@@ -111,13 +111,31 @@ pub fn raise(comptime code: Code, location: SourceLocation, args: anytype) Error
    call outside this file.
 3. **Templates must not name development concepts**. "Phase N",
    "ADR-NNNN", internal opcode names, file paths inside cw, and URLs
-   are forbidden in template strings. A reviewer who is not the
-   author has to be able to read the template and understand what
-   the user did wrong.
+   are forbidden in **template strings** (i.e., the `template` field
+   of an `entry()` arm). The same identifiers remain fine in ADR
+   prose, rule docs, code comments — anywhere a developer reads them.
+   The boundary is: anything `std.fmt.bufPrint` would render into a
+   message shown to a `cljw` user must pass this rule.
 4. **Unsupported features and Tier D forms use a `{name}` slot**.
    The form / feature name (`dosync`, `gen-class`, `deftype`, ...)
    is supplied via the args struct so that the same Code entry
    covers every concrete form. No per-form Code variants.
+
+### Code variant naming conventions
+
+The `Code` enum's variant names follow a single style so the catalog
+stays grep-friendly as it grows from the Phase 4 entry size (28
+variants) to the post-task-4.26 size (likely 60-100 variants):
+
+- Prefix is the phase or category: `parse_` / `analysis_` /
+  `macro_` / `eval_` / `unsupported_` / `tier_d_` / `out_of_memory` /
+  `internal_`.
+- The remainder describes **what the user did wrong**, not how the
+  runtime classifies it (`type_expected_number`, not
+  `type_error_eval_215`).
+- Multi-word use snake_case (`def_name_must_be_symbol`).
+- When two raise sites express the *same* user-visible error, they
+  share one `Code` variant. Distinct user wording = distinct variant.
 
 ### Named format args
 
@@ -165,14 +183,38 @@ slot is not yet used by other callers.
   new error is mechanical. The user no longer sees development
   calendar text. The reviewer can audit the message catalog without
   cross-referencing source files.
-- **Negative**: existing 80 `setErrorFmt` call sites migrate to
-  `raise(.code, loc, args)`. The migration itself is mechanical but
-  not free; tracked as Phase 4 task 4.26.
-- **Neutral / follow-ups**: when the public docs site exists, a
-  follow-up ADR amends this one to add an optional `docs_anchor`
-  field to `Entry`. The runtime formatter can then opt-in to render
-  `"See: <base_url>/<anchor>"` at the end of each message. Until
-  then, the catalog stays URL-free.
+- **Negative**: the existing ~116 `setErrorFmt` call sites (measured
+  by `grep -rn "setErrorFmt" src/ | wc -l`, including the helper
+  fns `expectNumber` / `checkArity` / `checkArityMin` /
+  `checkArityRange` in `error.zig` that today carry inline
+  templates) migrate to `raise(.code, loc, args)`. The migration is
+  mechanical but not free; tracked as Phase 4 task 4.26. The
+  count is approximate because each `error.zig` helper expands to
+  one inline `setErrorFmt` call per call path, and the helpers
+  themselves migrate to the catalog (their templates become
+  catalog entries).
+- **Neutral / follow-ups**:
+  - `Code.tier_d_form` and `Code.unsupported_feature` both carry
+    `Kind = .not_implemented` today. That conflates "Tier D
+    (permanent)" and "not yet supported (roadmap)" at the *Kind*
+    axis, intentionally — the user does not distinguish the two,
+    and the message templates already differ ("...is not part of
+    ClojureWasm" vs "...is not supported in ClojureWasm"). The
+    runtime can still distinguish the two by the `Code` itself
+    when an internal subsystem needs to. If a future requirement
+    surfaces the need for distinct user-visible *Kind*s (e.g. for
+    REPL UI), a follow-up amendment introduces a new `Kind`
+    variant.
+  - When the public docs site exists, a follow-up amends this ADR
+    to add an optional `docs_anchor` field to `Entry`. The runtime
+    formatter can then opt-in to render
+    `"See: <base_url>/<anchor>"` at the end of each message. Until
+    then, the catalog stays URL-free.
+  - Task 4.26 is large (~116 sites). At task open the implementer
+    splits it into sub-tasks per source-tree region (`reader.zig`,
+    `analyzer.zig`, `tree_walk.zig`, `lang/macro_transforms.zig`,
+    `lang/primitive/*`, `runtime/error.zig` helpers); see
+    handover.md when 4.26 is the active task.
 
 ## References
 
@@ -191,3 +233,9 @@ slot is not yet used by other callers.
 ## Revision history
 
 - 2026-05-23: Status: Proposed -> Accepted (initial landing).
+- 2026-05-23 (amendment): Rule 3 sharpened with the template-vs-prose
+  boundary. Added `Code` variant naming conventions. Consequences
+  expanded with (i) the rationale for `tier_d_form` and
+  `unsupported_feature` sharing `Kind.not_implemented`, (ii) the
+  measured ~116 site count and helper-fn migration note, (iii)
+  sub-task split guidance for task 4.26. Self-review feedback.

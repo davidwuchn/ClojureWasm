@@ -234,6 +234,10 @@ pub fn entry(comptime code: Code) Entry {
 ///
 /// On message buffer overflow `setErrorFmt` truncates with a trailing
 /// "..." per the existing convention in `error.zig`.
+///
+/// Call-site idiom: `return error_catalog.raise(.code, loc, args);`.
+/// `raise` returns the matching `Error` value directly; no `try` is
+/// required at the raise site because the caller propagates it.
 pub fn raise(comptime code: Code, location: SourceLocation, args: anytype) Error {
     const e = comptime entry(code);
     return error_mod.setErrorFmt(e.phase, e.kind, location, e.template, args);
