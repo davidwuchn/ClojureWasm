@@ -23,10 +23,10 @@ A no-op stub is any of:
 
 When the feature is genuinely not yet implemented:
 
-- Phase 4 entry: raise `Code.unsupported_feature` via the catalog
+- Phase 4 entry: raise `Code.feature_not_supported` via the catalog
   (`src/runtime/error_catalog.zig`, per ADR-0018) with the feature
   name supplied as `.{ .name = "<feature>" }`.
-- Tier D: raise `Code.tier_d_form` via the catalog with the same
+- Tier D: raise a matching `tier_d_<form>` Code (one per Tier D form) via the catalog with the same
   shape.
 
 The user-facing messages are
@@ -41,7 +41,7 @@ A "skeleton" is permitted when:
 
 - Only the struct type definition exists (no function declared yet).
 - A function is declared but its body is exactly
-  `return error_catalog.raise(.unsupported_feature, loc, .{ .name = "<form>" });`
+  `return error_catalog.raise(.feature_not_supported, loc, .{ .name = "<form>" });`
   (per ADR-0018), or for genuinely internal-only paths
   `return error.NotImplemented;` / `@panic("...")` with a
   developer-visible comment.
@@ -78,7 +78,7 @@ Do at Phase 4:
 pub fn dosync(rt: *Runtime, loc: SourceLocation, body: Value) !Value {
     _ = rt;
     _ = body;
-    return error_catalog.raise(.unsupported_feature, loc, .{ .name = "dosync" });
+    return error_catalog.raise(.feature_not_supported, loc, .{ .name = "dosync" });
 }
 ```
 

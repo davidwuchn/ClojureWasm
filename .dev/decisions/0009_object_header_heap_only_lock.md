@@ -52,9 +52,10 @@ pointer.
 
 Phase 5 reserves the bit slot in the struct. Phase 15 activates the
 implementation (CAS path + heavy fallback). Phase 4-14 attempts to
-take a lock raise `Code.unsupported_feature` via the catalog
-(per ADR-0018) with the form name (`locking` / `monitor-enter` /
-`monitor-exit`) as `.{ .name = "<form>" }`. No-op stub is forbidden
+take a lock raise sub-feature staged catalog Codes
+(`locking_not_supported` / `monitor_enter_not_supported` /
+`monitor_exit_not_supported`) per ADR-0018 amendment 2. These Codes
+are removed when Phase 15 activates the lock implementation. No-op stub is forbidden
 per `no_op_stub_forbidden.md`.
 
 ## Alternatives considered

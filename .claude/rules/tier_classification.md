@@ -12,15 +12,15 @@ paths:
 Every public function and type carries a tier classification A / B / C / D
 (per `compat_tiers.yaml` and ADR-0013).
 
-Tier D forms raise `Code.tier_d_form` (per ADR-0018) with the form
-name supplied via `.{ .name = "<form>" }`. The user-facing message is:
+Tier D forms raise a per-form catalog Code (`tier_d_gen_class` /
+`tier_d_gen_interface` / `tier_d_compile` / `tier_d_proxy_deep` /
+`tier_d_bean_deep`) per ADR-0018 amendment 2. Each Code carries a
+hand-written multi-sentence template that explains the technical
+reason and suggests the cw-native alternative.
 
-```
-<form> is not part of ClojureWasm
-```
-
-The tier classification and rationale ADR live in `compat_tiers.yaml`
-and ADR-0013; they do not appear in the user-facing message.
+The tier classification ("D") and the rationale ADR ("ADR-0013")
+live in `compat_tiers.yaml` and ADR-0013; they do not appear in the
+user-facing message.
 
 ## Why
 
