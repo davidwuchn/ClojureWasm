@@ -132,3 +132,7 @@ trailing parenthetical points to this ADR for cause.
   `(try (throw (ex-info "boom" 0)) (catch ExceptionInfo e (ex-message e)))` → `"boom"`
 - Related ADRs: 0001 (macroexpand routing — same pattern of "deferred
   decision surfaces during implementation").
+
+## Revision history
+
+- 2026-04-29: Status: Proposed -> Accepted (initial landing, retroactive history added 2026-05-23)

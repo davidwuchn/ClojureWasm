@@ -195,3 +195,7 @@ rule itself.
 - Upstream: [KurtWagner/zlinter](https://github.com/KurtWagner/zlinter)
 - Native proposal: [ziglang/zig#22822 — `@deprecated()`
   builtin](https://github.com/ziglang/zig/issues/22822)
+
+## Revision history
+
+- 2026-05-03: Status: Proposed -> Accepted (initial landing, retroactive history added 2026-05-23)

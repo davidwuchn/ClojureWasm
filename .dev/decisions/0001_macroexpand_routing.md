@@ -214,3 +214,7 @@ user-fn invocation site — and never crosses zone boundaries.
 - v1 reference: `~/Documents/MyProducts/ClojureWasm/src/lang/macro_transforms.zig`
 - Clojure JVM: `clojure/src/jvm/clojure/lang/Compiler.java::macroexpand1`
   (line ~7566) and `analyzeSeq` (line ~7673)
+
+## Revision history
+
+- 2026-04-29: Status: Proposed -> Accepted (initial landing, retroactive history added 2026-05-23)
