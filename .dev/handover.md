@@ -16,13 +16,17 @@
 ## Current state
 
 - **Phase**: **Phase 3 DONE; Phase 4 IN-PROGRESS, §9.6 OPEN.**
-  All §9.5 / 3.1–3.14 cells `[x]`, paired through chapter 0020
-  (`cc46a48`). Phase-3 boundary review chain finished (audit /
-  simplify / security-review / chapter); simplify apply-now landed in
-  `4ad8270`. Phase-3 security findings (H1 / H2 / H3) and ROADMAP
-  §10.2 bench harness (G4 physical) are now §9.6 tasks 4.0–4.3 —
-  full task table lives in `.dev/ROADMAP.md` §9.6. 🔒 OrbStack
-  x86_64 gate **PASSED 2026-04-27**. No blockers.
+  Phase-4-entry scaffolding wave landed 2026-05-23: 14 new ADRs
+  (0004-0017), 9 new rules, 8 new scripts + `.githooks/pre-push`,
+  4 new `.dev/` files (`debt.md`, `reference_clones.md`,
+  `lessons/INDEX.md`, `compat_tiers.yaml`), 4 skill modifications
+  (`continue/LOOP.md` new, Step 0.5 sweep, audit two-tier triggers,
+  big-bang regeneration policy), `.claude/settings.json` PostCompact
+  + Edit\|Write hooks, ROADMAP §1.4 / §A10-A14 / §3.2 / §6.0 / §9.6
+  4.13-4.25 / §11.8 / §14 / §17.5 amendments. All §9.5 / 3.1–3.14
+  cells `[x]`, paired through chapter 0020 (`cc46a48`). 🔒 OrbStack
+  x86_64 gate PASSED 2026-04-27 (pre-scaffolding state). Next
+  re-run after Phase 4 entry commits.
 - **Branch**: `cw-from-scratch` (long-lived; v0.5.0-derived).
 - **Last paired chapter commit**: `cc46a48` (0020 — Phase 3 の閉幕)
   covering all of `772ebcf` `28c2bc3` `c16380f` `99efd07` `a1a70aa`
@@ -67,16 +71,36 @@ optimisation work needs a measuring stick from day one. Wired into
 numbers, does not assert pass/fail until §10.1 lock at Phase 8).
 
 **Retrievable identifiers**:
-- ROADMAP §9.6 — full Phase 4 task table (4.0 → 4.12).
+- ROADMAP §9.6 — full Phase 4 task table (4.0 → 4.25 after the V3
+  scaffolding wave).
 - ROADMAP §10.2 — quick bench policy + intent.
-- ROADMAP §10.3 — v0.1.0 target numbers (the harness should make
-  these comparable; absolute numbers will move with the VM).
+- ROADMAP §10.3 — v0.1.0 target numbers.
 - `bench/quick.sh` — already exists from Phase 1, with `# TODO(phase4)`
-  placeholders at lines 94-97. 4.0 fills those in and wires the
-  script into `test/run_all.sh` (currently not wired).
-- `private/notes/phase3-simplify-queue.md` — Q1–Q11 deferred items
-  from the Phase-3 boundary simplify pass; some intersect 4.x work,
-  consult per task. (gitignored — present on this machine only)
+  placeholders. 4.0 fills those in and wires it into
+  `test/run_all.sh`.
+
+**Phase 4 task list (4.0 - 4.25, expanded by ADR-0004 through 0017)**:
+
+- 4.0-4.12: bench harness, errdefer + bound check fixes, Opcode enum,
+  VM compiler / dispatch / Phase-3 special forms, backend gate,
+  dual-backend run, `Evaluator.compare()` CI mandatory, phase4_cli,
+  exit smoke (the original V2 task set).
+- 4.13: `io_interface.zig` Zone 0 vtable (ADR-0015).
+- 4.14: `.dev/debt.md` operationalize.
+- 4.15: `compat_tiers.yaml` expansion (full clojure.core + 40
+  host_classes).
+- 4.16: Wasm FFI removal (ADR-0006).
+- 4.17: `TypeDescriptor` skeleton (ADR-0007).
+- 4.18: Protocol dispatch table skeleton (ADR-0008).
+- 4.19: Object header `u32 gc_and_lock` packed slot (ADR-0009).
+- 4.20: `src/runtime/host/` directory + `_host_api.zig` (ADR-0011).
+- 4.21: `deftype` / `defrecord` / `reify` / `definterface` analyzer
+  recognition with structured compile error (ADR-0007).
+- 4.22: `binding_stack.zig` with `threadlocal var dval_top`
+  (real impl from Phase 2-3 onward).
+- 4.23: `numeric/big_int.zig` struct (no arithmetic yet).
+- 4.24: `lazy_seq.zig` struct (no `force()` yet).
+- 4.25: `dispatch/method_table.zig` structs (no `dispatch()` yet).
 
 **Boundary-chain artefacts (just landed, this session)**:
 - Chapter 0020 covers 3.8–3.14 + meta in 1075 lines (`cc46a48`).
@@ -86,19 +110,34 @@ numbers, does not assert pass/fail until §10.1 lock at Phase 8).
   (`e3de44f`).
 - §9.6 expanded inline in ROADMAP (this commit).
 
-**Phase-3 → Phase-4 reading pause (active 2026-04-27)**:
-The user is reading chapters 0001–0020 before Phase 4 opens, to
-keep up with the agent's pace. Implications for the next agent
-session:
+**Phase 4 entry scaffolding (just landed, this commit batch)**:
 
-- Do **not** auto-start Phase 4 / §9.6 / 4.0 work on `/continue` —
-  wait for the user's explicit go signal after the reading pass.
-- Chapters 0001–0020 are all prose-polished — 0001–0019 through
-  commit `5711ce4`, 0020 through commit `7fcaef9`. The reader sees a
-  consistent style across the full Phase-3 arc.
-- No agent task is required during the pause; resume signal opens
-  Phase 4 / §9.6 / 4.0.
-- Resume guide: `private/READING_GUIDE.md` (gitignored, scratch).
+- 14 new ADRs (`.dev/decisions/0004` through `0017`) + retroactive
+  Revision history added to ADR-0001/2/3 to satisfy
+  `scripts/check_adr_history.sh`.
+- 9 new `.claude/rules/` files (total 14 rules now).
+- 8 new `scripts/` files + `.githooks/pre-push` zone gate.
+- 4 new `.dev/` files: `debt.md`, `reference_clones.md`,
+  `lessons/INDEX.md`, plus `compat_tiers.yaml` at repo root.
+- 4 skill modifications: `continue/LOOP.md` new, `continue/SKILL.md`
+  Step 0.5 + Step 1a, `audit_scaffolding/SKILL.md` two-tier
+  triggers, `code_learning_doc/SKILL.md` big-bang regeneration
+  policy.
+- `.claude/settings.json` PostCompact + Edit\|Write hooks.
+- ROADMAP amendments (§1.4 / §A10-A14 / §3.2 / §6.0 / §9.6
+  4.13-4.25 / §11.8 / §14 per-row predicate / §17.5).
+
+**Open questions / deferred (from DECISIONS_V2)**:
+
+- v0.1.0 deliverable specification (minimum success criterion within
+  Tier A) — finalized in Phase 11+; the SemVer rule (§1.4) holds
+  independently.
+- ValueTag enum slot design — ADR-0012 selected Option A (3 slot).
+  Open for revisit during Phase 5 implementation if Option B
+  measurements emerge.
+- D02-D30 follow-up propagation (numeric tower BigDecimal Tier B,
+  exception `:type` keyword, multimethod + TypeDescriptor, protocol
+  + TypeDescriptor) — Phase 5-7 individual ADR amendments.
 
 **Post-3.11 small cleanup queued** (not blocking, picked up in §9.6
 or later):

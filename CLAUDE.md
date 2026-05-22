@@ -133,6 +133,19 @@ zig build run          # run executable (`cljw`)
 zig fmt src/           # format
 ```
 
+## Data sources (Phase 4 entry additions)
+
+- [`compat_tiers.yaml`](compat_tiers.yaml) — authoritative Tier A / B /
+  C / D classification per var, special form, and host class. Read by
+  test runner, REPL error message, and future `cljw --list-vars`. See
+  ADR-0013 for the Tier D rationale.
+- [`.dev/debt.md`](.dev/debt.md) — row-level debt ledger. `continue`
+  skill Step 0.5 sweeps this on every resume. See ROADMAP §A13.
+- [`.dev/reference_clones.md`](.dev/reference_clones.md) — explicit
+  usage purpose for `additionalDirectories` paths.
+- [`.dev/lessons/INDEX.md`](.dev/lessons/INDEX.md) — observational
+  learnings, distinct from load-bearing ADRs.
+
 ## References
 
 - [`.dev/ROADMAP.md`](.dev/ROADMAP.md) — authoritative mission, principles,
@@ -140,3 +153,7 @@ zig fmt src/           # format
   conflicts with the roadmap, the roadmap wins.
 - [`.dev/handover.md`](.dev/handover.md) — short, mutable, current state.
 - [`.dev/decisions/`](.dev/decisions/) — ADRs (load-bearing decisions).
+  Phase 4 entry batch: ADR-0004 through ADR-0017 (Day-1 enums, dual
+  backend, Wasm defer, TypeDescriptor, protocol unify, heap-only lock,
+  STM Tier A, host extension, ValueTag, Tier D permanent, UTF-8,
+  io_interface, file size smell, Allocator strategy).

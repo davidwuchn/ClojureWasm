@@ -72,6 +72,26 @@ and Wasm support, implemented in Zig 0.16.0.**
 - **Learners of runtime implementation** who want design decisions and
   implementation in lockstep.
 
+### 1.4 Versioning and release commitment
+
+v0.1.0 is the first stable release. SemVer applies from v0.1.0 onward.
+Pre-v0.1.0 phases (1-20 in §9) are internal development; ROADMAP and
+ADR amendments may break behaviour. After v0.1.0:
+
+- **MAJOR**: Tier A / B namespace removal, special-form removal,
+  binary-format change (e.g., `cljw build` output).
+- **MINOR**: Tier C / D shift, new namespace, new special form, new
+  builtin.
+- **PATCH**: bug fix only, no behaviour change.
+
+Tier D is permanent (per ADR-0013): vars and packages listed there
+will not be added in any MINOR / PATCH release. Adding a Tier D
+entry requires a MAJOR release and an amendment to ADR-0013.
+
+The v0.1.0 deliverable specification (which subset of Tier A is the
+minimum success criterion) is finalized in Phase 11+; the SemVer
+rule above holds independently of that decision.
+
 ---
 
 ## 2. Inviolable principles
@@ -95,17 +115,22 @@ These do not change between phases. Changing one requires an ADR.
 
 ### 2.1 Architecture principles (verifiable)
 
-| #  | Principle                                                       | Verified by                                           |
-|----|-----------------------------------------------------------------|-------------------------------------------------------|
-| A1 | Lower zones do not import upper zones                           | `scripts/zone_check.sh --gate` (CI)                   |
-| A2 | New features go via new files, not edits to existing ones       | ModuleDef + comptime flags + pods                     |
-| A3 | Optimisation code lives in a dedicated subtree                  | `src/eval/optimize/` only                             |
-| A4 | GC is an isolated subsystem                                     | `runtime/gc/{arena, mark_sweep, roots}.zig`           |
-| A5 | Tests mirror the source layout                                  | `test/` mirrors `src/`                                |
-| A6 | One file ≤ 1,000 lines (soft limit)                            | Avoids the v1 `collections.zig` (6K LOC) trap         |
-| A7 | Concurrency and errors are designed in on day 1                 | Runtime handle + threadlocal binding + SourceLocation |
-| A8 | Interop is a single deep module                                 | `lang/interop.zig` only; Class is a Value heap type   |
-| A9 | External modules go through a single `ExternalModule` interface | comptime / .clj source / wasm pod loaded uniformly    |
+| #   | Principle                                                       | Verified by                                                                         |
+|-----|-----------------------------------------------------------------|-------------------------------------------------------------------------------------|
+| A1  | Lower zones do not import upper zones                           | `scripts/zone_check.sh --gate` (CI)                                                 |
+| A2  | New features go via new files, not edits to existing ones       | ModuleDef + comptime flags + pods                                                   |
+| A3  | Optimisation code lives in a dedicated subtree                  | `src/eval/optimize/` only                                                           |
+| A4  | GC is an isolated subsystem                                     | `runtime/gc/{arena, mark_sweep, roots}.zig`                                         |
+| A5  | Tests mirror the source layout                                  | `test/` mirrors `src/`                                                              |
+| A6  | One file ≤ 1,000 lines (soft limit)                            | Avoids the v1 `collections.zig` (6K LOC) trap                                       |
+| A7  | Concurrency and errors are designed in on day 1                 | Runtime handle + threadlocal binding + SourceLocation                               |
+| A8  | Interop is a single deep module                                 | `lang/interop.zig` only; Class is a Value heap type                                 |
+| A9  | External modules go through a single `ExternalModule` interface | comptime / .clj source / wasm pod loaded uniformly                                  |
+| A10 | Dual-backend differential testing is the oracle                 | `Evaluator.compare()` CI mandatory; mismatch = build failure (ADR-0005)             |
+| A11 | Day-one enum reservation                                        | `SpecialFormTag` / `Opcode` / `ValueTag` sized for phases 4-20 (ADR-0004, ADR-0012) |
+| A12 | File size is a smell detector, not a metric                     | 1,000-line soft cap / 2,000-line hard cap, `FILE-SIZE-EXEMPT` marker (ADR-0016)     |
+| A13 | Debt ledger maintenance                                         | `.dev/debt.md` row-level predicates; phase boundary audit per row                   |
+| A14 | Structural discipline markers                                   | `FILE-SIZE-EXEMPT`, `SIBLING-PUB`, `SKIP-<reason>` markers, grep-indexed            |
 
 ---
 
@@ -135,14 +160,41 @@ These do not change between phases. Changing one requires an ADR.
 
 ### 3.2 Out of scope permanently (Tier D)
 
-- **Java interop literally**: `(. obj method)` / `(.method obj)` target v2's
-  internal `Class`. JVM classes such as `java.lang.String` are not provided.
-- `reify`, `proxy`, `gen-class`, `definterface`, `bean`, `class?`, `supers`, `bases`
-- `monitor-enter`, `monitor-exit`, `locking` (use `atom` + `Io.Mutex` instead)
-- **STM (`ref` / `dosync` / `alter` / `commute`)**: atom + agent cover the
-  use cases; STM implementation cost is not justified.
-- AOT compilation (lein-aot equivalent)
-- Dynamic Wasm generation (security and complexity)
+Authoritative list lives in `compat_tiers.yaml` `tiers.D.excluded_*`
+(per ADR-0013). Summary at the ROADMAP level:
+
+**Excluded special forms (5)**:
+
+- `gen-class` — requires JVM Class system and bytecode emission.
+- `gen-interface` — same.
+- `clojure.core/compile` — JVM .class emission.
+- `proxy` when targeting deep Java extension (Apache HC base classes,
+  Swing GUI base classes, `java.util.logging.Formatter / Handler`).
+  Other `proxy` uses go through `reify` against cw-native protocols.
+- `bean`'s reflection-deep variant. Basic field walk via
+  `TypeDescriptor` stays Tier C.
+
+**Excluded Java packages**:
+
+- `java.awt.*`, `javax.swing.*`, `java.applet.*` (GUI, out of scope).
+- Deep reflection internals beyond what `TypeDescriptor` exposes.
+
+**Other**:
+
+- AOT compilation (lein-aot equivalent).
+- Dynamic Wasm generation in-runtime (security and complexity; Pod
+  boundary covers the legitimate uses per ADR-0006).
+
+**Forms moved OUT of Tier D since the original ROADMAP**:
+
+- `reify`, `definterface`, `class?`, `supers`, `bases`, `bean` (basic),
+  `(.method obj)`, `import`, `new`, `set!`, `doto`, `..` — now Tier A
+  via `TypeDescriptor` (ADR-0007) and unified `.method` dispatch
+  (ADR-0008).
+- `monitor-enter`, `monitor-exit`, `locking` — now Tier A on heap
+  values only (ADR-0009).
+- STM (`ref`, `dosync`, `alter`, `commute`, `ensure`, `ref-set`) — now
+  Tier A with full MVCC (ADR-0010); Phase 13-15 implementation.
 
 ### 3.3 Deferred (re-evaluate later)
 
@@ -497,6 +549,27 @@ ClojureWasm/                         (working dir on disk: ClojureWasmFromScratc
 
 ## 6. Ecosystem compatibility: tier system
 
+### 6.0 Tier data source (authoritative)
+
+Tier classification is data-driven. The authoritative data lives in
+`compat_tiers.yaml` at the repository root. The narrative in §6.1-§6.4
+documents the framework; the YAML carries the per-var / per-class
+classification.
+
+`compat_tiers.yaml` is read by:
+
+- the test runner (`test/clj/` for the Tier A 100% PASS gate),
+- the REPL error message format (`"Tier D: <reason>, see ADR-NNNN"`),
+- the future `cljw --list-vars` command.
+
+Amendment process:
+
+1. Edit the YAML entry.
+2. Open or amend the rationale ADR (typically ADR-0013 for Tier D).
+3. If a Tier D promotion is involved, that is a MAJOR release per
+   §1.4.
+4. Reference the ADR in the commit message.
+
 ### 6.1 Tier definitions
 
 | Tier  | Meaning                                                                          | Test requirement                                |
@@ -508,7 +581,7 @@ ClojureWasm/                         (working dir on disk: ClojureWasmFromScratc
 
 ### 6.2 Initial tier per namespace
 
-`.dev/compat_tiers.yaml` is the source of truth:
+`compat_tiers.yaml` (repo root) is the source of truth:
 
 ```yaml
 clojure.core:        A   # complete by Phase 14
@@ -560,28 +633,45 @@ against ad-hoc rot.
 
 ## 7. Concurrency design
 
-### 7.1 Clojure reference-types ↔ Zig 0.16 std.Io mapping
+### 7.1 Clojure reference-types ↔ Zig 0.16 primitive mapping
 
-| Clojure prim   | Zig 0.16 mechanism                  | File                       | Phase      |
-|----------------|-------------------------------------|----------------------------|------------|
-| **atom**       | `std.atomic` + CAS retry            | `lang/primitive/atom.zig`  | 15         |
-| **agent**      | `std.Thread.Pool` + `Io.Mutex`      | `lang/primitive/atom.zig`  | 15         |
-| **future**     | `std.Io.async` + `Io.Mutex`         | `lang/primitive/atom.zig`  | 15         |
-| **promise**    | `Io.Mutex` + `Io.Condition`         | `lang/primitive/atom.zig`  | 15         |
-| **delay**      | `Io.Mutex` (single lock)            | `lang/primitive/lazy.zig`  | 6          |
-| **volatile!**  | `@atomicLoad/Store`                 | `lang/primitive/atom.zig`  | 15         |
-| **binding**    | `pub threadlocal var current_frame` | `runtime/env.zig`          | 2          |
-| **core.async** | `std.Io` fibers + channels          | `lang/primitive/async.zig` | 15 stretch |
+| Clojure prim   | Zig 0.16 mechanism                                                                                   | File                                     | Phase                    |
+|----------------|------------------------------------------------------------------------------------------------------|------------------------------------------|--------------------------|
+| **atom**       | `std.atomic.Value` + CAS retry                                                                       | `runtime/atom.zig`                       | 15                       |
+| **ref / STM**  | self-built MVCC (TVal ring + Transaction context) per ADR-0010                                       | `runtime/ref.zig`, `runtime/lock_tx.zig` | 13-15                    |
+| **agent**      | `std.Thread.Pool` + action queue                                                                     | `runtime/agent.zig`                      | 15                       |
+| **future**     | `std.Thread.spawn` + `Condition`                                                                     | `runtime/future.zig`                     | 15                       |
+| **promise**    | `std.Thread.Mutex` + `Condition`                                                                     | `runtime/promise.zig`                    | 15                       |
+| **delay**      | `std.Thread.Mutex` (single lock + state machine)                                                     | `runtime/delay.zig`                      | 6                        |
+| **volatile!**  | `@atomicLoad` / `@atomicStore`                                                                       | `runtime/volatile.zig`                   | 15                       |
+| **binding**    | `threadlocal var dval_top: ?*DvalFrame`                                                              | `runtime/binding_stack.zig`              | 2 (task 4.22)            |
+| **locking**    | Object header `lock_state` bits + `std.Thread.Mutex` (heavy lock table), heap values only (ADR-0009) | `runtime/lock.zig`                       | 5 (slot) / 15 (activate) |
+| **core.async** | userspace coroutine on `std.Thread` pool (no built-in async in 0.16)                                 | `runtime/async.zig`                      | 15 stretch               |
 
-### 7.2 No STM
+### 7.2 STM is implemented (was: No STM)
 
-`ref` / `dosync` / `alter` / `commute` are **permanently unimplemented**.
-Reasons:
-- LockingTransaction is expensive to get right.
-- atom + agent cover ~95 % of real concurrent code.
-- v1 also stopped at the skeleton.
+`ref` / `dosync` / `alter` / `commute` / `ensure` / `ref-set` are
+implemented as Tier A per ADR-0010. The cw v1 charter explicitly aims
+beyond Babashka's subset; STM is the signature Clojure concurrency
+primitive and is included.
 
-Returns `(throw (UnsupportedException "STM not supported, use atom"))`.
+The implementation matches JVM `LockingTransaction.java` semantics:
+MVCC with TVal ring history per ref, thread-local transaction context,
+retry loop with snapshot validation, ordered locking by ref pointer
+(deadlock-free), and a barge mechanism (Phase 15.3) for starvation
+control.
+
+Phase staging:
+
+- Phase 4 entry: data structures declared; any `dosync` returns a
+  structured error referencing ADR-0010 (no-op stub forbidden per
+  `no_op_stub_forbidden.md`).
+- Phase 13: `Ref` and `TVal` data structures.
+- Phase 14: `doGet` / `doSet` / `doCommute` / `doEnsure`.
+- Phase 15.1: commit + retry loop.
+- Phase 15.2: commute fast path.
+- Phase 15.3: barge mechanism.
+- Phase 15.4: concurrent integration test.
 
 ### 7.3 Dynamic vars stay on threadlocal
 
@@ -833,11 +923,34 @@ ships the `bench/quick.sh` harness §10.2 has so far only described.
 | 4.9  | Run the full unit-test suite under both backends. Any TreeWalk-only test (e.g., heap collection deinit-ordering specifics) is moved into a `runtime`-zone test that does not depend on backend; or duplicated with a backend-specific `test "...vm only"` qualifier                                                                                                                                                                                  | [ ]    |
 | 4.10 | `src/eval/evaluator.zig` (new) — `pub fn compare(rt, env, src) struct { tree_walk: Value, vm: Value, equal: bool }`. Phase 8 wires this into `Evaluator.compare()` for dual-backend verify; Phase 4 just needs the plumbing in place                                                                                                                                                                                                                | [ ]    |
 | 4.11 | `test/e2e/phase4_cli.sh` — re-runs the §9.5 `phase3_cli.sh` cases under both backends via `cljw -Dbackend=vm -e ...` (or env var if `-D` doesn't reach the binary). Wired into `test/run_all.sh`                                                                                                                                                                                                                                                   | [ ]    |
-| 4.12 | Phase-4 exit smoke: `(defn f [x] (+ x 1)) (f 2)` → `3` under **both** backends. e2e in `test/e2e/phase4_exit.sh`. After 4.12 `[x]`, the §9 phase tracker flips Phase 4 from PENDING to DONE; expand Phase 5 inline in §9.7 (HAMT + Mark-Sweep GC, also 🔒)                                                                                                                                                                                         | [ ]    |
+| 4.12 | Phase-4 exit smoke: `(defn f [x] (+ x 1)) (f 2)` → `3` under **both** backends. e2e in `test/e2e/phase4_exit.sh`                                                                                                                                                                                                                                                                                                                                    | [ ]    |
+| 4.13 | `src/runtime/io_interface.zig` (new) — Zone 0 vtable abstraction for `Reader` / `Writer` / `Net` / `Process` (per ADR-0015). Concrete `io_default.zig` (Zone 1) wires it to current `std.Io`. Insulates the runtime from Zig stdlib reshape                                                                                                                                                                                                         | [ ]    |
+| 4.14 | `.dev/debt.md` operationalize — populate against the existing 16-row skeleton, add Phase-4 row entries as the wave proceeds. `continue` Step 0.5 debt sweep reads from this file each resume                                                                                                                                                                                                                                                        | [ ]    |
+| 4.15 | `compat_tiers.yaml` expansion — populate `clojure.core` `var_count_target` (currently `TBD-by-task-4.15`) from JVM source enumeration; expand `host_classes` to the 40 entries promised in ADR-0011                                                                                                                                                                                                                                                 | [ ]    |
+| 4.16 | Wasm FFI removal (per ADR-0006) — `-Dwasm=false` default in `build.zig`, remove the `cljw.wasm` namespace, drop the `zwasm` dependency from `build.zig.zon`                                                                                                                                                                                                                                                                                         | [ ]    |
+| 4.17 | `src/runtime/type_descriptor.zig` skeleton (per ADR-0007) — `TypeDescriptor` struct + `TypedInstance` + `ReifiedInstance` declarations. No `lookupMethod` / `register` / `new` functions yet (those land in Phase 5)                                                                                                                                                                                                                                | [ ]    |
+| 4.18 | `src/runtime/protocol.zig` dispatch table skeleton (per ADR-0008) — `ProtocolDescriptor` + `MethodEntry` struct declarations. No `dispatch` function yet (Phase 7 wires the `CallSite` cache)                                                                                                                                                                                                                                                       | [ ]    |
+| 4.19 | Object header layout extension (per ADR-0009) — `ObjectHeader` packed struct gains the `u32 gc_and_lock` field with `lock_state: u2` reserved at the low bits and `gc_mark: u30` at the high bits. Phase 5 reads/writes; Phase 4 only adds the slot. `monitor-enter` / `monitor-exit` / `locking` return a structured error in Phase 4 (per ADR-0009 + `no_op_stub_forbidden.md`)                                                                   | [ ]    |
+| 4.20 | `src/runtime/host/` directory + `_host_api.zig` (per ADR-0011) — empty subdirectories with one placeholder `.zig` each. `_host_api.zig` defines the `Extension` struct and `___HOST_EXTENSION` marker contract                                                                                                                                                                                                                                      | [ ]    |
+| 4.21 | `deftype` / `defrecord` / `reify` / `definterface` analyzer recognition (per ADR-0007). Reader accepts the syntax; analyzer emits a structured compile error: `"Phase 5: deftype not yet implemented, see ADR-0007"`. No fall-through, no no-op stub                                                                                                                                                                                                 | [ ]    |
+| 4.22 | `src/runtime/binding_stack.zig` — `threadlocal var dval_top: ?*DvalFrame` + `pushBindings` / `popBindings` / `varDeref` (real implementation, not stub). Required from Phase 2 onward for `*out*` / `*err*` / `*ns*` even though Phase 4 entry has not exercised it heavily. Thread-spawn inheritance lives in Phase 14-15                                                                                                                          | [ ]    |
+| 4.23 | `src/runtime/numeric/big_int.zig` — `BigInt` struct wrapping `std.math.big.int.Managed`; ValueTag `big_int` slot reservation (per ADR-0012). No arithmetic promotion functions in Phase 4; Phase 5 wires the long → BigInt path                                                                                                                                                                                                                    | [ ]    |
+| 4.24 | `src/runtime/lazy_seq.zig` — `LazySeq` struct (thunk + sval + `seq_cache: std.atomic.Value(?*Seq)` + `mutex: std.Thread.Mutex`) declaration. `force()` function lands in Phase 5 (per ADR-0009 + the trampoline pattern). Phase 4 has only the struct declaration                                                                                                                                                                                   | [ ]    |
+| 4.25 | `src/runtime/dispatch/method_table.zig` — `MethodEntry` struct (interned symbol + fn ptr) and `CallSite` struct (`last_type` + `last_method` cache slots) declaration. The `dispatch` function lands in Phase 7 (per ADR-0008). Phase 4 has only the struct declarations                                                                                                                                                                            | [ ]    |
 
-After 4.12 lands as a `[x]`, the §9 phase tracker flips Phase 4 from
+After 4.0-4.25 land as `[x]`, the §9 phase tracker flips Phase 4 from
 IN-PROGRESS to DONE and Phase 5 IN-PROGRESS (🔒 x86_64 gate);
 expand Phase 5 inline in §9.7.
+
+> 4.13-4.25 are the V3 additions per ADR-0007 through ADR-0017
+> (TypeDescriptor / Protocol dispatch / Object header lock / STM
+> intent / Host extension / NaN-box ValueTag / Tier D / UTF-8 /
+> io_interface / file size criterion / Allocator strategy). Most
+> are skeleton-only at Phase 4 — executable code lands in Phase 5+.
+> The `no_op_stub_forbidden` rule applies: a skeleton is a struct
+> declaration without a fall-through function, or a function whose
+> body is exactly `@panic("Phase N: see ADR-NNNN")` or
+> `return error.NotImplemented`.
 
 > 4.4 onwards is the **first time the VM actually runs code**. The
 > opcode set listed in 4.4 is the **starting** set, not the final one
@@ -956,6 +1069,30 @@ they are wired.
 | 15 | WIT auto-binding correctness                                   | inline test                                              | Phase 19                                 |
 | 16 | nREPL operation parity (CIDER 14 ops)                          | inline test                                              | Phase 14                                 |
 
+### 11.8 Gate wiring matrix (Phase 4 entry snapshot)
+
+Maps each gate to its current activation state (per ADR-0005 / 0009 /
+0013 / 0016 and the Wave 2 scripts).
+
+| Gate                               | Mac      | OrbStack | Wired by                                 |
+|------------------------------------|----------|----------|------------------------------------------|
+| zig build test                     | Active   | Active   | `test/run_all.sh`                        |
+| `zone_check.sh --gate`             | Active   | Active   | `test/run_all.sh` + `.githooks/pre-push` |
+| zlinter `no_deprecated`            | Active   | (skip)   | ADR-0003 (Mac-only)                      |
+| `phase3_cli.sh` / `phase3_exit.sh` | Active   | Active   | `test/run_all.sh`                        |
+| `check_learning_doc.sh`            | Active   | Active   | PreToolUse Bash hook                     |
+| `check_md_tables.sh`               | Active   | Active   | PreToolUse Bash hook                     |
+| `check_stale_git_lock.sh`          | Active   | Active   | PreToolUse Bash hook                     |
+| `check_roadmap_amendment.sh`       | Active   | Active   | PreToolUse Edit\|Write hook              |
+| `check_adr_history.sh`             | Active   | Active   | pre-commit script                        |
+| `bench/quick.sh`                   | Phase 4  | Phase 4  | task 4.0                                 |
+| `Evaluator.compare()`              | Phase 4  | Phase 4  | task 4.10, ADR-0005                      |
+| `check_compat_tiers_sync.sh`       | Phase 5  | Phase 5  | scripts (informational P4)               |
+| `check_no_op_stub.sh`              | Phase 5  | Phase 5  | scripts (informational P4)               |
+| `check_tier_d_error_msg.sh`        | Phase 5  | Phase 5  | scripts (informational P4)               |
+| `file_size_check.sh`               | Phase 5  | Phase 5  | ADR-0016                                 |
+| Clojure upstream test (Tier A)     | Phase 11 | Phase 11 | Skip taxonomy ADR (future)               |
+
 ### 11.7 Periodic scaffolding audit
 
 Every Phase boundary (or every ~10 ja docs, or before a release tag),
@@ -1057,13 +1194,16 @@ If `.claude/CLAUDE.md` and this file conflict, this file wins.
 - ❌ Committing with `--no-verify`
 - ❌ `git push --force` to `cw-from-scratch`
 - ❌ `git reset --hard` to throw away commits
-- ❌ Implementing STM (§3.2 / §7.2)
-- ❌ Providing JVM classes themselves (e.g. `java.lang.String`) (§3.2)
-- ❌ Using `std.Thread.Mutex` (removed in 0.16; use `std.Io.Mutex`)
+- ❌ No-op stubs that mask missing semantics
+  (per `.claude/rules/no_op_stub_forbidden.md`)
+- ❌ Providing the JVM Class hierarchy verbatim (e.g. `java.lang.Class`
+  with full reflection). cw v1 provides `TypeDescriptor` per ADR-0007
+  instead.
 - ❌ Using `std.io.AnyWriter` / `std.io.fixedBufferStream` (removed in 0.16)
 - ❌ Using `pub var` as a vtable (use struct `VTable` + Runtime field)
-- ❌ Letting any single file drift past 1,000 lines indefinitely
-- ❌ Running with only one backend after Phase 8
+- ❌ Letting any single file drift past 2,000 lines without a
+  `FILE-SIZE-EXEMPT` marker (per ADR-0016)
+- ❌ Running with only one backend after Phase 4 (per ADR-0005)
 - ❌ Pushing to remote without user approval
 - ❌ Writing a doc commit that omits any unpaired source SHA from `commits:` (§12.2 Rule 2)
 - ❌ Mixing source and a `docs/ja/learn_clojurewasm/NNNN_*.md` in the same commit (§12.2 Rule 1)
@@ -1072,14 +1212,20 @@ If `.claude/CLAUDE.md` and this file conflict, this file wins.
 
 ## 14. Future go/no-go decision points
 
+Each row carries a per-row predicate (no aggregate count gates).
+
 ### 14.1 End of Phase 17: do we implement JIT (Phase 20)?
 
-Criteria:
-- v0.1.0 benches (Phase 14) within 110 % of v1 24C.10 → **JIT not needed**
-  (transducer + super_instruction were enough).
-- Otherwise → **consider JIT** (start with ARM64; x86_64 is a stretch).
-
-Decision recorded as a go/no-go ADR in `.dev/decisions/` at end of Phase 17.
+- **Trigger event**: Phase 17 end with `bench/jit.yaml` showing
+  >2x speedup over VM on `bench/fixtures/arith_loop.clj` AND σ < 5%.
+  Equivalently: v0.1.0 benches (Phase 14) within 110% of cw v0
+  24C.10 → JIT not needed (transducer + super-instruction were
+  enough). Otherwise → consider JIT (start with ARM64).
+- **Go decision**: ADR amendment + Phase 18-20 task table expansion.
+- **No-go decision**: Tier D classification of JIT, removal of stub
+  code.
+- **Owner**: Shota.
+- **Last reviewed**: 2026-05-23.
 
 ### 14.2 End of Phase 15: switch production to std.Io.Evented?
 
@@ -1162,7 +1308,7 @@ using the templates below.
 - **<title>** (<file:line>) — what is wrong, why we live with it now, trigger to fix
 ```
 
-#### `.dev/compat_tiers.yaml` — when the first `src/lang/clj/<ns>.clj` lands (≈ Phase 10)
+#### `compat_tiers.yaml` (repo root) — when the first `src/lang/clj/<ns>.clj` lands (≈ Phase 10)
 
 ```yaml
 clojure.core:           { tier: A, phase: 14 }
@@ -1287,6 +1433,21 @@ When amending, do all four — none of them are optional:
 - "Quiet" renumbering of `§N` headings; if a renumber is unavoidable,
   it gets its own ADR and a sweep of every `§N.M` reference under
   `.claude/`, `.dev/`, `docs/ja/`, and source comments.
+
+### 17.5 ADR Status lifecycle
+
+ADRs progress through these statuses:
+
+- **Proposed** — under discussion, not yet implemented.
+- **Accepted** — implemented and active deviation from the baseline
+  ROADMAP.
+- **Superseded by ADR-NNNN** — replaced by a later ADR.
+- **Closed (Phase N DONE)** — phase boundary made the ADR irrelevant.
+- **Demoted to .dev/lessons/<file>** — observational learning only.
+
+Status changes are recorded in the ADR's `## Revision history`
+section. `scripts/check_adr_history.sh` (pre-commit gate) requires
+the section on every ADR.
 
 ### 17.4 Why this exists
 
