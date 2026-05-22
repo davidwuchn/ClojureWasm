@@ -560,9 +560,9 @@ classification.
 `compat_tiers.yaml` is read by:
 
 - the test runner (`test/clj/` for the Tier A 100% PASS gate),
-- the catalog's `Code.tier_d_form` lookup (per ADR-0018) — the
-  user-facing message is `"<form> is not part of ClojureWasm"`,
-  with the form name supplied at the raise site,
+- the catalog's per-form `tier_d_<form>` Codes (per ADR-0018
+  amendment 2) — each Tier D form has its own Code with a
+  hand-written user-facing template,
 - the future `cljw --list-vars` command.
 
 Amendment process:
