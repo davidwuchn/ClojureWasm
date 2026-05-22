@@ -1,0 +1,114 @@
+# cw v1 compatibility tier data — single source of truth for tier classification.
+# Used by:
+#   - test runner (test/clj/ for Tier A 100% PASS gate)
+#   - REPL error message ("Tier D: <reason>, see ADR-NNNN")
+#   - future `cljw --list-vars` command
+# Amendment: see ADR-0013 for Tier D rationale.
+
+version: 0.1.0-draft
+last_updated: 2026-05-23
+
+tiers:
+  A:
+    description: "Full JVM Clojure semantic equivalence. Test gate: 100% PASS."
+    target_phase: "5-7 (clojure.core core), 6 (spec.alpha), 8 (clojure.test full)"
+    namespaces:
+      clojure.core:
+        # Tier A var count = JVM Clojure clojure.core var total minus Tier D forms
+        # that reside in clojure.core. Exact value populated by task 4.15 after
+        # JVM source enumeration. Approximate range: 700-705
+        # (706 JVM total - 1-6 Tier D forms in clojure.core).
+        var_count_target: TBD-by-task-4.15
+      clojure.string:
+        var_count_target: 21
+      clojure.set:
+        var_count_target: 12
+      clojure.walk:
+        var_count_target: 10
+      clojure.zip:
+        var_count_target: 28
+      clojure.test:
+        var_count_target: 39
+      clojure.spec.alpha:
+        var_count_target: 87
+      clojure.spec.gen.alpha:
+        var_count_target: 54
+      clojure.math:
+        var_count_target: 45
+    special_forms:
+      # Phase 1-3 existing (14 slots):
+      #   if, do, let*, fn*, def, quote, var, the, loop*, recur, try*,
+      #   catch, finally, throw
+      # V2 added (10 slots per ADR-0004 amendment + ADR-0012 ValueTag connection):
+      #   deftype, defrecord, reify, definterface, dot, new, set!,
+      #   monitor-enter, monitor-exit, dosync
+      # Total: 24 slots; ADR-0004 amendment reserves at least these.
+      - if
+      - do
+      - let*
+      - fn*
+      - def
+      - quote
+      - var
+      - the
+      - loop*
+      - recur
+      - try*
+      - catch
+      - finally
+      - throw
+      - deftype
+      - defrecord
+      - reify
+      - definterface
+      - dot           # (.method obj args)
+      - new           # (new ClassName args)
+      - set!          # mutable field assignment (deftype volatile-mutable only)
+      - monitor-enter
+      - monitor-exit
+      - dosync        # STM transaction
+    host_classes:
+      # Java stdlib classes implemented natively under src/runtime/host/.
+      # Populated incrementally Phase 5-10 by task 4.15 (full enumeration).
+      - { fqn: "java.util.UUID",      native_ns: "cljw.host.java.util.UUID",      phase: 5 }
+      - { fqn: "java.util.Date",      native_ns: "cljw.host.java.util.Date",      phase: 5 }
+      - { fqn: "java.util.Random",    native_ns: "cljw.host.java.util.Random",    phase: 5 }
+      - { fqn: "java.time.Instant",   native_ns: "cljw.host.java.time.Instant",   phase: 6 }
+      - { fqn: "java.time.LocalDate", native_ns: "cljw.host.java.time.LocalDate", phase: 6 }
+      - { fqn: "java.io.File",        native_ns: "cljw.host.java.io.File",        phase: 5 }
+  B:
+    description: "Recommended compatibility, target Phase 8-14. Test gate: coverage report (no fail required)."
+    namespaces:
+      clojure.data:        { status: "planned" }
+      clojure.edn:         { status: "planned" }
+      clojure.pprint:      { status: "planned" }
+      clojure.java.io:     { status: "planned (cw-native rewrite)" }
+      clojure.java.shell:  { status: "planned" }
+      clojure.tools.cli:   { status: "planned" }
+  C:
+    description: "Thin reflective implementation via TypeDescriptor walk."
+    special_forms:
+      - bean
+      - supers
+      - bases
+      - memfn
+      - class?
+  D:
+    description: "Permanent exclusion. MAJOR release required to add."
+    rationale_adr: "ADR-0013"
+    excluded_special_forms:
+      - { name: "gen-class",       reason: "requires JVM Class system, out of cw scope" }
+      - { name: "gen-interface",   reason: "requires JVM Class system, out of cw scope" }
+      - { name: "compile",         reason: "JVM bytecode emission, out of cw scope" }
+      - { name: "proxy (deep)",    reason: "proxy targeting Apache HC / Swing / java.util.logging base classes (per excluded_proxy_targets below); other proxy uses go through reify against cw-native protocols and are Tier A" }
+      - { name: "bean (reflection-deep)", reason: "deep reflection beyond what TypeDescriptor exposes; basic field walk via TypeDescriptor stays Tier C" }
+    excluded_proxy_targets:
+      - { pattern: "java.awt.*",                        reason: "GUI base classes, out of cw scope" }
+      - { pattern: "javax.swing.*",                     reason: "GUI base classes, out of cw scope" }
+      - { pattern: "Apache HttpComponents base classes", reason: "deep Java extension, replaced by cw native HTTP (Phase 14)" }
+      - { pattern: "java.util.logging.Formatter / Handler", reason: "host-specific logging base, replaced by cw logger" }
+    excluded_java_packages:
+      - { pattern: "java.awt.*",                  reason: "GUI, out of cw scope" }
+      - { pattern: "javax.swing.*",               reason: "GUI, out of cw scope" }
+      - { pattern: "java.applet.*",               reason: "deprecated, out of cw scope" }
+      - { pattern: "java.lang.reflect.* (deep)",  reason: "reflection internals beyond what TypeDescriptor exposes (Method/Field surface stays Tier C via src/runtime/host/reflect/)" }
