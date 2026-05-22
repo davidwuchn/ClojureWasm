@@ -1,6 +1,6 @@
 # 0016 — File size as a smell detector, not a hard metric
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-05-23
 - **Author**: Shota Kudo (drafted with Claude)
 - **Tags**: file-size, refactor, discipline, smell-detector, phase-5-6
@@ -12,6 +12,17 @@ files over 1,500 lines. Each was perfectly intentional in isolation,
 yet the aggregate ended up hard to read and audit. zwasm v2 landed
 ADR-0099 to reframe its own file-size discipline from "drive the
 metric down" to "trigger investigation when the metric trips."
+
+zwasm v1 itself, in `src/vm.zig` (10,550 lines) and `src/jit.zig`
+(8,701 lines), evolved into what its own ARCHITECTURE.md calls
+"implicit-contract sprawl" — the file size grew because each new
+opcode or backend feature dropped in alongside existing ones with
+no extraction trigger. The external evidence is direct: the same
+project that uses Zig 0.16 in a similar runtime domain reached
+10K+ LOC in two files and identifies it as a structural problem.
+A 2,000-line hard cap with explicit exemption markers would have
+forced the conversation about extraction long before the 10K
+threshold.
 
 cw v1 needs the same reframe before the Phase 5 collections work
 lands, since RRB-tree vector + HAMT hashmap + ChunkedSeq + persistent
@@ -97,3 +108,11 @@ moves to Accepted (Phase 5-6 entry).
 
 - 2026-05-23: Status: Proposed (initial landing). Activation deferred
   to Phase 5-6 when collections work begins.
+- 2026-05-23 (amendment 1): Status promoted Proposed -> Accepted.
+  External evidence added to Context: zwasm v1's `src/vm.zig`
+  (10,550 lines) and `src/jit.zig` (8,701 lines) reached
+  "implicit-contract sprawl" exactly because no 2,000-line hard
+  cap forced an earlier conversation. Source:
+  `private/research-2026-05-23/INSIGHTS_ZWASM_V1.md`. Phase 5-6
+  activation timeline unchanged; the promotion is from "future
+  policy" to "active policy with documented external evidence".

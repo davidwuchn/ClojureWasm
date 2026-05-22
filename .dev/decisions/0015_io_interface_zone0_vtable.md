@@ -44,6 +44,42 @@ changes, only `io_default.zig` needs revision.
 
 `main()` constructs the default and injects it into the runtime.
 
+### Two-tier strategy (per amendment 1)
+
+The vtable is split into **two tiers** so that consumer code never
+imports `std.Io` directly:
+
+- **Tier 1** (`runtime/io_interface.zig`, Zone 0): the vtable
+  declarations only. No `std.Io` import. Public API is `Reader` /
+  `Writer` / `Net` / `Process` structs that carry a `*const VTable`
+  + `*anyopaque` context. Consumer code (analyzers, REPL,
+  primitives) imports this file.
+- **Tier 2** (`runtime/io_default.zig`, Zone 1): the actual `std.Io`
+  attachment. Constructs concrete vtable instances from `std.Io.File`,
+  `std.Io.Dir`, `std.Io.Writer` etc., and exposes
+  `defaultReader()` / `defaultWriter()` etc. so `main()` (Zone 3)
+  injects them.
+
+When Zig stdlib reshapes `std.Io` (the F140-F144 failure mode in
+cw v0), only Tier 2 changes. Tier 1 is invariant under stdlib
+churn. Consumer code never recompiles for the API surface; it only
+recompiles if its own logic changed.
+
+### File layout
+
+```
+src/runtime/
+  io_interface.zig    ← Tier 1, Zone 0, no `std.Io` import
+  io_default.zig      ← Tier 2, Zone 1, the only file that
+                        imports `std.Io` directly for I/O ops
+                        (other zones get I/O via injection)
+```
+
+Each `Tier 1` struct has a doc-comment declaring its semantic
+contract (what the caller expects: blocking semantics, ownership,
+error set). The `Tier 2` implementation must honour that contract;
+re-implementing for a future Zig version is a Tier-2-only change.
+
 ## Alternatives considered
 
 ### Alternative A — Use `std.Io` directly throughout
@@ -76,3 +112,9 @@ changes, only `io_default.zig` needs revision.
 ## Revision history
 
 - 2026-05-23: Status: Proposed -> Accepted (initial landing).
+- 2026-05-23 (amendment 1): Added "Two-tier strategy" section
+  documenting the Tier 1 (Zone 0, no `std.Io` import) and Tier 2
+  (Zone 1, the only `std.Io`-importing file) split. Source:
+  zwasm v1 D135 + `private/research-2026-05-23/INSIGHTS_ZWASM_V1.md`
+  observation that Tier 2 isolation makes Zig stdlib reshape a
+  one-file change instead of a project-wide recovery.
