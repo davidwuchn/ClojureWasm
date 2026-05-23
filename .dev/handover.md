@@ -16,7 +16,7 @@
 
 - **Phase**: Phase 4 IN-PROGRESS. §9.6 cluster A done
   (tasks 4.1 / 4.2 / 4.3); critical-path: 4.0 / 4.0a / 4.4 / 4.5
-  / 4.6 / 4.7 / 4.8 done.
+  / 4.6 / 4.7 / 4.8 / 4.9 done.
 - **Branch**: `cw-from-scratch` (long-lived; v0.5.0-derived;
   push free after gate green; never push to `main`).
 - **Last commit**: see `git log -1` (compute on resume — the
@@ -29,28 +29,28 @@
   (compute on resume; chapter pairing decision is per the
   `code_learning_doc` skill's two-cadence rule).
 
-## Active task — §9.6 / 4.9
+## Active task — §9.6 / 4.10
 
-Run the full unit-test suite under both backends. Phase-4 entry
-already runs `zig build test` (default tree-walk) and `zig build
-test -Dbackend=vm` cleanly. 4.9 expands this to: (a) any
-TreeWalk-only test (e.g., heap collection deinit-ordering
-specifics) is moved into a `runtime`-zone test that does not
-depend on backend, or duplicated with a backend-specific
-`test "...vm only"` qualifier; (b) `test/run_all.sh` learns a
-`--backend vm` mode that wires `zig build test -Dbackend=vm` in
-addition to the default. Both gate runs (Mac + Ubuntu) must be
-green under both backends before close.
+`src/eval/evaluator.zig` (new) — `pub fn compare(rt, env, src)
+struct { tree_walk: Value, vm: Value, equal: bool }`. Wires this
+into the CI-mandatory differential gate per ADR-0005, with
+`test/diff/runner.zig` + `cases.yaml` per ADR-0022 landing in
+this task. Phase 17 extends to a third backend (JIT).
 
 **Retrievable identifiers**:
 
-- ROADMAP §9.6 task 4.9 + dependency-graph at §9.6.x.
-- ADR-0005 (dual backend strategy), ADR-0022 (differential).
-- `src/eval/driver.zig` (4.8) — the comptime backend switch.
-  `installVTable` + `evalForm` route per `build_options.backend`.
-- `test/run_all.sh` — the test runner. Add a new step (or
-  argument) that runs `zig build test -Dbackend=vm` after the
-  default tree-walk gate.
+- ROADMAP §9.6 task 4.10 + dependency-graph at §9.6.x.
+- ADR-0005 (dual backend strategy), ADR-0022 (differential
+  wiring + scan framework), ADR-0024 (scan framework + run_step
+  pattern), debt row `D-018` (Zig YAML parser strategy — choose
+  hand-rolled scanner or JSON-like subset).
+- `src/eval/driver.zig::evalForm` already runs both backends as
+  separate top-level entry paths. `evaluator.compare` calls each
+  in sequence on the same input, captures the Value, and reports
+  divergence.
+- `test/diff/` — new directory hosting `cases.yaml` + the runner.
+  Wire `bash test/run_all.sh` to invoke it (Layer 3 per
+  `test_taxonomy.md`).
 
 ## Open questions / blockers
 

@@ -136,6 +136,7 @@ print_summary() {
 # --- Steps ---
 
 run_step "zig_build_test"      "zig build test"
+run_step "zig_build_test_vm"   "zig build test -Dbackend=vm"
 run_step "zone_check"           "bash scripts/zone_check.sh --gate"
 
 # zlinter no_deprecated gate (ADR-0003) — Mac-host only. zlinter is
