@@ -87,6 +87,7 @@ const Compiler = struct {
             .let_node => |n| try self.compileLet(n),
             .call_node => |n| try self.compileCall(n),
             .fn_node => |n| try self.compileFn(n),
+            .throw_node => |n| try self.compileThrow(n),
             else => {
                 // The VM backend is dev-only until task 4.8 flips
                 // `-Dbackend=vm`; no user-facing path reaches the
@@ -187,6 +188,16 @@ const Compiler = struct {
 
         const idx = try self.addConstant(fn_val);
         try self.emit(.op_make_fn, idx);
+    }
+
+    fn compileThrow(self: *Compiler, n: node_mod.ThrowNode) Error!void {
+        // (throw expr) — TreeWalk's evalThrow evaluates the expr then
+        // stashes the value in `dispatch.last_thrown_exception` and
+        // returns `error.ThrownValue`. The VM dispatcher does both via
+        // its `op_throw` arm, so the compiler emits the value-expr
+        // followed by a single `op_throw` instruction.
+        try self.compileNode(n.expr);
+        try self.emit(.op_throw, 0);
     }
 
     fn compileDef(self: *Compiler, n: node_mod.DefNode) Error!void {
@@ -549,6 +560,23 @@ test "compile def packs dynamic / macro / private flags into op_def operand" {
     try testing.expectEqual(@as(u16, 0), operand & opcode_mod.DEF_FLAG_MACRO);
     try testing.expectEqual(@as(u16, opcode_mod.DEF_FLAG_PRIVATE), operand & opcode_mod.DEF_FLAG_PRIVATE);
     try testing.expectEqualStrings("foo", string_mod.asString(chunk.constants[name_idx]));
+}
+
+test "compile throw emits value-expr then op_throw" {
+    var f = Fixture.init(testing.allocator);
+    defer f.deinit();
+
+    const expr: Node = .{ .constant = .{ .value = Value.true_val } };
+    const node: Node = .{ .throw_node = .{ .expr = &expr } };
+    const chunk = try f.compile(&node);
+
+    // op_const true ; op_throw ; op_ret (the dispatcher returns via
+    // op_throw's ThrownValue signal; op_ret is unreachable but the
+    // compile signature appends it unconditionally).
+    try testing.expectEqual(@as(usize, 3), chunk.instructions.len);
+    try testing.expectEqual(Opcode.op_const, chunk.instructions[0].opcode);
+    try testing.expectEqual(Opcode.op_throw, chunk.instructions[1].opcode);
+    try testing.expectEqual(Opcode.op_ret, chunk.instructions[2].opcode);
 }
 
 test "compile do pops intermediate forms and keeps the last" {
