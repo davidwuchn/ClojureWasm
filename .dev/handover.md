@@ -45,10 +45,12 @@
 
 - **Phase**: Phase 4 IN-PROGRESS. §9.6 critical-path closed
   (4.0 / 4.0a / 4.1 / 4.2 / 4.3 / 4.4 / 4.5 / 4.6 / 4.7 / 4.8 /
-  4.9 / 4.10 / 4.11 / 4.12 done). Cleanup wave: 4.13–4.24 done
-  (status table refreshed 2026-05-23). Remaining §9.6 rows
-  (4.25 / 4.26.a-f) — method_table skeleton + error-system
-  migration.
+  4.9 / 4.10 / 4.11 / 4.12 done). Cleanup wave: 4.13–4.25 done.
+  Error-system migration: 4.26.a (Code rename) + 4.26.b
+  (tier_d_form split) done. Remaining §9.6 rows: 4.26.c
+  (Error → ClojureWasmError union rename) / 4.26.d (~116
+  setErrorFmt → raise migration) / 4.26.e (@panic/unreachable
+  audit) / 4.26.f (main top-level catch).
 - **Branch**: `cw-from-scratch` (long-lived; push free after gate
   green; never push to `main`).
 - **Gate**: Mac 12/12 + OrbStack Ubuntu x86_64 11/11 green at
@@ -259,21 +261,33 @@ recognise the pattern *before* drifting silently. Same shape as
 Reservation-as-bias and Smallest-diff bias — invisible drift
 away from committed intent.
 
-## Active task — §9.6 / 4.25
+## Stopped — user requested
 
-`src/runtime/dispatch/method_table.zig` — `MethodEntry` struct
-(interned symbol + fn ptr) and `CallSite` struct (`last_type` +
-`last_method` cache slots) declaration. **But first re-read D-028**
-— 4.25 is itself a skeleton-row candidate; consider whether the
-smallest-diff landing or "Phase 7 entry: struct + dispatch
-together" is the cleaner shape before writing the file.
+User instruction (2026-05-24): 「きりの良いところで止めてください」.
+Last landed 4.26.b at d9bed4d (ROADMAP mark-up); gate Mac 12/12 +
+OrbStack Ubuntu 11/11 green.
+
+## Active task — §9.6 / 4.26.c (on resume)
+
+Rename the Zig error union from `Error` to `ClojureWasmError` in
+`src/runtime/error.zig` and update every `pub fn ... !Value`
+signature across `src/`. Self-check: `grep -rn "error_mod.Error\b"
+src/ | wc -l` returns 0 when complete. Mechanical sweep — no new
+public API or behaviour change beyond the rename.
 
 **Retrievable identifiers**:
 
-- ROADMAP §9.6 task 4.25, ADR-0008 (protocol dispatch unify),
-  debt D-028 (cleanup-wave audit).
-- The new file lives in a `src/runtime/dispatch/` subdirectory
-  which does not yet exist — create it.
+- ROADMAP §9.6 task 4.26.c, ADR-0018 amendment 2 (f) (records
+  the rename rationale: "catch surface + failing test traces name
+  the project").
+- Catalog already re-exports `Error` (now to-be-renamed
+  `ClojureWasmError`) at `error_catalog.zig::pub const Error =
+  error_mod.Error;` — the re-export becomes
+  `pub const ClojureWasmError = error_mod.ClojureWasmError;`.
+- After 4.26.c lands, 4.26.d (~116 setErrorFmt → raise migration)
+  is the next critical-path row, split by source-tree region
+  per the row text (reader → analyzer → tree_walk → macro →
+  primitive → error helpers).
 
 ## Open questions / blockers
 
