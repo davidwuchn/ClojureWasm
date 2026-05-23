@@ -967,23 +967,23 @@ ships the `bench/quick.sh` harness §10.2 has so far only described.
 > Phase 4 grows the surface area further. 4.4 onward is the VM
 > proper.
 
-> **Cleanup-wave smell note (added 2026-05-23).** Rows 4.13 / 4.16 /
-> 4.17 / 4.18 / 4.20 / 4.22 landed as "skeleton declared, no
-> consumer" during the cleanup wave. Per debt D-028 and the
-> Smallest-diff bias smell (`.dev/principle.md`), these rows are
-> candidates for re-scoping:
->
-> - **4.16 (wasm option)**: branch origin already lacks the surface
->   the removal targets; row may delete outright.
-> - **4.17 / 4.18 / 4.22**: declared structs that Phase 5+ rewrites.
->   Consider re-scoping to "Phase N+ entry: land struct + real impl
->   together" rather than landing now and rewriting later.
-> - **4.13 / 4.20**: Tier 2 / consumer is Phase 5+; the day-1
->   reservation may still be net-positive — confirm or downgrade.
->
-> The audit + amendment lands as a separate ROADMAP §17 step before
-> Phase 5 entry. Until then the rows stay landed and the status
-> below records the as-built state.
+> **Cleanup-wave smell note (added 2026-05-23, refined later same day).**
+> Rows 4.13 / 4.16 / 4.17 / 4.18 / 4.20 / 4.22 landed as "skeleton
+> declared, no consumer" during the cleanup wave. Per the new
+> Structural imagination phase (`.dev/principle.md`), audit and
+> re-scope decisions belong to **each row's owning Phase entry**,
+> not to the current loop. The 2026-05-23 session executed only
+> the unambiguous source-side normalisation (revert `-Dwasm` option
+> in `build.zig` per ADR-0006 amendment 2, delete `binding_stack.zig`
+> re-export); the ROADMAP row text is preserved so the owning Phase
+> reads the as-shipped state. Related debt rows that capture the
+> structural foresight from this session: **D-027** (NaN-box layout
+> 第二世代), **D-028** (this audit's parent), **D-029** (value.zig
+> split), **D-030** (analyzer.zig split), **D-031** (main.zig →
+> `src/app/`), **D-032** (host placeholder removal procedure),
+> **D-033** (primitive subdir), **D-034** (`modules/` top-level),
+> **D-035** (3rd-backend dispatch extraction), **D-036** (zwasm v2
+> Phase-16 inline-vs-Pod decision).
 
 | Task   | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               | Status |
 |--------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|--------|
@@ -1089,6 +1089,17 @@ expand Phase 5 inline in §9.7 per CLAUDE.md § Autonomous Workflow
 0009 (Object header lock — Phase 4 reserved the slot, Phase 5
 activates `cmpxchgLockBits` helpers) · 0017 (Allocator strategy +
 mark-sweep GC) · 0023 (Comptime stub).
+**Entry debts** (debt.md — resolve / decide at this Phase entry,
+per principle.md Structural imagination):
+**D-027** (NaN-box layout 第二世代 ADR co-issued with mark-sweep
+GC + TypeDescriptor — big_int / ratio / big_decimal move to
+Group A) · **D-028** (cleanup-wave rows owned here: 4.13 / 4.17 /
+4.20) · **D-029** (`value.zig` split, co-ordinated with D-027) ·
+**D-030** (`analyzer.zig` split — already > 1000 lines) ·
+**D-032** (host `_placeholder.zig` removal procedure at first
+host class landing) · D-008 (collections.zig split) · D-011
+(mark-sweep GC) · D-014a (numeric tower) · D-020 (header bit
+helpers).
 **Reference**: `private/JVM_TO_ZIG.md` §3 (Allocator), §9 (lazy-seq +
 trampoline), §12 (numeric tower), §13 (interop dispatch).
 **Skeletons to activate**: TypeDescriptor (task 4.17),
@@ -1144,6 +1155,9 @@ dispatch, rewrites the Phase 5 `.method` call sites to go through
 ### 9.10 Phase 8 — task list (PENDING, expand at Phase 8 entry)
 
 **Entry ADRs**: 0005 (Dual-backend differential — full bench).
+**Entry debts**: **D-031** (`main.zig` → `src/app/` split before
+the self-host loader / Phase-10 nREPL / Phase-12 build-runner
+modes pile on) · D-007 (self-host viability).
 **Reference**: ROADMAP §10 (Performance), `bench/history.yaml`.
 **Deliverables**: bench lock baseline established
 (ADR-0027 future issuance to define `bench/history.yaml` schema),
@@ -1154,6 +1168,17 @@ coverage. 🔒 OrbStack gate.
 
 **Entry ADRs**: 0007 (TypeDescriptor) · 0008 (Protocol dispatch) ·
 0011 (Host extension — deep interop).
+**Entry debts**: **D-034** (`modules/` top-level structure
+decision when json / csv / edn first land — verify the "modules/
+→ runtime/ + eval/ only" dependency rule, decide whether a
+`runtime/` subset needs to be promoted for string ops etc.).
+**Note (Phase 9 entry owner)**: the Deliverables line below
+currently reads "protocol / host complete behaviours" which
+overlaps the Phase 7 (§9.9) protocol dispatch + Phase 6 (§9.8)
+host stdlib first-wave content. Reconcile the Phase 9 scope to
+match its actual focus (external Clojure modules — json / csv /
+edn) before opening the task table; the current text is a
+historical artefact from the pre-amendment ROADMAP.
 **Deliverables**: defprotocol / defmulti / deftype / defrecord /
 reify complete behaviours, host interop "single deep module"
 delivers (`(.method obj args)` + `(ClassName. ...)` + `import` /
@@ -1243,7 +1268,15 @@ rewrites the corresponding test expectations.
 
 ### 9.18 Phase 16 — task list (PENDING, expand at Phase 16 entry)
 
-**Entry ADRs**: 0006 (Wasm FFI defer — re-introduction condition).
+**Entry ADRs**: 0006 (Wasm FFI defer — re-introduction condition;
+**read amendment 3** for the zwasm v2 counterparty + inline-vs-Pod
+re-opening).
+**Entry debts**: **D-036** (zwasm v2 inline-vs-Pod decision —
+if inline NaN-box Values are chosen, slots released by ADR-0006
+amendment 1 must be re-allocated; co-ordinate with **D-027**
+NaN-box layout 第二世代 if it has not landed yet. zwasm v2 carries
+its own JIT + GC — heap-boundary and JIT-coordination design owed
+here too) · D-006 (Wasm FFI re-introduction via Pod boundary).
 **Deliverables**: ClojureScript → JS compiler (v0.2.0 milestone),
 Wasm Component output via Pod boundary per ADR-0006 entry
 conditions.
@@ -1251,6 +1284,11 @@ conditions.
 ### 9.19 Phase 17 — task list (PENDING, expand at Phase 17 entry)
 
 **Decision point**: JIT go / no-go per ROADMAP §14.1.
+**Entry debts**: **D-035** (extract backend-shared "callable
+dispatch" layer before adding the JIT vtable — current
+`vm.installVTable` reuses tree_walk's `callFunction` via the
+`evalChunk` vtable hook, which skews the dependency graph when
+a 3rd backend joins) · D-005 (ARM64 JIT decision).
 **Deliverables**: VM optimisation `super_instruction.zig`, five
 canonical benchmarks within 100% of cw v0 24C.10, JIT go / no-go
 ADR landed. If go: ADR-0022 amendment for 3-way differential

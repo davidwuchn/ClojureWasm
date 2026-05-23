@@ -111,6 +111,50 @@ When you stop, ask:
 3. If I patch it lightly now, what does the redesign cost look like
    later?
 
+## Structural imagination (before touching structural plans)
+
+ROADMAP extends through Phase 20. When a task touches a
+**structural plan** that future phases will live with, the
+autonomous loop is **not** allowed to decide on the structure's
+behalf for the future. The decision belongs to the owning
+Phase. What the loop **must** do is **imagine the full
+ROADMAP range** so the future owner inherits foresight, not a
+blank slate.
+
+Structural plans include (at minimum):
+
+- **Reservation tables**: NaN-box slots, enum slots, ROADMAP
+  row queue, debt row family.
+- **Directory & file structure**: src/ subdirectory layout,
+  file-size soft cap (ROADMAP A6 ≤ 1000 lines), candidate splits
+  (`value.zig`, `analyzer.zig`, `main.zig` etc.).
+- **Responsibility separation**: which file owns which concept,
+  whether mixed-concern files need to fan out.
+- **Dependency graph**: zone layering (`zone_deps.md`), vtable
+  hooks, cross-module references that survive future phases.
+
+What the loop **must** do at any task that touches one of these:
+
+1. Spend a real moment imagining the full ROADMAP range
+   (Phase 5–20) and walking through what the structure will need
+   to absorb across that horizon. **Do not skip this step**; do
+   not shortcut to "let me just decide now".
+2. If the imagination reveals a structural gap (table close to
+   exhaustion / file headed past the soft cap / responsibility
+   leaking / dependency about to cycle / planned ADR will
+   collide), record it as a **debt row** scheduled at the owning
+   Phase's entry — do not resolve it here.
+3. The decision (delete / re-scope / split / keep / extend)
+   lands when the owning Phase's task is opened. The current
+   loop's job is to set the imagination output up so the future
+   owner can resolve cleanly.
+
+This is the antidote to the Progress-pressure smell on
+structural work. The smell says "let me clean this up since
+I'm here"; the structural imagination phase says "the owner
+has the context, I have the foresight — give the owner the
+foresight, don't seize the decision".
+
 ## How this file is maintained
 
 - Keep it short. Detail belongs in ROADMAP / ADR / rules.
