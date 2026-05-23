@@ -1,11 +1,11 @@
 ---
 name: code_learning_doc
-description: Write Japanese per-task notes under private/notes/ during the per-task TDD loop. The per-concept chapter half (docs/ja/learn_clojurewasm/NNNN_*.md) is DORMANT per ADR-0029 — no new chapters land, pre-commit gate is a no-op, existing chapters live in docs/ja/archive/. Re-activates by a future ADR.
+description: Write Japanese per-task notes under private/notes/ during the per-task TDD loop. The per-concept chapter half (docs/ja/learn_clojurewasm/NNNN_*.md) is DORMANT per ADR-0025 — no new chapters land, pre-commit gate is a no-op, existing chapters live in docs/ja/archive/. Re-activates by a future ADR.
 ---
 
 # code_learning_doc
 
-## ⚠ DORMANT — chapter cadence suspended per ADR-0029
+## ⚠ DORMANT — chapter cadence suspended per ADR-0025
 
 The **per-concept chapter half** of this skill is currently dormant.
 Existing chapters (learn_clojurewasm 0001-0020 + learn_zig副読本) live

@@ -4,7 +4,7 @@
 
 ## 現状：章執筆は休眠中 (Phase 4 critical-path close 時点)
 
-ADR-0029 に基づき、 Phase 1-3 期に書かれた既存章 (learn_clojurewasm
+ADR-0025 に基づき、 Phase 1-3 期に書かれた既存章 (learn_clojurewasm
 全 20 章 + learn_zig 副読本) は [`archive/`](./archive/) に一括移動
 されています。 章カデンス (新章の追加義務) は **休眠** していますが、
 per-task notes (`private/notes/`) は引き続き書かれ、 将来の章再生成の
@@ -22,12 +22,12 @@ Phase 4 が dual backend (TreeWalk + VM) を導入し、 Phase 1-3 期の
 複数の設計面を書き換えました (`Function.bytecode`、 vtable
 `evalChunk` フック、 `callFunction` のルーティング 等)。 Phase 1-3
 の章を継続として 0021 から書き続けると、 読者に「2 つの設計を順に
-追体験」 を強いる結果になります。 ADR-0029 はこれを避け、 archive
+追体験」 を強いる結果になります。 ADR-0025 はこれを避け、 archive
 + regenerate (大規模刷新後の一括再生成) を選びました。
 
 ### 再開はいつか
 
-再開条件は ADR-0029 §3 参照。 候補は Phase 4 closure
+再開条件は ADR-0025 §3 参照。 候補は Phase 4 closure
 (4.13-4.26.f 完了) または Phase 5 entry (mark-sweep GC +
 TypeDescriptor activation) です。 再開時は新章サイクルが `0001`
 から再スタートします。
@@ -39,7 +39,7 @@ TypeDescriptor activation) です。 再開時は新章サイクルが `0001`
 
 ## 関連
 
-- ADR-0029 — Big-bang chapter regeneration boundary at Phase-4
-  critical-path close (`.dev/decisions/0029_chapter_archive_boundary.md`)
+- ADR-0025 — Big-bang chapter regeneration boundary at Phase-4
+  critical-path close (`.dev/decisions/0025_chapter_archive_boundary.md`)
 - code_learning_doc skill (`.claude/skills/code_learning_doc/SKILL.md`) —
   cadence 規定 (現在は dormancy)

@@ -5,6 +5,35 @@ A Clojure runtime written in Zig 0.16.0.
 > Project memory loaded by Claude Code on every session. Keep it short.
 > Detailed plans live in `.dev/ROADMAP.md`. Skills hold runnable procedures.
 
+## Project spirit (top priority, governs everything below)
+
+**The finished form's cleanliness wins.** Shipping fast and avoiding
+rework are second-tier. Pre-built roadmaps and ADRs exist precisely
+to minimise rework, but when they collide with "what the final shape
+should look like", the final shape wins and the plan is amended in
+place (ROADMAP §17). This applies to:
+
+- **Big surgery is welcome** when design tighting-up exposes something
+  the original plan missed. The autonomous loop must not hesitate at
+  depth-3 / depth-4 revisions (`.dev/principle.md`).
+- **Skeleton-then-rewrite is endorsed** (per `permanent_noop_forbidden`)
+  but **excessive skeletons are a smell** (per the Smallest-diff bias
+  smell). Each skeleton must shrink the final-form rewrite, not enlarge
+  it.
+- **Reservations (ADR numbers, NaN-box slots, debt rows promising
+  future ADRs) are memos, not contracts.** Obeying a reservation
+  because "it is reserved" is a smell (Reservation-as-bias smell,
+  `.dev/principle.md`). ADR numbers are time-ordered (`max + 1` at
+  issue time); slots / rows are reshuffled when the final form needs
+  it.
+- **Progress pressure does not override the smell sensor.** "Let me
+  finish this task and come back" rarely comes back (Progress-pressure
+  smell). Stop, surgery, resume.
+
+This section is short on purpose. The mechanism lives in
+[`.dev/principle.md`](.dev/principle.md) (Bad Smell catalogue + four
+depths of revision + three questions to picture the finished form).
+
 ## Identity / Context (read first)
 
 **Project name (in all docs and the published artifact): `ClojureWasm`.**
@@ -41,7 +70,7 @@ commit messages, README, ROADMAP, ADRs, `.dev/`, `.claude/`, all
 configuration. **Japanese** for chat replies, `private/notes/<task>.md`
 per-task notes, and (when re-activated) `docs/ja/learn_clojurewasm/NNNN_*.md`
 learning narratives. The per-chapter cadence is currently **dormant**
-per ADR-0029; existing chapters live read-only under
+per ADR-0025; existing chapters live read-only under
 [`docs/ja/archive/`](docs/ja/archive/).
 
 Don't mix Japanese into English docs. In `docs/ja/`, body is Japanese;
@@ -75,7 +104,7 @@ turn 1 must be Japanese.
   runs are network-free.
 - Commit at the natural granularity of code changes. The per-concept
   chapter cadence (`docs/ja/learn_clojurewasm/NNNN_*.md`) is **dormant**
-  per ADR-0029 until a resumption ADR fires; only the per-task notes
+  per ADR-0025 until a resumption ADR fires; only the per-task notes
   half of the `code_learning_doc` skill is active.
 - Subagent fork is the default for: Step 0 surveys, large test logs
   (>200 lines), cross-codebase searches (>5 files), phase-boundary
@@ -262,7 +291,7 @@ considered" section, and continues.
 These hold the canonical procedures; CLAUDE.md only points to them.
 
 - **`code_learning_doc`** — Japanese learning material skill.
-  **DORMANT per ADR-0029**: only the per-task notes half is active
+  **DORMANT per ADR-0025**: only the per-task notes half is active
   (Step 7 writes `private/notes/<task>.md` from hot context). The
   per-concept chapter half (`docs/ja/learn_clojurewasm/NNNN_*.md`) is
   suspended; the pre-commit pairing gate is a no-op; existing chapters

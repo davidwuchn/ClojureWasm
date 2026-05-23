@@ -32,7 +32,7 @@
 
 set -euo pipefail
 
-# --- DORMANT (ADR-0029) -----------------------------------------------------
+# --- DORMANT (ADR-0025) -----------------------------------------------------
 # The chapter cadence is suspended at Phase-4 critical-path close. Existing
 # chapters live read-only under docs/ja/archive/. This gate is a no-op until
 # a future "resume chapter sequence" ADR re-activates it.

@@ -1,4 +1,4 @@
-# 0029 — Big-bang chapter regeneration boundary at Phase-4 critical-path close
+# 0025 — Big-bang chapter regeneration boundary at Phase-4 critical-path close
 
 - **Status**: Accepted
 - **Date**: 2026-05-23
