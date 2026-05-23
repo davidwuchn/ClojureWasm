@@ -15,8 +15,14 @@
 ## Current state
 
 - **Phase**: Phase 4 IN-PROGRESS. §9.6 cluster A done
-  (tasks 4.1 / 4.2 / 4.3); critical-path: 4.0 / 4.0a / 4.4 / 4.5
-  / 4.6 / 4.7 / 4.8 / 4.9 / 4.10 / 4.11 done.
+  (tasks 4.1 / 4.2 / 4.3); **critical-path closed**: 4.0 / 4.0a /
+  4.4 / 4.5 / 4.6 / 4.7 / 4.8 / 4.9 / 4.10 / 4.11 / 4.12 done.
+  Remaining §9.6 rows (4.13–4.26.f) form the post-VM cleanup
+  wave (io abstraction, debt operationalisation, compat_tiers
+  expansion, Wasm FFI removal, type_descriptor / protocol /
+  object_header / host extension / deftype-raise / binding_stack /
+  big_int / lazy_seq / method_table skeletons, error-system
+  migration).
 - **Branch**: `cw-from-scratch` (long-lived; v0.5.0-derived;
   push free after gate green; never push to `main`).
 - **Last commit**: see `git log -1` (compute on resume — the
@@ -29,25 +35,21 @@
   (compute on resume; chapter pairing decision is per the
   `code_learning_doc` skill's two-cadence rule).
 
-## Active task — §9.6 / 4.12
+## Active task — §9.6 / 4.13
 
-Phase-4 exit smoke: `(defn f [x] (+ x 1)) (f 2)` → `3` under both
-backends. e2e in `test/e2e/phase4_exit.sh`. Once green, the
-Phase-4 critical path is closed and the remaining §9.6 rows
-(4.13–4.26) form the post-VM Phase-4 cleanup wave (zone-0 io
-abstraction, debt operationalisation, compat_tiers expansion,
-Wasm FFI removal, error-system migration, etc.).
+`src/runtime/io_interface.zig` (new) — Zone 0 vtable abstraction
+for `Reader` / `Writer` / `Net` / `Process` (per ADR-0015).
+Concrete `io_default.zig` (Zone 1) wires it to current `std.Io`.
+Insulates the runtime from Zig stdlib reshape.
 
 **Retrievable identifiers**:
 
-- ROADMAP §9.6 task 4.12 + dependency-graph at §9.6.x. This is
-  the **exit smoke** for the dual-backend critical path.
-- `test/e2e/phase4_cli.sh` (4.11) — pattern to mirror. Same
-  two-build-and-diff structure, but for one specific
-  `(defn ...) (f ...)` round-trip.
-- `defn` is a macro defined in `src/lang/clj/clojure/core.clj` —
-  expand path lands in bootstrap, must reach the user/ namespace
-  before the exit smoke can invoke it.
+- ROADMAP §9.6 task 4.13 + dependency-graph at §9.6.x.
+- ADR-0015 (io abstraction). Pattern mirror: ADR-0011 host
+  extension dispatch (4.20 ships its sibling skeleton).
+- Existing zone-0 vtable: `src/runtime/dispatch.zig::VTable` —
+  the new io vtable should follow the same `?fn-ptr` shape with
+  default no-op fallbacks where applicable.
 
 ## Open questions / blockers
 
