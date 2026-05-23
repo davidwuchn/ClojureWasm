@@ -1081,6 +1081,9 @@ hashset HAMT), mark-sweep GC + GcHeap + sweep cycle, lazy-seq +
 trampoline + thread-safe realisation, BigInt + Ratio + numeric
 promotion, deftype / defrecord / reify activation (Tier A
 behaviour), task 4.26 carry-over if any. 🔒 OrbStack gate.
+**Final activation step**: flip `build_options.phase_at_least_5 = true`
+in `build.zig` (per ADR-0023 + task 4.0a) — this switches the
+comptime stub imports to the real implementations.
 
 Expand at Phase 5 entry per CLAUDE.md § Autonomous Workflow
 "When the current phase's task queue empties".
@@ -1105,6 +1108,8 @@ monomorphic cache, multimethod with hierarchy support, transducer
 foundations (`map` / `filter` / `take` / `reduce` fused path),
 Golden snapshot test layer opens (Phase 7+, ADR-0026 future
 issuance).
+**Final activation step**: flip `build_options.phase_at_least_7 = true`
+(per ADR-0023).
 
 ### 9.10 Phase 8 — task list (PENDING, expand at Phase 8 entry)
 
@@ -1145,6 +1150,8 @@ corpus), ADR-0021 Future-layers table.
 **Deliverables**: `clojure.test` (deftest / is / are) implementation,
 10+ upstream tests ported with `;; CLJW:` tier markers, Tier A 100%
 PASS gate active.
+**Final activation step**: flip `build_options.phase_at_least_11 = true`
+(per ADR-0023).
 
 ### 9.14 Phase 12 — task list (PENDING, expand at Phase 12 entry)
 
@@ -1173,7 +1180,13 @@ charts.
 `cljw component build` all work, future / promise / delay,
 `compat_tiers.yaml` Tier A/B declarations done, Wasm Component
 output supported (minimal), bench/history.yaml locked baseline,
-**v0.1.0 release**. 🔒 OrbStack gate.
+host stdlib third wave (`java.net.Socket` / `java.security.MessageDigest`
+/ remaining Tier B host classes per `compat_tiers.yaml`),
+F140-F144 re-introduction per ADR-0015 amendment 2 (`http_server`
+/ `http_client` / `nrepl` / `repl` line editor / `cljw component
+build` self-bundle), **v0.1.0 release**. 🔒 OrbStack gate.
+**Final activation step**: flip `build_options.phase_at_least_14 = true`
+(per ADR-0023).
 
 ### 9.17 Phase 15 — task list (PENDING, expand at Phase 15 entry)
 
@@ -1185,6 +1198,9 @@ phases 15.1-15.4), §6 (agent + action queue).
 / `ensure` / `ref-set` complete behaviours, agent + action queue,
 volatile! / locking activation (Object header lock CAS + heavy
 fallback), concurrent test layer opens (ADR-0021 deferred). 🔒.
+**Final activation step**: flip `build_options.phase_at_least_15 = true`
+(per ADR-0023) — switches `runtime/stm/stub.zig` and Object header
+lock stub imports to the real implementations.
 
 ### 9.18 Phase 16 — task list (PENDING, expand at Phase 16 entry)
 
@@ -1200,6 +1216,8 @@ conditions.
 canonical benchmarks within 100% of cw v0 24C.10, JIT go / no-go
 ADR landed. If go: ADR-0022 amendment for 3-way differential
 (TreeWalk == VM == JIT) per CLAUDE.md § Autonomous Workflow.
+**Final activation step (if JIT go)**: flip
+`build_options.phase_at_least_17 = true` (per ADR-0023).
 
 ### 9.20 Phase 18 — task list (PENDING, expand at Phase 18 entry)
 

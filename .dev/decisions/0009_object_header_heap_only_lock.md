@@ -91,15 +91,50 @@ per `no_op_stub_forbidden.md`.
   mechanism but does not share it. Phase 15.4 concurrent tests
   exercise both.
 
+## Phase 5 / Phase 15 migration note (amendment 2)
+
+The Phase 4 entry (task 4.19) reserves the `gc_and_lock: u32` packed
+field in `ObjectHeader` with `lock_state: u2` at the low bits and
+`gc_mark: u30` at the high bits. Activation is **two-step, across
+two Phases**; each step rewrites already-shipped code:
+
+- **Phase 5 activation (`gc_mark` side)**: mark-sweep GC (ADR-0017
+  amendment 1) reads and writes the `gc_mark: u30` bits. Phase 1-4
+  heap allocation call sites that currently set only `type_tag` /
+  `meta` rewrite to also route through `GcHeap.alloc` and to
+  initialise `gc_mark`. The `ObjectHeader` struct shape is
+  invariant from Phase 4 onward; what changes are the **call sites
+  that construct headers**.
+- **Phase 15 activation (`lock_state` side)**: `cmpxchgLockBits`
+  helpers (handover Next Phase Queue → eventually Phase 15.<n>)
+  land. The Phase 4-14 catalog Codes `locking_not_supported` /
+  `monitor_enter_not_supported` / `monitor_exit_not_supported` are
+  **removed** from `error_catalog.zig`; the corresponding `entry()`
+  switch arms disappear; the catalog test expectations rewrite from
+  "expect this Code" to "expect successful lock acquisition". This
+  is the canonical "Codes come and go" pattern per ADR-0018
+  amendment 2.
+
+Both rewrites are expected per ROADMAP §A25; principle.md depth 2-3
+covers each step. depth 4 only if a follow-up ADR replaces the
+`gc_and_lock` bit layout itself.
+
 ## References
 
 - ROADMAP §9.6 task 4.19 (Object header layout extension)
-- Related ADRs: 0007, 0010, 0017
+- ROADMAP §9.7 (Phase 5 entry — `gc_mark` activation)
+- ROADMAP §9.17 (Phase 15 entry — `lock_state` activation)
+- ROADMAP §A25 (Existing code is mutable)
+- Related ADRs: 0007, 0010, 0017, 0018
 - JVM JEP 374 (biased locking deprecation)
 
 ## Revision history
 
 - 2026-05-23: Status: Proposed -> Accepted (initial landing).
-- 2026-05-23 (amendment): Error phrasing rewritten to go through the
-  catalog (ADR-0018). User-facing messages no longer reference this
-  ADR by name.
+- 2026-05-23 (amendment 1): Error phrasing rewritten to go through
+  the catalog (ADR-0018). User-facing messages no longer reference
+  this ADR by name.
+- 2026-05-23 (amendment 2): Added "Phase 5 / Phase 15 migration
+  note" section to narrate the two-step rewrite scope when `gc_mark`
+  (Phase 5) and `lock_state` (Phase 15) sides of `gc_and_lock`
+  activate (per ROADMAP §A25).

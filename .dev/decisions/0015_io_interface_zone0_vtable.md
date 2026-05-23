@@ -103,10 +103,43 @@ re-implementing for a future Zig version is a Tier-2-only change.
   `(writer x)` / `(input-stream x)` / `(output-stream x)` are
   implemented in `cljw.host.java.io` against the abstraction.
 
+## Phase 14+ migration note (amendment 2)
+
+The Phase 4 entry (task 4.13) lands `runtime/io_interface.zig` (Tier
+1, Zone 0) + `runtime/io_default.zig` (Tier 2, Zone 1) skeleton plus
+`defaultReader()` / `defaultWriter()` injection in `main()`. cw v0's
+five disabled features (F140-F144) are **not** re-introduced at
+Phase 4; they re-land at Phase 14 alongside REPL / nREPL.
+
+Phase 14 entry activates each F-feature as a new file under the
+appropriate zone, **and** rewrites a small number of Phase 4-13
+src/ sites where today the dispatch row is a `feature_not_supported`
+catalog raise:
+
+| F    | Phase 14 landing path                                  | Phase 4-13 placeholder rewritten                                 |
+|------|--------------------------------------------------------|------------------------------------------------------------------|
+| F140 | `src/host/io/http_server.zig` (new)                    | `cljw.host.java.net` namespace dispatch row                      |
+| F141 | `src/host/io/http_client.zig` (new)                    | `cljw.host.java.net` namespace dispatch row                      |
+| F142 | `src/app/nrepl/{server,session,bencode,ops}.zig` (new) | `src/app/main.zig` subcommand dispatch row for `nrepl`           |
+| F143 | `src/app/repl/line_editor.zig` (new)                   | `src/app/main.zig` subcommand dispatch row for `repl`            |
+| F144 | `src/app/build/self_bundle.zig` (new)                  | `src/app/main.zig` subcommand dispatch row for `component build` |
+
+Tier 2 isolation (per amendment 1) means that if Zig 0.17 / 0.18
+reshapes `std.Io` again before Phase 14, only `io_default.zig` is
+rewritten — the F140-F144 landing files import from
+`io_interface.zig` only.
+
+The rewrite is expected per ROADMAP §A25; principle.md depth 2 for
+each subcommand dispatch row swap, depth 3 if a `std.Io` reshape
+coincides with the Phase 14 landing.
+
 ## References
 
 - ROADMAP §9.6 task 4.13 (io_interface.zig Zone 0)
+- ROADMAP §9.16 (Phase 14 entry — v0.1.0 milestone with REPL /
+  nREPL re-introduction)
 - ROADMAP §A1 (Zone discipline)
+- ROADMAP §A25 (Existing code is mutable)
 - cw v0 disabled features F140-F144
 
 ## Revision history
@@ -118,3 +151,7 @@ re-implementing for a future Zig version is a Tier-2-only change.
   zwasm v1 D135 + `private/research-2026-05-23/INSIGHTS_ZWASM_V1.md`
   observation that Tier 2 isolation makes Zig stdlib reshape a
   one-file change instead of a project-wide recovery.
+- 2026-05-23 (amendment 2): Added "Phase 14+ migration note"
+  section to narrate F140-F144 re-introduction landing paths and
+  the corresponding Phase 4-13 placeholder dispatch rewrites (per
+  ROADMAP §A25).

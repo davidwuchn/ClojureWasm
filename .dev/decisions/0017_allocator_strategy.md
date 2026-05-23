@@ -97,12 +97,56 @@ allocator simply allocates).
   cyclic references, structural sharing, transient -> persistent
   handoff.
 
+## Phase 5+ migration note (amendment 1)
+
+The Phase 4 entry reserves the `gc_mark` bit in `ObjectHeader`
+(ADR-0009 amendment 2) and declares `GcHeap` as a struct skeleton
+with no `collect()` body (per ADR-0023 Pattern B stub). Phase 5
+activates mark-sweep; the activation **rewrites every Phase 1-4
+heap allocation site that today calls `gpa.alloc(...)` directly**
+to instead route through `GcHeap.alloc(...)`.
+
+Affected categories (Phase 5 source, populated as each lands):
+
+- HAMT persistent vector / hashmap / hashset construction — Phase 5
+  greenfield; routes through `GcHeap` from the start (not a
+  rewrite, but the discipline starts here).
+- `deftype` / `defrecord` / `reify` instances (per ADR-0007
+  amendment 1) — the same activation Phase rewrites collection
+  primitives, so `GcHeap` adoption rides that pass.
+- `ex_info` instances (Phase 3-shipped: `src/runtime/ex_info.zig`)
+  — currently uses arena allocator for the message string and GPA
+  for the struct; Phase 5 reroutes the struct alloc through
+  `GcHeap` and keeps arena for short-lived message buffers.
+- `LazySeq` — Phase 4 task 4.24 ships the struct skeleton; Phase 5
+  `force()` activation also routes the seq node through `GcHeap`.
+- Future: `atom` / `ref` / `agent` content cells re-allocate
+  through `GcHeap` at Phase 14-15 (per ADR-0010 amendment 2); those
+  Phases will rewrite their own activation, not Phase 5.
+
+The arena allocator (per-evaluation short-lived population) remains
+unchanged; the rewrite is only at the GPA → GcHeap boundary, not at
+the arena boundary.
+
+The rewrite is expected per ROADMAP §A25; principle.md depth 3
+(cross-file refactor of alloc call sites) is typical, depth 4 only
+if the per-eval arena / GcHeap boundary itself needs an ADR
+revision.
+
 ## References
 
 - ROADMAP §9.6 task 4.0 (bench harness will measure pause time)
-- Related ADRs: 0009 (ObjectHeader gc_mark slot), 0007
+- ROADMAP §9.7 (Phase 5 entry — mark-sweep activation)
+- ROADMAP §A25 (Existing code is mutable)
+- Related ADRs: 0007 (TypeDescriptor activation rides this Phase),
+  0009 (ObjectHeader gc_mark slot), 0010 (atom/ref content cells
+  in Phase 14-15)
 - JVM_TO_ZIG.md §3 (working notes)
 
 ## Revision history
 
 - 2026-05-23: Status: Proposed -> Accepted (initial landing).
+- 2026-05-23 (amendment 1): Added "Phase 5+ migration note" section
+  to narrate the rewrite of Phase 1-4 GPA-direct alloc call sites
+  to `GcHeap.alloc` routing when mark-sweep activates in Phase 5
+  (per ROADMAP §A25; pairs with ADR-0007 amendment 1).

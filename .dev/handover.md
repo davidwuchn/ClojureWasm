@@ -40,10 +40,12 @@
   Step 0.5 debt sweep, audit two-tier triggers,
   big-bang regeneration policy), `.claude/settings.json` PostCompact
   + Edit\|Write hooks, ROADMAP §1.4 / §A10-A25 / §3.2 / §6.0 / §9.6
-  4.0-4.26.f / §11.7 / §14 / §17.4 amendments. A25 ("Existing code
-  is mutable") + ADR-0007 / 0008 migration-note amendments make
-  skeleton-activation rewrite an expected design step, not debt.
-  All §9.5 / 3.1–3.14
+  4.0-4.26.f / §9.7-§9.19 placeholders (flip task rows for
+  `build_options.phase_at_least_N`) / §11.7 / §14 / §17.4
+  amendments. A25 ("Existing code is mutable") +
+  ADR-0007 / 0008 / 0009 / 0010 / 0015 / 0017 migration-note
+  amendments make skeleton-activation rewrite an expected design
+  step, not debt. All §9.5 / 3.1–3.14
   cells `[x]`, paired through chapter 0020 (`cc46a48`). 🔒 OrbStack
   x86_64 gate PASSED 2026-04-27 (pre-scaffolding state). Next
   re-run after Phase 4 entry commits.

@@ -97,18 +97,53 @@ Phases:
 - **Neutral / follow-ups**: `commute` fast path can be optimized later;
   watches share infrastructure with atom (ADR follow-up at Phase 15).
 
+## Phase 13-15 migration note (amendment 2)
+
+The Phase 4 entry lands `Ref` / `TVal` / `Transaction` declarations
+(skeleton in `runtime/stm/`) and **six sub-feature staged Codes**
+in `error_catalog.zig` (`stm_dosync_not_supported` /
+`stm_ref_not_supported` / `stm_alter_not_supported` /
+`stm_commute_not_supported` / `stm_ensure_not_supported` /
+`stm_ref_set_not_supported`). Activation is staged across five
+Phases; each step rewrites already-shipped code by removing one or
+more of these Codes and rewriting the corresponding test
+expectations:
+
+| Phase | Sub-op activated                             | Codes removed                                                                            |
+|-------|----------------------------------------------|------------------------------------------------------------------------------------------|
+| 13    | `Ref` / `TVal` data structure                | none yet (read-only path lands)                                                          |
+| 14    | `doGet` / `doSet` / `doCommute` / `doEnsure` | `stm_alter`, `stm_commute`, `stm_ensure`, `stm_ref_set` (partial — read/write activate) |
+| 15.1  | commit + retry loop                          | `stm_dosync`                                                                             |
+| 15.2  | commute fast path                            | `stm_commute` (full — retry-loop integration)                                           |
+| 15.3  | barge mechanism                              | (no Code removed; correctness rewrite of retry control flow)                             |
+| 15.4  | concurrent integration test                  | (no Code removed; test surface expansion)                                                |
+
+Each Phase that removes a Code also **rewrites the catalog test**
+(`error_catalog.zig`'s inline tests assert that Code is reachable;
+removing the arm requires updating those tests). The catalog
+growth is non-monotonic per ADR-0018 amendment 2.
+
+The rewrite is expected per ROADMAP §A25; principle.md depth 2 for
+each Phase that only deletes a Code arm; depth 3 when also
+rewriting `Ref` storage / `Transaction` retry control flow.
+
 ## References
 
 - ROADMAP §9.6 task 4.7 (try/throw/loop/recur — STM error message
-  path), Phase 13-15 task tables (to be written when those phases
-  open)
-- Related ADRs: 0009, 0017
+  path), §9.15 (Phase 13 entry), §9.16 (Phase 14 entry), §9.17
+  (Phase 15.1-15.4)
+- ROADMAP §A25 (Existing code is mutable)
+- Related ADRs: 0009, 0017, 0018
 - JVM source: `clojure.lang.LockingTransaction`
 
 ## Revision history
 
 - 2026-05-23: Status: Proposed -> Accepted (initial landing).
-- 2026-05-23 (amendment): Phase 4 unsupported-attempt phrasing now
-  references per-sub-operation staged catalog Codes (per ADR-0018
-  amendment 2 sub-feature staged pattern). User messages name only
-  the form (`dosync`, `ref`, ...), not this ADR.
+- 2026-05-23 (amendment 1): Phase 4 unsupported-attempt phrasing
+  now references per-sub-operation staged catalog Codes (per
+  ADR-0018 amendment 2 sub-feature staged pattern). User messages
+  name only the form (`dosync`, `ref`, ...), not this ADR.
+- 2026-05-23 (amendment 2): Added "Phase 13-15 migration note"
+  section to narrate the staged catalog Code removal and test
+  expectation rewrite across Phase 13 / 14 / 15.1-15.4 (per
+  ROADMAP §A25 and ADR-0018 amendment 2 "Codes come and go").
