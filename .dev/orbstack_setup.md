@@ -50,3 +50,14 @@ If `orb list` later shows the VM in `stopped` state, OrbStack
 auto-starts it on the first `orb run`. If the VM does not exist
 on a fresh machine, the command fails with `error: machine not
 found`; re-run the steps above.
+
+## Multi-host pivot strategy
+
+Currently: Mac host + OrbStack Ubuntu x86_64.
+
+- Phase 4-5: status quo (OrbStack as gate).
+- Phase 6+ (re-evaluate): OrbStack as scratch host, remote
+  Linux x86_64 SSH host as gate. Rationale: long-running JIT
+  cycles (Phase 17+ if go) encounter Rosetta translation races
+  on OrbStack; native SSH host eliminates this class of flake.
+- Phase 13+: Windows track is separate (per ROADMAP §3 scope).

@@ -85,6 +85,125 @@ turn 1 must be Japanese.
   ROADMAP / ADR / `docs/ja/` / `handover.md` (all tracked in git);
   otherwise let it stay scratch.
 
+## Autonomous Workflow
+
+**Default mode: continuous autonomous execution.**
+After `/continue` or session resume, run the per-task TDD loop
+until a stop condition fires. Do **not** pause between tasks.
+
+### Loop: Step 0 → 8 → next task's Step 0
+
+After Step 8 (context budget check), **immediately start the next
+task's Step 0**. Do not stop, do not summarize, do not ask for
+confirmation. The next task starts now.
+
+**Step 0 — Survey** (subagent: Explore, default mode "medium")
+Survey the related codebase per `.claude/rules/textbook_survey.md`.
+Skip only when the task is a clear continuation (refactor / rename
+/ doc-only). Output lands in
+`private/notes/<phase>-<task>-survey.md`.
+
+**Step 0.5 — Debt sweep**
+Read `.dev/debt.md`. For each row whose `Last reviewed > 14 days
+ago`, re-evaluate the Barrier predicate. Flip Status if the barrier
+dissolved.
+
+**Step 1 — Plan**
+One sentence in chat: the smallest failing test that captures the
+next behaviour. Then **re-read `.dev/principle.md` and apply the
+Bad Smell sensor** to the plan. If something feels off, adjust
+before Step 2.
+
+**Step 1a — Phase reading list** (Phase 4)
+Read in order: `.dev/handover.md`, `.dev/ROADMAP.md` §9.<N> (active
+row), the ADRs referenced by the active task, `compat_tiers.yaml`
+entry for the function, and the JVM Clojure source
+(`~/Documents/OSS/clojure/`) for the function.
+
+**Step 2 — Red**
+Write the failing test (Edit / Write). Run; confirm red.
+
+**Step 3 — Green**
+Minimal code to pass. Resist over-design; the next refactor pass
+is cheap.
+
+**Step 4 — Refactor**
+Structural improvements only, while green. Then **re-read
+`.dev/principle.md` and apply the Bad Smell sensor to the
+Green → Refactor diff**. If a smell surfaced, choose depth 1-4
+per principle.md and act before commit.
+
+**Step 5 — Test gate** (Mac + Ubuntu x86_64 in parallel)
+
+Run both in a single message with two parallel Bash tool calls:
+
+- `bash test/run_all.sh` (Mac host, `aarch64-darwin`)
+- `orb run -m my-ubuntu-amd64 bash -c 'bash test/run_all.sh'`
+  (Linux `x86_64`, Bash timeout ≥ 600000 ms for cold builds)
+
+Both must be green. If either output exceeds ~200 lines, delegate
+to a Bash subagent and ask for "pass/fail + first failure only".
+
+**Step 6 — Source commit**
+
+Before staging:
+
+1. Re-read the Bad Smell catalogue in `.dev/principle.md`.
+2. Self-audit the staged diff against the catalogue (about a
+   minute, no checklist — apply the sensor).
+3. If a smell triggers, choose depth 1-4:
+   - depth 1: add a one-line note in the commit message.
+   - depth 2-4: hold the commit. Land the ADR amendment / new
+     ADR / `debt.md` row / `private/notes/` entry first, then
+     commit the source separately.
+4. `git add` source files; `git commit -m "<type>(<scope>):
+   <one line>"`. The pre-commit gate runs.
+
+**Step 7 — Per-task note** (written from hot context)
+
+Copy `.claude/skills/code_learning_doc/TEMPLATE_TASK_NOTE.md` to
+`private/notes/<phase>-<task>.md`. Fill in: 一行サマリ / 詰まった
+ポイント (1-3 個) / 教科書との対比 (Step 0 survey の要約) /
+設計判断 / 章を書くときに必ず触れる点. Gitignored.
+
+**Step 8 — Context budget check**
+
+If above ~60% of context window:
+
+1. Update `.dev/handover.md` to a clean post-task state (next task
+   + retrievable identifiers).
+2. Run `/compact` with a save brief listing active phase, next
+   task, architectural constraints, opened `private/` notes.
+3. Re-read `handover.md` after compact.
+
+Otherwise: **immediately proceed to the next task's Step 0**.
+
+### Stop ONLY when
+
+- User explicitly requests stop
+- `git push` permission required (push is forbidden without approval)
+- Ambiguous test failure with no obvious root cause
+- `audit_scaffolding` returned a `block` finding
+- ADR-level decision required (tier shift, scope change, principle
+  deviation that cannot be self-decided)
+- Phase boundary reached AND next phase requires user input
+
+### Do NOT stop for
+
+- Task queue feels empty — plan the next task from §9.<N> and continue
+- Context getting large — run `/compact` (Step 8) and continue
+- "This feels like a good stopping point" — there are none until
+  the phase closes
+- A subagent returned mixed results — choose the action and continue
+- "Maybe I should ask the user" — default to continue
+- Bad Smell triggered — apply depth 1-4 per `.dev/principle.md`
+  and continue
+- Test failure that looks fixable — fix and continue
+- A judgement call you could make yourself — make it and continue
+
+**When in doubt, continue** — pick the most reasonable option and
+proceed.
+
 ## Skills (the runnable procedures)
 
 These hold the canonical procedures; CLAUDE.md only points to them.

@@ -35,7 +35,9 @@
   8 new scripts + `.githooks/pre-push`,
   4 new `.dev/` files (`debt.md`, `reference_clones.md`,
   `lessons/INDEX.md`, `compat_tiers.yaml`), 4 skill modifications
-  (`continue/LOOP.md` new, Step 0.5 sweep, audit two-tier triggers,
+  (per-task TDD loop spec moved into CLAUDE.md § Autonomous
+  Workflow; continue/SKILL.md is now the thin invocation trigger;
+  Step 0.5 debt sweep, audit two-tier triggers,
   big-bang regeneration policy), `.claude/settings.json` PostCompact
   + Edit\|Write hooks, ROADMAP §1.4 / §A10-A14 / §3.2 / §6.0 / §9.6
   4.13-4.25 / §11.8 / §14 / §17.5 amendments. All §9.5 / 3.1–3.14
@@ -142,7 +144,10 @@ numbers, does not assert pass/fail until §10.1 lock at Phase 8).
 - 8 new `scripts/` files + `.githooks/pre-push` zone gate.
 - 4 new `.dev/` files: `debt.md`, `reference_clones.md`,
   `lessons/INDEX.md`, plus `compat_tiers.yaml` at repo root.
-- 4 skill modifications: `continue/LOOP.md` new, `continue/SKILL.md`
+- 4 skill modifications: continue skill now delegates loop spec
+  to CLAUDE.md § Autonomous Workflow (Step 0-8 + Stop ONLY /
+  Do NOT stop / When in doubt). SKILL.md is the thin trigger.
+  Step 0.5 debt sweep,
   Step 0.5 + Step 1a, `audit_scaffolding/SKILL.md` two-tier
   triggers, `code_learning_doc/SKILL.md` big-bang regeneration
   policy.
