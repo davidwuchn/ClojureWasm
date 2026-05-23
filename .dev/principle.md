@@ -70,6 +70,25 @@ fit the same shape:
   feature, but it must not bypass depth-3 / depth-4 surgery when
   the smell calls for it. "Let me finish 4.X first and come back"
   rarely comes back.
+- **Silent default-shift smell** — a previously established
+  default behaviour (decreed in docs OR established by past
+  commit pattern) is being silently changed to a different
+  default, with no committed text recording the new policy. The
+  loop tells itself "it's just my judgement; nobody set this in
+  stone" and shifts. Examples: through commit 025dea9 the loop
+  staged `bench/quick_baseline.txt` in source-bearing commits;
+  from commit 4.6 onward it silently stopped, with no
+  conventions / handover / ROADMAP note backing the change (the
+  user surfaced this on 2026-05-24 and the policy was made
+  explicit in commit bda8b4d as a result). Detection: when you
+  notice "what I'm about to do is different from what past
+  commits did", **stop and ask**: "is this a policy change?
+  Where is it recorded?" If nowhere, either (a) follow the past
+  pattern, or (b) record the new policy explicitly (CLAUDE.md /
+  `.dev/conventions.md` / principle.md / debt.md) before
+  applying the new default. Same shape as Reservation-as-bias
+  and Smallest-diff bias — invisible drift away from committed
+  intent.
 
 The catalogue is not exhaustive. Any felt smell counts.
 

@@ -243,6 +243,19 @@ five overlapping barriers (project_facts preamble + CLAUDE.md
 priority chain + principle.md Scope boundary + subagent brief
 ban + hook physical block) before it can land.
 
+**Follow-on (2026-05-24)**: a 6th smell — **Silent
+default-shift** — landed in principle.md after the user
+surfaced an instance of the same shape outside F-NNN:
+`bench/quick_baseline.txt` had been included in source-bearing
+commits through 025dea9 (Phase 4 critical-path entry) but the
+loop silently stopped from 4.6 onward without recording the
+policy change. Made the policy explicit in CLAUDE.md Step 6 +
+continue skill Phase boundary "Bench sweep" (commits bda8b4d /
+2ec8867), and added the smell to the catalogue so future loops
+recognise the pattern *before* drifting silently. Same shape as
+Reservation-as-bias and Smallest-diff bias — invisible drift
+away from committed intent.
+
 ## Active task — §9.6 / 4.25
 
 `src/runtime/dispatch/method_table.zig` — `MethodEntry` struct
