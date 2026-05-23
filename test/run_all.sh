@@ -153,9 +153,12 @@ run_step "e2e_phase3_exit"     "bash test/e2e/phase3_exit.sh"
 run_step "scan_catalog_only"   "bash scripts/scan_catalog_only.sh" optional
 run_step "scan_panic_audit"    "bash scripts/scan_panic_audit.sh"  optional
 
+# Bench quick — Phase 4 observability (per ROADMAP §10.2). Records
+# numbers, never fails the build until §10.1 lock at Phase 8.
+run_step "bench_quick"         "PHASE_NAME=phase4 bash bench/quick.sh" optional
+
 # Future suites (uncomment as their phase lands):
 #   run_step "diff_runner"  "zig build test -Dtest-filter='differential cases'"
-#   run_step "bench_quick"  "bash bench/quick.sh" optional
 #   run_step "test_clj"     "bash scripts/run_clj_tests.sh"  # Phase 11
 #   run_step "tier_check"   "bash scripts/tier_check.sh"     # Phase 14
 

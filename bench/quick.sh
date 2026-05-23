@@ -91,8 +91,21 @@ bench_run read_100_forms_us "$BIN" -e "$LONG"
     printf '%s\t%s\t%s\t%s\n' "$NOW" "$PHASE" "binary_size_bytes" "$size_bytes"
 } >> "$BASELINE"
 
-# TODO(phase4): once TreeWalk lands, append rows for:
-#   fib_recursive_us, arith_loop_us, list_build_us
+echo "==> 5. fib_recursive (recursive user-fn dispatch)"
+bench_run fib_recursive_us "$BIN" bench/fixtures/fib_recursive.clj
+
+echo "==> 6. arith_loop (loop*/recur backedge)"
+bench_run arith_loop_us "$BIN" bench/fixtures/arith_loop.clj
+
+echo "==> 7. list_build (reader + heap list construction)"
+bench_run list_build_us "$BIN" bench/fixtures/list_build.clj
+
+echo "==> 8. quote_chain (deeply nested quoted form)"
+bench_run quote_chain_us "$BIN" bench/fixtures/quote_chain.clj
+
+echo "==> 9. let_chain (lexical binding chain)"
+bench_run let_chain_us "$BIN" bench/fixtures/let_chain.clj
+
 # TODO(phase7): once transducers land:
 #   map_filter_reduce_us, transduce_us, lazy_chain_us
 

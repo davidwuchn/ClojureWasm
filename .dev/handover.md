@@ -85,28 +85,35 @@
 
 ## In-flight work
 
-なし。ACTION_PLAN V1/V2/V3/V4/V5 consolidation は 2026-05-23 完了
-(audit note `private/research-2026-05-23/REVIEW_V2_V1_LEFTOVER.md`、
-subagent cross-validation で賛同、新規反映項目なし)。次セッションは
-`/continue` で §9.6 / 4.0 に着手。
+なし。§9.6 / 4.0 (quick-bench harness extension) を 2026-05-23 完了。
+次は §9.6 / 4.0a (`build.zig` `phase_at_least_N` comptime bool 群)。
 
-## Active task — §9.6 / 4.0
+## Active task — §9.6 / 4.0a (next)
 
-`bench/quick.sh` + `bench/quick.yaml` + `bench/fixtures/*.clj` — the
-microbench harness ROADMAP §10.2 has so far only described in policy.
-This is the first §9.6 task because Phase 4 introduces the VM and
-optimisation work needs a measuring stick from day one. Wired into
-`test/run_all.sh` as a non-failing observability suite (records
-numbers, does not assert pass/fail until §10.1 lock at Phase 8).
+`build.zig` に `build_options.phase_at_least_5` / `_7` / `_11` / `_14`
+/ `_15` / `_17` の comptime bool 群を追加 (全部 Phase 4 entry では
+`false`)。これは ADR-0023 comptime conditional imports の scaffolding。
+タスク 4.17 / 4.19 / 4.22-4.25 が読む。各 bool は対応 Phase 開始時に
+`true` に flip される (フリップ task は §9.7 以降の placeholder で
+管理)。
 
 **Retrievable identifiers**:
-- ROADMAP §9.6 — full Phase 4 task table (4.0 → 4.26.f after the V3
-  scaffolding wave + ADR-0018 amendment 2 error system split).
-- ROADMAP §10.2 — quick bench policy + intent.
-- ROADMAP §10.3 — v0.1.0 target numbers.
-- `bench/quick.sh` — already exists from Phase 1, with `# TODO(phase4)`
-  placeholders. 4.0 fills those in and wires it into
-  `test/run_all.sh`.
+- ROADMAP §9.6 task 4.0a — `build.zig` comptime bool group spec.
+- ADR-0023 — comptime stub policy (`@import` を `if (phase_at_least_N)`
+  で囲む基本パターン)。
+- `build.zig` — 既存。`pub fn build(b: *std.Build)` の中に
+  `b.addOptions("build_options", ...)` を生やす想定。
+
+## Just landed — §9.6 / 4.0
+
+`bench/fixtures/{fib_recursive, arith_loop, list_build, quote_chain,
+let_chain}.clj` 5 本を追加、`bench/quick.sh` の TODO(phase4) を埋め、
+`test/run_all.sh` に `bench_quick` step を `optional` として配線。
+Mac (9/9) + OrbStack Ubuntu x86_64 (8/8) 双方 green。詳細は
+`private/notes/phase4-4.0.md`。Phase 4 entry の primitive 制約
+(`loop` macro 無し → `loop*`、recursive `defn` 不可 → `def fib nil`
++ `def fib (fn* ...)` forward-decl、シンボル quote 未実装 → 整数
+leaves) は per-task note に記録済み。
 
 **Phase 4 task list (4.0 - 4.26.f, expanded by ADR-0004 through 0024)**:
 
