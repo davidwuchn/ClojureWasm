@@ -51,6 +51,25 @@ fit the same shape:
   route looks attractive.
 - **Workaround smell** — "if I can dodge this point, I can keep
   moving".
+- **Smallest-diff bias smell** — picking the smallest-diff option
+  *because it is smallest*, rather than because it lands at the
+  finished form. The project's premise is "the finished form
+  wins"; ROADMAP P5 ("smallest diff first") is a tie-breaker, not
+  a veto. If the smallest-diff choice would be re-done later
+  anyway, take the bigger surgery now and keep the finished form
+  in place.
+- **Reservation-as-bias smell** — treating a "reserved" slot /
+  number / name as a hard constraint when it was only a memo. ADR
+  numbers, NaN-box slots, debt rows that say "future X is
+  reserved" — none of these are promises to obey. If the reservation
+  blocks the cleanest landing, edit the reservation and take the
+  number.
+- **Progress-pressure smell** — the autonomous loop's forward
+  momentum encouraging "I'll fix this later" / "let me push and
+  move on" / "the next task is waiting". Forward momentum is a
+  feature, but it must not bypass depth-3 / depth-4 surgery when
+  the smell calls for it. "Let me finish 4.X first and come back"
+  rarely comes back.
 
 The catalogue is not exhaustive. Any felt smell counts.
 
