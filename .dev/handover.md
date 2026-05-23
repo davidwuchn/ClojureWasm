@@ -289,9 +289,11 @@ or later):
 
 - Skill `continue` (`.claude/skills/continue/SKILL.md`) handles
   "続けて" / "/continue" / "resume". It auto-triggers on those phrases
-  and now drives a Step 0 (Survey) → Step 7 (per-task note) →
-  Step 8 (60% compact gate) loop with multi-agent fan-out at phase
-  boundaries.
+  and drives a Step 0 (Survey) → Step 7 (per-task note) → next
+  task's Step 0 loop with multi-agent fan-out at phase boundaries.
+  Auto-compaction is system-handled; the loop has no compact gate.
+  Stops only per the closed 3-condition list in CLAUDE.md
+  § Autonomous Workflow.
 - Skill `code_learning_doc` is **two-cadence**: per-task notes
   (private, gitignored) and per-concept chapters (`docs/ja/learn_clojurewasm/NNNN_*.md`,
   gated). Use `TEMPLATE_TASK_NOTE.md` and `TEMPLATE_PHASE_DOC.md`. Do

@@ -93,11 +93,12 @@ turn 1 must be Japanese.
 After `/continue` or session resume, run the per-task TDD loop
 until a stop condition fires. Do **not** pause between tasks.
 
-### Loop: Step 0 → 8 → next task's Step 0
+### Loop: Step 0 → 7 → next task's Step 0
 
-After Step 8 (context budget check), **immediately start the next
-task's Step 0**. Do not stop, do not summarize, do not ask for
-confirmation. The next task starts now.
+After Step 7 (per-task note), **immediately start the next task's
+Step 0**. Do not summarize, do not ask for confirmation. The next
+task starts now. Auto-compaction handles context size transparently;
+no agent action is needed.
 
 **Step 0 — Survey** (subagent: Explore, default mode "medium")
 Survey the related codebase per `.claude/rules/textbook_survey.md`.
@@ -170,19 +171,8 @@ Before staging:
 Copy `.claude/skills/code_learning_doc/TEMPLATE_TASK_NOTE.md` to
 `private/notes/<phase>-<task>.md`. Fill in: 一行サマリ / 詰まった
 ポイント (1-3 個) / 教科書との対比 (Step 0 survey の要約) /
-設計判断 / 章を書くときに必ず触れる点. Gitignored.
-
-**Step 8 — Context budget check**
-
-If above ~60% of context window:
-
-1. Update `.dev/handover.md` to a clean post-task state (next task
-   + retrievable identifiers).
-2. Run `/compact` with a save brief listing active phase, next
-   task, architectural constraints, opened `private/` notes.
-3. Re-read `handover.md` after compact.
-
-Otherwise: **immediately proceed to the next task's Step 0**.
+設計判断 / 章を書くときに必ず触れる点. Gitignored. Then immediately
+begin the next task's Step 0.
 
 ### When the current phase's task queue empties
 
@@ -205,31 +195,25 @@ rows:
 5. Commit alone: `git commit -m "roadmap: open Phase <N+1> task list"`.
 6. Proceed to §9.<N+1>.1 Step 0.
 
-### Stop ONLY when
+### Stop only when (closed list)
 
-- User explicitly requests stop
-- Push target is `main` (forbidden) — push to `cw-from-scratch` is free
-- Ambiguous test failure with no obvious root cause
-- `audit_scaffolding` returned a `block` finding
-- ADR-level decision required (tier shift, scope change, principle
-  deviation that cannot be self-decided)
-- Phase boundary reached AND next phase requires user input
+Three conditions, exhaustive:
 
-### Do NOT stop for
+1. **User explicitly requests stop** (any direct instruction).
+2. **ADR-level decision required that cannot be self-decided** —
+   tier shift, scope change, principle deviation, or
+   `audit_scaffolding` `block` finding that demands human judgement.
+3. **Physically blocked** — build broken with no identifiable root
+   cause, or test failure that cannot be diagnosed after honest
+   investigation.
 
-- Task queue feels empty — plan the next task from §9.<N> and continue
-- Context getting large — run `/compact` (Step 8) and continue
-- "This feels like a good stopping point" — there are none until
-  the phase closes
-- A subagent returned mixed results — choose the action and continue
-- "Maybe I should ask the user" — default to continue
-- Bad Smell triggered — apply depth 1-4 per `.dev/principle.md`
-  and continue
-- Test failure that looks fixable — fix and continue
-- A judgement call you could make yourself — make it and continue
+Anything outside these three is continued through. The loop's
+quality discipline lives in `.dev/principle.md` (Bad Smell sensor,
+depth 1-4 judgement) and is applied per cycle — quality is a *how*,
+not a stop condition.
 
-**When in doubt, continue** — pick the most reasonable option and
-proceed.
+This list intentionally avoids enumerating non-stop reasons. Closed
+stop conditions + open continue is the design.
 
 ## Skills (the runnable procedures)
 
@@ -242,12 +226,12 @@ These hold the canonical procedures; CLAUDE.md only points to them.
   concept sections, design-alternatives table, "Try it" snippet,
   textbook comparison. No exercises, predict-then-verify, L1/L2/L3,
   Feynman, or checklists. They are textbook units, not a project diary.
-- **`continue`** — resume procedure + per-task TDD loop (with Step 0
-  Survey, Step 7 per-task note, Step 8 60% compact gate) + multi-agent
-  Phase-boundary review chain. Auto-triggers on "続けて" / "/continue"
-  / "resume". **Fully autonomous from invocation**. Stops only for
-  ambiguous test failure, audit `block` finding, or an ADR-level
-  design decision (no per-commit push approval).
+- **`continue`** — resume procedure + per-task TDD loop (Step 0
+  Survey → Step 7 per-task note → next task's Step 0) + multi-agent
+  Phase-boundary review chain (audits run, then loop continues into
+  §9.<N+1>). Auto-triggers on "続けて" / "/continue" / "resume".
+  **Fully autonomous from invocation**. Stops only per the closed
+  3-condition list in § Autonomous Workflow.
 - **`audit_scaffolding`** — periodic audit for staleness, bloat, lies,
   and false positives across the tracked scaffolding (CLAUDE.md,
   `.dev/`, `.claude/`, `docs/`, `scripts/`). Auto-invoked by

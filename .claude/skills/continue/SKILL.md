@@ -1,15 +1,15 @@
 ---
 name: continue
-description: Resume fully autonomous work on cw-from-scratch and drive the per-task TDD loop until the user intervenes. Trigger when the user says 続けて, "resume", "pick up where we left off", "/continue", "次", "go", or starts a fresh session expecting prior context. The full step-by-step loop spec (Step 0 → 8, Stop ONLY / Do NOT stop / When in doubt) lives in CLAUDE.md § Autonomous Workflow and is loaded into every turn's system prompt; this skill is the invocation trigger and carries the resume procedure, the Phase-boundary review chain, the subagent delegation cheatsheet, and the model-selection guidance.
+description: Resume fully autonomous work on cw-from-scratch and drive the per-task TDD loop until the user intervenes. Trigger when the user says 続けて, "resume", "pick up where we left off", "/continue", "次", "go", or starts a fresh session expecting prior context. The full step-by-step loop spec (Step 0 → 7 + the closed 3-condition stop list) lives in CLAUDE.md § Autonomous Workflow and is loaded into every turn's system prompt; this skill is the invocation trigger and carries the resume procedure, the Phase-boundary review chain, the subagent delegation cheatsheet, and the model-selection guidance.
 ---
 
 # continue
 
 The `/continue` slash command's job is to start running the
 autonomous TDD loop. The loop's full step-by-step spec lives in
-`CLAUDE.md § Autonomous Workflow` (Step 0 → 8 + Stop ONLY +
-Do NOT stop + "When in doubt, continue") which is loaded into
-every turn's system prompt.
+`CLAUDE.md § Autonomous Workflow` (Step 0 → 7 + the closed
+3-condition stop list) which is loaded into every turn's system
+prompt.
 
 This file carries the procedural context that is only needed at
 invocation time: the resume procedure, the Phase-boundary review
@@ -64,9 +64,8 @@ without asking**:
 4. Open §9.<N+1>: flip the §9 phase tracker; expand §9.<N+1>
    inline (mirror §9.<N>'s structure); update `handover.md` to
    point at §9.<N+1>'s first task.
-5. Force a context reset: write the new handover state, then
-   `/compact` (or, if already low fill, `/clear` and re-read
-   handover). Resume Step 0 of §9.<N+1>.1.
+5. Proceed to Step 0 of §9.<N+1>.1. Auto-compaction handles context
+   size transparently — no agent action needed.
 
 ## Subagent delegation cheatsheet
 
@@ -93,7 +92,7 @@ importance**.
 
 ## Model selection (dual-model)
 
-- **Per-task TDD loop (Steps 1-7)**: current session's model —
+- **Per-task TDD loop (Step 0 → 7)**: current session's model —
   Opus 4.7 is fine.
 - **Phase boundary chain (multi-agent fan-out)**: prefer **Opus 4.6**
   for the long-context audit / simplify / chapter-write subagents —
