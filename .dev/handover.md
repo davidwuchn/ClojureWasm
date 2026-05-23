@@ -189,6 +189,60 @@ Persisted:
   `private/notes/zwasm_v2_feedback.md` (gitignored, ready for
   user to forward manually).
 
+**Wave 6 — F-NNN hardening (2026-05-24, post-audit)**:
+
+User identified that the previous waves left F-NNN with too
+much "informational" / "recommended" / "owner judges" flavor
+— a sabotage path where future AI sessions could spin "the rule
+is just a preference, smallest-diff is fine". Hardened across
+the board:
+
+- project_facts.md preamble: explicit **"⚠️ THIS FILE IS PROJECT
+  LAW"** block + 5-level priority chain (project_facts >
+  ROADMAP > ADR > principle > AI judgement). Anything at level
+  N may only be edited to align with level N-1 or above; level
+  1 (F-NNN) is edited **only** by user direction.
+- Each F-001..F-008 gets a `Status: confirmed — direction of
+  travel is law` label.
+- F-002 strengthened: smallest-diff is no longer "tie-breaker
+  not veto" (= still readable as "they're both OK, smaller wins")
+  — now explicitly "finished-form ALWAYS wins; smallest-diff is
+  a secondary preference applying only when candidate options
+  reach the same finished form".
+- CLAUDE.md § Project spirit gains the 5-level priority chain
+  + the explicit ban on treating F-NNN as informational /
+  tie-breaker / recommendation.
+- CLAUDE.md Step 6 + § "ADR-level designs" + principle.md
+  depth 2-4 branch: Devil's-advocate subagent brief now
+  explicitly forbids proposing alternatives that violate any
+  F-NNN; if the only finished-form-clean option requires
+  violating an F-NNN, the subagent **stops and surfaces** (=
+  stop condition 3 in the closed stop list).
+- principle.md Structural imagination phase gains a "Scope
+  boundary" subsection: imagination applies only to **open
+  structural plans**; F-NNN-decreed direction is implemented,
+  not re-imagined.
+- structure_plan.md preamble redrafted to distinguish **decree**
+  entries (F-NNN-tied — owner implements, does not re-decide)
+  from **imagination** entries (★new / ★split (D-NNN) — owner
+  picks shape within the F-NNN envelope).
+- All D-027..D-039 structure-class debt rows tightened: "owner
+  decides" → "owner decides within the F-NNN envelope (must
+  honor F-…)".
+- New PreToolUse hook **scripts/check_facts_immutable.sh**:
+  blocks `git commit` when project_facts.md amends an F-NNN
+  body without (a) a new `Revision history` entry inside the
+  F-NNN block AND (b) `Project-facts-amend: F-NNN — <one-line>`
+  in the commit message body. Removing an F-NNN is blocked
+  unconditionally (must use Supersedes chain). Wired into
+  `.claude/settings.json` PreToolUse Bash matcher.
+
+Net effect: a future session that tries to spin "well, the
+F-NNN is just a recommendation, smallest-diff is fine" hits
+five overlapping barriers (project_facts preamble + CLAUDE.md
+priority chain + principle.md Scope boundary + subagent brief
+ban + hook physical block) before it can land.
+
 ## Active task — §9.6 / 4.25
 
 `src/runtime/dispatch/method_table.zig` — `MethodEntry` struct

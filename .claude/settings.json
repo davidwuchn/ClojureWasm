@@ -99,6 +99,10 @@
           {
             "type": "command",
             "command": "bash $CLAUDE_PROJECT_DIR/scripts/check_smell_audit.sh"
+          },
+          {
+            "type": "command",
+            "command": "bash $CLAUDE_PROJECT_DIR/scripts/check_facts_immutable.sh"
           }
         ]
       },
