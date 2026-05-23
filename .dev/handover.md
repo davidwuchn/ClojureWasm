@@ -78,24 +78,14 @@
   backend concern (ADR 0001). `Runtime` gained
   `gensym(arena, prefix)` for hygienic auto-symbols.
 
-## In-flight work (suspended mid-session 2026-05-23)
+## In-flight work
 
-**ACTION_PLAN consolidation** — 中断点。memory file
-`project_action_plan_consolidation.md` 参照。
+なし。ACTION_PLAN V1/V2/V3/V4/V5 consolidation は 2026-05-23 完了
+(audit note `private/research-2026-05-23/REVIEW_V2_V1_LEFTOVER.md`、
+subagent cross-validation で賛同、新規反映項目なし)。次セッションは
+`/continue` で §9.6 / 4.0 に着手。
 
-- 最新 commit: `ad1d7ed` (push 済、working tree clean)
-- 完了: V3/V4/V5 を Read で読破、抜け 4 件を `94281ec` + `ad1d7ed`
-  で反映済 (Phase open procedure / Dependency graph / D-014 分割
-  / §17 順序 / cold-start orientation / 他)
-- 残: Shota 指摘の **V2 (`ACTION_PLAN_V2.md` 2,181 行) + V1
-  (`ACTION_PLAN.md` 1,821 行) の漏れチェック**。V3/V4/V5 だけだと
-  不十分。`private/research-2026-05-22/` 配下。次セッションで
-  V2 → V1 Read → diff → 反映 → commit → subagent フルレビュー
-  → 修正 commit。
-
-このタスクが完了するまで、§9.6 / 4.0 (下記) には着手しない。
-
-## Active task — §9.6 / 4.0 (待機中、上記 consolidation 完了後に開始)
+## Active task — §9.6 / 4.0
 
 `bench/quick.sh` + `bench/quick.yaml` + `bench/fixtures/*.clj` — the
 microbench harness ROADMAP §10.2 has so far only described in policy.
