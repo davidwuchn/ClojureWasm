@@ -75,12 +75,40 @@ provide.
 - **Neutral / follow-ups**: ADR-0007 carries the `TypeDescriptor`
   shape; ADR-0011 covers how `host` module entries register.
 
+## Phase 7+ migration note (amendment 1)
+
+The Phase 4 skeletons (task 4.18 `protocol.zig`, task 4.25
+`method_table.zig`) declare `ProtocolDescriptor` / `MethodEntry` /
+`CallSite` structs without dispatch logic. Phase 7 entry
+activation includes a rewrite:
+
+- `dispatch(callsite, receiver, method, args)` implementation with
+  cache-fill on miss (`last_type` + `last_method` slot in
+  `CallSite`).
+- The Phase 5 path that activated `TypeDescriptor.lookupMethod`
+  (see ADR-0007 amendment 1) is rewired through `dispatch` so that
+  `.method` / `(.method obj args)` / `new` / `import` / `doto` /
+  `..` go through `method_table.lookup` with the `CallSite` cache,
+  replacing the Phase 5 direct lookup.
+- `defprotocol` / `extend-protocol` / `extend-type` analyzer
+  recognition activates; Tier A behaviour lands.
+
+The rewrite is expected per ROADMAP §A25; principle.md depth 3 is
+the typical depth (cross-file refactor of the `.method` call path).
+depth 4 only if the protocol satisfaction model itself supersedes
+this ADR.
+
 ## References
 
 - ROADMAP §9.6 task 4.18 (protocol dispatch table skeleton),
   task 4.25 (method_table + CallSite cache skeleton)
+- ROADMAP §9.9 (Phase 7 entry — protocol activation)
+- ROADMAP §A25 (Existing code is mutable)
 - Related ADRs: 0007, 0011
 
 ## Revision history
 
 - 2026-05-23: Status: Proposed -> Accepted (initial landing).
+- 2026-05-23 (amendment 1): Added "Phase 7+ migration note" section
+  to narrate the rewrite of the Phase 5 dispatch path when task 4.18
+  / 4.25 skeletons activate in Phase 7 (per ROADMAP §A25).

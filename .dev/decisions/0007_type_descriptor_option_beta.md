@@ -82,13 +82,39 @@ deftype emit); otherwise a runtime `[]Value` slice carries the data.
   `ReifiedInstance`. The concrete Zig struct layout lives in the cw
   runtime source.
 
+## Phase 5+ migration note (amendment 1)
+
+The Phase 4 skeleton (task 4.17) declares `TypeDescriptor` /
+`TypedInstance` / `ReifiedInstance` structs without operations.
+Phase 5 entry activation includes a rewrite, not just adding:
+
+- `TypeDescriptor.lookupMethod` / `register` / `new` implementation
+  lands.
+- Existing Phase 1-3 primitives in `src/runtime/collection/*.zig`
+  (`string` / `list` / `keyword` / `symbol`) and the Value model gain
+  a back-pointer (or `ValueTag` route) to a native `TypeDescriptor`
+  registered at runtime init. The primitive struct shape changes;
+  this rewrites code already written in Phase 1-3.
+- `(class x)` / `(instance? T x)` / `(type x)` switch from the
+  Phase 3 keyword-only `type` dispatch to `TypeDescriptor`-based
+  dispatch.
+
+The rewrite is expected, not technical debt, per ROADMAP §A25.
+principle.md depth 3 (cross-file refactor) is the typical depth;
+depth 4 only if the Value model itself needs a new ADR.
+
 ## References
 
 - ROADMAP §A11 (Day-one enum reservation)
+- ROADMAP §A25 (Existing code is mutable)
 - ROADMAP §9.6 task 4.17 (TypeDescriptor skeleton)
+- ROADMAP §9.7 (Phase 5 entry — Skeletons to activate)
 - Related ADRs: 0004, 0008, 0012, 0013
 - Babashka precedent: sci.impl.records / sci.impl.types
 
 ## Revision history
 
 - 2026-05-23: Status: Proposed -> Accepted (initial landing).
+- 2026-05-23 (amendment 1): Added "Phase 5+ migration note" section
+  to narrate the rewrite scope when task 4.17 skeleton activates
+  in Phase 5 (per ROADMAP §A25).
