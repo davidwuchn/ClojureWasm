@@ -19,9 +19,10 @@
   done.
 - **Branch**: `cw-from-scratch` (long-lived; v0.5.0-derived;
   push free after gate green; never push to `main`).
-- **Last commit**: see `git log -1` (4.5 fn_node landing).
+- **Last commit**: see `git log -1` (compute on resume — the
+  resume procedure reads it directly).
 - **Gate**: Mac (9/9) + OrbStack Ubuntu x86_64 (8/8) green at
-  4.5 landing. 🔒 fresh OrbStack run due at Phase 4 close.
+  HEAD. 🔒 fresh OrbStack run due at Phase 4 close.
 - **Last paired chapter commit**: `cc46a48` (chapter 0020 —
   Phase 3 closure, covers §9.5 / 3.8–3.14).
 - **Unpaired source SHAs**: `git log cc46a48..HEAD --oneline -- src/`
