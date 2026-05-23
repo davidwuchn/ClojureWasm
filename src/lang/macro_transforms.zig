@@ -273,10 +273,17 @@ fn expandAnd(
     if (args.len == 0) return macro_dispatch.makeBool(true, loc);
     if (args.len == 1) return args[0];
 
-    // (let* [g <args[0]>] (if g (and <args[1..]>) g))
-    const gname = try rt.gensym(arena, "and");
-    const rest_call = try buildSelfCall(arena, "and", args[1..], loc);
-    return buildShortCircuit(arena, gname, args[0], rest_call, sym(gname, loc), loc);
+    // Left-fold non-recursively: walk args right-to-left, wrapping the
+    // accumulator with `(let* [g aᵢ] (if g acc g))`. Single expansion
+    // pass; macro_dispatch is not re-entered per arg.
+    var acc = args[args.len - 1];
+    var i: usize = args.len - 1;
+    while (i > 0) {
+        i -= 1;
+        const gname = try rt.gensym(arena, "and");
+        acc = try buildShortCircuit(arena, gname, args[i], acc, sym(gname, loc), loc);
+    }
+    return acc;
 }
 
 fn expandOr(
@@ -288,10 +295,16 @@ fn expandOr(
     if (args.len == 0) return nilForm(loc);
     if (args.len == 1) return args[0];
 
-    // (let* [g <args[0]>] (if g g (or <args[1..]>)))
-    const gname = try rt.gensym(arena, "or");
-    const rest_call = try buildSelfCall(arena, "or", args[1..], loc);
-    return buildShortCircuit(arena, gname, args[0], sym(gname, loc), rest_call, loc);
+    // Mirror of expandAnd; the truthy branch echoes the binding so the
+    // value flows out unchanged.
+    var acc = args[args.len - 1];
+    var i: usize = args.len - 1;
+    while (i > 0) {
+        i -= 1;
+        const gname = try rt.gensym(arena, "or");
+        acc = try buildShortCircuit(arena, gname, args[i], sym(gname, loc), acc, loc);
+    }
+    return acc;
 }
 
 /// `(let* [g expr] (if g <then_when_truthy> <else_when_falsy>))`.
@@ -319,18 +332,6 @@ fn buildShortCircuit(
     let_items[1] = .{ .data = .{ .vector = binding }, .location = loc };
     let_items[2] = if_form;
     return list(arena, let_items, loc);
-}
-
-fn buildSelfCall(
-    arena: std.mem.Allocator,
-    head: []const u8,
-    rest: []const Form,
-    loc: SourceLocation,
-) macro_dispatch.ExpandError!Form {
-    const items = try arena.alloc(Form, rest.len + 1);
-    items[0] = sym(head, loc);
-    @memcpy(items[1..], rest);
-    return list(arena, items, loc);
 }
 
 // --- if-let / when-let ---
@@ -603,7 +604,46 @@ test "expandAnd / expandOr cover empty / single / multi" {
     // (and x) -> x
     const a1 = try expandAnd(arena, &fix.rt, &.{true_f}, .{});
     try testing.expect(a1.data == .boolean and a1.data.boolean);
-    // (and x y) -> (let* [g x] (if g (and y) g))
+    // (and x y) -> (let* [g x] (if g y g)) — single-pass expansion, no
+    // nested (and y) form to re-dispatch.
     const a2 = try expandAnd(arena, &fix.rt, &.{ true_f, true_f }, .{});
     try testing.expectEqualStrings("let*", a2.data.list[0].data.symbol.name);
+    const if_form = a2.data.list[2];
+    try testing.expectEqualStrings("if", if_form.data.list[0].data.symbol.name);
+    // Then-branch should be the literal `true`, not an `(and ...)` call.
+    try testing.expect(if_form.data.list[2].data == .boolean);
+}
+
+test "expandAnd handles 10000 args without StackOverflow (4.3 regression)" {
+    var fix: TestFixture = undefined;
+    try fix.init(testing.allocator);
+    defer fix.deinit();
+
+    const arena = fix.arena.allocator();
+    var args: std.ArrayList(Form) = .empty;
+    defer args.deinit(testing.allocator);
+    var i: usize = 0;
+    while (i < 10000) : (i += 1) {
+        try args.append(testing.allocator, .{ .data = .{ .boolean = true }, .location = .{} });
+    }
+    // Pre-refactor this recursed 10000 times via macro_dispatch and
+    // crashed; now it's a single linear pass.
+    const expanded = try expandAnd(arena, &fix.rt, args.items, .{});
+    try testing.expectEqualStrings("let*", expanded.data.list[0].data.symbol.name);
+}
+
+test "expandOr handles 10000 args without StackOverflow (4.3 regression)" {
+    var fix: TestFixture = undefined;
+    try fix.init(testing.allocator);
+    defer fix.deinit();
+
+    const arena = fix.arena.allocator();
+    var args: std.ArrayList(Form) = .empty;
+    defer args.deinit(testing.allocator);
+    var i: usize = 0;
+    while (i < 10000) : (i += 1) {
+        try args.append(testing.allocator, .{ .data = .{ .boolean = false }, .location = .{} });
+    }
+    const expanded = try expandOr(arena, &fix.rt, args.items, .{});
+    try testing.expectEqualStrings("let*", expanded.data.list[0].data.symbol.name);
 }

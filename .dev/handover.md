@@ -85,23 +85,43 @@
 
 ## In-flight work
 
-なし。§9.6 cluster A の §9.6 / 4.0 (b5ddc0c) / §9.6 / 4.0a (e4e079e)
-/ §9.6 / 4.1 (bc8db41) / §9.6 / 4.2 (pending SHA) を 2026-05-23
-完了。次は cluster A 最後の §9.6 / 4.3 (expandAnd/expandOr 非再帰
-rewrite)。
+なし。Cluster A 全 3 タスク + critical path 先頭 2 タスクを
+2026-05-23 完了:
+- §9.6 / 4.0  (b5ddc0c) — bench/quick.sh 5 fixtures
+- §9.6 / 4.0a (e4e079e) — build_options phase_at_least_N comptime bools
+- §9.6 / 4.1  (bc8db41) — analyzer loop*/recur u16 bound-check
+- §9.6 / 4.2  (62118dd) — uniform errdefer across 4 heap alloc paths
+- §9.6 / 4.3  (pending SHA) — expandAnd/Or non-recursive
 
-## Active task — §9.6 / 4.3 (next)
+次は critical path 続行 §9.6 / 4.4 (Opcode enum + BytecodeChunk) か、
+cluster B の §9.6 / 4.13 (io_interface) / 4.14 (debt populate) /
+4.15 (compat_tiers expansion) / 4.20 (host/) のいずれか。VM 群
+(4.4-4.12) は逐次依存があるため、cluster B の独立タスクを先に
+拾える。
 
-`lang/macro_transforms.zig::expandAnd` / `expandOr` を単一の
-non-recursive expansion として書き直す (left-fold で chain of
-`let*`/`if` Forms を 1 pass で生成)。Long `(and a₁ … a_N)` が
-analyze を N 回呼ばないように。10000-arg `(and …)` で
-`error.StackOverflow` に達しないことを regression test で確認。
+## Active task — §9.6 / 4.4 (next, critical path)
+
+`src/eval/backend/vm/opcode.zig` を新規作成し、Opcode enum
+(`op_const` / `op_load_local` / `op_store_local` / `op_def` /
+`op_get_var` / `op_jump` / `op_jump_if_false` / `op_call` / `op_ret`
+/ `op_pop` / `op_dup` / `op_throw` / `op_make_fn` / `op_recur` /
+`op_invoke_builtin`) + `BytecodeChunk` struct + per-chunk constant
+pool を定義。Phase 4 critical path の VM 開始点。
 
 **Retrievable identifiers**:
-- ROADMAP §9.6 task 4.3.
-- `src/lang/macro_transforms.zig::expandAnd` / `expandOr`。
-- 10000-arg `(and ...)` 入力で StackOverflow しないテスト。
+- ROADMAP §9.6 task 4.4。
+- 新規ファイル `src/eval/backend/vm/opcode.zig`。
+- ADR-0005 (dual backend strategy)、ADR-0022 (differential wiring)。
+
+## Just landed — §9.6 / 4.3
+
+`src/lang/macro_transforms.zig::expandAnd` / `expandOr` を再帰展開
+(展開結果に `(and a1..aN)` を含める間接再帰) から、右端から左端へ
+acc を `buildShortCircuit` で 1-pass に巻き戻す non-recursive
+left-fold へ書き換え。`buildSelfCall` ヘルパー削除。10000-arg
+入力での StackOverflow 防御テスト 2 本追加 (and / or)。Mac (9/9)
++ Linux (8/8) green。debt.md D-001 Discharged。詳細
+`private/notes/phase4-4.3.md`。
 
 ## Just landed — §9.6 / 4.2
 
