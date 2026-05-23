@@ -15,36 +15,39 @@
 ## Current state
 
 - **Phase**: Phase 4 IN-PROGRESS. §9.6 cluster A done
-  (tasks 4.1 / 4.2 / 4.3); critical-path entry done (4.0 / 4.0a).
+  (tasks 4.1 / 4.2 / 4.3); critical-path: 4.0 / 4.0a / 4.4 done.
 - **Branch**: `cw-from-scratch` (long-lived; v0.5.0-derived;
   push free after gate green; never push to `main`).
-- **Last commit**: `e01da0d` (md-table-align hook auto-fixes +
-  re-stages, eliminating the 2-cycle commit pattern).
+- **Last commit**: see `git log -1` (4.4 landing).
 - **Gate**: Mac (9/9) + OrbStack Ubuntu x86_64 (8/8) green at
-  `e01da0d`. 🔒 fresh OrbStack run due at Phase 4 close.
+  4.4 landing. 🔒 fresh OrbStack run due at Phase 4 close.
 - **Last paired chapter commit**: `cc46a48` (chapter 0020 —
   Phase 3 closure, covers §9.5 / 3.8–3.14).
 - **Unpaired source SHAs**: `git log cc46a48..HEAD --oneline -- src/`
   (compute on resume; chapter pairing decision is per the
   `code_learning_doc` skill's two-cadence rule).
 
-## Active task — §9.6 / 4.4
+## Active task — §9.6 / 4.5
 
-`src/eval/backend/vm/opcode.zig` (new file) — Opcode enum
-(`op_const`, `op_load_local`, `op_store_local`, `op_def`,
-`op_get_var`, `op_jump`, `op_jump_if_false`, `op_call`, `op_ret`,
-`op_pop`, `op_dup`, `op_throw`, `op_make_fn`, `op_recur`,
-`op_invoke_builtin`) + `BytecodeChunk` struct + per-chunk constant
-pool. Critical-path VM start point — 4.4 → 4.5 (compiler) → 4.6
-(dispatch loop) → 4.7 (Phase-3 special forms) → … → 4.12 (exit
-smoke).
+`src/eval/backend/vm/compiler.zig` (new file) —
+`compile(arena, node) → BytecodeChunk` for Phase-1/2 special forms
+(`def` / `if` / `do` / `quote` / `let*` / `fn*` / call). Builtins
+reach via `op_invoke_builtin`. The analyzer Node shape is already
+factored, so this is a single-pass tree visitor. Critical path:
+4.5 → 4.6 (dispatch loop) → 4.7 (Phase-3 special forms) → … →
+4.12 (exit smoke).
 
 **Retrievable identifiers**:
 
-- ROADMAP §9.6 task 4.4 + the dependency-graph section at §9.6.x.
+- ROADMAP §9.6 task 4.5 + the dependency-graph section at §9.6.x.
 - ADR-0005 (dual backend strategy), ADR-0022 (differential
   wiring), ADR-0024 (scan framework + run_step).
-- New file path: `src/eval/backend/vm/opcode.zig`.
+- `src/eval/backend/vm/opcode.zig` (Opcode / Instruction /
+  BytecodeChunk; landed in 4.4).
+- TreeWalk reference shape: `src/eval/backend/tree_walk.zig`
+  (def / if / do / quote / let* / fn* / call dispatch — the
+  observable behaviour the VM must mirror under
+  `Evaluator.compare`).
 
 ## Next Phase Queue (Phase 5 entry — promote when §9.6 closes)
 
