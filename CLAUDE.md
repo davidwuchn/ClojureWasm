@@ -18,8 +18,9 @@ the v0.5.0 git history**:
   — distinct from the existing `~/Documents/MyProducts/ClojureWasm/`
   reference clone.
 - **Branch**: `cw-from-scratch` — long-lived, branched from `main`
-  (v0.5.0). All work happens here. **Never push to `main`**; push to
-  `cw-from-scratch` only with explicit user approval.
+  (v0.5.0). All work happens here. **Never push to `main`**. Push to
+  `cw-from-scratch` freely after green gate; no per-commit approval
+  needed.
 - **Git remote**: `git@github.com:clojurewasm/ClojureWasm.git`.
 
 ### Read-only reference clones (do not edit, do not commit from)
@@ -73,7 +74,8 @@ turn 1 must be Japanese.
   (>200 lines), cross-codebase searches (>5 files), phase-boundary
   audit / simplify / security-review fan-out. Stay in main only for
   small in-context edits.
-- Pushing to `cw-from-scratch` requires explicit user approval.
+- Pushing to `cw-from-scratch` is free after green gate (no per-commit
+  user approval). Pushing to `main` is forbidden.
 - ROADMAP corrections follow the four-step amendment in
   [`ROADMAP §17`](.dev/ROADMAP.md#17-amendment-policy): edit in place
   as if it had always been so, open an ADR, sync `handover.md`,
@@ -202,7 +204,7 @@ rows:
 ### Stop ONLY when
 
 - User explicitly requests stop
-- `git push` permission required (push is forbidden without approval)
+- Push target is `main` (forbidden) — push to `cw-from-scratch` is free
 - Ambiguous test failure with no obvious root cause
 - `audit_scaffolding` returned a `block` finding
 - ADR-level decision required (tier shift, scope change, principle
@@ -240,8 +242,8 @@ These hold the canonical procedures; CLAUDE.md only points to them.
   Survey, Step 7 per-task note, Step 8 60% compact gate) + multi-agent
   Phase-boundary review chain. Auto-triggers on "続けて" / "/continue"
   / "resume". **Fully autonomous from invocation**. Stops only for
-  `git push`, ambiguous test failure, audit `block` finding, or an
-  ADR-level design decision.
+  ambiguous test failure, audit `block` finding, or an ADR-level
+  design decision (no per-commit push approval).
 - **`audit_scaffolding`** — periodic audit for staleness, bloat, lies,
   and false positives across the tracked scaffolding (CLAUDE.md,
   `.dev/`, `.claude/`, `docs/`, `scripts/`). Auto-invoked by
