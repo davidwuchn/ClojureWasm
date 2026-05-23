@@ -31,6 +31,14 @@
   (compute on resume; chapter pairing decision is per the
   `code_learning_doc` skill's two-cadence rule).
 
+## Stopped — user requested
+
+User instruction (2026-05-23): 「OK、ここできりのいいところで止めて」
+after task 4.24 landed at commit 465d758. The cleanup wave
+through 4.13–4.24 is committed + pushed; the empty
+`src/runtime/dispatch/` directory created while opening 4.25
+was removed. Resume reads the next-task section below.
+
 ## Active task — §9.6 / 4.25
 
 `src/runtime/dispatch/method_table.zig` — `MethodEntry` struct
