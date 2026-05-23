@@ -17,8 +17,8 @@
 - **Phase**: Phase 4 IN-PROGRESS. §9.6 cluster A done
   (tasks 4.1 / 4.2 / 4.3); **critical-path closed**: 4.0 / 4.0a /
   4.4 / 4.5 / 4.6 / 4.7 / 4.8 / 4.9 / 4.10 / 4.11 / 4.12 done.
-  Cleanup wave in progress: 4.13–4.22 done. Remaining §9.6 rows
-  (4.23–4.26.f) — big_int / lazy_seq / method_table skeletons,
+  Cleanup wave in progress: 4.13–4.23 done. Remaining §9.6 rows
+  (4.24–4.26.f) — lazy_seq / method_table skeletons,
   error-system migration.
 - **Branch**: `cw-from-scratch` (long-lived; v0.5.0-derived;
   push free after gate green; never push to `main`).
@@ -32,21 +32,22 @@
   (compute on resume; chapter pairing decision is per the
   `code_learning_doc` skill's two-cadence rule).
 
-## Active task — §9.6 / 4.23
+## Active task — §9.6 / 4.24
 
-`src/runtime/numeric/big_int.zig` — `BigInt` struct wrapping
-`std.math.big.int.Managed`; ValueTag `big_int` slot reservation
-(per ADR-0012). No arithmetic promotion functions in Phase 4;
-Phase 5 wires the long → BigInt path.
+`src/runtime/lazy_seq.zig` — `LazySeq` struct (thunk + sval +
+`seq_cache: std.atomic.Value(?*Seq)` + `mutex: std.Thread.Mutex`)
+declaration. `force()` function lands in Phase 5 (per ADR-0009 +
+the trampoline pattern). Phase 4 has only the struct declaration.
 
 **Retrievable identifiers**:
 
-- ROADMAP §9.6 task 4.23, ADR-0012 (NaN-box ValueTag day 1).
-- `src/runtime/value.zig` Value.Tag already lists `big_int` (slot
-  reserved at Day 1 per ADR-0004). 4.23 adds the heap struct it
-  points at.
-- `src/runtime/numeric/` does not exist yet; create the directory
-  and the file.
+- ROADMAP §9.6 task 4.24, ADR-0009 (object header heap-only lock
+  — applies to lazy-seq's mutex too).
+- `lazy_seq` is already a HeapTag slot (value=16) and a Value.Tag
+  variant. The struct shape needs to land matching that slot.
+- `std.Thread.Mutex` is the appropriate primitive in Zig 0.16
+  (`std.Io.Mutex` requires an `io` arg per Zig 0.16 reshape;
+  lazy-seq creation paths don't yet thread io).
 
 ## Open questions / blockers
 

@@ -218,6 +218,7 @@ test {
     _ = @import("runtime/protocol.zig");
     _ = @import("runtime/host/_host_api.zig");
     _ = @import("runtime/binding_stack.zig");
+    _ = @import("runtime/numeric/big_int.zig");
     _ = @import("eval/form.zig");
     _ = @import("eval/tokenizer.zig");
     _ = @import("eval/reader.zig");
