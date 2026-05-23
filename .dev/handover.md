@@ -22,9 +22,13 @@
   ADR-0021 Test taxonomy, ADR-0022 Differential wiring,
   ADR-0023 Comptime stub, ADR-0024 Scan framework + run_step;
   ADR-0015 amend 1 Two-tier strategy, ADR-0016 amend 1 promoted
-  to Accepted with zwasm evidence), 12 new rules
+  to Accepted with zwasm evidence), 13 new rules
   (`error_catalog_only.md`, `test_taxonomy.md`,
-  `exploration_vs_done.md` added),
+  `exploration_vs_done.md`, `plan_revision_thinking.md` added),
+  `.dev/principle.md` (project-wide principles + Bad Smell
+  catalogue, the meta layer above ROADMAP / ADRs; SSOT for
+  plan-vs-reality revision triggered from
+  `continue/SKILL.md` Step 1 / Step 4 / Step 6),
   `src/runtime/error_catalog.zig` (~280 lines including tests;
   the file ships under the original 28-Code names and will be
   reshaped in task 4.26 per ADR-0018 amendment 2),

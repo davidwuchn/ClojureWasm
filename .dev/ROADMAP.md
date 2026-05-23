@@ -1280,6 +1280,7 @@ The minimum surface that must always exist:
 - `CLAUDE.md` — Claude Code project memory (short, points to this file)
 - `README.md` — public-facing description
 - `ARCHITECTURE.md` — 5-minute orientation (ADR-0020 / ADR-0023)
+- `.dev/principle.md` — project-wide principles + Bad Smell catalogue (the meta layer above ROADMAP / ADRs)
 - `LICENSE` — EPL-2.0
 - `.dev/ROADMAP.md` (this file) — single source of truth
 - `.dev/README.md` — index / convention pointer

@@ -117,6 +117,11 @@ for when to skip Step 0 and how to avoid being pulled by upstream styles.
 One sentence in chat: the smallest red test that captures the next
 behaviour. No permission needed.
 
+Before moving to Step 2, re-read `.dev/principle.md` and apply the
+Bad Smell sensor to the plan you just drafted (per the project
+principles). If something feels off, pause and adjust before
+writing the test.
+
 ### Step 2 — Red
 
 Write the failing test (Edit / Write — auto-accepted). Run it; confirm
@@ -131,6 +136,11 @@ cheap.
 
 While green. Apply only structural improvements that do not change
 behaviour.
+
+Before moving to Step 5, re-read `.dev/principle.md` and apply the
+Bad Smell sensor to the Green → Refactor diff. If a smell surfaced
+during the cycle, decide a depth (1-4 per principle.md) and act
+before commit.
 
 ### Step 5 — Test gate (Mac + Ubuntu x86_64, run in parallel)
 
@@ -152,7 +162,19 @@ attempt to provision it autonomously (uses Mac admin context).
 
 ### Step 6 — Source commit
 
-`git add` only the source files; `git commit -m "<type>(<scope>):
+Before staging:
+
+1. Re-read the Bad Smell catalogue in `.dev/principle.md`.
+2. Self-audit the staged diff against the catalogue (about a
+   minute, no checklist — apply the sensor).
+3. If a smell triggers, choose depth 1-4:
+   - depth 1: add a one-line note in the commit message.
+   - depth 2-4: hold the commit. Land the ADR amendment / new
+     ADR / `debt.md` row / `private/notes/` entry first, then
+     commit the source separately.
+4. If no smell triggers, proceed.
+
+Then `git add` only the source files; `git commit -m "<type>(<scope>):
 <one line>"`. The pre-commit gate runs. If the gate blocks for a
 genuine reason, fix and re-stage.
 
