@@ -154,15 +154,19 @@ ClojureWasmFromScratch/
    │  │  ├─ ref.zig
    │  │  ├─ dosync.zig
    │  │  └─ mvcc.zig
-   │  ├─ wasm/                                      ★new Phase 16 entry (F-001 + D-036)
-   │  │  ├─ module.zig
-   │  │  ├─ instance.zig
-   │  │  ├─ table.zig
-   │  │  ├─ global.zig
-   │  │  ├─ memory.zig
-   │  │  ├─ funcref.zig            (★ F-004 inline slot)
-   │  │  ├─ externref.zig          (★ F-004 inline slot)
-   │  │  └─ pod_boundary.zig       (zwasm v2 Pod-boundary connector if Pod path chosen)
+   │  ├─ wasm/                                      ★new Phase 16 entry (F-001 + F-008 + D-036)
+   │  │  ├─ engine.zig             zwasm v2 Engine wrapper (cw GC allocator inject point per F-006 + D-038)
+   │  │  ├─ linker.zig             zwasm v2 Linker wrapper (Clojure → defineFunc / defineMemory / defineWasi 橋渡し)
+   │  │  ├─ module.zig             zwasm v2 Module wrapper (compile-once, instantiate-many)
+   │  │  ├─ instance.zig           zwasm v2 Instance wrapper (Clojure Value から typedFunc/invoke 呼び出し)
+   │  │  ├─ table.zig / global.zig / memory.zig    各 wasm 構成要素の Clojure-side handle
+   │  │  ├─ funcref.zig            (★ F-004 inline slot — zwasm v2 ref:u64 を NaN-box Group D に inline、 要 align(8))
+   │  │  ├─ externref.zig          (★ F-004 inline slot — 同上)
+   │  │  ├─ marshal.zig            Clojure Value ↔ zwasm v2 Value (untyped invoke 経路、 §3.5、 cw v1 dynamic dispatch を支える要)
+   │  │  ├─ trap_map.zig           zwasm Trap 12 variant → cw error_catalog Code への 1:1 mapping (D-038 で stability 確認後)
+   │  │  ├─ host_func.zig          Clojure fn → zwasm `Linker.defineFunc` host import 登録 (Caller* 第一引数の optional 扱い per F-008 Q2 推奨)
+   │  │  ├─ wasi.zig               WASI 統合 (F-008 Q4 推奨 = bulk defineWasi; cw io_interface との責務分離は D-039)
+   │  │  └─ pod_boundary.zig       (zwasm v2 Pod-boundary connector if Pod path chosen — F-008 では inline path が default)
    │  └─ host/                     (continued, ADR-0011)
    │     ├─ _host_api.zig
    │     ├─ lang/                  java.lang.{Object,String,Long,Integer,Double,Boolean,Math,System,Throwable,Exception,Thread}

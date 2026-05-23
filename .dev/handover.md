@@ -13,7 +13,7 @@
    closed stop list**, condition 3 = smell-cluster trip).
 3. `.dev/project_facts.md` — **user-declared invariants the loop
    must treat as fact** even when ROADMAP / ADR text admits other
-   readings. **7 entries** at 2026-05-24:
+   readings. **8 entries** at 2026-05-24:
    F-001 (zwasm v2 unavoidable; carries own JIT + GC) /
    F-002 (finished-form wins; smallest-diff is tie-breaker not
    veto) / F-003 (decision-deferral on structural plans) /
@@ -22,7 +22,9 @@
    F-005 (numeric tower JVM-surface compatible, Zig-stdlib-affine
    internal) / F-006 (mark-sweep + 3-layer alloc; zwasm dual-heap
    with allocator injection) / F-007 (chapter cadence stays
-   dormant — user trigger only, AI must not re-propose).
+   dormant — user trigger only, AI must not re-propose) /
+   **F-008** (zwasm v2 ADR-0109 spec review + cw v1 stances on
+   6 open questions; 2026-05-24).
 4. `.dev/principle.md` — Bad Smell catalogue (8 entries) +
    Structural imagination phase + Devil's-advocate subagent
    mandate at depth ≥ 2.
@@ -153,6 +155,39 @@ D-027 / D-036) + ADR-0025 + ROADMAP §9.7 + §9.18 placeholders:
 `.dev/structure_plan.md` (new) — anticipated directory tree
 Phase 5-20 imagined per F-003 Structural imagination. Each Phase
 entry's owner amends in place when actual decisions land.
+
+**Wave 5 — zwasm v2 spec review (2026-05-24)**:
+
+User shared `~/Documents/MyProducts/zwasm_from_scratch/docs/zig_api_design.md`
+(zwasm v2 ADR-0109 Proposed). cw v1 reviewed it as consumer.
+Findings:
+
+- Pixel-perfect integration: §1 Allocator strict-pass = F-006;
+  §3.4 heap separation = F-006 同文; §4.1 funcref encoding =
+  F-004 ビット幅一致; §4.3 NaN-boxing-friendly bit ownership =
+  zwasm v2 が cw v1 用に明示設計 (削られたら cw v1 設計が破綻、
+  spec の continuance を要請).
+- C2 alignment 懸念 (`>> 3`) は **F-004 第二世代と競合しない** —
+  両 layout とも alignment shift = 3、 zwasm v2 `FuncEntity` が
+  align(8) なら現状でも F-004 後でも乗る。
+- §6 で zwasm v2 が cw v1 に振った 6 open questions に対する
+  推奨回答を F-008 に pin。
+
+Persisted:
+- F-008 (project_facts.md) — zwasm v2 spec load-bearing 要素 +
+  cw v1 推奨回答 6 個 + 構造的合意。
+- D-037 (rewrite timing sync) / D-038 (5 confirmation requests
+  awaiting zwasm v2 reply) / D-039 (io_interface vs WASI 責務
+  分離) を debt.md に追加。
+- D-036 description を F-008 反映に更新。
+- ROADMAP §9.18 (Phase 16) placeholder の Entry debts / Entry
+  facts に新 D-NNN / F-008 を thread。
+- `structure_plan.md` の `src/runtime/wasm/` subtree を更新
+  (engine / linker / marshal / trap_map / host_func / wasi
+  各 zig file を foresight 追加)。
+- Full draft of cw v1 → zwasm v2 feedback message:
+  `private/notes/zwasm_v2_feedback.md` (gitignored, ready for
+  user to forward manually).
 
 ## Active task — §9.6 / 4.25
 

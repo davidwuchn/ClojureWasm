@@ -1286,19 +1286,24 @@ rewrites the corresponding test expectations.
 **Entry ADRs**: 0006 (Wasm FFI defer — re-introduction condition;
 **read amendment 3** for the zwasm v2 counterparty + inline-vs-Pod
 re-opening).
-**Entry debts**: **D-036** (zwasm v2 integration — **F-001 +
-F-004 + F-006**: NaN-box `funcref` / `externref` inline slots
-are reserved day-1 in F-004 Group D so the inline path is
-already enabled; F-006 keeps cw heap and Wasm linear memory in
-separate spaces with cw GC allocator injected into zwasm
-internal bookkeeping; this Phase entry resolves the concrete
-Pod-vs-inline-API shape, the zwasm v2 `Engine.init(allocator)`
-contract, and the JIT-coordination design with cw v2 Phase 17
-JIT groundwork D-035) · D-006 (Wasm FFI re-introduction).
-**Entry facts** (project_facts.md): F-001 (zwasm v2
-unavoidable; zwasm v2 carries its own JIT + GC) · F-004 (NaN-box
-slots reserved) · F-006 (heap separation + allocator injection).
-Consult zwasm v2 spec (user supplies at Phase 16 entry).
+**Entry debts**: **D-036** (zwasm v2 integration master row) ·
+**D-037** (zwasm v2 rewrite timing sync — confirm rewrite
+(ADR-0109) completion before Phase 16; early-prototype window
+Phase 8-15 may need wasm-c-api veneer co-existence) ·
+**D-038** (5 confirmation requests already drafted to zwasm v2
+in `private/notes/zwasm_v2_feedback.md` §4; status =
+"awaiting zwasm v2 reply" — Phase 16 entry should re-fetch
+the reply before opening the §9.18 task table) ·
+**D-039** (cw v1 `io_interface.zig` Tier 1 vs zwasm v2
+`linker.defineWasi(cfg)` responsibility split) ·
+D-006 (Wasm FFI re-introduction).
+**Entry facts** (project_facts.md): F-001 (zwasm v2 unavoidable;
+own JIT + GC) · F-004 (NaN-box slots reserved) · F-006 (heap
+separation + allocator injection) · **F-008** (zwasm v2 spec
+ADR-0109 review record + cw v1 stances on §6 open questions).
+Consult `~/Documents/MyProducts/zwasm_from_scratch/docs/zig_api_design.md`
+(zwasm v2 spec) + `private/notes/zwasm_v2_feedback.md` (cw v1
+feedback draft) at Phase 16 entry.
 **Deliverables**: ClojureScript → JS compiler (v0.2.0 milestone),
 Wasm Component output via Pod boundary per ADR-0006 entry
 conditions.

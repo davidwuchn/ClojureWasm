@@ -322,3 +322,75 @@ Structural-imagination phase) lives in
 entry's owner consults that file when expanding the §9.<N>
 placeholder; decisions on splits / moves / new subdirectories
 remain with each owner.
+
+---
+
+## F-008 — zwasm v2 zig_api_design.md (ADR-0109) review record + cw v1 stances
+
+**Declared**: 2026-05-24 (user provided zwasm v2 spec; cw v1
+reviewed it via this session).
+**Source**: `~/Documents/MyProducts/zwasm_from_scratch/docs/zig_api_design.md`
+(ADR-0109 Proposed). Full cw v1 feedback note (zwasm v2 への
+配信用 draft) lives in
+`private/notes/zwasm_v2_feedback.md` (gitignored).
+
+### What zwasm v2 spec gives cw v1 (pixel-perfect integration points)
+
+These spec elements are **load-bearing for cw v1** and must be
+treated as fact during Phase 5-15 design (long before Phase 16
+entry actually consumes the integration):
+
+| zwasm v2 element                                                                   | cw v1 dependence                                                                                                         |
+|------------------------------------------------------------------------------------|--------------------------------------------------------------------------------------------------------------------------|
+| §1 Allocator strict-pass (`Engine.init(alloc, opts)`)                             | F-006 cw GC allocator injection の根拠                                                                                   |
+| §3.4 "Host alloc and Wasm linear memory are separate by construction"             | F-006 heap-separation 同文                                                                                               |
+| §4.1 funcref encoding `@intFromPtr(*const FuncEntity)` + 0 sentinel               | F-004 Group D inline `funcref` slot をビット幅で受け入れる根拠 (ただし要 align(8))                                       |
+| §4.3 NaN-boxing-friendly bit ownership (float bit pattern を canonicalize しない) | cw v1 が float slot に NaN-box tag を入れた Value を wasm fn 引数として通せる前提。 spec から削られたら cw v1 設計が破綻 |
+| Linker + Instance + TypedFunc pattern (§2-3)                                      | cw v1 が Clojure 側に「wasm/load / wasm/instance / wasm/call」 を露出する設計の API base                                 |
+| §3.5 untyped `Instance.invoke(name, args, results)`                               | Clojure dynamic dispatch (signature が runtime まで判明しない) を支える唯一の path                                       |
+| Trap 12 variant (§4)                                                              | cw v1 error_catalog に 12 Code として 1:1 mapping する予定 (Phase 16 entry + task 4.26 系の error system migration 後)   |
+
+### cw v1 stances on §6 open questions (recommended answers)
+
+zwasm v2 spec §6 で 6 個の open question が cw v1 (consumer)
+review を待っている。 cw v1 推奨回答:
+
+| Q  | 質問                       | cw v1 推奨                                       | 理由                                                                                    |
+|----|----------------------------|--------------------------------------------------|-----------------------------------------------------------------------------------------|
+| Q1 | multi-result shape         | named struct を default、 anonymous tuple も継続 | Clojure `(let [{:keys [quot rem]} ...])` 形に自然変換、 anonymous は順序依存で相性悪い  |
+| Q2 | Caller first arg           | optional (default 受けない、 必要時のみ宣言)     | pure fn の boilerplate 削減                                                             |
+| Q3 | `mem.slice()` invalidation | snapshot (Wasm spec 準拠)                        | growth-tracking は per-access コスト永続化、 snapshot は境界明示で再取得すれば良い      |
+| Q4 | WasiConfig granularity     | bulk 一括 default、 per-syscall は将来 opt-in    | cw v1 は wasi を環境としてまとめて利用                                                  |
+| Q5 | TypedFunc cache lifetime   | stable across instance lifetime                  | `defineFunc` は `instantiate()` 前限定にすれば cache 安定、 動的追加は別 API へ分離が筋 |
+| Q6 | ref-typed args             | typed wrappers (`FuncRef` / `ExternRef`)         | Zig 型システムの恩恵、 内部表現は `?u64` (0 sentinel) の薄い wrapper                    |
+
+これらは cw v1 側の preference 表明であり、 zwasm v2 設計者の
+最終判断を縛らない。 cw v1 は zwasm v2 の最終判断に追従する。
+
+### What zwasm v2 needs from cw v1 going forward
+
+cw v1 の今後の改修方向で zwasm v2 が知っておくべき事実:
+
+- cw v1 NaN-box は Phase 5 entry で第二世代 (4×16=64 slot,
+  44-bit shifted pointer, alignment shift 3) に拡張する。
+  zwasm v2 の `*const FuncEntity` が `align(8)` 保証なら、
+  cw v1 は Group D inline `funcref` slot をそのまま使う。
+- cw v1 Phase 16 entry が cw v1 ↔ zwasm v2 直接結合の本番。
+  それまでは zwasm v2 spec を foresight として保持。
+- zwasm v2 rewrite (post-ADR-0109、 6-8 cycle 見積) と cw v1
+  Phase 16 entry の timing sync は user 判断。
+
+### Open requests to zwasm v2 (debt D-038 で追跡)
+
+cw v1 から zwasm v2 への確認・依頼を debt D-038 に集約。 user
+経由で zwasm v2 側に伝達するタイミングは別 (debt の Status が
+"awaiting zwasm v2 reply" になる)。
+
+**Cross-references**: F-001 (zwasm v2 unavoidable) + F-004
+(NaN-box 64 slot) + F-006 (heap separation + allocator inject);
+debt D-036 (Phase 16 zwasm integration shape) + D-037 (rewrite
+timing) + D-038 (spec confirmation requests bundle) + D-039
+(cw v1 io_interface vs WASI 責務分離);
+`private/notes/zwasm_v2_feedback.md` (full draft note);
+`.dev/structure_plan.md` `src/runtime/wasm/` subtree (Phase 16
+file layout incl. marshal.zig / trap_map.zig / host_func.zig).
