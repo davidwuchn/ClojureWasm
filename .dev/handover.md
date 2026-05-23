@@ -17,9 +17,9 @@
 - **Phase**: Phase 4 IN-PROGRESS. §9.6 cluster A done
   (tasks 4.1 / 4.2 / 4.3); **critical-path closed**: 4.0 / 4.0a /
   4.4 / 4.5 / 4.6 / 4.7 / 4.8 / 4.9 / 4.10 / 4.11 / 4.12 done.
-  Cleanup wave in progress: 4.13–4.21 done. Remaining §9.6 rows
-  (4.22–4.26.f) — binding_stack / big_int / lazy_seq /
-  method_table skeletons, error-system migration.
+  Cleanup wave in progress: 4.13–4.22 done. Remaining §9.6 rows
+  (4.23–4.26.f) — big_int / lazy_seq / method_table skeletons,
+  error-system migration.
 - **Branch**: `cw-from-scratch` (long-lived; v0.5.0-derived;
   push free after gate green; never push to `main`).
 - **Last commit**: see `git log -1` (compute on resume — the
@@ -32,23 +32,21 @@
   (compute on resume; chapter pairing decision is per the
   `code_learning_doc` skill's two-cadence rule).
 
-## Active task — §9.6 / 4.22
+## Active task — §9.6 / 4.23
 
-`src/runtime/binding_stack.zig` — `threadlocal var dval_top:
-?*DvalFrame` + `pushBindings` / `popBindings` / `varDeref`
-(real implementation, not stub). Required from Phase 2 onward
-for `*out*` / `*err*` / `*ns*` even though Phase 4 entry has not
-exercised it heavily. Thread-spawn inheritance lives in
-Phase 14-15.
+`src/runtime/numeric/big_int.zig` — `BigInt` struct wrapping
+`std.math.big.int.Managed`; ValueTag `big_int` slot reservation
+(per ADR-0012). No arithmetic promotion functions in Phase 4;
+Phase 5 wires the long → BigInt path.
 
 **Retrievable identifiers**:
 
-- ROADMAP §9.6 task 4.22. Real impl (not skeleton), exercises
-  the same `Var.deref` chain that exists today in
-  `src/runtime/env.zig::Var.deref` (dynamic binding lookup).
-- The threadlocal pattern matches `tree_walk.pending_recur_buf`
-  / `dispatch.last_thrown_exception` style — local-to-file with
-  no `pub var`.
+- ROADMAP §9.6 task 4.23, ADR-0012 (NaN-box ValueTag day 1).
+- `src/runtime/value.zig` Value.Tag already lists `big_int` (slot
+  reserved at Day 1 per ADR-0004). 4.23 adds the heap struct it
+  points at.
+- `src/runtime/numeric/` does not exist yet; create the directory
+  and the file.
 
 ## Open questions / blockers
 
