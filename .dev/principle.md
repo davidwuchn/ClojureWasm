@@ -102,6 +102,16 @@ continues. The AI drafts and accepts the ADR itself — there is no
 external review gate. See CLAUDE.md § Autonomous Workflow
 "ADR-level designs are handled inline, not as a stop".
 
+**Devil's-advocate subagent is mandatory at depth ≥ 2.** Before
+the ADR is accepted, a `general-purpose` subagent is forked with
+**fresh context** to produce 3 alternative shapes (smallest-diff /
+finished-form-clean / wildcard). The output is embedded verbatim
+into the ADR's "Alternatives considered" section. This is the
+antidote to the loop's accumulated goal-drift / instruction
+centrifugation — alternatives sourced from a context without the
+main loop's momentum surface options the main loop is
+attention-suppressed against.
+
 ## Three questions to picture the finished form
 
 When you stop, ask:

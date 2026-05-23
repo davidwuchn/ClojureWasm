@@ -4,22 +4,26 @@
 > [`.claude/rules/handover_framing.md`](../.claude/rules/handover_framing.md).
 > Updated at session end; reads in < 30 sec at cold start.
 
-## Next 4 files to read (cold-start order)
+## Next 5 files to read (cold-start order)
 
 1. `.dev/handover.md` (this file) — recent landings + guardrail
    refresh log + active task pointer.
 2. `CLAUDE.md` § Project spirit (top section, governs all other
-   rules) + § Autonomous Workflow (Step 0 → 7).
-3. `.dev/principle.md` — Bad Smell catalogue (8 entries incl. new
-   Smallest-diff bias / Reservation-as-bias / Progress-pressure)
-   + **Structural imagination phase** governing reservation
-   tables, directory / file structure, responsibility, dependency.
-4. `.dev/ROADMAP.md` — find IN-PROGRESS phase in §9, take the
+   rules) + § Autonomous Workflow (Step 0 → 7 + the **3-condition
+   closed stop list**, condition 3 added 2026-05-23).
+3. `.dev/project_facts.md` — **user-declared invariants the loop
+   must treat as fact** even when ROADMAP / ADR text admits other
+   readings. F-001 (zwasm v2 unavoidable) / F-002 (finished-form
+   wins) / F-003 (decision-deferral on structural plans).
+4. `.dev/principle.md` — Bad Smell catalogue (8 entries) +
+   Structural imagination phase. Note **depth ≥ 2 mandates a
+   Devil's-advocate `general-purpose` subagent** with fresh
+   context before ADR accept.
+5. `.dev/ROADMAP.md` — find IN-PROGRESS phase in §9, take the
    first `[ ]` row in §9.<N>. At a Phase entry, read the
    placeholder's **Entry ADRs** + **Entry debts** lines and load
    every referenced ADR (incl. all Revision history amendments)
-   and `D-NNN` row. (§9.6 row table carries a cleanup-wave smell
-   banner — D-028 owns the per-row audit at each owning Phase.)
+   and `D-NNN` row.
 
 ## Current state
 
@@ -82,6 +86,33 @@ output)**:
   amendment 2).
 - `src/runtime/binding_stack.zig` deleted (env.zig is the
   authoritative location for the dynamic-binding stack).
+
+**Wave 3 — root-cause hardening (post-research)**:
+
+User asked "why did all this happen on top of an already-laid
+ROADMAP + guardrails?". A `general-purpose` subagent investigated
+LLM long-context behaviour (2026-05-23, 24 tool uses, output at
+`private/notes/llm_long_context_research.md` 523 lines) and
+concluded the symptoms are not attention decay (CLAUDE.md is
+re-injected every turn) but **CLAUDE.md's own "進め bias" +
+autonomous loop's instruction centrifugation** (~80% combined).
+Fix landed:
+
+- **`.dev/project_facts.md`** (new) — user-declared invariants
+  (F-001 zwasm / F-002 finished-form wins / F-003 deferral)
+  read at every Phase entry (CLAUDE.md Step 1a).
+- **CLAUDE.md stop list extended to 3 conditions** — condition 3
+  is "smell depth ≥ 3 fires 2× in one cycle → ADR-phase mode
+  switch" (not a stop, a mode change).
+- **CLAUDE.md Step 6 + principle.md depth ≥ 2** — Devil's-advocate
+  subagent with fresh context is mandatory before ADR accept;
+  output embedded verbatim in "Alternatives considered".
+- **`scripts/check_smell_audit.sh`** (new PreToolUse hook) —
+  `git push` is physically blocked unless every unpushed
+  source-bearing commit body contains `Smell-audited: <depth>:
+  <one-line>`. This is the deterministic enforcement layer
+  behind the probabilistic CLAUDE.md rule
+  ("CLAUDE.md is a suggestion, hooks make it law").
 
 ## Active task — §9.6 / 4.25
 

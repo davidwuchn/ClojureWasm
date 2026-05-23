@@ -169,17 +169,20 @@ entry, and **defer the structural decision to that owner**; do not
 resolve here. If something feels off, adjust before Step 2.
 
 **Step 1a — Phase reading list** (every Phase entry)
-Read in order: `.dev/handover.md`, `.dev/ROADMAP.md` §9.<N>
-placeholder (Entry ADRs / **Entry debts** / Reference / Skeletons
-to activate / Deliverables / Final activation step), each ADR
-listed in the placeholder's "Entry ADRs:" line **including the
-Phase N+ migration note section AND every Revision history
-amendment if present** (this is where existing-code rewrite scope
-and inter-Phase corrections are narrated per §A25), each `D-NNN`
-debt row listed in the placeholder's "Entry debts:" line (full row
-text in `.dev/debt.md`), `compat_tiers.yaml` entry for the
-function, and the JVM Clojure source (`~/Documents/OSS/clojure/`)
-for the function.
+Read in order: `.dev/handover.md`, **`.dev/project_facts.md`**
+(user-declared invariants the loop must treat as fact, even when
+ROADMAP / ADR text admits other readings), `.dev/ROADMAP.md`
+§9.<N> placeholder (Entry ADRs / **Entry debts** / Reference /
+Skeletons to activate / Deliverables / Final activation step),
+each ADR listed in the placeholder's "Entry ADRs:" line
+**including the Phase N+ migration note section AND every
+Revision history amendment if present** (this is where
+existing-code rewrite scope and inter-Phase corrections are
+narrated per §A25), each `D-NNN` debt row listed in the
+placeholder's "Entry debts:" line (full row text in
+`.dev/debt.md`), `compat_tiers.yaml` entry for the function, and
+the JVM Clojure source (`~/Documents/OSS/clojure/`) for the
+function.
 
 **Step 2 — Red**
 Write the failing test (Edit / Write). Run; confirm red.
@@ -205,7 +208,7 @@ Run both in a single message with two parallel Bash tool calls:
 Both must be green. If either output exceeds ~200 lines, delegate
 to a Bash subagent and ask for "pass/fail + first failure only".
 
-**Step 6 — Source commit + push (atomic)**
+**Step 6 — Source commit + push (atomic, smell-audited)**
 
 Before staging:
 
@@ -215,22 +218,40 @@ Before staging:
 3. If a smell triggers, choose depth 1-4:
    - depth 1: add a one-line note in the commit message.
    - depth 2-4: land the ADR amendment / new ADR / `debt.md` row
-     / `private/notes/` entry **autonomously** (the AI gathers
-     the "should-be" materials, drafts the ADR with
-     `Status: Proposed → Accepted`, fills Affected files,
-     Alternatives, Consequences), commits the doc change first,
+     / `private/notes/` entry **autonomously**. Before drafting
+     the ADR, **fork a `general-purpose` subagent with fresh
+     context as Devil's advocate**: brief the subagent on the
+     decision and ask for 3 alternative shapes (one smallest-diff,
+     one finished-form-clean, one "wildcard"). Reflect the
+     subagent's output verbatim into the ADR's "Alternatives
+     considered" section before stamping
+     `Status: Proposed → Accepted`. Commits the doc change first,
      then commits + pushes the source separately. No external
-     review gate — ADR history is the rationale record.
+     review gate — ADR history (plus the Devil's-advocate output
+     embedded in it) is the rationale record.
 
 Then:
 
-4. `git add` source files; `git commit -m "<type>(<scope>):
-   <one line>"`. The pre-commit gate auto-aligns any Markdown
-   tables that drifted and re-stages the fix transparently;
-   only genuine table-syntax errors block.
+4. `git add` source files; `git commit` with **a two-line message
+   shape**:
+   ```
+   <type>(<scope>): <one line summary>
+   
+   Smell-audited: <depth 0-4>: <one-line summary of audit outcome>
+   <optional further body>
+   ```
+   `Smell-audited:` is **mandatory** on every commit that stages
+   source-bearing files (`src/**/*.zig`, `build.zig`,
+   `build.zig.zon`, `.dev/decisions/NNNN_*.md`). It records that
+   Step 6's self-audit was actually performed. The pre-commit gate
+   auto-aligns Markdown tables; only genuine table-syntax errors
+   block.
 5. `git push origin cw-from-scratch` runs immediately on the
-   commit's success. The push is not optional and not deferred —
-   commit and push are one Step.
+   commit's success. **The `scripts/check_smell_audit.sh` PreToolUse
+   hook physically blocks pushes that include any source-bearing
+   commit missing a `Smell-audited:` line.** Re-audit, amend the
+   commit message, push again. Push is not optional and not
+   deferred.
 
 **Step 7 — Per-task note** (written from hot context)
 
@@ -263,20 +284,36 @@ rows:
 
 ### Stop only when (closed list)
 
-Two conditions, exhaustive:
+Three conditions, exhaustive:
 
 1. **User explicitly requests stop** (any direct instruction).
 2. **Physically blocked** — build broken with no identifiable root
    cause, or test failure that cannot be diagnosed after honest
    investigation.
+3. **Smell-cluster trip** — a Bad Smell at depth ≥ 3 fires twice
+   within the same per-task TDD cycle (Step 0 → 7). This is
+   "patterned smell": the plan is structurally off, not just
+   locally smelly. **Don't stop the project** — the loop transitions
+   into **ADR-phase mode**: pause the current task at its last
+   green state, commit nothing more, fork a `general-purpose`
+   subagent with fresh context to draft a root-cause ADR
+   (`Supersedes <NNNN>` or net-new), accept it inline per the
+   ADR-phase rules below, then resume the per-task loop with the
+   ADR's verdict applied. This is a **mode switch, not a stop** —
+   the autonomous loop continues; only its current activity
+   changes.
 
-Anything outside these two is continued through. The loop's quality
-discipline lives in `.dev/principle.md` (Bad Smell sensor, depth
-1-4) and is applied per cycle — quality is a *how*, not a stop
-condition.
+Anything outside these three is continued through. The loop's
+quality discipline lives in `.dev/principle.md` (Bad Smell sensor,
+depth 1-4) and is applied per cycle — quality is a *how*, not a
+stop condition.
 
 This list intentionally avoids enumerating non-stop reasons. Closed
-stop conditions + open continue is the design.
+stop conditions + open continue is the design. Condition 3 above
+exists because **depth ≥ 3 firing twice in one cycle indicates
+goal drift the per-cycle sensor is too narrow to catch** (per the
+2026-05-23 investigation into instruction centrifugation, recorded
+in `private/notes/llm_long_context_research.md`).
 
 ### ADR-level designs are handled inline, not as a stop
 
@@ -290,6 +327,19 @@ files / Consequences, lands the ADR commit, and proceeds with the
 source change. Rationale survives in the ADR's history; the loop
 does not need an external accept gate. Step 6's depth 2-4 branch
 is the runway for this.
+
+**Devil's-advocate subagent is mandatory at depth ≥ 2.** Before
+stamping `Status: Proposed → Accepted`, fork a `general-purpose`
+subagent with **fresh context** and brief it: "Devil's advocate
+this ADR. Produce 3 alternative shapes (one smallest-diff, one
+finished-form-clean, one wildcard); for each, name what it does
+better than the current draft and what it breaks." The subagent's
+output is reflected verbatim into the ADR's "Alternatives
+considered" section. This counters goal-drift / instruction
+centrifugation by sourcing the alternatives from a context
+without the main loop's accumulated momentum. The subagent's
+recommendation is **not binding** — the main loop still chooses
+— but the alternatives must appear in the ADR.
 
 The phrases "this needs human judgement" / "cannot be
 self-decided" / "user touchpoint required" are forbidden framings
