@@ -70,7 +70,7 @@ const NB_CANONICAL_NAN: u64 = 0x7FF8_0000_0000_0000; // IEEE-754 positive quiet 
 // | A: Core Data (0xFFF8) | string   | symbol   | keyword   | list        | vector  | arr_map | hash_map | hash_set   |
 // | B: Call/Bind (0xFFF9) | fn_val   | multi_fn | protocol  | protocol_fn | var_ref | ns      | delay    | regex      |
 // | C: Seq/State (0xFFFA) | lazy_seq | cons     | chunked_c | chunk_buf   | atom    | agent   | ref      | volatile   |
-// | D: Trans/Ext (0xFFFB) | t_vector | t_map    | t_set     | reduced     | ex_info | wasm_m  | wasm_fn  | class      |
+// | D: Trans/Ext (0xFFFB) | t_vector | t_map    | t_set     | reduced     | ex_info | big_int | ratio    | class      |
 
 /// Heap object discriminant. Stored in the object's `HeapHeader.tag` and
 /// also encoded as a 3-bit sub-type within heap-tagged Values (combined
@@ -109,8 +109,12 @@ pub const HeapTag = enum(u8) {
     transient_set = 26,
     reduced = 27,
     ex_info = 28,
-    wasm_module = 29,
-    wasm_fn = 30,
+    // Slots 29 / 30: released from `wasm_module` / `wasm_fn` per
+    // ADR-0006 amendment 1 (Wasm reintroduces via Pod boundary in
+    // Phase 16, not as inline NaN-box values). Re-purposed for
+    // Phase-5 numeric tower per ADR-0012 amendment 1.
+    big_int = 29,
+    ratio = 30,
     class = 31,
 };
 
@@ -206,8 +210,8 @@ pub const Value = enum(u64) {
         transient_set,
         reduced,
         ex_info,
-        wasm_module,
-        wasm_fn,
+        big_int,
+        ratio,
         class,
     };
 
@@ -268,8 +272,8 @@ pub const Value = enum(u64) {
             .transient_set => .transient_set,
             .reduced => .reduced,
             .ex_info => .ex_info,
-            .wasm_module => .wasm_module,
-            .wasm_fn => .wasm_fn,
+            .big_int => .big_int,
+            .ratio => .ratio,
             .class => .class,
         };
     }

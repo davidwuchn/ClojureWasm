@@ -21,26 +21,19 @@ const HeapHeader = value_mod.HeapHeader;
 /// carries the cw heap header so the future GC can walk it like any
 /// other heap object.
 ///
-/// Phase 4 entry lands the struct shape only. The matching
-/// `HeapTag.big_int` enum slot is **not yet assigned** because the
-/// current NaN-box layout (`NB_HEAP_GROUP_SIZE = 8`, 4 groups → 32
-/// slots, all used) needs an amendment to grow. The header's `tag`
-/// stays at a placeholder until Phase 5 lands the layout extension
-/// and the matching `encodeHeapPtr` group expansion.
+/// HeapTag slot 29 (`big_int`) is the released `wasm_module` slot
+/// per ADR-0006 amendment 1 + ADR-0012 amendment 1 — the day-1
+/// reservation principle (ADR-0004) places it at its final NaN-box
+/// position from skeleton time.
 pub const BigInt = struct {
     header: HeapHeader,
     /// Owned by `m.allocator`; lifetime tied to the cw heap. Phase 5
     /// `freeBigInt` calls `m.deinit()`.
     m: std.math.big.int.Managed,
 
-    /// Phase-4 placeholder tag value (0xFF — outside the assigned
-    /// HeapTag range). Phase 5 swaps to `HeapTag.big_int` once the
-    /// NaN-box layout amendment lands.
-    pub const PHASE4_PLACEHOLDER_TAG: u8 = 0xFF;
-
     pub fn init(managed: std.math.big.int.Managed) BigInt {
         return .{
-            .header = .{ .tag = PHASE4_PLACEHOLDER_TAG, .flags = .{} },
+            .header = HeapHeader.init(.big_int),
             .m = managed,
         };
     }
@@ -50,13 +43,13 @@ pub const BigInt = struct {
 
 const testing = std.testing;
 
-test "BigInt struct layout: HeapHeader + Managed" {
+test "BigInt struct layout: HeapHeader + Managed at HeapTag.big_int slot" {
     var m = try std.math.big.int.Managed.init(testing.allocator);
     try m.set(123);
 
     var bi: BigInt = .init(m);
     defer bi.m.deinit();
-    try testing.expectEqual(BigInt.PHASE4_PLACEHOLDER_TAG, bi.header.tag);
+    try testing.expectEqual(@as(u8, @intFromEnum(value_mod.HeapTag.big_int)), bi.header.tag);
 }
 
 test "BigInt holds values beyond i64 range" {
