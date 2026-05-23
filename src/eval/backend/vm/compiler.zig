@@ -20,6 +20,7 @@ const value_mod = @import("../../../runtime/value.zig");
 const env_mod = @import("../../../runtime/env.zig");
 const runtime_mod = @import("../../../runtime/runtime.zig");
 const string_mod = @import("../../../runtime/collection/string.zig");
+const tree_walk = @import("../tree_walk.zig");
 
 const Node = node_mod.Node;
 const Opcode = opcode_mod.Opcode;
@@ -85,6 +86,7 @@ const Compiler = struct {
             .if_node => |n| try self.compileIf(n),
             .let_node => |n| try self.compileLet(n),
             .call_node => |n| try self.compileCall(n),
+            .fn_node => |n| try self.compileFn(n),
             else => {
                 // The VM backend is dev-only until task 4.8 flips
                 // `-Dbackend=vm`; no user-facing path reaches the
@@ -150,6 +152,41 @@ const Compiler = struct {
         if (n.args.len > std.math.maxInt(u16)) return error.TooManyCallArgs;
         for (n.args) |*a| try self.compileNode(a);
         try self.emit(.op_call, @intCast(n.args.len));
+    }
+
+    fn compileFn(self: *Compiler, n: node_mod.FnNode) Error!void {
+        // Closure capture (slot_base > 0) belongs to task 4.7. The
+        // op_make_fn execute path must snapshot outer locals at
+        // fn*-evaluation time, which the current op_make_fn semantics
+        // (single constant-index operand) does not yet carry. Until
+        // 4.7 widens the operand layout, the closure-less case is the
+        // only supported one — analyzer-known top-level fns work.
+        if (n.slot_base != 0) return error.NotImplemented;
+
+        // Compile the body in a fresh sub-compiler that shares the
+        // arena. Sub-compiler state isolation lets the outer compiler
+        // continue appending instructions after the nested chunk
+        // finalizes.
+        var sub: Compiler = .init(self.rt, self.arena);
+        defer sub.deinit();
+        try sub.compileNode(n.body);
+        try sub.emit(.op_ret, 0);
+        const body_chunk = try sub.finalize();
+
+        // Pin the chunk on the arena so the Function (which lives on
+        // rt.gpa) can reference it; arena lifetime matches body /
+        // params slices already referenced by Function.
+        const chunk_ptr = try self.arena.create(BytecodeChunk);
+        chunk_ptr.* = body_chunk;
+
+        // Allocate the Function up-front: closure-less fns have no
+        // capture, so compile-time allocation matches op_make_fn's
+        // current single-constant-index semantics. The op_make_fn
+        // dispatcher (task 4.6) reads the constant and pushes it.
+        const fn_val = try tree_walk.allocFunctionWithBytecode(self.rt, n, &.{}, chunk_ptr);
+
+        const idx = try self.addConstant(fn_val);
+        try self.emit(.op_make_fn, idx);
     }
 
     fn compileDef(self: *Compiler, n: node_mod.DefNode) Error!void {
@@ -415,6 +452,55 @@ test "compile call with zero args emits op_call 0" {
     try testing.expectEqual(@as(usize, 3), chunk.instructions.len);
     try testing.expectEqual(Opcode.op_call, chunk.instructions[1].opcode);
     try testing.expectEqual(@as(u16, 0), chunk.instructions[1].operand);
+}
+
+test "compile fn* (closure-less) allocates a Function with bytecode and emits op_make_fn" {
+    var f = Fixture.init(testing.allocator);
+    defer f.deinit();
+
+    // (fn* [] true) — closure-less, zero-arg, body returns true.
+    const body: Node = .{ .constant = .{ .value = Value.true_val } };
+    const node: Node = .{ .fn_node = .{
+        .arity = 0,
+        .has_rest = false,
+        .params = &.{},
+        .body = &body,
+        .slot_base = 0,
+    } };
+    const chunk = try f.compile(&node);
+
+    // op_make_fn 0 ; op_ret
+    try testing.expectEqual(@as(usize, 2), chunk.instructions.len);
+    try testing.expectEqual(Opcode.op_make_fn, chunk.instructions[0].opcode);
+    try testing.expectEqual(@as(u16, 0), chunk.instructions[0].operand);
+    try testing.expectEqual(Opcode.op_ret, chunk.instructions[1].opcode);
+
+    // The constant is a Function Value whose bytecode body is the
+    // compiled (true ; ret) inner chunk.
+    const fn_val = chunk.constants[0];
+    try testing.expectEqual(value_mod.Value.Tag.fn_val, fn_val.tag());
+    const fn_ptr = fn_val.decodePtr(*const tree_walk.Function);
+    try testing.expect(fn_ptr.bytecode != null);
+    const body_chunk = fn_ptr.bytecode.?;
+    try testing.expectEqual(@as(usize, 2), body_chunk.instructions.len);
+    try testing.expectEqual(Opcode.op_const, body_chunk.instructions[0].opcode);
+    try testing.expectEqual(Opcode.op_ret, body_chunk.instructions[1].opcode);
+    try testing.expectEqual(Value.true_val, body_chunk.constants[0]);
+}
+
+test "compile fn* with slot_base > 0 returns NotImplemented (closure capture is task 4.7)" {
+    var f = Fixture.init(testing.allocator);
+    defer f.deinit();
+
+    const body: Node = .{ .constant = .{ .value = Value.nil_val } };
+    const node: Node = .{ .fn_node = .{
+        .arity = 0,
+        .has_rest = false,
+        .params = &.{},
+        .body = &body,
+        .slot_base = 1,
+    } };
+    try testing.expectError(error.NotImplemented, f.compile(&node));
 }
 
 test "compile def emits value-expr then op_def with symbol-name String" {

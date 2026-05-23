@@ -43,6 +43,8 @@ const SourceLocation = error_mod.SourceLocation;
 const dispatch = @import("../../runtime/dispatch.zig");
 const node_mod = @import("../node.zig");
 const Node = node_mod.Node;
+const opcode_mod = @import("vm/opcode.zig");
+const BytecodeChunk = opcode_mod.BytecodeChunk;
 
 /// Per-frame slot-array size. Generous so the analyser can lay out
 /// `let*` chains without checking; the VM (Phase 4) will switch to a
@@ -103,6 +105,13 @@ pub const Function = struct {
     /// (top-level fn) so the common case stays a single null check
     /// rather than an empty-slice round-trip.
     closure_bindings: ?[]Value,
+    /// Compiled bytecode body. `null` means TreeWalk evaluates the
+    /// `body` Node directly; non-null means the VM dispatcher
+    /// (task 4.6) uses this chunk and ignores `body`. The two paths
+    /// produce bit-for-bit identical Values under
+    /// `Evaluator.compare` (ADR-0005 / ADR-0022). The chunk slices
+    /// live in the analyser arena alongside `body`/`params`.
+    bytecode: ?*const BytecodeChunk = null,
 };
 
 /// Heap-allocate a Function and wrap it in a NaN-boxed Value. The
@@ -113,6 +122,28 @@ pub const Function = struct {
 /// the Phase-5 GC arrives, register the allocation with
 /// `rt.heap_objects` so `Runtime.deinit` frees it.
 pub fn allocFunction(rt: *Runtime, fn_node: node_mod.FnNode, locals: []const Value) !Value {
+    return allocFunctionMaybeBytecode(rt, fn_node, locals, null);
+}
+
+/// Same as `allocFunction` but stamps a compiled bytecode body onto
+/// the Function. The VM dispatcher (task 4.6) uses `bytecode` when
+/// set; the `body` Node is still stored so error frames can cite the
+/// source form.
+pub fn allocFunctionWithBytecode(
+    rt: *Runtime,
+    fn_node: node_mod.FnNode,
+    locals: []const Value,
+    bytecode: *const BytecodeChunk,
+) !Value {
+    return allocFunctionMaybeBytecode(rt, fn_node, locals, bytecode);
+}
+
+fn allocFunctionMaybeBytecode(
+    rt: *Runtime,
+    fn_node: node_mod.FnNode,
+    locals: []const Value,
+    bytecode: ?*const BytecodeChunk,
+) !Value {
     const closure: ?[]Value = if (fn_node.slot_base == 0)
         null
     else blk: {
@@ -132,6 +163,7 @@ pub fn allocFunction(rt: *Runtime, fn_node: node_mod.FnNode, locals: []const Val
         .body = fn_node.body,
         .params = fn_node.params,
         .closure_bindings = closure,
+        .bytecode = bytecode,
     };
     try rt.trackHeap(.{ .ptr = @ptrCast(f), .free = freeFunction });
     return Value.encodeHeapPtr(.fn_val, f);
