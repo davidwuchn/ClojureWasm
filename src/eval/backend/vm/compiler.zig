@@ -18,12 +18,15 @@ const node_mod = @import("../../node.zig");
 const opcode_mod = @import("opcode.zig");
 const value_mod = @import("../../../runtime/value.zig");
 const env_mod = @import("../../../runtime/env.zig");
+const runtime_mod = @import("../../../runtime/runtime.zig");
+const string_mod = @import("../../../runtime/collection/string.zig");
 
 const Node = node_mod.Node;
 const Opcode = opcode_mod.Opcode;
 const Instruction = opcode_mod.Instruction;
 const BytecodeChunk = opcode_mod.BytecodeChunk;
 const Value = value_mod.Value;
+const Runtime = runtime_mod.Runtime;
 
 pub const Error = error{
     TooManyConstants,
@@ -33,9 +36,18 @@ pub const Error = error{
 } || std.mem.Allocator.Error;
 
 /// One-shot entry: compile `root` into a finalised `BytecodeChunk`.
-/// The chunk's slices are owned by `arena` (analyzer-arena lifetime).
-pub fn compile(arena: std.mem.Allocator, root: *const Node) Error!BytecodeChunk {
-    var c: Compiler = .init(arena);
+///
+/// The chunk's `instructions` and `constants` slices are owned by
+/// `arena` (analyzer-arena lifetime). New heap Values created during
+/// compilation (currently: the symbol-name `String` for `def_node`)
+/// are allocated through `rt` and tracked by the runtime's heap
+/// ledger, so they outlive the arena and reach the future GC.
+pub fn compile(
+    rt: *Runtime,
+    arena: std.mem.Allocator,
+    root: *const Node,
+) Error!BytecodeChunk {
+    var c: Compiler = .init(rt, arena);
     defer c.deinit();
     try c.compileNode(root);
     try c.emit(.op_ret, 0);
@@ -43,12 +55,14 @@ pub fn compile(arena: std.mem.Allocator, root: *const Node) Error!BytecodeChunk 
 }
 
 const Compiler = struct {
+    rt: *Runtime,
     arena: std.mem.Allocator,
     instructions: std.ArrayList(Instruction),
     constants: std.ArrayList(Value),
 
-    fn init(arena: std.mem.Allocator) Compiler {
+    fn init(rt: *Runtime, arena: std.mem.Allocator) Compiler {
         return .{
+            .rt = rt,
             .arena = arena,
             .instructions = .empty,
             .constants = .empty,
@@ -67,6 +81,7 @@ const Compiler = struct {
             .do_node => |n| try self.compileDo(n.forms),
             .local_ref => |n| try self.emit(.op_load_local, n.index),
             .var_ref => |n| try self.compileVarRef(n),
+            .def_node => |n| try self.compileDef(n),
             .if_node => |n| try self.compileIf(n),
             .let_node => |n| try self.compileLet(n),
             .call_node => |n| try self.compileCall(n),
@@ -137,6 +152,19 @@ const Compiler = struct {
         try self.emit(.op_call, @intCast(n.args.len));
     }
 
+    fn compileDef(self: *Compiler, n: node_mod.DefNode) Error!void {
+        // Emit the value expression first, then `op_def <idx>` where
+        // `constants[idx]` is the symbol-name String. The VM dispatch
+        // loop reads the bytes via `string_mod.asString` and calls
+        // `env.intern(current_ns, bytes, popped_value)`, then sets the
+        // dynamic / macro / private flags from the DefNode itself
+        // (carried through a sidecar lookup table in task 4.6).
+        try self.compileNode(n.value_expr);
+        const name_val = try string_mod.alloc(self.rt, n.name);
+        const idx = try self.addConstant(name_val);
+        try self.emit(.op_def, idx);
+    }
+
     /// Emit a jump opcode with a placeholder operand and return the
     /// instruction index so `patchJump` can fill in the offset once
     /// the target is known.
@@ -175,12 +203,40 @@ const Compiler = struct {
 
 const testing = std.testing;
 
+/// Minimal fixture that builds the Runtime + arena needed to call
+/// `compile`. Heap Values allocated during compilation (e.g. the
+/// symbol-name String emitted by `compileDef`) are tracked by
+/// `rt.trackHeap` and freed in `rt.deinit`.
+const Fixture = struct {
+    threaded: std.Io.Threaded,
+    rt: Runtime,
+    arena: std.heap.ArenaAllocator,
+
+    fn init(alloc: std.mem.Allocator) Fixture {
+        var f: Fixture = undefined;
+        f.threaded = std.Io.Threaded.init(alloc, .{});
+        f.rt = Runtime.init(f.threaded.io(), alloc);
+        f.arena = std.heap.ArenaAllocator.init(alloc);
+        return f;
+    }
+
+    fn deinit(self: *Fixture) void {
+        self.arena.deinit();
+        self.rt.deinit();
+        self.threaded.deinit();
+    }
+
+    fn compile(self: *Fixture, node: *const Node) Error!BytecodeChunk {
+        return @import("compiler.zig").compile(&self.rt, self.arena.allocator(), node);
+    }
+};
+
 test "compile constant emits op_const + op_ret" {
-    var arena = std.heap.ArenaAllocator.init(testing.allocator);
-    defer arena.deinit();
+    var f = Fixture.init(testing.allocator);
+    defer f.deinit();
 
     const node: Node = .{ .constant = .{ .value = Value.nil_val } };
-    const chunk = try compile(arena.allocator(), &node);
+    const chunk = try f.compile(&node);
 
     try testing.expectEqual(@as(usize, 2), chunk.instructions.len);
     try testing.expectEqual(Opcode.op_const, chunk.instructions[0].opcode);
@@ -191,22 +247,22 @@ test "compile constant emits op_const + op_ret" {
 }
 
 test "compile records each constant exactly once" {
-    var arena = std.heap.ArenaAllocator.init(testing.allocator);
-    defer arena.deinit();
+    var f = Fixture.init(testing.allocator);
+    defer f.deinit();
 
     const node: Node = .{ .constant = .{ .value = Value.true_val } };
-    const chunk = try compile(arena.allocator(), &node);
+    const chunk = try f.compile(&node);
 
     try testing.expectEqual(@as(usize, 1), chunk.constants.len);
     try testing.expectEqual(Value.true_val, chunk.constants[0]);
 }
 
 test "compile quote pushes the quoted value as a constant" {
-    var arena = std.heap.ArenaAllocator.init(testing.allocator);
-    defer arena.deinit();
+    var f = Fixture.init(testing.allocator);
+    defer f.deinit();
 
     const node: Node = .{ .quote_node = .{ .quoted = Value.false_val } };
-    const chunk = try compile(arena.allocator(), &node);
+    const chunk = try f.compile(&node);
 
     try testing.expectEqual(@as(usize, 2), chunk.instructions.len);
     try testing.expectEqual(Opcode.op_const, chunk.instructions[0].opcode);
@@ -216,11 +272,11 @@ test "compile quote pushes the quoted value as a constant" {
 }
 
 test "compile empty do yields nil constant" {
-    var arena = std.heap.ArenaAllocator.init(testing.allocator);
-    defer arena.deinit();
+    var f = Fixture.init(testing.allocator);
+    defer f.deinit();
 
     const node: Node = .{ .do_node = .{ .forms = &.{} } };
-    const chunk = try compile(arena.allocator(), &node);
+    const chunk = try f.compile(&node);
 
     try testing.expectEqual(@as(usize, 2), chunk.instructions.len);
     try testing.expectEqual(Opcode.op_const, chunk.instructions[0].opcode);
@@ -230,11 +286,11 @@ test "compile empty do yields nil constant" {
 }
 
 test "compile local_ref emits op_load_local with slot index" {
-    var arena = std.heap.ArenaAllocator.init(testing.allocator);
-    defer arena.deinit();
+    var f = Fixture.init(testing.allocator);
+    defer f.deinit();
 
     const node: Node = .{ .local_ref = .{ .name = "x", .index = 3 } };
-    const chunk = try compile(arena.allocator(), &node);
+    const chunk = try f.compile(&node);
 
     try testing.expectEqual(@as(usize, 2), chunk.instructions.len);
     try testing.expectEqual(Opcode.op_load_local, chunk.instructions[0].opcode);
@@ -243,14 +299,14 @@ test "compile local_ref emits op_load_local with slot index" {
 }
 
 test "compile if emits jump_if_false + jump with patched offsets" {
-    var arena = std.heap.ArenaAllocator.init(testing.allocator);
-    defer arena.deinit();
+    var f = Fixture.init(testing.allocator);
+    defer f.deinit();
 
     const cond: Node = .{ .constant = .{ .value = Value.true_val } };
     const then_b: Node = .{ .constant = .{ .value = Value.false_val } };
     const else_b: Node = .{ .constant = .{ .value = Value.nil_val } };
     const node: Node = .{ .if_node = .{ .cond = &cond, .then_branch = &then_b, .else_branch = &else_b } };
-    const chunk = try compile(arena.allocator(), &node);
+    const chunk = try f.compile(&node);
 
     // op_const cond ; op_jump_if_false +2 ; op_const then ; op_jump +1 ; op_const else ; op_ret
     try testing.expectEqual(@as(usize, 6), chunk.instructions.len);
@@ -265,13 +321,13 @@ test "compile if emits jump_if_false + jump with patched offsets" {
 }
 
 test "compile if without else branch emits nil for the alternative" {
-    var arena = std.heap.ArenaAllocator.init(testing.allocator);
-    defer arena.deinit();
+    var f = Fixture.init(testing.allocator);
+    defer f.deinit();
 
     const cond: Node = .{ .constant = .{ .value = Value.true_val } };
     const then_b: Node = .{ .constant = .{ .value = Value.false_val } };
     const node: Node = .{ .if_node = .{ .cond = &cond, .then_branch = &then_b, .else_branch = null } };
-    const chunk = try compile(arena.allocator(), &node);
+    const chunk = try f.compile(&node);
 
     try testing.expectEqual(@as(usize, 6), chunk.instructions.len);
     try testing.expectEqual(Opcode.op_const, chunk.instructions[4].opcode);
@@ -280,8 +336,8 @@ test "compile if without else branch emits nil for the alternative" {
 }
 
 test "compile let* stores each binding then evaluates the body" {
-    var arena = std.heap.ArenaAllocator.init(testing.allocator);
-    defer arena.deinit();
+    var f = Fixture.init(testing.allocator);
+    defer f.deinit();
 
     const v0: Node = .{ .constant = .{ .value = Value.true_val } };
     const v1: Node = .{ .constant = .{ .value = Value.false_val } };
@@ -291,7 +347,7 @@ test "compile let* stores each binding then evaluates the body" {
         .{ .name = "y", .index = 1, .value_expr = &v1 },
     };
     const node: Node = .{ .let_node = .{ .bindings = &bindings, .body = &body } };
-    const chunk = try compile(arena.allocator(), &node);
+    const chunk = try f.compile(&node);
 
     // op_const true ; op_store_local 0 ; op_const false ; op_store_local 1 ; op_load_local 1 ; op_ret
     try testing.expectEqual(@as(usize, 6), chunk.instructions.len);
@@ -307,8 +363,8 @@ test "compile let* stores each binding then evaluates the body" {
 }
 
 test "compile var_ref stores the Var pointer Value and emits op_get_var" {
-    var arena = std.heap.ArenaAllocator.init(testing.allocator);
-    defer arena.deinit();
+    var f = Fixture.init(testing.allocator);
+    defer f.deinit();
 
     // The test does not deref the Var; it only checks that the
     // compiler encodes the pointer into the constant pool and emits
@@ -316,7 +372,7 @@ test "compile var_ref stores the Var pointer Value and emits op_get_var" {
     var dummy_ns: env_mod.Namespace = undefined;
     var dummy_var: env_mod.Var = .{ .ns = &dummy_ns, .name = "x" };
     const node: Node = .{ .var_ref = .{ .var_ptr = &dummy_var } };
-    const chunk = try compile(arena.allocator(), &node);
+    const chunk = try f.compile(&node);
 
     try testing.expectEqual(@as(usize, 2), chunk.instructions.len);
     try testing.expectEqual(Opcode.op_get_var, chunk.instructions[0].opcode);
@@ -327,8 +383,8 @@ test "compile var_ref stores the Var pointer Value and emits op_get_var" {
 }
 
 test "compile call emits callee, args, op_call <arity>" {
-    var arena = std.heap.ArenaAllocator.init(testing.allocator);
-    defer arena.deinit();
+    var f = Fixture.init(testing.allocator);
+    defer f.deinit();
 
     const callee: Node = .{ .constant = .{ .value = Value.true_val } };
     const args = [_]Node{
@@ -336,7 +392,7 @@ test "compile call emits callee, args, op_call <arity>" {
         .{ .constant = .{ .value = Value.nil_val } },
     };
     const node: Node = .{ .call_node = .{ .callee = &callee, .args = &args } };
-    const chunk = try compile(arena.allocator(), &node);
+    const chunk = try f.compile(&node);
 
     // op_const callee ; op_const arg0 ; op_const arg1 ; op_call 2 ; op_ret
     try testing.expectEqual(@as(usize, 5), chunk.instructions.len);
@@ -349,21 +405,40 @@ test "compile call emits callee, args, op_call <arity>" {
 }
 
 test "compile call with zero args emits op_call 0" {
-    var arena = std.heap.ArenaAllocator.init(testing.allocator);
-    defer arena.deinit();
+    var f = Fixture.init(testing.allocator);
+    defer f.deinit();
 
     const callee: Node = .{ .constant = .{ .value = Value.true_val } };
     const node: Node = .{ .call_node = .{ .callee = &callee, .args = &.{} } };
-    const chunk = try compile(arena.allocator(), &node);
+    const chunk = try f.compile(&node);
 
     try testing.expectEqual(@as(usize, 3), chunk.instructions.len);
     try testing.expectEqual(Opcode.op_call, chunk.instructions[1].opcode);
     try testing.expectEqual(@as(u16, 0), chunk.instructions[1].operand);
 }
 
+test "compile def emits value-expr then op_def with symbol-name String" {
+    var f = Fixture.init(testing.allocator);
+    defer f.deinit();
+
+    const value_expr: Node = .{ .constant = .{ .value = Value.true_val } };
+    const node: Node = .{ .def_node = .{ .name = "hello", .value_expr = &value_expr } };
+    const chunk = try f.compile(&node);
+
+    // op_const true ; op_def <idx-of-"hello"> ; op_ret
+    try testing.expectEqual(@as(usize, 3), chunk.instructions.len);
+    try testing.expectEqual(Opcode.op_const, chunk.instructions[0].opcode);
+    try testing.expectEqual(Opcode.op_def, chunk.instructions[1].opcode);
+    try testing.expectEqual(Opcode.op_ret, chunk.instructions[2].opcode);
+
+    const name_val = chunk.constants[chunk.instructions[1].operand];
+    try testing.expect(name_val.isString());
+    try testing.expectEqualStrings("hello", string_mod.asString(name_val));
+}
+
 test "compile do pops intermediate forms and keeps the last" {
-    var arena = std.heap.ArenaAllocator.init(testing.allocator);
-    defer arena.deinit();
+    var f = Fixture.init(testing.allocator);
+    defer f.deinit();
 
     const forms = [_]Node{
         .{ .constant = .{ .value = Value.true_val } },
@@ -371,7 +446,7 @@ test "compile do pops intermediate forms and keeps the last" {
         .{ .constant = .{ .value = Value.nil_val } },
     };
     const node: Node = .{ .do_node = .{ .forms = &forms } };
-    const chunk = try compile(arena.allocator(), &node);
+    const chunk = try f.compile(&node);
 
     // Expected: op_const 0; op_pop; op_const 1; op_pop; op_const 2; op_ret
     try testing.expectEqual(@as(usize, 6), chunk.instructions.len);
