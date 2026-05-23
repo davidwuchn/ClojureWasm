@@ -233,27 +233,43 @@ fn stepOnce(
                 return error.ThrownValue;
             },
             .op_make_fn => {
-                // The compiler pre-allocates closure-less Functions at
-                // compile time and stashes the resulting `.fn_val`
-                // Value in the constant pool (compiler.zig::compileFn).
-                // Closure capture (`slot_base > 0`) is task 4.7 and
-                // already errors at compile time, so the dispatcher
-                // only handles the closure-less case: push the
-                // pre-built Function.
+                // The compiler stashes either a final closure-less
+                // Function (slot_base == 0) or a template Function
+                // (slot_base > 0, closure_bindings still null) in the
+                // constant pool. For the template case the dispatcher
+                // allocates a fresh Function with a snapshot of the
+                // caller's locals[0..slot_base] so each fn* evaluation
+                // captures its enclosing scope.
                 if (instr.operand >= chunk.constants.len)
                     return raiseInternal("vm: op_make_fn constant index out of range");
                 if (sp >= OPERAND_STACK_MAX)
                     return raiseInternal("vm: operand stack overflow");
-                stack[sp] = chunk.constants[instr.operand];
+                const template_val = chunk.constants[instr.operand];
+                const template = template_val.decodePtr(*const Function);
+                if (template.slot_base == 0) {
+                    stack[sp] = template_val;
+                } else {
+                    const bytecode = template.bytecode orelse
+                        return raiseInternal("vm: op_make_fn template missing bytecode");
+                    const fn_node = node_mod.FnNode{
+                        .arity = template.arity,
+                        .has_rest = template.has_rest,
+                        .params = template.params,
+                        .body = template.body,
+                        .slot_base = template.slot_base,
+                    };
+                    stack[sp] = try tree_walk.allocFunctionWithBytecode(rt, fn_node, locals, bytecode);
+                }
                 sp += 1;
             },
             .op_recur => {
-                // The compiler does not yet emit `op_recur` (loop*/recur
-                // compile lands at task 4.7, which also adds the
-                // matching loop driver that drains the recur scratch).
-                // Per `no_op_stub_forbidden.md`, surface the absence
-                // explicitly rather than half-wire the unwind.
-                return error_catalog.raise(.unsupported_feature, .{}, .{ .name = "recur" });
+                // The compiler emits `op_recur <arity>` followed by N
+                // op_store_local + op_jump <-back_offset>. The arity
+                // check here is defensive — the analyser already
+                // validated arity at parse time. The actual rebind
+                // and back-jump happen in the following instructions.
+                if (sp < instr.operand)
+                    return raiseInternal("vm: op_recur underflow");
             },
             .op_invoke_builtin => {
                 // Reserved for analyzer-resolved direct builtin calls;
@@ -560,6 +576,69 @@ test "op_call routes through rt.vtable.callFn" {
     const chunk: BytecodeChunk = .{ .instructions = &instrs, .constants = &constants };
 
     try testing.expectEqual(Value.true_val, try f.run(&chunk));
+}
+
+test "op_make_fn snapshots locals when template.slot_base > 0" {
+    var f = try Fixture.init(testing.allocator);
+    defer f.deinit();
+
+    // Build a template Function with slot_base = 1, body returns
+    // local 0 (which the closure snapshot will provide).
+    const body: node_mod.Node = .{ .local_ref = .{ .name = "x", .index = 0 } };
+    const fn_node = node_mod.FnNode{
+        .arity = 0,
+        .has_rest = false,
+        .params = &.{},
+        .body = &body,
+        .slot_base = 1,
+    };
+    // The template's bytecode body needs to actually produce a value;
+    // a one-op chunk that loads local 0 + returns suffices.
+    const template_instrs = [_]Instruction{
+        .{ .opcode = .op_load_local, .operand = 0 },
+        .{ .opcode = .op_ret },
+    };
+    const template_chunk: BytecodeChunk = .{
+        .instructions = &template_instrs,
+        .constants = &.{},
+    };
+    const template_val = try tree_walk.allocFunctionTemplate(&f.rt, fn_node, &template_chunk);
+
+    // Outer chunk: load local 5 (which the caller seeds with true),
+    // make a closure (snapshot), then read its closure_bindings[0]
+    // directly to verify the snapshot captured the right thing.
+    const instrs = [_]Instruction{
+        .{ .opcode = .op_make_fn, .operand = 0 },
+        .{ .opcode = .op_ret },
+    };
+    const constants = [_]Value{template_val};
+    const chunk: BytecodeChunk = .{ .instructions = &instrs, .constants = &constants };
+
+    var locals: [256]Value = [_]Value{.nil_val} ** 256;
+    locals[0] = Value.true_val;
+    const result = try eval(&f.rt, &f.env, &locals, &chunk);
+
+    try testing.expectEqual(value_mod.Value.Tag.fn_val, result.tag());
+    const closure_fn = result.decodePtr(*const tree_walk.Function);
+    try testing.expect(closure_fn.closure_bindings != null);
+    try testing.expectEqual(@as(usize, 1), closure_fn.closure_bindings.?.len);
+    try testing.expectEqual(Value.true_val, closure_fn.closure_bindings.?[0]);
+    // The template itself must NOT have been mutated.
+    const template_fn = template_val.decodePtr(*const tree_walk.Function);
+    try testing.expect(template_fn.closure_bindings == null);
+}
+
+test "op_recur with insufficient stack raises internal_error" {
+    var f = try Fixture.init(testing.allocator);
+    defer f.deinit();
+
+    const instrs = [_]Instruction{
+        .{ .opcode = .op_recur, .operand = 3 },
+        .{ .opcode = .op_ret },
+    };
+    const chunk: BytecodeChunk = .{ .instructions = &instrs, .constants = &.{} };
+
+    try testing.expectError(error.InternalError, f.run(&chunk));
 }
 
 test "op_make_fn pushes the pre-allocated Function from the constants pool" {

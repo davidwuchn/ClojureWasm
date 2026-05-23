@@ -16,7 +16,7 @@
 
 - **Phase**: Phase 4 IN-PROGRESS. §9.6 cluster A done
   (tasks 4.1 / 4.2 / 4.3); critical-path: 4.0 / 4.0a / 4.4 / 4.5
-  / 4.6 done.
+  / 4.6 / 4.7 done.
 - **Branch**: `cw-from-scratch` (long-lived; v0.5.0-derived;
   push free after gate green; never push to `main`).
 - **Last commit**: see `git log -1` (compute on resume — the
@@ -29,33 +29,29 @@
   (compute on resume; chapter pairing decision is per the
   `code_learning_doc` skill's two-cadence rule).
 
-## Active task — §9.6 / 4.7
+## Active task — §9.6 / 4.8
 
-Extend compiler + VM to Phase-3 special forms: `try` / `catch` /
-`throw` / `loop*` / `recur` / closure capture. Each must mirror
-`tree_walk.evalTry` / `evalLoop` / `allocFunction` so the existing
-TreeWalk tests pass verbatim under `-Dbackend=vm` (the gate flips
-at 4.8).
+`build.zig` — add `-Dbackend=tree-walk|vm` comptime gate.
+`tree_walk.installVTable` vs `vm.installVTable` (new) flips at
+startup. Default stays `tree-walk` until 4.12 confirms parity.
+The VM dispatch loop, compiler, and Phase-3 special-form lowering
+all landed at 4.6 / 4.7; 4.8 is the wiring step that makes
+`cljw -Dbackend=vm -e ...` reachable from the CLI.
 
 **Retrievable identifiers**:
 
-- ROADMAP §9.6 task 4.7 + dependency-graph section at §9.6.x.
-- ADR-0005 (dual backend strategy), ADR-0022 (differential
-  wiring).
-- TreeWalk reference shape: `src/eval/backend/tree_walk.zig`
-  — `evalLoop` (L249), `evalRecur` (L274), `evalThrow` (L289),
-  `evalTry` (L295), `callFunction` closure replay (L397-407).
-- VM dispatch loop landed at `src/eval/backend/vm.zig`. The
-  `op_recur` / `op_invoke_builtin` arms currently raise
-  `unsupported_feature` per `no_op_stub_forbidden.md`; 4.7
-  replaces them with real semantics + a `loop` driver that
-  drains the recur scratch. `op_throw` already sets
-  `dispatch.last_thrown_exception` and returns
-  `error.ThrownValue`; 4.7 wires the matching catch arm.
-- Closure capture: compiler.zig `compileFn` currently errors at
-  `slot_base != 0`; 4.7 widens `op_make_fn`'s operand layout so
-  the dispatcher can snapshot outer locals at fn*-evaluation
-  time.
+- ROADMAP §9.6 task 4.8 + dependency-graph section at §9.6.x.
+- ADR-0023 (comptime conditional imports — the `phase_at_least_N`
+  bools landed at 4.0a are the precedent for the
+  `-Dbackend=...` switch).
+- `src/main.zig` L21 / 118 imports `tree_walk` and calls
+  `tree_walk.installVTable(&rt)` unconditionally at startup; 4.8
+  routes through a comptime branch.
+- VM entry point: `src/eval/backend/vm.zig::eval` — wired by a
+  yet-to-write `vm.installVTable(&rt)` that registers a `callFn`
+  bridging `Function.bytecode != null` to `vm.eval` and falls
+  back to TreeWalk for builtins. Task 4.9 then runs the unit
+  test suite under both backends.
 
 ## Open questions / blockers
 

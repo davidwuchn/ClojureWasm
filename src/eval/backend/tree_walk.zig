@@ -138,6 +138,33 @@ pub fn allocFunctionWithBytecode(
     return allocFunctionMaybeBytecode(rt, fn_node, locals, bytecode);
 }
 
+/// Allocate a Function that carries `fn_node.slot_base` for the VM's
+/// `op_make_fn` dispatcher to read at run time, but defers the actual
+/// closure snapshot until then. `closure_bindings` is `null` even when
+/// `slot_base > 0`. The dispatcher calls `allocFunctionWithBytecode`
+/// with the live `locals` to produce the per-evaluation Function from
+/// this template.
+pub fn allocFunctionTemplate(
+    rt: *Runtime,
+    fn_node: node_mod.FnNode,
+    bytecode: *const BytecodeChunk,
+) !Value {
+    const f = try rt.gpa.create(Function);
+    errdefer rt.gpa.destroy(f);
+    f.* = .{
+        .header = HeapHeader.init(.fn_val),
+        .arity = fn_node.arity,
+        .has_rest = fn_node.has_rest,
+        .slot_base = fn_node.slot_base,
+        .body = fn_node.body,
+        .params = fn_node.params,
+        .closure_bindings = null,
+        .bytecode = bytecode,
+    };
+    try rt.trackHeap(.{ .ptr = @ptrCast(f), .free = freeFunction });
+    return Value.encodeHeapPtr(.fn_val, f);
+}
+
 fn allocFunctionMaybeBytecode(
     rt: *Runtime,
     fn_node: node_mod.FnNode,

@@ -60,6 +60,18 @@ const Compiler = struct {
     arena: std.mem.Allocator,
     instructions: std.ArrayList(Instruction),
     constants: std.ArrayList(Value),
+    /// Innermost enclosing `loop*` frame, or `null` outside a loop.
+    /// `compileRecur` reads this to know the back-edge target IP and
+    /// the slot list to rebind. Saved/restored across nested loops.
+    current_loop: ?LoopFrame = null,
+
+    const LoopFrame = struct {
+        /// Instruction index `recur` jumps back to (the first
+        /// instruction of the loop body — *after* the initial
+        /// op_store_local sequence).
+        top_ip: usize,
+        bindings: []const node_mod.LetNode.Binding,
+    };
 
     fn init(rt: *Runtime, arena: std.mem.Allocator) Compiler {
         return .{
@@ -67,6 +79,7 @@ const Compiler = struct {
             .arena = arena,
             .instructions = .empty,
             .constants = .empty,
+            .current_loop = null,
         };
     }
 
@@ -89,14 +102,8 @@ const Compiler = struct {
             .fn_node => |n| try self.compileFn(n),
             .throw_node => |n| try self.compileThrow(n),
             .try_node => |n| try self.compileTry(n),
-            else => {
-                // The VM backend is dev-only until task 4.8 flips
-                // `-Dbackend=vm`; no user-facing path reaches the
-                // compiler yet. Per `no_op_stub_forbidden.md`,
-                // internal-only paths may return `error.NotImplemented`
-                // until the §9.6 / 4.5 cycles widen this switch.
-                return error.NotImplemented;
-            },
+            .loop_node => |n| try self.compileLoop(n),
+            .recur_node => |n| try self.compileRecur(n),
         }
     }
 
@@ -157,14 +164,6 @@ const Compiler = struct {
     }
 
     fn compileFn(self: *Compiler, n: node_mod.FnNode) Error!void {
-        // Closure capture (slot_base > 0) belongs to task 4.7. The
-        // op_make_fn execute path must snapshot outer locals at
-        // fn*-evaluation time, which the current op_make_fn semantics
-        // (single constant-index operand) does not yet carry. Until
-        // 4.7 widens the operand layout, the closure-less case is the
-        // only supported one — analyzer-known top-level fns work.
-        if (n.slot_base != 0) return error.NotImplemented;
-
         // Compile the body in a fresh sub-compiler that shares the
         // arena. Sub-compiler state isolation lets the outer compiler
         // continue appending instructions after the nested chunk
@@ -181,14 +180,66 @@ const Compiler = struct {
         const chunk_ptr = try self.arena.create(BytecodeChunk);
         chunk_ptr.* = body_chunk;
 
-        // Allocate the Function up-front: closure-less fns have no
-        // capture, so compile-time allocation matches op_make_fn's
-        // current single-constant-index semantics. The op_make_fn
-        // dispatcher (task 4.6) reads the constant and pushes it.
-        const fn_val = try tree_walk.allocFunctionWithBytecode(self.rt, n, &.{}, chunk_ptr);
+        // Closure-less fns (slot_base == 0): allocate the final
+        // Function at compile time and push as a constant. Closure
+        // capture (slot_base > 0): allocate a *template* Function
+        // (closure_bindings stays null); op_make_fn dispatcher
+        // snapshots the caller's locals at run time. Both shapes live
+        // in the constant pool — the dispatcher decides which by
+        // reading template.slot_base.
+        const fn_val = if (n.slot_base == 0)
+            try tree_walk.allocFunctionWithBytecode(self.rt, n, &.{}, chunk_ptr)
+        else
+            try tree_walk.allocFunctionTemplate(self.rt, n, chunk_ptr);
 
         const idx = try self.addConstant(fn_val);
         try self.emit(.op_make_fn, idx);
+    }
+
+    fn compileLoop(self: *Compiler, n: node_mod.LoopNode) Error!void {
+        // (loop* [n1 e1 …] body) — same binding shape as let*: emit
+        // each value-expr + op_store_local. The loop top is the body's
+        // first instruction (after the initial binds), so a back-edge
+        // `op_jump` rewinds straight to the body without re-running
+        // initial binds.
+        for (n.bindings) |b| {
+            try self.compileNode(b.value_expr);
+            try self.emit(.op_store_local, b.index);
+        }
+        const saved = self.current_loop;
+        defer self.current_loop = saved;
+        self.current_loop = .{
+            .top_ip = self.instructions.items.len,
+            .bindings = n.bindings,
+        };
+        try self.compileNode(n.body);
+    }
+
+    fn compileRecur(self: *Compiler, n: node_mod.RecurNode) Error!void {
+        // recur target = innermost enclosing loop frame, supplied by
+        // the analyser via current_loop. Stack discipline: push args
+        // in order, then `op_recur <N>` (arity check), then pop them
+        // back into the loop's binding slots in reverse order so the
+        // bindings see the pre-recur frame (matches TreeWalk's
+        // "evaluate all args before mutating any slot" semantics).
+        // Both invariants are analyser-guaranteed; this is a defensive
+        // dev-only check (the analyser rejects recur outside loop and
+        // recur with mismatched arity at parse time).
+        const frame = self.current_loop orelse return error.NotImplemented;
+        if (n.args.len != frame.bindings.len) return error.NotImplemented;
+        if (n.args.len > std.math.maxInt(u16)) return error.TooManyCallArgs;
+        for (n.args) |*a| try self.compileNode(a);
+        try self.emit(.op_recur, @intCast(n.args.len));
+        var i: usize = frame.bindings.len;
+        while (i > 0) {
+            i -= 1;
+            try self.emit(.op_store_local, frame.bindings[i].index);
+        }
+        const back_distance: usize = self.instructions.items.len + 1 - frame.top_ip;
+        if (back_distance > std.math.maxInt(i16))
+            return error.JumpTooFar;
+        const back_offset: i16 = -@as(i16, @intCast(back_distance));
+        try self.emit(.op_jump, @as(u16, @bitCast(back_offset)));
     }
 
     fn compileTry(self: *Compiler, n: node_mod.TryNode) Error!void {
@@ -573,7 +624,7 @@ test "compile fn* (closure-less) allocates a Function with bytecode and emits op
     try testing.expectEqual(Value.true_val, body_chunk.constants[0]);
 }
 
-test "compile fn* with slot_base > 0 returns NotImplemented (closure capture is task 4.7)" {
+test "compile fn* with slot_base > 0 emits a template Function (closure capture wired at op_make_fn)" {
     var f = Fixture.init(testing.allocator);
     defer f.deinit();
 
@@ -585,7 +636,16 @@ test "compile fn* with slot_base > 0 returns NotImplemented (closure capture is 
         .body = &body,
         .slot_base = 1,
     } };
-    try testing.expectError(error.NotImplemented, f.compile(&node));
+    const chunk = try f.compile(&node);
+
+    // The constant holds a *template* Function: slot_base > 0,
+    // closure_bindings still null. The dispatcher snapshots locals
+    // at op_make_fn time.
+    const fn_val = chunk.constants[0];
+    try testing.expectEqual(value_mod.Value.Tag.fn_val, fn_val.tag());
+    const fn_ptr = fn_val.decodePtr(*const tree_walk.Function);
+    try testing.expectEqual(@as(u16, 1), fn_ptr.slot_base);
+    try testing.expect(fn_ptr.closure_bindings == null);
 }
 
 test "compile def emits value-expr then op_def with symbol-name String" {
@@ -629,6 +689,55 @@ test "compile def packs dynamic / macro / private flags into op_def operand" {
     try testing.expectEqual(@as(u16, 0), operand & opcode_mod.DEF_FLAG_MACRO);
     try testing.expectEqual(@as(u16, opcode_mod.DEF_FLAG_PRIVATE), operand & opcode_mod.DEF_FLAG_PRIVATE);
     try testing.expectEqualStrings("foo", string_mod.asString(chunk.constants[name_idx]));
+}
+
+test "compile loop* emits initial bindings then body without exit op" {
+    var f = Fixture.init(testing.allocator);
+    defer f.deinit();
+
+    // (loop* [x true] x) — minimal loop with one binding, body is the
+    // local ref. No recur, so no back-edge.
+    const init_val: Node = .{ .constant = .{ .value = Value.true_val } };
+    const body: Node = .{ .local_ref = .{ .name = "x", .index = 0 } };
+    const bindings = [_]node_mod.LetNode.Binding{
+        .{ .name = "x", .index = 0, .value_expr = &init_val },
+    };
+    const node: Node = .{ .loop_node = .{ .bindings = &bindings, .body = &body } };
+    const chunk = try f.compile(&node);
+
+    // op_const true ; op_store_local 0 ; op_load_local 0 ; op_ret
+    try testing.expectEqual(@as(usize, 4), chunk.instructions.len);
+    try testing.expectEqual(Opcode.op_const, chunk.instructions[0].opcode);
+    try testing.expectEqual(Opcode.op_store_local, chunk.instructions[1].opcode);
+    try testing.expectEqual(Opcode.op_load_local, chunk.instructions[2].opcode);
+    try testing.expectEqual(Opcode.op_ret, chunk.instructions[3].opcode);
+}
+
+test "compile recur emits args, op_recur, reverse op_store_locals, back-edge op_jump" {
+    var f = Fixture.init(testing.allocator);
+    defer f.deinit();
+
+    // (loop* [i 0] (recur 1)) — one-arg recur drains stack into i.
+    const init_val: Node = .{ .constant = .{ .value = Value.nil_val } };
+    const recur_arg: Node = .{ .constant = .{ .value = Value.true_val } };
+    const recur_args = [_]Node{recur_arg};
+    const body: Node = .{ .recur_node = .{ .args = &recur_args } };
+    const bindings = [_]node_mod.LetNode.Binding{
+        .{ .name = "i", .index = 0, .value_expr = &init_val },
+    };
+    const node: Node = .{ .loop_node = .{ .bindings = &bindings, .body = &body } };
+    const chunk = try f.compile(&node);
+
+    // op_const nil ; op_store_local 0 ; <body starts here>
+    // op_const true ; op_recur 1 ; op_store_local 0 ; op_jump -4 ; op_ret
+    try testing.expectEqual(Opcode.op_store_local, chunk.instructions[1].opcode);
+    try testing.expectEqual(Opcode.op_const, chunk.instructions[2].opcode);
+    try testing.expectEqual(Opcode.op_recur, chunk.instructions[3].opcode);
+    try testing.expectEqual(@as(u16, 1), chunk.instructions[3].operand);
+    try testing.expectEqual(Opcode.op_store_local, chunk.instructions[4].opcode);
+    try testing.expectEqual(Opcode.op_jump, chunk.instructions[5].opcode);
+    const back_offset: i16 = @bitCast(chunk.instructions[5].operand);
+    try testing.expect(back_offset < 0);
 }
 
 test "compile try with no catches still emits push/pop_handler and re-raise path" {
