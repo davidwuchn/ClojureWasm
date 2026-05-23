@@ -164,7 +164,9 @@ Before staging:
      ADR / `debt.md` row / `private/notes/` entry first, then
      commit the source separately.
 4. `git add` source files; `git commit -m "<type>(<scope>):
-   <one line>"`. The pre-commit gate runs.
+   <one line>"`. The pre-commit gate auto-aligns any Markdown
+   tables that drifted and re-stages the fix transparently;
+   only genuine table-syntax errors block.
 
 **Step 7 — Per-task note** (written from hot context)
 

@@ -2,9 +2,12 @@
 # scripts/check_md_tables.sh
 #
 # Pre-commit gate: every staged *.md file must already be aligned by
-# `md-table-align`. We don't run a PostToolUse formatter on every Edit
-# (too noisy); we run a single gate at commit time, which is the
-# cheapest place to catch drift.
+# `md-table-align`. Behaviour was originally check-only and required
+# a separate fix-and-re-stage round-trip whenever the agent (or a
+# human) staged before aligning. That two-cycle pattern was wasteful,
+# so the hook now **auto-fixes and re-stages** misaligned files
+# before letting the commit through. The commit then contains the
+# realigned content automatically; no second round-trip needed.
 #
 # Hook contract: invoked as a Claude Code PreToolUse hook on Bash
 # (.claude/settings.json). Reads the JSON payload from stdin, no-ops
@@ -12,8 +15,8 @@
 #
 # Failure modes:
 #   - md-table-align not installed → block with install guide (exit 1).
-#   - One or more staged *.md files would change → block with the
-#     filenames and a one-liner fix command (exit 1).
+#   - md-table-align cannot fix a file (genuine syntax issue) → block
+#     with the filename (exit 2). No-op for that file; commit blocked.
 #
 # md-table-align is shipped via bbin from
 # https://github.com/chaploud/babashka-utilities.
@@ -72,39 +75,50 @@ EOF
   exit 2
 fi
 
-# --- 5. Per-file check -------------------------------------------------------
-BAD=()
+# --- 5. Per-file auto-fix + re-stage -----------------------------------------
+#
+# For each staged *.md file that md-table-align --check reports as
+# misaligned, run md-table-align in-place and re-add it. The commit
+# will then pick up the realigned content. If md-table-align itself
+# errors out for a file (genuine syntax issue, not just alignment),
+# we block the commit and surface the filename.
+
+FIXED=()
+FAILED=()
 while IFS= read -r f; do
   [[ -z "$f" ]] && continue
-  # Skip files that disappeared between staging and now (rare).
   [[ -f "$f" ]] || continue
-  if ! md-table-align --check "$f" >/dev/null 2>&1; then
-    BAD+=("$f")
+
+  if md-table-align --check "$f" >/dev/null 2>&1; then
+    continue
+  fi
+
+  if md-table-align "$f" >/dev/null 2>&1; then
+    git add -- "$f"
+    FIXED+=("$f")
+  else
+    FAILED+=("$f")
   fi
 done <<< "$STAGED_MD"
 
-if (( ${#BAD[@]} == 0 )); then
-  exit 0
+if (( ${#FIXED[@]} > 0 )); then
+  echo "[md-table-gate] auto-aligned and re-staged ${#FIXED[@]} file(s):" >&2
+  for f in "${FIXED[@]}"; do
+    echo "  - $f" >&2
+  done
 fi
 
-# --- 6. Block, with a one-liner fix ------------------------------------------
-{
-  echo "[md-table-gate] The following staged *.md files have misaligned tables:"
-  for f in "${BAD[@]}"; do
-    echo "  - $f"
-  done
-  echo
-  echo "Fix and re-stage:"
-  echo
-  printf '  md-table-align'
-  for f in "${BAD[@]}"; do
-    printf ' %q' "$f"
-  done
-  printf ' && git add'
-  for f in "${BAD[@]}"; do
-    printf ' %q' "$f"
-  done
-  printf '\n'
-} >&2
+if (( ${#FAILED[@]} > 0 )); then
+  {
+    echo "[md-table-gate] md-table-align could not process the following file(s):"
+    for f in "${FAILED[@]}"; do
+      echo "  - $f"
+    done
+    echo
+    echo "Run md-table-align manually on each to see the parser error,"
+    echo "fix the table syntax, then retry the commit."
+  } >&2
+  exit 2
+fi
 
-exit 2
+exit 0

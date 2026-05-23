@@ -19,10 +19,14 @@ md-table-align <file>            # rewrite in place
 md-table-align --check <file>    # verify (pre-commit hook does this)
 ```
 
-A `PreToolUse` hook on `git commit` blocks the commit if any staged
-`.md` file would change under `md-table-align --check`. So you cannot
-forget; you can only get a noisier commit step. Run the tool yourself
-once and the gate stays quiet.
+A `PreToolUse` hook on `git commit` **auto-aligns and re-stages** any
+staged `.md` file whose tables drifted (`scripts/check_md_tables.sh`).
+The commit then proceeds with the realigned content automatically.
+Only genuine table-syntax errors (parser cannot fix) block.
+
+You can still run `md-table-align` yourself before staging — it's
+faster than waiting for the hook, and the diff stays minimal — but
+forgetting is no longer a 2-cycle penalty.
 
 If the binary is missing, the gate prints an install guide. Short form:
 
