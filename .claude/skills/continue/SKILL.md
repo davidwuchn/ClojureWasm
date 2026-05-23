@@ -18,26 +18,41 @@ spec is not duplicated here — CLAUDE.md is the single source.
 
 ## Resume procedure (on every session pickup)
 
-1. Read `.dev/handover.md`. (The `SessionStart` hook already prints
-   it; re-read to confirm the current state.)
-2. Read `.dev/ROADMAP.md`:
+1. Read `.dev/handover.md` (SessionStart hook already prints it;
+   re-read). Pay attention to any "Guardrail refresh" section —
+   it points at recent principle.md / CLAUDE.md spirit edits the
+   loop must honour.
+2. Read `CLAUDE.md` § Project spirit (top section, governs all
+   other rules) and `.dev/principle.md` (Bad Smell catalogue +
+   Structural imagination phase). These two are the meta layer
+   the per-task loop is checked against.
+3. Read `.dev/ROADMAP.md`:
    - Find the IN-PROGRESS phase in §9. If none, take the first
      PENDING.
    - In that phase's expanded §9.<N> task list, find the first
      `[ ]` task. If §9.<N> is missing/empty, the phase has not
-     been opened yet.
-3. `git log --oneline -10` — identify any unpaired source commits
-   since the last `docs/ja/learn_clojurewasm/NNNN_*.md` commit.
-4. `bash test/run_all.sh` — confirm the build is green. **If the
+     been opened yet — load the §9.<N> placeholder including
+     its **Entry ADRs / Entry debts / Reference / Skeletons /
+     Deliverables / Final activation step** lines. The Entry
+     debts list points at `.dev/debt.md` rows the Phase owner
+     must resolve.
+4. (Dormant cadence per ADR-0025: skip the
+   `docs/ja/learn_clojurewasm/` chapter check. `private/notes/`
+   per-task notes continue.)
+5. `git log --oneline -10` — read the recent commit chain so
+   the next task starts with the as-pushed reality, not the
+   handover's narration of it.
+6. `bash test/run_all.sh` — confirm the build is green. **If the
    test output is large (>200 lines), run via subagent and ask
    only for pass/fail + the first failure.**
-5. Summarise to the user in 5-10 lines:
+7. Summarise to the user in 5-10 lines:
    - Phase (number + name)
    - Last commit
    - Test status
-   - Unpaired source SHAs (if any) — address first
-   - Next task (number + name + exit criterion)
-6. **Immediately proceed into the TDD loop per CLAUDE.md
+   - Active task (number + name + exit criterion)
+   - Any **Entry debts** owed at this Phase (D-NNN list) so the
+     loop's Step 1 picks them up before touching structure
+8. **Immediately proceed into the TDD loop per CLAUDE.md
    § Autonomous Workflow.** Do not wait for "go" — `/continue`
    itself is the go signal.
 

@@ -151,23 +151,35 @@ lands in `private/notes/<phase>-<task>-survey.md`.
 **Step 0.5 — Debt sweep**
 Read `.dev/debt.md`. For each row whose `Last reviewed > 14 days
 ago`, re-evaluate the Barrier predicate. Flip Status if the barrier
-dissolved.
+dissolved. **At a Phase entry** (the §9.<N> task list is about to
+open), additionally read every row whose Status names the entering
+phase (`Phase N entry` / `Phase N target` / `Phase N+ ...`) — these
+are the structural-imagination outputs from earlier sessions that
+the current Phase owner is meant to resolve.
 
 **Step 1 — Plan**
 One sentence in chat: the smallest failing test that captures the
 next behaviour. Then **re-read `.dev/principle.md` and apply the
-Bad Smell sensor** to the plan. If something feels off, adjust
-before Step 2.
+Bad Smell sensor** to the plan. If the plan touches any **structural
+plan** (reservation table / directory or file structure / responsibility
+separation / dependency graph), additionally apply the **Structural
+imagination phase** from `principle.md` — imagine the full Phase 5-20
+horizon, record gaps as debt rows scheduled at the owning Phase
+entry, and **defer the structural decision to that owner**; do not
+resolve here. If something feels off, adjust before Step 2.
 
 **Step 1a — Phase reading list** (every Phase entry)
 Read in order: `.dev/handover.md`, `.dev/ROADMAP.md` §9.<N>
-placeholder (Entry ADRs / Reference / Skeletons to activate /
-Deliverables / Final activation step), each ADR listed in the
-placeholder's "Entry ADRs:" line **including the Phase N+ migration
-note section if present** (this is where existing-code rewrite
-scope is narrated per §A25), `compat_tiers.yaml` entry for the
-function, and the JVM Clojure source
-(`~/Documents/OSS/clojure/`) for the function.
+placeholder (Entry ADRs / **Entry debts** / Reference / Skeletons
+to activate / Deliverables / Final activation step), each ADR
+listed in the placeholder's "Entry ADRs:" line **including the
+Phase N+ migration note section AND every Revision history
+amendment if present** (this is where existing-code rewrite scope
+and inter-Phase corrections are narrated per §A25), each `D-NNN`
+debt row listed in the placeholder's "Entry debts:" line (full row
+text in `.dev/debt.md`), `compat_tiers.yaml` entry for the
+function, and the JVM Clojure source (`~/Documents/OSS/clojure/`)
+for the function.
 
 **Step 2 — Red**
 Write the failing test (Edit / Write). Run; confirm red.

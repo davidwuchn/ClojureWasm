@@ -4,15 +4,22 @@
 > [`.claude/rules/handover_framing.md`](../.claude/rules/handover_framing.md).
 > Updated at session end; reads in < 30 sec at cold start.
 
-## Next 3 files to read (cold-start order)
+## Next 4 files to read (cold-start order)
 
-1. `.dev/handover.md` (this file)
-2. `CLAUDE.md` § Project spirit — newly added at top, governs all
-   other rules; especially the **Reservation-as-bias** and
-   **Smallest-diff bias** smells in `.dev/principle.md`.
-3. `.dev/ROADMAP.md` — find IN-PROGRESS phase in §9, take the
-   first `[ ]` row in §9.<N>. (Note 2026-05-23 cleanup-wave smell
-   banner above the §9.6 row table — debt D-028 audit pending.)
+1. `.dev/handover.md` (this file) — recent landings + guardrail
+   refresh log + active task pointer.
+2. `CLAUDE.md` § Project spirit (top section, governs all other
+   rules) + § Autonomous Workflow (Step 0 → 7).
+3. `.dev/principle.md` — Bad Smell catalogue (8 entries incl. new
+   Smallest-diff bias / Reservation-as-bias / Progress-pressure)
+   + **Structural imagination phase** governing reservation
+   tables, directory / file structure, responsibility, dependency.
+4. `.dev/ROADMAP.md` — find IN-PROGRESS phase in §9, take the
+   first `[ ]` row in §9.<N>. At a Phase entry, read the
+   placeholder's **Entry ADRs** + **Entry debts** lines and load
+   every referenced ADR (incl. all Revision history amendments)
+   and `D-NNN` row. (§9.6 row table carries a cleanup-wave smell
+   banner — D-028 owns the per-row audit at each owning Phase.)
 
 ## Current state
 
@@ -33,28 +40,48 @@
 
 ## Guardrail refresh (post-2026-05-23 session)
 
-User-directed correction. The autonomous loop accumulated multiple
-smells during the cleanup wave; the guardrails were strengthened
-so the next session does not re-produce them:
+User-directed correction across two waves:
+
+**Wave 1 — guardrails**:
 
 - **Project spirit** — added to CLAUDE.md top: finished-form
-  cleanliness wins, shipping fast and avoiding rework are
-  second-tier. Surgical big edits welcome when the plan misses
-  something.
-- **Bad Smell catalogue** — 3 new entries in `principle.md`:
+  cleanliness wins, shipping fast / avoiding rework are
+  second-tier. Surgical big edits welcome.
+- **Bad Smell catalogue** — `principle.md` gained 3 entries:
   **Smallest-diff bias**, **Reservation-as-bias**,
-  **Progress-pressure**. ROADMAP P5 ("smallest diff first")
-  re-framed as a tie-breaker, not a veto.
-- **D-021 retired** — ADR number reservation is a smell; numbers
-  are time-ordered (`max + 1` at issue).
-- **D-027 added** — NaN-box layout 第二世代 ADR is owed at Phase
-  5 entry (current `big_int` / `ratio` at Group D is a
-  smallest-diff landing, not the finished form).
-- **D-028 added** — ROADMAP §9.6 cleanup-wave rows (4.13 / 4.16 /
-  4.17 / 4.18 / 4.20 / 4.22) need audit + amendment before Phase
-  5 entry; the row table now carries a smell banner.
-- **ADR-0029 → ADR-0025** rename — chapter archive boundary
-  re-numbered to time-ordered slot.
+  **Progress-pressure**. P5 reframed as tie-breaker not veto.
+- **Structural imagination phase** — `principle.md` new section
+  governing reservation tables AND directory / file structure
+  AND responsibility separation AND dependency graph. The loop
+  imagines Phase 5-20 horizon, records gaps as debt, defers
+  decisions to the owning Phase.
+- **D-021 retired** — ADR number reservation = smell.
+- **ADR-0029 → ADR-0025 renamed** — time-ordered numbering.
+
+**Wave 2 — structural foresight debts (Phase 5-20 imagination
+output)**:
+
+- **D-027** — NaN-box layout 第二世代 (Phase 5 entry).
+- **D-028** — cleanup-wave row audit, **per owning Phase**.
+- **D-029** — `value.zig` split (Phase 5 entry, with D-027).
+- **D-030** — `analyzer.zig` split (already above 1000 lines).
+- **D-031** — `main.zig` → `src/app/` (Phase 8 entry).
+- **D-032** — host `_placeholder.zig` removal procedure (Phase
+  5 entry, first host class landing).
+- **D-033** — `lang/primitive/` subdir restructure.
+- **D-034** — `modules/` top-level (Phase 9 entry).
+- **D-035** — 3rd-backend dispatch extraction (Phase 17 entry).
+- **D-036** — **zwasm v2 inline-vs-Pod decision (Phase 16
+  entry)**. wasm FFI confirmed unavoidable per user direction.
+  zwasm v2 carries its own JIT + GC; territorial overlap with
+  cw v2 Phase 5 GC + Phase 17 JIT needs Phase-16-entry design.
+
+**Source normalisation executed in this session** (not deferred):
+
+- `build.zig` `-Dwasm=false` option reverted (ADR-0006
+  amendment 2).
+- `src/runtime/binding_stack.zig` deleted (env.zig is the
+  authoritative location for the dynamic-binding stack).
 
 ## Active task — §9.6 / 4.25
 
