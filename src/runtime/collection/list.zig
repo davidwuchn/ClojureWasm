@@ -51,6 +51,7 @@ pub fn cons(alloc: std.mem.Allocator, head: Value, tail: Value) !Value {
 /// above when they don't need long-lived Values.
 pub fn consHeap(rt: *Runtime, head: Value, tail: Value) !Value {
     const cell = try rt.gpa.create(Cons);
+    errdefer rt.gpa.destroy(cell);
     cell.* = .{
         .header = HeapHeader.init(.list),
         .first = head,
@@ -125,6 +126,18 @@ test "cons creates a single-element list" {
     try testing.expectEqual(@as(u32, 1), countOf(lst));
     try testing.expectEqual(@as(i48, 42), first(lst).asInteger());
     try testing.expect(rest(lst).isNil());
+}
+
+fn consHeapFailingHarness(alloc_inner: std.mem.Allocator) !void {
+    var th = std.Io.Threaded.init(alloc_inner, .{});
+    defer th.deinit();
+    var rt = Runtime.init(th.io(), alloc_inner);
+    defer rt.deinit();
+    _ = try consHeap(&rt, Value.initInteger(42), .nil_val);
+}
+
+test "consHeap returns OOM without leaking under each allocation failure (uniform errdefer)" {
+    try testing.checkAllAllocationFailures(testing.allocator, consHeapFailingHarness, .{});
 }
 
 test "cons creates a multi-element list (1 2 3)" {

@@ -123,6 +123,7 @@ pub fn allocFunction(rt: *Runtime, fn_node: node_mod.FnNode, locals: []const Val
     errdefer if (closure) |s| rt.gpa.free(s);
 
     const f = try rt.gpa.create(Function);
+    errdefer rt.gpa.destroy(f);
     f.* = .{
         .header = HeapHeader.init(.fn_val),
         .arity = fn_node.arity,
@@ -463,6 +464,28 @@ fn builtinPlus(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation
         };
     }
     return Value.initInteger(sum);
+}
+
+fn allocFunctionFailingHarness(alloc_inner: std.mem.Allocator) !void {
+    var th = std.Io.Threaded.init(alloc_inner, .{});
+    defer th.deinit();
+    var rt = Runtime.init(th.io(), alloc_inner);
+    defer rt.deinit();
+    // Minimal FnNode reaching allocFunction's slot_base == 0 path
+    // (no closure). The body Node lives on the stack — allocFunction
+    // only stores the pointer, never dereferences it during alloc.
+    const body = node_mod.Node{ .constant = .{ .value = .nil_val } };
+    const fn_node = node_mod.FnNode{
+        .arity = 0,
+        .params = &.{},
+        .body = &body,
+        .slot_base = 0,
+    };
+    _ = try allocFunction(&rt, fn_node, &.{});
+}
+
+test "allocFunction returns OOM without leaking under each allocation failure (uniform errdefer)" {
+    try testing.checkAllAllocationFailures(testing.allocator, allocFunctionFailingHarness, .{});
 }
 
 test "Function is 8-byte aligned (NaN boxing safety)" {

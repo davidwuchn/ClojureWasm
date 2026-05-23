@@ -56,6 +56,7 @@ pub fn alloc(rt: *Runtime, msg_bytes: []const u8, data_v: Value, cause_v: Value)
     const owned_msg = try rt.gpa.dupe(u8, msg_bytes);
     errdefer rt.gpa.free(owned_msg);
     const ex = try rt.gpa.create(ExInfo);
+    errdefer rt.gpa.destroy(ex);
     ex.* = .{
         .header = HeapHeader.init(.ex_info),
         .message = owned_msg,
@@ -114,6 +115,18 @@ test "alloc returns an .ex_info-tagged Value with the original parts" {
     try testing.expectEqualStrings("boom", message(v));
     try testing.expectEqual(data_val, data(v));
     try testing.expect(cause(v).isNil());
+}
+
+fn allocFailingHarness(alloc_inner: std.mem.Allocator) !void {
+    var th = std.Io.Threaded.init(alloc_inner, .{});
+    defer th.deinit();
+    var rt = Runtime.init(th.io(), alloc_inner);
+    defer rt.deinit();
+    _ = try alloc(&rt, "boom", .nil_val, .nil_val);
+}
+
+test "alloc returns OOM without leaking under each allocation failure (uniform errdefer)" {
+    try testing.checkAllAllocationFailures(testing.allocator, allocFailingHarness, .{});
 }
 
 test "alloc duplicates the message bytes" {

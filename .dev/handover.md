@@ -85,24 +85,35 @@
 
 ## In-flight work
 
-なし。§9.6 / 4.0 (b5ddc0c) / §9.6 / 4.0a (e4e079e) / §9.6 / 4.1
-(pending SHA) を 2026-05-23 完了。次は cluster A の残り §9.6 / 4.2
-(uniform errdefer across string/ex_info/list/fn alloc paths)。
+なし。§9.6 cluster A の §9.6 / 4.0 (b5ddc0c) / §9.6 / 4.0a (e4e079e)
+/ §9.6 / 4.1 (bc8db41) / §9.6 / 4.2 (pending SHA) を 2026-05-23
+完了。次は cluster A 最後の §9.6 / 4.3 (expandAnd/expandOr 非再帰
+rewrite)。
 
-## Active task — §9.6 / 4.2 (next)
+## Active task — §9.6 / 4.3 (next)
 
-`runtime/collection/string.zig::alloc`, `runtime/collection/ex_info.zig
-::alloc`, `runtime/collection/list.zig::consHeap`, `eval/backend/
-tree_walk.zig::allocFunction` の 4 箇所に統一的に `errdefer rt.gpa
-.destroy(s)` (または `ensureUnusedCapacity` + `appendAssumeCapacity`)
-を入れる。`testing.allocator` での failing-mode injection でテスト。
-adversarial uniform-pattern allocator-failure leak 対策 (Phase 3
-boundary security review H2)。
+`lang/macro_transforms.zig::expandAnd` / `expandOr` を単一の
+non-recursive expansion として書き直す (left-fold で chain of
+`let*`/`if` Forms を 1 pass で生成)。Long `(and a₁ … a_N)` が
+analyze を N 回呼ばないように。10000-arg `(and …)` で
+`error.StackOverflow` に達しないことを regression test で確認。
 
 **Retrievable identifiers**:
-- ROADMAP §9.6 task 4.2.
-- 4 箇所のファイル / 関数: 上記 4 つ。
-- `std.testing.FailingAllocator` (Zig 0.16 stdlib) で injection。
+- ROADMAP §9.6 task 4.3.
+- `src/lang/macro_transforms.zig::expandAnd` / `expandOr`。
+- 10000-arg `(and ...)` 入力で StackOverflow しないテスト。
+
+## Just landed — §9.6 / 4.2
+
+`String.alloc` / `ExInfo.alloc` / `consHeap` / `allocFunction` の 4
+箇所に `errdefer rt.gpa.destroy(...)` 追加 (`gpa.create` 直後)、
+trackHeap 失敗時の struct leak を塞ぐ。各ファイルに
+`std.testing.checkAllAllocationFailures` ベースの failing-allocator
+test 1 本追加 (tree_walk の test は env layer leak を巻き込まない
+よう手作り FnNode で allocFunction を直接呼ぶ形)。Mac (9/9) +
+Linux (8/8) green。debt.md D-002 Discharged。詳細
+`private/notes/phase4-4.2.md`。env layer の findOrCreateNs leak
+(今回テスト副産物) は別 task で対処予定。
 
 ## Just landed — §9.6 / 4.1
 

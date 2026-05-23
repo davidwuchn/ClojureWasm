@@ -37,6 +37,7 @@ pub fn alloc(rt: *Runtime, bytes: []const u8) !Value {
     const owned = try rt.gpa.dupe(u8, bytes);
     errdefer rt.gpa.free(owned);
     const s = try rt.gpa.create(String);
+    errdefer rt.gpa.destroy(s);
     s.* = .{ .header = HeapHeader.init(.string), .bytes = owned };
     try rt.trackHeap(.{ .ptr = @ptrCast(s), .free = freeString });
     return Value.encodeHeapPtr(.string, s);
@@ -85,6 +86,18 @@ test "alloc duplicates the input bytes" {
     // Mutate the source after alloc: the heap String must not change.
     src_buf[0] = 'Z';
     try testing.expectEqualStrings("abc", asString(v));
+}
+
+fn allocFailingHarness(alloc_inner: std.mem.Allocator) !void {
+    var th = std.Io.Threaded.init(alloc_inner, .{});
+    defer th.deinit();
+    var rt = Runtime.init(th.io(), alloc_inner);
+    defer rt.deinit();
+    _ = try alloc(&rt, "hello-world");
+}
+
+test "alloc returns OOM without leaking under each allocation failure (uniform errdefer)" {
+    try testing.checkAllAllocationFailures(testing.allocator, allocFailingHarness, .{});
 }
 
 test "alloc handles the empty string" {
