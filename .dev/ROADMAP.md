@@ -1170,7 +1170,8 @@ dispatch, rewrites the Phase 5 `.method` call sites to go through
 **Entry ADRs**: 0005 (Dual-backend differential — full bench).
 **Entry debts**: **D-031** (`main.zig` → `src/app/` split before
 the self-host loader / Phase-10 nREPL / Phase-12 build-runner
-modes pile on) · D-007 (self-host viability).
+modes pile on; see `.dev/structure_plan.md` for the anticipated
+`src/app/` layout) · D-007 (self-host viability).
 **Reference**: ROADMAP §10 (Performance), `bench/history.yaml`.
 **Deliverables**: bench lock baseline established
 (ADR-0027 future issuance to define `bench/history.yaml` schema),
@@ -1184,7 +1185,8 @@ coverage. 🔒 OrbStack gate.
 **Entry debts**: **D-034** (`modules/` top-level structure
 decision when json / csv / edn first land — verify the "modules/
 → runtime/ + eval/ only" dependency rule, decide whether a
-`runtime/` subset needs to be promoted for string ops etc.).
+`runtime/` subset needs to be promoted for string ops etc.; see
+`.dev/structure_plan.md` for the anticipated `modules/` layout).
 **Note (Phase 9 entry owner)**: the Deliverables line below
 currently reads "protocol / host complete behaviours" which
 overlaps the Phase 7 (§9.9) protocol dispatch + Phase 6 (§9.8)
@@ -1308,7 +1310,9 @@ conditions.
 dispatch" layer before adding the JIT vtable — current
 `vm.installVTable` reuses tree_walk's `callFunction` via the
 `evalChunk` vtable hook, which skews the dependency graph when
-a 3rd backend joins) · D-005 (ARM64 JIT decision).
+a 3rd backend joins; see `.dev/structure_plan.md` for the
+anticipated `src/runtime/dispatch/callable.zig` extraction +
+`src/eval/backend/jit/` subtree) · D-005 (ARM64 JIT decision).
 **Deliverables**: VM optimisation `super_instruction.zig`, five
 canonical benchmarks within 100% of cw v0 24C.10, JIT go / no-go
 ADR landed. If go: ADR-0022 amendment for 3-way differential

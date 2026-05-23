@@ -33,6 +33,13 @@ place (ROADMAP §17). This applies to:
 This section is short on purpose. The mechanism lives in
 [`.dev/principle.md`](.dev/principle.md) (Bad Smell catalogue + four
 depths of revision + three questions to picture the finished form).
+**User-declared invariants** the loop must treat as fact even when
+ROADMAP / ADR text reads differently live in
+[`.dev/project_facts.md`](.dev/project_facts.md) (F-001 zwasm v2
+unavoidable, F-002 finished-form wins, F-003 deferral on
+structural plans, F-004 NaN-box 64-slot, F-005 numeric tower
+JVM-surface, F-006 GC strategy, F-007 chapter cadence dormant
+permanently — read this file when in doubt).
 
 ## Identity / Context (read first)
 

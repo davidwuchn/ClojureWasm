@@ -123,6 +123,13 @@ When you stop, ask:
 
 ## Structural imagination (before touching structural plans)
 
+> **Origin**: this phase exists because of user invariant **F-003**
+> in `.dev/project_facts.md` (decision-deferral over
+> decision-seizure on structural plans). The output of past
+> imagination cycles lives in `.dev/structure_plan.md`
+> (anticipated directory tree Phase 5-20). New imagination
+> cycles amend that file in place.
+
 ROADMAP extends through Phase 20. When a task touches a
 **structural plan** that future phases will live with, the
 autonomous loop is **not** allowed to decide on the structure's
