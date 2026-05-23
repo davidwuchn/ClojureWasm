@@ -26,6 +26,7 @@ const Value = value_mod.Value;
 
 pub const Error = error{
     TooManyConstants,
+    JumpTooFar,
     NotImplemented,
 } || std.mem.Allocator.Error;
 
@@ -62,6 +63,9 @@ const Compiler = struct {
             .constant => |n| try self.emitConst(n.value),
             .quote_node => |n| try self.emitConst(n.quoted),
             .do_node => |n| try self.compileDo(n.forms),
+            .local_ref => |n| try self.emit(.op_load_local, n.index),
+            .if_node => |n| try self.compileIf(n),
+            .let_node => |n| try self.compileLet(n),
             else => {
                 // The VM backend is dev-only until task 4.8 flips
                 // `-Dbackend=vm`; no user-facing path reaches the
@@ -88,6 +92,46 @@ const Compiler = struct {
             try self.emit(.op_pop, 0);
         }
         try self.compileNode(&forms[forms.len - 1]);
+    }
+
+    fn compileIf(self: *Compiler, n: node_mod.IfNode) Error!void {
+        try self.compileNode(n.cond);
+        const jif = try self.emitJump(.op_jump_if_false);
+        try self.compileNode(n.then_branch);
+        const jend = try self.emitJump(.op_jump);
+        try self.patchJump(jif);
+        if (n.else_branch) |eb| {
+            try self.compileNode(eb);
+        } else {
+            try self.emitConst(Value.nil_val);
+        }
+        try self.patchJump(jend);
+    }
+
+    fn compileLet(self: *Compiler, n: node_mod.LetNode) Error!void {
+        for (n.bindings) |b| {
+            try self.compileNode(b.value_expr);
+            try self.emit(.op_store_local, b.index);
+        }
+        try self.compileNode(n.body);
+    }
+
+    /// Emit a jump opcode with a placeholder operand and return the
+    /// instruction index so `patchJump` can fill in the offset once
+    /// the target is known.
+    fn emitJump(self: *Compiler, op: Opcode) Error!usize {
+        const idx = self.instructions.items.len;
+        try self.emit(op, 0);
+        return idx;
+    }
+
+    /// Patch a previously emitted jump to land on the next instruction
+    /// to be emitted. Offset is relative to the instruction *after*
+    /// the jump (so 0 means "fall through").
+    fn patchJump(self: *Compiler, jump_index: usize) Error!void {
+        const offset = self.instructions.items.len - jump_index - 1;
+        if (offset > std.math.maxInt(i16)) return error.JumpTooFar;
+        self.instructions.items[jump_index].operand = @as(u16, @bitCast(@as(i16, @intCast(offset))));
     }
 
     fn emit(self: *Compiler, op: Opcode, operand: u16) Error!void {
@@ -162,6 +206,83 @@ test "compile empty do yields nil constant" {
     try testing.expectEqual(Opcode.op_ret, chunk.instructions[1].opcode);
     try testing.expectEqual(@as(usize, 1), chunk.constants.len);
     try testing.expectEqual(Value.nil_val, chunk.constants[0]);
+}
+
+test "compile local_ref emits op_load_local with slot index" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+
+    const node: Node = .{ .local_ref = .{ .name = "x", .index = 3 } };
+    const chunk = try compile(arena.allocator(), &node);
+
+    try testing.expectEqual(@as(usize, 2), chunk.instructions.len);
+    try testing.expectEqual(Opcode.op_load_local, chunk.instructions[0].opcode);
+    try testing.expectEqual(@as(u16, 3), chunk.instructions[0].operand);
+    try testing.expectEqual(Opcode.op_ret, chunk.instructions[1].opcode);
+}
+
+test "compile if emits jump_if_false + jump with patched offsets" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+
+    const cond: Node = .{ .constant = .{ .value = Value.true_val } };
+    const then_b: Node = .{ .constant = .{ .value = Value.false_val } };
+    const else_b: Node = .{ .constant = .{ .value = Value.nil_val } };
+    const node: Node = .{ .if_node = .{ .cond = &cond, .then_branch = &then_b, .else_branch = &else_b } };
+    const chunk = try compile(arena.allocator(), &node);
+
+    // op_const cond ; op_jump_if_false +2 ; op_const then ; op_jump +1 ; op_const else ; op_ret
+    try testing.expectEqual(@as(usize, 6), chunk.instructions.len);
+    try testing.expectEqual(Opcode.op_const, chunk.instructions[0].opcode);
+    try testing.expectEqual(Opcode.op_jump_if_false, chunk.instructions[1].opcode);
+    try testing.expectEqual(@as(i16, 2), @as(i16, @bitCast(chunk.instructions[1].operand)));
+    try testing.expectEqual(Opcode.op_const, chunk.instructions[2].opcode);
+    try testing.expectEqual(Opcode.op_jump, chunk.instructions[3].opcode);
+    try testing.expectEqual(@as(i16, 1), @as(i16, @bitCast(chunk.instructions[3].operand)));
+    try testing.expectEqual(Opcode.op_const, chunk.instructions[4].opcode);
+    try testing.expectEqual(Opcode.op_ret, chunk.instructions[5].opcode);
+}
+
+test "compile if without else branch emits nil for the alternative" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+
+    const cond: Node = .{ .constant = .{ .value = Value.true_val } };
+    const then_b: Node = .{ .constant = .{ .value = Value.false_val } };
+    const node: Node = .{ .if_node = .{ .cond = &cond, .then_branch = &then_b, .else_branch = null } };
+    const chunk = try compile(arena.allocator(), &node);
+
+    try testing.expectEqual(@as(usize, 6), chunk.instructions.len);
+    try testing.expectEqual(Opcode.op_const, chunk.instructions[4].opcode);
+    // The synthesized nil constant lives at index 2 in the pool.
+    try testing.expectEqual(Value.nil_val, chunk.constants[chunk.instructions[4].operand]);
+}
+
+test "compile let* stores each binding then evaluates the body" {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+
+    const v0: Node = .{ .constant = .{ .value = Value.true_val } };
+    const v1: Node = .{ .constant = .{ .value = Value.false_val } };
+    const body: Node = .{ .local_ref = .{ .name = "y", .index = 1 } };
+    const bindings = [_]node_mod.LetNode.Binding{
+        .{ .name = "x", .index = 0, .value_expr = &v0 },
+        .{ .name = "y", .index = 1, .value_expr = &v1 },
+    };
+    const node: Node = .{ .let_node = .{ .bindings = &bindings, .body = &body } };
+    const chunk = try compile(arena.allocator(), &node);
+
+    // op_const true ; op_store_local 0 ; op_const false ; op_store_local 1 ; op_load_local 1 ; op_ret
+    try testing.expectEqual(@as(usize, 6), chunk.instructions.len);
+    try testing.expectEqual(Opcode.op_const, chunk.instructions[0].opcode);
+    try testing.expectEqual(Opcode.op_store_local, chunk.instructions[1].opcode);
+    try testing.expectEqual(@as(u16, 0), chunk.instructions[1].operand);
+    try testing.expectEqual(Opcode.op_const, chunk.instructions[2].opcode);
+    try testing.expectEqual(Opcode.op_store_local, chunk.instructions[3].opcode);
+    try testing.expectEqual(@as(u16, 1), chunk.instructions[3].operand);
+    try testing.expectEqual(Opcode.op_load_local, chunk.instructions[4].opcode);
+    try testing.expectEqual(@as(u16, 1), chunk.instructions[4].operand);
+    try testing.expectEqual(Opcode.op_ret, chunk.instructions[5].opcode);
 }
 
 test "compile do pops intermediate forms and keeps the last" {
