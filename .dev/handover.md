@@ -18,10 +18,10 @@
   (tasks 4.1 / 4.2 / 4.3); critical-path entry done (4.0 / 4.0a).
 - **Branch**: `cw-from-scratch` (long-lived; v0.5.0-derived;
   push free after gate green; never push to `main`).
-- **Last commit**: `b09b54e` (autonomous-workflow spec revision —
-  closed 3-condition stop list, dropped Step 8 compact gate).
+- **Last commit**: `e01da0d` (md-table-align hook auto-fixes +
+  re-stages, eliminating the 2-cycle commit pattern).
 - **Gate**: Mac (9/9) + OrbStack Ubuntu x86_64 (8/8) green at
-  `b09b54e`. 🔒 fresh OrbStack run due at Phase 4 close.
+  `e01da0d`. 🔒 fresh OrbStack run due at Phase 4 close.
 - **Last paired chapter commit**: `cc46a48` (chapter 0020 —
   Phase 3 closure, covers §9.5 / 3.8–3.14).
 - **Unpaired source SHAs**: `git log cc46a48..HEAD --oneline -- src/`
