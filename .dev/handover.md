@@ -17,9 +17,8 @@
 - **Phase**: Phase 4 IN-PROGRESS. §9.6 cluster A done
   (tasks 4.1 / 4.2 / 4.3); **critical-path closed**: 4.0 / 4.0a /
   4.4 / 4.5 / 4.6 / 4.7 / 4.8 / 4.9 / 4.10 / 4.11 / 4.12 done.
-  Cleanup wave in progress: 4.13–4.23 done. Remaining §9.6 rows
-  (4.24–4.26.f) — lazy_seq / method_table skeletons,
-  error-system migration.
+  Cleanup wave in progress: 4.13–4.24 done. Remaining §9.6 rows
+  (4.25–4.26.f) — method_table skeleton, error-system migration.
 - **Branch**: `cw-from-scratch` (long-lived; v0.5.0-derived;
   push free after gate green; never push to `main`).
 - **Last commit**: see `git log -1` (compute on resume — the
@@ -32,22 +31,21 @@
   (compute on resume; chapter pairing decision is per the
   `code_learning_doc` skill's two-cadence rule).
 
-## Active task — §9.6 / 4.24
+## Active task — §9.6 / 4.25
 
-`src/runtime/lazy_seq.zig` — `LazySeq` struct (thunk + sval +
-`seq_cache: std.atomic.Value(?*Seq)` + `mutex: std.Thread.Mutex`)
-declaration. `force()` function lands in Phase 5 (per ADR-0009 +
-the trampoline pattern). Phase 4 has only the struct declaration.
+`src/runtime/dispatch/method_table.zig` — `MethodEntry` struct
+(interned symbol + fn ptr) and `CallSite` struct (`last_type` +
+`last_method` cache slots) declaration. The `dispatch` function
+lands in Phase 7 (per ADR-0008). Phase 4 has only the struct
+declarations.
 
 **Retrievable identifiers**:
 
-- ROADMAP §9.6 task 4.24, ADR-0009 (object header heap-only lock
-  — applies to lazy-seq's mutex too).
-- `lazy_seq` is already a HeapTag slot (value=16) and a Value.Tag
-  variant. The struct shape needs to land matching that slot.
-- `std.Thread.Mutex` is the appropriate primitive in Zig 0.16
-  (`std.Io.Mutex` requires an `io` arg per Zig 0.16 reshape;
-  lazy-seq creation paths don't yet thread io).
+- ROADMAP §9.6 task 4.25, ADR-0008 (protocol dispatch unify).
+- `src/runtime/dispatch.zig` already exists at the same path
+  level (Layer 0 vtable). The new file lives in a
+  `src/runtime/dispatch/` subdirectory which does not yet exist
+  — create it.
 
 ## Open questions / blockers
 
