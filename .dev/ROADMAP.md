@@ -1082,8 +1082,13 @@ trampoline + thread-safe realisation, BigInt + Ratio + numeric
 promotion, deftype / defrecord / reify activation (Tier A
 behaviour), task 4.26 carry-over if any. 🔒 OrbStack gate.
 **Final activation step**: flip `build_options.phase_at_least_5 = true`
-in `build.zig` (per ADR-0023 + task 4.0a) — this switches the
-comptime stub imports to the real implementations.
+in `build.zig` (per ADR-0023 + task 4.0a) — this swaps
+`runtime/gc/stub.zig` → real `mark_sweep.zig`, swaps any other
+`*/stub.zig` parallels gated by `phase_at_least_5`, removes the
+catalog Codes named in ADR-0009 amendment 2 (`gc_*_not_supported`
+family) and ADR-0017 amendment 1, and rewrites the corresponding
+test expectations from "expect this Code" to "expect successful
+op".
 
 Expand at Phase 5 entry per CLAUDE.md § Autonomous Workflow
 "When the current phase's task queue empties".
@@ -1103,13 +1108,20 @@ ADR-0011, UTF-8 string primitives, optional fuzz harness opens
 
 **Entry ADRs**: 0008 (Protocol dispatch — CallSite cache activates).
 **Reference**: `private/JVM_TO_ZIG.md` §13.2 (CallSite cache).
+**Skeletons to activate**: Protocol dispatch table (task 4.18),
+method_table + CallSite cache (task 4.25). Phase 5 activated
+`TypeDescriptor.lookupMethod` (per ADR-0007 amendment 1); Phase 7
+rewires that direct lookup through `dispatch` + `CallSite` cache
+per ADR-0008 amendment 1.
 **Deliverables**: protocol full dispatch path + per-call-site
 monomorphic cache, multimethod with hierarchy support, transducer
 foundations (`map` / `filter` / `take` / `reduce` fused path),
 Golden snapshot test layer opens (Phase 7+, ADR-0026 future
 issuance).
 **Final activation step**: flip `build_options.phase_at_least_7 = true`
-(per ADR-0023).
+(per ADR-0023) — swaps `runtime/protocol/stub.zig` → real
+dispatch, rewrites the Phase 5 `.method` call sites to go through
+`CallSite.lookup` cache.
 
 ### 9.10 Phase 8 — task list (PENDING, expand at Phase 8 entry)
 
@@ -1151,7 +1163,9 @@ corpus), ADR-0021 Future-layers table.
 10+ upstream tests ported with `;; CLJW:` tier markers, Tier A 100%
 PASS gate active.
 **Final activation step**: flip `build_options.phase_at_least_11 = true`
-(per ADR-0023).
+(per ADR-0023) — swaps any test-corpus stubs to the real upstream
+test harness, rewrites `test/run_all.sh` to enforce the Tier A
+100% PASS gate.
 
 ### 9.14 Phase 12 — task list (PENDING, expand at Phase 12 entry)
 
@@ -1186,7 +1200,10 @@ F140-F144 re-introduction per ADR-0015 amendment 2 (`http_server`
 / `http_client` / `nrepl` / `repl` line editor / `cljw component
 build` self-bundle), **v0.1.0 release**. 🔒 OrbStack gate.
 **Final activation step**: flip `build_options.phase_at_least_14 = true`
-(per ADR-0023).
+(per ADR-0023) — swaps `runtime/io/stub.zig` and any REPL / nREPL
+stubs to the real implementations, rewrites `src/app/main.zig`
+subcommand dispatch rows per ADR-0015 amendment 2 table (F140-F144
+landing).
 
 ### 9.17 Phase 15 — task list (PENDING, expand at Phase 15 entry)
 
@@ -1200,7 +1217,11 @@ volatile! / locking activation (Object header lock CAS + heavy
 fallback), concurrent test layer opens (ADR-0021 deferred). 🔒.
 **Final activation step**: flip `build_options.phase_at_least_15 = true`
 (per ADR-0023) — switches `runtime/stm/stub.zig` and Object header
-lock stub imports to the real implementations.
+lock stub imports to the real implementations; removes the STM
+sub-feature catalog Codes (`stm_*_not_supported` family per
+ADR-0010 amendment 2) and the locking catalog Codes
+(`locking_not_supported` family per ADR-0009 amendment 2);
+rewrites the corresponding test expectations.
 
 ### 9.18 Phase 16 — task list (PENDING, expand at Phase 16 entry)
 
@@ -1217,7 +1238,10 @@ canonical benchmarks within 100% of cw v0 24C.10, JIT go / no-go
 ADR landed. If go: ADR-0022 amendment for 3-way differential
 (TreeWalk == VM == JIT) per CLAUDE.md § Autonomous Workflow.
 **Final activation step (if JIT go)**: flip
-`build_options.phase_at_least_17 = true` (per ADR-0023).
+`build_options.phase_at_least_17 = true` (per ADR-0023) — swaps
+`runtime/jit/stub.zig` → real JIT engine, rewrites
+`test/diff/runner.zig` from 2-way (TreeWalk == VM) to 3-way
+(TreeWalk == VM == JIT) per ADR-0022 amendment.
 
 ### 9.20 Phase 18 — task list (PENDING, expand at Phase 18 entry)
 

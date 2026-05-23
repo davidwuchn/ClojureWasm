@@ -116,10 +116,14 @@ next behaviour. Then **re-read `.dev/principle.md` and apply the
 Bad Smell sensor** to the plan. If something feels off, adjust
 before Step 2.
 
-**Step 1a — Phase reading list** (Phase 4)
-Read in order: `.dev/handover.md`, `.dev/ROADMAP.md` §9.<N> (active
-row), the ADRs referenced by the active task, `compat_tiers.yaml`
-entry for the function, and the JVM Clojure source
+**Step 1a — Phase reading list** (every Phase entry)
+Read in order: `.dev/handover.md`, `.dev/ROADMAP.md` §9.<N>
+placeholder (Entry ADRs / Reference / Skeletons to activate /
+Deliverables / Final activation step), each ADR listed in the
+placeholder's "Entry ADRs:" line **including the Phase N+ migration
+note section if present** (this is where existing-code rewrite
+scope is narrated per §A25), `compat_tiers.yaml` entry for the
+function, and the JVM Clojure source
 (`~/Documents/OSS/clojure/`) for the function.
 
 **Step 2 — Red**
