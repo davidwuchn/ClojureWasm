@@ -26,6 +26,11 @@ spec is not duplicated here — CLAUDE.md is the single source.
    other rules) and `.dev/principle.md` (Bad Smell catalogue +
    Structural imagination phase). These two are the meta layer
    the per-task loop is checked against.
+2a. Read `.dev/project_facts.md` (user-declared invariants —
+   F-001 … F-007 at 2026-05-24) and `.dev/structure_plan.md`
+   (anticipated directory tree Phase 5-20). When a task touches
+   any topic these files cover, treat them as fact above
+   ROADMAP / ADR text.
 3. Read `.dev/ROADMAP.md`:
    - Find the IN-PROGRESS phase in §9. If none, take the first
      PENDING.

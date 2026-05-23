@@ -1,0 +1,258 @@
+# Anticipated directory structure — Phase 5-20 imagination
+
+> Output of the Structural imagination phase
+> (`.dev/principle.md`). The tree below predicts what the cw v2
+> source tree will look like as Phase 5-20 ROADMAP entries land.
+>
+> **This is imagination, not a decree.** Per F-003, decisions on
+> splits / moves / new subdirectories belong to **each owning
+> Phase entry's owner**, not to the imagination author. Each
+> entry's owner reads this file when expanding the §9.<N>
+> placeholder, takes the parts that still make sense, and amends
+> the parts that do not.
+>
+> Markers used below:
+>
+> - **★new** = directory or file that does not exist at HEAD,
+>   anticipated to land at the noted Phase.
+> - **★split** = current single file expected to fan out under
+>   the noted Phase (per debt D-029 / D-030 / D-031 / D-033 /
+>   D-035).
+> - **(D-NNN)** = debt row that owns the decision.
+
+## Origins of this file
+
+Built 2026-05-24 from:
+
+- The Phase 4 entry's as-shipped src/ tree.
+- The Structural imagination research note
+  (`private/notes/struct_imagination_research.md`, 525 lines —
+  the cw v0 GC / Wasm / 45-tag / Clojure-JVM-140-class
+  enumeration that informs the slot expansion in F-004).
+- User direction F-001 (zwasm v2 unavoidable; carries JIT + GC),
+  F-002 (finished-form wins), F-003 (defer to owning Phase),
+  F-004 (64-slot NaN-box, types day-1: range / map_entry /
+  tagged_literal / string_seq / array_seq / funcref / externref),
+  F-005 (numeric tower JVM-surface compatible), F-006 (mark-sweep
+  + 3-layer alloc; zwasm dual-heap; cw GC allocator injects into
+  zwasm bookkeeping), F-007 (chapter cadence stays dormant).
+- ROADMAP §A1 (zone layering) + §A6 (≤ 1000 lines soft cap) +
+  §A11 (day-1 enum reservation).
+- ADR-0006 a1+a3 (zwasm) / ADR-0011 (host) / ADR-0012 a1 (NaN
+  slots) / ADR-0023 (comptime stub) / ADR-0025 (chapter archive).
+
+## Future tree (Phase 5-20)
+
+```
+ClojureWasmFromScratch/
+├─ build.zig
+├─ build.zig.zon
+├─ CLAUDE.md
+├─ .dev/
+│  ├─ ROADMAP.md
+│  ├─ handover.md
+│  ├─ principle.md
+│  ├─ project_facts.md             (F-001..F-007, append-only)
+│  ├─ structure_plan.md            (this file)
+│  ├─ debt.md
+│  └─ decisions/
+│     └─ 0001…NNNN.md              (time-ordered, never reserved)
+├─ scripts/                        pre-commit + pre-push hooks
+│  ├─ check_smell_audit.sh
+│  ├─ check_md_tables.sh
+│  ├─ check_stale_git_lock.sh
+│  ├─ check_learning_doc.sh        (dormant per ADR-0025)
+│  ├─ check_roadmap_amendment.sh
+│  └─ zone_check.sh
+├─ test/
+│  ├─ run_all.sh
+│  ├─ e2e/                         phase4_cli.sh, phase4_exit.sh, …
+│  ├─ diff/                        cases.yaml + runner.zig    (Phase 4.10+)
+│  └─ clj/                         Clojure test port           (Phase 11+) ★new
+├─ private/                        gitignored (notes, surveys, research)
+│  └─ notes/                       per-task + research output
+├─ docs/ja/
+│  ├─ README.md                    (dormant marker)
+│  └─ archive/                     learn_clojurewasm_v1_phase1to3 / learn_zig_v1
+├─ modules/                                         ★new top-level (Phase 9 entry, D-034)
+│  ├─ json/                        clojure.data.json
+│  ├─ csv/                         clojure.data.csv
+│  ├─ edn/                         clojure.edn
+│  └─ cli/                         clojure.tools.cli
+└─ src/
+   ├─ main.zig                     Layer 3 entry (shrinks in Phase 8 ★split)
+   ├─ app/                                         ★new (Phase 8 entry, D-031)
+   │  ├─ repl.zig
+   │  ├─ runner.zig                file / -e / stdin 共通の eval runner
+   │  ├─ self_host_loader.zig                                Phase 8
+   │  ├─ nrepl_server.zig                                    Phase 10
+   │  ├─ builder.zig                                         Phase 12 (cljw build)
+   │  └─ pod_runner.zig                                      Phase 16 (zwasm v2)
+   ├─ runtime/                     Layer 0
+   │  ├─ value/                                    ★split (Phase 5 entry, D-029, co-issued with D-027)
+   │  │  ├─ value.zig              Value enum + NaN-box constants
+   │  │  ├─ nan_box.zig            encode / decode helpers
+   │  │  ├─ heap_tag.zig           HeapTag enum + 64-slot table (F-004)
+   │  │  └─ heap_header.zig        HeapHeader struct + gc_and_lock
+   │  ├─ runtime.zig
+   │  ├─ env.zig                   Namespace / Var / dynamic binding stack
+   │  ├─ dispatch.zig              Layer-0 VTable + threadlocal
+   │  ├─ dispatch/                                 ★new (Phase 17 entry, D-035)
+   │  │  ├─ callable.zig           backend-shared callable dispatch
+   │  │  └─ method_table.zig       MethodEntry + CallSite cache       Phase 7
+   │  ├─ error.zig
+   │  ├─ error_catalog.zig
+   │  ├─ io_interface.zig          Tier 1 (zone 0)
+   │  ├─ io_default.zig                                       ★new Phase 5+ (Tier 2, zone 1)
+   │  ├─ type_descriptor.zig
+   │  ├─ protocol.zig
+   │  ├─ keyword.zig
+   │  ├─ collection/
+   │  │  ├─ string.zig             (current)
+   │  │  ├─ list.zig               (current)
+   │  │  ├─ ex_info.zig            (current)
+   │  │  ├─ vector.zig                                        ★new Phase 5 (HAMT)
+   │  │  ├─ hash_map.zig                                      ★new Phase 5 (HAMT)
+   │  │  ├─ hash_set.zig                                      ★new Phase 5 (HAMT)
+   │  │  ├─ array_map.zig                                     ★new Phase 5
+   │  │  ├─ map_entry.zig                                     ★new Phase 5 (F-004 new slot)
+   │  │  ├─ range.zig                                         ★new Phase 5 (F-004 new slot)
+   │  │  ├─ sorted_map.zig                                    ★new Phase 6+
+   │  │  ├─ sorted_set.zig                                    ★new Phase 6+
+   │  │  ├─ persistent_queue.zig                              ★new Phase 6+
+   │  │  └─ transient/                                        ★new Phase 5+
+   │  │     ├─ transient_vector.zig
+   │  │     ├─ transient_map.zig
+   │  │     └─ transient_set.zig
+   │  ├─ seq/                                       ★new Phase 5+
+   │  │  ├─ lazy_seq.zig           (moved or co-resident)
+   │  │  ├─ cons.zig
+   │  │  ├─ chunked_cons.zig
+   │  │  ├─ chunk_buffer.zig
+   │  │  ├─ string_seq.zig                                    ★ F-004 new slot
+   │  │  └─ array_seq.zig                                     ★ F-004 new slot
+   │  ├─ reader_extra/                              ★new Phase 5+ (F-004 new slots)
+   │  │  ├─ tagged_literal.zig
+   │  │  └─ reader_conditional.zig
+   │  ├─ numeric/
+   │  │  ├─ big_int.zig            (current)
+   │  │  ├─ ratio.zig                                         ★new Phase 5 (F-005)
+   │  │  ├─ big_decimal.zig                                   ★new Phase 5 (F-005)
+   │  │  └─ promote.zig                                       ★new Phase 5 (Long ↔ BigInt auto)
+   │  ├─ gc/                                        ★new Phase 5 entry (F-006, D-011, D-020)
+   │  │  ├─ mark_sweep.zig         tracing GC body (cw v0 path inheritance)
+   │  │  ├─ root_set.zig           env / threadlocal / fn closure / lazy_seq / inline cache (5 sources cw v0 D100 patched late)
+   │  │  ├─ free_pool.zig          intrusive free list (3-7x perf from cw v0)
+   │  │  ├─ arena_node.zig         Analyzer-AST Arena (3-layer middle)
+   │  │  └─ gc_strategy.zig        vtable abstraction (Arena ↔ MarkSweep switch)
+   │  ├─ concurrency/                               ★new Phase 14-15
+   │  │  ├─ atom.zig
+   │  │  ├─ agent.zig
+   │  │  ├─ future.zig
+   │  │  └─ promise.zig
+   │  ├─ stm/                                       ★new Phase 15 (ADR-0010)
+   │  │  ├─ ref.zig
+   │  │  ├─ dosync.zig
+   │  │  └─ mvcc.zig
+   │  ├─ wasm/                                      ★new Phase 16 entry (F-001 + D-036)
+   │  │  ├─ module.zig
+   │  │  ├─ instance.zig
+   │  │  ├─ table.zig
+   │  │  ├─ global.zig
+   │  │  ├─ memory.zig
+   │  │  ├─ funcref.zig            (★ F-004 inline slot)
+   │  │  ├─ externref.zig          (★ F-004 inline slot)
+   │  │  └─ pod_boundary.zig       (zwasm v2 Pod-boundary connector if Pod path chosen)
+   │  └─ host/                     (continued, ADR-0011)
+   │     ├─ _host_api.zig
+   │     ├─ lang/                  java.lang.{Object,String,Long,Integer,Double,Boolean,Math,System,Throwable,Exception,Thread}
+   │     ├─ io/                    java.io.{File,InputStream,OutputStream,Reader,Writer,ByteArrayInputStream,ByteArrayOutputStream,PrintWriter}
+   │     ├─ util/                  java.util.{UUID,Date,Random,Locale,regex.Pattern,concurrent.Future,concurrent.atomic.AtomicLong}
+   │     ├─ time/                  java.time.{Instant,LocalDate,LocalDateTime,Duration,ZonedDateTime,ZoneId}
+   │     ├─ net/                   java.net.{URL,URI}
+   │     ├─ nio/                   java.nio.{file.Path,file.Files,charset.Charset}
+   │     ├─ math/                  java.math.{BigInteger,BigDecimal}
+   │     └─ security/              java.security.MessageDigest
+   ├─ eval/                        Layer 1
+   │  ├─ analyzer/                                 ★split (Phase 5+ entry, D-030; already 1335 lines today)
+   │  │  ├─ analyzer.zig           entry + orchestration
+   │  │  ├─ special_form.zig       SPECIAL_FORMS dispatch
+   │  │  ├─ symbol.zig             resolution + Scope
+   │  │  ├─ macro.zig              macro expand routing
+   │  │  └─ deftype_analyze.zig                              ★new Phase 5+ (deftype / defrecord / reify)
+   │  ├─ driver.zig
+   │  ├─ evaluator.zig             (compare across backends)
+   │  ├─ form.zig
+   │  ├─ macro_dispatch.zig
+   │  ├─ node.zig
+   │  ├─ reader.zig
+   │  ├─ tokenizer.zig
+   │  └─ backend/
+   │     ├─ tree_walk.zig
+   │     ├─ vm.zig
+   │     ├─ vm/
+   │     │  ├─ compiler.zig
+   │     │  └─ opcode.zig
+   │     └─ jit/                                   ★new Phase 17 entry (D-035 + ADR-0005)
+   │        ├─ codegen.zig
+   │        ├─ compiler.zig
+   │        └─ runtime.zig
+   └─ lang/                        Layer 2
+      ├─ bootstrap.zig
+      ├─ diff_test.zig
+      ├─ macro_transforms.zig
+      ├─ primitive.zig             registry
+      ├─ primitive/                                ★split (Phase 5+, D-033)
+      │  ├─ core/
+      │  │  ├─ core.zig            general fns
+      │  │  ├─ sequence.zig        map / filter / reduce / partition / interleave
+      │  │  └─ type.zig            type? / instance? / class
+      │  ├─ math.zig
+      │  ├─ io/                                    ★new Phase 5+
+      │  │  ├─ print.zig
+      │  │  └─ read.zig
+      │  ├─ numeric/                               ★new Phase 5 (F-005)
+      │  │  ├─ promote.zig
+      │  │  └─ bigint.zig
+      │  ├─ collection/                            ★new Phase 5+
+      │  └─ error.zig
+      └─ clj/                      Clojure source (bootstrap)
+         └─ clojure/
+            ├─ core.clj            (current)
+            └─ (Phase 9+: string/set/walk/zip/data/edn/pprint)
+```
+
+## Cross-phase coordination notes
+
+- **Phase 5 entry is the biggest single landing**: GC (`gc/`) +
+  numeric (`numeric/ratio.zig` + `big_decimal.zig` + `promote.zig`)
+  + value split (`value/`) + collection wave 1 (`vector/hash_map/
+  hash_set/array_map/map_entry/range`) + analyzer split + new
+  reader-extra slots (`tagged_literal`) + host first wave. The
+  ADR cluster is large (D-027 + D-029 + D-030 + D-032 + D-011 +
+  D-020 + D-014a + D-017). The Phase 5 entry owner co-issues
+  these as a co-ordinated cluster, not one at a time.
+- **Phase 8 entry triggers `src/app/` extraction** before the
+  Phase 10 nREPL / Phase 12 builder land. main.zig stays as a
+  thin Juicy-Main entry; everything else moves under `app/`.
+- **Phase 16 entry decides zwasm integration shape** (F-001 +
+  F-006 + D-036). The decision is between Pod boundary
+  (default) and inline NaN-box `funcref` / `externref` (the
+  F-004 reservation that this file marks as ★ Phase 16 entry).
+- **Phase 17 entry triggers backend dispatch extraction** under
+  `src/runtime/dispatch/callable.zig` before adding
+  `src/eval/backend/jit/`.
+
+## When to update this file
+
+- A Phase entry's owner amends the relevant subtree as decisions
+  land (and records which sections they touched).
+- A user-declared invariant (new F-NNN in `project_facts.md`) may
+  invalidate part of this tree — note the invalidation here, do
+  not silently rewrite.
+- Audits (`audit_scaffolding` skill) flag drift between this file
+  and the live src/ tree.
+
+This file is **append-only history** for amendments; sections
+that no longer reflect reality get `(superseded by F-NNN /
+ADR-NNNN at YYYY-MM-DD)` notes appended, not deletions.

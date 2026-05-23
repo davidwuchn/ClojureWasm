@@ -1091,15 +1091,28 @@ activates `cmpxchgLockBits` helpers) · 0017 (Allocator strategy +
 mark-sweep GC) · 0023 (Comptime stub).
 **Entry debts** (debt.md — resolve / decide at this Phase entry,
 per principle.md Structural imagination):
-**D-027** (NaN-box layout 第二世代 ADR co-issued with mark-sweep
-GC + TypeDescriptor — big_int / ratio / big_decimal move to
-Group A) · **D-028** (cleanup-wave rows owned here: 4.13 / 4.17 /
-4.20) · **D-029** (`value.zig` split, co-ordinated with D-027) ·
-**D-030** (`analyzer.zig` split — already > 1000 lines) ·
-**D-032** (host `_placeholder.zig` removal procedure at first
-host class landing) · D-008 (collections.zig split) · D-011
-(mark-sweep GC) · D-014a (numeric tower) · D-020 (header bit
-helpers).
+**D-027** (NaN-box layout 第二世代 ADR — direction confirmed
+**F-004** = 4×16=64 slot, 44-bit pointer; absorbs F-004 day-1
+types `range / map_entry / tagged_literal / string_seq /
+array_seq / sorted_map / sorted_set / persistent_queue /
+funcref / externref` co-issued with mark-sweep GC +
+TypeDescriptor; big_int / ratio / big_decimal move from ADR-0012
+a1 placement to F-004 Group D numeric block) · **D-028**
+(cleanup-wave rows owned here: 4.13 / 4.17 / 4.20) · **D-029**
+(`value.zig` split, co-ordinated with D-027) · **D-030**
+(`analyzer.zig` split — already > 1000 lines) · **D-032** (host
+`_placeholder.zig` removal procedure at first host class
+landing) · D-008 (collections.zig split) · **D-011** (mark-sweep
+GC — direction confirmed **F-006** = single-generation
+mark-sweep + free-pool + 3-layer alloc, cw v0 D100 root-set
+gaps pre-enumerated) · **D-014a** (numeric tower — direction
+confirmed **F-005** = JVM-surface-compatible, Zig-stdlib-affine
+internal) · D-020 (header bit helpers).
+**Entry facts** (project_facts.md): F-004 (NaN-box 64 slot) ·
+F-005 (numeric tower surface) · F-006 (GC strategy + zwasm
+dual-heap). Also consult `.dev/structure_plan.md` for the
+anticipated `runtime/value/` split, `runtime/gc/` layout,
+`runtime/seq/`, `runtime/reader_extra/`, etc.
 **Reference**: `private/JVM_TO_ZIG.md` §3 (Allocator), §9 (lazy-seq +
 trampoline), §12 (numeric tower), §13 (interop dispatch).
 **Skeletons to activate**: TypeDescriptor (task 4.17),
@@ -1271,12 +1284,19 @@ rewrites the corresponding test expectations.
 **Entry ADRs**: 0006 (Wasm FFI defer — re-introduction condition;
 **read amendment 3** for the zwasm v2 counterparty + inline-vs-Pod
 re-opening).
-**Entry debts**: **D-036** (zwasm v2 inline-vs-Pod decision —
-if inline NaN-box Values are chosen, slots released by ADR-0006
-amendment 1 must be re-allocated; co-ordinate with **D-027**
-NaN-box layout 第二世代 if it has not landed yet. zwasm v2 carries
-its own JIT + GC — heap-boundary and JIT-coordination design owed
-here too) · D-006 (Wasm FFI re-introduction via Pod boundary).
+**Entry debts**: **D-036** (zwasm v2 integration — **F-001 +
+F-004 + F-006**: NaN-box `funcref` / `externref` inline slots
+are reserved day-1 in F-004 Group D so the inline path is
+already enabled; F-006 keeps cw heap and Wasm linear memory in
+separate spaces with cw GC allocator injected into zwasm
+internal bookkeeping; this Phase entry resolves the concrete
+Pod-vs-inline-API shape, the zwasm v2 `Engine.init(allocator)`
+contract, and the JIT-coordination design with cw v2 Phase 17
+JIT groundwork D-035) · D-006 (Wasm FFI re-introduction).
+**Entry facts** (project_facts.md): F-001 (zwasm v2
+unavoidable; zwasm v2 carries its own JIT + GC) · F-004 (NaN-box
+slots reserved) · F-006 (heap separation + allocator injection).
+Consult zwasm v2 spec (user supplies at Phase 16 entry).
 **Deliverables**: ClojureScript → JS compiler (v0.2.0 milestone),
 Wasm Component output via Pod boundary per ADR-0006 entry
 conditions.

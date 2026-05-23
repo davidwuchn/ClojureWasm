@@ -116,3 +116,209 @@ Smell catalogue.
 phase"; CLAUDE.md Step 0.5 (Phase-entry debt read) + Step 1
 (Structural imagination trigger); debt rows D-027 / D-029 /
 D-031 / D-032 / D-034 / D-035 / D-036.
+
+---
+
+## F-004 — NaN-box layout 第二世代 = 4 group × 16 sub-type = 64 slot (44-bit pointer)
+
+**Declared**: 2026-05-24 (user chat after struct-imagination
+research; see `private/notes/struct_imagination_research.md`
+525 lines).
+
+**Direction confirmed**: Phase 5 entry lands the NaN-box second
+generation as **4 group × 16 sub-type = 64 slot, 44-bit shifted
+pointer (128 TB address space)**. Issued as a new ADR
+(D-027 candidate) co-issued with the mark-sweep GC + TypeDescriptor
+activation. Co-ordinated with `value.zig` split (D-029).
+
+**Why this shape**:
+
+- cw v0 final state = 32 slot with **5 types crammed into the
+  `delay` slot via a discriminant byte** (future / promise /
+  delay / agent / ref). cw v0 also crammed `ratio` + `big_decimal`
+  into a single slot. This was a design surrender that produced
+  debug pain. cw v2 refuses the same path.
+- cw v2 day-1 26 tags will reach ~45 by Phase 15 (counted in the
+  research note). 32 slot is provably insufficient.
+- Sub-type bits 3 → 4 cost **zero performance** (decode
+  instruction count unchanged; only shift/mask constants change).
+  Pointer reduction 45 → 44 bit stays comfortably within the
+  user-space VA on all supported platforms (Linux x86_64 /
+  aarch64, Mac aarch64, Windows x86_64 — all canonical 48-bit
+  user space = 128 TB).
+- 64 slot absorbs the day-1 plan + Phase 5-15 additions + the
+  newly-imagined types below, with ~10 slots reserve for further
+  surprises.
+
+**Types day-1 in the 64-slot plan that the cw v2 ROADMAP did NOT
+previously enumerate** (research §1.2):
+
+- **Seq family**: `range` / `LongRange` (chunked range for
+  `(reduce + (range 1e6))`), `string_seq` (`(seq "abc")`),
+  `array_seq` (`(seq arr)`).
+- **Coll family**: `map_entry` (`(first {:a 1})` returns a
+  MapEntry, not a vector — `instance?` differs), `sorted_map`
+  (`PersistentTreeMap`), `sorted_set` (`PersistentTreeSet`),
+  `persistent_queue`.
+- **Reader family**: `tagged_literal` (EDN `#my/tag 42`
+  round-trip), `reader_conditional` (`#?(:clj …)` for `.cljc`).
+- **Wasm family** (inline-tagged, F-001 zwasm v2 integration):
+  `funcref`, `externref`. (cw v0 did not slot-promote these; cw
+  v2 day-1 plans them because zwasm v2 integration is unavoidable
+  per F-001.)
+
+**Indicative slot map** (full table in the research note; the
+final placement lands when the Phase 5 ADR draft is reviewed via
+the Devil's-advocate subagent):
+
+- **Group A — Hot data + persistent collections** (16 slots):
+  string / symbol / keyword / list / vector / array_map /
+  hash_map / hash_set + lazy_seq / cons / chunked_cons /
+  chunk_buffer + range / string_seq / array_seq / map_entry.
+- **Group B — Callables + reader extra** (16 slots):
+  fn_val / multi_fn / protocol / protocol_fn + var_ref / ns /
+  delay / regex + tagged_literal / reader_conditional / class /
+  reified_instance / type_descriptor / host_instance +
+  2 reserved.
+- **Group C — Mutable + concurrency** (16 slots):
+  atom / agent / ref / volatile + future / promise / reduced /
+  ex_info + transient_vector / transient_map / transient_set +
+  array_chunk / persistent_queue / sorted_map / sorted_set +
+  1 reserved.
+- **Group D — Numeric + wasm + extension** (16 slots):
+  big_int / ratio / big_decimal / array (Java-array compat) +
+  wasm_module / wasm_fn / wasm_funcref (inline) /
+  wasm_externref (inline) + matcher / tuple / box +
+  5 reserved.
+
+**Cross-references**: debt D-027 (the surgery row); D-029
+(`value.zig` split, runs co-ordinated with D-027); research note
+`private/notes/struct_imagination_research.md` §1, §7; ADR-0012
+(amendment 1 currently parks big_int / ratio at slots 29 / 30
+of the 32-slot layout — second generation moves them to Group A's
+big_int / ratio / big_decimal slots; the amendment-1 placement is
+the smallest-diff landing, not the finished form).
+
+---
+
+## F-005 — Numeric tower: Clojure JVM surface compatibility, Zig-native internal implementation
+
+**Declared**: 2026-05-24 (user chat).
+**Verbatim**: 「数値タワーの互換性はあって良いんじゃないか(ただし
+見た目や表出する振る舞いだけで内部はZig実装に親和のやり方という認識)」
+
+**Direction confirmed**:
+
+- **User-observable behaviour matches JVM Clojure**:
+  `(* Long/MAX_VALUE 2)` → BigInt auto-promote;
+  `(/ 1 3)` → Ratio `1/3`;
+  `1.5M` → BigDecimal; `(+ 1 1.5)` → 2.5 (double widening);
+  `(+ 1/3 1/6)` → `1/2` (Ratio addition).
+- **Internal implementation uses Zig stdlib affinity**:
+  `std.math.big.int.Managed` for BigInt limbs (already adopted at
+  task 4.23); Ratio = `(BigInt, BigInt)` struct with simplification
+  on construction; BigDecimal = `(BigInt unscaled, i32 scale)`.
+  No re-implementation of arbitrary precision arithmetic — borrow
+  the stdlib.
+- All three are **heap-allocated** (任意精度 cannot fit in NaN-box
+  47 bits). Heap slots assigned in F-004 Group D.
+- Promotion is the runtime's job, not the user's: Long overflow
+  silently promotes to BigInt (matches `+`); `+'` family (when
+  added) throws on overflow.
+
+**Cross-references**: F-004 (Group D slot allocation); ADR-0017
+(Allocator strategy — promotion path); debt D-014a (numeric tower
+landing target Phase 5); current scaffold
+`src/runtime/numeric/big_int.zig` (HeapTag.big_int at slot 29
+per ADR-0012 amendment 1 — moves to Group D slot 1 at Phase 5
+entry per F-004).
+
+---
+
+## F-006 — GC strategy = mark-sweep + 3-layer allocator (cw v0 inheritance); zwasm v2 heap is separate, cw GC allocator injects into zwasm bookkeeping
+
+**Declared**: 2026-05-24 (user chat after research review).
+**Verbatim** (paraphrased): 「2 種類に分けてやる系の GC が
+mark-sweep GC?これと Arena の組合せが今かな」 +
+「(generational) までしなくてもワークしてたような」
+
+**Direction confirmed**:
+
+- **Phase 5 GC = mark-sweep, single generation** (cw v0 path).
+  "2 種類に分ける" was the user's interpretation of "mark phase +
+  sweep phase" — clarified, not generational.
+- **3-layer allocator** continues cw v0's D70 design:
+  1. GPA (`infra_alloc`): Env / Namespace / Var / process-lifetime
+     storage.
+  2. Arena (`node_arena`): Reader Form / Analyzer Node /
+     per-program lifetime.
+  3. GC allocator (`gc_alloc`): Values (Fn / collections /
+     strings / lazy_seq / etc.) — mark-sweep collected, free-pool
+     recycled.
+- **Generational GC is a future candidate** (ROADMAP §89.2),
+  **not Phase 5**. cw v0 reached production maturity without it;
+  cw v2 follows the same starting point.
+- **cw v0 free-pool optimisation is inherited**: intrusive linked
+  list per (size, alignment); demonstrated 3-7x speed-up on
+  gc_stress / nested_update benchmarks.
+- **cw v0 reflection points to address from day 1**: root-set
+  enumeration must cover (a) macro-expansion-time lazy-seq
+  realisation paths, (b) ProtocolFn / MultiFn inline caches,
+  (c) refer()-borrowed string pointers, (d) closure-captured
+  Values in macro callFnVal, (e) valueToForm intermediate trees.
+  These five gaps are what cw v0 patched late (D100); cw v2 lists
+  them in the Phase 5 GC ADR's "Root sources" section.
+- **zwasm v2 integration heap layout** (F-001 + research §2.4):
+  cw heap and Wasm linear memory are **separate spaces** that
+  co-exist (no unification). zwasm internal bookkeeping (module
+  metadata, function table, instance state) accepts a cw GC
+  allocator at `Engine.init(allocator)` time, so dual-GC lifecycle
+  mismatch (cw v0's D110 issue) does not recur. `wasm_module` /
+  `wasm_fn` are cw-GC-managed Values; zwasm metadata lives
+  underneath them.
+
+**Cross-references**: F-001 (zwasm v2 integration); F-004 (NaN-box
+slots for wasm types); debt D-011 (mark-sweep GC implementation);
+debt D-020 (header bit helpers, `cmpxchgLockBits`); debt D-036
+(Phase 16 zwasm integration shape — heap-boundary design); ADR-0017
+(Allocator strategy); research note §3, §4.
+
+---
+
+## F-007 — Chapter cadence (`docs/ja/learn_clojurewasm/`) is intentionally NOT to be re-produced; archive is permanent
+
+**Declared**: 2026-05-23 (user chat, paraphrased as 「参考書作成の
+ことであれば、 (しなくていい) というのがわたしの意見として反映
+したはず」).
+
+**Direction confirmed**:
+
+- ADR-0025 archived `docs/ja/learn_clojurewasm/0001-0020` + the
+  `learn_zig` companion under `docs/ja/archive/`. The user
+  explicitly does **not** want the chapter cadence to resume
+  unprompted. The autonomous loop must not propose, draft, or
+  re-activate the cadence on its own.
+- The per-task notes half (`private/notes/<task>.md`) **continues
+  to be written** at Step 7 of the per-task TDD loop. These are
+  the live record of session intent.
+- If a future need for published learning material arises, the
+  user signals it explicitly; only then does the loop draft a
+  "Resume chapter sequence" ADR.
+- `scripts/check_learning_doc.sh` stays at its early `exit 0` —
+  the chapter pairing gate is dormant and remains dormant.
+
+**Cross-references**: ADR-0025 (the archive boundary); CLAUDE.md
+language policy + code_learning_doc skill description (both
+already annotated dormant); `scripts/check_learning_doc.sh`
+(early exit); handover.md (chapter cadence dormant line).
+
+---
+
+## Anticipated directory structure (Phase 5–20 imagination)
+
+The full directory tree predicted across Phase 5–20 (per F-003
+Structural-imagination phase) lives in
+[`.dev/structure_plan.md`](./structure_plan.md). Each Phase
+entry's owner consults that file when expanding the §9.<N>
+placeholder; decisions on splits / moves / new subdirectories
+remain with each owner.

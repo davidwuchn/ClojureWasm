@@ -158,3 +158,12 @@ commit 2868e21):
 - 2026-05-23: Status: Proposed → Accepted (autonomous-loop
   self-accept per CLAUDE.md § "ADR-level designs are handled
   inline").
+- 2026-05-24 (clarification): **Resumption is user-triggered
+  only.** Per `project_facts.md` F-007, the user does not want
+  the chapter cadence to resume unprompted. The autonomous loop
+  must **not** propose, draft, or re-activate the cadence on its
+  own. The "Re-resumption conditions" listed in §3 remain
+  informational (signals the user may consider), but the trigger
+  itself is a user-only action. Until that signal arrives, the
+  cadence stays dormant and the existing 20-chapter set +
+  learn_zig companion stay read-only under `docs/ja/archive/`.

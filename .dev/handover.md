@@ -4,26 +4,37 @@
 > [`.claude/rules/handover_framing.md`](../.claude/rules/handover_framing.md).
 > Updated at session end; reads in < 30 sec at cold start.
 
-## Next 5 files to read (cold-start order)
+## Next 6 files to read (cold-start order)
 
 1. `.dev/handover.md` (this file) — recent landings + guardrail
    refresh log + active task pointer.
 2. `CLAUDE.md` § Project spirit (top section, governs all other
    rules) + § Autonomous Workflow (Step 0 → 7 + the **3-condition
-   closed stop list**, condition 3 added 2026-05-23).
+   closed stop list**, condition 3 = smell-cluster trip).
 3. `.dev/project_facts.md` — **user-declared invariants the loop
    must treat as fact** even when ROADMAP / ADR text admits other
-   readings. F-001 (zwasm v2 unavoidable) / F-002 (finished-form
-   wins) / F-003 (decision-deferral on structural plans).
+   readings. **7 entries** at 2026-05-24:
+   F-001 (zwasm v2 unavoidable; carries own JIT + GC) /
+   F-002 (finished-form wins; smallest-diff is tie-breaker not
+   veto) / F-003 (decision-deferral on structural plans) /
+   F-004 (NaN-box 64-slot day-1 incl. range / map_entry /
+   tagged_literal / string_seq / array_seq / funcref / externref) /
+   F-005 (numeric tower JVM-surface compatible, Zig-stdlib-affine
+   internal) / F-006 (mark-sweep + 3-layer alloc; zwasm dual-heap
+   with allocator injection) / F-007 (chapter cadence stays
+   dormant — user trigger only, AI must not re-propose).
 4. `.dev/principle.md` — Bad Smell catalogue (8 entries) +
-   Structural imagination phase. Note **depth ≥ 2 mandates a
-   Devil's-advocate `general-purpose` subagent** with fresh
-   context before ADR accept.
-5. `.dev/ROADMAP.md` — find IN-PROGRESS phase in §9, take the
+   Structural imagination phase + Devil's-advocate subagent
+   mandate at depth ≥ 2.
+5. `.dev/structure_plan.md` — anticipated directory tree
+   Phase 5-20. Each Phase entry owner amends in place; this is
+   the structural-imagination output map.
+6. `.dev/ROADMAP.md` — find IN-PROGRESS phase in §9, take the
    first `[ ]` row in §9.<N>. At a Phase entry, read the
-   placeholder's **Entry ADRs** + **Entry debts** lines and load
-   every referenced ADR (incl. all Revision history amendments)
-   and `D-NNN` row.
+   placeholder's **Entry ADRs** + **Entry debts** + **Entry
+   facts** lines and load every referenced ADR (incl. all
+   Revision history amendments), `D-NNN` row, and `F-NNN`
+   project fact.
 
 ## Current state
 
@@ -113,6 +124,35 @@ Fix landed:
   <one-line>`. This is the deterministic enforcement layer
   behind the probabilistic CLAUDE.md rule
   ("CLAUDE.md is a suggestion, hooks make it law").
+
+**Wave 4 — direction confirmations (2026-05-24, post-research)**:
+
+After deeper investigation
+(`private/notes/struct_imagination_research.md`, 525 lines —
+cw v0 GC + 45-tag enumeration / zwasm v1+v2 GC / Clojure JVM
+140-class survey), the user confirmed directions on 4 structural
+fronts. Captured as project_facts.md F-004 / F-005 / F-006 /
+F-007 and threaded into the relevant debt rows (D-011 / D-014a /
+D-027 / D-036) + ADR-0025 + ROADMAP §9.7 + §9.18 placeholders:
+
+- F-004: NaN-box 第二世代 = 4×16=64 slot, 44-bit pointer.
+  Day-1 type set absorbs F-004 enumerated additions (range /
+  map_entry / tagged_literal / string_seq / array_seq /
+  sorted_map / sorted_set / persistent_queue / wasm funcref /
+  externref).
+- F-005: Numeric tower = JVM-surface-compatible, Zig-stdlib-affine
+  internal (BigInt via `std.math.big.int.Managed`, Ratio =
+  (BigInt × BigInt), BigDecimal = (unscaled BigInt, i32 scale)).
+- F-006: GC = mark-sweep + free-pool + 3-layer alloc (cw v0
+  path). zwasm v2 heap remains separate; cw GC allocator
+  injects into zwasm internal bookkeeping (avoids cw v0 D110
+  dual-GC leak).
+- F-007: Chapter cadence stays dormant. Resumption is
+  user-triggered only; AI must not re-propose.
+
+`.dev/structure_plan.md` (new) — anticipated directory tree
+Phase 5-20 imagined per F-003 Structural imagination. Each Phase
+entry's owner amends in place when actual decisions land.
 
 ## Active task — §9.6 / 4.25
 
