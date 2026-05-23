@@ -220,6 +220,7 @@ test {
     _ = @import("eval/analyzer.zig");
     _ = @import("eval/macro_dispatch.zig");
     _ = @import("eval/backend/tree_walk.zig");
+    _ = @import("eval/backend/vm.zig");
     _ = @import("eval/backend/vm/opcode.zig");
     _ = @import("eval/backend/vm/compiler.zig");
     _ = @import("lang/primitive/math.zig");

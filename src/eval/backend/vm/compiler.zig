@@ -190,16 +190,21 @@ const Compiler = struct {
     }
 
     fn compileDef(self: *Compiler, n: node_mod.DefNode) Error!void {
-        // Emit the value expression first, then `op_def <idx>` where
-        // `constants[idx]` is the symbol-name String. The VM dispatch
-        // loop reads the bytes via `string_mod.asString` and calls
-        // `env.intern(current_ns, bytes, popped_value)`, then sets the
-        // dynamic / macro / private flags from the DefNode itself
-        // (carried through a sidecar lookup table in task 4.6).
+        // Emit the value expression first, then `op_def <packed>` where
+        // the low 13 bits index the symbol-name String constant and
+        // the high 3 bits carry the dynamic / macro / private flags
+        // (see `opcode.zig` for the layout). The constant-pool ceiling
+        // shrinks from u16 to `DEF_NAME_IDX_MAX` only for def name
+        // slots — call / let / get_var indices keep the full u16.
         try self.compileNode(n.value_expr);
         const name_val = try string_mod.alloc(self.rt, n.name);
         const idx = try self.addConstant(name_val);
-        try self.emit(.op_def, idx);
+        if (idx > opcode_mod.DEF_NAME_IDX_MAX) return error.TooManyConstants;
+        var packed_operand: u16 = idx;
+        if (n.is_dynamic) packed_operand |= opcode_mod.DEF_FLAG_DYNAMIC;
+        if (n.is_macro) packed_operand |= opcode_mod.DEF_FLAG_MACRO;
+        if (n.is_private) packed_operand |= opcode_mod.DEF_FLAG_PRIVATE;
+        try self.emit(.op_def, packed_operand);
     }
 
     /// Emit a jump opcode with a placeholder operand and return the
@@ -517,9 +522,33 @@ test "compile def emits value-expr then op_def with symbol-name String" {
     try testing.expectEqual(Opcode.op_def, chunk.instructions[1].opcode);
     try testing.expectEqual(Opcode.op_ret, chunk.instructions[2].opcode);
 
-    const name_val = chunk.constants[chunk.instructions[1].operand];
+    const operand = chunk.instructions[1].operand;
+    try testing.expectEqual(@as(u16, 0), operand & ~opcode_mod.DEF_NAME_IDX_MASK);
+    const name_val = chunk.constants[operand & opcode_mod.DEF_NAME_IDX_MASK];
     try testing.expect(name_val.isString());
     try testing.expectEqualStrings("hello", string_mod.asString(name_val));
+}
+
+test "compile def packs dynamic / macro / private flags into op_def operand" {
+    var f = Fixture.init(testing.allocator);
+    defer f.deinit();
+
+    const value_expr: Node = .{ .constant = .{ .value = Value.true_val } };
+    const node: Node = .{ .def_node = .{
+        .name = "foo",
+        .value_expr = &value_expr,
+        .is_dynamic = true,
+        .is_macro = false,
+        .is_private = true,
+    } };
+    const chunk = try f.compile(&node);
+
+    const operand = chunk.instructions[1].operand;
+    const name_idx = operand & opcode_mod.DEF_NAME_IDX_MASK;
+    try testing.expectEqual(@as(u16, opcode_mod.DEF_FLAG_DYNAMIC), operand & opcode_mod.DEF_FLAG_DYNAMIC);
+    try testing.expectEqual(@as(u16, 0), operand & opcode_mod.DEF_FLAG_MACRO);
+    try testing.expectEqual(@as(u16, opcode_mod.DEF_FLAG_PRIVATE), operand & opcode_mod.DEF_FLAG_PRIVATE);
+    try testing.expectEqualStrings("foo", string_mod.asString(chunk.constants[name_idx]));
 }
 
 test "compile do pops intermediate forms and keeps the last" {

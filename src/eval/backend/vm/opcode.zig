@@ -30,9 +30,14 @@ const Value = @import("../../../runtime/value.zig").Value;
 ///                          `Var` Value (analyzer pre-resolves the
 ///                          pointer; the VM decodes and calls
 ///                          `Var.deref`)
-///   - `op_def`             operand = constants index of the symbol-name
-///                          Value (the VM passes the bytes to
-///                          `env.intern` at execute time)
+///   - `op_def`             operand = packed `(flags << 13) | name_idx`
+///                          where the low 13 bits are the constants
+///                          index of the symbol-name `String` Value
+///                          (max `DEF_NAME_IDX_MAX`) and the high
+///                          3 bits carry `DEF_FLAG_DYNAMIC /
+///                          DEF_FLAG_MACRO / DEF_FLAG_PRIVATE`. The
+///                          VM passes the name bytes to `env.intern`
+///                          and stamps the flags on the resulting Var.
 ///   - `op_jump` /
 ///     `op_jump_if_false`   operand = signed instruction offset (bitcast to i16)
 ///   - `op_call` /
@@ -58,6 +63,13 @@ pub const Opcode = enum(u8) {
     op_recur = 0x0D,
     op_invoke_builtin = 0x0E,
 };
+
+/// `op_def` operand layout — see the Opcode docstring.
+pub const DEF_NAME_IDX_MASK: u16 = 0x1FFF;
+pub const DEF_NAME_IDX_MAX: u16 = DEF_NAME_IDX_MASK;
+pub const DEF_FLAG_DYNAMIC: u16 = 1 << 13;
+pub const DEF_FLAG_MACRO: u16 = 1 << 14;
+pub const DEF_FLAG_PRIVATE: u16 = 1 << 15;
 
 /// A single VM instruction. Fixed-width (opcode + u16 operand).
 ///

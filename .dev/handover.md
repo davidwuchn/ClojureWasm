@@ -16,7 +16,7 @@
 
 - **Phase**: Phase 4 IN-PROGRESS. §9.6 cluster A done
   (tasks 4.1 / 4.2 / 4.3); critical-path: 4.0 / 4.0a / 4.4 / 4.5
-  done.
+  / 4.6 done.
 - **Branch**: `cw-from-scratch` (long-lived; v0.5.0-derived;
   push free after gate green; never push to `main`).
 - **Last commit**: see `git log -1` (compute on resume — the
@@ -29,34 +29,33 @@
   (compute on resume; chapter pairing decision is per the
   `code_learning_doc` skill's two-cadence rule).
 
-## Active task — §9.6 / 4.6
+## Active task — §9.6 / 4.7
 
-`src/eval/backend/vm.zig` (new file) —
-`pub fn eval(rt, env, locals, chunk) Value` dispatch loop. Single
-`switch (Opcode)` over the 15 ops landed in 4.4. Computed-goto is
-deferred; only `@branchHint(.likely)` on the hot arm. Per-frame
-`[256]Value` slot stack mirrors TreeWalk so the same MAX_LOCALS
-invariant holds. Critical path: 4.6 → 4.7 (Phase-3 special
-forms) → … → 4.12 (exit smoke).
+Extend compiler + VM to Phase-3 special forms: `try` / `catch` /
+`throw` / `loop*` / `recur` / closure capture. Each must mirror
+`tree_walk.evalTry` / `evalLoop` / `allocFunction` so the existing
+TreeWalk tests pass verbatim under `-Dbackend=vm` (the gate flips
+at 4.8).
 
 **Retrievable identifiers**:
 
-- ROADMAP §9.6 task 4.6 + dependency-graph section at §9.6.x.
+- ROADMAP §9.6 task 4.7 + dependency-graph section at §9.6.x.
 - ADR-0005 (dual backend strategy), ADR-0022 (differential
-  wiring), ADR-0024 (scan framework + run_step).
-- `src/eval/backend/vm/opcode.zig` — Opcode operand semantics
-  table sits in the module docstring; the dispatch loop's
-  per-arm behaviour mirrors what TreeWalk does at the same
-  point. For `op_make_fn`, note that 4.5's emitter pre-allocates
-  the Function at compile time (closure-less); the dispatcher
-  just reads the constant and pushes it. Closure capture
-  (`slot_base > 0`) is task 4.7 and currently returns
-  `error.NotImplemented` from `compiler.zig`.
-- TreeWalk reference shape: `src/eval/backend/tree_walk.zig`.
-  Function struct now carries a `bytecode: ?*const
-  BytecodeChunk = null` (4.5 cycle 5); `null` ⇒ TreeWalk Node
-  body, non-null ⇒ VM bytecode body. The dispatcher routes on
-  this discriminator.
+  wiring).
+- TreeWalk reference shape: `src/eval/backend/tree_walk.zig`
+  — `evalLoop` (L249), `evalRecur` (L274), `evalThrow` (L289),
+  `evalTry` (L295), `callFunction` closure replay (L397-407).
+- VM dispatch loop landed at `src/eval/backend/vm.zig`. The
+  `op_recur` / `op_invoke_builtin` arms currently raise
+  `unsupported_feature` per `no_op_stub_forbidden.md`; 4.7
+  replaces them with real semantics + a `loop` driver that
+  drains the recur scratch. `op_throw` already sets
+  `dispatch.last_thrown_exception` and returns
+  `error.ThrownValue`; 4.7 wires the matching catch arm.
+- Closure capture: compiler.zig `compileFn` currently errors at
+  `slot_base != 0`; 4.7 widens `op_make_fn`'s operand layout so
+  the dispatcher can snapshot outer locals at fn*-evaluation
+  time.
 
 ## Open questions / blockers
 
