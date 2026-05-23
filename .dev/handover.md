@@ -118,14 +118,45 @@ numbers, does not assert pass/fail until §10.1 lock at Phase 8).
 - 4.23: `numeric/big_int.zig` struct (no arithmetic yet).
 - 4.24: `lazy_seq.zig` struct (no `force()` yet).
 - 4.25: `dispatch/method_table.zig` structs (no `dispatch()` yet).
-- 4.26: Error system migration (six sub-tasks per ADR-0018
-  amendment 2 + ADR-0019). (a) Rename 28 existing Codes to
-  `<target>_<state-adjective>`. (b) Split `tier_d_form` into 5
-  per-form Codes with hand-written templates. (c) Rename the Zig
-  error union `Error` → `ClojureWasmError`. (d) Migrate ~116
-  existing `setErrorFmt` sites. (e) Audit `@panic` /
-  `unreachable` sites per ADR-0019. (f) Wire top-level catch in
-  `main()` with exit codes 0 / 1 / 70 / 130.
+- 4.0a: `build.zig` `build_options.phase_at_least_N` bool group
+  (Phase 5 / 7 / 11 / 14 / 15 / 17). Scaffolding for ADR-0023
+  comptime conditional imports. Tasks 4.17 / 4.19 / 4.22-4.25
+  depend on it.
+- 4.26.a-f: Error system migration, now six independent task rows
+  (a) 28 Code rename / (b) Tier D 5 per-form Codes / (c)
+  `Error` → `ClojureWasmError` rename / (d) ~116 setErrorFmt
+  migration by region / (e) @panic / unreachable audit / (f)
+  main() top-level catch + exit codes 0 / 1 / 70 / 130.
+
+## Next Phase Queue (Phase 5 entry)
+
+When Phase 4 closes, promote these to §9.7 task table per
+CLAUDE.md § Autonomous Workflow "When the current phase's task
+queue empties":
+
+- HAMT persistent vector (per ADR-0007 / JVM_TO_ZIG §10)
+- HAMT persistent hashmap + hashset
+- Mark-sweep GC `GcHeap.collect` + roots + threshold trigger (per
+  ADR-0017 / JVM_TO_ZIG §3)
+- Object header bit helpers `cmpxchgLockBits` etc. (per
+  ADR-0009 + D-020)
+- `LazySeq.force()` + trampoline + thread-safe realisation (per
+  ADR-0009 + JVM_TO_ZIG §9, activates task 4.24 skeleton)
+- BigInt arithmetic + promotion (per ADR-0012 + JVM_TO_ZIG §12,
+  activates task 4.23 skeleton)
+- `TypeDescriptor.lookupMethod` + `register` + `new`; deftype /
+  defrecord / reify activation (per ADR-0007 + task 4.17 / 4.21)
+- `flip build_options.phase_at_least_5 = true` (per ADR-0023 +
+  task 4.0a)
+
+## Future ADR shopping list (recall trigger via debt.md D-021)
+
+| Future ADR | Title                                       | Trigger Phase         | Reference                                                    |
+|------------|---------------------------------------------|-----------------------|--------------------------------------------------------------|
+| ADR-0025   | Upstream skip taxonomy                      | Phase 11 entry        | ADR-0021 deferred-layer table; `test/clj/skip_taxonomy.yaml` |
+| ADR-0026   | Golden snapshot framework                   | Phase 7+              | ADR-0021 deferred-layer table                                |
+| ADR-0027   | bench/history.yaml schema                   | Phase 8 lock baseline | ROADMAP §10.1                                               |
+| ADR-0028   | State machine domain (REPL / nREPL / build) | Phase 14+             | Pollaroid INSIGHTS §2                                       |
 
 **Boundary-chain artefacts (just landed, this session)**:
 - Chapter 0020 covers 3.8–3.14 + meta in 1075 lines (`cc46a48`).

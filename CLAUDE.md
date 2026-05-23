@@ -178,6 +178,27 @@ If above ~60% of context window:
 
 Otherwise: **immediately proceed to the next task's Step 0**.
 
+### When the current phase's task queue empties
+
+When the active phase's §9.<N> task list has no remaining `[ ]`
+rows:
+
+1. Check `.dev/handover.md` "Next Phase Queue" — if populated,
+   promote those entries to §9.<N+1>'s task table.
+2. Otherwise: read `.dev/ROADMAP.md` Phase tracker → find the
+   first PENDING phase → read **only that phase's placeholder
+   section** in §9.<N+1>. The placeholder lists entry ADRs,
+   reference sections in `private/JVM_TO_ZIG.md`, and skeletons
+   to activate from earlier phases.
+3. Expand §9.<N+1> inline: mirror the §9.6 structure (table of
+   `[ ]` task rows + Exit criterion). Pull task content from the
+   listed entry ADRs and reference sections; size each row so it
+   is one to three TDD cycles.
+4. Update the Phase tracker: mark current phase DONE, next phase
+   IN-PROGRESS.
+5. Commit alone: `git commit -m "roadmap: open Phase <N+1> task list"`.
+6. Proceed to §9.<N+1>.1 Step 0.
+
 ### Stop ONLY when
 
 - User explicitly requests stop

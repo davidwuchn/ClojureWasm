@@ -115,30 +115,44 @@ These do not change between phases. Changing one requires an ADR.
 
 ### 2.1 Architecture principles (verifiable)
 
-| #   | Principle                                                       | Verified by                                                                                                                                                 |
-|-----|-----------------------------------------------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| A1  | Lower zones do not import upper zones                           | `scripts/zone_check.sh --gate` (CI)                                                                                                                         |
-| A2  | New features go via new files, not edits to existing ones       | ModuleDef + comptime flags + pods                                                                                                                           |
-| A3  | Optimisation code lives in a dedicated subtree                  | `src/eval/optimize/` only                                                                                                                                   |
-| A4  | GC is an isolated subsystem                                     | `runtime/gc/{arena, mark_sweep, roots}.zig`                                                                                                                 |
-| A5  | Tests mirror the source layout                                  | `test/` mirrors `src/`                                                                                                                                      |
-| A6  | One file ≤ 1,000 lines (soft limit)                            | Avoids the v1 `collections.zig` (6K LOC) trap                                                                                                               |
-| A7  | Concurrency and errors are designed in on day 1                 | Runtime handle + threadlocal binding + SourceLocation                                                                                                       |
-| A8  | Interop is a single deep module                                 | `lang/interop.zig` only; Class is a Value heap type                                                                                                         |
-| A9  | External modules go through a single `ExternalModule` interface | comptime / .clj source / wasm pod loaded uniformly                                                                                                          |
-| A10 | Dual-backend differential testing is the oracle                 | `Evaluator.compare()` CI mandatory; mismatch = build failure (ADR-0005)                                                                                     |
-| A11 | Day-one enum reservation                                        | `SpecialFormTag` / `Opcode` / `ValueTag` sized for phases 4-20 (ADR-0004, ADR-0012)                                                                         |
-| A12 | File size is a smell detector, not a metric                     | 1,000-line soft cap / 2,000-line hard cap, `FILE-SIZE-EXEMPT` marker (ADR-0016)                                                                             |
-| A13 | Debt ledger maintenance                                         | `.dev/debt.md` row-level predicates; phase boundary audit per row                                                                                           |
-| A14 | Structural discipline markers                                   | `FILE-SIZE-EXEMPT`, `SIBLING-PUB`, `SKIP-<reason>` markers, grep-indexed                                                                                    |
-| A15 | Error catalog as Single Source Of Truth                         | `src/runtime/error_catalog.zig` owns every user-facing message; returns `ClojureWasmError` (ADR-0018). Crash policy split across Layer 1 / 2 / 3 (ADR-0019) |
-| A16 | Test taxonomy is 5-layer at Phase 4 entry                       | `test/README.md` lists Layer 1-5 with Phase activation (ADR-0021)                                                                                           |
-| A17 | Differential testing is CI mandatory                            | `test/diff/runner.zig` + `cases.yaml` (ADR-0005, ADR-0022)                                                                                                  |
-| A18 | Source-scan gates share a framework                             | `scripts/scan_lib.sh` (ADR-0024); existing 4 check_*.sh adopt at Phase 5                                                                                    |
-| A19 | ARCHITECTURE.md is the 5-minute orientation                     | repo root `ARCHITECTURE.md` (ADR-0020)                                                                                                                      |
-| A20 | run_step is the runner dispatch pattern                         | `test/run_all.sh` `run_step` + summary (ADR-0024)                                                                                                           |
-| A21 | Comptime conditional import + stub struct for phase staging     | `runtime/X/stub.zig` parallels real X, `build_options.phase_at_least_N` switches (ADR-0023)                                                                 |
-| A22 | ADRs carry "Affected files" from 0020 onward                    | `.dev/decisions/0000_template.md` + every new ADR (ADR-0020)                                                                                                |
+The principles split into two tables. **§2.1.a** is the original cw v0
+inheritance — structural invariants verified by a gate. **§2.1.b** is
+the Phase 4 entry batch — ADR-backed extensions, each row pointing at
+its source ADR.
+
+#### §2.1.a — Structural invariants (cw v0 inheritance, gate-verified)
+
+| #  | Principle                                                       | Verified by                                                                   |
+|----|-----------------------------------------------------------------|-------------------------------------------------------------------------------|
+| A1 | Lower zones do not import upper zones                           | `scripts/zone_check.sh --gate` (CI)                                           |
+| A2 | New features go via new files, not edits to existing ones       | ModuleDef + comptime flags + pods                                             |
+| A3 | Optimisation code lives in a dedicated subtree                  | `src/eval/optimize/` only                                                     |
+| A4 | GC is an isolated subsystem                                     | `runtime/gc/{arena, mark_sweep, roots}.zig`                                   |
+| A5 | Tests mirror the source layout                                  | `test/` mirrors `src/`                                                        |
+| A6 | One file ≤ 1,000 lines (soft limit)                            | Avoids the cw v0 `collections.zig` (6K LOC) trap; hard cap 2,000 per ADR-0016 |
+| A7 | Concurrency and errors are designed in on day 1                 | Runtime handle + threadlocal binding + SourceLocation                         |
+| A8 | Interop is a single deep module                                 | `lang/interop.zig` routes through `TypeDescriptor` per ADR-0007 (Option β)   |
+| A9 | External modules go through a single `ExternalModule` interface | comptime / .clj source / wasm pod loaded uniformly                            |
+
+#### §2.1.b — Phase 4 entry batch (ADR-backed extensions)
+
+| #   | Principle                                                   | ADR source                                                                                                                                                  |
+|-----|-------------------------------------------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| A10 | Dual-backend differential testing is the oracle             | `Evaluator.compare()` CI mandatory; mismatch = build failure (ADR-0005)                                                                                     |
+| A11 | Day-one enum reservation                                    | `SpecialFormTag` / `Opcode` / `ValueTag` sized for phases 4-20 (ADR-0004, ADR-0012)                                                                         |
+| A12 | File size is a smell detector, not a metric                 | 1,000-line soft cap / 2,000-line hard cap, `FILE-SIZE-EXEMPT` marker (ADR-0016)                                                                             |
+| A13 | Debt ledger maintenance                                     | `.dev/debt.md` row-level predicates; phase boundary audit per row                                                                                           |
+| A14 | Structural discipline markers                               | `FILE-SIZE-EXEMPT`, `SIBLING-PUB`, `SKIP-<reason>` markers, grep-indexed                                                                                    |
+| A15 | Error catalog as Single Source Of Truth                     | `src/runtime/error_catalog.zig` owns every user-facing message; returns `ClojureWasmError` (ADR-0018). Crash policy split across Layer 1 / 2 / 3 (ADR-0019) |
+| A16 | Test taxonomy is 5-layer at Phase 4 entry                   | `test/README.md` lists Layer 1-5 with Phase activation (ADR-0021)                                                                                           |
+| A17 | Differential testing is CI mandatory                        | `test/diff/runner.zig` + `cases.yaml` (ADR-0005, ADR-0022)                                                                                                  |
+| A18 | Source-scan gates share a framework                         | `scripts/scan_lib.sh` (ADR-0024); existing 4 check_*.sh adopt at Phase 5                                                                                    |
+| A19 | ARCHITECTURE.md is the 5-minute orientation                 | repo root `ARCHITECTURE.md` (ADR-0020)                                                                                                                      |
+| A20 | run_step is the runner dispatch pattern                     | `test/run_all.sh` `run_step` + summary (ADR-0024)                                                                                                           |
+| A21 | Comptime conditional import + stub struct for phase staging | `runtime/X/stub.zig` parallels real X, `build_options.phase_at_least_N` switches (ADR-0023)                                                                 |
+| A22 | ADRs carry "Affected files" from 0020 onward                | `.dev/decisions/0000_template.md` + every new ADR (ADR-0020)                                                                                                |
+| A23 | Bad Smell sensor + four depths of revision                  | `.dev/principle.md` + `.claude/rules/plan_revision_thinking.md` (no ADR — meta layer above ADR / ROADMAP)                                                  |
+| A24 | Autonomous workflow is direct sequential                    | `CLAUDE.md § Autonomous Workflow` (cw v0-style, in-loop reflexive re-read of principle.md at Steps 1 / 4 / 6)                                              |
 
 ---
 
@@ -308,32 +322,31 @@ binding frames) only**: `pub threadlocal var current_frame: ?*BindingFrame`.
 
 CLI: `cljw eval --tree-walk` switches backends; default is VM after Phase 4.
 
-### 4.5 Interop as a single deep module + Class as Value
+### 4.5 Interop as a single deep module + TypeDescriptor (Option β)
 
-Interop is one deep module with a 3-entry interface:
+cw v1 adopts **Option β** (ADR-0007): a Zig-native `TypeDescriptor`
+plays the role JVM's `Class` plays for Clojure, without inheriting
+JVM bytecode emission or the runtime reflection surface. `Class`-like
+behaviour (`class` / `instance?` / `type` / `deftype` / `defrecord`
+/ `reify` / `definterface`) routes through this descriptor.
 
-```zig
-pub const InterOp = struct {
-    pub fn call(rt, target: Value, method: []const u8, args: []const Value) !Value;
-    pub fn fieldGet(rt, target: Value, field: []const u8) !Value;
-    pub fn isInstance(rt, class_val: Value, val: Value) bool;
-};
-```
+**TypeDescriptor** (per ADR-0007) holds:
+- `fqcn` (interned symbol), `kind` (`native | deftype | defrecord
+  | reify_anon`)
+- `field_layout` (optional, fixed at analyzer time)
+- `protocol_impls`, `method_table` (sorted slice + per-call-site
+  `CallSite` cache from Phase 7, per ADR-0008)
+- `parent` (optional), `meta`
 
-**A `Class` is itself a Value** (Group D `class` slot).
+`(.method obj args)` and `(ClassName. ...)` and `import` / `doto`
+/ `..` all dispatch through `method_table.lookup` per ADR-0008.
+Host-imported types (UUID / Date / File / …) register a
+`TypeDescriptor` from `src/runtime/host/` per ADR-0011; from the
+user's perspective the dispatch is identical to cw-native types.
 
-- Instance method: `(.length s)` → `call(rt, "abc", "length", &.{})`
-- Static: `(String/length s)` → `call(rt, classFor("String"), "length", &.{s})` (target is the Class Value)
-- Field: `(.-x point)` → `fieldGet(rt, point, "x")`
-- `(instance? String s)` → `isInstance(rt, classFor("String"), s)`
-
-**Internal seams**: `ClassRegistry` maps `name → ClassDef` (methods, fields,
-type_key).
-
-**Two adapters**:
-1. **PureZigClass**: methods are Zig functions (e.g. `java.io.File`,
-   `clojure.lang.String` equivalents).
-2. **PodClass**: method calls dispatch to a Wasm Component's `invoke`.
+The Phase-4 skeletons for these structs land in tasks 4.17 / 4.18
+/ 4.25; full behaviours activate in Phase 5 (deftype / defrecord
+/ reify) and Phase 7 (protocol dispatch with `CallSite` cache).
 
 ### 4.6 ExternalModule (one interface, three adapters)
 
@@ -364,23 +377,32 @@ src/runtime/gc/
 └── roots.zig         Root set definition + per-type mark walk
 ```
 
-- Mark bit lives in `HeapHeader.marked` (no separate hash map).
+- Mark bit lives in `ObjectHeader.gc_and_lock` low-30-bit range
+  (per ADR-0009 / ADR-0017): `u32 gc_and_lock` packed as
+  `lock_state: u2` at bits 0-1 and `gc_mark: u30` at bits 2-31.
 - `suppress_count: u32` blocks collection during macro expansion.
 - `--gc-stress` runs collect on every allocation (test only).
-- `gc.collect(rt)` takes `*Runtime` and locks via `std.Io.Mutex.lock(rt.io)`.
-- Allocator vtable callbacks do NOT take the mutex (per-thread arena or
-  lock-free bump).
+- `gc.collect(rt)` takes `*Runtime` and uses `std.Thread.Mutex`
+  (Zig 0.16's primitive; cf. JVM_TO_ZIG.md §3.3 / §8.2).
+- Allocator vtable callbacks do NOT take the mutex (per-thread
+  arena or lock-free bump).
+- Stop-the-world is acceptable at cw v1 scale (batch / REPL); the
+  Phase 15+ re-evaluation considers generational GC if pause time
+  becomes a problem (per ADR-0017 Consequences).
 
-### 4.8 Memory tiers (3 allocators)
+### 4.8 Memory tiers (3 allocators) — per ADR-0017
 
-| Tier       | Contents                             | GC? | Lifetime   |
-|------------|--------------------------------------|-----|------------|
-| GPA        | Env, Namespace, Var, HashMap backing | No  | Process    |
-| node_arena | Reader Form, Analyzer Node           | No  | Per-eval   |
-| GC alloc   | Runtime Values                       | Yes | Mark-sweep |
+| Tier                      | Contents                                             | GC? | Lifetime                                    |
+|---------------------------|------------------------------------------------------|-----|---------------------------------------------|
+| GeneralPurposeAllocator   | Env, Namespace, Var, HashMap backing                 | No  | Process                                     |
+| ArenaAllocator (per-eval) | Reader Form, Analyzer Node, short-lived seq pipeline | No  | Per-eval (bulk freed at REPL prompt return) |
+| GcHeap (mark-sweep)       | Runtime Values reachable beyond one eval             | Yes | Mark-sweep                                  |
 
-Nodes are not Values, so the GC will not trace them — false-liveness is
-structurally avoided.
+Nodes are not Values, so the GC will not trace them — false-liveness
+is structurally avoided. Per-eval arena absorbs the majority of
+short-lived allocation; the mark-sweep heap holds only objects that
+outlive a single evaluation. See ADR-0017 for the rationale against
+generational GC at Phase 5 scale.
 
 ---
 
@@ -920,35 +942,41 @@ ships the `bench/quick.sh` harness §10.2 has so far only described.
 > Phase 4 grows the surface area further. 4.4 onward is the VM
 > proper.
 
-| Task | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | Status |
-|------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|--------|
-| 4.0  | Extend the existing `bench/quick.sh` (Phase 1 baseline harness) to land the Phase-4 fixtures (`fib_recursive`, `arith_loop`, `list_build`, `quote_chain`, `let_chain`) at the `# TODO(phase4)` placeholder (around line 94). Append rows to `bench/quick_baseline.txt`. Wire `bash bench/quick.sh` into `test/run_all.sh` as a non-failing observability suite (records numbers, does not assert). Phases 4-7 quick-bench tracker per ROADMAP §10.2                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | [ ]    |
-| 4.1  | `src/eval/analyzer.zig::analyzeLoopStar` (line ~678) and `analyzeRecur` (line ~737) — bound-check `binding_forms.len / 2` and `items.len - 1` against `std.math.maxInt(u16)` before `@intCast`. On overflow, raise `error_mod.setErrorFmt(.analysis, .not_implemented, ..., "loop*/recur arity {d} exceeds u16 limit", ...)`. Adds a regression test that uses 65537 bindings                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | [ ]    |
-| 4.2  | Uniform `errdefer rt.gpa.destroy(s)` (or `ensureUnusedCapacity` + `appendAssumeCapacity`) across `runtime/collection/string.zig::alloc`, `runtime/collection/ex_info.zig::alloc`, `runtime/collection/list.zig::consHeap`, `eval/backend/tree_walk.zig::allocFunction`. Test under `testing.allocator` with failing-mode injection                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             | [ ]    |
-| 4.3  | `lang/macro_transforms.zig::expandAnd` / `expandOr` rewritten as a single non-recursive expansion (left-fold to a chain of `let*`/`if` Forms in one pass). Long `(and a₁ … a_N)` no longer feeds `analyze` N times. Regression test: 10000-arg `(and …)` reaches eval without `error.StackOverflow`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | [ ]    |
-| 4.4  | `src/eval/backend/vm/opcode.zig` (new) — Opcode enum (initial set: `op_const`, `op_load_local`, `op_store_local`, `op_def`, `op_get_var`, `op_jump`, `op_jump_if_false`, `op_call`, `op_ret`, `op_pop`, `op_dup`, `op_throw`, `op_make_fn`, `op_recur`, `op_invoke_builtin`). `BytecodeChunk` struct + per-chunk constant pool                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                | [ ]    |
-| 4.5  | `src/eval/backend/vm/compiler.zig` (new) — `compile(arena, node) → BytecodeChunk` for Phase-1/2 special forms (`def` / `if` / `do` / `quote` / `let*` / `fn*` / call). `lang/primitive` builtins still reach via `op_invoke_builtin`. `analyze`-shape Node already factored, so this is a single-pass tree visitor                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | [ ]    |
-| 4.6  | `src/eval/backend/vm.zig` (new) — `pub fn eval(rt, env, locals, chunk) Value` dispatch loop. Single switch over `Opcode`; computed-goto deferred (`@branchHint(.likely)` on the hot arm only). Per-frame `[256]Value` slot stack mirrors TreeWalk so the same `MAX_LOCALS` invariant holds                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | [ ]    |
-| 4.7  | Compiler + VM: extend to Phase-3 special forms — `try` / `catch` / `throw` / `loop*` / `recur` / closure capture. Mirrors `tree_walk.evalTry` / `evalLoop` / `allocFunction` so each TreeWalk test under `-Dbackend=vm` passes verbatim                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       | [ ]    |
-| 4.8  | `build.zig` — `-Dbackend=tree-walk\|vm` comptime gate. `tree_walk.installVTable` vs `vm.installVTable` (the latter new) flips at startup. Default stays `tree-walk` until 4.12 confirms parity                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                | [ ]    |
-| 4.9  | Run the full unit-test suite under both backends. Any TreeWalk-only test (e.g., heap collection deinit-ordering specifics) is moved into a `runtime`-zone test that does not depend on backend; or duplicated with a backend-specific `test "...vm only"` qualifier                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | [ ]    |
-| 4.10 | `src/eval/evaluator.zig` (new) — `pub fn compare(rt, env, src) struct { tree_walk: Value, vm: Value, equal: bool }`. Wires this into the CI-mandatory differential gate per ADR-0005, with `test/diff/runner.zig` + `cases.yaml` per ADR-0022 landing in this task. Phase 17 extends to a third backend (JIT)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | [ ]    |
-| 4.11 | `test/e2e/phase4_cli.sh` — re-runs the §9.5 `phase3_cli.sh` cases under both backends via `cljw -Dbackend=vm -e ...` (or env var if `-D` doesn't reach the binary). Wired into `test/run_all.sh`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             | [ ]    |
-| 4.12 | Phase-4 exit smoke: `(defn f [x] (+ x 1)) (f 2)` → `3` under **both** backends. e2e in `test/e2e/phase4_exit.sh`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | [ ]    |
-| 4.13 | `src/runtime/io_interface.zig` (new) — Zone 0 vtable abstraction for `Reader` / `Writer` / `Net` / `Process` (per ADR-0015). Concrete `io_default.zig` (Zone 1) wires it to current `std.Io`. Insulates the runtime from Zig stdlib reshape                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | [ ]    |
-| 4.14 | `.dev/debt.md` operationalize — populate against the existing 16-row skeleton, add Phase-4 row entries as the wave proceeds. `continue` Step 0.5 debt sweep reads from this file each resume                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  | [ ]    |
-| 4.15 | `compat_tiers.yaml` expansion — populate `clojure.core` `var_count_target` (currently `TBD-by-task-4.15`) from JVM source enumeration; expand `host_classes` to the 40 entries promised in ADR-0011                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | [ ]    |
-| 4.16 | Wasm FFI removal (per ADR-0006) — `-Dwasm=false` default in `build.zig`, remove the `cljw.wasm` namespace, drop the `zwasm` dependency from `build.zig.zon`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | [ ]    |
-| 4.17 | `src/runtime/type_descriptor.zig` skeleton (per ADR-0007) — `TypeDescriptor` struct + `TypedInstance` + `ReifiedInstance` declarations. No `lookupMethod` / `register` / `new` functions yet (those land in Phase 5)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | [ ]    |
-| 4.18 | `src/runtime/protocol.zig` dispatch table skeleton (per ADR-0008) — `ProtocolDescriptor` + `MethodEntry` struct declarations. No `dispatch` function yet (Phase 7 wires the `CallSite` cache)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | [ ]    |
-| 4.19 | Object header layout extension (per ADR-0009) — `ObjectHeader` packed struct gains the `u32 gc_and_lock` field with `lock_state: u2` reserved at the low bits and `gc_mark: u30` at the high bits. Phase 5 reads/writes; Phase 4 only adds the slot. `monitor-enter` / `monitor-exit` / `locking` return a structured error in Phase 4 (per ADR-0009 + `no_op_stub_forbidden.md`)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             | [ ]    |
-| 4.20 | `src/runtime/host/` directory + `_host_api.zig` (per ADR-0011) — empty subdirectories with one placeholder `.zig` each. `_host_api.zig` defines the `Extension` struct and `___HOST_EXTENSION` marker contract                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                | [ ]    |
-| 4.21 | `deftype` / `defrecord` / `reify` / `definterface` analyzer recognition (per ADR-0007). Reader accepts the syntax; analyzer raises `Code.feature_not_supported` (the generic fallback per ADR-0018 amendment 2) with the form name as `.{ .name = "deftype" }` etc. User-facing message: `"deftype is not yet supported in ClojureWasm"`. Task 4.26.b later promotes these to named sub-feature Codes (`deftype_not_supported`, `defrecord_not_supported`, ...). No fall-through, no no-op stub                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                | [ ]    |
-| 4.22 | `src/runtime/binding_stack.zig` — `threadlocal var dval_top: ?*DvalFrame` + `pushBindings` / `popBindings` / `varDeref` (real implementation, not stub). Required from Phase 2 onward for `*out*` / `*err*` / `*ns*` even though Phase 4 entry has not exercised it heavily. Thread-spawn inheritance lives in Phase 14-15                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | [ ]    |
-| 4.23 | `src/runtime/numeric/big_int.zig` — `BigInt` struct wrapping `std.math.big.int.Managed`; ValueTag `big_int` slot reservation (per ADR-0012). No arithmetic promotion functions in Phase 4; Phase 5 wires the long → BigInt path                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | [ ]    |
-| 4.24 | `src/runtime/lazy_seq.zig` — `LazySeq` struct (thunk + sval + `seq_cache: std.atomic.Value(?*Seq)` + `mutex: std.Thread.Mutex`) declaration. `force()` function lands in Phase 5 (per ADR-0009 + the trampoline pattern). Phase 4 has only the struct declaration                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             | [ ]    |
-| 4.25 | `src/runtime/dispatch/method_table.zig` — `MethodEntry` struct (interned symbol + fn ptr) and `CallSite` struct (`last_type` + `last_method` cache slots) declaration. The `dispatch` function lands in Phase 7 (per ADR-0008). Phase 4 has only the struct declarations                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | [ ]    |
-| 4.26 | Error system migration per ADR-0018 amendment-2 + ADR-0019. Six sub-tasks: (a) rename existing 28 `Code` variants in `error_catalog.zig` to the `<target>_<state-adjective>` convention; (b) split the generic `tier_d_form` into one Code per form (`tier_d_gen_class` / `tier_d_gen_interface` / `tier_d_compile` / `tier_d_proxy_deep` / `tier_d_bean_deep`) with hand-written user-helpful templates; (c) rename the Zig error union from `Error` to `ClojureWasmError` in `error.zig` and all signatures; (d) migrate the existing ~116 `setErrorFmt(...)` call sites (recount with `grep -rn 'setErrorFmt' src/ \| wc -l` at task open) to `error_catalog.raise(.code, loc, args)`, splitting by source-tree region (`reader.zig` / `analyzer.zig` / `tree_walk.zig` / `lang/macro_transforms.zig` / `lang/primitive/*` / `runtime/error.zig` helpers); (e) audit `@panic` and `unreachable` sites per ADR-0019, converting user-reachable ones to catalog raises and annotating the rest with a `// @panic: <reason>` justification; (f) wire the top-level catch in `main()` to emit catalog errors with exit code 1, internal errors with exit code 70. Self-check at completion: `grep -rn "setErrorFmt" src/` returns only the catalog file and the `setErrorFmt` definition itself | [ ]    |
+| Task   | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               | Status |
+|--------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|--------|
+| 4.0    | Extend the existing `bench/quick.sh` (Phase 1 baseline harness) to land the Phase-4 fixtures (`fib_recursive`, `arith_loop`, `list_build`, `quote_chain`, `let_chain`) at the `# TODO(phase4)` placeholder (around line 94). Append rows to `bench/quick_baseline.txt`. Wire `bash bench/quick.sh` into `test/run_all.sh` as a non-failing observability suite (records numbers, does not assert). Phases 4-7 quick-bench tracker per ROADMAP §10.2                                                                                                                                      | [ ]    |
+| 4.0a   | `build.zig` — add `build_options.phase_at_least_5` / `phase_at_least_7` / `phase_at_least_11` / `phase_at_least_14` / `phase_at_least_15` / `phase_at_least_17` comptime bools (all `false` at Phase 4 entry). These are the scaffolding for ADR-0023 comptime conditional imports. Tasks 4.17 / 4.19 / 4.22-4.25 read them. Each bool flips to `true` when the corresponding phase opens                                                                                                                                                                                                | [ ]    |
+| 4.1    | `src/eval/analyzer.zig::analyzeLoopStar` (line ~678) and `analyzeRecur` (line ~737) — bound-check `binding_forms.len / 2` and `items.len - 1` against `std.math.maxInt(u16)` before `@intCast`. On overflow, raise `error_mod.setErrorFmt(.analysis, .not_implemented, ..., "loop*/recur arity {d} exceeds u16 limit", ...)`. Adds a regression test that uses 65537 bindings                                                                                                                                                                                                            | [ ]    |
+| 4.2    | Uniform `errdefer rt.gpa.destroy(s)` (or `ensureUnusedCapacity` + `appendAssumeCapacity`) across `runtime/collection/string.zig::alloc`, `runtime/collection/ex_info.zig::alloc`, `runtime/collection/list.zig::consHeap`, `eval/backend/tree_walk.zig::allocFunction`. Test under `testing.allocator` with failing-mode injection                                                                                                                                                                                                                                                        | [ ]    |
+| 4.3    | `lang/macro_transforms.zig::expandAnd` / `expandOr` rewritten as a single non-recursive expansion (left-fold to a chain of `let*`/`if` Forms in one pass). Long `(and a₁ … a_N)` no longer feeds `analyze` N times. Regression test: 10000-arg `(and …)` reaches eval without `error.StackOverflow`                                                                                                                                                                                                                                                                                    | [ ]    |
+| 4.4    | `src/eval/backend/vm/opcode.zig` (new) — Opcode enum (initial set: `op_const`, `op_load_local`, `op_store_local`, `op_def`, `op_get_var`, `op_jump`, `op_jump_if_false`, `op_call`, `op_ret`, `op_pop`, `op_dup`, `op_throw`, `op_make_fn`, `op_recur`, `op_invoke_builtin`). `BytecodeChunk` struct + per-chunk constant pool                                                                                                                                                                                                                                                           | [ ]    |
+| 4.5    | `src/eval/backend/vm/compiler.zig` (new) — `compile(arena, node) → BytecodeChunk` for Phase-1/2 special forms (`def` / `if` / `do` / `quote` / `let*` / `fn*` / call). `lang/primitive` builtins still reach via `op_invoke_builtin`. `analyze`-shape Node already factored, so this is a single-pass tree visitor                                                                                                                                                                                                                                                                      | [ ]    |
+| 4.6    | `src/eval/backend/vm.zig` (new) — `pub fn eval(rt, env, locals, chunk) Value` dispatch loop. Single switch over `Opcode`; computed-goto deferred (`@branchHint(.likely)` on the hot arm only). Per-frame `[256]Value` slot stack mirrors TreeWalk so the same `MAX_LOCALS` invariant holds                                                                                                                                                                                                                                                                                               | [ ]    |
+| 4.7    | Compiler + VM: extend to Phase-3 special forms — `try` / `catch` / `throw` / `loop*` / `recur` / closure capture. Mirrors `tree_walk.evalTry` / `evalLoop` / `allocFunction` so each TreeWalk test under `-Dbackend=vm` passes verbatim                                                                                                                                                                                                                                                                                                                                                  | [ ]    |
+| 4.8    | `build.zig` — `-Dbackend=tree-walk\|vm` comptime gate. `tree_walk.installVTable` vs `vm.installVTable` (the latter new) flips at startup. Default stays `tree-walk` until 4.12 confirms parity                                                                                                                                                                                                                                                                                                                                                                                           | [ ]    |
+| 4.9    | Run the full unit-test suite under both backends. Any TreeWalk-only test (e.g., heap collection deinit-ordering specifics) is moved into a `runtime`-zone test that does not depend on backend; or duplicated with a backend-specific `test "...vm only"` qualifier                                                                                                                                                                                                                                                                                                                       | [ ]    |
+| 4.10   | `src/eval/evaluator.zig` (new) — `pub fn compare(rt, env, src) struct { tree_walk: Value, vm: Value, equal: bool }`. Wires this into the CI-mandatory differential gate per ADR-0005, with `test/diff/runner.zig` + `cases.yaml` per ADR-0022 landing in this task. Phase 17 extends to a third backend (JIT)                                                                                                                                                                                                                                                                            | [ ]    |
+| 4.11   | `test/e2e/phase4_cli.sh` — re-runs the §9.5 `phase3_cli.sh` cases under both backends via `cljw -Dbackend=vm -e ...` (or env var if `-D` doesn't reach the binary). Wired into `test/run_all.sh`                                                                                                                                                                                                                                                                                                                                                                                        | [ ]    |
+| 4.12   | Phase-4 exit smoke: `(defn f [x] (+ x 1)) (f 2)` → `3` under **both** backends. e2e in `test/e2e/phase4_exit.sh`                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | [ ]    |
+| 4.13   | `src/runtime/io_interface.zig` (new) — Zone 0 vtable abstraction for `Reader` / `Writer` / `Net` / `Process` (per ADR-0015). Concrete `io_default.zig` (Zone 1) wires it to current `std.Io`. Insulates the runtime from Zig stdlib reshape                                                                                                                                                                                                                                                                                                                                              | [ ]    |
+| 4.14   | `.dev/debt.md` operationalize — populate against the existing 16-row skeleton, add Phase-4 row entries as the wave proceeds. `continue` Step 0.5 debt sweep reads from this file each resume                                                                                                                                                                                                                                                                                                                                                                                             | [ ]    |
+| 4.15   | `compat_tiers.yaml` expansion — populate `clojure.core` `var_count_target` (currently `TBD-by-task-4.15`) from JVM source enumeration; expand `host_classes` to the 40 entries promised in ADR-0011                                                                                                                                                                                                                                                                                                                                                                                      | [ ]    |
+| 4.16   | Wasm FFI removal (per ADR-0006) — `-Dwasm=false` default in `build.zig`, remove the `cljw.wasm` namespace, drop the `zwasm` dependency from `build.zig.zon`                                                                                                                                                                                                                                                                                                                                                                                                                              | [ ]    |
+| 4.17   | `src/runtime/type_descriptor.zig` skeleton (per ADR-0007) — `TypeDescriptor` struct + `TypedInstance` + `ReifiedInstance` declarations. No `lookupMethod` / `register` / `new` functions yet (those land in Phase 5)                                                                                                                                                                                                                                                                                                                                                                     | [ ]    |
+| 4.18   | `src/runtime/protocol.zig` dispatch table skeleton (per ADR-0008) — `ProtocolDescriptor` + `MethodEntry` struct declarations. No `dispatch` function yet (Phase 7 wires the `CallSite` cache)                                                                                                                                                                                                                                                                                                                                                                                            | [ ]    |
+| 4.19   | Object header layout extension (per ADR-0009) — `ObjectHeader` packed struct gains the `u32 gc_and_lock` field with `lock_state: u2` reserved at the low bits and `gc_mark: u30` at the high bits. Phase 5 reads/writes; Phase 4 only adds the slot. `monitor-enter` / `monitor-exit` / `locking` return a structured error in Phase 4 (per ADR-0009 + `no_op_stub_forbidden.md`)                                                                                                                                                                                                        | [ ]    |
+| 4.20   | `src/runtime/host/` directory + `_host_api.zig` (per ADR-0011) — empty subdirectories with one placeholder `.zig` each. `_host_api.zig` defines the `Extension` struct and `___HOST_EXTENSION` marker contract                                                                                                                                                                                                                                                                                                                                                                           | [ ]    |
+| 4.21   | `deftype` / `defrecord` / `reify` / `definterface` analyzer recognition (per ADR-0007). Reader accepts the syntax; analyzer raises `Code.feature_not_supported` (the generic fallback per ADR-0018 amendment 2) with the form name as `.{ .name = "deftype" }` etc. User-facing message: `"deftype is not yet supported in ClojureWasm"`. Task 4.26.b later promotes these to named sub-feature Codes (`deftype_not_supported`, `defrecord_not_supported`, ...). No fall-through, no no-op stub                                                                                           | [ ]    |
+| 4.22   | `src/runtime/binding_stack.zig` — `threadlocal var dval_top: ?*DvalFrame` + `pushBindings` / `popBindings` / `varDeref` (real implementation, not stub). Required from Phase 2 onward for `*out*` / `*err*` / `*ns*` even though Phase 4 entry has not exercised it heavily. Thread-spawn inheritance lives in Phase 14-15                                                                                                                                                                                                                                                               | [ ]    |
+| 4.23   | `src/runtime/numeric/big_int.zig` — `BigInt` struct wrapping `std.math.big.int.Managed`; ValueTag `big_int` slot reservation (per ADR-0012). No arithmetic promotion functions in Phase 4; Phase 5 wires the long → BigInt path                                                                                                                                                                                                                                                                                                                                                         | [ ]    |
+| 4.24   | `src/runtime/lazy_seq.zig` — `LazySeq` struct (thunk + sval + `seq_cache: std.atomic.Value(?*Seq)` + `mutex: std.Thread.Mutex`) declaration. `force()` function lands in Phase 5 (per ADR-0009 + the trampoline pattern). Phase 4 has only the struct declaration                                                                                                                                                                                                                                                                                                                        | [ ]    |
+| 4.25   | `src/runtime/dispatch/method_table.zig` — `MethodEntry` struct (interned symbol + fn ptr) and `CallSite` struct (`last_type` + `last_method` cache slots) declaration. The `dispatch` function lands in Phase 7 (per ADR-0008). Phase 4 has only the struct declarations                                                                                                                                                                                                                                                                                                                 | [ ]    |
+| 4.26.a | Error system migration (a) — rename existing 28 `Code` variants in `error_catalog.zig` from the `<phase>_<verb-phrase>` form to `<target>_<state-adjective>` per ADR-0018 amendment 2 (e.g., `eval_type_expected_number` → `type_arg_not_number`). Update the four catalog tests accordingly                                                                                                                                                                                                                                                                                            | [ ]    |
+| 4.26.b | Error system migration (b) — split the generic `tier_d_form` Code with `{name}` slot into five per-form Codes (`tier_d_gen_class` / `tier_d_gen_interface` / `tier_d_compile` / `tier_d_proxy_deep` / `tier_d_bean_deep`) per ADR-0018 amendment 2. Each Code carries a hand-written multi-sentence template explaining the reason and the cw-native alternative. `compat_tiers.yaml` Tier D enumeration stays unchanged                                                                                                                                                                 | [ ]    |
+| 4.26.c | Error system migration (c) — rename the Zig error union from `Error` to `ClojureWasmError` in `runtime/error.zig` and update every `pub fn ... !Value` signature across `src/`. Sweep with `grep -rn "error_mod.Error\b" src/ \| wc -l` until zero                                                                                                                                                                                                                                                                                                                                       | [ ]    |
+| 4.26.d | Error system migration (d) — migrate the existing ~116 `setErrorFmt(...)` call sites to `error_catalog.raise(.code, loc, args)`. Split by source-tree region in this order: `reader.zig` (16) → `analyzer.zig` (26) → `tree_walk.zig` (11) → `lang/macro_transforms.zig` (12) → `lang/primitive/*` (5+) → `runtime/error.zig` helpers (`expectNumber` / `checkArity` / `checkArityMin` / `checkArityRange` move into the catalog as named Code arms). Self-check at completion: `grep -rn "setErrorFmt" src/` returns only the catalog file and the `setErrorFmt` definition itself | [ ]    |
+| 4.26.e | Error system migration (e) — audit every `@panic(` and `unreachable` site in `src/` per ADR-0019. Convert any user-reachable site to `error_catalog.raise(.internal_error, ...)`. For sites the compiler can prove unreachable (exhaustive switch arms), annotate with a `// @panic: compiler-proved unreachable` comment. The `scripts/scan_panic_audit.sh` count should match the annotated set                                                                                                                                                                                        | [ ]    |
+| 4.26.f | Error system migration (f) — wire the top-level catch in `src/main.zig` (`pub fn main(init: std.process.Init)`) to format catalog errors and exit with the per-Kind exit codes from ADR-0019: 0 success / 1 user-facing catalog error / 70 internal error / 130 SIGINT. Test: `cljw -e '(+ 1 :foo)'` exits 1, `cljw -e '(throw (ex-info "" {}))'` exits 1, an `internal_error` raise produces exit 70                                                                                                                                                                                    | [ ]    |
 
 After 4.0-4.26 land as `[x]`, the §9 phase tracker flips Phase 4 from
 IN-PROGRESS to DONE and Phase 5 IN-PROGRESS (🔒 x86_64 gate);
@@ -974,6 +1002,159 @@ expand Phase 5 inline in §9.7.
 > not required for opcode additions unless they alter ROADMAP §4.4
 > ("dual backend") or §13 ("forbidden patterns") — those need ADRs
 > per §17.2.
+
+### 9.7 Phase 5 — task list (PENDING, expand at Phase 5 entry)
+
+**Entry ADRs**: 0007 (TypeDescriptor) · 0008 (Protocol dispatch) ·
+0009 (Object header lock — Phase 4 reserved the slot, Phase 5
+activates `cmpxchgLockBits` helpers) · 0017 (Allocator strategy +
+mark-sweep GC) · 0023 (Comptime stub).
+**Reference**: `private/JVM_TO_ZIG.md` §3 (Allocator), §9 (lazy-seq +
+trampoline), §12 (numeric tower), §13 (interop dispatch).
+**Skeletons to activate**: TypeDescriptor (task 4.17),
+Protocol dispatch table (task 4.18), Object header (task 4.19),
+BigInt (task 4.23), lazy_seq (task 4.24), method_table (task 4.25).
+**Deliverables**: persistent collections (vector / hashmap /
+hashset HAMT), mark-sweep GC + GcHeap + sweep cycle, lazy-seq +
+trampoline + thread-safe realisation, BigInt + Ratio + numeric
+promotion, deftype / defrecord / reify activation (Tier A
+behaviour), task 4.26 carry-over if any. 🔒 OrbStack gate.
+
+Expand at Phase 5 entry per CLAUDE.md § Autonomous Workflow
+"When the current phase's task queue empties".
+
+### 9.8 Phase 6 — task list (PENDING, expand at Phase 6 entry)
+
+**Entry ADRs**: 0011 (Host extension) · 0014 (UTF-8 internal).
+**Reference**: `private/JVM_TO_ZIG.md` §13 (host stdlib mapping);
+`compat_tiers.yaml` host_classes (Phase 6 entries).
+**Deliverables**: `clojure.string` / `clojure.set` /
+`clojure.walk` / `clojure.zip` 完備、host stdlib first wave
+(`java.util.UUID` / `Date` / `Random` / `java.io.File`) per
+ADR-0011, UTF-8 string primitives, optional fuzz harness opens
+(per ADR-0021 deferred layer table).
+
+### 9.9 Phase 7 — task list (PENDING, expand at Phase 7 entry)
+
+**Entry ADRs**: 0008 (Protocol dispatch — CallSite cache activates).
+**Reference**: `private/JVM_TO_ZIG.md` §13.2 (CallSite cache).
+**Deliverables**: protocol full dispatch path + per-call-site
+monomorphic cache, multimethod with hierarchy support, transducer
+foundations (`map` / `filter` / `take` / `reduce` fused path),
+Golden snapshot test layer opens (Phase 7+, ADR-0026 future
+issuance).
+
+### 9.10 Phase 8 — task list (PENDING, expand at Phase 8 entry)
+
+**Entry ADRs**: 0005 (Dual-backend differential — full bench).
+**Reference**: ROADMAP §10 (Performance), `bench/history.yaml`.
+**Deliverables**: bench lock baseline established
+(ADR-0027 future issuance to define `bench/history.yaml` schema),
+1.2x regression gate active, dual-backend `--compare` full e2e
+coverage. 🔒 OrbStack gate.
+
+### 9.11 Phase 9 — task list (PENDING, expand at Phase 9 entry)
+
+**Entry ADRs**: 0007 (TypeDescriptor) · 0008 (Protocol dispatch) ·
+0011 (Host extension — deep interop).
+**Deliverables**: defprotocol / defmulti / deftype / defrecord /
+reify complete behaviours, host interop "single deep module"
+delivers (`(.method obj args)` + `(ClassName. ...)` + `import` /
+`doto` / `..` all route through method_table).
+
+### 9.12 Phase 10 — task list (PENDING, expand at Phase 10 entry)
+
+**Entry ADRs**: 0011 (Host extension — second wave).
+**Deliverables**: namespaces + `require` + standard library
+(Tier A) — `clojure.string` / `clojure.set` / `clojure.edn` /
+`clojure.pprint` tests green, host stdlib second wave
+(`java.time.Instant` / `LocalDate` / `java.math.BigDecimal` /
+`java.util.regex.Pattern`).
+
+### 9.13 Phase 11 — task list (PENDING, expand at Phase 11 entry)
+
+**Entry ADRs**: 0021 (Test layer taxonomy — Layer 5 Conformance
+opens) · 0013 (Tier D permanent).
+**ADRs to issue at this entry**: **ADR-0025 (Upstream skip
+taxonomy)** — `test/clj/skip_taxonomy.yaml` schema, Tier A 100%
+PASS gate semantics.
+**Reference**: `~/Documents/OSS/clojure/test/` (Upstream test
+corpus), ADR-0021 Future-layers table.
+**Deliverables**: `clojure.test` (deftest / is / are) implementation,
+10+ upstream tests ported with `;; CLJW:` tier markers, Tier A 100%
+PASS gate active.
+
+### 9.14 Phase 12 — task list (PENDING, expand at Phase 12 entry)
+
+**Entry ADRs**: 0004 (Day-1 enum — Opcode now stable).
+**Deliverables**: bytecode cache (serialize + cache_gen) per
+ROADMAP §9 table row 12, cold start < 12 ms, cache format version
+field.
+
+### 9.15 Phase 13 — task list (PENDING, expand at Phase 13 entry)
+
+**Entry ADRs**: 0010 (STM — Ref / TVal data structures).
+**Reference**: `private/JVM_TO_ZIG.md` §5 (STM Zig API).
+**Deliverables**: `Ref` and `TVal` data structures, VM optimisation
+peephole.zig, five canonical benchmarks within 110% of cw v0
+24C.10.
+
+### 9.16 Phase 14 — task list (PENDING, expand at Phase 14 entry, **v0.1.0 milestone**)
+
+**Entry ADRs**: 0015 (io_interface — REPL / nREPL wiring) ·
+0021 (Test taxonomy — Conformance gate matures).
+**ADRs to issue at this entry**: **ADR-0028 (State machine
+domain)** — nREPL session / REPL prompt / build-pipeline state
+charts.
+**Reference**: `private/JVM_TO_ZIG.md` §7 (future / promise / delay).
+**Deliverables**: CLI `cljw repl` / `cljw nrepl` /
+`cljw component build` all work, future / promise / delay,
+`compat_tiers.yaml` Tier A/B declarations done, Wasm Component
+output supported (minimal), bench/history.yaml locked baseline,
+**v0.1.0 release**. 🔒 OrbStack gate.
+
+### 9.17 Phase 15 — task list (PENDING, expand at Phase 15 entry)
+
+**Entry ADRs**: 0009 (Object header lock — activation) ·
+0010 (STM — full MVCC commit / retry / barge).
+**Reference**: `private/JVM_TO_ZIG.md` §4 (atom + CAS), §5 (STM
+phases 15.1-15.4), §6 (agent + action queue).
+**Deliverables**: atom + watch, STM `dosync` / `alter` / `commute`
+/ `ensure` / `ref-set` complete behaviours, agent + action queue,
+volatile! / locking activation (Object header lock CAS + heavy
+fallback), concurrent test layer opens (ADR-0021 deferred). 🔒.
+
+### 9.18 Phase 16 — task list (PENDING, expand at Phase 16 entry)
+
+**Entry ADRs**: 0006 (Wasm FFI defer — re-introduction condition).
+**Deliverables**: ClojureScript → JS compiler (v0.2.0 milestone),
+Wasm Component output via Pod boundary per ADR-0006 entry
+conditions.
+
+### 9.19 Phase 17 — task list (PENDING, expand at Phase 17 entry)
+
+**Decision point**: JIT go / no-go per ROADMAP §14.1.
+**Deliverables**: VM optimisation `super_instruction.zig`, five
+canonical benchmarks within 100% of cw v0 24C.10, JIT go / no-go
+ADR landed. If go: ADR-0022 amendment for 3-way differential
+(TreeWalk == VM == JIT) per CLAUDE.md § Autonomous Workflow.
+
+### 9.20 Phase 18 — task list (PENDING, expand at Phase 18 entry)
+
+**Deliverables**: Module system + math + C FFI;
+`zig build -Dmath=true` etc. comptime-gated builds.
+
+### 9.21 Phase 19 — task list (PENDING, expand at Phase 19 entry)
+
+**Deliverables**: Module Wasm FFI (zwasm import) + WIT
+auto-binding, `(wasm/component "x.wasm")` → bindgen → Clojure
+namespace.
+
+### 9.22 Phase 20 — task list (PENDING, **gated by Phase 17 outcome**)
+
+**Decision precondition**: Phase 17 JIT go ADR is `Accepted`.
+**Deliverables**: ARM64 / x86_64 JIT engine, 3-way differential
+testing (TreeWalk == VM == JIT), bench targets per Phase 17 ADR.
 
 ---
 
@@ -1273,34 +1454,94 @@ Porting cljs.analyzer + cljs.compiler is large. If yes, dedicate v0.2 to it.
 
 ## 15. References
 
+### 15.0 Top entry points (read these first)
+
+A new contributor (or a cold-context AI session) reaches the
+project through this short stack. Everything else extends from it.
+
+| Order | File                          | Purpose                                                        |
+|-------|-------------------------------|----------------------------------------------------------------|
+| 1     | `CLAUDE.md`                   | Project memory, every-turn auto-loaded                         |
+| 2     | `ARCHITECTURE.md`             | 5-minute orientation (zones / backends / error / tier / phase) |
+| 3     | `.dev/principle.md`           | Working principles + Bad Smell catalogue + depth 4 段          |
+| 4     | `.dev/handover.md`            | Current state + Active task + Next Phase Queue                 |
+| 5     | `.dev/ROADMAP.md` (this file) | Authoritative plan                                             |
+| 6     | `.dev/decisions/NNNN_*.md`    | Load-bearing decisions (browse on demand)                      |
+
 ### 15.1 Internal (committed; load-bearing)
 
-The minimum surface that must always exist:
+The minimum surface that must always exist (§15.0 lists the entry
+points; this section enumerates every required file).
 
+**Top-level / project memory**:
 - `CLAUDE.md` — Claude Code project memory (short, points to this file)
 - `README.md` — public-facing description
 - `ARCHITECTURE.md` — 5-minute orientation (ADR-0020 / ADR-0023)
-- `.dev/principle.md` — project-wide principles + Bad Smell catalogue (the meta layer above ROADMAP / ADRs)
 - `LICENSE` — EPL-2.0
+- `compat_tiers.yaml` — authoritative Tier classification
+
+**`.dev/` (project state)**:
 - `.dev/ROADMAP.md` (this file) — single source of truth
+- `.dev/principle.md` — working principles + Bad Smell catalogue (meta layer)
+- `.dev/handover.md` — current state, Active task, Next Phase Queue
+- `.dev/debt.md` — debt ledger (row-level predicates, per A13)
+- `.dev/reference_clones.md` — usage purpose of `additionalDirectories`
+- `.dev/lessons/INDEX.md` — observational lessons (distinct from ADRs)
+- `.dev/orbstack_setup.md` — Linux x86_64 gate setup
 - `.dev/README.md` — index / convention pointer
 - `.dev/decisions/{README.md, 0000_template.md}` — ADR infrastructure
+**`.claude/` (auto-loaded rules, skills, settings)**:
 - `.claude/settings.json` — permissions / hooks
-- `.claude/rules/zone_deps.md` — auto-loaded layering rules
-- `.claude/rules/zig_tips.md` — auto-loaded Zig 0.16 idioms
-- `.claude/rules/textbook_survey.md` — Step-0 survey policy + anti-pull
-  guardrails (auto-loaded on `src/**/*.zig`)
-- `.claude/rules/cljw_invocation.md` — `cljw` invocation safety
-  (auto-loaded on test/e2e and bench scripts)
-- `.claude/skills/code_learning_doc/{SKILL,TEMPLATE_TASK_NOTE,
-  TEMPLATE_PHASE_DOC}.md` — two-cadence learning material skill
-- `.claude/skills/continue/SKILL.md` — autonomous resume + 8-step TDD
-  loop + multi-agent phase-boundary chain
-- `.claude/skills/audit_scaffolding/{SKILL,CHECKS}.md` — periodic
-  scaffolding audit (incl. Section F: unadopted strategic notes)
+- `.claude/rules/zone_deps.md` — layering rules (auto-load on src/)
+- `.claude/rules/zig_tips.md` — Zig 0.16 idioms (auto-load on src/)
+- `.claude/rules/textbook_survey.md` — Step 0 survey policy + anti-pull guardrails (auto-load on `src/**/*.zig`)
+- `.claude/rules/cljw_invocation.md` — `cljw` invocation safety (auto-load on test/e2e + bench)
+- `.claude/rules/markdown_format.md` — md-table-align + commit gate
+- `.claude/rules/clojure_spec_citation.md` — Clojure semantics citation per primitive (per ADR-0013 / A11)
+- `.claude/rules/debt_dedup.md` — debt.md row de-duplication discipline (per A13)
+- `.claude/rules/exploration_vs_done.md` — exploration / Done boundary (Pollaroid-derived)
+- `.claude/rules/host_extension_layout.md` — `src/runtime/host/` Java-package mirror (per ADR-0011)
+- `.claude/rules/error_catalog_only.md` — catalog SSOT enforcement (per ADR-0018)
+- `.claude/rules/no_copy_from_v1.md` — re-derive, do not verbatim-copy cw v0
+- `.claude/rules/no_handover_predictions.md` — handover holds facts, not numeric predictions
+- `.claude/rules/no_jvm_specific_assumption.md` — cw v1 is not a JVM reimplementation
+- `.claude/rules/no_op_stub_forbidden.md` — stub vs no-op boundary
+- `.claude/rules/plan_revision_thinking.md` — Bad Smell sensor hook (per A23)
+- `.claude/rules/test_taxonomy.md` — 5-layer test placement (per ADR-0021)
+- `.claude/rules/tier_classification.md` — A/B/C/D classification per public fn (per ADR-0013)
+- `.claude/rules/extended_challenge.md` — pre-stop provisioning
+- `.claude/skills/code_learning_doc/{SKILL,TEMPLATE_TASK_NOTE,TEMPLATE_PHASE_DOC}.md` — two-cadence learning material
+- `.claude/skills/continue/SKILL.md` — thin invocation trigger; loop spec lives in `CLAUDE.md § Autonomous Workflow`
+- `.claude/skills/audit_scaffolding/{SKILL,CHECKS}.md` — periodic scaffolding audit
+
+**`scripts/` (gates and helpers)**:
 - `scripts/check_learning_doc.sh` — pairing gate (PreToolUse hook)
+- `scripts/check_md_tables.sh` — md-table-align gate
+- `scripts/check_adr_history.sh` — ADR Revision history gate
+- `scripts/check_roadmap_amendment.sh` — ROADMAP edit reminder hook
+- `scripts/check_stale_git_lock.sh` — stale `.git/index.lock` cleanup
 - `scripts/zone_check.sh` — zone checker (info / --strict / --gate)
-- `test/run_all.sh` — unified test runner
+- `scripts/scan_lib.sh` — shared library for source-scan gates (per ADR-0024)
+- `scripts/scan_catalog_only.sh` — ADR-0018 enforcement (informational at Phase 4)
+- `scripts/scan_panic_audit.sh` — ADR-0019 enforcement (informational at Phase 4)
+- `scripts/check_compat_tiers_sync.sh` / `check_no_op_stub.sh` / `check_tier_d_error_msg.sh` / `file_size_check.sh` — informational at Phase 4, gates at Phase 5+
+- `scripts/print_handover_brief.sh` — SessionStart / PostCompact hook
+- `.githooks/pre-commit`, `.githooks/pre-push`
+
+**ADRs (browse on demand, see `.dev/decisions/`)** — 25 ADRs landed at
+Phase 4 entry. Grouped by category:
+- **Governance / process**: 0020 (ADR template + Affected files), 0024 (Source-scan + run_step)
+- **Error / crash**: 0018 (Catalog SSOT), 0019 (Crash policy)
+- **Architecture decisions**: 0007 (TypeDescriptor Option β), 0008 (Protocol dispatch), 0009 (Object header lock), 0010 (STM Tier A), 0011 (Host extension), 0012 (NaN-box ValueTag day-1), 0013 (Tier D permanent), 0014 (UTF-8 internal), 0017 (Allocator strategy)
+- **Build / I/O / staging**: 0015 (io_interface Zone 0 vtable), 0023 (Comptime stub)
+- **Test**: 0005 (Dual-backend differential), 0021 (Test taxonomy), 0022 (Differential wiring)
+- **Discipline**: 0016 (File size smell)
+- **Day-1 reserve**: 0004 (Enum reservation)
+- **Phase scope**: 0006 (Wasm FFI defer)
+- **Pre-Phase-4 ADRs**: 0001 (Macroexpand routing), 0002 (Phase 3 exit no map literal), 0003 (zlinter no_deprecated gate)
+
+**Other tracked**:
+- `test/{README.md, e2e/*, diff/README.md}` + `bench/{README.md, quick.sh}`
 - `docs/ja/{README.md, learn_clojurewasm/, learn_zig/}` — learning docs
 - `build.zig`, `build.zig.zon`, `flake.nix`, `.envrc`, `.gitignore`
 - `src/main.zig` and the rest of `src/`
@@ -1402,6 +1643,20 @@ Project-specific:
 | **x86_64 Gate**     | A phase-completion gate: `zig build test` on OrbStack Ubuntu x86_64.                                  |
 | **Juicy Main**      | `pub fn main(init: std.process.Init)` (a Zig 0.16 idiom).                                             |
 | **Learning doc**    | `docs/ja/learn_clojurewasm/NNNN_<slug>.md`, the Japanese learning narrative required by §12.2.       |
+
+Phase 4 entry batch additions:
+
+| Term                     | Meaning                                                                                                                                                                                                                          |
+|--------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| **Bad Smell**            | Mid-implementation "this feels off" signals catalogued in `.dev/principle.md`. Memory aid, not a checklist. Triggers Step 1 / 4 / 6 self-audit (per A23 / A24).                                                                  |
+| **depth (1-4)**          | Revision depth picked when a Bad Smell triggers: 1 local fix → 2 ADR amend → 3 ADR cascade → 4 Big rewrite. Per `.dev/principle.md`.                                                                                          |
+| **catalog Code**         | A variant of `Code` in `src/runtime/error_catalog.zig` identifying a user-facing message. Naming: `<target>_<state-adjective>` per ADR-0018 amendment 2.                                                                         |
+| **ClojureWasmError**     | The Zig error union returned by every `raise()` site in `src/runtime/error_catalog.zig` (per ADR-0018).                                                                                                                          |
+| **TypeDescriptor**       | cw v1's Option β `Class`-equivalent (per ADR-0007). Holds `fqcn` / `kind` / `field_layout` / `protocol_impls` / `method_table` / `parent` / `meta`.                                                                             |
+| **Tier D form**          | A form permanently excluded from cw v1 (per ADR-0013). Each Tier D form has a dedicated `tier_d_<form>` catalog Code with a hand-written user-helpful template.                                                                  |
+| **Phase open procedure** | The five-step move at a Phase boundary: promote Next Phase Queue → expand §9.<N+1> from placeholder → flip Phase tracker → commit `roadmap: open Phase <N+1> task list` → proceed (per `CLAUDE.md § Autonomous Workflow`). |
+| **Layer (test)**         | One of the 5 test layers in ADR-0021: Unit / E2E / Differential / Bench quick / Conformance.                                                                                                                                     |
+| **principle.md**         | `.dev/principle.md`: the meta layer above ROADMAP / ADR / CLAUDE.md. Defines premises, Bad Smell catalogue, depth 1-4, three questions to picture the finished form.                                                             |
 
 ---
 
