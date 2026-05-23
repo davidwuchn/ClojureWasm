@@ -125,9 +125,9 @@ ClojureWasmFromScratch/
    │  ├─ runtime.zig
    │  ├─ env.zig                   Namespace / Var / dynamic binding stack
    │  ├─ dispatch.zig              Layer-0 VTable + threadlocal
-   │  ├─ dispatch/                                 ★new (Phase 17 entry, D-035)
-   │  │  ├─ callable.zig           backend-shared callable dispatch
-   │  │  └─ method_table.zig       MethodEntry + CallSite cache       Phase 7
+   │  ├─ dispatch/                                 ★new (Phase 4 entry, landed at 4.25)
+   │  │  ├─ method_table.zig       CallSite cache (4.25 skeleton; dispatch fn at Phase 7 per ADR-0008 a1)
+   │  │  └─ callable.zig                                              ★new Phase 17 entry (D-035, backend-shared callable dispatch)
    │  ├─ error.zig
    │  ├─ error_catalog.zig
    │  ├─ io_interface.zig          Tier 1 (zone 0)
