@@ -3,22 +3,50 @@
 > Loaded together with SKILL.md. Stable policies (rare changes) sit
 > here, separate from per-task steps (frequent changes).
 
-## Self-perpetuation
+## Self-perpetuation — sequential by default
 
-After completing a per-task TDD cycle, `/continue` re-arms via:
+After completing a per-task TDD cycle, **immediately proceed to the
+next task's Step 0**. No `ScheduleWakeup`. The autonomous loop runs
+as straight-line code: Step 0 → 1 → 2 → 3 → 4 → 5 → 6 → 7 → 8 →
+(next task's Step 0). Commit chains are unbroken; the agent does
+not pause between tasks.
 
-```
-ScheduleWakeup(delaySeconds=60, prompt="<original /continue input>",
-               reason="awaiting cw v1 next task <task-id>")
-```
+This is the default. Sequential execution preserves rhythm and
+avoids the per-task clock-time tax that re-arm patterns impose.
 
-### Why 60 seconds
+### When `ScheduleWakeup` IS used (narrow list)
 
-1. Quick handoff in active sessions.
-2. Stays within the Anthropic prompt cache TTL (5 min).
-3. Aligns with handover.md update cadence (commit -> next task).
-4. Buffers `git push` confirmation lag.
-5. Short enough that idle re-arm wastes minimal compute.
+`ScheduleWakeup` is reserved for waiting on **external systems the
+harness cannot notify the agent about**:
+
+1. An OrbStack cold build that genuinely takes >5 minutes (and
+   only when the agent has nothing else to do in parallel).
+2. A CI run on a remote host being polled.
+3. A user-requested long delay ("re-check in 30 minutes").
+4. A fallback heartbeat after a true stop condition (delay
+   ≥1200s; long enough that the cache miss is amortised).
+
+`ScheduleWakeup(60s)` between tasks is **explicitly forbidden** —
+it wasted clock time without buying anything.
+
+## Stop conditions (loop ends, no auto-continuation)
+
+`/continue` stops (the loop ends, control returns to the user)
+under exactly these conditions:
+
+1. **`git push` permission required**: cw v1 ROADMAP forbids push
+   without user approval.
+2. **Ambiguous test failure**: not a known false positive; root
+   cause unclear.
+3. **Audit `block` finding**: `audit_scaffolding` returned a
+   blocker.
+4. **ADR-level decision**: e.g., tier classification change, scope
+   shift.
+5. **Phase boundary**: at Phase close, after handover.md update
+   review.
+
+In every other case, the loop continues straight into the next
+task's Step 0. No wait, no re-arm.
 
 ## Git operations are serial
 
@@ -28,21 +56,6 @@ ScheduleWakeup(delaySeconds=60, prompt="<original /continue input>",
    (PreToolUse Bash hook).
 2. If the lock is >60s old and no `git` process holds it, remove it.
 3. Otherwise the hook backs off; caller retries.
-
-## Stop conditions
-
-`/continue` stops (does NOT re-arm) under exactly these conditions:
-
-1. **`git push` permission required**: cw v1 ROADMAP forbids push
-   without user approval.
-2. **Ambiguous test failure**: not a known false positive; root cause
-   unclear.
-3. **Audit `block` finding**: `audit_scaffolding` returned a blocker.
-4. **ADR-level decision**: e.g., tier classification change, scope
-   shift.
-5. **Phase boundary**: at Phase close, after handover.md update review.
-
-In all other cases, re-arm.
 
 ## Step 0.5: Debt sweep
 
@@ -86,12 +99,15 @@ Currently: Mac host + OrbStack Ubuntu x86_64.
   this class of flake.
 - Phase 13+: Windows track is separate (per ROADMAP §3 scope).
 
-## ScheduleWakeup reasons
+## ScheduleWakeup reasons (only when it fires at all)
 
-The `reason` field is specific:
+Per the policy above, `ScheduleWakeup` is rare. When it does
+fire, the `reason` field is specific:
 
-- OK: "awaiting cw v1 next task §9.6 / 4.0"
+- OK: "OrbStack cold build, large change set"
 - OK: "watching CI build cw v1 §9.6 / 4.2 errdefer"
+- OK: "fallback heartbeat after audit block"
+- NG: "awaiting next task" (sequential execution does not need this)
 - NG: "waiting"
 - NG: "continue loop"
 
