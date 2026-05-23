@@ -27,6 +27,7 @@ const dispatch = @import("../../runtime/dispatch.zig");
 const error_mod = @import("../../runtime/error.zig");
 const error_catalog = @import("../../runtime/error_catalog.zig");
 const tree_walk = @import("tree_walk.zig");
+const ex_info_mod = @import("../../runtime/collection/ex_info.zig");
 
 const Opcode = opcode_mod.Opcode;
 const Instruction = opcode_mod.Instruction;
@@ -44,6 +45,17 @@ const Function = tree_walk.Function;
 /// raises `internal_error` if a malformed chunk overflows.
 pub const OPERAND_STACK_MAX: u16 = 256;
 
+/// Per-frame exception-handler stack ceiling. Deep `try` nesting is
+/// rare; oversize raises `internal_error`. Mirrors v1's `HANDLERS_MAX`
+/// but per-call rather than VM-global (cw v2 dispatcher is single-frame
+/// per `eval()` call).
+pub const HANDLER_STACK_MAX: u16 = 32;
+
+const Handler = struct {
+    catch_ip: usize,
+    saved_sp: u16,
+};
+
 /// Evaluate a compiled chunk. `locals` is the caller-owned slot array
 /// (typically a fixed 256-entry stack array, matching `tree_walk.eval`).
 /// Returns the value produced by `op_ret`.
@@ -56,14 +68,63 @@ pub fn eval(
     var stack: [OPERAND_STACK_MAX]Value = undefined;
     var sp: u16 = 0;
     var ip: usize = 0;
+    var handlers: [HANDLER_STACK_MAX]Handler = undefined;
+    var handler_count: u16 = 0;
 
     while (true) {
-        if (ip >= chunk.instructions.len)
-            return raiseInternal("vm: ip past end of chunk");
-        const instr = chunk.instructions[ip];
-        ip += 1;
+        const step_result = stepOnce(rt, env, locals, chunk, &stack, &sp, &ip, &handlers, &handler_count);
+        if (step_result) |maybe_return| {
+            if (maybe_return) |v| return v;
+        } else |err| {
+            if (err == error.ThrownValue and handler_count > 0) {
+                handler_count -= 1;
+                const h = handlers[handler_count];
+                ip = h.catch_ip;
+                sp = h.saved_sp;
+                const thrown = dispatch.last_thrown_exception orelse
+                    return raiseInternal("vm: ThrownValue without payload");
+                dispatch.last_thrown_exception = null;
+                if (sp >= OPERAND_STACK_MAX)
+                    return raiseInternal("vm: handler unwind overflow");
+                stack[sp] = thrown;
+                sp += 1;
+                continue;
+            }
+            return err;
+        }
+    }
+}
 
-        switch (instr.opcode) {
+/// Fetch + execute one instruction. Returns `null` to keep looping,
+/// a non-null Value when `op_ret` fires, or propagates the Zig error
+/// so the outer loop can route `error.ThrownValue` through the
+/// handler stack.
+fn stepOnce(
+    rt: *Runtime,
+    env: *Env,
+    locals: []Value,
+    chunk: *const BytecodeChunk,
+    stack: *[OPERAND_STACK_MAX]Value,
+    sp_ptr: *u16,
+    ip_ptr: *usize,
+    handlers: *[HANDLER_STACK_MAX]Handler,
+    handler_count_ptr: *u16,
+) anyerror!?Value {
+    var sp = sp_ptr.*;
+    var ip = ip_ptr.*;
+    var handler_count = handler_count_ptr.*;
+    defer {
+        sp_ptr.* = sp;
+        ip_ptr.* = ip;
+        handler_count_ptr.* = handler_count;
+    }
+
+    if (ip >= chunk.instructions.len)
+        return raiseInternal("vm: ip past end of chunk");
+    const instr = chunk.instructions[ip];
+    ip += 1;
+
+    switch (instr.opcode) {
             .op_const => {
                 @branchHint(.likely);
                 if (instr.operand >= chunk.constants.len)
@@ -202,8 +263,48 @@ pub fn eval(
                 // through silently.
                 return error_catalog.raise(.unsupported_feature, .{}, .{ .name = "op_invoke_builtin" });
             },
-        }
+            .op_push_handler => {
+                const offset: i16 = @bitCast(instr.operand);
+                const catch_ip = applyJump(ip, offset) orelse
+                    return raiseInternal("vm: op_push_handler target out of range");
+                if (handler_count >= HANDLER_STACK_MAX)
+                    return raiseInternal("vm: handler stack overflow");
+                handlers[handler_count] = .{ .catch_ip = catch_ip, .saved_sp = sp };
+                handler_count += 1;
+            },
+            .op_pop_handler => {
+                if (handler_count == 0)
+                    return raiseInternal("vm: op_pop_handler on empty handler stack");
+                handler_count -= 1;
+            },
+            .op_match_class => {
+                if (sp == 0)
+                    return raiseInternal("vm: op_match_class on empty stack");
+                if (instr.operand >= chunk.constants.len)
+                    return raiseInternal("vm: op_match_class constant index out of range");
+                const class_val = chunk.constants[instr.operand];
+                if (!class_val.isString())
+                    return raiseInternal("vm: op_match_class constant is not a String");
+                const thrown = stack[sp - 1];
+                const matches = matchExceptionClass(string_mod.asString(class_val), thrown);
+                if (sp >= OPERAND_STACK_MAX)
+                    return raiseInternal("vm: operand stack overflow");
+                stack[sp] = if (matches) Value.true_val else Value.false_val;
+                sp += 1;
+            },
     }
+    return null;
+}
+
+fn matchExceptionClass(class_name: []const u8, thrown: Value) bool {
+    if (std.mem.eql(u8, class_name, "ExceptionInfo")) {
+        return thrown.tag() == .ex_info;
+    }
+    // Phase 3.11 only recognises `ExceptionInfo`; other class symbols
+    // were accepted at analyse time so user code stays readable. They
+    // simply never match a thrown Value until later phases extend the
+    // type-name table — mirrors `tree_walk.catchMatches`.
+    return false;
 }
 
 fn raiseInternal(comptime detail: []const u8) anyerror {
@@ -521,4 +622,82 @@ fn testReturnFirstArg(rt: *Runtime, env: *Env, args: []const Value, loc: SourceL
     _ = loc;
     if (args.len == 0) return Value.nil_val;
     return args[0];
+}
+
+test "op_push_handler routes thrown value into the catch arm" {
+    var f = try Fixture.init(testing.allocator);
+    defer f.deinit();
+    dispatch.last_thrown_exception = null;
+
+    // op_push_handler +3 ; op_const ex ; op_throw ; op_pop_handler (unreachable) ; <handler> op_ret
+    const ex_val = try ex_info_mod.alloc(&f.rt, "boom", Value.nil_val, Value.nil_val);
+    const instrs = [_]Instruction{
+        .{ .opcode = .op_push_handler, .operand = @as(u16, @bitCast(@as(i16, 3))) },
+        .{ .opcode = .op_const, .operand = 0 },
+        .{ .opcode = .op_throw },
+        .{ .opcode = .op_pop_handler },
+        .{ .opcode = .op_ret },
+    };
+    const constants = [_]Value{ex_val};
+    const chunk: BytecodeChunk = .{ .instructions = &instrs, .constants = &constants };
+
+    try testing.expectEqual(ex_val, try f.run(&chunk));
+    try testing.expect(dispatch.last_thrown_exception == null);
+}
+
+test "op_pop_handler removes the innermost handler so thrown propagates" {
+    var f = try Fixture.init(testing.allocator);
+    defer f.deinit();
+    dispatch.last_thrown_exception = null;
+
+    const ex_val = try ex_info_mod.alloc(&f.rt, "x", Value.nil_val, Value.nil_val);
+    const instrs = [_]Instruction{
+        .{ .opcode = .op_push_handler, .operand = @as(u16, @bitCast(@as(i16, 4))) },
+        .{ .opcode = .op_pop_handler },
+        .{ .opcode = .op_const, .operand = 0 },
+        .{ .opcode = .op_throw },
+        .{ .opcode = .op_ret },
+    };
+    const constants = [_]Value{ex_val};
+    const chunk: BytecodeChunk = .{ .instructions = &instrs, .constants = &constants };
+
+    try testing.expectError(error.ThrownValue, f.run(&chunk));
+    try testing.expectEqual(ex_val, dispatch.last_thrown_exception.?);
+    dispatch.last_thrown_exception = null;
+}
+
+test "op_match_class returns true for ExceptionInfo vs ex_info tag" {
+    var f = try Fixture.init(testing.allocator);
+    defer f.deinit();
+
+    const ex_val = try ex_info_mod.alloc(&f.rt, "x", Value.nil_val, Value.nil_val);
+    const class_val = try string_mod.alloc(&f.rt, "ExceptionInfo");
+
+    const instrs = [_]Instruction{
+        .{ .opcode = .op_const, .operand = 0 },
+        .{ .opcode = .op_match_class, .operand = 1 },
+        .{ .opcode = .op_ret },
+    };
+    const constants = [_]Value{ ex_val, class_val };
+    const chunk: BytecodeChunk = .{ .instructions = &instrs, .constants = &constants };
+
+    try testing.expectEqual(Value.true_val, try f.run(&chunk));
+}
+
+test "op_match_class returns false for unknown class names" {
+    var f = try Fixture.init(testing.allocator);
+    defer f.deinit();
+
+    const ex_val = try ex_info_mod.alloc(&f.rt, "x", Value.nil_val, Value.nil_val);
+    const class_val = try string_mod.alloc(&f.rt, "IndexOutOfBoundsException");
+
+    const instrs = [_]Instruction{
+        .{ .opcode = .op_const, .operand = 0 },
+        .{ .opcode = .op_match_class, .operand = 1 },
+        .{ .opcode = .op_ret },
+    };
+    const constants = [_]Value{ ex_val, class_val };
+    const chunk: BytecodeChunk = .{ .instructions = &instrs, .constants = &constants };
+
+    try testing.expectEqual(Value.false_val, try f.run(&chunk));
 }

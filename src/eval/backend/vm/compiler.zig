@@ -88,6 +88,7 @@ const Compiler = struct {
             .call_node => |n| try self.compileCall(n),
             .fn_node => |n| try self.compileFn(n),
             .throw_node => |n| try self.compileThrow(n),
+            .try_node => |n| try self.compileTry(n),
             else => {
                 // The VM backend is dev-only until task 4.8 flips
                 // `-Dbackend=vm`; no user-facing path reaches the
@@ -188,6 +189,74 @@ const Compiler = struct {
 
         const idx = try self.addConstant(fn_val);
         try self.emit(.op_make_fn, idx);
+    }
+
+    fn compileTry(self: *Compiler, n: node_mod.TryNode) Error!void {
+        // Lowering shape (mirrors TreeWalk's evalTry semantics):
+        //
+        //   op_push_handler  +offset_to_handler
+        //   <body>
+        //   op_pop_handler
+        //   [finally]                                   ; success path
+        //   op_jump  +offset_to_end
+        // handler:                                     ; thrown on stack
+        //   for each catch clause:
+        //     op_match_class <class_idx>               ; peek, push bool
+        //     op_jump_if_false +offset_to_next_clause
+        //     op_store_local <binding_idx>             ; pop thrown
+        //     <catch body>
+        //     [finally]                                ; matched-catch path
+        //     op_jump  +offset_to_end
+        //   ; no clause matched — thrown still on stack
+        //   [finally]                                  ; no-match path
+        //   op_throw                                   ; re-raises
+        // end:
+        //
+        // `finally` is duplicated on each exit edge so no opcode
+        // overhead is paid at run time and the BytecodeChunk shape
+        // stays simple (matches JVM Clojure's lowering).
+
+        const push_handler_idx = try self.emitJump(.op_push_handler);
+        try self.compileNode(n.body);
+        try self.emit(.op_pop_handler, 0);
+        if (n.finally_body) |fb| try self.compileFinallyPreservingTop(fb);
+        const success_jump_idx = try self.emitJump(.op_jump);
+
+        try self.patchJump(push_handler_idx);
+
+        var end_jump_indices: std.ArrayList(usize) = .empty;
+        defer end_jump_indices.deinit(self.arena);
+        try end_jump_indices.append(self.arena, success_jump_idx);
+
+        for (n.catch_clauses) |cc| {
+            const class_val = try string_mod.alloc(self.rt, cc.class_name);
+            const class_idx = try self.addConstant(class_val);
+            try self.emit(.op_match_class, class_idx);
+            const skip_clause_idx = try self.emitJump(.op_jump_if_false);
+            try self.emit(.op_store_local, cc.binding_index);
+            try self.compileNode(cc.body);
+            if (n.finally_body) |fb| try self.compileFinallyPreservingTop(fb);
+            const clause_end_jump = try self.emitJump(.op_jump);
+            try end_jump_indices.append(self.arena, clause_end_jump);
+            try self.patchJump(skip_clause_idx);
+        }
+
+        // No clause matched (or no clauses at all). The thrown Value is
+        // still on top of the operand stack; run finally on the
+        // re-raise path, then op_throw re-fires the unwind.
+        if (n.finally_body) |fb| try self.compileFinallyPreservingTop(fb);
+        try self.emit(.op_throw, 0);
+
+        for (end_jump_indices.items) |idx| try self.patchJump(idx);
+    }
+
+    /// Emit `finally`'s body and discard its result so the
+    /// surrounding form's top-of-stack remains the body or catch
+    /// result. Per JVM Clojure semantics, finally is evaluated for
+    /// effect, not value.
+    fn compileFinallyPreservingTop(self: *Compiler, fb: *const node_mod.Node) Error!void {
+        try self.compileNode(fb);
+        try self.emit(.op_pop, 0);
     }
 
     fn compileThrow(self: *Compiler, n: node_mod.ThrowNode) Error!void {
@@ -560,6 +629,81 @@ test "compile def packs dynamic / macro / private flags into op_def operand" {
     try testing.expectEqual(@as(u16, 0), operand & opcode_mod.DEF_FLAG_MACRO);
     try testing.expectEqual(@as(u16, opcode_mod.DEF_FLAG_PRIVATE), operand & opcode_mod.DEF_FLAG_PRIVATE);
     try testing.expectEqualStrings("foo", string_mod.asString(chunk.constants[name_idx]));
+}
+
+test "compile try with no catches still emits push/pop_handler and re-raise path" {
+    var f = Fixture.init(testing.allocator);
+    defer f.deinit();
+
+    // (try true) — no catches, no finally. The compiler still installs
+    // a handler frame (so an exception inside the body unwinds
+    // correctly) and the handler entry is just op_throw on the bare
+    // thrown value.
+    const body: Node = .{ .constant = .{ .value = Value.true_val } };
+    const node: Node = .{ .try_node = .{ .body = &body, .catch_clauses = &.{} } };
+    const chunk = try f.compile(&node);
+
+    // Layout: push_handler ; const true ; pop_handler ; jump end ;
+    //         handler: op_throw ; end: op_ret
+    try testing.expectEqual(@as(usize, 6), chunk.instructions.len);
+    try testing.expectEqual(Opcode.op_push_handler, chunk.instructions[0].opcode);
+    try testing.expectEqual(Opcode.op_const, chunk.instructions[1].opcode);
+    try testing.expectEqual(Opcode.op_pop_handler, chunk.instructions[2].opcode);
+    try testing.expectEqual(Opcode.op_jump, chunk.instructions[3].opcode);
+    try testing.expectEqual(Opcode.op_throw, chunk.instructions[4].opcode);
+    try testing.expectEqual(Opcode.op_ret, chunk.instructions[5].opcode);
+}
+
+test "compile try with one catch wires match_class + jump_if_false + store_local" {
+    var f = Fixture.init(testing.allocator);
+    defer f.deinit();
+
+    // (try true (catch ExceptionInfo e e))
+    const body: Node = .{ .constant = .{ .value = Value.true_val } };
+    const catch_body: Node = .{ .local_ref = .{ .name = "e", .index = 0 } };
+    const clauses = [_]node_mod.TryNode.CatchClause{.{
+        .class_name = "ExceptionInfo",
+        .binding_name = "e",
+        .binding_index = 0,
+        .body = &catch_body,
+    }};
+    const node: Node = .{ .try_node = .{ .body = &body, .catch_clauses = &clauses } };
+    const chunk = try f.compile(&node);
+
+    // Layout: push_handler ; const true ; pop_handler ; jump end ;
+    //         match_class ; jump_if_false +skip ; store_local 0 ;
+    //         local_ref 0 ; jump end ;
+    //         (no-match path) op_throw ; end: op_ret
+    try testing.expectEqual(Opcode.op_push_handler, chunk.instructions[0].opcode);
+    try testing.expectEqual(Opcode.op_match_class, chunk.instructions[4].opcode);
+    try testing.expectEqual(Opcode.op_jump_if_false, chunk.instructions[5].opcode);
+    try testing.expectEqual(Opcode.op_store_local, chunk.instructions[6].opcode);
+    try testing.expectEqual(Opcode.op_throw, chunk.instructions[chunk.instructions.len - 2].opcode);
+    try testing.expectEqual(Opcode.op_ret, chunk.instructions[chunk.instructions.len - 1].opcode);
+}
+
+test "compile try with finally duplicates the finally body on each exit path" {
+    var f = Fixture.init(testing.allocator);
+    defer f.deinit();
+
+    // (try true (finally :side)) — finally body is one form that the
+    // compiler duplicates: once on success, once on re-raise. Each
+    // copy is followed by op_pop because finally's value is discarded.
+    const body: Node = .{ .constant = .{ .value = Value.true_val } };
+    const fb: Node = .{ .constant = .{ .value = Value.nil_val } };
+    const node: Node = .{ .try_node = .{
+        .body = &body,
+        .catch_clauses = &.{},
+        .finally_body = &fb,
+    } };
+    const chunk = try f.compile(&node);
+
+    var pop_count: usize = 0;
+    for (chunk.instructions) |ins| {
+        if (ins.opcode == .op_pop) pop_count += 1;
+    }
+    // Two finally copies → two op_pop pairs (one per finally exit).
+    try testing.expectEqual(@as(usize, 2), pop_count);
 }
 
 test "compile throw emits value-expr then op_throw" {

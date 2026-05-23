@@ -44,6 +44,21 @@ const Value = @import("../../../runtime/value.zig").Value;
 ///     `op_invoke_builtin`  operand = argument count
 ///   - `op_make_fn`         operand = constants index of the FnProto
 ///   - `op_recur`           operand = binding count
+///   - `op_push_handler`    operand = signed forward offset to the
+///                          handler entry (`i16` via `@bitCast`).
+///                          The dispatcher records `{ catch_ip,
+///                          saved_sp }` and, on `error.ThrownValue`
+///                          from the protected region, jumps to the
+///                          handler with the thrown Value pushed.
+///   - `op_pop_handler`     operand unused — pops the innermost
+///                          handler entry (normal try exit)
+///   - `op_match_class`     operand = constants index of the catch
+///                          class-name `String`. Peeks the top Value
+///                          and pushes `true_val` / `false_val`
+///                          based on whether the class matches
+///                          (`ExceptionInfo` ⇒ `.ex_info` tag,
+///                          other names ⇒ false until later phases
+///                          extend the table)
 ///   - `op_ret` / `op_pop` /
 ///     `op_dup` / `op_throw` operand unused
 pub const Opcode = enum(u8) {
@@ -62,6 +77,9 @@ pub const Opcode = enum(u8) {
     op_make_fn = 0x0C,
     op_recur = 0x0D,
     op_invoke_builtin = 0x0E,
+    op_push_handler = 0x0F,
+    op_pop_handler = 0x10,
+    op_match_class = 0x11,
 };
 
 /// `op_def` operand layout — see the Opcode docstring.
@@ -108,6 +126,9 @@ test "opcode enum tags are stable u8 values" {
     try std.testing.expectEqual(@as(u8, 0x0C), @intFromEnum(Opcode.op_make_fn));
     try std.testing.expectEqual(@as(u8, 0x0D), @intFromEnum(Opcode.op_recur));
     try std.testing.expectEqual(@as(u8, 0x0E), @intFromEnum(Opcode.op_invoke_builtin));
+    try std.testing.expectEqual(@as(u8, 0x0F), @intFromEnum(Opcode.op_push_handler));
+    try std.testing.expectEqual(@as(u8, 0x10), @intFromEnum(Opcode.op_pop_handler));
+    try std.testing.expectEqual(@as(u8, 0x11), @intFromEnum(Opcode.op_match_class));
 }
 
 test "Instruction carries opcode and u16 operand" {
