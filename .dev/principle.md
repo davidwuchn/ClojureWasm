@@ -76,6 +76,13 @@ The procedure is fuzzy; the writer chooses:
 Choosing the depth is the writer's call. The four levels are not a
 flow chart.
 
+**All four depths proceed within the autonomous loop.** Depth 2-4
+land their conclusion (ADR amendment / new ADR / archive move) in
+a separate commit before the source commit, then the loop
+continues. The AI drafts and accepts the ADR itself — there is no
+external review gate. See CLAUDE.md § Autonomous Workflow
+"ADR-level designs are handled inline, not as a stop".
+
 ## Three questions to picture the finished form
 
 When you stop, ask:

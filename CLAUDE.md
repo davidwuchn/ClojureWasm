@@ -18,9 +18,10 @@ the v0.5.0 git history**:
   — distinct from the existing `~/Documents/MyProducts/ClojureWasm/`
   reference clone.
 - **Branch**: `cw-from-scratch` — long-lived, branched from `main`
-  (v0.5.0). All work happens here. **Never push to `main`**. Push to
-  `cw-from-scratch` freely after green gate; no per-commit approval
-  needed.
+  (v0.5.0). All work happens here. **Never push to `main`**. Every
+  commit on `cw-from-scratch` is followed immediately by
+  `git push origin cw-from-scratch` in the same Step 6 — commits do
+  not accumulate locally.
 - **Git remote**: `git@github.com:clojurewasm/ClojureWasm.git`.
 
 ### Read-only reference clones (do not edit, do not commit from)
@@ -76,8 +77,12 @@ turn 1 must be Japanese.
   (>200 lines), cross-codebase searches (>5 files), phase-boundary
   audit / simplify / security-review fan-out. Stay in main only for
   small in-context edits.
-- Pushing to `cw-from-scratch` is free after green gate (no per-commit
-  user approval). Pushing to `main` is forbidden.
+- **Commit and push are one atomic Step 6** on `cw-from-scratch`:
+  after the gate is green, `git commit` is followed immediately by
+  `git push origin cw-from-scratch`. Local commits never accumulate
+  unpushed — leaving them stacked invites a "should I push?"
+  decision point that does not exist. Pushing to `main` is
+  forbidden.
 - ROADMAP corrections follow the four-step amendment in
   [`ROADMAP §17`](.dev/ROADMAP.md#17-amendment-policy): edit in place
   as if it had always been so, open an ADR, sync `handover.md`,
@@ -155,7 +160,7 @@ Run both in a single message with two parallel Bash tool calls:
 Both must be green. If either output exceeds ~200 lines, delegate
 to a Bash subagent and ask for "pass/fail + first failure only".
 
-**Step 6 — Source commit**
+**Step 6 — Source commit + push (atomic)**
 
 Before staging:
 
@@ -164,13 +169,23 @@ Before staging:
    minute, no checklist — apply the sensor).
 3. If a smell triggers, choose depth 1-4:
    - depth 1: add a one-line note in the commit message.
-   - depth 2-4: hold the commit. Land the ADR amendment / new
-     ADR / `debt.md` row / `private/notes/` entry first, then
-     commit the source separately.
+   - depth 2-4: land the ADR amendment / new ADR / `debt.md` row
+     / `private/notes/` entry **autonomously** (the AI gathers
+     the "should-be" materials, drafts the ADR with
+     `Status: Proposed → Accepted`, fills Affected files,
+     Alternatives, Consequences), commits the doc change first,
+     then commits + pushes the source separately. No external
+     review gate — ADR history is the rationale record.
+
+Then:
+
 4. `git add` source files; `git commit -m "<type>(<scope>):
    <one line>"`. The pre-commit gate auto-aligns any Markdown
    tables that drifted and re-stages the fix transparently;
    only genuine table-syntax errors block.
+5. `git push origin cw-from-scratch` runs immediately on the
+   commit's success. The push is not optional and not deferred —
+   commit and push are one Step.
 
 **Step 7 — Per-task note** (written from hot context)
 
@@ -203,23 +218,40 @@ rows:
 
 ### Stop only when (closed list)
 
-Three conditions, exhaustive:
+Two conditions, exhaustive:
 
 1. **User explicitly requests stop** (any direct instruction).
-2. **ADR-level decision required that cannot be self-decided** —
-   tier shift, scope change, principle deviation, or
-   `audit_scaffolding` `block` finding that demands human judgement.
-3. **Physically blocked** — build broken with no identifiable root
+2. **Physically blocked** — build broken with no identifiable root
    cause, or test failure that cannot be diagnosed after honest
    investigation.
 
-Anything outside these three is continued through. The loop's
-quality discipline lives in `.dev/principle.md` (Bad Smell sensor,
-depth 1-4 judgement) and is applied per cycle — quality is a *how*,
-not a stop condition.
+Anything outside these two is continued through. The loop's quality
+discipline lives in `.dev/principle.md` (Bad Smell sensor, depth
+1-4) and is applied per cycle — quality is a *how*, not a stop
+condition.
 
 This list intentionally avoids enumerating non-stop reasons. Closed
 stop conditions + open continue is the design.
+
+### ADR-level designs are handled inline, not as a stop
+
+When a design choice surfaces that would historically be called
+"ADR-level" (tier shift, scope change, principle deviation,
+load-bearing structural choice), the AI does **not** stop. It
+gathers the "should-be" materials itself — alternatives,
+trade-offs, references to existing ADRs — drafts the ADR with
+`Status: Proposed → Accepted` in the same cycle, fills Affected
+files / Consequences, lands the ADR commit, and proceeds with the
+source change. Rationale survives in the ADR's history; the loop
+does not need an external accept gate. Step 6's depth 2-4 branch
+is the runway for this.
+
+The phrases "this needs human judgement" / "cannot be
+self-decided" / "user touchpoint required" are forbidden framings
+in the autonomous loop. If the choice is between candidate
+designs, the AI picks one (preferring the smallest-diff option),
+records the rejected alternatives in the ADR's "Alternatives
+considered" section, and continues.
 
 ## Skills (the runnable procedures)
 

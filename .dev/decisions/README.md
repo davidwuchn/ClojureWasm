@@ -27,11 +27,14 @@ ADR has:
 
 ## Lifecycle
 
-- **Add**: when a load-bearing decision is made. Number = max(existing) + 1.
+- **Add**: when a load-bearing decision surfaces in the autonomous loop.
+  Number = max(existing) + 1. The AI drafts the ADR with
+  `Status: Proposed → Accepted` in the same cycle, lands the doc commit,
+  and proceeds with the source change. No external review gate.
 - **Supersede**: do not edit a historical ADR. Add a new one and mark the
   old one `Status: Superseded by NNNN`.
-- **Reject after debate**: also add an ADR with `Status: Proposed → Rejected`.
-  Records why the path was not taken.
+- **Reject after consideration**: also add an ADR with
+  `Status: Proposed → Rejected`. Records why the path was not taken.
 
 ## Commit gate trigger
 

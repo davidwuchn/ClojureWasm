@@ -1,6 +1,6 @@
 ---
 name: continue
-description: Resume fully autonomous work on cw-from-scratch and drive the per-task TDD loop until the user intervenes. Trigger when the user says 続けて, "resume", "pick up where we left off", "/continue", "次", "go", or starts a fresh session expecting prior context. The full step-by-step loop spec (Step 0 → 7 + the closed 3-condition stop list) lives in CLAUDE.md § Autonomous Workflow and is loaded into every turn's system prompt; this skill is the invocation trigger and carries the resume procedure, the Phase-boundary review chain, the subagent delegation cheatsheet, and the model-selection guidance.
+description: Resume fully autonomous work on cw-from-scratch and drive the per-task TDD loop until the user intervenes. Trigger when the user says 続けて, "resume", "pick up where we left off", "/continue", "次", "go", or starts a fresh session expecting prior context. The full step-by-step loop spec (Step 0 → 7 + the closed 2-condition stop list) lives in CLAUDE.md § Autonomous Workflow and is loaded into every turn's system prompt; this skill is the invocation trigger and carries the resume procedure, the Phase-boundary review chain, the subagent delegation cheatsheet, and the model-selection guidance.
 ---
 
 # continue
@@ -8,7 +8,7 @@ description: Resume fully autonomous work on cw-from-scratch and drive the per-t
 The `/continue` slash command's job is to start running the
 autonomous TDD loop. The loop's full step-by-step spec lives in
 `CLAUDE.md § Autonomous Workflow` (Step 0 → 7 + the closed
-3-condition stop list) which is loaded into every turn's system
+2-condition stop list) which is loaded into every turn's system
 prompt.
 
 This file carries the procedural context that is only needed at

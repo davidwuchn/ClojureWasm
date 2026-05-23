@@ -1455,40 +1455,45 @@ docs(ja): NNNN — <title> (#<first-sha>..<last-sha>)
 ### 12.4 Iteration loop (skill `continue` is canonical)
 
 The full resume procedure + per-task TDD loop lives in
-[`.claude/skills/continue/SKILL.md`](../.claude/skills/continue/SKILL.md).
-The user invokes it with "続けて" / "/continue" / "resume"; the skill
-reads handover, finds the next task, runs tests, prints a brief
-summary, then **immediately enters the TDD loop and runs autonomously
-until the user intervenes** (no "go" gate, no per-Phase confirmation).
+[`.claude/skills/continue/SKILL.md`](../.claude/skills/continue/SKILL.md);
+the step-by-step spec lives in CLAUDE.md § Autonomous Workflow and
+is loaded into every turn's system prompt. The user invokes the
+skill with "続けて" / "/continue" / "resume"; the skill reads
+handover, finds the next task, runs tests, prints a brief summary,
+then **immediately enters the TDD loop and runs autonomously**.
 
-The TDD loop has eight steps per task:
+The TDD loop has seven steps per task:
 
-| # | Step                | Where                                      |
-|---|---------------------|--------------------------------------------|
-| 0 | Survey              | Subagent (Explore)                         |
-| 1 | Plan                | Main                                       |
-| 2 | Red                 | Main                                       |
-| 3 | Green               | Main                                       |
-| 4 | Refactor            | Main                                       |
-| 5 | Test gate           | Main or Subagent (Bash) if log > 200 lines |
-| 6 | Source commit       | Main                                       |
-| 7 | Per-task note       | Main → `private/notes/<phase>-<task>.md`  |
-| 8 | Context-budget gate | Main; `/compact` if > 60% fill             |
+| # | Step                  | Where                                      |
+|---|-----------------------|--------------------------------------------|
+| 0 | Survey                | Subagent (`general-purpose`)               |
+| 1 | Plan                  | Main                                       |
+| 2 | Red                   | Main                                       |
+| 3 | Green                 | Main                                       |
+| 4 | Refactor              | Main                                       |
+| 5 | Test gate (Mac+Linux) | Main or Subagent (Bash) if log > 200 lines |
+| 6 | Commit + push         | Main; atomic — push runs on every commit  |
+| 7 | Per-task note         | Main → `private/notes/<phase>-<task>.md`  |
 
-Chapters (`docs/ja/learn_clojurewasm/NNNN_*.md`) are written **per concept** (every 3–5
-source commits or at phase boundary), not per task. The chapter pulls
-from per-task notes; that's why per-task notes exist.
+Chapters (`docs/ja/learn_clojurewasm/NNNN_*.md`) are written **per
+concept** (every 3–5 source commits or at phase boundary), not
+per task. The chapter pulls from per-task notes; that's why
+per-task notes exist.
 
 Phase-boundary review chain runs as a **multi-agent fan-out**:
-audit_scaffolding, `simplify` on the phase diff, `security-review` on
-unpushed commits, and outstanding chapter writing — all in parallel
-subagents. Long-context audit / chapter-write subagents may use
-Opus 4.6 (better long-context retrieval) instead of Opus 4.7.
+audit_scaffolding, `simplify` on the phase diff, `security-review`
+on unpushed commits, and outstanding chapter writing — all in
+parallel subagents. The loop continues into §9.<N+1> immediately
+after the fan-out synthesises; the phase boundary is not a stop
+point.
 
-It only stops for: a `git push`, an ambiguous test failure, an
-audit_scaffolding `block` finding, or an ADR-level decision.
-
-Pushing to `cw-from-scratch` always requires explicit user approval.
+The loop stops only on the two CLAUDE.md § Autonomous Workflow
+closed conditions: explicit user request, or a physical block
+(unrecoverable build / test failure). ADR-level design choices are
+handled inline (the AI drafts and accepts the ADR autonomously per
+CLAUDE.md "ADR-level designs are handled inline, not as a stop").
+Push to `cw-from-scratch` runs on every commit as part of Step 6;
+push to `main` is forbidden.
 
 ---
 
@@ -1511,7 +1516,11 @@ If `.claude/CLAUDE.md` and this file conflict, this file wins.
 - ❌ Letting any single file drift past 2,000 lines without a
   `FILE-SIZE-EXEMPT` marker (per ADR-0016)
 - ❌ Running with only one backend after Phase 4 (per ADR-0005)
-- ❌ Pushing to remote without user approval
+- ❌ Pushing to `main` (push to `cw-from-scratch` is automatic per
+  Step 6; only `main` is the forbidden target)
+- ❌ Leaving local commits on `cw-from-scratch` unpushed (Step 6
+  pushes immediately; accumulation invites a "should I push?"
+  pseudo-decision that the closed stop list does not authorise)
 - ❌ Writing a doc commit that omits any unpaired source SHA from `commits:` (§12.2 Rule 2)
 - ❌ Mixing source and a `docs/ja/learn_clojurewasm/NNNN_*.md` in the same commit (§12.2 Rule 1)
 
