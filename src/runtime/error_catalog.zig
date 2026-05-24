@@ -66,6 +66,19 @@ pub const Code = enum {
     /// args: `.{ .form = "loop*"|"recur", .got = N, .max = 65535 }`
     arity_too_large,
 
+    // --- Reader macros / nesting / escapes (Phase 1 reader migration) ---
+    form_nesting_too_deep,
+    delimiter_unmatched_at_eof,
+    quote_reader_macro_incomplete,
+    symbolic_value_incomplete,
+    symbolic_value_unknown,
+    discard_reader_macro_incomplete,
+    string_escape_trailing_backslash,
+    unicode_escape_truncated,
+    unicode_escape_invalid_hex,
+    unicode_codepoint_invalid,
+    string_escape_unknown,
+
     // --- Macroexpand ---
     let_form_incomplete,
     cond_clauses_arity_odd,
@@ -174,6 +187,52 @@ pub fn entry(comptime code: Code) Entry {
         .arity_too_large => .{
             .kind = .not_implemented, .phase = .analysis,
             .template = "{[form]s} arity {[got]d} exceeds the limit of {[max]d}",
+        },
+
+        // --- Reader macros / nesting / escapes ---
+        .form_nesting_too_deep => .{
+            .kind = .syntax_error, .phase = .parse,
+            .template = "Form nesting exceeds max depth ({[max]d})",
+        },
+        .delimiter_unmatched_at_eof => .{
+            .kind = .syntax_error, .phase = .parse,
+            .template = "Unmatched delimiter; reached EOF before '{[delim]s}'",
+        },
+        .quote_reader_macro_incomplete => .{
+            .kind = .syntax_error, .phase = .parse,
+            .template = "Quote ' has no following form",
+        },
+        .symbolic_value_incomplete => .{
+            .kind = .syntax_error, .phase = .parse,
+            .template = "Symbolic value '##' has no following name",
+        },
+        .symbolic_value_unknown => .{
+            .kind = .syntax_error, .phase = .parse,
+            .template = "Unknown symbolic value '##{[name]s}'",
+        },
+        .discard_reader_macro_incomplete => .{
+            .kind = .syntax_error, .phase = .parse,
+            .template = "Discard '#_' has no following form",
+        },
+        .string_escape_trailing_backslash => .{
+            .kind = .string_error, .phase = .parse,
+            .template = "Trailing '\\' in string literal",
+        },
+        .unicode_escape_truncated => .{
+            .kind = .string_error, .phase = .parse,
+            .template = "Truncated \\u escape sequence",
+        },
+        .unicode_escape_invalid_hex => .{
+            .kind = .string_error, .phase = .parse,
+            .template = "Invalid hex in \\u escape: '{[hex]s}'",
+        },
+        .unicode_codepoint_invalid => .{
+            .kind = .string_error, .phase = .parse,
+            .template = "Codepoint U+{[hex]s} is not a valid Unicode scalar",
+        },
+        .string_escape_unknown => .{
+            .kind = .string_error, .phase = .parse,
+            .template = "Unknown escape sequence '\\{[escape]c}'",
         },
 
         // --- Macroexpand ---

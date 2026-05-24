@@ -19,14 +19,15 @@ const Tokenizer = tok_mod.Tokenizer;
 const Token = tok_mod.Token;
 const TokenKind = tok_mod.TokenKind;
 const error_mod = @import("../runtime/error.zig");
+const error_catalog = @import("../runtime/error_catalog.zig");
 const SourceLocation = error_mod.SourceLocation;
 
-/// Reader error surface. Aliases `error_mod.ClojureWasmError` so that the
-/// `setErrorFmt` rendezvous (which returns the full `Error` enum) is
-/// type-compatible. Callers continue to match on the specific tags
-/// `SyntaxError` / `NumberError` / `StringError` / `OutOfMemory` —
-/// the wider set just admits future kinds without churning every
-/// signature.
+/// Reader error surface. Aliases `error_mod.ClojureWasmError` so that
+/// the `error_catalog.raise(.code, loc, args)` rendezvous (which
+/// returns the full `ClojureWasmError` enum) is type-compatible.
+/// Callers continue to match on the specific tags `SyntaxError` /
+/// `NumberError` / `StringError` / `OutOfMemory` — the wider set
+/// just admits future kinds without churning every signature.
 pub const ReadError = error_mod.ClojureWasmError;
 
 pub const Reader = struct {
@@ -87,9 +88,9 @@ pub const Reader = struct {
             .quote => self.readQuote(tok),
             .symbolic => self.readSymbolic(tok),
             .discard => self.readDiscard(tok),
-            .rparen, .rbracket, .rbrace => error_mod.setErrorFmt(.parse, .syntax_error, self.locOf(tok), "Unexpected delimiter '{s}'", .{tok.text(self.source)}),
-            .eof => error_mod.setErrorFmt(.parse, .syntax_error, self.locOf(tok), "Unexpected EOF while reading form", .{}),
-            .invalid => error_mod.setErrorFmt(.parse, .syntax_error, self.locOf(tok), "Invalid token '{s}'", .{tok.text(self.source)}),
+            .rparen, .rbracket, .rbrace => error_catalog.raise(.delimiter_unexpected, self.locOf(tok), .{ .delim = tok.text(self.source) }),
+            .eof => error_catalog.raise(.eof_unexpected, self.locOf(tok), .{}),
+            .invalid => error_catalog.raise(.token_invalid, self.locOf(tok), .{ .token = tok.text(self.source) }),
         };
     }
 
@@ -111,7 +112,7 @@ pub const Reader = struct {
         // preserving precision — strip it before std.fmt parses.
         if (s.len > 0 and s[s.len - 1] == 'N') s = s[0 .. s.len - 1];
         const val = std.fmt.parseInt(i64, s, 0) catch
-            return error_mod.setErrorFmt(.parse, .number_error, self.locOf(tok), "Invalid integer literal '{s}'", .{txt});
+            return error_catalog.raise(.integer_literal_invalid, self.locOf(tok), .{ .text = txt });
         return Form{ .data = .{ .integer = val }, .location = self.locOf(tok) };
     }
 
@@ -120,7 +121,7 @@ pub const Reader = struct {
         var s = txt;
         if (s.len > 0 and s[s.len - 1] == 'M') s = s[0 .. s.len - 1];
         const val = std.fmt.parseFloat(f64, s) catch
-            return error_mod.setErrorFmt(.parse, .number_error, self.locOf(tok), "Invalid float literal '{s}'", .{txt});
+            return error_catalog.raise(.float_literal_invalid, self.locOf(tok), .{ .text = txt });
         return Form{ .data = .{ .float = val }, .location = self.locOf(tok) };
     }
 
@@ -128,7 +129,7 @@ pub const Reader = struct {
         const txt = tok.text(self.source);
         const loc = self.locOf(tok);
         if (txt.len < 2)
-            return error_mod.setErrorFmt(.parse, .string_error, loc, "Unterminated string literal", .{});
+            return error_catalog.raise(.string_unterminated, loc, .{});
         const content = txt[1 .. txt.len - 1];
         const unescaped = self.unescapeString(content, loc) catch |err| {
             // unescapeString already populated last_error for StringError.
@@ -162,14 +163,14 @@ pub const Reader = struct {
         // Maps must have an even number of elements at read time so the
         // analyzer can iterate `[k0 v0 k1 v1 ...]` without re-checking.
         if (items.len % 2 != 0)
-            return error_mod.setErrorFmt(.parse, .syntax_error, loc, "Map literal must contain an even number of forms", .{});
+            return error_catalog.raise(.map_literal_arity_odd, loc, .{});
         return Form{ .data = .{ .map = items }, .location = loc };
     }
 
     fn readDelimited(self: *Reader, closing: TokenKind, opener_loc: SourceLocation) ReadError![]const Form {
         self.depth += 1;
         if (self.depth > self.max_depth)
-            return error_mod.setErrorFmt(.parse, .syntax_error, opener_loc, "Form nesting exceeds max depth ({d})", .{self.max_depth});
+            return error_catalog.raise(.form_nesting_too_deep, opener_loc, .{ .max = self.max_depth });
         defer self.depth -= 1;
 
         var items: std.ArrayList(Form) = .empty;
@@ -178,7 +179,7 @@ pub const Reader = struct {
         while (true) {
             const tok = self.nextToken();
             if (tok.kind == .eof)
-                return error_mod.setErrorFmt(.parse, .syntax_error, opener_loc, "Unmatched delimiter; reached EOF before '{s}'", .{closingText(closing)});
+                return error_catalog.raise(.delimiter_unmatched_at_eof, opener_loc, .{ .delim = closingText(closing) });
             if (tok.kind == closing) break;
             const f = try self.readForm(tok);
             items.append(self.allocator, f) catch return error.OutOfMemory;
@@ -192,12 +193,12 @@ pub const Reader = struct {
         const loc = self.locOf(tok);
         self.depth += 1;
         if (self.depth > self.max_depth)
-            return error_mod.setErrorFmt(.parse, .syntax_error, loc, "Form nesting exceeds max depth ({d})", .{self.max_depth});
+            return error_catalog.raise(.form_nesting_too_deep, loc, .{ .max = self.max_depth });
         defer self.depth -= 1;
 
         const next_tok = self.nextToken();
         if (next_tok.kind == .eof)
-            return error_mod.setErrorFmt(.parse, .syntax_error, loc, "Quote ' has no following form", .{});
+            return error_catalog.raise(.quote_reader_macro_incomplete, loc, .{});
         const inner = try self.readForm(next_tok);
 
         const items = self.allocator.alloc(Form, 2) catch return error.OutOfMemory;
@@ -210,22 +211,22 @@ pub const Reader = struct {
         const loc = self.locOf(tok);
         const next_tok = self.nextToken();
         if (next_tok.kind == .eof)
-            return error_mod.setErrorFmt(.parse, .syntax_error, loc, "Symbolic value '##' has no following name", .{});
+            return error_catalog.raise(.symbolic_value_incomplete, loc, .{});
         const txt = next_tok.text(self.source);
         if (std.mem.eql(u8, txt, "Inf")) return Form{ .data = .{ .float = std.math.inf(f64) }, .location = loc };
         if (std.mem.eql(u8, txt, "-Inf")) return Form{ .data = .{ .float = -std.math.inf(f64) }, .location = loc };
         if (std.mem.eql(u8, txt, "NaN")) return Form{ .data = .{ .float = std.math.nan(f64) }, .location = loc };
-        return error_mod.setErrorFmt(.parse, .syntax_error, self.locOf(next_tok), "Unknown symbolic value '##{s}'", .{txt});
+        return error_catalog.raise(.symbolic_value_unknown, self.locOf(next_tok), .{ .name = txt });
     }
 
     fn readDiscard(self: *Reader, tok: Token) ReadError!Form {
         const discard_loc = self.locOf(tok);
         const next_tok = self.nextToken();
         if (next_tok.kind == .eof)
-            return error_mod.setErrorFmt(.parse, .syntax_error, discard_loc, "Discard '#_' has no following form", .{});
+            return error_catalog.raise(.discard_reader_macro_incomplete, discard_loc, .{});
         _ = try self.readForm(next_tok);
         return try self.read() orelse
-            error_mod.setErrorFmt(.parse, .syntax_error, discard_loc, "Discard '#_' has no form to follow", .{});
+            error_catalog.raise(.discard_reader_macro_incomplete, discard_loc, .{});
     }
 
     // --- string unescaping ---
@@ -241,7 +242,7 @@ pub const Reader = struct {
             if (s[i] == '\\') {
                 i += 1;
                 if (i >= s.len)
-                    return error_mod.setErrorFmt(.parse, .string_error, loc, "Trailing '\\' in string literal", .{});
+                    return error_catalog.raise(.string_escape_trailing_backslash, loc, .{});
                 switch (s[i]) {
                     'n' => buf.append(self.allocator, '\n') catch return error.OutOfMemory,
                     't' => buf.append(self.allocator, '\t') catch return error.OutOfMemory,
@@ -252,17 +253,17 @@ pub const Reader = struct {
                     'f' => buf.append(self.allocator, 0x0C) catch return error.OutOfMemory,
                     'u' => {
                         if (i + 4 >= s.len)
-                            return error_mod.setErrorFmt(.parse, .string_error, loc, "Truncated \\u escape sequence", .{});
+                            return error_catalog.raise(.unicode_escape_truncated, loc, .{});
                         const hex = s[i + 1 .. i + 5];
                         const cp = std.fmt.parseInt(u21, hex, 16) catch
-                            return error_mod.setErrorFmt(.parse, .string_error, loc, "Invalid hex in \\u escape: '{s}'", .{hex});
+                            return error_catalog.raise(.unicode_escape_invalid_hex, loc, .{ .hex = hex });
                         var utf8_buf: [4]u8 = undefined;
                         const len = std.unicode.utf8Encode(cp, &utf8_buf) catch
-                            return error_mod.setErrorFmt(.parse, .string_error, loc, "Codepoint U+{s} is not a valid Unicode scalar", .{hex});
+                            return error_catalog.raise(.unicode_codepoint_invalid, loc, .{ .hex = hex });
                         for (utf8_buf[0..len]) |b| buf.append(self.allocator, b) catch return error.OutOfMemory;
                         i += 4;
                     },
-                    else => |c| return error_mod.setErrorFmt(.parse, .string_error, loc, "Unknown escape sequence '\\{c}'", .{c}),
+                    else => |c| return error_catalog.raise(.string_escape_unknown, loc, .{ .escape = c }),
                 }
                 i += 1;
             } else {
