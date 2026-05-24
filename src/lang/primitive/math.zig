@@ -105,6 +105,62 @@ pub fn star(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) a
     return acc;
 }
 
+/// `(+' ...)` — strict-integer addition. Raises on overflow rather
+/// than promoting to BigInt. Mirrors JVM Clojure's `+'`.
+pub fn plusStrict(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = env;
+    try ensureNumeric(args, "+'", loc);
+    if (args.len == 0) return Value.initInteger(0);
+    var acc = args[0];
+    var i: usize = 1;
+    while (i < args.len) : (i += 1) {
+        acc = promote.addStrict(rt, acc, args[i]) catch |err| switch (err) {
+            error.IntegerOverflow => return error_catalog.raise(.integer_overflow, loc, .{}),
+            else => return err,
+        };
+    }
+    return acc;
+}
+
+/// `(-' x ...)` — strict-integer subtraction.
+pub fn minusStrict(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = env;
+    try ensureNumeric(args, "-'", loc);
+    if (args.len == 0)
+        return error_catalog.raise(.arity_below_min, loc, .{ .got = @as(usize, 0), .fn_name = "-'", .min = @as(usize, 1) });
+    if (args.len == 1) {
+        return promote.subStrict(rt, Value.initInteger(0), args[0]) catch |err| switch (err) {
+            error.IntegerOverflow => return error_catalog.raise(.integer_overflow, loc, .{}),
+            else => return err,
+        };
+    }
+    var acc = args[0];
+    var i: usize = 1;
+    while (i < args.len) : (i += 1) {
+        acc = promote.subStrict(rt, acc, args[i]) catch |err| switch (err) {
+            error.IntegerOverflow => return error_catalog.raise(.integer_overflow, loc, .{}),
+            else => return err,
+        };
+    }
+    return acc;
+}
+
+/// `(*' ...)` — strict-integer multiplication.
+pub fn starStrict(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = env;
+    try ensureNumeric(args, "*'", loc);
+    if (args.len == 0) return Value.initInteger(1);
+    var acc = args[0];
+    var i: usize = 1;
+    while (i < args.len) : (i += 1) {
+        acc = promote.mulStrict(rt, acc, args[i]) catch |err| switch (err) {
+            error.IntegerOverflow => return error_catalog.raise(.integer_overflow, loc, .{}),
+            else => return err,
+        };
+    }
+    return acc;
+}
+
 /// `(/ ...)` — 1 arg returns `1/x` (matches Clojure); N args
 /// divides the first by each subsequent. Integer / integer not
 /// evenly divisible produces a Ratio; b == 0 raises divide_by_zero.
@@ -231,6 +287,9 @@ const ENTRIES = [_]Entry{
     .{ .name = "-", .f = &minus },
     .{ .name = "*", .f = &star },
     .{ .name = "/", .f = &slash },
+    .{ .name = "+'", .f = &plusStrict },
+    .{ .name = "-'", .f = &minusStrict },
+    .{ .name = "*'", .f = &starStrict },
     .{ .name = "=", .f = &equals },
     .{ .name = "<", .f = &lt },
     .{ .name = ">", .f = &gt },

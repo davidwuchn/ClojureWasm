@@ -148,6 +148,7 @@ pub const Code = enum {
 
     // --- Eval (arithmetic) ---
     divide_by_zero,
+    integer_overflow,
 
     // --- Eval (arity at call) ---
     arity_below_min,
@@ -484,6 +485,10 @@ pub fn entry(comptime code: Code) Entry {
         .divide_by_zero => .{
             .kind = .arithmetic_error, .phase = .eval,
             .template = "Divide by zero",
+        },
+        .integer_overflow => .{
+            .kind = .arithmetic_error, .phase = .eval,
+            .template = "integer overflow",
         },
 
         // --- Eval (arity) ---

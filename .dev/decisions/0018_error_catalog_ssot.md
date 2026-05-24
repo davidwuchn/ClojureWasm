@@ -359,3 +359,14 @@ slot is not yet used by other callers.
   user-visible message `"Divide by zero"` is the most-grepped
   Clojure error string and deserves its own Code for grep-by-Code
   testing in Phase 6+.
+
+- 2026-05-24: Amendment 4 — `integer_overflow` Code added under the
+  existing `arithmetic_error` Kind, raised from the
+  `+'` / `-'` / `*'` strict-integer family (Phase 5.10.c). Template
+  "integer overflow" mirrors the JVM Clojure
+  `ArithmeticException` text for `(*' Long/MAX_VALUE 2)` etc. No
+  new Kind needed; same-Kind group as `divide_by_zero` from
+  amendment 3. Devil's-advocate cross-check inline: alternatives
+  "reuse `value_error`" and "let it raise as an internal Zig
+  error" rejected for the same reasons as amendment 3 (Clojure
+  `(try ... (catch ArithmeticException ...))` is the surface).

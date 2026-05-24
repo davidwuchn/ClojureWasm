@@ -144,6 +144,64 @@ pub fn mulPromoting(rt: *Runtime, a: Value, b: Value) !Value {
     return try big_int.allocMulManaged(rt, &am, &bm);
 }
 
+/// Strict-integer `a + b`. Returns `error.IntegerOverflow` instead
+/// of promoting to BigInt. Mirrors JVM Clojure `+'`. Float operands
+/// are still float-contagious (matches JVM).
+pub fn addStrict(rt: *Runtime, a: Value, b: Value) !Value {
+    if (a.isFloat() or b.isFloat()) {
+        return Value.initFloat(toF64(rt, a) + toF64(rt, b));
+    }
+    if (a.isInt() and b.isInt()) {
+        const ai: i64 = @as(i64, a.asInteger());
+        const bi: i64 = @as(i64, b.asInteger());
+        const sum, const overflowed = @addWithOverflow(ai, bi);
+        if (overflowed != 0 or !inI48(sum)) return error.IntegerOverflow;
+        return Value.initInteger(sum);
+    }
+    // BigInt arms stay non-overflow (already arbitrary precision).
+    var am = try coerceToManaged(rt, a);
+    defer am.deinit();
+    var bm = try coerceToManaged(rt, b);
+    defer bm.deinit();
+    return try big_int.allocAddManaged(rt, &am, &bm);
+}
+
+pub fn subStrict(rt: *Runtime, a: Value, b: Value) !Value {
+    if (a.isFloat() or b.isFloat()) {
+        return Value.initFloat(toF64(rt, a) - toF64(rt, b));
+    }
+    if (a.isInt() and b.isInt()) {
+        const ai: i64 = @as(i64, a.asInteger());
+        const bi: i64 = @as(i64, b.asInteger());
+        const diff, const overflowed = @subWithOverflow(ai, bi);
+        if (overflowed != 0 or !inI48(diff)) return error.IntegerOverflow;
+        return Value.initInteger(diff);
+    }
+    var am = try coerceToManaged(rt, a);
+    defer am.deinit();
+    var bm = try coerceToManaged(rt, b);
+    defer bm.deinit();
+    return try big_int.allocSubManaged(rt, &am, &bm);
+}
+
+pub fn mulStrict(rt: *Runtime, a: Value, b: Value) !Value {
+    if (a.isFloat() or b.isFloat()) {
+        return Value.initFloat(toF64(rt, a) * toF64(rt, b));
+    }
+    if (a.isInt() and b.isInt()) {
+        const ai: i64 = @as(i64, a.asInteger());
+        const bi: i64 = @as(i64, b.asInteger());
+        const prod, const overflowed = @mulWithOverflow(ai, bi);
+        if (overflowed != 0 or !inI48(prod)) return error.IntegerOverflow;
+        return Value.initInteger(prod);
+    }
+    var am = try coerceToManaged(rt, a);
+    defer am.deinit();
+    var bm = try coerceToManaged(rt, b);
+    defer bm.deinit();
+    return try big_int.allocMulManaged(rt, &am, &bm);
+}
+
 /// `a / b` with auto-promotion. Integer/Integer evenly-divisible
 /// returns the quotient; not-evenly-divisible returns a Ratio.
 /// Mirrors `Numbers.divide(Number, Number)` in JVM Clojure.
@@ -292,4 +350,20 @@ test "divPromoting (1.0 / 2) returns float 0.5" {
     const v = try divPromoting(&fix.rt, Value.initFloat(1.0), Value.initInteger(2));
     try testing.expect(v.isFloat());
     try testing.expectEqual(@as(f64, 0.5), v.asFloat());
+}
+
+test "mulStrict overflowing i48 raises IntegerOverflow" {
+    var fix = Fixture.init();
+    defer fix.deinit();
+
+    const a = Value.initInteger((1 << 47) - 1);
+    try testing.expectError(error.IntegerOverflow, mulStrict(&fix.rt, a, Value.initInteger(2)));
+}
+
+test "addStrict in-range stays Long" {
+    var fix = Fixture.init();
+    defer fix.deinit();
+
+    const v = try addStrict(&fix.rt, Value.initInteger(3), Value.initInteger(4));
+    try testing.expectEqual(@as(i48, 7), v.asInteger());
 }
