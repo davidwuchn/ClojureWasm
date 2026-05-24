@@ -24,40 +24,47 @@
 
 ## Current state
 
-- **Phase**: **Phase 5 IN-PROGRESS** — §9.7 rows 5.0–5.7 `[x]`.
-  5.7 closed at 633422a (2 micro-commits: extern struct rewrite +
-  force, first/rest/next). 9 rows remain (5.8–5.16). Mutex shape =
-  no-lock single-thread (D-046 records Phase 15 re-eval). Collection
-  family + lazy seq foundation ready for 5.8's ChunkedCons.
-- **Branch**: `cw-from-scratch`. HEAD = 633422a.
+- **Phase**: **Phase 5 IN-PROGRESS** — §9.7 rows 5.0–5.8 `[x]`.
+  5.8 closed at 6fe11c6 (5.8.a struct shapes for ChunkBuffer +
+  ChunkedCons; 5.8.b range/lazy-seq integration deferred). 8 rows
+  remain (5.9–5.16). list.zig rename deferred per F-003 (no
+  behaviour win). ChunkedCons + ChunkBuffer trace fns registered.
+- **Branch**: `cw-from-scratch`. HEAD = 6fe11c6.
 - **Gate**: Mac 13/13 + OrbStack Ubuntu x86_64 12/12 green.
 - **Chapter cadence**: dormant per ADR-0025 + F-007.
 
-## Active task — §9.7.9 / 5.8 Persistent List + Cons + chunked Cons
+## Active task — §9.7.10 / 5.9 BigInt / Ratio / BigDecimal arithmetic (F-005)
 
-Refactor existing `runtime/collection/list.zig` per ADR-0027 Group A:
-- **Keep** `list.zig` ↔ Cons (A9) — minimal rename / split per
-  F-003 (the existing module already does the persistent-list job
-  since Cons is immutable + structurally shared).
-- **Add** `runtime/collection/chunked_cons.zig` — ChunkedCons (A10)
-  with 32-element `slots` chunk + tail link. Needed for
-  `(reduce + (range 1e6))` exit-smoke chunked realisation.
-- **Add** (optional, defer to 5.8.b) `runtime/collection/chunk_buffer.zig`
-  — ChunkBuffer (A11) for mutable-during-construction chunks.
+Activate per F-005 + ADR-0017 + the 5.3.d.9 deferred BigInt
+migration. **Owns the BigInt extern-struct restructure** (Managed
+has non-extern fields — needs `*Managed` wrapper). New types:
+- `runtime/numeric/big_int.zig` (already exists, activate)
+- `runtime/numeric/ratio.zig` (new) — `BigInt × BigInt` simplified
+  on construction
+- `runtime/numeric/big_decimal.zig` (new) — `(BigInt unscaled,
+  i32 scale)`
+- `runtime/numeric/promote.zig` (new) — Long ↔ BigInt promotion
+  paths per `+` / `-` / `*` / `/`
 
-`seq` returns List/LazySeq/Cons uniformly via dispatch (already
-mostly wired — `runtime/collection/list.zig::seq` + `lazy_seq.zig::seq`).
+`compare` / `+` / `-` / `*` / `/` extended to handle the wider
+tower. F-005 anchors: JVM-surface compat (user-observable), Zig-
+stdlib-affine internal (`std.math.big.int.Managed` for limbs).
 
-**Step 0 reading**: ADR-0027 §2 Group A (A9-A11 slot map); cw v0
-chunked cons in collections.zig (grep `ChunkedCons` /
-`PersistentChunkedSeq`); clojure JVM `ChunkedCons.java` +
-`ArrayChunk.java`. Survey may be brief — 5.4 PersistentVector +
-5.5 ArrayMap have established the extern-struct + trace-fn pattern.
+**Step 0 reading**: F-005 verbatim; ADR-0017 (3-layer alloc +
+infra_alloc for limbs); cw v0 `runtime/collections.zig` BigInt/
+Ratio/BigDecimal; clojure JVM Numbers.java (numeric tower
+dispatch).
 
-**Open hazards**: (a) chunked realisation auto-trigger collect
-becomes load-bearing here — `(reduce + (range 1e6))` allocates
-~31K ChunkedCons cells minimum; defer-or-trigger decision lives
-in 5.8; (b) range function (also Phase 5 territory) constructs
+**Step 0 survey target** (`general-purpose` subagent): cw v0
+numeric tower + clojure JVM Numbers.
+
+**Open hazards**: (a) Managed wrapping — `*Managed` pointer to
+infra_alloc-managed storage; finaliser must `Managed.deinit`
+before sweep rawFrees BigInt wrapper; (b) Ratio simplification
+(gcd) at construction; (c) auto-promotion paths in `+ - * /` —
+F-005 says user-observable JVM-exact; (d) 5.10 is the next row
+(promotion auto-trigger paths) — 5.9 lands arithmetic, 5.10
+lands the auto-promotion dispatch.
 chunked seqs via the new types — 5.8 lands the data shape, range
 implementation may need a co-commit or separate row.
 
