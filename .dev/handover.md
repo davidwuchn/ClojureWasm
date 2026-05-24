@@ -25,36 +25,30 @@
 ## Current state
 
 - **Phase**: **Phase 5 IN-PROGRESS** — §9.7 rows 5.0–5.8 `[x]`,
-  5.9.a `[x]`. **In user-directed structural session (2026-05-24)**:
-  Phase 5 残務 (5.10 開始前) に ADR-0029 cluster (Commits 1-6) を
-  挟む。5.9.b/c/d + 5.10-5.16 はその後。
-- **Branch**: `cw-from-scratch`. HEAD = 4289062 → ADR-0029 cluster
-  進行中。
-- **Gate**: Mac 13/13 + OrbStack Ubuntu x86_64 12/12 green at 7e2ef17.
+  5.9.a `[x]`. ADR-0029 cluster (2026-05-24) `[x]` (6 commits
+  58d8cc0..53dd7f2 + Commit 6 handover sweep). 5.9.b/c/d + 5.10-5.16
+  remain.
+- **Branch**: `cw-from-scratch`. HEAD = 53dd7f2 (Commit 6 will
+  advance this).
+- **Gate**: Mac 15/15 + OrbStack Ubuntu x86_64 14/14 green at
+  53dd7f2 (added 2 new steps: surface_marker, feature_keyword).
 - **Chapter cadence**: dormant per ADR-0025 + F-007.
 
-## In-flight user-directed structural session (ADR-0029 cluster)
+## ADR-0029 cluster summary (landed 2026-05-24)
 
-User-directed session 2026-05-24 が現在進行中。Phase 5 残務に着手する
-前に、Java InterOp / cljw-original surface の配置とガードレールを
-確立する。詳細は `.dev/decisions/0029_runtime_java_cljw_layout.md`
-+ F-009 (`.dev/project_facts.md`)。
+User-directed structural session landed the Java InterOp /
+cljw-original surface layout + feature-implementation neutrality
+invariant before Phase 6 starts adding host classes.
 
-Commit プラン (6 連):
+- ADR-0029 Accepted (supersedes ADR-0011)
+- F-009 added to project_facts.md
+- runtime/host/ retired; runtime/java/ holds _host_api.zig
+- runtime/error/{info,catalog,print}.zig and
+  runtime/io/{interface[,default-Phase5+]}.zig consolidation
+- G1/G2/G3 gate scripts wired into test/run_all.sh
+- See `.dev/decisions/0029_runtime_java_cljw_layout.md` + F-009.
 
-1. **Commit 1**: ADR-0029 land + F-009 + ADR-0011 supersede (本 commit)
-2. **Commit 2**: ROADMAP §5 §6.5 + structure_plan.md + rule 改名
-   (`host_extension_layout.md` → `java_cljw_surface_layout.md`) +
-   compat_tiers.yaml schema 拡張 + `feature_name_consistency.md` 新規
-3. **Commit 3**: `runtime/error/` + `runtime/io/` 集約 + import 全置換
-4. **Commit 4**: `runtime/host/` 削除 + `_host_api.zig` を
-   `runtime/java/` へ移動
-5. **Commit 5**: G1/G2/G3 gate スクリプト + `test/run_all.sh` 統合
-6. **Commit 6**: `.dev/proposals/` ディレクトリ削除
-
-各 commit ごとに Mac + Linux 両 gate を実行。
-
-## Active task after ADR-0029 cluster — §9.7.10 / 5.9.b Ratio
+## Active task after cluster — §9.7.10 / 5.9.b Ratio
 
 ADR-0029 cluster 完了後、5.9.b (Ratio extern struct +
 gcd-on-construction) から再開。5.9.a (7e2ef17) は BigInt extern +
