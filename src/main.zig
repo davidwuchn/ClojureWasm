@@ -11,6 +11,17 @@
 //! threadlocal `Info`, the catch sites render via
 //! `error_print.formatErrorWithContext` (file:line:col + caret +
 //! message); otherwise they fall back to `@errorName(err)`.
+//!
+//! ### Exit codes (ADR-0019)
+//!
+//!   0   success
+//!   1   user-facing catalog error (syntax / type / arity / etc.)
+//!   70  internal_error (cw runtime bug; user should file an issue)
+//!   130 SIGINT (handled by the OS signal, not this catch chain)
+//!
+//! The mapping lives in `kindToExitCode`; per-Kind dispatch is
+//! intentional so future Kinds (`overflow_error`, `permission_error`,
+//! ...) can pick their exit code without touching call sites.
 
 const std = @import("std");
 const Writer = std.Io.Writer;
@@ -133,28 +144,24 @@ pub fn main(init: std.process.Init) !void {
     // diagnostic, not a panic.
     const bootstrap_ctx = error_print.SourceContext{ .file = bootstrap.SOURCE_LABEL, .text = bootstrap.CORE_SOURCE };
     bootstrap.loadCore(arena, &rt, &env, &macro_table) catch |err| {
-        try renderError(stderr, bootstrap_ctx, err);
-        std.process.exit(1);
+        renderAndExit(stderr, bootstrap_ctx, err);
     };
 
     // --- Read - Analyse - Eval - Print loop ---
     var reader = Reader.init(arena, source_text.?);
     while (true) {
         const form_opt = reader.read() catch |err| {
-            try renderError(stderr, ctx, err);
-            std.process.exit(1);
+            renderAndExit(stderr, ctx, err);
         };
         const form = form_opt orelse break;
 
         const node = analyzeForm(arena, &rt, &env, null, form, &macro_table) catch |err| {
-            try renderError(stderr, ctx, err);
-            std.process.exit(1);
+            renderAndExit(stderr, ctx, err);
         };
 
         var locals: [driver.MAX_LOCALS]Value = [_]Value{.nil_val} ** driver.MAX_LOCALS;
         const result = driver.evalForm(&rt, &env, &locals, arena, node) catch |err| {
-            try renderError(stderr, ctx, err);
-            std.process.exit(1);
+            renderAndExit(stderr, ctx, err);
         };
 
         try print.printValue(stdout, result);
@@ -176,8 +183,44 @@ fn renderError(stderr: *Writer, ctx: error_print.SourceContext, err: anyerror) W
     try stderr.flush();
 }
 
+/// Map a `Kind` to the process exit code per ADR-0019. The catalog
+/// `internal_error` Code is the sole exit-70 path; every other Kind
+/// is a user-facing catalog error and exits 1.
+pub fn kindToExitCode(kind: error_mod.Kind) u8 {
+    return switch (kind) {
+        .internal_error => 70,
+        else => 1,
+    };
+}
+
+/// Peek the threadlocal `Info` (without consuming it), pick the
+/// matching exit code per ADR-0019, render the error, then exit.
+/// Centralises the "catch site exits the process" pattern so future
+/// Kinds need only update `kindToExitCode`.
+fn renderAndExit(stderr: *Writer, ctx: error_print.SourceContext, err: anyerror) noreturn {
+    const code: u8 = if (error_mod.peekLastError()) |info|
+        kindToExitCode(info.kind)
+    else
+        1;
+    renderError(stderr, ctx, err) catch {
+        // stderr write failed (closed pipe?); proceed to exit anyway —
+        // the alternative is swallowing the failure silently.
+    };
+    std.process.exit(code);
+}
+
 test "smoke: main module loads" {
     try std.testing.expect(true);
+}
+
+test "kindToExitCode maps internal_error → 70 and others → 1 (ADR-0019)" {
+    try std.testing.expectEqual(@as(u8, 70), kindToExitCode(.internal_error));
+    try std.testing.expectEqual(@as(u8, 1), kindToExitCode(.type_error));
+    try std.testing.expectEqual(@as(u8, 1), kindToExitCode(.syntax_error));
+    try std.testing.expectEqual(@as(u8, 1), kindToExitCode(.arity_error));
+    try std.testing.expectEqual(@as(u8, 1), kindToExitCode(.name_error));
+    try std.testing.expectEqual(@as(u8, 1), kindToExitCode(.not_implemented));
+    try std.testing.expectEqual(@as(u8, 1), kindToExitCode(.out_of_memory));
 }
 
 test "build_options exposes phase_at_least_N comptime bools (ADR-0023)" {
