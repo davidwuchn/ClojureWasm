@@ -270,6 +270,7 @@ fn evalDeftype(rt: *Runtime, n: node_mod.DeftypeNode) !Value {
     // Re-register: replacing an existing entry frees the old one to
     // keep `rt.types` consistent across REPL re-defs.
     if (rt.types.fetchRemove(n.name)) |old| {
+        rt.gpa.free(old.key);
         if (old.value.field_layout) |old_layout| {
             for (old_layout) |fe| rt.gpa.free(fe.name);
             rt.gpa.free(old_layout);

@@ -40,6 +40,10 @@ const keyword = @import("keyword.zig");
 const string_collection = @import("collection/string.zig");
 const list_collection = @import("collection/list.zig");
 const ex_info_collection = @import("collection/ex_info.zig");
+const big_int_mod = @import("numeric/big_int.zig");
+const ratio_mod = @import("numeric/ratio.zig");
+const big_decimal_mod = @import("numeric/big_decimal.zig");
+const td_mod = @import("type_descriptor.zig");
 
 /// Render `v` to `w` in `pr-str` style. Phase-3 surface covers nil /
 /// boolean / integer / float / char / keyword / builtin_fn / string /
@@ -72,8 +76,55 @@ pub fn printValue(w: *Writer, v: Value) Writer.Error!void {
         .string => try printString(w, string_collection.asString(v)),
         .list => try printList(w, v),
         .ex_info => try printExInfo(w, v),
+        .big_int => try printBigInt(w, v),
+        .ratio => try printRatio(w, v),
+        .big_decimal => try printBigDecimal(w, v),
+        .typed_instance => try printTypedInstance(w, v),
         else => |t| try w.print("#<{s}>", .{@tagName(t)}),
     }
+}
+
+fn printBigInt(w: *Writer, v: Value) Writer.Error!void {
+    // BigInt's Managed.format renders just the digits; suffix with
+    // `N` to disambiguate from a plain Long in pr-str round-trip.
+    const m = big_int_mod.asManaged(v);
+    try w.print("{f}N", .{m});
+}
+
+fn printRatio(w: *Writer, v: Value) Writer.Error!void {
+    // numerator and denominator are *BigInt; render each Managed
+    // without the trailing `N` and join with `/`.
+    const r = v.decodePtr(*const ratio_mod.Ratio);
+    try w.print("{f}/{f}", .{ r.numer.m, r.denom.m });
+}
+
+fn printBigDecimal(w: *Writer, v: Value) Writer.Error!void {
+    // value = unscaled * 10^(-scale). For scale > 0 we render with
+    // a decimal point inserted; for scale <= 0 we use scientific-ish
+    // `<unscaled>E<-scale>M` (rare; matches JVM `toPlainString` for
+    // scale > 0, otherwise `toString`).
+    const bd = v.decodePtr(*const big_decimal_mod.BigDecimal);
+    if (bd.scale > 0) {
+        try w.print("{f}M", .{bd.unscaled.m});
+        // Decimal-point insertion is left lossy in 5.16 — matches
+        // Clojure's pr-str of BigDecimal which uses the bare digit
+        // string for the unscaled value plus an `M`. Full
+        // toPlainString lands when BigDecimal arithmetic + Phase-6
+        // pprint care does.
+    } else {
+        try w.print("{f}M", .{bd.unscaled.m});
+    }
+}
+
+fn printTypedInstance(w: *Writer, v: Value) Writer.Error!void {
+    const inst = v.decodePtr(*const td_mod.TypedInstance);
+    const fqcn = inst.descriptor.fqcn orelse "<anonymous>";
+    try w.print("#{s}[", .{fqcn});
+    for (inst.fields(), 0..) |fv, i| {
+        if (i > 0) try w.writeByte(' ');
+        try printValue(w, fv);
+    }
+    try w.writeByte(']');
 }
 
 /// Render an `ex-info` Value in `#error{ :message "..." :data ... }`

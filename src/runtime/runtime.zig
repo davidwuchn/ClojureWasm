@@ -152,6 +152,7 @@ pub const Runtime = struct {
         // strategy F-006).
         var it = self.types.iterator();
         while (it.next()) |entry| {
+            self.gpa.free(entry.key_ptr.*);
             const td = entry.value_ptr.*;
             if (td.field_layout) |layout| {
                 for (layout) |fe| self.gpa.free(fe.name);

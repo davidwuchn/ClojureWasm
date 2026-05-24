@@ -73,11 +73,33 @@ fn wrapI64(rt: *Runtime, x: i64) !Value {
     return try big_int.allocFromManaged(rt, &m);
 }
 
+const big_decimal_mod = @import("big_decimal.zig");
+const ratio_mod = @import("ratio.zig");
+
+fn integerCollapseFallback(rt: *Runtime, a: Value, b: Value) !Value {
+    _ = rt;
+    _ = a;
+    _ = b;
+    // Phase 5 placeholder: Ratio op produced a `null` (integer
+    // collapse). Cross-recompute as BigInt arithmetic. Phase 7's
+    // dispatch unification reuses the actual integer-collapse path
+    // from runtime/numeric/ratio.zig; for now Ratio + Ratio with
+    // collapsing result is rare in Phase 5 surface tests.
+    return error.IntegerCollapseNotImplemented;
+}
+
 /// `a + b` with auto-promotion. Both inputs MUST be numeric (caller
 /// runs `ensureNumeric` first).
 pub fn addPromoting(rt: *Runtime, a: Value, b: Value) !Value {
     if (a.isFloat() or b.isFloat()) {
         return Value.initFloat(toF64(rt, a) + toF64(rt, b));
+    }
+    if (a.tag() == .big_decimal and b.tag() == .big_decimal) {
+        return try big_decimal_mod.allocAdd(rt, a, b);
+    }
+    if (a.tag() == .ratio and b.tag() == .ratio) {
+        return (try ratio_mod.allocAdd(rt, a, b)) orelse
+            try integerCollapseFallback(rt, a, b);
     }
     if (a.isInt() and b.isInt()) {
         const ai: i64 = @as(i64, a.asInteger());
@@ -103,6 +125,13 @@ pub fn subPromoting(rt: *Runtime, a: Value, b: Value) !Value {
     if (a.isFloat() or b.isFloat()) {
         return Value.initFloat(toF64(rt, a) - toF64(rt, b));
     }
+    if (a.tag() == .big_decimal and b.tag() == .big_decimal) {
+        return try big_decimal_mod.allocSub(rt, a, b);
+    }
+    if (a.tag() == .ratio and b.tag() == .ratio) {
+        return (try ratio_mod.allocSub(rt, a, b)) orelse
+            try integerCollapseFallback(rt, a, b);
+    }
     if (a.isInt() and b.isInt()) {
         const ai: i64 = @as(i64, a.asInteger());
         const bi: i64 = @as(i64, b.asInteger());
@@ -125,6 +154,13 @@ pub fn subPromoting(rt: *Runtime, a: Value, b: Value) !Value {
 pub fn mulPromoting(rt: *Runtime, a: Value, b: Value) !Value {
     if (a.isFloat() or b.isFloat()) {
         return Value.initFloat(toF64(rt, a) * toF64(rt, b));
+    }
+    if (a.tag() == .big_decimal and b.tag() == .big_decimal) {
+        return try big_decimal_mod.allocMul(rt, a, b);
+    }
+    if (a.tag() == .ratio and b.tag() == .ratio) {
+        return (try ratio_mod.allocMul(rt, a, b)) orelse
+            try integerCollapseFallback(rt, a, b);
     }
     if (a.isInt() and b.isInt()) {
         const ai: i64 = @as(i64, a.asInteger());
