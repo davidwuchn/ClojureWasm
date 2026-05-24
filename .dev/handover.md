@@ -24,43 +24,47 @@
 
 ## Current state
 
-- **Phase**: **Phase 5 IN-PROGRESS** — §9.7 rows 5.0 / 5.1 / 5.2 / 5.3 / 5.4 / 5.5 `[x]`.
-  5.5 closed at 5b978e8 (4 micro-commits 5.5.a → 5.5.d: ArrayMap
-  surface complete with 8 ops). 11 rows remain (5.6–5.16).
-  PersistentHashMap shipped on ArrayMap path (≤ 8 entries); HAMT
-  body deferred to D-045 follow-up. D13 / D14 named hamt_map_node /
-  hash_collision_map_node per ADR-0027 amendment 5. Reader-literal
-  `{...}` hook deferred to analyzer follow-up.
-- **Branch**: `cw-from-scratch`. HEAD = 5b978e8.
+- **Phase**: **Phase 5 IN-PROGRESS** — §9.7 rows 5.0 / 5.1 / 5.2 / 5.3 / 5.4 / 5.5 / 5.6 `[x]`.
+  5.6 closed at 9553840 (single commit, 5 day-1 ops on HashMap-
+  backed wrapper). 10 rows remain (5.7–5.16). Collection family
+  trio (Vector / HashMap-ArrayMap / HashSet) all shipping; HAMT
+  body still D-045.
+- **Branch**: `cw-from-scratch`. HEAD = 9553840.
 - **Gate**: Mac 13/13 + OrbStack Ubuntu x86_64 12/12 green.
 - **Chapter cadence**: dormant per ADR-0025 + F-007.
 
-## Active task — §9.7.7 / 5.6 PersistentHashSet (HashMap-backed)
+## Active task — §9.7.8 / 5.7 LazySeq `force()` + thunk realisation
 
-Land `runtime/collection/set.zig`: HashSet backed by HashMap
-(key = element, value = `:cw/present` sentinel per ROADMAP row 5.6).
-Day-1: `conj` / `disj` / `contains?` / `count` / `seq`. `#{...}`
-reader literal hook deferred to analyzer follow-up.
+Activate `runtime/lazy_seq.zig` (4.24 skeleton): `force()` walks
+the thunk and caches the realised Seq into `seq_cache`. `seq` /
+`first` / `rest` / `next` understand `.lazy_seq` Values. Test:
+`(reduce + (range 1e6))` without OOM (chunked realisation through
+GC). Per ADR-0009 amendment + 5.1 input bullet #2 the mutex shape
+decision happens here.
 
-Since 5.5's HAMT body is deferred (D-045), 5.6 lands on top of
-ArrayMap-only — ≤ 8 entries via ArrayMap-backed set. The HAMT
-expansion path co-lands when D-045 is taken.
+**Step 0 reading**: ADR-0009 amendment 2 (double-checked locking);
+`phase5-5.1-survey.md` Block A (cw v0 `io_default.zig` rationale,
+verbatim) + survey bullets 1 / 2 / 4 (root walker + mutex + thunk
+shape); `phase5-skeleton-audit.md` §"`src/runtime/lazy_seq.zig`"
+(skeleton has `std.atomic.Mutex` field — Zig-0.16 gap noted).
 
-**Step 0 reading**: clojure JVM `PersistentHashSet.java` (thin
-wrapper over PersistentHashMap with `:cw/present` sentinel); cw
-v0 collections.zig PersistentHashSet (if present); 5.5
-implementation patterns from `runtime/collection/map.zig`.
+**Mutex decision (5.7 owns)**: choose between (a) no lock per cw v0
+single-thread (Phase 5 OK, Phase 15 revisit); (b) std.Io.Mutex via
+io_default pattern (matches survey Block A); (c) std.atomic.Value
+busy-spin (lock-free). Per F-002 + Phase 5 single-thread reality,
+(a) likely lands at 5.7 with explicit "Phase 15 STM activation
+re-evaluates" debt row.
 
-**Step 0 survey target**: not needed for 5.6 — the JVM pattern
-(HashMap wrapper with sentinel value) is well-known and 5.5's
-implementation already establishes the GC integration. Direct
-implementation likely fits in 2-3 micro-commits.
-
-**Open hazards**: (a) `:cw/present` sentinel needs a stable
-keyword pointer — must be interned via Runtime.keywords at first
-use or via a Layer-0 const; (b) 5.5 deferred HAMT means 5.6
-inherits the same limit (≤ 8 entries); (c) set equality semantics
-match clojure (order-independent) which the wrapper inherits.
+**Open hazards**: (a) `seq_cache` Value-typed slot pre-existing
+as `std.atomic.Value(?*SeqOpaque)` — atomic state survives even
+under choice (a); GC root walker must trace whatever pointer the
+atomic carries (5.1 input bullet #1); (b) `thunk: *const fn` is
+NOT a Value-encoded fn — it's a Zig fn pointer; ctx is *anyopaque
+which the GC trace cannot blindly walk per 5.1 input #1 —
+finished form may need ctx tagging or per-LazySeq trace fn
+registration; (c) `(reduce + (range 1e6))` exit smoke needs
+chunked realisation NOT to OOM — auto-trigger collect may finally
+become necessary here (defer-or-trigger decision lives in 5.7).
 
 ## Open questions / blockers
 
