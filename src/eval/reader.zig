@@ -83,6 +83,7 @@ pub const Reader = struct {
             .big_int_literal => self.readBigIntLiteral(tok),
             .big_decimal_literal => self.readBigDecimalLiteral(tok),
             .string => self.readString(tok),
+            .regex_literal => self.readRegexLiteral(tok),
             .keyword => self.readKeyword(tok),
             .lparen => self.readList(tok),
             .lbracket => self.readVector(tok),
@@ -153,6 +154,22 @@ pub const Reader = struct {
     fn readKeyword(self: *Reader, tok: Token) ReadError!Form {
         const txt = tok.text(self.source)[1..]; // drop leading ':'
         return Form{ .data = .{ .keyword = parseSymbolRef(txt) }, .location = self.locOf(tok) };
+    }
+
+    /// `#"..."` token text includes the leading `#` + bracketing
+    /// quotes. Strip the 2-byte prefix `#"` and the trailing `"`
+    /// to recover the raw pattern source (no escape decoding —
+    /// see Form.regex_literal docstring + JVM Clojure behaviour).
+    fn readRegexLiteral(self: *Reader, tok: Token) ReadError!Form {
+        const txt = tok.text(self.source);
+        const loc = self.locOf(tok);
+        if (txt.len < 3) {
+            // `#"` with no closing — tokenizer would have flagged
+            // as .invalid; defensive guard.
+            return error_catalog.raise(.string_unterminated, loc, .{});
+        }
+        const body = txt[2 .. txt.len - 1];
+        return Form{ .data = .{ .regex_literal = body }, .location = loc };
     }
 
     // --- collections ---
@@ -459,6 +476,21 @@ test "reader macros: quote / ##Inf / ##-Inf / ##NaN / #_" {
     try testing.expect(std.math.isNan((try ctx.read("##NaN")).data.float));
 
     try testing.expectEqual(@as(i64, 42), (try ctx.read("#_foo 42")).data.integer);
+}
+
+test "regex literal: #\"\\d+\" reads as Form.regex_literal carrying the raw body" {
+    var ctx = TestCtx.init();
+    defer ctx.deinit();
+    const form = try ctx.read("#\"\\d+\"");
+    try testing.expectEqualStrings("\\d+", form.data.regex_literal);
+}
+
+test "regex literal: prints back with the #\"...\" envelope" {
+    var ctx = TestCtx.init();
+    defer ctx.deinit();
+    const form = try ctx.read("#\"a|b\"");
+    const out = try form.toString(ctx.arena.allocator());
+    try testing.expectEqualStrings("#\"a|b\"", out);
 }
 
 test "readAll yields multiple top-level forms" {

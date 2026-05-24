@@ -28,6 +28,13 @@ pub const FormData = union(enum) {
     /// `1.5M`. The string slice is the decimal representation without
     /// the trailing `M`. Analyzer parses it into unscaled + scale.
     big_decimal_literal: []const u8,
+    /// `#"\d+"`. The string slice is the raw pattern source between
+    /// `#"` and the closing `"` — no escape decoding (per JVM
+    /// Clojure: `#"\\d"` matches a digit, the body is handed
+    /// verbatim to the regex engine). Analyzer / evaluator turns
+    /// the slice into a `.regex` Value via
+    /// `runtime/regex/value.zig::alloc`.
+    regex_literal: []const u8,
     string: []const u8,
 
     symbol: SymbolRef,
@@ -54,6 +61,7 @@ pub const Form = struct {
             .float => "float",
             .big_int_literal => "big_int_literal",
             .big_decimal_literal => "big_decimal_literal",
+            .regex_literal => "regex_literal",
             .string => "string",
             .symbol => "symbol",
             .keyword => "keyword",
@@ -81,6 +89,7 @@ pub const Form = struct {
             .float => |f| try formatFloat(w, f),
             .big_int_literal => |s| try w.print("{s}N", .{s}),
             .big_decimal_literal => |s| try w.print("{s}M", .{s}),
+            .regex_literal => |s| try w.print("#\"{s}\"", .{s}),
             .string => |s| try formatString(w, s),
             .symbol => |sym| {
                 if (sym.ns) |ns| {

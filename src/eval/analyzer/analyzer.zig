@@ -48,6 +48,7 @@ const string_collection = @import("../../runtime/collection/string.zig");
 const list_collection = @import("../../runtime/collection/list.zig");
 const big_int = @import("../../runtime/numeric/big_int.zig");
 const big_decimal = @import("../../runtime/numeric/big_decimal.zig");
+const regex_value = @import("../../runtime/regex/value.zig");
 const error_mod = @import("../../runtime/error/info.zig");
 const error_catalog = @import("../../runtime/error/catalog.zig");
 const SourceLocation = error_mod.SourceLocation;
@@ -215,6 +216,7 @@ pub fn analyze(
         .float => |f| try makeConstant(arena, Value.initFloat(f), form),
         .big_int_literal => |s| try makeConstant(arena, try parseBigIntLiteral(rt, s, form.location), form),
         .big_decimal_literal => |s| try makeConstant(arena, try parseBigDecimalLiteral(rt, s, form.location), form),
+        .regex_literal => |s| try makeConstant(arena, try parseRegexLiteral(rt, s, form.location), form),
         .keyword => |sym| {
             const v = try keyword.intern(rt, sym.ns, sym.name);
             return try makeConstant(arena, v, form);
@@ -287,6 +289,24 @@ pub fn parseBigDecimalLiteral(rt: *Runtime, digits: []const u8, loc: error_mod.S
         return error_catalog.raise(.float_literal_invalid, loc, .{ .text = digits });
 
     return try big_decimal.allocFromManagedScale(rt, &unscaled, scale);
+}
+
+/// Compile a `#"..."` reader-literal body into a regex Value via
+/// `runtime/regex/value.zig::alloc`. Cycle-1 compile errors surface
+/// as `feature_not_supported`; cycle 5 wires the
+/// `PatternSyntaxException`-aligned error messages (D-051).
+///
+/// Return type is pinned to `AnalyzeError` so the per-variant
+/// CompileError set (UnexpectedToken / NotImplemented / etc.)
+/// gets folded into the catalog-raised path; the analyzer
+/// signature only knows `AnalyzeError`.
+pub fn parseRegexLiteral(rt: *Runtime, body: []const u8, loc: error_mod.SourceLocation) AnalyzeError!Value {
+    return regex_value.alloc(rt, body, .{}) catch |err| switch (err) {
+        error.OutOfMemory => return error.OutOfMemory,
+        else => return error_catalog.raise(.feature_not_supported, loc, .{
+            .name = "regex literal (unsupported syntax in cycle 1)",
+        }),
+    };
 }
 
 pub fn makeConstant(arena: std.mem.Allocator, v: Value, form: Form) !*const Node {
@@ -494,6 +514,7 @@ pub fn formToValue(rt: *Runtime, form: Form) AnalyzeError!Value {
         .float => |f| Value.initFloat(f),
         .big_int_literal => |s| try parseBigIntLiteral(rt, s, form.location),
         .big_decimal_literal => |s| try parseBigDecimalLiteral(rt, s, form.location),
+        .regex_literal => |s| try parseRegexLiteral(rt, s, form.location),
         .keyword => |sym| try keyword.intern(rt, sym.ns, sym.name),
         .string => |s| try string_collection.alloc(rt, s),
         .list => |items| try listFormToValue(rt, items),

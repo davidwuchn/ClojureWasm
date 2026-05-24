@@ -160,6 +160,7 @@ run_step "e2e_phase4_cli"        "bash test/e2e/phase4_cli.sh"
 run_step "e2e_phase4_exit"       "bash test/e2e/phase4_exit.sh"
 run_step "e2e_phase4_exit_codes" "bash test/e2e/phase4_exit_codes.sh"
 run_step "e2e_phase5_exit"       "bash test/e2e/phase5_exit.sh"
+run_step "e2e_phase6_regex_cycle1" "bash test/e2e/phase6_regex_cycle1.sh"
 
 # Informational scans (ADR-0024). Phase 5+ they become blocking.
 run_step "scan_catalog_only"   "bash scripts/scan_catalog_only.sh" optional

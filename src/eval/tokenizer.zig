@@ -37,6 +37,11 @@ pub const TokenKind = enum(u8) {
     quote, // '
     discard, // #_
     symbolic, // ## (##Inf / ##-Inf / ##NaN)
+    /// `#"..."` regex literal. Token text includes the leading
+    /// `#` and the bracketing quotes; the reader strips the
+    /// `#"` prefix and trailing `"` to recover the pattern
+    /// source before calling `runtime/regex/value.zig::alloc`.
+    regex_literal,
 
     eof,
     invalid,
@@ -124,6 +129,32 @@ pub const Tokenizer = struct {
                 return self.makeToken(.string, start, start_line, start_col);
             }
             if (c == '\\') {
+                self.advance();
+                if (self.pos < self.source.len) self.advance();
+                continue;
+            }
+            self.advance();
+        }
+        return self.makeToken(.invalid, start, start_line, start_col); // unterminated
+    }
+
+    fn readRegexLiteral(self: *Tokenizer, start: u32, start_line: u32, start_col: u16) Token {
+        // `#` was advanced by readDispatch; we're at the opening
+        // `"`. Pattern bodies treat `\\` as a single literal
+        // backslash (i.e., the tokenizer does NOT decode escapes —
+        // that is the regex compiler's job). So `\\"` inside
+        // `#"..."` is a literal-backslash followed by an end-quote,
+        // matching JVM Clojure's reader behaviour.
+        self.advance(); // opening "
+        while (self.pos < self.source.len) {
+            const c = self.source[self.pos];
+            if (c == '"') {
+                self.advance();
+                return self.makeToken(.regex_literal, start, start_line, start_col);
+            }
+            if (c == '\\') {
+                // Skip the backslash itself plus the next byte; the
+                // regex compiler will interpret the escape later.
                 self.advance();
                 if (self.pos < self.source.len) self.advance();
                 continue;
@@ -221,6 +252,7 @@ pub const Tokenizer = struct {
                 while (self.pos < self.source.len and self.source[self.pos] != '\n') self.advance();
                 return self.next(); // skip shebang line, return next real token
             },
+            '"' => return self.readRegexLiteral(start, start_line, start_col),
             else => return self.makeToken(.invalid, start, start_line, start_col),
         }
     }
@@ -393,6 +425,27 @@ test "reader macros: quote / discard / symbolic" {
     try testing.expectEqual(TokenKind.symbol, t.next().kind);
     try testing.expectEqual(TokenKind.symbolic, t.next().kind);
     try testing.expectEqual(TokenKind.symbol, t.next().kind);
+}
+
+test "regex literal: #\"\\d+\" is a single regex_literal token" {
+    var t = Tokenizer.init("#\"\\d+\"");
+    const tok = t.next();
+    try testing.expectEqual(TokenKind.regex_literal, tok.kind);
+    try testing.expectEqualStrings("#\"\\d+\"", tok.text(t.source));
+}
+
+test "regex literal: backslash before closing quote is consumed as escape" {
+    // #"a\"b" — the \" is a literal `\\"` inside the pattern body,
+    // NOT the end-quote. Tokenizer must consume both bytes.
+    var t = Tokenizer.init("#\"a\\\"b\"");
+    const tok = t.next();
+    try testing.expectEqual(TokenKind.regex_literal, tok.kind);
+    try testing.expectEqualStrings("#\"a\\\"b\"", tok.text(t.source));
+}
+
+test "regex literal: unterminated emits invalid" {
+    var t = Tokenizer.init("#\"unterm");
+    try testing.expectEqual(TokenKind.invalid, t.next().kind);
 }
 
 test "comments and shebangs are skipped; commas count as whitespace" {
