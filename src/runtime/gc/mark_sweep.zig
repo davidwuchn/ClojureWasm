@@ -25,22 +25,47 @@ const testing = std.testing;
 
 const gc_heap_mod = @import("gc_heap.zig");
 const heap_header = @import("../value/heap_header.zig");
+const tag_ops = @import("tag_ops.zig");
 
 const GcHeap = gc_heap_mod.GcHeap;
 const HeapHeader = heap_header.HeapHeader;
 
-/// Visit every root + recursively trace through GC-managed pointers.
-/// Sets `header.gc_and_lock.mark` (bit 0) on every reached object.
-/// **Phase 5.3.a stub** — raises until 5.3.b wires the body.
-pub fn mark(gc: *GcHeap, root_header: *HeapHeader) !void {
-    _ = gc;
-    _ = root_header;
-    return error.GcMarkNotSupported;
+/// Visit a heap object + recursively trace through its GC-managed
+/// pointers. Sets `header.gc_and_lock.gc_mark` bit 0 on every reached
+/// object. **Phase 5.3.b.2 body.**
+///
+/// Cycle invariant (per ADR-0028 §5 Mark cycle invariant): if the
+/// header's mark bit is already set, return immediately — the bit
+/// doubles as a visited flag during the mark phase. Cycles
+/// (e.g. `LazySeq` whose `thunk` captures another `LazySeq` whose
+/// `seq_cache` points back) terminate at the second visit.
+///
+/// Per-tag trace dispatch: `tag_ops.tag_trace_table[hdr.tag]` returns
+/// the type-specific outgoing-pointer walker. Trace entries are
+/// `null` at 5.3.b.2 (all entries get filled at 5.3.b.3 + during
+/// the per-Tag activation rows 5.4–5.12), so mark behaves as a
+/// leaf-node visit for every tag today — bit set + return.
+pub fn mark(gc: *GcHeap, header: *HeapHeader) void {
+    if (header.gc_and_lock.gc_mark & 1 == 1) return; // cycle invariant
+    header.gc_and_lock.gc_mark |= 1;
+    if (tag_ops.tag_trace_table[header.tag]) |trace_fn| {
+        trace_fn(@ptrCast(gc), header);
+    }
+}
+
+/// Reset the mark bit on every live allocation. Called by `collect()`
+/// after sweep, so the next mark phase starts from a known-clean
+/// state. (5.3.b.4 wires this into `GcHeap.collect()`; for now it
+/// stands alone for test + the eventual call site.)
+pub fn clearMarks(gc: *GcHeap) void {
+    for (gc.allocations.items) |rec| {
+        rec.header.gc_and_lock.gc_mark &= ~@as(u30, 1);
+    }
 }
 
 /// Walk the live list, finalise + recycle unreached objects, clear
-/// marks on reached ones. **Phase 5.3.a stub** — raises until 5.3.c
-/// wires the body.
+/// marks on reached ones. **Phase 5.3.c stub** — raises until 5.3.c
+/// wires the body (free-pool push + per-tag finaliser dispatch).
 pub fn sweep(gc: *GcHeap) !void {
     _ = gc;
     return error.GcSweepNotSupported;
@@ -48,15 +73,69 @@ pub fn sweep(gc: *GcHeap) !void {
 
 // --- tests ---
 
-test "mark stub raises GcMarkNotSupported at 5.3.a" {
+const Cell = extern struct { header: HeapHeader, payload: u64 = 0 };
+
+test "mark sets gc_mark bit 0 on a leaf header" {
     var gc = GcHeap.init(testing.allocator);
     defer gc.deinit();
 
-    var hdr = HeapHeader.init(.string);
-    try testing.expectError(error.GcMarkNotSupported, mark(&gc, &hdr));
+    const c = try gc.alloc(Cell);
+    c.* = .{ .header = HeapHeader.init(.string) };
+    try testing.expectEqual(@as(u30, 0), c.header.gc_and_lock.gc_mark);
+
+    mark(&gc, &c.header);
+    try testing.expectEqual(@as(u30, 1), c.header.gc_and_lock.gc_mark & 1);
 }
 
-test "sweep stub raises GcSweepNotSupported at 5.3.a" {
+test "mark cycle invariant: double-mark is idempotent" {
+    var gc = GcHeap.init(testing.allocator);
+    defer gc.deinit();
+
+    const c = try gc.alloc(Cell);
+    c.* = .{ .header = HeapHeader.init(.list) };
+
+    mark(&gc, &c.header);
+    const after_first = c.header.gc_and_lock.gc_mark;
+    mark(&gc, &c.header);
+    const after_second = c.header.gc_and_lock.gc_mark;
+    try testing.expectEqual(after_first, after_second);
+}
+
+test "clearMarks resets bit 0 on every live allocation" {
+    var gc = GcHeap.init(testing.allocator);
+    defer gc.deinit();
+
+    const a = try gc.alloc(Cell);
+    a.* = .{ .header = HeapHeader.init(.string) };
+    const b = try gc.alloc(Cell);
+    b.* = .{ .header = HeapHeader.init(.vector) };
+
+    mark(&gc, &a.header);
+    mark(&gc, &b.header);
+    try testing.expect(a.header.gc_and_lock.gc_mark & 1 == 1);
+    try testing.expect(b.header.gc_and_lock.gc_mark & 1 == 1);
+
+    clearMarks(&gc);
+    try testing.expectEqual(@as(u30, 0), a.header.gc_and_lock.gc_mark & 1);
+    try testing.expectEqual(@as(u30, 0), b.header.gc_and_lock.gc_mark & 1);
+}
+
+test "clearMarks preserves bits 1..29 (only bit 0 is the mark)" {
+    // Bits 1..29 are reserved per ADR-0028 §6 for tri-colour upgrade +
+    // size_class (5.3 owner picks split). clearMarks must not touch
+    // them; 5.3.b.2 only resets bit 0.
+    var gc = GcHeap.init(testing.allocator);
+    defer gc.deinit();
+
+    const c = try gc.alloc(Cell);
+    c.* = .{ .header = HeapHeader.init(.string) };
+    c.header.gc_and_lock.gc_mark = 0b101010101; // arbitrary non-bit-0 pattern + bit 0
+
+    clearMarks(&gc);
+    try testing.expectEqual(@as(u30, 0b101010100), c.header.gc_and_lock.gc_mark);
+}
+
+test "sweep stub raises GcSweepNotSupported at 5.3.b.2" {
     var gc = GcHeap.init(testing.allocator);
     defer gc.deinit();
 
