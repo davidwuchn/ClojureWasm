@@ -52,10 +52,11 @@ const SourceLocation = error_mod.SourceLocation;
 const macro_dispatch = @import("macro_dispatch.zig");
 
 /// Analyser errors. Phase 2 covers syntax + name resolution only.
-/// Aliases the wide `error_mod.ClojureWasmError` set so calls to `setErrorFmt`
-/// type-check; the analyser still only **emits** SyntaxError /
-/// NameError / NotImplemented / OutOfMemory in practice. See the
-/// equivalent comment in `eval/reader.zig` for the design rationale.
+/// Aliases the wide `error_mod.ClojureWasmError` set so calls to
+/// `error_catalog.raise(.code, loc, args)` type-check; the analyser
+/// still only **emits** SyntaxError / NameError / NotImplemented /
+/// ArityError / OutOfMemory in practice. See the equivalent comment
+/// in `eval/reader.zig` for the design rationale.
 pub const AnalyzeError = error_mod.ClojureWasmError;
 
 // --- Scope (local-binding chain consulted during analysis) ---
@@ -221,8 +222,8 @@ pub fn analyze(
         },
         // Vector / map as expression values land in later Phase 3
         // tasks once their heap shape ships. NotImplemented for now.
-        .vector => error_mod.setErrorFmt(.analysis, .not_implemented, form.location, "Vector literal as expression value not yet supported (Phase 3+)", .{}),
-        .map => error_mod.setErrorFmt(.analysis, .not_implemented, form.location, "Map literal as expression value not yet supported (Phase 3+)", .{}),
+        .vector => error_catalog.raise(.feature_not_supported, form.location, .{ .name = "Vector literal as expression value" }),
+        .map => error_catalog.raise(.feature_not_supported, form.location, .{ .name = "Map literal as expression value" }),
     };
 }
 
@@ -274,10 +275,10 @@ fn analyzeSymbol(
     }
     // Global Var resolution.
     const ns = if (sym.ns) |ns_name|
-        env.findNs(ns_name) orelse return error_mod.setErrorFmt(.analysis, .name_error, form.location, "No namespace: '{s}'", .{ns_name})
+        env.findNs(ns_name) orelse return error_catalog.raise(.namespace_unknown, form.location, .{ .ns = ns_name })
     else
-        env.current_ns orelse return error_mod.setErrorFmt(.analysis, .name_error, form.location, "No current namespace; cannot resolve '{s}'", .{sym.name});
-    const v_ptr = ns.resolve(sym.name) orelse return error_mod.setErrorFmt(.analysis, .name_error, form.location, "Unable to resolve symbol: '{s}'", .{symFullName(sym)});
+        env.current_ns orelse return error_catalog.raise(.current_namespace_missing, form.location, .{ .sym = sym.name });
+    const v_ptr = ns.resolve(sym.name) orelse return error_catalog.raise(.symbol_unresolved, form.location, .{ .sym = symFullName(sym) });
     const n = try arena.create(Node);
     n.* = .{ .var_ref = .{ .var_ptr = v_ptr, .loc = form.location } };
     return n;
@@ -298,7 +299,7 @@ fn analyzeList(
         // The empty-list literal `()` evaluates to () in Clojure, which
         // requires a heap List Value the analyser doesn't have yet
         // (Phase 5 collections). Defer cleanly.
-        return error_mod.setErrorFmt(.analysis, .not_implemented, form.location, "Empty list as expression value not yet supported (Phase 5+)", .{});
+        return error_catalog.raise(.feature_not_supported, form.location, .{ .name = "Empty list as expression value" });
     }
     if (items[0].data == .symbol) {
         const head = items[0].data.symbol;
@@ -409,12 +410,12 @@ fn analyzeDef(
 ) AnalyzeError!*const Node {
     // (def name) | (def name value)
     if (items.len < 2 or items.len > 3)
-        return error_mod.setErrorFmt(.analysis, .syntax_error, form.location, "def expects 1 or 2 args, got {d}", .{items.len - 1});
+        return error_catalog.raise(.def_arity_invalid, form.location, .{ .got = items.len - 1 });
     if (items[1].data != .symbol)
-        return error_mod.setErrorFmt(.analysis, .syntax_error, items[1].location, "First argument to def must be a symbol", .{});
+        return error_catalog.raise(.def_name_not_symbol, items[1].location, .{});
     const name_sym = items[1].data.symbol;
     if (name_sym.ns != null)
-        return error_mod.setErrorFmt(.analysis, .syntax_error, items[1].location, "def name must not be namespace-qualified: '{s}/{s}'", .{ name_sym.ns.?, name_sym.name });
+        return error_catalog.raise(.def_name_namespace_qualified, items[1].location, .{ .ns = name_sym.ns.?, .name = name_sym.name });
     const value_node = if (items.len == 3)
         try analyze(arena, rt, env, scope, items[2], macro_table)
     else
@@ -438,7 +439,7 @@ fn analyzeIf(
     macro_table: *const macro_dispatch.Table,
 ) AnalyzeError!*const Node {
     if (items.len < 3 or items.len > 4)
-        return error_mod.setErrorFmt(.analysis, .syntax_error, form.location, "if expects 2 or 3 args, got {d}", .{items.len - 1});
+        return error_catalog.raise(.if_arity_invalid, form.location, .{ .got = items.len - 1 });
     const cond = try analyze(arena, rt, env, scope, items[1], macro_table);
     const then_b = try analyze(arena, rt, env, scope, items[2], macro_table);
     const else_b: ?*const Node = if (items.len == 4)
@@ -481,7 +482,7 @@ fn analyzeQuote(
     form: Form,
 ) AnalyzeError!*const Node {
     if (items.len != 2)
-        return error_mod.setErrorFmt(.analysis, .syntax_error, form.location, "quote expects 1 arg, got {d}", .{items.len - 1});
+        return error_catalog.raise(.quote_arity_invalid, form.location, .{ .got = items.len - 1 });
     const v = try formToValue(rt, items[1]);
     const n = try arena.create(Node);
     n.* = .{ .quote_node = .{ .quoted = v, .loc = form.location } };
@@ -500,9 +501,9 @@ fn formToValue(rt: *Runtime, form: Form) AnalyzeError!Value {
         .keyword => |sym| try keyword.intern(rt, sym.ns, sym.name),
         .string => |s| try string_collection.alloc(rt, s),
         .list => |items| try listFormToValue(rt, items),
-        .symbol => error_mod.setErrorFmt(.analysis, .not_implemented, form.location, "Quoted symbol as Value not yet supported (Phase 3.7+)", .{}),
-        .vector => error_mod.setErrorFmt(.analysis, .not_implemented, form.location, "Quoted vector as Value not yet supported (Phase 3+)", .{}),
-        .map => error_mod.setErrorFmt(.analysis, .not_implemented, form.location, "Quoted map as Value not yet supported (Phase 3+)", .{}),
+        .symbol => error_catalog.raise(.feature_not_supported, form.location, .{ .name = "Quoted symbol as Value" }),
+        .vector => error_catalog.raise(.feature_not_supported, form.location, .{ .name = "Quoted vector as Value" }),
+        .map => error_catalog.raise(.feature_not_supported, form.location, .{ .name = "Quoted map as Value" }),
     };
 }
 
@@ -531,9 +532,9 @@ fn analyzeFnStar(
 ) AnalyzeError!*const Node {
     // (fn* [params] body...)
     if (items.len < 3)
-        return error_mod.setErrorFmt(.analysis, .syntax_error, form.location, "fn* requires a parameter vector and a body", .{});
+        return error_catalog.raise(.fn_star_form_incomplete, form.location, .{});
     if (items[1].data != .vector)
-        return error_mod.setErrorFmt(.analysis, .syntax_error, items[1].location, "fn* parameter list must be a vector", .{});
+        return error_catalog.raise(.fn_star_params_not_vector, items[1].location, .{});
     const params_form = items[1].data.vector;
 
     var has_rest = false;
@@ -544,16 +545,16 @@ fn analyzeFnStar(
     var i: usize = 0;
     while (i < params_form.len) : (i += 1) {
         if (params_form[i].data != .symbol)
-            return error_mod.setErrorFmt(.analysis, .syntax_error, params_form[i].location, "fn* parameter must be a symbol", .{});
+            return error_catalog.raise(.fn_star_param_not_symbol, params_form[i].location, .{});
         const ps = params_form[i].data.symbol;
         if (ps.ns != null)
-            return error_mod.setErrorFmt(.analysis, .syntax_error, params_form[i].location, "fn* parameter must not be namespace-qualified", .{});
+            return error_catalog.raise(.fn_star_param_namespace_qualified, params_form[i].location, .{});
         if (std.mem.eql(u8, ps.name, "&")) {
             // `& rest`: the next symbol is the rest-parameter.
             if (i + 1 >= params_form.len)
-                return error_mod.setErrorFmt(.analysis, .syntax_error, params_form[i].location, "fn* '&' must be followed by a rest-parameter symbol", .{});
+                return error_catalog.raise(.fn_star_rest_missing, params_form[i].location, .{});
             if (params_form[i + 1].data != .symbol)
-                return error_mod.setErrorFmt(.analysis, .syntax_error, params_form[i + 1].location, "fn* rest-parameter must be a symbol", .{});
+                return error_catalog.raise(.fn_star_rest_not_symbol, params_form[i + 1].location, .{});
             try param_names.append(arena, params_form[i + 1].data.symbol.name);
             has_rest = true;
             break;
@@ -626,12 +627,12 @@ fn analyzeLetStar(
 ) AnalyzeError!*const Node {
     // (let* [k1 v1 k2 v2 ...] body...)
     if (items.len < 3)
-        return error_mod.setErrorFmt(.analysis, .syntax_error, form.location, "let* requires a binding vector and a body", .{});
+        return error_catalog.raise(.bindings_form_incomplete, form.location, .{ .form = "let*" });
     if (items[1].data != .vector)
-        return error_mod.setErrorFmt(.analysis, .syntax_error, items[1].location, "let* bindings must be a vector", .{});
+        return error_catalog.raise(.bindings_not_vector, items[1].location, .{ .form = "let*" });
     const binding_forms = items[1].data.vector;
     if (binding_forms.len % 2 != 0)
-        return error_mod.setErrorFmt(.analysis, .syntax_error, items[1].location, "let* bindings must have an even number of forms", .{});
+        return error_catalog.raise(.bindings_arity_odd, items[1].location, .{ .form = "let*" });
 
     var child_scope = if (scope) |s| Scope.child(s) else Scope{};
     defer child_scope.deinit(arena);
@@ -641,10 +642,10 @@ fn analyzeLetStar(
     var fi: usize = 0;
     while (fi < binding_forms.len) : (fi += 2) {
         if (binding_forms[fi].data != .symbol)
-            return error_mod.setErrorFmt(.analysis, .syntax_error, binding_forms[fi].location, "let* binding name must be a symbol", .{});
+            return error_catalog.raise(.binding_name_not_symbol, binding_forms[fi].location, .{ .form = "let*" });
         const name_sym = binding_forms[fi].data.symbol;
         if (name_sym.ns != null)
-            return error_mod.setErrorFmt(.analysis, .syntax_error, binding_forms[fi].location, "let* binding name must not be namespace-qualified", .{});
+            return error_catalog.raise(.binding_name_namespace_qualified, binding_forms[fi].location, .{ .form = "let*" });
         // Analyse the value *before* declaring the name so each value
         // expression sees the pre-shadow scope (Clojure `let` semantics:
         // bindings are sequential; later bindings see earlier ones, but
@@ -683,12 +684,12 @@ fn analyzeLoopStar(
 ) AnalyzeError!*const Node {
     // (loop* [k1 v1 k2 v2 ...] body...)
     if (items.len < 3)
-        return error_mod.setErrorFmt(.analysis, .syntax_error, form.location, "loop* requires a binding vector and a body", .{});
+        return error_catalog.raise(.bindings_form_incomplete, form.location, .{ .form = "loop*" });
     if (items[1].data != .vector)
-        return error_mod.setErrorFmt(.analysis, .syntax_error, items[1].location, "loop* bindings must be a vector", .{});
+        return error_catalog.raise(.bindings_not_vector, items[1].location, .{ .form = "loop*" });
     const binding_forms = items[1].data.vector;
     if (binding_forms.len % 2 != 0)
-        return error_mod.setErrorFmt(.analysis, .syntax_error, items[1].location, "loop* bindings must have an even number of forms", .{});
+        return error_catalog.raise(.bindings_arity_odd, items[1].location, .{ .form = "loop*" });
     const pair_count = binding_forms.len / 2;
     if (pair_count > std.math.maxInt(u16))
         return error_catalog.raise(.arity_too_large, items[1].location, .{
@@ -716,10 +717,10 @@ fn analyzeLoopStar(
     var fi: usize = 0;
     while (fi < binding_forms.len) : (fi += 2) {
         if (binding_forms[fi].data != .symbol)
-            return error_mod.setErrorFmt(.analysis, .syntax_error, binding_forms[fi].location, "loop* binding name must be a symbol", .{});
+            return error_catalog.raise(.binding_name_not_symbol, binding_forms[fi].location, .{ .form = "loop*" });
         const name_sym = binding_forms[fi].data.symbol;
         if (name_sym.ns != null)
-            return error_mod.setErrorFmt(.analysis, .syntax_error, binding_forms[fi].location, "loop* binding name must not be namespace-qualified", .{});
+            return error_catalog.raise(.binding_name_namespace_qualified, binding_forms[fi].location, .{ .form = "loop*" });
         // Value is analysed in the *parent* scope (recur is scoped to
         // the body, not to siblings; matching Clojure's semantics for
         // initial values).
@@ -754,7 +755,7 @@ fn analyzeRecur(
     macro_table: *const macro_dispatch.Table,
 ) AnalyzeError!*const Node {
     const target = if (scope) |s| s.recur_target else null;
-    const tgt = target orelse return error_mod.setErrorFmt(.analysis, .syntax_error, form.location, "recur is only valid inside a loop* or fn*", .{});
+    const tgt = target orelse return error_catalog.raise(.recur_outside_target, form.location, .{});
 
     const supplied_raw = items.len - 1;
     if (supplied_raw > std.math.maxInt(u16))
@@ -769,7 +770,7 @@ fn analyzeRecur(
             .loop_kw => "loop*",
             .fn_kw => "fn*",
         };
-        return error_mod.setErrorFmt(.analysis, .arity_error, form.location, "recur of {s}: expected {d} arg(s), got {d}", .{ kind_str, tgt.arity, supplied });
+        return error_catalog.raise(.recur_arity_mismatch, form.location, .{ .target = kind_str, .expected = tgt.arity, .got = supplied });
     }
 
     var args = try arena.alloc(Node, supplied);
@@ -793,7 +794,7 @@ fn analyzeThrow(
     macro_table: *const macro_dispatch.Table,
 ) AnalyzeError!*const Node {
     if (items.len != 2)
-        return error_mod.setErrorFmt(.analysis, .syntax_error, form.location, "throw expects 1 arg, got {d}", .{items.len - 1});
+        return error_catalog.raise(.throw_arity_invalid, form.location, .{ .got = items.len - 1 });
     const expr = try analyze(arena, rt, env, scope, items[1], macro_table);
 
     const n = try arena.create(Node);
@@ -852,7 +853,7 @@ fn analyzeTry(
 
     for (clause_forms) |cf| {
         if (seen_finally)
-            return error_mod.setErrorFmt(.analysis, .syntax_error, cf.location, "try: clauses must not appear after `finally`", .{});
+            return error_catalog.raise(.try_clause_after_finally, cf.location, .{});
         const head = cf.data.list[0].data.symbol.name;
         if (std.mem.eql(u8, head, "catch")) {
             const cc = try analyzeCatchClause(arena, rt, env, scope, cf, macro_table);
@@ -895,15 +896,15 @@ fn analyzeCatchClause(
     // (catch ClassName binding-sym body...)
     const items = clause.data.list;
     if (items.len < 4)
-        return error_mod.setErrorFmt(.analysis, .syntax_error, clause.location, "catch requires (catch <Class> <binding> <body>...)", .{});
+        return error_catalog.raise(.catch_form_incomplete, clause.location, .{});
     if (items[1].data != .symbol)
-        return error_mod.setErrorFmt(.analysis, .syntax_error, items[1].location, "catch class must be a symbol", .{});
+        return error_catalog.raise(.catch_class_not_symbol, items[1].location, .{});
     if (items[2].data != .symbol)
-        return error_mod.setErrorFmt(.analysis, .syntax_error, items[2].location, "catch binding must be a symbol", .{});
+        return error_catalog.raise(.catch_binding_not_symbol, items[2].location, .{});
     const class_sym = items[1].data.symbol;
     const bind_sym = items[2].data.symbol;
     if (bind_sym.ns != null)
-        return error_mod.setErrorFmt(.analysis, .syntax_error, items[2].location, "catch binding must not be namespace-qualified", .{});
+        return error_catalog.raise(.catch_binding_namespace_qualified, items[2].location, .{});
 
     // Analyse the catch body in a child scope that declares the binding.
     var child_scope = if (scope) |s| Scope.child(s) else Scope{};

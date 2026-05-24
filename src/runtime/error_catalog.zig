@@ -58,13 +58,43 @@ pub const Code = enum {
     // --- Analysis (def / if / let / symbol resolution / arity) ---
     def_arity_invalid,
     def_name_not_symbol,
+    def_name_namespace_qualified,
     if_arity_invalid,
+    quote_arity_invalid,
     symbol_unresolved,
-    let_bindings_not_vector,
-    let_bindings_arity_odd,
+    /// args: `.{ .form = "let*"|"loop*" }`
+    bindings_form_incomplete,
+    /// args: `.{ .form = "let*"|"loop*" }`
+    bindings_not_vector,
+    /// args: `.{ .form = "let*"|"loop*" }`
+    bindings_arity_odd,
+    /// args: `.{ .form = "let*"|"loop*" }`
+    binding_name_not_symbol,
+    /// args: `.{ .form = "let*"|"loop*" }`
+    binding_name_namespace_qualified,
     /// loop* / recur arity exceeds the internal slot-index width.
     /// args: `.{ .form = "loop*"|"recur", .got = N, .max = 65535 }`
     arity_too_large,
+    namespace_unknown,
+    current_namespace_missing,
+
+    // --- Analysis (fn*) ---
+    fn_star_form_incomplete,
+    fn_star_params_not_vector,
+    fn_star_param_not_symbol,
+    fn_star_param_namespace_qualified,
+    fn_star_rest_missing,
+    fn_star_rest_not_symbol,
+
+    // --- Analysis (recur / throw / try / catch) ---
+    recur_outside_target,
+    recur_arity_mismatch,
+    throw_arity_invalid,
+    try_clause_after_finally,
+    catch_form_incomplete,
+    catch_class_not_symbol,
+    catch_binding_not_symbol,
+    catch_binding_namespace_qualified,
 
     // --- Reader macros / nesting / escapes (Phase 1 reader migration) ---
     form_nesting_too_deep,
@@ -168,25 +198,113 @@ pub fn entry(comptime code: Code) Entry {
             .kind = .syntax_error, .phase = .analysis,
             .template = "First argument to def must be a symbol",
         },
+        .def_name_namespace_qualified => .{
+            .kind = .syntax_error, .phase = .analysis,
+            .template = "def name must not be namespace-qualified: '{[ns]s}/{[name]s}'",
+        },
         .if_arity_invalid => .{
             .kind = .syntax_error, .phase = .analysis,
             .template = "if expects 2 or 3 args, got {[got]d}",
+        },
+        .quote_arity_invalid => .{
+            .kind = .syntax_error, .phase = .analysis,
+            .template = "quote expects 1 arg, got {[got]d}",
         },
         .symbol_unresolved => .{
             .kind = .name_error, .phase = .analysis,
             .template = "Unable to resolve symbol: '{[sym]s}'",
         },
-        .let_bindings_not_vector => .{
+        .bindings_form_incomplete => .{
             .kind = .syntax_error, .phase = .analysis,
-            .template = "let* bindings must be a vector",
+            .template = "{[form]s} requires a binding vector and a body",
         },
-        .let_bindings_arity_odd => .{
+        .bindings_not_vector => .{
             .kind = .syntax_error, .phase = .analysis,
-            .template = "let* bindings must have an even number of forms",
+            .template = "{[form]s} bindings must be a vector",
+        },
+        .bindings_arity_odd => .{
+            .kind = .syntax_error, .phase = .analysis,
+            .template = "{[form]s} bindings must have an even number of forms",
+        },
+        .binding_name_not_symbol => .{
+            .kind = .syntax_error, .phase = .analysis,
+            .template = "{[form]s} binding name must be a symbol",
+        },
+        .binding_name_namespace_qualified => .{
+            .kind = .syntax_error, .phase = .analysis,
+            .template = "{[form]s} binding name must not be namespace-qualified",
         },
         .arity_too_large => .{
             .kind = .not_implemented, .phase = .analysis,
             .template = "{[form]s} arity {[got]d} exceeds the limit of {[max]d}",
+        },
+        .namespace_unknown => .{
+            .kind = .name_error, .phase = .analysis,
+            .template = "No namespace: '{[ns]s}'",
+        },
+        .current_namespace_missing => .{
+            .kind = .name_error, .phase = .analysis,
+            .template = "No current namespace; cannot resolve '{[sym]s}'",
+        },
+
+        // --- Analysis (fn*) ---
+        .fn_star_form_incomplete => .{
+            .kind = .syntax_error, .phase = .analysis,
+            .template = "fn* requires a parameter vector and a body",
+        },
+        .fn_star_params_not_vector => .{
+            .kind = .syntax_error, .phase = .analysis,
+            .template = "fn* parameter list must be a vector",
+        },
+        .fn_star_param_not_symbol => .{
+            .kind = .syntax_error, .phase = .analysis,
+            .template = "fn* parameter must be a symbol",
+        },
+        .fn_star_param_namespace_qualified => .{
+            .kind = .syntax_error, .phase = .analysis,
+            .template = "fn* parameter must not be namespace-qualified",
+        },
+        .fn_star_rest_missing => .{
+            .kind = .syntax_error, .phase = .analysis,
+            .template = "fn* '&' must be followed by a rest-parameter symbol",
+        },
+        .fn_star_rest_not_symbol => .{
+            .kind = .syntax_error, .phase = .analysis,
+            .template = "fn* rest-parameter must be a symbol",
+        },
+
+        // --- Analysis (recur / throw / try / catch) ---
+        .recur_outside_target => .{
+            .kind = .syntax_error, .phase = .analysis,
+            .template = "recur is only valid inside a loop* or fn*",
+        },
+        .recur_arity_mismatch => .{
+            .kind = .arity_error, .phase = .analysis,
+            .template = "recur of {[target]s}: expected {[expected]d} arg(s), got {[got]d}",
+        },
+        .throw_arity_invalid => .{
+            .kind = .syntax_error, .phase = .analysis,
+            .template = "throw expects 1 arg, got {[got]d}",
+        },
+        .try_clause_after_finally => .{
+            .kind = .syntax_error, .phase = .analysis,
+            .template = "try: clauses must not appear after `finally`",
+        },
+        .catch_form_incomplete => .{
+            .kind = .syntax_error, .phase = .analysis,
+            .template = "catch requires (catch <Class> <binding> <body>...)",
+        },
+        .catch_class_not_symbol => .{
+            .kind = .syntax_error, .phase = .analysis,
+            .template = "catch class must be a symbol",
+        },
+        .catch_binding_not_symbol => .{
+            .kind = .syntax_error, .phase = .analysis,
+            .template = "catch binding must be a symbol",
+        },
+        .catch_binding_namespace_qualified => .{
+            .kind = .syntax_error, .phase = .analysis,
+            .template = "catch binding must not be namespace-qualified",
         },
 
         // --- Reader macros / nesting / escapes ---
