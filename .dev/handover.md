@@ -24,41 +24,34 @@
 
 ## Current state
 
-- **Phase**: **Phase 5 IN-PROGRESS** — §9.7 rows 5.0 / 5.1 `[x]`
-  (5.1 paired ADR cluster ADR-0027 + ADR-0028 Accepted; per-Tag
-  dispatch infrastructure consolidated in 0028 §4 per Devil's-
-  advocate Alt 1; bit-0 reservation reclaimed; A3 nil/bool split
-  into D14/D15; §6 bit allocation deferred to 5.3 owner per
-  F-003). 15 rows remain (5.2–5.16). Phase 4 DONE.
-- **Branch**: `cw-from-scratch`. HEAD = (5.1 ADR commit).
-- **Gate**: Mac 13/13 + OrbStack Ubuntu x86_64 12/12 green at
-  HEAD (doc-only commit; no source change).
+- **Phase**: **Phase 5 IN-PROGRESS** — §9.7 rows 5.0 / 5.1 / 5.2 `[x]`.
+  5.1 paired ADR cluster ADR-0027 + ADR-0028 Accepted (amendments
+  1/2/3 landed during 5.2.b for §1 bit-layout corrections).
+  5.2 split-then-widen: 5.2.a pure refactor (5e8d035), 5.2.b
+  F-004 widening + big_int Group D rotation + tag_ops.zig
+  skeleton (9fe4e20). 14 rows remain (5.3–5.16). Phase 4 DONE.
+- **Branch**: `cw-from-scratch`. HEAD = 9fe4e20.
+- **Gate**: Mac 13/13 + OrbStack Ubuntu x86_64 12/12 green.
 - **Chapter cadence**: dormant per ADR-0025 + F-007.
 
-## Active task — §9.7.3 / 5.2 `runtime/value.zig` split + F-004 Tag widening
+## Active task — §9.7.4 / 5.3 mark-sweep GC implementation
 
-Apply ADR-0027 + ADR-0028 layout. Decompose 1335-line
-`src/runtime/value.zig` into `runtime/value/{value, nan_box,
-heap_tag, heap_header}.zig` per `.dev/structure_plan.md` decree
-(F-004 + D-029). Tag enum widens 32 → 64 entries per ADR-0027 §2
-slot map; new entries land as `Code.feature_not_supported` stubs
-per `no_op_stub_forbidden.md` explicit-error pattern. `HeapTag.
-big_int` rotates slot 29 → Group D slot 0 in the same commit.
+Land `runtime/gc/{mark_sweep, root_set, free_pool, gc_heap}.zig`
+per ADR-0028 + F-006 decree. 3-layer allocator boundary, free-
+pool intrusive at offset 8 (preserves HeapHeader at 0), per-tag
+finaliser dispatch via `tag_ops.zig` (5.2.b skeleton fills here),
+D100 5 root-set gaps pre-enumerated. `gc_and_lock.gc_mark` 30-bit
+partition is row 5.3 owner's call per ADR-0028 §6 F-003 deferral.
 
-**Step 0 reading**: ADR-0027 (slot map + bit layout + encode/
-decode contract) + ADR-0028 §4 (per-Tag tables — 5.2 lands
-`tag_ops.zig` empty skeleton; 5.3 fills); F-004 verbatim;
-D-029 row; `.dev/structure_plan.md` `runtime/value/` decree.
+**Step 0 reading**: ADR-0028 §1-9 verbatim; ADR-0027 §2-4 (slot
+map + encode/decode); F-006; D-011 + D-020; `private/notes/
+phase5-5.1-survey.md` Block B + Block C verbatim; ADR-0009 a2.
 
-**Step 0 procedural note** (per ADR-0027 §5 disposition on
-Devil's-advocate Load-bearing concern #1): run the grep
-`rg -nE '@enumFromInt\(.*Tag|@intFromEnum\(.*Tag|@intFromEnum\(.*HeapTag' src/ test/`
-on row open to size the migration surface before drafting tests.
-
-**Open hazards**: (a) D-040 MethodEntry collision — do not
-rename in 5.2 (Phase 7 owns); (b) `tag_ops.zig` shape choice
-(3 parallel arrays vs `TagOps` struct-of-arrays) defers to
-5.3 owner per ADR-0028 §4 — 5.2 lands empty skeleton only.
+**Open hazards**: (a) `tag_ops.zig` shape pick (3 parallel arrays
+vs `TagOps` struct) per ADR-0028 §4 — measure access-pattern;
+(b) free-pool min alloc 16 bytes — Phase 1-3 alloc sites under 16
+round up; (c) ADR-0009 `Flags.marked` deletion vs migration to
+`gc_and_lock.mark` per ADR-0028 §6.
 
 ## Open questions / blockers
 
