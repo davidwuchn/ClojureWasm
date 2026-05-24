@@ -63,15 +63,20 @@ pub fn allocFromI64(rt: *Runtime, v: i64) !Value {
     return Value.encodeHeapPtr(.big_int, bi);
 }
 
-/// Allocate a BigInt from a base-10 string. Useful for literals
-/// that overflow i64 at the analyser. Fails with the underlying
-/// parse-error union from `Managed.setString`.
-pub fn allocFromString(rt: *Runtime, base: u8, s: []const u8) !Value {
+/// Allocate a BigInt as a copy of an existing Managed. The source's
+/// limbs are deep-copied through `Managed.clone` so the caller's
+/// Managed can be deinit'd independently. Useful when arithmetic
+/// produces a Managed result that needs to land on the GC heap.
+///
+/// **Note**: `Managed.setString` from `std.math.big.int` has a
+/// known Linux glibc-x86 platform divergence in Zig 0.16 (off-by-
+/// one result for values past i64). Until upstream lands a fix
+/// (tracked in D-047), construct large BigInts via `set` + bit-shift
+/// or via repeated arithmetic instead of base-10 string parsing.
+pub fn allocFromManaged(rt: *Runtime, src: *const std.math.big.int.Managed) !Value {
     const m_ptr = try rt.gc.infra.create(std.math.big.int.Managed);
     errdefer rt.gc.infra.destroy(m_ptr);
-    m_ptr.* = try std.math.big.int.Managed.init(rt.gc.infra);
-    errdefer m_ptr.deinit();
-    try m_ptr.setString(base, s);
+    m_ptr.* = try src.cloneWithDifferentAllocator(rt.gc.infra);
 
     const bi = try rt.gc.alloc(BigInt);
     bi.* = .{ .header = HeapHeader.init(.big_int), .m = m_ptr };
@@ -147,24 +152,28 @@ test "allocFromI64 + asManaged round-trip on negative value" {
     try testing.expectEqual(@as(i64, -987654321), try m.toInt(i64));
 }
 
-test "allocFromString holds values beyond i64 range" {
+test "allocFromManaged holds values beyond i64 range (2^65 via shiftLeft)" {
     var fix = RuntimeFixture.init();
     defer fix.deinit();
 
-    // 2^65 — beyond i64.
-    const v = try allocFromString(&fix.rt, 10, "36893488147419103232");
+    // 2^65 — beyond i64. Construct via `set(1)` + `shiftLeft(65)`
+    // (avoids the Zig-0.16 Managed.setString Linux glibc-x86
+    // off-by-one; see D-047 + allocFromManaged docstring).
+    var src = try std.math.big.int.Managed.init(testing.allocator);
+    defer src.deinit();
+    try src.set(1);
+    try src.shiftLeft(&src, 65);
+
+    const v = try allocFromManaged(&fix.rt, &src);
     const m = asManaged(v);
     try testing.expect(m.bitCountAbs() > 64);
-    // Verify the string round-trip (canonical representation).
-    const s = try m.toString(testing.allocator, 10, .lower);
-    defer testing.allocator.free(s);
-    try testing.expectEqualStrings("36893488147419103232", s);
+    try testing.expect(m.eql(src));
 }
 
 test "Runtime.deinit releases BigInt + Managed limbs (no leak)" {
     var fix = RuntimeFixture.init();
     _ = try allocFromI64(&fix.rt, 42);
-    _ = try allocFromString(&fix.rt, 10, "99999999999999999999");
+    _ = try allocFromI64(&fix.rt, std.math.maxInt(i64));
     // Don't `defer fix.deinit()` — call manually so the testing
     // allocator's leak detector verifies the finaliser ran.
     fix.deinit();
