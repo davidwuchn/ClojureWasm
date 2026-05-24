@@ -105,6 +105,31 @@ pub fn star(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) a
     return acc;
 }
 
+/// `(/ ...)` — 1 arg returns `1/x` (matches Clojure); N args
+/// divides the first by each subsequent. Integer / integer not
+/// evenly divisible produces a Ratio; b == 0 raises divide_by_zero.
+pub fn slash(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = env;
+    try ensureNumeric(args, "/", loc);
+    if (args.len == 0)
+        return error_catalog.raise(.arity_below_min, loc, .{ .got = @as(usize, 0), .fn_name = "/", .min = @as(usize, 1) });
+    if (args.len == 1) {
+        return promote.divPromoting(rt, Value.initInteger(1), args[0]) catch |err| switch (err) {
+            error.DivideByZero => return error_catalog.raise(.divide_by_zero, loc, .{}),
+            else => return err,
+        };
+    }
+    var acc = args[0];
+    var i: usize = 1;
+    while (i < args.len) : (i += 1) {
+        acc = promote.divPromoting(rt, acc, args[i]) catch |err| switch (err) {
+            error.DivideByZero => return error_catalog.raise(.divide_by_zero, loc, .{}),
+            else => return err,
+        };
+    }
+    return acc;
+}
+
 // --- comparison ---
 
 /// Run `pred` pairwise across `args`, short-circuiting on `false`.
@@ -205,6 +230,7 @@ const ENTRIES = [_]Entry{
     .{ .name = "+", .f = &plus },
     .{ .name = "-", .f = &minus },
     .{ .name = "*", .f = &star },
+    .{ .name = "/", .f = &slash },
     .{ .name = "=", .f = &equals },
     .{ .name = "<", .f = &lt },
     .{ .name = ">", .f = &gt },

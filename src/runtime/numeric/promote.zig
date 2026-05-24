@@ -144,6 +144,45 @@ pub fn mulPromoting(rt: *Runtime, a: Value, b: Value) !Value {
     return try big_int.allocMulManaged(rt, &am, &bm);
 }
 
+/// `a / b` with auto-promotion. Integer/Integer evenly-divisible
+/// returns the quotient; not-evenly-divisible returns a Ratio.
+/// Mirrors `Numbers.divide(Number, Number)` in JVM Clojure.
+pub fn divPromoting(rt: *Runtime, a: Value, b: Value) !Value {
+    if (a.isFloat() or b.isFloat()) {
+        const bf = toF64(rt, b);
+        if (bf == 0.0) return error.DivideByZero;
+        return Value.initFloat(toF64(rt, a) / bf);
+    }
+
+    // Integer / integer path: build Managed for both, compute gcd,
+    // collapse to BigInt if exact; otherwise Ratio.
+    var am = try coerceToManaged(rt, a);
+    defer am.deinit();
+    var bm = try coerceToManaged(rt, b);
+    defer bm.deinit();
+
+    if (bm.eqlZero()) return error.DivideByZero;
+
+    const ratio = @import("ratio.zig");
+    if (try ratio.allocFromManagedPair(rt, &am, &bm)) |r| {
+        return r;
+    }
+    // Integer-collapse: the result is exact (denominator collapsed
+    // to 1). Compute am / bm as a BigInt and wrap, choosing
+    // immediate-Long if it fits in i48.
+    var q = try Managed.init(rt.gc.infra);
+    defer q.deinit();
+    var r = try Managed.init(rt.gc.infra);
+    defer r.deinit();
+    try q.divTrunc(&r, &am, &bm);
+    if (q.toInt(i64)) |qi| {
+        if (inI48(qi)) return Value.initInteger(qi);
+    } else |_| {
+        // q exceeds i64 range — fall through to BigInt wrap below.
+    }
+    return try big_int.allocFromManaged(rt, &q);
+}
+
 // --- tests ---
 
 const testing = std.testing;
@@ -220,4 +259,37 @@ test "addPromoting (Long + Float) is float-contagious" {
     const v = try addPromoting(&fix.rt, Value.initInteger(3), Value.initFloat(0.25));
     try testing.expect(v.isFloat());
     try testing.expectEqual(@as(f64, 3.25), v.asFloat());
+}
+
+test "divPromoting (6 / 3) returns immediate Long 2 (exact)" {
+    var fix = Fixture.init();
+    defer fix.deinit();
+
+    const v = try divPromoting(&fix.rt, Value.initInteger(6), Value.initInteger(3));
+    try testing.expect(v.tag() == .integer);
+    try testing.expectEqual(@as(i48, 2), v.asInteger());
+}
+
+test "divPromoting (1 / 3) returns Ratio 1/3 (not exact)" {
+    var fix = Fixture.init();
+    defer fix.deinit();
+
+    const v = try divPromoting(&fix.rt, Value.initInteger(1), Value.initInteger(3));
+    try testing.expect(v.tag() == .ratio);
+}
+
+test "divPromoting (5 / 0) raises DivideByZero" {
+    var fix = Fixture.init();
+    defer fix.deinit();
+
+    try testing.expectError(error.DivideByZero, divPromoting(&fix.rt, Value.initInteger(5), Value.initInteger(0)));
+}
+
+test "divPromoting (1.0 / 2) returns float 0.5" {
+    var fix = Fixture.init();
+    defer fix.deinit();
+
+    const v = try divPromoting(&fix.rt, Value.initFloat(1.0), Value.initInteger(2));
+    try testing.expect(v.isFloat());
+    try testing.expectEqual(@as(f64, 0.5), v.asFloat());
 }
