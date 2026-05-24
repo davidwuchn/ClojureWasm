@@ -35,30 +35,17 @@ case "$CMD" in
 esac
 
 REMINDER=$(cat <<'EOF'
-[post-commit reminder per CLAUDE.md § The only stop]
+[post-commit reminder]
 
-A commit just landed. The autonomous TDD loop continues without
-pause:
-
-  - Step 6 commit + push → Step 7 per-task note (from hot context,
-    private/notes/<phase>-<task>.md) → next task's Step 0 (general-
-    purpose subagent survey unless the task qualifies for skip per
-    .claude/rules/textbook_survey.md).
-  - Do NOT pause for user direction. The only stop is the user
-    explicit stop directive (CLAUDE.md § The only stop). Task /
-    region / cluster / commit / Phase boundaries all roll into the
-    next unit of work.
-  - Smell triggers are interrupts (in-flight surgery), not stops.
-    Build / test failures are Active-task items.
-  - Status summaries to the user are fine and often useful; what
-    is forbidden is using a summary as a stop rationalisation
-    (handover_framing.md forbidden-phrase table: "good stopping
-    point" / "キリがいい" / etc).
-  - Phase boundary chain (audit_scaffolding + simplify + security-
-    review + §9.<N+1> open) is itself in-loop work.
-
-Active task lives in .dev/handover.md "Active task" — read it,
-then start Step 0 of the next task without pause.
+A commit landed. Recall the project's fully-autonomous principle:
+return to the head of the autonomous loop in CLAUDE.md
+§ Autonomous Workflow and continue the next unit of work
+immediately. Intermediate artefacts — per-task notes, status
+summaries, planning text — are fine to produce on the way, but
+must never become a reason to stop. Smell triggers are in-flight
+interrupts; build / test failures are Active-task items; neither
+halts the loop. Only the user's explicit stop directive halts
+the loop (CLAUDE.md § The only stop).
 EOF
 )
 
