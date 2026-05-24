@@ -482,3 +482,113 @@ timing) + D-038 (spec confirmation requests bundle) + D-039
 `private/notes/zwasm_v2_feedback.md` (full draft note);
 `.dev/structure_plan.md` `src/runtime/wasm/` subtree (Phase 16
 file layout incl. marshal.zig / trap_map.zig / host_func.zig).
+
+## F-009 — Feature-implementation neutrality: impl bodies live in namespace-neutral locations; Clojure / Java / cljw surfaces are thin wrappers above
+
+**Status**: `confirmed` — direction of travel is law. Amendable only
+by user direction + Revision history entry.
+
+**Declared**: 2026-05-24 (user-directed structural session, landed
+alongside ADR-0029).
+
+### Rule
+
+Feature-implementation bodies — i.e. the file that calls OS /
+Zig-std or holds cw-original compute logic — live in
+**namespace-neutral locations** under `src/runtime/`:
+
+- Flat: `runtime/uuid.zig`, `runtime/clock.zig`,
+  `runtime/file_io.zig`, `runtime/uri_parse.zig`, `runtime/path.zig`,
+  `runtime/charset.zig`, `runtime/random.zig`, `runtime/print.zig`.
+- Sub-directories (when one feature spans multiple files):
+  `runtime/regex/{compile, match}.zig`,
+  `runtime/crypto/{secure_random, message_digest}.zig`,
+  `runtime/time/{instant, local_date, …}.zig`,
+  `runtime/io/{interface, default}.zig`,
+  `runtime/error/{info, catalog, print}.zig`,
+  `runtime/wasm/{engine, linker, …}.zig`.
+
+Three categories of surface — Clojure-ns, Java-ns, cljw-ns — all
+connect **as thin wrappers from above**:
+
+| Surface category | Location                                                             | Wrapper role                             |
+|------------------|----------------------------------------------------------------------|------------------------------------------|
+| Clojure-ns       | `src/lang/primitive/<feature>.zig` / `src/lang/clj/clojure/<…>.clj` | Var registration into `rt/` / clojure ns |
+| Java-ns          | `src/runtime/java/<pkg>/<Class>.zig`                                 | Java FQCN 1:1 thin wrapper               |
+| cljw-ns          | `src/runtime/cljw/<area>/<Item>.zig`                                 | cw-original symmetric thin wrapper       |
+
+**Cross-surface calls are forbidden.** A Clojure-ns wrapper must not
+import a Java-ns wrapper, and vice versa. Both reach the shared
+neutral impl directly.
+
+### Why
+
+- The cw-v0 pattern (impl directly inside `src/lang/interop/classes/
+  uuid.zig`) prevented sharing the same generator between
+  `(random-uuid)` and `(java.util.UUID/randomUUID)`. Cross-namespace
+  sharing requires a neutral implementation home.
+- The zwasm-v2 Java-InterOp premise — *"for what is supported, no
+  error surfaces; the internal implementation need not mirror Java;
+  equivalent inputs and outputs (with side effects where applicable)
+  are achieved via Zig-idiomatic means"* — explicitly authorises a
+  Java surface to use cw-native data shapes internally, which in
+  turn authorises implementation sharing.
+- File fan-out across zones (one feature = impl + surface + ns
+  registration ≥ 3 files) is structurally unavoidable. Mitigation
+  comes from discoverability (feature-name consistency + index
+  integrity in `compat_tiers.yaml` + grep-100% guarantee via
+  guardrail G3), not from collapsing files together.
+- At Phase 12+ the AI loop is statistically very likely to propose
+  "inline impl into the surface for fewer files." F-009 lets the
+  Devil's-advocate subagent (CLAUDE.md § Smell triggers are
+  interrupts, not stops) automatically reject these envelope-
+  violating alternatives.
+
+### Out of scope
+
+- Language-core foundations — `runtime/value/`, `runtime/collection/`,
+  `runtime/numeric/`, `runtime/gc/`, `runtime/env.zig`,
+  `runtime/dispatch.zig`, `runtime/keyword.zig`,
+  `runtime/type_descriptor.zig`, `runtime/protocol.zig` — are
+  outside this invariant. They *are* the representation of cw
+  values; this invariant addresses OS-borrowed features (UUID,
+  file I/O, regex, time, crypto hashes, …) and cw-original
+  backends (zwasm engine, JIT codegen).
+
+### Guardrails
+
+- **G1** `scripts/zone_check.sh` extension — enforces D2 of
+  ADR-0029 (no non-surface file in `runtime/` imports from
+  `runtime/java/**` or `runtime/cljw/**`).
+- **G2** `scripts/check_surface_marker.sh` — enforces the Backend
+  marker docstring contract on every `runtime/java/**/*.zig` and
+  `runtime/cljw/**/*.zig`.
+- **G3** `scripts/check_feature_keyword.sh` — enforces 100% grep
+  hit on the `keyword:` field across all files listed under each
+  `compat_tiers.yaml` `host_classes` entry.
+
+### Cross-references
+
+- **ADR-0029** (this F-NNN's structural home).
+- **Supersedes via ADR-0029**: ADR-0011 (the previous
+  `runtime/host/<pkg>/` reservation pattern).
+- **Related**: ADR-0007 (TypeDescriptor / Option β; thin wrappers
+  register TypeDescriptors), ADR-0015 (io_interface Tier 1 / Tier 2
+  shape; the `runtime/io/` consolidation is a continuation of this),
+  ADR-0018 (error catalog SSOT; the `runtime/error/` consolidation
+  groups its files together).
+- **Schema home**: `compat_tiers.yaml` `host_classes` entries
+  (extended schema per ADR-0029 D5 carries the `keyword:` and
+  `files:` fields that G3 verifies).
+- **Frequency basis**:
+  `private/clojure_frequent_java_interop/00a_frequency_overview.md`
+  (Java-package + class frequency data used to size the Phase 6+
+  landing order).
+
+### Revision history
+
+- 2026-05-24 added: invariant landed alongside ADR-0029. Locks in
+  the "implementation lives in a namespace-neutral place; all three
+  surface families wrap it from above" shape. Sets up the
+  Devil's-advocate subagent to reject Phase-12+ smallest-diff bias
+  alternatives that would inline impl into a surface file.

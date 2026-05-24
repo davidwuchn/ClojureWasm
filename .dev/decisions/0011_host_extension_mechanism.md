@@ -1,9 +1,9 @@
 # 0011 — Host extension mechanism via `src/runtime/host/` directory layout
 
-- **Status**: Accepted
+- **Status**: Superseded by ADR-0029 (2026-05-24)
 - **Date**: 2026-05-23
 - **Author**: Shota Kudo (drafted with Claude)
-- **Tags**: phase-4-entry, host, extension, java-stdlib, directory-layout
+- **Tags**: phase-4-entry, host, extension, java-stdlib, directory-layout, superseded
 
 ## Context
 
@@ -85,3 +85,13 @@ User code reaches each entry through a mirrored cw namespace:
 ## Revision history
 
 - 2026-05-23: Status: Proposed -> Accepted (initial landing).
+- 2026-05-24: Status: Accepted -> Superseded by ADR-0029. The
+  `___HOST_EXTENSION` marker pattern (distributed registration
+  replacing a central registry) carries forward, but the
+  registration root moves from `runtime/host/_host_api.zig` to
+  `runtime/java/_host_api.zig`, and the reserved 13
+  `runtime/host/<pkg>/_placeholder.zig` files are removed. Java
+  surfaces now live at `runtime/java/<pkg>/<Class>.zig`; cljw-native
+  surfaces at `runtime/cljw/<area>/<Item>.zig`. Rationale: see
+  ADR-0029 Context. Triggered by user-directed structural session
+  (2026-05-24).

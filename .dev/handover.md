@@ -25,33 +25,41 @@
 ## Current state
 
 - **Phase**: **Phase 5 IN-PROGRESS** — §9.7 rows 5.0–5.8 `[x]`,
-  5.9.a `[x]` (BigInt extern-struct migration; 5.3.d.9 deferral
-  resolved at 7e2ef17). 5.9.b/c/d (Ratio + BigDecimal + arithmetic)
-  remain; 5.10–5.16 also remain (7 row.subset units total).
-- **Branch**: `cw-from-scratch`. HEAD = 7e2ef17.
-- **Gate**: Mac 13/13 + OrbStack Ubuntu x86_64 12/12 green
-  (verified both gates' exit codes explicitly at HEAD).
+  5.9.a `[x]`. **In user-directed structural session (2026-05-24)**:
+  Phase 5 残務 (5.10 開始前) に ADR-0029 cluster (Commits 1-6) を
+  挟む。5.9.b/c/d + 5.10-5.16 はその後。
+- **Branch**: `cw-from-scratch`. HEAD = 4289062 → ADR-0029 cluster
+  進行中。
+- **Gate**: Mac 13/13 + OrbStack Ubuntu x86_64 12/12 green at 7e2ef17.
 - **Chapter cadence**: dormant per ADR-0025 + F-007.
 
-## Stopped — user requested
+## In-flight user-directed structural session (ADR-0029 cluster)
 
-User instruction (2026-05-24): 「きりが良くなったら止めて
-（ユーザー介入）」. Stop honoured at HEAD = 7e2ef17 — 5.9.a (BigInt
-extern struct migration) landed + verified green on both gates +
-D-047 records the Zig 0.16 setString Linux platform bug. Next
-session resumes at §9.7.10 / 5.9.b (Ratio implementation).
+User-directed session 2026-05-24 が現在進行中。Phase 5 残務に着手する
+前に、Java InterOp / cljw-original surface の配置とガードレールを
+確立する。詳細は `.dev/decisions/0029_runtime_java_cljw_layout.md`
++ F-009 (`.dev/project_facts.md`)。
 
-Extended-challenge items captured per `.claude/rules/extended_challenge.md`
-in `private/notes/phase5-5.9.md` (Alt hypothesis / Next experiment /
-Explicit blocker).
+Commit プラン (6 連):
 
-## Active task at resume — §9.7.10 / 5.9.b Ratio (then .c BigDecimal, .d arithmetic)
+1. **Commit 1**: ADR-0029 land + F-009 + ADR-0011 supersede (本 commit)
+2. **Commit 2**: ROADMAP §5 §6.5 + structure_plan.md + rule 改名
+   (`host_extension_layout.md` → `java_cljw_surface_layout.md`) +
+   compat_tiers.yaml schema 拡張 + `feature_name_consistency.md` 新規
+3. **Commit 3**: `runtime/error/` + `runtime/io/` 集約 + import 全置換
+4. **Commit 4**: `runtime/host/` 削除 + `_host_api.zig` を
+   `runtime/java/` へ移動
+5. **Commit 5**: G1/G2/G3 gate スクリプト + `test/run_all.sh` 統合
+6. **Commit 6**: `.dev/proposals/` ディレクトリ削除
 
-5.9.a (7e2ef17) shipped BigInt extern + `*Managed` wrapper +
-finaliser + `allocFromI64` / `allocFromManaged`. Next: 5.9.b Ratio
-`(*Managed, *Managed)` gcd-simplified; 5.9.c BigDecimal
-`(*Managed unscaled, i32 scale)`; 5.9.d arithmetic
-(`compare`/`+`/`-`/`*`/`/`) across the tower.
+各 commit ごとに Mac + Linux 両 gate を実行。
+
+## Active task after ADR-0029 cluster — §9.7.10 / 5.9.b Ratio
+
+ADR-0029 cluster 完了後、5.9.b (Ratio extern struct +
+gcd-on-construction) から再開。5.9.a (7e2ef17) は BigInt extern +
+`*Managed` wrapper + finaliser + `allocFromI64` / `allocFromManaged`
+を land 済。続けて 5.9.c (BigDecimal)、5.9.d (arithmetic) を順次。
 
 **Step 0**: F-005 verbatim; ADR-0017; cw v0 collections.zig
 Ratio/BigDecimal; clojure JVM Numbers.java. Fork `general-purpose`
@@ -59,9 +67,7 @@ survey subagent per `private/notes/phase5-5.9.md` Next experiment.
 
 **Process discipline**: Step 5 — always verify BOTH gates' exit
 codes explicitly (`echo "exit=$?"` + `grep "failed:[[:space:]]+0"`)
-before commit. 94d228b skipped this and pushed despite Linux
-failure; 7e2ef17 rolled forward. Add gate-verification hook or
-script-level enforcement.
+before commit.
 
 **Open hazards**: (a) Ratio `(*Managed, *Managed)` + gcd via
 `std.math.big.int.gcd` (verify Linux platform soundness post-D-047);
@@ -70,34 +76,17 @@ script-level enforcement.
 ## Open questions / blockers
 
 None testable from inside the loop. Recall triggers + follow-up
-candidates live in [`debt.md`](./debt.md) (rows D-005 through
-D-043). Step 0.5 debt sweep walks them at resume; pay attention
-to D-008 / D-014a / D-014b / D-017 / D-030 (other Phase-5-target
-rows that 5.2-5.16 will land), D-040 (Phase 7 MethodEntry
-naming — do not touch in Phase 5), D-043 (anonymous slot
-reserves for Phase 7 entry to revisit).
+candidates live in [`debt.md`](./debt.md). Step 0.5 debt sweep
+walks them at resume. Phase-5-target rows: D-008 / D-014a / D-014b
+/ D-017 / D-030. Phase 7+: D-040 (MethodEntry naming), D-043
+(anonymous slot reserves).
 
 ## Guardrail refresh history (condensed)
 
-User-directed guardrail evolution 2026-05-23 / -24:
-
-- Wave 1-2 (2026-05-23): project spirit (finished-form wins),
-  Bad Smell catalogue grew Smallest-diff / Reservation-as-bias /
-  Progress-pressure smells, Structural imagination phase, and
-  ten D-027..D-036 structural-foresight debts for Phase 5-20.
-- Wave 3 (2026-05-23): root-cause hardening after the long-context
-  research (`private/notes/llm_long_context_research.md`) —
-  `.dev/project_facts.md` (F-NNN, project law),
-  `scripts/check_smell_audit.sh` PreToolUse hook.
-- Wave 4-5 (2026-05-24): F-004 NaN-box 64-slot / F-005 numeric
-  tower / F-006 GC strategy / F-007 chapter cadence dormant /
-  F-008 zwasm v2 spec review; `.dev/structure_plan.md` Phase 5-20
-  tree.
-- Wave 6 (2026-05-24): F-NNN hardening — preamble = project law,
-  5-level priority chain, Devil's-advocate F-NNN envelope ban,
-  `scripts/check_facts_immutable.sh` PreToolUse hook. Silent
-  default-shift smell added to principle.md.
-- Wave 7 (2026-05-24): stop-list narrowed to "user explicit stop"
-  only; smell triggers are interrupts (in-flight surgery),
-  build/test failures are Active-task items, Phase / region /
-  task / commit boundaries roll into the next unit of work.
+- Wave 1-7 (2026-05-23..24): project spirit, Bad Smell catalogue,
+  Structural imagination phase, F-NNN/project_facts hardening,
+  Devil's-advocate F-NNN envelope ban, stop-list narrowed to
+  "user explicit stop" only.
+- Wave 8 (2026-05-24): ADR-0029 + F-009 (Java InterOp / cljw
+  surface layout + feature-implementation neutrality, supersedes
+  ADR-0011). See `.dev/decisions/0029_*.md`.
