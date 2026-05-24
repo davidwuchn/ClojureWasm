@@ -33,38 +33,21 @@
 - **Gate**: Mac 13/13 + OrbStack Ubuntu x86_64 12/12 green.
 - **Chapter cadence**: dormant per ADR-0025 + F-007.
 
-## Active task — §9.7.10 / 5.9 BigInt / Ratio / BigDecimal arithmetic (F-005)
+## Active task — §9.7.10 / 5.9 BigInt / Ratio / BigDecimal (F-005)
 
-Activate per F-005 + ADR-0017 + the 5.3.d.9 deferred BigInt
-migration. **Owns the BigInt extern-struct restructure** (Managed
-has non-extern fields — needs `*Managed` wrapper). New types:
-- `runtime/numeric/big_int.zig` (already exists, activate)
-- `runtime/numeric/ratio.zig` (new) — `BigInt × BigInt` simplified
-  on construction
-- `runtime/numeric/big_decimal.zig` (new) — `(BigInt unscaled,
-  i32 scale)`
-- `runtime/numeric/promote.zig` (new) — Long ↔ BigInt promotion
-  paths per `+` / `-` / `*` / `/`
+Owns the BigInt extern-struct restructure (5.3.d.9 deferral —
+Managed needs `*Managed` wrapper). New types: big_int.zig
+(activate), ratio.zig, big_decimal.zig, promote.zig. F-005 =
+JVM-surface compat + Zig-stdlib-affine internals.
 
-`compare` / `+` / `-` / `*` / `/` extended to handle the wider
-tower. F-005 anchors: JVM-surface compat (user-observable), Zig-
-stdlib-affine internal (`std.math.big.int.Managed` for limbs).
+**Step 0**: F-005 verbatim; ADR-0017; cw v0 collections.zig
+numeric tower; clojure JVM Numbers.java. `general-purpose`
+subagent for cw v0 + JVM survey.
 
-**Step 0 reading**: F-005 verbatim; ADR-0017 (3-layer alloc +
-infra_alloc for limbs); cw v0 `runtime/collections.zig` BigInt/
-Ratio/BigDecimal; clojure JVM Numbers.java (numeric tower
-dispatch).
-
-**Step 0 survey target** (`general-purpose` subagent): cw v0
-numeric tower + clojure JVM Numbers.
-
-**Open hazards**: (a) Managed wrapping — `*Managed` pointer to
-infra_alloc-managed storage; finaliser must `Managed.deinit`
-before sweep rawFrees BigInt wrapper; (b) Ratio simplification
-(gcd) at construction; (c) auto-promotion paths in `+ - * /` —
-F-005 says user-observable JVM-exact; (d) 5.10 is the next row
-(promotion auto-trigger paths) — 5.9 lands arithmetic, 5.10
-lands the auto-promotion dispatch.
+**Open hazards**: (a) Managed wrapping + finaliser `Managed.deinit`;
+(b) Ratio gcd at construction; (c) auto-promotion paths in
+`+ - * /` per F-005 JVM-exact; (d) 5.10 covers auto-promotion
+dispatch — 5.9 lands arithmetic only.
 chunked seqs via the new types — 5.8 lands the data shape, range
 implementation may need a co-commit or separate row.
 
