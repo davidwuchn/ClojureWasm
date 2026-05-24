@@ -78,6 +78,10 @@ test "registerAll installs every Phase-2 primitive in rt/" {
     // Core (sample)
     try testing.expect(rt_ns.resolve("nil?") != null);
     try testing.expect(rt_ns.resolve("identical?") != null);
+    // Regex (sample — ADR-0031 cycle 1c.2)
+    try testing.expect(rt_ns.resolve("re-pattern") != null);
+    try testing.expect(rt_ns.resolve("re-find") != null);
+    try testing.expect(rt_ns.resolve("re-matches") != null);
 }
 
 test "registerAll refers rt/ into user/ so + resolves unqualified" {
