@@ -43,6 +43,8 @@ const Runtime = @import("../runtime.zig").Runtime;
 const tag_ops = @import("../gc/tag_ops.zig");
 const gc_heap_mod = @import("../gc/gc_heap.zig");
 const mark_sweep = @import("../gc/mark_sweep.zig");
+const list_mod = @import("list.zig");
+const vector_mod = @import("vector.zig");
 
 /// ArrayMap threshold: at most 8 K/V pairs before promotion to
 /// HamtMap. Per ROADMAP row 5.5 wording + survey recommendation.
@@ -260,6 +262,101 @@ pub fn registerGcHooks() void {
     tag_ops.registerTrace(.hash_collision_map_node, &traceHamtMapNode); // same slot-walk; 5.5.c may specialise
 }
 
+/// `(contains? m k)` — returns true when the key exists, false
+/// otherwise. Distinct from `get` only for distinguishing
+/// "key absent" vs "key maps to nil" (which `get` cannot do).
+pub fn contains(v: Value, k: Value) !bool {
+    return switch (v.tag()) {
+        .array_map => blk: {
+            const am = v.decodePtr(*const ArrayMap);
+            var i: u32 = 0;
+            while (i < am.count) : (i += 1) {
+                if (keyEq(am.entries[2 * i], k)) break :blk true;
+            }
+            break :blk false;
+        },
+        .hash_map => error.HashMapNotImplemented,
+        .nil => false,
+        else => false,
+    };
+}
+
+/// `(keys m)` — returns a list of keys in iteration order (empty
+/// list when `m` is empty per Clojure; returns nil here for empty
+/// to match `(seq m)` semantics).
+pub fn keys(rt: *Runtime, v: Value) !Value {
+    return switch (v.tag()) {
+        .array_map => try keysArrayMap(rt, v.decodePtr(*const ArrayMap)),
+        .hash_map => error.HashMapNotImplemented,
+        .nil => Value.nil_val,
+        else => error.KeysOnNonMap,
+    };
+}
+
+fn keysArrayMap(rt: *Runtime, am: *const ArrayMap) !Value {
+    if (am.count == 0) return Value.nil_val;
+    // Build the list backwards (consHeap prepends) so the resulting
+    // list iterates in insertion order.
+    var result: Value = Value.nil_val;
+    var i: i32 = @intCast(am.count);
+    while (i > 0) {
+        i -= 1;
+        result = try list_mod.consHeap(rt, am.entries[@intCast(2 * i)], result);
+    }
+    return result;
+}
+
+/// `(vals m)` — returns a list of values in iteration order
+/// (nil for empty, matching `(seq m)`).
+pub fn vals(rt: *Runtime, v: Value) !Value {
+    return switch (v.tag()) {
+        .array_map => try valsArrayMap(rt, v.decodePtr(*const ArrayMap)),
+        .hash_map => error.HashMapNotImplemented,
+        .nil => Value.nil_val,
+        else => error.ValsOnNonMap,
+    };
+}
+
+fn valsArrayMap(rt: *Runtime, am: *const ArrayMap) !Value {
+    if (am.count == 0) return Value.nil_val;
+    var result: Value = Value.nil_val;
+    var i: i32 = @intCast(am.count);
+    while (i > 0) {
+        i -= 1;
+        result = try list_mod.consHeap(rt, am.entries[@intCast(2 * i + 1)], result);
+    }
+    return result;
+}
+
+/// `(seq m)` — returns a list of 2-element vector pairs `[k v]`
+/// (or nil for empty per Clojure). 5.5.d uses 2-element
+/// PersistentVector as the entry representation; future ADR may
+/// promote to a dedicated `map_entry` Tag (A15 is reserved per
+/// F-004) once the `MapEntry.key` / `MapEntry.val` accessor needs
+/// the distinction.
+pub fn seq(rt: *Runtime, v: Value) !Value {
+    return switch (v.tag()) {
+        .array_map => try seqArrayMap(rt, v.decodePtr(*const ArrayMap)),
+        .hash_map => error.HashMapNotImplemented,
+        .nil => Value.nil_val,
+        else => error.SeqOnNonMap,
+    };
+}
+
+fn seqArrayMap(rt: *Runtime, am: *const ArrayMap) !Value {
+    if (am.count == 0) return Value.nil_val;
+    var result: Value = Value.nil_val;
+    var i: i32 = @intCast(am.count);
+    while (i > 0) {
+        i -= 1;
+        var pair = vector_mod.empty();
+        pair = try vector_mod.conj(rt, pair, am.entries[@intCast(2 * i)]);
+        pair = try vector_mod.conj(rt, pair, am.entries[@intCast(2 * i + 1)]);
+        result = try list_mod.consHeap(rt, pair, result);
+    }
+    return result;
+}
+
 /// `(get m k)` — returns `nil` when the key is absent (matches
 /// Clojure 2-arg `get`; the 3-arg `(get m k not-found)` form lands
 /// at 5.5.d via the `contains?` path).
@@ -460,6 +557,68 @@ test "dissoc on nil: returns nil" {
 
     const r = try dissoc(&fix.rt, Value.nil_val, Value.initInteger(1));
     try testing.expect(r.isNil());
+}
+
+test "contains? distinguishes key-present-with-nil-value from key-absent" {
+    var fix = RuntimeFixture.init();
+    defer fix.deinit();
+
+    var m = empty();
+    m = try assoc(&fix.rt, m, Value.initInteger(1), Value.nil_val);
+
+    try testing.expect(try contains(m, Value.initInteger(1)));
+    try testing.expect(!try contains(m, Value.initInteger(99)));
+    // get returns nil for both (the disambiguation IS contains?'s job)
+    try testing.expectEqual(Value.nil_val, try get(m, Value.initInteger(1)));
+    try testing.expectEqual(Value.nil_val, try get(m, Value.initInteger(99)));
+}
+
+test "keys returns a list of keys in insertion order" {
+    var fix = RuntimeFixture.init();
+    defer fix.deinit();
+
+    var m = empty();
+    m = try assoc(&fix.rt, m, Value.initInteger(10), Value.initInteger(100));
+    m = try assoc(&fix.rt, m, Value.initInteger(20), Value.initInteger(200));
+    m = try assoc(&fix.rt, m, Value.initInteger(30), Value.initInteger(300));
+
+    const ks = try keys(&fix.rt, m);
+    try testing.expectEqual(@as(u32, 3), list_mod.countOf(ks));
+    try testing.expectEqual(@as(i48, 10), list_mod.first(ks).asInteger());
+    try testing.expectEqual(@as(i48, 20), list_mod.first(list_mod.rest(ks)).asInteger());
+    try testing.expectEqual(@as(i48, 30), list_mod.first(list_mod.rest(list_mod.rest(ks))).asInteger());
+}
+
+test "vals returns a list of values in insertion order" {
+    var fix = RuntimeFixture.init();
+    defer fix.deinit();
+
+    var m = empty();
+    m = try assoc(&fix.rt, m, Value.initInteger(10), Value.initInteger(100));
+    m = try assoc(&fix.rt, m, Value.initInteger(20), Value.initInteger(200));
+
+    const vs = try vals(&fix.rt, m);
+    try testing.expectEqual(@as(u32, 2), list_mod.countOf(vs));
+    try testing.expectEqual(@as(i48, 100), list_mod.first(vs).asInteger());
+    try testing.expectEqual(@as(i48, 200), list_mod.first(list_mod.rest(vs)).asInteger());
+}
+
+test "seq returns a list of [k v] vector pairs (nil for empty)" {
+    var fix = RuntimeFixture.init();
+    defer fix.deinit();
+
+    try testing.expect((try seq(&fix.rt, empty())).isNil());
+
+    var m = empty();
+    m = try assoc(&fix.rt, m, Value.initInteger(1), Value.initInteger(100));
+    m = try assoc(&fix.rt, m, Value.initInteger(2), Value.initInteger(200));
+
+    const s = try seq(&fix.rt, m);
+    try testing.expectEqual(@as(u32, 2), list_mod.countOf(s));
+    const first_pair = list_mod.first(s);
+    try testing.expectEqual(@as(u32, 2), vector_mod.count(first_pair));
+    try testing.expectEqual(@as(i48, 1), vector_mod.nth(first_pair, 0).asInteger());
+    try testing.expectEqual(@as(i48, 100), vector_mod.nth(first_pair, 1).asInteger());
 }
 
 test "get on .hash_map raises HashMapNotImplemented at 5.5.a" {
