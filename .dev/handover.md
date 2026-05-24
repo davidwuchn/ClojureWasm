@@ -23,15 +23,16 @@
 
 ## Current state
 
-- **Phase**: **Phase 6 IN-PROGRESS (opened 2026-05-24)** —
-  §9.7 (Phase 5) closed; §9.8 expanded with 15 rows (6.0 →
-  6.15). 6.1 = analyzer.zig split (deferred 5.13). Cluster
-  work: capability foundations (uuid/clock/random/regex/time/
-  file_io), first Java host wave, Clojure stdlib companions.
-- **Branch**: `cw-from-scratch`. HEAD advances per boundary
-  sync commit on top of b876ee4 (5.13 deferral).
-- **Gate**: Mac 16/16 + OrbStack Ubuntu x86_64 15/15 green
-  (e2e_phase5_exit added at 5.16).
+- **Phase**: **Phase 6 IN-PROGRESS** — §9.8 rows 6.1, 6.2, 6.3,
+  6.4, 6.5.a `[x]`. Remaining: 6.5.b (LocalDate /
+  LocalDateTime / Duration / ZonedDateTime / ZoneId — calendar
+  + TZ logic), 6.6 (regex — engine choice still open: custom
+  vs 3rd-party vs pcre bind), 6.7 (charset / UTF-8 string
+  prims), 6.8 (file_io), 6.9-6.12 (clojure.string/set/walk/
+  zip), 6.13 (compat_tiers schema migration sweep),
+  6.14 (exit smoke), 6.15 (phase_at_least_6 flip).
+- **Branch**: `cw-from-scratch`. HEAD ≈ 4587927 (6.5.a).
+- **Gate**: Mac 16/16 + OrbStack Ubuntu x86_64 15/15 green at HEAD.
 - **Chapter cadence**: dormant per ADR-0025 + F-007.
 
 ## Phase 5 closing (2026-05-24)
@@ -46,40 +47,22 @@ sync header). D-032 Discharged.
 Phase 6.1 (analyzer.zig split per D-030, deferred 5.13) landed
 2026-05-24 in 5 commits (1ac8198..149371f); D-030 discharged.
 
-## Active task — §9.8.2 runtime/uuid.zig + lang/primitive/uuid.zig + runtime/java/util/UUID.zig
+## Active task — §9.8 next: 6.7 (charset) / 6.6 (regex with ADR)
 
-§9.8.1 (analyzer split) complete at `149371f`. 5 sub-files all
-under A6 1000-line cap. D-030 discharged.
+Phase 6 surface scaling validated through 6.2-6.5.a (5 Java
+surfaces on the new schema). Surface-slot exemption added to
+G3/R1 (Java PascalCase ≠ lower_snake_case keyword).
 
-Next: **6.2** — First F-009 multi-zone exercise. Land UUID in
-three zones simultaneously:
+**Recommended next**: 6.7 (charset, smallest finished-form unit;
+clojure.string's bytes-vs-codepoints depends on it). Then 6.6
+(regex) which needs an engine-choice ADR (custom min /
+zig-regex 3rd-party / pcre bind; Devil's-advocate mandatory).
 
-1. `runtime/uuid.zig` (impl) — `randomBytes() [16]u8` + format
-   v4 helpers. Backed by `std.crypto.random` (via
-   `runtime/crypto/secure_random.zig` if that file already
-   exists; otherwise inline here, factor out at 6.4).
-2. `lang/primitive/uuid.zig` — `clojure.core/random-uuid` (no
-   args, returns String of the UUID v4 form) + `parse-uuid`
-   (validates a 36-char string).
-3. `runtime/java/util/UUID.zig` — Java surface with
-   `randomUUID` / `fromString` / `toString` etc. Marker
-   docstring per `.claude/rules/feature_name_consistency.md`
-   (`Backend: impl-only` / `Impl deps: uuid` / `Clojure peer:
-   clojure.core/random-uuid`).
-4. `compat_tiers.yaml` entry migrated to the ADR-0029 D5
-   extended schema (first one — G3 gate validates).
-
-**Step 0**: F-005/F-009 verbatim; ADR-0029 D1+D4+D5; cw v0
-`src/lang/interop/classes/uuid.zig` (221 lines) for prior-art
-on UUID v4 format; clojure.lang.Numbers for random-uuid
-semantics. Fork `general-purpose` survey if useful, but the
-scope is small.
-
-**Open hazards**: (a) UUID v4 needs `std.crypto.random.bytes`;
-direct std.crypto call for Phase 6 (io_interface abstraction
-for random at Phase 14+). (b) compat_tiers.yaml: only UUID's
-entry migrates to the new schema in 6.2; other 39 entries stay
-legacy until their owning task touches them.
+**Open hazards**: (a) 6.6 regex engine choice is ADR-level
+(depth 2-3); do not skip Devil's-advocate fork. (b) 6.5.b TZ
+data is a multi-MB embed; defer until size budget articulated.
+(c) compat_tiers.yaml legacy entries (35 left); each Phase-6
+row migrates its own entry; 6.13 sweeps the rest.
 
 ## Open questions / blockers
 
