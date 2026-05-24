@@ -29,9 +29,10 @@
   (clojure.string/set/walk/zip — needs bootstrap multi-clj
   load), 6.13 (yaml sweep ~34 entries), 6.14 (exit smoke),
   6.15 (phase flip).
-- **Branch**: `cw-from-scratch`. HEAD ≈ 854f3d1 (ADR-0031
-  Accepted — Alternative 2 two-tier IR + lazy DFA over
-  Pike-NFA, Devil's-advocate fork executed inline).
+- **Branch**: `cw-from-scratch`. HEAD ≈ b5df7db (ADR-0031
+  cycle 1 skeleton set landed: compile.zig + match.zig +
+  Pattern.zig surface + lang/primitive/regex.zig peer; all
+  raise NotImplemented per `no_op_stub_forbidden`).
 - **Gate**: Mac 16/16 + OrbStack Ubuntu x86_64 15/15 green.
 - **Chapter cadence**: dormant per ADR-0025 + F-007.
 
@@ -57,21 +58,25 @@ boundary — further single-primitive expansion is cheaper than
 the exit-criterion deliverable. The next session should pivot
 away from primitive accretion and take 6.6 directly.
 
-**Recommended next**: 6.6 (regex) impl against ADR-0031
-Accepted (854f3d1). Cycle 1 lands the parser + AST + IR
-(`Program`) + Pike-NFA VM only — DFA fast path is cycle 2.
+**Recommended next**: ADR-0031 Alt 2 cycle 1 parser + AST
+emit. The four skeletons (compile.zig / match.zig /
+Pattern.zig / primitive/regex.zig) are all wired and gate-
+green; each currently raises NotImplemented per
+`no_op_stub_forbidden`. Next commit fills compile.zig parser:
+recursive-descent on the regex source → `Node` AST → IR `Inst`
+slice; then match.zig Pike-VM step loop; then primitive/regex.zig
+registers `re-find` + `re-matches` against `Program`, with the
 Phase 6.6 exit smoke `(re-find #"\d+" "abc123")` → `"123"`
-should pass at the end of cycle 1.
+as the cycle-1 acceptance test.
 
-File targets (per ADR-0031 Decision):
-  runtime/regex/compile.zig (parser + AST + IR optimiser)
-  runtime/regex/match.zig (Pike VM, NFA correctness baseline)
-  runtime/regex/dfa.zig (cycle 2: lazy DFA)
-  runtime/regex/exec.zig (cycle 2: dispatcher)
-  runtime/java/util/regex/Pattern.zig (JVM-shaped surface)
-  lang/primitive/regex.zig (re-find / re-matches / re-seq /
-    re-groups / re-pattern, dispatch into Pattern)
-  compat_tiers.yaml (new java.util.regex.Pattern entry)
+Cycle 2-5 remain queued (lazy DFA + capture groups + `(?i)` +
+`PatternSyntaxException`-aligned errors); see D-051. The Alt 3
+intern-cache promotion lives in D-052 as a Phase 10+ recall.
+
+compat_tiers.yaml entry for `java.util.regex.Pattern` (new
+schema: `keyword: regex` + `files:` listing all four file
+paths) lands in the same commit as the cycle-1 first-green so
+G2 / G3 gates start validating immediately.
 
 Alternative parallel-track: 6.13 yaml sweep — mechanical bulk
 diff over ~34 legacy entries to ADR-0029 D5 schema. Low risk,
