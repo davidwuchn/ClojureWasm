@@ -199,3 +199,19 @@ marker (`impl-only`) per ADR-0029 D4.
   selected Alternative 2 (two-tier IR + lazy-DFA over Pike-NFA)
   per F-002 finished-form-clean wins. Alternative 3 logged as
   post-acceptance follow-up (recall-trigger debt at Phase 10+).
+- 2026-05-25 (cycle 1 progress, same session): cycle 1 first
+  cells landed (commits b5df7db..6a9eb52). All four skeleton
+  files wired: `runtime/regex/{compile,match}.zig`,
+  `runtime/java/util/regex/Pattern.zig`,
+  `lang/primitive/regex.zig`. Cycle-1 first-green: single-char
+  literal + multi-char literal (Node.concat) + `.` wildcard
+  (Node.class with all-set bitmap), all green via the
+  straight-line `tryMatchAt` driver. 12 Layer-1 unit tests.
+  Remaining for cycle 1: alternation `|`, quantifiers
+  (`*`/`+`/`?`/`{n,m}`), character classes `[abc]` /
+  `[^abc]` / `[a-z]`, escape sequences `\d \w \s \b`, anchors
+  `^` / `$`, group capture `(e)`, and the `re-pattern` /
+  `re-find` / `re-matches` clojure-peer registration once the
+  Value path through the reader lands. The proper Pike-VM
+  thread-list driver replaces `tryMatchAt` at the alternation /
+  Kleene-star landing.
