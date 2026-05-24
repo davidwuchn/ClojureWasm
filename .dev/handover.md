@@ -6,25 +6,26 @@
 
 ## Resume contract
 
-- **HEAD**: `a46a241` (see `git log` for stale-drift; HEAD line
+- **HEAD**: `701b19a` (see `git log` for stale-drift; HEAD line
   refreshes only on Active-task-identifier change per the
   ≤ 2 / session cap).
-- **First commit on resume MUST be**: ADR-0031 Alt 2 cycle 1
-  parser extension — recursive-descent refactor that adds
-  alternation `|` and the `*`/`+`/`?` quantifiers as the next
-  pair, so `Inst.split` / `Inst.jmp` join the IR and `tryMatchAt`
-  is replaced by the proper Pike-VM thread-list driver in
-  `runtime/regex/match.zig`. Acceptance: `(re-find #"a|b" "xby")`
-  → `{start=1, end=2}` and `(re-find #"a*" "aaa")` → `{start=0,
-  end=3}` green at the Zig unit-test layer.
-- **Forbidden this session**: (a) expanding `core.zig` /
-  `math.zig` primitive cluster — 6.16 is closed at 48 fns; only
-  re-open if a downstream caller (6.9 clojure.string etc.)
-  genuinely needs a primitive that is absent. (b) handover
-  HEAD-pointer churn — leave the field stale and refresh only
-  when the Active-task identifier itself changes. (c) Proposed
-  ADR landing across session boundaries (CLAUDE.md
-  Proposed→Accepted same-cycle rule).
+- **First commit on resume MUST be**: pick ONE of:
+  - (a) ADR-0031 cycle 2 = lazy DFA skeleton in
+    `runtime/regex/dfa.zig` + `exec.zig` dispatcher (per D-051);
+    first cell = 32-state cached subset-construction table +
+    NFA-fallback on overflow; or
+  - (b) D-054 cycle-3 first port = create
+    `test/e2e/regex/phase6_captures.sh` (failing) sourcing from
+    `~/Documents/OSS/clojure/test/clojure/test_clojure/regex.clj`
+    L9-52 to drive cycle 3 captures red-first; or
+  - (c) Phase 6 next row = 6.9 `clojure.string` (uses cycle-1
+    regex foundation — `re-find` / `re-matches` now green; needs
+    bootstrap multi-clj load decision first).
+  User picks the branch on resume; default (per finished-form
+  bias) is (c) since cycle 1 unblocks Phase 6 forward motion.
+- **Forbidden this session**: (a) re-opening `core.zig` / `math.zig`
+  primitive cluster (6.16 still closed). (b) handover HEAD-pointer
+  churn — refresh only when Active-task-identifier changes.
 
 ## Cold-start reading order
 
@@ -35,65 +36,52 @@ Workflow + § The only stop) → `.dev/project_facts.md` (F-001..F-009)
 
 ## Current state
 
-- **Phase**: **Phase 6 IN-PROGRESS** — §9.8 8/16 `[x]`
-  (6.1-6.4, 6.5.a, 6.7, 6.8, 6.16). Remaining: 6.5.b (TZ
-  data — defer), 6.6 (regex, engine-choice ADR), 6.9-6.12
-  (clojure.string/set/walk/zip — needs bootstrap multi-clj
-  load), 6.13 (yaml sweep ~34 entries), 6.14 (exit smoke),
-  6.15 (phase flip).
-- **Branch**: `cw-from-scratch`. HEAD ≈ b5df7db (ADR-0031
-  cycle 1 skeleton set landed: compile.zig + match.zig +
-  Pattern.zig surface + lang/primitive/regex.zig peer; all
-  raise NotImplemented per `no_op_stub_forbidden`).
-- **Gate**: Mac 16/16 + OrbStack Ubuntu x86_64 15/15 green.
+- **Phase**: **Phase 6 IN-PROGRESS** — §9.8 now 9/16 `[x]`
+  (6.1-6.4, 6.5.a, 6.6 **[NEW — cycle 1 end-to-end]**, 6.7,
+  6.8, 6.16). Remaining: 6.0 (boundary review), 6.5.b (TZ data
+  — defer), 6.9-6.12 (clojure.string/set/walk/zip — needs
+  bootstrap multi-clj load), 6.13 (yaml sweep ~34 entries),
+  6.14 (exit smoke), 6.15 (phase flip).
+- **Branch**: `cw-from-scratch`. HEAD `701b19a` — ADR-0031
+  Alt 2 cycle 1 complete (parser + Pike VM + char classes +
+  escapes + anchors + Regex Value + primitives + reader
+  literal `#"..."`). 6 cycle-1 commits + 1 silent-skip
+  surgery + D-053 clock port pushed this session.
+- **Gate**: Mac 18/18 + OrbStack Ubuntu x86_64 17/17 green.
+  `zig build test` 573/573. `scripts/check_test_reach.sh
+  --gate` active.
 - **Chapter cadence**: dormant per ADR-0025 + F-007.
 
-## Active task — §9.8 row 6.6 (regex impl against ADR-0031)
+## Active task — pick one of the 3 Resume-contract branches
 
-Phase 6 progressed 8/16. Row 6.16 cluster expanded into a
-broad Tier A surface (46 fns across `core.zig` predicates +
-`math.zig` sign / parity / mod / bit / shift / strict
-arithmetic). The cluster is at a Progress-pressure smell
-boundary — further single-primitive expansion is cheaper than
-the exit-criterion deliverable. The next session should pivot
-away from primitive accretion and take 6.6 directly.
-
-**Recommended next**: ADR-0031 Alt 2 cycle 1 parser + AST
-emit. The four skeletons (compile.zig / match.zig /
-Pattern.zig / primitive/regex.zig) are all wired and gate-
-green; each currently raises NotImplemented per
-`no_op_stub_forbidden`. Next commit fills compile.zig parser:
-recursive-descent on the regex source → `Node` AST → IR `Inst`
-slice; then match.zig Pike-VM step loop; then primitive/regex.zig
-registers `re-find` + `re-matches` against `Program`, with the
-Phase 6.6 exit smoke `(re-find #"\d+" "abc123")` → `"123"`
-as the cycle-1 acceptance test.
-
-Cycle 2-5 remain queued (lazy DFA + capture groups + `(?i)` +
-`PatternSyntaxException`-aligned errors); see D-051. The Alt 3
-intern-cache promotion lives in D-052 as a Phase 10+ recall.
-
-compat_tiers.yaml entry for `java.util.regex.Pattern` (new
-schema: `keyword: regex` + `files:` listing all four file
-paths) lands in the same commit as the cycle-1 first-green so
-G2 / G3 gates start validating immediately.
-
-Alternative parallel-track: 6.13 yaml sweep — mechanical bulk
-diff over ~34 legacy entries to ADR-0029 D5 schema. Low risk,
-G3 gate validates each row.
-
-**Open hazards**: (a) 6.6 regex ADR depth 2-3 (Devil's-advocate
-fork mandatory). (b) 6.5.b TZ data multi-MB embed — defer.
-(c) 6.9 bootstrap.zig multi-clj-load extension (load order if
-clojure.string top-level depends on clojure.core fns).
+The session that just ended closed §9.8 row 6.6 (ADR-0031
+cycle 1) end-to-end. The Resume contract above lists the 3
+defensible next branches; default is (c) Phase 6 forward
+motion via row 6.9 `clojure.string`. Cycles 2-5 (D-051) are
+ready any time; cycle-3 corpus port (D-054) is also queued.
 
 ## Open questions / blockers
 
 None testable from inside the loop. Step 0.5 debt sweep walks
-debt.md (D-005, D-014a/b, D-017, D-040, D-043, D-048..D-052).
+debt.md (D-005, D-014a/b, D-017, D-040, D-043, D-048..D-052,
+**D-054 new**). D-053 discharged at `7a9e990`.
 
 ## Guardrail refresh history (condensed)
 
-Waves 1-10: spirit + Bad Smell + F-NNN hardening + stop-list +
-ADR-0029 F-009 + ADR-0030 + 6.1 analyzer split. Wave 11:
-ADR-0031 Accepted (Alt 2) + 6.16 cluster (48 fns).
+Waves 1-11: spirit + Bad Smell + F-NNN + stop-list + ADR-0029
+F-009 + ADR-0030 + 6.1 analyzer split + ADR-0031 Accepted
+(Alt 2) + 6.16 cluster (48 fns). **Wave 12 (2026-05-25)**:
+silent-test-skip surgery → `scripts/check_test_reach.sh` gate
++ `zig_tips.md` "Test discovery via @import" section + clock
+API port (D-053) discharged.
+
+## Stopped — user requested
+
+User instruction (2026-05-25): 「ここで、サイクル終端まで達し
+コミットしたら、停止していてください」 = stop at the next cycle
+end + commit. ADR-0031 cycle 1 closed end-to-end (commit
+`701b19a`); test gate green on both Mac + Linux; per-task
+note written at `private/notes/phase6-6.6-cycle1c.md` (incl.
+extended-challenge Alt hypothesis / Next experiment /
+Explicit blocker). Resume at one of the 3 branches in
+Resume contract above.
