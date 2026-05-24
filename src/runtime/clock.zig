@@ -7,20 +7,24 @@
 //!   2. (future) `lang/primitive/clock.zig` — when a Clojure-level
 //!      wrapper like `(cljw/now)` lands. Today no Clojure peer exists
 //!      (Clojure idiomatic time access goes through the Java surface).
+//!
+//! Zig 0.16 moved the clock API under `std.Io.Clock`; the call sites
+//! must thread an `io: std.Io` through (Juicy-Main / Runtime.io).
+//! The legacy `std.time.nanoTimestamp` was removed.
 
 const std = @import("std");
 
 /// Milliseconds since the Unix epoch. Mirrors JVM
 /// `System.currentTimeMillis()`. Wall clock; subject to NTP jumps.
-pub fn currentMillis() i64 {
-    return @intCast(@divTrunc(std.time.nanoTimestamp(), std.time.ns_per_ms));
+pub fn currentMillis(io: std.Io) i64 {
+    return std.Io.Clock.real.now(io).toMilliseconds();
 }
 
 /// Monotonic nanoseconds. Mirrors JVM `System.nanoTime()`. The
-/// absolute value is meaningless; only differences are. Unaffected by
-/// wall-clock adjustments.
-pub fn nanoTime() i64 {
-    return @intCast(std.time.nanoTimestamp());
+/// absolute value is meaningless; only differences are. Unaffected
+/// by wall-clock adjustments.
+pub fn nanoTime(io: std.Io) i64 {
+    return @intCast(std.Io.Clock.awake.now(io).toNanoseconds());
 }
 
 // --- tests ---
@@ -28,13 +32,17 @@ pub fn nanoTime() i64 {
 const testing = std.testing;
 
 test "currentMillis returns a positive epoch milliseconds value" {
-    const ms = currentMillis();
-    // 2026-05-24 ≈ 1.77e12 ms past the Unix epoch.
+    var th = std.Io.Threaded.init(testing.allocator, .{});
+    defer th.deinit();
+    const ms = currentMillis(th.io());
+    // 2026-05-25 ≈ 1.77e12 ms past the Unix epoch.
     try testing.expect(ms > 1_700_000_000_000);
 }
 
 test "nanoTime advances monotonically across two consecutive calls" {
-    const t1 = nanoTime();
-    const t2 = nanoTime();
+    var th = std.Io.Threaded.init(testing.allocator, .{});
+    defer th.deinit();
+    const t1 = nanoTime(th.io());
+    const t2 = nanoTime(th.io());
     try testing.expect(t2 >= t1);
 }

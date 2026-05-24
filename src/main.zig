@@ -300,14 +300,8 @@ test {
     // these lines Zig 0.16's lazy decl analysis silently skips
     // their tests. See .claude/rules/zig_tips.md "Test
     // discovery via @import".
-    //
-    // NOTE: `runtime/clock.zig` and `runtime/time/instant.zig`
-    // are intentionally NOT listed here — they reference
-    // `std.time.nanoTimestamp`, which was removed in Zig 0.16
-    // (the clock surface moved to `std.Io.Clock`). Including
-    // them surfaces real compile errors that need a port; the
-    // port is tracked as a Phase 6 debt row (see debt.md). Add
-    // them back here once the port lands.
     _ = @import("runtime/charset.zig");
+    _ = @import("runtime/clock.zig");
     _ = @import("runtime/random.zig");
+    _ = @import("runtime/time/instant.zig");
 }
