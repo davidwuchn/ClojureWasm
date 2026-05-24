@@ -11,21 +11,34 @@
   ≤ 2 / session cap).
 - **First commit on resume MUST be**: pick ONE of:
   - (a) ADR-0031 cycle 2 = lazy DFA skeleton in
-    `runtime/regex/dfa.zig` + `exec.zig` dispatcher (per D-051);
-    first cell = 32-state cached subset-construction table +
-    NFA-fallback on overflow; or
-  - (b) D-054 cycle-3 first port = create
-    `test/e2e/regex/phase6_captures.sh` (failing) sourcing from
-    `~/Documents/OSS/clojure/test/clojure/test_clojure/regex.clj`
-    L9-52 to drive cycle 3 captures red-first; or
+    `runtime/regex/dfa.zig` + `exec.zig` dispatcher (per D-051).
+    First cell = 32-state cached subset-construction table +
+    NFA-fallback on overflow. Owner MUST also read D-056 — if
+    honey/sql compat tier stays, the dispatcher signature must
+    accommodate lookahead in cycle 4.
+  - (b) D-054 (amended) cycle-3 first port = create
+    `test/e2e/regex/phase6_captures.sh` (failing) sourced from
+    cw v0's `/Users/shota.508/Documents/MyProducts/ClojureWasm/test/upstream/clojure/test_clojure/regex.clj`
+    (the cw lineage SSOT — re-derive in Zig idiom per
+    `no_copy_from_v1.md`, do NOT verbatim copy). **NOT** the
+    JVM upstream — `find ~/Documents/OSS/clojure -name 'regex*'`
+    returns zero hits; the 228-line upstream file does not
+    exist. See D-054 amended row + the deep dive at
+    `private/notes/cw_v0_regex_indirect_coverage.md` §6.
   - (c) Phase 6 next row = 6.9 `clojure.string` (uses cycle-1
     regex foundation — `re-find` / `re-matches` now green; needs
-    bootstrap multi-clj load decision first).
+    bootstrap multi-clj load decision first). Owner: cycle-1
+    regex covers basic str/replace + split; if tests touch
+    lookahead `(?=...)` the work pulls forward into ADR-0031
+    cycle 4 — surface as a debt before sinking time in.
   User picks the branch on resume; default (per finished-form
   bias) is (c) since cycle 1 unblocks Phase 6 forward motion.
 - **Forbidden this session**: (a) re-opening `core.zig` / `math.zig`
   primitive cluster (6.16 still closed). (b) handover HEAD-pointer
   churn — refresh only when Active-task-identifier changes.
+  (c) acting on the **original** (pre-2026-05-25-amendment)
+  D-054 plan that referenced a non-existent JVM upstream
+  `regex.clj` — read the amended D-054 + deep-dive note first.
 
 ## Cold-start reading order
 
