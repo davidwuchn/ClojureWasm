@@ -24,7 +24,9 @@
 const std = @import("std");
 const KeywordInterner = @import("keyword.zig").KeywordInterner;
 const dispatch = @import("dispatch.zig");
+const gc_heap_mod = @import("gc/gc_heap.zig");
 const VTable = dispatch.VTable;
+const GcHeap = gc_heap_mod.GcHeap;
 
 /// Process-wide execution context.
 ///
@@ -63,8 +65,19 @@ pub const Runtime = struct {
     /// Layer-1+ heap allocation registers a `(ptr, free_fn)` pair here
     /// so `Runtime.deinit` can release them. The list keeps Layer 0
     /// from needing to know concrete Layer-1 types like `tree_walk
-    /// .Function`.
+    /// .Function`. 5.3.d migrates Phase 1-4 alloc sites to `gc.alloc`
+    /// and shrinks this list to "Layer-1 closure_bindings + bytecode"
+    /// scope (Function struct stays GC-managed but its side-tables
+    /// remain gpa-owned until ADR-0028 §5 row 3 wires the trace).
     heap_objects: std.ArrayList(HeapEntry) = .empty,
+
+    /// Phase 5 mark-sweep GC heap (ADR-0028 + F-006). Inline field —
+    /// every Runtime carries one; the empty `GcHeap` is ~40 bytes of
+    /// null pointers until first allocation. 5.3.d migrates Phase 1-4
+    /// alloc sites from `gpa.create` to `gc.alloc`. The
+    /// `mark_sweep.collect(gc, ctx)` entry point reaches this field
+    /// via `&rt.gc`.
+    gc: GcHeap,
 
     pub const HeapEntry = struct {
         ptr: *anyopaque,
@@ -93,6 +106,7 @@ pub const Runtime = struct {
             .io = io,
             .gpa = gpa,
             .keywords = KeywordInterner.init(gpa),
+            .gc = GcHeap.init(gpa),
         };
     }
 
@@ -101,6 +115,7 @@ pub const Runtime = struct {
             entry.free(self.gpa, entry.ptr);
         }
         self.heap_objects.deinit(self.gpa);
+        self.gc.deinit();
         self.keywords.deinit();
     }
 };
