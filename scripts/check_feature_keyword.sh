@@ -96,11 +96,17 @@ while i < len(lines):
     if not fm:
         continue
     files_block = fm.group(1)
+    # The greedy block regex above scoops up sibling keys after
+    # `files:` (e.g. `methods:`, `clojure_peer_vars:`); restrict to
+    # the documented file-slot names per ADR-0029 D5.
+    FILE_SLOTS = {"surface", "impl", "impl_extras", "wrap", "clojure_peer"}
     for fl in files_block.splitlines():
         fm2 = re.match(r'^\s+(\w+):\s*(.+?)\s*(?:#.*)?$', fl)
         if not fm2:
             continue
         slot = fm2.group(1)
+        if slot not in FILE_SLOTS:
+            continue
         raw = fm2.group(2).strip()
         paths = []
         if raw.startswith('['):
@@ -146,8 +152,11 @@ path_has_keyword() {
     python3 -c '
 import sys, re
 kw, p = sys.argv[1], sys.argv[2]
-parts = re.split(r"[/._]+", p)
-sys.exit(0 if kw in parts else 1)
+# Java-surface filenames are PascalCase by convention while the
+# keyword (per R1) is lower_snake_case; case-insensitive compare
+# so e.g. keyword=uuid matches runtime/java/util/UUID.zig.
+parts = [seg.lower() for seg in re.split(r"[/._]+", p)]
+sys.exit(0 if kw.lower() in parts else 1)
 ' "$kw" "$path"
 }
 
@@ -161,7 +170,11 @@ while IFS='|' read -r fqn keyword slot path; do
         continue
     fi
 
-    if [ ! -f "$path" ]; then
+    # Paths in compat_tiers.yaml are repo-relative without the
+    # leading `src/`; prepend it for the existence check. Yaml-level
+    # paths stay short to keep the schema readable.
+    full_path="src/$path"
+    if [ ! -f "$full_path" ]; then
         echo "$fqn: G3/ADR-0029 D4: $slot file does not exist: $path" >> "$violations_file"
         continue
     fi

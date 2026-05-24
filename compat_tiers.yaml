@@ -133,7 +133,17 @@ tiers:
       - { fqn: "java.io.ByteArrayOutputStream",          native_ns: "cljw.host.java.io.ByteArrayOutputStream",          phase: 6 }
       - { fqn: "java.io.PrintWriter",                    native_ns: "cljw.host.java.io.PrintWriter",                    phase: 6 }
       # java.util
-      - { fqn: "java.util.UUID",                         native_ns: "cljw.host.java.util.UUID",                         phase: 5 }
+      - fqn: java.util.UUID
+        cljw_ns: cljw.java.util.UUID
+        keyword: uuid
+        tier: A
+        phase: 6
+        files:
+          surface: runtime/java/util/UUID.zig
+          impl: runtime/uuid.zig
+          clojure_peer: lang/primitive/uuid.zig
+        methods: [randomUUID, fromString, toString]
+        clojure_peer_vars: [clojure.core/random-uuid, clojure.core/parse-uuid]
       - { fqn: "java.util.Date",                         native_ns: "cljw.host.java.util.Date",                         phase: 5 }
       - { fqn: "java.util.Random",                       native_ns: "cljw.host.java.util.Random",                       phase: 5 }
       - { fqn: "java.util.Locale",                       native_ns: "cljw.host.java.util.Locale",                       phase: 6 }
