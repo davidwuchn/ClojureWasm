@@ -52,11 +52,11 @@ const SourceLocation = error_mod.SourceLocation;
 const macro_dispatch = @import("macro_dispatch.zig");
 
 /// Analyser errors. Phase 2 covers syntax + name resolution only.
-/// Aliases the wide `error_mod.Error` set so calls to `setErrorFmt`
+/// Aliases the wide `error_mod.ClojureWasmError` set so calls to `setErrorFmt`
 /// type-check; the analyser still only **emits** SyntaxError /
 /// NameError / NotImplemented / OutOfMemory in practice. See the
 /// equivalent comment in `eval/reader.zig` for the design rationale.
-pub const AnalyzeError = error_mod.Error;
+pub const AnalyzeError = error_mod.ClojureWasmError;
 
 // --- Scope (local-binding chain consulted during analysis) ---
 

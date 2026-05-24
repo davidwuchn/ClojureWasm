@@ -51,14 +51,14 @@ const BytecodeChunk = opcode_mod.BytecodeChunk;
 /// frame-size known at analyse time.
 pub const MAX_LOCALS: u16 = 256;
 
-/// TreeWalk error surface. Aliases `error_mod.Error` so calls to
+/// TreeWalk error surface. Aliases `error_mod.ClojureWasmError` so calls to
 /// `setErrorFmt` type-check; the backend still only **emits**
 /// `error.TypeError` (non-callable callee), `error.ArityError`
 /// (wrong number of args), `error.IndexError` (slot out of range),
 /// `error.NotImplemented` (Phase-3+ feature stub), and
 /// `error.OutOfMemory`. Mirrors the `ReadError` / `AnalyzeError`
 /// treatment in §9.5/3.2 / 3.3.
-pub const EvalError = error_mod.Error;
+pub const EvalError = error_mod.ClojureWasmError;
 
 // --- §9.5/3.11 control-flow signals ---
 //

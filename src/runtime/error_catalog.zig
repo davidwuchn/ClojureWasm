@@ -32,7 +32,7 @@ const error_mod = @import("error.zig");
 pub const Kind = error_mod.Kind;
 pub const Phase = error_mod.Phase;
 pub const SourceLocation = error_mod.SourceLocation;
-pub const Error = error_mod.Error;
+pub const ClojureWasmError = error_mod.ClojureWasmError;
 
 /// One variant per distinct user-facing message.
 ///
@@ -283,9 +283,9 @@ pub fn entry(comptime code: Code) Entry {
 /// "..." per the existing convention in `error.zig`.
 ///
 /// Call-site idiom: `return error_catalog.raise(.code, loc, args);`.
-/// `raise` returns the matching `Error` value directly; no `try` is
-/// required at the raise site because the caller propagates it.
-pub fn raise(comptime code: Code, location: SourceLocation, args: anytype) Error {
+/// `raise` returns the matching `ClojureWasmError` value directly; no
+/// `try` is required at the raise site because the caller propagates it.
+pub fn raise(comptime code: Code, location: SourceLocation, args: anytype) ClojureWasmError {
     const e = comptime entry(code);
     return error_mod.setErrorFmt(e.phase, e.kind, location, e.template, args);
 }
@@ -299,7 +299,7 @@ test "raise produces matching Kind / Phase and renders template" {
         .fn_name = "+",
         .actual = "keyword",
     });
-    try testing.expectEqual(Error.TypeError, err);
+    try testing.expectEqual(ClojureWasmError.TypeError, err);
 
     const info = error_mod.getLastError().?;
     try testing.expectEqual(Kind.type_error, info.kind);

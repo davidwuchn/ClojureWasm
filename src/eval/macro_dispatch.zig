@@ -39,11 +39,11 @@ const SourceLocation = error_mod.SourceLocation;
 ///
 /// Errors should be reported via `error_mod.setErrorFmt(.macroexpand,
 /// kind, loc, ...)` so the renderer attributes them to the call site.
-/// The return error set is `error_mod.Error` (the wide tag set used
+/// The return error set is `error_mod.ClojureWasmError` (the wide tag set used
 /// throughout the analyzer) so call sites in `analyze` can `try` the
 /// result without a type widen — see `reader.ReadError` /
 /// `analyzer.AnalyzeError` for the same pattern.
-pub const ExpandError = error_mod.Error;
+pub const ExpandError = error_mod.ClojureWasmError;
 pub const ZigExpandFn = *const fn (
     arena: std.mem.Allocator,
     rt: *Runtime,

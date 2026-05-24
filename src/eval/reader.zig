@@ -21,13 +21,13 @@ const TokenKind = tok_mod.TokenKind;
 const error_mod = @import("../runtime/error.zig");
 const SourceLocation = error_mod.SourceLocation;
 
-/// Reader error surface. Aliases `error_mod.Error` so that the
+/// Reader error surface. Aliases `error_mod.ClojureWasmError` so that the
 /// `setErrorFmt` rendezvous (which returns the full `Error` enum) is
 /// type-compatible. Callers continue to match on the specific tags
 /// `SyntaxError` / `NumberError` / `StringError` / `OutOfMemory` —
 /// the wider set just admits future kinds without churning every
 /// signature.
-pub const ReadError = error_mod.Error;
+pub const ReadError = error_mod.ClojureWasmError;
 
 pub const Reader = struct {
     tokenizer: Tokenizer,

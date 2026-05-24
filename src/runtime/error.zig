@@ -6,7 +6,7 @@
 //!     because Zig's error unions carry no payload,
 //!   - a 64-frame threadlocal call stack,
 //!   - 1:1 mapping between `Kind` (semantic categories) and Zig error
-//!     tags (`Error.SyntaxError`, …),
+//!     tags (`ClojureWasmError.SyntaxError`, …),
 //!   - `expect*` / `checkArity*` helpers that centralise the type-check
 //!     and arity-check call sites,
 //!   - a `BuiltinFn` signature for Phase-1 primitive function pointers.
@@ -28,9 +28,9 @@ pub const SourceLocation = struct {
     column: u16 = 0,
 };
 
-// --- Error classification ---
+// --- ClojureWasmError classification ---
 
-/// Semantic error categories. Each maps 1:1 to a tag in `Error`.
+/// Semantic error categories. Each maps 1:1 to a tag in `ClojureWasmError`.
 pub const Kind = enum {
     // Parse phase
     syntax_error,
@@ -75,7 +75,7 @@ pub const Info = struct {
 };
 
 /// Zig error tags. 1:1 with `Kind`.
-pub const Error = error{
+pub const ClojureWasmError = error{
     SyntaxError,
     NumberError,
     StringError,
@@ -91,21 +91,21 @@ pub const Error = error{
     OutOfMemory,
 };
 
-fn kindToError(kind: Kind) Error {
+fn kindToError(kind: Kind) ClojureWasmError {
     return switch (kind) {
-        .syntax_error => Error.SyntaxError,
-        .number_error => Error.NumberError,
-        .string_error => Error.StringError,
-        .name_error => Error.NameError,
-        .arity_error => Error.ArityError,
-        .value_error => Error.ValueError,
-        .not_implemented => Error.NotImplemented,
-        .type_error => Error.TypeError,
-        .arithmetic_error => Error.ArithmeticError,
-        .index_error => Error.IndexError,
-        .io_error => Error.IoError,
-        .internal_error => Error.InternalError,
-        .out_of_memory => Error.OutOfMemory,
+        .syntax_error => ClojureWasmError.SyntaxError,
+        .number_error => ClojureWasmError.NumberError,
+        .string_error => ClojureWasmError.StringError,
+        .name_error => ClojureWasmError.NameError,
+        .arity_error => ClojureWasmError.ArityError,
+        .value_error => ClojureWasmError.ValueError,
+        .not_implemented => ClojureWasmError.NotImplemented,
+        .type_error => ClojureWasmError.TypeError,
+        .arithmetic_error => ClojureWasmError.ArithmeticError,
+        .index_error => ClojureWasmError.IndexError,
+        .io_error => ClojureWasmError.IoError,
+        .internal_error => ClojureWasmError.InternalError,
+        .out_of_memory => ClojureWasmError.OutOfMemory,
     };
 }
 
@@ -139,7 +139,7 @@ pub fn setErrorFmt(
     location: SourceLocation,
     comptime fmt: []const u8,
     args: anytype,
-) Error {
+) ClojureWasmError {
     const msg = std.fmt.bufPrint(&msg_buf, fmt, args) catch blk: {
         @memcpy(msg_buf[509..512], "...");
         break :blk msg_buf[0..512];
@@ -197,7 +197,7 @@ pub fn clearCallStack() void {
 
 /// Signature of a Phase-1 primitive function. Phase 2+ extends this to
 /// `(rt, env, args, loc)`; the typedef will then move to `dispatch.zig`.
-pub const BuiltinFn = *const fn (args: []const Value, loc: SourceLocation) Error!Value;
+pub const BuiltinFn = *const fn (args: []const Value, loc: SourceLocation) ClojureWasmError!Value;
 
 // --- Tag name helper ---
 
@@ -208,7 +208,7 @@ fn tagName(val: Value) []const u8 {
 // --- Type assertion helpers ---
 
 /// Assert `val` is a number; widen to f64.
-pub fn expectNumber(val: Value, name: []const u8, loc: SourceLocation) Error!f64 {
+pub fn expectNumber(val: Value, name: []const u8, loc: SourceLocation) ClojureWasmError!f64 {
     return switch (val.tag()) {
         .integer => @floatFromInt(val.asInteger()),
         .float => val.asFloat(),
@@ -217,13 +217,13 @@ pub fn expectNumber(val: Value, name: []const u8, loc: SourceLocation) Error!f64
 }
 
 /// Assert `val` is an integer.
-pub fn expectInteger(val: Value, name: []const u8, loc: SourceLocation) Error!i48 {
+pub fn expectInteger(val: Value, name: []const u8, loc: SourceLocation) ClojureWasmError!i48 {
     if (val.tag() == .integer) return val.asInteger();
     return setErrorFmt(.eval, .type_error, loc, "{s}: expected integer, got {s}", .{ name, tagName(val) });
 }
 
 /// Assert `val` is a boolean.
-pub fn expectBoolean(val: Value, name: []const u8, loc: SourceLocation) Error!bool {
+pub fn expectBoolean(val: Value, name: []const u8, loc: SourceLocation) ClojureWasmError!bool {
     if (val.tag() == .boolean) return val.asBoolean();
     return setErrorFmt(.eval, .type_error, loc, "{s}: expected boolean, got {s}", .{ name, tagName(val) });
 }
@@ -231,27 +231,27 @@ pub fn expectBoolean(val: Value, name: []const u8, loc: SourceLocation) Error!bo
 // --- Arity check helpers ---
 
 /// Exact arity check.
-pub fn checkArity(name: []const u8, args: []const Value, expected: usize, loc: SourceLocation) Error!void {
+pub fn checkArity(name: []const u8, args: []const Value, expected: usize, loc: SourceLocation) ClojureWasmError!void {
     if (args.len != expected) {
         return setErrorFmt(.eval, .arity_error, loc, "Wrong number of args ({d}) passed to {s}", .{ args.len, name });
     }
 }
 
 /// Minimum-arity check (variadic primitives).
-pub fn checkArityMin(name: []const u8, args: []const Value, min: usize, loc: SourceLocation) Error!void {
+pub fn checkArityMin(name: []const u8, args: []const Value, min: usize, loc: SourceLocation) ClojureWasmError!void {
     if (args.len < min) {
         return setErrorFmt(.eval, .arity_error, loc, "Wrong number of args ({d}) passed to {s}, expected at least {d}", .{ args.len, name, min });
     }
 }
 
 /// Inclusive arity-range check.
-pub fn checkArityRange(name: []const u8, args: []const Value, min: usize, max: usize, loc: SourceLocation) Error!void {
+pub fn checkArityRange(name: []const u8, args: []const Value, min: usize, max: usize, loc: SourceLocation) ClojureWasmError!void {
     if (args.len < min or args.len > max) {
         return setErrorFmt(.eval, .arity_error, loc, "Wrong number of args ({d}) passed to {s}, expected {d} to {d}", .{ args.len, name, min, max });
     }
 }
 
-// --- Error formatting ---
+// --- ClojureWasmError formatting ---
 
 /// Render an `Info` into `buf` for human display. Returns a slice of
 /// `buf` containing the rendered output (truncated on overflow).
@@ -293,7 +293,7 @@ test "setErrorFmt stores info and returns matching tag" {
     clearLastError();
     const loc = SourceLocation{ .file = "test.clj", .line = 1 };
     const err = setErrorFmt(.eval, .type_error, loc, "expected number, got {s}", .{"nil"});
-    try testing.expectEqual(Error.TypeError, err);
+    try testing.expectEqual(ClojureWasmError.TypeError, err);
 
     const info = peekLastError().?;
     try testing.expectEqual(Kind.type_error, info.kind);
@@ -303,17 +303,17 @@ test "setErrorFmt stores info and returns matching tag" {
     try testing.expectEqual(@as(u32, 1), info.location.line);
 }
 
-fn retSyntaxError() Error!void {
+fn retSyntaxError() ClojureWasmError!void {
     return setErrorFmt(.parse, .syntax_error, .{}, "bad token", .{});
 }
 
-fn retNameError() Error!void {
+fn retNameError() ClojureWasmError!void {
     return setErrorFmt(.eval, .name_error, .{}, "x not found", .{});
 }
 
 test "getLastError clears after read" {
     clearLastError();
-    try testing.expectError(Error.SyntaxError, retSyntaxError());
+    try testing.expectError(ClojureWasmError.SyntaxError, retSyntaxError());
     const info = getLastError();
     try testing.expect(info != null);
     try testing.expectEqual(Kind.syntax_error, info.?.kind);
@@ -321,7 +321,7 @@ test "getLastError clears after read" {
 }
 
 test "clearLastError" {
-    try testing.expectError(Error.NameError, retNameError());
+    try testing.expectError(ClojureWasmError.NameError, retNameError());
     clearLastError();
     try testing.expect(peekLastError() == null);
 }
@@ -334,7 +334,7 @@ test "checkArity exact pass" {
 test "checkArity exact fail" {
     clearLastError();
     const args = [_]Value{Value.initInteger(1)};
-    try testing.expectError(Error.ArityError, checkArity("+", &args, 2, .{}));
+    try testing.expectError(ClojureWasmError.ArityError, checkArity("+", &args, 2, .{}));
     const info = getLastError().?;
     try testing.expectEqualStrings("Wrong number of args (1) passed to +", info.message);
 }
@@ -344,7 +344,7 @@ test "checkArityMin pass and fail" {
     try checkArityMin("str", &args2, 1, .{});
 
     const args0 = [_]Value{};
-    try testing.expectError(Error.ArityError, checkArityMin("str", &args0, 1, .{}));
+    try testing.expectError(ClojureWasmError.ArityError, checkArityMin("str", &args0, 1, .{}));
 }
 
 test "checkArityRange pass and fail (low/high)" {
@@ -352,10 +352,10 @@ test "checkArityRange pass and fail (low/high)" {
     try checkArityRange("subs", &args2, 2, 3, .{});
 
     const args1 = [_]Value{Value.initInteger(1)};
-    try testing.expectError(Error.ArityError, checkArityRange("subs", &args1, 2, 3, .{}));
+    try testing.expectError(ClojureWasmError.ArityError, checkArityRange("subs", &args1, 2, 3, .{}));
 
     const args4 = [_]Value{ .nil_val, .nil_val, .nil_val, .nil_val };
-    try testing.expectError(Error.ArityError, checkArityRange("subs", &args4, 2, 3, .{}));
+    try testing.expectError(ClojureWasmError.ArityError, checkArityRange("subs", &args4, 2, 3, .{}));
 }
 
 test "expectNumber accepts int and float, rejects nil" {
@@ -363,19 +363,19 @@ test "expectNumber accepts int and float, rejects nil" {
     try testing.expectEqual(@as(f64, 42.0), try expectNumber(Value.initInteger(42), "f", .{}));
     try testing.expectApproxEqRel(@as(f64, 3.14), try expectNumber(Value.initFloat(3.14), "f", .{}), 1e-10);
 
-    try testing.expectError(Error.TypeError, expectNumber(.nil_val, "f", .{}));
+    try testing.expectError(ClojureWasmError.TypeError, expectNumber(.nil_val, "f", .{}));
     const info = getLastError().?;
     try testing.expectEqualStrings("f: expected number, got nil", info.message);
 }
 
 test "expectInteger pass; float fails" {
     try testing.expectEqual(@as(i48, -7), try expectInteger(Value.initInteger(-7), "nth", .{}));
-    try testing.expectError(Error.TypeError, expectInteger(Value.initFloat(1.5), "nth", .{}));
+    try testing.expectError(ClojureWasmError.TypeError, expectInteger(Value.initFloat(1.5), "nth", .{}));
 }
 
 test "expectBoolean pass; nil fails" {
     try testing.expect(try expectBoolean(.true_val, "t", .{}));
-    try testing.expectError(Error.TypeError, expectBoolean(.nil_val, "t", .{}));
+    try testing.expectError(ClojureWasmError.TypeError, expectBoolean(.nil_val, "t", .{}));
 }
 
 test "call stack push/pop and overflow are silent" {
@@ -399,10 +399,10 @@ test "call stack push/pop and overflow are silent" {
 }
 
 test "kindToError maps every Kind" {
-    try testing.expectEqual(Error.SyntaxError, kindToError(.syntax_error));
-    try testing.expectEqual(Error.TypeError, kindToError(.type_error));
-    try testing.expectEqual(Error.ArityError, kindToError(.arity_error));
-    try testing.expectEqual(Error.OutOfMemory, kindToError(.out_of_memory));
+    try testing.expectEqual(ClojureWasmError.SyntaxError, kindToError(.syntax_error));
+    try testing.expectEqual(ClojureWasmError.TypeError, kindToError(.type_error));
+    try testing.expectEqual(ClojureWasmError.ArityError, kindToError(.arity_error));
+    try testing.expectEqual(ClojureWasmError.OutOfMemory, kindToError(.out_of_memory));
 }
 
 test "formatError contains location and message" {
@@ -421,8 +421,8 @@ test "formatError contains location and message" {
 
 test "BuiltinFn signature compiles and is invocable" {
     const Fns = struct {
-        fn echoFirst(args: []const Value, _: SourceLocation) Error!Value {
-            if (args.len == 0) return Error.ArityError;
+        fn echoFirst(args: []const Value, _: SourceLocation) ClojureWasmError!Value {
+            if (args.len == 0) return ClojureWasmError.ArityError;
             return args[0];
         }
     };
