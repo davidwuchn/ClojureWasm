@@ -30,6 +30,55 @@ pub const Flags = packed struct(u8) {
     _pad: u7 = 0,
 };
 
+/// Parsed AST node. The parser produces this tree; the IR
+/// emitter walks it to populate `Program.insts`.
+pub const Node = union(enum) {
+    /// A single literal byte (e.g. `a`).
+    lit: u8,
+    /// A character-class bitmap (e.g. `[a-z]`, `\d`).
+    class: CharClass,
+    /// Sequential composition (`ab`).
+    concat: []Node,
+    /// Alternation (`a|b`).
+    alt: []Node,
+    /// `e*` — zero or more (greedy).
+    star: *Node,
+    /// `e+` — one or more (greedy).
+    plus: *Node,
+    /// `e?` — optional.
+    quest: *Node,
+    /// `e{n,m}` — bounded repetition.
+    repeat: struct { child: *Node, min: u16, max: u16 },
+    /// Capturing group `(e)` — `index` is the slot pair offset.
+    group: struct { child: *Node, index: u16 },
+    /// Non-capturing group `(?:e)`.
+    non_capture: *Node,
+    /// Position anchor (`^`, `$`, `\b`, `\B`).
+    anchor: Anchor,
+};
+
+/// Character-class bitmap: 256 bits over the byte alphabet.
+/// Phase 6.6 cycle 1 stays ASCII; Unicode `\p{...}` lands as a
+/// debt row at cycle 3+.
+pub const CharClass = struct {
+    bits: [32]u8 = [_]u8{0} ** 32,
+
+    pub fn set(self: *CharClass, b: u8) void {
+        self.bits[b >> 3] |= @as(u8, 1) << @intCast(b & 7);
+    }
+
+    pub fn contains(self: CharClass, b: u8) bool {
+        return (self.bits[b >> 3] & (@as(u8, 1) << @intCast(b & 7))) != 0;
+    }
+};
+
+pub const Anchor = enum {
+    line_start,
+    line_end,
+    word_boundary,
+    non_word_boundary,
+};
+
 /// IR instruction (Pike VM opcode). Matches Russ Cox's
 /// thread-list VM design — `char` / `range` advance, `match` is
 /// the accept state, `jmp` / `split` change the PC, `save`
@@ -38,6 +87,8 @@ pub const Flags = packed struct(u8) {
 pub const Inst = union(enum) {
     char: u8,
     range: struct { lo: u8, hi: u8 },
+    class: CharClass,
+    anchor: Anchor,
     match: void,
     jmp: u32,
     split: struct { a: u32, b: u32 },
