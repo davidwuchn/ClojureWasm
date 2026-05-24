@@ -24,36 +24,42 @@
 
 ## Current state
 
-- **Phase**: **Phase 5 IN-PROGRESS** — §9.7 rows 5.0 / 5.1 / 5.2 / 5.3 / 5.4 / 5.5 / 5.6 `[x]`.
-  5.6 closed at 9553840 (single commit, 5 day-1 ops on HashMap-
-  backed wrapper). 10 rows remain (5.7–5.16). Collection family
-  trio (Vector / HashMap-ArrayMap / HashSet) all shipping; HAMT
-  body still D-045.
-- **Branch**: `cw-from-scratch`. HEAD = 9553840.
+- **Phase**: **Phase 5 IN-PROGRESS** — §9.7 rows 5.0–5.7 `[x]`.
+  5.7 closed at 633422a (2 micro-commits: extern struct rewrite +
+  force, first/rest/next). 9 rows remain (5.8–5.16). Mutex shape =
+  no-lock single-thread (D-046 records Phase 15 re-eval). Collection
+  family + lazy seq foundation ready for 5.8's ChunkedCons.
+- **Branch**: `cw-from-scratch`. HEAD = 633422a.
 - **Gate**: Mac 13/13 + OrbStack Ubuntu x86_64 12/12 green.
 - **Chapter cadence**: dormant per ADR-0025 + F-007.
 
-## Active task — §9.7.8 / 5.7 LazySeq `force()` + thunk realisation
+## Active task — §9.7.9 / 5.8 Persistent List + Cons + chunked Cons
 
-Activate `runtime/lazy_seq.zig` (4.24 skeleton): `force()` realises
-the thunk + caches into `seq_cache`. `seq` / `first` / `rest` /
-`next` understand `.lazy_seq`. Exit-smoke goal: `(reduce + (range
-1e6))` without OOM via chunked realisation through GC.
+Refactor existing `runtime/collection/list.zig` per ADR-0027 Group A:
+- **Keep** `list.zig` ↔ Cons (A9) — minimal rename / split per
+  F-003 (the existing module already does the persistent-list job
+  since Cons is immutable + structurally shared).
+- **Add** `runtime/collection/chunked_cons.zig` — ChunkedCons (A10)
+  with 32-element `slots` chunk + tail link. Needed for
+  `(reduce + (range 1e6))` exit-smoke chunked realisation.
+- **Add** (optional, defer to 5.8.b) `runtime/collection/chunk_buffer.zig`
+  — ChunkBuffer (A11) for mutable-during-construction chunks.
 
-**Step 0 reading**: ADR-0009 a2; `phase5-5.1-survey.md` Block A +
-bullets 1/2/4; `phase5-skeleton-audit.md` §"lazy_seq.zig".
+`seq` returns List/LazySeq/Cons uniformly via dispatch (already
+mostly wired — `runtime/collection/list.zig::seq` + `lazy_seq.zig::seq`).
 
-**Mutex decision (5.7 owns)**: (a) no-lock single-thread + Phase 15
-re-eval debt; (b) std.Io.Mutex via io_default pattern; (c) atomic
-busy-spin. Per F-002 + Phase 5 single-thread, (a) is the likely
-disposition with an explicit re-eval debt row.
+**Step 0 reading**: ADR-0027 §2 Group A (A9-A11 slot map); cw v0
+chunked cons in collections.zig (grep `ChunkedCons` /
+`PersistentChunkedSeq`); clojure JVM `ChunkedCons.java` +
+`ArrayChunk.java`. Survey may be brief — 5.4 PersistentVector +
+5.5 ArrayMap have established the extern-struct + trace-fn pattern.
 
-**Open hazards**: (a) `seq_cache` atomic slot — GC root walker
-must trace whatever pointer the atomic carries (5.1 #1); (b)
-`thunk: *const fn` + `ctx: *anyopaque` — GC trace can't blindly
-walk opaque ctx; finished form may need ctx tagging or per-LazySeq
-trace registration; (c) chunked realisation may finally force
-auto-trigger collect (defer-or-trigger lives in 5.7).
+**Open hazards**: (a) chunked realisation auto-trigger collect
+becomes load-bearing here — `(reduce + (range 1e6))` allocates
+~31K ChunkedCons cells minimum; defer-or-trigger decision lives
+in 5.8; (b) range function (also Phase 5 territory) constructs
+chunked seqs via the new types — 5.8 lands the data shape, range
+implementation may need a co-commit or separate row.
 
 ## Open questions / blockers
 
