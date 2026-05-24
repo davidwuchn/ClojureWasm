@@ -301,11 +301,60 @@ container file is itself orphan.
 
 ### Detection: `bash scripts/check_test_reach.sh`
 
-Runs in `test/run_all.sh`. Walks `@import` strings from
-`src/main.zig` to build a reachable set, then flags any
-`src/**/*.zig` that contains `^test ` blocks but is not reachable.
-The gate is informational at Phase 6 (warn-only); promote to
-hard-fail when the false-positive rate is zero.
+Runs in `test/run_all.sh` as `--gate`. Walks `@import` strings
+from every root listed in the script's `test_roots` array
+(currently just `src/main.zig`; extend when `build.zig` adds a
+second `addTest()` site) to build a union reachable set, then
+flags any `src/**/*.zig` that contains `^test ` blocks but is
+not reachable. The script also sanity-warns if `build.zig`'s
+`addTest()` count exceeds `test_roots`'s length so the gate
+doesn't silently degrade when a test exe is added.
+
+### The broader pattern: phase-deferred scaffolds lose their homing path
+
+(Surfaced 2026-05-25 via the zwasm v2 reciprocal observation
+at `private/notes/zwasm_v2_reciprocal_observations.md`.)
+
+The test-discovery trap is one *symptom* of a broader anti-pattern:
+**phase-deferred scaffolds that lose their homing path**. The
+test-orphan case is the easiest to detect (test never runs); the
+compile-error orphan case (file references stale stdlib API that
+never gets analysed) is the same shape but harder to detect (cw
+v1's D-053 `std.time.nanoTimestamp` ride-along was exactly this).
+Both root in: "we landed code expecting future wiring; future
+wiring never came; code sits without a caller."
+
+The complementary detection layers cw v1 carries today:
+
+- **Test-presence orphan check** (`scripts/check_test_reach.sh`)
+  — high signal, allow-list-free, hard-fail gate.
+- **Lazy decl analysis ride-along** — once a file enters the
+  test graph, latent compile errors against removed stdlib APIs
+  surface immediately. The check_test_reach gate is therefore
+  also a covert "is the code still buildable" gate for files
+  with no production-path caller.
+- **Periodic debt review** — `Phase N target` /
+  `blocked-by: <event>` rows in `.dev/debt.md` that have been
+  blocked for ≥ 3 cycles get escalated at Step 0.5 sweep.
+
+When a new Phase-deferred scaffold lands, the author should:
+
+1. Put a `_ = @import("path/to/scaffold.zig");` line in
+   `src/main.zig`'s `test {}` aggregator block in the same
+   commit, so the file is in the test graph from day one
+   (covers both orphan symptoms above).
+2. If the scaffold is genuinely too disruptive to compile until
+   the deferred phase lands (rare), file an explicit
+   `D-NNN blocked-by: Phase N landing` row in `.dev/debt.md`
+   so the deferral has a tracked owner — not a silent orphan.
+
+The aspirational-rule trap (cw v1's
+`.claude/rules/<X>.md` declaring an enforcement that has no
+matching script) is the next-broader shape and is tracked
+separately via `audit_scaffolding`. zwasm v2's
+`audit_table_sync.sh` is the canonical "aspirational rule lifted
+to a mechanical gate" pattern; replicate for any cw v1 rule that
+declares enforcement without a backing script.
 
 ## Variable shadowing
 

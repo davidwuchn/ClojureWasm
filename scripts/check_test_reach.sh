@@ -27,10 +27,45 @@ cd "$(dirname "$0")/.."
 
 mode="${1:-informational}"
 
-root_file="src/main.zig"
-if [[ ! -f "$root_file" ]]; then
-    echo "check_test_reach: $root_file not found" >&2
-    exit 2
+# Test roots — every `addTest(.{ .root_module = X })` site in
+# `build.zig` introduces an independent test executable whose
+# analysis set starts from a different `root_source_file`. A
+# `.zig` file with a `test {}` block runs ONLY if it's reachable
+# from the exe whose test runner it's part of. Reaching from
+# root #1 doesn't help if the file belongs to root #2.
+#
+# cw v1 today (Phase 6) has a single `addTest()`. The list below
+# is open for extension: when a second test exe lands (spec
+# runner, fuzz harness, etc.), append its root_source_file path
+# here so the union BFS stays sound. zwasm v2's reciprocal
+# observation surfaced this multi-test-root blind spot —
+# auto-parsing `build.zig` is the future improvement, but a
+# manual list is enough at cw v1's current scale and stays
+# obvious in `git diff`.
+test_roots=("src/main.zig")
+
+for root_file in "${test_roots[@]}"; do
+    if [[ ! -f "$root_file" ]]; then
+        echo "check_test_reach: configured test root $root_file not found" >&2
+        exit 2
+    fi
+done
+
+# Sanity check: warn loudly if `build.zig` carries more addTest
+# sites than this script knows about. Cheap insurance against the
+# script silently degrading as the test infrastructure grows.
+build_test_count="$(grep -cE 'addTest\(' build.zig 2>/dev/null || echo 0)"
+if [[ "$build_test_count" -gt "${#test_roots[@]}" ]]; then
+    cat >&2 <<EOF
+check_test_reach: WARNING — build.zig has $build_test_count addTest() sites
+but this script only walks ${#test_roots[@]} root(s):
+  ${test_roots[*]}
+
+A new test exe was added without updating this script. Append its
+root_source_file path to the test_roots array near the top of
+$(basename "$0") so the union BFS covers it. Until then a file
+reachable only from the new exe's root counts as unreachable here.
+EOF
 fi
 
 # Collect all .zig files under src/ that contain at least one
@@ -38,11 +73,11 @@ fi
 # `test "name"` and `test {` anonymous forms).
 mapfile -t test_files < <(grep -rl '^test ' src/ --include='*.zig' | sort -u)
 
-# BFS over @import strings starting from src/main.zig. The
-# `reachable` map records absolute paths so duplicate-path edges
-# don't loop.
+# BFS the union of @import-reachable files from every configured
+# test root. `reachable` records absolute paths so duplicate-path
+# edges don't loop and so the union is taken implicitly.
 declare -A reachable
-queue=("$root_file")
+queue=("${test_roots[@]}")
 while [[ ${#queue[@]} -gt 0 ]]; do
     cur="${queue[0]}"
     queue=("${queue[@]:1}")
@@ -69,7 +104,7 @@ for f in "${test_files[@]}"; do
 done
 
 if [[ ${#unreachable[@]} -eq 0 ]]; then
-    echo "check_test_reach: all $(printf '%d' "${#test_files[@]}") test-bearing .zig files reachable from $root_file"
+    echo "check_test_reach: all $(printf '%d' "${#test_files[@]}") test-bearing .zig files reachable from ${#test_roots[@]} root(s)"
     exit 0
 fi
 
