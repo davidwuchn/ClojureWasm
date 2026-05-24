@@ -40,6 +40,13 @@ const FreePoolMap = free_pool_mod.FreePoolMap;
 /// per ADR-0028 §1 Load-bearing-concern #2 disposition.
 pub const default_gc_threshold_bytes: usize = 1 * 1024 * 1024;
 
+/// Minimum allocation size (bytes) per ADR-0028 §3: the freed payload
+/// must host the FreeNode overlay at offset 8 (8 bytes header +
+/// ≥ 8 bytes payload = 16 bytes minimum). Allocations of types
+/// smaller than 16 bytes round up; the extra bytes are unused while
+/// live but become the FreeNode region on free.
+pub const min_alloc_bytes: usize = 16;
+
 /// Allocation + collection statistics.
 pub const Stats = struct {
     bytes_allocated: usize = 0,
@@ -100,7 +107,9 @@ pub const GcHeap = struct {
     bytes_since_last_gc: usize = 0,
 
     pub fn init(infra: std.mem.Allocator) GcHeap {
-        return .{ .infra = infra };
+        var g = GcHeap{ .infra = infra };
+        g.free_pools.initMap(infra);
+        return g;
     }
 
     pub fn deinit(self: *GcHeap) void {
@@ -118,11 +127,15 @@ pub const GcHeap = struct {
         self.free_pools.deinit(self.infra);
     }
 
-    /// Allocate a typed heap object on the GC heap. **Phase 5.3.b.1**:
-    /// straight-through `infra.rawAlloc` + append to allocations.
-    /// Caller initialises the value (HeapHeader and payload fields).
-    /// 5.3.c will add the free-pool fast-path; 5.3.b.4 will wire the
+    /// Allocate a typed heap object on the GC heap. **Phase 5.3.c.2**:
+    /// free-pool fast-path → infra slow-path. Caller initialises the
+    /// value (HeapHeader and payload fields). 5.3.b.4 will wire the
     /// adaptive-threshold collect trigger.
+    ///
+    /// Allocation size is rounded up to `min_alloc_bytes = 16` per
+    /// ADR-0028 §3 so freed memory can host the FreeNode overlay at
+    /// offset 8. The extra payload bytes (for T smaller than 16) are
+    /// unused while live but become the FreeNode region on free.
     ///
     /// Convention: `T` must have `HeapHeader` as its first field so
     /// the returned `*T` and `*HeapHeader` are pointer-aliases. The
@@ -132,19 +145,26 @@ pub const GcHeap = struct {
     /// invariant violation. 5.3.b.4 lands a comptime check.
     pub fn alloc(self: *GcHeap, comptime T: type) !*T {
         const align_t: std.mem.Alignment = .fromByteUnits(@alignOf(T));
-        const raw = self.infra.rawAlloc(@sizeOf(T), align_t, @returnAddress()) orelse
-            return error.OutOfMemory;
-        errdefer self.infra.rawFree(raw[0..@sizeOf(T)], align_t, @returnAddress());
+        const effective_size: usize = @max(@sizeOf(T), min_alloc_bytes);
+        const key = free_pool_mod.FreePoolKey{ .size = effective_size, .alignment = align_t };
+
+        const raw: [*]u8 = self.free_pools.pop(key) orelse blk: {
+            const fresh = self.infra.rawAlloc(effective_size, align_t, @returnAddress()) orelse
+                return error.OutOfMemory;
+            break :blk fresh;
+        };
+        errdefer self.infra.rawFree(raw[0..effective_size], align_t, @returnAddress());
+
         const obj: *T = @ptrCast(@alignCast(raw));
         const hdr: *HeapHeader = @ptrCast(@alignCast(raw));
         try self.allocations.append(self.infra, .{
             .header = hdr,
-            .size = @sizeOf(T),
+            .size = effective_size,
             .alignment = align_t,
         });
-        self.stats.bytes_allocated += @sizeOf(T);
+        self.stats.bytes_allocated += effective_size;
         self.stats.alloc_count += 1;
-        self.bytes_since_last_gc += @sizeOf(T);
+        self.bytes_since_last_gc += effective_size;
         return obj;
     }
 

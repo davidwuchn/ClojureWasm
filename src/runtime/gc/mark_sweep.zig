@@ -26,6 +26,7 @@ const testing = std.testing;
 const gc_heap_mod = @import("gc_heap.zig");
 const heap_header = @import("../value/heap_header.zig");
 const tag_ops = @import("tag_ops.zig");
+const free_pool_mod = @import("free_pool.zig");
 
 const GcHeap = gc_heap_mod.GcHeap;
 const HeapHeader = heap_header.HeapHeader;
@@ -88,8 +89,14 @@ pub fn sweep(gc: *GcHeap) void {
             if (tag_ops.tag_finaliser_table[rec.header.tag]) |finaliser| {
                 finaliser(rec.header);
             }
-            const mem = @as([*]u8, @ptrCast(rec.header))[0..rec.size];
-            gc.infra.rawFree(mem, rec.alignment, @returnAddress());
+            const mem: [*]u8 = @ptrCast(rec.header);
+            const key = free_pool_mod.FreePoolKey{ .size = rec.size, .alignment = rec.alignment };
+            // Push onto the matching free pool for reuse; fall through
+            // to direct rawFree only if push fails (e.g. infra OOM
+            // during HashMap getOrPut for a never-before-seen key).
+            gc.free_pools.push(key, mem) catch {
+                gc.infra.rawFree(mem[0..rec.size], rec.alignment, @returnAddress());
+            };
             gc.stats.bytes_freed += rec.size;
             _ = gc.allocations.swapRemove(i);
         } else {

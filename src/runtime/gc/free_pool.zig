@@ -41,31 +41,80 @@ pub const FreeNode = struct {
 /// + §6's F-003 deferral).
 pub const FreePoolKey = struct {
     size: usize,
-    alignment: u8,
+    alignment: std.mem.Alignment,
 
     pub fn eql(self: FreePoolKey, other: FreePoolKey) bool {
         return self.size == other.size and self.alignment == other.alignment;
     }
 };
 
-/// Per-(size, alignment) free pool head map. **Phase 5.3.a skeleton.**
-/// 5.3.c lands the `push(self, infra, key, node)` / `pop(self, key)
-/// ?*FreeNode` fast-path + the deinit (drains every pool, returns
-/// node memory to `infra` via `raw_free`).
+/// Per-(size, alignment) free pool head map. **Phase 5.3.c.2 body.**
+/// Push lands freed memory at the head of the matching pool (intrusive
+/// overlay at offset 8 per ADR-0028 §3); pop returns the memory base
+/// to caller for reuse. Deinit walks every pool and `rawFree`s each
+/// node's backing memory back to `infra`.
+///
+/// Memory layout convention (per ADR-0028 §3): the freed block's
+/// bytes 0..7 hold the (preserved-but-stale) HeapHeader; bytes 8..15
+/// host the `FreeNode { next }` overlay. The returned `[*]u8` from
+/// `pop` points at offset 0 (the HeapHeader position) so the caller
+/// can cast to `*T` with HeapHeader at offset 0.
 pub const FreePoolMap = struct {
     /// HashMap from key to pool head. `null` head = pool exists with
     /// no free nodes; absent key = pool not yet observed at any size.
-    /// 5.3.c picks between the HashMap shape (declared here) vs the
-    /// flat-array Wildcard Alt 3 shape per measured distribution.
-    map: std.AutoHashMapUnmanaged(FreePoolKey, ?*FreeNode) = .empty,
+    /// Devil's-advocate Wildcard Alt 3 (size-class quantised flat
+    /// array) defers to a future ADR per ADR-0028 §3 + §6 F-003.
+    map: std.AutoHashMap(FreePoolKey, ?*FreeNode) = undefined,
 
-    pub const empty: FreePoolMap = .{};
+    pub const empty: FreePoolMap = .{ .map = undefined };
+
+    /// Two-step init pattern: create the map with the infra allocator
+    /// at GcHeap.init time. `empty` literal defers map construction
+    /// to a follow-up `initMap(infra)` call so the `FreePoolMap` can
+    /// live as a default-initialised field on `GcHeap`.
+    pub fn initMap(self: *FreePoolMap, infra: std.mem.Allocator) void {
+        self.map = std.AutoHashMap(FreePoolKey, ?*FreeNode).init(infra);
+    }
 
     pub fn deinit(self: *FreePoolMap, infra: std.mem.Allocator) void {
-        // 5.3.c walks every pool head and `infra.rawFree`s each freed
-        // node's backing memory. At 5.3.a skeleton the map is always
-        // empty so we just drop the HashMap state.
-        self.map.deinit(infra);
+        var it = self.map.iterator();
+        while (it.next()) |entry| {
+            const key = entry.key_ptr.*;
+            var maybe_node = entry.value_ptr.*;
+            while (maybe_node) |node| {
+                const next = node.next;
+                // Recover the memory base (offset 0, HeapHeader
+                // position) from the FreeNode address (offset 8).
+                const mem_base: [*]u8 = @ptrFromInt(@intFromPtr(node) - 8);
+                infra.rawFree(mem_base[0..key.size], key.alignment, @returnAddress());
+                maybe_node = next;
+            }
+        }
+        self.map.deinit();
+    }
+
+    /// Push a freed memory block onto the matching (size, alignment)
+    /// pool. `mem` must be the memory base (offset 0, HeapHeader
+    /// position) — the FreeNode is overlaid at offset 8.
+    /// Requires `key.size >= 16` so the payload can host the FreeNode.
+    pub fn push(self: *FreePoolMap, key: FreePoolKey, mem: [*]u8) !void {
+        std.debug.assert(key.size >= 16);
+        const node_ptr: *FreeNode = @ptrCast(@alignCast(mem + 8));
+        const gop = try self.map.getOrPut(key);
+        if (!gop.found_existing) gop.value_ptr.* = null;
+        node_ptr.* = .{ .next = gop.value_ptr.* };
+        gop.value_ptr.* = node_ptr;
+    }
+
+    /// Pop a freed memory block from the matching pool, or return
+    /// null if the pool is empty / absent. Returns the memory base
+    /// (offset 0, HeapHeader position) suitable for caller cast.
+    pub fn pop(self: *FreePoolMap, key: FreePoolKey) ?[*]u8 {
+        const head_entry = self.map.getPtr(key) orelse return null;
+        const node = head_entry.* orelse return null;
+        head_entry.* = node.next;
+        const mem_base: [*]u8 = @ptrFromInt(@intFromPtr(node) - 8);
+        return mem_base;
     }
 };
 
@@ -79,17 +128,72 @@ test "FreeNode is at most 16 bytes (intrusive overlay budget)" {
 }
 
 test "FreePoolKey eql" {
-    const k1 = FreePoolKey{ .size = 32, .alignment = 8 };
-    const k2 = FreePoolKey{ .size = 32, .alignment = 8 };
-    const k3 = FreePoolKey{ .size = 64, .alignment = 8 };
+    const k1 = FreePoolKey{ .size = 32, .alignment = .@"8" };
+    const k2 = FreePoolKey{ .size = 32, .alignment = .@"8" };
+    const k3 = FreePoolKey{ .size = 64, .alignment = .@"8" };
 
     try testing.expect(k1.eql(k2));
     try testing.expect(!k1.eql(k3));
 }
 
-test "FreePoolMap empty init + deinit" {
+test "FreePoolMap init / deinit empty" {
     var pool: FreePoolMap = .empty;
+    pool.initMap(testing.allocator);
     defer pool.deinit(testing.allocator);
 
     try testing.expectEqual(@as(u32, 0), pool.map.count());
+}
+
+test "FreePoolMap push then pop returns the same memory base (LIFO)" {
+    var pool: FreePoolMap = .empty;
+    pool.initMap(testing.allocator);
+    defer pool.deinit(testing.allocator);
+
+    const align_t: std.mem.Alignment = .@"8";
+    const key = FreePoolKey{ .size = 16, .alignment = align_t };
+
+    // Manually allocate a 16-byte block (header + payload) and push.
+    const raw_a = testing.allocator.rawAlloc(16, align_t, @returnAddress()) orelse
+        return error.OutOfMemory;
+    try pool.push(key, raw_a);
+
+    const popped = pool.pop(key) orelse return error.PopMissed;
+    try testing.expectEqual(raw_a, popped);
+    try testing.expect(pool.pop(key) == null);
+
+    testing.allocator.rawFree(popped[0..16], align_t, @returnAddress());
+}
+
+test "FreePoolMap push twice + pop twice (LIFO order)" {
+    var pool: FreePoolMap = .empty;
+    pool.initMap(testing.allocator);
+    defer pool.deinit(testing.allocator);
+
+    const align_t: std.mem.Alignment = .@"8";
+    const key = FreePoolKey{ .size = 16, .alignment = align_t };
+
+    const raw_a = testing.allocator.rawAlloc(16, align_t, @returnAddress()) orelse
+        return error.OutOfMemory;
+    const raw_b = testing.allocator.rawAlloc(16, align_t, @returnAddress()) orelse
+        return error.OutOfMemory;
+    try pool.push(key, raw_a);
+    try pool.push(key, raw_b);
+
+    // LIFO: pop returns most-recently pushed first.
+    const first_pop = pool.pop(key) orelse return error.PopMissed;
+    const second_pop = pool.pop(key) orelse return error.PopMissed;
+    try testing.expectEqual(raw_b, first_pop);
+    try testing.expectEqual(raw_a, second_pop);
+
+    testing.allocator.rawFree(raw_a[0..16], align_t, @returnAddress());
+    testing.allocator.rawFree(raw_b[0..16], align_t, @returnAddress());
+}
+
+test "FreePoolMap.pop on absent key returns null" {
+    var pool: FreePoolMap = .empty;
+    pool.initMap(testing.allocator);
+    defer pool.deinit(testing.allocator);
+
+    const key = FreePoolKey{ .size = 32, .alignment = .@"8" };
+    try testing.expect(pool.pop(key) == null);
 }
