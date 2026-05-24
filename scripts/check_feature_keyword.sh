@@ -152,10 +152,14 @@ path_has_keyword() {
     python3 -c '
 import sys, re
 kw, p = sys.argv[1], sys.argv[2]
-# Java-surface filenames are PascalCase by convention while the
-# keyword (per R1) is lower_snake_case; case-insensitive compare
-# so e.g. keyword=uuid matches runtime/java/util/UUID.zig.
-parts = [seg.lower() for seg in re.split(r"[/._]+", p)]
+# Split on path / dot only. Underscore is NOT a splitter because
+# keywords are lower_snake_case (per R1) and we want a single
+# `file_io` keyword to match `runtime/file_io.zig`, not require
+# the filename stem to contain literally `file` or `io` alone.
+# Java-surface filenames are PascalCase by convention so the
+# match is case-insensitive (e.g. keyword=uuid matches
+# runtime/java/util/UUID.zig).
+parts = [seg.lower() for seg in re.split(r"[/.]+", p)]
 sys.exit(0 if kw.lower() in parts else 1)
 ' "$kw" "$path"
 }

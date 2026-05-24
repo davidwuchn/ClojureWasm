@@ -28,6 +28,7 @@ const math = @import("primitive/math.zig");
 const core = @import("primitive/core.zig");
 const error_prim = @import("primitive/error.zig");
 const uuid = @import("primitive/uuid.zig");
+const file_io_prim = @import("primitive/file_io.zig");
 
 pub const RegisterError = error{
     RtNamespaceMissing,
@@ -45,6 +46,7 @@ pub fn registerAll(env: *Env) !void {
     try core.register(env, rt_ns);
     try error_prim.register(env, rt_ns);
     try uuid.register(env, rt_ns);
+    try file_io_prim.register(env, rt_ns);
 
     // (refer 'rt) into user — primitives become unqualified at the
     // user prompt. Idempotent: subsequent registerAll calls won't

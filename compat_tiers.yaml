@@ -133,7 +133,17 @@ tiers:
       - { fqn: "java.lang.Exception",                    native_ns: "cljw.host.java.lang.Exception",                    phase: 5 }
       - { fqn: "java.lang.Thread",                       native_ns: "cljw.host.java.lang.Thread",                       phase: 14 }
       # java.io
-      - { fqn: "java.io.File",                           native_ns: "cljw.host.java.io.File",                           phase: 5 }
+      - fqn: java.io.File
+        cljw_ns: cljw.java.io.File
+        keyword: file_io
+        tier: A
+        phase: 6
+        files:
+          surface: runtime/java/io/File.zig
+          impl: runtime/file_io.zig
+          clojure_peer: lang/primitive/file_io.zig
+        methods: [exists, length, getName, getPath]
+        clojure_peer_vars: [clojure.core/slurp, clojure.core/spit]
       - { fqn: "java.io.InputStream",                    native_ns: "cljw.host.java.io.InputStream",                    phase: 6 }
       - { fqn: "java.io.OutputStream",                   native_ns: "cljw.host.java.io.OutputStream",                   phase: 6 }
       - { fqn: "java.io.Reader",                         native_ns: "cljw.host.java.io.Reader",                         phase: 6 }
