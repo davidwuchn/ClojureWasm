@@ -87,18 +87,12 @@ clojure.core fns at top level).
 
 ## Open questions / blockers
 
-None testable from inside the loop. Recall: D-005 / D-014a/b /
-D-017 (Phase-5-rolled-into-Phase-6 entries are reviewed by Step
-0.5 debt sweep), D-040 (MethodEntry naming → Phase 7),
-D-043 (anonymous slot reserves → Phase 7 entry), D-048/049/050
-(ADR-0029 post-review follow-ups → Phase 6+).
+None testable from inside the loop. Step 0.5 debt sweep walks
+debt.md (D-005, D-014a/b, D-017, D-040, D-043, D-048/049/050).
 
 ## Guardrail refresh history (condensed)
 
-- Waves 1-7 (2026-05-23..24): project spirit, Bad Smell
-  catalogue, Structural imagination, F-NNN/project_facts
-  hardening, Devil's-advocate envelope ban, stop-list narrowed.
-- Wave 8 (2026-05-24): ADR-0029 + F-009.
-- Wave 9 (2026-05-24): ADR-0030 + Phase 5 closed.
-- Wave 10 (2026-05-24): Phase 6.1 analyzer split (D-030
-  discharged).
+Waves 1-7: project spirit + Bad Smell catalogue + F-NNN
+hardening + stop-list. Wave 8: ADR-0029 + F-009. Wave 9:
+ADR-0030 + Phase 5 closed. Wave 10: Phase 6.1 analyzer split
+(D-030 discharged).
