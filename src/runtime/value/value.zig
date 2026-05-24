@@ -281,6 +281,26 @@ pub const Value = enum(u64) {
     pub fn isKeyword(self: Value) bool {
         return self.tag() == .keyword;
     }
+
+    /// Decode this Value to its underlying heap `*HeapHeader`, or
+    /// `null` if it is an immediate (nil / boolean / integer / float
+    /// / char / builtin_fn — `NB_CONST_TAG` / `NB_INT_TAG` /
+    /// `NB_CHAR_TAG` / `NB_BUILTIN_FN_TAG` band + raw float).
+    /// Heap-tagged Values per ADR-0027 §1 carry a 44-bit shifted
+    /// pointer in bits 43..0; the helper reuses `decodePtr` to
+    /// reconstruct the byte address.
+    ///
+    /// Per ADR-0028 §5: every root walker calls `heapHeader()` to
+    /// punch the membrane between a runtime-data-structure stored
+    /// Value and the GC's mark queue. Immediates yield `null` so
+    /// the queue stays leaf-clean.
+    pub fn heapHeader(self: Value) ?*HeapHeader {
+        const bits = @intFromEnum(self);
+        const top16: u16 = @truncate(bits >> nb.NB_TAG_SHIFT);
+        if (top16 < nb.NB_FLOAT_TAG_BOUNDARY) return null;        // raw f64
+        if (top16 >= nb.NB_TAG_INT) return null;                  // immediate band
+        return self.decodePtr(*HeapHeader);
+    }
 };
 
 // --- tests ---
@@ -471,6 +491,26 @@ test "F-004 big_int slot rotation: now Group D slot 0 (value 48)" {
     const v = Value.encodeHeapPtr(.big_int, &obj);
     try testing.expectEqual(Value.Tag.big_int, v.tag());
     try testing.expectEqual(&obj, v.decodePtr(*u64));
+}
+
+test "Value.heapHeader returns null for every immediate kind" {
+    try testing.expect(Value.nil_val.heapHeader() == null);
+    try testing.expect(Value.true_val.heapHeader() == null);
+    try testing.expect(Value.false_val.heapHeader() == null);
+    try testing.expect(Value.initInteger(42).heapHeader() == null);
+    try testing.expect(Value.initFloat(3.14).heapHeader() == null);
+    try testing.expect(Value.initChar('a').heapHeader() == null);
+}
+
+test "Value.heapHeader returns the decoded pointer for heap-tagged Values" {
+    // The Cell layout matches the 5.3.b.* "HeapHeader at offset 0"
+    // convention so the alias is valid.
+    const Cell = extern struct { header: HeapHeader = HeapHeader.init(.string), payload: u64 = 0 };
+    var c: Cell align(8) = .{};
+    const v = Value.encodeHeapPtr(.string, &c);
+    const hdr = v.heapHeader();
+    try testing.expect(hdr != null);
+    try testing.expectEqual(@as(*HeapHeader, @ptrCast(&c)), hdr.?);
 }
 
 test "F-004 inline wasm slots: funcref + externref encode through Group D" {
