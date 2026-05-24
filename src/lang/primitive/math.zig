@@ -350,6 +350,44 @@ pub fn abs(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) an
     return args[0];
 }
 
+/// `(quot a b)` — integer division, truncating toward zero.
+/// Matches clojure.core/quot semantics for the Long fast-path
+/// (BigInt arm is a follow-up).
+pub fn quot(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = rt;
+    _ = env;
+    try error_catalog.checkArity("quot", args, 2, loc);
+    const a = try error_catalog.expectInteger(args[0], "quot", loc);
+    const b = try error_catalog.expectInteger(args[1], "quot", loc);
+    if (b == 0) return error_catalog.raise(.divide_by_zero, loc, .{});
+    return Value.initInteger(@divTrunc(@as(i64, a), @as(i64, b)));
+}
+
+/// `(rem a b)` — remainder with sign matching the dividend
+/// (Java `%` semantics, NOT floor-mod). Matches clojure.core/rem.
+pub fn rem(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = rt;
+    _ = env;
+    try error_catalog.checkArity("rem", args, 2, loc);
+    const a = try error_catalog.expectInteger(args[0], "rem", loc);
+    const b = try error_catalog.expectInteger(args[1], "rem", loc);
+    if (b == 0) return error_catalog.raise(.divide_by_zero, loc, .{});
+    return Value.initInteger(@rem(@as(i64, a), @as(i64, b)));
+}
+
+/// `(mod a b)` — floor-mod: result has the same sign as the
+/// divisor. Matches clojure.core/mod (which differs from
+/// `rem` by exactly this sign rule).
+pub fn mod(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = rt;
+    _ = env;
+    try error_catalog.checkArity("mod", args, 2, loc);
+    const a = try error_catalog.expectInteger(args[0], "mod", loc);
+    const b = try error_catalog.expectInteger(args[1], "mod", loc);
+    if (b == 0) return error_catalog.raise(.divide_by_zero, loc, .{});
+    return Value.initInteger(@mod(@as(i64, a), @as(i64, b)));
+}
+
 // --- registration ---
 
 const Entry = struct {
@@ -379,6 +417,9 @@ const ENTRIES = [_]Entry{
     .{ .name = "odd?", .f = &oddQ },
     .{ .name = "even?", .f = &evenQ },
     .{ .name = "abs", .f = &abs },
+    .{ .name = "quot", .f = &quot },
+    .{ .name = "rem", .f = &rem },
+    .{ .name = "mod", .f = &mod },
 };
 
 /// Register the math primitives into `rt_ns`.
