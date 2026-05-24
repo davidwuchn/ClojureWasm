@@ -38,6 +38,38 @@ const TypeDescriptor = @import("../type_descriptor.zig").TypeDescriptor;
 pub const CallSite = struct {
     last_type: ?*const TypeDescriptor = null,
     last_method: ?*const TypeDescriptor.MethodEntry = null,
+
+    /// Look up `(protocol, method)` on `td` with monomorphic cache.
+    /// Hit short-circuits straight to the cached MethodEntry; miss
+    /// falls through to `TypeDescriptor.lookupMethod` and refills
+    /// both cache slots. Returns `null` when no implementation
+    /// exists on the descriptor chain (caller raises
+    /// `value_not_callable` or a protocol-specific error).
+    ///
+    /// Phase 5.11 lands the lookup-with-cache; Phase 7 wires the
+    /// actual `dispatch(rt, cs, receiver, protocol, method, args)`
+    /// on top, which casts `MethodEntry.fn_ptr` and threads
+    /// `Caller`-style runtime context (ADR-0008 a1).
+    pub fn lookupWithCache(
+        self: *CallSite,
+        td: *const TypeDescriptor,
+        protocol_name: []const u8,
+        method_name: []const u8,
+    ) ?*const TypeDescriptor.MethodEntry {
+        if (self.last_type == td) {
+            if (self.last_method) |m| {
+                if (std.mem.eql(u8, m.protocol_name, protocol_name) and
+                    std.mem.eql(u8, m.method_name, method_name))
+                {
+                    return m;
+                }
+            }
+        }
+        const found = td.lookupMethod(protocol_name, method_name) orelse return null;
+        self.last_type = td;
+        self.last_method = found;
+        return found;
+    }
 };
 
 // --- tests ---
@@ -46,6 +78,67 @@ const testing = std.testing;
 
 test "CallSite default-initialises with both cache slots null" {
     const cs: CallSite = .{};
+    try testing.expect(cs.last_type == null);
+    try testing.expect(cs.last_method == null);
+}
+
+test "lookupWithCache fills the cache on miss and short-circuits on hit" {
+    const entries = [_]TypeDescriptor.MethodEntry{
+        .{ .protocol_name = "ISeq", .method_name = "first", .fn_ptr = null },
+    };
+    const td: TypeDescriptor = .{
+        .fqcn = "user.Foo",
+        .kind = .deftype,
+        .field_layout = null,
+        .protocol_impls = &.{"ISeq"},
+        .method_table = &entries,
+        .parent = null,
+        .meta = .nil_val,
+    };
+    var cs: CallSite = .{};
+    // First call: miss, fills cache.
+    const m1 = cs.lookupWithCache(&td, "ISeq", "first").?;
+    try testing.expect(cs.last_type.? == &td);
+    try testing.expect(cs.last_method.? == m1);
+    // Second call: hit, returns the same pointer (cache short-circuit).
+    const m2 = cs.lookupWithCache(&td, "ISeq", "first").?;
+    try testing.expect(m1 == m2);
+}
+
+test "lookupWithCache cache miss when (protocol, method) differs from cache" {
+    const entries = [_]TypeDescriptor.MethodEntry{
+        .{ .protocol_name = "ISeq", .method_name = "first", .fn_ptr = null },
+        .{ .protocol_name = "ISeq", .method_name = "rest", .fn_ptr = null },
+    };
+    const td: TypeDescriptor = .{
+        .fqcn = "user.Foo",
+        .kind = .deftype,
+        .field_layout = null,
+        .protocol_impls = &.{"ISeq"},
+        .method_table = &entries,
+        .parent = null,
+        .meta = .nil_val,
+    };
+    var cs: CallSite = .{};
+    _ = cs.lookupWithCache(&td, "ISeq", "first");
+    // Now ask for a different method on the same type — cache slot
+    // refills because the cached method_name doesn't match.
+    const m_rest = cs.lookupWithCache(&td, "ISeq", "rest").?;
+    try testing.expectEqualStrings("rest", m_rest.method_name);
+}
+
+test "lookupWithCache returns null when method is not on the descriptor" {
+    const td: TypeDescriptor = .{
+        .fqcn = "user.Bare",
+        .kind = .deftype,
+        .field_layout = null,
+        .protocol_impls = &.{},
+        .method_table = &.{},
+        .parent = null,
+        .meta = .nil_val,
+    };
+    var cs: CallSite = .{};
+    try testing.expect(cs.lookupWithCache(&td, "IAny", "missing") == null);
     try testing.expect(cs.last_type == null);
     try testing.expect(cs.last_method == null);
 }

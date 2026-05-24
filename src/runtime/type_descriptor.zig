@@ -1,17 +1,30 @@
 // SPDX-License-Identifier: EPL-2.0
 //! cw v1 class system — TypeDescriptor / TypedInstance / ReifiedInstance
-//! struct declarations only (Phase 4 skeleton per ROADMAP §9.6 / 4.17
-//! and ADR-0007 Option β).
+//! per ADR-0007 Option β.
 //!
-//! Phase 4 entry lands only the type shapes. `lookupMethod` /
-//! `register` / `new` operations are Phase 5 work (per ADR-0007 §Phase
-//! 5+ migration note) and rewrite primitives in
-//! `src/runtime/collection/*.zig` to carry a back-pointer to a native
-//! TypeDescriptor. Until then, the cw runtime keeps the Phase-3
-//! keyword-only `(type x)` dispatch.
+//! Phase 5.11 activation per ROADMAP §9.7 / 5.11:
+//!   - `lookupMethod` (linear search) is now operational.
+//!   - `allocInstance` allocates a TypedInstance on `rt.gc.alloc`
+//!     (extern struct shape) and wraps it as a typed_instance Value.
+//!   - TypedInstance is an extern struct holding a back-pointer to
+//!     the TypeDescriptor (process-lifetime; lives on `rt.gc.infra`)
+//!     and a flat tail of field Values that the GC traces.
+//!   - The trace fn marks each field Value's heap header.
+//!
+//! TypeDescriptor itself is NOT GC-managed — it is allocated on
+//! `rt.gc.infra` (process-lifetime) by the deftype / defrecord
+//! analyzer (Phase 5.12). This keeps the descriptor pointer stable
+//! for the CallSite cache (`runtime/dispatch/method_table.zig`)
+//! without needing GC pinning.
 
 const std = @import("std");
-const Value = @import("value/value.zig").Value;
+const value_mod = @import("value/value.zig");
+const Value = value_mod.Value;
+const HeapHeader = value_mod.HeapHeader;
+const Runtime = @import("runtime.zig").Runtime;
+const tag_ops = @import("gc/tag_ops.zig");
+const gc_heap_mod = @import("gc/gc_heap.zig");
+const mark_sweep = @import("gc/mark_sweep.zig");
 
 /// Discriminates `TypeDescriptor`'s origin so dispatch can fast-path
 /// the common cases. `native` covers the cw primitive types (String,
@@ -25,10 +38,8 @@ pub const TypeKind = enum {
     reify_anon,
 };
 
-/// Descriptor for one type. Layout is final at Phase 4 (Phase 5
-/// activation populates the function pointers but does not reshape
-/// the struct). `fqcn` is `?[]const u8` because `reify_anon`
-/// descriptors carry no fully-qualified class name.
+/// Descriptor for one type. Process-lifetime — allocated on
+/// `rt.gc.infra` by the deftype / defrecord analyzer.
 pub const TypeDescriptor = struct {
     fqcn: ?[]const u8,
     kind: TypeKind,
@@ -36,10 +47,10 @@ pub const TypeDescriptor = struct {
     /// `reify_anon` (which has no positional field layout).
     field_layout: ?[]const FieldEntry,
     /// Protocols this descriptor implements (Phase 7 wires the
-    /// dispatch cache; Phase 4 holds the names only).
+    /// dispatch cache; Phase 5 declares the names).
     protocol_impls: []const []const u8,
-    /// Method table. Phase 5 populates entries; Phase 7 caches
-    /// resolutions per call site. Phase 4 declares the slice shape.
+    /// Method table populated at deftype / defrecord / reify analyse
+    /// time. `lookupMethod` searches this slice linearly.
     method_table: []const MethodEntry,
     /// Parent descriptor, when `kind == .defrecord` extends another
     /// record (rare but valid in Clojure). `null` otherwise.
@@ -56,32 +67,143 @@ pub const TypeDescriptor = struct {
     pub const MethodEntry = struct {
         protocol_name: []const u8,
         method_name: []const u8,
-        /// Function pointer; `null` at Phase 4 (Phase 5 wires real
-        /// implementations via `register`).
+        /// Function pointer. Populated by the deftype / defrecord
+        /// analyzer at registration time; `null` is the "method
+        /// declared but not yet implemented" state (used by
+        /// `definterface`-style protocol declarations until an
+        /// implementer registers a body).
         fn_ptr: ?*const anyopaque,
     };
+
+    /// Find the method record for `(protocol, method)` on this
+    /// descriptor. Linear search — method tables are small (Clojure
+    /// typically ≤ 8 methods per protocol). Phase 7's CallSite cache
+    /// memoises hot paths so the linear scan is amortised.
+    pub fn lookupMethod(
+        self: *const TypeDescriptor,
+        protocol_name: []const u8,
+        method_name: []const u8,
+    ) ?*const MethodEntry {
+        for (self.method_table) |*entry| {
+            if (std.mem.eql(u8, entry.protocol_name, protocol_name) and
+                std.mem.eql(u8, entry.method_name, method_name))
+            {
+                return entry;
+            }
+        }
+        if (self.parent) |p| return p.lookupMethod(protocol_name, method_name);
+        return null;
+    }
 };
 
-/// A `deftype` / `defrecord` runtime value. The fields slice is
-/// sized by `descriptor.field_layout.?.len` at allocation time and
-/// lives alongside the value (cw allocator strategy, not a separate
-/// allocation per field).
-pub const TypedInstance = struct {
+/// A `deftype` / `defrecord` runtime value. **Extern struct** so
+/// `rt.gc.alloc` accepts it and the GC walker treats the head as a
+/// HeapHeader. The flat field tail is sized at allocation time; the
+/// trace fn walks `field_count` entries from `field_values_ptr`.
+pub const TypedInstance = extern struct {
+    header: HeapHeader,
+    field_count: u32,
+    _pad: [4]u8 = .{ 0, 0, 0, 0 },
+    /// Back-pointer to the (process-lifetime) descriptor. Stable for
+    /// the CallSite cache.
     descriptor: *const TypeDescriptor,
-    field_values: []Value,
+    /// Pointer to a `gc.infra`-owned `[]Value` slice. Owned by this
+    /// TypedInstance; finaliser releases it.
+    field_values_ptr: [*]Value,
+
+    comptime {
+        std.debug.assert(@alignOf(TypedInstance) >= 8);
+        std.debug.assert(@offsetOf(TypedInstance, "header") == 0);
+    }
+
+    pub fn fields(self: *const TypedInstance) []const Value {
+        return self.field_values_ptr[0..self.field_count];
+    }
 };
 
 /// A `reify` runtime value. Closed-over locals from the surrounding
 /// lexical scope live here; the anonymous descriptor lives on
 /// `descriptor` and is never registered into a namespace.
-pub const ReifiedInstance = struct {
+pub const ReifiedInstance = extern struct {
+    header: HeapHeader,
+    closure_count: u32,
+    _pad: [4]u8 = .{ 0, 0, 0, 0 },
     descriptor: *const TypeDescriptor,
-    closure_bindings: []Value,
+    closure_bindings_ptr: [*]Value,
+
+    comptime {
+        std.debug.assert(@alignOf(ReifiedInstance) >= 8);
+        std.debug.assert(@offsetOf(ReifiedInstance, "header") == 0);
+    }
+
+    pub fn closure(self: *const ReifiedInstance) []const Value {
+        return self.closure_bindings_ptr[0..self.closure_count];
+    }
 };
+
+/// Allocate a TypedInstance on the GC heap with `field_values` copied
+/// into a freshly-allocated `gc.infra` array. Returns a Value tagged
+/// `.typed_instance`.
+pub fn allocInstance(rt: *Runtime, descriptor: *const TypeDescriptor, field_values: []const Value) !Value {
+    const buf = try rt.gc.infra.alloc(Value, field_values.len);
+    errdefer rt.gc.infra.free(buf);
+    std.mem.copyForwards(Value, buf, field_values);
+
+    const inst = try rt.gc.alloc(TypedInstance);
+    inst.* = .{
+        .header = HeapHeader.init(.typed_instance),
+        .field_count = @intCast(field_values.len),
+        .descriptor = descriptor,
+        .field_values_ptr = buf.ptr,
+    };
+    return Value.encodeHeapPtr(.typed_instance, inst);
+}
+
+/// Trace fn for `.typed_instance`. Walks every field Value and marks
+/// any heap reference it contains.
+pub fn traceTypedInstance(gc_ptr: *anyopaque, header: *HeapHeader) void {
+    const gc: *gc_heap_mod.GcHeap = @ptrCast(@alignCast(gc_ptr));
+    const inst: *TypedInstance = @ptrCast(@alignCast(header));
+    var i: u32 = 0;
+    while (i < inst.field_count) : (i += 1) {
+        if (inst.field_values_ptr[i].heapHeader()) |hdr| mark_sweep.mark(gc, hdr);
+    }
+}
+
+/// Finaliser for `.typed_instance` — releases the `gc.infra`-owned
+/// field array.
+pub fn finaliseTypedInstance(gc_ptr: *anyopaque, header: *HeapHeader) void {
+    const gc: *gc_heap_mod.GcHeap = @ptrCast(@alignCast(gc_ptr));
+    const inst: *TypedInstance = @ptrCast(@alignCast(header));
+    gc.infra.free(inst.field_values_ptr[0..inst.field_count]);
+}
+
+pub fn registerGcHooks() void {
+    tag_ops.registerTrace(.typed_instance, &traceTypedInstance);
+    tag_ops.registerFinaliser(.typed_instance, &finaliseTypedInstance);
+}
 
 // --- tests ---
 
 const testing = std.testing;
+
+const TdFixture = struct {
+    threaded: std.Io.Threaded,
+    rt: Runtime,
+
+    fn init() TdFixture {
+        var fix: TdFixture = .{
+            .threaded = std.Io.Threaded.init(testing.allocator, .{}),
+            .rt = undefined,
+        };
+        fix.rt = Runtime.init(fix.threaded.io(), testing.allocator);
+        return fix;
+    }
+    fn deinit(self: *TdFixture) void {
+        self.rt.deinit();
+        self.threaded.deinit();
+    }
+};
 
 test "TypeDescriptor struct layout: fqcn is optional, kind is required" {
     const td: TypeDescriptor = .{
@@ -112,19 +234,95 @@ test "TypeDescriptor: reify_anon variant carries no fqcn" {
     try testing.expectEqual(TypeKind.reify_anon, td.kind);
 }
 
-test "FieldEntry indexes are stable u16 slots" {
-    const entries = [_]TypeDescriptor.FieldEntry{
-        .{ .name = "x", .index = 0 },
-        .{ .name = "y", .index = 1 },
+test "lookupMethod finds matching protocol + method, returns null when missing" {
+    const entries = [_]TypeDescriptor.MethodEntry{
+        .{ .protocol_name = "ISeq", .method_name = "first", .fn_ptr = null },
+        .{ .protocol_name = "ISeq", .method_name = "rest", .fn_ptr = null },
     };
-    try testing.expectEqual(@as(u16, 1), entries[1].index);
+    const td: TypeDescriptor = .{
+        .fqcn = "user.Foo",
+        .kind = .deftype,
+        .field_layout = null,
+        .protocol_impls = &.{"ISeq"},
+        .method_table = &entries,
+        .parent = null,
+        .meta = .nil_val,
+    };
+    const m = td.lookupMethod("ISeq", "first");
+    try testing.expect(m != null);
+    try testing.expectEqualStrings("first", m.?.method_name);
+    try testing.expect(td.lookupMethod("ISeq", "nope") == null);
 }
 
-test "MethodEntry fn_ptr stays null at Phase 4 skeleton" {
-    const m: TypeDescriptor.MethodEntry = .{
-        .protocol_name = "ISeq",
-        .method_name = "first",
-        .fn_ptr = null,
+test "lookupMethod walks parent chain for defrecord inheritance" {
+    const parent_entries = [_]TypeDescriptor.MethodEntry{
+        .{ .protocol_name = "IBase", .method_name = "base_method", .fn_ptr = null },
     };
-    try testing.expect(m.fn_ptr == null);
+    const parent_td: TypeDescriptor = .{
+        .fqcn = "user.BaseRecord",
+        .kind = .defrecord,
+        .field_layout = null,
+        .protocol_impls = &.{"IBase"},
+        .method_table = &parent_entries,
+        .parent = null,
+        .meta = .nil_val,
+    };
+    const child_td: TypeDescriptor = .{
+        .fqcn = "user.ChildRecord",
+        .kind = .defrecord,
+        .field_layout = null,
+        .protocol_impls = &.{},
+        .method_table = &.{},
+        .parent = &parent_td,
+        .meta = .nil_val,
+    };
+    const m = child_td.lookupMethod("IBase", "base_method");
+    try testing.expect(m != null);
+    try testing.expectEqualStrings("base_method", m.?.method_name);
+}
+
+test "allocInstance allocates TypedInstance with field copy + tag .typed_instance" {
+    var fix = TdFixture.init();
+    defer fix.deinit();
+
+    const td = try testing.allocator.create(TypeDescriptor);
+    defer testing.allocator.destroy(td);
+    td.* = .{
+        .fqcn = "user.Point",
+        .kind = .deftype,
+        .field_layout = null,
+        .protocol_impls = &.{},
+        .method_table = &.{},
+        .parent = null,
+        .meta = .nil_val,
+    };
+
+    const fields = [_]Value{ Value.initInteger(3), Value.initInteger(4) };
+    const v = try allocInstance(&fix.rt, td, &fields);
+    try testing.expect(v.tag() == .typed_instance);
+    const inst = v.decodePtr(*const TypedInstance);
+    try testing.expectEqual(@as(u32, 2), inst.field_count);
+    try testing.expectEqual(@as(i48, 3), inst.fields()[0].asInteger());
+    try testing.expectEqual(@as(i48, 4), inst.fields()[1].asInteger());
+    try testing.expect(inst.descriptor == td);
+}
+
+test "Runtime.deinit releases TypedInstance + its field array (no leak)" {
+    var fix = TdFixture.init();
+
+    const td = try testing.allocator.create(TypeDescriptor);
+    defer testing.allocator.destroy(td);
+    td.* = .{
+        .fqcn = "user.Leakcheck",
+        .kind = .deftype,
+        .field_layout = null,
+        .protocol_impls = &.{},
+        .method_table = &.{},
+        .parent = null,
+        .meta = .nil_val,
+    };
+
+    const fields = [_]Value{ Value.initInteger(1), Value.initInteger(2), Value.initInteger(3) };
+    _ = try allocInstance(&fix.rt, td, &fields);
+    fix.deinit();
 }
