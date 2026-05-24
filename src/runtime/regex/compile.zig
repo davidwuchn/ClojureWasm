@@ -126,11 +126,38 @@ pub const CompileError = error{
 /// the resulting `Program` and must call `Program.deinit` to
 /// free the IR slice.
 ///
-/// Status: skeleton — returns `CompileError.NotImplemented` until
-/// the parser + AST emit lands.
+/// Status: skeleton — `compile` calls `parsePattern` then
+/// `emit`; both still return `CompileError.NotImplemented` until
+/// the recursive-descent parser + IR walker land.
 pub fn compile(alloc: std.mem.Allocator, pattern: []const u8, flags: Flags) CompileError!Program {
-    _ = alloc;
+    var arena = std.heap.ArenaAllocator.init(alloc);
+    defer arena.deinit();
+    const node = try parsePattern(arena.allocator(), pattern, flags);
+    return try emit(alloc, node, flags);
+}
+
+/// Parser entry point: recursive-descent over the regex source,
+/// emits a `Node` tree into the supplied arena allocator. The
+/// arena lifetime is the caller's `compile` call; only the
+/// final `Program.insts` slice survives.
+///
+/// Status: skeleton — returns `CompileError.NotImplemented` until
+/// the recursive-descent body lands.
+pub fn parsePattern(arena: std.mem.Allocator, pattern: []const u8, flags: Flags) CompileError!*const Node {
+    _ = arena;
     _ = pattern;
+    _ = flags;
+    return CompileError.NotImplemented;
+}
+
+/// IR emitter: walks the AST and emits Pike-VM instructions
+/// into a flat `Inst` slice. The walker is straight-line per
+/// AST node variant (no backtracking).
+///
+/// Status: skeleton — returns `CompileError.NotImplemented`.
+fn emit(alloc: std.mem.Allocator, node: *const Node, flags: Flags) CompileError!Program {
+    _ = alloc;
+    _ = node;
     _ = flags;
     return CompileError.NotImplemented;
 }
