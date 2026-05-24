@@ -90,11 +90,10 @@ clojure.string top-level depends on clojure.core fns).
 ## Open questions / blockers
 
 None testable from inside the loop. Step 0.5 debt sweep walks
-debt.md (D-005, D-014a/b, D-017, D-040, D-043, D-048/049/050).
+debt.md (D-005, D-014a/b, D-017, D-040, D-043, D-048..D-052).
 
 ## Guardrail refresh history (condensed)
 
-Waves 1-7: project spirit + Bad Smell catalogue + F-NNN
-hardening + stop-list. Wave 8: ADR-0029 + F-009. Wave 9:
-ADR-0030 + Phase 5 closed. Wave 10: Phase 6.1 analyzer split
-(D-030 discharged).
+Waves 1-10: spirit + Bad Smell + F-NNN hardening + stop-list +
+ADR-0029 F-009 + ADR-0030 + 6.1 analyzer split. Wave 11:
+ADR-0031 Accepted (Alt 2) + 6.16 cluster (48 fns).
