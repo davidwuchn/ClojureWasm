@@ -85,6 +85,19 @@ for file in $files; do
                     ;;
             esac
 
+            # G1 (ADR-0029 D2): lang/primitive/ must not call surface
+            # (must reach the shared neutral impl directly per F-009).
+            case "$file" in
+                src/lang/primitive/*)
+                    case "$rel" in
+                        src/runtime/java/*|src/runtime/cljw/*)
+                            echo "$file:$lineno: G1/ADR-0029 D2/F-009: lang/primitive imports surface ($import_path)" \
+                                >> "$violations_file"
+                            ;;
+                    esac
+                    ;;
+            esac
+
             # G1 (ADR-0029 D2): cross-surface horizontal calls
             case "$file" in
                 src/runtime/java/*)

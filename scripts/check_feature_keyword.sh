@@ -38,13 +38,24 @@ if [ ! -f "$YAML" ]; then
     exit 0
 fi
 
-violations_file=$(mktemp)
-entries_file=$(mktemp)
-trap "rm -f $violations_file $entries_file" EXIT
+violations_file=$(mktemp) || { echo "G3: mktemp failed" >&2; exit 2; }
+entries_file=$(mktemp) || { echo "G3: mktemp failed" >&2; exit 2; }
+trap 'rm -f "$violations_file" "$entries_file"' EXIT
 
-# Parse YAML with Python — small, deterministic, no extra deps.
-# Output one line per (fqn, keyword, slot, path) tuple, separator |.
-python3 - "$YAML" "$entries_file" <<'PY'
+# Parse YAML with Python. Failure here MUST not silently pass the
+# gate — host class entries are how Phase 6+ surfaces wire in, and a
+# parser bug masquerading as "0 entries to check" would defeat the
+# whole purpose of G3.
+#
+# Limitations of the current parser (intentional, narrow scope for
+# Phase 5 → 6 transition):
+#   - Block-style entries only (the cluster-default shape).
+#   - Flow-style entries (`- { fqn: ..., ... }`) are tolerated but
+#     no `keyword:` / `files:` extraction is performed on them.
+#   - Inline `# ...` comments inside scalar values are not stripped.
+# These limitations are revisited at Phase 6 entry when the first
+# new-schema host class entry lands.
+if ! python3 - "$YAML" "$entries_file" <<'PY'
 import sys, re
 
 src, dst = sys.argv[1], sys.argv[2]
@@ -109,20 +120,60 @@ with open(dst, "w") as f:
     if out:
         f.write("\n")
 PY
+then
+    echo "G3: YAML parser failed (python3 exit non-zero); refusing to pass gate" >&2
+    exit 2
+fi
+
+# Sanity check: number of `keyword:` lines in YAML should match the
+# number of distinct fqn entries the parser extracted. If they don't,
+# the parser silently dropped entries (e.g. flow-style + keyword
+# combo) and the gate cannot trust its output.
+yaml_kw_lines=$(grep -cE '^[[:space:]]+keyword:[[:space:]]' "$YAML" || true)
+parsed_fqn_count=$(cut -d'|' -f1 "$entries_file" 2>/dev/null | sort -u | grep -c . || true)
+if [ "$yaml_kw_lines" -ne "$parsed_fqn_count" ]; then
+    echo "G3: parser sanity check failed: yaml has $yaml_kw_lines 'keyword:' line(s) but parsed $parsed_fqn_count fqn entry/entries" >&2
+    exit 2
+fi
+
+# Validate keyword: distinctive lower_snake_case, 3-31 chars, alphanum+_
+# Helper for "path component or filename stem" match.
+# A keyword matches if it appears between path separators (`/`, start,
+# end) or between underscore / dot boundaries — i.e. it is one of the
+# slash- or dot-separated segments, or a snake_case word within one.
+path_has_keyword() {
+    local kw="$1" path="$2"
+    python3 -c '
+import sys, re
+kw, p = sys.argv[1], sys.argv[2]
+parts = re.split(r"[/._]+", p)
+sys.exit(0 if kw in parts else 1)
+' "$kw" "$path"
+}
 
 while IFS='|' read -r fqn keyword slot path; do
     [ -z "$fqn" ] && continue
+
+    # Keyword shape validation — must match the rule in
+    # .claude/rules/feature_name_consistency.md R1.
+    if ! printf '%s' "$keyword" | grep -qE '^[a-z][a-z0-9_]{2,30}$'; then
+        echo "$fqn: G3/ADR-0029 D4: invalid keyword '$keyword' (must match ^[a-z][a-z0-9_]{2,30}$)" >> "$violations_file"
+        continue
+    fi
 
     if [ ! -f "$path" ]; then
         echo "$fqn: G3/ADR-0029 D4: $slot file does not exist: $path" >> "$violations_file"
         continue
     fi
 
+    # `wrap:` slot is exempt from keyword matching per R1 (value-wrap
+    # helpers like runtime/collection/string.zig are legitimately
+    # reused across features). Existence is still checked above.
     if [ "$slot" = "wrap" ]; then
         continue
     fi
-    if ! printf '%s' "$path" | grep -q "$keyword"; then
-        echo "$fqn: G3/ADR-0029 D4: keyword '$keyword' not in $slot path: $path" >> "$violations_file"
+    if ! path_has_keyword "$keyword" "$path"; then
+        echo "$fqn: G3/ADR-0029 D4: keyword '$keyword' is not a path component of $slot path: $path" >> "$violations_file"
     fi
 done < "$entries_file"
 
