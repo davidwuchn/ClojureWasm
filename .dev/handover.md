@@ -24,33 +24,38 @@
 
 ## Current state
 
-- **Phase**: Phase 4 task list closed — every §9.6 row is `[x]`.
-  Phase 4 → DONE / Phase 5 → IN-PROGRESS narrative flip lives in
-  the §9.7 opener commit pending the boundary review chain
-  (audit_scaffolding + simplify on the phase diff + security
-  review on unpushed commits + Phase 5 task list expansion).
-- **Branch**: `cw-from-scratch` (long-lived; push after gate
-  green; never push to `main`). HEAD = 1f2406a (4.26.f close).
+- **Phase**: **Phase 5 IN-PROGRESS** — §9.7 expanded inline with
+  17 task rows (5.0–5.16). Phase 4 DONE (every §9.6 row `[x]`,
+  4.26.d/e/f closed in this session). Boundary chain ran:
+  audit_scaffolding 0 block + 2 soon (queued D-042) + 3 watch;
+  simplify subagent applied finding #1 at 393466e + queued
+  #2/4/5/7 as D-041; security-review 0 high.
+- **Branch**: `cw-from-scratch`. HEAD = 393466e (next will be the
+  §9.7 opener commit on the same branch).
 - **Gate**: Mac 13/13 + OrbStack Ubuntu x86_64 12/12 green at
-  HEAD (gained `e2e_phase4_exit_codes` in 4.26.f).
+  HEAD.
 - **Chapter cadence**: dormant per ADR-0025 + F-007.
 
-## Active task — Phase 4 boundary review chain → §9.7 opener
+## Active task — §9.7.1 / 5.0 cleanup-wave audit (D-028)
 
-Per CLAUDE.md "Phase boundary review chain" + continue skill:
-(1) run `audit_scaffolding` skill; (2) parallel fan-out:
-`simplify` on `git diff phase-4-start..HEAD -- src/` + built-in
-`security-review` on unpushed commits + outstanding-chapter
-subagent (no-op per F-007 dormancy); (3) bench sweep if doc-only
-commits left dangling rows; (4) open §9.7 — flip §9 tracker
-(Phase 4 DONE, Phase 5 IN-PROGRESS), expand §9.7 task list by
-walking entry materials F-004 / F-005 / F-006 + debts D-011 /
-D-014a / D-020 / D-027 / D-029 + ADR-0007 / 0009 / 0012 / 0017;
-(5) proceed to §9.7.1 Step 0 (general-purpose survey).
+Walk every Phase-4 skeleton row owned by Phase 5 entry (4.13
+`io_interface.zig` / 4.17 `type_descriptor.zig` / 4.18
+`protocol.zig` / 4.20 `host/_host_api.zig` / 4.22
+`binding_stack.zig` / 4.23 `numeric/big_int.zig` / 4.24
+`lazy_seq.zig` / 4.25 `dispatch/method_table.zig`). Per row:
+status (skeleton / partial / activate-this-phase), entry ADR
+pointer, target activation row in §9.7. Output:
+`private/notes/phase5-skeleton-audit.md` + new ADR-0026
+(Phase 5 entry scope decree) summarising the audit. This becomes
+the foundation for 5.1's ADR draft (NaN-box 第二世代 + GC +
+TypeDescriptor co-issue).
 
-**Retrievable identifiers**: ROADMAP §9.6 (just closed) + §9.7
-placeholder; CLAUDE.md § Phase boundary review chain; commits
-between Phase 4 start and HEAD = 1f2406a via `git log`.
+**Retrievable identifiers**: ROADMAP §9.7 placeholder lines
+(Entry ADRs 0007 / 0008 / 0009 / 0017 / 0023; Entry debts
+D-027 / D-028 / D-029 / D-030 / D-032 / D-008 / D-011 / D-014a /
+D-020); F-004 / F-005 / F-006 in project_facts.md;
+`.dev/structure_plan.md` anticipated `runtime/value/` +
+`runtime/gc/` layouts.
 
 ## Open questions / blockers
 
