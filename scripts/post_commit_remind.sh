@@ -34,7 +34,7 @@ case "$CMD" in
         ;;
 esac
 
-cat <<'EOF'
+REMINDER=$(cat <<'EOF'
 [post-commit reminder per CLAUDE.md § The only stop]
 
 A commit just landed. The autonomous TDD loop continues without
@@ -60,3 +60,18 @@ pause:
 Active task lives in .dev/handover.md "Active task" — read it,
 then start Step 0 of the next task without pause.
 EOF
+)
+
+# PostToolUse: stdout must be JSON with hookSpecificOutput.additionalContext
+# for the text to be injected into Claude's next-turn context. Bare-text
+# stdout is shown only in transcript mode (Ctrl-R), not to Claude.
+export REMINDER
+python3 -c '
+import json, os
+print(json.dumps({
+    "hookSpecificOutput": {
+        "hookEventName": "PostToolUse",
+        "additionalContext": os.environ.get("REMINDER", ""),
+    }
+}))
+'
