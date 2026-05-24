@@ -3,10 +3,33 @@
 #   - test runner (test/clj/ for Tier A 100% PASS gate)
 #   - REPL error message ("Tier D: <reason>, see ADR-NNNN")
 #   - future `cljw --list-vars` command
+#   - future `cljw --list-host-classes` command (planned Phase 14, ADR-0029 D5)
+#   - G3 gate scripts/check_feature_keyword.sh (per ADR-0029 D4)
 # Amendment: see ADR-0013 for Tier D rationale.
+#
+# host_classes schema (extended per ADR-0029 D5, 2026-05-24):
+#   - fqn: java.<pkg>.<Class>
+#     cljw_ns: cljw.java.<pkg>.<Class>       # was native_ns: cljw.host.* — host. prefix retired
+#     keyword: <short-keyword>                # validated by G3 against files: paths
+#     tier: A | B | C | D
+#     phase: <int>
+#     files:                                  # validated by G3 (wrap: slot is exempt)
+#       surface: runtime/java/<pkg>/<Class>.zig
+#       impl: runtime/<keyword>.zig           # or runtime/<feature-subdir>/<file>.zig
+#       impl_extras: [runtime/<sub>/...]      # additional sub-impls
+#       wrap: runtime/collection/<...>.zig    # value-wrap helper (exempt from G3)
+#       clojure_peer: lang/primitive/<...>.zig  # optional; "null" if no peer
+#     methods: [list, of, instance, methods]
+#     clojure_peer_vars: [list, of, clojure, ns/vars]
+#
+# Entry migration to the extended schema is INCREMENTAL — each host class
+# landing in Phase 6+ ships its entry in the new schema in the same
+# commit. The legacy `{fqn, native_ns, phase}` shape (40 entries below)
+# remains readable during the transition and migrates as the
+# corresponding host class lands.
 
-version: 0.1.0-draft
-last_updated: 2026-05-23
+version: 0.1.1-draft
+last_updated: 2026-05-24
 
 tiers:
   A:

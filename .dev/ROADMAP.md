@@ -433,6 +433,31 @@ generational GC at Phase 5 scale.
 
 ## 5. Directory layout (final form)
 
+> **2026-05-24 amendment (ADR-0029)**: this section is the Phase-1-era
+> snapshot and has partially drifted from current reality. The
+> authoritative Phase-5-20 imagination tree lives in
+> [`.dev/structure_plan.md`](./structure_plan.md). Notable deltas
+> codified by ADR-0029 + F-009:
+>
+> - `runtime/host/` is **retired** (was reserved by ADR-0011 with 13
+>   `_placeholder.zig` files). Replaced by:
+>   - `runtime/java/<pkg>/<Class>.zig` — Java-compat surface (thin
+>     wrappers, 1:1 with Java FQCN)
+>   - `runtime/cljw/<area>/<Item>.zig` — cljw-original surface
+>     (Wasm, build, edge, pod, repl, …)
+> - **Neutral implementation layer** lands flat under `src/runtime/`:
+>   `runtime/uuid.zig`, `runtime/clock.zig`, `runtime/file_io.zig`,
+>   `runtime/uri_parse.zig`, `runtime/path.zig`, `runtime/charset.zig`,
+>   `runtime/random.zig`. Multi-file features go to sub-directories:
+>   `runtime/regex/`, `runtime/crypto/`, `runtime/time/`,
+>   `runtime/error/`, `runtime/io/`, `runtime/wasm/`.
+> - `error.zig` + `error_catalog.zig` + `error_print.zig` consolidate
+>   into `runtime/error/{info, catalog, print}.zig`. `io_interface.zig`
+>   moves to `runtime/io/interface.zig` (`runtime/io/default.zig` lands
+>   later in Phase 5+).
+> - F-009 (feature-implementation neutrality) is the invariant that
+>   governs which layer a new feature file goes into.
+
 Per **P2 (see the final shape on day 1)**, the full directory tree at the
 end of all phases is fixed below. Phase 1 stubs out the directories; later
 phases fill the contents without adding new directories.
@@ -617,7 +642,34 @@ classification.
 - the catalog's per-form `tier_d_<form>` Codes (per ADR-0018
   amendment 2) — each Tier D form has its own Code with a
   hand-written user-facing template,
-- the future `cljw --list-vars` command.
+- the future `cljw --list-vars` and `cljw --list-host-classes`
+  commands (the latter planned by Phase 14, per ADR-0029 D5),
+- the **G3 gate** `scripts/check_feature_keyword.sh` (per ADR-0029
+  D4) that validates the `keyword:` field appears in every file
+  path under each entry's `files:` map.
+
+`host_classes` entry schema (extended per ADR-0029 D5, 2026-05-24):
+
+```yaml
+- fqn: java.util.UUID
+  cljw_ns: cljw.java.util.UUID          # was: native_ns: cljw.host.* (host. prefix dropped)
+  keyword: uuid                          # validated by G3
+  tier: A
+  phase: 5
+  files:                                 # validated by G3
+    surface: runtime/java/util/UUID.zig
+    impl: runtime/uuid.zig
+    impl_extras: [runtime/crypto/secure_random.zig]
+    wrap: runtime/collection/string.zig
+    clojure_peer: lang/primitive/uuid.zig
+  methods: [randomUUID, fromString, toString, ...]
+  clojure_peer_vars: [clojure.core/random-uuid]
+```
+
+Entry migration to the extended schema is **incremental** — each
+host class landing in Phase 6+ ships its entry in the new schema in
+the same commit. The old `{fqn, native_ns, phase}` shape remains
+readable during the transition (per Phase 6 entry plan).
 
 Amendment process:
 

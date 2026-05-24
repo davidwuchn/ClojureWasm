@@ -63,7 +63,10 @@ Built 2026-05-24 from:
   tagged_literal / string_seq / array_seq / funcref / externref),
   F-005 (numeric tower JVM-surface compatible), F-006 (mark-sweep
   + 3-layer alloc; zwasm dual-heap; cw GC allocator injects into
-  zwasm bookkeeping), F-007 (chapter cadence stays dormant).
+  zwasm bookkeeping), F-007 (chapter cadence stays dormant),
+  F-009 (feature-implementation neutrality; impl in namespace-
+  neutral runtime/ root, Clojure/Java/cljw surfaces as thin
+  wrappers — decreed 2026-05-24 alongside ADR-0029).
 - ROADMAP §A1 (zone layering) + §A6 (≤ 1000 lines soft cap) +
   §A11 (day-1 enum reservation).
 - ADR-0006 a1+a3 (zwasm) / ADR-0011 (host) / ADR-0012 a1 (NaN
@@ -80,7 +83,7 @@ ClojureWasmFromScratch/
 │  ├─ ROADMAP.md
 │  ├─ handover.md
 │  ├─ principle.md
-│  ├─ project_facts.md             (F-001..F-007, append-only)
+│  ├─ project_facts.md             (F-001..F-009, append-only)
 │  ├─ structure_plan.md            (this file)
 │  ├─ debt.md
 │  └─ decisions/
@@ -128,10 +131,13 @@ ClojureWasmFromScratch/
    │  ├─ dispatch/                                 ★new (Phase 4 entry, landed at 4.25)
    │  │  ├─ method_table.zig       CallSite cache (4.25 skeleton; dispatch fn at Phase 7 per ADR-0008 a1)
    │  │  └─ callable.zig                                              ★new Phase 17 entry (D-035, backend-shared callable dispatch)
-   │  ├─ error.zig
-   │  ├─ error_catalog.zig
-   │  ├─ io_interface.zig          Tier 1 (zone 0)
-   │  ├─ io_default.zig                                       ★new Phase 5+ (Tier 2, zone 1)
+   │  ├─ error/                                    ★ Phase 5 終盤 consolidation (ADR-0029)
+   │  │  ├─ info.zig               (= 旧 error.zig)
+   │  │  ├─ catalog.zig            (= 旧 error_catalog.zig)
+   │  │  └─ print.zig              (= 旧 error_print.zig)
+   │  ├─ io/                                       ★ Phase 5 終盤 consolidation (ADR-0029)
+   │  │  ├─ interface.zig          (= 旧 io_interface.zig、Tier 1)
+   │  │  └─ default.zig                                       ★new Phase 5+ (Tier 2, std.Io バインド)
    │  ├─ type_descriptor.zig
    │  ├─ protocol.zig
    │  ├─ keyword.zig
@@ -195,16 +201,52 @@ ClojureWasmFromScratch/
    │  │  ├─ host_func.zig          Clojure fn → zwasm `Linker.defineFunc` host import 登録 (Caller* 第一引数の optional 扱い per F-008 Q2 推奨)
    │  │  ├─ wasi.zig               WASI 統合 (F-008 Q4 推奨 = bulk defineWasi; cw io_interface との責務分離は D-039)
    │  │  └─ pod_boundary.zig       (zwasm v2 Pod-boundary connector if Pod path chosen — F-008 では inline path が default)
-   │  └─ host/                     (continued, ADR-0011)
-   │     ├─ _host_api.zig
-   │     ├─ lang/                  java.lang.{Object,String,Long,Integer,Double,Boolean,Math,System,Throwable,Exception,Thread}
-   │     ├─ io/                    java.io.{File,InputStream,OutputStream,Reader,Writer,ByteArrayInputStream,ByteArrayOutputStream,PrintWriter}
-   │     ├─ util/                  java.util.{UUID,Date,Random,Locale,regex.Pattern,concurrent.Future,concurrent.atomic.AtomicLong}
-   │     ├─ time/                  java.time.{Instant,LocalDate,LocalDateTime,Duration,ZonedDateTime,ZoneId}
-   │     ├─ net/                   java.net.{URL,URI}
-   │     ├─ nio/                   java.nio.{file.Path,file.Files,charset.Charset}
-   │     ├─ math/                  java.math.{BigInteger,BigDecimal}
-   │     └─ security/              java.security.MessageDigest
+   │  │
+   │  │  ───── 中立な OS / std ラッパ (ADR-0029 + F-009) ─────  ★new
+   │  │  これらは Clojure ns 経由 (lang/primitive/) と Java ns 経由
+   │  │  (runtime/java/) と cljw ns 経由 (runtime/cljw/) の三家族から
+   │  │  共有される。F-009 が名前空間中立性を invariant 化。
+   │  ├─ uuid.zig                                              ★new Phase 6 (16-byte 乱数 → UUID v4)
+   │  ├─ clock.zig                                             ★new Phase 6 (mono + wall clock)
+   │  ├─ random.zig                                            ★new Phase 6 (fast PRNG)
+   │  ├─ uri_parse.zig                                         ★new Phase 6 (std.Uri ラッパ)
+   │  ├─ path.zig                                              ★new Phase 6 (std.fs.path ラッパ)
+   │  ├─ file_io.zig                                           ★new Phase 6 (io_interface 経由)
+   │  ├─ charset.zig                                           ★new Phase 6 (UTF-8/16/Latin-1)
+   │  ├─ locale.zig                                            ★new Phase 6+
+   │  ├─ regex/                                                ★new Phase 6
+   │  │  ├─ compile.zig, match.zig
+   │  ├─ crypto/                                               ★new Phase 6+
+   │  │  ├─ secure_random.zig
+   │  │  └─ message_digest.zig
+   │  ├─ time/                                                 ★new Phase 6
+   │  │  ├─ instant.zig, local_date.zig, local_date_time.zig
+   │  │  ├─ duration.zig, zone.zig
+   │  ├─ net/                                                  ★new Phase 14+
+   │  │  ├─ socket.zig, url.zig, dns.zig
+   │  │
+   │  │  ───── Java-compat surface (ADR-0029、ADR-0011 を supersede) ─────  ★new
+   │  ├─ java/                                                 ★new (Phase 6+ 着地、ADR-0011 supersede)
+   │  │  ├─ _README.md             配置基準 + Backend marker 規約
+   │  │  ├─ _host_api.zig          ___HOST_EXTENSION marker (元 host/_host_api.zig)
+   │  │  ├─ lang/                  Object, String, Long, Integer, Double, Boolean, Character, Math, System, Throwable, Exception, RuntimeException, Thread
+   │  │  ├─ io/                    File, PrintWriter, InputStream, OutputStream, Reader, Writer, ByteArrayInputStream, ByteArrayOutputStream
+   │  │  ├─ util/                  UUID, Date, Random, Locale, regex/{Pattern, Matcher}, concurrent/{Future, atomic/AtomicLong}
+   │  │  ├─ time/                  Instant, LocalDate, LocalDateTime, Duration, ZonedDateTime, ZoneId
+   │  │  ├─ net/                   URL, URI                                                          (Phase 14+)
+   │  │  ├─ nio/                   file/{Path, Files}, charset/Charset                              (Phase 6+)
+   │  │  ├─ math/                  BigInteger, BigDecimal
+   │  │  ├─ security/              MessageDigest, SecureRandom                                       (Phase 14+)
+   │  │  └─ reflect/               Method, Field (薄、TypeDescriptor 経由)                          (Phase 7+ Tier C)
+   │  │
+   │  │  ───── cljw-original surface (ADR-0029) ─────  ★new
+   │  └─ cljw/                                                 ★new (Phase 10+ 着地)
+   │     ├─ _README.md
+   │     ├─ build/Compiler.zig                                 (Phase 12, cljw.build/compile)
+   │     ├─ wasm/{Engine, Module, Instance, Component}.zig     (Phase 16+, cljw.wasm/instantiate)
+   │     ├─ edge/{Server, Request}.zig                         (Phase 14+, cljw.edge/serve)
+   │     ├─ pod/Pod.zig                                        (Phase 16+, cljw.pod/invoke)
+   │     └─ repl/NReplServer.zig                               (Phase 10+)
    ├─ eval/                        Layer 1
    │  ├─ analyzer/                                 ★split (Phase 5+ entry, D-030; already 1335 lines today)
    │  │  ├─ analyzer.zig           entry + orchestration
