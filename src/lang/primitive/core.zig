@@ -146,6 +146,50 @@ pub fn fnQ(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) an
     return if (t == .builtin_fn or t == .fn_val or t == .multi_fn) .true_val else .false_val;
 }
 
+/// `(boolean? x)` — true iff `x` is one of the booleans `true` / `false`.
+/// nil is NOT a boolean.
+pub fn booleanQ(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = rt;
+    _ = env;
+    try error_catalog.checkArity("boolean?", args, 1, loc);
+    return if (args[0] == Value.true_val or args[0] == Value.false_val) .true_val else .false_val;
+}
+
+/// `(char? x)` — true iff `x` is a Character (single Unicode codepoint).
+pub fn charQ(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = rt;
+    _ = env;
+    try error_catalog.checkArity("char?", args, 1, loc);
+    return if (args[0].tag() == .char) .true_val else .false_val;
+}
+
+/// `(float? x)` — true iff `x` is a double-precision float (IEEE-754
+/// 64-bit). Matches clojure.core/float? (which on JVM returns true
+/// for both Float and Double; cw v1 has only one float tag).
+pub fn floatQ(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = rt;
+    _ = env;
+    try error_catalog.checkArity("float?", args, 1, loc);
+    return if (args[0].tag() == .float) .true_val else .false_val;
+}
+
+/// `(ratio? x)` — true iff `x` is a Ratio (numer/denom pair of BigInts).
+pub fn ratioQ(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = rt;
+    _ = env;
+    try error_catalog.checkArity("ratio?", args, 1, loc);
+    return if (args[0].tag() == .ratio) .true_val else .false_val;
+}
+
+/// `(decimal? x)` — true iff `x` is a BigDecimal. Matches
+/// clojure.core/decimal?.
+pub fn decimalQ(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = rt;
+    _ = env;
+    try error_catalog.checkArity("decimal?", args, 1, loc);
+    return if (args[0].tag() == .big_decimal) .true_val else .false_val;
+}
+
 // --- registration ---
 
 const Entry = struct {
@@ -168,6 +212,11 @@ const ENTRIES = [_]Entry{
     .{ .name = "map?", .f = &mapQ },
     .{ .name = "set?", .f = &setQ },
     .{ .name = "fn?", .f = &fnQ },
+    .{ .name = "boolean?", .f = &booleanQ },
+    .{ .name = "char?", .f = &charQ },
+    .{ .name = "float?", .f = &floatQ },
+    .{ .name = "ratio?", .f = &ratioQ },
+    .{ .name = "decimal?", .f = &decimalQ },
 };
 
 pub fn register(env: *Env, rt_ns: *env_mod.Namespace) !void {
