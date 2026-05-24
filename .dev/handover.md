@@ -24,35 +24,43 @@
 
 ## Current state
 
-- **Phase**: **Phase 5 IN-PROGRESS** — §9.7 rows 5.0 / 5.1 / 5.2 / 5.3 / 5.4 `[x]`.
-  5.4 closed at 996df4d (4 micro-commits 5.4.a → 5.4.d: struct + 6
-  ops). 12 rows remain (5.5–5.16). PersistentVector shipped with
-  conj / nth / count / pop / assoc / subvec; lazy SubVector wrapper
-  → D-044 (Phase 7+). D11 / D12 named hamt_node / tail_node per
-  ADR-0027 amendment 4. Reader-literal `(vec ...)` hook deferred to
-  analyzer-change follow-up.
-- **Branch**: `cw-from-scratch`. HEAD = 996df4d.
+- **Phase**: **Phase 5 IN-PROGRESS** — §9.7 rows 5.0 / 5.1 / 5.2 / 5.3 / 5.4 / 5.5 `[x]`.
+  5.5 closed at 5b978e8 (4 micro-commits 5.5.a → 5.5.d: ArrayMap
+  surface complete with 8 ops). 11 rows remain (5.6–5.16).
+  PersistentHashMap shipped on ArrayMap path (≤ 8 entries); HAMT
+  body deferred to D-045 follow-up. D13 / D14 named hamt_map_node /
+  hash_collision_map_node per ADR-0027 amendment 5. Reader-literal
+  `{...}` hook deferred to analyzer follow-up.
+- **Branch**: `cw-from-scratch`. HEAD = 5b978e8.
 - **Gate**: Mac 13/13 + OrbStack Ubuntu x86_64 12/12 green.
 - **Chapter cadence**: dormant per ADR-0025 + F-007.
 
-## Active task — §9.7.6 / 5.5 PersistentHashMap (HAMT shift=5 + ArrayMap fallback)
+## Active task — §9.7.7 / 5.6 PersistentHashSet (HashMap-backed)
 
-Land `runtime/collection/persistent_map.zig`: HAMT (shift=5 =
-32-way) + ArrayMap for ≤ 8 entries (linear scan). Day-1: `get` /
-`assoc` / `dissoc` / `contains?` / `count` / `keys` / `vals` /
-`seq`. `{...}` reader literal hook deferred to analyzer follow-up.
-Slot map per F-004: array_map = A5, hash_map = A6 (already named);
-new tags for HamtMapNode + HashCollisionNode from D-043 reserves
-(B15 / C11 / D13 / D14 / D15 candidates).
+Land `runtime/collection/set.zig`: HashSet backed by HashMap
+(key = element, value = `:cw/present` sentinel per ROADMAP row 5.6).
+Day-1: `conj` / `disj` / `contains?` / `count` / `seq`. `#{...}`
+reader literal hook deferred to analyzer follow-up.
 
-**Step 0 survey**: `private/notes/phase5-5.5-survey.md` (subagent
-running). Recommendations land before implementation.
+Since 5.5's HAMT body is deferred (D-045), 5.6 lands on top of
+ArrayMap-only — ≤ 8 entries via ArrayMap-backed set. The HAMT
+expansion path co-lands when D-045 is taken.
 
-**Open hazards**: (a) hash function — `runtime/hash.zig` survey
-target; (b) 4 alloc-heavy types (map / array_map / hamt_node /
-collision_node) all need trace fns; (c) `(into {} (range 1e6))`
-exit-smoke shape may force auto-trigger collect here (5.5 owner
-decides per survey's alloc-volume estimate).
+**Step 0 reading**: clojure JVM `PersistentHashSet.java` (thin
+wrapper over PersistentHashMap with `:cw/present` sentinel); cw
+v0 collections.zig PersistentHashSet (if present); 5.5
+implementation patterns from `runtime/collection/map.zig`.
+
+**Step 0 survey target**: not needed for 5.6 — the JVM pattern
+(HashMap wrapper with sentinel value) is well-known and 5.5's
+implementation already establishes the GC integration. Direct
+implementation likely fits in 2-3 micro-commits.
+
+**Open hazards**: (a) `:cw/present` sentinel needs a stable
+keyword pointer — must be interned via Runtime.keywords at first
+use or via a Layer-0 const; (b) 5.5 deferred HAMT means 5.6
+inherits the same limit (≤ 8 entries); (c) set equality semantics
+match clojure (order-independent) which the wrapper inherits.
 
 ## Open questions / blockers
 
