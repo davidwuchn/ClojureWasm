@@ -119,7 +119,7 @@ pub const HeapTag = enum(u8) {
     box = 58,
     hamt_node = 59, // D11 — PersistentVector interior/leaf node (5.4.a)
     tail_node = 60, // D12 — PersistentVector 32-element tail array (5.4.a)
-    reserved_d13 = 61,
-    reserved_d14 = 62,
+    hamt_map_node = 61, // D13 — PersistentHashMap CHAMP-style HAMT node (5.5.a)
+    hash_collision_map_node = 62, // D14 — PersistentHashMap collision bucket (5.5.c, declared here)
     reserved_d15 = 63,
 };
