@@ -35,51 +35,88 @@ pub const Value = enum(u64) {
     false_val = nb.NB_CONST_TAG | 2,
     _,
 
-    /// High-level type tag returned by `tag()`. One slot per kind.
-    pub const Tag = enum {
-        // Immediates
-        nil,
-        boolean,
-        integer,
-        float,
-        char,
-        builtin_fn,
-        // Group A: Core Data
-        string,
-        symbol,
-        keyword,
-        list,
-        vector,
-        array_map,
-        hash_map,
-        hash_set,
-        // Group B: Callable & Binding
-        fn_val,
-        multi_fn,
-        protocol,
-        protocol_fn,
-        var_ref,
-        ns,
-        delay,
-        regex,
-        // Group C: Sequence & State
-        lazy_seq,
-        cons,
-        chunked_cons,
-        chunk_buffer,
-        atom,
-        agent,
-        ref,
-        @"volatile",
-        // Group D: Transient & Extension
-        transient_vector,
-        transient_map,
-        transient_set,
-        reduced,
-        ex_info,
-        big_int,
-        ratio,
-        class,
+    /// High-level type tag returned by `tag()`. Heap entries (0..63) match
+    /// `HeapTag` 1:1 by integer position per ADR-0027 §2; immediates (64..69)
+    /// sit after. This ordering lets `heapTagToTag` collapse to
+    /// `@enumFromInt(@intFromEnum(.))` per simplify finding #8 + ROADMAP
+    /// §9.7 row 5.2 text.
+    pub const Tag = enum(u8) {
+        // Group A (slots 0..15)
+        string = 0,
+        symbol = 1,
+        keyword = 2,
+        list = 3,
+        vector = 4,
+        array_map = 5,
+        hash_map = 6,
+        hash_set = 7,
+        lazy_seq = 8,
+        cons = 9,
+        chunked_cons = 10,
+        chunk_buffer = 11,
+        range = 12,
+        string_seq = 13,
+        array_seq = 14,
+        map_entry = 15,
+        // Group B (slots 16..31)
+        fn_val = 16,
+        multi_fn = 17,
+        protocol = 18,
+        protocol_fn = 19,
+        var_ref = 20,
+        ns = 21,
+        delay = 22,
+        regex = 23,
+        tagged_literal = 24,
+        reader_conditional = 25,
+        class = 26,
+        reified_instance = 27,
+        type_descriptor = 28,
+        host_instance = 29,
+        typed_instance = 30,
+        reserved_b15 = 31,
+        // Group C (slots 32..47)
+        atom = 32,
+        agent = 33,
+        ref = 34,
+        @"volatile" = 35,
+        future = 36,
+        promise = 37,
+        reduced = 38,
+        ex_info = 39,
+        transient_vector = 40,
+        transient_map = 41,
+        transient_set = 42,
+        reserved_c11 = 43,
+        array_chunk = 44,
+        persistent_queue = 45,
+        sorted_map = 46,
+        sorted_set = 47,
+        // Group D (slots 48..63)
+        big_int = 48,
+        ratio = 49,
+        big_decimal = 50,
+        array = 51,
+        wasm_module = 52,
+        wasm_fn = 53,
+        wasm_funcref = 54,
+        wasm_externref = 55,
+        matcher = 56,
+        tuple = 57,
+        box = 58,
+        reserved_d11 = 59,
+        reserved_d12 = 60,
+        reserved_d13 = 61,
+        reserved_d14 = 62,
+        reserved_d15 = 63,
+        // Immediates (not in heap slot space; classified by top16 band,
+        // not by integer-indexed lookup against HeapTag)
+        nil = 64,
+        boolean = 65,
+        integer = 66,
+        float = 67,
+        char = 68,
+        builtin_fn = 69,
     };
 
     /// Pack a heap pointer + HeapTag into a Value. The pointer must be
@@ -113,41 +150,11 @@ pub const Value = enum(u64) {
         return @ptrFromInt(@as(usize, shifted) << nb.NB_ADDR_ALIGN_SHIFT);
     }
 
+    /// Map a HeapTag integer to its parallel Tag entry. Per ADR-0027 §2 +
+    /// simplify finding #8: Tag heap entries (0..63) are integer-aligned
+    /// with HeapTag (0..63), so the mapping is a single `@enumFromInt`.
     fn heapTagToTag(ht_raw: u8) Tag {
-        return switch (@as(HeapTag, @enumFromInt(ht_raw))) {
-            .string => .string,
-            .symbol => .symbol,
-            .keyword => .keyword,
-            .list => .list,
-            .vector => .vector,
-            .array_map => .array_map,
-            .hash_map => .hash_map,
-            .hash_set => .hash_set,
-            .fn_val => .fn_val,
-            .multi_fn => .multi_fn,
-            .protocol => .protocol,
-            .protocol_fn => .protocol_fn,
-            .var_ref => .var_ref,
-            .ns => .ns,
-            .delay => .delay,
-            .regex => .regex,
-            .lazy_seq => .lazy_seq,
-            .cons => .cons,
-            .chunked_cons => .chunked_cons,
-            .chunk_buffer => .chunk_buffer,
-            .atom => .atom,
-            .agent => .agent,
-            .ref => .ref,
-            .@"volatile" => .@"volatile",
-            .transient_vector => .transient_vector,
-            .transient_map => .transient_map,
-            .transient_set => .transient_set,
-            .reduced => .reduced,
-            .ex_info => .ex_info,
-            .big_int => .big_int,
-            .ratio => .ratio,
-            .class => .class,
-        };
+        return @enumFromInt(ht_raw);
     }
 
     /// Classify this Value into a Tag by inspecting the upper 16 bits.
@@ -415,4 +422,67 @@ test "encodeHeapPtr covers all four heap groups" {
 
 test "Value is 8 bytes" {
     try testing.expectEqual(@as(usize, 8), @sizeOf(Value));
+}
+
+test "F-004 g2 64-slot layout: HeapTag and Tag are integer-aligned for heap entries" {
+    // Per ADR-0027 §2 + simplify finding #8 collapse: heapTagToTag is now
+    // a single @enumFromInt. This requires Tag heap entries (0..63) to
+    // hold the same integer values as HeapTag (0..63).
+    try testing.expectEqual(@intFromEnum(HeapTag.string), @intFromEnum(Value.Tag.string));
+    try testing.expectEqual(@intFromEnum(HeapTag.range), @intFromEnum(Value.Tag.range));
+    try testing.expectEqual(@intFromEnum(HeapTag.map_entry), @intFromEnum(Value.Tag.map_entry));
+    try testing.expectEqual(@intFromEnum(HeapTag.typed_instance), @intFromEnum(Value.Tag.typed_instance));
+    try testing.expectEqual(@intFromEnum(HeapTag.big_int), @intFromEnum(Value.Tag.big_int));
+    try testing.expectEqual(@intFromEnum(HeapTag.wasm_funcref), @intFromEnum(Value.Tag.wasm_funcref));
+    try testing.expectEqual(@intFromEnum(HeapTag.reserved_d15), @intFromEnum(Value.Tag.reserved_d15));
+}
+
+test "F-004 day-1 Tag additions encode + decode through Group A" {
+    // The g2 widening adds range / string_seq / array_seq / map_entry
+    // to Group A. Encode a heap pointer with each and confirm the
+    // round-trip lands the same Tag.
+    var obj_range: u64 align(8) = 0;
+    var obj_string_seq: u64 align(8) = 0;
+    var obj_array_seq: u64 align(8) = 0;
+    var obj_map_entry: u64 align(8) = 0;
+
+    const v_range = Value.encodeHeapPtr(.range, &obj_range);
+    const v_string_seq = Value.encodeHeapPtr(.string_seq, &obj_string_seq);
+    const v_array_seq = Value.encodeHeapPtr(.array_seq, &obj_array_seq);
+    const v_map_entry = Value.encodeHeapPtr(.map_entry, &obj_map_entry);
+
+    try testing.expectEqual(Value.Tag.range, v_range.tag());
+    try testing.expectEqual(Value.Tag.string_seq, v_string_seq.tag());
+    try testing.expectEqual(Value.Tag.array_seq, v_array_seq.tag());
+    try testing.expectEqual(Value.Tag.map_entry, v_map_entry.tag());
+
+    try testing.expectEqual(&obj_range, v_range.decodePtr(*u64));
+    try testing.expectEqual(&obj_string_seq, v_string_seq.decodePtr(*u64));
+    try testing.expectEqual(&obj_array_seq, v_array_seq.decodePtr(*u64));
+    try testing.expectEqual(&obj_map_entry, v_map_entry.decodePtr(*u64));
+}
+
+test "F-004 big_int slot rotation: now Group D slot 0 (value 48)" {
+    // Per ADR-0027 §5 + the §9.7 row 5.2.b commit message, big_int
+    // moves from g1 slot 29 to g2 slot 48 (Group D position 0).
+    try testing.expectEqual(@as(u8, 48), @intFromEnum(HeapTag.big_int));
+
+    var obj: u64 align(8) = 0xCAFE_BABE;
+    const v = Value.encodeHeapPtr(.big_int, &obj);
+    try testing.expectEqual(Value.Tag.big_int, v.tag());
+    try testing.expectEqual(&obj, v.decodePtr(*u64));
+}
+
+test "F-004 inline wasm slots: funcref + externref encode through Group D" {
+    // wasm_funcref + wasm_externref live at D6 / D7 inline per F-004 +
+    // ADR-0027 §2; 5.2.b lands the slot encoding only (Phase 16 entry
+    // adds the marshalling wrapper per D-036).
+    var obj_func: u64 align(8) = 0;
+    var obj_extern: u64 align(8) = 0;
+
+    const v_func = Value.encodeHeapPtr(.wasm_funcref, &obj_func);
+    const v_extern = Value.encodeHeapPtr(.wasm_externref, &obj_extern);
+
+    try testing.expectEqual(Value.Tag.wasm_funcref, v_func.tag());
+    try testing.expectEqual(Value.Tag.wasm_externref, v_extern.tag());
 }

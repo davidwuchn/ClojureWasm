@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: EPL-2.0
-//! NaN-box layout constants for cw v1 Value encoding.
+//! NaN-box layout constants for cw v1 Value encoding (g2 64-slot per
+//! F-004 + ADR-0027).
 //!
 //! Every Clojure value is a `u64` using IEEE-754 NaN boxing. The upper
 //! 16 bits act as a tag:
@@ -7,10 +8,10 @@
 //!   top16 < 0xFFF8                 raw f64 (pass-through)
 //!
 //!   Heap groups (contiguous 0xFFF8-0xFFFB):
-//!     0xFFF8  Group A  Core Data           sub-type[47:45] | addr>>3 [44:0]
-//!     0xFFF9  Group B  Callable & Binding  sub-type[47:45] | addr>>3 [44:0]
-//!     0xFFFA  Group C  Sequence & State    sub-type[47:45] | addr>>3 [44:0]
-//!     0xFFFB  Group D  Transient & Ext     sub-type[47:45] | addr>>3 [44:0]
+//!     0xFFF8  Group A  Hot data + persistent colls
+//!     0xFFF9  Group B  Callables + reader extra
+//!     0xFFFA  Group C  Mutable + concurrency + transient + sorted/queue
+//!     0xFFFB  Group D  Numeric + wasm + extension
 //!
 //!   Immediate types (contiguous 0xFFFC-0xFFFF):
 //!     0xFFFC  integer     i48, signed; overflow → float promotion
@@ -22,13 +23,18 @@
 //!   isHeap:      (top16 & 0xFFFC) == 0xFFF8
 //!   isImmediate: (top16 & 0xFFFC) == 0xFFFC
 //!
-//! Slot mapping is 1:1 (no slot-sharing + discriminant) so a type check
-//! reduces to a band comparison on top16 plus a 3-bit sub-type read.
+//! Heap-tag bit layout within a tagged Value (per ADR-0027 §1):
+//!   bits 63..51   quiet-NaN signal (13)
+//!   bits 50..49   group selector (2) — encoded within top16 = 0xFFFx
+//!   bits 48..45   sub-type (4)         — 16 sub-types per group → 64 slots
+//!   bits 44..1    pointer payload (44) — shifted by 3, 47-bit byte address = 128 TB
+//!   bit  0        reserved per F-004   — implicit reservation, stays 0
 //!
-//! Phase 5 row 5.2.b widens the sub-type field 3 → 4 bits per F-004 +
-//! ADR-0027 §1 (64 slot, 44-bit shifted pointer, 128 TB user space).
-//! The constants below are the g1 32-slot shape; the widening lands as
-//! the follow-up 5.2.b commit per the split-then-widen decomposition.
+//! 5.2.a shipped the file split with g1 32-slot constants; 5.2.b widens
+//! to g2 64-slot per F-004. The g1 constants are gone — every tagged
+//! Value built before 5.2.b's deploy is incompatible with the g2 decode
+//! path. There is no g1-on-disk compatibility concern (all Values live
+//! in-process, regenerated each REPL/eval cycle).
 
 // Heap group tags (contiguous: 0xFFF8-0xFFFB)
 pub const NB_HEAP_TAG_A: u64 = 0xFFF8_0000_0000_0000;
@@ -44,10 +50,20 @@ pub const NB_BUILTIN_FN_TAG: u64 = 0xFFFF_0000_0000_0000;
 
 pub const NB_TAG_SHIFT: u6 = 48;
 pub const NB_PAYLOAD_MASK: u64 = 0x0000_FFFF_FFFF_FFFF;
-pub const NB_ADDR_SHIFTED_MASK: u64 = 0x0000_1FFF_FFFF_FFFF; // 45 bits for addr>>3 (g1)
-pub const NB_HEAP_SUBTYPE_SHIFT: u6 = 45; // 3-bit sub-type at bits 47..45 (g1)
+/// 44-bit mask for `addr>>3` per F-004 "44-bit shifted pointer (128 TB)".
+/// Pointer payload lives at bits 43..0; align-8 invariant forces the
+/// low 3 bits of the byte address to zero, giving an effective 41-bit
+/// byte index but 47-bit byte address after shift = 128 TB user space.
+pub const NB_ADDR_SHIFTED_MASK: u64 = 0x0000_0FFF_FFFF_FFFF;
+/// Sub-type field lives at bits 47..44 (4 bits) per F-004 + ADR-0027
+/// §1. Encoding shifts the sub-type index left by NB_HEAP_SUBTYPE_SHIFT
+/// to place it; decoding right-shifts + masks with NB_HEAP_SUBTYPE_MASK.
+/// Note: was 45 in g1 (3-bit sub-type at bits 47..45); g2 widens by 1
+/// bit so SHIFT moves down to 44.
+pub const NB_HEAP_SUBTYPE_SHIFT: u6 = 44;
 pub const NB_ADDR_ALIGN_SHIFT: u3 = 3; // 8-byte alignment (>>3)
-pub const NB_HEAP_GROUP_SIZE: u8 = 8; // g1; widens to 16 at 5.2.b per F-004
+/// 16 sub-types per group (g2 per F-004). Was 8 in g1.
+pub const NB_HEAP_GROUP_SIZE: u8 = 16;
 
 // Derived (kept in sync via expressions, not hand-written hex literals)
 pub const NB_ADDR_ALIGN_MASK: u64 = (@as(u64, 1) << NB_ADDR_ALIGN_SHIFT) - 1;

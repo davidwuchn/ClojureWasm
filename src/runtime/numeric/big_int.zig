@@ -21,10 +21,11 @@ const HeapHeader = value_mod.HeapHeader;
 /// carries the cw heap header so the future GC can walk it like any
 /// other heap object.
 ///
-/// HeapTag slot 29 (`big_int`) is the released `wasm_module` slot
-/// per ADR-0006 amendment 1 + ADR-0012 amendment 1 — the day-1
-/// reservation principle (ADR-0004) places it at its final NaN-box
-/// position from skeleton time.
+/// HeapTag slot 48 (Group D position 0, `big_int`) per F-004 +
+/// ADR-0027 §2. Phase 5 row 5.2.b rotated the slot from the g1
+/// placement at 29 (released `wasm_module` slot per ADR-0006
+/// amendment 1 + ADR-0012 amendment 1) to the canonical Group D
+/// numeric block per the F-004 decree.
 pub const BigInt = struct {
     header: HeapHeader,
     /// Owned by `m.allocator`; lifetime tied to the cw heap. Phase 5
