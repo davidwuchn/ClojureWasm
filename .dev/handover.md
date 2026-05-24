@@ -29,9 +29,9 @@
   (clojure.string/set/walk/zip — needs bootstrap multi-clj
   load), 6.13 (yaml sweep ~34 entries), 6.14 (exit smoke),
   6.15 (phase flip).
-- **Branch**: `cw-from-scratch`. HEAD ≈ 3993bd4 (6.16
-  cluster: pos-int? / neg-int? / nat-int? landed; 46 fns
-  total across core.zig + math.zig).
+- **Branch**: `cw-from-scratch`. HEAD ≈ 29435a5 (ADR-0031
+  regex engine-choice Proposed skeleton landed; 48 fns
+  total in 6.16 cluster).
 - **Gate**: Mac 16/16 + OrbStack Ubuntu x86_64 15/15 green.
 - **Chapter cadence**: dormant per ADR-0025 + F-007.
 
@@ -57,13 +57,14 @@ boundary — further single-primitive expansion is cheaper than
 the exit-criterion deliverable. The next session should pivot
 away from primitive accretion and take 6.6 directly.
 
-**Recommended next**: 6.6 (regex). Engine-choice ADR with
-Devil's-advocate fork mandatory (depth 2-3, per CLAUDE.md
-§ ADR-level designs are handled inline). Custom-min vs
-zig-regex vs pcre bind. After ADR, ~300-500 LOC impl. This
-unblocks Phase 6 exit criterion `(re-find #"\d+" "abc123")` →
-`"123"` and is a precondition for 6.9 (clojure.string
-re-find / re-matches callers).
+**Recommended next**: 6.6 (regex) finish. ADR-0031 skeleton
+already landed (29435a5) with the Devil's-advocate brief
+embedded. Next session: fork a `general-purpose` subagent
+with the brief copy-pasted from ADR-0031's "Devil's-advocate
+brief" section, paste the subagent's response verbatim into
+"Alternatives considered", flip Status to Accepted, then
+implement runtime/regex/{compile,match}.zig + the Java
+surface + the Clojure peer.
 
 Alternative parallel-track: 6.13 yaml sweep — mechanical bulk
 diff over ~34 legacy entries to ADR-0029 D5 schema. Low risk,
