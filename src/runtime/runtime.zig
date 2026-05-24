@@ -112,6 +112,7 @@ pub const Runtime = struct {
     /// switches its `alloc` body from `gpa.create` to `gc.alloc`.
     pub fn init(io: std.Io, gpa: std.mem.Allocator) Runtime {
         @import("collection/string.zig").registerGcHooks();
+        @import("collection/list.zig").registerGcHooks();
         return .{
             .io = io,
             .gpa = gpa,

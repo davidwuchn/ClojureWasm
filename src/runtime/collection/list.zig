@@ -11,13 +11,16 @@ const Value = value.Value;
 const HeapHeader = value.HeapHeader;
 const HeapTag = value.HeapTag;
 const Runtime = @import("../runtime.zig").Runtime;
+const tag_ops = @import("../gc/tag_ops.zig");
+const gc_heap_mod = @import("../gc/gc_heap.zig");
+const mark_sweep = @import("../gc/mark_sweep.zig");
 
-/// Cons cell — fundamental list-building block. Heap allocations from
-/// the arena are 8-byte aligned; the explicit padding keeps `first`/
-/// `rest`/`meta` aligned for downstream NaN-boxed pointer encoding.
-pub const Cons = struct {
+/// Cons cell — fundamental list-building block. `extern struct` so
+/// declaration order is preserved + HeapHeader lands at offset 0
+/// (required by `gc.alloc(T)` per the comptime check).
+pub const Cons = extern struct {
     header: HeapHeader,
-    _pad: [6]u8 = undefined,
+    _pad: [6]u8 = .{ 0, 0, 0, 0, 0, 0 },
     first: Value,
     rest: Value,
     meta: Value,
@@ -25,6 +28,7 @@ pub const Cons = struct {
 
     comptime {
         std.debug.assert(@alignOf(Cons) >= 8);
+        std.debug.assert(@offsetOf(Cons, "header") == 0);
     }
 };
 
@@ -43,15 +47,19 @@ pub fn cons(alloc: std.mem.Allocator, head: Value, tail: Value) !Value {
     return Value.encodeHeapPtr(.list, cell);
 }
 
-/// Allocate a new cons cell into `rt.gpa` and register it with
-/// `rt.trackHeap`, so the resulting Value outlives any per-eval arena
-/// (e.g. when the list ends up bound to a global Var). Use this for
-/// quoted-list literals and any list a primitive needs to return to
-/// caller-land. Tests + per-test arenas keep using the plain `cons`
-/// above when they don't need long-lived Values.
+/// Allocate a new cons cell on the GC heap, so the resulting Value
+/// outlives any per-eval arena (e.g. when the list ends up bound to
+/// a global Var). Use this for quoted-list literals and any list a
+/// primitive needs to return to caller-land. Tests + per-test arenas
+/// keep using the plain `cons` above when they don't need long-lived
+/// Values.
+///
+/// 5.3.d.5 migration: rt.gpa.create + trackHeap → rt.gc.alloc; the
+/// per-tag trace fn (registered by `registerGcHooks`) walks
+/// first / rest / meta so the GC sees the outgoing pointers and
+/// keeps reachable children alive.
 pub fn consHeap(rt: *Runtime, head: Value, tail: Value) !Value {
-    const cell = try rt.gpa.create(Cons);
-    errdefer rt.gpa.destroy(cell);
+    const cell = try rt.gc.alloc(Cons);
     cell.* = .{
         .header = HeapHeader.init(.list),
         .first = head,
@@ -59,13 +67,25 @@ pub fn consHeap(rt: *Runtime, head: Value, tail: Value) !Value {
         .meta = .nil_val,
         .count = 1 + countOf(tail),
     };
-    try rt.trackHeap(.{ .ptr = @ptrCast(cell), .free = freeCons });
     return Value.encodeHeapPtr(.list, cell);
 }
 
-fn freeCons(gpa: std.mem.Allocator, ptr: *anyopaque) void {
-    const c: *Cons = @ptrCast(@alignCast(ptr));
-    gpa.destroy(c);
+/// Per-tag trace fn called by mark phase to walk outgoing GC-managed
+/// pointers per ADR-0028 §5 + the cw v0 D100 "transitive trace"
+/// requirement. Cons has no owned non-GC resources so no finaliser
+/// is needed.
+pub fn traceGc(gc_ptr: *anyopaque, header: *HeapHeader) void {
+    const gc: *gc_heap_mod.GcHeap = @ptrCast(@alignCast(gc_ptr));
+    const c: *Cons = @ptrCast(@alignCast(header));
+    if (c.first.heapHeader()) |hdr| mark_sweep.mark(gc, hdr);
+    if (c.rest.heapHeader()) |hdr| mark_sweep.mark(gc, hdr);
+    if (c.meta.heapHeader()) |hdr| mark_sweep.mark(gc, hdr);
+}
+
+/// Register Cons's trace fn into `tag_ops.tag_trace_table[.list]`.
+/// Idempotent at the same fn pointer; called from `Runtime.init`.
+pub fn registerGcHooks() void {
+    tag_ops.registerTrace(.list, &traceGc);
 }
 
 /// First element. `nil` for non-list inputs (matches Clojure's `first`).
