@@ -138,6 +138,8 @@ print_summary() {
 run_step "zig_build_test"      "zig build test"
 run_step "zig_build_test_vm"   "zig build test -Dbackend=vm"
 run_step "zone_check"           "bash scripts/zone_check.sh --gate"
+run_step "surface_marker"       "bash scripts/check_surface_marker.sh --gate"
+run_step "feature_keyword"      "bash scripts/check_feature_keyword.sh --gate"
 
 # zlinter no_deprecated gate (ADR-0003) — Mac-host only. zlinter is
 # fetched via `zig fetch` against GitHub; OrbStack runs are network-

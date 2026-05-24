@@ -6,6 +6,12 @@
 #   Layer 1 (eval/)    must NOT import from Layer 2+ (lang/, modules/, app/)
 #   Layer 2 (lang/)    must NOT import from Layer 3 (app/)
 #
+# Plus the ADR-0029 D2 surface rule (G1):
+#   Any file under runtime/ that is NOT in runtime/java/** or
+#   runtime/cljw/** must NOT import from runtime/java/** or
+#   runtime/cljw/**.  Surface layers call the neutral impl layer;
+#   the reverse is forbidden.
+#
 # Modes:
 #   bash scripts/zone_check.sh           informational; always exits 0
 #   bash scripts/zone_check.sh --strict  exit 1 on any violation
@@ -65,6 +71,39 @@ for file in $files; do
                 echo "$file:$lineno: zone $src_zone imports zone $tgt_zone ($import_path)" \
                     >> "$violations_file"
             fi
+
+            # G1 (ADR-0029 D2): runtime/ non-surface importing surface
+            case "$file" in
+                src/runtime/java/*|src/runtime/cljw/*) ;;  # surface itself: OK
+                src/runtime/*)
+                    case "$rel" in
+                        src/runtime/java/*|src/runtime/cljw/*)
+                            echo "$file:$lineno: G1/ADR-0029 D2: non-surface runtime/ imports surface ($import_path)" \
+                                >> "$violations_file"
+                            ;;
+                    esac
+                    ;;
+            esac
+
+            # G1 (ADR-0029 D2): cross-surface horizontal calls
+            case "$file" in
+                src/runtime/java/*)
+                    case "$rel" in
+                        src/runtime/cljw/*)
+                            echo "$file:$lineno: G1/ADR-0029 D2: java/ imports cljw/ ($import_path)" \
+                                >> "$violations_file"
+                            ;;
+                    esac
+                    ;;
+                src/runtime/cljw/*)
+                    case "$rel" in
+                        src/runtime/java/*)
+                            echo "$file:$lineno: G1/ADR-0029 D2: cljw/ imports java/ ($import_path)" \
+                                >> "$violations_file"
+                            ;;
+                    esac
+                    ;;
+            esac
         done
 done
 
