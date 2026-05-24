@@ -18,16 +18,11 @@ const error_catalog = @import("../../runtime/error_catalog.zig");
 const SourceLocation = error_mod.SourceLocation;
 const dispatch = @import("../../runtime/dispatch.zig");
 
-fn requireArity(name: []const u8, args: []const Value, n: usize, loc: SourceLocation) !void {
-    if (args.len != n)
-        return error_catalog.raise(.arity_not_expected, loc, .{ .fn_name = name, .got = args.len, .expected = n });
-}
-
 /// `(nil? x)` — true iff `x` is the singleton nil Value.
 pub fn nilQ(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
     _ = rt;
     _ = env;
-    try requireArity("nil?", args, 1, loc);
+    try error_catalog.checkArity("nil?", args, 1, loc);
     return if (args[0].isNil()) .true_val else .false_val;
 }
 
@@ -36,7 +31,7 @@ pub fn nilQ(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) a
 pub fn trueQ(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
     _ = rt;
     _ = env;
-    try requireArity("true?", args, 1, loc);
+    try error_catalog.checkArity("true?", args, 1, loc);
     return if (args[0] == Value.true_val) .true_val else .false_val;
 }
 
@@ -45,7 +40,7 @@ pub fn trueQ(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) 
 pub fn falseQ(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
     _ = rt;
     _ = env;
-    try requireArity("false?", args, 1, loc);
+    try error_catalog.checkArity("false?", args, 1, loc);
     return if (args[0] == Value.false_val) .true_val else .false_val;
 }
 
@@ -54,7 +49,7 @@ pub fn falseQ(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation)
 pub fn identicalQ(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
     _ = rt;
     _ = env;
-    try requireArity("identical?", args, 2, loc);
+    try error_catalog.checkArity("identical?", args, 2, loc);
     return if (args[0] == args[1]) .true_val else .false_val;
 }
 

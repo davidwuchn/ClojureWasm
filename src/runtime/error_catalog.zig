@@ -592,10 +592,11 @@ pub fn expectBoolean(val: Value, name: []const u8, loc: SourceLocation) ClojureW
 
 // --- Arity check helpers ---
 
-/// Exact arity check. Raises `arity_invalid` on mismatch.
+/// Exact arity check. Raises `arity_not_expected` (the wider template
+/// that names the expected count) on mismatch.
 pub fn checkArity(name: []const u8, args: []const Value, expected: usize, loc: SourceLocation) ClojureWasmError!void {
     if (args.len != expected) {
-        return raise(.arity_invalid, loc, .{ .got = args.len, .fn_name = name });
+        return raise(.arity_not_expected, loc, .{ .fn_name = name, .got = args.len, .expected = expected });
     }
 }
 
@@ -700,7 +701,7 @@ test "checkArity exact fail" {
     const args = [_]Value{Value.initInteger(1)};
     try testing.expectError(ClojureWasmError.ArityError, checkArity("+", &args, 2, .{}));
     const info = error_mod.getLastError().?;
-    try testing.expectEqualStrings("Wrong number of args (1) passed to +", info.message);
+    try testing.expectEqualStrings("Wrong number of args (1) passed to +, expected 2", info.message);
 }
 
 test "checkArityMin pass and fail" {

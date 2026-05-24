@@ -28,21 +28,6 @@ const dispatch = @import("../../runtime/dispatch.zig");
 const ex_info = @import("../../runtime/collection/ex_info.zig");
 const string_collection = @import("../../runtime/collection/string.zig");
 
-fn requireArityBetween(
-    name: []const u8,
-    args: []const Value,
-    min: usize,
-    max: usize,
-    loc: SourceLocation,
-) !void {
-    if (args.len < min or args.len > max) {
-        if (min == max) {
-            return error_catalog.raise(.arity_not_expected, loc, .{ .fn_name = name, .got = args.len, .expected = min });
-        }
-        return error_catalog.raise(.arity_out_of_range, loc, .{ .fn_name = name, .got = args.len, .min = min, .max = max });
-    }
-}
-
 /// `(ex-info msg data)` / `(ex-info msg data cause)`.
 ///
 /// Phase 3.10 accepts **any Value** for `data` (not just maps) — once
@@ -50,7 +35,7 @@ fn requireArityBetween(
 /// suite will check `data` is a map and we can tighten the contract.
 pub fn exInfo(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
     _ = env;
-    try requireArityBetween("ex-info", args, 2, 3, loc);
+    try error_catalog.checkArityRange("ex-info", args, 2, 3, loc);
     if (args[0].tag() != .string)
         return error_catalog.raise(.type_arg_not_string, loc, .{ .fn_name = "ex-info", .actual = @tagName(args[0].tag()) });
     const msg = string_collection.asString(args[0]);
@@ -62,7 +47,7 @@ pub fn exInfo(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation)
 /// `(ex-message x)` — string message if `x` is an ex-info, else nil.
 pub fn exMessage(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
     _ = env;
-    try requireArityBetween("ex-message", args, 1, 1, loc);
+    try error_catalog.checkArity("ex-message", args, 1, loc);
     const v = args[0];
     if (v.tag() != .ex_info) return .nil_val;
     // Lift the borrowed message slice into a fresh heap String so the
@@ -76,7 +61,7 @@ pub fn exMessage(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocati
 pub fn exData(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
     _ = rt;
     _ = env;
-    try requireArityBetween("ex-data", args, 1, 1, loc);
+    try error_catalog.checkArity("ex-data", args, 1, loc);
     const v = args[0];
     if (v.tag() != .ex_info) return .nil_val;
     return ex_info.data(v);
