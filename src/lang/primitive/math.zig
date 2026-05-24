@@ -81,7 +81,7 @@ pub fn minus(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) 
     _ = env;
     try ensureNumeric(args, "-", loc);
     if (args.len == 0)
-        return error_catalog.raise(.arity_invalid, loc, .{ .got = @as(usize, 0), .fn_name = "-" });
+        return error_catalog.raise(.arity_below_min, loc, .{ .got = @as(usize, 0), .fn_name = "-", .min = @as(usize, 1) });
     if (anyFloat(args)) {
         var acc: f64 = toF64(args[0]);
         if (args.len == 1) return Value.initFloat(-acc);

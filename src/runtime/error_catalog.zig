@@ -147,7 +147,6 @@ pub const Code = enum {
     value_not_callable,
 
     // --- Eval (arity at call) ---
-    arity_invalid,
     arity_below_min,
     arity_out_of_range,
     arity_not_expected,
@@ -479,10 +478,6 @@ pub fn entry(comptime code: Code) Entry {
         },
 
         // --- Eval (arity) ---
-        .arity_invalid => .{
-            .kind = .arity_error, .phase = .eval,
-            .template = "Wrong number of args ({[got]d}) passed to {[fn_name]s}",
-        },
         .arity_below_min => .{
             .kind = .arity_error, .phase = .eval,
             .template = "Wrong number of args ({[got]d}) passed to {[fn_name]s}, expected at least {[min]d}",
@@ -669,13 +664,7 @@ test "tier_d_bean_deep keeps basic TypeDescriptor field walk available in the wo
     try testing.expect(std.mem.find(u8, info.message, "TypeDescriptor") != null);
 }
 
-test "arity templates render all three variants" {
-    _ = raise(.arity_invalid, .{}, .{ .got = 3, .fn_name = "inc" }) catch {};
-    try testing.expectEqualStrings(
-        "Wrong number of args (3) passed to inc",
-        error_mod.getLastError().?.message,
-    );
-
+test "arity templates render all variants" {
     _ = raise(.arity_below_min, .{}, .{ .got = 1, .fn_name = "+", .min = 2 }) catch {};
     try testing.expectEqualStrings(
         "Wrong number of args (1) passed to +, expected at least 2",
