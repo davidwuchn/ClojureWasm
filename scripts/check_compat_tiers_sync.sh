@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
 # check_compat_tiers_sync.sh — pre-commit gate.
 # Verifies compat_tiers.yaml entries match actual implementation in
-# src/lang/primitive/ and src/runtime/host/.
+# src/lang/primitive/ and src/runtime/{java,cljw}/.
 #
-# Phase 5+ activation by design. Phase 4 entry: informational only.
+# Phase 5 entry shipped the directory layout (ADR-0029, supersedes
+# ADR-0011); Phase 6+ lands the first host_classes entries on the
+# new schema. Until then this script is informational only.
 
 set -euo pipefail
 

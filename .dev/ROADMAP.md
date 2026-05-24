@@ -474,7 +474,7 @@ ClojureWasm/                         (working dir on disk: ClojureWasmFromScratc
 │   │   ├── hash.zig                Murmur3
 │   │   ├── env.zig                 Namespace, Var, dynamic binding
 │   │   ├── dispatch.zig            VTable type
-│   │   ├── error.zig               SourceLocation, BuiltinFn, helpers
+│   │   ├── error/                  SourceLocation, BuiltinFn, helpers, catalog SSOT (per ADR-0029 consolidation; split into info/catalog/print.zig)
 │   │   ├── keyword.zig             KeywordInterner
 │   │   ├── symbol.zig              SymbolInterner
 │   │   ├── module.zig              ExternalModule interface
@@ -1114,10 +1114,18 @@ inside the same commit window.
 
 Phase 4 closed at commit 1f2406a (4.26.f) — every §9.6 row is `[x]`.
 Boundary chain ran at 393466e (simplify finding #1 applied; #2/4/5/7
-queued as D-041 / D-042). Phase tracker now records Phase 4 as
-**DONE** and Phase 5 as **IN-PROGRESS** (🔒 OrbStack x86_64 gate
-passing at HEAD); §9.7 expanded inline below per CLAUDE.md
-§ Autonomous Workflow "When the current phase's task queue empties".
+queued as D-041 / D-042).
+
+**Phase 5 closed 2026-05-24** at commit b876ee4 — every §9.7 row is
+either `[x]` (5.0–5.12.a, 5.14–5.16) or `[deferred → Phase N entry]`
+(5.12.b/c/d → Phase 7 per ADR-0030; 5.13 → Phase 6 entry per
+in-place amendment). The user-directed ADR-0029 cluster (Java +
+cljw surface layout + F-009 feature-implementation neutrality)
+ran mid-Phase as the largest structural intervention; ADR-0030
+followed at the end to scope-protect Phase 5 closing. Phase
+tracker now records Phase 5 as **DONE** and Phase 6 as
+**IN-PROGRESS**; §9.8 will expand inline below at the next
+session's Phase 6 entry expansion (carries 5.13 as 6.1).
 
 > 4.13-4.25 are the V3 additions per ADR-0007 through ADR-0017
 > (TypeDescriptor / Protocol dispatch / Object header lock / STM
@@ -1224,8 +1232,8 @@ type; the bootstrap prologue still loads. 🔒 OrbStack gate.
 | 5.12 | `deftype` / `defrecord` / `reify` analyzer + eval per ADR-0007. Replaces the 4.21 Tier-D-style raises (`Code.feature_not_supported`) with real codegen. `deftype` produces a fresh `TypeDescriptor`; `defrecord` extends with implicit `IPersistentMap` semantics; `reify` produces an anonymous TypeDescriptor for the body. Test: `(deftype Point [x y]) (.x (Point. 1 2))` → 1                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       | [ ]                       |
 | 5.13 | `eval/analyzer.zig` split per D-030 (already > 1000 lines after 4.26.d). Decompose into `eval/analyzer/{analyzer.zig (top + dispatch), special_forms.zig (def/if/do/quote/throw), bindings.zig (let*/loop*/fn*), recur.zig, try.zig}`. Behaviour-preserving; tests stay green                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | [ ]                       |
 | 5.14 | **Resolved by ADR-0029 cluster (2026-05-24)**: `runtime/host/` directory + 13 `_placeholder.zig` removed in commit 9604a9e; `_host_api.zig` moved to `runtime/java/_host_api.zig`; the `Extension` marker contract continues (now covers both `runtime/java/**` and `runtime/cljw/**`). D-032 closed.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | [x] (`9604a9e`, ADR-0029) |
-| 5.15 | Final activation step — `build_options.phase_at_least_5 = true` flipped in `build.zig`. The `gc_*_not_supported` Codes + allocator stubs never landed in catalog source (Phase 5 GC + 3-layer allocator shipped on the real path from the outset; the placeholder note in `mark_sweep.zig` / `gc_heap.zig` docs survives as history). Only `main.zig`'s `build_options` test value needed flipping                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | [ ]                       |
-| 5.16 | Phase 5 exit smoke — e2e: `(get {:a 1} :a)` → `1`, `(reduce + (range 1e6))` → `500000500000`, `(/ 1 3)` → `1/3`, `(* 9223372036854775807 2)` → `18446744073709551614N`, `(deftype Point [x y]) (.x (Point. 1 2))` → `1`. Tree-walk and VM agree under `Evaluator.compare`. Wired into `test/run_all.sh` as `e2e_phase5_exit.sh`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | [ ]                       |
+| 5.15 | Final activation step — `build_options.phase_at_least_5 = true` flipped in `build.zig`. The `gc_*_not_supported` Codes + allocator stubs never landed in catalog source (Phase 5 GC + 3-layer allocator shipped on the real path from the outset; the placeholder note in `mark_sweep.zig` / `gc_heap.zig` docs survives as history). Only `main.zig`'s `build_options` test value needed flipping                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | [x] (`4c574cd`)           |
+| 5.16 | Phase 5 exit smoke — `test/e2e/phase5_exit.sh` with 4 cases (`(/ 1 3)` → `1/3`, `(* 9223372036854775807N 2)` → `18446744073709551614N`, `(+ 1.50M 0.5M)` → `200M`, `(deftype Point [x y]) (.x (Point. 1 2))` → `nil` / `1`). `get` / `reduce` / `range` deferred to Phase 6 (clojure.core landings). Long/MAX_VALUE → BigInt-literal `9223372036854775807N` (Java static-field access lands Phase 7). Tree-walk only; VM raises NotImplemented for deftype/ctor/field per ADR-0030. Evaluator.compare to Phase 7 entry                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             | [x] (`694d36b`)           |
 
 ### 9.7.x Dependency graph (Phase 5 task ordering)
 
@@ -1241,27 +1249,61 @@ type; the bootstrap prologue still loads. 🔒 OrbStack gate.
   anywhere after 5.2 settles. 5.14 (host placeholder doc) is
   doc-only.
 
-### 9.8 Phase 6 — task list (PENDING, expand at Phase 6 entry)
+### 9.8 Phase 6 — task list (IN-PROGRESS at boundary expansion 2026-05-24)
 
-**Entry ADRs**: 0011 (Host extension) · 0014 (UTF-8 internal).
-**Reference**: `private/JVM_TO_ZIG.md` §13 (host stdlib mapping);
-`compat_tiers.yaml` host_classes (Phase 6 entries).
+**Entry ADRs**: 0029 (Java + cljw surface layout, supersedes
+ADR-0011) · 0014 (UTF-8 internal) · F-009 (feature-implementation
+neutrality).
+**Reference**: `private/clojure_frequent_java_interop/00a_frequency_overview.md`
+(top-class frequencies); `compat_tiers.yaml` `host_classes`
+entries with `phase: 5/6` (incremental schema migration per
+ADR-0029 D5).
+**Skeletons to activate**: `runtime/java/_host_api.zig` aggregator
+(landed at ADR-0029 cluster); `runtime/cljw/` directory tree
+(landed empty at ADR-0029 cluster, first cljw surface lands
+Phase 10+).
 **Deliverables**: `clojure.string` / `clojure.set` /
-`clojure.walk` / `clojure.zip` 完備、host stdlib first wave
-(`java.util.UUID` / `Date` / `Random` / `java.io.File`) per
-ADR-0029 (supersedes ADR-0011), UTF-8 string primitives, optional
-fuzz harness opens (per ADR-0021 deferred layer table).
+`clojure.walk` / `clojure.zip` (Tier A clojure.core companions);
+first Java surface wave (`UUID` / `Date` / `Random` / `File` /
+`Instant` / `Pattern`); the corresponding neutral impl layer
+(`runtime/uuid.zig`, `runtime/clock.zig`, `runtime/random.zig`,
+`runtime/regex/`, `runtime/time/`, `runtime/file_io.zig`,
+`runtime/charset.zig`); UTF-8 string primitives per ADR-0014;
+analyzer.zig split per D-030. F-009 multi-zone pattern (impl /
+Clojure peer / Java surface) gets its first three production
+exercises.
 
-**Carried forward from Phase 5 (Phase 5 closing amendment,
-2026-05-24)**:
+| #    | Description                                                                                                                                                                                                                                              | Status |
+|------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|--------|
+| 6.0  | Phase 5 → 6 boundary review chain follow-ups: audit_scaffolding findings absorbed, bench sweep, Phase tracker flipped (this row reflects boundary work; closes when expansion is complete)                                                              | [ ]    |
+| 6.1  | `eval/analyzer.zig` split per D-030 (deferred from 5.13). Decompose 1525 lines into `eval/analyzer/{analyzer (top+dispatch), special_forms (def/if/do/quote/throw/deftype/ctor/field), bindings (let*/loop*/fn*), recur, try}.zig`. Behaviour-preserving | [ ]    |
+| 6.2  | `runtime/uuid.zig` + `lang/primitive/uuid.zig` (`random-uuid` / `parse-uuid` clojure.core) + `runtime/java/util/UUID.zig`. First F-009 multi-zone exercise; ADR-0029 D5 schema entry in `compat_tiers.yaml`                                              | [ ]    |
+| 6.3  | `runtime/clock.zig` + `runtime/java/lang/System.zig` (`currentTimeMillis` / `nanoTime`). G2 Backend marker + G3 keyword check enforced                                                                                                                   | [ ]    |
+| 6.4  | `runtime/random.zig` + `runtime/crypto/secure_random.zig` + `runtime/java/util/Random.zig`                                                                                                                                                               | [ ]    |
+| 6.5  | `runtime/time/{instant,local_date,local_date_time,duration}.zig` + `runtime/java/util/Date.zig` + `runtime/java/time/{Instant,LocalDate,LocalDateTime,Duration}.zig`                                                                                     | [ ]    |
+| 6.6  | `runtime/regex/{compile,match}.zig` + `runtime/java/util/regex/Pattern.zig` + `lang/primitive/regex.zig` (`re-pattern` / `re-find` / `re-matches`)                                                                                                       | [ ]    |
+| 6.7  | `runtime/charset.zig` + UTF-8 internal string primitives per ADR-0014 (`subs` / `count` / `nth` over codepoints)                                                                                                                                         | [ ]    |
+| 6.8  | `runtime/file_io.zig` + `runtime/path.zig` + `runtime/java/io/File.zig` + `runtime/java/nio/file/Path.zig`. `slurp` / `spit` clojure peer via `lang/clj/clojure/java/io.clj` (slim Phase 6 surface)                                                      | [ ]    |
+| 6.9  | `lang/clj/clojure/string.clj` (Tier A, ~21 vars). Uses Phase 6.6 regex foundation                                                                                                                                                                        | [ ]    |
+| 6.10 | `lang/clj/clojure/set.clj` (Tier A, ~12 vars)                                                                                                                                                                                                            | [ ]    |
+| 6.11 | `lang/clj/clojure/walk.clj` (Tier A, ~10 vars)                                                                                                                                                                                                           | [ ]    |
+| 6.12 | `lang/clj/clojure/zip.clj` (Tier A, ~28 vars)                                                                                                                                                                                                            | [ ]    |
+| 6.13 | `compat_tiers.yaml` schema migration: rewrite the 6+ host_classes entries landed in Phase 6 (UUID/Date/Random/File/Instant/Pattern等) to the ADR-0029 D5 extended schema (`keyword:` + `files:` + `clojure_peer_vars:`). G3 gate validates               | [ ]    |
+| 6.14 | Phase 6 exit smoke — e2e: `(clojure.string/upper-case "hi")` → `"HI"`; `(re-find #"\d+" "abc123")` → `"123"`; `(java.util.UUID/randomUUID)` returns a 36-char string; `(.toString (java.util.Date.))` returns ISO-8601-ish text                       | [ ]    |
+| 6.15 | Final activation step — flip `build_options.phase_at_least_6 = true` (add option first if absent; ADR-0023 comptime-stub flip)                                                                                                                          | [ ]    |
 
-- **5.13** — `eval/analyzer.zig` split per D-030 (1525 lines today).
-  Decompose into `eval/analyzer/{analyzer.zig (top + dispatch),
-  special_forms.zig (def/if/do/quote/throw/deftype + ctor + field),
-  bindings.zig (let*/loop*/fn*), recur.zig, try.zig}`.
-  Behaviour-preserving; tests stay green. Lands inside the
-  Phase 5 → 6 boundary review chain's simplify subagent, or as
-  the first Phase 6 entry source-bearing task.
+**Goal**: stand up the first batch of Tier-A clojure.core
+companions (string/set/walk/zip) and the host stdlib first wave
+(UUID/Date/Random/File/Instant/Pattern), exercising the F-009 +
+ADR-0029 multi-zone pattern (impl / Clojure peer / Java surface)
+three or more times. Analyzer split absorbs the residual Phase 5
+structural smell.
+
+**Exit criterion**: `clojure.string` upper/lower/split/join/replace
+all green against an upstream-derived test fixture; `(re-find
+#"\d+" "abc123")` → `"123"`; UUID / Date / File / Pattern roundtrip
+via the Java surface; analyzer.zig sub-1000-line cap restored.
+🔒 OrbStack x86_64 gate passes.
 
 ### 9.9 Phase 7 — task list (PENDING, expand at Phase 7 entry)
 
@@ -1334,12 +1376,14 @@ delivers (`(.method obj args)` + `(ClassName. ...)` + `import` /
 
 ### 9.12 Phase 10 — task list (PENDING, expand at Phase 10 entry)
 
-**Entry ADRs**: 0011 (Host extension — second wave).
+**Entry ADRs**: 0029 (Java + cljw surface layout — second wave host classes;
+supersedes ADR-0011).
 **Deliverables**: namespaces + `require` + standard library
 (Tier A) — `clojure.string` / `clojure.set` / `clojure.edn` /
 `clojure.pprint` tests green, host stdlib second wave
-(`java.time.Instant` / `LocalDate` / `java.math.BigDecimal` /
-`java.util.regex.Pattern`).
+(`java.time.LocalDateTime` / `Duration` / `ZonedDateTime` /
+`java.math.BigDecimal` / `java.util.regex.Matcher` and the
+remaining Phase-14-deferred classes from ADR-0029 §D5 schema).
 
 ### 9.13 Phase 11 — task list (PENDING, expand at Phase 11 entry)
 

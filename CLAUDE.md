@@ -39,7 +39,8 @@ ROADMAP / ADR text reads differently live in
 unavoidable, F-002 finished-form wins, F-003 deferral on
 structural plans, F-004 NaN-box 64-slot, F-005 numeric tower
 JVM-surface, F-006 GC strategy, F-007 chapter cadence dormant
-permanently, F-008 zwasm v2 spec review — read this file when in
+permanently, F-008 zwasm v2 spec review, F-009
+feature-implementation neutrality — read this file when in
 doubt).
 
 ### Priority order (the loop obeys this chain top-down)
