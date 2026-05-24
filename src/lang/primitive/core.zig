@@ -133,6 +133,19 @@ pub fn setQ(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) a
     return if (t == .hash_set or t == .sorted_set) .true_val else .false_val;
 }
 
+/// `(fn? x)` — true iff `x` is callable as a function:
+/// builtin_fn (NaN-box-immediate function pointer like `+`),
+/// fn_val (user `(fn [...] ...)` closure), or multi_fn.
+/// JVM Clojure's clojure.core/fn? tests `IFn` minus `Var` —
+/// cw v1 mirrors the same intent at the Value.Tag layer.
+pub fn fnQ(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = rt;
+    _ = env;
+    try error_catalog.checkArity("fn?", args, 1, loc);
+    const t = args[0].tag();
+    return if (t == .builtin_fn or t == .fn_val or t == .multi_fn) .true_val else .false_val;
+}
+
 // --- registration ---
 
 const Entry = struct {
@@ -154,6 +167,7 @@ const ENTRIES = [_]Entry{
     .{ .name = "list?", .f = &listQ },
     .{ .name = "map?", .f = &mapQ },
     .{ .name = "set?", .f = &setQ },
+    .{ .name = "fn?", .f = &fnQ },
 };
 
 pub fn register(env: *Env, rt_ns: *env_mod.Namespace) !void {
