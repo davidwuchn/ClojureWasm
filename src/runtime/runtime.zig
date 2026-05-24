@@ -114,6 +114,7 @@ pub const Runtime = struct {
         @import("collection/string.zig").registerGcHooks();
         @import("collection/list.zig").registerGcHooks();
         @import("collection/ex_info.zig").registerGcHooks();
+        @import("collection/vector.zig").registerGcHooks();
         return .{
             .io = io,
             .gpa = gpa,
