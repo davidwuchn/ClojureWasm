@@ -83,3 +83,38 @@ pub fn matchFull(
     _ = input;
     return MatchError.NotImplemented;
 }
+
+/// One Pike-VM step: advance every live thread by consuming
+/// (or rejecting) the input byte `c` at position `pos`.
+/// Epsilon-closure (`jmp` / `split` / `save`) is followed
+/// inline before the byte test.
+///
+/// Status: skeleton — body lands together with the parser /
+/// emit in `compile.zig`. Once green, this function is the
+/// hot loop the matcher driver invokes per input byte.
+fn step(
+    program: *const compile.Program,
+    current: []Thread,
+    next: *std.ArrayList(Thread),
+    c: u8,
+    pos: u32,
+) MatchError!void {
+    _ = program;
+    _ = current;
+    _ = next;
+    _ = c;
+    _ = pos;
+    return MatchError.NotImplemented;
+}
+
+test "step is currently NotImplemented" {
+    var threads: [0]Thread = .{};
+    var next: std.ArrayList(Thread) = .empty;
+    defer next.deinit(std.testing.allocator);
+    const prog = compile.Program{
+        .insts = &.{},
+        .capture_count = 0,
+        .flags = .{},
+    };
+    try std.testing.expectError(MatchError.NotImplemented, step(&prog, &threads, &next, 0, 0));
+}
