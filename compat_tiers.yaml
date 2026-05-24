@@ -153,7 +153,16 @@ tiers:
           clojure_peer: lang/primitive/uuid.zig
         methods: [randomUUID, fromString, toString]
         clojure_peer_vars: [clojure.core/random-uuid, clojure.core/parse-uuid]
-      - { fqn: "java.util.Date",                         native_ns: "cljw.host.java.util.Date",                         phase: 5 }
+      - fqn: java.util.Date
+        cljw_ns: cljw.java.util.Date
+        keyword: instant
+        tier: A
+        phase: 6
+        files:
+          surface: runtime/java/util/Date.zig
+          impl: runtime/time/instant.zig
+        methods: [getTime, setTime, toString, toInstant]
+        clojure_peer_vars: []
       - fqn: java.util.Random
         cljw_ns: cljw.java.util.Random
         keyword: random
@@ -169,7 +178,16 @@ tiers:
       - { fqn: "java.util.concurrent.Future",            native_ns: "cljw.host.java.util.concurrent.Future",            phase: 14 }
       - { fqn: "java.util.concurrent.atomic.AtomicLong", native_ns: "cljw.host.java.util.concurrent.atomic.AtomicLong", phase: 15 }
       # java.time
-      - { fqn: "java.time.Instant",                      native_ns: "cljw.host.java.time.Instant",                      phase: 6 }
+      - fqn: java.time.Instant
+        cljw_ns: cljw.java.time.Instant
+        keyword: instant
+        tier: A
+        phase: 6
+        files:
+          surface: runtime/java/time/Instant.zig
+          impl: runtime/time/instant.zig
+        methods: [now, toEpochMilli, getEpochSecond, getNano, parse]
+        clojure_peer_vars: []
       - { fqn: "java.time.LocalDate",                    native_ns: "cljw.host.java.time.LocalDate",                    phase: 6 }
       - { fqn: "java.time.LocalDateTime",                native_ns: "cljw.host.java.time.LocalDateTime",                phase: 6 }
       - { fqn: "java.time.Duration",                     native_ns: "cljw.host.java.time.Duration",                     phase: 6 }
