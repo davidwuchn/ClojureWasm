@@ -106,6 +106,119 @@ pub fn registerGcHooks() void {
     tag_ops.registerTrace(.big_decimal, &traceGc);
 }
 
+// --- same-type arithmetic (5.9.d) ---
+//
+// BigDecimal add/sub/compare align both operands to the larger
+// scale by multiplying the smaller-scale unscaled value by
+// 10^(scale_diff). `mul` multiplies unscaled values and sums
+// scales (JVM convention; no precision loss). `div` requires a
+// MathContext (rounding mode + precision) and lands at 5.10.
+
+/// Three-way compare two BigDecimal Values. Aligns scales then
+/// compares unscaled values. Both inputs MUST have
+/// `tag() == .big_decimal`.
+pub fn compareValue(rt: *Runtime, a: Value, b: Value) !std.math.Order {
+    std.debug.assert(a.tag() == .big_decimal and b.tag() == .big_decimal);
+    var aligned_a: std.math.big.int.Managed = undefined;
+    var aligned_b: std.math.big.int.Managed = undefined;
+    try alignScales(rt, a, b, &aligned_a, &aligned_b);
+    defer aligned_a.deinit();
+    defer aligned_b.deinit();
+    return aligned_a.order(aligned_b);
+}
+
+/// `a + b` returning a fresh BigDecimal with `scale = max(a.scale, b.scale)`.
+pub fn allocAdd(rt: *Runtime, a: Value, b: Value) !Value {
+    return try alignedCombine(rt, a, b, .add);
+}
+
+/// `a - b`.
+pub fn allocSub(rt: *Runtime, a: Value, b: Value) !Value {
+    return try alignedCombine(rt, a, b, .sub);
+}
+
+/// `a * b` — unscaled values multiply, scales add.
+pub fn allocMul(rt: *Runtime, a: Value, b: Value) !Value {
+    std.debug.assert(a.tag() == .big_decimal and b.tag() == .big_decimal);
+    const ad = a.decodePtr(*const BigDecimal);
+    const bd = b.decodePtr(*const BigDecimal);
+
+    var u = try std.math.big.int.Managed.init(rt.gc.infra);
+    defer u.deinit();
+    try u.mul(ad.unscaled.m, bd.unscaled.m);
+
+    return try allocFromManagedScale(rt, &u, ad.scale + bd.scale);
+}
+
+const AddOrSub = enum { add, sub };
+
+fn alignedCombine(rt: *Runtime, a: Value, b: Value, op: AddOrSub) !Value {
+    std.debug.assert(a.tag() == .big_decimal and b.tag() == .big_decimal);
+    const ad = a.decodePtr(*const BigDecimal);
+    const bd = b.decodePtr(*const BigDecimal);
+
+    var aligned_a: std.math.big.int.Managed = undefined;
+    var aligned_b: std.math.big.int.Managed = undefined;
+    try alignScales(rt, a, b, &aligned_a, &aligned_b);
+    defer aligned_a.deinit();
+    defer aligned_b.deinit();
+
+    var r = try std.math.big.int.Managed.init(rt.gc.infra);
+    defer r.deinit();
+    switch (op) {
+        .add => try r.add(&aligned_a, &aligned_b),
+        .sub => try r.sub(&aligned_a, &aligned_b),
+    }
+
+    const result_scale = @max(ad.scale, bd.scale);
+    return try allocFromManagedScale(rt, &r, result_scale);
+}
+
+/// Initialise `aligned_a` / `aligned_b` such that both represent
+/// the same numeric values with the common scale `max(a.scale, b.scale)`.
+/// Caller MUST `deinit` both outputs.
+fn alignScales(
+    rt: *Runtime,
+    a: Value,
+    b: Value,
+    aligned_a: *std.math.big.int.Managed,
+    aligned_b: *std.math.big.int.Managed,
+) !void {
+    const ad = a.decodePtr(*const BigDecimal);
+    const bd = b.decodePtr(*const BigDecimal);
+    const target_scale = @max(ad.scale, bd.scale);
+
+    aligned_a.* = try cloneAndScale(rt, ad.unscaled.m, target_scale - ad.scale);
+    errdefer aligned_a.deinit();
+    aligned_b.* = try cloneAndScale(rt, bd.unscaled.m, target_scale - bd.scale);
+}
+
+/// Clone `src` and multiply by 10^extra_scale (extra_scale >= 0).
+fn cloneAndScale(rt: *Runtime, src: *const std.math.big.int.Managed, extra_scale: i32) !std.math.big.int.Managed {
+    var out = try src.cloneWithDifferentAllocator(rt.gc.infra);
+    errdefer out.deinit();
+    if (extra_scale > 0) {
+        var ten = try std.math.big.int.Managed.init(rt.gc.infra);
+        defer ten.deinit();
+        try ten.set(10);
+        var multiplier = try std.math.big.int.Managed.init(rt.gc.infra);
+        defer multiplier.deinit();
+        try multiplier.set(1);
+        var i: i32 = 0;
+        while (i < extra_scale) : (i += 1) {
+            var tmp = try std.math.big.int.Managed.init(rt.gc.infra);
+            defer tmp.deinit();
+            try tmp.mul(&multiplier, &ten);
+            multiplier.swap(&tmp);
+        }
+        var product = try std.math.big.int.Managed.init(rt.gc.infra);
+        defer product.deinit();
+        try product.mul(&out, &multiplier);
+        out.swap(&product);
+    }
+    return out;
+}
+
 // --- tests ---
 
 const testing = std.testing;
@@ -165,6 +278,58 @@ test "allocFromManagedScale supports unscaled > i64 (2^70 with scale=5)" {
     const v = try allocFromManagedScale(&fix.rt, &big, 5);
     try testing.expect(big_int_mod.asManaged(Value.encodeHeapPtr(.big_int, asUnscaled(v))).bitCountAbs() > 64);
     try testing.expectEqual(@as(i32, 5), asScale(v));
+}
+
+test "compareValue (1.50 vs 1.5): equal numerically despite different scale" {
+    var fix = BdFixture.init();
+    defer fix.deinit();
+
+    const a = try allocFromI64Scale(&fix.rt, 150, 2); // 1.50
+    const b = try allocFromI64Scale(&fix.rt, 15, 1);  // 1.5
+    try testing.expectEqual(std.math.Order.eq, try compareValue(&fix.rt, a, b));
+}
+
+test "compareValue (1.5 vs 2.0): lt" {
+    var fix = BdFixture.init();
+    defer fix.deinit();
+
+    const a = try allocFromI64Scale(&fix.rt, 15, 1);
+    const b = try allocFromI64Scale(&fix.rt, 20, 1);
+    try testing.expectEqual(std.math.Order.lt, try compareValue(&fix.rt, a, b));
+}
+
+test "allocAdd (1.50 + 0.5) = 2.00 (scale 2)" {
+    var fix = BdFixture.init();
+    defer fix.deinit();
+
+    const a = try allocFromI64Scale(&fix.rt, 150, 2);
+    const b = try allocFromI64Scale(&fix.rt, 5, 1);
+    const sum = try allocAdd(&fix.rt, a, b);
+    // 1.50 + 0.5 = 1.50 + 0.50 = 2.00 -> unscaled=200, scale=2
+    try testing.expectEqual(@as(i64, 200), try big_int_mod.asManaged(Value.encodeHeapPtr(.big_int, asUnscaled(sum))).toInt(i64));
+    try testing.expectEqual(@as(i32, 2), asScale(sum));
+}
+
+test "allocSub (3.00 - 1.5) = 1.50" {
+    var fix = BdFixture.init();
+    defer fix.deinit();
+
+    const a = try allocFromI64Scale(&fix.rt, 300, 2);
+    const b = try allocFromI64Scale(&fix.rt, 15, 1);
+    const diff = try allocSub(&fix.rt, a, b);
+    try testing.expectEqual(@as(i64, 150), try big_int_mod.asManaged(Value.encodeHeapPtr(.big_int, asUnscaled(diff))).toInt(i64));
+    try testing.expectEqual(@as(i32, 2), asScale(diff));
+}
+
+test "allocMul (1.5 * 2.0): unscaled=300, scale=2 (= 3.00)" {
+    var fix = BdFixture.init();
+    defer fix.deinit();
+
+    const a = try allocFromI64Scale(&fix.rt, 15, 1);
+    const b = try allocFromI64Scale(&fix.rt, 20, 1);
+    const prod = try allocMul(&fix.rt, a, b);
+    try testing.expectEqual(@as(i64, 300), try big_int_mod.asManaged(Value.encodeHeapPtr(.big_int, asUnscaled(prod))).toInt(i64));
+    try testing.expectEqual(@as(i32, 2), asScale(prod));
 }
 
 test "Runtime.deinit releases BigDecimal + unscaled BigInt (no leak)" {

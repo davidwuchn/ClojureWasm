@@ -343,3 +343,19 @@ slot is not yet used by other callers.
   All changes are reflected in catalog source as part of task 4.26
   (the existing 28 Codes from the initial landing will be renamed
   in the same task).
+
+- 2026-05-24: Amendment 3 — `divide_by_zero` Code added under the
+  existing `arithmetic_error` Kind, raised from numeric arithmetic
+  paths (5.9.b Ratio constructor + 5.9.d arithmetic dispatch).
+  Template "Divide by zero" matches the JVM Clojure
+  `ArithmeticException` surface text. No new Kind needed
+  (`arithmetic_error` slot was reserved on the initial Kind list
+  and is now lit up). Devil's-advocate cross-check:
+  alternatives "raise generic `value_error` with a custom
+  template" and "leave the Zig-API surface (error.DivideByZero) as
+  the only surface" were both considered; rejected because (a)
+  Clojure callers expect to `(try ... (catch ArithmeticException
+  e ...))` which maps to the `arithmetic_error` Kind, and (b) the
+  user-visible message `"Divide by zero"` is the most-grepped
+  Clojure error string and deserves its own Code for grep-by-Code
+  testing in Phase 6+.

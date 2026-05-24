@@ -106,6 +106,74 @@ pub fn asManaged(v: Value) *const std.math.big.int.Managed {
     return v.decodePtr(*const BigInt).m;
 }
 
+// --- same-type arithmetic (5.9.d) ---
+//
+// Cross-type dispatch (Long ↔ BigInt ↔ Ratio ↔ BigDecimal) lands at
+// 5.10 in `runtime/numeric/promote.zig`. The functions below are the
+// per-type building blocks the dispatcher composes.
+
+/// Three-way compare two BigInt Values (a vs b). Both Values MUST
+/// have `tag() == .big_int`.
+pub fn compareManaged(a: *const std.math.big.int.Managed, b: *const std.math.big.int.Managed) std.math.Order {
+    return a.order(b.*);
+}
+
+/// Allocate `a + b` as a fresh BigInt on the GC heap. Limbs of the
+/// result live on `rt.gc.infra`; the wrapper lives on `rt.gc.alloc`.
+pub fn allocAddManaged(
+    rt: *Runtime,
+    a: *const std.math.big.int.Managed,
+    b: *const std.math.big.int.Managed,
+) !Value {
+    var r = try std.math.big.int.Managed.init(rt.gc.infra);
+    defer r.deinit();
+    try r.add(a, b);
+    return allocFromManaged(rt, &r);
+}
+
+/// Allocate `a - b`.
+pub fn allocSubManaged(
+    rt: *Runtime,
+    a: *const std.math.big.int.Managed,
+    b: *const std.math.big.int.Managed,
+) !Value {
+    var r = try std.math.big.int.Managed.init(rt.gc.infra);
+    defer r.deinit();
+    try r.sub(a, b);
+    return allocFromManaged(rt, &r);
+}
+
+/// Allocate `a * b`.
+pub fn allocMulManaged(
+    rt: *Runtime,
+    a: *const std.math.big.int.Managed,
+    b: *const std.math.big.int.Managed,
+) !Value {
+    var r = try std.math.big.int.Managed.init(rt.gc.infra);
+    defer r.deinit();
+    try r.mul(a, b);
+    return allocFromManaged(rt, &r);
+}
+
+/// Floor-divide `a / b` (integer quotient toward -∞). Raises
+/// `error.DivideByZero` on `b == 0`. Cross-type promotion of
+/// non-exact integer division to Ratio is the 5.10 dispatcher's
+/// responsibility; this entry returns the floor quotient and
+/// discards the remainder.
+pub fn allocDivFloorManaged(
+    rt: *Runtime,
+    a: *const std.math.big.int.Managed,
+    b: *const std.math.big.int.Managed,
+) !Value {
+    if (b.eqlZero()) return error.DivideByZero;
+    var q = try std.math.big.int.Managed.init(rt.gc.infra);
+    defer q.deinit();
+    var r = try std.math.big.int.Managed.init(rt.gc.infra);
+    defer r.deinit();
+    try q.divFloor(&r, a, b);
+    return allocFromManaged(rt, &q);
+}
+
 // --- tests ---
 
 const testing = std.testing;
@@ -168,6 +236,69 @@ test "allocFromManaged holds values beyond i64 range (2^65 via shiftLeft)" {
     const m = asManaged(v);
     try testing.expect(m.bitCountAbs() > 64);
     try testing.expect(m.eql(src));
+}
+
+test "compareManaged orders (3 < 5 == 5)" {
+    var a = try std.math.big.int.Managed.init(testing.allocator);
+    defer a.deinit();
+    try a.set(3);
+    var b = try std.math.big.int.Managed.init(testing.allocator);
+    defer b.deinit();
+    try b.set(5);
+
+    try testing.expectEqual(std.math.Order.lt, compareManaged(&a, &b));
+    try testing.expectEqual(std.math.Order.gt, compareManaged(&b, &a));
+    try testing.expectEqual(std.math.Order.eq, compareManaged(&a, &a));
+}
+
+test "allocAddManaged / SubManaged / MulManaged round-trip" {
+    var fix = RuntimeFixture.init();
+    defer fix.deinit();
+
+    var a = try std.math.big.int.Managed.init(testing.allocator);
+    defer a.deinit();
+    try a.set(7);
+    var b = try std.math.big.int.Managed.init(testing.allocator);
+    defer b.deinit();
+    try b.set(5);
+
+    const sum_v = try allocAddManaged(&fix.rt, &a, &b);
+    try testing.expectEqual(@as(i64, 12), try asManaged(sum_v).toInt(i64));
+
+    const diff_v = try allocSubManaged(&fix.rt, &a, &b);
+    try testing.expectEqual(@as(i64, 2), try asManaged(diff_v).toInt(i64));
+
+    const prod_v = try allocMulManaged(&fix.rt, &a, &b);
+    try testing.expectEqual(@as(i64, 35), try asManaged(prod_v).toInt(i64));
+}
+
+test "allocDivFloorManaged raises DivideByZero on b=0" {
+    var fix = RuntimeFixture.init();
+    defer fix.deinit();
+
+    var a = try std.math.big.int.Managed.init(testing.allocator);
+    defer a.deinit();
+    try a.set(7);
+    var z = try std.math.big.int.Managed.init(testing.allocator);
+    defer z.deinit();
+    try z.set(0);
+
+    try testing.expectError(error.DivideByZero, allocDivFloorManaged(&fix.rt, &a, &z));
+}
+
+test "allocDivFloorManaged returns floor quotient (7 / 2 = 3)" {
+    var fix = RuntimeFixture.init();
+    defer fix.deinit();
+
+    var a = try std.math.big.int.Managed.init(testing.allocator);
+    defer a.deinit();
+    try a.set(7);
+    var b = try std.math.big.int.Managed.init(testing.allocator);
+    defer b.deinit();
+    try b.set(2);
+
+    const q = try allocDivFloorManaged(&fix.rt, &a, &b);
+    try testing.expectEqual(@as(i64, 3), try asManaged(q).toInt(i64));
 }
 
 test "Runtime.deinit releases BigInt + Managed limbs (no leak)" {

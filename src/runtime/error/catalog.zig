@@ -146,6 +146,9 @@ pub const Code = enum {
     type_arg_not_string,
     value_not_callable,
 
+    // --- Eval (arithmetic) ---
+    divide_by_zero,
+
     // --- Eval (arity at call) ---
     arity_below_min,
     arity_out_of_range,
@@ -475,6 +478,12 @@ pub fn entry(comptime code: Code) Entry {
         .value_not_callable => .{
             .kind = .type_error, .phase = .eval,
             .template = "Cannot call value of type '{[actual]s}'",
+        },
+
+        // --- Eval (arithmetic) ---
+        .divide_by_zero => .{
+            .kind = .arithmetic_error, .phase = .eval,
+            .template = "Divide by zero",
         },
 
         // --- Eval (arity) ---
