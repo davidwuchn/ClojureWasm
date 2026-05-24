@@ -14,12 +14,13 @@ const Runtime = @import("../../runtime/runtime.zig").Runtime;
 const env_mod = @import("../../runtime/env.zig");
 const Env = env_mod.Env;
 const error_mod = @import("../../runtime/error.zig");
+const error_catalog = @import("../../runtime/error_catalog.zig");
 const SourceLocation = error_mod.SourceLocation;
 const dispatch = @import("../../runtime/dispatch.zig");
 
 fn requireArity(name: []const u8, args: []const Value, n: usize, loc: SourceLocation) !void {
     if (args.len != n)
-        return error_mod.setErrorFmt(.eval, .arity_error, loc, "Wrong number of args ({d}) passed to {s} (expected {d})", .{ args.len, name, n });
+        return error_catalog.raise(.arity_not_expected, loc, .{ .fn_name = name, .got = args.len, .expected = n });
 }
 
 /// `(nil? x)` — true iff `x` is the singleton nil Value.

@@ -18,6 +18,7 @@ const Runtime = @import("../../runtime/runtime.zig").Runtime;
 const env_mod = @import("../../runtime/env.zig");
 const Env = env_mod.Env;
 const error_mod = @import("../../runtime/error.zig");
+const error_catalog = @import("../../runtime/error_catalog.zig");
 const SourceLocation = error_mod.SourceLocation;
 const dispatch = @import("../../runtime/dispatch.zig");
 
@@ -49,7 +50,7 @@ fn ensureNumeric(args: []const Value, name: []const u8, loc: SourceLocation) !vo
     for (args) |v| {
         switch (v.tag()) {
             .integer, .float => continue,
-            else => |t| return error_mod.setErrorFmt(.eval, .type_error, loc, "{s}: expected number, got {s}", .{ name, @tagName(t) }),
+            else => |t| return error_catalog.raise(.type_arg_not_number, loc, .{ .fn_name = name, .actual = @tagName(t) }),
         }
     }
 }
@@ -80,7 +81,7 @@ pub fn minus(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) 
     _ = env;
     try ensureNumeric(args, "-", loc);
     if (args.len == 0)
-        return error_mod.setErrorFmt(.eval, .arity_error, loc, "Wrong number of args (0) passed to -", .{});
+        return error_catalog.raise(.arity_invalid, loc, .{ .got = @as(usize, 0), .fn_name = "-" });
     if (anyFloat(args)) {
         var acc: f64 = toF64(args[0]);
         if (args.len == 1) return Value.initFloat(-acc);
@@ -184,7 +185,7 @@ pub fn compare(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation
     _ = rt;
     _ = env;
     if (args.len != 2)
-        return error_mod.setErrorFmt(.eval, .arity_error, loc, "Wrong number of args ({d}) passed to compare (expected 2)", .{args.len});
+        return error_catalog.raise(.arity_not_expected, loc, .{ .fn_name = "compare", .got = args.len, .expected = @as(usize, 2) });
     try ensureNumeric(args, "compare", loc);
     if (anyFloat(args)) {
         const a = toF64(args[0]);

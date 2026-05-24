@@ -22,6 +22,7 @@ const Runtime = @import("../../runtime/runtime.zig").Runtime;
 const env_mod = @import("../../runtime/env.zig");
 const Env = env_mod.Env;
 const error_mod = @import("../../runtime/error.zig");
+const error_catalog = @import("../../runtime/error_catalog.zig");
 const SourceLocation = error_mod.SourceLocation;
 const dispatch = @import("../../runtime/dispatch.zig");
 const ex_info = @import("../../runtime/collection/ex_info.zig");
@@ -36,9 +37,9 @@ fn requireArityBetween(
 ) !void {
     if (args.len < min or args.len > max) {
         if (min == max) {
-            return error_mod.setErrorFmt(.eval, .arity_error, loc, "Wrong number of args ({d}) passed to {s} (expected {d})", .{ args.len, name, min });
+            return error_catalog.raise(.arity_not_expected, loc, .{ .fn_name = name, .got = args.len, .expected = min });
         }
-        return error_mod.setErrorFmt(.eval, .arity_error, loc, "Wrong number of args ({d}) passed to {s} (expected {d}-{d})", .{ args.len, name, min, max });
+        return error_catalog.raise(.arity_out_of_range, loc, .{ .fn_name = name, .got = args.len, .min = min, .max = max });
     }
 }
 
@@ -51,7 +52,7 @@ pub fn exInfo(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation)
     _ = env;
     try requireArityBetween("ex-info", args, 2, 3, loc);
     if (args[0].tag() != .string)
-        return error_mod.setErrorFmt(.eval, .type_error, loc, "ex-info: message must be a string, got {s}", .{@tagName(args[0].tag())});
+        return error_catalog.raise(.type_arg_not_string, loc, .{ .fn_name = "ex-info", .actual = @tagName(args[0].tag()) });
     const msg = string_collection.asString(args[0]);
     const data_v = args[1];
     const cause_v: Value = if (args.len == 3) args[2] else .nil_val;

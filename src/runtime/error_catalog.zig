@@ -140,6 +140,7 @@ pub const Code = enum {
     type_arg_not_number,
     type_arg_not_integer,
     type_arg_not_boolean,
+    type_arg_not_string,
     value_not_callable,
 
     // --- Eval (arity at call) ---
@@ -460,6 +461,10 @@ pub fn entry(comptime code: Code) Entry {
         .type_arg_not_boolean => .{
             .kind = .type_error, .phase = .eval,
             .template = "{[fn_name]s}: expected boolean, got {[actual]s}",
+        },
+        .type_arg_not_string => .{
+            .kind = .type_error, .phase = .eval,
+            .template = "{[fn_name]s}: expected string, got {[actual]s}",
         },
         .value_not_callable => .{
             .kind = .type_error, .phase = .eval,
