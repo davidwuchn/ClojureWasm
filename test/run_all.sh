@@ -140,6 +140,10 @@ run_step "zig_build_test_vm"   "zig build test -Dbackend=vm"
 run_step "zone_check"           "bash scripts/zone_check.sh --gate"
 run_step "surface_marker"       "bash scripts/check_surface_marker.sh --gate"
 run_step "feature_keyword"      "bash scripts/check_feature_keyword.sh --gate"
+# Informational at Phase 6 (warns about test{} blocks in files not
+# reachable from src/main.zig — Zig 0.16 lazy-decl-analysis trap).
+# Promote to --gate when the residual D-053 clock/instant port lands.
+run_step "test_reach"           "bash scripts/check_test_reach.sh"
 
 # zlinter no_deprecated gate (ADR-0003) — Mac-host only. zlinter is
 # fetched via `zig fetch` against GitHub; OrbStack runs are network-

@@ -248,6 +248,65 @@ The gate is **Mac-host only** — `test/run_all.sh` skips it on
 non-Darwin hosts so OrbStack / CI Linux do not need network reach
 to fetch zlinter.
 
+## Test discovery via `@import` (lazy-decl-analysis trap)
+
+Zig 0.16 analyses top-level declarations **lazily**. A bare
+`pub const X = @import("foo.zig");` does **not** pull `foo.zig`'s
+`test {...}` blocks into the test set unless some code path
+actually references `X` (a function call, a struct-field access,
+even `_ = X.something;`). The import alone is not enough.
+
+Effect: a `.zig` file can sit in the source tree with passing
+unit tests on disk, and `zig build test` silently skips them.
+Worse, compile errors inside that file go undetected — the file
+is never type-checked because nothing references it.
+
+Two known cw v1 cases (2026-05-25): the `runtime/regex/{compile,
+match}.zig` skeletons shipped with 13 unit tests that never ran
+(fixed by the cycle-1 commit). The `runtime/clock.zig` +
+`runtime/time/instant.zig` impls referenced
+`std.time.nanoTimestamp` — a function **removed in Zig 0.16** —
+and the silent skip let the broken code sit on `main` for
+multiple commits before surfacing (D-053).
+
+### The canonical fix: aggregator block in `src/main.zig`
+
+`src/main.zig` already carries a `test { _ = @import(...); ... }`
+block whose sole job is to pull tests into the discovery graph
+for files that have no production-path referrer yet:
+
+```zig
+test {
+    _ = @import("runtime/value/value.zig");
+    _ = @import("runtime/charset.zig");
+    _ = @import("runtime/random.zig");
+    // ... add a line whenever a new src/**/*.zig has test blocks
+    //     but no other file references it yet.
+}
+```
+
+When you land a new impl file before its surface / Clojure peer
+exists, add the `_ = @import("...");` line to this aggregator in
+the same commit. The line goes away (= the entry can be removed)
+once a real production caller wires the module in.
+
+### Local alternative: `test { refAllDecls(X); }`
+
+Inside a file that **is** already in the test graph, an explicit
+`test { @import("std").testing.refAllDecls(some_imported_module);
+}` pulls every decl (incl. tests) of `some_imported_module` into
+the analysis set. This is fine for surface/peer files; it's
+**not** a substitute for the main-aggregator fix when the
+container file is itself orphan.
+
+### Detection: `bash scripts/check_test_reach.sh`
+
+Runs in `test/run_all.sh`. Walks `@import` strings from
+`src/main.zig` to build a reachable set, then flags any
+`src/**/*.zig` that contains `^test ` blocks but is not reachable.
+The gate is informational at Phase 6 (warn-only); promote to
+hard-fail when the false-positive rate is zero.
+
 ## Variable shadowing
 
 Zig disallows locals that shadow struct method names. Rename the local.
