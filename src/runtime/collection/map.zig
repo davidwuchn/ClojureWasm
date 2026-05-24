@@ -178,6 +178,49 @@ fn assocArrayMap(rt: *Runtime, am: *const ArrayMap, k: Value, val: Value) !Value
     return Value.encodeHeapPtr(.array_map, new_am);
 }
 
+/// `(dissoc m k)` — returns a new map without `k`. Returns the
+/// original map (no copy) when the key is absent. ArrayMap path
+/// linear-scans + copy-with-hole-removed; HamtMap path raises
+/// `error.HashMapNotImplemented` until 5.5.b.2 lands the body.
+pub fn dissoc(rt: *Runtime, v: Value, k: Value) !Value {
+    return switch (v.tag()) {
+        .array_map => try dissocArrayMap(rt, v.decodePtr(*const ArrayMap), v, k),
+        .hash_map => error.HashMapNotImplemented,
+        .nil => Value.nil_val,
+        else => error.DissocOnNonMap,
+    };
+}
+
+fn dissocArrayMap(rt: *Runtime, am: *const ArrayMap, original: Value, k: Value) !Value {
+    var found_idx: ?u32 = null;
+    var i: u32 = 0;
+    while (i < am.count) : (i += 1) {
+        if (keyEq(am.entries[2 * i], k)) {
+            found_idx = i;
+            break;
+        }
+    }
+    if (found_idx == null) return original;
+    if (am.count == 1) return empty(); // collapses to empty singleton
+
+    // Copy + shift entries after the removed slot down by one K/V pair.
+    const new_am = try rt.gc.alloc(ArrayMap);
+    new_am.* = .{
+        .header = HeapHeader.init(.array_map),
+        .count = am.count - 1,
+        .entries = @splat(Value.nil_val),
+    };
+    var write: u32 = 0;
+    var read: u32 = 0;
+    while (read < am.count) : (read += 1) {
+        if (read == found_idx.?) continue;
+        new_am.entries[2 * write] = am.entries[2 * read];
+        new_am.entries[2 * write + 1] = am.entries[2 * read + 1];
+        write += 1;
+    }
+    return Value.encodeHeapPtr(.array_map, new_am);
+}
+
 /// Per-tag trace fns (called by mark phase to walk outgoing GC-
 /// managed pointers per ADR-0028 §5).
 pub fn traceArrayMap(gc_ptr: *anyopaque, header: *HeapHeader) void {
@@ -372,6 +415,51 @@ test "assoc on nil: starts from EMPTY (treats nil as empty map per Clojure)" {
 
     const m = try assoc(&fix.rt, Value.nil_val, Value.initInteger(1), Value.initInteger(100));
     try testing.expectEqual(@as(u32, 1), count(m));
+}
+
+test "dissoc removes key: count decremented, value gone" {
+    var fix = RuntimeFixture.init();
+    defer fix.deinit();
+
+    var m = empty();
+    m = try assoc(&fix.rt, m, Value.initInteger(1), Value.initInteger(100));
+    m = try assoc(&fix.rt, m, Value.initInteger(2), Value.initInteger(200));
+    m = try assoc(&fix.rt, m, Value.initInteger(3), Value.initInteger(300));
+
+    const m2 = try dissoc(&fix.rt, m, Value.initInteger(2));
+    try testing.expectEqual(@as(u32, 2), count(m2));
+    try testing.expectEqual(@as(i48, 100), (try get(m2, Value.initInteger(1))).asInteger());
+    try testing.expectEqual(Value.nil_val, try get(m2, Value.initInteger(2)));
+    try testing.expectEqual(@as(i48, 300), (try get(m2, Value.initInteger(3))).asInteger());
+    // Original unchanged
+    try testing.expectEqual(@as(u32, 3), count(m));
+}
+
+test "dissoc absent key: returns original map (no copy)" {
+    var fix = RuntimeFixture.init();
+    defer fix.deinit();
+
+    const m = try assoc(&fix.rt, empty(), Value.initInteger(1), Value.initInteger(100));
+    const m2 = try dissoc(&fix.rt, m, Value.initInteger(99));
+    try testing.expectEqual(@intFromEnum(m), @intFromEnum(m2)); // identity
+}
+
+test "dissoc last entry collapses to empty singleton" {
+    var fix = RuntimeFixture.init();
+    defer fix.deinit();
+
+    const m1 = try assoc(&fix.rt, empty(), Value.initInteger(1), Value.initInteger(100));
+    const m0 = try dissoc(&fix.rt, m1, Value.initInteger(1));
+    try testing.expectEqual(@as(u32, 0), count(m0));
+    try testing.expectEqual(@intFromEnum(empty()), @intFromEnum(m0)); // back to EMPTY singleton
+}
+
+test "dissoc on nil: returns nil" {
+    var fix = RuntimeFixture.init();
+    defer fix.deinit();
+
+    const r = try dissoc(&fix.rt, Value.nil_val, Value.initInteger(1));
+    try testing.expect(r.isNil());
 }
 
 test "get on .hash_map raises HashMapNotImplemented at 5.5.a" {
