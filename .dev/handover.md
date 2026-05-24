@@ -35,36 +35,25 @@
 
 ## Active task — §9.7.8 / 5.7 LazySeq `force()` + thunk realisation
 
-Activate `runtime/lazy_seq.zig` (4.24 skeleton): `force()` walks
-the thunk and caches the realised Seq into `seq_cache`. `seq` /
-`first` / `rest` / `next` understand `.lazy_seq` Values. Test:
-`(reduce + (range 1e6))` without OOM (chunked realisation through
-GC). Per ADR-0009 amendment + 5.1 input bullet #2 the mutex shape
-decision happens here.
+Activate `runtime/lazy_seq.zig` (4.24 skeleton): `force()` realises
+the thunk + caches into `seq_cache`. `seq` / `first` / `rest` /
+`next` understand `.lazy_seq`. Exit-smoke goal: `(reduce + (range
+1e6))` without OOM via chunked realisation through GC.
 
-**Step 0 reading**: ADR-0009 amendment 2 (double-checked locking);
-`phase5-5.1-survey.md` Block A (cw v0 `io_default.zig` rationale,
-verbatim) + survey bullets 1 / 2 / 4 (root walker + mutex + thunk
-shape); `phase5-skeleton-audit.md` §"`src/runtime/lazy_seq.zig`"
-(skeleton has `std.atomic.Mutex` field — Zig-0.16 gap noted).
+**Step 0 reading**: ADR-0009 a2; `phase5-5.1-survey.md` Block A +
+bullets 1/2/4; `phase5-skeleton-audit.md` §"lazy_seq.zig".
 
-**Mutex decision (5.7 owns)**: choose between (a) no lock per cw v0
-single-thread (Phase 5 OK, Phase 15 revisit); (b) std.Io.Mutex via
-io_default pattern (matches survey Block A); (c) std.atomic.Value
-busy-spin (lock-free). Per F-002 + Phase 5 single-thread reality,
-(a) likely lands at 5.7 with explicit "Phase 15 STM activation
-re-evaluates" debt row.
+**Mutex decision (5.7 owns)**: (a) no-lock single-thread + Phase 15
+re-eval debt; (b) std.Io.Mutex via io_default pattern; (c) atomic
+busy-spin. Per F-002 + Phase 5 single-thread, (a) is the likely
+disposition with an explicit re-eval debt row.
 
-**Open hazards**: (a) `seq_cache` Value-typed slot pre-existing
-as `std.atomic.Value(?*SeqOpaque)` — atomic state survives even
-under choice (a); GC root walker must trace whatever pointer the
-atomic carries (5.1 input bullet #1); (b) `thunk: *const fn` is
-NOT a Value-encoded fn — it's a Zig fn pointer; ctx is *anyopaque
-which the GC trace cannot blindly walk per 5.1 input #1 —
-finished form may need ctx tagging or per-LazySeq trace fn
-registration; (c) `(reduce + (range 1e6))` exit smoke needs
-chunked realisation NOT to OOM — auto-trigger collect may finally
-become necessary here (defer-or-trigger decision lives in 5.7).
+**Open hazards**: (a) `seq_cache` atomic slot — GC root walker
+must trace whatever pointer the atomic carries (5.1 #1); (b)
+`thunk: *const fn` + `ctx: *anyopaque` — GC trace can't blindly
+walk opaque ctx; finished form may need ctx tagging or per-LazySeq
+trace registration; (c) chunked realisation may finally force
+auto-trigger collect (defer-or-trigger lives in 5.7).
 
 ## Open questions / blockers
 
