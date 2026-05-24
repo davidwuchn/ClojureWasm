@@ -24,52 +24,41 @@
 
 ## Current state
 
-- **Phase**: Phase 4 IN-PROGRESS. §9.6 critical-path closed
-  (4.0–4.12 done). Cleanup wave: 4.13–4.25 done. Error-system
-  migration: 4.26.a (Code rename) + 4.26.b (tier_d_form split) +
-  4.26.c (Error → ClojureWasmError) + 4.26.d region 1/6 (reader,
-  21 sites) done. Remaining 4.26.d regions: analyzer (38) /
-  tree_walk (15) / macro_transforms (14) / primitive (7) /
-  error.zig helpers (11). Then 4.26.e / 4.26.f close §9.6.
+- **Phase**: Phase 4 task list closed — every §9.6 row is `[x]`.
+  Phase 4 → DONE / Phase 5 → IN-PROGRESS narrative flip lives in
+  the §9.7 opener commit pending the boundary review chain
+  (audit_scaffolding + simplify on the phase diff + security
+  review on unpushed commits + Phase 5 task list expansion).
 - **Branch**: `cw-from-scratch` (long-lived; push after gate
-  green; never push to `main`).
-- **Gate**: Mac 12/12 + OrbStack Ubuntu x86_64 11/11 green at
-  HEAD.
+  green; never push to `main`). HEAD = 1f2406a (4.26.f close).
+- **Gate**: Mac 13/13 + OrbStack Ubuntu x86_64 12/12 green at
+  HEAD (gained `e2e_phase4_exit_codes` in 4.26.f).
 - **Chapter cadence**: dormant per ADR-0025 + F-007.
 
-## Active task — §9.6 / 4.26.d region 2 (analyzer, 38 sites)
+## Active task — Phase 4 boundary review chain → §9.7 opener
 
-`src/eval/analyzer.zig` has 38 `error_mod.setErrorFmt(...)` sites
-that rotate to `error_catalog.raise(.code, loc, args)`. Catalog
-needs ~25-30 new Code variants. Recommended grouping for the
-single analyzer commit:
+Per CLAUDE.md "Phase boundary review chain" + continue skill:
+(1) run `audit_scaffolding` skill; (2) parallel fan-out:
+`simplify` on `git diff phase-4-start..HEAD -- src/` + built-in
+`security-review` on unpushed commits + outstanding-chapter
+subagent (no-op per F-007 dormancy); (3) bench sweep if doc-only
+commits left dangling rows; (4) open §9.7 — flip §9 tracker
+(Phase 4 DONE, Phase 5 IN-PROGRESS), expand §9.7 task list by
+walking entry materials F-004 / F-005 / F-006 + debts D-011 /
+D-014a / D-020 / D-027 / D-029 + ADR-0007 / 0009 / 0012 / 0017;
+(5) proceed to §9.7.1 Step 0 (general-purpose survey).
 
-- cluster a: top-level resolution (lines ~224 / 225 / 277 / 279 /
-  280 / 301)
-- cluster b: def + if + quote (~412–505)
-- cluster c: fn* (~534–556)
-- cluster d: let* + loop* binding (~629–722)
-- cluster e: recur + throw (~757–796)
-- cluster f: try + catch (~855–906)
-
-**Catalog amendment to surface during region 2**: existing
-`let_bindings_not_vector` / `let_bindings_arity_odd` (4.26.a)
-generalise to `bindings_not_vector` / `bindings_arity_odd` with a
-`.form` slot so loop* / let* share one Code each. Depth-1
-commit-body note within the analyzer region.
-
-**Retrievable identifiers**: ROADMAP §9.6 4.26.d row text;
-ADR-0018 amendment 2 (a). After 4.26.d completes, 4.26.e
-(`@panic` / `unreachable` audit per ADR-0019) and 4.26.f (main
-top-level catch wiring) close §9.6 and Phase 4.
+**Retrievable identifiers**: ROADMAP §9.6 (just closed) + §9.7
+placeholder; CLAUDE.md § Phase boundary review chain; commits
+between Phase 4 start and HEAD = 1f2406a via `git log`.
 
 ## Open questions / blockers
 
 None testable from inside the loop. Recall triggers + follow-up
 candidates live in [`debt.md`](./debt.md) (rows D-005 through
 D-040). Step 0.5 debt sweep walks them at resume; pay attention
-to D-027 / D-028 (Phase 5 structural surgery) and D-040 (Phase 7
-MethodEntry naming).
+to D-027 / D-028 (Phase 5 structural surgery), D-029
+(`value.zig` split), and D-040 (Phase 7 MethodEntry naming).
 
 ## Guardrail refresh history (condensed)
 
@@ -91,10 +80,7 @@ User-directed guardrail evolution 2026-05-23 / -24:
   5-level priority chain, Devil's-advocate F-NNN envelope ban,
   `scripts/check_facts_immutable.sh` PreToolUse hook. Silent
   default-shift smell added to principle.md.
-- Wave 7 (2026-05-24): stop-list narrowed to the single condition
-  "user explicit stop"; smell triggers are interrupts (in-flight
-  surgery), build/test failures are Active-task items, and
-  Phase / region / task / commit boundaries roll into the next
-  unit of work. Smell-cluster / physical-block / ADR-phase-mode
-  stop wording removed across CLAUDE.md / principle.md /
-  continue SKILL.md / handover_framing.md / extended_challenge.md.
+- Wave 7 (2026-05-24): stop-list narrowed to "user explicit stop"
+  only; smell triggers are interrupts (in-flight surgery),
+  build/test failures are Active-task items, Phase / region /
+  task / commit boundaries roll into the next unit of work.
