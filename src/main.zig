@@ -261,6 +261,7 @@ test {
     _ = @import("runtime/collection/vector.zig");
     _ = @import("runtime/collection/map.zig");
     _ = @import("runtime/collection/set.zig");
+    _ = @import("runtime/collection/chunked_cons.zig");
     _ = @import("runtime/hash.zig");
     _ = @import("runtime/keyword.zig");
     _ = @import("runtime/print.zig");

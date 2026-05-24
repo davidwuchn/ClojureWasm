@@ -118,6 +118,7 @@ pub const Runtime = struct {
         @import("collection/map.zig").registerGcHooks();
         @import("collection/set.zig").registerGcHooks();
         @import("lazy_seq.zig").registerGcHooks();
+        @import("collection/chunked_cons.zig").registerGcHooks();
         return .{
             .io = io,
             .gpa = gpa,
