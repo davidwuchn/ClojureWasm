@@ -21,6 +21,16 @@ const Runtime = @import("../runtime.zig").Runtime;
 
 /// Heap String. `bytes` is owned (duplicated at `alloc` time) so the
 /// Value lives until `Runtime.deinit` frees it.
+///
+/// **Pre-GC-migration layout** — uses Zig default struct, which
+/// reorders fields by alignment. After Zig's reorder `header` is
+/// NOT at offset 0 (the 16-byte slice `bytes` lands first); this
+/// is OK for the current trackHeap-based path (callers reach
+/// `s.header` / `s.bytes` through the typed `*String`), but blocks
+/// migration to `rt.gc.alloc(String)` which requires HeapHeader at
+/// offset 0. Future task (5.3.d.4 candidate): restructure to
+/// `extern struct` with `bytes_ptr` / `bytes_len` fields so the
+/// layout is declaration-ordered + `header` lands at offset 0.
 pub const String = struct {
     header: HeapHeader,
     _pad: [6]u8 = undefined,
@@ -33,6 +43,8 @@ pub const String = struct {
 
 /// Allocate a heap String holding a copy of `bytes`. Registers cleanup
 /// with `rt.trackHeap` so `Runtime.deinit` frees both struct and bytes.
+/// (Migration to `rt.gc.alloc(String)` deferred to 5.3.d.4 alongside
+/// the `extern struct` restructure — see struct docstring above.)
 pub fn alloc(rt: *Runtime, bytes: []const u8) !Value {
     const owned = try rt.gpa.dupe(u8, bytes);
     errdefer rt.gpa.free(owned);

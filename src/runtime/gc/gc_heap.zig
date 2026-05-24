@@ -148,13 +148,16 @@ pub const GcHeap = struct {
     }
 
     pub fn deinit(self: *GcHeap) void {
-        // Drain every live allocation back to infra. Per-tag finalisers
-        // (ADR-0028 §4) land in 5.3.c; until then deinit just frees
-        // raw memory without per-tag side-effects (acceptable because
-        // gc.alloc has not been wired into Phase 1-4 alloc sites yet,
-        // so the only headers in the list are 5.3.b.1's allocator-
-        // test-fixture headers, not real Value payloads).
+        // Drain every live allocation back to infra. Calls the per-tag
+        // finaliser before rawFree so types that own non-GC resources
+        // (String.bytes / BigInt limbs / wasm_module references) get
+        // their cleanup chance — matches the sweep contract per
+        // ADR-0028 §4.
+        const tag_ops = @import("tag_ops.zig");
         for (self.allocations.items) |rec| {
+            if (tag_ops.tag_finaliser_table[rec.header.tag]) |finaliser| {
+                finaliser(@ptrCast(self), rec.header);
+            }
             const mem = @as([*]u8, @ptrCast(rec.header))[0..rec.size];
             self.infra.rawFree(mem, rec.alignment, @returnAddress());
         }

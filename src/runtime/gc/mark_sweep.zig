@@ -88,7 +88,7 @@ pub fn sweep(gc: *GcHeap) void {
         const mark_bit: u30 = rec.header.gc_and_lock.gc_mark & 1;
         if (mark_bit == 0) {
             if (tag_ops.tag_finaliser_table[rec.header.tag]) |finaliser| {
-                finaliser(rec.header);
+                finaliser(@ptrCast(gc), rec.header);
             }
             const mem: [*]u8 = @ptrCast(rec.header);
             const key = free_pool_mod.FreePoolKey{ .size = rec.size, .alignment = rec.alignment };

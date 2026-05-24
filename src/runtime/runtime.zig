@@ -101,6 +101,13 @@ pub const Runtime = struct {
 
     /// Production initializer. `io` typically comes from
     /// `std.process.Init.io`; in tests use `std.Io.Threaded`.
+    ///
+    /// **5.3.d.4 will register per-tag GC hooks here** once Phase 1-4
+    /// heap types (String / Cons / ExInfo / Keyword / BigInt) are
+    /// restructured to put `HeapHeader` at offset 0 (Zig default
+    /// struct reorders by alignment; the comptime check on
+    /// `gc.alloc(T)` requires offset 0). Until then, those types
+    /// stay on `gpa.create` + `trackHeap`.
     pub fn init(io: std.Io, gpa: std.mem.Allocator) Runtime {
         return .{
             .io = io,

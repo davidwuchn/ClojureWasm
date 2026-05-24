@@ -99,9 +99,16 @@ pub const TraceFn = *const fn (gc: *anyopaque, header: *HeapHeader) void;
 ///
 /// Phase 5 row 5.3 wires the entries that have known finalisers; the
 /// rest stay `null` until their owning Phase entry lands behaviour.
-pub var tag_finaliser_table: [64]?*const fn (header: *HeapHeader) void = @splat(null);
+pub var tag_finaliser_table: [64]?*const fn (gc: *anyopaque, header: *HeapHeader) void = @splat(null);
 
-pub const FinaliserFn = *const fn (header: *HeapHeader) void;
+/// Finaliser signature — receives the *GcHeap (type-erased to break
+/// the import cycle; concrete cast at call site) so it can free
+/// owned non-GC resources back to `gc.infra` per ADR-0028 §4 + the
+/// Block B reconciliation in §2. Examples:
+///   - String.finaliseGc frees `bytes: []const u8` back to gc.infra
+///   - BigInt.finaliseGc calls `Managed.deinit` (which uses the
+///     Managed's stored allocator — set to `gc.infra` at construction)
+pub const FinaliserFn = *const fn (gc: *anyopaque, header: *HeapHeader) void;
 
 /// Register a finaliser for `tag`. Idempotent at the same `fn_ptr` —
 /// re-registering the same function is a no-op (matches multi-
@@ -161,9 +168,9 @@ test "tag_*_table default: all entries are null before any registration" {
 test "registerFinaliser sets the entry; re-registering same fn is idempotent" {
     defer resetForTest();
     const noop = struct {
-        fn f(_: *HeapHeader) void {
+        fn f(_: *anyopaque, _: *HeapHeader) void {
             // Test-only no-op finaliser; production finalisers free
-            // owned slices (e.g. String.bytes) back to infra_alloc.
+            // owned slices (e.g. String.bytes) back to gc.infra.
         }
     }.f;
     registerFinaliser(.string, &noop);
