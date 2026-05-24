@@ -40,6 +40,9 @@ const Value = value_mod.Value;
 const HeapHeader = value_mod.HeapHeader;
 const HeapTag = value_mod.HeapTag;
 const Runtime = @import("../runtime.zig").Runtime;
+const tag_ops = @import("../gc/tag_ops.zig");
+const gc_heap_mod = @import("../gc/gc_heap.zig");
+const mark_sweep = @import("../gc/mark_sweep.zig");
 
 /// ArrayMap threshold: at most 8 K/V pairs before promotion to
 /// HamtMap. Per ROADMAP row 5.5 wording + survey recommendation.
@@ -127,6 +130,93 @@ fn keyEq(a: Value, b: Value) bool {
     return @intFromEnum(a) == @intFromEnum(b);
 }
 
+/// `(assoc m k v)` — returns a new map with `k → v` per Clojure
+/// semantics. 5.5.b body handles the ArrayMap path:
+///   - key found → copy with that slot's value replaced
+///   - key absent, count < 8 → copy with append
+///   - key absent, count == 8 → promote to HamtMap (5.5.b.2)
+///
+/// HamtMap path raises `error.HashMapNotImplemented` at 5.5.b
+/// until 5.5.b.2 lands the bitmap-indexed body.
+pub fn assoc(rt: *Runtime, v: Value, k: Value, val: Value) !Value {
+    return switch (v.tag()) {
+        .array_map => try assocArrayMap(rt, v.decodePtr(*const ArrayMap), k, val),
+        .hash_map => error.HashMapNotImplemented,
+        .nil => try assocArrayMap(rt, &EMPTY_ARRAY_MAP, k, val),
+        else => error.AssocOnNonMap,
+    };
+}
+
+fn assocArrayMap(rt: *Runtime, am: *const ArrayMap, k: Value, val: Value) !Value {
+    // Search for existing key.
+    var found_idx: ?u32 = null;
+    var i: u32 = 0;
+    while (i < am.count) : (i += 1) {
+        if (keyEq(am.entries[2 * i], k)) {
+            found_idx = i;
+            break;
+        }
+    }
+
+    if (found_idx) |idx| {
+        // Replace value at idx — copy the map with the one slot updated.
+        const new_am = try rt.gc.alloc(ArrayMap);
+        new_am.* = .{ .header = HeapHeader.init(.array_map), .count = am.count, .entries = am.entries };
+        new_am.entries[2 * idx + 1] = val;
+        return Value.encodeHeapPtr(.array_map, new_am);
+    }
+
+    // Append — promote to HamtMap if count would exceed threshold.
+    if (am.count >= ARRAY_MAP_THRESHOLD) {
+        return error.HashMapPromotionNotImplemented; // 5.5.b.2 lands the promote path
+    }
+
+    const new_am = try rt.gc.alloc(ArrayMap);
+    new_am.* = .{ .header = HeapHeader.init(.array_map), .count = am.count + 1, .entries = am.entries };
+    new_am.entries[2 * am.count] = k;
+    new_am.entries[2 * am.count + 1] = val;
+    return Value.encodeHeapPtr(.array_map, new_am);
+}
+
+/// Per-tag trace fns (called by mark phase to walk outgoing GC-
+/// managed pointers per ADR-0028 §5).
+pub fn traceArrayMap(gc_ptr: *anyopaque, header: *HeapHeader) void {
+    const gc: *gc_heap_mod.GcHeap = @ptrCast(@alignCast(gc_ptr));
+    const am: *ArrayMap = @ptrCast(@alignCast(header));
+    var i: u32 = 0;
+    while (i < am.count) : (i += 1) {
+        if (am.entries[2 * i].heapHeader()) |h| mark_sweep.mark(gc, h);
+        if (am.entries[2 * i + 1].heapHeader()) |h| mark_sweep.mark(gc, h);
+    }
+}
+
+pub fn tracePersistentHashMap(gc_ptr: *anyopaque, header: *HeapHeader) void {
+    const gc: *gc_heap_mod.GcHeap = @ptrCast(@alignCast(gc_ptr));
+    const m: *PersistentHashMap = @ptrCast(@alignCast(header));
+    if (m.root) |r| mark_sweep.mark(gc, @ptrCast(r));
+    if (m.meta.heapHeader()) |h| mark_sweep.mark(gc, h);
+}
+
+pub fn traceHamtMapNode(gc_ptr: *anyopaque, header: *HeapHeader) void {
+    const gc: *gc_heap_mod.GcHeap = @ptrCast(@alignCast(gc_ptr));
+    const node: *HamtMapNode = @ptrCast(@alignCast(header));
+    // CHAMP layout: 5.5.b.2 wires the data_map / node_map walk. For
+    // 5.5.a/b every slot is conservatively walked — nil + immediate
+    // Values filter out via Value.heapHeader.
+    for (node.slots) |slot| {
+        if (slot.heapHeader()) |h| mark_sweep.mark(gc, h);
+    }
+}
+
+/// Register all four map-related trace fns into
+/// `tag_ops.tag_trace_table`. Idempotent at same fn pointers.
+pub fn registerGcHooks() void {
+    tag_ops.registerTrace(.array_map, &traceArrayMap);
+    tag_ops.registerTrace(.hash_map, &tracePersistentHashMap);
+    tag_ops.registerTrace(.hamt_map_node, &traceHamtMapNode);
+    tag_ops.registerTrace(.hash_collision_map_node, &traceHamtMapNode); // same slot-walk; 5.5.c may specialise
+}
+
 /// `(get m k)` — returns `nil` when the key is absent (matches
 /// Clojure 2-arg `get`; the 3-arg `(get m k not-found)` form lands
 /// at 5.5.d via the `contains?` path).
@@ -205,6 +295,83 @@ test "ArrayMap.get: linear scan on hand-built 3-entry map" {
     try testing.expectEqual(@as(i48, 200), (try get(v, Value.initInteger(2))).asInteger());
     try testing.expectEqual(@as(i48, 300), (try get(v, Value.initInteger(3))).asInteger());
     try testing.expectEqual(Value.nil_val, try get(v, Value.initInteger(999)));
+}
+
+const RuntimeFixture = struct {
+    threaded: std.Io.Threaded,
+    rt: Runtime,
+
+    fn init() RuntimeFixture {
+        var fix: RuntimeFixture = .{
+            .threaded = std.Io.Threaded.init(testing.allocator, .{}),
+            .rt = undefined,
+        };
+        fix.rt = Runtime.init(fix.threaded.io(), testing.allocator);
+        return fix;
+    }
+    fn deinit(self: *RuntimeFixture) void {
+        self.rt.deinit();
+        self.threaded.deinit();
+    }
+};
+
+test "assoc on empty: count = 1; get returns the value" {
+    var fix = RuntimeFixture.init();
+    defer fix.deinit();
+
+    const m1 = try assoc(&fix.rt, empty(), Value.initInteger(1), Value.initInteger(100));
+    try testing.expectEqual(@as(u32, 1), count(m1));
+    try testing.expectEqual(@as(i48, 100), (try get(m1, Value.initInteger(1))).asInteger());
+}
+
+test "assoc replaces existing key: count unchanged, value updated" {
+    var fix = RuntimeFixture.init();
+    defer fix.deinit();
+
+    var m = empty();
+    m = try assoc(&fix.rt, m, Value.initInteger(1), Value.initInteger(100));
+    m = try assoc(&fix.rt, m, Value.initInteger(2), Value.initInteger(200));
+    m = try assoc(&fix.rt, m, Value.initInteger(1), Value.initInteger(999));
+
+    try testing.expectEqual(@as(u32, 2), count(m));
+    try testing.expectEqual(@as(i48, 999), (try get(m, Value.initInteger(1))).asInteger());
+    try testing.expectEqual(@as(i48, 200), (try get(m, Value.initInteger(2))).asInteger());
+}
+
+test "assoc appends up to ARRAY_MAP_THRESHOLD = 8 entries" {
+    var fix = RuntimeFixture.init();
+    defer fix.deinit();
+
+    var m = empty();
+    for (0..ARRAY_MAP_THRESHOLD) |i| {
+        m = try assoc(&fix.rt, m, Value.initInteger(@intCast(i)), Value.initInteger(@intCast(i + 1000)));
+    }
+    try testing.expectEqual(@as(u32, ARRAY_MAP_THRESHOLD), count(m));
+    for (0..ARRAY_MAP_THRESHOLD) |i| {
+        try testing.expectEqual(@as(i48, @intCast(i + 1000)), (try get(m, Value.initInteger(@intCast(i)))).asInteger());
+    }
+}
+
+test "assoc at threshold: 9th distinct key raises HashMapPromotionNotImplemented (5.5.b.2 lands the promote)" {
+    var fix = RuntimeFixture.init();
+    defer fix.deinit();
+
+    var m = empty();
+    for (0..ARRAY_MAP_THRESHOLD) |i| {
+        m = try assoc(&fix.rt, m, Value.initInteger(@intCast(i)), Value.initInteger(@intCast(i)));
+    }
+    try testing.expectError(
+        error.HashMapPromotionNotImplemented,
+        assoc(&fix.rt, m, Value.initInteger(99), Value.initInteger(99)),
+    );
+}
+
+test "assoc on nil: starts from EMPTY (treats nil as empty map per Clojure)" {
+    var fix = RuntimeFixture.init();
+    defer fix.deinit();
+
+    const m = try assoc(&fix.rt, Value.nil_val, Value.initInteger(1), Value.initInteger(100));
+    try testing.expectEqual(@as(u32, 1), count(m));
 }
 
 test "get on .hash_map raises HashMapNotImplemented at 5.5.a" {
