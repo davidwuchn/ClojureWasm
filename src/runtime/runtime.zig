@@ -102,13 +102,16 @@ pub const Runtime = struct {
     /// Production initializer. `io` typically comes from
     /// `std.process.Init.io`; in tests use `std.Io.Threaded`.
     ///
-    /// **5.3.d.4 will register per-tag GC hooks here** once Phase 1-4
-    /// heap types (String / Cons / ExInfo / Keyword / BigInt) are
-    /// restructured to put `HeapHeader` at offset 0 (Zig default
-    /// struct reorders by alignment; the comptime check on
-    /// `gc.alloc(T)` requires offset 0). Until then, those types
-    /// stay on `gpa.create` + `trackHeap`.
+    /// Registers per-tag GC hooks for migrated heap types
+    /// (`runtime/collection/*.zig`) before any allocation can land.
+    /// `tag_ops.registerFinaliser` is idempotent at the same fn
+    /// pointer so multi-Runtime test processes re-register the same
+    /// Layer 0 finalisers without conflict. Migration to `gc.alloc`
+    /// is per-type (5.3.d.4 = String; 5.3.d.5 = Cons; ...): each
+    /// migration commit adds its `registerGcHooks` call here +
+    /// switches its `alloc` body from `gpa.create` to `gc.alloc`.
     pub fn init(io: std.Io, gpa: std.mem.Allocator) Runtime {
+        @import("collection/string.zig").registerGcHooks();
         return .{
             .io = io,
             .gpa = gpa,

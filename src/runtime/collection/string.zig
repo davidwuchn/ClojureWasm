@@ -18,54 +18,75 @@ const value_mod = @import("../value/value.zig");
 const Value = value_mod.Value;
 const HeapHeader = value_mod.HeapHeader;
 const Runtime = @import("../runtime.zig").Runtime;
+const tag_ops = @import("../gc/tag_ops.zig");
+const gc_heap_mod = @import("../gc/gc_heap.zig");
 
-/// Heap String. `bytes` is owned (duplicated at `alloc` time) so the
-/// Value lives until `Runtime.deinit` frees it.
+/// Heap String. `bytes_ptr` + `bytes_len` decompose what was previously
+/// a `[]const u8` slice; the decomposition lets the struct be `extern`,
+/// which preserves declaration order so `header` lands at offset 0
+/// (required by `gc.alloc(T)`'s comptime invariant). Use `bytes()` to
+/// recover the slice view.
 ///
-/// **Pre-GC-migration layout** — uses Zig default struct, which
-/// reorders fields by alignment. After Zig's reorder `header` is
-/// NOT at offset 0 (the 16-byte slice `bytes` lands first); this
-/// is OK for the current trackHeap-based path (callers reach
-/// `s.header` / `s.bytes` through the typed `*String`), but blocks
-/// migration to `rt.gc.alloc(String)` which requires HeapHeader at
-/// offset 0. Future task (5.3.d.4 candidate): restructure to
-/// `extern struct` with `bytes_ptr` / `bytes_len` fields so the
-/// layout is declaration-ordered + `header` lands at offset 0.
-pub const String = struct {
+/// Lifetime: the byte storage is owned (duplicated at `alloc` time via
+/// `gc.infra.dupe`); the wrapper struct itself is GC-managed through
+/// `gc.alloc(String)`. The per-tag finaliser (`finaliseGc`, registered
+/// at `Runtime.init` time via `registerGcHooks`) frees the bytes back
+/// to `gc.infra` before sweep rawFrees the wrapper memory.
+pub const String = extern struct {
     header: HeapHeader,
-    _pad: [6]u8 = undefined,
-    bytes: []const u8,
+    _pad: [6]u8 = .{ 0, 0, 0, 0, 0, 0 },
+    bytes_ptr: [*]const u8,
+    bytes_len: usize,
 
     comptime {
         std.debug.assert(@alignOf(String) >= 8);
+        std.debug.assert(@offsetOf(String, "header") == 0);
+    }
+
+    pub fn bytes(self: *const String) []const u8 {
+        return self.bytes_ptr[0..self.bytes_len];
     }
 };
 
-/// Allocate a heap String holding a copy of `bytes`. Registers cleanup
-/// with `rt.trackHeap` so `Runtime.deinit` frees both struct and bytes.
-/// (Migration to `rt.gc.alloc(String)` deferred to 5.3.d.4 alongside
-/// the `extern struct` restructure — see struct docstring above.)
-pub fn alloc(rt: *Runtime, bytes: []const u8) !Value {
-    const owned = try rt.gpa.dupe(u8, bytes);
-    errdefer rt.gpa.free(owned);
-    const s = try rt.gpa.create(String);
-    errdefer rt.gpa.destroy(s);
-    s.* = .{ .header = HeapHeader.init(.string), .bytes = owned };
-    try rt.trackHeap(.{ .ptr = @ptrCast(s), .free = freeString });
+/// Allocate a heap String holding a copy of `bytes`. The byte storage
+/// is `dupe`d through `rt.gc.infra` (= `rt.gpa`) so the per-tag
+/// finaliser can release it back; the wrapper struct goes through
+/// `rt.gc.alloc(String)` so it appears on the GC's allocations list +
+/// participates in mark / sweep like any other Value.
+pub fn alloc(rt: *Runtime, byte_view: []const u8) !Value {
+    const owned = try rt.gc.infra.dupe(u8, byte_view);
+    errdefer rt.gc.infra.free(owned);
+    const s = try rt.gc.alloc(String);
+    s.* = .{
+        .header = HeapHeader.init(.string),
+        .bytes_ptr = owned.ptr,
+        .bytes_len = owned.len,
+    };
     return Value.encodeHeapPtr(.string, s);
 }
 
-fn freeString(gpa: std.mem.Allocator, ptr: *anyopaque) void {
-    const s: *String = @ptrCast(@alignCast(ptr));
-    gpa.free(s.bytes);
-    gpa.destroy(s);
+/// Per-tag finaliser called by sweep / GcHeap.deinit before unlinking +
+/// rawFree. Frees the owned bytes slice back to `gc.infra`; the wrapper
+/// struct's memory is then rawFreed by the calling layer.
+pub fn finaliseGc(gc_ptr: *anyopaque, header: *HeapHeader) void {
+    const gc: *gc_heap_mod.GcHeap = @ptrCast(@alignCast(gc_ptr));
+    const s: *String = @ptrCast(@alignCast(header));
+    gc.infra.free(s.bytes());
+}
+
+/// Register the string finaliser into `tag_ops.tag_finaliser_table`.
+/// Idempotent at the same fn pointer (`tag_ops.registerFinaliser`);
+/// `Runtime.init` calls this so registration lands before the first
+/// allocation.
+pub fn registerGcHooks() void {
+    tag_ops.registerFinaliser(.string, &finaliseGc);
 }
 
 /// Decode a String Value into its byte slice. Caller must already know
 /// `val.tag() == .string`.
 pub fn asString(val: Value) []const u8 {
     std.debug.assert(val.tag() == .string);
-    return val.decodePtr(*String).bytes;
+    return val.decodePtr(*String).bytes();
 }
 
 // --- tests ---
