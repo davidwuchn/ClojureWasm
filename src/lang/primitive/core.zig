@@ -82,6 +82,57 @@ pub fn numberQ(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation
     return if (t == .integer or t == .float or t == .big_int or t == .ratio or t == .big_decimal) .true_val else .false_val;
 }
 
+/// `(symbol? x)` — true iff `x` is a Symbol Value.
+pub fn symbolQ(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = rt;
+    _ = env;
+    try error_catalog.checkArity("symbol?", args, 1, loc);
+    return if (args[0].tag() == .symbol) .true_val else .false_val;
+}
+
+/// `(keyword? x)` — true iff `x` is a Keyword Value.
+pub fn keywordQ(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = rt;
+    _ = env;
+    try error_catalog.checkArity("keyword?", args, 1, loc);
+    return if (args[0].tag() == .keyword) .true_val else .false_val;
+}
+
+/// `(vector? x)` — true iff `x` is a persistent Vector.
+pub fn vectorQ(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = rt;
+    _ = env;
+    try error_catalog.checkArity("vector?", args, 1, loc);
+    return if (args[0].tag() == .vector) .true_val else .false_val;
+}
+
+/// `(list? x)` — true iff `x` is a persistent List
+/// (NOT lazy-seq / cons / chunked-cons — those are `seq?` only).
+pub fn listQ(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = rt;
+    _ = env;
+    try error_catalog.checkArity("list?", args, 1, loc);
+    return if (args[0].tag() == .list) .true_val else .false_val;
+}
+
+/// `(map? x)` — true iff `x` is an array-map / hash-map / sorted-map.
+pub fn mapQ(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = rt;
+    _ = env;
+    try error_catalog.checkArity("map?", args, 1, loc);
+    const t = args[0].tag();
+    return if (t == .array_map or t == .hash_map or t == .sorted_map) .true_val else .false_val;
+}
+
+/// `(set? x)` — true iff `x` is a hash-set or sorted-set.
+pub fn setQ(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = rt;
+    _ = env;
+    try error_catalog.checkArity("set?", args, 1, loc);
+    const t = args[0].tag();
+    return if (t == .hash_set or t == .sorted_set) .true_val else .false_val;
+}
+
 // --- registration ---
 
 const Entry = struct {
@@ -97,6 +148,12 @@ const ENTRIES = [_]Entry{
     .{ .name = "string?", .f = &stringQ },
     .{ .name = "integer?", .f = &integerQ },
     .{ .name = "number?", .f = &numberQ },
+    .{ .name = "symbol?", .f = &symbolQ },
+    .{ .name = "keyword?", .f = &keywordQ },
+    .{ .name = "vector?", .f = &vectorQ },
+    .{ .name = "list?", .f = &listQ },
+    .{ .name = "map?", .f = &mapQ },
+    .{ .name = "set?", .f = &setQ },
 };
 
 pub fn register(env: *Env, rt_ns: *env_mod.Namespace) !void {
