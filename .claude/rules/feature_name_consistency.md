@@ -49,6 +49,11 @@ in every file path listed under `files:`. Exceptions:
 - `wrap:` (value-wrap helpers like `collection/string.zig`) may
   legitimately not contain the keyword — they are reused across
   features. This slot is exempt from G3.
+- `surface:` (Java-surface paths under `runtime/java/<pkg>/<Class>.zig`)
+  uses the Java class name (PascalCase) which rarely matches the
+  lower_snake_case impl keyword. Grep by Java class name is the
+  canonical way to find a surface; G3 enforces the keyword link
+  only on impl / impl_extras / clojure_peer slots.
 
 ### R2. Backend marker docstring on every surface file
 

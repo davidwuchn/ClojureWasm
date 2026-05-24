@@ -119,7 +119,16 @@ tiers:
       - { fqn: "java.lang.Double",                       native_ns: "cljw.host.java.lang.Double",                       phase: 5 }
       - { fqn: "java.lang.Boolean",                      native_ns: "cljw.host.java.lang.Boolean",                      phase: 5 }
       - { fqn: "java.lang.Math",                         native_ns: "cljw.host.java.lang.Math",                         phase: 5 }
-      - { fqn: "java.lang.System",                       native_ns: "cljw.host.java.lang.System",                       phase: 5 }
+      - fqn: java.lang.System
+        cljw_ns: cljw.java.lang.System
+        keyword: clock
+        tier: A
+        phase: 6
+        files:
+          surface: runtime/java/lang/System.zig
+          impl: runtime/clock.zig
+        methods: [currentTimeMillis, nanoTime]
+        clojure_peer_vars: []
       - { fqn: "java.lang.Throwable",                    native_ns: "cljw.host.java.lang.Throwable",                    phase: 5 }
       - { fqn: "java.lang.Exception",                    native_ns: "cljw.host.java.lang.Exception",                    phase: 5 }
       - { fqn: "java.lang.Thread",                       native_ns: "cljw.host.java.lang.Thread",                       phase: 14 }

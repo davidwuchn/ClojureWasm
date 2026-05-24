@@ -182,7 +182,14 @@ while IFS='|' read -r fqn keyword slot path; do
     # `wrap:` slot is exempt from keyword matching per R1 (value-wrap
     # helpers like runtime/collection/string.zig are legitimately
     # reused across features). Existence is still checked above.
-    if [ "$slot" = "wrap" ]; then
+    #
+    # `surface:` slot is also exempt — Java-surface paths use the
+    # Java class name (PascalCase, e.g. UUID.zig / System.zig) which
+    # rarely matches the lower_snake_case impl keyword. Grep by Java
+    # class name is the canonical way to find a Java surface;
+    # G3 enforces the keyword link only on impl / impl_extras /
+    # clojure_peer slots.
+    if [ "$slot" = "wrap" ] || [ "$slot" = "surface" ]; then
         continue
     fi
     if ! path_has_keyword "$keyword" "$path"; then
