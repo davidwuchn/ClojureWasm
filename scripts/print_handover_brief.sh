@@ -1,6 +1,13 @@
 #!/usr/bin/env bash
 # print_handover_brief.sh — SessionStart / PostCompact hook.
-# Prints handover.md current state + active task + git log -3 + language policy.
+# Prints handover.md Resume contract + current state + active task
+# + git log -3 + language policy.
+#
+# Resume contract is the top section of handover.md per the rule
+# `.claude/rules/handover_framing.md` (mandatory, 3-5 lines): HEAD
+# pointer / First commit MUST be / Forbidden this session. Surfaced
+# first so the resuming loop sees the contract before any other
+# context.
 
 set -euo pipefail
 
@@ -16,10 +23,11 @@ echo "=== handover brief (auto from hook) ==="
 echo ""
 
 awk '
-    /^## Current state/ { in_section=1; print; next }
-    /^## Active task/   { in_section=1; print; next }
-    /^## /              { in_section=0 }
-    in_section          { print }
+    /^## Resume contract/ { in_section=1; print; next }
+    /^## Current state/   { in_section=1; print; next }
+    /^## Active task/     { in_section=1; print; next }
+    /^## /                { in_section=0 }
+    in_section            { print }
 ' "$HANDOVER"
 
 echo ""

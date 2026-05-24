@@ -4,22 +4,34 @@
 > [`.claude/rules/handover_framing.md`](../.claude/rules/handover_framing.md).
 > Updated at session end; reads in < 30 sec at cold start.
 
-## Next 6 files to read (cold-start order)
+## Resume contract
 
-1. `.dev/handover.md` (this file) — current state + active task.
-2. `CLAUDE.md` § Project spirit + § Autonomous Workflow (Step 0 → 7)
-   + § The only stop (single condition: user explicit stop) +
-   § Smell triggers are interrupts, not stops.
-3. `.dev/project_facts.md` — user-declared invariants F-001..F-009
-   (treat as project law; never amend without user direction).
-4. `.dev/principle.md` — Bad Smell catalogue (16 entries) +
-   Structural imagination phase + Devil's-advocate subagent
-   mandate at depth ≥ 2 (F-NNN envelope).
-5. `.dev/structure_plan.md` — anticipated directory tree
-   Phase 5-20 (decree entries vs imagination entries).
-6. `.dev/ROADMAP.md` — Phase 6 IN-PROGRESS (§9.8). Take the
-   first `[ ]` row. Phase 6 entry ADRs / Entry debts / Entry
-   facts in the §9.8 placeholder.
+- **HEAD**: `a46a241` (see `git log` for stale-drift; HEAD line
+  refreshes only on Active-task-identifier change per the
+  ≤ 2 / session cap).
+- **First commit on resume MUST be**: ADR-0031 Alt 2 cycle 1
+  parser extension — recursive-descent refactor that adds
+  alternation `|` and the `*`/`+`/`?` quantifiers as the next
+  pair, so `Inst.split` / `Inst.jmp` join the IR and `tryMatchAt`
+  is replaced by the proper Pike-VM thread-list driver in
+  `runtime/regex/match.zig`. Acceptance: `(re-find #"a|b" "xby")`
+  → `{start=1, end=2}` and `(re-find #"a*" "aaa")` → `{start=0,
+  end=3}` green at the Zig unit-test layer.
+- **Forbidden this session**: (a) expanding `core.zig` /
+  `math.zig` primitive cluster — 6.16 is closed at 48 fns; only
+  re-open if a downstream caller (6.9 clojure.string etc.)
+  genuinely needs a primitive that is absent. (b) handover
+  HEAD-pointer churn — leave the field stale and refresh only
+  when the Active-task identifier itself changes. (c) Proposed
+  ADR landing across session boundaries (CLAUDE.md
+  Proposed→Accepted same-cycle rule).
+
+## Cold-start reading order
+
+handover (this file) → CLAUDE.md (§ Project spirit + § Autonomous
+Workflow + § The only stop) → `.dev/project_facts.md` (F-001..F-009)
+→ `.dev/principle.md` (Bad Smell + Devil's-advocate mandate)
+→ `.dev/structure_plan.md` → `.dev/ROADMAP.md` §9.8.
 
 ## Current state
 
@@ -36,19 +48,7 @@
 - **Gate**: Mac 16/16 + OrbStack Ubuntu x86_64 15/15 green.
 - **Chapter cadence**: dormant per ADR-0025 + F-007.
 
-## Phase 5 closing (2026-05-24)
-
-ADR-0029 cluster (Java + cljw surface layout, F-009) + ADR-0030
-(defrecord/reify → Phase 7) + 5.9-5.16 landings (numeric tower,
-TypeDescriptor, deftype skeleton, exit smoke). Boundary review
-chain absorbed audit_scaffolding findings (handover, CLAUDE.md
-F-009 enumeration, 3 rules' paths frontmatter, compat_tiers
-sync header). D-032 Discharged.
-
-Phase 6.1 (analyzer.zig split per D-030, deferred 5.13) landed
-2026-05-24 in 5 commits (1ac8198..149371f); D-030 discharged.
-
-## Active task — §9.8 next: 6.6 (regex ADR) or 6.13 (yaml sweep)
+## Active task — §9.8 row 6.6 (regex impl against ADR-0031)
 
 Phase 6 progressed 8/16. Row 6.16 cluster expanded into a
 broad Tier A surface (46 fns across `core.zig` predicates +
