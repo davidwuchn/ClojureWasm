@@ -30,6 +30,7 @@ const testing = std.testing;
 
 const heap_header = @import("../value/heap_header.zig");
 const free_pool_mod = @import("free_pool.zig");
+const value_mod_for_test = @import("../value/value.zig"); // tests only — HeapTag tag-byte sanity
 
 const HeapHeader = heap_header.HeapHeader;
 const FreePoolMap = free_pool_mod.FreePoolMap;
@@ -49,17 +50,43 @@ pub const Stats = struct {
     last_live_bytes: usize = 0,
 };
 
+/// Per-allocation record on the GcHeap live list. Stores the type-
+/// erased `*HeapHeader` plus the original (size, alignment) so deinit
+/// / 5.3.c sweep can `rawFree` with the matching metadata back to
+/// `infra`. Without the per-record size + alignment, debug allocators
+/// trip "Invalid free" canaries because the type-erased *HeapHeader
+/// alone would imply an 8-byte destroy of a (typically larger) full
+/// allocation.
+pub const AllocRecord = struct {
+    header: *HeapHeader,
+    size: usize,
+    alignment: std.mem.Alignment,
+};
+
 /// Mark-sweep GC heap. Owns a list of tracked heap objects + per-size
 /// free pools; trigger threshold adapts based on the last live-set
 /// measurement.
+///
+/// Live-list shape (per 5.3.b.1 design decision, depth 1):
+/// **side-table** `ArrayListUnmanaged(AllocRecord)` on GcHeap rather
+/// than an intrusive `next: ?*HeapHeader` field on HeapHeader. Reason:
+/// (1) preserves ADR-0009's 8-byte HeapHeader invariant (avoiding
+/// header-grow surgery); (2) matches cw v0's path (refined per
+/// ADR-0028 audit bullet #5 — only the mark BIT goes inline per
+/// ADR-0028 §6, not the live-list link); (3) sweep walk stays
+/// sequential through ArrayList memory (cache-friendly), which is
+/// what the cw v0 perf inheritance language in ADR-0028 §3 cares
+/// about. Each record carries (size, alignment) so the deinit /
+/// sweep `rawFree` paths match what `rawAlloc` originally requested.
 pub const GcHeap = struct {
     /// Backing allocator for raw heap pages. Per F-006 §2 this is the
     /// process-lifetime GPA (`infra_alloc`).
     infra: std.mem.Allocator,
-    /// Singly-linked live list head — `null` when the heap is empty.
-    /// Threaded through a `next: ?*HeapHeader` field that 5.3.b adds
-    /// to the header's spare bytes; not present at 5.3.a skeleton.
-    live_head: ?*HeapHeader = null,
+    /// Side-table of live heap-object records. Append at alloc time;
+    /// swap-remove during sweep for dead objects. Per the docstring
+    /// design decision: side-table chosen over intrusive next-pointer
+    /// to preserve the 8-byte HeapHeader invariant.
+    allocations: std.ArrayList(AllocRecord) = .empty,
     /// Per-(size, alignment) free pool heads. Phase 5.3.c lands the
     /// intrusive FreeNode at offset 8 + recycling fast-path.
     free_pools: FreePoolMap = .empty,
@@ -77,21 +104,48 @@ pub const GcHeap = struct {
     }
 
     pub fn deinit(self: *GcHeap) void {
-        // 5.3.c lands the per-tag finaliser walk + free-pool drain. At
-        // 5.3.a skeleton the live list is empty (no allocations have
-        // landed) so deinit is a no-op safety check.
-        std.debug.assert(self.live_head == null);
+        // Drain every live allocation back to infra. Per-tag finalisers
+        // (ADR-0028 §4) land in 5.3.c; until then deinit just frees
+        // raw memory without per-tag side-effects (acceptable because
+        // gc.alloc has not been wired into Phase 1-4 alloc sites yet,
+        // so the only headers in the list are 5.3.b.1's allocator-
+        // test-fixture headers, not real Value payloads).
+        for (self.allocations.items) |rec| {
+            const mem = @as([*]u8, @ptrCast(rec.header))[0..rec.size];
+            self.infra.rawFree(mem, rec.alignment, @returnAddress());
+        }
+        self.allocations.deinit(self.infra);
         self.free_pools.deinit(self.infra);
     }
 
-    /// Allocate a typed heap object. **Phase 5.3.a stub** — raises
-    /// `Code.gc_alloc_not_supported` per ADR-0017 amendment 1 +
-    /// `no_op_stub_forbidden.md` explicit-error pattern. 5.3.b lands
-    /// the body (free-pool fast-path → infra slow-path → adaptive
-    /// trigger check) and 5.3.d migrates Phase 1-4 call sites.
+    /// Allocate a typed heap object on the GC heap. **Phase 5.3.b.1**:
+    /// straight-through `infra.rawAlloc` + append to allocations.
+    /// Caller initialises the value (HeapHeader and payload fields).
+    /// 5.3.c will add the free-pool fast-path; 5.3.b.4 will wire the
+    /// adaptive-threshold collect trigger.
+    ///
+    /// Convention: `T` must have `HeapHeader` as its first field so
+    /// the returned `*T` and `*HeapHeader` are pointer-aliases. The
+    /// caller-side existing pattern (`pub const BigInt = struct {
+    /// header: HeapHeader, ... }`) satisfies this; an inconsistent T
+    /// would mis-link the live list and surface as a debugger-only
+    /// invariant violation. 5.3.b.4 lands a comptime check.
     pub fn alloc(self: *GcHeap, comptime T: type) !*T {
-        _ = self;
-        return error.GcAllocNotSupported;
+        const align_t: std.mem.Alignment = .fromByteUnits(@alignOf(T));
+        const raw = self.infra.rawAlloc(@sizeOf(T), align_t, @returnAddress()) orelse
+            return error.OutOfMemory;
+        errdefer self.infra.rawFree(raw[0..@sizeOf(T)], align_t, @returnAddress());
+        const obj: *T = @ptrCast(@alignCast(raw));
+        const hdr: *HeapHeader = @ptrCast(@alignCast(raw));
+        try self.allocations.append(self.infra, .{
+            .header = hdr,
+            .size = @sizeOf(T),
+            .alignment = align_t,
+        });
+        self.stats.bytes_allocated += @sizeOf(T);
+        self.stats.alloc_count += 1;
+        self.bytes_since_last_gc += @sizeOf(T);
+        return obj;
     }
 
     /// Trigger a mark-sweep collection cycle. **Phase 5.3.a stub.**
@@ -111,18 +165,51 @@ test "GcHeap.init / deinit on an empty heap" {
     var gc = GcHeap.init(testing.allocator);
     defer gc.deinit();
 
-    try testing.expect(gc.live_head == null);
+    try testing.expectEqual(@as(usize, 0), gc.allocations.items.len);
     try testing.expectEqual(@as(usize, 0), gc.stats.bytes_allocated);
     try testing.expectEqual(@as(u64, 0), gc.stats.alloc_count);
     try testing.expectEqual(@as(usize, default_gc_threshold_bytes), gc.threshold_bytes);
 }
 
-test "GcHeap.alloc raises gc_alloc_not_supported at 5.3.a skeleton" {
+test "GcHeap.alloc tracks bytes + count + bytes_since_last_gc" {
+    // Use a HeapHeader-prefixed test type to satisfy the 5.3.b.1
+    // "HeapHeader at offset 0" convention.
+    const Cell = extern struct { header: HeapHeader, payload: u64 = 0 };
+
     var gc = GcHeap.init(testing.allocator);
     defer gc.deinit();
 
-    const result = gc.alloc(u32);
-    try testing.expectError(error.GcAllocNotSupported, result);
+    const c1 = try gc.alloc(Cell);
+    c1.* = .{ .header = HeapHeader.init(.string) };
+    try testing.expectEqual(@as(usize, 1), gc.allocations.items.len);
+    try testing.expectEqual(@as(usize, @sizeOf(Cell)), gc.stats.bytes_allocated);
+    try testing.expectEqual(@as(u64, 1), gc.stats.alloc_count);
+    try testing.expectEqual(@as(usize, @sizeOf(Cell)), gc.bytes_since_last_gc);
+
+    const c2 = try gc.alloc(Cell);
+    c2.* = .{ .header = HeapHeader.init(.vector) };
+    try testing.expectEqual(@as(usize, 2), gc.allocations.items.len);
+    try testing.expectEqual(@as(usize, 2 * @sizeOf(Cell)), gc.stats.bytes_allocated);
+    try testing.expectEqual(@as(u64, 2), gc.stats.alloc_count);
+}
+
+test "GcHeap.alloc returned pointer aliases the live-list HeapHeader" {
+    // The HeapHeader-at-offset-0 convention means the returned *T and
+    // the live-list *HeapHeader are pointer-aliases (same address);
+    // 5.3.b mark / 5.3.c sweep both rely on this.
+    const Cell = extern struct { header: HeapHeader, payload: u64 = 0 };
+
+    var gc = GcHeap.init(testing.allocator);
+    defer gc.deinit();
+
+    const c = try gc.alloc(Cell);
+    c.* = .{ .header = HeapHeader.init(.list) };
+
+    const rec = gc.allocations.items[0];
+    const hdr_via_cast: *HeapHeader = @ptrCast(c);
+    try testing.expectEqual(rec.header, hdr_via_cast);
+    try testing.expectEqual(@as(u8, @intFromEnum(value_mod_for_test.HeapTag.list)), rec.header.tag);
+    try testing.expectEqual(@sizeOf(Cell), rec.size);
 }
 
 test "GcHeap.collect is a no-op at 5.3.a skeleton" {
