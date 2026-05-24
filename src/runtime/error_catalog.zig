@@ -96,6 +96,16 @@ pub const Code = enum {
     catch_binding_not_symbol,
     catch_binding_namespace_qualified,
 
+    // --- Eval (tree-walk runtime) ---
+    /// args: `.{ .form = "Local"|"let*"|"loop*"|"catch", .index = N, .max = M }`
+    slot_out_of_range,
+    /// args: `.{ .got = N, .max = M }`
+    recur_args_exceed_buffer,
+    /// args: `.{ .got = N, .max = M }`
+    call_args_exceed_max_locals,
+    /// args: `.{ .base = N, .arity = M, .max = K }`
+    fn_frame_exceeds_max_locals,
+
     // --- Reader macros / nesting / escapes (Phase 1 reader migration) ---
     form_nesting_too_deep,
     delimiter_unmatched_at_eof,
@@ -305,6 +315,24 @@ pub fn entry(comptime code: Code) Entry {
         .catch_binding_namespace_qualified => .{
             .kind = .syntax_error, .phase = .analysis,
             .template = "catch binding must not be namespace-qualified",
+        },
+
+        // --- Eval (tree-walk runtime) ---
+        .slot_out_of_range => .{
+            .kind = .index_error, .phase = .eval,
+            .template = "{[form]s} slot {[index]d} out of range (max {[max]d})",
+        },
+        .recur_args_exceed_buffer => .{
+            .kind = .not_implemented, .phase = .eval,
+            .template = "recur with {[got]d} args exceeds buffer ({[max]d})",
+        },
+        .call_args_exceed_max_locals => .{
+            .kind = .not_implemented, .phase = .eval,
+            .template = "Call with {[got]d} args exceeds the limit of {[max]d}",
+        },
+        .fn_frame_exceeds_max_locals => .{
+            .kind = .not_implemented, .phase = .eval,
+            .template = "fn frame ({[base]d}+{[arity]d}) exceeds the limit of {[max]d}",
         },
 
         // --- Reader macros / nesting / escapes ---

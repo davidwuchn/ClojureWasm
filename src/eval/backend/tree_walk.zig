@@ -39,6 +39,7 @@ const env_mod = @import("../../runtime/env.zig");
 const Env = env_mod.Env;
 const Var = env_mod.Var;
 const error_mod = @import("../../runtime/error.zig");
+const error_catalog = @import("../../runtime/error_catalog.zig");
 const SourceLocation = error_mod.SourceLocation;
 const dispatch = @import("../../runtime/dispatch.zig");
 const node_mod = @import("../node.zig");
@@ -51,13 +52,14 @@ const BytecodeChunk = opcode_mod.BytecodeChunk;
 /// frame-size known at analyse time.
 pub const MAX_LOCALS: u16 = 256;
 
-/// TreeWalk error surface. Aliases `error_mod.ClojureWasmError` so calls to
-/// `setErrorFmt` type-check; the backend still only **emits**
-/// `error.TypeError` (non-callable callee), `error.ArityError`
-/// (wrong number of args), `error.IndexError` (slot out of range),
-/// `error.NotImplemented` (Phase-3+ feature stub), and
-/// `error.OutOfMemory`. Mirrors the `ReadError` / `AnalyzeError`
-/// treatment in §9.5/3.2 / 3.3.
+/// TreeWalk error surface. Aliases `error_mod.ClojureWasmError` so
+/// calls to `error_catalog.raise(.code, loc, args)` type-check; the
+/// backend still only **emits** `error.TypeError` (non-callable
+/// callee), `error.ArityError` (wrong number of args),
+/// `error.IndexError` (slot out of range), `error.NotImplemented`
+/// (Phase-3+ feature stub), `error.InternalError` (defensive runtime
+/// invariants), and `error.OutOfMemory`. Mirrors the `ReadError` /
+/// `AnalyzeError` treatment in §9.5/3.2 / 3.3.
 pub const EvalError = error_mod.ClojureWasmError;
 
 // --- §9.5/3.11 control-flow signals ---
@@ -216,7 +218,7 @@ pub fn eval(
         .constant => |n| n.value,
         .local_ref => |n| {
             if (n.index >= locals.len)
-                return error_mod.setErrorFmt(.eval, .index_error, n.loc, "Local slot {d} out of range (max {d})", .{ n.index, locals.len });
+                return error_catalog.raise(.slot_out_of_range, n.loc, .{ .form = "Local", .index = n.index, .max = locals.len });
             return locals[n.index];
         },
         .var_ref => |n| n.var_ptr.deref(),
@@ -237,7 +239,7 @@ pub fn eval(
 fn evalDef(rt: *Runtime, env: *Env, locals: []Value, n: node_mod.DefNode) !Value {
     const v = try eval(rt, env, locals, n.value_expr);
     const ns = env.current_ns orelse
-        return error_mod.setErrorFmt(.eval, .internal_error, n.loc, "def: no current namespace", .{});
+        return error_catalog.raise(.internal_error, n.loc, .{ .detail = "def: no current namespace" });
     const var_ptr = try env.intern(ns, n.name, v);
     var_ptr.flags.dynamic = n.is_dynamic;
     var_ptr.flags.macro_ = n.is_macro;
@@ -267,7 +269,7 @@ fn evalDo(rt: *Runtime, env: *Env, locals: []Value, forms: []const Node) !Value 
 fn evalLet(rt: *Runtime, env: *Env, locals: []Value, n: node_mod.LetNode) !Value {
     for (n.bindings) |b| {
         if (b.index >= locals.len)
-            return error_mod.setErrorFmt(.eval, .index_error, n.loc, "let* slot {d} out of range (max {d})", .{ b.index, locals.len });
+            return error_catalog.raise(.slot_out_of_range, n.loc, .{ .form = "let*", .index = b.index, .max = locals.len });
         locals[b.index] = try eval(rt, env, locals, b.value_expr);
     }
     return eval(rt, env, locals, n.body);
@@ -278,7 +280,7 @@ fn evalLoop(rt: *Runtime, env: *Env, locals: []Value, n: node_mod.LoopNode) anye
     // here to rewrite the same slots and re-enter the body.
     for (n.bindings) |b| {
         if (b.index >= locals.len)
-            return error_mod.setErrorFmt(.eval, .index_error, n.loc, "loop* slot {d} out of range (max {d})", .{ b.index, locals.len });
+            return error_catalog.raise(.slot_out_of_range, n.loc, .{ .form = "loop*", .index = b.index, .max = locals.len });
         locals[b.index] = try eval(rt, env, locals, b.value_expr);
     }
     while (true) {
@@ -287,7 +289,7 @@ fn evalLoop(rt: *Runtime, env: *Env, locals: []Value, n: node_mod.LoopNode) anye
         } else |err| switch (err) {
             error.RecurSignaled => {
                 if (pending_recur_len != n.bindings.len)
-                    return error_mod.setErrorFmt(.eval, .arity_error, n.loc, "recur to loop*: expected {d} arg(s), got {d}", .{ n.bindings.len, pending_recur_len });
+                    return error_catalog.raise(.recur_arity_mismatch, n.loc, .{ .target = "loop*", .expected = n.bindings.len, .got = pending_recur_len });
                 for (n.bindings, 0..) |b, i| {
                     locals[b.index] = pending_recur_buf[i];
                 }
@@ -300,7 +302,7 @@ fn evalLoop(rt: *Runtime, env: *Env, locals: []Value, n: node_mod.LoopNode) anye
 
 fn evalRecur(rt: *Runtime, env: *Env, locals: []Value, n: node_mod.RecurNode) anyerror!Value {
     if (n.args.len > pending_recur_buf.len)
-        return error_mod.setErrorFmt(.eval, .not_implemented, n.loc, "recur with {d} args exceeds buffer ({d})", .{ n.args.len, pending_recur_buf.len });
+        return error_catalog.raise(.recur_args_exceed_buffer, n.loc, .{ .got = n.args.len, .max = pending_recur_buf.len });
     // Evaluate **all** args before mutating any slot — otherwise a
     // recur arg that referenced an earlier binding would see the
     // partially-rewritten frame. Stash them in the threadlocal scratch
@@ -330,14 +332,14 @@ fn evalTry(rt: *Runtime, env: *Env, locals: []Value, n: node_mod.TryNode) anyerr
         return result;
     } else |err| switch (err) {
         error.ThrownValue => {
-            const thrown = dispatch.last_thrown_exception orelse return error_mod.setErrorFmt(.eval, .internal_error, n.loc, "ThrownValue without last_thrown_exception", .{});
+            const thrown = dispatch.last_thrown_exception orelse return error_catalog.raise(.internal_error, n.loc, .{ .detail = "ThrownValue without last_thrown_exception" });
             // Walk catch clauses linearly — Phase 3 only matches
             // `ExceptionInfo` against `.ex_info`-tagged Values.
             for (n.catch_clauses) |cc| {
                 if (catchMatches(cc.class_name, thrown)) {
                     dispatch.last_thrown_exception = null;
                     if (cc.binding_index >= locals.len)
-                        return error_mod.setErrorFmt(.eval, .index_error, cc.loc, "catch slot {d} out of range (max {d})", .{ cc.binding_index, locals.len });
+                        return error_catalog.raise(.slot_out_of_range, cc.loc, .{ .form = "catch", .index = cc.binding_index, .max = locals.len });
                     locals[cc.binding_index] = thrown;
                     const caught = eval(rt, env, locals, cc.body);
                     if (n.finally_body) |fb| {
@@ -380,7 +382,7 @@ fn evalCall(rt: *Runtime, env: *Env, locals: []Value, n: node_mod.CallNode) !Val
     const callee = try eval(rt, env, locals, n.callee);
     var args_buf: [MAX_LOCALS]Value = undefined;
     if (n.args.len > MAX_LOCALS)
-        return error_mod.setErrorFmt(.eval, .not_implemented, n.loc, "Call with {d} args exceeds Phase-2 MAX_LOCALS ({d})", .{ n.args.len, MAX_LOCALS });
+        return error_catalog.raise(.call_args_exceed_max_locals, n.loc, .{ .got = n.args.len, .max = MAX_LOCALS });
     for (n.args, 0..) |*a, i| {
         args_buf[i] = try eval(rt, env, locals, a);
     }
@@ -388,7 +390,7 @@ fn evalCall(rt: *Runtime, env: *Env, locals: []Value, n: node_mod.CallNode) !Val
     if (rt.vtable) |vt| {
         return vt.callFn(rt, env, callee, args, n.loc);
     }
-    return error_mod.setErrorFmt(.eval, .internal_error, n.loc, "Runtime vtable not installed; cannot dispatch call", .{});
+    return error_catalog.raise(.internal_error, n.loc, .{ .detail = "Runtime vtable not installed; cannot dispatch call" });
 }
 
 // --- Backend's callFn (registered as rt.vtable.callFn) ---
@@ -406,7 +408,7 @@ pub fn treeWalkCall(
     return switch (callee.tag()) {
         .fn_val => callFunction(rt, env, callee, args, loc),
         .builtin_fn => callBuiltin(rt, env, callee, args, loc),
-        else => |t| error_mod.setErrorFmt(.eval, .type_error, loc, "Cannot call value of type '{s}'", .{@tagName(t)}),
+        else => |t| error_catalog.raise(.value_not_callable, loc, .{ .actual = @tagName(t) }),
     };
 }
 
@@ -414,13 +416,13 @@ pub fn callFunction(rt: *Runtime, env: *Env, fn_val: Value, args: []const Value,
     const f = fn_val.decodePtr(*Function);
     if (!f.has_rest) {
         if (args.len != f.arity)
-            return error_mod.setErrorFmt(.eval, .arity_error, loc, "Wrong number of args ({d}) passed to fn (expected {d})", .{ args.len, f.arity });
+            return error_catalog.raise(.arity_not_expected, loc, .{ .fn_name = "fn", .got = args.len, .expected = f.arity });
     } else {
         if (args.len < f.arity)
-            return error_mod.setErrorFmt(.eval, .arity_error, loc, "Wrong number of args ({d}) passed to fn (expected at least {d})", .{ args.len, f.arity });
+            return error_catalog.raise(.arity_below_min, loc, .{ .fn_name = "fn", .got = args.len, .min = f.arity });
     }
     if (@as(usize, f.slot_base) + f.arity + @intFromBool(f.has_rest) > MAX_LOCALS)
-        return error_mod.setErrorFmt(.eval, .not_implemented, loc, "fn frame ({d}+{d}) exceeds MAX_LOCALS ({d})", .{ f.slot_base, f.arity, MAX_LOCALS });
+        return error_catalog.raise(.fn_frame_exceeds_max_locals, loc, .{ .base = f.slot_base, .arity = f.arity, .max = MAX_LOCALS });
     var locals: [MAX_LOCALS]Value = [_]Value{.nil_val} ** MAX_LOCALS;
     // Replay captured outer locals into the fresh frame so LocalRefs
     // resolved against the analyser's enclosing scope still find their
