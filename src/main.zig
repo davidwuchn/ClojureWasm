@@ -258,6 +258,7 @@ test {
     _ = @import("runtime/collection/ex_info.zig");
     _ = @import("runtime/collection/list.zig");
     _ = @import("runtime/collection/string.zig");
+    _ = @import("runtime/collection/vector.zig");
     _ = @import("runtime/hash.zig");
     _ = @import("runtime/keyword.zig");
     _ = @import("runtime/print.zig");

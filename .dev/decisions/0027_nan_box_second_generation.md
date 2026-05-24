@@ -70,12 +70,12 @@ C2  ref               C6  reduced           C10  transient_set      C14 sorted_m
 C3  volatile          C7  ex_info           C11  reserved           C15 sorted_set
 ```
 
-**Group D (slots 48..63) — Numeric + wasm + extension**
+**Group D (slots 48..63) — Numeric + wasm + extension + vector internals**
 ```
-D0  big_int           D4  wasm_module       D8   matcher            D12 reserved
+D0  big_int           D4  wasm_module       D8   matcher            D12 tail_node
 D1  ratio             D5  wasm_fn           D9   tuple              D13 reserved
 D2  big_decimal       D6  wasm_funcref      D10  box                D14 reserved
-D3  array             D7  wasm_externref    D11  reserved           D15 reserved
+D3  array             D7  wasm_externref    D11  hamt_node          D15 reserved
 ```
 
 `wasm_funcref` / `wasm_externref` at D6 / D7 are **inline-tagged**, committed by F-004 (decree). zwasm v2 §4.1 encodes `*const FuncEntity` with `align(8)` (F-008) — fits the 45-bit shifted pointer field with margin. The D-036 Phase 16 decision is **only about the marshalling wrapper** (whether `host_func.zig` exposes an additional Pod-shaped wrapper around the inline body for FFI hand-off); the slot encoding itself is decreed inline by F-004. This resolves the internal contradiction Devil's-advocate flagged on the §2 draft (cross-coupling §"wasm_funcref / wasm_externref inline reservation" row).
@@ -253,3 +253,4 @@ Load-bearing concern #3 (Group A density vs Group D sparseness; `hash_set` displ
 
   **Amendment 2's narrative was itself partly wrong** (corrected in amendment 3): it claimed a "1 residual bit at position 0 reserved per F-004 implicit" arising from "51-bit payload − 2 group − 4 sub − 44 pointer = 1 residual". That arithmetic conflated the 13-bit NaN signal at bits 63..51 with the 3-bit band selector at bits 50..48 — the actual payload below top16 (bits 47..0) is 48 bits, of which g2 uses 4 sub-type + 44 pointer = 48 exactly, with no residual bit. The "Devil's-advocate Alt 2 item 3 → withdrawn because F-004 violation" disposition stays correct (widening to 45-bit pointer does violate F-004), but the "bit-0 is F-004-decreed reservation" framing in §1 was incorrect.
 - 2026-05-24 (amendment 3): §1 bit layout table re-corrected — there is **no residual reservation bit**. g2 partition: bits 63..51 quiet-NaN signal (13) + bits 50..48 band selector low (3, part of `0xFFFx`) + bits 47..44 sub-type (4) + bits 43..0 pointer payload (44) = 64 exactly. The `NB_HEAP_SUBTYPE_SHIFT` constant moves from 45 (g1) → 44 (g2); the `NB_ADDR_SHIFTED_MASK` moves from `0x1FFF_FFFF_FFFF` (45-bit) → `0x0FFF_FFFF_FFFF` (44-bit). 5.2.b source landing uses the corrected constants (`src/runtime/value/nan_box.zig`). Devil's-advocate Alt 2 item 3 stays withdrawn — there is no bit to reclaim or name; the layout is exact. Smell trigger: caught when 5.2.b's test gate failed on `runtime.value.value.test.F-004 day-1 Tag additions encode + decode through Group A` ("expected .range, found .type_descriptor") — the SHIFT=45 spilled the sub-type's high bit into top16's bit 48, corrupting the band identifier. The principled fix matches F-004's decree exactly. Smell category: Spec-drift (the amendment-2 arithmetic was wrong).
+- 2026-05-24 (amendment 4): §2 Group D slot map names **D11 = `hamt_node`** + **D12 = `tail_node`** for PersistentVector internals (§9.7 row 5.4.a). Both are vector backing types per the survey at `private/notes/phase5-5.4-survey.md` — HamtNode is the 32-slot HAMT interior/leaf node, TailNode is the 32-element tail array. Naming 2 of the 6 D-043 anonymous reserves at this row matches the "name when a use case lands" disposition recorded in the original D-043 row text. Per F-NNN envelope: F-004's "indicative slot map" + F-002 finished-form let the ADR name a reserve when a concrete consumer lands; this is not an F-NNN amendment, just a slot-naming refinement within the F-004 envelope. D-043 reservation count drops 6 → 4 (B15 / C13–D13 / D14 / D15 remain anonymous and stay on D-043's Phase 7 entry deadline).
