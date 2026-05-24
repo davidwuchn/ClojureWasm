@@ -230,15 +230,13 @@ pub const GcHeap = struct {
         return obj;
     }
 
-    /// Trigger a mark-sweep collection cycle. **Phase 5.3.a stub.**
-    /// 5.3.b lands the mark phase (root enumeration + transitive
-    /// trace via `tag_ops.tag_trace_table`); 5.3.c lands the sweep
-    /// phase (per-tag finaliser dispatch + free-pool push).
-    pub fn collect(self: *GcHeap) void {
-        _ = self;
-        // No-op at 5.3.a; the stats counter stays at zero to make
-        // "collection never ran" detectable from a test.
-    }
+    // The `collect()` orchestrator lives in `mark_sweep.zig` per
+    // 5.3.b.5 — it imports `root_set.zig` which itself imports
+    // `gc_heap.zig`, so the natural cycle-free place for the entry
+    // point is `mark_sweep.collect(gc, ctx)`. Callers (5.3.d alloc-
+    // site migration, future `(System/gc)`) reach the entry point
+    // through `mark_sweep.collect`, not through a method on this
+    // struct.
 };
 
 // --- tests ---
@@ -311,15 +309,6 @@ test "GcHeap.alloc returned pointer aliases the live-list HeapHeader" {
     try testing.expectEqual(rec.header, hdr_via_cast);
     try testing.expectEqual(@as(u8, @intFromEnum(value_mod.HeapTag.list)), rec.header.tag);
     try testing.expectEqual(@sizeOf(Cell), rec.size);
-}
-
-test "GcHeap.collect is a no-op at 5.3.a skeleton" {
-    var gc = GcHeap.init(testing.allocator);
-    defer gc.deinit();
-
-    const before = gc.stats.collect_count;
-    gc.collect();
-    try testing.expectEqual(before, gc.stats.collect_count);
 }
 
 test "Stats struct shape" {

@@ -27,6 +27,7 @@ const gc_heap_mod = @import("gc_heap.zig");
 const heap_header = @import("../value/heap_header.zig");
 const tag_ops = @import("tag_ops.zig");
 const free_pool_mod = @import("free_pool.zig");
+const root_set_mod = @import("root_set.zig");
 
 const GcHeap = gc_heap_mod.GcHeap;
 const HeapHeader = heap_header.HeapHeader;
@@ -106,6 +107,38 @@ pub fn sweep(gc: *GcHeap) void {
     }
     gc.stats.sweep_count += 1;
     gc.stats.last_live_bytes = live_bytes;
+}
+
+/// Full mark-sweep collection cycle: enumerate every root via
+/// `root_set.enumerate(ctx)`, mark each transitively (per-tag trace
+/// dispatch handles outgoing pointers), sweep the live list
+/// (per-tag finaliser → push onto free pool / direct rawFree
+/// fallback), then update the adaptive threshold per ADR-0028 §1
+/// (`threshold_bytes = max(default, last_live_bytes * 2)`) and
+/// reset `bytes_since_last_gc`. **Phase 5.3.b.5 body.**
+///
+/// Callers invoke this directly rather than through a method on
+/// `GcHeap` because the cycle traverses `root_set.zig` which itself
+/// imports `gc_heap.zig` — the entry point lives here in
+/// `mark_sweep.zig` to keep the import graph acyclic.
+///
+/// Adaptive-threshold semantics (per ADR-0028 §1 Load-bearing
+/// concern #2 disposition): after sweep updates `stats.last_live_bytes`,
+/// the next-trigger threshold is recomputed so it doubles on each
+/// growth cycle. Prevents the "first def triggers a full GC mid-
+/// load on a 4 MiB Clojure source" failure mode.
+pub fn collect(gc: *GcHeap, ctx: root_set_mod.WalkContext) void {
+    var it = root_set_mod.enumerate(ctx);
+    while (it.next()) |root_header| {
+        mark(gc, root_header);
+    }
+    sweep(gc);
+    gc.threshold_bytes = @max(
+        gc_heap_mod.default_gc_threshold_bytes,
+        gc.stats.last_live_bytes *| 2,
+    );
+    gc.bytes_since_last_gc = 0;
+    gc.stats.collect_count += 1;
 }
 
 // --- tests ---
@@ -208,6 +241,49 @@ test "sweep on empty heap is a no-op (bumps sweep_count, no panics)" {
     sweep(&gc);
     try testing.expectEqual(@as(u64, 1), gc.stats.sweep_count);
     try testing.expectEqual(@as(usize, 0), gc.stats.last_live_bytes);
+}
+
+test "collect: pinned roots survive; unpinned allocations get swept" {
+    var gc = GcHeap.init(testing.allocator);
+    defer gc.deinit();
+
+    const cell_kept = try gc.alloc(Cell);
+    cell_kept.* = .{ .header = HeapHeader.init(.string) };
+    const cell_dropped = try gc.alloc(Cell);
+    cell_dropped.* = .{ .header = HeapHeader.init(.vector) };
+
+    const value_mod_test = @import("../value/value.zig");
+    try gc.pin(value_mod_test.Value.encodeHeapPtr(.string, cell_kept));
+
+    const before_alloc_count = gc.allocations.items.len;
+    try testing.expectEqual(@as(usize, 2), before_alloc_count);
+
+    collect(&gc, .{ .envs = &.{}, .gc = &gc });
+    try testing.expectEqual(@as(usize, 1), gc.allocations.items.len);
+    try testing.expectEqual(@as(u64, 1), gc.stats.collect_count);
+    try testing.expectEqual(@as(usize, @sizeOf(Cell)), gc.stats.last_live_bytes);
+    try testing.expectEqual(@as(usize, 0), gc.bytes_since_last_gc);
+    try testing.expectEqual(@as(*HeapHeader, @ptrCast(cell_kept)), gc.allocations.items[0].header);
+}
+
+test "collect: adaptive threshold = max(default, last_live_bytes * 2)" {
+    var gc = GcHeap.init(testing.allocator);
+    defer gc.deinit();
+
+    // No live allocations → last_live_bytes = 0 → threshold stays at default.
+    collect(&gc, .{ .envs = &.{}, .gc = &gc });
+    try testing.expectEqual(gc_heap_mod.default_gc_threshold_bytes, gc.threshold_bytes);
+
+    // Pin a heap Value so it survives the cycle. last_live_bytes = sizeOf(Cell);
+    // since 2 * sizeOf(Cell) is far below default, threshold still stays at default.
+    const cell = try gc.alloc(Cell);
+    cell.* = .{ .header = HeapHeader.init(.list) };
+    const value_mod_test = @import("../value/value.zig");
+    try gc.pin(value_mod_test.Value.encodeHeapPtr(.list, cell));
+
+    collect(&gc, .{ .envs = &.{}, .gc = &gc });
+    try testing.expectEqual(@as(usize, @sizeOf(Cell)), gc.stats.last_live_bytes);
+    try testing.expectEqual(gc_heap_mod.default_gc_threshold_bytes, gc.threshold_bytes);
 }
 
 test "sweep iterating backward keeps swap-remove indices valid" {
