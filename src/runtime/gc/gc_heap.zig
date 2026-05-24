@@ -47,6 +47,33 @@ pub const default_gc_threshold_bytes: usize = 1 * 1024 * 1024;
 /// live but become the FreeNode region on free.
 pub const min_alloc_bytes: usize = 16;
 
+/// Comptime invariant: every `T` passed to `GcHeap.alloc` must have
+/// `HeapHeader` as its first field. The returned `*T` and the
+/// live-list `*HeapHeader` are pointer-aliases — caster relies on
+/// offset 0 holding the header so mark/sweep can read `header.tag`
+/// without knowing T. A struct with a different first field would
+/// silently misinterpret the first bytes as a tag enum value, and
+/// the mis-link would surface only under a debugger or on the
+/// downstream sweep path (where the tag's `tag_finaliser_table`
+/// entry runs against the wrong memory). The check below fires at
+/// compile time so the bug never reaches a debugger.
+fn assertHeaderAtOffsetZero(comptime T: type) void {
+    const info = @typeInfo(T);
+    if (info != .@"struct") {
+        @compileError("GcHeap.alloc requires a struct type; got " ++ @typeName(T));
+    }
+    const fields = info.@"struct".fields;
+    if (fields.len == 0) {
+        @compileError("GcHeap.alloc requires T to have at least one field; " ++ @typeName(T) ++ " has none");
+    }
+    if (fields[0].type != HeapHeader) {
+        @compileError("GcHeap.alloc requires T to have HeapHeader as its first field; " ++ @typeName(T) ++ "'s first field is " ++ @typeName(fields[0].type));
+    }
+    if (@offsetOf(T, fields[0].name) != 0) {
+        @compileError("GcHeap.alloc requires HeapHeader at offset 0 of T; " ++ @typeName(T) ++ " has it at a different offset");
+    }
+}
+
 /// Allocation + collection statistics.
 pub const Stats = struct {
     bytes_allocated: usize = 0,
@@ -128,9 +155,12 @@ pub const GcHeap = struct {
     }
 
     /// Allocate a typed heap object on the GC heap. **Phase 5.3.c.2**:
-    /// free-pool fast-path → infra slow-path. Caller initialises the
-    /// value (HeapHeader and payload fields). 5.3.b.4 will wire the
-    /// adaptive-threshold collect trigger.
+    /// free-pool fast-path → infra slow-path. **Phase 5.3.b.4 adds
+    /// the comptime HeapHeader-at-offset-0 check.** Caller initialises
+    /// the value (HeapHeader and payload fields). Auto-trigger of
+    /// `collect()` mid-alloc lands once root walkers are wired at
+    /// 5.3.b.3 — without roots, an auto-collect would sweep every
+    /// allocation including the one we're about to return.
     ///
     /// Allocation size is rounded up to `min_alloc_bytes = 16` per
     /// ADR-0028 §3 so freed memory can host the FreeNode overlay at
@@ -140,10 +170,11 @@ pub const GcHeap = struct {
     /// Convention: `T` must have `HeapHeader` as its first field so
     /// the returned `*T` and `*HeapHeader` are pointer-aliases. The
     /// caller-side existing pattern (`pub const BigInt = struct {
-    /// header: HeapHeader, ... }`) satisfies this; an inconsistent T
-    /// would mis-link the live list and surface as a debugger-only
-    /// invariant violation. 5.3.b.4 lands a comptime check.
+    /// header: HeapHeader, ... }`) satisfies this; the comptime check
+    /// below rejects mis-typed `T` at compile time before the live-
+    /// list mis-link can land.
     pub fn alloc(self: *GcHeap, comptime T: type) !*T {
+        comptime assertHeaderAtOffsetZero(T);
         const align_t: std.mem.Alignment = .fromByteUnits(@alignOf(T));
         const effective_size: usize = @max(@sizeOf(T), min_alloc_bytes);
         const key = free_pool_mod.FreePoolKey{ .size = effective_size, .alignment = align_t };
