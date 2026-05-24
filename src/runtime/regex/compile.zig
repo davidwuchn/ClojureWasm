@@ -147,19 +147,34 @@ pub fn compile(alloc: std.mem.Allocator, pattern: []const u8, flags: Flags) Comp
 pub fn parsePattern(arena: std.mem.Allocator, pattern: []const u8, flags: Flags) CompileError!*const Node {
     _ = flags;
     if (pattern.len == 0) return CompileError.NotImplemented;
+    // Reject metachars other than '.' (which the cycle-1 atom
+    // parser handles below as a wildcard class).
     for (pattern) |c| {
-        if (isMetaChar(c)) return CompileError.NotImplemented;
+        if (isMetaChar(c) and c != '.') return CompileError.NotImplemented;
     }
     if (pattern.len == 1) {
         const node = try arena.create(Node);
-        node.* = .{ .lit = pattern[0] };
+        node.* = atomFor(pattern[0]);
         return node;
     }
     const children = try arena.alloc(Node, pattern.len);
-    for (pattern, 0..) |c, i| children[i] = .{ .lit = c };
+    for (pattern, 0..) |c, i| children[i] = atomFor(c);
     const root = try arena.create(Node);
     root.* = .{ .concat = children };
     return root;
+}
+
+/// Cycle-1 atom builder: literal byte, or `.` → all-set
+/// character class (cycle-1 simplification — JVM `.` excludes
+/// `\n`; the line-ending exclusion lands with the `(?s)` flag
+/// in cycle 4).
+fn atomFor(c: u8) Node {
+    if (c == '.') {
+        var cls: CharClass = .{};
+        for (0..256) |b| cls.set(@intCast(b));
+        return .{ .class = cls };
+    }
+    return .{ .lit = c };
 }
 
 fn isMetaChar(c: u8) bool {
@@ -186,6 +201,7 @@ fn emit(alloc: std.mem.Allocator, node: *const Node, flags: Flags) CompileError!
 fn emitNode(list: *std.ArrayList(Inst), alloc: std.mem.Allocator, node: *const Node) CompileError!void {
     switch (node.*) {
         .lit => |c| try list.append(alloc, .{ .char = c }),
+        .class => |cls| try list.append(alloc, .{ .class = cls }),
         .concat => |children| {
             for (children) |*ch| try emitNode(list, alloc, ch);
         },

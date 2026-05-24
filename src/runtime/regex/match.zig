@@ -109,6 +109,11 @@ fn tryMatchAt(
                 if (input[ip] != c) return null;
                 ip += 1;
             },
+            .class => |cls| {
+                if (ip >= input.len) return null;
+                if (!cls.contains(input[ip])) return null;
+                ip += 1;
+            },
             .match => return MatchResult{
                 .start = start,
                 .end = ip,
@@ -157,6 +162,23 @@ test "matchFull green on exact multi-char literal" {
     const r = (try matchFull(std.testing.allocator, &prog, "abc")).?;
     try std.testing.expectEqual(@as(u32, 0), r.start);
     try std.testing.expectEqual(@as(u32, 3), r.end);
+}
+
+test "dot matches any single character" {
+    var prog = try compile.compile(std.testing.allocator, ".", .{});
+    defer prog.deinit(std.testing.allocator);
+    const r1 = (try matchFull(std.testing.allocator, &prog, "x")).?;
+    try std.testing.expectEqual(@as(u32, 1), r1.end);
+    const r2 = (try matchFull(std.testing.allocator, &prog, "Z")).?;
+    try std.testing.expectEqual(@as(u32, 1), r2.end);
+}
+
+test "a.c matches abc / aZc but not ac" {
+    var prog = try compile.compile(std.testing.allocator, "a.c", .{});
+    defer prog.deinit(std.testing.allocator);
+    try std.testing.expect((try matchFull(std.testing.allocator, &prog, "abc")) != null);
+    try std.testing.expect((try matchFull(std.testing.allocator, &prog, "aZc")) != null);
+    try std.testing.expectEqual(@as(?MatchResult, null), try matchFull(std.testing.allocator, &prog, "ac"));
 }
 
 /// One Pike-VM step: advance every live thread by consuming
