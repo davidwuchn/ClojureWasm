@@ -467,9 +467,11 @@ fn analyzeSpecial(
         .recur_form => analyzeRecur(arena, rt, env, scope, items, form, macro_table),
         .try_form => analyzeTry(arena, rt, env, scope, items, form, macro_table),
         .throw_form => analyzeThrow(arena, rt, env, scope, items, form, macro_table),
-        .deftype_form => analyzeDeftype(arena, items, form),
+        .deftype_form => special_forms.analyzeDeftype(arena, items, form),
     };
 }
+
+const special_forms = @import("special_forms.zig");
 
 /// `(deftype Name [field1 field2 ...])` per ADR-0007 Option β +
 /// ROADMAP §9.7 / 5.12.a. Phase 5.12.a accepts declaration only —
@@ -516,42 +518,6 @@ fn analyzeFieldAccess(
     n.* = .{ .field_access_node = .{
         .field_name = field_name,
         .target = target,
-        .loc = form.location,
-    } };
-    return n;
-}
-
-fn analyzeDeftype(arena: std.mem.Allocator, items: []const Form, form: Form) AnalyzeError!*const Node {
-    if (items.len < 3) {
-        return error_catalog.raise(.feature_not_supported, form.location, .{ .name = "deftype with no field list" });
-    }
-    if (items[1].data != .symbol) {
-        return error_catalog.raise(.def_name_not_symbol, items[1].location, .{});
-    }
-    const name_sym = items[1].data.symbol;
-    if (name_sym.ns != null) {
-        return error_catalog.raise(.def_name_namespace_qualified, items[1].location, .{ .ns = name_sym.ns.?, .name = name_sym.name });
-    }
-    if (items[2].data != .vector) {
-        return error_catalog.raise(.bindings_not_vector, items[2].location, .{ .form = "deftype" });
-    }
-    const field_forms = items[2].data.vector;
-    const field_names = try arena.alloc([]const u8, field_forms.len);
-    for (field_forms, 0..) |fld, i| {
-        if (fld.data != .symbol) {
-            return error_catalog.raise(.binding_name_not_symbol, fld.location, .{ .form = "deftype" });
-        }
-        if (fld.data.symbol.ns != null) {
-            return error_catalog.raise(.binding_name_namespace_qualified, fld.location, .{ .form = "deftype" });
-        }
-        field_names[i] = fld.data.symbol.name;
-    }
-    // items[3..] (protocol method bodies) silently dropped at
-    // 5.12.a; 5.12.d wires them via ADR-0008 a1 dispatch.
-    const n = try arena.create(Node);
-    n.* = .{ .deftype_node = .{
-        .name = name_sym.name,
-        .fields = field_names,
         .loc = form.location,
     } };
     return n;
