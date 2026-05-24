@@ -137,27 +137,66 @@ pub fn compile(alloc: std.mem.Allocator, pattern: []const u8, flags: Flags) Comp
 }
 
 /// Parser entry point: recursive-descent over the regex source,
-/// emits a `Node` tree into the supplied arena allocator. The
-/// arena lifetime is the caller's `compile` call; only the
-/// final `Program.insts` slice survives.
+/// emits a `Node` tree into the supplied arena allocator.
 ///
-/// Status: skeleton — returns `CompileError.NotImplemented` until
-/// the recursive-descent body lands.
+/// Cycle-1 first cell: single ASCII literal character only.
+/// Metacharacters (`.`, `*`, `+`, `?`, `(`, `)`, `[`, `]`,
+/// `|`, `\\`, `^`, `$`), multi-char patterns, and the empty
+/// pattern all raise `NotImplemented`. Subsequent commits
+/// extend the parser to handle each case.
 pub fn parsePattern(arena: std.mem.Allocator, pattern: []const u8, flags: Flags) CompileError!*const Node {
-    _ = arena;
-    _ = pattern;
     _ = flags;
-    return CompileError.NotImplemented;
+    if (pattern.len != 1) return CompileError.NotImplemented;
+    const c = pattern[0];
+    if (isMetaChar(c)) return CompileError.NotImplemented;
+    const node = try arena.create(Node);
+    node.* = .{ .lit = c };
+    return node;
+}
+
+fn isMetaChar(c: u8) bool {
+    return switch (c) {
+        '.', '*', '+', '?', '(', ')', '[', ']', '|', '\\', '^', '$', '{', '}' => true,
+        else => false,
+    };
 }
 
 /// IR emitter: walks the AST and emits Pike-VM instructions
-/// into a flat `Inst` slice. The walker is straight-line per
-/// AST node variant (no backtracking).
-///
-/// Status: skeleton — returns `CompileError.NotImplemented`.
+/// into a flat `Inst` slice. Cycle-1 first cell: `.lit` only.
 fn emit(alloc: std.mem.Allocator, node: *const Node, flags: Flags) CompileError!Program {
-    _ = alloc;
-    _ = node;
-    _ = flags;
-    return CompileError.NotImplemented;
+    var list: std.ArrayList(Inst) = .empty;
+    errdefer list.deinit(alloc);
+    try emitNode(&list, alloc, node);
+    try list.append(alloc, .{ .match = {} });
+    return Program{
+        .insts = try list.toOwnedSlice(alloc),
+        .capture_count = 0,
+        .flags = flags,
+    };
+}
+
+fn emitNode(list: *std.ArrayList(Inst), alloc: std.mem.Allocator, node: *const Node) CompileError!void {
+    switch (node.*) {
+        .lit => |c| try list.append(alloc, .{ .char = c }),
+        else => return CompileError.NotImplemented,
+    }
+}
+
+// --- tests ---
+
+const testing = std.testing;
+
+test "compile single-char literal emits [char, match]" {
+    var prog = try compile(testing.allocator, "a", .{});
+    defer prog.deinit(testing.allocator);
+    try testing.expectEqual(@as(usize, 2), prog.insts.len);
+    try testing.expectEqual(@as(u8, 'a'), prog.insts[0].char);
+    try testing.expectEqual({}, prog.insts[1].match);
+}
+
+test "compile rejects metacharacter (NotImplemented at cycle 1)" {
+    try testing.expectError(CompileError.NotImplemented, compile(testing.allocator, ".", .{}));
+    try testing.expectError(CompileError.NotImplemented, compile(testing.allocator, "*", .{}));
+    try testing.expectError(CompileError.NotImplemented, compile(testing.allocator, "ab", .{}));
+    try testing.expectError(CompileError.NotImplemented, compile(testing.allocator, "", .{}));
 }

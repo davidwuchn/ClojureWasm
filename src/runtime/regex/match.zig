@@ -60,15 +60,23 @@ pub const MatchError = error{
 
 /// `(re-find pattern input)` baseline: find the first match
 /// anywhere in `input`. Returns null when no match exists.
+///
+/// Cycle-1 first cell: single-thread linear scan. Handles
+/// programs consisting of `Inst.char` followed by `Inst.match`
+/// (single-character literal patterns). Alternation /
+/// quantifiers / classes require the full Pike-VM driver and
+/// land together with the parser's cycle-1 expansion.
 pub fn find(
     alloc: std.mem.Allocator,
     program: *const compile.Program,
     input: []const u8,
 ) MatchError!?MatchResult {
     _ = alloc;
-    _ = program;
-    _ = input;
-    return MatchError.NotImplemented;
+    var start: u32 = 0;
+    while (start <= input.len) : (start += 1) {
+        if (try tryMatchAt(program, input, start)) |result| return result;
+    }
+    return null;
 }
 
 /// `(re-matches pattern input)` baseline: succeeds iff the
@@ -79,9 +87,60 @@ pub fn matchFull(
     input: []const u8,
 ) MatchError!?MatchResult {
     _ = alloc;
-    _ = program;
-    _ = input;
-    return MatchError.NotImplemented;
+    const result = (try tryMatchAt(program, input, 0)) orelse return null;
+    if (result.end != input.len) return null;
+    return result;
+}
+
+/// Attempt one match starting at `start`. Cycle-1 baseline:
+/// straight-line execution through the IR; the Pike-VM thread
+/// list is unused for the single-character literal case.
+fn tryMatchAt(
+    program: *const compile.Program,
+    input: []const u8,
+    start: u32,
+) MatchError!?MatchResult {
+    var pc: u32 = 0;
+    var ip: u32 = start;
+    while (pc < program.insts.len) : (pc += 1) {
+        switch (program.insts[pc]) {
+            .char => |c| {
+                if (ip >= input.len) return null;
+                if (input[ip] != c) return null;
+                ip += 1;
+            },
+            .match => return MatchResult{
+                .start = start,
+                .end = ip,
+                .captures = .{},
+            },
+            else => return MatchError.NotImplemented,
+        }
+    }
+    return null;
+}
+
+test "find single-char literal in middle of input" {
+    var prog = try compile.compile(std.testing.allocator, "b", .{});
+    defer prog.deinit(std.testing.allocator);
+    const r = (try find(std.testing.allocator, &prog, "abc")).?;
+    try std.testing.expectEqual(@as(u32, 1), r.start);
+    try std.testing.expectEqual(@as(u32, 2), r.end);
+}
+
+test "find returns null on no match" {
+    var prog = try compile.compile(std.testing.allocator, "z", .{});
+    defer prog.deinit(std.testing.allocator);
+    try std.testing.expectEqual(@as(?MatchResult, null), try find(std.testing.allocator, &prog, "abc"));
+}
+
+test "matchFull only succeeds on full-string match" {
+    var prog = try compile.compile(std.testing.allocator, "a", .{});
+    defer prog.deinit(std.testing.allocator);
+    const r1 = try matchFull(std.testing.allocator, &prog, "a");
+    try std.testing.expect(r1 != null);
+    const r2 = try matchFull(std.testing.allocator, &prog, "abc");
+    try std.testing.expectEqual(@as(?MatchResult, null), r2);
 }
 
 /// One Pike-VM step: advance every live thread by consuming
