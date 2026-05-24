@@ -17,10 +17,9 @@
 const std = @import("std");
 const type_descriptor = @import("../type_descriptor.zig");
 
-/// Marker symbol every Java- and cljw-surface file exports under this
-/// exact name. The Phase-6+ aggregator scans for `___HOST_EXTENSION`
-/// declarations across `src/runtime/java/**/*.zig` and
-/// `src/runtime/cljw/**/*.zig`.
+/// Marker symbol every Java- and cljw-surface file exports under
+/// this exact name. See the module docstring for the aggregator
+/// scan contract.
 pub const MARKER_NAME: []const u8 = "___HOST_EXTENSION";
 
 /// One surface extension entry. Carries the user-facing Clojure name
@@ -44,8 +43,6 @@ pub const Extension = struct {
     /// descriptor registration.
     init: ?*const fn () anyerror!void = null,
 };
-
-// --- tests ---
 
 const testing = std.testing;
 

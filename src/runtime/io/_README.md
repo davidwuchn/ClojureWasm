@@ -1,8 +1,8 @@
 # `src/runtime/io/`
 
 Consolidated I/O abstraction subsystem. ADR-0015 (Tier 1 / Tier 2
-shape) + ADR-0029 D-Consequences (consolidation as the first cw-v1
-case study).
+shape) + ADR-0029 § Consequences > Neutral / follow-ups
+(consolidation as the first cw-v1 case study).
 
 | File            | Role                                                                                                                                                                                        |
 |-----------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
@@ -15,11 +15,18 @@ the consumer migration. The directory exists eagerly because Phase
 6+ `runtime/java/io/{File, Reader, Writer}.zig` adoption is easier
 when the `runtime/io/` parent already exists.
 
-Imports from outside `runtime/io/`:
+Imports from outside `runtime/io/` use call-site-relative paths.
+Examples from real call sites in this repo:
 
 ```zig
+// from src/main.zig:
+_ = @import("runtime/io/interface.zig");
+
+// from src/eval/<X>.zig:
 const io_interface = @import("../runtime/io/interface.zig");
-const io_default = @import("../runtime/io/default.zig");  // Phase 5+
+
+// from src/lang/primitive/<X>.zig:
+const io_interface = @import("../../runtime/io/interface.zig");
 ```
 
 Imports inside `runtime/io/` use same-directory bare paths.

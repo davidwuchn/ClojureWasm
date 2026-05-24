@@ -3,7 +3,7 @@
 //!
 //! Carries the **Tier 1** vtable declarations only — no `std.Io`
 //! import. Consumer code (analyser, REPL, primitives) imports this
-//! file; the concrete `std.Io` attachment lives in `io_default.zig`
+//! file; the concrete `std.Io` attachment lives in `runtime/io/default.zig`
 //! (Tier 2, Zone 1) and is injected by `main()` so a future `std.Io`
 //! reshape only touches one file.
 //!
@@ -14,7 +14,7 @@
 //! across Zig versions.
 //!
 //! Phase 4 entry ships only the type shapes. Concrete `defaultReader()`
-//! / `defaultWriter()` constructors land in `io_default.zig` as the
+//! / `defaultWriter()` constructors land in `runtime/io/default.zig` as the
 //! consumer paths (REPL, file load, primitive I/O) migrate off the
 //! direct `std.Io.File` references they currently use. The migration
 //! is opportunistic — touched files adopt the abstraction; old call

@@ -106,9 +106,11 @@ tiers:
       # 578 distinct java.* classes; the top 40 cover most production
       # Clojure I/O, time, networking, and data formatting). Phase
       # column = first phase at which the cw-native equivalent lands.
-      # All entries are Tier A — the cw runtime ships native cw.host
-      # implementations and Clojure code reaches them via
-      # `(:require [cljw.host.java.<pkg> :refer [<class>]])`.
+      # All entries are Tier A. The legacy `native_ns: cljw.host.*`
+      # field below is the pre-ADR-0029 schema; the ADR-0029 D5
+      # replacement is `cljw_ns: cljw.java.*` (host. prefix retired)
+      # plus `keyword:` + `files:`. The 40 legacy entries migrate
+      # incrementally as each host class lands in Phase 6+.
       # java.lang
       - { fqn: "java.lang.Object",                       native_ns: "cljw.host.java.lang.Object",                       phase: 5 }
       - { fqn: "java.lang.String",                       native_ns: "cljw.host.java.lang.String",                       phase: 5 }

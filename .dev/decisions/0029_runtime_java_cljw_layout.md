@@ -258,7 +258,7 @@ it as F-NNN.
 ### Negative
 
 - **Large amendment fan-out among existing documents.** ADR-0011
-  supersede / ROADMAP §5 §6.5 / structure_plan.md /
+  supersede / ROADMAP §5 §6.0 / structure_plan.md /
   host_extension_layout.md (renamed) / compat_tiers.yaml (schema
   extension) / project_facts.md (F-009 added) / handover.md. All
   manageable in one user-directed sweep but non-trivial.
@@ -298,7 +298,7 @@ it as F-NNN.
   ADR-0018 (error catalog SSOT), ADR-0023 (comptime stub).
 - **New F-NNN**: F-009 (feature-implementation neutrality), landed
   alongside this ADR.
-- **Amended docs**: ROADMAP §5 / §6.5; `.dev/structure_plan.md`;
+- **Amended docs**: ROADMAP §5 / §6.0; `.dev/structure_plan.md`;
   `.claude/rules/host_extension_layout.md` (renamed to
   `.claude/rules/java_cljw_surface_layout.md`); `compat_tiers.yaml`
   (schema extension).
@@ -306,8 +306,9 @@ it as F-NNN.
   (keyword consistency + Backend marker contract).
 - **Proposal draft trail**: `.dev/proposals/host_layer_design.md`
   (v2 design memo) and `.dev/proposals/0029_runtime_java_cljw_layout_draft.md`
-  (Japanese ADR draft) — both removed after the migration is
-  complete.
+  (Japanese ADR draft) — both lived under `.dev/proposals/` (a
+  scratch directory, never git-tracked) and were removed in
+  Commit 6 of the cluster (772e16c, 2026-05-24).
 - **Frequency data**: `private/clojure_frequent_java_interop/00a_frequency_overview.md`
   (host-class landing priority basis).
 
