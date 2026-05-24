@@ -24,38 +24,39 @@
 
 ## Current state
 
-- **Phase**: **Phase 5 IN-PROGRESS** — §9.7 expanded inline with
-  17 task rows (5.0–5.16). Phase 4 DONE (every §9.6 row `[x]`,
-  4.26.d/e/f closed in this session). Boundary chain ran:
-  audit_scaffolding 0 block + 2 soon (queued D-042) + 3 watch;
-  simplify subagent applied finding #1 at 393466e + queued
-  #2/4/5/7 as D-041; security-review 0 high.
-- **Branch**: `cw-from-scratch`. HEAD = 393466e (next will be the
-  §9.7 opener commit on the same branch).
+- **Phase**: **Phase 5 IN-PROGRESS** — §9.7 row 5.0 `[x]`
+  (cleanup-wave audit closed at fd66df5 via ADR-0026 Accepted).
+  16 rows remain (5.1–5.16). Phase 4 DONE in this session.
+  Boundary chain artefacts: D-041 / D-042 queued; ADR-0026 records
+  the activation classification + critical-path ordering.
+- **Branch**: `cw-from-scratch`. HEAD = fd66df5.
 - **Gate**: Mac 13/13 + OrbStack Ubuntu x86_64 12/12 green at
   HEAD.
 - **Chapter cadence**: dormant per ADR-0025 + F-007.
 
-## Active task — §9.7.1 / 5.0 cleanup-wave audit (D-028)
+## Active task — §9.7.2 / 5.1 ADR cluster (NaN-box 第二世代 + GC)
 
-Walk every Phase-4 skeleton row owned by Phase 5 entry (4.13
-`io_interface.zig` / 4.17 `type_descriptor.zig` / 4.18
-`protocol.zig` / 4.20 `host/_host_api.zig` / 4.22
-`binding_stack.zig` / 4.23 `numeric/big_int.zig` / 4.24
-`lazy_seq.zig` / 4.25 `dispatch/method_table.zig`). Per row:
-status (skeleton / partial / activate-this-phase), entry ADR
-pointer, target activation row in §9.7. Output:
-`private/notes/phase5-skeleton-audit.md` + new ADR-0026
-(Phase 5 entry scope decree) summarising the audit. This becomes
-the foundation for 5.1's ADR draft (NaN-box 第二世代 + GC +
-TypeDescriptor co-issue).
+Draft ADR-0027 (NaN-box 第二世代 = F-004 = 4 group × 16 sub-type =
+64 slot, 44-bit shifted pointer) + ADR-0028 (mark-sweep GC +
+3-layer allocator = F-006) as a **paired Accepted set**.
+Devil's-advocate subagent mandatory (depth 3 per principle.md).
 
-**Retrievable identifiers**: ROADMAP §9.7 placeholder lines
-(Entry ADRs 0007 / 0008 / 0009 / 0017 / 0023; Entry debts
-D-027 / D-028 / D-029 / D-030 / D-032 / D-008 / D-011 / D-014a /
-D-020); F-004 / F-005 / F-006 in project_facts.md;
-`.dev/structure_plan.md` anticipated `runtime/value/` +
-`runtime/gc/` layouts.
+**Step 0 reading**: ADR-0026 (verdict + critical path) +
+`private/notes/phase5-skeleton-audit.md` §"5.1 input bullets"
+(quote verbatim — paraphrase risk on #2 `std.atomic.Mutex`
+Zig-0.16 gap); F-004 / F-006 / F-008; existing ADR-0007 / 0009 /
+0012 / 0017; `.dev/structure_plan.md` `runtime/value/` +
+`runtime/gc/`; ROADMAP §9.7 row 5.1 text.
+
+**Step 0 survey target** (`general-purpose` subagent): cw v0
+NaN-box + mark-sweep in `~/Documents/MyProducts/ClojureWasm/src/runtime/`
+solving each of the 8 input bullets; Zig 0.16 std.atomic vs
+std.Io.Mutex with LazySeq cache; DIVERGENCE per F-002.
+
+**Open hazards**: (a) `LazySeq.lock` Zig-0.16 gap — 5.7 owns
+re-eval; (b) GC root-set enumerates `LazySeq.thunk/ctx/seq_cache`;
+(c) 29 spare `gc_mark` bits — record chosen use; (d) D-040
+collision deferred to Phase 7, do not rename in 5.1.
 
 ## Open questions / blockers
 
