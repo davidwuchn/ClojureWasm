@@ -24,36 +24,35 @@
 
 ## Current state
 
-- **Phase**: **Phase 5 IN-PROGRESS** — §9.7 rows 5.0 / 5.1 / 5.2 / 5.3 `[x]`.
-  5.3 closed at 8864ca4 (16 micro-commits 5.3.a → 5.3.d.9 + ADR-0028
-  amendment 1 + handover/roadmap updates). 13 rows remain (5.4–5.16).
-  Phase 4 DONE. GC body fully wired; 3 types (String/Cons/ExInfo)
-  migrated to rt.gc.alloc; Keyword stays infra (interner-managed);
-  BigInt + auto-trigger collect deferred to 5.9 / 5.4 respectively.
-- **Branch**: `cw-from-scratch`. HEAD = 8864ca4.
+- **Phase**: **Phase 5 IN-PROGRESS** — §9.7 rows 5.0 / 5.1 / 5.2 / 5.3 / 5.4 `[x]`.
+  5.4 closed at 996df4d (4 micro-commits 5.4.a → 5.4.d: struct + 6
+  ops). 12 rows remain (5.5–5.16). PersistentVector shipped with
+  conj / nth / count / pop / assoc / subvec; lazy SubVector wrapper
+  → D-044 (Phase 7+). D11 / D12 named hamt_node / tail_node per
+  ADR-0027 amendment 4. Reader-literal `(vec ...)` hook deferred to
+  analyzer-change follow-up.
+- **Branch**: `cw-from-scratch`. HEAD = 996df4d.
 - **Gate**: Mac 13/13 + OrbStack Ubuntu x86_64 12/12 green.
 - **Chapter cadence**: dormant per ADR-0025 + F-007.
 
-## Active task — §9.7.5 / 5.4 Persistent Vector (HAMT shift=5 + tail)
+## Active task — §9.7.6 / 5.5 PersistentHashMap (HAMT shift=5 + ArrayMap fallback)
 
-Land `runtime/collection/persistent_vector.zig`: HAMT (shift=5 =
-32-way) + 32-element tail for O(1) conj. Day-1 ops: `conj` / `nth`
-/ `count` / `pop` / `subvec` / `assoc`. `(vec ...)` reader literal
-hooked. HAMT nodes + Vector value extern struct (header at offset 0)
-+ trace fn walks slots; per-tag register from this module.
+Land `runtime/collection/persistent_map.zig`: HAMT (shift=5 =
+32-way) + ArrayMap for ≤ 8 entries (linear scan). Day-1: `get` /
+`assoc` / `dissoc` / `contains?` / `count` / `keys` / `vals` /
+`seq`. `{...}` reader literal hook deferred to analyzer follow-up.
+Slot map per F-004: array_map = A5, hash_map = A6 (already named);
+new tags for HamtMapNode + HashCollisionNode from D-043 reserves
+(B15 / C11 / D13 / D14 / D15 candidates).
 
-**Step 0 reading**: ADR-0028 §4 (registerTrace pattern per 5.3.d.5/.6)
-+ ADR-0027 §2 (vector = A4) + F-005 + `phase5-5.1-survey.md` (cw v0
-HAMT) + OSS clojure `PersistentVector.java`.
+**Step 0 survey**: `private/notes/phase5-5.5-survey.md` (subagent
+running). Recommendations land before implementation.
 
-**Step 0 survey target** (`general-purpose` subagent): cw v0
-`~/Documents/MyProducts/ClojureWasm/src/runtime/collection/persistent_vector.zig`
-+ clojure JVM PersistentVector. DIVERGENCE per F-002.
-
-**Open hazards**: (a) `(reduce + (range 1e6))` Phase 5 exit smoke
-will need auto-trigger collect — wire when alloc volume forces it;
-(b) tail-overflow → root push semantics match clojure JVM;
-(c) `subvec` aliasing — trace parent pointer in root_set.
+**Open hazards**: (a) hash function — `runtime/hash.zig` survey
+target; (b) 4 alloc-heavy types (map / array_map / hamt_node /
+collision_node) all need trace fns; (c) `(into {} (range 1e6))`
+exit-smoke shape may force auto-trigger collect here (5.5 owner
+decides per survey's alloc-volume estimate).
 
 ## Open questions / blockers
 
