@@ -1,171 +1,38 @@
-//! NaN-boxed Value type for ClojureWasm runtime.
+// SPDX-License-Identifier: EPL-2.0
+//! NaN-boxed Value type for ClojureWasm runtime — module root.
 //!
-//! Every Clojure value is a `u64` using IEEE-754 NaN boxing. The upper
-//! 16 bits act as a tag:
+//! This file is the public face of the `runtime/value/` subdirectory.
+//! It exports the `Value` enum + its `Tag` classifier + every helper
+//! callers used to import from the old single-file `runtime/value.zig`.
+//! Internal types (`HeapTag`, `HeapHeader`, NaN-box constants) are
+//! re-exported here so existing call sites only need to add the `/value`
+//! segment to their `@import` path.
 //!
-//!   top16 < 0xFFF8                 raw f64 (pass-through)
-//!
-//!   Heap groups (contiguous 0xFFF8-0xFFFB):
-//!     0xFFF8  Group A  Core Data           sub-type[47:45] | addr>>3 [44:0]
-//!     0xFFF9  Group B  Callable & Binding  sub-type[47:45] | addr>>3 [44:0]
-//!     0xFFFA  Group C  Sequence & State    sub-type[47:45] | addr>>3 [44:0]
-//!     0xFFFB  Group D  Transient & Ext     sub-type[47:45] | addr>>3 [44:0]
-//!
-//!   Immediate types (contiguous 0xFFFC-0xFFFF):
-//!     0xFFFC  integer     i48, signed; overflow → float promotion
-//!     0xFFFD  constant    0=nil, 1=true, 2=false
-//!     0xFFFE  char        u21 codepoint
-//!     0xFFFF  builtin_fn  48-bit function pointer
-//!
-//! Contiguous layout enables single-op classification:
-//!   isHeap:      (top16 & 0xFFFC) == 0xFFF8
-//!   isImmediate: (top16 & 0xFFFC) == 0xFFFC
-//!
-//! Slot mapping is 1:1 (no slot-sharing + discriminant) so a type check
-//! reduces to a band comparison on top16 plus a 3-bit sub-type read.
+//! Phase 5 row 5.2 split lands this module decomposition per
+//! `.dev/structure_plan.md` (F-004 + D-029 decree) + ADR-0027 §5.
+//! The 32 → 64 HeapTag widening + `heapTagToTag` collapse +
+//! `big_int` slot rotation + `tag_ops.zig` skeleton land in the
+//! follow-up 5.2.b commit.
 
 const std = @import("std");
 const testing = std.testing;
 
-// Heap group tags (contiguous: 0xFFF8-0xFFFB)
-const NB_HEAP_TAG_A: u64 = 0xFFF8_0000_0000_0000;
-const NB_HEAP_TAG_B: u64 = 0xFFF9_0000_0000_0000;
-const NB_HEAP_TAG_C: u64 = 0xFFFA_0000_0000_0000;
-const NB_HEAP_TAG_D: u64 = 0xFFFB_0000_0000_0000;
+const heap_tag_mod = @import("heap_tag.zig");
+const heap_header_mod = @import("heap_header.zig");
+const nb = @import("nan_box.zig");
 
-// Immediate type tags (contiguous: 0xFFFC-0xFFFF)
-const NB_INT_TAG: u64 = 0xFFFC_0000_0000_0000;
-const NB_CONST_TAG: u64 = 0xFFFD_0000_0000_0000;
-const NB_CHAR_TAG: u64 = 0xFFFE_0000_0000_0000;
-const NB_BUILTIN_FN_TAG: u64 = 0xFFFF_0000_0000_0000;
-
-const NB_TAG_SHIFT: u6 = 48;
-const NB_PAYLOAD_MASK: u64 = 0x0000_FFFF_FFFF_FFFF;
-const NB_ADDR_SHIFTED_MASK: u64 = 0x0000_1FFF_FFFF_FFFF; // 45 bits for addr>>3
-const NB_HEAP_SUBTYPE_SHIFT: u6 = 45; // 3-bit sub-type at bits 47..45
-const NB_ADDR_ALIGN_SHIFT: u3 = 3; // 8-byte alignment (>>3)
-const NB_HEAP_GROUP_SIZE: u8 = 8;
-
-// Derived (kept in sync via expressions, not hand-written hex literals)
-const NB_ADDR_ALIGN_MASK: u64 = (@as(u64, 1) << NB_ADDR_ALIGN_SHIFT) - 1;
-const NB_HEAP_SUBTYPE_MASK: u64 = NB_HEAP_GROUP_SIZE - 1;
-const NB_FLOAT_TAG_BOUNDARY: u16 = @truncate(NB_HEAP_TAG_A >> NB_TAG_SHIFT);
-const NB_TAG_A: u16 = @truncate(NB_HEAP_TAG_A >> NB_TAG_SHIFT);
-const NB_TAG_B: u16 = @truncate(NB_HEAP_TAG_B >> NB_TAG_SHIFT);
-const NB_TAG_C: u16 = @truncate(NB_HEAP_TAG_C >> NB_TAG_SHIFT);
-const NB_TAG_D: u16 = @truncate(NB_HEAP_TAG_D >> NB_TAG_SHIFT);
-const NB_TAG_INT: u16 = @truncate(NB_INT_TAG >> NB_TAG_SHIFT);
-const NB_TAG_CONST: u16 = @truncate(NB_CONST_TAG >> NB_TAG_SHIFT);
-const NB_TAG_CHAR: u16 = @truncate(NB_CHAR_TAG >> NB_TAG_SHIFT);
-const NB_TAG_BUILTIN: u16 = @truncate(NB_BUILTIN_FN_TAG >> NB_TAG_SHIFT);
-const NB_I48_MIN: i64 = -(@as(i64, 1) << (NB_TAG_SHIFT - 1));
-const NB_I48_MAX: i64 = (@as(i64, 1) << (NB_TAG_SHIFT - 1)) - 1;
-const NB_CANONICAL_NAN: u64 = 0x7FF8_0000_0000_0000; // IEEE-754 positive quiet NaN
-
-// 32 heap slots (4 groups × 8 sub-types). A type check is a band+sub-type
-// read; the value's HeapTag also lives in the object's HeapHeader.
-//
-// | Group (band)          | Sub 0    | Sub 1    | Sub 2     | Sub 3       | Sub 4   | Sub 5   | Sub 6    | Sub 7      |
-// |-----------------------|----------|----------|-----------|-------------|---------|---------|----------|------------|
-// | A: Core Data (0xFFF8) | string   | symbol   | keyword   | list        | vector  | arr_map | hash_map | hash_set   |
-// | B: Call/Bind (0xFFF9) | fn_val   | multi_fn | protocol  | protocol_fn | var_ref | ns      | delay    | regex      |
-// | C: Seq/State (0xFFFA) | lazy_seq | cons     | chunked_c | chunk_buf   | atom    | agent   | ref      | volatile   |
-// | D: Trans/Ext (0xFFFB) | t_vector | t_map    | t_set     | reduced     | ex_info | big_int | ratio    | class      |
-
-/// Heap object discriminant. Stored in the object's `HeapHeader.tag` and
-/// also encoded as a 3-bit sub-type within heap-tagged Values (combined
-/// with the 2-bit group band).
-pub const HeapTag = enum(u8) {
-    // Group A: Core Data — immutable literals and persistent collections.
-    string = 0,
-    symbol = 1,
-    keyword = 2,
-    list = 3,
-    vector = 4,
-    array_map = 5,
-    hash_map = 6,
-    hash_set = 7,
-    // Group B: Callable & Binding — invocable, dispatch, name resolution.
-    fn_val = 8,
-    multi_fn = 9,
-    protocol = 10,
-    protocol_fn = 11,
-    var_ref = 12,
-    ns = 13,
-    delay = 14,
-    regex = 15,
-    // Group C: Sequence & State — lazy evaluation, mutable references.
-    lazy_seq = 16,
-    cons = 17,
-    chunked_cons = 18,
-    chunk_buffer = 19,
-    atom = 20,
-    agent = 21,
-    ref = 22,
-    @"volatile" = 23,
-    // Group D: Transient & Extension — mutable colls, control, wasm, escape.
-    transient_vector = 24,
-    transient_map = 25,
-    transient_set = 26,
-    reduced = 27,
-    ex_info = 28,
-    // Slots 29 / 30: released from `wasm_module` / `wasm_fn` per
-    // ADR-0006 amendment 1 (Wasm reintroduces via Pod boundary in
-    // Phase 16, not as inline NaN-box values). Re-purposed for
-    // Phase-5 numeric tower per ADR-0012 amendment 1.
-    big_int = 29,
-    ratio = 30,
-    class = 31,
-};
-
-/// 2-byte header prefixed to every heap-allocated object. Used by GC
-/// for mark/sweep and by the runtime for fine-grained type dispatch.
-pub const HeapHeader = extern struct {
-    /// HeapTag discriminant (0–31).
-    tag: u8,
-    /// Per-object GC and lifecycle flags.
-    flags: Flags,
-    /// Padding so `gc_and_lock` lands on its natural 4-byte boundary.
-    _pad: [2]u8 = .{ 0, 0 },
-    /// ROADMAP §9.6 / 4.19 + ADR-0009: low 2 bits are the heap-only
-    /// lock state, high 30 bits are the GC mark / age. Phase 4 only
-    /// reserves the slot; Phase 5 wires read/write paths
-    /// (`cmpxchgLockBits`, mark-sweep mark/clear). Phase 15 wires
-    /// `monitor-enter` / `monitor-exit` / `locking` to the lock_state
-    /// bits and `dosync` to the STM scaffold on top.
-    gc_and_lock: GcAndLock = .{},
-
-    pub const Flags = packed struct(u8) {
-        /// GC mark bit for mark-sweep collection. Phase 5 migrates
-        /// this into `gc_and_lock.gc_mark`; Phase 4 still reads here.
-        marked: bool = false,
-        /// Arena freeze flag — prevents mutation after snapshot.
-        frozen: bool = false,
-        _pad: u6 = 0,
-    };
-
-    pub const GcAndLock = packed struct(u32) {
-        /// 0 = unlocked, 1 = light-locked, 2 = heavyweight, 3 = reserved.
-        lock_state: u2 = 0,
-        /// Phase 5 mark-sweep collector reads/writes this. Wider than
-        /// strictly necessary for a single bit so a generational
-        /// counter can fit later without a struct migration.
-        gc_mark: u30 = 0,
-    };
-
-    pub fn init(heap_tag: HeapTag) HeapHeader {
-        return .{ .tag = @intFromEnum(heap_tag), .flags = .{} };
-    }
-};
+// Re-exports — callers used to reach these through `runtime/value.zig`.
+pub const HeapTag = heap_tag_mod.HeapTag;
+pub const HeapHeader = heap_header_mod.HeapHeader;
 
 /// NaN-boxed runtime value. Every Clojure value fits in 8 bytes.
 ///
 /// Use `tag()` to classify, constructors (`initInteger`, `initFloat`, …)
 /// to build, and accessors (`asInteger`, `asFloat`, …) to extract.
 pub const Value = enum(u64) {
-    nil_val = NB_CONST_TAG | 0,
-    true_val = NB_CONST_TAG | 1,
-    false_val = NB_CONST_TAG | 2,
+    nil_val = nb.NB_CONST_TAG | 0,
+    true_val = nb.NB_CONST_TAG | 1,
+    false_val = nb.NB_CONST_TAG | 2,
     _,
 
     /// High-level type tag returned by `tag()`. One slot per kind.
@@ -219,31 +86,31 @@ pub const Value = enum(u64) {
     /// 8-byte aligned so the low 3 bits are zero.
     pub fn encodeHeapPtr(ht: HeapTag, ptr: anytype) Value {
         const addr: u64 = @intFromPtr(ptr);
-        std.debug.assert(addr & NB_ADDR_ALIGN_MASK == 0);
-        const shifted = addr >> NB_ADDR_ALIGN_SHIFT;
-        std.debug.assert(shifted <= NB_ADDR_SHIFTED_MASK);
+        std.debug.assert(addr & nb.NB_ADDR_ALIGN_MASK == 0);
+        const shifted = addr >> nb.NB_ADDR_ALIGN_SHIFT;
+        std.debug.assert(shifted <= nb.NB_ADDR_SHIFTED_MASK);
         const type_val = @intFromEnum(ht);
-        const group = type_val / NB_HEAP_GROUP_SIZE;
+        const group = type_val / nb.NB_HEAP_GROUP_SIZE;
         const tag_base: u64 = switch (group) {
-            0 => NB_HEAP_TAG_A,
-            1 => NB_HEAP_TAG_B,
-            2 => NB_HEAP_TAG_C,
-            3 => NB_HEAP_TAG_D,
+            0 => nb.NB_HEAP_TAG_A,
+            1 => nb.NB_HEAP_TAG_B,
+            2 => nb.NB_HEAP_TAG_C,
+            3 => nb.NB_HEAP_TAG_D,
             // @panic: cw runtime invariant — HeapTag is bounded to
-            // 4 × NB_HEAP_GROUP_SIZE entries (F-004 NaN-box second
-            // generation layout). Adding a 65th HeapTag would require
-            // a layout extension; this arm guards against silent
-            // drift past that bound.
+            // 4 × NB_HEAP_GROUP_SIZE entries (g1 = 32; g2 = 64 per
+            // F-004 NaN-box second generation layout, row 5.2.b).
+            // Adding entries past that bound would require a layout
+            // extension ADR; this arm guards against silent drift.
             else => unreachable,
         };
-        const sub_type: u64 = type_val % NB_HEAP_GROUP_SIZE;
-        return @enumFromInt(tag_base | (sub_type << NB_HEAP_SUBTYPE_SHIFT) | shifted);
+        const sub_type: u64 = type_val % nb.NB_HEAP_GROUP_SIZE;
+        return @enumFromInt(tag_base | (sub_type << nb.NB_HEAP_SUBTYPE_SHIFT) | shifted);
     }
 
     /// Extract the heap pointer from a heap-tagged Value.
     pub fn decodePtr(self: Value, comptime T: type) T {
-        const shifted = @intFromEnum(self) & NB_ADDR_SHIFTED_MASK;
-        return @ptrFromInt(@as(usize, shifted) << NB_ADDR_ALIGN_SHIFT);
+        const shifted = @intFromEnum(self) & nb.NB_ADDR_SHIFTED_MASK;
+        return @ptrFromInt(@as(usize, shifted) << nb.NB_ADDR_ALIGN_SHIFT);
     }
 
     fn heapTagToTag(ht_raw: u8) Tag {
@@ -286,16 +153,16 @@ pub const Value = enum(u64) {
     /// Classify this Value into a Tag by inspecting the upper 16 bits.
     pub fn tag(self: Value) Tag {
         const bits = @intFromEnum(self);
-        const top16: u16 = @truncate(bits >> NB_TAG_SHIFT);
-        if (top16 < NB_FLOAT_TAG_BOUNDARY) return .float;
-        const sub: u8 = @truncate((bits >> NB_HEAP_SUBTYPE_SHIFT) & NB_HEAP_SUBTYPE_MASK);
+        const top16: u16 = @truncate(bits >> nb.NB_TAG_SHIFT);
+        if (top16 < nb.NB_FLOAT_TAG_BOUNDARY) return .float;
+        const sub: u8 = @truncate((bits >> nb.NB_HEAP_SUBTYPE_SHIFT) & nb.NB_HEAP_SUBTYPE_MASK);
         return switch (top16) {
-            NB_TAG_A => heapTagToTag(sub),
-            NB_TAG_B => heapTagToTag(sub + NB_HEAP_GROUP_SIZE),
-            NB_TAG_C => heapTagToTag(sub + NB_HEAP_GROUP_SIZE * 2),
-            NB_TAG_D => heapTagToTag(sub + NB_HEAP_GROUP_SIZE * 3),
-            NB_TAG_INT => .integer,
-            NB_TAG_CONST => switch (bits & NB_PAYLOAD_MASK) {
+            nb.NB_TAG_A => heapTagToTag(sub),
+            nb.NB_TAG_B => heapTagToTag(sub + nb.NB_HEAP_GROUP_SIZE),
+            nb.NB_TAG_C => heapTagToTag(sub + nb.NB_HEAP_GROUP_SIZE * 2),
+            nb.NB_TAG_D => heapTagToTag(sub + nb.NB_HEAP_GROUP_SIZE * 3),
+            nb.NB_TAG_INT => .integer,
+            nb.NB_TAG_CONST => switch (bits & nb.NB_PAYLOAD_MASK) {
                 0 => .nil,
                 1, 2 => .boolean,
                 // @panic: cw runtime invariant — NB_TAG_CONST payload
@@ -304,8 +171,8 @@ pub const Value = enum(u64) {
                 // payload is a corrupt bit pattern.
                 else => unreachable,
             },
-            NB_TAG_CHAR => .char,
-            NB_TAG_BUILTIN => .builtin_fn,
+            nb.NB_TAG_CHAR => .char,
+            nb.NB_TAG_BUILTIN => .builtin_fn,
             // @panic: cw runtime invariant — top16 is constructed only
             // as NB_TAG_INT / _A / _B / _C / _D / _CONST / _CHAR /
             // _BUILTIN, or covered by the `< NB_FLOAT_TAG_BOUNDARY`
@@ -322,38 +189,38 @@ pub const Value = enum(u64) {
     /// Encode an integer. Values outside i48 range are promoted to float
     /// (Clojure-compatible auto-promotion within the i48 window).
     pub fn initInteger(i: i64) Value {
-        if (i < NB_I48_MIN or i > NB_I48_MAX) {
+        if (i < nb.NB_I48_MIN or i > nb.NB_I48_MAX) {
             return initFloat(@floatFromInt(i));
         }
         const raw: u48 = @truncate(@as(u64, @bitCast(i)));
-        return @enumFromInt(NB_INT_TAG | @as(u64, raw));
+        return @enumFromInt(nb.NB_INT_TAG | @as(u64, raw));
     }
 
     /// Encode a float. NaN bit patterns whose top16 ≥ 0xFFF8 collide
     /// with tagged values; collapse them to canonical positive quiet NaN.
     pub fn initFloat(f: f64) Value {
         const bits: u64 = @bitCast(f);
-        if ((bits >> NB_TAG_SHIFT) >= NB_FLOAT_TAG_BOUNDARY) {
-            return @enumFromInt(NB_CANONICAL_NAN);
+        if ((bits >> nb.NB_TAG_SHIFT) >= nb.NB_FLOAT_TAG_BOUNDARY) {
+            return @enumFromInt(nb.NB_CANONICAL_NAN);
         }
         return @enumFromInt(bits);
     }
 
     pub fn initChar(c: u21) Value {
-        return @enumFromInt(NB_CHAR_TAG | @as(u64, c));
+        return @enumFromInt(nb.NB_CHAR_TAG | @as(u64, c));
     }
 
     /// Pack a 48-bit function pointer into a NaN-boxed Value.
     pub fn initBuiltinFn(fn_ptr: anytype) Value {
         const addr: u64 = @intFromPtr(fn_ptr);
-        std.debug.assert(addr <= NB_PAYLOAD_MASK);
-        return @enumFromInt(NB_BUILTIN_FN_TAG | addr);
+        std.debug.assert(addr <= nb.NB_PAYLOAD_MASK);
+        return @enumFromInt(nb.NB_BUILTIN_FN_TAG | addr);
     }
 
     /// Extract the function pointer from a builtin_fn Value. Caller
     /// supplies the concrete pointer type via `FnPtr`.
     pub fn asBuiltinFn(self: Value, comptime FnPtr: type) FnPtr {
-        const raw = @intFromEnum(self) & NB_PAYLOAD_MASK;
+        const raw = @intFromEnum(self) & nb.NB_PAYLOAD_MASK;
         return @ptrFromInt(raw);
     }
 
@@ -515,20 +382,6 @@ test "type predicates" {
     try testing.expect(!nil.isNumber());
 }
 
-test "HeapHeader layout and flags" {
-    var hdr = HeapHeader.init(.string);
-    try testing.expectEqual(@as(u8, 0), hdr.tag);
-    try testing.expect(!hdr.flags.marked);
-    try testing.expect(!hdr.flags.frozen);
-
-    hdr.flags.marked = true;
-    try testing.expect(hdr.flags.marked);
-    try testing.expect(!hdr.flags.frozen);
-
-    hdr.flags.frozen = true;
-    try testing.expect(hdr.flags.marked and hdr.flags.frozen);
-}
-
 test "encodeHeapPtr round-trip (string)" {
     var data: u64 align(8) = 0xDEAD_BEEF;
     const encoded = Value.encodeHeapPtr(.string, &data);
@@ -562,29 +415,4 @@ test "encodeHeapPtr covers all four heap groups" {
 
 test "Value is 8 bytes" {
     try testing.expectEqual(@as(usize, 8), @sizeOf(Value));
-}
-
-test "HeapHeader is 8 bytes (tag + flags + pad + gc_and_lock)" {
-    // Phase 4 task 4.19 + ADR-0009 extend the header from 2 → 8 bytes
-    // to reserve the gc_and_lock u32 slot (with natural 4-byte
-    // alignment after tag/flags + 2 bytes of padding).
-    try testing.expectEqual(@as(usize, 8), @sizeOf(HeapHeader));
-}
-
-test "HeapHeader.GcAndLock packs lock_state + gc_mark into 4 bytes" {
-    try testing.expectEqual(@as(usize, 4), @sizeOf(HeapHeader.GcAndLock));
-    var gl: HeapHeader.GcAndLock = .{};
-    try testing.expectEqual(@as(u2, 0), gl.lock_state);
-    try testing.expectEqual(@as(u30, 0), gl.gc_mark);
-
-    gl.lock_state = 2;
-    gl.gc_mark = 0x3F_FF_FF_FF;
-    try testing.expectEqual(@as(u2, 2), gl.lock_state);
-    try testing.expectEqual(@as(u30, 0x3F_FF_FF_FF), gl.gc_mark);
-}
-
-test "HeapHeader.init zero-initialises gc_and_lock" {
-    const hdr = HeapHeader.init(.string);
-    try testing.expectEqual(@as(u2, 0), hdr.gc_and_lock.lock_state);
-    try testing.expectEqual(@as(u30, 0), hdr.gc_and_lock.gc_mark);
 }

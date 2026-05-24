@@ -32,8 +32,8 @@
 //! (Phase 4) will tighten this to the analyser-known frame size.
 
 const std = @import("std");
-const Value = @import("../../runtime/value.zig").Value;
-const HeapHeader = @import("../../runtime/value.zig").HeapHeader;
+const Value = @import("../../runtime/value/value.zig").Value;
+const HeapHeader = @import("../../runtime/value/value.zig").HeapHeader;
 const Runtime = @import("../../runtime/runtime.zig").Runtime;
 const env_mod = @import("../../runtime/env.zig");
 const Env = env_mod.Env;

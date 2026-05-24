@@ -18,7 +18,7 @@ const macro_dispatch = @import("../eval/macro_dispatch.zig");
 const Runtime = @import("../runtime/runtime.zig").Runtime;
 const env_mod = @import("../runtime/env.zig");
 const Env = env_mod.Env;
-const Value = @import("../runtime/value.zig").Value;
+const Value = @import("../runtime/value/value.zig").Value;
 const primitive = @import("primitive.zig");
 const macro_transforms = @import("macro_transforms.zig");
 

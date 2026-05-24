@@ -29,7 +29,7 @@
 //! multi-class catch.
 
 const std = @import("std");
-const value_mod = @import("../value.zig");
+const value_mod = @import("../value/value.zig");
 const Value = value_mod.Value;
 const HeapHeader = value_mod.HeapHeader;
 const Runtime = @import("../runtime.zig").Runtime;

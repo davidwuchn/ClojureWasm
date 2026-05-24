@@ -13,8 +13,8 @@
 //! `force()` collapse to one evaluation.
 
 const std = @import("std");
-const HeapHeader = @import("value.zig").HeapHeader;
-const Value = @import("value.zig").Value;
+const HeapHeader = @import("value/value.zig").HeapHeader;
+const Value = @import("value/value.zig").Value;
 
 /// Forward declaration — the realised cons cell type lives in
 /// `runtime/collection/cons.zig` (or its Phase-5 replacement). We
@@ -69,10 +69,10 @@ fn dummyThunk(ctx: *anyopaque) anyerror!?*SeqOpaque {
 test "LazySeq struct shape: header + thunk + ctx + cache + lock" {
     var ctx_storage: u64 = 0;
     const hdr: HeapHeader = .{
-        .tag = @intFromEnum(@import("value.zig").HeapTag.lazy_seq),
+        .tag = @intFromEnum(@import("value/value.zig").HeapTag.lazy_seq),
         .flags = .{},
     };
     var ls: LazySeq = .initShape(hdr, &dummyThunk, &ctx_storage);
-    try testing.expectEqual(@as(u8, @intFromEnum(@import("value.zig").HeapTag.lazy_seq)), ls.header.tag);
+    try testing.expectEqual(@as(u8, @intFromEnum(@import("value/value.zig").HeapTag.lazy_seq)), ls.header.tag);
     try testing.expect(ls.seq_cache.load(.acquire) == null);
 }

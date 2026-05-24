@@ -32,7 +32,7 @@ const macro_dispatch = @import("eval/macro_dispatch.zig");
 const driver = @import("eval/driver.zig");
 const Runtime = @import("runtime/runtime.zig").Runtime;
 const Env = @import("runtime/env.zig").Env;
-const Value = @import("runtime/value.zig").Value;
+const Value = @import("runtime/value/value.zig").Value;
 const primitive = @import("lang/primitive.zig");
 const macro_transforms = @import("lang/macro_transforms.zig");
 const bootstrap = @import("lang/bootstrap.zig");
@@ -242,7 +242,7 @@ test "build_options exposes phase_at_least_N comptime bools (ADR-0023)" {
 // Pull in tests from the source tree. As more files appear under
 // src/, add them here so the unified `zig build test` discovers them.
 test {
-    _ = @import("runtime/value.zig");
+    _ = @import("runtime/value/value.zig");
     _ = @import("runtime/error.zig");
     _ = @import("runtime/error_catalog.zig");
     _ = @import("runtime/error_print.zig");

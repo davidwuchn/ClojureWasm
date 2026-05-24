@@ -34,7 +34,7 @@
 const std = @import("std");
 const Writer = std.Io.Writer;
 
-const value_mod = @import("value.zig");
+const value_mod = @import("value/value.zig");
 const Value = value_mod.Value;
 const keyword = @import("keyword.zig");
 const string_collection = @import("collection/string.zig");

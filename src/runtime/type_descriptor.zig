@@ -11,7 +11,7 @@
 //! keyword-only `(type x)` dispatch.
 
 const std = @import("std");
-const Value = @import("value.zig").Value;
+const Value = @import("value/value.zig").Value;
 
 /// Discriminates `TypeDescriptor`'s origin so dispatch can fast-path
 /// the common cases. `native` covers the cw primitive types (String,

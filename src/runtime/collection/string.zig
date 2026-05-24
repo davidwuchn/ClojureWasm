@@ -14,7 +14,7 @@
 //! would need. Phase 8's GC + interning pass can revisit.
 
 const std = @import("std");
-const value_mod = @import("../value.zig");
+const value_mod = @import("../value/value.zig");
 const Value = value_mod.Value;
 const HeapHeader = value_mod.HeapHeader;
 const Runtime = @import("../runtime.zig").Runtime;

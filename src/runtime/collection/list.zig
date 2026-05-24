@@ -6,7 +6,7 @@
 //! reuses `ys` directly.
 
 const std = @import("std");
-const value = @import("../value.zig");
+const value = @import("../value/value.zig");
 const Value = value.Value;
 const HeapHeader = value.HeapHeader;
 const HeapTag = value.HeapTag;

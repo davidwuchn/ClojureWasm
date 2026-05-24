@@ -18,7 +18,7 @@
 //! ROADMAP §4.4 / §13 changes need one, per §17.2).
 
 const std = @import("std");
-const Value = @import("../../../runtime/value.zig").Value;
+const Value = @import("../../../runtime/value/value.zig").Value;
 
 /// Bytecode operations dispatched by the VM.
 ///

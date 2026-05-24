@@ -12,7 +12,7 @@
 //! points at.
 
 const std = @import("std");
-const value_mod = @import("../value.zig");
+const value_mod = @import("../value/value.zig");
 const HeapHeader = value_mod.HeapHeader;
 
 /// Heap-allocated arbitrary-precision integer. Wraps

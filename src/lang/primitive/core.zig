@@ -9,7 +9,7 @@
 //! handles those forms.
 
 const std = @import("std");
-const Value = @import("../../runtime/value.zig").Value;
+const Value = @import("../../runtime/value/value.zig").Value;
 const Runtime = @import("../../runtime/runtime.zig").Runtime;
 const env_mod = @import("../../runtime/env.zig");
 const Env = env_mod.Env;

@@ -28,7 +28,7 @@
 
 const std = @import("std");
 const error_mod = @import("error.zig");
-const Value = @import("value.zig").Value;
+const Value = @import("value/value.zig").Value;
 
 pub const Kind = error_mod.Kind;
 pub const Phase = error_mod.Phase;
