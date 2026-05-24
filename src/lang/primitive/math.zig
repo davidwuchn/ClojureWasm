@@ -429,6 +429,47 @@ pub fn bitNot(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation)
     return Value.initInteger(@intCast(~@as(i64, a)));
 }
 
+/// `(bit-shift-left x n)` — shifts `x` left by `n` bits. JVM Clojure
+/// uses only the low 6 bits of `n` (Java spec); cw v1 mirrors that
+/// to preserve the JVM identity `(bit-shift-left x 64) ≡ x`.
+/// The result is truncated to the i48 immediate envelope (overflow
+/// wraps, matching Long arithmetic).
+pub fn bitShiftLeft(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = rt;
+    _ = env;
+    try error_catalog.checkArity("bit-shift-left", args, 2, loc);
+    const x = try error_catalog.expectInteger(args[0], "bit-shift-left", loc);
+    const n = try error_catalog.expectInteger(args[1], "bit-shift-left", loc);
+    const sh: u6 = @intCast(n & 0x3F);
+    const r: i64 = @as(i64, x) << sh;
+    return Value.initInteger(@truncate(r));
+}
+
+/// `(bit-shift-right x n)` — arithmetic right shift (sign-extending).
+pub fn bitShiftRight(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = rt;
+    _ = env;
+    try error_catalog.checkArity("bit-shift-right", args, 2, loc);
+    const x = try error_catalog.expectInteger(args[0], "bit-shift-right", loc);
+    const n = try error_catalog.expectInteger(args[1], "bit-shift-right", loc);
+    const sh: u6 = @intCast(n & 0x3F);
+    const r: i64 = @as(i64, x) >> sh;
+    return Value.initInteger(@truncate(r));
+}
+
+/// `(unsigned-bit-shift-right x n)` — logical right shift (zero-fill).
+pub fn unsignedBitShiftRight(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = rt;
+    _ = env;
+    try error_catalog.checkArity("unsigned-bit-shift-right", args, 2, loc);
+    const x = try error_catalog.expectInteger(args[0], "unsigned-bit-shift-right", loc);
+    const n = try error_catalog.expectInteger(args[1], "unsigned-bit-shift-right", loc);
+    const sh: u6 = @intCast(n & 0x3F);
+    const ux: u64 = @bitCast(@as(i64, x));
+    const r: u64 = ux >> sh;
+    return Value.initInteger(@truncate(@as(i64, @bitCast(r))));
+}
+
 // --- registration ---
 
 const Entry = struct {
@@ -465,6 +506,9 @@ const ENTRIES = [_]Entry{
     .{ .name = "bit-or", .f = &bitOr },
     .{ .name = "bit-xor", .f = &bitXor },
     .{ .name = "bit-not", .f = &bitNot },
+    .{ .name = "bit-shift-left", .f = &bitShiftLeft },
+    .{ .name = "bit-shift-right", .f = &bitShiftRight },
+    .{ .name = "unsigned-bit-shift-right", .f = &unsignedBitShiftRight },
 };
 
 /// Register the math primitives into `rt_ns`.
