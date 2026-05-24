@@ -203,7 +203,9 @@ test "HeapHeader carries the list tag and starts unmarked / unfrozen" {
     const lst = try cons(alloc, .true_val, .nil_val);
     const cell = asCons(lst);
     try testing.expectEqual(@as(u8, @intFromEnum(HeapTag.list)), cell.header.tag);
-    try testing.expect(!cell.header.flags.marked);
+    // GC mark bit lives in gc_and_lock.gc_mark per ADR-0009 a2 +
+    // 5.3.d.9 (Flags.marked removed; mark bit 0 of gc_mark).
+    try testing.expectEqual(@as(u30, 0), cell.header.gc_and_lock.gc_mark & 1);
     try testing.expect(!cell.header.flags.frozen);
 }
 

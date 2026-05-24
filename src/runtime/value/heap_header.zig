@@ -33,12 +33,9 @@ pub const HeapHeader = extern struct {
     gc_and_lock: GcAndLock = .{},
 
     pub const Flags = packed struct(u8) {
-        /// GC mark bit for mark-sweep collection. Phase 5 migrates
-        /// this into `gc_and_lock.gc_mark`; Phase 4 still reads here.
-        marked: bool = false,
         /// Arena freeze flag — prevents mutation after snapshot.
         frozen: bool = false,
-        _pad: u6 = 0,
+        _pad: u7 = 0,
     };
 
     pub const GcAndLock = packed struct(u32) {
@@ -60,15 +57,17 @@ pub const HeapHeader = extern struct {
 test "HeapHeader layout and flags" {
     var hdr = HeapHeader.init(.string);
     try testing.expectEqual(@as(u8, 0), hdr.tag);
-    try testing.expect(!hdr.flags.marked);
-    try testing.expect(!hdr.flags.frozen);
-
-    hdr.flags.marked = true;
-    try testing.expect(hdr.flags.marked);
     try testing.expect(!hdr.flags.frozen);
 
     hdr.flags.frozen = true;
-    try testing.expect(hdr.flags.marked and hdr.flags.frozen);
+    try testing.expect(hdr.flags.frozen);
+
+    // GC mark bit migrated to gc_and_lock.gc_mark per ADR-0009
+    // amendment 2 + 5.3.b.2 implementation; verify gc_mark bit 0
+    // sets independently of flags.
+    hdr.gc_and_lock.gc_mark = 1;
+    try testing.expectEqual(@as(u30, 1), hdr.gc_and_lock.gc_mark);
+    try testing.expect(hdr.flags.frozen); // flags unchanged
 }
 
 test "HeapHeader is 8 bytes (tag + flags + pad + gc_and_lock)" {
