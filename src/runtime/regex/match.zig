@@ -302,6 +302,67 @@ test "find a|bc handles unequal-length alternation" {
     try testing.expectEqual(@as(u32, 3), r2.end);
 }
 
+test "find \\d+ in abc123 returns the digit run" {
+    var prog = try compile.compile(testing.allocator, "\\d+", .{});
+    defer prog.deinit(testing.allocator);
+    const r = (try find(testing.allocator, &prog, "abc123")).?;
+    try testing.expectEqual(@as(u32, 3), r.start);
+    try testing.expectEqual(@as(u32, 6), r.end);
+}
+
+test "find [abc] in xyz returns null" {
+    var prog = try compile.compile(testing.allocator, "[abc]", .{});
+    defer prog.deinit(testing.allocator);
+    try testing.expectEqual(@as(?MatchResult, null), try find(testing.allocator, &prog, "xyz"));
+}
+
+test "find [a-z]+ in ABCdef finds the lower-case run" {
+    var prog = try compile.compile(testing.allocator, "[a-z]+", .{});
+    defer prog.deinit(testing.allocator);
+    const r = (try find(testing.allocator, &prog, "ABCdef")).?;
+    try testing.expectEqual(@as(u32, 3), r.start);
+    try testing.expectEqual(@as(u32, 6), r.end);
+}
+
+test "find [^a-z]+ skips lowercase run" {
+    var prog = try compile.compile(testing.allocator, "[^a-z]+", .{});
+    defer prog.deinit(testing.allocator);
+    const r = (try find(testing.allocator, &prog, "abcXYZdef")).?;
+    try testing.expectEqual(@as(u32, 3), r.start);
+    try testing.expectEqual(@as(u32, 6), r.end);
+}
+
+test "find \\s matches an ASCII space" {
+    var prog = try compile.compile(testing.allocator, "\\s", .{});
+    defer prog.deinit(testing.allocator);
+    const r = (try find(testing.allocator, &prog, "a b")).?;
+    try testing.expectEqual(@as(u32, 1), r.start);
+    try testing.expectEqual(@as(u32, 2), r.end);
+}
+
+test "find \\w+ skips whitespace and finds the word" {
+    var prog = try compile.compile(testing.allocator, "\\w+", .{});
+    defer prog.deinit(testing.allocator);
+    const r = (try find(testing.allocator, &prog, " hello world ")).?;
+    try testing.expectEqual(@as(u32, 1), r.start);
+    try testing.expectEqual(@as(u32, 6), r.end);
+}
+
+test "find \\. matches a literal dot in 1.2" {
+    var prog = try compile.compile(testing.allocator, "\\.", .{});
+    defer prog.deinit(testing.allocator);
+    const r = (try find(testing.allocator, &prog, "1.2")).?;
+    try testing.expectEqual(@as(u32, 1), r.start);
+    try testing.expectEqual(@as(u32, 2), r.end);
+}
+
+test "ADR-0031 cycle-1 exit smoke: re-find #\"\\d+\" \"abc123\" → \"123\"" {
+    var prog = try compile.compile(testing.allocator, "\\d+", .{});
+    defer prog.deinit(testing.allocator);
+    const r = (try find(testing.allocator, &prog, "abc123")).?;
+    try testing.expectEqualStrings("123", "abc123"[r.start..r.end]);
+}
+
 test "find ab+ matches one a followed by greedy b run" {
     var prog = try compile.compile(testing.allocator, "ab+", .{});
     defer prog.deinit(testing.allocator);

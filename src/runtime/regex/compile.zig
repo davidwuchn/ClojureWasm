@@ -144,9 +144,12 @@ pub fn compile(alloc: std.mem.Allocator, pattern: []const u8, flags: Flags) Comp
 /// ```text
 /// pattern := alt
 /// alt     := concat ('|' concat)*
-/// concat  := quant+               -- empty branches reject in cycle 1
+/// concat  := quant+                       -- empty branches reject in cycle 1
 /// quant   := atom ('*' | '+' | '?')?
-/// atom    := '.' | literal_byte
+/// atom    := '.' | char_class | escape | literal_byte
+/// char_class := '[' '^'? class_item+ ']'
+/// class_item := escape | byte ('-' byte)?
+/// escape  := '\' ('d'|'D'|'w'|'W'|'s'|'S'|'t'|'n'|'r'|'f'|meta_byte)
 /// ```
 pub fn parsePattern(arena: std.mem.Allocator, pattern: []const u8, flags: Flags) CompileError!*const Node {
     _ = flags;
@@ -200,10 +203,9 @@ const Parser = struct {
             if (p == '|') break;
             // Quantifier with no operand: '*' / '+' / '?' here is a syntax error.
             if (p == '*' or p == '+' or p == '?') return CompileError.UnexpectedToken;
-            // Cycle-1 unsupported metas raise NotImplemented so the
-            // user sees an explicit not-yet message rather than a
-            // misleading "syntax error".
-            if (isMetaChar(p) and p != '.') return CompileError.NotImplemented;
+            // Cycle-1 supports `.`, `[`, and `\`. Other metas
+            // (`(`, `)`, `^`, `$`, `{`, `}`, stray `]`) reach
+            // parseAtom which raises NotImplemented / UnexpectedToken.
             const atom = try self.parseQuant();
             try children.append(self.arena, atom.*);
         }
@@ -235,12 +237,127 @@ const Parser = struct {
 
     fn parseAtom(self: *Parser) CompileError!*Node {
         const c = self.advance() orelse return CompileError.UnexpectedToken;
-        if (isMetaChar(c) and c != '.') return CompileError.NotImplemented;
         const node = try self.arena.create(Node);
-        node.* = atomFor(c);
+        if (c == '.') {
+            node.* = atomFor('.');
+            return node;
+        }
+        if (c == '[') {
+            node.* = .{ .class = try self.parseCharClass() };
+            return node;
+        }
+        if (c == '\\') {
+            node.* = try self.parseEscape();
+            return node;
+        }
+        if (c == ']') return CompileError.UnexpectedToken;
+        // Remaining cycle-1 unsupported metas: (, ), ^, $, {, }.
+        if (isMetaChar(c)) return CompileError.NotImplemented;
+        node.* = .{ .lit = c };
         return node;
     }
+
+    fn parseCharClass(self: *Parser) CompileError!CharClass {
+        var negate = false;
+        if (self.peek() == @as(?u8, '^')) {
+            _ = self.advance();
+            negate = true;
+        }
+        if (self.atEnd()) return CompileError.UnclosedClass;
+        if (self.peek() == @as(?u8, ']')) {
+            // Empty class `[]` / `[^]` — cycle 1 holds back; JVM
+            // treats `[]` as a syntax error and `[^]` as
+            // "anything", neither of which we need yet.
+            return CompileError.NotImplemented;
+        }
+        var cls: CharClass = .{};
+        while (true) {
+            const c = self.advance() orelse return CompileError.UnclosedClass;
+            if (c == ']') break;
+            if (c == '\\') {
+                const esc = try self.parseEscape();
+                switch (esc) {
+                    .lit => |b| cls.set(b),
+                    .class => |sub| {
+                        for (0..cls.bits.len) |i| cls.bits[i] |= sub.bits[i];
+                    },
+                    else => return CompileError.InvalidEscape,
+                }
+                continue;
+            }
+            // Range a-z: peek `-` and the following char is not `]`.
+            if (self.peek() == @as(?u8, '-') and
+                self.pos + 1 < self.src.len and
+                self.src[self.pos + 1] != ']')
+            {
+                _ = self.advance(); // consume '-'
+                const hi = self.advance() orelse return CompileError.UnclosedClass;
+                // Escaped range endpoint deferred to cycle 1b.
+                if (hi == '\\') return CompileError.NotImplemented;
+                if (c > hi) return CompileError.InvalidQuantifier;
+                var b: u16 = c;
+                while (b <= hi) : (b += 1) cls.set(@intCast(b));
+            } else {
+                cls.set(c);
+            }
+        }
+        if (negate) {
+            for (0..cls.bits.len) |i| cls.bits[i] = ~cls.bits[i];
+        }
+        return cls;
+    }
+
+    fn parseEscape(self: *Parser) CompileError!Node {
+        const c = self.advance() orelse return CompileError.InvalidEscape;
+        return switch (c) {
+            'd' => .{ .class = digitClass() },
+            'D' => .{ .class = negateClass(digitClass()) },
+            'w' => .{ .class = wordClass() },
+            'W' => .{ .class = negateClass(wordClass()) },
+            's' => .{ .class = whitespaceClass() },
+            'S' => .{ .class = negateClass(whitespaceClass()) },
+            't' => .{ .lit = '\t' },
+            'n' => .{ .lit = '\n' },
+            'r' => .{ .lit = '\r' },
+            'f' => .{ .lit = 12 },
+            '.', '*', '+', '?', '(', ')', '[', ']', '|', '\\', '^', '$', '{', '}', '/' => .{ .lit = c },
+            else => CompileError.InvalidEscape,
+        };
+    }
 };
+
+fn digitClass() CharClass {
+    var cls: CharClass = .{};
+    var b: u8 = '0';
+    while (b <= '9') : (b += 1) cls.set(b);
+    return cls;
+}
+
+fn wordClass() CharClass {
+    var cls: CharClass = digitClass();
+    var b: u8 = 'a';
+    while (b <= 'z') : (b += 1) cls.set(b);
+    b = 'A';
+    while (b <= 'Z') : (b += 1) cls.set(b);
+    cls.set('_');
+    return cls;
+}
+
+fn whitespaceClass() CharClass {
+    var cls: CharClass = .{};
+    cls.set(' ');
+    cls.set('\t');
+    cls.set('\n');
+    cls.set('\r');
+    cls.set(12); // form feed
+    return cls;
+}
+
+fn negateClass(c: CharClass) CharClass {
+    var out: CharClass = .{};
+    for (0..c.bits.len) |i| out.bits[i] = ~c.bits[i];
+    return out;
+}
 
 /// Cycle-1 atom builder: literal byte, or `.` → all-set
 /// character class (cycle-1 simplification — JVM `.` excludes
@@ -404,11 +521,13 @@ test "compile rejects empty / unsupported metas / stray quantifier" {
     try testing.expectError(CompileError.UnexpectedToken, compile(testing.allocator, "*", .{}));
     try testing.expectError(CompileError.UnexpectedToken, compile(testing.allocator, "+", .{}));
     try testing.expectError(CompileError.UnexpectedToken, compile(testing.allocator, "?", .{}));
-    // Cycle-1 unsupported metas: explicit not-implemented, not a lie.
+    // Cycle-1 unsupported metas: explicit not-implemented.
     try testing.expectError(CompileError.NotImplemented, compile(testing.allocator, "(", .{}));
-    try testing.expectError(CompileError.NotImplemented, compile(testing.allocator, "[", .{}));
-    try testing.expectError(CompileError.NotImplemented, compile(testing.allocator, "\\", .{}));
     try testing.expectError(CompileError.NotImplemented, compile(testing.allocator, "^", .{}));
+    // Lone trailing backslash: parseEscape sees end-of-input.
+    try testing.expectError(CompileError.InvalidEscape, compile(testing.allocator, "\\", .{}));
+    // Unclosed character class.
+    try testing.expectError(CompileError.UnclosedClass, compile(testing.allocator, "[", .{}));
 }
 
 test "compile multi-char literal emits sequence of char + match" {
@@ -486,6 +605,82 @@ test "isMetaChar covers the cycle-1 + future metachar set" {
     try testing.expect(!isMetaChar('a'));
     try testing.expect(!isMetaChar('1'));
     try testing.expect(!isMetaChar(' '));
+}
+
+test "compile \\d emits class[0-9] + match" {
+    var prog = try compile(testing.allocator, "\\d", .{});
+    defer prog.deinit(testing.allocator);
+    try testing.expectEqual(@as(usize, 2), prog.insts.len);
+    const cls = prog.insts[0].class;
+    try testing.expect(cls.contains('0'));
+    try testing.expect(cls.contains('9'));
+    try testing.expect(!cls.contains('a'));
+    try testing.expect(!cls.contains(' '));
+}
+
+test "compile \\D is the negation of \\d" {
+    var prog = try compile(testing.allocator, "\\D", .{});
+    defer prog.deinit(testing.allocator);
+    const cls = prog.insts[0].class;
+    try testing.expect(!cls.contains('0'));
+    try testing.expect(cls.contains('a'));
+    try testing.expect(cls.contains(' '));
+}
+
+test "compile [abc] emits the literal set bitmap" {
+    var prog = try compile(testing.allocator, "[abc]", .{});
+    defer prog.deinit(testing.allocator);
+    const cls = prog.insts[0].class;
+    try testing.expect(cls.contains('a'));
+    try testing.expect(cls.contains('b'));
+    try testing.expect(cls.contains('c'));
+    try testing.expect(!cls.contains('d'));
+}
+
+test "compile [a-z] emits the range bitmap" {
+    var prog = try compile(testing.allocator, "[a-z]", .{});
+    defer prog.deinit(testing.allocator);
+    const cls = prog.insts[0].class;
+    var b: u16 = 'a';
+    while (b <= 'z') : (b += 1) try testing.expect(cls.contains(@intCast(b)));
+    try testing.expect(!cls.contains('A'));
+    try testing.expect(!cls.contains('0'));
+}
+
+test "compile [^abc] negates the literal set" {
+    var prog = try compile(testing.allocator, "[^abc]", .{});
+    defer prog.deinit(testing.allocator);
+    const cls = prog.insts[0].class;
+    try testing.expect(!cls.contains('a'));
+    try testing.expect(!cls.contains('c'));
+    try testing.expect(cls.contains('d'));
+    try testing.expect(cls.contains('0'));
+}
+
+test "compile [\\d] uses the escape's bitmap inside the class" {
+    var prog = try compile(testing.allocator, "[\\d]", .{});
+    defer prog.deinit(testing.allocator);
+    const cls = prog.insts[0].class;
+    try testing.expect(cls.contains('5'));
+    try testing.expect(!cls.contains('x'));
+}
+
+test "compile \\. emits literal dot, not the all-set class" {
+    var prog = try compile(testing.allocator, "\\.", .{});
+    defer prog.deinit(testing.allocator);
+    try testing.expectEqual(@as(u8, '.'), prog.insts[0].char);
+}
+
+test "compile rejects bad escape" {
+    try testing.expectError(CompileError.InvalidEscape, compile(testing.allocator, "\\q", .{}));
+}
+
+test "compile rejects reversed range" {
+    try testing.expectError(CompileError.InvalidQuantifier, compile(testing.allocator, "[z-a]", .{}));
+}
+
+test "compile rejects unclosed class" {
+    try testing.expectError(CompileError.UnclosedClass, compile(testing.allocator, "[abc", .{}));
 }
 
 test "CharClass set / contains is bit-exact" {
