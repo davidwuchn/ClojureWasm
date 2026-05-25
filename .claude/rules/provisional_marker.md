@@ -67,41 +67,39 @@ Rules:
 
 ## Examples
 
-### Introduce
+### Introduce (Zig)
+
+The marker is one source line. Editors may wrap visually; do
+not split with `//` continuations.
 
 ```zig
-// PROVISIONAL: in-ns auto-refers rt/ and clojure.core because the
-// (ns ...) macro has not landed yet [refs: D-071,
-// feature_deps.yaml#runtime/eval/in_ns_auto_refer]
-fn evalInNs(env: *Env, n: node_mod.InNsNode) !Value {
-    env.current_ns = try env.findOrCreateNs(n.ns_name);
-    if (env.findNs("rt")) |rt_ns| {
-        try env.referAll(rt_ns, env.current_ns.?);
-    }
-    if (env.findNs("clojure.core")) |clojure_core_ns| {
-        try env.referAll(clojure_core_ns, env.current_ns.?);
-    }
-    return .nil_val;
+// PROVISIONAL: in-ns auto-refers rt/ pending (ns ...) macro [refs: D-071, feature_deps.yaml#runtime/eval/in_ns_auto_refer]
+if (env.findNs("rt")) |rt_ns| {
+    try env.referAll(rt_ns, env.current_ns.?);
 }
 ```
 
-Wait — that example wraps across two lines for prose width;
-the rule is "single line" *in the source file* (no `//`
-continuation). Keep the marker on one line and let the editor
-wrap visually. The above split is for documentation only.
+### Introduce (Clojure)
 
-### In a Clojure source
+`clojure.set/join` ships 2-arity only; the 3-arity
+`[xrel yrel km]` body requires multi-arity `fn*` dispatch
+(D-070) and will land when D-070 closes.
 
 ```clojure
-;; PROVISIONAL: variadic-with-internal-arity dispatch substitutes for multi-arity fn* [refs: D-070, feature_deps.yaml#clojure.set/union]
-(def union
-  (fn* [& sets]
-    (if (= 0 (count sets))
-      (hash-set)
-      (reduce (fn* [acc s] (reduce conj acc s))
-              (first sets)
-              (rest sets)))))
+;; PROVISIONAL: 2-arity only pending multi-arity fn* dispatch [refs: D-070, feature_deps.yaml#clojure.set/join]
+(def join
+  (fn* [xrel yrel]
+    ...body...))
 ```
+
+**Counter-example — what is NOT provisional.** Variadic with
+internal arity discrimination (e.g. `(fn* [& args] (if (= 0
+(count args)) ... ...))`) is the **finished form** for
+"fold over N args" — no different-body-per-arity dispatch is
+needed, so D-070 is not blocking it. Such a body would be a
+false-positive marker and should NOT be tagged PROVISIONAL.
+See `feature_deps.yaml#clojure.core/merge` notes for the
+re-classification precedent (spike 2.3, 2026-05-26).
 
 ### Discharge (one commit removes marker + closes refs)
 

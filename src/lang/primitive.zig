@@ -67,9 +67,7 @@ pub fn registerAll(env: *Env) !void {
     try set_prim.register(env);
     try walk_prim.register(env);
 
-    // (refer 'rt) into user — primitives become unqualified at the
-    // user prompt. Idempotent: subsequent registerAll calls won't
-    // duplicate refers (Env.referAll skips existing names).
+    // PROVISIONAL: hardcoded rt → user refer pending (ns ...) macro :refer-clojure [refs: D-063, D-071, feature_deps.yaml#runtime/bootstrap/refer_table]
     try env.referAll(rt_ns, user_ns);
 }
 

@@ -231,7 +231,10 @@ at a real debt row + real yaml entry:
 
 ```sh
 # Markers in source
-rg --no-heading -oE 'PROVISIONAL:.*\[refs: ([^]]+)\]' src/ \
+# Note: ripgrep's `-E` flag is encoding (NOT "extended regex" like grep);
+# use plain `-o` and rely on default Rust regex syntax. The character class
+# `[^]]+` is accepted by Rust regex without escaping the closing `]`.
+rg --no-heading -o 'PROVISIONAL:.*\[refs: ([^]]+)\]' src/ \
   | sed -E 's/.*\[refs: ([^]]+)\].*/\1/' \
   | tr ',' '\n' | sed 's/^ *//' | sort -u > /tmp/marker_refs.txt
 
@@ -279,10 +282,15 @@ For every `status: provisional` entry in `feature_deps.yaml`, the
 `provisional_markers:` field should match `rg 'feature_deps.yaml#<name>' src/`:
 
 ```sh
+# Note: the rg pattern below anchors with a trailing terminator class so a
+# prefix match (e.g. `feature_deps.yaml#clojure.set/rename` substring-matching
+# `feature_deps.yaml#clojure.set/rename-keys`) does NOT double-count
+# (review finding F2). `\b` would also work but is more permissive on `?`/`!`
+# suffixes that Clojure identifiers carry.
 yq '.entries[] | select(.status == "provisional") | .name' feature_deps.yaml \
   | while read name; do
       decl=$(yq ".entries[] | select(.name == \"$name\") | .provisional_markers[]" feature_deps.yaml 2>/dev/null | wc -l)
-      grep=$(rg --no-heading -c "feature_deps.yaml#${name}" src/ 2>/dev/null \
+      grep=$(rg --no-heading -c "feature_deps\.yaml#${name}([], \t]|\$)" src/ 2>/dev/null \
              | awk -F: '{s+=$2} END {print s+0}')
       if [[ $decl -ne $grep ]]; then
         echo "$name: yaml declares $decl marker(s), source has $grep"

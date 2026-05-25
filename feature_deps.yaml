@@ -94,19 +94,26 @@ entries:
       - D-071
     provisional_markers:
       - src/lang/bootstrap.zig (loadCore — end-of-loop refer table)
+      - src/lang/primitive.zig (registerAll — rt → user refer)
+      - src/lang/macro_transforms.zig (registerInto — rt → user macro refer)
     notes: |
-      `loadCore` walks a hardcoded list of bootstrap namespaces
-      (user / clojure.set / clojure.string / clojure.walk) and
-      refers `clojure.core` into each at the end of multi-file load.
-      Static counterpart to the dynamic
-      `runtime/eval/in_ns_auto_refer`: namespaces created at
-      registerAll time (before any (in-ns) form ran) need
-      clojure.core too. The finished form replaces this hardcoded
-      table with per-file `:refer-clojure` directives emitted by
-      the `(ns ...)` macro at ADR-0035 / Phase 6.16.b-4.
+      Three hardcoded `referAll(rt_ns, target)` sites set up the
+      initial namespace visibility graph at boot:
+        1. `bootstrap.zig::loadCore` end-of-loop fans clojure.core
+           into user / clojure.set / clojure.string / clojure.walk.
+        2. `primitive.zig::registerAll` fans rt/ into user/.
+        3. `macro_transforms.zig::registerInto` fans rt/'s macro
+           vars into user/.
+      All three discharge when ADR-0035 ships the `(ns ...)`
+      macro + explicit `:refer-clojure` directive per file.
 
-  - name: clojure.core/ns_declaration
-    kind: var
+      Generalised from spike 2.1's single-site framing after
+      review finding F15 (2026-05-26): the same provisional
+      pattern (= hardcoded refer pending macro-emitted directive)
+      surfaces 3 places, not 1.
+
+  - name: runtime/eval/bare_in_ns_decl
+    kind: runtime_layer
     defined_in: src/lang/clj/clojure/core.clj
     status: provisional
     requires:
@@ -115,12 +122,21 @@ entries:
       - D-071
     provisional_markers:
       - src/lang/clj/clojure/core.clj (head — bare in-ns declaration)
+      - src/lang/clj/clojure/set.clj (head — bare in-ns declaration)
+      - src/lang/clj/clojure/string.clj (head — bare in-ns declaration)
+      - src/lang/clj/clojure/walk.clj (head — bare in-ns declaration)
     notes: |
-      core.clj opens with `(in-ns 'clojure.core)` as a bare
-      special-form call. The finished form is `(ns clojure.core
-      (:refer-clojure))` macro that handles in-ns + refer
-      atomically + carries metadata for the namespace. Lands at
+      Each multi-file bootstrap source opens with a bare
+      `(in-ns 'foo.bar)` special-form call. The finished form is
+      `(ns foo.bar (:refer-clojure))` macro that handles in-ns
+      + refer atomically + carries metadata for the namespace.
+      One shared provisional pattern across 4 sites; lands at
       ADR-0035 / Phase 6.16.b-4 when `(ns ...)` arrives.
+
+      Generalised from the original `clojure.core/ns_declaration`
+      entry after review finding F14 (2026-05-26): the
+      bare-in-ns smell is identical for all 4 files; SSOT is one
+      entry, four marker sites.
 
   - name: special_form/ns_macro
     kind: special_form

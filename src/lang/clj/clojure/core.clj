@@ -10,7 +10,7 @@
 ;; `.clj` defns. The remaining D-071 work (^:private enforcement on
 ;; the `-*-eager` leaves) lands at a future cycle.
 
-;; PROVISIONAL: bare (in-ns 'clojure.core) special form pending (ns ...) macro [refs: D-063, D-071, feature_deps.yaml#clojure.core/ns_declaration]
+;; PROVISIONAL: bare (in-ns 'foo) special form pending (ns ...) macro [refs: D-063, D-071, feature_deps.yaml#runtime/eval/bare_in_ns_decl]
 (in-ns 'clojure.core)
 
 (def not (fn* [x] (if x false true)))

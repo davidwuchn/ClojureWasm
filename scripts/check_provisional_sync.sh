@@ -34,6 +34,7 @@
 #   2  hook blocked the push
 
 set -u
+set -o pipefail
 
 # --- 1. Parse args -----------------------------------------------------------
 
@@ -56,16 +57,28 @@ cd "${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
 # --- 2. In hook mode, only act on `git push` ---------------------------------
 
 if [[ "$MODE" == "hook" ]]; then
-  INPUT="$(cat || echo '')"
+  INPUT="$(cat)"
+  # Fail-closed on parser problems: if we can't decode the payload we cannot
+  # tell whether this is a `git push`, so a silent exit-0 would create an
+  # invisible bypass. Instead surface the error and block.
+  if ! command -v python3 >/dev/null 2>&1; then
+    echo "internal: python3 missing — cannot parse hook payload" >&2
+    exit 1
+  fi
   COMMAND="$(printf '%s' "$INPUT" | python3 -c '
 import sys, json
 try:
     data = json.load(sys.stdin)
-except Exception:
-    print("")
-    sys.exit(0)
-print((data.get("tool_input") or {}).get("command", "") or "")
-' 2>/dev/null || echo "")"
+except Exception as e:
+    sys.stderr.write(f"internal: hook payload decode failed: {e}\n")
+    sys.exit(1)
+cmd = (data.get("tool_input") or {}).get("command", "") or ""
+print(cmd)
+' 2>&1)" || {
+    echo "internal: hook payload parse error — failing closed" >&2
+    echo "$COMMAND" >&2
+    exit 1
+  }
 
   if ! printf '%s' "$COMMAND" | grep -qE '(^|[ ;&|])git[[:space:]]+push([[:space:]]|$)'; then
     exit 0
@@ -185,19 +198,30 @@ case "$MODE" in
   hook)
     UPSTREAM="$(git rev-parse --abbrev-ref --symbolic-full-name '@{u}' 2>/dev/null || echo '')"
     if [[ -n "$UPSTREAM" ]]; then
-      RANGES=()
-      while IFS= read -r sha; do
-        [[ -z "$sha" ]] && continue
-        RANGES+=("$sha^..$sha")
-      done < <(git rev-list "$UPSTREAM..HEAD" 2>/dev/null || true)
+      REV_RANGE="$UPSTREAM..HEAD"
     else
       # First push — every commit on HEAD
-      RANGES=()
-      while IFS= read -r sha; do
-        [[ -z "$sha" ]] && continue
-        RANGES+=("$sha^..$sha")
-      done < <(git rev-list HEAD 2>/dev/null || true)
+      REV_RANGE="HEAD"
     fi
+    REV_OUT="$(git rev-list "$REV_RANGE" 2>&1)" || {
+      echo "internal: git rev-list $REV_RANGE failed — failing closed" >&2
+      echo "$REV_OUT" >&2
+      exit 1
+    }
+    RANGES=()
+    while IFS= read -r sha; do
+      [[ -z "$sha" ]] && continue
+      # `git rev-list HEAD` includes the root commit, whose parent does not
+      # exist. Use the empty-tree object as parent for that case so the diff
+      # walk still works without raising "fatal: bad revision" (review
+      # finding F5).
+      if git rev-parse --verify "$sha^" >/dev/null 2>&1; then
+        RANGES+=("$sha^..$sha")
+      else
+        empty_tree="$(git hash-object -t tree --stdin </dev/null)"
+        RANGES+=("$empty_tree..$sha")
+      fi
+    done <<< "$REV_OUT"
     ;;
   test_range)
     RANGES=("$TEST_RANGE")

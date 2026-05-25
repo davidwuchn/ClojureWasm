@@ -51,6 +51,7 @@ pub fn registerInto(env: *Env, table: *macro_dispatch.Table) !void {
         try ensureRegistered(table, entry.name, entry.expand);
     }
 
+    // PROVISIONAL: hardcoded rt → user macro refer pending (ns ...) macro :refer-clojure [refs: D-063, D-071, feature_deps.yaml#runtime/bootstrap/refer_table]
     try env.referAll(rt_ns, user_ns);
 }
 

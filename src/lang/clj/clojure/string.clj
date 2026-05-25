@@ -14,4 +14,5 @@
 ;; lower + subs; split-lines uses a small regex; etc.) per the
 ;; per-task survey at private/notes/phase6-6.9-survey.md §6.
 
+;; PROVISIONAL: bare (in-ns 'foo) special form pending (ns ...) macro [refs: D-063, D-071, feature_deps.yaml#runtime/eval/bare_in_ns_decl]
 (in-ns 'clojure.string)

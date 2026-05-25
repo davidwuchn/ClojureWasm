@@ -20,6 +20,7 @@
 ;; at 6.16.b-3 after D-061 (`#{}` reader literal) + D-059 (map-literal
 ;; analyzer) infra ships in 6.16.b-2.
 
+;; PROVISIONAL: bare (in-ns 'foo) special form pending (ns ...) macro [refs: D-063, D-071, feature_deps.yaml#runtime/eval/bare_in_ns_decl]
 (in-ns 'clojure.set)
 
 (def union
