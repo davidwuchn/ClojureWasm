@@ -301,6 +301,106 @@ yq '.entries[] | select(.status == "provisional") | .name' feature_deps.yaml \
 Severity: **block** if mismatch — the marker SSOT has drifted from
 the source ground truth.
 
+### E2.5 status-drift scan
+
+For each `status: provisional` yaml entry, check whether all its
+`requires_features:` are `landed` AND all its `requires_debts:` are
+discharged. If yes, the entry is a candidate for `provisional →
+landed` reclassification.
+
+```sh
+# For each provisional entry: walk its requires_features + requires_debts;
+# if all features landed and all debts discharged, propose reclassify.
+yq -r '.entries[] | select(.status == "provisional") | .name' feature_deps.yaml \
+  | while read name; do
+      pending_features=$(yq -r ".entries[] | select(.name == \"$name\") | .requires_features[]?" feature_deps.yaml \
+        | while read req; do
+            status=$(yq -r ".entries[] | select(.name == \"$req\") | .status" feature_deps.yaml)
+            [[ "$status" != "landed" ]] && echo "$req:$status"
+          done)
+      pending_debts=$(yq -r ".entries[] | select(.name == \"$name\") | .requires_debts[]?" feature_deps.yaml \
+        | while read drow; do
+            # Discharged rows are in `## Discharged` section; check the row's status field
+            grep -E "^\| $drow " .dev/debt.md | grep -E "Discharged \(" >/dev/null || echo "$drow"
+          done)
+      if [[ -z "$pending_features" && -z "$pending_debts" ]]; then
+        echo "  - $name: all requires satisfied → reclassify candidate"
+      fi
+    done
+```
+
+Severity: **soon** for each candidate (= eligible-for-reclassify
+notice; do not block but surface in next audit report).
+
+### E2.6 stale Phase reference scan (Stale-phase-ref smell)
+
+Scan source / scripts / `.claude/rules` for `Phase \d+` references and
+cross-check against ROADMAP §9 phase tracker.
+
+```sh
+# Extract Phase numbers cited in source-bearing + script files
+rg --no-heading -no '\bPhase \d+(\.\d+)*(\+|\b)' src/ scripts/ .claude/rules/ \
+  | sed -E 's/.*:Phase ([0-9.]+).*/\1/' | sort -u | head -20
+
+# For each cited phase, check ROADMAP §9 status. A reference to a
+# DONE phase + an "until / informational only / entry" qualifier in
+# the same line is a strong stale-phase smell.
+rg --no-heading -n 'Phase \d+ entry: informational|until Phase \d+|Phase \d+\+? target' \
+  src/ scripts/ .claude/rules/ 2>/dev/null
+```
+
+Severity: **soon** when a referenced Phase has DONE-flipped in
+ROADMAP §9. The cite ages into a lie — refresh wording or remove.
+
+### E2.7 telltale-pattern provisional sweep
+
+Find candidate **unmarked** provisional behaviour in source. The
+`.claude/rules/framework_completion.md` discovery-criterion shape
+this implements:
+
+```sh
+# Telltale patterns that hint at intermediate state. Each hit needs
+# classification: provisional / tier-staging / skeleton / stale-doc /
+# false-positive.
+rg --no-heading -in 'until Phase \d+|stands in for|for now,\? a\|substitute\|temporarily,\? \|placeholder\|TBD' \
+  src/ test/e2e/ 2>/dev/null \
+  | grep -v 'PROVISIONAL:' \
+  | grep -v '^\s*//.*PROVISIONAL'
+
+# Cross-check: any feature_not_supported raise that points at a future
+# Phase but lacks a corresponding debt row?
+rg --no-heading -n 'feature_not_supported' src/ 2>/dev/null \
+  | awk -F: '{print $1}' | sort -u
+```
+
+Severity: **soon** for each hit — main agent classifies. Hits that
+turn out to be real provisional become marker + yaml + debt rows in
+the same cycle as the audit (per
+`.claude/rules/framework_completion.md`).
+
+### E2.8 watch_findings.md re-evaluation
+
+For each row in `.dev/watch_findings.md` `## Active`, parse
+`Revisit trigger` and Last reviewed. If `Last reviewed > 14 days
+ago` OR if the trigger predicate is testably true, the row needs
+re-evaluation this audit pass.
+
+```sh
+# Crude: list rows with Last reviewed in the row's last cell
+# (YYYY-MM-DD format). Re-evaluation is currently human-judgement;
+# script just surfaces the candidate set.
+awk -F'|' '/^\| W-[0-9]+/ {date=$NF; gsub(/ /,"",date); print "  - "$2" ("date")"}' \
+  .dev/watch_findings.md 2>/dev/null
+
+# Manual re-evaluation: for each W-NNN, read the Revisit trigger and
+# decide whether it has fired. If yes, escalate to active work
+# (move to Discharged or open a new debt row); if no, refresh the
+# Last reviewed date.
+```
+
+Severity: **watch** — no automated decision; just resurfaces the
+deferred set so the loop doesn't forget about it.
+
 ## F. Agent scratch hygiene (`private/`)
 
 `private/` is **gitignored agent scratch**, not a source of truth.

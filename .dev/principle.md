@@ -92,6 +92,34 @@ these — and on others that fit the same shape:
   applying the new default. Same shape as Reservation-as-bias
   and Smallest-diff bias — invisible drift away from committed
   intent.
+- **Stale-phase-ref smell** — code / docs / scripts cite a Phase
+  number ("Phase 4 entry: informational", "until Phase-5 GC
+  arrives", "Phase 7+ target") whose status has since shifted in
+  ROADMAP §9 (e.g., Phase 4 has closed; Phase 5 GC has landed).
+  The cite ages into a lie. Detection: when editing a file, scan
+  for `Phase \d+` references and verify against the ROADMAP
+  tracker before committing. Example: the 6 placeholder hook
+  scripts that said "Phase 4 entry: informational only" while
+  Phase 6 was the active phase (surfaced at Wave-16 inventory
+  2026-05-26).
+- **Framework-incomplete smell** — introducing a new discipline
+  (rule / SSOT / hook / marker convention) without, in the same
+  cycle, defining the discovery criterion + running the sweep +
+  retrofitting existing sites. The result is a 2-tier codebase:
+  new sites comply, old sites do not, and nothing tracks the
+  asymmetry. See `.claude/rules/framework_completion.md`. Example:
+  the Wave-15 spike landed `provisional_marker.md` + yaml + hook
+  but missed 5 retrofit sites; silent-failure-hunter caught them
+  at review (commit ef4f683 fixed).
+- **Defer-to-amnesia smell** — saying "watch" / "defer" / "fix
+  later" without recording the deferral in
+  `.dev/watch_findings.md` with a testable revisit trigger. The
+  decision becomes unrecoverable — no future audit walks the
+  deferred set. Example: F4 / F7 / F9 review findings were
+  classified "watch" without rows; user prompt later surfaced
+  them as the Wave-15-follow-up cycle. The fix is to write the
+  `watch_findings.md` row in the same edit as the defer
+  decision.
 
 The catalogue is not exhaustive. Any felt smell counts.
 

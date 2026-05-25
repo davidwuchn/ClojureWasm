@@ -1,0 +1,62 @@
+# Watch findings — defer / re-evaluate ledger
+
+> Per Wave 16 design (2026-05-26): every "defer to watch" decision the
+> autonomous loop makes during review / planning / Step-0.6 re-laying
+> lands a row here. Pre-empts the **Defer-to-amnesia smell** by giving
+> each watch a tracked revisit predicate. Audit reads this file every
+> `/continue` Step 0.5 sweep + at Phase boundary.
+
+## How an entry is created
+
+When the loop says "defer" / "watch" / "fix later" — in code review,
+in a Step 6 self-audit, in a Step 0.6 re-laying, in a survey amend, in
+a per-task note design-judgement section — write a row here in the
+same edit. Empty defer (= no row) is the smell.
+
+## Row schema
+
+| Field           | Meaning                                                                |
+|-----------------|------------------------------------------------------------------------|
+| ID              | `W-NNN` (zero-padded 3 digits, time-ordered).                          |
+| Source          | Commit SHA + section / file:line where the defer was decided.          |
+| Finding         | What the loop saw, in one sentence.                                    |
+| Defer rationale | Why deferring is the right call right now (cost / scope / dependency). |
+| Revisit trigger | Present-tense, testable predicate. Same shape as debt.md Status.       |
+| Last reviewed   | Date (YYYY-MM-DD).                                                     |
+
+## Audit consumption
+
+- `/continue` Step 0.5 sweep: walk every row whose `Last reviewed > 14
+  days ago` AND re-evaluate the `Revisit trigger`. If true, escalate to
+  active work; otherwise refresh `Last reviewed`.
+- `audit_scaffolding` E2.8 check at Phase boundary: count + list rows
+  whose triggers have fired.
+- A row whose finding has been promoted to a real cycle / commit gets
+  moved to the `## Discharged` section with the SHA.
+
+## Active
+
+| ID    | Source                               | Finding                                                                                                                                                | Defer rationale                                                                                                                                 | Revisit trigger                                                                                                          | Last reviewed |
+|-------|--------------------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------|--------------------------------------------------------------------------------------------------------------------------|---------------|
+| W-001 | review-fix commit ef4f683 (F4)       | feature_deps.yaml schema docstring stayed "file:line" while every entry uses prose label                                                               | Landed at Wave-15-follow-up commit 7ea9aae (schema doc updated). Resolved — moving to Discharged at next sweep.                                | (discharged; this row is the model)                                                                                      | 2026-05-26    |
+| W-002 | review-fix commit ef4f683 (F9)       | feature_deps.yaml `requires:` mixed feature names with D-NNN refs; future topological sort would dangle                                                | Landed at Wave-15-follow-up commit 7ea9aae (requires_features / requires_debts split). Resolved.                                                | (discharged; model)                                                                                                      | 2026-05-26    |
+| W-003 | review-fix commit ef4f683 (F11)      | check_provisional_sync.sh file-touched, not content-aware (= any random doc edit to yaml/debt passes when paired with marker change)                   | Mitigated by audit_scaffolding E2.2 round-trip catching dangling refs. Hook content-awareness is medium-effort.                                 | check_provisional_sync.sh passes a real false-positive in the wild (= someone touches yaml/debt without correspondence). | 2026-05-26    |
+| W-004 | review-fix commit ef4f683 (F19)      | scripts/check_provisional_sync.sh diff-rename parse fragile on paths containing literal " b/"                                                          | No cw v1 paths contain " b/"; truly latent. Refactor to `git diff --name-status -z` would be cleaner but unforced.                              | A real source path with " b/" lands in cw v1.                                                                            | 2026-05-26    |
+| W-005 | review-fix commit ef4f683 (F7-extra) | CLAUDE.md Step numbering 0 / 0.5 / 0.6 / 1 / 1a — still a fractional cluster. A renumber to 0.a / 0.b / 0.c / 1 / 1.a would stop the fractional drift | Wave-15-follow-up flipped 0.7 → 0.6 for monotonicity. The fractional scheme itself is acceptable for now; renumber would churn many citations. | New step inserted between 0.5 / 0.6 or between 0.6 / 1 (= forces the next fractional 0.55/0.7).                          | 2026-05-26    |
+
+## Discharged
+
+| ID    | Discharged at | Resolution                                                            |
+|-------|---------------|-----------------------------------------------------------------------|
+| W-001 | 7ea9aae       | F4 schema doc updated to acknowledge prose-label format.              |
+| W-002 | 7ea9aae       | F9 requires_features / requires_debts split landed across 17 entries. |
+
+## Conventions
+
+- Append-only history. A row that gets resolved moves to `## Discharged`
+  with the SHA, not deleted.
+- Multiple findings from the same review session may share a Source SHA
+  — that's fine; the ID is per finding.
+- A `Defer rationale` of "no time / will get to it" is the
+  Defer-to-amnesia smell — flesh out the real cost or escalate.
+- `Revisit trigger` MUST be testable. "When relevant" is not testable.
