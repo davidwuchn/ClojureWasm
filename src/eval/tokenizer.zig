@@ -42,6 +42,9 @@ pub const TokenKind = enum(u8) {
     /// `#"` prefix and trailing `"` to recover the pattern
     /// source before calling `runtime/regex/value.zig::alloc`.
     regex_literal,
+    /// `#{` set-literal opener. The reader emits a `.set` Form
+    /// by reading delimited elements up to the matching `}`.
+    set_open,
 
     eof,
     invalid,
@@ -253,6 +256,10 @@ pub const Tokenizer = struct {
                 return self.next(); // skip shebang line, return next real token
             },
             '"' => return self.readRegexLiteral(start, start_line, start_col),
+            '{' => {
+                self.advance();
+                return self.makeToken(.set_open, start, start_line, start_col);
+            },
             else => return self.makeToken(.invalid, start, start_line, start_col),
         }
     }

@@ -74,6 +74,8 @@ pub const Node = union(enum) {
     field_access_node: FieldAccessNode,
     in_ns_node: InNsNode,
     vector_literal_node: VectorLiteralNode,
+    map_literal_node: MapLiteralNode,
+    set_literal_node: SetLiteralNode,
 
     /// Source location of this Node. Returns the inner variant's `loc`
     /// — every variant carries one because Phase-2 errors must cite a
@@ -292,6 +294,23 @@ pub const FieldAccessNode = struct {
 /// because `clojure.string/join` and friends could not be exercised
 /// from Clojure without literal vectors.
 pub const VectorLiteralNode = struct {
+    elements: []const Node,
+    loc: SourceLocation = .{},
+};
+
+/// `{k1 v1 k2 v2 ...}` — map literal in expression position. The
+/// elements slice is flat `[k0, v0, k1, v1, ...]`; the reader
+/// guarantees even length. Eval evaluates each child, assoc-ing the
+/// k/v pairs into an empty ArrayMap. Phase 6.16.b-2 closes D-059.
+pub const MapLiteralNode = struct {
+    elements: []const Node,
+    loc: SourceLocation = .{},
+};
+
+/// `#{e1 e2 ...}` — set literal in expression position. Eval evaluates
+/// each child, conj-ing into an empty HashSet (duplicates collapse).
+/// Phase 6.16.b-2 closes D-061.
+pub const SetLiteralNode = struct {
     elements: []const Node,
     loc: SourceLocation = .{},
 };

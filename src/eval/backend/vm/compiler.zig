@@ -34,6 +34,8 @@ pub const Error = error{
     JumpTooFar,
     TooManyCallArgs,
     VectorLiteralTooLarge,
+    MapLiteralTooLarge,
+    SetLiteralTooLarge,
     NotImplemented,
 } || std.mem.Allocator.Error;
 
@@ -118,6 +120,10 @@ const Compiler = struct {
             // `op_vector_literal <n>` operand. VM dispatch pops N values
             // and builds a PersistentVector.
             .vector_literal_node => |n| try self.compileVectorLiteral(n),
+            // Closes D-059 + D-061 (Phase 6.16.b-2): same shape — emit
+            // each element, then the matching collection-build opcode.
+            .map_literal_node => |n| try self.compileMapLiteral(n),
+            .set_literal_node => |n| try self.compileSetLiteral(n),
         }
     }
 
@@ -125,6 +131,18 @@ const Compiler = struct {
         for (n.elements) |*elt| try self.compileNode(elt);
         if (n.elements.len > std.math.maxInt(u16)) return error.VectorLiteralTooLarge;
         try self.emit(.op_vector_literal, @intCast(n.elements.len));
+    }
+
+    fn compileMapLiteral(self: *Compiler, n: node_mod.MapLiteralNode) Error!void {
+        for (n.elements) |*elt| try self.compileNode(elt);
+        if (n.elements.len > std.math.maxInt(u16)) return error.MapLiteralTooLarge;
+        try self.emit(.op_map_literal, @intCast(n.elements.len));
+    }
+
+    fn compileSetLiteral(self: *Compiler, n: node_mod.SetLiteralNode) Error!void {
+        for (n.elements) |*elt| try self.compileNode(elt);
+        if (n.elements.len > std.math.maxInt(u16)) return error.SetLiteralTooLarge;
+        try self.emit(.op_set_literal, @intCast(n.elements.len));
     }
 
     fn emitConst(self: *Compiler, v: Value) Error!void {

@@ -45,6 +45,9 @@ pub const FormData = union(enum) {
     /// Flat k/v pairs: `[k1, v1, k2, v2, ...]`. Reader-emitted maps stay
     /// flat to keep the analyzer's iteration trivial.
     map: []const Form,
+    /// `#{1 2 3}` — set literal. Each element form is read in source
+    /// order; the analyzer drops duplicates at conj time (set semantics).
+    set: []const Form,
 };
 
 /// AST node. Source location is required and defaults to "unknown".
@@ -68,6 +71,7 @@ pub const Form = struct {
             .list => "list",
             .vector => "vector",
             .map => "map",
+            .set => "set",
         };
     }
 
@@ -109,6 +113,7 @@ pub const Form = struct {
             .list => |items| try formatCollection(w, "(", ")", items),
             .vector => |items| try formatCollection(w, "[", "]", items),
             .map => |items| try formatMapEntries(w, items),
+            .set => |items| try formatCollection(w, "#{", "}", items),
         }
     }
 

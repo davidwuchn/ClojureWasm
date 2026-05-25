@@ -24,6 +24,8 @@ const env_mod = @import("../../runtime/env.zig");
 const runtime_mod = @import("../../runtime/runtime.zig");
 const string_mod = @import("../../runtime/collection/string.zig");
 const vector_mod = @import("../../runtime/collection/vector.zig");
+const map_mod = @import("../../runtime/collection/map.zig");
+const set_mod = @import("../../runtime/collection/set.zig");
 const dispatch = @import("../../runtime/dispatch.zig");
 const error_mod = @import("../../runtime/error/info.zig");
 const error_catalog = @import("../../runtime/error/catalog.zig");
@@ -339,6 +341,35 @@ fn stepOnce(
                 }
                 sp -= n;
                 stack[sp] = v;
+                sp += 1;
+            },
+            .op_map_literal => {
+                // Closes D-059: pop N stack values (= 2 * pair_count),
+                // assoc k/v pairs in source order into an empty
+                // ArrayMap, push result.
+                const n: u16 = instr.operand;
+                if (sp < n) return raiseInternal("vm: op_map_literal underflows operand stack");
+                var m = map_mod.empty();
+                var i: u16 = sp - n;
+                while (i < sp) : (i += 2) {
+                    m = try map_mod.assoc(rt, m, stack[i], stack[i + 1]);
+                }
+                sp -= n;
+                stack[sp] = m;
+                sp += 1;
+            },
+            .op_set_literal => {
+                // Closes D-061: pop N values, conj-fold into an empty
+                // HashSet (duplicates collapse), push result.
+                const n: u16 = instr.operand;
+                if (sp < n) return raiseInternal("vm: op_set_literal underflows operand stack");
+                var s = set_mod.empty();
+                var i: u16 = sp - n;
+                while (i < sp) : (i += 1) {
+                    s = try set_mod.conj(rt, s, stack[i]);
+                }
+                sp -= n;
+                stack[sp] = s;
                 sp += 1;
             },
     }

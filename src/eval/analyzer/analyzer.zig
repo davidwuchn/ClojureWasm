@@ -232,9 +232,11 @@ pub fn analyze(
         // Vector literal in expression position — analyze each child
         // form, emit VectorLiteralNode (Phase 6.9 cycle 4).
         .vector => |items| try analyzeVectorLiteral(arena, rt, env, scope, items, form, macro_table),
-        // Map literal still raises until the analyzer has somewhere to
-        // park the assoc-build sequence (D-059 tracks).
-        .map => error_catalog.raise(.feature_not_supported, form.location, .{ .name = "Map literal as expression value" }),
+        // `{...}` and `#{...}` literals (Phase 6.16.b-2 closes D-059
+        // + D-061). Each emits its own LiteralNode shape; eval walks
+        // the children and folds into an empty ArrayMap / HashSet.
+        .map => |items| try analyzeMapLiteral(arena, rt, env, scope, items, form, macro_table),
+        .set => |items| try analyzeSetLiteral(arena, rt, env, scope, items, form, macro_table),
     };
 }
 
@@ -516,6 +518,50 @@ fn analyzeVectorLiteral(
     return n;
 }
 
+/// `{k1 v1 k2 v2 ...}` lift — analyze each k/v form, package into
+/// MapLiteralNode (k0, v0, k1, v1, ...). Reader guarantees the
+/// flat pair count is even.
+fn analyzeMapLiteral(
+    arena: std.mem.Allocator,
+    rt: *Runtime,
+    env: *Env,
+    scope: ?*const Scope,
+    items: []const Form,
+    form: Form,
+    macro_table: *const macro_dispatch.Table,
+) AnalyzeError!*const Node {
+    const elt_nodes = try arena.alloc(Node, items.len);
+    for (items, 0..) |elt_form, i| {
+        const elt = try analyze(arena, rt, env, scope, elt_form, macro_table);
+        elt_nodes[i] = elt.*;
+    }
+    const n = try arena.create(Node);
+    n.* = .{ .map_literal_node = .{ .elements = elt_nodes, .loc = form.location } };
+    return n;
+}
+
+/// `#{e1 e2 ...}` lift — analyze each element, package into
+/// SetLiteralNode. Eval conj-folds duplicates into a single entry
+/// (set semantics).
+fn analyzeSetLiteral(
+    arena: std.mem.Allocator,
+    rt: *Runtime,
+    env: *Env,
+    scope: ?*const Scope,
+    items: []const Form,
+    form: Form,
+    macro_table: *const macro_dispatch.Table,
+) AnalyzeError!*const Node {
+    const elt_nodes = try arena.alloc(Node, items.len);
+    for (items, 0..) |elt_form, i| {
+        const elt = try analyze(arena, rt, env, scope, elt_form, macro_table);
+        elt_nodes[i] = elt.*;
+    }
+    const n = try arena.create(Node);
+    n.* = .{ .set_literal_node = .{ .elements = elt_nodes, .loc = form.location } };
+    return n;
+}
+
 // --- Special forms ---
 
 fn analyzeSpecial(
@@ -574,6 +620,7 @@ pub fn formToValue(rt: *Runtime, form: Form) AnalyzeError!Value {
         .symbol => error_catalog.raise(.feature_not_supported, form.location, .{ .name = "Quoted symbol as Value" }),
         .vector => error_catalog.raise(.feature_not_supported, form.location, .{ .name = "Quoted vector as Value" }),
         .map => error_catalog.raise(.feature_not_supported, form.location, .{ .name = "Quoted map as Value" }),
+        .set => error_catalog.raise(.feature_not_supported, form.location, .{ .name = "Quoted set as Value" }),
     };
 }
 

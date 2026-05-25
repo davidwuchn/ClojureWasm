@@ -88,6 +88,7 @@ pub const Reader = struct {
             .lparen => self.readList(tok),
             .lbracket => self.readVector(tok),
             .lbrace => self.readMap(tok),
+            .set_open => self.readSet(tok),
             .quote => self.readQuote(tok),
             .symbolic => self.readSymbolic(tok),
             .discard => self.readDiscard(tok),
@@ -194,6 +195,15 @@ pub const Reader = struct {
         if (items.len % 2 != 0)
             return error_catalog.raise(.map_literal_arity_odd, loc, .{});
         return Form{ .data = .{ .map = items }, .location = loc };
+    }
+
+    /// `#{...}` set literal. Mirror of readVector; the closing
+    /// delimiter is `}` (the `#` is consumed by the tokenizer's
+    /// readDispatch as part of the `set_open` token).
+    fn readSet(self: *Reader, tok: Token) ReadError!Form {
+        const loc = self.locOf(tok);
+        const items = try self.readDelimited(.rbrace, loc);
+        return Form{ .data = .{ .set = items }, .location = loc };
     }
 
     fn readDelimited(self: *Reader, closing: TokenKind, opener_loc: SourceLocation) ReadError![]const Form {

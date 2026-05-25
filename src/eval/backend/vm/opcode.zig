@@ -90,6 +90,17 @@ pub const Opcode = enum(u8) {
     /// a fresh PersistentVector via `vector.empty()` + `vector.conj`,
     /// and pushes it. Closes D-060 (Phase 6.16.a-3.2).
     op_vector_literal = 0x13,
+    /// `{k1 v1 k2 v2 ...}` map literal — operand = total stack-pop
+    /// count = 2 * pair_count. VM dispatch pops the pairs (k0 first,
+    /// then v0, then k1, ...; built bottom-up to preserve source
+    /// order), assoc-folds into an empty ArrayMap, pushes the result.
+    /// Closes D-059 (Phase 6.16.b-2).
+    op_map_literal = 0x14,
+    /// `#{e1 e2 ...}` set literal — operand = element count N. VM
+    /// dispatch pops N values, conj-folds into an empty HashSet
+    /// (duplicates collapse), pushes the result. Closes D-061
+    /// (Phase 6.16.b-2).
+    op_set_literal = 0x15,
 };
 
 /// `op_def` operand layout — see the Opcode docstring.
@@ -140,6 +151,9 @@ test "opcode enum tags are stable u8 values" {
     try std.testing.expectEqual(@as(u8, 0x10), @intFromEnum(Opcode.op_pop_handler));
     try std.testing.expectEqual(@as(u8, 0x11), @intFromEnum(Opcode.op_match_class));
     try std.testing.expectEqual(@as(u8, 0x12), @intFromEnum(Opcode.op_in_ns));
+    try std.testing.expectEqual(@as(u8, 0x13), @intFromEnum(Opcode.op_vector_literal));
+    try std.testing.expectEqual(@as(u8, 0x14), @intFromEnum(Opcode.op_map_literal));
+    try std.testing.expectEqual(@as(u8, 0x15), @intFromEnum(Opcode.op_set_literal));
 }
 
 test "Instruction carries opcode and u16 operand" {

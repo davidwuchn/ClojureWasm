@@ -41,6 +41,8 @@ const Var = env_mod.Var;
 const error_mod = @import("../../runtime/error/info.zig");
 const error_catalog = @import("../../runtime/error/catalog.zig");
 const vector_collection = @import("../../runtime/collection/vector.zig");
+const map_collection = @import("../../runtime/collection/map.zig");
+const set_collection = @import("../../runtime/collection/set.zig");
 const list_mod = @import("../../runtime/collection/list.zig");
 const SourceLocation = error_mod.SourceLocation;
 const dispatch = @import("../../runtime/dispatch.zig");
@@ -240,6 +242,8 @@ pub fn eval(
         .field_access_node => |n| try evalFieldAccess(rt, env, locals, n),
         .in_ns_node => |n| try evalInNs(env, n),
         .vector_literal_node => |n| try evalVectorLiteral(rt, env, locals, n),
+        .map_literal_node => |n| try evalMapLiteral(rt, env, locals, n),
+        .set_literal_node => |n| try evalSetLiteral(rt, env, locals, n),
     };
 }
 
@@ -278,6 +282,31 @@ fn evalVectorLiteral(rt: *Runtime, env: *Env, locals: []Value, n: node_mod.Vecto
         v = try vector_collection.conj(rt, v, elt_val);
     }
     return v;
+}
+
+/// `{k1 v1 k2 v2 ...}` — evaluate each child, assoc the k/v pair
+/// into an empty ArrayMap. Flat element layout per MapLiteralNode
+/// (reader guarantees even count).
+fn evalMapLiteral(rt: *Runtime, env: *Env, locals: []Value, n: node_mod.MapLiteralNode) !Value {
+    var m = map_collection.empty();
+    var i: usize = 0;
+    while (i < n.elements.len) : (i += 2) {
+        const k = try eval(rt, env, locals, &n.elements[i]);
+        const v = try eval(rt, env, locals, &n.elements[i + 1]);
+        m = try map_collection.assoc(rt, m, k, v);
+    }
+    return m;
+}
+
+/// `#{e1 e2 ...}` — evaluate each child, conj into an empty HashSet.
+/// Duplicates collapse via set semantics.
+fn evalSetLiteral(rt: *Runtime, env: *Env, locals: []Value, n: node_mod.SetLiteralNode) !Value {
+    var s = set_collection.empty();
+    for (n.elements) |*elt| {
+        const elt_val = try eval(rt, env, locals, elt);
+        s = try set_collection.conj(rt, s, elt_val);
+    }
+    return s;
 }
 
 const type_descriptor_mod = @import("../../runtime/type_descriptor.zig");
