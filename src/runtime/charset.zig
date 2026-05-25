@@ -119,6 +119,49 @@ fn isWhitespaceCodepoint(cp: u21) bool {
     };
 }
 
+/// Slice off leading whitespace codepoints per `isAllWhitespace`'s
+/// predicate (JVM `Character.isWhitespace` mirror). Returns a byte
+/// sub-slice of `s` — no allocation. On malformed UTF-8 returns the
+/// input unchanged.
+pub fn trimLeft(s: []const u8) []const u8 {
+    var iter = std.unicode.Utf8Iterator{ .bytes = s, .i = 0 };
+    while (true) {
+        const before = iter.i;
+        const cp = iter.nextCodepoint() orelse return s[before..];
+        if (!isWhitespaceCodepoint(cp)) return s[before..];
+    }
+}
+
+/// Mirror of `trimLeft` for the trailing edge. Iterates the entire
+/// string once forward, tracking the byte position just past the
+/// most recent non-whitespace codepoint. O(n) but allocation-free.
+pub fn trimRight(s: []const u8) []const u8 {
+    var iter = std.unicode.Utf8Iterator{ .bytes = s, .i = 0 };
+    var end_byte: usize = 0;
+    while (iter.nextCodepoint()) |cp| {
+        if (!isWhitespaceCodepoint(cp)) end_byte = iter.i;
+    }
+    return s[0..end_byte];
+}
+
+/// `trimLeft` + `trimRight`. Returns a byte sub-slice; no allocation.
+pub fn trim(s: []const u8) []const u8 {
+    return trimRight(trimLeft(s));
+}
+
+/// `clojure.string/trim-newline` mirror — strip ONLY trailing `\r`
+/// and `\n` (ASCII line terminators), not the broader Unicode
+/// whitespace set. Byte-level scan; no codepoint iteration needed
+/// because `\r` (0x0D) and `\n` (0x0A) are single-byte UTF-8
+/// codepoints.
+pub fn trimNewlineRight(s: []const u8) []const u8 {
+    var end: usize = s.len;
+    while (end > 0 and (s[end - 1] == '\n' or s[end - 1] == '\r')) {
+        end -= 1;
+    }
+    return s[0..end];
+}
+
 // --- tests ---
 
 const testing = std.testing;
@@ -181,6 +224,31 @@ test "isAllWhitespace false on non-whitespace mixed in" {
 
 test "isAllWhitespace false on NO-BREAK SPACE (JVM divergence)" {
     try testing.expect(!try isAllWhitespace("\u{00A0}"));
+}
+
+test "trimLeft strips ASCII spaces" {
+    try testing.expectEqualStrings("hi  ", trimLeft("  hi  "));
+}
+
+test "trimLeft strips Unicode ideographic space" {
+    try testing.expectEqualStrings("hi", trimLeft("\u{3000}\u{3000}hi"));
+}
+
+test "trimRight strips trailing whitespace" {
+    try testing.expectEqualStrings("  hi", trimRight("  hi  "));
+}
+
+test "trim handles both ends" {
+    try testing.expectEqualStrings("hi", trim("\t\n hi \r\n"));
+}
+
+test "trim on all-whitespace returns empty" {
+    try testing.expectEqualStrings("", trim("   \t\n"));
+}
+
+test "trimNewlineRight strips only \\r and \\n" {
+    try testing.expectEqualStrings("line", trimNewlineRight("line\r\n"));
+    try testing.expectEqualStrings("  hi  ", trimNewlineRight("  hi  "));
 }
 
 test "substring slices on codepoint boundaries" {

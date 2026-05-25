@@ -14,6 +14,7 @@
 //! vars land in cycles 2-4 per the per-task survey at
 //! `private/notes/phase6-6.9-survey.md` §6.
 
+const std = @import("std");
 const Value = @import("../../runtime/value/value.zig").Value;
 const Runtime = @import("../../runtime/runtime.zig").Runtime;
 const env_mod = @import("../../runtime/env.zig");
@@ -75,6 +76,90 @@ pub fn blank(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) 
     return if (blank_all) .true_val else .false_val;
 }
 
+const TrimVariant = enum { both, left, right, newline_right };
+
+fn trimImpl(rt: *Runtime, fn_name: []const u8, variant: TrimVariant, args: []const Value, loc: SourceLocation) anyerror!Value {
+    try error_catalog.checkArity(fn_name, args, 1, loc);
+    if (args[0].tag() != .string)
+        return error_catalog.raise(.type_arg_not_string, loc, .{ .fn_name = fn_name, .actual = @tagName(args[0].tag()) });
+    const s = string_collection.asString(args[0]);
+    const out = switch (variant) {
+        .both => charset.trim(s),
+        .left => charset.trimLeft(s),
+        .right => charset.trimRight(s),
+        .newline_right => charset.trimNewlineRight(s),
+    };
+    return try string_collection.alloc(rt, out);
+}
+
+/// `(clojure.string/trim s)` — strip Unicode whitespace from both
+/// ends. Matches JVM `clojure.string/trim` (which uses
+/// `Character/isWhitespace`, NOT `String.trim()` which is ASCII-only).
+pub fn trimBoth(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = env;
+    return trimImpl(rt, "trim", .both, args, loc);
+}
+
+/// `(clojure.string/triml s)` — left edge only.
+pub fn trimLeft(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = env;
+    return trimImpl(rt, "triml", .left, args, loc);
+}
+
+/// `(clojure.string/trimr s)` — right edge only.
+pub fn trimRight(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = env;
+    return trimImpl(rt, "trimr", .right, args, loc);
+}
+
+/// `(clojure.string/trim-newline s)` — strip ONLY trailing `\r` /
+/// `\n`. Narrower than `trimr` (no broader Unicode whitespace).
+pub fn trimNewline(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = env;
+    return trimImpl(rt, "trim-newline", .newline_right, args, loc);
+}
+
+const PrefixCheck = enum { starts, ends, contains };
+
+fn prefixImpl(fn_name: []const u8, check: PrefixCheck, args: []const Value, loc: SourceLocation) anyerror!Value {
+    try error_catalog.checkArity(fn_name, args, 2, loc);
+    if (args[0].tag() != .string)
+        return error_catalog.raise(.type_arg_not_string, loc, .{ .fn_name = fn_name, .actual = @tagName(args[0].tag()) });
+    if (args[1].tag() != .string)
+        return error_catalog.raise(.type_arg_not_string, loc, .{ .fn_name = fn_name, .actual = @tagName(args[1].tag()) });
+    const haystack = string_collection.asString(args[0]);
+    const needle = string_collection.asString(args[1]);
+    const hit = switch (check) {
+        // UTF-8 is self-synchronising — byte-equality is codepoint-
+        // equality for prefix / suffix / substring at this scope.
+        .starts => std.mem.startsWith(u8, haystack, needle),
+        .ends => std.mem.endsWith(u8, haystack, needle),
+        .contains => std.mem.find(u8, haystack, needle) != null,
+    };
+    return if (hit) Value.true_val else Value.false_val;
+}
+
+/// `(clojure.string/starts-with? s substr)`.
+pub fn startsWith(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = rt;
+    _ = env;
+    return prefixImpl("starts-with?", .starts, args, loc);
+}
+
+/// `(clojure.string/ends-with? s substr)`.
+pub fn endsWith(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = rt;
+    _ = env;
+    return prefixImpl("ends-with?", .ends, args, loc);
+}
+
+/// `(clojure.string/includes? s substr)`.
+pub fn includes(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = rt;
+    _ = env;
+    return prefixImpl("includes?", .contains, args, loc);
+}
+
 // --- registration ---
 
 const Entry = struct {
@@ -86,6 +171,13 @@ const ENTRIES = [_]Entry{
     .{ .name = "upper-case", .f = &upperCase },
     .{ .name = "lower-case", .f = &lowerCase },
     .{ .name = "blank?", .f = &blank },
+    .{ .name = "trim", .f = &trimBoth },
+    .{ .name = "triml", .f = &trimLeft },
+    .{ .name = "trimr", .f = &trimRight },
+    .{ .name = "trim-newline", .f = &trimNewline },
+    .{ .name = "starts-with?", .f = &startsWith },
+    .{ .name = "ends-with?", .f = &endsWith },
+    .{ .name = "includes?", .f = &includes },
 };
 
 /// Create the `clojure.string` namespace (idempotent — uses

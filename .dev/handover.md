@@ -9,14 +9,17 @@
 - **HEAD**: see `git log` (Phase 6.9 cycle 1 just landed; HEAD line
   refreshes only on Active-task-identifier change per the
   ≤ 2 / session cap).
-- **First commit on resume MUST be**: Phase 6.9 cycle 2 =
-  trim family + predicate family (6 vars: `trim` / `triml` /
-  `trimr` / `trim-newline` / `starts-with?` / `ends-with?` /
-  `includes?`) per `private/notes/phase6-6.9-survey.md` §6 cycle
-  2. Pure-scan + Phase-6.7 charset.zig helpers (no regex
-  dependency). The `(in-ns)` analyzer special form + multi-file
-  bootstrap loader are already wired (ADR-0032); cycle 2 only
-  adds clojure.string primitives + `string.clj` defns.
+- **First commit on resume MUST be**: Phase 6.9 cycle 3 =
+  indexing + simple replace + escape + reverse (6 vars:
+  `index-of` / `last-index-of` / `replace` string-only /
+  `replace-first` string-only / `escape` / `reverse`) per
+  `private/notes/phase6-6.9-survey.md` §6 cycle 3. `replace`
+  regex form raises `feature_not_supported` per DIVERGENCE D3
+  (regex captures land at D-051 cycle 3). `reverse` needs new
+  `charset.zig::reverseCodepoints` helper. `escape` needs char
+  iteration + per-char Clojure-fn callout (the first cycle-3 var
+  that requires invoking a Clojure fn from Zig — check how
+  `dispatch.callFnVal` exposes that).
 - **Forbidden this session**: (a) re-opening `core.zig` /
   `math.zig` primitive cluster (6.16 still closed). (b) handover
   HEAD-pointer churn — refresh only when Active-task-identifier
@@ -36,36 +39,29 @@ Workflow + § The only stop) → `.dev/project_facts.md` (F-001..F-009)
 ## Current state
 
 - **Phase**: **Phase 6 IN-PROGRESS** — §9.8 9/16 `[x]` + 6.9
-  `[~] (cycle 1 done)` (6.1, 6.5.b, 6.10-6.15 remain). 6.9
-  cycle 1 ships multi-file bootstrap loader + `(in-ns)` analyzer
-  special form + `clojure.string` namespace surface with
-  `upper-case` / `lower-case` / `blank?`. Cycles 2-4 land
-  remaining ~18 vars per `private/notes/phase6-6.9-survey.md`
-  §6.
+  `[~] (cycles 1-2 done)` (6.1, 6.5.b, 6.10-6.15 remain). 6.9
+  cycle 1 = multi-file bootstrap + `(in-ns)` + `upper-case` /
+  `lower-case` / `blank?`. Cycle 2 = trim + predicate families
+  (7 vars). Cycles 3-4 land remaining ~11 vars per
+  `private/notes/phase6-6.9-survey.md` §6.
 - **Branch**: `cw-from-scratch`. ADR-0032 issued (multi-file
   loader + in-ns). Symbol-Value-Form unsupported at runtime
   (Group A slot 1 reserved per F-004) → `(in-ns)` lands as
   analyzer special form, not primitive fn — analyzer flattens
   bare `(in-ns sym)` and quoted `(in-ns 'sym)` to InNsNode.
-- **Gate**: Mac 19/19 + OrbStack Ubuntu x86_64 18/18 green.
-  `zig build test` includes new charset / lang/primitive/string
-  / bootstrap tests + Layer-2 `e2e_phase6_clojure_string_cycle1`
-  (9 cases incl `(in-ns)` round-trip via stdin).
+- **Gate**: Mac 20/20 + OrbStack Ubuntu x86_64 19/19 green.
+  Two Layer-2 e2e: `phase6_clojure_string_cycle1` (9 cases) +
+  `phase6_clojure_string_cycle2` (16 cases incl Unicode
+  ideographic trim + UTF-8 substring includes?).
 - **Chapter cadence**: dormant per ADR-0025 + F-007.
 
-## Active task — Phase 6.9 cycle 2
+## Active task — Phase 6.9 cycle 3
 
-Land `clojure.string` trim + predicate family (6 vars):
-`trim` / `triml` / `trimr` / `trim-newline` / `starts-with?` /
-`ends-with?` / `includes?`. Pure-scan over Phase-6.7
-`runtime/charset.zig`. New helpers needed: `trimLeft` /
-`trimRight` (Unicode-whitespace-aware via the just-landed
-`isWhitespaceCodepoint` predicate); rest can call into
-`std.mem.startsWith` / `std.mem.endsWith` / `std.mem.find` on
-byte-equivalent UTF-8 prefixes (no codepoint iteration needed
-for prefix/suffix tests). E2E added to
-`test/e2e/phase6_clojure_string_cycle1.sh` (extend in place) or
-a new `phase6_clojure_string_cycle2.sh`.
+Land `clojure.string` indexing + simple replace + escape +
+reverse (6 vars). `replace` regex form raises
+`feature_not_supported` (D-051 cycle 3 dependency); `escape`
+introduces the first Clojure-fn callout from a clojure.string
+primitive — verify the dispatch surface before sinking time.
 
 ## Open questions / blockers
 
