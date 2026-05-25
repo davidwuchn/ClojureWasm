@@ -188,6 +188,34 @@ phase (`Phase N entry` / `Phase N target` / `Phase N+ ...`) — these
 are the structural-imagination outputs from earlier sessions that
 the current Phase owner is meant to resolve.
 
+**Step 0.7 — Re-laying against finished-form (main agent)**
+The main agent (not a subagent) reads the survey output and
+spends up to 30 minutes:
+  1. Walk the plan's required-feature chain mentally; confirm the
+     prerequisites the survey assumed are actually in place.
+  2. Re-lay the plan against finished-form (F-NNN in
+     `.dev/project_facts.md` + `.dev/structure_plan.md` + ROADMAP
+     §9): does the survey's recommended shape land closer to the
+     finished form, or is it a smallest-diff convenience that the
+     finished-form owner would unwind?
+  3. If the survey misses a prerequisite or proposes a
+     smallest-diff bias path, **amend the survey in place** (the
+     survey is not immutable — it is the loop's input, not its
+     contract).
+  4. If the re-laying surfaces a provisional behaviour the cycle
+     will need to introduce, **fork a `general-purpose`
+     Devil's-advocate subagent (mandatory, even at depth 1)**
+     to enumerate finished-form-clean alternatives within the
+     F-NNN envelope before committing to the provisional shape.
+     The marker comment + `feature_deps.yaml` entry + `.dev/debt.md`
+     row triad (per `.claude/rules/provisional_marker.md`) lands
+     in the same commit as the provisional behaviour.
+
+Step 0.7 is the discipline answer to "Step 0 surveys are only
+~80% accurate; the remaining 20% surfaces in implementation".
+Skip only when Step 0 itself was skipped (= the task is a
+refactor / rename / doc-only change).
+
 **Step 1 — Plan**
 One sentence in chat: the smallest failing test that captures the
 next behaviour. Then **re-read `.dev/principle.md` and apply the

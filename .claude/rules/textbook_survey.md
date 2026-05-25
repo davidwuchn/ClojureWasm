@@ -94,6 +94,35 @@ shared file, **do not replicate**. Either write a Tier-promotion
 ADR (`.dev/decisions/NNNN_promote_X.md`) or implement as a Wasm
 Component pod. ROADMAP §6.4 is non-negotiable.
 
+## The survey is not immutable — Step 0.7 may amend it
+
+Surveys are ~80% accurate at write time. The remaining ~20% surfaces
+only once implementation begins (the prerequisite was missed; the
+recommended shape is smallest-diff bias against the finished form;
+a provisional behaviour will need to be introduced).
+
+CLAUDE.md § Autonomous Workflow **Step 0.7 (Re-laying against
+finished-form)** is the main-agent pass that catches this. After
+Step 0 hands back the survey note, before Step 1's plan is
+committed, the main agent:
+
+- Walks the prerequisite chain to confirm what the survey assumed.
+- Re-lays the recommended shape against the F-NNN envelope
+  (`.dev/project_facts.md`) + `.dev/structure_plan.md` +
+  ROADMAP §9.
+- **Amends the survey in place** when reality drifts from the
+  survey's prediction. Survey notes are not immutable contracts;
+  they are the loop's working memory.
+- Forks a Devil's-advocate subagent (mandatory, even at depth 1)
+  when the re-laying surfaces a provisional behaviour, to
+  enumerate finished-form-clean alternatives within the F-NNN
+  envelope before committing to the provisional shape.
+
+This is the discipline answer to "Step 0 is by a subagent and only
+sees the snapshot; finished-form alignment is a main-agent
+responsibility". The survey is the input; Step 0.7 is the
+re-orientation against the project's invariants.
+
 ## When to skip Step 0
 
 Skip only when **all** are true:

@@ -206,6 +206,93 @@ Severity: **soon** on inconsistency.
 
 Severity: **watch** for missing ownership.
 
+## E2. Provisional marker health
+
+PROVISIONAL marker comments (`.claude/rules/provisional_marker.md`)
+are the in-code anchor for intermediate states. `audit_scaffolding`
+tracks their count, age, and SSOT-sync.
+
+### E2.1 Total marker count + per-file distribution
+
+```sh
+rg --no-heading -n 'PROVISIONAL:' src/ build.zig build.zig.zon test/e2e/ \
+  | sed 's/:[0-9]*:.*//' \
+  | sort | uniq -c | sort -rn
+```
+
+Severity: **watch** if count climbs > 10 net over a Phase boundary
+without matching discharge commits; **soon** if any single file
+carries > 3 markers (= concentrated rot).
+
+### E2.2 Marker / feature_deps.yaml / debt.md cross-reference
+
+Every marker's `[refs: D-NNN, feature_deps.yaml#<key>]` must point
+at a real debt row + real yaml entry:
+
+```sh
+# Markers in source
+rg --no-heading -oE 'PROVISIONAL:.*\[refs: ([^]]+)\]' src/ \
+  | sed -E 's/.*\[refs: ([^]]+)\].*/\1/' \
+  | tr ',' '\n' | sed 's/^ *//' | sort -u > /tmp/marker_refs.txt
+
+# Refs that exist in debt.md
+grep -oE 'D-[0-9]+' .dev/debt.md | sort -u > /tmp/debt_refs.txt
+
+# Refs that exist in feature_deps.yaml
+grep -E '^  - name:' feature_deps.yaml \
+  | sed -E 's/.*- name: *(.+)/feature_deps.yaml#\1/' \
+  | sort -u > /tmp/yaml_refs.txt
+
+# Cross-check
+comm -23 \
+  <(grep -E '^(D-[0-9]+|feature_deps\.yaml#)' /tmp/marker_refs.txt) \
+  <(cat /tmp/debt_refs.txt /tmp/yaml_refs.txt | sort -u)
+```
+
+Findings: any line printed = a marker references a row / entry
+that does not exist. Severity: **block** — broken SSOT pointer.
+
+### E2.3 Stale provisional markers (>14 days)
+
+```sh
+for f in $(rg -l 'PROVISIONAL:' src/ build.zig build.zig.zon test/e2e/); do
+  while IFS=: read -r file line content; do
+    last_commit=$(git log -1 --format=%cs -L "${line},${line}:${file}" 2>/dev/null | head -1)
+    [[ -z "$last_commit" ]] && continue
+    age_days=$(( ( $(date +%s) - $(date -j -f %Y-%m-%d "$last_commit" +%s 2>/dev/null || date -d "$last_commit" +%s) ) / 86400 ))
+    if [[ $age_days -gt 14 ]]; then
+      echo "$file:$line  $age_days days  $content"
+    fi
+  done < <(rg --no-heading -n 'PROVISIONAL:' "$f")
+done
+```
+
+Severity: **watch** for any line printed. A stale marker is not
+itself a problem — many provisionals legitimately wait for upstream
+features that will not land this phase. But each row should be
+checked against its `.dev/debt.md` close-out predicate; flip from
+"waiting" to "actionable" if the upstream landed.
+
+### E2.4 feature_deps.yaml ↔ marker round-trip
+
+For every `status: provisional` entry in `feature_deps.yaml`, the
+`provisional_markers:` field should match `rg 'feature_deps.yaml#<name>' src/`:
+
+```sh
+yq '.entries[] | select(.status == "provisional") | .name' feature_deps.yaml \
+  | while read name; do
+      decl=$(yq ".entries[] | select(.name == \"$name\") | .provisional_markers[]" feature_deps.yaml 2>/dev/null | wc -l)
+      grep=$(rg --no-heading -c "feature_deps.yaml#${name}" src/ 2>/dev/null \
+             | awk -F: '{s+=$2} END {print s+0}')
+      if [[ $decl -ne $grep ]]; then
+        echo "$name: yaml declares $decl marker(s), source has $grep"
+      fi
+    done
+```
+
+Severity: **block** if mismatch — the marker SSOT has drifted from
+the source ground truth.
+
 ## F. Agent scratch hygiene (`private/`)
 
 `private/` is **gitignored agent scratch**, not a source of truth.
