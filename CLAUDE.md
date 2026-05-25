@@ -277,60 +277,30 @@ Before staging:
 3. If a smell triggers, choose depth 1-4:
    - depth 1: add a one-line note in the commit message.
    - depth 2-4: land the ADR amendment / new ADR / `debt.md` row
-     / `private/notes/` entry **autonomously**. Before drafting
-     the ADR, **fork a `general-purpose` subagent with fresh
-     context as Devil's advocate**. Brief the subagent with the
-     decision under consideration **AND the active F-NNN
-     constraints** (paste in or link to project_facts.md). Ask
-     for 3 alternative shapes within the F-NNN envelope (one
-     smallest-diff, one finished-form-clean, one "wildcard"
-     within the constraints). **Subagent is instructed: "do NOT
-     propose alternatives that violate any F-NNN; if the only
-     finished-form-clean option requires violating an F-NNN,
-     record that finding as the leading entry of Alternatives
-     considered so the main loop sees it, but do not ask the loop
-     to halt — F-NNN amendment is a user action".** Reflect the
-     subagent's output verbatim into the ADR's "Alternatives
-     considered" section before stamping `Status: Proposed →
-     Accepted`. Commits the doc change first, then commits +
-     pushes the source separately. No external review gate for
-     ADR — ADR history (plus the Devil's-advocate output embedded
-     in it) is the rationale record. If the subagent surfaces a
-     would-violate-F-NNN finding, the main loop records it,
-     selects the best F-NNN-compliant shape, and continues.
+     / `private/notes/` entry **autonomously**. Devil's-advocate
+     subagent fork is mandatory at depth ≥ 2 — see § ADR-level
+     designs are handled inline below for the canonical brief.
+     Commit the doc change first, then commit + push the source
+     separately. ADR history (including the embedded
+     Devil's-advocate output) is the rationale record; no
+     external accept gate.
 
 Then:
 
-4. `git add` source files **and** `bench/quick_baseline.txt`
-   (gate-generated observability log; default to include in
-   source-bearing commits so number-changes line up with the
-   source diff that caused them — see policy note below).
-   Then `git commit` with **a two-line message shape**:
+4. `git add` source files **and** `bench/quick_baseline.txt` for
+   source-bearing commits, NOT for doc-only / chore commits (see
+   [`.claude/rules/bench_baseline.md`](.claude/rules/bench_baseline.md)
+   for the policy). Then `git commit` with the two-line shape:
    ```
    <type>(<scope>): <one line summary>
-   
+
    Smell-audited: <depth 0-4>: <one-line summary of audit outcome>
    <optional further body>
    ```
    `Smell-audited:` is **mandatory** on every commit that stages
    source-bearing files (`src/**/*.zig`, `build.zig`,
-   `build.zig.zon`, `.dev/decisions/NNNN_*.md`). It records that
-   Step 6's self-audit was actually performed. The pre-commit gate
-   auto-aligns Markdown tables; only genuine table-syntax errors
-   block.
-
-   **`bench/quick_baseline.txt` commit policy** (added 2026-05-24
-   after the user audit): the file is auto-appended by `bench/quick.sh`
-   on every gate run. Treat it as source-coupled telemetry:
-   - **Source-bearing commit**: include `bench/quick_baseline.txt`
-     in the same commit (= numbers line up with the source diff
-     that may have caused them).
-   - **Doc-only / chore commit**: do NOT include (= the numbers
-     have no source explanation to anchor against).
-   - **Phase boundary**: if doc-only commits left bench deltas
-     dangling, the Phase boundary review chain (continue skill)
-     sweeps them into one `bench: accumulated samples through
-     <phase>` commit.
+   `build.zig.zon`, `.dev/decisions/NNNN_*.md`). Pre-commit gate
+   auto-aligns Markdown tables; only genuine syntax errors block.
 5. `git push origin cw-from-scratch` runs immediately on the
    commit's success. **The `scripts/check_smell_audit.sh` PreToolUse
    hook physically blocks pushes that include any source-bearing
