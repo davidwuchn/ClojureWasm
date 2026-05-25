@@ -9,13 +9,12 @@
 - **HEAD**: see `git log` (Phase 6.9 cycle 1 just landed; HEAD line
   refreshes only on Active-task-identifier change per the
   ≤ 2 / session cap).
-- **First commit on resume MUST be**: §9.8 row 6.10 =
-  `lang/clj/clojure/set.clj` (Tier A, ~12 vars). Survey at
-  `private/notes/phase6-6.10-survey.md` first (Step 0). The
-  bootstrap loader + `(in-ns)` are already wired (ADR-0032) and
-  vector-literal evaluation + pr-str + multi-clj-load
-  infrastructure is all in place after 6.9 cycle 4. Phase 6.9
-  row already flipped to `[x]` in §9.8.
+- **First commit on resume MUST be**: §9.8 row 6.10 cycle 2 =
+  clojure.set Group B (`rename-keys` / `map-invert`). Needs
+  `hash-map` constructor primitive (mirror of `hash-set`) +
+  map pr-str (mirror of `printSet`). Group C (relational ops)
+  is deferred per D-061 until set literal `#{...}` reader +
+  map literal `{...}` analyzer (D-059) close.
 - **Forbidden this session**: (a) re-opening `core.zig` /
   `math.zig` primitive cluster (6.16 still closed). (b) handover
   HEAD-pointer churn — refresh only when Active-task-identifier
@@ -34,43 +33,40 @@ Workflow + § The only stop) → `.dev/project_facts.md` (F-001..F-009)
 
 ## Current state
 
-- **Phase**: **Phase 6 IN-PROGRESS** — §9.8 10/16 `[x]`
-  (6.1, 6.5.b, 6.10-6.15 remain). 6.9 closed end-to-end across
-  4 cycles: cycle 1 = loader + `(in-ns)` + 3 vars; cycle 2 =
-  trim + predicate families (7 vars); cycle 3 = indexing +
-  replace string-only + escape (fn cmap) + reverse (6 vars);
-  cycle 4 = `capitalize` + `split` + `split-lines` + `join`
-  + vector literal evaluation + vector pr-str. 22 vars total
-  in `clojure.string` ns.
+- **Phase**: **Phase 6 IN-PROGRESS** — §9.8 10/16 `[x]` plus
+  6.10 `[~] (cycle 1 done, 5/12 vars)` (6.1, 6.5.b,
+  6.11-6.15 remain). 6.9 closed across 4 cycles (22 vars in
+  `clojure.string`). 6.10 cycle 1 = `clojure.set` Group A
+  (`union` / `intersection` / `difference` / `subset?` /
+  `superset?`) + `rt/hash-set` constructor + `printSet`.
+  Group B (2 vars) cycle 2 next; Group C (5 vars) deferred
+  to D-061 (set literal reader + map literal analyzer).
 - **Branch**: `cw-from-scratch`. ADR-0032 issued (multi-file
   loader + in-ns). Symbol-Value-Form unsupported at runtime
   (Group A slot 1 reserved per F-004) → `(in-ns)` lands as
   analyzer special form, not primitive fn — analyzer flattens
   bare `(in-ns sym)` and quoted `(in-ns 'sym)` to InNsNode.
-- **Gate**: Mac 22/22 + OrbStack Ubuntu x86_64 21/21 green.
-  Four Layer-2 e2e: `phase6_clojure_string_cycle{1,2,3,4}`
-  (9 + 16 + 13 + 14 cases).
+- **Gate**: Mac 23/23 + OrbStack Ubuntu x86_64 22/22 green.
+  Layer-2 e2e: 4 × clojure_string cycle 1-4 (9+16+13+14) +
+  1 × clojure_set cycle 1 (16 cases).
 - **Chapter cadence**: dormant per ADR-0025 + F-007.
 
-## Active task — §9.8 row 6.10 (clojure.set)
+## Active task — §9.8 row 6.10 cycle 2 (Group B)
 
-`lang/clj/clojure/set.clj` (Tier A, ~12 vars). Spawn a Step-0
-survey subagent to map `clojure.set` against JVM upstream
-(`~/Documents/OSS/clojure/src/clj/clojure/set.clj`) and cw v0
-(`~/Documents/MyProducts/ClojureWasm/src/lang/builtins/...`).
-`set?` predicate is already in `core.zig` (cycle 1 verified).
-The 4 cycles of 6.9 worked off the survey at
-`private/notes/phase6-6.9-survey.md` — the same template
-applies. set-Value Tag is already day-1 reserved (Group A
-slot 7 — `hash_set`). Cycles likely fan out as: cycle 1 =
-foundation + 2-3 simplest (`union` / `intersection`).
+`rename-keys` (map + key-rename map → renamed map) + `map-invert`
+(swap k/v in map). Both lean on `runtime/collection/map.zig`
+ops (`assoc` / `dissoc` / `get` / `contains` + `keys` / `vals`
+iteration). Cycle 2 also lands `rt/hash-map` constructor +
+`printMap` for testing surface. Both follow the cycle-1
+DIVERGENCE D1 pattern (Zig impls calling collection ops
+directly; no `assoc`-as-primitive prerequisite).
 
 ## Open questions / blockers
 
 None testable from inside the loop. Step 0.5 debt sweep walks
 debt.md (D-005, D-014a/b, D-017, D-040, D-043, D-048..D-052,
-D-054, D-056..D-059, **D-060 new** VM op_vector_literal —
-TreeWalk path landed, VM raises NotImplemented).
+D-054, D-056..D-060, **D-061 new** clojure.set relational ops
+deferred until set-literal reader + map-literal analyzer).
 
 ## Guardrail refresh history (condensed)
 

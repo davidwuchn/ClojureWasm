@@ -31,6 +31,7 @@ const uuid = @import("primitive/uuid.zig");
 const file_io_prim = @import("primitive/file_io.zig");
 const regex_prim = @import("primitive/regex.zig");
 const string_prim = @import("primitive/string.zig");
+const set_prim = @import("primitive/set.zig");
 
 pub const RegisterError = error{
     RtNamespaceMissing,
@@ -56,6 +57,7 @@ pub fn registerAll(env: *Env) !void {
     // bootstrap loader later runs `string.clj` which opens with
     // `(in-ns 'clojure.string)` and finds an already-populated ns.
     try string_prim.register(env);
+    try set_prim.register(env);
 
     // (refer 'rt) into user — primitives become unqualified at the
     // user prompt. Idempotent: subsequent registerAll calls won't
