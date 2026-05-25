@@ -141,6 +141,109 @@ issue with no close-out plan yet, file a `.dev/debt.md` row
 first, then mark with `PROVISIONAL:` referring to the new row.
 A marker without `refs:` is rejected by the hook.
 
+## Skeleton vs transient stub vs PROVISIONAL vs permanent no-op
+
+(Wave 16 W16-6 fold of `no_op_stub_forbidden.md` — the time-axis
+distinction between "final shape" and "development trajectory" is
+the central invariant; preserve verbatim.)
+
+The cw v1 codebase commits to:
+
+> **No Tier A / B / C feature may ship in a form where the user
+> sees success while the runtime silently drops the intended
+> semantics.**
+
+The verb is "ship": the rule is about what lands in the **final
+shape** of the feature, not about the development trajectory.
+
+| Shape                                                                                   | Rule   | Why                                                                     |
+|-----------------------------------------------------------------------------------------|--------|-------------------------------------------------------------------------|
+| Skeleton struct that Phase N+ rewrites into a real impl                                 | **OK** | Reservation lowers later surface ripple. ADR-0004 day-1 enum.           |
+| Function body that raises `feature_not_supported`                                       | **OK** | Explicit user signal. Transient — disappears when the real impl lands. |
+| Function body that **runs** with intermediate semantics + carries `PROVISIONAL:` marker | **OK** | Marker + yaml entry + debt row triad makes the lifecycle auditable.     |
+| Function body that returns the input unchanged                                          | **NG** | Pretends to work, drops semantics silently. The user builds on a lie.   |
+| Macro that expands to `nil` or to its body without effect                               | **NG** | Same shape — user code compiles and runs, semantics are gone.          |
+
+The third row is where the **`PROVISIONAL:` marker** earns its
+keep: the function DOES run with intermediate semantics (= not a
+`feature_not_supported` raise), and the marker + SSOT triad
+record that the intermediate behaviour is intentional + has a
+close-out predicate. Without the marker, the third row collapses
+into the fourth (= permanent no-op).
+
+### Boundary rules
+
+A **skeleton** is permitted when any of:
+- Only the struct type definition exists (no function declared yet).
+- A function is declared but its body is exactly
+  `return error_catalog.raise(.unsupported_feature, loc, .{ .name = "<form>" });`
+  (per ADR-0018), or for internal-only paths
+  `return error.NotImplemented;` / `@panic("...")` with a developer-
+  visible comment naming the future task.
+
+A **transient stub** is permitted when the function ships an
+explicit error rather than fake-running.
+
+A **PROVISIONAL behaviour** is permitted when the function runs
+with intermediate semantics AND carries the `PROVISIONAL:` marker
++ yaml entry + debt row triad (this is the new third row).
+
+A **permanent no-op** is **forbidden** when:
+- A function is declared and executes the argument without the
+  intended semantics (e.g., `dosync` body executed without snapshot
+  isolation).
+- A function returns a default value that masks the missing feature.
+- A macro expands to `nil` or to its body without effect.
+
+The boundary is **what the user observes** + **whether the
+intermediate state is mechanically tracked**.
+
+### Examples
+
+Forbidden:
+```zig
+pub fn dosync(rt: *Runtime, body: Value) !Value {
+    return eval(rt, body);   // ❌ no snapshot isolation; ships as STM that isn't STM
+}
+```
+
+Allowed (transient stub):
+```zig
+pub fn dosync(rt: *Runtime, loc: SourceLocation, body: Value) !Value {
+    _ = rt;
+    _ = body;
+    return error_catalog.raise(.unsupported_feature, loc, .{ .name = "dosync" });
+}
+```
+
+Allowed (PROVISIONAL — runs intermediate semantics with the triad):
+```zig
+// PROVISIONAL: in-ns auto-refers rt/ pending (ns ...) macro [refs: D-071, feature_deps.yaml#runtime/eval/in_ns_auto_refer]
+if (env.findNs("rt")) |rt_ns| {
+    try env.referAll(rt_ns, env.current_ns.?);
+}
+```
+
+### Why (Shota's original directive, preserved)
+
+- A stub that "works" misleads users into building code that breaks
+  later.
+- STM (`dosync` without snapshot isolation) and locking (`locking`
+  without lock) are common offenders in JVM-non-equivalent runtimes.
+- cw v1 commits to either a real implementation, an explicit error,
+  or a PROVISIONAL-tracked intermediate.
+- Skeleton-then-rewrite **is** how the codebase grows; the only
+  thing forbidden is shipping a lie.
+
+### Enforcement
+
+- `scripts/check_no_op_stub.sh` — heuristic scan (currently
+  informational; W16-2 refreshed the activation criterion).
+- `scripts/check_provisional_sync.sh` — PROVISIONAL marker + SSOT
+  triad sync (hard gate at push time).
+- ADR-0004 / ADR-0012 / ADR-0023 endorse skeleton-then-rewrite for
+  day-1 reservations.
+
 ## Marker scope
 
 The rule applies to source files in the directories where
