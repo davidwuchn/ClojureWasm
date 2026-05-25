@@ -8,24 +8,22 @@
 
 - **HEAD**: see `git log` (v5 plan + wiring landed; HEAD line refreshes
   only on Active-task-identifier change).
-- **First commit on resume MUST be**: open **Phase 6.16.b** cycle —
-  `clojure.set` 12 vars `.clj` 化 (Group A+B+C 一括) per ADR-0033
-  D7 + ROADMAP §9.8 row 6.16.b + v5 §8.2 + §9. The 12 vars: union /
-  intersection / difference / subset? / superset? / rename-keys /
-  map-invert / select / project / index / rename / join. Pattern A
-  (pure Clojure composition over reduce/conj/disj/contains?/count/
-  every?/etc — all now landed). Group C (5 relational ops) requires
-  set-literal reader + map-literal analyzer (D-061 + D-059) — fold
-  these gap closes into 6.16.b cycle. Also: open **ADR-0035** (require
-  spec, D-063) at the same cycle since multi-file dependency order
-  becomes load-bearing once set.clj defns reference partial/comp/
-  juxt etc from core.clj. Step 0 survey via general-purpose subagent
-  first (output `private/notes/phase6-6.16.b-survey.md`). e2e:
-  `clojure_set_full.sh`. After 6.16.b: Phase 6.16.c (clojure.walk).
-  Prior landings: ADR-0033 (2bf491b) + ADR-0034 (2834511) + 6.16.a-0
-  (b5d44f7) + 6.16.a-1 (d35dc3b) + 6.16.a-2 (a4bfca5) + 6.16.a-3.1
-  (f84a918) + 6.16.a-3.2 (1d20ce3, includes D-060 close + D-070/
-  D-071/D-072/D-073 open).
+- **First commit on resume MUST be**: open **Phase 6.16.b-2** cycle —
+  D-061 (`#{...}` reader literal `.set` Form variant + tokenizer
+  `set_open` + readSet) + D-059 (map-literal-as-Value analyzer
+  `analyzeMapLiteral` + `analyzeSetLiteral` mirror of
+  `analyzeVectorLiteral` at `src/eval/analyzer/analyzer.zig`
+  L500-517) + TreeWalk eval + VM compile/opcode + tests. Ruler:
+  D-060 `op_vector_literal` landed at 1d20ce3 (~60 LOC analyzer +
+  Node + tree_walk + VM compile + opcode). Total LOC budget ~230
+  per `private/notes/phase6-6.16.b-survey.md` §4. e2e: new
+  `test/e2e/phase6_set_map_literal.sh`. After 6.16.b-2:
+  Phase 6.16.b-3 (Group C select/project/index/rename/join `.clj`
+  defns sitting on this infra). 6.16.b-1 landed at ddb7203
+  (Group A+B `.clj` defns + evalInNs rt/ auto-refer; D-070 finding
+  recorded — variadic + internal arity discrimination sidesteps
+  D-070 for union/intersection/difference; multi-arity dispatch
+  remains needed only for "different body per arity" cases).
 - **Forbidden this session**: (a) `__zig-` namespace prefix path (v5
   §3.1 rejected; `defn-` + `-name` + `^:private :zig-leaf` metadata is
   the confirmed scheme). (b) `clojure.X.impl/` sub-ns path (v5 §3 rejected
@@ -47,30 +45,34 @@ build + error 確定計画 SSOT)** →
 
 ## Current state
 
-- **Phase**: **Phase 6 IN-PROGRESS** — §9.8 14/24 `[x]` + 6.10 `[~]
-  (7/12)` + 6.11 `[~] (3/10)`. v5 plan + ADR-0033 (2bf491b) + ADR-0034
-  (2834511) + Phase 6.16.a-0 (b5d44f7) + a-1 (d35dc3b) + a-2 (a4bfca5)
-  + a-3.1 (f84a918) + a-3.2 (1d20ce3, +D-060 close + D-070/D-071/D-072/
-  D-073 open). **Active task = Phase 6.16.b cycle** (clojure.set 12
-  vars `.clj` 化 + ADR-0035 require spec).
+- **Phase**: **Phase 6 IN-PROGRESS** — §9.8 14/24 `[x]` + 6.10 `[~]`
+  + 6.11 `[~] (3/10)` + 6.16.b-1 landed (Group A+B `.clj` defn
+  migration). v5 plan + ADR-0033/0034 + 6.16.a-0..a-3.2 + 6.16.b-1
+  (ddb7203). **Active task = Phase 6.16.b-2 cycle** (D-061 +
+  D-059 reader/analyzer infra).
 - **Branch**: `cw-from-scratch`. ADR-0032 issued (multi-file loader +
   in-ns). v5 plan = `private/notes/clj_vs_zig_split_proposal_v5.md`
   (1593 lines, self-contained, SSOT for ADR-0033/0034/0035).
-- **Gate**: Mac 30/30 + OrbStack Ubuntu x86_64 29/29 green at 1d20ce3
-  (composition_unlock_a3_1.sh + transducer_unlock_a3.sh registered).
+- **Gate**: Mac 31/31 + OrbStack Ubuntu x86_64 30/30 green at
+  ddb7203 (phase6_clojure_set_group_ab.sh registered).
 - **Chapter cadence**: dormant per ADR-0025 + F-007.
 
-## Active task — Phase 6.16.b (clojure.set 12 vars .clj 化)
+## Active task — Phase 6.16.b-2 (D-061 + D-059 reader/analyzer infra)
 
-Open Phase 6.16.b: 12 vars (union/intersection/difference/subset?/
-superset?/rename-keys/map-invert/select/project/index/rename/join)
-as pure Pattern A defns in `src/lang/clj/clojure/set.clj`. Group C
-relational ops (5 vars) require D-061 (set-literal reader) +
-D-059 (map-literal analyzer) gap closes — fold these into 6.16.b
-cycle. Concurrently: ADR-0035 (require spec, D-063) issuance —
-multi-file dependency order becomes load-bearing.
-
-After 6.16.b: Phase 6.16.c (clojure.walk 10 vars .clj 化).
+Open Phase 6.16.b-2: `#{...}` reader literal + `{...}` map-literal-
+as-Value analyzer. Files to touch: `src/eval/form.zig` (`.set`
+FormData variant), `src/eval/tokenizer.zig` (`set_open` kind +
+readDispatch `'{'` arm), `src/eval/reader.zig` (`readSet` mirror of
+`readMap`), `src/eval/node.zig` (`SetLiteralNode` + `MapLiteralNode`),
+`src/eval/analyzer/analyzer.zig` (`analyzeSetLiteral` +
+`analyzeMapLiteral` mirror of `analyzeVectorLiteral` L500-517),
+`src/eval/backend/tree_walk.zig` (`evalSetLiteral` + `evalMapLiteral`),
+`src/eval/backend/vm/compiler.zig` (`compileSetLiteral` +
+`compileMapLiteral`), `src/eval/backend/vm/opcode.zig`
+(`op_set_literal` + `op_map_literal`), `src/eval/backend/vm.zig`
+(dispatch). Ruler: D-060 `op_vector_literal` (1d20ce3). e2e:
+`test/e2e/phase6_set_map_literal.sh`. Closes D-061 + D-059. After:
+6.16.b-3 (Group C `.clj` defns + retire old phase6_clojure_set_cycle*).
 
 v5 follow-up amendments accumulating (fold into ADR-0033 amendment
 or next-cycle commit body):
@@ -78,6 +80,8 @@ or next-cycle commit body):
 - §5.2 every?/some explicit Layer 2 designation (6.16.a-3.1)
 - §5.2 + §7 transducer arity cw v1 deviation + D-070 trigger spec (6.16.a-3.2)
 - ADR-0033 D6a amendment (partial 着地、 D-070 後 back-fill plan)
+- 6.16.b-1 evalInNs rt/ auto-refer (ADR-0032 amendment 候補、 ADR-0035
+  で `(ns ...)` macro が landing する時に正式置換予定)
 
 ## Open questions / blockers
 
@@ -90,11 +94,7 @@ at `placement.yaml`, populated incrementally as cycles close.
 
 Waves 1-12: spirit + Bad Smell + F-NNN + stop-list + ADR-0029 F-009
 + ADR-0030 + 6.1 analyzer split + ADR-0031 Accepted (Alt 2) + 6.16
-cluster + silent-test-skip surgery + clock API port. **Wave 13
-(2026-05-25)**: ADR-0032 multi-file bootstrap loader + `(in-ns)`
-analyzer special form. **Wave 14 (2026-05-25)**: v5 placement/build/
-error plan landed (`private/notes/clj_vs_zig_split_proposal_v5.md`)
-+ ROADMAP §9.8 cycle rows 6.16.a-0..e + ROADMAP §9.14/16/18/19
-deliverable extensions + debt.md D-062..D-069 + placement.yaml stub
-+ ADR-0033/0034/0035 起票計画 (ADR-0033 immediate, 0034/0035 cycle-
-terminus deferred).
+cluster + silent-test-skip surgery + clock API port. **Wave 13-14
+(2026-05-25)**: ADR-0032 (in-ns) + v5 placement/build/error plan
+SSOT + ROADMAP §9.8 cycle rows 6.16.a-0..e + debt.md D-062..D-073
++ ADR-0033/0034 issued / 0035 deferred to 6.16.b-4.
