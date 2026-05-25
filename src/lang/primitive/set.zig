@@ -24,6 +24,7 @@ const error_catalog = @import("../../runtime/error/catalog.zig");
 const dispatch = @import("../../runtime/dispatch.zig");
 const set_collection = @import("../../runtime/collection/set.zig");
 const list_collection = @import("../../runtime/collection/list.zig");
+const map_collection = @import("../../runtime/collection/map.zig");
 
 /// `(hash-set & xs)` — construct a set from variadic args. Empty
 /// arg list returns the empty-set singleton. Each arg is conj-ed
@@ -34,6 +35,22 @@ pub fn hashSet(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation
     var s = set_collection.empty();
     for (args) |a| s = try set_collection.conj(rt, s, a);
     return s;
+}
+
+/// `(hash-map & kvs)` — construct a map from variadic key/value pairs.
+/// Odd argument count raises `map_literal_arity_odd` (matches the
+/// JVM `IllegalArgumentException`). Empty arg list returns the
+/// empty-map singleton.
+pub fn hashMap(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = env;
+    if (args.len % 2 != 0)
+        return error_catalog.raise(.map_literal_arity_odd, loc, .{});
+    var m = map_collection.empty();
+    var i: usize = 0;
+    while (i < args.len) : (i += 2) {
+        m = try map_collection.assoc(rt, m, args[i], args[i + 1]);
+    }
+    return m;
 }
 
 fn assertSetArg(v: Value, fn_name: []const u8, loc: SourceLocation) !void {
@@ -136,6 +153,58 @@ pub fn supersetQ(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocati
     return subsetQ(rt, env, &[_]Value{ args[1], args[0] }, loc);
 }
 
+fn assertMapArg(v: Value, fn_name: []const u8, loc: SourceLocation) !void {
+    if (v.tag() != .array_map and v.tag() != .hash_map)
+        return error_catalog.raise(.feature_not_supported, loc, .{ .name = fn_name });
+    if (v.tag() == .hash_map)
+        // PersistentHashMap iteration is gated on D-045; until promotion
+        // lands, maps stay ArrayMap-backed at every accessible scope.
+        return error_catalog.raise(.feature_not_supported, loc, .{ .name = fn_name });
+}
+
+/// `(clojure.set/rename-keys m kmap)` — return `m` with every key
+/// present in `kmap` renamed to its corresponding value. Keys in
+/// `kmap` that are absent from `m` are skipped (matches JVM
+/// behaviour); when the rename target already exists in `m`, the
+/// source's value overwrites it.
+pub fn renameKeys(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = env;
+    try error_catalog.checkArity("rename-keys", args, 2, loc);
+    try assertMapArg(args[0], "clojure.set/rename-keys (non-map arg)", loc);
+    try assertMapArg(args[1], "clojure.set/rename-keys (non-map kmap)", loc);
+
+    var result = args[0];
+    const kmap = args[1].decodePtr(*const map_collection.ArrayMap);
+    var i: u32 = 0;
+    while (i < kmap.count) : (i += 1) {
+        const old_k = kmap.entries[2 * i];
+        const new_k = kmap.entries[2 * i + 1];
+        if (try map_collection.contains(result, old_k)) {
+            const v = try map_collection.get(result, old_k);
+            result = try map_collection.dissoc(rt, result, old_k);
+            result = try map_collection.assoc(rt, result, new_k, v);
+        }
+    }
+    return result;
+}
+
+/// `(clojure.set/map-invert m)` — swap keys and values. When two
+/// entries share the same value, one of them wins (JVM does not
+/// guarantee which — iteration order determined).
+pub fn mapInvert(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = env;
+    try error_catalog.checkArity("map-invert", args, 1, loc);
+    try assertMapArg(args[0], "clojure.set/map-invert (non-map arg)", loc);
+
+    var result = map_collection.empty();
+    const am = args[0].decodePtr(*const map_collection.ArrayMap);
+    var i: u32 = 0;
+    while (i < am.count) : (i += 1) {
+        result = try map_collection.assoc(rt, result, am.entries[2 * i + 1], am.entries[2 * i]);
+    }
+    return result;
+}
+
 // --- registration ---
 
 const Entry = struct {
@@ -145,6 +214,7 @@ const Entry = struct {
 
 const RT_ENTRIES = [_]Entry{
     .{ .name = "hash-set", .f = &hashSet },
+    .{ .name = "hash-map", .f = &hashMap },
 };
 
 const SET_NS_ENTRIES = [_]Entry{
@@ -153,6 +223,8 @@ const SET_NS_ENTRIES = [_]Entry{
     .{ .name = "difference", .f = &differenceFn },
     .{ .name = "subset?", .f = &subsetQ },
     .{ .name = "superset?", .f = &supersetQ },
+    .{ .name = "rename-keys", .f = &renameKeys },
+    .{ .name = "map-invert", .f = &mapInvert },
 };
 
 /// Register `hash-set` into `rt/` (so it's user-callable unqualified

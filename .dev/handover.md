@@ -9,12 +9,14 @@
 - **HEAD**: see `git log` (Phase 6.9 cycle 1 just landed; HEAD line
   refreshes only on Active-task-identifier change per the
   ≤ 2 / session cap).
-- **First commit on resume MUST be**: §9.8 row 6.10 cycle 2 =
-  clojure.set Group B (`rename-keys` / `map-invert`). Needs
-  `hash-map` constructor primitive (mirror of `hash-set`) +
-  map pr-str (mirror of `printSet`). Group C (relational ops)
-  is deferred per D-061 until set literal `#{...}` reader +
-  map literal `{...}` analyzer (D-059) close.
+- **First commit on resume MUST be**: §9.8 row 6.11 =
+  `lang/clj/clojure/walk.clj` (Tier A, ~10 vars). Spawn Step-0
+  survey subagent to map `clojure.walk` against JVM upstream +
+  cw v0 + check which `clojure.walk` vars need higher-order
+  primitives like `map` / `keys` / `vals` (those may force
+  new primitive registration vs DIVERGENCE D1 Zig-direct
+  pattern). Phase 6.10 cycles 3+ (Group C relational ops)
+  remain deferred per D-061.
 - **Forbidden this session**: (a) re-opening `core.zig` /
   `math.zig` primitive cluster (6.16 still closed). (b) handover
   HEAD-pointer churn — refresh only when Active-task-identifier
@@ -34,32 +36,32 @@ Workflow + § The only stop) → `.dev/project_facts.md` (F-001..F-009)
 ## Current state
 
 - **Phase**: **Phase 6 IN-PROGRESS** — §9.8 10/16 `[x]` plus
-  6.10 `[~] (cycle 1 done, 5/12 vars)` (6.1, 6.5.b,
+  6.10 `[~] (cycles 1-2 done, 7/12 vars)` (6.1, 6.5.b,
   6.11-6.15 remain). 6.9 closed across 4 cycles (22 vars in
-  `clojure.string`). 6.10 cycle 1 = `clojure.set` Group A
-  (`union` / `intersection` / `difference` / `subset?` /
-  `superset?`) + `rt/hash-set` constructor + `printSet`.
-  Group B (2 vars) cycle 2 next; Group C (5 vars) deferred
-  to D-061 (set literal reader + map literal analyzer).
+  `clojure.string`). 6.10 cycle 1 = Group A + `hash-set` +
+  `printSet`. 6.10 cycle 2 = Group B (`rename-keys` /
+  `map-invert`) + `hash-map` + `printMap`. Group C (5 vars)
+  deferred to D-061 (set-literal reader + map-literal
+  analyzer).
 - **Branch**: `cw-from-scratch`. ADR-0032 issued (multi-file
   loader + in-ns). Symbol-Value-Form unsupported at runtime
   (Group A slot 1 reserved per F-004) → `(in-ns)` lands as
   analyzer special form, not primitive fn — analyzer flattens
   bare `(in-ns sym)` and quoted `(in-ns 'sym)` to InNsNode.
-- **Gate**: Mac 23/23 + OrbStack Ubuntu x86_64 22/22 green.
-  Layer-2 e2e: 4 × clojure_string cycle 1-4 (9+16+13+14) +
-  1 × clojure_set cycle 1 (16 cases).
+- **Gate**: Mac 24/24 + OrbStack Ubuntu x86_64 23/23 green.
+  Layer-2 e2e: 4 × clojure_string + 2 × clojure_set
+  (16+9 cases).
 - **Chapter cadence**: dormant per ADR-0025 + F-007.
 
-## Active task — §9.8 row 6.10 cycle 2 (Group B)
+## Active task — §9.8 row 6.11 (clojure.walk)
 
-`rename-keys` (map + key-rename map → renamed map) + `map-invert`
-(swap k/v in map). Both lean on `runtime/collection/map.zig`
-ops (`assoc` / `dissoc` / `get` / `contains` + `keys` / `vals`
-iteration). Cycle 2 also lands `rt/hash-map` constructor +
-`printMap` for testing surface. Both follow the cycle-1
-DIVERGENCE D1 pattern (Zig impls calling collection ops
-directly; no `assoc`-as-primitive prerequisite).
+`lang/clj/clojure/walk.clj` (Tier A, ~10 vars). Step-0 survey
+subagent to map `clojure.walk` against JVM upstream + cw v0 +
+identify which higher-order primitives (`map`, `keys`, `vals`,
+`reduce`, anonymous-fn dispatch) are required. `walk` itself
+is a higher-order traversal that takes user fns — calling
+Clojure fns from Zig already works via `rt.vtable.callFn`
+(escape primitive's pattern from Phase 6.9 cycle 3).
 
 ## Open questions / blockers
 

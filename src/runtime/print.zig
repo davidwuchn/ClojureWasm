@@ -41,6 +41,7 @@ const string_collection = @import("collection/string.zig");
 const list_collection = @import("collection/list.zig");
 const vector_collection = @import("collection/vector.zig");
 const set_collection = @import("collection/set.zig");
+const map_collection = @import("collection/map.zig");
 const ex_info_collection = @import("collection/ex_info.zig");
 const big_int_mod = @import("numeric/big_int.zig");
 const ratio_mod = @import("numeric/ratio.zig");
@@ -79,6 +80,7 @@ pub fn printValue(w: *Writer, v: Value) Writer.Error!void {
         .list => try printList(w, v),
         .vector => try printVector(w, v),
         .hash_set => try printSet(w, v),
+        .array_map, .hash_map => try printMap(w, v),
         .ex_info => try printExInfo(w, v),
         .big_int => try printBigInt(w, v),
         .ratio => try printRatio(w, v),
@@ -177,6 +179,24 @@ pub fn printVector(w: *Writer, v: Value) Writer.Error!void {
         try printValue(w, vector_collection.nth(v, i));
     }
     try w.writeByte(']');
+}
+
+/// Render an ArrayMap (Phase 6.10 cycle 2) in `{k v k v ...}` form.
+/// hash_map-backed maps are not iterated yet (D-045 promotion path
+/// has no callable consumers — sets/maps stay ArrayMap-only).
+pub fn printMap(w: *Writer, v: Value) Writer.Error!void {
+    try w.writeByte('{');
+    if (v.tag() == .array_map) {
+        const am = v.decodePtr(*const map_collection.ArrayMap);
+        var i: u32 = 0;
+        while (i < am.count) : (i += 1) {
+            if (i > 0) try w.writeAll(", ");
+            try printValue(w, am.entries[2 * i]);
+            try w.writeByte(' ');
+            try printValue(w, am.entries[2 * i + 1]);
+        }
+    }
+    try w.writeByte('}');
 }
 
 /// Render a PersistentHashSet in `#{a b c}` form (Phase 6.10 cycle 1).
