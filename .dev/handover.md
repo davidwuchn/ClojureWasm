@@ -96,3 +96,11 @@ F-009 + ADR-0030 + 6.1 analyzer split + ADR-0031 Accepted +
 / 0035 deferred. **Wave 15 (2026-05-26)**: provisional-marker
 mechanisation (rule + SSOT yaml + sync hook + Step 0.7 + audit
 E2 + bootstrap_essence + 11+5 marker retrofit + review-fix).
+
+## Stopped — user requested
+
+User instruction (2026-05-26): "配線監査修正まで済んだら、止めて
+おいてOK". The framework + spike + review-fix + cold-start
+wiring audit all landed (commits 1fdc342 / 0fed954 / 89b8fae /
+64c697c / ef4f683 / 025ea17). Resume at Phase 6.16.b-4 per
+Resume contract above.
