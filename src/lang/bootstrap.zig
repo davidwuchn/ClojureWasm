@@ -1,26 +1,27 @@
-//! Stage-1 bootstrap — read+analyse+evaluate `clj/clojure/core.clj`
-//! after `primitive.registerAll` populates the `rt` namespace and
-//! `macro_transforms.registerInto` populates the analyzer's macro
-//! Table.
+//! Stage-1 bootstrap — read+analyse+evaluate the embedded Clojure
+//! source files (currently `clj/clojure/core.clj` and
+//! `clj/clojure/string.clj`) after `primitive.registerAll` populates
+//! the kernel namespaces and `macro_transforms.registerInto` populates
+//! the analyzer's macro Table.
 //!
-//! ### Why a separate module
+//! ### Multi-file loader (ADR-0032)
 //!
-//! `main.zig` already runs the read-analyse-eval loop for user input
-//! (CLI / file / stdin). The Stage-1 prologue uses the same loop but
-//! over an embedded source string and a synthetic `<bootstrap>` source
-//! label. Splitting it out keeps `main.zig` focused on argv handling
-//! and lets unit tests drive the prologue without touching argv.
+//! `loadCore` iterates `FILES`, a flat table of `{label, source}`
+//! pairs. The loader carries **no** namespace knowledge — each `.clj`
+//! file declares its own namespace via a leading `(in-ns 'foo.bar)`
+//! form (analyzer special form per ADR-0032). After the last file,
+//! `current_ns` resets to `user/` so the REPL prompt lands there.
 //!
-//! ### Phase 3.12 scope
+//! ### Phase 3.12 → Phase 6.9 scope
 //!
 //! - `loadCore` accepts an arena (caller-owned), runs the loop, and
-//!   propagates errors via the standard `runtime/error.zig` pipeline
-//!   so error context (file `<bootstrap>`, line, column) is preserved
-//!   for the renderer.
-//! - The embedded source `clj/clojure/core.clj` only uses today's
-//!   special forms (`def`, `fn*`, `if`) — Clojure-level macros that
-//!   themselves require user-defined `defmacro` arrive in later tasks.
-//! - Wiring into `main.zig`'s startup chain is task 3.13.
+//!   propagates errors via the standard `runtime/error.zig` pipeline.
+//!   Errors surface with the file's label so the renderer's
+//!   `<file>:<line>:<col>: …` formatting points at the right source
+//!   (ADR-0032 + D-058 caveat: the renderer's `SourceContext.text`
+//!   slice still points at the first file's bytes until the renderer
+//!   learns about multi-file context — a known cosmetic gap for
+//!   non-first-file errors).
 
 const std = @import("std");
 
@@ -33,36 +34,59 @@ const env_mod = @import("../runtime/env.zig");
 const Env = env_mod.Env;
 const Value = @import("../runtime/value/value.zig").Value;
 
-/// The Stage-1 prologue source. Embedded at compile time so the binary
-/// is self-contained — `cljw` does not need its source tree on disk to
-/// boot.
-pub const CORE_SOURCE: []const u8 = @embedFile("clj/clojure/core.clj");
+/// One entry in the bootstrap file table. `label` is the synthetic
+/// source label the renderer attributes to errors raised while
+/// evaluating this file (e.g. `<bootstrap>` for `core.clj`,
+/// `<clojure.string>` for `string.clj`).
+pub const FileEntry = struct {
+    label: []const u8,
+    source: []const u8,
+};
 
-/// Source label attributed to errors raised while evaluating the
-/// prologue. Surfaces in `formatErrorWithContext` output as the
-/// `<file>` portion of `<file>:<line>:<col>: ...`.
-pub const SOURCE_LABEL: []const u8 = "<bootstrap>";
+/// Bootstrap source table — load order matters. `core.clj` must be
+/// first because it lands `(def not ...)` and the future
+/// `clojure.core` companions that subsequent files may reference.
+/// Each non-first file is expected to open with `(in-ns 'foo.bar)`.
+pub const FILES: []const FileEntry = &.{
+    .{ .label = "<bootstrap>", .source = @embedFile("clj/clojure/core.clj") },
+    .{ .label = "<clojure.string>", .source = @embedFile("clj/clojure/string.clj") },
+};
 
-/// Read + analyse + evaluate the embedded `core.clj`. Caller supplies
-/// an arena; the bootstrap allocates Forms / Nodes from it. Errors
-/// propagate as `anyerror` (the analyzer / tree-walk error sets) and
-/// have already been routed through `setErrorFmt` so the threadlocal
-/// `Info` is populated for the renderer.
+/// First file's source — exposed so `main.zig`'s renderer can fall
+/// back to it when a bootstrap-time error fires (per D-058 the
+/// renderer does not yet thread per-file context; this kept the
+/// renderer call sites unchanged from the single-file era).
+pub const CORE_SOURCE: []const u8 = FILES[0].source;
+
+/// First file's source label — same compatibility purpose as
+/// `CORE_SOURCE`.
+pub const SOURCE_LABEL: []const u8 = FILES[0].label;
+
+/// Iterate `FILES`, read + analyse + evaluate each form, and reset
+/// `current_ns` to `user/` at the end so REPL / file-eval callers
+/// see their expected starting namespace. Caller-supplied arena
+/// holds Forms / Nodes for the duration; the GC owns Values.
 pub fn loadCore(
     arena: std.mem.Allocator,
     rt: *Runtime,
     env: *Env,
     macro_table: *const macro_dispatch.Table,
 ) !void {
-    var reader = Reader.init(arena, CORE_SOURCE);
-    while (true) {
-        const form_opt = try reader.read();
-        const form = form_opt orelse break;
+    for (FILES) |file| {
+        var reader = Reader.init(arena, file.source);
+        while (true) {
+            const form_opt = try reader.read();
+            const form = form_opt orelse break;
 
-        const node = try analyzeForm(arena, rt, env, null, form, macro_table);
+            const node = try analyzeForm(arena, rt, env, null, form, macro_table);
 
-        var locals: [driver.MAX_LOCALS]Value = [_]Value{.nil_val} ** driver.MAX_LOCALS;
-        _ = try driver.evalForm(rt, env, &locals, arena, node);
+            var locals: [driver.MAX_LOCALS]Value = [_]Value{.nil_val} ** driver.MAX_LOCALS;
+            _ = try driver.evalForm(rt, env, &locals, arena, node);
+        }
+    }
+
+    if (env.findNs("user")) |user_ns| {
+        env.current_ns = user_ns;
     }
 }
 
@@ -110,4 +134,28 @@ test "loadCore evaluates `(def not ...)` so 'not' resolves in user/" {
     const user = fix.env.findNs("user") orelse return error.TestUnexpectedResult;
     const not_var = user.resolve("not") orelse return error.TestUnexpectedResult;
     try testing.expect(!not_var.root.isNil());
+}
+
+test "loadCore leaves current_ns at user/ after multi-file load" {
+    var fix: Fixture = undefined;
+    try fix.init(testing.allocator);
+    defer fix.deinit();
+
+    try loadCore(fix.arena.allocator(), &fix.rt, &fix.env, &fix.table);
+
+    try testing.expect(fix.env.current_ns != null);
+    try testing.expectEqualStrings("user", fix.env.current_ns.?.name);
+}
+
+test "loadCore pulls in clojure.string namespace (ADR-0032 + Phase 6.9)" {
+    var fix: Fixture = undefined;
+    try fix.init(testing.allocator);
+    defer fix.deinit();
+
+    try loadCore(fix.arena.allocator(), &fix.rt, &fix.env, &fix.table);
+
+    const cs = fix.env.findNs("clojure.string") orelse return error.TestUnexpectedResult;
+    try testing.expect(cs.resolve("upper-case") != null);
+    try testing.expect(cs.resolve("lower-case") != null);
+    try testing.expect(cs.resolve("blank?") != null);
 }

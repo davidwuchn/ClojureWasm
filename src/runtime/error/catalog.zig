@@ -78,6 +78,10 @@ pub const Code = enum {
     arity_too_large,
     namespace_unknown,
     current_namespace_missing,
+    /// `(in-ns ...)` arity. args: `.{ .got = N }`.
+    in_ns_arity_invalid,
+    /// `(in-ns ...)` arg shape. args: `.{ .actual = "..." }`.
+    in_ns_arg_not_symbol,
 
     // --- Analysis (fn*) ---
     fn_star_form_incomplete,
@@ -275,6 +279,14 @@ pub fn entry(comptime code: Code) Entry {
         .current_namespace_missing => .{
             .kind = .name_error, .phase = .analysis,
             .template = "No current namespace; cannot resolve '{[sym]s}'",
+        },
+        .in_ns_arity_invalid => .{
+            .kind = .syntax_error, .phase = .analysis,
+            .template = "in-ns expects 1 arg, got {[got]d}",
+        },
+        .in_ns_arg_not_symbol => .{
+            .kind = .syntax_error, .phase = .analysis,
+            .template = "in-ns arg must be a symbol or (quote sym), got {[actual]s}",
         },
 
         // --- Analysis (fn*) ---

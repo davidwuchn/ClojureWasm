@@ -67,6 +67,58 @@ pub fn substring(s: []const u8, start: usize, end: usize) Utf8Error![]const u8 {
     return s[byte_start..byte_end];
 }
 
+/// Allocate a new UTF-8 byte slice with every ASCII lowercase
+/// codepoint replaced by its uppercase pair. Non-ASCII codepoints
+/// pass through verbatim. Per Phase 6.9 cycle 1, full Unicode case
+/// folding (Latin Extended, Greek, Cyrillic, …) is tracked at debt
+/// D-057 and lands when `clojure.string` graduates to JVM-conformance
+/// (Phase 11+). Caller owns the returned slice.
+pub fn upperCaseAlloc(alloc: std.mem.Allocator, s: []const u8) ![]u8 {
+    const out = try alloc.alloc(u8, s.len);
+    @memcpy(out, s);
+    for (out) |*c| c.* = std.ascii.toUpper(c.*);
+    return out;
+}
+
+/// ASCII case-fold mirror of `upperCaseAlloc`. Same Phase-11 Unicode
+/// caveat applies (D-057).
+pub fn lowerCaseAlloc(alloc: std.mem.Allocator, s: []const u8) ![]u8 {
+    const out = try alloc.alloc(u8, s.len);
+    @memcpy(out, s);
+    for (out) |*c| c.* = std.ascii.toLower(c.*);
+    return out;
+}
+
+/// JVM `Character.isWhitespace` mirror — recognises ASCII space, tab,
+/// CR, LF, FF, VT (matches `std.ascii.isWhitespace`) plus the Unicode
+/// SPACE_SEPARATOR / LINE_SEPARATOR / PARAGRAPH_SEPARATOR codepoints
+/// (U+1680, U+2000–U+200A, U+2028, U+2029, U+202F, U+205F, U+3000).
+/// Excludes U+00A0 NO-BREAK SPACE per JVM convention. Returns true on
+/// an empty string (vacuous truth — `blank?` callers special-case this
+/// at the source level if they need to).
+pub fn isAllWhitespace(s: []const u8) !bool {
+    var iter = std.unicode.Utf8Iterator{ .bytes = s, .i = 0 };
+    while (iter.nextCodepoint()) |cp| {
+        if (!isWhitespaceCodepoint(cp)) return false;
+    }
+    return true;
+}
+
+fn isWhitespaceCodepoint(cp: u21) bool {
+    return switch (cp) {
+        // ASCII whitespace (matches std.ascii.isWhitespace).
+        ' ', '\t', '\n', '\r', 0x0B, 0x0C => true,
+        // Unicode SPACE_SEPARATOR / LINE_SEPARATOR / PARAGRAPH_SEPARATOR
+        // categories recognised by JVM Character.isWhitespace. Excludes
+        // U+00A0 / U+2007 / U+202F (NO-BREAK / FIGURE / NARROW NO-BREAK
+        // SPACE) — JVM treats those as non-whitespace.
+        0x1680, 0x2028, 0x2029, 0x205F, 0x3000 => true,
+        0x2000...0x2006 => true,
+        0x2008...0x200A => true,
+        else => false,
+    };
+}
+
 // --- tests ---
 
 const testing = std.testing;
@@ -91,6 +143,44 @@ test "codepointAt returns the right codepoint at an offset" {
 
 test "codepointAt out-of-bounds raises" {
     try testing.expectError(error.IndexOutOfBounds, codepointAt("ab", 5));
+}
+
+test "upperCaseAlloc folds ASCII codepoints" {
+    const out = try upperCaseAlloc(testing.allocator, "Hello World");
+    defer testing.allocator.free(out);
+    try testing.expectEqualStrings("HELLO WORLD", out);
+}
+
+test "upperCaseAlloc passes non-ASCII through" {
+    const out = try upperCaseAlloc(testing.allocator, "あいう");
+    defer testing.allocator.free(out);
+    try testing.expectEqualStrings("あいう", out);
+}
+
+test "lowerCaseAlloc folds ASCII codepoints" {
+    const out = try lowerCaseAlloc(testing.allocator, "HELLO");
+    defer testing.allocator.free(out);
+    try testing.expectEqualStrings("hello", out);
+}
+
+test "isAllWhitespace true on empty string" {
+    try testing.expect(try isAllWhitespace(""));
+}
+
+test "isAllWhitespace true on ASCII whitespace mix" {
+    try testing.expect(try isAllWhitespace("  \t\n"));
+}
+
+test "isAllWhitespace true on Unicode ideographic space" {
+    try testing.expect(try isAllWhitespace("\u{3000}\u{3000}"));
+}
+
+test "isAllWhitespace false on non-whitespace mixed in" {
+    try testing.expect(!try isAllWhitespace("  hi  "));
+}
+
+test "isAllWhitespace false on NO-BREAK SPACE (JVM divergence)" {
+    try testing.expect(!try isAllWhitespace("\u{00A0}"));
 }
 
 test "substring slices on codepoint boundaries" {

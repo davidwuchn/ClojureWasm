@@ -162,6 +162,7 @@ const SpecialFormKind = enum {
     try_form,
     throw_form,
     deftype_form,
+    in_ns_form,
 };
 
 const SPECIAL_FORMS = std.StaticStringMap(SpecialFormKind).initComptime(.{
@@ -176,6 +177,7 @@ const SPECIAL_FORMS = std.StaticStringMap(SpecialFormKind).initComptime(.{
     .{ "try", .try_form },
     .{ "throw", .throw_form },
     .{ "deftype", .deftype_form },
+    .{ "in-ns", .in_ns_form },
 });
 
 /// Forms the analyser recognises but the runtime does not yet
@@ -488,6 +490,7 @@ fn analyzeSpecial(
         .try_form => try_form.analyzeTry(arena, rt, env, scope, items, form, macro_table),
         .throw_form => special_forms.analyzeThrow(arena, rt, env, scope, items, form, macro_table),
         .deftype_form => special_forms.analyzeDeftype(arena, items, form),
+        .in_ns_form => special_forms.analyzeInNs(arena, items, form),
     };
 }
 

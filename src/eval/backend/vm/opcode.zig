@@ -80,6 +80,11 @@ pub const Opcode = enum(u8) {
     op_push_handler = 0x0F,
     op_pop_handler = 0x10,
     op_match_class = 0x11,
+    /// `(in-ns 'foo.bar)` — operand = constants index of the heap String
+    /// holding the target namespace name. VM dispatch decodes the
+    /// string, calls `env.findOrCreateNs` + sets `current_ns`, and
+    /// pushes nil (matches `tree_walk::evalInNs` per ADR-0032).
+    op_in_ns = 0x12,
 };
 
 /// `op_def` operand layout — see the Opcode docstring.
@@ -129,6 +134,7 @@ test "opcode enum tags are stable u8 values" {
     try std.testing.expectEqual(@as(u8, 0x0F), @intFromEnum(Opcode.op_push_handler));
     try std.testing.expectEqual(@as(u8, 0x10), @intFromEnum(Opcode.op_pop_handler));
     try std.testing.expectEqual(@as(u8, 0x11), @intFromEnum(Opcode.op_match_class));
+    try std.testing.expectEqual(@as(u8, 0x12), @intFromEnum(Opcode.op_in_ns));
 }
 
 test "Instruction carries opcode and u16 operand" {

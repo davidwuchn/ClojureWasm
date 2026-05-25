@@ -72,6 +72,7 @@ pub const Node = union(enum) {
     deftype_node: DeftypeNode,
     ctor_call_node: CtorCallNode,
     field_access_node: FieldAccessNode,
+    in_ns_node: InNsNode,
 
     /// Source location of this Node. Returns the inner variant's `loc`
     /// — every variant carries one because Phase-2 errors must cite a
@@ -280,6 +281,20 @@ pub const FieldAccessNode = struct {
     /// Field name without the leading dot.
     field_name: []const u8,
     target: *const Node,
+    loc: SourceLocation = .{},
+};
+
+/// `(in-ns 'foo.bar)` — switch `env.current_ns` to the named namespace,
+/// creating it if absent. Per ADR-0032 this is a special form (not a
+/// primitive Value-arg fn) because quoted-symbol-as-Value has no heap
+/// representation in cw v1 yet (F-004 Group A slot 1 reserved for
+/// future symbol intern table). The form accepts either a bare symbol
+/// (`(in-ns foo)`) or a quoted symbol (`(in-ns 'foo)`); the analyzer
+/// flattens both to `ns_name` here. Eval returns `nil` (JVM returns
+/// the namespace value — a documented divergence pending the `ns`
+/// heap Value landing).
+pub const InNsNode = struct {
+    ns_name: []const u8,
     loc: SourceLocation = .{},
 };
 

@@ -112,6 +112,7 @@ const Compiler = struct {
             .deftype_node, .ctor_call_node, .field_access_node => {
                 return error.NotImplemented;
             },
+            .in_ns_node => |n| try self.compileInNs(n),
         }
     }
 
@@ -326,6 +327,17 @@ const Compiler = struct {
         // followed by a single `op_throw` instruction.
         try self.compileNode(n.expr);
         try self.emit(.op_throw, 0);
+    }
+
+    fn compileInNs(self: *Compiler, n: node_mod.InNsNode) Error!void {
+        // ADR-0032 in-ns VM path. Heap-allocate the ns name as a
+        // String Value (the dispatcher decodes it via
+        // `string_collection.asString`), park it in the constant pool,
+        // and emit op_in_ns. The dispatcher mutates env.current_ns
+        // and pushes nil (matching tree_walk::evalInNs).
+        const name_val = try string_mod.alloc(self.rt, n.ns_name);
+        const idx = try self.addConstant(name_val);
+        try self.emit(.op_in_ns, idx);
     }
 
     fn compileDef(self: *Compiler, n: node_mod.DefNode) Error!void {

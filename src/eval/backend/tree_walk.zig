@@ -236,7 +236,17 @@ pub fn eval(
         .deftype_node => |n| try evalDeftype(rt, n),
         .ctor_call_node => |n| try evalCtorCall(rt, env, locals, n),
         .field_access_node => |n| try evalFieldAccess(rt, env, locals, n),
+        .in_ns_node => |n| try evalInNs(env, n),
     };
+}
+
+/// `(in-ns 'foo.bar)` — switch `env.current_ns` to the named namespace,
+/// creating it if absent. Returns `nil` (JVM Clojure returns the
+/// namespace value — documented divergence pending the `ns` heap
+/// Value landing per F-004 Group B slot 21).
+fn evalInNs(env: *Env, n: node_mod.InNsNode) !Value {
+    env.current_ns = try env.findOrCreateNs(n.ns_name);
+    return .nil_val;
 }
 
 const type_descriptor_mod = @import("../../runtime/type_descriptor.zig");

@@ -308,6 +308,19 @@ fn stepOnce(
                 stack[sp] = if (matches) Value.true_val else Value.false_val;
                 sp += 1;
             },
+            .op_in_ns => {
+                // ADR-0032 in-ns — mirror of tree_walk::evalInNs.
+                if (instr.operand >= chunk.constants.len)
+                    return raiseInternal("vm: op_in_ns constant index out of range");
+                const name_val = chunk.constants[instr.operand];
+                if (!name_val.isString())
+                    return raiseInternal("vm: op_in_ns constant is not a String");
+                env.current_ns = try env.findOrCreateNs(string_mod.asString(name_val));
+                if (sp >= OPERAND_STACK_MAX)
+                    return raiseInternal("vm: operand stack overflow");
+                stack[sp] = Value.nil_val;
+                sp += 1;
+            },
     }
     return null;
 }
