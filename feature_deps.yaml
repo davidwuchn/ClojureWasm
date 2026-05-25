@@ -1,0 +1,191 @@
+# feature_deps.yaml — Feature dependency SSOT.
+#
+# Catalogues vars / special forms / reader features / runtime-layer
+# capabilities and the dependencies that must land before each entry
+# is callable in its finished form. Read by:
+#
+#   - scripts/check_provisional_sync.sh — enforces marker / yaml /
+#     debt.md three-way sync on every source-bearing commit.
+#   - audit_scaffolding skill — counts PROVISIONAL markers per entry,
+#     flags entries that have been provisional for >14 days.
+#   - Cycle planning — topological sort of `requires:` graph to verify
+#     a cycle's prerequisites are in place before it opens.
+#
+# Sister SSOTs:
+#   - compat_tiers.yaml — Tier A/B/C/D classification per Java class /
+#     special form (host-surface granularity).
+#   - placement.yaml — Pattern A vs Pattern B classification per
+#     Clojure-ns var (var-level placement).
+#   - feature_deps.yaml (this file) — dependencies between any two
+#     features (cross-cutting graph; the edge of the other two yamls).
+#
+# Schema per entry:
+#   - name        : string, the canonical identifier (e.g.
+#                   "clojure.core/select-keys" /
+#                   "runtime/eval/in_ns_auto_refer").
+#   - kind        : enum, one of:
+#                     var               — a callable / def'd value
+#                     special_form      — analyzer-recognised form
+#                     reader_feature    — tokenizer / reader capability
+#                     runtime_layer     — host-side runtime affordance
+#   - defined_in  : relative path of the file that owns the
+#                   implementation (or the headline file when
+#                   multi-file).
+#   - status      : enum, one of:
+#                     landed       — finished form (no PROVISIONAL
+#                                    markers exist; no close-out
+#                                    pending).
+#                     provisional  — current implementation is
+#                                    intermediate; PROVISIONAL markers
+#                                    point here and a close-out plan
+#                                    is in .dev/debt.md.
+#                     planned      — not yet implemented; entry exists
+#                                    to record the upcoming dependency.
+#   - requires    : list of `name:` references that must land before
+#                   this entry's finished form is reachable. Each
+#                   reference can be a feature_deps entry name or
+#                   a debt row reference `D-NNN`.
+#   - provisional_markers (optional, only when status: provisional):
+#                   list of `file:line` locations carrying a
+#                   `PROVISIONAL:` comment that refers to this entry.
+#                   audit_scaffolding cross-checks against
+#                   `rg 'feature_deps.yaml#<name>' src/`.
+#   - notes (optional): one-paragraph free-text explanation of the
+#                   provisional shape and what landing looks like.
+#                   Used by audit reports; not read by hooks.
+#
+# Populating discipline: Cycle 1 lands the schema header + a small
+# seed of entries reflecting the active provisional behaviour. Each
+# new cycle that introduces or discharges a PROVISIONAL marker MUST
+# update this file in the same commit (enforced by
+# scripts/check_provisional_sync.sh). The full var / feature
+# population is incremental (per cycle), not a single big sweep.
+
+entries:
+
+  - name: runtime/eval/in_ns_auto_refer
+    kind: runtime_layer
+    defined_in: src/eval/backend/tree_walk.zig
+    status: provisional
+    requires:
+      - special_form/ns_macro
+      - D-063
+      - D-071
+    provisional_markers: []
+    notes: |
+      evalInNs (tree_walk + VM) auto-refers `rt/` and (when present)
+      `clojure.core` into the entered namespace. This is the
+      mechanical substitute for the JVM `(ns ...)` macro that
+      explicitly calls `(clojure.core/refer 'clojure.core)`. Finished
+      form lands at ADR-0035 (Phase 6.16.b-4) when `(ns ...)` is a
+      real macro; evalInNs then reverts to bare ns-switch.
+
+  - name: special_form/ns_macro
+    kind: special_form
+    defined_in: src/eval/analyzer/special_forms.zig
+    status: planned
+    requires:
+      - D-063
+    notes: |
+      JVM Clojure's `(ns foo (:require [x] [y :as a]) (:refer-clojure))`
+      macro. Currently cw v1 has only the bare `(in-ns 'foo)` special
+      form (ADR-0032). Lands at ADR-0035 (D-063).
+
+  - name: clojure.core/select-keys
+    kind: var
+    defined_in: src/lang/clj/clojure/core.clj
+    status: landed
+    requires:
+      - clojure.core/reduce
+      - clojure.core/contains?
+      - clojure.core/assoc
+      - clojure.core/get
+      - reader_feature/map_literal_value
+
+  - name: clojure.core/merge
+    kind: var
+    defined_in: src/lang/clj/clojure/core.clj
+    status: provisional
+    requires:
+      - clojure.core/reduce
+      - clojure.core/assoc
+      - clojure.core/keys
+      - clojure.core/get
+    provisional_markers: []
+    notes: |
+      Variadic via `[& maps]` with internal arity discrimination
+      (`(if (= 0 (count maps)) ...)`). Sidesteps D-070 multi-arity
+      `fn*` for the "fold over N maps" body. The shape is
+      finished-form-compatible — multi-arity dispatch would not buy
+      anything here — so the only provisional axis is that `nil?`
+      handling within the reducer assumes `(get nil k)` returns nil
+      (true in cw v1; verified at 6.16.b-3).
+
+  - name: clojure.core/set
+    kind: var
+    defined_in: src/lang/clj/clojure/core.clj
+    status: landed
+    requires:
+      - clojure.core/reduce
+      - clojure.core/conj
+      - reader_feature/set_literal
+
+  - name: clojure.set/join
+    kind: var
+    defined_in: src/lang/clj/clojure/set.clj
+    status: provisional
+    requires:
+      - clojure.core/intersection
+      - clojure.core/set
+      - clojure.core/keys
+      - clojure.core/first
+      - clojure.core/select-keys
+      - clojure.core/merge
+      - clojure.core/index
+      - clojure.set/rename-keys
+      - reader_feature/set_literal
+      - reader_feature/map_literal_value
+      - special_form/fn_multi_arity
+    provisional_markers: []
+    notes: |
+      Ships 2-arity `[xrel yrel]` natural-join only. The 3-arity
+      `[xrel yrel km]` key-map form requires multi-arity `fn*`
+      dispatch (D-070). When D-070 closes, the 3-arity body lands
+      and this entry's status flips to `landed`.
+
+  - name: special_form/fn_multi_arity
+    kind: special_form
+    defined_in: src/eval/analyzer/special_forms.zig
+    status: planned
+    requires:
+      - D-070
+    notes: |
+      `(fn* ([x] body1) ([x y] body2))` form + arity-dispatch table.
+      Currently cw v1 `fn*` accepts only a single argv vector. D-070
+      tracks the analyzer extension (~150 LOC).
+
+  - name: reader_feature/set_literal
+    kind: reader_feature
+    defined_in: src/eval/reader.zig
+    status: landed
+    requires:
+      - reader_feature/tokenizer_dispatch_hash
+
+  - name: reader_feature/map_literal_value
+    kind: reader_feature
+    defined_in: src/eval/analyzer/analyzer.zig
+    status: landed
+    requires:
+      - reader_feature/tokenizer_lbrace
+
+  - name: reader_feature/tokenizer_dispatch_hash
+    kind: reader_feature
+    defined_in: src/eval/tokenizer.zig
+    status: landed
+    requires: []
+
+  - name: reader_feature/tokenizer_lbrace
+    kind: reader_feature
+    defined_in: src/eval/tokenizer.zig
+    status: landed
+    requires: []
