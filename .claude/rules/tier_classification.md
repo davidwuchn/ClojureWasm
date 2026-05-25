@@ -14,13 +14,11 @@ Every public function and type carries a tier classification A / B / C / D
 
 Tier D forms raise a per-form catalog Code (`tier_d_gen_class` /
 `tier_d_gen_interface` / `tier_d_compile` / `tier_d_proxy_deep` /
-`tier_d_bean_deep`) per ADR-0018 amendment 2. Each Code carries a
-hand-written multi-sentence template that explains the technical
-reason and suggests the cw-native alternative.
-
-The tier classification ("D") and the rationale ADR ("ADR-0013")
-live in `compat_tiers.yaml` and ADR-0013; they do not appear in the
-user-facing message.
+`tier_d_bean_deep`); each Code carries a hand-written multi-sentence
+template. The canonical naming + template-content spec lives in
+**ADR-0018 amendment 2** (= the catalog SSOT); the Tier label (D)
+and rationale ADR (ADR-0013) live in `compat_tiers.yaml`; neither
+the label nor the ADR identifier appears in user-facing text.
 
 ## Why
 

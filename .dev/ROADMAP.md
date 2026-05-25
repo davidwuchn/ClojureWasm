@@ -1964,7 +1964,6 @@ points; this section enumerates every required file).
 - `.claude/rules/feature_name_consistency.md` — keyword consistency + Backend marker (per ADR-0029 D4)
 - `.claude/rules/error_catalog_only.md` — catalog SSOT enforcement (per ADR-0018)
 - `.claude/rules/no_copy_from_v1.md` — re-derive, do not verbatim-copy cw v0
-- `.claude/rules/no_handover_predictions.md` — handover holds facts, not numeric predictions
 - `.claude/rules/no_jvm_specific_assumption.md` — cw v1 is not a JVM reimplementation
 - `.claude/rules/no_op_stub_forbidden.md` — stub vs no-op boundary
 - `.claude/rules/plan_revision_thinking.md` — Bad Smell sensor hook (per A23)

@@ -123,13 +123,13 @@ repair before proceeding.
 
 ### Structural (log / forecast / reproduced-content accumulation)
 
-| Pattern                                                          | Why forbidden                                                                            | Replace with                                                                                                |
-|------------------------------------------------------------------|------------------------------------------------------------------------------------------|-------------------------------------------------------------------------------------------------------------|
-| More than **one** `## Just landed` section                       | Log accumulation; `git log` is the SSOT                                                  | Keep at most the most-recent landing as a single ≤ 10-line section, or drop entirely once next task starts |
-| `## Future ... shopping list` / forecast tables                  | Forecast belongs in `.dev/debt.md` (recall trigger row) or ROADMAP §A / ADR governance  | Move to debt.md as a `D-NNN` row with `Status: recall trigger` and remove from handover                     |
-| `## Notes for the next session` reproducing rule / skill content | CLAUDE.md / `.claude/rules/` / skill `SKILL.md` are the SSOT — auto-loaded each session | Drop; the next session re-reads the source SSOT                                                             |
-| Numeric predictions (`~N tasks remain`, cycle counts)            | Per `no_handover_predictions.md`                                                         | Concrete identifiers (`next: §9.6 / 4.4`); no counts                                                       |
-| Multi-paragraph editorial framing of work size                   | "deep work" / "substantial multi-cycle" / "重い" framings are stop rationalisations      | Just name the task and the entry ADR                                                                        |
+| Pattern                                                          | Why forbidden                                                                                                          | Replace with                                                                                                                           |
+|------------------------------------------------------------------|------------------------------------------------------------------------------------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------|
+| More than **one** `## Just landed` section                       | Log accumulation; `git log` is the SSOT                                                                                | Keep at most the most-recent landing as a single ≤ 10-line section, or drop entirely once next task starts                            |
+| `## Future ... shopping list` / forecast tables                  | Forecast belongs in `.dev/debt.md` (recall trigger row) or ROADMAP §A / ADR governance                                | Move to debt.md as a `D-NNN` row with `Status: recall trigger` and remove from handover                                                |
+| `## Notes for the next session` reproducing rule / skill content | CLAUDE.md / `.claude/rules/` / skill `SKILL.md` are the SSOT — auto-loaded each session                               | Drop; the next session re-reads the source SSOT                                                                                        |
+| Numeric predictions (`~N tasks remain`, cycle counts)            | Predictions diverge from reality as time passes; the next session resumes against the stale guess instead of measuring | Concrete identifiers (`next: §9.6 / 4.4`); no counts. Live measurement scripts (`git log`, debt.md, audit_scaffolding) produce truth. |
+| Multi-paragraph editorial framing of work size                   | "deep work" / "substantial multi-cycle" / "重い" framings are stop rationalisations                                    | Just name the task and the entry ADR                                                                                                   |
 
 ## What handover IS for
 
@@ -174,8 +174,7 @@ When reviewing a handover.md commit:
 - [ ] `Open questions / blockers` rows are either testable
       external blockers OR already mirrored as `.dev/debt.md`
       D-NNN rows (named here by ID).
-- [ ] No numeric predictions (per
-      [`no_handover_predictions.md`](no_handover_predictions.md)).
+- [ ] No numeric predictions — concrete identifiers only.
 - [ ] If this is the 3rd+ handover update in the session,
       the change must be Active-task-identifier-level
       (Phase boundary / ADR status flip / new Forbidden);
@@ -263,9 +262,11 @@ This rule is stale if:
 
 ## Related
 
-- [`no_handover_predictions.md`](no_handover_predictions.md) —
-  forbids numeric / behaviour predictions (sibling rule).
 - CLAUDE.md § The only stop — the single-condition stop
   this rule references.
+- `scripts/check_handover_framing.sh` — the PreToolUse:Edit hook
+  that enforces the forbidden-phrase table + length cap (Wave 16
+  W16-3); canonical regex lives at the script's
+  `FORBIDDEN_PHRASES_RE`.
 - `~/Documents/MyProducts/zwasm_from_scratch/.claude/rules/handover_framing.md`
   — the v2 source rule cw adapted from.

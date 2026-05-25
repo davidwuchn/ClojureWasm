@@ -13,16 +13,22 @@ codebases without being pulled by their styles.
 
 ## The textbooks
 
-| Path                                                               | What it teaches                                                                                         | When to use                                                                                                 |
-|--------------------------------------------------------------------|---------------------------------------------------------------------------------------------------------|-------------------------------------------------------------------------------------------------------------|
-| `~/Documents/MyProducts/ClojureWasm/`                              | v1, 89K LOC, 18-month build. Deep Clojure semantics + GC + VM + Wasm interop.                           | Always when introducing a new Clojure feature.                                                              |
-| `~/Documents/MyProducts/ClojureWasmFromScratch_v1_ref/`            | Previous redesign Phase 1+2. Closer to current shape.                                                   | When a v2 file already exists in v1_ref under the same name.                                                |
-| `~/Documents/OSS/clojure/`                                         | Upstream Clojure JVM. `clojure/lang/{Var, Namespace, RT, LispReader, ...}.java` and `clojure/core.clj`. | When a Clojure language semantic is at stake (var resolution, multimethod dispatch, lazy seq, ex-info, …). |
-| `~/Documents/OSS/babashka/`                                        | SCI-based Clojure. Pod system, native-without-JVM precedent.                                            | When the question is "how do other JVM-less Clojures handle X".                                             |
-| `~/Documents/OSS/zig/`                                             | Zig 0.16 stdlib source.                                                                                 | When a `std.Io.*` / `std.atomic.*` / `std.process.*` API is in question.                                    |
-| `~/Documents/OSS/spec.alpha/`, `malli/`                            | Spec systems.                                                                                           | Phase 14+ spec work only.                                                                                   |
-| `~/Documents/OSS/wasmtime/`                                        | Wasm runtime reference.                                                                                 | Phase 14, 19.                                                                                               |
-| `~/Documents/OSS/mattpocock_skills/improve-codebase-architecture/` | Module / Interface / Depth / Seam vocabulary.                                                           | When a new module is being introduced.                                                                      |
+The full list of reference clones + purpose-of-use lives in
+[`.dev/reference_clones.md`](../../.dev/reference_clones.md) (the
+SSOT — matches `.claude/settings.json` `additionalDirectories`).
+Survey-time mapping:
+
+- **Always** when introducing a Clojure feature: `~/Documents/OSS/clojure/`
+  (`clojure/lang/*.java` + `clojure/core.clj`) for canonical
+  semantics; `~/Documents/MyProducts/ClojureWasm/` (cw v0) for
+  prior-art and known pain points.
+- **When the file exists under same name in v1_ref**: read
+  `~/Documents/MyProducts/ClojureWasmFromScratch_v1_ref/`.
+- **For JVM-less precedent**: `~/Documents/OSS/babashka/`.
+- **For Zig 0.16 stdlib idiom**: `~/Documents/OSS/zig/`.
+- **Phase-specific**: spec → `spec.alpha/` + `malli/` (Phase 14+);
+  Wasm runtime → `wasmtime/` (Phase 16+); type-system vocab →
+  `mattpocock_skills/` (when designing a new module).
 
 ## Survey procedure (default brief for the survey subagent)
 

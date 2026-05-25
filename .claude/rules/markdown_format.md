@@ -51,13 +51,13 @@ implementation:
 Knowing the rule helps you sanity-check the formatter's output, but
 your job is **never** to compute widths in your head.
 
-## Other Markdown conventions for this repo
+## Language policy + Japanese narrative conventions
 
-- `docs/ja/learn_clojurewasm/NNNN_*.md` is Japanese narrative text. Body text is
-  Japanese; code blocks keep English identifiers. See
-  `.claude/output_styles/japanese.md` for the prose-polish checklist
-  (`〜です/〜ます` over 体言止め, "本リポジトリ" not "本リポ", etc).
-- All other Markdown — `README.md`, `.dev/`, `.claude/`, `docs/`
-  outside `docs/ja/`, ADRs — is English.
-- Don't mix Japanese into English docs, or English prose into Japanese
-  ones (identifiers in code blocks are exempt and stay English).
+See [`.claude/output_styles/japanese.md`](../output_styles/japanese.md)
+for the canonical rule. Summary:
+
+- English by default for all Markdown — `README.md`, `.dev/`,
+  `.claude/`, ADRs, `docs/` outside `docs/ja/`.
+- Japanese for chat replies, `private/notes/<task>.md`, and
+  `docs/ja/` body text (code blocks keep English identifiers).
+- Do not mix: identifiers in code blocks are the only exception.
