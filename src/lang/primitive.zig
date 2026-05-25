@@ -26,6 +26,7 @@ const Runtime = @import("../runtime/runtime.zig").Runtime;
 
 const math = @import("primitive/math.zig");
 const core = @import("primitive/core.zig");
+const sequence = @import("primitive/sequence.zig");
 const error_prim = @import("primitive/error.zig");
 const uuid = @import("primitive/uuid.zig");
 const file_io_prim = @import("primitive/file_io.zig");
@@ -48,6 +49,7 @@ pub fn registerAll(env: *Env) !void {
 
     try math.register(env, rt_ns);
     try core.register(env, rt_ns);
+    try sequence.register(env, rt_ns);
     try error_prim.register(env, rt_ns);
     try uuid.register(env, rt_ns);
     try file_io_prim.register(env, rt_ns);

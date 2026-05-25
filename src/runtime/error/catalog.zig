@@ -152,6 +152,11 @@ pub const Code = enum {
     type_arg_not_integer,
     type_arg_not_boolean,
     type_arg_not_string,
+    /// args: `.{ .fn_name = "...", .expected = "...", .actual = "..." }`
+    /// Generic type mismatch — used by Phase 6.16.a+ core glue
+    /// primitives where the expected category is "seqable" /
+    /// "counted" / "collection" rather than a single concrete type.
+    type_arg_invalid,
     value_not_callable,
 
     // --- Eval (arithmetic) ---
@@ -499,6 +504,10 @@ pub fn entry(comptime code: Code) Entry {
         .type_arg_not_string => .{
             .kind = .type_error, .phase = .eval,
             .template = "{[fn_name]s}: expected string, got {[actual]s}",
+        },
+        .type_arg_invalid => .{
+            .kind = .type_error, .phase = .eval,
+            .template = "{[fn_name]s}: expected {[expected]s}, got {[actual]s}",
         },
         .value_not_callable => .{
             .kind = .type_error, .phase = .eval,

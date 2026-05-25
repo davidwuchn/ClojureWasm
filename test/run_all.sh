@@ -169,6 +169,7 @@ run_step "e2e_phase6_clojure_set_cycle1" "bash test/e2e/phase6_clojure_set_cycle
 run_step "e2e_phase6_clojure_set_cycle2" "bash test/e2e/phase6_clojure_set_cycle2.sh"
 run_step "e2e_phase6_clojure_walk_cycle1" "bash test/e2e/phase6_clojure_walk_cycle1.sh"
 run_step "e2e_phase6_16_a_0_metadata"      "bash test/e2e/phase6_16_a_0_metadata.sh"
+run_step "e2e_composition_unlock_a1"       "bash test/e2e/composition_unlock_a1.sh"
 
 # Informational scans (ADR-0024). Phase 5+ they become blocking.
 run_step "scan_catalog_only"   "bash scripts/scan_catalog_only.sh" optional
