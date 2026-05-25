@@ -95,6 +95,6 @@ framework_completion + 3 Bad Smell + audit E2 expansion.
 
 ## Stopped — user requested
 
-User instruction (2026-05-26): "配線監査修正まで済んだら止めてOK"
-+ "やり残し原理的予防のガードレールを既存体系に...見直しを" →
-Wave-15 + Wave-16 landed. Resume at Phase 6.16.b-4.
+User instruction (2026-05-26): "ええと、このあたりで止めて
+ください" — Wave-15 + Wave-16 + W16-fix landed (11 commits).
+Resume at Phase 6.16.b-4.
