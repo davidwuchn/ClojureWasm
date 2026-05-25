@@ -40,7 +40,39 @@ pub const VarFlags = packed struct(u8) {
     macro_: bool = false,
     /// `^:private` — not reachable from other namespaces via refer/var.
     private: bool = false,
-    _pad: u5 = 0,
+    /// `^:zig-leaf true` — Zig-implemented leaf primitive (B2 pattern
+    /// per ADR-0033 D4). Used by tooling to distinguish hand-written
+    /// Zig leaf intern from regular `(def ...)`-produced Vars; does
+    /// not affect runtime dispatch.
+    zig_leaf: bool = false,
+    /// `^:unsupported true` — declare-only placeholder per ADR-0033 D8.
+    /// Analyzer raises `feature_not_supported_unsupported_var` when the
+    /// Var is used as a callable. Used for vars like
+    /// `clojure.walk/macroexpand-all` that depend on later-Phase
+    /// machinery (Phase 7 macroexpand) but need a symbol present today.
+    unsupported: bool = false,
+    _pad: u3 = 0,
+};
+
+/// Per-Var metadata bundle accepted by `Env.intern`. All fields
+/// optional; the default `.{}` is equivalent to no metadata.
+///
+/// Phase 6.16.a-0 (ADR-0033 D8): introduced as the first-class path
+/// for injecting `^:private` / `^:zig-leaf` / `^:unsupported` from
+/// Zig-side `env.intern` calls. The `.clj`-side `^:private` reader
+/// macro lands later (D-066, Phase 6.16.b).
+pub const MetadataMap = struct {
+    /// `^:private` — analyzer blocks cross-namespace symbol reference.
+    private: bool = false,
+    /// `^:zig-leaf` — marker for Zig-side leaf primitives (Pattern B2).
+    zig_leaf: bool = false,
+    /// `^:unsupported` — declare-only placeholder; raises on call.
+    unsupported: bool = false,
+    /// `^:doc` string. Stored on the Var for `(doc fn-name)`.
+    doc: ?[]const u8 = null,
+    /// `^:arglists` (human-readable summary). Stored on the Var
+    /// for `(doc fn-name)`.
+    arglists: ?[]const u8 = null,
 };
 
 /// Clojure's `Var`: a named value holder produced by `def`.
@@ -54,8 +86,12 @@ pub const Var = struct {
     root: Value = .nil_val,
     /// `^{...}` metadata. Phase 3+ wires this; Phase 2 just stores it.
     meta: ?Value = null,
-    /// dynamic / macro / private flags.
+    /// dynamic / macro / private / zig_leaf / unsupported flags.
     flags: VarFlags = .{},
+    /// `^:doc` — docstring for `(doc fn-name)`. Set via MetadataMap.
+    doc: ?[]const u8 = null,
+    /// `^:arglists` — human-readable signature for `(doc fn-name)`.
+    arglists: ?[]const u8 = null,
 
     /// Return the active value: dynamic binding (if any) for dynamic
     /// Vars, otherwise the root.
@@ -240,9 +276,16 @@ pub const Env = struct {
     /// updates the existing Var's `root` in place if `name` is already
     /// bound. Update-in-place is what makes `def` idempotent at the
     /// REPL — repeated `(def x ...)` shouldn't churn references.
-    pub fn intern(self: *Env, ns: *Namespace, name: []const u8, root: Value) !*Var {
+    pub fn intern(
+        self: *Env,
+        ns: *Namespace,
+        name: []const u8,
+        root: Value,
+        meta: ?MetadataMap,
+    ) !*Var {
         if (ns.mappings.get(name)) |existing| {
             existing.root = root;
+            if (meta) |m| applyMetadata(existing, m);
             return existing;
         }
         const owned_name = try self.alloc.dupe(u8, name);
@@ -250,10 +293,24 @@ pub const Env = struct {
         const v = try self.alloc.create(Var);
         errdefer self.alloc.destroy(v);
         v.* = .{ .ns = ns, .name = owned_name, .root = root };
+        if (meta) |m| applyMetadata(v, m);
         try ns.mappings.put(self.alloc, owned_name, v);
         return v;
     }
 };
+
+/// Copy MetadataMap fields onto the Var. Idempotent — re-interning
+/// with the same metadata is a no-op. Re-interning with a *different*
+/// MetadataMap merges into the existing Var (last writer wins per
+/// field). Used by both first-intern and re-intern paths in
+/// `Env.intern`.
+fn applyMetadata(v: *Var, m: MetadataMap) void {
+    v.flags.private = m.private;
+    v.flags.zig_leaf = m.zig_leaf;
+    v.flags.unsupported = m.unsupported;
+    v.doc = m.doc;
+    v.arglists = m.arglists;
+}
 
 // --- tests ---
 
@@ -309,7 +366,7 @@ test "Env.intern creates a Var with root and back-reference to ns" {
     defer env.deinit();
 
     const user = env.findNs("user").?;
-    const v = try env.intern(user, "x", .true_val);
+    const v = try env.intern(user, "x", .true_val, null);
     try testing.expectEqual(Value.true_val, v.root);
     try testing.expectEqual(user, v.ns);
     try testing.expectEqualStrings("x", v.name);
@@ -324,8 +381,8 @@ test "Env.intern updates root in place on re-def" {
     defer env.deinit();
 
     const user = env.findNs("user").?;
-    const v1 = try env.intern(user, "x", .nil_val);
-    const v2 = try env.intern(user, "x", .true_val);
+    const v1 = try env.intern(user, "x", .nil_val, null);
+    const v2 = try env.intern(user, "x", .true_val, null);
     try testing.expectEqual(v1, v2); // same Var pointer
     try testing.expectEqual(Value.true_val, v1.root);
 }
@@ -339,7 +396,7 @@ test "Namespace.resolve hits mappings; misses unknown" {
     defer env.deinit();
 
     const user = env.findNs("user").?;
-    _ = try env.intern(user, "y", .true_val);
+    _ = try env.intern(user, "y", .true_val, null);
     try testing.expect(user.resolve("y") != null);
     try testing.expect(user.resolve("nope") == null);
 }
@@ -353,7 +410,7 @@ test "Var.deref returns root when no dynamic binding is active" {
     defer env.deinit();
 
     const user = env.findNs("user").?;
-    const v = try env.intern(user, "x", .true_val);
+    const v = try env.intern(user, "x", .true_val, null);
     try testing.expectEqual(Value.true_val, v.deref());
 }
 
@@ -366,7 +423,7 @@ test "Var.deref respects dynamic binding stack on dynamic Vars" {
     defer env.deinit();
 
     const user = env.findNs("user").?;
-    const v = try env.intern(user, "*x*", .nil_val);
+    const v = try env.intern(user, "*x*", .nil_val, null);
     v.flags.dynamic = true;
 
     try testing.expectEqual(Value.nil_val, v.deref()); // root visible
@@ -389,7 +446,7 @@ test "Var.deref ignores binding when Var is not dynamic" {
     defer env.deinit();
 
     const user = env.findNs("user").?;
-    const v = try env.intern(user, "x", .nil_val);
+    const v = try env.intern(user, "x", .nil_val, null);
     // Leave flags.dynamic = false intentionally.
 
     var frame: BindingFrame = .{};
@@ -411,7 +468,7 @@ test "BindingFrame: nested frames see innermost binding" {
     defer env.deinit();
 
     const user = env.findNs("user").?;
-    const v = try env.intern(user, "*x*", .nil_val);
+    const v = try env.intern(user, "*x*", .nil_val, null);
     v.flags.dynamic = true;
 
     var f1: BindingFrame = .{};
@@ -440,7 +497,7 @@ test "referAll exposes source mappings under target.refers" {
 
     const rt_ns = env.findNs("rt").?;
     const user = env.findNs("user").?;
-    _ = try env.intern(rt_ns, "+", .true_val);
+    _ = try env.intern(rt_ns, "+", .true_val, null);
 
     try env.referAll(rt_ns, user);
     // user/+ now resolves through refers.
@@ -465,7 +522,7 @@ test "Two Envs sharing a Runtime have isolated namespaces" {
     defer env2.deinit();
 
     const user1 = env1.findNs("user").?;
-    _ = try env1.intern(user1, "x", .true_val);
+    _ = try env1.intern(user1, "x", .true_val, null);
 
     const user2 = env2.findNs("user").?;
     try testing.expect(user2.resolve("x") == null);
@@ -473,4 +530,77 @@ test "Two Envs sharing a Runtime have isolated namespaces" {
 
 test "VarFlags packs into one byte" {
     try testing.expectEqual(@as(usize, 1), @sizeOf(VarFlags));
+}
+
+test "Env.intern with null metadata leaves flags + doc default" {
+    var fix: TestFixture = undefined;
+    fix.init(testing.allocator);
+    defer fix.deinit();
+
+    var env = try Env.init(&fix.rt);
+    defer env.deinit();
+
+    const ns = try env.findOrCreateNs("my.ns");
+    const v = try env.intern(ns, "x", Value.nil_val, null);
+    try testing.expect(!v.flags.private);
+    try testing.expect(!v.flags.zig_leaf);
+    try testing.expect(!v.flags.unsupported);
+    try testing.expect(v.doc == null);
+    try testing.expect(v.arglists == null);
+}
+
+test "Env.intern with MetadataMap sets all fields" {
+    var fix: TestFixture = undefined;
+    fix.init(testing.allocator);
+    defer fix.deinit();
+
+    var env = try Env.init(&fix.rt);
+    defer env.deinit();
+
+    const ns = try env.findOrCreateNs("my.ns");
+    const v = try env.intern(ns, "-secret", Value.nil_val, .{
+        .private = true,
+        .zig_leaf = true,
+        .unsupported = false,
+        .doc = "a private leaf",
+        .arglists = "([x])",
+    });
+    try testing.expect(v.flags.private);
+    try testing.expect(v.flags.zig_leaf);
+    try testing.expect(!v.flags.unsupported);
+    try testing.expectEqualStrings("a private leaf", v.doc.?);
+    try testing.expectEqualStrings("([x])", v.arglists.?);
+}
+
+test "Env.intern re-intern with new metadata overwrites previous metadata" {
+    var fix: TestFixture = undefined;
+    fix.init(testing.allocator);
+    defer fix.deinit();
+
+    var env = try Env.init(&fix.rt);
+    defer env.deinit();
+
+    const ns = try env.findOrCreateNs("my.ns");
+    _ = try env.intern(ns, "x", Value.nil_val, .{ .private = true });
+    const v2 = try env.intern(ns, "x", Value.true_val, .{ .private = false, .unsupported = true });
+    try testing.expect(!v2.flags.private);
+    try testing.expect(v2.flags.unsupported);
+    try testing.expectEqual(Value.true_val, v2.root);
+}
+
+test "Env.intern with ^:unsupported marker stores flag" {
+    var fix: TestFixture = undefined;
+    fix.init(testing.allocator);
+    defer fix.deinit();
+
+    var env = try Env.init(&fix.rt);
+    defer env.deinit();
+
+    const ns = try env.findOrCreateNs("clojure.walk");
+    const v = try env.intern(ns, "macroexpand-all", Value.nil_val, .{
+        .private = false,
+        .unsupported = true,
+    });
+    try testing.expect(v.flags.unsupported);
+    try testing.expect(!v.flags.private);
 }

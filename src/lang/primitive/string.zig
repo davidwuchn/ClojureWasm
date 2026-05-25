@@ -497,6 +497,6 @@ const ENTRIES = [_]Entry{
 pub fn register(env: *Env) !void {
     const ns = try env.findOrCreateNs("clojure.string");
     for (ENTRIES) |it| {
-        _ = try env.intern(ns, it.name, Value.initBuiltinFn(it.f));
+        _ = try env.intern(ns, it.name, Value.initBuiltinFn(it.f), null);
     }
 }

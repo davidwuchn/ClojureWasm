@@ -233,10 +233,10 @@ const SET_NS_ENTRIES = [_]Entry{
 pub fn register(env: *Env) !void {
     const rt_ns = env.findNs("rt") orelse return error.RtNamespaceMissing;
     for (RT_ENTRIES) |it| {
-        _ = try env.intern(rt_ns, it.name, Value.initBuiltinFn(it.f));
+        _ = try env.intern(rt_ns, it.name, Value.initBuiltinFn(it.f), null);
     }
     const set_ns = try env.findOrCreateNs("clojure.set");
     for (SET_NS_ENTRIES) |it| {
-        _ = try env.intern(set_ns, it.name, Value.initBuiltinFn(it.f));
+        _ = try env.intern(set_ns, it.name, Value.initBuiltinFn(it.f), null);
     }
 }

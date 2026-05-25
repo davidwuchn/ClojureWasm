@@ -344,7 +344,7 @@ fn evalDef(rt: *Runtime, env: *Env, locals: []Value, n: node_mod.DefNode) !Value
     const v = try eval(rt, env, locals, n.value_expr);
     const ns = env.current_ns orelse
         return error_catalog.raiseInternal(n.loc, "def: no current namespace");
-    const var_ptr = try env.intern(ns, n.name, v);
+    const var_ptr = try env.intern(ns, n.name, v, null);
     var_ptr.flags.dynamic = n.is_dynamic;
     var_ptr.flags.macro_ = n.is_macro;
     var_ptr.flags.private = n.is_private;
@@ -759,7 +759,7 @@ test "eval calls a built-in registered through Env.intern" {
     defer fix.deinit();
 
     const user = fix.env.findNs("user").?;
-    _ = try fix.env.intern(user, "+", Value.initBuiltinFn(&builtinPlus));
+    _ = try fix.env.intern(user, "+", Value.initBuiltinFn(&builtinPlus), null);
 
     try testing.expectEqual(@as(i48, 3), (try fix.evalStr("(+ 1 2)")).asInteger());
 }
@@ -770,7 +770,7 @@ test "eval (let* [x 1] (+ x 2)) → 3 (Phase-2 exit criterion 1/2)" {
     defer fix.deinit();
 
     const user = fix.env.findNs("user").?;
-    _ = try fix.env.intern(user, "+", Value.initBuiltinFn(&builtinPlus));
+    _ = try fix.env.intern(user, "+", Value.initBuiltinFn(&builtinPlus), null);
 
     try testing.expectEqual(@as(i48, 3), (try fix.evalStr("(let* [x 1] (+ x 2))")).asInteger());
 }
@@ -781,7 +781,7 @@ test "eval ((fn* [x] (+ x 1)) 41) → 42 (Phase-2 exit criterion combined)" {
     defer fix.deinit();
 
     const user = fix.env.findNs("user").?;
-    _ = try fix.env.intern(user, "+", Value.initBuiltinFn(&builtinPlus));
+    _ = try fix.env.intern(user, "+", Value.initBuiltinFn(&builtinPlus), null);
 
     try testing.expectEqual(@as(i48, 42), (try fix.evalStr("((fn* [x] (+ x 1)) 41)")).asInteger());
 }
@@ -792,7 +792,7 @@ test "calling a non-callable Value yields NotCallable" {
     defer fix.deinit();
 
     const user = fix.env.findNs("user").?;
-    _ = try fix.env.intern(user, "x", Value.initInteger(7));
+    _ = try fix.env.intern(user, "x", Value.initInteger(7), null);
     try testing.expectError(error.TypeError, fix.evalStr("(x 1 2)"));
 }
 
@@ -811,7 +811,7 @@ test "non-callable callee populates last_error with eval phase" {
     defer fix.deinit();
 
     const user = fix.env.findNs("user").?;
-    _ = try fix.env.intern(user, "x", Value.initInteger(7));
+    _ = try fix.env.intern(user, "x", Value.initInteger(7), null);
 
     error_mod.clearLastError();
     try testing.expectError(error.TypeError, fix.evalStr("(x 1 2)"));
@@ -899,7 +899,7 @@ test "eval try / catch ExceptionInfo binds the thrown ex-info" {
     // here without dragging registerAll in.
     const error_prim = @import("../../lang/primitive/error.zig");
     const user = fix.env.findNs("user").?;
-    _ = try fix.env.intern(user, "ex-info", Value.initBuiltinFn(&error_prim.exInfo));
+    _ = try fix.env.intern(user, "ex-info", Value.initBuiltinFn(&error_prim.exInfo), null);
 
     const r = try fix.evalStr(
         "(try (throw (ex-info \"boom\" 0)) (catch ExceptionInfo e e))",
@@ -954,7 +954,7 @@ test "eval (((fn* [x] (fn* [y] (+ x y))) 3) 4) → 7 (lexical closure)" {
     defer fix.deinit();
 
     const user = fix.env.findNs("user").?;
-    _ = try fix.env.intern(user, "+", Value.initBuiltinFn(&builtinPlus));
+    _ = try fix.env.intern(user, "+", Value.initBuiltinFn(&builtinPlus), null);
 
     const r = try fix.evalStr("(((fn* [x] (fn* [y] (+ x y))) 3) 4)");
     try testing.expectEqual(@as(i48, 7), r.asInteger());
@@ -966,7 +966,7 @@ test "eval (let* [x 5] ((fn* [y] (+ x y)) 6)) → 11 (closure over let)" {
     defer fix.deinit();
 
     const user = fix.env.findNs("user").?;
-    _ = try fix.env.intern(user, "+", Value.initBuiltinFn(&builtinPlus));
+    _ = try fix.env.intern(user, "+", Value.initBuiltinFn(&builtinPlus), null);
 
     const r = try fix.evalStr("(let* [x 5] ((fn* [y] (+ x y)) 6))");
     try testing.expectEqual(@as(i48, 11), r.asInteger());

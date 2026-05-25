@@ -63,6 +63,10 @@ pub const Code = enum {
     if_arity_invalid,
     quote_arity_invalid,
     symbol_unresolved,
+    /// args: `.{ .sym = "ns/name", .ns = "ns" }` — raised when a
+    /// `^:private` var is referenced as a symbol from outside its
+    /// owning namespace.
+    private_access_error,
     /// args: `.{ .form = "let*"|"loop*" }`
     bindings_form_incomplete,
     /// args: `.{ .form = "let*"|"loop*" }`
@@ -166,6 +170,10 @@ pub const Code = enum {
     ///
     /// args: `.{ .name = "<feature>" }`
     feature_not_supported,
+    /// args: `.{ .sym = "ns/name" }` — raised when an analyzer
+    /// reaches a callable position whose target Var carries
+    /// `^:unsupported` metadata (declare-only placeholder).
+    feature_not_supported_unsupported_var,
 
     /// Tier D forms — permanently outside cw scope (ADR-0013). One
     /// Code per form, each with a hand-written multi-sentence
@@ -247,6 +255,10 @@ pub fn entry(comptime code: Code) Entry {
         .symbol_unresolved => .{
             .kind = .name_error, .phase = .analysis,
             .template = "Unable to resolve symbol: '{[sym]s}'",
+        },
+        .private_access_error => .{
+            .kind = .name_error, .phase = .analysis,
+            .template = "Var '{[sym]s}' is private to namespace '{[ns]s}'",
         },
         .bindings_form_incomplete => .{
             .kind = .syntax_error, .phase = .analysis,
@@ -521,6 +533,10 @@ pub fn entry(comptime code: Code) Entry {
         .feature_not_supported => .{
             .kind = .not_implemented, .phase = .eval,
             .template = "{[name]s} is not supported in ClojureWasm",
+        },
+        .feature_not_supported_unsupported_var => .{
+            .kind = .not_implemented, .phase = .analysis,
+            .template = "'{[sym]s}' is declared but not yet supported in ClojureWasm",
         },
         .tier_d_gen_class => .{
             .kind = .not_implemented, .phase = .analysis,

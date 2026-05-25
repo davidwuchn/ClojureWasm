@@ -161,7 +161,7 @@ fn stepOnce(
                     return raiseInternal("vm: op_def constant is not a String");
                 const ns = env.current_ns orelse
                     return error_catalog.raiseInternal(.{}, "def: no current namespace");
-                const var_ptr = try env.intern(ns, string_mod.asString(name_val), value);
+                const var_ptr = try env.intern(ns, string_mod.asString(name_val), value, null);
                 var_ptr.flags.dynamic = (instr.operand & opcode_mod.DEF_FLAG_DYNAMIC) != 0;
                 var_ptr.flags.macro_ = (instr.operand & opcode_mod.DEF_FLAG_MACRO) != 0;
                 var_ptr.flags.private = (instr.operand & opcode_mod.DEF_FLAG_PRIVATE) != 0;
@@ -585,7 +585,7 @@ test "op_get_var dereferences a Var pointer from the constant pool" {
     defer f.deinit();
 
     const ns = f.env.current_ns.?;
-    const var_ptr = try f.env.intern(ns, "x", Value.true_val);
+    const var_ptr = try f.env.intern(ns, "x", Value.true_val, null);
     const var_value = Value.encodeHeapPtr(.var_ref, var_ptr);
 
     const instrs = [_]Instruction{
@@ -604,7 +604,7 @@ test "op_call routes through rt.vtable.callFn" {
 
     const ns = f.env.current_ns.?;
     const builtin_val = Value.initBuiltinFn(@as(dispatch.BuiltinFn, &testReturnFirstArg));
-    _ = try f.env.intern(ns, "first-arg", builtin_val);
+    _ = try f.env.intern(ns, "first-arg", builtin_val, null);
 
     const instrs = [_]Instruction{
         .{ .opcode = .op_const, .operand = 0 },

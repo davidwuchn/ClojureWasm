@@ -86,7 +86,7 @@ const ENTRIES = [_]Entry{
 /// `lang/primitive.registerAll` calls this once at startup.
 pub fn register(env: *Env, rt_ns: *env_mod.Namespace) !void {
     for (ENTRIES) |it| {
-        _ = try env.intern(rt_ns, it.name, Value.initBuiltinFn(it.f));
+        _ = try env.intern(rt_ns, it.name, Value.initBuiltinFn(it.f), null);
     }
 }
 

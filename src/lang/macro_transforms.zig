@@ -46,7 +46,7 @@ pub fn registerInto(env: *Env, table: *macro_dispatch.Table) !void {
     const user_ns = env.findNs("user") orelse return RegisterError.UserNamespaceMissing;
 
     inline for (BOOTSTRAP) |entry| {
-        const v = try env.intern(rt_ns, entry.name, .nil_val);
+        const v = try env.intern(rt_ns, entry.name, .nil_val, null);
         v.flags.macro_ = true;
         try ensureRegistered(table, entry.name, entry.expand);
     }

@@ -363,6 +363,21 @@ fn analyzeSymbol(
     else
         env.current_ns orelse return error_catalog.raise(.current_namespace_missing, form.location, .{ .sym = sym.name });
     const v_ptr = ns.resolve(sym.name) orelse return error_catalog.raise(.symbol_unresolved, form.location, .{ .sym = symFullName(sym) });
+    // ADR-0033 D4 + D8: `^:private` vars cannot be referenced as a
+    // symbol from outside their owning namespace. The check fires only
+    // when the resolution target is in a different namespace than the
+    // currently-active `(in-ns)`. `(var ...)` / quote / macro paths
+    // bypass this on purpose per v5 §3.3 — they go through their own
+    // analyze arms and do not enter analyzeSymbol.
+    if (v_ptr.flags.private) {
+        const here = env.current_ns;
+        if (here == null or here.? != v_ptr.ns) {
+            return error_catalog.raise(.private_access_error, form.location, .{
+                .sym = symFullName(sym),
+                .ns = v_ptr.ns.name,
+            });
+        }
+    }
     const n = try arena.create(Node);
     n.* = .{ .var_ref = .{ .var_ptr = v_ptr, .loc = form.location } };
     return n;
@@ -454,6 +469,18 @@ fn analyzeCall(
     macro_table: *const macro_dispatch.Table,
 ) AnalyzeError!*const Node {
     const callee = try analyze(arena, rt, env, scope, items[0], macro_table);
+    // ADR-0033 D8: `^:unsupported` declare-only vars raise at the
+    // callable position. Other usages (`(var foo)` / quote / passing
+    // as data) are allowed — the marker says "calling me is not yet
+    // supported", not "I do not exist".
+    if (callee.* == .var_ref and callee.var_ref.var_ptr.flags.unsupported) {
+        const vp = callee.var_ref.var_ptr;
+        var name_buf: [256]u8 = undefined;
+        const written = std.fmt.bufPrint(&name_buf, "{s}/{s}", .{ vp.ns.name, vp.name }) catch vp.name;
+        return error_catalog.raise(.feature_not_supported_unsupported_var, form.location, .{
+            .sym = written,
+        });
+    }
     var arg_nodes = try arena.alloc(Node, items.len - 1);
     for (items[1..], 0..) |arg_form, i| {
         const arg_node = try analyze(arena, rt, env, scope, arg_form, macro_table);
@@ -673,7 +700,7 @@ test "resolved symbol → var_ref pointing at the right Var.root" {
     defer fix.deinit();
 
     const user = fix.env.findNs("user").?;
-    _ = try fix.env.intern(user, "x", .true_val);
+    _ = try fix.env.intern(user, "x", .true_val, null);
     const n = try fix.analyzeStr("x");
     try testing.expect(n.* == .var_ref);
     try testing.expectEqual(Value.true_val, n.var_ref.var_ptr.root);
@@ -727,7 +754,7 @@ test "(let* [x 1 y 2] (+ x y)) — slot indices increment; body is a call_node" 
     defer fix.deinit();
 
     const user = fix.env.findNs("user").?;
-    _ = try fix.env.intern(user, "+", .nil_val); // dummy so symbol resolves
+    _ = try fix.env.intern(user, "+", .nil_val, null); // dummy so symbol resolves
 
     const n = try fix.analyzeStr("(let* [x 1 y 2] (+ x y))");
     try testing.expectEqual(@as(u16, 0), n.let_node.bindings[0].index);
@@ -793,7 +820,7 @@ test "call to a Var-resolved function lands as a call_node with var_ref callee" 
     defer fix.deinit();
 
     const user = fix.env.findNs("user").?;
-    _ = try fix.env.intern(user, "f", .nil_val);
+    _ = try fix.env.intern(user, "f", .nil_val, null);
     const n = try fix.analyzeStr("(f 1 2)");
     try testing.expect(n.call_node.callee.* == .var_ref);
     try testing.expectEqual(@as(usize, 2), n.call_node.args.len);
@@ -968,4 +995,61 @@ test "defrecord / reify / definterface still raise unsupported_feature (5.12.b/c
         try testing.expect(std.mem.find(u8, info.message, form_name) != null);
         try testing.expect(std.mem.find(u8, info.message, "not supported in ClojureWasm") != null);
     }
+}
+
+// --- ADR-0033 D4 + D8: private + unsupported metadata checks ---
+
+test "analyzeSymbol: same-ns private var resolves successfully" {
+    var fix: TestFixture = undefined;
+    try fix.init(testing.allocator);
+    defer fix.deinit();
+
+    const user = fix.env.findNs("user").?;
+    _ = try fix.env.intern(user, "-secret", .true_val, .{ .private = true });
+    // user is current_ns by default
+    const n = try fix.analyzeStr("-secret");
+    try testing.expect(n.* == .var_ref);
+    try testing.expectEqual(Value.true_val, n.var_ref.var_ptr.root);
+    try testing.expect(n.var_ref.var_ptr.flags.private);
+}
+
+test "analyzeSymbol: cross-ns private var raises private_access_error" {
+    var fix: TestFixture = undefined;
+    try fix.init(testing.allocator);
+    defer fix.deinit();
+
+    const other = try fix.env.findOrCreateNs("other.ns");
+    _ = try fix.env.intern(other, "-secret", .true_val, .{ .private = true });
+    // current_ns is still user
+    try testing.expectError(AnalyzeError.NameError, fix.analyzeStr("other.ns/-secret"));
+    const info = error_mod.peekLastError() orelse return error.TestUnexpectedResult;
+    try testing.expectEqual(error_mod.Kind.name_error, info.kind);
+    try testing.expect(std.mem.find(u8, info.message, "private") != null);
+    try testing.expect(std.mem.find(u8, info.message, "other.ns") != null);
+}
+
+test "analyzeSymbol: cross-ns public var resolves successfully" {
+    var fix: TestFixture = undefined;
+    try fix.init(testing.allocator);
+    defer fix.deinit();
+
+    const other = try fix.env.findOrCreateNs("other.ns");
+    _ = try fix.env.intern(other, "open-name", .true_val, .{ .private = false });
+    const n = try fix.analyzeStr("other.ns/open-name");
+    try testing.expect(n.* == .var_ref);
+    try testing.expectEqual(Value.true_val, n.var_ref.var_ptr.root);
+}
+
+test "analyzeCall: unsupported var at callable position raises feature_not_supported_unsupported_var" {
+    var fix: TestFixture = undefined;
+    try fix.init(testing.allocator);
+    defer fix.deinit();
+
+    const user = fix.env.findNs("user").?;
+    _ = try fix.env.intern(user, "todo-fn", .nil_val, .{ .unsupported = true });
+    try testing.expectError(AnalyzeError.NotImplemented, fix.analyzeStr("(todo-fn)"));
+    const info = error_mod.peekLastError() orelse return error.TestUnexpectedResult;
+    try testing.expectEqual(error_mod.Kind.not_implemented, info.kind);
+    try testing.expect(std.mem.find(u8, info.message, "todo-fn") != null);
+    try testing.expect(std.mem.find(u8, info.message, "declared but not yet supported") != null);
 }

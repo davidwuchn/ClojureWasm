@@ -361,9 +361,9 @@ test "ns_vars walker yields Var.root across two Envs sharing a Runtime" {
     cell2.* = .{ .header = HeapHeader.init(.vector) };
 
     const ns1 = env1.findNs("user").?;
-    _ = try env1.intern(ns1, "x", Value.encodeHeapPtr(.string, cell1));
+    _ = try env1.intern(ns1, "x", Value.encodeHeapPtr(.string, cell1), null);
     const ns2 = env2.findNs("user").?;
-    _ = try env2.intern(ns2, "y", Value.encodeHeapPtr(.vector, cell2));
+    _ = try env2.intern(ns2, "y", Value.encodeHeapPtr(.vector, cell2), null);
 
     var found1: bool = false;
     var found2: bool = false;
@@ -385,8 +385,8 @@ test "current_frame walker yields heap Values across nested binding frames" {
     var env = try Env.init(&fix.rt);
     defer env.deinit();
     const ns = env.findNs("user").?;
-    const var_x = try env.intern(ns, "x", Value.nil_val);
-    const var_y = try env.intern(ns, "y", Value.nil_val);
+    const var_x = try env.intern(ns, "x", Value.nil_val, null);
+    const var_y = try env.intern(ns, "y", Value.nil_val, null);
 
     const cell_x = try gc.alloc(Cell);
     cell_x.* = .{ .header = HeapHeader.init(.string) };

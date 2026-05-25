@@ -132,7 +132,7 @@ const ENTRIES = [_]Entry{
 
 pub fn register(env: *Env, rt_ns: *env_mod.Namespace) !void {
     for (ENTRIES) |it| {
-        _ = try env.intern(rt_ns, it.name, Value.initBuiltinFn(it.f));
+        _ = try env.intern(rt_ns, it.name, Value.initBuiltinFn(it.f), null);
     }
 }
 
