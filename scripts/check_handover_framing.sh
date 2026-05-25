@@ -33,6 +33,9 @@
 
 set -u
 set -o pipefail
+# `set -e` intentionally OFF: forbidden-phrase grep returns 1 on no
+# match, which is the success case here. The script uses the FAIL
+# accumulator pattern (see L82+) instead of relying on -e.
 
 source "$(dirname "$0")/hook_lib.sh"
 

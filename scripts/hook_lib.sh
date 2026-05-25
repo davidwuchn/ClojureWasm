@@ -54,8 +54,12 @@ hook_read_command() {
     exit 1
   fi
 
+  # Capture stdout only; Python's stderr (decode-failure diagnostics +
+  # any latent warnings) goes to the terminal so it cannot pollute the
+  # parsed command via a stderr→stdout fold. The script's own exit
+  # check (below) handles the decode-failure case fail-closed.
   local _cmd
-  _cmd="$(printf '%s' "$_input" | python3 -c '
+  if ! _cmd="$(printf '%s' "$_input" | python3 -c '
 import sys, json
 try:
     data = json.load(sys.stdin)
@@ -63,11 +67,10 @@ except Exception as e:
     sys.stderr.write(f"internal: hook payload decode failed: {e}\n")
     sys.exit(1)
 print((data.get("tool_input") or {}).get("command", "") or "")
-' 2>&1)" || {
+')"; then
     echo "internal: hook payload parse error — failing closed" >&2
-    echo "$_cmd" >&2
     exit 1
-  }
+  fi
 
   if [[ -n "${1:-}" ]]; then
     printf -v "$1" '%s' "$_cmd"

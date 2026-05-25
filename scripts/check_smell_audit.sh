@@ -45,7 +45,14 @@ else
   RANGE="HEAD"
 fi
 
-UNPUSHED="$(git log --format='%H' "$RANGE" 2>/dev/null || true)"
+# Fail-closed on git error (Wave-16 review-fix block#4 — previous
+# `|| true` swallowed any git failure as "no unpushed commits",
+# bypassing the gate). Use the same approach as hook_iter_unpushed.
+if ! UNPUSHED="$(git log --format='%H' "$RANGE" 2>&1)"; then
+  echo "internal: git log $RANGE failed — failing closed" >&2
+  echo "$UNPUSHED" >&2
+  exit 1
+fi
 [[ -z "$UNPUSHED" ]] && exit 0
 
 # --- 4. Helpers --------------------------------------------------------------

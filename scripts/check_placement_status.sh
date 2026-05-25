@@ -60,12 +60,12 @@ fi
 
 count_status() {
   local status="$1"
-  yq -r ".vars[] | select(.status == \"$status\") | .name" "$YAML" 2>/dev/null | wc -l | tr -d ' '
+  yq -r ".vars | to_entries | .[] | select(.value.status == \"$status\") | .key" "$YAML" 2>/dev/null | wc -l | tr -d ' '
 }
 
 list_status() {
   local status="$1"
-  yq -r ".vars[] | select(.status == \"$status\") | .name" "$YAML" 2>/dev/null
+  yq -r ".vars | to_entries | .[] | select(.value.status == \"$status\") | .key" "$YAML" 2>/dev/null
 }
 
 # --- audit mode ---------------------------------------------------------------
@@ -81,7 +81,7 @@ audit() {
 
   echo ""
   echo "=== entries with recall_trigger predicate ==="
-  yq -r '.vars[] | select(.recall_trigger != null) | "  \(.name): \(.recall_trigger)"' "$YAML" 2>/dev/null \
+  yq -r '.vars | to_entries | .[] | select(.value.recall_trigger != null) | "  \(.key): \(.value.recall_trigger)"' "$YAML" 2>/dev/null \
     | sort -u | head -40 || true
 
   echo ""
@@ -99,21 +99,15 @@ audit() {
 check_mode() {
   local fail=0
 
-  # Schema sanity: each entry must have name + status
-  local bad
-  bad=$(yq -r '.vars[] | select(.name == null or .status == null) | "  - missing required field"' "$YAML" 2>/dev/null)
-  if [[ -n "$bad" ]]; then
-    echo "✗ placement.yaml: entries missing required fields" >&2
-    echo "$bad" >&2
-    fail=1
-  fi
-
-  # Status must be in enum
-  local bad_status
-  bad_status=$(yq -r '.vars[] | select(.status != "transient_zig" and .status != "ready_for_migration" and .status != "stable" and .status != "migrated") | "  - \(.name): status=\(.status)"' "$YAML" 2>/dev/null)
-  if [[ -n "$bad_status" ]]; then
-    echo "✗ placement.yaml: entries with invalid status" >&2
-    echo "$bad_status" >&2
+  # Schema sanity: each entry must have a status in the enum.
+  # Using map(select(...)) + length avoids a yq quirk where the
+  # equivalent `.[] | select(...)` form emits a spurious empty entry
+  # on this particular yaml shape.
+  local bad_count
+  bad_count=$(yq -r '.vars | to_entries | map(select(.value.status == null or (.value.status != "transient_zig" and .value.status != "ready_for_migration" and .value.status != "stable" and .value.status != "migrated"))) | length' "$YAML" 2>/dev/null)
+  if [[ "${bad_count:-0}" -gt 0 ]]; then
+    echo "✗ placement.yaml: $bad_count entries with missing or invalid status" >&2
+    yq -r '.vars | to_entries | map(select(.value.status == null or (.value.status != "transient_zig" and .value.status != "ready_for_migration" and .value.status != "stable" and .value.status != "migrated"))) | .[] | "  - \(.key): status=\(.value.status)"' "$YAML" 2>/dev/null >&2
     fail=1
   fi
 
@@ -128,7 +122,7 @@ check_mode() {
 sweep() {
   echo "# ready_for_migration shortlist by composition_deps"
   echo ""
-  yq -r '.vars[] | select(.status == "ready_for_migration") | "- \(.name) — leaf=\(.leaf_loc // "n/a") deps=\(.composition_deps // [] | join(","))"' "$YAML" 2>/dev/null
+  yq -r '.vars | to_entries | .[] | select(.value.status == "ready_for_migration") | "- \(.key) — leaf=\(.value.leaf_loc // "n/a") deps=\(.value.composition_deps // [] | join(","))"' "$YAML" 2>/dev/null
 }
 
 case "$MODE" in

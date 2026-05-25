@@ -371,7 +371,10 @@ this implements:
 # Telltale patterns that hint at intermediate state. Each hit needs
 # classification: provisional / tier-staging / skeleton / stale-doc /
 # false-positive.
-rg --no-heading -in 'until Phase \d+|stands in for|for now,\? a\|substitute\|temporarily,\? \|placeholder\|TBD' \
+# Note: alternation pipes are ripgrep / Rust-regex literal `|`, NOT
+# `\|` (the latter would be the literal substring "\|" and match
+# nothing — verified by Wave-16 self-review).
+rg --no-heading -in 'until Phase \d+|stands in for|for now|substitute|temporarily|placeholder|TBD' \
   src/ test/e2e/ 2>/dev/null \
   | grep -v 'PROVISIONAL:' \
   | grep -v '^\s*//.*PROVISIONAL'
