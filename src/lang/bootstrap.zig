@@ -51,6 +51,7 @@ pub const FILES: []const FileEntry = &.{
     .{ .label = "<bootstrap>", .source = @embedFile("clj/clojure/core.clj") },
     .{ .label = "<clojure.string>", .source = @embedFile("clj/clojure/string.clj") },
     .{ .label = "<clojure.set>", .source = @embedFile("clj/clojure/set.clj") },
+    .{ .label = "<clojure.walk>", .source = @embedFile("clj/clojure/walk.clj") },
 };
 
 /// First file's source — exposed so `main.zig`'s renderer can fall
