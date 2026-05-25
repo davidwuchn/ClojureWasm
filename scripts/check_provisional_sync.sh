@@ -36,6 +36,9 @@
 set -u
 set -o pipefail
 
+# --- 0. Shared helpers (Wave 16 hook_lib.sh extraction) ----------------------
+source "$(dirname "$0")/hook_lib.sh"
+
 # --- 1. Parse args -----------------------------------------------------------
 
 MODE="hook"
@@ -52,37 +55,13 @@ case "${1:-}" in
     ;;
 esac
 
-cd "${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
+hook_cd_project_root
 
 # --- 2. In hook mode, only act on `git push` ---------------------------------
 
 if [[ "$MODE" == "hook" ]]; then
-  INPUT="$(cat)"
-  # Fail-closed on parser problems: if we can't decode the payload we cannot
-  # tell whether this is a `git push`, so a silent exit-0 would create an
-  # invisible bypass. Instead surface the error and block.
-  if ! command -v python3 >/dev/null 2>&1; then
-    echo "internal: python3 missing — cannot parse hook payload" >&2
-    exit 1
-  fi
-  COMMAND="$(printf '%s' "$INPUT" | python3 -c '
-import sys, json
-try:
-    data = json.load(sys.stdin)
-except Exception as e:
-    sys.stderr.write(f"internal: hook payload decode failed: {e}\n")
-    sys.exit(1)
-cmd = (data.get("tool_input") or {}).get("command", "") or ""
-print(cmd)
-' 2>&1)" || {
-    echo "internal: hook payload parse error — failing closed" >&2
-    echo "$COMMAND" >&2
-    exit 1
-  }
-
-  if ! printf '%s' "$COMMAND" | grep -qE '(^|[ ;&|])git[[:space:]]+push([[:space:]]|$)'; then
-    exit 0
-  fi
+  hook_read_command
+  hook_is_git_push || exit 0
 fi
 
 # --- 3. Helpers --------------------------------------------------------------

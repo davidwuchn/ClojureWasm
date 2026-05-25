@@ -26,24 +26,15 @@
 
 set -euo pipefail
 
-# --- 1. Read hook payload from stdin -----------------------------------------
-INPUT="$(cat)"
-COMMAND="$(printf '%s' "$INPUT" | python3 -c '
-import sys, json
-try:
-    data = json.load(sys.stdin)
-except Exception:
-    print("")
-    sys.exit(0)
-print((data.get("tool_input") or {}).get("command", "") or "")
-' 2>/dev/null || echo "")"
+# --- 1. Shared helpers (Wave 16) ---------------------------------------------
+source "$(dirname "$0")/hook_lib.sh"
 
 # --- 2. Only enforce on `git commit` -----------------------------------------
-if ! printf '%s' "$COMMAND" | grep -qE '(^|[ ;&|])git[[:space:]]+commit([[:space:]]|$)'; then
-  exit 0
-fi
+hook_read_command
+hook_is_git_commit || exit 0
+hook_cd_project_root
 
-cd "${CLAUDE_PROJECT_DIR:-$(pwd)}"
+COMMAND="$HOOK_COMMAND"  # used by the commit-message extraction below
 
 # --- 3. Is .dev/project_facts.md staged? -------------------------------------
 STAGED="$(git diff --cached --name-only --diff-filter=ACMR 2>/dev/null || true)"

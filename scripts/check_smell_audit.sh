@@ -29,29 +29,15 @@
 
 set -euo pipefail
 
-# --- 1. Read hook payload from stdin -----------------------------------------
-INPUT="$(cat)"
-
-COMMAND="$(printf '%s' "$INPUT" | python3 -c '
-import sys, json
-try:
-    data = json.load(sys.stdin)
-except Exception:
-    print("")
-    sys.exit(0)
-print((data.get("tool_input") or {}).get("command", "") or "")
-' 2>/dev/null || echo "")"
+# --- 1. Shared helpers (Wave 16) ---------------------------------------------
+source "$(dirname "$0")/hook_lib.sh"
 
 # --- 2. Only enforce on `git push` -------------------------------------------
-if ! printf '%s' "$COMMAND" | grep -qE '(^|[ ;&|])git[[:space:]]+push([[:space:]]|$)'; then
-  exit 0
-fi
-
-cd "${CLAUDE_PROJECT_DIR:-$(pwd)}"
+hook_read_command
+hook_is_git_push || exit 0
+hook_cd_project_root
 
 # --- 3. Identify unpushed commits --------------------------------------------
-# Compare HEAD to its upstream. If no upstream yet (first push), inspect
-# all commits on the current branch.
 UPSTREAM="$(git rev-parse --abbrev-ref --symbolic-full-name '@{u}' 2>/dev/null || echo '')"
 if [[ -n "$UPSTREAM" ]]; then
   RANGE="$UPSTREAM..HEAD"

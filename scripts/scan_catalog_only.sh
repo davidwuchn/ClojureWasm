@@ -6,8 +6,10 @@
 # caller of `error_mod.setErrorFmt(...)`. Other modules use
 # `error_catalog.raise(.code, loc, args)`.
 #
-# Phase 4 entry: informational (the migration is task 4.26).
-# Phase 5+: gate.
+# Current mode: informational. The error-catalog migration (task 4.26)
+# is the historical context — promotion to hard gate happens when
+# `setErrorFmt(` hits outside the catalog drop to a stable 0 and the
+# gate becomes a non-regressing guard.
 
 set -euo pipefail
 
@@ -26,8 +28,9 @@ hits=$(grep -rn "setErrorFmt(" "$REPO_ROOT/src/" 2>/dev/null \
     | grep -v "/error\.zig:.*setErrorFmt stores info" \
     | wc -l | tr -d ' ')
 
-# Threshold: Phase 4 entry has ~110-116 sites. Task 4.26 brings this
-# to 0 (modulo the catalog and the setErrorFmt definition itself).
+# Threshold: historical Phase 4 had ~110-116 raw setErrorFmt sites.
+# Task 4.26 brought this toward 0 (modulo the catalog itself + the
+# setErrorFmt definition). Tracking ongoing count for drift detection.
 scan_report "scan_catalog_only" "$hits" 120
 
 if (( hits > 0 )); then

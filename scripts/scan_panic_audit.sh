@@ -7,7 +7,10 @@
 #   - replaced with error_catalog.raise(.internal_error, ...), or
 #   - kept with a `// @panic: <reason>` justification comment.
 #
-# Phase 4 entry: informational. Phase 5+: gate per ADR-0019.
+# Current mode: informational. Promote to gate per ADR-0019 once
+# `@panic(` + `unreachable` hits stabilise at a low baseline and each
+# remaining hit carries either the `// @panic: <reason>` justification
+# or has migrated to `error_catalog.raise(.internal_error, ...)`.
 
 set -euo pipefail
 
@@ -22,8 +25,8 @@ scan_section "scan_panic_audit (ADR-0019 enforcement)"
 panic_hits=$( { grep -rn "@panic(" "$REPO_ROOT/src/" || true; } | wc -l | tr -d ' ')
 unreach_hits=$( { grep -rnE '\bunreachable\b' "$REPO_ROOT/src/" || true; } | wc -l | tr -d ' ')
 
-# Threshold: ADR-0019 estimates ~4 unreachable + 0 @panic at Phase 4
-# entry. Each hit must carry a justification comment.
+# Threshold: ADR-0019 estimated ~4 unreachable + 0 @panic at Phase 4
+# entry as the baseline. Each hit must carry a justification comment.
 scan_report "scan_panic_audit @panic"     "$panic_hits"   5
 scan_report "scan_panic_audit unreachable" "$unreach_hits" 20
 

@@ -1,7 +1,11 @@
 #!/usr/bin/env bash
-# file_size_check.sh — informational at Phase 4, gate at Phase 5-6 (ADR-0016).
-# Reports files exceeding 1000 lines (soft) / 2000 lines (hard).
-# Exempt marker: `FILE-SIZE-EXEMPT: <reason> (ADR-NNNN)` in file header.
+# file_size_check.sh — current mode: informational (reports only).
+# Reports files exceeding 1000 lines (soft) / 2000 lines (hard) per
+# ADR-0016. Exempt marker: `FILE-SIZE-EXEMPT: <reason> (ADR-NNNN)`
+# in file header. Promote to hard gate (= exit 1 on over-hard) at the
+# next cycle that pairs over-soft growth with a split-or-refactor
+# commit. D-030 (analyzer.zig) and D-029 (value.zig) are the active
+# candidate splits.
 
 set -euo pipefail
 
@@ -39,6 +43,6 @@ if (( ${#over_hard[@]} > 0 )); then
     printf "  %s\n" "${over_hard[@]}"
 fi
 
-# Phase 4 entry: informational only (exit 0 regardless).
-# Phase 5-6 (post ADR-0016 landing): hard cap becomes gate (exit 1 if any over_hard).
+# Informational only (exit 0 regardless). Promote to hard gate when
+# a real cycle pairs over-cap growth with a split-or-refactor commit.
 exit 0

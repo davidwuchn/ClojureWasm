@@ -3,9 +3,11 @@
 # Verifies compat_tiers.yaml entries match actual implementation in
 # src/lang/primitive/ and src/runtime/{java,cljw}/.
 #
-# Phase 5 entry shipped the directory layout (ADR-0029, supersedes
-# ADR-0011); Phase 6+ lands the first host_classes entries on the
-# new schema. Until then this script is informational only.
+# Active phase: 6. Directory layout shipped at Phase 5 entry (ADR-0029,
+# supersedes ADR-0011); host_classes entries are landing through Phase
+# 6+. Sync check remains informational pending a real-cycle promotion;
+# refresh when the first cycle actually treats this gate as block-grade
+# (= when host_classes mis-sync would damage code-correctness).
 
 set -euo pipefail
 
@@ -17,8 +19,8 @@ if [[ ! -f "$YAML" ]]; then
     exit 0
 fi
 
-# Phase 4 entry: skeleton only; sync check is informational (always exit 0).
-# Phase 5+: this script becomes a hard gate after actual implementation
-# files exist in src/.
-echo "[check_compat_tiers_sync] informational mode (Phase 4 entry); sync check activates at Phase 5."
+# Informational mode (always exit 0). Promote to hard gate when a real
+# host_classes mis-sync surfaces a bug we want the gate to catch
+# (D-048 host class wire-up is the natural trigger).
+echo "[check_compat_tiers_sync] informational mode; sync gate activates when host_classes drift would harm correctness."
 exit 0

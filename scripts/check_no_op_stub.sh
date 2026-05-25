@@ -3,7 +3,10 @@
 # Heuristic lint for forbidden no-op stub patterns in src/.
 # Per Shota's directive: "if implemented, must be real; no-op redirect forbidden".
 #
-# Phase 5+ activation by design. Phase 4 entry: informational only.
+# Active phase: 6. Activation as hard gate deferred — the heuristic
+# at L113 of `.claude/rules/no_op_stub_forbidden.md` needs concrete
+# bash/grep recipes before the gate becomes block-grade. Informational
+# is the current correct shape (no new debt row needed).
 
 set -euo pipefail
 
@@ -17,5 +20,5 @@ REPO_ROOT="${REPO_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
 # Skeleton boundary: struct definition only OR fn body that is exactly
 # `return error.NotImplemented;` or `@panic("Phase N: see ADR-NNNN");`
 # is allowed (see JVM_TO_ZIG §2 原則 4).
-echo "[check_no_op_stub] informational mode (Phase 4 entry); full heuristic activates at Phase 5."
+echo "[check_no_op_stub] informational mode; full heuristic is a future cycle (Phase 7+ analyzer-side help expected per ADR-0008 dispatch unify)."
 exit 0
