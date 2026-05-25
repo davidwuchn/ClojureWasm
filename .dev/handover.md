@@ -8,17 +8,22 @@
 
 - **HEAD**: see `git log` (v5 plan + wiring landed; HEAD line refreshes
   only on Active-task-identifier change).
-- **First commit on resume MUST be**: open **Phase 6.16.a-2** cycle —
-  collection ops (conj / disj / contains? / get / nth / assoc /
-  dissoc / keys / vals) per ADR-0033 D6 + ROADMAP §9.8 row 6.16.a-2
-  + v5 §5.2. Step 0 survey required (general-purpose subagent,
-  output `private/notes/phase6-6.16.a-2-survey.md`). Pattern: Layer
-  2 Tag switch wrapping existing Layer 0 collection helpers (vector.
-  conj / set.contains / map.get etc), same shape as sequence.zig
-  (d35dc3b). e2e deliverable: `test/e2e/composition_unlock_a2.sh`.
-  After this cycle: Phase 6.16.a-3 (higher-order + transducer 先取り,
-  2-3 cycles range). ADR-0033 (2bf491b) + ADR-0034 (2834511) +
-  Phase 6.16.a-0 (b5d44f7) + Phase 6.16.a-1 (d35dc3b) all landed.
+- **First commit on resume MUST be**: open **Phase 6.16.a-3** cycle —
+  higher-order + transducer 先取り (apply / reduce 素朴版 / into /
+  map / filter / take / drop / keep / remove / every? / some / some?
+  + Layer 3 `.clj` defn partial / comp / complement / constantly /
+  juxt) per ADR-0033 D6 + D6a + ROADMAP §9.8 row 6.16.a-3 + v5 §5.2
+  + §7 transducer 先取り spec. **2-3 cycles range** — apply の lazy
+  seq 連携が cw v0 evidence で ~100 LOC + threadlocal の規模、 cw v1
+  では Phase 6.16.a-3 段階で 50 LOC 素朴版 start (lazy seq 連携は
+  Phase 7)、 詳細 scope は cycle 着手時の survey で再見積もり可能。
+  transducer arity (1-arg = xform) + multi-arity (eager + multi-coll)
+  両方着地、 rf protocol を Layer 2 で正式登録 (v5 §7.2)。 Step 0
+  survey via general-purpose subagent first (output
+  `private/notes/phase6-6.16.a-3-survey.md`). e2e: `transducer_unlock_a3.sh`.
+  After cycle close: Phase 6.16.b (clojure.set 12 vars `.clj` 化).
+  Prior landings: ADR-0033 (2bf491b) + ADR-0034 (2834511) + Phase
+  6.16.a-0 (b5d44f7) + 6.16.a-1 (d35dc3b) + 6.16.a-2 (a4bfca5).
 - **Forbidden this session**: (a) `__zig-` namespace prefix path (v5
   §3.1 rejected; `defn-` + `-name` + `^:private :zig-leaf` metadata is
   the confirmed scheme). (b) `clojure.X.impl/` sub-ns path (v5 §3 rejected
@@ -40,31 +45,36 @@ build + error 確定計画 SSOT)** →
 
 ## Current state
 
-- **Phase**: **Phase 6 IN-PROGRESS** — §9.8 12/24 `[x]` + 6.10 `[~]
+- **Phase**: **Phase 6 IN-PROGRESS** — §9.8 13/24 `[x]` + 6.10 `[~]
   (7/12)` + 6.11 `[~] (3/10)`. v5 plan + ADR-0033 (2bf491b) + ADR-0034
   (2834511) + ROADMAP §9.8 rows 6.16.a-0..e + §9.14/16/18/19 v5
   expansions + debt rows D-062..D-069 (757a0b5) + Phase 6.16.a-0
-  env.intern metadata (b5d44f7、 D-065 解消) + Phase 6.16.a-1
-  sequence.zig 6 primitives (d35dc3b). **Active task = Phase 6.16.a-2
-  cycle** (collection ops).
+  env.intern metadata (b5d44f7) + Phase 6.16.a-1 sequence.zig 6
+  primitives (d35dc3b) + Phase 6.16.a-2 collection.zig 9 primitives
+  (a4bfca5). **Active task = Phase 6.16.a-3 cycle** (higher-order +
+  transducer, 2-3 cycles range).
 - **Branch**: `cw-from-scratch`. ADR-0032 issued (multi-file loader +
   in-ns). v5 plan = `private/notes/clj_vs_zig_split_proposal_v5.md`
   (1593 lines, self-contained, SSOT for ADR-0033/0034/0035).
-- **Gate**: Mac 26/26 + OrbStack Ubuntu x86_64 24/24 green at b5d44f7
-  (Phase 6.16.a-0 e2e `phase6_16_a_0_metadata.sh` registered).
+- **Gate**: Mac 28/28 + OrbStack Ubuntu x86_64 27/27 green at a4bfca5
+  (6.16.a-1 `composition_unlock_a1.sh` + 6.16.a-2
+  `composition_unlock_a2.sh` registered).
 - **Chapter cadence**: dormant per ADR-0025 + F-007.
 
-## Active task — Phase 6.16.a-2 (collection ops)
+## Active task — Phase 6.16.a-3 (higher-order + transducer 先取り)
 
-Open Phase 6.16.a-2 cycle: conj / disj / contains? / get / nth /
-assoc / dissoc / keys / vals as Layer 2 polymorphic Tag switch
-wrapping existing Layer 0 collection helpers. Per ADR-0033 D6 +
-ROADMAP §9.8 row 6.16.a-2 + v5 §5.2. Same shape as sequence.zig
-(d35dc3b). e2e: `composition_unlock_a2.sh`. Step 0 survey via
+Open Phase 6.16.a-3 cycle (2-3 cycles range): 12 Layer 2 primitives
+(apply / reduce 素朴版 / into / map / filter / take / drop / keep /
+remove / every? / some / some?) + 5 Layer 3 `.clj` defn (partial /
+comp / complement / constantly / juxt) + rf protocol formal
+registration. transducer arity 先取り per v5 §7. Step 0 survey via
 general-purpose subagent first.
 
-After this: Phase 6.16.a-3 (higher-order + transducer 先取り,
-2-3 cycles range).
+After cycle close: Phase 6.16.b (clojure.set 12 vars `.clj` 化、
+Group A+B+C 一括 per ROADMAP §9.8 row 6.16.b).
+
+DIVERGENCE D1 v5 §5.2 amendment also queued (contains? wording
+correction) — fold into Phase 6.16.a-3 survey or first commit body.
 
 ## Open questions / blockers
 
