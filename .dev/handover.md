@@ -8,19 +8,17 @@
 
 - **HEAD**: see `git log` (v5 plan + wiring landed; HEAD line refreshes
   only on Active-task-identifier change).
-- **First commit on resume MUST be**: issue **ADR-0034** (cljw build
-  single mode + Tier 0 metadata + structured EDN + post-mortem decode)
-  per v5 §19.2. Phase 6.16.a-1 (d35dc3b) terminus measured the Tier 0
-  metadata size baseline (bench/quick_baseline.txt
-  `binary_size_bytes` row), satisfying the ADR-0034 prerequisite per
-  v5 §11.5 + §24.5 U-1. Devil's-advocate fork mandatory (depth ≥ 2)
-  with brief: 11 D-items D1-D11 + F-001/F-004/F-009 envelope + ABI
-  commitment 不要 (decoder-only 永久互換性). Reflect 3 alternatives
-  verbatim into `Alternatives considered`, stamp `Status: Proposed →
-  Accepted`. After ADR-0034 lands: open **Phase 6.16.a-2** cycle
-  (collection ops conj / disj / contains? / get / nth / assoc /
-  dissoc / keys / vals per ADR-0033 D6 + ROADMAP §9.8 row 6.16.a-2,
-  e2e `composition_unlock_a2.sh`).
+- **First commit on resume MUST be**: open **Phase 6.16.a-2** cycle —
+  collection ops (conj / disj / contains? / get / nth / assoc /
+  dissoc / keys / vals) per ADR-0033 D6 + ROADMAP §9.8 row 6.16.a-2
+  + v5 §5.2. Step 0 survey required (general-purpose subagent,
+  output `private/notes/phase6-6.16.a-2-survey.md`). Pattern: Layer
+  2 Tag switch wrapping existing Layer 0 collection helpers (vector.
+  conj / set.contains / map.get etc), same shape as sequence.zig
+  (d35dc3b). e2e deliverable: `test/e2e/composition_unlock_a2.sh`.
+  After this cycle: Phase 6.16.a-3 (higher-order + transducer 先取り,
+  2-3 cycles range). ADR-0033 (2bf491b) + ADR-0034 (2834511) +
+  Phase 6.16.a-0 (b5d44f7) + Phase 6.16.a-1 (d35dc3b) all landed.
 - **Forbidden this session**: (a) `__zig-` namespace prefix path (v5
   §3.1 rejected; `defn-` + `-name` + `^:private :zig-leaf` metadata is
   the confirmed scheme). (b) `clojure.X.impl/` sub-ns path (v5 §3 rejected
@@ -43,11 +41,12 @@ build + error 確定計画 SSOT)** →
 ## Current state
 
 - **Phase**: **Phase 6 IN-PROGRESS** — §9.8 12/24 `[x]` + 6.10 `[~]
-  (7/12)` + 6.11 `[~] (3/10)`. v5 plan + ADR-0033 (2bf491b、 Accepted)
-  + ROADMAP §9.8 rows 6.16.a-0..e + §9.14/16/18/19 v5 expansions +
-  debt rows D-062..D-069 (757a0b5) + Phase 6.16.a-0 env.intern metadata
-  (b5d44f7、 D-065 解消) + Phase 6.16.a-1 sequence.zig 6 primitives
-  (d35dc3b). **Active task = ADR-0034 issuance** (build pipeline).
+  (7/12)` + 6.11 `[~] (3/10)`. v5 plan + ADR-0033 (2bf491b) + ADR-0034
+  (2834511) + ROADMAP §9.8 rows 6.16.a-0..e + §9.14/16/18/19 v5
+  expansions + debt rows D-062..D-069 (757a0b5) + Phase 6.16.a-0
+  env.intern metadata (b5d44f7、 D-065 解消) + Phase 6.16.a-1
+  sequence.zig 6 primitives (d35dc3b). **Active task = Phase 6.16.a-2
+  cycle** (collection ops).
 - **Branch**: `cw-from-scratch`. ADR-0032 issued (multi-file loader +
   in-ns). v5 plan = `private/notes/clj_vs_zig_split_proposal_v5.md`
   (1593 lines, self-contained, SSOT for ADR-0033/0034/0035).
@@ -55,17 +54,17 @@ build + error 確定計画 SSOT)** →
   (Phase 6.16.a-0 e2e `phase6_16_a_0_metadata.sh` registered).
 - **Chapter cadence**: dormant per ADR-0025 + F-007.
 
-## Active task — ADR-0034 issuance (cljw build single mode + Tier 0 + EDN + render-error)
+## Active task — Phase 6.16.a-2 (collection ops)
 
-Issue ADR-0034 per v5 §19.2 + ROADMAP §9.14 (Phase 12) v5 expansion.
-Tier 0 metadata size baseline now measured (d35dc3b
-`binary_size_bytes`). 11 decisions D1-D11 from v5 §11-§14: single
-mode + flag ゼロ / bytecode embed default / Tier 0 metadata always
-ON / Deno trailer + bootstrap cache / build-id map / ABI commitment
-不要 / stream-separated stderr / EDN event schema / env var overrides
-/ babashka-style human renderer / `cljw render-error` post-mortem
-tool. Devil's-advocate fork required (depth ≥ 2). After ADR-0034:
-open Phase 6.16.a-2 cycle.
+Open Phase 6.16.a-2 cycle: conj / disj / contains? / get / nth /
+assoc / dissoc / keys / vals as Layer 2 polymorphic Tag switch
+wrapping existing Layer 0 collection helpers. Per ADR-0033 D6 +
+ROADMAP §9.8 row 6.16.a-2 + v5 §5.2. Same shape as sequence.zig
+(d35dc3b). e2e: `composition_unlock_a2.sh`. Step 0 survey via
+general-purpose subagent first.
+
+After this: Phase 6.16.a-3 (higher-order + transducer 先取り,
+2-3 cycles range).
 
 ## Open questions / blockers
 
