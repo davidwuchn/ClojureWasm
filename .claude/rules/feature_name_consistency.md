@@ -5,11 +5,14 @@ paths:
   - compat_tiers.yaml
 ---
 
-# Feature-name consistency (keyword + Backend marker)
+# Feature-name consistency + Java/cljw surface layout
 
-> Codifies ADR-0029 D4 (guardrails G2/G3) and the discoverability
-> mechanism that compensates for the unavoidable file fan-out
-> declared by F-009.
+> Codifies ADR-0029 D1-D6 (directory layout, dependency direction,
+> keyword discipline, Backend marker docstring, compat_tiers schema)
+> + F-009 (feature-implementation neutrality). Supersedes the prior
+> standalone `host_extension_layout.md` and `java_cljw_surface_layout.md`
+> rules (the latter folded into this file at Wave 16, W16-5,
+> 2026-05-26 per D-050(a)).
 
 ## Background
 
@@ -113,25 +116,87 @@ Exceptions:
 8. Run `bash test/run_all.sh`. G2 (`check_surface_marker.sh`)
    and G3 (`check_feature_keyword.sh`) must pass.
 
+### R3. Java + cljw surface directory layout (ADR-0029 D1)
+
+Surface files live under two parallel trees:
+
+```
+src/runtime/java/                          (Java-compat surface)
+├── _host_api.zig    ___HOST_EXTENSION marker aggregator
+├── lang/            Object/String/Long/Integer/Double/Boolean/
+│                    Character/Math/System/Throwable/Exception/
+│                    RuntimeException/Thread
+├── io/              File/PrintWriter/InputStream/OutputStream/
+│                    Reader/Writer/ByteArrayInputStream/ByteArrayOutputStream
+├── util/            UUID/Date/Random/Locale/regex/{Pattern,Matcher}/
+│                    concurrent/{Future, atomic/AtomicLong}
+├── time/            Instant/LocalDate/LocalDateTime/Duration/
+│                    ZonedDateTime/ZoneId
+├── net/             URL/URI                            (Phase 14+)
+├── nio/             file/{Path,Files}/charset/Charset
+├── math/            BigInteger/BigDecimal
+├── security/        MessageDigest/SecureRandom         (Phase 14+)
+└── reflect/         Method/Field via TypeDescriptor    (Phase 7+ Tier C)
+
+src/runtime/cljw/                          (cljw-original surface)
+├── _host_api.zig    optional aggregator
+├── build/           Compiler                            (Phase 12)
+├── wasm/            Engine/Module/Instance/Component    (Phase 16+)
+├── edge/            Server/Request                      (Phase 14+)
+├── pod/             Pod (bb-style pod 互換)              (Phase 16+)
+└── repl/            NReplServer                         (Phase 10+)
+```
+
+User code reaches Java entries as `(:require [cljw.java.util :refer
+[UUID]])` — `cljw.host.*` is retired per ADR-0029. cljw-original
+surfaces ship Zig extensions (Wasm component invoke / edge runtime /
+build command / pod invocation); anything that is a Clojure library
+belongs in `lang/clj/` (in-source) or `modules/` (peer to src/,
+Phase 9+).
+
+### R4. Dependency direction (ADR-0029 D2, gate G1)
+
+> No file under `runtime/` other than those in `runtime/java/**`
+> and `runtime/cljw/**` may import from `runtime/java/**` or
+> `runtime/cljw/**`.
+
+Surface layers (`java/`, `cljw/`) call the **neutral impl layer**
+(everything else in `runtime/`). The reverse is forbidden. Cross-
+surface horizontal calls are also forbidden:
+
+- `runtime/java/<X>.zig` must not import `runtime/cljw/<Y>.zig`
+- `runtime/cljw/<X>.zig` must not import `runtime/java/<Y>.zig`
+- `lang/primitive/<X>.zig` must not import `runtime/java/` or
+  `runtime/cljw/`
+
+All three surface families (Java, cljw, Clojure-ns) share the
+**same neutral impl**. `scripts/zone_check.sh` (extended per
+ADR-0029 D4) gates these constraints in CI.
+
 ## Counter-examples
 
-- **Bad keyword choice**: `keyword: m` (too generic, grep hits
-  thousands of unrelated lines). Pick a 4-12 char distinctive
-  word.
+- **Bad keyword choice**: `keyword: m` (too generic). Pick a
+  4-12 char distinctive word.
 - **Forgetting the marker docstring** on a new
-  `runtime/java/<X>.zig`: G2 will block the commit.
-- **Listing a file in `files:` that lacks the keyword in its
-  path**: G3 will block. If the file is legitimately reusable
-  across features (like `collection/string.zig`), put it under
-  the `wrap:` slot (which is exempt from G3).
+  `runtime/java/<X>.zig`: G2 blocks.
+- **Listing a file in `files:` that lacks the keyword**: G3 blocks
+  (use the `wrap:` slot for legitimately-reusable helpers).
+- **Body inline in surface file**: forbidden per F-009; surface is
+  a thin wrapper over the neutral impl in `runtime/<feature>.zig`.
+- **Cross-surface import** (`runtime/java/` → `runtime/cljw/` or
+  vice versa): forbidden per R4; both reach the shared impl.
+- **`cljw.host.*` ns prefix**: retired by ADR-0029; use
+  `cljw.java.*` for Java compat ns and `cljw.*` for cljw-original.
 
 ## Related
 
-- ADR-0029 D4 (G1/G2/G3 guardrails) + D5 (`compat_tiers.yaml`
-  schema).
+- ADR-0029 D1-D6 (directory layout, dependency direction, G1/G2/G3
+  guardrails, compat_tiers schema).
 - F-009 — feature-implementation neutrality (the invariant this
   rule operationalises).
-- `.claude/rules/java_cljw_surface_layout.md` — surface
-  directory layout + Backend marker reference.
-- `scripts/check_surface_marker.sh` (G2 implementation).
-- `scripts/check_feature_keyword.sh` (G3 implementation).
+- ADR-0011 — superseded by ADR-0029 (the `___HOST_EXTENSION` marker
+  pattern carries forward).
+- `scripts/zone_check.sh` (G1).
+- `scripts/check_surface_marker.sh` (G2).
+- `scripts/check_feature_keyword.sh` (G3).
+- `compat_tiers.yaml` — extended schema per ADR-0029 D5.
