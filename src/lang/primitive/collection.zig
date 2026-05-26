@@ -367,6 +367,56 @@ pub fn assocFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation
             }
             break :blk acc;
         },
+        .typed_instance => blk: {
+            const inst = coll.decodePtr(*const td_mod.TypedInstance);
+            if (inst.descriptor.kind != .defrecord) {
+                break :blk error_catalog.raise(.type_arg_invalid, loc, .{
+                    .fn_name = "assoc",
+                    .expected = "map, vector, defrecord, or nil",
+                    .actual = @tagName(coll.tag()),
+                });
+            }
+            // Cycle 4 ships single-pair assoc only. Multi-pair on a
+            // record would allocate multiple TypedInstance values; the
+            // opportunistic 4.5+ cycle that lands `__extmap` overflow
+            // would cover this in the same surgery (D-086).
+            if (args.len > 3) {
+                break :blk error_catalog.raise(.feature_not_supported, loc, .{
+                    .name = "multi-pair assoc on defrecord",
+                });
+            }
+            const k = args[1];
+            const v = args[2];
+            if (k.tag() != .keyword) {
+                break :blk error_catalog.raise(.type_arg_invalid, loc, .{
+                    .fn_name = "assoc",
+                    .expected = "keyword key on defrecord",
+                    .actual = @tagName(k.tag()),
+                });
+            }
+            const key_name = keyword_mod.asKeyword(k).name;
+            const layout = inst.descriptor.field_layout orelse {
+                // PROVISIONAL: __extmap overflow deferred [refs: D-086, feature_deps.yaml#runtime/record_extmap]
+                break :blk error_catalog.raise(.defrecord_assoc_undeclared_key, loc, .{ .name = key_name });
+            };
+            var slot_idx: ?u16 = null;
+            for (layout) |fe| {
+                if (std.mem.eql(u8, fe.name, key_name)) {
+                    slot_idx = fe.index;
+                    break;
+                }
+            }
+            if (slot_idx == null) {
+                // PROVISIONAL: __extmap overflow deferred [refs: D-086, feature_deps.yaml#runtime/record_extmap]
+                break :blk error_catalog.raise(.defrecord_assoc_undeclared_key, loc, .{ .name = key_name });
+            }
+            const old_fields = inst.fields();
+            const new_fields = try rt.gpa.alloc(Value, old_fields.len);
+            defer rt.gpa.free(new_fields);
+            @memcpy(new_fields, old_fields);
+            new_fields[slot_idx.?] = v;
+            break :blk try td_mod.allocInstance(rt, inst.descriptor, new_fields);
+        },
         else => error_catalog.raise(.type_arg_invalid, loc, .{
             .fn_name = "assoc",
             .expected = "map, vector, or nil",
@@ -425,6 +475,27 @@ pub fn keysFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation)
             if (map.count(coll) == 0) break :blk .nil_val;
             break :blk try map.keys(rt, coll);
         },
+        .typed_instance => blk: {
+            const inst = coll.decodePtr(*const td_mod.TypedInstance);
+            if (inst.descriptor.kind != .defrecord) {
+                break :blk error_catalog.raise(.type_arg_invalid, loc, .{
+                    .fn_name = "keys",
+                    .expected = "map or defrecord",
+                    .actual = @tagName(coll.tag()),
+                });
+            }
+            const layout = inst.descriptor.field_layout orelse break :blk .nil_val;
+            if (layout.len == 0) break :blk .nil_val;
+            // Build list backwards so declared-order iteration falls out.
+            var result: Value = .nil_val;
+            var i: usize = layout.len;
+            while (i > 0) {
+                i -= 1;
+                const kw = try keyword_mod.intern(rt, null, layout[i].name);
+                result = try list.consHeap(rt, kw, result);
+            }
+            break :blk result;
+        },
         else => error_catalog.raise(.type_arg_invalid, loc, .{
             .fn_name = "keys",
             .expected = "map",
@@ -448,6 +519,25 @@ pub fn valsFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation)
         .array_map, .hash_map => blk: {
             if (map.count(coll) == 0) break :blk .nil_val;
             break :blk try map.vals(rt, coll);
+        },
+        .typed_instance => blk: {
+            const inst = coll.decodePtr(*const td_mod.TypedInstance);
+            if (inst.descriptor.kind != .defrecord) {
+                break :blk error_catalog.raise(.type_arg_invalid, loc, .{
+                    .fn_name = "vals",
+                    .expected = "map or defrecord",
+                    .actual = @tagName(coll.tag()),
+                });
+            }
+            const fields_slice = inst.fields();
+            if (fields_slice.len == 0) break :blk .nil_val;
+            var result: Value = .nil_val;
+            var i: usize = fields_slice.len;
+            while (i > 0) {
+                i -= 1;
+                result = try list.consHeap(rt, fields_slice[i], result);
+            }
+            break :blk result;
         },
         else => error_catalog.raise(.type_arg_invalid, loc, .{
             .fn_name = "vals",

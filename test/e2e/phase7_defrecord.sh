@@ -125,6 +125,47 @@ EOF
 ) || fail "case10: non-zero exit ($got)"
 assert_eq 'defrecord_count_field_count' "$(last_line "$got")" '2'
 
+# --- Case 12 (cycle 4): assoc on declared key returns updated record ---
+got=$("$BIN" - <<'EOF' 2>/dev/null
+(defrecord Point [x y])
+(get (assoc (Point. 3 4) :x 99) :x)
+EOF
+) || fail "case12: non-zero exit ($got)"
+assert_eq 'defrecord_assoc_declared_field' "$(last_line "$got")" '99'
+
+# --- Case 13 (cycle 4): assoc preserves other fields ---
+got=$("$BIN" - <<'EOF' 2>/dev/null
+(defrecord Point [x y])
+(get (assoc (Point. 3 4) :x 99) :y)
+EOF
+) || fail "case13: non-zero exit ($got)"
+assert_eq 'defrecord_assoc_preserves_other_field' "$(last_line "$got")" '4'
+
+# --- Case 14 (cycle 4): assoc on non-declared key raises PROVISIONAL ---
+# D-086: __extmap overflow is deferred — non-declared key assoc raises
+# feature_not_supported until the layout migration lands.
+diag=$("$BIN" -e '(defrecord Point [x y]) (assoc (Point. 3 4) :z 99)' 2>&1 || true)
+if [[ "$diag" != *"defrecord"* ]] || [[ "$diag" != *"non-declared"* ]]; then
+    fail "case14: expected defrecord non-declared-key diagnostic, got '$diag'"
+fi
+echo "PASS defrecord_assoc_undeclared_provisional"
+
+# --- Case 15 (cycle 4): keys returns the declared field names ---
+got=$("$BIN" - <<'EOF' 2>/dev/null
+(defrecord Point [x y])
+(count (keys (Point. 3 4)))
+EOF
+) || fail "case15: non-zero exit ($got)"
+assert_eq 'defrecord_keys_count' "$(last_line "$got")" '2'
+
+# --- Case 16 (cycle 4): vals returns the declared values ---
+got=$("$BIN" - <<'EOF' 2>/dev/null
+(defrecord Point [x y])
+(count (vals (Point. 3 4)))
+EOF
+) || fail "case16: non-zero exit ($got)"
+assert_eq 'defrecord_vals_count' "$(last_line "$got")" '2'
+
 # --- Case 11 (cycle 3): deftype does NOT route through IPersistentMap ---
 # `(get deftype-inst :x)` returns nil — deftype is not a map. defrecord
 # is the only TypedInstance whose `descriptor.kind` enables the
@@ -136,4 +177,4 @@ EOF
 ) || fail "case11: non-zero exit ($got)"
 assert_eq 'deftype_get_no_map_routing_returns_nil' "$(last_line "$got")" 'nil'
 
-echo "OK — phase7_defrecord smoke (11 cases) green"
+echo "OK — phase7_defrecord smoke (16 cases) green"

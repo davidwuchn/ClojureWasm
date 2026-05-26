@@ -426,6 +426,44 @@ entries:
       (entry stays in the file as SSOT linkage for D-073 sub-site
       (e) discharge).
 
+  - name: runtime/record_extmap
+    kind: runtime_layer
+    defined_in: src/lang/primitive/collection.zig
+    status: provisional
+    requires_features: []
+    requires_debts:
+      - D-086
+    provisional_markers:
+      - src/lang/primitive/collection.zig (assocFn .typed_instance — empty field_layout fallback)
+      - src/lang/primitive/collection.zig (assocFn .typed_instance — unmatched declared key)
+    notes: |
+      JVM `defrecord` keeps non-declared keys in a hidden `__extmap`
+      HashMap so the record's IRecord identity survives `(assoc rec
+      :extra v)`. cw v1's `TypedInstance` extern struct (header +
+      descriptor pointer + flat Value field tail) has no extmap slot
+      today; row 7.4 cycle 4 ships single-pair declared-key assoc and
+      raises `defrecord_assoc_undeclared_key` for both the
+      empty-layout and the unmatched-key paths.
+
+      Discharge route lands a dedicated cycle that picks one of two
+      shapes (per survey §6 Q1):
+
+        (a) Trailing `?Value extmap` slot on the extern struct
+            (single extra 8 bytes per record + nil check on every
+            map op).
+        (b) Sibling `*HashMap` pointer (4 GC fields in the struct +
+            indirection on every access).
+
+      Either choice triggers F-006 GC trace surface adjustment +
+      an ADR amending the TypedInstance layout. The Devil's-advocate
+      output at D-086 ruled out three smaller-scope alternatives
+      (silent drop, full layout in cycle 4, degrade-to-map). Once
+      this entry lands, the two PROVISIONAL markers in
+      `assocFn .typed_instance` are removed, `(seq rec)` / proper
+      IPersistentMap surface (currently cycle 4 declared-keys-only)
+      can extend, and the cycle 4 e2e case `defrecord_assoc_undeclared_provisional`
+      flips from "expected diagnostic" to "expected new record with extmap".
+
   - name: runtime/vm/require_libspec
     kind: runtime_layer
     defined_in: src/eval/backend/vm/compiler.zig

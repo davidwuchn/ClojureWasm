@@ -154,6 +154,8 @@ pub const Code = enum {
     defrecord_name_invalid,
     defrecord_fields_not_vector,
     defrecord_field_invalid,
+    /// args: `.{ .name = "<field-name>" }`
+    defrecord_assoc_undeclared_key,
     extend_type_form_incomplete,
     extend_type_method_invalid,
     extend_protocol_form_incomplete,
@@ -597,6 +599,10 @@ pub fn entry(comptime code: Code) Entry {
         .defrecord_field_invalid => .{
             .kind = .syntax_error, .phase = .macroexpand,
             .template = "defrecord field must be an unqualified symbol",
+        },
+        .defrecord_assoc_undeclared_key => .{
+            .kind = .not_implemented, .phase = .eval,
+            .template = "assoc on defrecord with non-declared key '{[name]s}' is not yet supported",
         },
         .extend_type_form_incomplete => .{
             .kind = .syntax_error, .phase = .macroexpand,
