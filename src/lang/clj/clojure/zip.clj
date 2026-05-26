@@ -250,3 +250,65 @@
              new-current (nth all (- n 1))
              new-lefts (into [] (take (- n 1) all))]
         (with-loc-internal loc new-current (.path loc) new-lefts [] false)))))
+
+;; ----------------------------------------------------------------
+;; Row 7.13 cycle 3 — traversal (3 vars: next / prev / end?)
+;; ----------------------------------------------------------------
+
+;; `(end? loc)` — true when the depth-first walk via `next` has
+;; exhausted. Raw field read on the `end?` slot.
+(defn end? [loc] (.end? loc))
+
+;; Internal helper: mark a loc as end-of-walk. `next` returns
+;; this when there is no next position.
+(defn mark-end [loc]
+  (->ZipLoc (.node loc) (.path loc) (.lefts loc) (.rights loc) true
+            (.branch-fn loc) (.children-fn loc) (.make-node-fn loc) (.kind loc)))
+
+;; Internal helper for `next`'s "walk up until a right-sibling is
+;; available" loop. Returns either (right of some ancestor) or nil
+;; (root reached without a right sibling — caller marks `:end`).
+(defn next-up-right [start]
+  (loop* [p start]
+    (let* [u (up p)]
+      (if (nil? u)
+        nil
+        (let* [r (right u)]
+          (if (nil? r)
+            (recur u)
+            r))))))
+
+;; `(next loc)` — depth-first walk. JVM order: descend if branch;
+;; else step right; else walk up looking for a right sibling; if
+;; no parent has one, mark end and return the root-most position.
+;; Once end? is set, `(next loc)` returns loc unchanged so caller
+;; loops terminate.
+(defn next [loc]
+  (if (end? loc)
+    loc
+    (if (branch? loc)
+      (let* [d (down loc)]
+        (if (nil? d)
+          (or (right loc) (or (next-up-right loc) (mark-end loc)))
+          d))
+      (or (right loc) (or (next-up-right loc) (mark-end loc))))))
+
+;; Internal helper for `prev`: descend to the rightmost leaf of a
+;; subtree (used when stepping back over a branch).
+(defn rightmost-descendant [loc]
+  (loop* [l loc]
+    (if (branch? l)
+      (let* [d (down l)]
+        (if (nil? d)
+          l
+          (recur (rightmost d))))
+      l)))
+
+;; `(prev loc)` — reverse of `next`. Step left and descend to the
+;; rightmost leaf of that subtree; if no left sibling, go up.
+;; Returns nil at the start (root with no traversal history).
+(defn prev [loc]
+  (let* [l (left loc)]
+    (if (nil? l)
+      (up loc)
+      (rightmost-descendant l))))
