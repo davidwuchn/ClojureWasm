@@ -139,7 +139,7 @@ pub fn dispatch(
     }
     const inst = receiver.decodePtr(*const td_mod.TypedInstance);
     const td = inst.descriptor;
-    const me = cs.lookupWithCache(td, protocol_name, method_name) orelse {
+    const me = cs.lookupWithCache(td, protocol_name, method_name, rt.protocol_generation) orelse {
         return error_catalog.raise(.protocol_no_satisfies, loc, .{
             .protocol = protocol_name,
             .method = method_name,

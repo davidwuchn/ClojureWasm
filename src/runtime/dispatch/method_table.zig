@@ -38,25 +38,32 @@ const TypeDescriptor = @import("../type_descriptor.zig").TypeDescriptor;
 pub const CallSite = struct {
     last_type: ?*const TypeDescriptor = null,
     last_method: ?*const TypeDescriptor.MethodEntry = null,
+    /// `Runtime.protocol_generation` snapshot at the time the slot
+    /// was filled. Cycle 7.3.2: a cache hit additionally requires
+    /// `cached_generation == rt.protocol_generation`. When
+    /// `extend-type` bumps the counter, prior caches detect the
+    /// drift on next dispatch and miss-refill against the fresh
+    /// `td.method_table` pointer. Per ADR-0008 amendment 1 Alt 1.
+    cached_generation: u32 = 0,
 
     /// Look up `(protocol, method)` on `td` with monomorphic cache.
-    /// Hit short-circuits straight to the cached MethodEntry; miss
-    /// falls through to `TypeDescriptor.lookupMethod` and refills
-    /// both cache slots. Returns `null` when no implementation
-    /// exists on the descriptor chain (caller raises
+    /// Hit short-circuits straight to the cached MethodEntry when:
+    ///   - `last_type == td`,
+    ///   - `cached_generation == current_generation` (= no
+    ///     `extend-type` mutation since the slot filled),
+    ///   - `(protocol_name, method_name)` matches the cached entry.
+    /// Otherwise falls through to `TypeDescriptor.lookupMethod` and
+    /// refills all three cache slots. Returns `null` when no
+    /// implementation exists on the descriptor chain (caller raises
     /// `value_not_callable` or a protocol-specific error).
-    ///
-    /// Phase 5.11 lands the lookup-with-cache; Phase 7 wires the
-    /// actual `dispatch(rt, cs, receiver, protocol, method, args)`
-    /// on top, which casts `MethodEntry.fn_ptr` and threads
-    /// `Caller`-style runtime context (ADR-0008 a1).
     pub fn lookupWithCache(
         self: *CallSite,
         td: *const TypeDescriptor,
         protocol_name: []const u8,
         method_name: []const u8,
+        current_generation: u32,
     ) ?*const TypeDescriptor.MethodEntry {
-        if (self.last_type == td) {
+        if (self.last_type == td and self.cached_generation == current_generation) {
             if (self.last_method) |m| {
                 if (std.mem.eql(u8, m.protocol_name, protocol_name) and
                     std.mem.eql(u8, m.method_name, method_name))
@@ -68,6 +75,7 @@ pub const CallSite = struct {
         const found = td.lookupMethod(protocol_name, method_name) orelse return null;
         self.last_type = td;
         self.last_method = found;
+        self.cached_generation = current_generation;
         return found;
     }
 };
@@ -97,11 +105,11 @@ test "lookupWithCache fills the cache on miss and short-circuits on hit" {
     };
     var cs: CallSite = .{};
     // First call: miss, fills cache.
-    const m1 = cs.lookupWithCache(&td, "ISeq", "first").?;
+    const m1 = cs.lookupWithCache(&td, "ISeq", "first", 0).?;
     try testing.expect(cs.last_type.? == &td);
     try testing.expect(cs.last_method.? == m1);
     // Second call: hit, returns the same pointer (cache short-circuit).
-    const m2 = cs.lookupWithCache(&td, "ISeq", "first").?;
+    const m2 = cs.lookupWithCache(&td, "ISeq", "first", 0).?;
     try testing.expect(m1 == m2);
 }
 
@@ -120,10 +128,10 @@ test "lookupWithCache cache miss when (protocol, method) differs from cache" {
         .meta = .nil_val,
     };
     var cs: CallSite = .{};
-    _ = cs.lookupWithCache(&td, "ISeq", "first");
+    _ = cs.lookupWithCache(&td, "ISeq", "first", 0);
     // Now ask for a different method on the same type — cache slot
     // refills because the cached method_name doesn't match.
-    const m_rest = cs.lookupWithCache(&td, "ISeq", "rest").?;
+    const m_rest = cs.lookupWithCache(&td, "ISeq", "rest", 0).?;
     try testing.expectEqualStrings("rest", m_rest.method_name);
 }
 
@@ -138,9 +146,35 @@ test "lookupWithCache returns null when method is not on the descriptor" {
         .meta = .nil_val,
     };
     var cs: CallSite = .{};
-    try testing.expect(cs.lookupWithCache(&td, "IAny", "missing") == null);
+    try testing.expect(cs.lookupWithCache(&td, "IAny", "missing", 0) == null);
     try testing.expect(cs.last_type == null);
     try testing.expect(cs.last_method == null);
+}
+
+test "lookupWithCache misses when current_generation differs from cached_generation" {
+    const entries = [_]TypeDescriptor.MethodEntry{
+        .{ .protocol_name = "ISeq", .method_name = "first", .fn_ptr = null },
+    };
+    const td: TypeDescriptor = .{
+        .fqcn = "user.Foo",
+        .kind = .deftype,
+        .field_layout = null,
+        .protocol_impls = &.{"ISeq"},
+        .method_table = &entries,
+        .parent = null,
+        .meta = .nil_val,
+    };
+    var cs: CallSite = .{};
+    // Fill the cache at generation 0.
+    _ = cs.lookupWithCache(&td, "ISeq", "first", 0);
+    try testing.expectEqual(@as(u32, 0), cs.cached_generation);
+
+    // Simulate an extend-type bump: generation advances. Even though
+    // (td, protocol, method) match the cache, the generation mismatch
+    // forces a miss + refill against td.method_table (which in
+    // production has been re-allocated by extendTypeWithImpls).
+    _ = cs.lookupWithCache(&td, "ISeq", "first", 7);
+    try testing.expectEqual(@as(u32, 7), cs.cached_generation);
 }
 
 test "CallSite cache slots accept TypeDescriptor + MethodEntry pointers" {
