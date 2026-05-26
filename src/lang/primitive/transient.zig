@@ -25,6 +25,7 @@ const SourceLocation = error_mod.SourceLocation;
 const dispatch = @import("../../runtime/dispatch.zig");
 
 const transient_vector = @import("../../runtime/collection/transient/transient_vector.zig");
+const transient_array_map = @import("../../runtime/collection/transient/transient_array_map.zig");
 
 /// Implements clojure.core/transient.
 /// Spec: `(transient coll)` returns an editable transient version of
@@ -38,10 +39,14 @@ pub fn transientFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLoca
     const coll = args[0];
     return switch (coll.tag()) {
         .vector => try transient_vector.fromVector(rt, coll),
+        .array_map => try transient_array_map.fromMap(rt, coll),
+        // `.hash_map` source bubbles `error.HashMapNotImplemented` —
+        // mirrors the persistent dispatch gap pending D-045 (HAMT body).
+        .hash_map => try transient_array_map.fromMap(rt, coll),
         .nil => try transient_vector.fromVector(rt, coll),
         else => error_catalog.raise(.transient_kind_mismatch, loc, .{
             .fn_name = "transient",
-            .expected = "vector",
+            .expected = "vector, array_map, or hash_map",
             .actual = @tagName(coll.tag()),
         }),
     };
@@ -59,6 +64,7 @@ pub fn persistentBangFn(rt: *Runtime, env: *Env, args: []const Value, loc: Sourc
     const tcoll = args[0];
     return switch (tcoll.tag()) {
         .transient_vector => try transient_vector.toPersistent(rt, tcoll, loc),
+        .transient_map => try transient_array_map.toPersistent(rt, tcoll, loc),
         else => error_catalog.raise(.transient_kind_mismatch, loc, .{
             .fn_name = "persistent!",
             .expected = "transient",
@@ -81,9 +87,49 @@ pub fn conjBangFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocat
     const x = args[1];
     return switch (tcoll.tag()) {
         .transient_vector => try transient_vector.conj(rt, tcoll, x, loc),
+        .transient_map => try transient_array_map.conjEntry(rt, tcoll, x, loc),
         else => error_catalog.raise(.transient_kind_mismatch, loc, .{
             .fn_name = "conj!",
             .expected = "transient",
+            .actual = @tagName(tcoll.tag()),
+        }),
+    };
+}
+
+/// Implements clojure.core/assoc!.
+/// Spec: `(assoc! tcoll k v)` — vector: integer key in [0, count];
+///   map: arbitrary key. cycle 2 supports map-arm; vector-arm lands
+///   in a follow-up sub-cycle.
+/// JVM reference: clojure.core/assoc! → ITransientAssociative.assoc
+/// cw v1 tier: A (Phase 8.5 cycle 2)
+pub fn assocBangFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = env;
+    try error_catalog.checkArity("assoc!", args, 3, loc);
+    const tcoll = args[0];
+    return switch (tcoll.tag()) {
+        .transient_map => try transient_array_map.assoc(rt, tcoll, args[1], args[2], loc),
+        else => error_catalog.raise(.transient_kind_mismatch, loc, .{
+            .fn_name = "assoc!",
+            .expected = "transient_map",
+            .actual = @tagName(tcoll.tag()),
+        }),
+    };
+}
+
+/// Implements clojure.core/dissoc!.
+/// Spec: `(dissoc! tmap k)` — removes k from tmap in place.
+/// JVM reference: clojure.core/dissoc! → ITransientMap.without
+/// cw v1 tier: A (Phase 8.5 cycle 2)
+pub fn dissocBangFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = rt;
+    _ = env;
+    try error_catalog.checkArity("dissoc!", args, 2, loc);
+    const tcoll = args[0];
+    return switch (tcoll.tag()) {
+        .transient_map => try transient_array_map.dissoc(tcoll, args[1], loc),
+        else => error_catalog.raise(.transient_kind_mismatch, loc, .{
+            .fn_name = "dissoc!",
+            .expected = "transient_map",
             .actual = @tagName(tcoll.tag()),
         }),
     };
@@ -121,6 +167,8 @@ const ENTRIES = [_]Entry{
     .{ .name = "persistent!", .f = &persistentBangFn },
     .{ .name = "conj!", .f = &conjBangFn },
     .{ .name = "pop!", .f = &popBangFn },
+    .{ .name = "assoc!", .f = &assocBangFn },
+    .{ .name = "dissoc!", .f = &dissocBangFn },
 };
 
 pub fn register(env: *Env, rt_ns: *env_mod.Namespace) !void {
