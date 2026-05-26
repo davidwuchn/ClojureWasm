@@ -9,6 +9,10 @@
 //! cache (4.25) can reference these types now.
 
 const std = @import("std");
+const value = @import("value/value.zig");
+const Value = value.Value;
+const HeapHeader = value.HeapHeader;
+const HeapTag = value.HeapTag;
 const Runtime = @import("runtime.zig").Runtime;
 const td_mod = @import("type_descriptor.zig");
 const TypeDescriptor = td_mod.TypeDescriptor;
@@ -35,6 +39,61 @@ pub const ProtocolDescriptor = struct {
     /// over this slice plus the per-call-site cache.
     methods: []const MethodEntry,
 };
+
+/// Per-method dispatch handle, allocated when `(defprotocol P (m
+/// [this]) ...)` evaluates. Carries the (descriptor, method-name)
+/// pair that cycle 4's `(m receiver args)` callable Value uses to
+/// route through the row 7.1 dispatch ABI. Sits on F-004 Group B
+/// slot 19 (`.protocol_fn`, declared in heap_tag.zig); CallSite is
+/// NOT carried here — analyzer-time per-call-site CallSite slots
+/// remain the cache location, this struct is just the per-method
+/// handle.
+pub const ProtocolFn = extern struct {
+    header: HeapHeader,
+    // Pad to align Value-sized fields to 16 — header is 8 bytes,
+    // but the descriptor pointer + method_name slice need an even
+    // boundary so the C-ABI layout is portable.
+    _pad: [6]u8 = .{ 0, 0, 0, 0, 0, 0 },
+    /// Owning protocol descriptor. Process-lifetime (allocated on
+    /// `rt.gc.infra`), so the pointer is stable for the runtime's
+    /// lifetime.
+    descriptor: *const ProtocolDescriptor,
+    /// Interned method name (bytes owned by the symbol pool).
+    method_name_ptr: [*]const u8,
+    method_name_len: usize,
+
+    /// Return the method name as a `[]const u8` slice.
+    pub fn methodName(self: *const ProtocolFn) []const u8 {
+        return self.method_name_ptr[0..self.method_name_len];
+    }
+};
+
+/// Allocate a `ProtocolFn` Value on `rt.gc.infra`. Caller supplies
+/// the owning ProtocolDescriptor pointer + the method's interned
+/// name slice. Returns a `.protocol_fn`-tagged Value pointing at
+/// the new struct.
+pub fn makeProtocolFn(
+    rt: *Runtime,
+    descriptor: *const ProtocolDescriptor,
+    method_name: []const u8,
+) !Value {
+    const pfn = try rt.gc.infra.create(ProtocolFn);
+    pfn.* = .{
+        .header = HeapHeader.init(.protocol_fn),
+        .descriptor = descriptor,
+        .method_name_ptr = method_name.ptr,
+        .method_name_len = method_name.len,
+    };
+    return Value.encodeHeapPtr(.protocol_fn, pfn);
+}
+
+/// Decode a `.protocol_fn`-tagged Value back to its `*ProtocolFn`.
+/// Asserts the tag (callers must check `val.tag() == .protocol_fn`
+/// beforehand).
+pub fn asProtocolFn(val: Value) *const ProtocolFn {
+    std.debug.assert(val.tag() == .protocol_fn);
+    return val.decodePtr(*const ProtocolFn);
+}
 
 /// Row 7.3 cycle 1: append `new_impls` to `td.method_table` and bump
 /// `rt.protocol_generation`. The TypeDescriptor's `method_table` is
@@ -79,6 +138,28 @@ test "ProtocolDescriptor: fqcn + method list shape" {
     const pd: ProtocolDescriptor = .{ .fqcn = "user/ISeq", .methods = &methods };
     try testing.expectEqualStrings("user/ISeq", pd.fqcn);
     try testing.expectEqual(@as(usize, 3), pd.methods.len);
+}
+
+test "makeProtocolFn allocates a .protocol_fn Value carrying descriptor + method name" {
+    var th = std.Io.Threaded.init(testing.allocator, .{});
+    defer th.deinit();
+    var rt = Runtime.init(th.io(), testing.allocator);
+    defer rt.deinit();
+
+    const methods = [_]MethodEntry{
+        .{ .name = "first", .arity = 1 },
+    };
+    const proto = try rt.gc.infra.create(ProtocolDescriptor);
+    defer rt.gc.infra.destroy(proto);
+    proto.* = .{ .fqcn = "user/ISeq", .methods = &methods };
+
+    const v = try makeProtocolFn(&rt, proto, "first");
+    defer rt.gc.infra.destroy(@constCast(asProtocolFn(v)));
+    try testing.expect(v.tag() == .protocol_fn);
+
+    const pfn = asProtocolFn(v);
+    try testing.expect(pfn.descriptor == proto);
+    try testing.expectEqualStrings("first", pfn.methodName());
 }
 
 test "extendTypeWithImpls bumps protocol_generation and grows method_table" {
