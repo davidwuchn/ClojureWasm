@@ -121,6 +121,50 @@ pub const TypedInstance = extern struct {
     }
 };
 
+/// Value handle to a process-lifetime `TypeDescriptor`. Sits on the
+/// F-004 Group C slot 12 (`.type_descriptor`, already reserved in
+/// `heap_tag.zig`). Cycle 6.5 introduces this thin wrapper rather
+/// than migrating `TypeDescriptor` itself to an extern struct — the
+/// finished form keeps `TypeDescriptor`'s rich field types (incl.
+/// `protocol_impls: []const []const u8` slice-of-slices) and
+/// reserves Value-handle semantics for `TypeDescriptorRef`, mirroring
+/// the Java `Class` (static type info) vs `Class<T>` (handle) split.
+///
+/// Allocated on `rt.gc.infra` per descriptor (one ref per `TypeDescriptor`).
+/// The held pointer is stable for the runtime's lifetime; no GC trace
+/// recursion needed since `TypeDescriptor` itself lives on `rt.gc.infra`
+/// (the pre-existing `td.meta` Value field is currently always `nil`
+/// in practice — landing real meta tracing arrives with D-075 metadata
+/// layer, same row as Symbol/Keyword meta).
+pub const TypeDescriptorRef = extern struct {
+    header: HeapHeader,
+    _pad: [6]u8 = .{ 0, 0, 0, 0, 0, 0 },
+    td_ptr: *const TypeDescriptor,
+
+    comptime {
+        std.debug.assert(@alignOf(TypeDescriptorRef) >= 8);
+        std.debug.assert(@offsetOf(TypeDescriptorRef, "header") == 0);
+    }
+};
+
+/// Allocate a `TypeDescriptorRef` on `rt.gc.infra` that points at
+/// the given descriptor. Returns a `.type_descriptor`-tagged Value.
+pub fn makeTypeDescriptorRef(rt: *Runtime, td: *const TypeDescriptor) !Value {
+    const ref = try rt.gc.infra.create(TypeDescriptorRef);
+    ref.* = .{
+        .header = HeapHeader.init(.type_descriptor),
+        .td_ptr = td,
+    };
+    return Value.encodeHeapPtr(.type_descriptor, ref);
+}
+
+/// Decode a `.type_descriptor`-tagged Value back to its
+/// `*const TypeDescriptor`. Asserts the tag.
+pub fn asTypeDescriptorRef(val: Value) *const TypeDescriptor {
+    std.debug.assert(val.tag() == .type_descriptor);
+    return val.decodePtr(*const TypeDescriptorRef).td_ptr;
+}
+
 /// A `reify` runtime value. Closed-over locals from the surrounding
 /// lexical scope live here; the anonymous descriptor lives on
 /// `descriptor` and is never registered into a namespace.
@@ -305,6 +349,28 @@ test "allocInstance allocates TypedInstance with field copy + tag .typed_instanc
     try testing.expectEqual(@as(i48, 3), inst.fields()[0].asInteger());
     try testing.expectEqual(@as(i48, 4), inst.fields()[1].asInteger());
     try testing.expect(inst.descriptor == td);
+}
+
+test "TypeDescriptorRef round-trips a TypeDescriptor pointer through .type_descriptor Value" {
+    var fix = TdFixture.init();
+    defer fix.deinit();
+
+    const td = try fix.rt.gc.infra.create(TypeDescriptor);
+    defer fix.rt.gc.infra.destroy(td);
+    td.* = .{
+        .fqcn = "user.Bar",
+        .kind = .deftype,
+        .field_layout = null,
+        .protocol_impls = &.{},
+        .method_table = &.{},
+        .parent = null,
+        .meta = Value.nil_val,
+    };
+
+    const v = try makeTypeDescriptorRef(&fix.rt, td);
+    defer fix.rt.gc.infra.destroy(@constCast(v.decodePtr(*const TypeDescriptorRef)));
+    try testing.expect(v.tag() == .type_descriptor);
+    try testing.expect(asTypeDescriptorRef(v) == td);
 }
 
 test "Runtime.deinit releases TypedInstance + its field array (no leak)" {
