@@ -210,8 +210,8 @@ pub fn printMap(w: *Writer, v: Value) Writer.Error!void {
 
 /// Render a PersistentHashSet in `#{a b c}` form (Phase 6.10 cycle 1).
 /// Iterates the backing map's `entries` array directly (set's map is
-/// an `array_map` until Phase 5 D-045 promotes to HAMT). Element
-/// order is insertion order at this scale.
+/// an `array_map` until D-045 promotes to HAMT). Element order is
+/// insertion order at this scale.
 pub fn printSet(w: *Writer, v: Value) Writer.Error!void {
     try w.writeAll("#{");
     const s = v.decodePtr(*const set_collection.PersistentHashSet);

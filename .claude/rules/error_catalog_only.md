@@ -145,8 +145,8 @@ Tier D form.
 ## Enforcement
 
 - ADR-0018 specifies the contract.
-- Phase 5+: `scripts/check_no_op_stub.sh` extends to flag bare
+- `scripts/check_no_op_stub.sh` extends to flag bare
   `setErrorFmt(...)` calls outside `error_catalog.zig` (heuristic
-  grep). Phase 4 entry: informational only.
+  grep). Current state: informational only.
 - Reviewers reject `setErrorFmt(...)` introductions outside the
   catalog.

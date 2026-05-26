@@ -99,7 +99,7 @@ pub fn expandIfMacro(
     args: []const Form,
     loc: SourceLocation,
 ) ExpandError!?Form {
-    _ = env; // unused until Phase 3.12 user-fn path
+    _ = env; // unused until the user-fn macro path lands
     if (!head_var.flags.macro_) return null;
     if (table.lookup(head_name)) |f| {
         return try f(arena, rt, args, loc);
