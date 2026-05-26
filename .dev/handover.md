@@ -3,6 +3,16 @@
 > ≤ 100 lines. Driving doc; framing per
 > [`.claude/rules/handover_framing.md`](../.claude/rules/handover_framing.md).
 
+## Operating mode (user directive 2026-05-27)
+
+完全自律で進める。`[x]` flip / feature_deps status flip / ADR
+"Selected:" 確定 / DA subagent の "Recommendation" 採用 等の
+framework boundary では **pause + PushNotification しない**。
+CLAUDE.md § The only stop の "only user explicit stop halts the
+loop" を operative rule として運用し、autonomous-tick framing の
+"Reaching for justifications, wait" heuristic は採らない。row /
+ADR / cycle 境界はそのまま次の Step 0 survey に roll する。
+
 ## Resume contract
 
 - **HEAD**: see `git log` (row 7.8 cycle 4 close is HEAD).
