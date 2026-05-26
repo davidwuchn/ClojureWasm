@@ -32,10 +32,12 @@ const Value = value.Value;
 const HeapHeader = value.HeapHeader;
 const HeapTag = value.HeapTag;
 const Runtime = @import("runtime.zig").Runtime;
+const Env = @import("env.zig").Env;
 const map_mod = @import("collection/map.zig");
 const set_mod = @import("collection/set.zig");
 const error_catalog = @import("error/catalog.zig");
 const symbol = @import("symbol.zig");
+const dispatch_mod = @import("dispatch.zig");
 
 const SourceLocation = error_catalog.SourceLocation;
 
@@ -253,6 +255,30 @@ pub fn getMethod(
     return error_catalog.raise(.multimethod_no_method, loc, .{
         .name = name_sym.name,
     });
+}
+
+/// Invoke a multimethod Value as a callable. Routes via:
+///   1. evaluate `mf.dispatch_fn(args)` → `dispatch_val`
+///   2. `getMethod(rt, mf, dispatch_val, loc)` → `method`
+///   3. evaluate `method(args)` → return
+///
+/// Both step-1 and step-3 go through `rt.vtable.callFn`, so the
+/// dispatch fn and method can be any callable Value (`.fn_val`,
+/// `.builtin_fn`, `.keyword` fast-path, even another `.multi_fn`).
+/// This is the function `vtable.callFn`'s `.multi_fn` arm routes
+/// to per ADR-0008 Phase 7.2 amendment (Alt 1).
+pub fn callMultiFn(
+    rt: *Runtime,
+    env: *Env,
+    multi: Value,
+    args: []const Value,
+    loc: SourceLocation,
+) anyerror!Value {
+    const mf: *MultiFn = multi.decodePtr(*MultiFn);
+    const vt = rt.vtable orelse return error.NoVTable;
+    const dispatch_val = try vt.callFn(rt, env, mf.dispatch_fn, args, loc);
+    const method = try getMethod(rt, mf, dispatch_val, loc);
+    return vt.callFn(rt, env, method, args, loc);
 }
 
 // --- tests ---
@@ -622,6 +648,76 @@ test "getMethod: second call hits method_cache even after method_table is cleare
 
     const second = try getMethod(&fix.rt, mf, kw_a, .{});
     try testing.expectEqual(@intFromEnum(m_a), @intFromEnum(second));
+}
+
+// --- cycle 5a: callMultiFn end-to-end ---
+
+fn testCallMultiFnDispatchFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = env;
+    _ = loc;
+    _ = rt;
+    return args[0];
+}
+
+fn testCallMultiFnMockCallFn(
+    rt: *Runtime,
+    env: *Env,
+    callee: Value,
+    args: []const Value,
+    loc: SourceLocation,
+) anyerror!Value {
+    if (callee.tag() == .builtin_fn) {
+        const fn_ptr = callee.asBuiltinFn(dispatch_mod.BuiltinFn);
+        return fn_ptr(rt, env, args, loc);
+    }
+    return callee;
+}
+
+fn testCallMultiFnTypeKey(val: Value) []const u8 {
+    return @tagName(val.tag());
+}
+
+test "callMultiFn: routes dispatch_fn → getMethod → method via vtable.callFn" {
+    var fix: TestFixture = undefined;
+    fix.init(testing.allocator);
+    defer fix.deinit();
+
+    var env = try Env.init(&fix.rt);
+    defer env.deinit();
+
+    fix.rt.vtable = .{
+        .callFn = &testCallMultiFnMockCallFn,
+        .valueTypeKey = &testCallMultiFnTypeKey,
+    };
+
+    const name_sym = try symbol.intern(&fix.rt, "test", "f");
+    const default_kw = try keyword.intern(&fix.rt, null, "default");
+    const kw_a = try keyword.intern(&fix.rt, null, "a");
+    const m_a = try keyword.intern(&fix.rt, null, "method-a");
+
+    const dispatch_fn = Value.initBuiltinFn(&testCallMultiFnDispatchFn);
+    const mt = try map_mod.assoc(&fix.rt, map_mod.empty(), kw_a, m_a);
+
+    const mf = try fix.rt.gc.alloc(MultiFn);
+    mf.* = .{
+        .header = HeapHeader.init(.multi_fn),
+        .name = name_sym,
+        .dispatch_fn = dispatch_fn,
+        .default_dispatch_val = default_kw,
+        .hierarchy_ref = Value.nil_val,
+        .method_table = mt,
+        .prefer_table = map_mod.empty(),
+        .method_cache = map_mod.empty(),
+        .cached_hierarchy_snapshot = Value.nil_val,
+    };
+    const multi = Value.encodeHeapPtr(.multi_fn, mf);
+
+    // Call with first arg = :a. dispatch_fn returns args[0] = :a;
+    // getMethod(:a) = m_a; mock callFn(method) returns m_a (= the
+    // "method" Value, since our mock returns non-builtin callees
+    // as-is — stands in for "method was invoked and produced m_a").
+    const result = try callMultiFn(&fix.rt, &env, multi, &[_]Value{kw_a}, .{});
+    try testing.expectEqual(@intFromEnum(m_a), @intFromEnum(result));
 }
 
 test "getMethod: hierarchy change invalidates method_cache" {

@@ -44,6 +44,7 @@ const vector_collection = @import("../../runtime/collection/vector.zig");
 const map_collection = @import("../../runtime/collection/map.zig");
 const set_collection = @import("../../runtime/collection/set.zig");
 const list_mod = @import("../../runtime/collection/list.zig");
+const multimethod_mod = @import("../../runtime/multimethod.zig");
 const SourceLocation = error_mod.SourceLocation;
 const dispatch = @import("../../runtime/dispatch.zig");
 const node_mod = @import("../node.zig");
@@ -631,6 +632,7 @@ pub fn treeWalkCall(
     return switch (callee.tag()) {
         .fn_val => callFunction(rt, env, callee, args, loc),
         .builtin_fn => callBuiltin(rt, env, callee, args, loc),
+        .multi_fn => multimethod_mod.callMultiFn(rt, env, callee, args, loc),
         else => |t| error_catalog.raise(.value_not_callable, loc, .{ .actual = @tagName(t) }),
     };
 }
