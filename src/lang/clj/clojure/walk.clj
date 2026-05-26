@@ -93,3 +93,19 @@
 
 (def postwalk-demo
   (fn* [form] (postwalk (fn* [x] (println x) x) form)))
+
+;; macroexpand-all: recursively macroexpand all forms in `form`.
+;; JVM impl: (prewalk (fn [x] (if (seq? x) (macroexpand x) x)) form).
+;; cw v1 ships a transient `throw`-stub here per provisional_marker.md
+;; row 2 (explicit user-visible error rather than silent semantic
+;; drop). The real impl lands once `macroexpand` itself is callable at
+;; runtime (Phase 7+ macro completion). The ADR-0033 D8 `^:unsupported`
+;; metadata declare-only path is not used here because the reader does
+;; not yet parse `^:keyword` shorthand (no metadata reader syntax in
+;; the Phase 6 surface); the stub raise is the cleanest available
+;; shape until the reader + DefNode metadata propagation both ship.
+(def macroexpand-all
+  (fn* [form]
+    (throw (ex-info "macroexpand-all is not yet supported in ClojureWasm"
+                    {:form form
+                     :reason :phase-7-macro-completion-pending}))))
