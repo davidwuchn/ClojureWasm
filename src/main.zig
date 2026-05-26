@@ -127,6 +127,7 @@ pub fn main(init: std.process.Init) !void {
     defer env.deinit();
 
     driver.installVTable(&rt);
+    bootstrap.installEmbeddedResolver(&rt);
     try primitive.registerAll(&env);
 
     // Bootstrap macros (Phase 3.7): intern `let` / `when` / `cond` /

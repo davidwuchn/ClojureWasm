@@ -177,6 +177,7 @@ run_step "e2e_phase6_clojure_set_group_ab" "bash test/e2e/phase6_clojure_set_gro
 run_step "e2e_phase6_set_map_literal"      "bash test/e2e/phase6_set_map_literal.sh"
 run_step "e2e_phase6_clojure_set_group_c"  "bash test/e2e/phase6_clojure_set_group_c.sh"
 run_step "e2e_phase6_16_b_4_private_leaf"  "bash test/e2e/phase6_16_b_4_private_leaf.sh"
+run_step "e2e_phase6_16_b_4_require_basic" "bash test/e2e/phase6_16_b_4_require_basic.sh"
 
 # Informational scans (ADR-0024). Phase 5+ they become blocking.
 run_step "scan_catalog_only"   "bash scripts/scan_catalog_only.sh" optional

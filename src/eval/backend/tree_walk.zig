@@ -241,6 +241,7 @@ pub fn eval(
         .ctor_call_node => |n| try evalCtorCall(rt, env, locals, n),
         .field_access_node => |n| try evalFieldAccess(rt, env, locals, n),
         .in_ns_node => |n| try evalInNs(env, n),
+        .require_node => |n| try evalRequire(rt, env, n),
         .vector_literal_node => |n| try evalVectorLiteral(rt, env, locals, n),
         .map_literal_node => |n| try evalMapLiteral(rt, env, locals, n),
         .set_literal_node => |n| try evalSetLiteral(rt, env, locals, n),
@@ -274,6 +275,31 @@ fn evalInNs(env: *Env, n: node_mod.InNsNode) !Value {
         try env.referAll(clojure_core_ns, env.current_ns.?);
     }
     return .nil_val;
+}
+
+/// `(require 'foo.bar)` — bare-symbol shape only at Phase 6.16.b-4
+/// sub-cycle c.4. ADR-0035 D2/D5/D8. Already-loaded namespaces (any
+/// of the 4 bootstrap namespaces, plus any future namespaces) are a
+/// no-op returning nil. Unknown names (= resolver returns null)
+/// raise `lib_not_found`. Source-loading of a not-yet-loaded
+/// namespace + libspec opts (`:as` / `:refer` / `:reload`) land in
+/// sub-cycle c.5 (needs macro_table threading + the (ns ...) macro).
+fn evalRequire(rt: *Runtime, env: *Env, n: node_mod.RequireNode) !Value {
+    if (env.findNs(n.ns_name)) |existing| {
+        if (existing.mappings.count() > 0) return .nil_val;
+    }
+    const resolver = rt.require_resolver orelse
+        return error_catalog.raise(.lib_not_found, n.loc, .{ .ns = n.ns_name });
+    const source_opt = try resolver(rt, n.ns_name);
+    if (source_opt == null)
+        return error_catalog.raise(.lib_not_found, n.loc, .{ .ns = n.ns_name });
+    // Source-load path lands in sub-cycle c.5 (requires macro_table
+    // threading). Falling through here can only happen if the
+    // resolver covers a namespace the bootstrap loader did not
+    // load — which is impossible for the embedded resolver today.
+    return error_catalog.raise(.feature_not_supported, n.loc, .{
+        .name = "require: loading a not-yet-loaded namespace (Phase 6.16.b-4 c.5)",
+    });
 }
 
 /// `[expr1 expr2 ...]` — evaluate each child, conj into an empty

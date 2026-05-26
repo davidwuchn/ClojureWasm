@@ -332,6 +332,33 @@ fn stepOnce(
                 stack[sp] = Value.nil_val;
                 sp += 1;
             },
+            .op_require => {
+                // ADR-0035 D2 — mirror of tree_walk::evalRequire.
+                if (instr.operand >= chunk.constants.len)
+                    return raiseInternal("vm: op_require constant index out of range");
+                const name_val = chunk.constants[instr.operand];
+                if (!name_val.isString())
+                    return raiseInternal("vm: op_require constant is not a String");
+                const ns_name = string_mod.asString(name_val);
+                const already_loaded = blk: {
+                    const existing = env.findNs(ns_name) orelse break :blk false;
+                    break :blk existing.mappings.count() > 0;
+                };
+                if (!already_loaded) {
+                    const resolver = rt.require_resolver orelse
+                        return error_catalog.raise(.lib_not_found, .{}, .{ .ns = ns_name });
+                    const source_opt = try resolver(rt, ns_name);
+                    if (source_opt == null)
+                        return error_catalog.raise(.lib_not_found, .{}, .{ .ns = ns_name });
+                    return error_catalog.raise(.feature_not_supported, .{}, .{
+                        .name = "require: loading a not-yet-loaded namespace (Phase 6.16.b-4 c.5)",
+                    });
+                }
+                if (sp >= OPERAND_STACK_MAX)
+                    return raiseInternal("vm: operand stack overflow");
+                stack[sp] = Value.nil_val;
+                sp += 1;
+            },
             .op_vector_literal => {
                 // Closes D-060: pop N values from top of stack, build a
                 // PersistentVector via empty + conj, push result.

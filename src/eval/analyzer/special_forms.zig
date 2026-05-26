@@ -203,6 +203,46 @@ pub fn analyzeQuote(
 /// `InNsNode` for the tree-walk evaluator to act on. Quoted-symbol
 /// form is unwrapped here because cw v1 has no symbol heap Value
 /// yet (F-004 Group A slot 1 reserved).
+/// `(require 'ns.name)` — bare-symbol shape only at Phase 6.16.b-4
+/// sub-cycle c.4. libspec opts (`:as` / `:refer` / `:reload` /
+/// `:as-alias`) and vector libspec shape land in sub-cycle c.5
+/// alongside the `(ns ...)` macro per ADR-0035 D2. Quoted-symbol
+/// form is unwrapped here because cw v1 has no symbol heap Value
+/// yet (F-004 Group A slot 1 reserved). Mirrors `analyzeInNs` shape.
+pub fn analyzeRequire(
+    arena: std.mem.Allocator,
+    items: []const Form,
+    form: Form,
+) AnalyzeError!*const Node {
+    if (items.len != 2)
+        return error_catalog.raise(.feature_not_supported, form.location, .{ .name = "require with multiple libspecs (Phase 6.16.b-4 c.5)" });
+
+    const arg = items[1];
+    const sym = sym: switch (arg.data) {
+        .symbol => |s| break :sym s,
+        .list => |inner| {
+            if (inner.len == 2 and inner[0].data == .symbol and
+                inner[0].data.symbol.ns == null and
+                std.mem.eql(u8, inner[0].data.symbol.name, "quote") and
+                inner[1].data == .symbol)
+            {
+                break :sym inner[1].data.symbol;
+            }
+            return error_catalog.raise(.feature_not_supported, arg.location, .{ .name = "require with non-symbol libspec (Phase 6.16.b-4 c.5)" });
+        },
+        else => return error_catalog.raise(.feature_not_supported, arg.location, .{ .name = "require with non-symbol libspec (Phase 6.16.b-4 c.5)" }),
+    };
+
+    const ns_name: []const u8 = if (sym.ns) |prefix|
+        try std.fmt.allocPrint(arena, "{s}/{s}", .{ prefix, sym.name })
+    else
+        try arena.dupe(u8, sym.name);
+
+    const n = try arena.create(Node);
+    n.* = .{ .require_node = .{ .ns_name = ns_name, .loc = form.location } };
+    return n;
+}
+
 pub fn analyzeInNs(
     arena: std.mem.Allocator,
     items: []const Form,

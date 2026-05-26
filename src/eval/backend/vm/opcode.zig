@@ -101,6 +101,15 @@ pub const Opcode = enum(u8) {
     /// (duplicates collapse), pushes the result. Closes D-061
     /// (Phase 6.16.b-2).
     op_set_literal = 0x15,
+    /// `(require 'foo.bar)` — operand indexes a String constant in
+    /// the chunk's constant pool carrying the namespace name. VM
+    /// dispatch mirrors `tree_walk::evalRequire`: if the namespace
+    /// is already loaded (= `env.findNs(name).mappings.count() > 0`)
+    /// push nil; otherwise call `rt.require_resolver`, raise
+    /// `lib_not_found` on null, raise `feature_not_supported` on
+    /// non-null (source-load path lands in sub-cycle c.5).
+    /// ADR-0035 D2/D5/D8.
+    op_require = 0x16,
 };
 
 /// `op_def` operand layout — see the Opcode docstring.
@@ -154,6 +163,7 @@ test "opcode enum tags are stable u8 values" {
     try std.testing.expectEqual(@as(u8, 0x13), @intFromEnum(Opcode.op_vector_literal));
     try std.testing.expectEqual(@as(u8, 0x14), @intFromEnum(Opcode.op_map_literal));
     try std.testing.expectEqual(@as(u8, 0x15), @intFromEnum(Opcode.op_set_literal));
+    try std.testing.expectEqual(@as(u8, 0x16), @intFromEnum(Opcode.op_require));
 }
 
 test "Instruction carries opcode and u16 operand" {

@@ -73,6 +73,7 @@ pub const Node = union(enum) {
     ctor_call_node: CtorCallNode,
     field_access_node: FieldAccessNode,
     in_ns_node: InNsNode,
+    require_node: RequireNode,
     vector_literal_node: VectorLiteralNode,
     map_literal_node: MapLiteralNode,
     set_literal_node: SetLiteralNode,
@@ -325,6 +326,16 @@ pub const SetLiteralNode = struct {
 /// the namespace value — a documented divergence pending the `ns`
 /// heap Value landing).
 pub const InNsNode = struct {
+    ns_name: []const u8,
+    loc: SourceLocation = .{},
+};
+
+/// `(require 'ns.name)` analyser node. Phase 6.16.b-4 sub-cycle c.4
+/// supports the bare-symbol shape only; libspec opts (`:as` /
+/// `:refer` / `:reload`) land in the next sub-cycle alongside the
+/// `(ns ...)` special form (ADR-0035 D2). The `ns_name` slice is
+/// arena-owned.
+pub const RequireNode = struct {
     ns_name: []const u8,
     loc: SourceLocation = .{},
 };

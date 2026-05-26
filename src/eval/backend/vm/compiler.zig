@@ -116,6 +116,7 @@ const Compiler = struct {
                 return error.NotImplemented;
             },
             .in_ns_node => |n| try self.compileInNs(n),
+            .require_node => |n| try self.compileRequire(n),
             // Closes D-060 (Phase 6.16.a-3.2): emit each element + the
             // `op_vector_literal <n>` operand. VM dispatch pops N values
             // and builds a PersistentVector.
@@ -367,6 +368,14 @@ const Compiler = struct {
         const name_val = try string_mod.alloc(self.rt, n.ns_name);
         const idx = try self.addConstant(name_val);
         try self.emit(.op_in_ns, idx);
+    }
+
+    fn compileRequire(self: *Compiler, n: node_mod.RequireNode) Error!void {
+        // ADR-0035 D2 require VM path. Same shape as compileInNs: park
+        // the ns name as a String Value, emit op_require.
+        const name_val = try string_mod.alloc(self.rt, n.ns_name);
+        const idx = try self.addConstant(name_val);
+        try self.emit(.op_require, idx);
     }
 
     fn compileDef(self: *Compiler, n: node_mod.DefNode) Error!void {
