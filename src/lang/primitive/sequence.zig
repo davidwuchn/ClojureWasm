@@ -50,6 +50,7 @@ const string_collection = @import("../../runtime/collection/string.zig");
 const chunked_cons = @import("../../runtime/collection/chunked_cons.zig");
 const lazy_seq = @import("../../runtime/lazy_seq.zig");
 const charset = @import("../../runtime/charset.zig");
+const td_mod = @import("../../runtime/type_descriptor.zig");
 
 // --- count ---
 
@@ -84,6 +85,21 @@ pub fn countFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation
         .array_map, .hash_map => Value.initInteger(@intCast(map.count(coll))),
         .hash_set => Value.initInteger(@intCast(set.count(coll))),
         .chunked_cons => Value.initInteger(@intCast(chunked_cons.count(coll))),
+        .typed_instance => blk: {
+            // Row 7.4 cycle 3: defrecord exposes its declared-field
+            // count via the IPersistentMap surface; deftype is not
+            // counted? per JVM precedent (Counted is implemented by
+            // IPersistentMap-bearing types only).
+            const inst = coll.decodePtr(*const td_mod.TypedInstance);
+            if (inst.descriptor.kind != .defrecord) {
+                return error_catalog.raise(.type_arg_invalid, loc, .{
+                    .fn_name = "count",
+                    .expected = "counted? collection",
+                    .actual = @tagName(coll.tag()),
+                });
+            }
+            break :blk Value.initInteger(@intCast(inst.field_count));
+        },
         .lazy_seq => {
             // O(n) walk: realize and count via seq chain.
             var n: i64 = 0;

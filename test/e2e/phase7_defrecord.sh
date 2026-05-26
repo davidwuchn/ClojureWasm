@@ -81,4 +81,59 @@ if [[ "$diag" != *"defrecord fields"* ]]; then
 fi
 echo "PASS defrecord_fields_not_vector_diagnostic"
 
-echo "OK — phase7_defrecord smoke (5 cases) green"
+# --- Case 6 (cycle 3): implicit get on declared field ---
+got=$("$BIN" - <<'EOF' 2>/dev/null
+(defrecord Point [x y])
+(get (Point. 3 4) :x)
+EOF
+) || fail "case6: non-zero exit ($got)"
+assert_eq 'defrecord_get_declared_field' "$(last_line "$got")" '3'
+
+# --- Case 7 (cycle 3): get with default + multiple values via let* ---
+# Note: `(:k coll)` keyword-as-fn callable is intentionally deferred
+# to a future cycle — `tree_walk.callFn` lacks a `.keyword` arm and
+# adding it cleanly requires a Layer-0 lookup helper (eval/ cannot
+# import lang/primitive/collection.zig). Tracked via D-085 in debt.md.
+got=$("$BIN" - <<'EOF' 2>/dev/null
+(defrecord Point [x y])
+(let* [p (Point. 3 4)] (+ (get p :x) (get p :y)))
+EOF
+) || fail "case7: non-zero exit ($got)"
+assert_eq 'defrecord_get_sum_two_fields' "$(last_line "$got")" '7'
+
+# --- Case 8 (cycle 3): get on undeclared key returns nil ---
+got=$("$BIN" - <<'EOF' 2>/dev/null
+(defrecord Point [x y])
+(get (Point. 3 4) :z)
+EOF
+) || fail "case8: non-zero exit ($got)"
+assert_eq 'defrecord_get_undeclared_returns_nil' "$(last_line "$got")" 'nil'
+
+# --- Case 9 (cycle 3): get with default on undeclared key ---
+got=$("$BIN" - <<'EOF' 2>/dev/null
+(defrecord Point [x y])
+(get (Point. 3 4) :z 99)
+EOF
+) || fail "case9: non-zero exit ($got)"
+assert_eq 'defrecord_get_undeclared_default' "$(last_line "$got")" '99'
+
+# --- Case 10 (cycle 3): count returns field count ---
+got=$("$BIN" - <<'EOF' 2>/dev/null
+(defrecord Point [x y])
+(count (Point. 3 4))
+EOF
+) || fail "case10: non-zero exit ($got)"
+assert_eq 'defrecord_count_field_count' "$(last_line "$got")" '2'
+
+# --- Case 11 (cycle 3): deftype does NOT route through IPersistentMap ---
+# `(get deftype-inst :x)` returns nil — deftype is not a map. defrecord
+# is the only TypedInstance whose `descriptor.kind` enables the
+# implicit map routing in `getFn`.
+got=$("$BIN" - <<'EOF' 2>/dev/null
+(deftype Pair [a b])
+(get (Pair. 1 2) :a)
+EOF
+) || fail "case11: non-zero exit ($got)"
+assert_eq 'deftype_get_no_map_routing_returns_nil' "$(last_line "$got")" 'nil'
+
+echo "OK — phase7_defrecord smoke (11 cases) green"

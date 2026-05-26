@@ -40,6 +40,8 @@ const vector = @import("../../runtime/collection/vector.zig");
 const list = @import("../../runtime/collection/list.zig");
 const map = @import("../../runtime/collection/map.zig");
 const set = @import("../../runtime/collection/set.zig");
+const td_mod = @import("../../runtime/type_descriptor.zig");
+const keyword_mod = @import("../../runtime/keyword.zig");
 
 // --- conj ---
 
@@ -181,8 +183,30 @@ pub fn getFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) 
             if (idx >= n) break :blk default;
             break :blk vector.nth(coll, @intCast(idx));
         },
+        .typed_instance => recordGet(coll, k, default),
         else => default,
     };
+}
+
+/// Implicit IPersistentMap read for a `defrecord` TypedInstance.
+/// `(get rec :k)` walks `descriptor.field_layout` and returns the
+/// matching field value; non-keyword keys and non-matching keys fall
+/// through to `default`. `deftype` instances (`.kind = .deftype`)
+/// do not route through the map surface — they return `default`.
+/// Row 7.4 cycle 3 — minimum declared-key shape; non-declared key
+/// `__extmap` overflow lands at the cycle-4 PROVISIONAL discharge.
+fn recordGet(rec: Value, k: Value, default: Value) Value {
+    const inst = rec.decodePtr(*const td_mod.TypedInstance);
+    if (inst.descriptor.kind != .defrecord) return default;
+    if (k.tag() != .keyword) return default;
+    const layout = inst.descriptor.field_layout orelse return default;
+    const key_name = keyword_mod.asKeyword(k).name;
+    for (layout) |fe| {
+        if (std.mem.eql(u8, fe.name, key_name)) {
+            return inst.fields()[fe.index];
+        }
+    }
+    return default;
 }
 
 // --- nth ---
