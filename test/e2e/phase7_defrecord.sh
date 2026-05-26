@@ -195,4 +195,24 @@ EOF
 ) || fail "case18: non-zero exit ($got)"
 assert_eq 'defrecord_inline_protocol_body' "$(last_line "$got")" '30'
 
-echo "OK — phase7_defrecord smoke (18 cases) green"
+# --- Case 19 (cycle 6): record? true on defrecord instance ---
+got=$("$BIN" - <<'EOF' 2>/dev/null
+(defrecord Point [x y])
+(record? (->Point 1 2))
+EOF
+) || fail "case19: non-zero exit ($got)"
+assert_eq 'defrecord_record_pred_true' "$(last_line "$got")" 'true'
+
+# --- Case 20 (cycle 6): record? false on deftype instance ---
+got=$("$BIN" - <<'EOF' 2>/dev/null
+(deftype Pair [a b])
+(record? (Pair. 1 2))
+EOF
+) || fail "case20: non-zero exit ($got)"
+assert_eq 'deftype_record_pred_false' "$(last_line "$got")" 'false'
+
+# --- Case 21 (cycle 6): record? false on map ---
+got=$("$BIN" -e '(record? {:a 1})' 2>/dev/null) || fail "case21: non-zero exit"
+assert_eq 'map_record_pred_false' "$(last_line "$got")" 'false'
+
+echo "OK — phase7_defrecord smoke (21 cases) green"

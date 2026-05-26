@@ -22,6 +22,7 @@ const symbol_mod = @import("../../runtime/symbol.zig");
 const string_mod = @import("../../runtime/collection/string.zig");
 const print_mod = @import("../../runtime/print.zig");
 const charset_mod = @import("../../runtime/charset.zig");
+const td_mod = @import("../../runtime/type_descriptor.zig");
 
 /// `(nil? x)` — true iff `x` is the singleton nil Value.
 pub fn nilQ(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
@@ -136,6 +137,22 @@ pub fn setQ(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) a
     try error_catalog.checkArity("set?", args, 1, loc);
     const t = args[0].tag();
     return if (t == .hash_set or t == .sorted_set) .true_val else .false_val;
+}
+
+/// Implements clojure.core/record?.
+/// Spec: `(record? x)` returns true iff x is an instance of a
+/// defrecord-declared type. cw v1 routes through `.typed_instance`
+/// tag + `descriptor.kind == .defrecord` discrimination.
+/// JVM reference: clojure.core/record? in clojure/core.clj — calls
+/// `(instance? clojure.lang.IRecord x)`.
+/// cw v1 tier: A (row 7.4 cycle 6).
+pub fn recordQ(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = rt;
+    _ = env;
+    try error_catalog.checkArity("record?", args, 1, loc);
+    if (args[0].tag() != .typed_instance) return .false_val;
+    const inst = args[0].decodePtr(*const td_mod.TypedInstance);
+    return if (inst.descriptor.kind == .defrecord) .true_val else .false_val;
 }
 
 /// `(fn? x)` — true iff `x` is callable as a function:
@@ -496,6 +513,7 @@ const ENTRIES = [_]Entry{
     .{ .name = "list?", .f = &listQ },
     .{ .name = "map?", .f = &mapQ },
     .{ .name = "set?", .f = &setQ },
+    .{ .name = "record?", .f = &recordQ },
     .{ .name = "fn?", .f = &fnQ },
     .{ .name = "boolean?", .f = &booleanQ },
     .{ .name = "char?", .f = &charQ },

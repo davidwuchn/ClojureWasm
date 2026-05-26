@@ -6,16 +6,15 @@
 ## Resume contract
 
 - **HEAD**: see `git log`.
-- **First commit on resume MUST be**: §9.9 row 7.4 first red —
-  `defrecord` analyzer + eval surface. ROADMAP row 7.4 description:
-  "5.12.b carry-forward — defrecord analyzer + eval. Implicit
-  IPersistentMap semantics (get/assoc/keys/vals over field names).
-  Uses Phase 7 dispatch ABI." Phase 5 task 5.12 left the
-  deftype/defrecord analyzer skeleton; row 7.4 picks it up with
-  the row 7.3 protocol dispatch surface (`__extend-type!` +
-  `.protocol_fn` arm + per-Tag registry) now landed. Survey first
-  via Step 0 (Clojure JVM `core_deftype.clj` defrecord + cw v0
-  prior art + cw v1 5.12 skeleton) before macro/primitive design.
+- **First commit on resume MUST be**: §9.9 row 7.5 first red —
+  `reify` analyzer + eval surface. ROADMAP row 7.5 description:
+  "5.12.c carry-forward — reify analyzer + eval. Anonymous
+  TypeDescriptor + closure capture + protocol-method bodies."
+  Row 7.4 (defrecord) closed cycles 1-6 across the prior session
+  (commit chain 202c794 → cycle 6). Row 7.4 left user-typed_instance
+  receivers live; row 7.5 builds on them with anonymous descriptors.
+  Survey first via Step 0 (Clojure JVM `core_deftype.clj` `reify*`
+  + cw v0 prior art + cw v1 5.12 skeleton).
 - **Forbidden this session**: (a) re-deriving Phase 7 entry triad
   (T1 ADR-0036 + T2 ADR-0037 + T3 ADR-0035 D9 second amendment).
   (b) commits adding VM compile arm bodies of the form
@@ -42,39 +41,39 @@ end-state → `feature_deps.yaml` → `.dev/debt.md` Step 0.5 sweep.
 ## Current state
 
 - **Phase**: Phase 7 IN-PROGRESS — §9.9 rows 7.0 / 7.1 / 7.2 / 7.3
-  all [x]. Row 7.3 closed at `d2b1c98` (cycles 1-8.5 across the
-  same session: runtime helpers → Layer-2 primitives →
-  TypeDescriptorRef wrap → macros → analyzer pre-register +
-  per-method-Var restore → .protocol_fn dispatch arm + per-Tag
-  descriptor registry). Active = row 7.4 (defrecord).
+  / 7.4 all [x]. Row 7.4 closed across 6 cycles (commit chain
+  202c794 → cycle 6): macro skeleton + `__defrecord!` primitive +
+  collection arms (get/assoc/keys/vals/count) + `->Name` factory +
+  inline protocol-method bodies + `record?` predicate.
+  D-085 (keyword-as-fn callable) and D-086 (defrecord `__extmap`
+  overflow) opened opportunistically. Active = row 7.5 (reify).
 - **Branch**: `cw-from-scratch`. v5 plan =
   `private/notes/clj_vs_zig_split_proposal_v5.md`.
-- **Gate**: Mac 44/44 + OrbStack Ubuntu x86_64 43/43 green at HEAD
-  `d2b1c98`.
+- **Gate**: Mac 44/44 + OrbStack Ubuntu x86_64 44/44 green at HEAD
+  row 7.4 close commit.
 - **VM-DEFER markers**: 4 active (3 deftype-family in
   `vm/compiler.zig` + 1 `require_libspec` in `compileRequire`).
   PROVISIONAL markers: D-070 join, D-074 map-invert, D-075 project
-  + rename, D-076 rename-keys, D-077 catch_class_table.
+  + rename, D-076 rename-keys, D-077 catch_class_table, D-086
+  defrecord __extmap (2 markers in assocFn).
 - **Chapter cadence**: dormant per ADR-0025 + F-007.
 
-## Active task — §9.9 row 7.4 (defrecord)
+## Active task — §9.9 row 7.5 (reify)
 
-`defrecord` analyzer + eval, plus implicit IPersistentMap semantics
-(get/assoc/keys/vals over field names). Uses the Phase 7 dispatch
-ABI (row 7.3's `dispatch(rt, env, cs, receiver, protocol, method,
-args, loc)` + `.protocol_fn` arm + extend-type). Row 7.4 enables
-user-typed_instance receivers which unblock (a) full survey §8
-7-case ladder e2e for row 7.3 (the user-type subset) and (b) D-082
-discharge (typed_instance walk in isaCheck). Step 0 survey before
-implementation per `.claude/rules/textbook_survey.md`.
+`reify` analyzer + eval. Anonymous TypeDescriptor + closure capture
++ protocol-method bodies. Builds on row 7.4's user-typed_instance
+machinery — reify's anonymous descriptor is the deftype/defrecord
+flow without a registered name (or with a gensym'd name).
 
 ## Open questions / blockers
 
 None testable from inside the loop. D-081 (multimethod ergonomic
 surface) blocked-by D-012 (Atom + swap!, Phase 15 target). D-082
-(typed_instance walk in isaCheck) re-recallable at row 7.4 entry
-once deftype lands user typed_instances. D-083 (multimethod
-diff_test parity) opportunistic.
+(typed_instance walk in isaCheck) now testable — row 7.4 lands user
+typed_instances; opportunistic discharge in any row 7.5+ cycle that
+touches isaCheck. D-083 (multimethod diff_test parity) opportunistic.
+D-085 (keyword-as-fn callable) opportunistic — needs Layer-0 lookup
+helper. D-086 (defrecord __extmap overflow) dedicated cycle later.
 
 ## Guardrail refresh history
 
