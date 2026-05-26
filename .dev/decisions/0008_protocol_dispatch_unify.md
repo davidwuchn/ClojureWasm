@@ -421,3 +421,180 @@ this ADR.
   Phase 7.3 cycle 6.6 source commit follows this ADR
   amendment commit per the depth-2 cycle protocol (ADR commit
   first, source commit second; same row, same session).
+
+- 2026-05-26 (amendment 4 — Phase 7.7 cycle 1 hybrid polymorphic
+  primitives, R3 fast-path / slow-path ordering): The
+  polymorphic primitives `count` / `seq` / `conj` / `reduce`
+  (D-069) take a hybrid shape per ROADMAP §9.9 row 7.7: existing
+  Zig Tag-switch fast-path arms stay verbatim; the
+  `.typed_instance` arm consults `MethodEntry` for the
+  corresponding protocol method *first* and falls back to its
+  typed-default only when no override is registered; the outer
+  `else =>` raise is replaced with a route through
+  `dispatch(rt, env, &cs, receiver, fqcn, method, args, loc)` so
+  `(extend-type LongTag IPersistentCollection -count …)`-style
+  native-Tag overrides reach the primitive via the row 7.3
+  per-Tag descriptor registry.
+
+  Cycle 1 lands `count` only; cycles 2-4 mirror the shape onto
+  `seq` / `conj` / `reduce`. Protocol declarations
+  (`IPersistentCollection -count …`) live in
+  `src/lang/clj/clojure/core.clj`; each cycle extends the
+  bootstrap form. `MethodEntry.protocol_name` stores the bare
+  symbol name (per `allocFqcn` at `lang/primitive/protocol.zig:41-51`),
+  so the slow-path hardcodes the same bare-name string
+  (`"IPersistentCollection"`) — collision with user
+  `(defprotocol IPersistentCollection …)` in another ns is a
+  known follow-up gap, tracked at D-NNN protocol fqcn
+  namespacing (filed at Phase 7 boundary).
+
+  **R3 — `.typed_instance` fast/slow ordering choice**: today
+  `count`'s `.typed_instance` arm at `sequence.zig:88-102`
+  hard-codes `defrecord → field_count; else → raise`. Without
+  R3a, a user `(extend-type MyRecord IPersistentCollection
+  (-count [_] …))` is silently overridden by `field_count` —
+  the Silent default-shift smell. R3a (method_table first,
+  field_count fallback) is the finished form per F-002; R3b
+  (document precedence; user must use deftype) defers the
+  JVM-parity gap into permanent debt for no finished-form
+  benefit.
+
+  **Devil's-advocate fork (depth-2, fresh context) verbatim
+  embedding** — produced 3 alternatives within F-002 / F-003 /
+  F-005 / F-006 / F-009 envelope:
+
+  > **Alt 1 — smallest-diff ("Defrecord-only fast-path; deftype
+  > falls to outer slow-path")**.
+  > Shape: R3c verbatim. The `.typed_instance` arm is
+  > shortened to `defrecord → field_count; deftype → break to
+  > outer slow-path`. The per-Tag descriptor registry handles
+  > deftype (and any future `.typed_instance`-shaped Tag) via
+  > its declared `IPersistentCollection.-count` entry. No
+  > method_table consultation lives in the `.typed_instance`
+  > arm of `count` itself.
+  > Better than R3a: hot path stays one branch (`kind != .defrecord`)
+  > → integer load; no `lookupMethod` linear scan on every
+  > `count` call. Diff is the smallest of the four candidates
+  > (~6 lines, no new helper).
+  > Cost: a user who `(extend-type MyRecord IPersistentCollection
+  > (-count [c] …))` is silently overridden — the JVM-parity
+  > gap R3 was named for. The Silent default-shift smell that
+  > R3 was filed against remains exactly where it was.
+  > F-NNN: F-002 — finished form almost certainly wants user
+  > `-count` to win on defrecord too (JVM behaviour), so R3c is
+  > finished-form-incomplete; smallest-diff convenience whose
+  > follow-up debt lands at Phase 7+.
+  >
+  > **Alt 2 — finished-form-clean ("Method-table-first, helper
+  > extracted to `runtime/dispatch.zig`")**.
+  > Shape: R3a, with the consultation **lifted out of every
+  > primitive's `.typed_instance` arm** into a shared helper
+  > next to the existing `dispatch()` in
+  > `src/runtime/dispatch.zig`: `dispatchOrNull(rt, env, &cs,
+  > receiver, protocol, method, args, loc)` returns `?Value`
+  > (null on miss). The `count` arm reads: `if (dispatchOrNull
+  > …) |v| break :blk v; else if (.defrecord) field_count;
+  > else raise(protocol_no_satisfies)`.
+  > `seq` / `conj` / `assoc` / `get` / `keys` / `vals` use the
+  > same helper at cycles 2-4 (and the Q6 retro-audit row).
+  > Better than R3a-inline: shared helper, no per-primitive
+  > duplication of the linear scan. Phase 8 follow-up (Q6 —
+  > `empty` / `first` / `nth` / `assoc` / etc.) costs ~3 lines
+  > per primitive instead of ~10.
+  > Cost: ~15 LOC for the helper over R3a-inline; defrecord
+  > `field_count` is now `else if (.defrecord) field_count`
+  > rather than an unconditional fast-path — slightly more
+  > cognitive load reading the arm. Hot-path cost is the same
+  > ~5-10ns/call as R3a-inline.
+  > F-NNN: F-002 fully satisfied; F-009 satisfied (helper in
+  > `runtime/dispatch.zig`, namespace-neutral; `lang/primitive/`
+  > stays a thin caller); F-003 satisfied (Q6 deferred but
+  > helper shaped to receive).
+  >
+  > **Alt 3 — wildcard ("Cached `count_fn: ?*const Fn` slot on
+  > TypeDescriptor")**.
+  > Shape: add `count_fn: ?*const MethodEntry = null` directly
+  > on `TypeDescriptor` (next to `kind` and `method_table`). At
+  > `extend-type IPersistentCollection (-count …)` time,
+  > populate `descriptor.count_fn`. The `count` arm reads:
+  > `if (inst.descriptor.count_fn) |m| call m; else if
+  > (.defrecord) field_count; else slow_path`. Zero linear scan
+  > on hot path — pointer-test + indirect call.
+  > Better than R3a: hot path = one optional-test + one
+  > indirect call, matching JVM's vtable dispatch (Java
+  > `coll.count()` is one vmethod load). Cleanest Phase 20
+  > reading for the four absolute-hot primitives (count / first
+  > / next / cons).
+  > Cost: two-tier method storage (method_table for the general
+  > case + dedicated slots for hot primitives) diverges from
+  > "method_table is the SSOT" landed at row 7.3. Introduces a
+  > sync invariant — every `extend-type` must update BOTH the
+  > method_table AND the relevant slot — easy to break, hard
+  > to detect (a slot-miss = silent fallback to default). The
+  > hot-primitive set is Phase-dependent.
+  > F-NNN: F-002 — arguably cleaner *finished form* for hot
+  > dispatch, but only if cw v1 commits to "TypeDescriptor has
+  > hot-primitive slots" as a permanent design. Row 7.3 / ADR-0040
+  > specifically chose method_table-as-SSOT. **Flag**: if the
+  > cleanest finished form turns out to require this, the right
+  > move is a fresh ADR amending row 7.3, not inlining under
+  > R3. F-003 violated by greedy decision-seizure unless the
+  > ADR explicitly opens hot-slot as Phase 7's owner choice.
+  >
+  > **No hard F-NNN violation** across any alternative; Alt 3
+  > would require a separate row-7.3 amending ADR before
+  > adoption (flagged, not adopted in this amendment).
+  > **Recommendation**: Alt 2 — finished-form-clean.
+
+  **Selected**: Alt 2. The candidate brief (survey §8 R3a) was
+  R3a inline in each primitive; the Devil's-advocate upgrades
+  to Alt 2 (helper extracted to `runtime/dispatch.zig`) because
+  the shape pays back at every cycle 2-4 primitive and at the
+  Phase 8 Q6 retro-audit row — cycle 1's +15 LOC for the
+  helper saves ~6 × (10 - 3) = ~42 LOC across the next 6
+  primitive arms. F-009 reinforces (impl-neutral helper home).
+  Alt 1 rejected per advocate's F-002 finding (Silent
+  default-shift gap persists). Alt 3 rejected as out of scope
+  (would amend row 7.3 method_table SSOT — separate ADR).
+
+  **Affected files**: `runtime/dispatch.zig` (new
+  `dispatchOrNull` + `resolveDescriptor` helpers; `dispatch`
+  body refactored to delegate); `lang/primitive/sequence.zig`
+  (`IPC_FQCN` constant + `count` `.typed_instance` arm rewired
+  for R3a + outer `else =>` routed through `dispatch.dispatch`);
+  `lang/clj/clojure/core.clj` (bootstrap `defprotocol
+  IPersistentCollection (-count [c])`); `test/e2e/phase7_polymorphic_extend.sh`
+  (new — 4 cases) + `test/run_all.sh` (register the new e2e).
+
+  **Opportunistic latent-bug fix bundled in cycle 1's source
+  commit**: bootstrap `(defprotocol IPersistentCollection …)`
+  surfaced a pre-existing leak — `lang/primitive/protocol.zig
+  ::makeProtocol` / `::makeProtocolFn` and
+  `runtime/type_descriptor.zig::makeTypeDescriptorRef`
+  allocate on `rt.gc.infra` with no cleanup registration, so
+  every cljw invocation that touches a protocol or
+  `__native-type` emitted DebugAllocator leak diagnostics at
+  process exit. The diagnostics were tolerable in user-level
+  test fixtures (stderr was redirected away per the cycles 1+4+6
+  policy documented in `test/e2e/phase7_protocol.sh`'s header)
+  but became universal once the bootstrap declared
+  `IPersistentCollection`. Fixed in-line by adding
+  `freeOwnedProtocol` / `freeOwnedProtocolFn` (in `runtime/protocol.zig`)
+  + `freeTypeDescriptorRef` (in `runtime/type_descriptor.zig`)
+  callbacks and `rt.trackHeap(.{ .ptr = ..., .free = ... })`
+  registrations at the user-facing primitive call sites
+  (`lang/primitive/protocol.zig::makeProtocol` /
+  `::makeProtocolFn`, `runtime/type_descriptor.zig::makeTypeDescriptorRef`).
+  Test fixtures in `runtime/protocol.zig` (lines 215+) keep
+  their pre-existing `defer rt.gc.infra.destroy(...)` shape
+  because their fqcn / methods are stack / rodata literals,
+  not heap dups; the `freeOwned…` callbacks are only invoked
+  by the user-facing paths that own heap-allocated slices.
+
+  Cycles 2-4 will re-use the helper for `seq` (`-seq`) /
+  `conj` (`-cons`) / `reduce` (`-reduce`) without amending
+  this ADR (the helper's contract is closed by cycle 1's diff).
+
+  Phase 7.7 cycle 1 source commit follows this ADR amendment
+  commit per the depth-2 cycle protocol (ADR commit first,
+  source commit second; same row, same session).
