@@ -230,10 +230,17 @@ const Entry = struct {
     f: dispatch.BuiltinFn,
 };
 
+/// Phase 6.16.c Group A: `prewalk` + `postwalk` migrated to Pattern A
+/// `.clj` defns in `src/lang/clj/clojure/walk.clj`. Only the `walk`
+/// leaf remains here (B2 placement preserved per v5 §9.1). The
+/// `prewalkFn` / `postwalkFn` impls below stay live as the call
+/// targets the `.clj` defns use through `walk` — actually no, the
+/// `.clj` defns are Zig-recursive via `walk` only; the standalone
+/// `prewalkFn` / `postwalkFn` are now unreferenced. Future cleanup
+/// can drop them once Phase 6.16.c closes and the per-task note
+/// confirms no Zig-internal caller remains.
 const ENTRIES = [_]Entry{
     .{ .name = "walk", .f = &walkFn },
-    .{ .name = "prewalk", .f = &prewalkFn },
-    .{ .name = "postwalk", .f = &postwalkFn },
 };
 
 pub fn register(env: *Env) !void {
