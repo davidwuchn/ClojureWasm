@@ -82,14 +82,22 @@ entries:
     requires_features: []
     requires_debts: []
     notes: |
-      Landed at Phase 6.16.b-4 sub-cycle d (ADR-0035 D9
-      discharge). evalInNs / op_in_ns retain the convenience
-      auto-refer of rt + clojure.core for direct user
-      `(in-ns 'foo)` calls; the finished-form contract for
-      bootstrap-time `.clj` heads is the new `(ns foo
-      (:refer-clojure))` analyzer special form (evalNs path).
-      The auto-refer is no longer a substitute for a missing
-      macro — it is the documented in-ns convenience semantics.
+      Retired at Phase 7 entry T3 (ADR-0035 D9 second
+      amendment, 2026-05-26). The "convenience auto-refer of
+      rt + clojure.core for direct user `(in-ns 'foo)`" semantic
+      that D9 first amendment (sub-cycle d) classified as
+      load-bearing has been removed: `(in-ns 'foo)` is now a
+      naked ns switch (both `evalInNs` and `op_in_ns` no longer
+      fire `referAll`). The refer mechanism is now exclusively
+      driven by `(ns foo (:refer-clojure))` (the analyzer
+      special form). cw v1 `(:refer-clojure)` widens to include
+      both `clojure.core` AND `rt` — a cw-specific divergence
+      from JVM (which has no `rt` ns). The `runtime/bootstrap/
+      refer_table` entry remains active for boot-time fan-out
+      into `user/` (the only ns that has no `.clj` head and
+      thus cannot self-install via `(ns ...)`). Status stays
+      `landed` because the new semantic IS the finished form;
+      the entry remains for historical SSOT linkage.
 
   - name: runtime/bootstrap/refer_table
     kind: runtime_layer
@@ -143,6 +151,17 @@ entries:
       ns body raise transient `feature_not_supported` (deferred
       within ADR-0035 follow-up scope; users compose with separate
       `(require ...)` calls today).
+
+      At Phase 7 entry T3 (ADR-0035 D9 second amendment,
+      2026-05-26) the cw v1 `(:refer-clojure)` semantic was
+      widened to refer BOTH `clojure.core` AND `rt` (cw-specific
+      divergence from JVM which has no `rt` ns). VM compile arm
+      `compileNs` now emits the new opcode `op_ns_with_refer_clojure`
+      when `refer_clojure = true` (sibling to bare `op_in_ns`);
+      tree_walk `evalNs` fires both refers in the same condition.
+      The widening replaces the prior `evalInNs` / `op_in_ns`
+      auto-refer convenience (now removed) as the single source
+      of refer installation for any non-bootstrap-fan-out ns.
 
   - name: clojure.core/select-keys
     kind: var

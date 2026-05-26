@@ -591,3 +591,150 @@ violates-F-NNN finding: なし。
   - sub-cycle d (this commit): 11 PROVISIONAL markers removed +
     3 yaml flips + D-063 closed + Revision history amend (D2 +
     D9 inline amendments).
+
+- 2026-05-26 D9 second amendment (Phase 7 entry T3) — widen
+  cw v1 `(:refer-clojure)` semantic to include rt namespace +
+  remove auto-refer blocks from evalInNs / op_in_ns + introduce
+  new opcode `op_ns_with_refer_clojure` per ADR-0036 dual-
+  backend parity contract.
+
+  **Rationale**: D9 first amendment (sub-cycle d, commit a762ca9)
+  re-classified the rt + clojure.core auto-refer in evalInNs /
+  op_in_ns as "load-bearing convenience" — honest given that
+  core.clj uses rt primitives (`count` / `conj` / `reduce` /
+  `assoc`) unqualified throughout, so removing the auto-refer
+  would have required mass-qualifying ~50+ sites. But the
+  re-classification left an asymmetry: a reader of
+  `clojure.set/union`'s body using `reduce` could not grep
+  `referAll` to find where `reduce` becomes visible — it was
+  in `evalNs` Zig code, not the `.clj` source. The
+  「規律がわからん」 shape the user flagged at Phase 7 entry
+  retrospective.
+
+  **D9 second amendment** removes the asymmetry by:
+
+  - **Widening the cw v1 `(:refer-clojure)` directive semantic**
+    to refer BOTH `clojure.core` AND `rt` namespaces into the
+    entering ns. `.clj` heads `(ns foo (:refer-clojure))` thus
+    install both refers explicitly via the analyzer special
+    form expansion.
+  - **Removing the rt + clojure.core auto-refer blocks** from
+    `evalInNs` (tree_walk) + `op_in_ns` (VM dispatch). User
+    `(in-ns 'foo)` becomes a naked ns switch; user must
+    explicitly `(refer 'rt)` or `(refer 'clojure.core)` or use
+    `(ns foo (:refer-clojure))`.
+  - **Fixing a pre-existing shape bug in `evalNs`**: at HEAD
+    pre-T3, evalNs's rt refer was unconditional while its
+    clojure.core refer was gated on `refer_clojure`. Post-
+    amendment both are gated on `refer_clojure`.
+  - **Adding a new VM opcode** `op_ns_with_refer_clojure` per
+    ADR-0036 parity contract. `compileNs` emits this when
+    `refer_clojure = true`; `compileInNs` continues to emit
+    bare `op_in_ns`. VM dispatch performs op_in_ns logic +
+    `referAll(rt, here)` + `referAll(clojure.core, here)`.
+    Same-commit retrofit lands tree_walk path + VM compile arm
+    + VM dispatch arm + ≥1 differential test case per
+    `.claude/rules/dual_backend_parity.md`.
+
+  **Bootstrap fan-out (primitive.zig::registerAll +
+  macro_transforms.zig::registerInto + bootstrap.zig end-of-
+  loop refer of clojure.core into user/) stays** — user/ is
+  not a `.clj` file, so its initial refers must come from
+  boot-time setup. ADR-0033 D4 private leaf semantics in
+  clojure.core unaffected (private check is per-Var-ns, not
+  per-refer-source).
+
+  **cw v1 divergence from JVM**: JVM has no `rt` ns; the
+  widened `(:refer-clojure)` semantic is cw-specific. JVM's
+  `(:refer-clojure)` only refers clojure.core (because there
+  is no rt to refer). Option (A) full rt elimination (move
+  all rt primitives to clojure.core; eliminate rt as user-
+  visible) is **deferred to Phase 10-11 entry** when Tier-A
+  polish provides budget for the ~50-site mass-qualify cost.
+  D9 second amendment is the F-002 finished form for Phase 7
+  entry — the refer mechanism is fully regular without forcing
+  the rt-elimination prerequisite (per F-002 staged-finished-
+  form via ROADMAP §17).
+
+  **VM-DEFER discharge**: T1 (ADR-0036) introduced the
+  `runtime/vm/ns_filter` VM-DEFER marker on
+  `_ = n.refer_clojure;` in `compileNs`. T3 consumes the
+  field by emitting `op_ns_with_refer_clojure`, discharging
+  that marker per the discharge discipline in
+  `.claude/rules/dual_backend_parity.md`. D-073 cluster sub-
+  site (e) closes; sites (a-d) remain (deftype/ctor_call/
+  field_access pending row 7.6; require_libspec pending
+  ADR-0036 follow-up cycle).
+
+  **Test impact** (per survey §6 corpus audit): all 5
+  functional `(in-ns ...)` sites in the test corpus either
+  switch into a ns where the called Var is intern-local
+  (same-ns lookup, refer-independent), switch into user/
+  (which has boot-installed refers), or use fully-qualified
+  names. No test relies on the in-ns auto-refer; zero
+  predicted breakage.
+
+  **Devil's-advocate fork** (depth-2 mandatory, fresh context,
+  briefed against F-NNN envelope from
+  `.dev/project_facts.md`) verbatim:
+
+  ---
+
+  **F-NNN envelope verification**: F-002 (finished form wins), F-007 (chapter cadence dormant), F-009 (impl neutrality). No alternative below violates an F-NNN. F-002 is the active discriminator.
+
+  ### Alt 1 — Smallest-diff (option C): keep behaviour, strengthen docstring only
+
+  **Shape**: Leave `evalInNs` / `op_in_ns` auto-refer in place. Add a multi-line docstring at each site naming the asymmetry, citing ADR-0035 D9 first amendment, and explaining why the convenience is load-bearing.
+
+  **Better than proposal**: Zero source surface change; zero new opcode; zero ADR-0036 parity surface; smell-audit depth 1 (docstring strengthening only). No test risk. Carries no `op_ns_with_refer_clojure` cost that has to be discharged later if option (A) lands at Phase 10-11.
+
+  **Breaks**: This is the **Smallest-diff bias smell** by F-002's named definition — Alt 1 reaches a **different finished form** (asymmetry preserved as a permanent comment) than Alts 2 / 3 (asymmetry removed). F-002 §2 forbids picking smallest-diff *because it is smallest* when finished-form would diverge. The 「規律がわからん」 shape (triad §T3 L736) persists: a reader of `clojure.set/union` still cannot grep-trace the rt refer to its source — the docstring lives in Zig, not the `.clj` head. **Rejected** under F-002.
+
+  ### Alt 2 — Finished-form-clean (option B as proposal, with refinements)
+
+  **Shape**: Proposal as written. Three refinements to weigh:
+
+  **Refinement 2a — opcode vs operand encoding**: The proposal adds `op_ns_with_refer_clojure` (distinct opcode). The alternative is `op_in_ns` with a flag-bit operand (`packed { name_idx: u24, do_refer: u1 }`). **Reject the flag-bit form**: ADR-0036 §D1 (T1's contract) treats each opcode as the unit of parity, and the exhaustive `switch (Opcode)` in `vm.zig` is the build-time presence enforcer. A flag-bit operand hides the second variant from the switch enforcement, regressing T1's compiler-enforced layer. Distinct opcode is correct.
+
+  **Refinement 2b — migration warning on `(in-ns)`**: The proposal does not emit a deprecation notice. **Skip the warning**. cw v1 is pre-release; the test corpus (survey §6.1) shows zero breakage; emitting stderr noise for a non-issue is itself a **Silent default-shift smell** inversion (loud default-shift). Survey §6.1's evidence — every `(in-ns)` test site either same-ns-resolves, switches to user/, or uses qualified names — makes the warning gratuitous.
+
+  **Refinement 2c — stage op_in_ns vs evalInNs removal**: Proposal removes both simultaneously. **Keep them coupled**. ADR-0036 §D1 makes TreeWalk + VM atomic for any backend-touching commit; staging would create a one-cycle window where TreeWalk `(in-ns 'foo)` is naked but VM `op_in_ns` still auto-refers, exposing a Layer-3 differential test divergence the new diff case would catch. Coupled removal honours the parity rule the same cycle exercises.
+
+  **Better than proposal as written**: Documents the rejection of flag-bit / warning / staging so future readers do not re-relitigate.
+
+  **Breaks**: Adds one opcode whose long-term home is Phase 10-11 option (A) elimination (where it gets retired alongside rt itself). That is acceptable — F-002 §3 endorses skeleton-then-rewrite when each skeleton shrinks the final rewrite. `op_ns_with_refer_clojure` becomes a no-op or a `referAll(clojure.core)` simplifier at Phase 10-11; cleanly retired.
+
+  ### Alt 3 — Wildcard (option A): full rt elimination at Phase 7 entry
+
+  **Shape**: Move ~30+ rt primitives into `clojure.core`; mass-qualify ~50 unqualified rt call sites in `core.clj` / `set.clj` / `string.clj` / `walk.clj`; delete the rt ns entirely from user-visible space; rewrite every `registerAll` site.
+
+  **Better than proposal**: This is the **ultimate finished form** under F-002 §1 (the user explicitly named (A) as the cleanest end state, triad §T3 L739-743). After (A), `(:refer-clojure)` has its JVM meaning; no cw-specific divergence remains; no `op_ns_with_refer_clojure` is ever needed. Eliminates the asymmetry at the *namespace* layer, not the *refer-mechanism* layer.
+
+  **Breaks**: Cost is 1-2 cycles plus high coordination risk (every `registerAll` + 4 `.clj` heads + analyzer ns-resolution + bootstrap fan-out + Phase 6.16.d shim audit). Surface-level: rt as a Zig-leaf-primitive home is structurally distinct from clojure.core (rt = Zig-implemented, cc = Clojure-or-Zig); collapsing them muddles the Layer-1 vs Layer-2 boundary that ADR-0033 D4 private-leaf semantics depend on. **F-002 §1 reading**: per ROADMAP §17, finished form may be reached in stages provided each stage lands a finished form within its own scope. Alt 2's `(:refer-clojure)` widening *is* a finished form for Phase 7 entry — the refer mechanism is fully regular — without forcing the rt-elimination prerequisite Tier-A polish provides budget for. **F-002-compliant** to defer (A); not F-002-compliant to never reach (A). Triad §T3 L760-762 user direction: defer.
+
+  ### Recommendation
+
+  **Alt 2 (refined)**. Distinct opcode (`op_ns_with_refer_clojure`); no migration warning; coupled `evalInNs` + `op_in_ns` removal; ADR-0035 in-place amendment with this Devil's-advocate verbatim. (A) deferred per user direction. The new opcode is a skeleton that shrinks at Phase 10-11 (F-002 §3 compliant).
+
+  ---
+
+  **Selected**: Alt 2 refined as recommended. T3 lands the
+  amendment + opcode + tree_walk evalNs gate fix + evalInNs/
+  op_in_ns auto-refer removal + compileNs new emit path +
+  diff case + feature_deps.yaml updates + D-073 (e)
+  discharge in a single source commit, with this Revision
+  history amendment landing in a separate doc-first commit
+  per CLAUDE.md Step 6 depth-2 discipline.
+
+  Affected files (T3 cycle): src/eval/backend/vm/opcode.zig
+  (new `op_ns_with_refer_clojure` = 0x17); src/eval/backend/
+  vm.zig (new dispatch arm + remove auto-refer from
+  op_in_ns); src/eval/backend/vm/compiler.zig (compileNs
+  emits new opcode when refer_clojure=true; VM-DEFER on
+  `_ = n.refer_clojure;` removed); src/eval/backend/
+  tree_walk.zig (evalNs gates rt refer on refer_clojure;
+  evalInNs removes auto-refer block); src/lang/diff_test.zig
+  (new diff case exercising widened semantic); feature_deps.yaml
+  (re-frame `runtime/eval/in_ns_auto_refer` notes; extend
+  `special_form/ns_macro` notes; discharge `runtime/vm/ns_filter`
+  status flip); `.dev/debt.md` (D-073 (e) discharge note).
