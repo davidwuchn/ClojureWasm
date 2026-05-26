@@ -122,3 +122,131 @@
   (if (instance? ZipLoc x) (identical? :seq (.kind x)) false))
 (defn xml-zip? [x]
   (if (instance? ZipLoc x) (identical? :xml (.kind x)) false))
+
+;; ----------------------------------------------------------------
+;; Row 7.13 cycle 2 — navigation (10 vars)
+;; ----------------------------------------------------------------
+
+;; Internal helper: rebuild a ZipLoc with overridden fields, copying
+;; the others from `src`. cw v1 lacks `assoc` on defrecord today
+;; (the typed_instance field-set surface is row 7.4+ deferred work
+;; per D-086 `__extmap`); use the `->ZipLoc` factory explicitly.
+;;
+;; NOTE: would be `^:private` per JVM convention but cw v1's defn
+;; macro does not yet parse the metadata-map reader form (D-091).
+;; The name prefix `with-` + `-loc` suffix marks intent; future
+;; D-091 discharge can flip to `^:private` non-breakingly.
+(defn with-loc-internal
+  [src nd path lefts rights end?]
+  (->ZipLoc nd path lefts rights end?
+            (.branch-fn src)
+            (.children-fn src)
+            (.make-node-fn src)
+            (.kind src)))
+
+;; `(lefts loc)` / `(rights loc)` / `(path loc)` — raw field reads
+;; matching JVM clojure.zip's public accessors. `path` returns the
+;; vector of node values walked from root down to (but not
+;; including) `(node loc)`; cw v1's ZipLoc encodes this as a parent
+;; ZipLoc chain rather than a vector, so `(path)` walks the chain
+;; building the vector on demand.
+(defn lefts  [loc] (.lefts loc))
+(defn rights [loc] (.rights loc))
+
+(defn path [loc]
+  (loop* [p (.path loc) acc nil]
+    (if (nil? p)
+      (into [] acc)
+      (recur (.path p) (cons (.node p) acc)))))
+
+;; `(down loc)` — descend into the first child of a branch.
+;; Returns nil if `loc` is not a branch or has no children.
+;; The new loc's `.path` references `loc` (the parent); `.lefts`
+;; starts empty; `.rights` = rest of the children.
+(defn down [loc]
+  (if (branch? loc)
+    (let* [cs (children loc)]
+      (if (nil? cs)
+        nil
+        (if (nil? (seq cs))
+          nil
+          (->ZipLoc (first cs)
+                    loc
+                    []
+                    (into [] (rest cs))
+                    false
+                    (.branch-fn loc)
+                    (.children-fn loc)
+                    (.make-node-fn loc)
+                    (.kind loc)))))
+    nil))
+
+;; `(up loc)` — ascend to the parent. Rebuilds the parent's node
+;; via `make-node`, splicing the current node back into the parent's
+;; children at position `(count (.lefts loc))`. Returns nil at root.
+(defn up [loc]
+  (let* [p (.path loc)]
+    (if (nil? p)
+      nil
+      (let* [new-children (into (into (.lefts loc) [(.node loc)]) (.rights loc))
+             new-node ((.make-node-fn loc) (.node p) new-children)]
+        (with-loc-internal p new-node (.path p) (.lefts p) (.rights p) (.end? p))))))
+
+;; `(root loc)` — repeatedly `(up)` until at the root, return the
+;; root's node value (NOT a loc). JVM semantics — the value
+;; reconstruction terminates at the topmost ZipLoc and yields its
+;; `.node`.
+(defn root [loc]
+  (loop* [l loc]
+    (if (nil? (.path l))
+      (.node l)
+      (recur (up l)))))
+
+;; `(right loc)` — sibling step right. Reads `(.rights loc)` for
+;; the next sibling; updates lefts / rights / node. Returns nil
+;; if at the rightmost sibling.
+(defn right [loc]
+  (let* [rs (.rights loc)]
+    (if (nil? (seq rs))
+      nil
+      (with-loc-internal loc
+                (first rs)
+                (.path loc)
+                (into (.lefts loc) [(.node loc)])
+                (into [] (rest rs))
+                false))))
+
+;; `(left loc)` — sibling step left. Symmetric to `right` but
+;; harvests the last `.lefts` element. Returns nil at leftmost.
+(defn left [loc]
+  (let* [ls (.lefts loc)]
+    (if (nil? (seq ls))
+      nil
+      (let* [n (count ls)
+             new-current (nth ls (- n 1))
+             new-lefts (into [] (take (- n 1) ls))
+             new-rights (into [(.node loc)] (.rights loc))]
+        (with-loc-internal loc new-current (.path loc) new-lefts new-rights false)))))
+
+;; `(leftmost loc)` / `(rightmost loc)` — jump to the edge sibling
+;; without walking step-by-step. JVM semantics.
+(defn leftmost [loc]
+  (let* [ls (.lefts loc)]
+    (if (nil? (seq ls))
+      loc
+      (with-loc-internal loc
+                (first ls)
+                (.path loc)
+                []
+                (into (into [] (rest ls)) (into [(.node loc)] (.rights loc)))
+                false))))
+
+(defn rightmost [loc]
+  (let* [rs (.rights loc)]
+    (if (nil? (seq rs))
+      loc
+      (let* [all (into (into (.lefts loc) [(.node loc)]) rs)
+             n (count all)
+             new-current (nth all (- n 1))
+             new-lefts (into [] (take (- n 1) all))]
+        (with-loc-internal loc new-current (.path loc) new-lefts [] false)))))
