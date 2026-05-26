@@ -1383,18 +1383,44 @@ the protocol-dispatch ABI:
   via CallSite cache. The general-arity dispatch fn that replaces
   Phase 5's `.field`-only `FieldAccessNode` path.
 
-### 9.10 Phase 8 — task list (PENDING, expand at Phase 8 entry)
+### 9.10 Phase 8 — task list (IN-PROGRESS; opened 2026-05-27)
 
-**Entry ADRs**: 0005 (Dual-backend differential — full bench).
+**Entry ADRs**: 0005 (Dual-backend differential — full bench);
+ADR-0027 candidate (`bench/history.yaml` schema, to be drafted at
+row 8.2).
 **Entry debts**: **D-031** (`main.zig` → `src/app/` split before
 the self-host loader / Phase-10 nREPL / Phase-12 build-runner
 modes pile on; see `.dev/structure_plan.md` for the anticipated
-`src/app/` layout) · D-007 (self-host viability).
+`src/app/` layout) · D-007 (self-host viability) · D-089 (row 7.7
+Q6 retro-audit cluster — other collection primitives needing
+hybrid slow-path) · D-074 (transient! / persistent! / Tier-A
+surface).
 **Reference**: ROADMAP §10 (Performance), `bench/history.yaml`.
 **Deliverables**: bench lock baseline established
-(ADR-0027 future issuance to define `bench/history.yaml` schema),
+(ADR-0027 issued + `bench/history.yaml` schema defined),
 1.2x regression gate active, dual-backend `--compare` full e2e
-coverage. 🔒 OrbStack gate.
+coverage; `src/app/` split + transient surface land
+opportunistically. 🔒 OrbStack gate.
+**Final activation step**: no `build_options.phase_at_least_8`
+flag exists (no Phase-gated stub-swap planned). Phase 8 close =
+exit smoke + Phase tracker flip.
+
+| #   | Description                                                                                                                                                                                     | Status                                                                            |
+|-----|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|-----------------------------------------------------------------------------------|
+| 8.0 | Phase 7 → 8 boundary review chain follow-ups: audit_scaffolding findings absorbed, bench sweep, Phase tracker flipped (this row reflects boundary work; closes when expansion is complete)     | [x] (boundary work landed at this commit; no audit findings of severity ≥ block) |
+| 8.1 | D-031 — `main.zig` → `src/app/` split (before self-host loader / Phase-10 nREPL / Phase-12 build-runner modes pile on). Per `.dev/structure_plan.md` anticipated `src/app/` layout            | [ ]                                                                               |
+| 8.2 | ADR-0027 draft — `bench/history.yaml` schema definition + bench-lock baseline established (per-run sample storage + regression delta tracking)                                                 | [ ]                                                                               |
+| 8.3 | 1.2x regression gate activation (per-bench threshold + CI fail trigger). Rides on row 8.2's schema landing                                                                                      | [ ]                                                                               |
+| 8.4 | Dual-backend `--compare` full e2e coverage. ADR-0005 reaches its full-bench remit (every diff_test case + Phase 7 e2e suite runs under both backends through one CLI invocation)                | [ ]                                                                               |
+| 8.5 | D-074 — transient! / persistent! / conj! / assoc! / disj! Tier-A surface. Phase 8 entry candidate per F-006 3-layer allocator                                                                  | [ ]                                                                               |
+| 8.6 | D-089 — row 7.7 Q6 retro-audit cluster (other collection primitives needing hybrid slow-path beyond count/seq/conj/reduce). Phase 8+ opportunistic                                             | [ ]                                                                               |
+| 8.7 | Phase 8 exit smoke — bench gate active (informational ok, blocking thresholds wired); dual-backend `--compare` runs full e2e + diff_test in one invocation; transient surface end-to-end green | [ ]                                                                               |
+
+**Exit criterion**: bench gate green (1.2x ceiling enforced or
+deliberately set looser with a rationale comment); dual-backend
+`--compare` e2e wiring complete; transient Tier-A surface
+landed; `src/app/` split done with `main.zig` reduced to a thin
+dispatcher. 🔒 OrbStack x86_64 gate passes.
 
 ### 9.11 Phase 9 — task list (PENDING, expand at Phase 9 entry)
 
