@@ -64,6 +64,43 @@ pub const CORE_SOURCE: []const u8 = FILES[0].source;
 /// `CORE_SOURCE`.
 pub const SOURCE_LABEL: []const u8 = FILES[0].label;
 
+/// Map a bootstrap-embedded namespace name (e.g. `clojure.set`) to
+/// the corresponding `FileEntry`. Returns `null` for names the
+/// embedded table does not cover. Pure lookup; no allocator use.
+fn lookupEmbeddedFile(ns_name: []const u8) ?FileEntry {
+    // Internal name table: bootstrap source file labels are
+    // `<ns_name>`-shaped except for `<bootstrap>` aliasing
+    // `clojure.core`. Keep the table here (not as a separate map)
+    // so it stays paired with `FILES` for grep-discovery.
+    if (std.mem.eql(u8, ns_name, "clojure.core")) return FILES[0];
+    if (std.mem.eql(u8, ns_name, "clojure.string")) return FILES[1];
+    if (std.mem.eql(u8, ns_name, "clojure.set")) return FILES[2];
+    if (std.mem.eql(u8, ns_name, "clojure.walk")) return FILES[3];
+    return null;
+}
+
+/// ADR-0035 D8 embedded resolver: serves the 4 bootstrap
+/// namespaces (`clojure.core` / `clojure.set` / `clojure.string` /
+/// `clojure.walk`) from `@embedFile`'d byte slices. Returns `null`
+/// for everything else — the caller (`requireOne`) maps `null` to
+/// `lib_not_found`. Phase 12+ adds a `cljw_path` resolver that
+/// swaps this slot; Phase 16+ adds a Wasm pod resolver.
+pub fn embeddedResolver(
+    rt: *Runtime,
+    ns_name: []const u8,
+) anyerror!?[]const u8 {
+    _ = rt;
+    if (lookupEmbeddedFile(ns_name)) |entry| return entry.source;
+    return null;
+}
+
+/// Install `embeddedResolver` onto `rt.require_resolver`. Called at
+/// boot from `main.zig` after `Runtime.init`. Tests that exercise
+/// the resolver directly call this themselves.
+pub fn installEmbeddedResolver(rt: *Runtime) void {
+    rt.require_resolver = embeddedResolver;
+}
+
 /// Iterate `FILES`, read + analyse + evaluate each form, and reset
 /// `current_ns` to `user/` at the end so REPL / file-eval callers
 /// see their expected starting namespace. Caller-supplied arena
@@ -169,4 +206,51 @@ test "loadCore pulls in clojure.string namespace (ADR-0032 + Phase 6.9)" {
     try testing.expect(cs.resolve("upper-case") != null);
     try testing.expect(cs.resolve("lower-case") != null);
     try testing.expect(cs.resolve("blank?") != null);
+}
+
+test "embeddedResolver serves the 4 bootstrap namespaces (ADR-0035 D8)" {
+    var th = std.Io.Threaded.init(testing.allocator, .{});
+    defer th.deinit();
+    var rt = Runtime.init(th.io(), testing.allocator);
+    defer rt.deinit();
+
+    const core = try embeddedResolver(&rt, "clojure.core") orelse return error.TestUnexpectedResult;
+    try testing.expect(core.len > 0);
+    // The first form must be `(in-ns 'clojure.core)` per the head
+    // landed at 6.16.b-3 (PROVISIONAL bare-in-ns) — confirms we
+    // returned the right source.
+    try testing.expect(std.mem.find(u8, core, "(in-ns 'clojure.core)") != null);
+
+    const set = try embeddedResolver(&rt, "clojure.set") orelse return error.TestUnexpectedResult;
+    try testing.expect(std.mem.find(u8, set, "(in-ns 'clojure.set)") != null);
+    const string = try embeddedResolver(&rt, "clojure.string") orelse return error.TestUnexpectedResult;
+    try testing.expect(std.mem.find(u8, string, "(in-ns 'clojure.string)") != null);
+    const walk = try embeddedResolver(&rt, "clojure.walk") orelse return error.TestUnexpectedResult;
+    try testing.expect(std.mem.find(u8, walk, "(in-ns 'clojure.walk)") != null);
+}
+
+test "embeddedResolver returns null for unknown namespaces" {
+    var th = std.Io.Threaded.init(testing.allocator, .{});
+    defer th.deinit();
+    var rt = Runtime.init(th.io(), testing.allocator);
+    defer rt.deinit();
+
+    try testing.expect((try embeddedResolver(&rt, "no.such.ns")) == null);
+    try testing.expect((try embeddedResolver(&rt, "")) == null);
+    try testing.expect((try embeddedResolver(&rt, "clojure")) == null);
+}
+
+test "installEmbeddedResolver sets rt.require_resolver" {
+    var th = std.Io.Threaded.init(testing.allocator, .{});
+    defer th.deinit();
+    var rt = Runtime.init(th.io(), testing.allocator);
+    defer rt.deinit();
+
+    try testing.expect(rt.require_resolver == null);
+    installEmbeddedResolver(&rt);
+    try testing.expect(rt.require_resolver != null);
+
+    // Round-trip the installed resolver through the slot.
+    const core = try rt.require_resolver.?(&rt, "clojure.core") orelse return error.TestUnexpectedResult;
+    try testing.expect(core.len > 0);
 }
