@@ -51,7 +51,11 @@ pub fn registerInto(env: *Env, table: *macro_dispatch.Table) !void {
         try ensureRegistered(table, entry.name, entry.expand);
     }
 
-    // PROVISIONAL: hardcoded rt → user macro refer pending (ns ...) macro :refer-clojure [refs: D-063, D-071, feature_deps.yaml#runtime/bootstrap/refer_table]
+    // ADR-0035 D9 (sub-cycle d): boot-time rt → user macro refer
+    // mirrors the primitive-Var path so macros (`let`, `cond`, `->`,
+    // ...) resolve unqualified at the REPL prompt. Per ADR-0035 the
+    // `(ns ...)` macro does NOT auto-refer rt; macros stay rt-owned
+    // and the user-ns convenience refer happens here at boot.
     try env.referAll(rt_ns, user_ns);
 }
 

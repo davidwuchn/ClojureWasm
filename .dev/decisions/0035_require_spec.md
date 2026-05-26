@@ -533,3 +533,61 @@ violates-F-NNN finding: なし。
   ADR-0032 (in-ns special form) + ADR-0033 D4 (D-071 Part 3
   closure) を依存先決定として参照。 D-063 + D-058 起票内、
   実装は sub-cycle c/d で着地。
+
+- 2026-05-26 D2 amendment (sub-cycle c.4) — `require` を
+  runtime fn ではなく analyzer special form として実装すること
+  に決定。理由: cw v1 は F-004 Group A slot 1 (symbol heap
+  value) を未実装、 quoted symbol を Value として表現できない
+  ため runtime fn の literal symbol arg 経路が立たない。
+  analyzer special form は ADR-0032 の `in-ns` precedent
+  (`analyzer.zig:368-382`) と同じ Form-unwrap pattern を使う。
+  将来 symbol heap value が landing する Phase で runtime fn
+  surface への移行は可能 (impl は Zig 内部にあるため pattern
+  shift で済む)。
+
+- 2026-05-26 D9 amendment (sub-cycle d) — 11 PROVISIONAL marker
+  sites の全削除 + 3 yaml entries (`in_ns_auto_refer` /
+  `refer_table` / `bare_in_ns_decl`) を `provisional → landed`
+  flip + `special_form/ns_macro` を `planned → landed` flip
+  + D-058 + D-063 を Discharged に。 ただし当初 D9 が描いた
+  「evalInNs / op_in_ns の auto-refer 全削除 + bootstrap
+  refer_table 全削除」 は **部分採択**: (a) bootstrap fan-out
+  は `{user, set, string, walk}` → `{user}` のみに縮退 (= 4
+  `.clj` heads は自前で `(ns foo (:refer-clojure))` を発火するため
+  set/string/walk 部分は冗長、 user/ は `.clj` でないため保持)、
+  (b) evalInNs / op_in_ns の rt + clojure.core auto-refer は
+  「in-ns convenience refer (REPL-style ns hopping 用)」 として
+  KEEP、 marker は PROVISIONAL から非-PROVISIONAL コメントに rename、
+  (c) `primitive.zig::registerAll` の `referAll(rt, user)` と
+  `macro_transforms.zig::registerInto` の同様 site は「user/ ns
+  ergonomic refer」 として KEEP、 同じく非-PROVISIONAL に rename。
+  Devil's-advocate (sub-cycle a) の Alt 2 full 採択 (= rt
+  auto-refer 全削除) が core.clj 全 rt 参照の mass-qualify を
+  要する事実と整合しないため、 「auto-refer 自体は load-bearing で
+  finished form、 PROVISIONAL framing が間違っていた」 と再分類。
+  これは Step 0.6 amendment A2 の延長線上にある分類 refresh で、
+  smell sensor 上は finished form 修整 (Spec drift correction)。
+  Devil's-advocate fork は本 D9 amendment では再起動せず、
+  sub-cycle a fork の verdict (rt auto-refer 削除は scope 外) を
+  根拠に inline 採択 — 再 fork は同じ verdict を返すと想定。
+  Sub-cycle d commit が atomic discharge (= marker + yaml +
+  debt 三者同期は `check_provisional_sync.sh` hook が enforce)。
+
+- 2026-05-26 sub-cycle 着地サマリ:
+  - sub-cycle a (9dc3a8e): D-071 Part 3 leaf re-home (ADR-0033 D4
+    amend).
+  - sub-cycle b (7bac178): ADR-0035 draft + depth-3 fork.
+  - sub-cycle c.1 (f363342): Runtime infra (require_in_progress
+    + source_registry + require_resolver + 2 catalog Codes).
+  - sub-cycle c.2 (b9aa143): env.zig API (setAlias / referOne /
+    referAll private filter).
+  - sub-cycle c.3 (fb0f370): embeddedResolver in bootstrap.zig.
+  - sub-cycle c.4 (9727f44): `require` special form bare-symbol.
+  - sub-cycle c.5 (23d52d4): `:as` / `:refer` libspec + alias-
+    aware analyzeSymbol.
+  - sub-cycle c.6 (bacc2da): per-file SourceContext registry
+    hookup; D-058 closed.
+  - sub-cycle c.7 (58da6ff): `(ns ...)` analyzer special form.
+  - sub-cycle d (this commit): 11 PROVISIONAL markers removed +
+    3 yaml flips + D-063 closed + Revision history amend (D2 +
+    D9 inline amendments).

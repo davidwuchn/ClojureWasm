@@ -319,11 +319,13 @@ fn stepOnce(
                 if (!name_val.isString())
                     return raiseInternal("vm: op_in_ns constant is not a String");
                 env.current_ns = try env.findOrCreateNs(string_mod.asString(name_val));
-                // PROVISIONAL: in-ns auto-refers rt/ pending (ns ...) macro [refs: D-071, feature_deps.yaml#runtime/eval/in_ns_auto_refer]
+                // ADR-0035 D9 — mirror of tree_walk::evalInNs's
+                // convenience auto-refer. Bootstrap-time `.clj` heads
+                // use `(ns ...)` (compileNs); this op_in_ns path
+                // remains for direct user `(in-ns 'foo)` calls.
                 if (env.findNs("rt")) |rt_ns| {
                     try env.referAll(rt_ns, env.current_ns.?);
                 }
-                // PROVISIONAL: in-ns auto-refers clojure.core pending (ns ...) macro [refs: D-071, feature_deps.yaml#runtime/eval/in_ns_auto_refer]
                 if (env.findNs("clojure.core")) |clojure_core_ns| {
                     try env.referAll(clojure_core_ns, env.current_ns.?);
                 }

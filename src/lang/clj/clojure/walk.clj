@@ -9,5 +9,4 @@
 ;; to keep the bootstrap-loader pattern consistent across every
 ;; Tier-A namespace.
 
-;; PROVISIONAL: bare (in-ns 'foo) special form pending (ns ...) macro [refs: D-063, D-071, feature_deps.yaml#runtime/eval/bare_in_ns_decl]
-(in-ns 'clojure.walk)
+(ns clojure.walk (:refer-clojure))

@@ -69,7 +69,11 @@ pub fn registerAll(env: *Env) !void {
     try set_prim.register(env);
     try walk_prim.register(env);
 
-    // PROVISIONAL: hardcoded rt → user refer pending (ns ...) macro :refer-clojure [refs: D-063, D-071, feature_deps.yaml#runtime/bootstrap/refer_table]
+    // ADR-0035 D9 (sub-cycle d): boot-time rt → user refer makes
+    // primitives (`+`, `=`, `count`, ...) reachable unqualified at
+    // the REPL prompt. The `(ns foo (:refer-clojure))` macro does NOT
+    // refer rt into the entering ns; explicit `(require '[rt …])` is
+    // not a stable surface, so `user/` retains the rt refer at boot.
     try env.referAll(rt_ns, user_ns);
 }
 

@@ -129,12 +129,14 @@ pub fn loadCore(
         }
     }
 
-    // PROVISIONAL: hardcoded end-of-loadCore refer table pending (ns ...) macro per-file :refer-clojure directive [refs: D-063, D-071, feature_deps.yaml#runtime/bootstrap/refer_table]
+    // ADR-0035 D9 (sub-cycle d): bootstrap fan-out reduces to just
+    // `user/`. Each `.clj` head now uses `(ns foo (:refer-clojure))`
+    // which installs the clojure.core refer per file via evalNs; the
+    // remaining `user/` entry is the REPL-prompt ns, not a `.clj`
+    // file, so it needs an explicit refer here.
     if (env.findNs("clojure.core")) |clojure_core_ns| {
-        for ([_][]const u8{ "user", "clojure.set", "clojure.string", "clojure.walk" }) |ns_name| {
-            if (env.findNs(ns_name)) |target| {
-                try env.referAll(clojure_core_ns, target);
-            }
+        if (env.findNs("user")) |target| {
+            try env.referAll(clojure_core_ns, target);
         }
     }
 
@@ -221,17 +223,17 @@ test "embeddedResolver serves the 4 bootstrap namespaces (ADR-0035 D8)" {
 
     const core = try embeddedResolver(&rt, "clojure.core") orelse return error.TestUnexpectedResult;
     try testing.expect(core.len > 0);
-    // The first form must be `(in-ns 'clojure.core)` per the head
-    // landed at 6.16.b-3 (PROVISIONAL bare-in-ns) — confirms we
-    // returned the right source.
-    try testing.expect(std.mem.find(u8, core, "(in-ns 'clojure.core)") != null);
+    // The first form is the `(ns clojure.core (:refer-clojure))`
+    // head landed at Phase 6.16.b-4 sub-cycle d (ADR-0035 D9
+    // discharge) — confirms we returned the right source.
+    try testing.expect(std.mem.find(u8, core, "(ns clojure.core") != null);
 
     const set = try embeddedResolver(&rt, "clojure.set") orelse return error.TestUnexpectedResult;
-    try testing.expect(std.mem.find(u8, set, "(in-ns 'clojure.set)") != null);
+    try testing.expect(std.mem.find(u8, set, "(ns clojure.set") != null);
     const string = try embeddedResolver(&rt, "clojure.string") orelse return error.TestUnexpectedResult;
-    try testing.expect(std.mem.find(u8, string, "(in-ns 'clojure.string)") != null);
+    try testing.expect(std.mem.find(u8, string, "(ns clojure.string") != null);
     const walk = try embeddedResolver(&rt, "clojure.walk") orelse return error.TestUnexpectedResult;
-    try testing.expect(std.mem.find(u8, walk, "(in-ns 'clojure.walk)") != null);
+    try testing.expect(std.mem.find(u8, walk, "(ns clojure.walk") != null);
 }
 
 test "embeddedResolver returns null for unknown namespaces" {

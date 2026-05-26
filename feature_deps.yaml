@@ -78,92 +78,71 @@ entries:
   - name: runtime/eval/in_ns_auto_refer
     kind: runtime_layer
     defined_in: src/eval/backend/tree_walk.zig
-    status: provisional
-    requires_features:
-      - special_form/ns_macro
-    requires_debts:
-      - D-063
-      - D-071
-    provisional_markers:
-      - src/eval/backend/tree_walk.zig (evalInNs — rt/ auto-refer)
-      - src/eval/backend/tree_walk.zig (evalInNs — clojure.core auto-refer)
-      - src/eval/backend/vm.zig (op_in_ns — rt/ auto-refer)
-      - src/eval/backend/vm.zig (op_in_ns — clojure.core auto-refer)
+    status: landed
+    requires_features: []
+    requires_debts: []
     notes: |
-      evalInNs (tree_walk + VM) auto-refers `rt/` and (when present)
-      `clojure.core` into the entered namespace. This is the
-      mechanical substitute for the JVM `(ns ...)` macro that
-      explicitly calls `(clojure.core/refer 'clojure.core)`. Finished
-      form lands at ADR-0035 (Phase 6.16.b-4) when `(ns ...)` is a
-      real macro; evalInNs then reverts to bare ns-switch.
+      Landed at Phase 6.16.b-4 sub-cycle d (ADR-0035 D9
+      discharge). evalInNs / op_in_ns retain the convenience
+      auto-refer of rt + clojure.core for direct user
+      `(in-ns 'foo)` calls; the finished-form contract for
+      bootstrap-time `.clj` heads is the new `(ns foo
+      (:refer-clojure))` analyzer special form (evalNs path).
+      The auto-refer is no longer a substitute for a missing
+      macro — it is the documented in-ns convenience semantics.
 
   - name: runtime/bootstrap/refer_table
     kind: runtime_layer
     defined_in: src/lang/bootstrap.zig
-    status: provisional
-    requires_features:
-      - special_form/ns_macro
-    requires_debts:
-      - D-063
-      - D-071
-    provisional_markers:
-      - src/lang/bootstrap.zig (loadCore — end-of-loop refer table)
-      - src/lang/primitive.zig (registerAll — rt → user refer)
-      - src/lang/macro_transforms.zig (registerInto — rt → user macro refer)
+    status: landed
+    requires_features: []
+    requires_debts: []
     notes: |
-      Three hardcoded `referAll(rt_ns, target)` sites set up the
-      initial namespace visibility graph at boot:
-        1. `bootstrap.zig::loadCore` end-of-loop fans clojure.core
-           into user / clojure.set / clojure.string / clojure.walk.
-        2. `primitive.zig::registerAll` fans rt/ into user/.
-        3. `macro_transforms.zig::registerInto` fans rt/'s macro
-           vars into user/.
-      All three discharge when ADR-0035 ships the `(ns ...)`
-      macro + explicit `:refer-clojure` directive per file.
-
-      Generalised from spike 2.1's single-site framing after
-      review finding F15 (2026-05-26): the same provisional
-      pattern (= hardcoded refer pending macro-emitted directive)
-      surfaces 3 places, not 1.
+      Landed at Phase 6.16.b-4 sub-cycle d (ADR-0035 D9
+      discharge). Bootstrap retains 3 boot-time `referAll` sites
+      with non-PROVISIONAL rationale:
+        1. `bootstrap.zig::loadCore` end-of-loop refers
+           clojure.core into `user/` (the REPL-prompt ns is not a
+           `.clj` file, so the `(ns ...)` macro cannot install
+           the refer for it). The fan-out to clojure.set /
+           clojure.string / clojure.walk is removed because each
+           file now uses `(ns foo (:refer-clojure))`.
+        2. `primitive.zig::registerAll` refers rt → user so
+           primitives (`+`, `=`, `count`, ...) resolve unqualified
+           at the REPL prompt — `(ns ...)` does NOT auto-refer rt.
+        3. `macro_transforms.zig::registerInto` refers rt → user
+           for macro Vars by the same rationale.
 
   - name: runtime/eval/bare_in_ns_decl
     kind: runtime_layer
     defined_in: src/lang/clj/clojure/core.clj
-    status: provisional
-    requires_features:
-      - special_form/ns_macro
-    requires_debts:
-      - D-063
-      - D-071
-    provisional_markers:
-      - src/lang/clj/clojure/core.clj (head — bare in-ns declaration)
-      - src/lang/clj/clojure/set.clj (head — bare in-ns declaration)
-      - src/lang/clj/clojure/string.clj (head — bare in-ns declaration)
-      - src/lang/clj/clojure/walk.clj (head — bare in-ns declaration)
+    status: landed
+    requires_features: []
+    requires_debts: []
     notes: |
-      Each multi-file bootstrap source opens with a bare
-      `(in-ns 'foo.bar)` special-form call. The finished form is
-      `(ns foo.bar (:refer-clojure))` macro that handles in-ns
-      + refer atomically + carries metadata for the namespace.
-      One shared provisional pattern across 4 sites; lands at
-      ADR-0035 / Phase 6.16.b-4 when `(ns ...)` arrives.
-
-      Generalised from the original `clojure.core/ns_declaration`
-      entry after review finding F14 (2026-05-26): the
-      bare-in-ns smell is identical for all 4 files; SSOT is one
-      entry, four marker sites.
+      Landed at Phase 6.16.b-4 sub-cycle d (ADR-0035 D9
+      discharge). All 4 bootstrap `.clj` heads (core / set /
+      string / walk) now use `(ns foo (:refer-clojure))` —
+      the analyzer special form per ADR-0035 D1 — instead of
+      bare `(in-ns 'foo)`. Discharge complete.
 
   - name: special_form/ns_macro
     kind: special_form
     defined_in: src/eval/analyzer/special_forms.zig
-    status: planned
+    status: landed
     requires_features: []
-    requires_debts:
-      - D-063
+    requires_debts: []
     notes: |
-      JVM Clojure's `(ns foo (:require [x] [y :as a]) (:refer-clojure))`
-      macro. Currently cw v1 has only the bare `(in-ns 'foo)` special
-      form (ADR-0032). Lands at ADR-0035 (D-063).
+      Landed at Phase 6.16.b-4 sub-cycle c.7 as an analyzer special
+      form (NOT a macro per Devil's-advocate Alt 2 of ADR-0035 D1 —
+      analyzer special form gives precise location errors + cannot
+      be shadowed by user `(def ns ...)`). Sub-cycle c.7 ships bare
+      `(ns foo)` + `(:refer-clojure)` (no filter); the four
+      bootstrap `.clj` heads use this shape from sub-cycle d.
+      `:require` / `:exclude` / `:only` / `:use` directives inside
+      ns body raise transient `feature_not_supported` (deferred
+      within ADR-0035 follow-up scope; users compose with separate
+      `(require ...)` calls today).
 
   - name: clojure.core/select-keys
     kind: var

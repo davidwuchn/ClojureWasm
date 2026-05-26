@@ -267,11 +267,14 @@ pub fn eval(
 /// Idempotent via `referAll`'s existing-key skip.
 fn evalInNs(env: *Env, n: node_mod.InNsNode) !Value {
     env.current_ns = try env.findOrCreateNs(n.ns_name);
-    // PROVISIONAL: in-ns auto-refers rt/ pending (ns ...) macro [refs: D-071, feature_deps.yaml#runtime/eval/in_ns_auto_refer]
+    // ADR-0035 D9 (Phase 6.16.b-4 sub-cycle d): `(in-ns ...)` carries
+    // a convenience auto-refer of rt + clojure.core for REPL-style ns
+    // hopping. The `(ns foo (:refer-clojure))` macro is the
+    // finished-form contract for bootstrap-time .clj heads (= evalNs
+    // does the same); this in-ns path remains for direct user calls.
     if (env.findNs("rt")) |rt_ns| {
         try env.referAll(rt_ns, env.current_ns.?);
     }
-    // PROVISIONAL: in-ns auto-refers clojure.core pending (ns ...) macro [refs: D-071, feature_deps.yaml#runtime/eval/in_ns_auto_refer]
     if (env.findNs("clojure.core")) |clojure_core_ns| {
         try env.referAll(clojure_core_ns, env.current_ns.?);
     }

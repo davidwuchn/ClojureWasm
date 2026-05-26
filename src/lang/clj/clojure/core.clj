@@ -1,17 +1,14 @@
 ;; ClojureWasm Stage-1 prologue.
 ;;
 ;; Loaded by `src/lang/bootstrap.zig::loadCore` after
-;; `primitive.registerAll` and `macro_transforms.registerInto`. Phase
-;; 6.16.b-3 lands the `(in-ns 'clojure.core)` head (= D-071 part 1):
-;; defs in this file are interned into the `clojure.core` namespace,
-;; and `bootstrap.zig::loadCore` refers `clojure.core` into `user/`
-;; + every other bootstrap-time ns so unqualified resolution works
-;; from the REPL prompt and from `clojure.set` / `walk` / `string`
-;; `.clj` defns. The remaining D-071 work (^:private enforcement on
-;; the `-*-eager` leaves) lands at a future cycle.
+;; `primitive.registerAll` and `macro_transforms.registerInto`. The
+;; head form is `(ns clojure.core (:refer-clojure))` per ADR-0035 D1
+;; — the analyzer special form switches into clojure.core (creating
+;; the ns at boot via `Env.init`, idempotent here) and honours
+;; `:refer-clojure` (a no-op when we ARE clojure.core; kept for
+;; surface-uniformity with the other bootstrap files).
 
-;; PROVISIONAL: bare (in-ns 'foo) special form pending (ns ...) macro [refs: D-063, D-071, feature_deps.yaml#runtime/eval/bare_in_ns_decl]
-(in-ns 'clojure.core)
+(ns clojure.core (:refer-clojure))
 
 (def not (fn* [x] (if x false true)))
 
