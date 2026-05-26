@@ -187,7 +187,7 @@ pub fn matches(thrown: Value, class_name: []const u8) bool {
     if (thrownClassName(thrown)) |thrown_simple| {
         return isSubclassOf(thrown_simple, simple);
     }
-    // PROVISIONAL: host_instance receiver arm pending D-048 host_class wire-up [refs: D-048, feature_deps.yaml#runtime/eval/catch_class_table]
+    // PROVISIONAL: host_instance receiver arm pending D-048 host_class wire-up [refs: D-048, feature_deps.yaml#runtime/error/catch_class_host_instance_arm]
     return false;
 }
 

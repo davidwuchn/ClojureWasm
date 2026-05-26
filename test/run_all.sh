@@ -193,6 +193,7 @@ run_step "e2e_phase7_method_dispatch"        "bash test/e2e/phase7_method_dispat
 run_step "e2e_phase7_polymorphic_extend"     "bash test/e2e/phase7_polymorphic_extend.sh"
 run_step "e2e_phase7_multi_arity"            "bash test/e2e/phase7_multi_arity.sh"
 run_step "e2e_phase7_apply_variadic"         "bash test/e2e/phase7_apply_variadic.sh"
+run_step "e2e_phase7_catch_hierarchy"        "bash test/e2e/phase7_catch_hierarchy.sh"
 
 # Informational scans (ADR-0024). Phase 5+ they become blocking.
 run_step "scan_catalog_only"   "bash scripts/scan_catalog_only.sh" optional

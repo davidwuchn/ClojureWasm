@@ -379,6 +379,48 @@ test "diff: row 7.10 op_require_with_libspec — :as + :refer combined" {
     , 84);
 }
 
+// Row 7.11 cycle 3 (D-077 close): catch-class hierarchy walk via
+// `runtime/error/host_class.zig::matches`. Both backends share the
+// predicate (tree_walk.catchMatches + vm.matchExceptionClass both
+// 1-line delegate to `host_class.matches`); these cases lock the
+// JVM-compatible parent-chain semantics. Analyzer-time
+// `catch_class_unknown` raise also covered here via a negative
+// expectation (cf. e2e for the user-facing diagnostic).
+
+test "diff: row 7.11 catch RuntimeException matches ex-info (parent walk)" {
+    var f = try Fixture.init(testing.allocator);
+    defer f.deinit();
+    try f.check("(try (throw (ex-info \"boom\" {})) (catch RuntimeException e 1))", 1);
+}
+
+test "diff: row 7.11 catch Throwable matches everything" {
+    var f = try Fixture.init(testing.allocator);
+    defer f.deinit();
+    try f.check("(try (throw (ex-info \"x\" {})) (catch Throwable e 2))", 2);
+}
+
+test "diff: row 7.11 catch Exception matches via RuntimeException" {
+    var f = try Fixture.init(testing.allocator);
+    defer f.deinit();
+    try f.check("(try (throw (ex-info \"x\" {})) (catch Exception e 3))", 3);
+}
+
+test "diff: row 7.11 catch sibling skipped, specific arm fires" {
+    var f = try Fixture.init(testing.allocator);
+    defer f.deinit();
+    try f.check(
+        \\(try (throw (ex-info "x" {}))
+        \\  (catch IOException e 10)
+        \\  (catch ExceptionInfo e 4))
+    , 4);
+}
+
+test "diff: row 7.11 catch FQCN java.lang.RuntimeException normalises" {
+    var f = try Fixture.init(testing.allocator);
+    defer f.deinit();
+    try f.check("(try (throw (ex-info \"x\" {})) (catch java.lang.RuntimeException e 5))", 5);
+}
+
 // ADR-0042 row 7.9: `apply` variadic-callee bind-direct gate. Both
 // backends share `tree_walk.callFunction` (vm.zig:573 wires
 // `treeWalkCall` into the VM vtable), so the gate fires identically

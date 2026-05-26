@@ -15,6 +15,7 @@ const Runtime = @import("../../runtime/runtime.zig").Runtime;
 const env_mod = @import("../../runtime/env.zig");
 const Env = env_mod.Env;
 const error_catalog = @import("../../runtime/error/catalog.zig");
+const host_class = @import("../../runtime/error/host_class.zig");
 const macro_dispatch = @import("../macro_dispatch.zig");
 const analyzer_mod = @import("analyzer.zig");
 const AnalyzeError = analyzer_mod.AnalyzeError;
@@ -111,6 +112,15 @@ fn analyzeCatchClause(
     const bind_sym = items[2].data.symbol;
     if (bind_sym.ns != null)
         return error_catalog.raise(.catch_binding_namespace_qualified, items[2].location, .{});
+    // Row 7.11 cycle 3 (D-077 discharge): reject unknown catch class
+    // names at analyze time so `(catch FooBarException e ...)` no longer
+    // becomes silent dead code at eval. The host-class hierarchy
+    // (`runtime/error/host_class.zig`) is the authoritative list of
+    // recognised exception types; future host_class wire-up (D-048)
+    // expands it for user-defined deftype-based exceptions.
+    const class_full_name = analyzer_mod.symFullName(class_sym);
+    if (!host_class.isKnownException(class_full_name))
+        return error_catalog.raise(.catch_class_unknown, items[1].location, .{ .name = class_full_name });
 
     var child_scope = if (scope) |s| Scope.child(s) else Scope{};
     defer child_scope.deinit(arena);

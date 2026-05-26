@@ -113,6 +113,7 @@ pub const Code = enum {
     try_clause_after_finally,
     catch_form_incomplete,
     catch_class_not_symbol,
+    catch_class_unknown,
     catch_binding_not_symbol,
     catch_binding_namespace_qualified,
 
@@ -459,6 +460,10 @@ pub fn entry(comptime code: Code) Entry {
         .catch_class_not_symbol => .{
             .kind = .syntax_error, .phase = .analysis,
             .template = "catch class must be a symbol",
+        },
+        .catch_class_unknown => .{
+            .kind = .name_error, .phase = .analysis,
+            .template = "catch class '{[name]s}' is not a known exception type",
         },
         .catch_binding_not_symbol => .{
             .kind = .syntax_error, .phase = .analysis,

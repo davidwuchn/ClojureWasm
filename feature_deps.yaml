@@ -359,29 +359,47 @@ entries:
   - name: runtime/eval/catch_class_table
     kind: runtime_layer
     defined_in: src/runtime/error/host_class.zig
-    status: provisional
+    status: landed
     requires_features: []
     requires_debts:
       - D-077
+    provisional_markers: []
+    notes: |
+      Row 7.11 cycles 1+2+3 (2026-05-27) discharged this entry. Cycle 1
+      landed `src/runtime/error/host_class.zig` (17-entry Throwable
+      hierarchy + `isKnownException` / `getParent` / `isSubclassOf` +
+      FQCN normalisation). Cycle 2 replaced `tree_walk.catchMatches` +
+      `vm.matchExceptionClass` with single-line delegations to
+      `host_class.matches` (no pub-var injection per ROADMAP §13).
+      Cycle 3 added analyzer-time `catch_class_unknown` raise so
+      `(catch FooBarException e ...)` is a loud name_error rather than
+      silently dead code (= silent-default-shift smell eliminated at
+      the source per ADR-0019 / `provisional_marker.md`
+      permanent-no-op-forbidden). The future host-class wire-up
+      (D-048) extends `host_class.matches`'s `host_instance` arm to
+      walk `TypeDescriptor.parent`; tracked by the sibling
+      `runtime/error/catch_class_host_instance_arm` entry.
+
+  - name: runtime/error/catch_class_host_instance_arm
+    kind: runtime_layer
+    defined_in: src/runtime/error/host_class.zig
+    status: provisional
+    requires_features: []
+    requires_debts:
       - D-048
     provisional_markers:
-      - src/runtime/error/host_class.zig (matches — host_instance arm awaiting D-048)
+      - src/runtime/error/host_class.zig (matches — host_instance arm returns false)
     notes: |
-      Row 7.11 cycle 1 (2026-05-27) landed the comptime hierarchy
-      table at `src/runtime/error/host_class.zig` (Throwable / Error /
-      Exception / RuntimeException + 13 subclasses incl. ExceptionInfo
-      via clojure.lang). Cycle 2 (2026-05-27) replaced both backends'
-      single-class predicates with `host_class.matches(thrown,
-      class_name)` — `tree_walk.catchMatches` + `vm.matchExceptionClass`
-      now delegate to the same shared function (no pub-var injection
-      per ROADMAP §13). 2 of 3 prior provisional_markers cleared in
-      that step. Remaining marker: `host_class.matches` `host_instance`
-      receiver arm returns false pending D-048 host-class wire-up — at
-      that point the arm walks `TypeDescriptor.parent` and the entry
-      flips to `landed`. Cycle 3 adds analyzer-time
-      `catch_class_unknown` raise so unknown class symbols no longer
-      pass through (= silent-default-shift smell eliminated at the
-      source).
+      `host_class.matches` returns false defensively when
+      `thrown.tag() == .host_instance`. Today there is no way to
+      produce a `.host_instance` Value (= host-class wire-up D-048
+      lands the constructor surface), so the arm has no live
+      consumer. When D-048 lands, the arm walks
+      `TypeDescriptor.parent` chain (analogous to JVM's
+      `Class.isInstance` walk) and the marker discharges. Split from
+      the cycle 3 close of `runtime/eval/catch_class_table` so that
+      entry could land cleanly without bundling the unrelated D-048
+      wait.
 
   - name: runtime/vm/dispatch_family
     kind: runtime_layer
