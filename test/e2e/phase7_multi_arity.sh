@@ -37,6 +37,10 @@ assert_eq() {
     echo "PASS $name -> $want"
 }
 
+last_line() {
+    awk 'END { print }' <<< "$1"
+}
+
 # --- Case 1: 2-method fn* dispatched by call-arity ---
 got=$("$BIN" -e '((fn* ([x] x) ([x y] (+ x y))) 1)' 2>/dev/null) || fail "case1: non-zero exit ($got)"
 assert_eq 'fn_star_two_methods_arity_1' "$got" '1'
@@ -102,3 +106,34 @@ if [[ "$diag" != *"more than 1 variadic"* ]] && [[ "$diag" != *"duplicate"* ]] &
     fail "case9: expected fn_star_variadic_duplicate diagnostic, got '$diag'"
 fi
 echo "PASS fn_star_variadic_duplicate_diagnostic"
+
+# --- Cycle 3: defn macro multi-arity ---
+
+# --- Case 10: defn with multi-arity body ---
+got=$("$BIN" - <<'EOF' 2>/dev/null
+(defn greet
+  ([] (greet "world"))
+  ([name] (str "hello, " name)))
+(greet)
+EOF
+) || fail "case10: non-zero exit ($got)"
+assert_eq 'defn_multi_arity_calls_other_arity' "$(last_line "$got")" '"hello, world"'
+
+# --- Case 11: defn multi-arity arity-2 dispatch ---
+got=$("$BIN" - <<'EOF' 2>/dev/null
+(defn add
+  ([] 0)
+  ([x] x)
+  ([x y] (+ x y)))
+(add 10 20)
+EOF
+) || fail "case11: non-zero exit ($got)"
+assert_eq 'defn_multi_arity_three_methods' "$(last_line "$got")" '30'
+
+# --- Case 12: single-arity defn (back-compat — no behaviour change) ---
+got=$("$BIN" - <<'EOF' 2>/dev/null
+(defn square [x] (* x x))
+(square 7)
+EOF
+) || fail "case12: non-zero exit ($got)"
+assert_eq 'defn_single_arity_back_compat' "$(last_line "$got")" '49'

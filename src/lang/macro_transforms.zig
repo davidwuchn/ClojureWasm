@@ -397,9 +397,12 @@ fn expandIfLet(
 // `(defn name [params...] body...)` →
 //   `(def name (fn* [params...] (do body...)))`
 //
-// Stage 1 keeps the surface narrow: no docstring, no metadata map, no
-// multi-arity. Phase 4+ extends this transform once user-defined macros
-// can override it from `core.clj`.
+// Row 7.8 cycle 3 (ADR-0041) added multi-arity:
+// `(defn name ([params...] body...) ([params...] body...) ...)` →
+//   `(def name (fn* ([params...] (do body...)) ([params...] (do body...)) ...))`
+//
+// Docstring + metadata-map deferred per survey §11 Q6 to a separate
+// D-NNN follow-up row.
 fn expandDefn(
     arena: std.mem.Allocator,
     rt: *Runtime,
@@ -407,33 +410,47 @@ fn expandDefn(
     loc: SourceLocation,
 ) macro_dispatch.ExpandError!Form {
     _ = rt;
-    if (args.len < 3)
+    if (args.len < 2)
         return error_catalog.raise(.defn_form_incomplete, loc, .{});
     if (args[0].data != .symbol or args[0].data.symbol.ns != null)
         return error_catalog.raise(.defn_name_invalid, args[0].location, .{});
-    if (args[1].data != .vector)
-        return error_catalog.raise(.defn_params_not_vector, args[1].location, .{});
 
     const name_form = args[0];
-    const params_form = args[1];
-    const body = args[2..];
 
-    // Collapse the body: single form passes through; multi-form wraps
-    // in (do ...) so the analyser sees a single expression for the
-    // fn* body.
-    const body_form = if (body.len == 1) body[0] else blk: {
-        var do_items = try arena.alloc(Form, body.len + 1);
-        do_items[0] = sym("do", loc);
-        @memcpy(do_items[1..], body);
-        break :blk try list(arena, do_items, loc);
+    // Two body shapes: vector ⇒ single-arity (existing); list ⇒ multi-arity.
+    const fn_form = blk: {
+        if (args[1].data == .vector) {
+            if (args.len < 3)
+                return error_catalog.raise(.defn_form_incomplete, loc, .{});
+            const params_form = args[1];
+            const body = args[2..];
+            const body_form = try wrapBodyInDo(arena, body, loc);
+            const fn_items = try arena.alloc(Form, 3);
+            fn_items[0] = sym("fn*", loc);
+            fn_items[1] = params_form;
+            fn_items[2] = body_form;
+            break :blk try list(arena, fn_items, loc);
+        }
+        // Multi-arity: every args[1..] must be a `([params] body...)` list.
+        var fn_items = try arena.alloc(Form, args.len);
+        fn_items[0] = sym("fn*", loc);
+        var i: usize = 1;
+        while (i < args.len) : (i += 1) {
+            if (args[i].data != .list)
+                return error_catalog.raise(.defn_params_not_vector, args[i].location, .{});
+            const sub = args[i].data.list;
+            if (sub.len < 2)
+                return error_catalog.raise(.defn_form_incomplete, args[i].location, .{});
+            if (sub[0].data != .vector)
+                return error_catalog.raise(.defn_params_not_vector, sub[0].location, .{});
+            const body_form = try wrapBodyInDo(arena, sub[1..], args[i].location);
+            const method_items = try arena.alloc(Form, 2);
+            method_items[0] = sub[0];
+            method_items[1] = body_form;
+            fn_items[i] = try list(arena, method_items, args[i].location);
+        }
+        break :blk try list(arena, fn_items, loc);
     };
-
-    // (fn* [params...] body_form)
-    const fn_items = try arena.alloc(Form, 3);
-    fn_items[0] = sym("fn*", loc);
-    fn_items[1] = params_form;
-    fn_items[2] = body_form;
-    const fn_form = try list(arena, fn_items, loc);
 
     // (def name (fn* ...))
     const def_items = try arena.alloc(Form, 3);
@@ -441,6 +458,14 @@ fn expandDefn(
     def_items[1] = name_form;
     def_items[2] = fn_form;
     return list(arena, def_items, loc);
+}
+
+fn wrapBodyInDo(arena: std.mem.Allocator, body: []const Form, loc: SourceLocation) macro_dispatch.ExpandError!Form {
+    if (body.len == 1) return body[0];
+    const do_items = try arena.alloc(Form, body.len + 1);
+    do_items[0] = sym("do", loc);
+    @memcpy(do_items[1..], body);
+    return list(arena, do_items, loc);
 }
 
 // --- defmulti — multimethod definition (ADR-0008 Phase 7.2 amendment, Alt 1) ---
