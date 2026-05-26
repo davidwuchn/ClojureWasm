@@ -128,17 +128,66 @@ test "diff: def_node recursive defn" {
     try f.check("(do (defn diff-rec [n] (if (= n 0) 0 (diff-rec (- n 1)))) (diff-rec 7))", 0);
 }
 
-// Row 7.3 protocol round-trip (defprotocol → extend-type → dispatch)
-// does NOT land as a diff_test case because the ProtocolDescriptor /
-// ProtocolFn / extend-type method_table allocations are infra-
-// allocated process-lifetime per cycles 1-6 policy; testing.allocator
-// detects them as leaks. The e2e at test/e2e/phase7_protocol.sh
-// exercises the full TreeWalk path; VM parity holds by construction
-// because the dispatch lives in runtime/ (both backends route through
-// vtable.callFn → treeWalkCall .protocol_fn arm → dispatch.dispatch).
-// A separate Runtime.trackHeap-based cleanup of cycle-6+ infra
-// allocations would unblock the diff coverage but is out of scope
-// for cycle 8.5 (the e2e is the protective oracle today).
+// Row 7.7 cycle 5: protocol round-trip (defprotocol → extend-type →
+// dispatch) now lands as diff_test cases. Cycle 1's rt.trackHeap-based
+// cleanup of ProtocolDescriptor / ProtocolFn / TypeDescriptorRef
+// allocations (per ADR-0008 amendment 4 "Affected files") closed the
+// testing.allocator leak gap that previously deferred the coverage.
+// Both backends route user-fn invocation through `vtable.callFn`, so
+// the four primitive paths (count / seq / conj / reduce) below
+// produce byte-identical Values across TreeWalk and VM by construction.
+// `extendTypeWithImpls` still leaks the old method_table slice on each
+// extend (separate latent bug filed as a follow-up debt row); the test
+// fixture's testing.allocator catches it, so the diff cases below use
+// just one extend per type to avoid the bug.
+
+test "diff: row 7.7 count via IPersistentCollection -count slow-path" {
+    var f = try Fixture.init(testing.allocator);
+    defer f.deinit();
+    try f.check(
+        \\(do
+        \\  (defprotocol IPersistentCollection (-count [c]))
+        \\  (defrecord DiffPt [x y])
+        \\  (extend-type DiffPt IPersistentCollection (-count [_] 7))
+        \\  (count (->DiffPt 1 2)))
+    , 7);
+}
+
+test "diff: row 7.7 seq via Seqable -seq slow-path" {
+    var f = try Fixture.init(testing.allocator);
+    defer f.deinit();
+    try f.check(
+        \\(do
+        \\  (defprotocol Seqable (-seq [c]))
+        \\  (defrecord DiffPair [a b])
+        \\  (extend-type DiffPair Seqable (-seq [_] '(11 22 33)))
+        \\  (first (seq (->DiffPair 1 2))))
+    , 11);
+}
+
+test "diff: row 7.7 conj via IPersistentCollection -cons slow-path" {
+    var f = try Fixture.init(testing.allocator);
+    defer f.deinit();
+    try f.check(
+        \\(do
+        \\  (defprotocol IPersistentCollection (-cons [c x]))
+        \\  (defrecord DiffBag [contents])
+        \\  (extend-type DiffBag IPersistentCollection (-cons [_ x] x))
+        \\  (conj (->DiffBag '()) 13))
+    , 13);
+}
+
+test "diff: row 7.7 reduce via IReduce -reduce fast-path" {
+    var f = try Fixture.init(testing.allocator);
+    defer f.deinit();
+    try f.check(
+        \\(do
+        \\  (defprotocol IReduce (-reduce [c f]))
+        \\  (defrecord DiffBox [v])
+        \\  (extend-type DiffBox IReduce (-reduce [_ _] 42))
+        \\  (reduce + (->DiffBox 1)))
+    , 42);
+}
 
 test "diff: do_node sequence" {
     var f = try Fixture.init(testing.allocator);

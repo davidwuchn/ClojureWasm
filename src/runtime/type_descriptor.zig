@@ -281,6 +281,14 @@ pub fn registerType(
             rt.gpa.free(old_layout);
         }
         if (old.value.fqcn) |o_n| rt.gpa.free(o_n);
+        // Row 7.7 cycle 5: free the old TD's `method_table` slice and
+        // each entry's `method_name` dup (populated by `extend-type`
+        // between the prior `registerType` and now). Mirrors the
+        // equivalent cleanup in `Runtime.deinit`'s rt.types iteration.
+        for (old.value.method_table) |mentry| {
+            rt.gpa.free(mentry.method_name);
+        }
+        if (old.value.method_table.len > 0) rt.gpa.free(old.value.method_table);
         rt.gpa.destroy(@constCast(old.value));
     }
     const key = try rt.gpa.dupe(u8, name);

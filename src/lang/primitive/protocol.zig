@@ -491,26 +491,6 @@ const TestFixture = struct {
     }
 };
 
-/// Test-only cleanup: release a `.protocol` Value's infra-owned
-/// Row 7.7 cycle 1 retired the manual test-cleanup:
-/// `makeProtocol` / `makeProtocolFn` now register their owned
-/// allocations via `rt.trackHeap` so `rt.deinit` frees them. These
-/// helpers stay as no-op shims so existing `defer destroyProto…ForTest(...)`
-/// sites in the unit tests below keep their structural shape
-/// (one-line minimal-touch retirement — the tests are unchanged in
-/// intent, only the redundant cleanup goes away). The shims will
-/// disappear together with their `defer` sites in a follow-up
-/// commit once the row 7.7 close-cycle retro-audit lands.
-fn destroyProtoForTest(rt: *Runtime, val: Value) void {
-    _ = rt;
-    _ = val;
-}
-
-fn destroyProtoFnForTest(rt: *Runtime, val: Value) void {
-    _ = rt;
-    _ = val;
-}
-
 test "__make-protocol! returns a .protocol Value carrying the qualified symbol name" {
     var fix: TestFixture = undefined;
     try fix.init(testing.allocator);
@@ -520,7 +500,6 @@ test "__make-protocol! returns a .protocol Value carrying the qualified symbol n
     const methods_vec = vector_mod.empty();
 
     const result = try makeProtocol(&fix.rt, &fix.env, &[_]Value{ name, methods_vec }, .{});
-    defer destroyProtoForTest(&fix.rt, result);
     try testing.expect(result.tag() == .protocol);
 
     const pd = protocol_mod.asProtocol(result);
@@ -539,7 +518,6 @@ test "__make-protocol! captures method-name Symbols into MethodEntry array" {
     methods_vec = try vector_mod.conj(&fix.rt, methods_vec, try symbol_mod.intern(&fix.rt, null, "rest"));
 
     const result = try makeProtocol(&fix.rt, &fix.env, &[_]Value{ name, methods_vec }, .{});
-    defer destroyProtoForTest(&fix.rt, result);
     const pd = protocol_mod.asProtocol(result);
     try testing.expectEqualStrings("P", pd.fqcn());
     try testing.expectEqual(@as(usize, 2), pd.methods().len);
@@ -565,11 +543,9 @@ test "__make-protocol-fn! returns a .protocol_fn Value carrying descriptor + met
     const name = try symbol_mod.intern(&fix.rt, null, "P");
     const methods_vec = vector_mod.empty();
     const proto_val = try makeProtocol(&fix.rt, &fix.env, &[_]Value{ name, methods_vec }, .{});
-    defer destroyProtoForTest(&fix.rt, proto_val);
 
     const method_name_str = try string_mod.alloc(&fix.rt, "first");
     const pfn_val = try makeProtocolFn(&fix.rt, &fix.env, &[_]Value{ proto_val, method_name_str }, .{});
-    defer destroyProtoFnForTest(&fix.rt, pfn_val);
     try testing.expect(pfn_val.tag() == .protocol_fn);
 
     const pfn = protocol_mod.asProtocolFn(pfn_val);
@@ -597,7 +573,6 @@ test "__satisfies? returns false for non-typed_instance receivers" {
     const name = try symbol_mod.intern(&fix.rt, null, "P");
     const methods_vec = vector_mod.empty();
     const proto_val = try makeProtocol(&fix.rt, &fix.env, &[_]Value{ name, methods_vec }, .{});
-    defer destroyProtoForTest(&fix.rt, proto_val);
 
     const result = try satisfiesPrim(&fix.rt, &fix.env, &[_]Value{ proto_val, Value.initInteger(42) }, .{});
     try testing.expectEqual(Value.false_val, result);
@@ -613,7 +588,6 @@ test "__satisfies? returns true when typed_instance's descriptor implements the 
     var methods_vec = vector_mod.empty();
     methods_vec = try vector_mod.conj(&fix.rt, methods_vec, try symbol_mod.intern(&fix.rt, null, "m"));
     const proto_val = try makeProtocol(&fix.rt, &fix.env, &[_]Value{ proto_name, methods_vec }, .{});
-    defer destroyProtoForTest(&fix.rt, proto_val);
 
     // Synthetic TypeDescriptor with an entry for protocol "P" — mirrors the
     // shape `extendTypeWithImpls` would install once cycle 6.5 lands the
@@ -679,7 +653,6 @@ test "__extend-type! appends method_val rows + bumps protocol_generation" {
     var methods_vec = vector_mod.empty();
     methods_vec = try vector_mod.conj(&fix.rt, methods_vec, try symbol_mod.intern(&fix.rt, null, "m"));
     const proto_val = try makeProtocol(&fix.rt, &fix.env, &[_]Value{ proto_name, methods_vec }, .{});
-    defer destroyProtoForTest(&fix.rt, proto_val);
 
     // Empty TypeDescriptor on infra.
     const td = try fix.rt.gc.infra.create(td_mod.TypeDescriptor);
@@ -727,7 +700,6 @@ test "__extend-type! rejects a non-type_descriptor target" {
     const proto_name = try symbol_mod.intern(&fix.rt, null, "P");
     const empty_methods = vector_mod.empty();
     const proto_val = try makeProtocol(&fix.rt, &fix.env, &[_]Value{ proto_name, empty_methods }, .{});
-    defer destroyProtoForTest(&fix.rt, proto_val);
 
     const impls = vector_mod.empty();
     try testing.expectError(

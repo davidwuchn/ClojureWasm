@@ -292,9 +292,18 @@ pub const Runtime = struct {
                 self.gpa.free(layout);
             }
             if (td.fqcn) |n| self.gpa.free(n);
-            // method_table and protocol_impls slices are gpa-owned
-            // by the analyzer if populated; 5.12.a leaves them
-            // empty so no free needed yet.
+            // Row 7.7 cycle 5: user `(extend-type X P (m …))` populates
+            // `method_table` via `__extend-type!` on `rt.gc.infra`
+            // (same backing as gpa per F-006 / GcHeap), so free both
+            // the per-entry method_name dup and the slice itself.
+            // `protocol_name` is a borrowed slice from the
+            // ProtocolDescriptor (process-lifetime via rt.trackHeap),
+            // and `protocol_impls` stays empty for user-defined types
+            // (no populator yet).
+            for (td.method_table) |mentry| {
+                self.gpa.free(mentry.method_name);
+            }
+            if (td.method_table.len > 0) self.gpa.free(td.method_table);
             self.gpa.destroy(@constCast(td));
         }
         self.types.deinit();

@@ -208,6 +208,15 @@ pub fn extendTypeWithImpls(
     @memcpy(combined[0..old.len], old);
     @memcpy(combined[old.len..], new_impls);
     td.method_table = combined;
+    // Row 7.7 cycle 5: free the prior heap-allocated method_table
+    // slice now that `combined` has copied its entries by value.
+    // Entries' interior pointers (`method_name`, `method_val`) remain
+    // valid because they were `@memcpy`'d (the bytes they point at
+    // are owned by their original allocators — gc.infra dups for
+    // `method_name`, ProtocolDescriptor lifetime for `protocol_name`).
+    // The very first extend hits `old.len == 0` which is `&.{}` and
+    // not a real allocation, so guarded.
+    if (old.len > 0) rt.gc.infra.free(old);
     rt.protocol_generation +%= 1;
 }
 
