@@ -93,3 +93,80 @@ test "diff: nested if branches" {
     defer f.deinit();
     try f.check("(if (if true false true) 1 2)", 2);
 }
+
+// ADR-0036 T1 retrofit: 11 cases covering the previously-untested
+// non-deferred Node variants enumerated in
+// private/notes/phase7-T1-survey.md §2.3. The 5 VM-DEFER sites
+// (deftype_node / ctor_call_node / field_access_node /
+// require libspec / ns refer-clojure filter) do not yet land diff
+// cases — those join when the markers discharge.
+
+test "diff: def_node" {
+    var f = try Fixture.init(testing.allocator);
+    defer f.deinit();
+    // `(do (def x ...) x)` cannot be a single source string in cw v1
+    // because the single-pass analyzer resolves the second `x` before
+    // `def` fires at eval time. Exercise def_node via the do-tail
+    // returning a literal; both backends still execute the def.
+    try f.check("(do (def diff-x 42) 99)", 99);
+}
+
+test "diff: do_node sequence" {
+    var f = try Fixture.init(testing.allocator);
+    defer f.deinit();
+    try f.check("(do 1 2 3 4 5)", 5);
+}
+
+test "diff: quote_node" {
+    var f = try Fixture.init(testing.allocator);
+    defer f.deinit();
+    try f.check("(count (quote (1 2 3 4 5)))", 5);
+}
+
+test "diff: try_node — happy path" {
+    var f = try Fixture.init(testing.allocator);
+    defer f.deinit();
+    try f.check("(try (+ 10 20) (catch ExceptionInfo _ 0))", 30);
+}
+
+test "diff: throw_node caught by try" {
+    var f = try Fixture.init(testing.allocator);
+    defer f.deinit();
+    try f.check("(try (throw (ex-info \"x\" {})) (catch ExceptionInfo _ 7))", 7);
+}
+
+test "diff: in_ns_node switches ns" {
+    var f = try Fixture.init(testing.allocator);
+    defer f.deinit();
+    try f.check("(do (in-ns 'user) 11)", 11);
+}
+
+test "diff: require_node bare symbol" {
+    var f = try Fixture.init(testing.allocator);
+    defer f.deinit();
+    try f.check("(do (require 'clojure.core) 13)", 13);
+}
+
+test "diff: ns_node bare with refer-clojure" {
+    var f = try Fixture.init(testing.allocator);
+    defer f.deinit();
+    try f.check("(do (ns diff-ns-1 (:refer-clojure)) 17)", 17);
+}
+
+test "diff: vector_literal_node" {
+    var f = try Fixture.init(testing.allocator);
+    defer f.deinit();
+    try f.check("(count [1 2 3 4 5 6 7])", 7);
+}
+
+test "diff: map_literal_node" {
+    var f = try Fixture.init(testing.allocator);
+    defer f.deinit();
+    try f.check("(count {:a 1 :b 2 :c 3})", 3);
+}
+
+test "diff: set_literal_node" {
+    var f = try Fixture.init(testing.allocator);
+    defer f.deinit();
+    try f.check("(count #{1 2 3 4})", 4);
+}

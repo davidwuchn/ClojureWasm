@@ -746,7 +746,7 @@ const TestFixture = struct {
 
     fn evalStr(self: *TestFixture, source: []const u8) !Value {
         var reader = Reader.init(self.arena.allocator(), source);
-        const form = (try reader.read()) orelse return error.NotImplemented;
+        const form = (try reader.read()) orelse return error.ReadEmpty;
         const node = try analyze(self.arena.allocator(), &self.rt, &self.env, null, form, &self.macro_table);
         var locals: [MAX_LOCALS]Value = [_]Value{.nil_val} ** MAX_LOCALS;
         return eval(&self.rt, &self.env, &locals, node);
@@ -765,7 +765,7 @@ fn builtinPlus(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation
     for (args) |v| {
         sum += switch (v.tag()) {
             .integer => @as(i64, v.asInteger()),
-            else => return error.NotImplemented,
+            else => return error.PlusArgNotInteger,
         };
     }
     return Value.initInteger(sum);

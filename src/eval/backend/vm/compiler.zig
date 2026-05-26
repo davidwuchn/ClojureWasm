@@ -107,14 +107,12 @@ const Compiler = struct {
             .try_node => |n| try self.compileTry(n),
             .loop_node => |n| try self.compileLoop(n),
             .recur_node => |n| try self.compileRecur(n),
-            // 5.12.a: VM wiring deferred to 5.12.a.4. The TreeWalk
-            // backend handles these nodes today; the VM compiler
-            // raises feature_not_supported until the bytecode shape
-            // for deftype / ctor / field-access is decided alongside
-            // the Phase 7 dispatch fn (ADR-0008 a1).
-            .deftype_node, .ctor_call_node, .field_access_node => {
-                return error.NotImplemented;
-            },
+            // VM-DEFER: deftype VM bytecode shape pending row 7.6 MethodCallNode design [refs: D-073, feature_deps.yaml#runtime/vm/dispatch_family]
+            .deftype_node => return error.NotImplemented,
+            // VM-DEFER: ctor_call VM bytecode shape pending row 7.6 MethodCallNode design [refs: D-073, feature_deps.yaml#runtime/vm/dispatch_family]
+            .ctor_call_node => return error.NotImplemented,
+            // VM-DEFER: field_access VM bytecode shape pending row 7.6 MethodCallNode design [refs: D-073, feature_deps.yaml#runtime/vm/dispatch_family]
+            .field_access_node => return error.NotImplemented,
             .in_ns_node => |n| try self.compileInNs(n),
             .require_node => |n| try self.compileRequire(n),
             .ns_node => |n| try self.compileNs(n),
@@ -264,9 +262,12 @@ const Compiler = struct {
         // "evaluate all args before mutating any slot" semantics).
         // Both invariants are analyser-guaranteed; this is a defensive
         // dev-only check (the analyser rejects recur outside loop and
-        // recur with mismatched arity at parse time).
-        const frame = self.current_loop orelse return error.NotImplemented;
-        if (n.args.len != frame.bindings.len) return error.NotImplemented;
+        // recur with mismatched arity at parse time). `unreachable`
+        // per Zig 0.16 idiom for analyzer-guaranteed conditions —
+        // not a VM-DEFER site (= these branches are not deferred VM
+        // semantics, they are claims about analyzer correctness).
+        const frame = self.current_loop.?;
+        if (n.args.len != frame.bindings.len) unreachable;
         if (n.args.len > std.math.maxInt(u16)) return error.TooManyCallArgs;
         for (n.args) |*a| try self.compileNode(a);
         try self.emit(.op_recur, @intCast(n.args.len));
@@ -374,9 +375,14 @@ const Compiler = struct {
     fn compileNs(self: *Compiler, n: node_mod.NsNode) Error!void {
         // ADR-0035 D1 ns VM path. Bare `(ns foo)` + `(:refer-clojure)`
         // compile to op_in_ns + an implicit clojure.core auto-refer
-        // (matching evalInNs's existing auto-refer behaviour). VM
-        // parity for the full ns directive surface lands in a Phase
-        // 7+ cycle (D-073 sibling).
+        // (matching evalInNs's existing auto-refer behaviour). The
+        // silent drop below is dormant today (analyzer always sets
+        // refer_clojure = true, op_in_ns auto-refers clojure.core).
+        // When NsNode extends with `:exclude` / `:only` filter
+        // fields, this becomes a real divergence; the VM-DEFER
+        // marker per ADR-0036 makes the gap discoverable until the
+        // filter encoding lands.
+        // VM-DEFER: ns :refer-clojure filter pending NsNode filter extension [refs: D-073, feature_deps.yaml#runtime/vm/ns_filter]
         _ = n.refer_clojure;
         const name_val = try string_mod.alloc(self.rt, n.name);
         const idx = try self.addConstant(name_val);
@@ -386,11 +392,12 @@ const Compiler = struct {
     fn compileRequire(self: *Compiler, n: node_mod.RequireNode) Error!void {
         // ADR-0035 D2 require VM path. The bare-symbol shape parks
         // the ns name as a String constant and emits op_require.
-        // `:as` / `:refer` libspec evaluation in VM mode is deferred
-        // to a future cycle (D-073 sibling) because op_require's
-        // single-operand encoding does not carry alias + refers; the
-        // tree-walk backend handles the full surface today.
+        // Libspec lowering needs a new opcode (`op_require_with_libspec`
+        // or equivalent — encoding TBD) per ADR-0036 +
+        // Devil's-advocate Alt 2 refined; carved out of T1 as the
+        // first real-feature exercise of the parity contract.
         if (n.alias != null or n.refers.len > 0) {
+            // VM-DEFER: require libspec pending op_require_with_libspec design [refs: D-073, feature_deps.yaml#runtime/vm/require_libspec]
             return error.NotImplemented;
         }
         const name_val = try string_mod.alloc(self.rt, n.ns_name);
