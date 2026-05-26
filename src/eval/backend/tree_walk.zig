@@ -97,30 +97,45 @@ threadlocal var pending_recur_len: u16 = 0;
 /// per-eval arena, so the Function lives only as long as that arena
 /// does. `closure_bindings` is owned by the Function (separate
 /// gpa allocation) and freed by `freeFunction`.
+/// Row 7.8 cycle 1 (ADR-0041) runtime-side per-arity record. Mirrors
+/// `node_mod.FnMethod` plus an optional bytecode chunk (the VM
+/// compile arm stamps one chunk per method).
+pub const FunctionMethod = struct {
+    arity: u16,
+    has_rest: bool,
+    /// Parameter names (debug + error frames). Borrowed from the
+    /// analyser arena.
+    params: []const []const u8,
+    /// Body Node — borrowed too. The TreeWalk backend evaluates it
+    /// directly when `bytecode == null`.
+    body: *const Node,
+    /// Compiled bytecode body. `null` means TreeWalk evaluates the
+    /// `body` Node directly; non-null means the VM dispatcher uses
+    /// this chunk and ignores `body`. The two paths produce bit-for-
+    /// bit identical Values under `Evaluator.compare` (ADR-0005 /
+    /// ADR-0022). The chunk lives in the analyser arena alongside
+    /// `body`/`params`.
+    bytecode: ?*const BytecodeChunk = null,
+};
+
 pub const Function = struct {
     header: HeapHeader,
     _pad: [6]u8 = undefined,
-    arity: u16,
-    has_rest: bool,
     /// Number of locals the analyser allocated above this fn — these
-    /// are the slots the closure snapshot fills, and the fn's params
-    /// land at `[slot_base, slot_base + arity)`.
+    /// are the slots the closure snapshot fills, and the active
+    /// method's params land at `[slot_base, slot_base + method.arity)`.
     slot_base: u16,
-    /// Function body — borrowed from the analyser arena.
-    body: *const Node,
-    /// Parameter names (debug + error frames). Borrowed too.
-    params: []const []const u8,
+    /// Fixed-arity methods, sorted by arity ascending (analyser-time).
+    /// Single-arity ships as a 1-element slice. JVM rule 2 (no two
+    /// same-arity fixed) enforced at analyzer-time.
+    methods: []const FunctionMethod,
+    /// Variadic body, separate slot per ADR-0041 — JVM allows ≤ 1
+    /// variadic per fn (rule 1).
+    variadic: ?FunctionMethod,
     /// Captured outer locals; null when the fn closes over nothing
     /// (top-level fn) so the common case stays a single null check
     /// rather than an empty-slice round-trip.
     closure_bindings: ?[]Value,
-    /// Compiled bytecode body. `null` means TreeWalk evaluates the
-    /// `body` Node directly; non-null means the VM dispatcher
-    /// (task 4.6) uses this chunk and ignores `body`. The two paths
-    /// produce bit-for-bit identical Values under
-    /// `Evaluator.compare` (ADR-0005 / ADR-0022). The chunk slices
-    /// live in the analyser arena alongside `body`/`params`.
-    bytecode: ?*const BytecodeChunk = null,
 };
 
 /// Heap-allocate a Function and wrap it in a NaN-boxed Value. The
@@ -131,21 +146,32 @@ pub const Function = struct {
 /// the Phase-5 GC arrives, register the allocation with
 /// `rt.heap_objects` so `Runtime.deinit` frees it.
 pub fn allocFunction(rt: *Runtime, fn_node: node_mod.FnNode, locals: []const Value) !Value {
-    return allocFunctionMaybeBytecode(rt, fn_node, locals, null);
+    return allocFunctionWithBytecodes(rt, fn_node, locals, null);
 }
 
-/// Same as `allocFunction` but stamps a compiled bytecode body onto
-/// the Function. The VM dispatcher (task 4.6) uses `bytecode` when
-/// set; the `body` Node is still stored so error frames can cite the
-/// source form.
+/// Same as `allocFunction` but stamps per-method bytecode chunks onto
+/// the Function. The slice length must equal `fn_node.methods.len` (a
+/// `null` entry within the slice means "no bytecode for that method";
+/// useful when a future per-method JIT can lazily fill chunks).
+/// `variadic_chunk` covers `fn_node.variadic` when present.
 pub fn allocFunctionWithBytecode(
     rt: *Runtime,
     fn_node: node_mod.FnNode,
     locals: []const Value,
-    bytecode: *const BytecodeChunk,
+    method_chunks: []const ?*const BytecodeChunk,
+    variadic_chunk: ?*const BytecodeChunk,
 ) !Value {
-    return allocFunctionMaybeBytecode(rt, fn_node, locals, bytecode);
+    std.debug.assert(method_chunks.len == fn_node.methods.len);
+    return allocFunctionWithBytecodes(rt, fn_node, locals, .{
+        .method_chunks = method_chunks,
+        .variadic_chunk = variadic_chunk,
+    });
 }
+
+const Bytecodes = struct {
+    method_chunks: []const ?*const BytecodeChunk,
+    variadic_chunk: ?*const BytecodeChunk,
+};
 
 /// Allocate a Function that carries `fn_node.slot_base` for the VM's
 /// `op_make_fn` dispatcher to read at run time, but defers the actual
@@ -156,29 +182,33 @@ pub fn allocFunctionWithBytecode(
 pub fn allocFunctionTemplate(
     rt: *Runtime,
     fn_node: node_mod.FnNode,
-    bytecode: *const BytecodeChunk,
+    method_chunks: []const ?*const BytecodeChunk,
+    variadic_chunk: ?*const BytecodeChunk,
 ) !Value {
+    std.debug.assert(method_chunks.len == fn_node.methods.len);
+    const methods = try buildFunctionMethods(rt, fn_node.methods, method_chunks);
+    errdefer rt.gpa.free(methods);
+    var variadic: ?FunctionMethod = null;
+    if (fn_node.variadic) |v| variadic = methodFromNode(v, variadic_chunk);
+
     const f = try rt.gpa.create(Function);
     errdefer rt.gpa.destroy(f);
     f.* = .{
         .header = HeapHeader.init(.fn_val),
-        .arity = fn_node.arity,
-        .has_rest = fn_node.has_rest,
         .slot_base = fn_node.slot_base,
-        .body = fn_node.body,
-        .params = fn_node.params,
+        .methods = methods,
+        .variadic = variadic,
         .closure_bindings = null,
-        .bytecode = bytecode,
     };
     try rt.trackHeap(.{ .ptr = @ptrCast(f), .free = freeFunction });
     return Value.encodeHeapPtr(.fn_val, f);
 }
 
-fn allocFunctionMaybeBytecode(
+fn allocFunctionWithBytecodes(
     rt: *Runtime,
     fn_node: node_mod.FnNode,
     locals: []const Value,
-    bytecode: ?*const BytecodeChunk,
+    bytecodes: ?Bytecodes,
 ) !Value {
     const closure: ?[]Value = if (fn_node.slot_base == 0)
         null
@@ -189,25 +219,63 @@ fn allocFunctionMaybeBytecode(
     };
     errdefer if (closure) |s| rt.gpa.free(s);
 
+    const method_chunks: []const ?*const BytecodeChunk = if (bytecodes) |bc| bc.method_chunks else &.{};
+    const variadic_chunk: ?*const BytecodeChunk = if (bytecodes) |bc| bc.variadic_chunk else null;
+    const methods = if (bytecodes != null)
+        try buildFunctionMethods(rt, fn_node.methods, method_chunks)
+    else
+        try buildFunctionMethodsNoBytecode(rt, fn_node.methods);
+    errdefer rt.gpa.free(methods);
+    var variadic: ?FunctionMethod = null;
+    if (fn_node.variadic) |v| variadic = methodFromNode(v, variadic_chunk);
+
     const f = try rt.gpa.create(Function);
     errdefer rt.gpa.destroy(f);
     f.* = .{
         .header = HeapHeader.init(.fn_val),
-        .arity = fn_node.arity,
-        .has_rest = fn_node.has_rest,
         .slot_base = fn_node.slot_base,
-        .body = fn_node.body,
-        .params = fn_node.params,
+        .methods = methods,
+        .variadic = variadic,
         .closure_bindings = closure,
-        .bytecode = bytecode,
     };
     try rt.trackHeap(.{ .ptr = @ptrCast(f), .free = freeFunction });
     return Value.encodeHeapPtr(.fn_val, f);
 }
 
+fn buildFunctionMethods(
+    rt: *Runtime,
+    src: []const node_mod.FnMethod,
+    bytecodes: []const ?*const BytecodeChunk,
+) ![]FunctionMethod {
+    const out = try rt.gpa.alloc(FunctionMethod, src.len);
+    for (src, 0..) |m, i| {
+        out[i] = methodFromNode(m, bytecodes[i]);
+    }
+    return out;
+}
+
+fn buildFunctionMethodsNoBytecode(rt: *Runtime, src: []const node_mod.FnMethod) ![]FunctionMethod {
+    const out = try rt.gpa.alloc(FunctionMethod, src.len);
+    for (src, 0..) |m, i| {
+        out[i] = methodFromNode(m, null);
+    }
+    return out;
+}
+
+fn methodFromNode(m: node_mod.FnMethod, bytecode: ?*const BytecodeChunk) FunctionMethod {
+    return .{
+        .arity = m.arity,
+        .has_rest = m.has_rest,
+        .params = m.params,
+        .body = m.body,
+        .bytecode = bytecode,
+    };
+}
+
 fn freeFunction(gpa: std.mem.Allocator, ptr: *anyopaque) void {
     const f: *Function = @ptrCast(@alignCast(ptr));
     if (f.closure_bindings) |s| gpa.free(s);
+    if (f.methods.len > 0) gpa.free(f.methods);
     gpa.destroy(f);
 }
 
@@ -674,52 +742,87 @@ pub fn callProtocolFn(rt: *Runtime, env: *Env, callee: Value, args: []const Valu
 
 pub fn callFunction(rt: *Runtime, env: *Env, fn_val: Value, args: []const Value, loc: SourceLocation) !Value {
     const f = fn_val.decodePtr(*Function);
-    if (!f.has_rest) {
-        if (args.len != f.arity)
-            return error_catalog.raise(.arity_not_expected, loc, .{ .fn_name = "fn", .got = args.len, .expected = f.arity });
-    } else {
-        if (args.len < f.arity)
-            return error_catalog.raise(.arity_below_min, loc, .{ .fn_name = "fn", .got = args.len, .min = f.arity });
-    }
-    if (@as(usize, f.slot_base) + f.arity + @intFromBool(f.has_rest) > MAX_LOCALS)
-        return error_catalog.raise(.fn_frame_exceeds_max_locals, loc, .{ .base = f.slot_base, .arity = f.arity, .max = MAX_LOCALS });
+
+    // Row 7.8 cycle 1 (ADR-0041): linear scan over `methods`, fixed-
+    // arity wins on exact match; fall through to `variadic` when
+    // `args.len >= variadic.arity`. Single-arity fns produce a
+    // 1-element `methods` slice = same code path.
+    const m: *const FunctionMethod = selectMethod(f, args.len) orelse {
+        return raiseArityNotMatched(f, args.len, loc);
+    };
+
+    const frame_slots: usize = @as(usize, f.slot_base) + m.arity + @intFromBool(m.has_rest);
+    if (frame_slots > MAX_LOCALS)
+        return error_catalog.raise(.fn_frame_exceeds_max_locals, loc, .{ .base = f.slot_base, .arity = m.arity, .max = MAX_LOCALS });
+
     var locals: [MAX_LOCALS]Value = [_]Value{.nil_val} ** MAX_LOCALS;
-    // Replay captured outer locals into the fresh frame so LocalRefs
-    // resolved against the analyser's enclosing scope still find their
-    // values. Top-level fns skip this entirely.
     if (f.closure_bindings) |snap| {
         @memcpy(locals[0..snap.len], snap);
     }
-    // Params land at `[slot_base, slot_base + arity)` — the slots the
-    // analyser allocated when it descended into the fn body.
-    for (args[0..f.arity], 0..) |v, i| {
+    for (args[0..m.arity], 0..) |v, i| {
         locals[f.slot_base + i] = v;
     }
-    if (f.has_rest) {
-        // Build a list of the trailing args (those past `f.arity`).
+    if (m.has_rest) {
+        // Build a list of the trailing args (those past `m.arity`).
         // JVM Clojure binds `& rest` to a seq view; cw v1 builds the
         // simpler heap List (Cons chain). Empty trailing → nil per
-        // `(defn f [& xs] xs) → (f)` returning nil (matches v1 list.rest
-        // empty-list semantics; full empty-PersistentList singleton
-        // lands at Phase 7 entry per ADR-0033 follow-up).
+        // `(defn f [& xs] xs) → (f)` returning nil.
         var rest_list: Value = .nil_val;
         var i: usize = args.len;
-        while (i > f.arity) {
+        while (i > m.arity) {
             i -= 1;
             rest_list = try list_mod.consHeap(rt, args[i], rest_list);
         }
-        locals[f.slot_base + f.arity] = rest_list;
+        locals[f.slot_base + m.arity] = rest_list;
     }
-    // VM backend hook: when the Function carries compiled bytecode and
+    // VM backend hook: when this method carries compiled bytecode and
     // the vtable has the `evalChunk` slot wired (vm.installVTable), run
     // the chunk instead of walking the Node body. The TreeWalk backend
     // leaves `evalChunk` null and always reaches the `eval(...)` line.
-    if (f.bytecode) |chunk| {
+    if (m.bytecode) |chunk| {
         if (rt.vtable) |vt| {
             if (vt.evalChunk) |ec| return ec(rt, env, &locals, @ptrCast(chunk));
         }
     }
-    return eval(rt, env, &locals, f.body);
+    return eval(rt, env, &locals, m.body);
+}
+
+fn selectMethod(f: *const Function, n: usize) ?*const FunctionMethod {
+    for (f.methods) |*m| {
+        if (m.arity == n) return m;
+    }
+    if (f.variadic) |*v| {
+        if (n >= v.arity) return v;
+    }
+    return null;
+}
+
+fn raiseArityNotMatched(f: *const Function, got: usize, loc: SourceLocation) anyerror {
+    // For single-arity fixed fns, preserve the existing
+    // arity_not_expected / arity_below_min diagnostics so existing
+    // user-visible error text stays stable.
+    if (f.variadic == null and f.methods.len == 1) {
+        return error_catalog.raise(.arity_not_expected, loc, .{ .fn_name = "fn", .got = got, .expected = f.methods[0].arity });
+    }
+    if (f.variadic) |v| {
+        if (f.methods.len == 0) {
+            return error_catalog.raise(.arity_below_min, loc, .{ .fn_name = "fn", .got = got, .min = v.arity });
+        }
+    }
+    // Multi-arity: build a "1, 2, or [3 & rest]" string for the message.
+    var buf: [256]u8 = undefined;
+    var w: std.Io.Writer = .fixed(&buf);
+    var first = true;
+    for (f.methods) |m| {
+        if (!first) w.print(", ", .{}) catch break;
+        w.print("{d}", .{m.arity}) catch break;
+        first = false;
+    }
+    if (f.variadic) |v| {
+        if (!first) w.print(", or ", .{}) catch {};
+        w.print("[{d} & rest]", .{v.arity}) catch {};
+    }
+    return error_catalog.raise(.arity_not_expected_multi, loc, .{ .fn_name = "fn", .got = got, .arities = w.buffered() });
 }
 
 fn callBuiltin(rt: *Runtime, env: *Env, callee: Value, args: []const Value, loc: SourceLocation) !Value {
@@ -812,10 +915,13 @@ fn allocFunctionFailingHarness(alloc_inner: std.mem.Allocator) !void {
     // (no closure). The body Node lives on the stack — allocFunction
     // only stores the pointer, never dereferences it during alloc.
     const body = node_mod.Node{ .constant = .{ .value = .nil_val } };
-    const fn_node = node_mod.FnNode{
+    const methods = [_]node_mod.FnMethod{.{
         .arity = 0,
         .params = &.{},
         .body = &body,
+    }};
+    const fn_node = node_mod.FnNode{
+        .methods = &methods,
         .slot_base = 0,
     };
     _ = try allocFunction(&rt, fn_node, &.{});

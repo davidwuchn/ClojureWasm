@@ -29,12 +29,99 @@ pub fn analyzeFnStar(
     form: Form,
     macro_table: *const macro_dispatch.Table,
 ) AnalyzeError!*const Node {
-    if (items.len < 3)
+    if (items.len < 2)
         return error_catalog.raise(.fn_star_form_incomplete, form.location, .{});
-    if (items[1].data != .vector)
-        return error_catalog.raise(.fn_star_params_not_vector, items[1].location, .{});
-    const params_form = items[1].data.vector;
 
+    const slot_base: u16 = if (scope) |s| s.next_slot else 0;
+
+    // Row 7.8 cycle 1 (ADR-0041): two body shapes — single-arity
+    // `(fn* [params] body...)` (items[1] is vector) and multi-arity
+    // `(fn* ([params] body...) ([params] body...) ...)` (items[1+] are
+    // each a list). Normalise by collecting a slice of "(params_vec,
+    // body_forms)" subforms; the same loop then handles both.
+    var method_forms: std.ArrayList(MethodSubform) = .empty;
+    defer method_forms.deinit(arena);
+
+    if (items[1].data == .vector) {
+        // Single-arity: the whole `items[1..]` is one method.
+        if (items.len < 3)
+            return error_catalog.raise(.fn_star_form_incomplete, form.location, .{});
+        try method_forms.append(arena, .{ .params_form = items[1], .body_forms = items[2..] });
+    } else {
+        // Multi-arity: each `items[i]` must be a list `(params body...)`.
+        var i: usize = 1;
+        while (i < items.len) : (i += 1) {
+            if (items[i].data != .list)
+                return error_catalog.raise(.fn_star_params_not_vector, items[i].location, .{});
+            const sub = items[i].data.list;
+            if (sub.len < 2)
+                return error_catalog.raise(.fn_star_form_incomplete, items[i].location, .{});
+            if (sub[0].data != .vector)
+                return error_catalog.raise(.fn_star_params_not_vector, sub[0].location, .{});
+            try method_forms.append(arena, .{ .params_form = sub[0], .body_forms = sub[1..] });
+        }
+    }
+
+    var methods: std.ArrayList(node_mod.FnMethod) = .empty;
+    defer methods.deinit(arena);
+    var variadic: ?node_mod.FnMethod = null;
+    var seen_arities: std.AutoHashMapUnmanaged(u16, void) = .empty;
+    defer seen_arities.deinit(arena);
+
+    for (method_forms.items) |mf| {
+        const m = try analyzeFnMethod(arena, rt, env, scope, mf, slot_base, form, macro_table);
+        if (m.has_rest) {
+            // JVM rule 1: at most one variadic per fn.
+            if (variadic != null)
+                return error_catalog.raise(.fn_star_variadic_duplicate, mf.params_form.location, .{});
+            variadic = m;
+        } else {
+            // JVM rule 2: no two fixed methods share the same required arity.
+            const gop = try seen_arities.getOrPut(arena, m.arity);
+            if (gop.found_existing)
+                return error_catalog.raise(.fn_star_arity_duplicate, mf.params_form.location, .{ .arity = m.arity });
+            try methods.append(arena, m);
+        }
+    }
+
+    // Sort fixed methods by arity ascending so callFunction's linear
+    // scan + future binary-search optimisation see a deterministic
+    // shape. Single-arity is a 1-element slice (no sort needed).
+    std.mem.sort(node_mod.FnMethod, methods.items, {}, lessByArity);
+
+    const n = try arena.create(Node);
+    n.* = .{ .fn_node = .{
+        .methods = try arena.dupe(node_mod.FnMethod, methods.items),
+        .variadic = variadic,
+        .slot_base = slot_base,
+        .loc = form.location,
+    } };
+    return n;
+}
+
+const MethodSubform = struct {
+    params_form: Form,
+    body_forms: []const Form,
+};
+
+fn lessByArity(_: void, a: node_mod.FnMethod, b: node_mod.FnMethod) bool {
+    return a.arity < b.arity;
+}
+
+/// Parse one `(params body...)` subform into a `FnMethod`. Each method
+/// runs body analysis in its own `child_scope` so `recur` inside
+/// arity-N body re-enters arity-N body (JVM parity per ADR-0041 R1).
+fn analyzeFnMethod(
+    arena: std.mem.Allocator,
+    rt: *Runtime,
+    env: *Env,
+    scope: ?*const Scope,
+    mf: MethodSubform,
+    slot_base: u16,
+    form: Form,
+    macro_table: *const macro_dispatch.Table,
+) AnalyzeError!node_mod.FnMethod {
+    const params_form = mf.params_form.data.vector;
     var has_rest = false;
     var arity: u16 = 0;
     var param_names: std.ArrayList([]const u8) = .empty;
@@ -60,29 +147,22 @@ pub fn analyzeFnStar(
         arity += 1;
     }
 
-    const recur_arity = arity;
-    const slot_base: u16 = if (scope) |s| s.next_slot else 0;
     var child_scope = if (scope) |s|
-        Scope.childWithRecur(s, .{ .arity = recur_arity, .slot_base = slot_base, .kind = .fn_kw })
+        Scope.childWithRecur(s, .{ .arity = arity, .slot_base = slot_base, .kind = .fn_kw })
     else
-        Scope{ .recur_target = .{ .arity = recur_arity, .slot_base = 0, .kind = .fn_kw } };
+        Scope{ .recur_target = .{ .arity = arity, .slot_base = 0, .kind = .fn_kw } };
     defer child_scope.deinit(arena);
     for (param_names.items) |name| {
         _ = try child_scope.declare(arena, name);
     }
 
-    const body_node = try analyzeBody(arena, rt, env, &child_scope, items[2..], form, macro_table);
-
-    const n = try arena.create(Node);
-    n.* = .{ .fn_node = .{
+    const body_node = try analyzeBody(arena, rt, env, &child_scope, mf.body_forms, form, macro_table);
+    return .{
         .arity = arity,
         .has_rest = has_rest,
         .params = try arena.dupe([]const u8, param_names.items),
         .body = body_node,
-        .slot_base = slot_base,
-        .loc = form.location,
-    } };
-    return n;
+    };
 }
 
 /// Fold multiple body forms into a `do_node`; a single body form is

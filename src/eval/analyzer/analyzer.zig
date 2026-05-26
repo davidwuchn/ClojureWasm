@@ -852,10 +852,13 @@ test "(fn* [x] x) — arity, params, body local_ref" {
     defer fix.deinit();
 
     const n = try fix.analyzeStr("(fn* [x] x)");
-    try testing.expectEqual(@as(u16, 1), n.fn_node.arity);
-    try testing.expect(!n.fn_node.has_rest);
-    try testing.expectEqualStrings("x", n.fn_node.params[0]);
-    try testing.expectEqual(@as(u16, 0), n.fn_node.body.local_ref.index);
+    try testing.expectEqual(@as(usize, 1), n.fn_node.methods.len);
+    try testing.expect(n.fn_node.variadic == null);
+    const m = n.fn_node.methods[0];
+    try testing.expectEqual(@as(u16, 1), m.arity);
+    try testing.expect(!m.has_rest);
+    try testing.expectEqualStrings("x", m.params[0]);
+    try testing.expectEqual(@as(u16, 0), m.body.local_ref.index);
 }
 
 test "(fn* [x & rest] x) — has_rest is true; params include rest" {
@@ -864,10 +867,13 @@ test "(fn* [x & rest] x) — has_rest is true; params include rest" {
     defer fix.deinit();
 
     const n = try fix.analyzeStr("(fn* [x & rest] x)");
-    try testing.expectEqual(@as(u16, 1), n.fn_node.arity);
-    try testing.expect(n.fn_node.has_rest);
-    try testing.expectEqual(@as(usize, 2), n.fn_node.params.len);
-    try testing.expectEqualStrings("rest", n.fn_node.params[1]);
+    // Variadic single-arity lives in the `variadic` slot per ADR-0041.
+    try testing.expectEqual(@as(usize, 0), n.fn_node.methods.len);
+    const v = n.fn_node.variadic.?;
+    try testing.expectEqual(@as(u16, 1), v.arity);
+    try testing.expect(v.has_rest);
+    try testing.expectEqual(@as(usize, 2), v.params.len);
+    try testing.expectEqualStrings("rest", v.params[1]);
 }
 
 test "(def x 1) records name + value expr" {

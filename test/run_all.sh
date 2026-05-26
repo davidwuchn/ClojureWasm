@@ -191,6 +191,7 @@ run_step "e2e_phase7_defrecord"              "bash test/e2e/phase7_defrecord.sh"
 run_step "e2e_phase7_reify"                  "bash test/e2e/phase7_reify.sh"
 run_step "e2e_phase7_method_dispatch"        "bash test/e2e/phase7_method_dispatch.sh"
 run_step "e2e_phase7_polymorphic_extend"     "bash test/e2e/phase7_polymorphic_extend.sh"
+run_step "e2e_phase7_multi_arity"            "bash test/e2e/phase7_multi_arity.sh"
 
 # Informational scans (ADR-0024). Phase 5+ they become blocking.
 run_step "scan_catalog_only"   "bash scripts/scan_catalog_only.sh" optional

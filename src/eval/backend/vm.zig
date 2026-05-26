@@ -253,16 +253,46 @@ fn stepOnce(
                 if (template.slot_base == 0) {
                     stack[sp] = template_val;
                 } else {
-                    const bytecode = template.bytecode orelse
+                    // Row 7.8 cycle 1 (ADR-0041): rebuild a transient
+                    // FnNode from the template's per-method records so
+                    // `allocFunctionWithBytecode` can snapshot the
+                    // caller's locals + stamp per-method chunks.
+                    if (templateMethodsHaveAnyMissingChunk(template))
                         return raiseInternal("vm: op_make_fn template missing bytecode");
+                    var node_methods = std.heap.stackFallback(8 * @sizeOf(node_mod.FnMethod), rt.gpa);
+                    const allocator = node_methods.get();
+                    const ms = allocator.alloc(node_mod.FnMethod, template.methods.len) catch
+                        return raiseInternal("vm: op_make_fn alloc failed");
+                    defer allocator.free(ms);
+                    const chunks = allocator.alloc(?*const opcode_mod.BytecodeChunk, template.methods.len) catch
+                        return raiseInternal("vm: op_make_fn alloc failed");
+                    defer allocator.free(chunks);
+                    for (template.methods, 0..) |m, i| {
+                        ms[i] = .{
+                            .arity = m.arity,
+                            .has_rest = m.has_rest,
+                            .params = m.params,
+                            .body = m.body,
+                        };
+                        chunks[i] = m.bytecode;
+                    }
+                    var variadic_node: ?node_mod.FnMethod = null;
+                    var variadic_chunk: ?*const opcode_mod.BytecodeChunk = null;
+                    if (template.variadic) |v| {
+                        variadic_node = .{
+                            .arity = v.arity,
+                            .has_rest = v.has_rest,
+                            .params = v.params,
+                            .body = v.body,
+                        };
+                        variadic_chunk = v.bytecode;
+                    }
                     const fn_node = node_mod.FnNode{
-                        .arity = template.arity,
-                        .has_rest = template.has_rest,
-                        .params = template.params,
-                        .body = template.body,
+                        .methods = ms,
+                        .variadic = variadic_node,
                         .slot_base = template.slot_base,
                     };
-                    stack[sp] = try tree_walk.allocFunctionWithBytecode(rt, fn_node, locals, bytecode);
+                    stack[sp] = try tree_walk.allocFunctionWithBytecode(rt, fn_node, locals, chunks, variadic_chunk);
                 }
                 sp += 1;
             },
@@ -520,6 +550,14 @@ fn matchExceptionClass(class_name: []const u8, thrown: Value) bool {
 
 fn raiseInternal(comptime detail: []const u8) anyerror {
     return error_catalog.raiseInternal(.{}, detail);
+}
+
+fn templateMethodsHaveAnyMissingChunk(template: *const tree_walk.Function) bool {
+    for (template.methods) |m| {
+        if (m.bytecode == null) return true;
+    }
+    if (template.variadic) |v| if (v.bytecode == null) return true;
+    return false;
 }
 
 /// Populate `rt.vtable` for the VM backend (ROADMAP §9.6 / 4.8). The
@@ -808,11 +846,14 @@ test "op_make_fn snapshots locals when template.slot_base > 0" {
     // Build a template Function with slot_base = 1, body returns
     // local 0 (which the closure snapshot will provide).
     const body: node_mod.Node = .{ .local_ref = .{ .name = "x", .index = 0 } };
-    const fn_node = node_mod.FnNode{
+    const methods = [_]node_mod.FnMethod{.{
         .arity = 0,
         .has_rest = false,
         .params = &.{},
         .body = &body,
+    }};
+    const fn_node = node_mod.FnNode{
+        .methods = &methods,
         .slot_base = 1,
     };
     // The template's bytecode body needs to actually produce a value;
@@ -825,7 +866,8 @@ test "op_make_fn snapshots locals when template.slot_base > 0" {
         .instructions = &template_instrs,
         .constants = &.{},
     };
-    const template_val = try tree_walk.allocFunctionTemplate(&f.rt, fn_node, &template_chunk);
+    const method_chunks = [_]?*const BytecodeChunk{&template_chunk};
+    const template_val = try tree_walk.allocFunctionTemplate(&f.rt, fn_node, &method_chunks, null);
 
     // Outer chunk: load local 5 (which the caller seeds with true),
     // make a closure (snapshot), then read its closure_bindings[0]
@@ -869,11 +911,14 @@ test "op_make_fn pushes the pre-allocated Function from the constants pool" {
     defer f.deinit();
 
     const body: node_mod.Node = .{ .constant = .{ .value = Value.true_val } };
-    const fn_node = node_mod.FnNode{
+    const methods = [_]node_mod.FnMethod{.{
         .arity = 0,
         .has_rest = false,
         .params = &.{},
         .body = &body,
+    }};
+    const fn_node = node_mod.FnNode{
+        .methods = &methods,
         .slot_base = 0,
     };
     const fn_val = try tree_walk.allocFunction(&f.rt, fn_node, &.{});

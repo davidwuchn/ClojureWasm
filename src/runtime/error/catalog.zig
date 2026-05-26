@@ -94,6 +94,13 @@ pub const Code = enum {
     fn_star_param_namespace_qualified,
     fn_star_rest_missing,
     fn_star_rest_not_symbol,
+    /// Two fixed-arity methods share the same required-arg count. JVM
+    /// Clojure rule 2 per ADR-0041 / row 7.8 cycle 1. args:
+    /// `.{ .arity = N }`.
+    fn_star_arity_duplicate,
+    /// More than one variadic `[& rest]` body. JVM rule 1 per ADR-0041
+    /// / row 7.8 cycle 1.
+    fn_star_variadic_duplicate,
 
     // --- Analysis (recur / throw / try / catch) ---
     recur_outside_target,
@@ -188,6 +195,10 @@ pub const Code = enum {
     arity_below_min,
     arity_out_of_range,
     arity_not_expected,
+    /// Multi-arity `fn*` (ADR-0041 / row 7.8 cycle 1) reached call
+    /// dispatch with no matching arity. args: `.{ .fn_name = "...",
+    /// .got = N, .arities = "1, 2, or 3" }`.
+    arity_not_expected_multi,
 
     // --- Unsupported / Tier ---
     /// Feature is on the cw roadmap but not yet implemented in this
@@ -406,6 +417,14 @@ pub fn entry(comptime code: Code) Entry {
         .fn_star_rest_not_symbol => .{
             .kind = .syntax_error, .phase = .analysis,
             .template = "fn* rest-parameter must be a symbol",
+        },
+        .fn_star_arity_duplicate => .{
+            .kind = .syntax_error, .phase = .analysis,
+            .template = "fn*: can't have two overloads with same arity ({[arity]d})",
+        },
+        .fn_star_variadic_duplicate => .{
+            .kind = .syntax_error, .phase = .analysis,
+            .template = "fn*: can't have more than 1 variadic overload",
         },
 
         // --- Analysis (recur / throw / try / catch) ---
@@ -692,6 +711,10 @@ pub fn entry(comptime code: Code) Entry {
         .arity_not_expected => .{
             .kind = .arity_error, .phase = .eval,
             .template = "Wrong number of args ({[got]d}) passed to {[fn_name]s}, expected {[expected]d}",
+        },
+        .arity_not_expected_multi => .{
+            .kind = .arity_error, .phase = .eval,
+            .template = "Wrong number of args ({[got]d}) passed to {[fn_name]s}, expected one of: {[arities]s}",
         },
 
         // --- Unsupported / Tier ---

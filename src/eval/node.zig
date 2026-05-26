@@ -154,22 +154,37 @@ pub const QuoteNode = struct {
     loc: SourceLocation = .{},
 };
 
-/// `(fn* [params] body)`. Variadic parameters are represented by
-/// `has_rest = true`; the rest-parameter is the last entry in
-/// `params` and is **not** counted in `arity`.
-pub const FnNode = struct {
+/// One arity body of a `fn*` form. Row 7.8 cycle 1 (ADR-0041)
+/// lifted `FnNode`'s flat single-arity fields into a slice of these,
+/// so JVM `(fn* ([x] body1) ([x y] body2))` parses cleanly. Variadic
+/// parameters are represented by `has_rest = true`; the rest-parameter
+/// is the last entry in `params` and is **not** counted in `arity`.
+/// Bytecode lives on the runtime-side `Function.methods` per-arity
+/// counterpart (`tree_walk.FunctionMethod`), not here — `node.zig`
+/// stays VM-agnostic.
+pub const FnMethod = struct {
     arity: u16,
     has_rest: bool = false,
     /// Parameter names (debug + error frames). Length equals `arity`
     /// when `has_rest` is false, `arity + 1` otherwise.
     params: []const []const u8,
     body: *const Node,
+};
+
+/// `(fn* [params] body)` or `(fn* ([params] body1) ([params] body2) ...)`.
+/// Single-arity ships as `methods.len == 1`, `variadic == null` per
+/// ADR-0041 Option B-extracted (uniform shape; no `single`/`multi`
+/// discriminant). Variadic body (cycle 2) lives in the `variadic` slot
+/// — JVM allows at most one variadic per fn (rule 1).
+pub const FnNode = struct {
+    methods: []const FnMethod,
+    variadic: ?FnMethod = null,
     /// First local-slot index this fn's parameters occupy. Inherited
     /// from the enclosing scope so a fn nested inside `let*` / `fn*`
     /// captures slots `[0, slot_base)` from the caller's frame as its
-    /// closure environment, and places parameters at `[slot_base,
-    /// slot_base + arity)`. Top-level fns have `slot_base == 0` and no
-    /// closure (Phase 3.11; ROADMAP §9.5).
+    /// closure environment, and each method's params land at
+    /// `[slot_base, slot_base + method.arity)`. Top-level fns have
+    /// `slot_base == 0` and no closure (Phase 3.11; ROADMAP §9.5).
     slot_base: u16 = 0,
     loc: SourceLocation = .{},
 };
@@ -428,13 +443,18 @@ test "IfNode supports optional else branch" {
 test "FnNode default has_rest is false" {
     const body = Node{ .constant = .{ .value = .nil_val } };
     const params = [_][]const u8{"x"};
-    const fn_node = Node{ .fn_node = .{
+    const methods = [_]FnMethod{.{
         .arity = 1,
         .params = &params,
         .body = &body,
+    }};
+    const fn_node = Node{ .fn_node = .{
+        .methods = &methods,
     } };
-    try testing.expect(!fn_node.fn_node.has_rest);
-    try testing.expectEqual(@as(u16, 1), fn_node.fn_node.arity);
+    try testing.expectEqual(@as(usize, 1), fn_node.fn_node.methods.len);
+    try testing.expect(!fn_node.fn_node.methods[0].has_rest);
+    try testing.expectEqual(@as(u16, 1), fn_node.fn_node.methods[0].arity);
+    try testing.expect(fn_node.fn_node.variadic == null);
 }
 
 test "DoNode accepts empty forms" {

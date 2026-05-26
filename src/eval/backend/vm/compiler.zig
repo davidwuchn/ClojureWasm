@@ -207,36 +207,44 @@ const Compiler = struct {
     }
 
     fn compileFn(self: *Compiler, n: node_mod.FnNode) Error!void {
-        // Compile the body in a fresh sub-compiler that shares the
-        // arena. Sub-compiler state isolation lets the outer compiler
-        // continue appending instructions after the nested chunk
-        // finalizes.
-        var sub: Compiler = .init(self.rt, self.arena);
-        defer sub.deinit();
-        try sub.compileNode(n.body);
-        try sub.emit(.op_ret, 0);
-        const body_chunk = try sub.finalize();
-
-        // Pin the chunk on the arena so the Function (which lives on
-        // rt.gpa) can reference it; arena lifetime matches body /
-        // params slices already referenced by Function.
-        const chunk_ptr = try self.arena.create(BytecodeChunk);
-        chunk_ptr.* = body_chunk;
+        // Row 7.8 cycle 1 (ADR-0041): emit one BytecodeChunk per
+        // FnMethod (and one for `variadic` if present). The Function
+        // dispatcher (`callFunction` / `op_make_fn`) selects the
+        // chunk matching the call's arity. Sub-compiler state
+        // isolation lets the outer compiler continue appending
+        // instructions after each nested chunk finalizes.
+        const method_chunks = try self.arena.alloc(?*const BytecodeChunk, n.methods.len);
+        for (n.methods, 0..) |m, i| {
+            method_chunks[i] = try self.compileFnMethodBody(m.body);
+        }
+        const variadic_chunk: ?*const BytecodeChunk = if (n.variadic) |v|
+            try self.compileFnMethodBody(v.body)
+        else
+            null;
 
         // Closure-less fns (slot_base == 0): allocate the final
         // Function at compile time and push as a constant. Closure
         // capture (slot_base > 0): allocate a *template* Function
         // (closure_bindings stays null); op_make_fn dispatcher
-        // snapshots the caller's locals at run time. Both shapes live
-        // in the constant pool — the dispatcher decides which by
-        // reading template.slot_base.
+        // snapshots the caller's locals at run time.
         const fn_val = if (n.slot_base == 0)
-            try tree_walk.allocFunctionWithBytecode(self.rt, n, &.{}, chunk_ptr)
+            try tree_walk.allocFunctionWithBytecode(self.rt, n, &.{}, method_chunks, variadic_chunk)
         else
-            try tree_walk.allocFunctionTemplate(self.rt, n, chunk_ptr);
+            try tree_walk.allocFunctionTemplate(self.rt, n, method_chunks, variadic_chunk);
 
         const idx = try self.addConstant(fn_val);
         try self.emit(.op_make_fn, idx);
+    }
+
+    fn compileFnMethodBody(self: *Compiler, body: *const Node) Error!*const BytecodeChunk {
+        var sub: Compiler = .init(self.rt, self.arena);
+        defer sub.deinit();
+        try sub.compileNode(body);
+        try sub.emit(.op_ret, 0);
+        const body_chunk = try sub.finalize();
+        const chunk_ptr = try self.arena.create(BytecodeChunk);
+        chunk_ptr.* = body_chunk;
+        return chunk_ptr;
     }
 
     fn compileLoop(self: *Compiler, n: node_mod.LoopNode) Error!void {
@@ -742,11 +750,14 @@ test "compile fn* (closure-less) allocates a Function with bytecode and emits op
 
     // (fn* [] true) — closure-less, zero-arg, body returns true.
     const body: Node = .{ .constant = .{ .value = Value.true_val } };
-    const node: Node = .{ .fn_node = .{
+    const methods = [_]node_mod.FnMethod{.{
         .arity = 0,
         .has_rest = false,
         .params = &.{},
         .body = &body,
+    }};
+    const node: Node = .{ .fn_node = .{
+        .methods = &methods,
         .slot_base = 0,
     } };
     const chunk = try f.compile(&node);
@@ -757,13 +768,14 @@ test "compile fn* (closure-less) allocates a Function with bytecode and emits op
     try testing.expectEqual(@as(u16, 0), chunk.instructions[0].operand);
     try testing.expectEqual(Opcode.op_ret, chunk.instructions[1].opcode);
 
-    // The constant is a Function Value whose bytecode body is the
-    // compiled (true ; ret) inner chunk.
+    // The constant is a Function Value whose first method's bytecode
+    // body is the compiled (true ; ret) inner chunk.
     const fn_val = chunk.constants[0];
     try testing.expectEqual(value_mod.Value.Tag.fn_val, fn_val.tag());
     const fn_ptr = fn_val.decodePtr(*const tree_walk.Function);
-    try testing.expect(fn_ptr.bytecode != null);
-    const body_chunk = fn_ptr.bytecode.?;
+    try testing.expectEqual(@as(usize, 1), fn_ptr.methods.len);
+    try testing.expect(fn_ptr.methods[0].bytecode != null);
+    const body_chunk = fn_ptr.methods[0].bytecode.?;
     try testing.expectEqual(@as(usize, 2), body_chunk.instructions.len);
     try testing.expectEqual(Opcode.op_const, body_chunk.instructions[0].opcode);
     try testing.expectEqual(Opcode.op_ret, body_chunk.instructions[1].opcode);
@@ -775,11 +787,14 @@ test "compile fn* with slot_base > 0 emits a template Function (closure capture 
     defer f.deinit();
 
     const body: Node = .{ .constant = .{ .value = Value.nil_val } };
-    const node: Node = .{ .fn_node = .{
+    const methods = [_]node_mod.FnMethod{.{
         .arity = 0,
         .has_rest = false,
         .params = &.{},
         .body = &body,
+    }};
+    const node: Node = .{ .fn_node = .{
+        .methods = &methods,
         .slot_base = 1,
     } };
     const chunk = try f.compile(&node);
