@@ -303,7 +303,9 @@ survey §3.1).
   neutrality).
 - `private/notes/phase7-T1-survey.md` — Step 0 survey (~440
   lines) carrying the gap inventory + sweep result.
-- `.dev/phase7_entry_prereq_triad.md` §T1 — operational driver
+- `.dev/archive/phase7_entry_prereq_triad.md` §T1 — operational
+  driver (archived 2026-05-26 after triad completion per its
+  self-described lifecycle).
   for this ADR's introducing cycle.
 
 ## Revision history

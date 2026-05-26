@@ -295,7 +295,8 @@ D-075's shape pre-empts its own Devil's-advocate).
   deferred concern D6 names).
 - `private/notes/phase7-T2-survey.md` — Step 0 survey (~808
   lines).
-- `.dev/phase7_entry_prereq_triad.md` §T2 — operational
+- `.dev/archive/phase7_entry_prereq_triad.md` §T2 — operational
+  driver (archived 2026-05-26 post-triad completion).
   driver for this cycle.
 - `src/runtime/keyword.zig` — verbatim template (303 lines).
 
