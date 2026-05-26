@@ -52,11 +52,12 @@ const lazy_seq = @import("../../runtime/lazy_seq.zig");
 const charset = @import("../../runtime/charset.zig");
 const td_mod = @import("../../runtime/type_descriptor.zig");
 
-/// Protocol fqcn the hybrid slow-path matches against `MethodEntry.protocol_name`.
-/// Bootstrap declares the protocol in `lang/clj/clojure/core.clj` so the fqcn
+/// Protocol fqcns the hybrid slow-paths match against `MethodEntry.protocol_name`.
+/// Bootstrap declares each protocol in `lang/clj/clojure/core.clj` so the fqcn
 /// `allocFqcn` stores at extend-type time is the bare symbol name (see
 /// `lang/primitive/protocol.zig:41-51`). Per ADR-0008 amendment 4 (row 7.7).
 const IPC_FQCN: []const u8 = "IPersistentCollection";
+const SEQABLE_FQCN: []const u8 = "Seqable";
 
 // --- count ---
 
@@ -157,11 +158,17 @@ pub fn seqFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) 
         .hash_set => if (set.count(coll) > 0) try set.seq(rt, coll) else .nil_val,
         .chunked_cons => coll,
         .lazy_seq => try lazy_seq.seq(rt, env, coll),
-        else => return error_catalog.raise(.type_arg_invalid, loc, .{
-            .fn_name = "seq",
-            .expected = "seqable? collection",
-            .actual = @tagName(coll.tag()),
-        }),
+        else => blk: {
+            // Row 7.7 cycle 2: outer-else routes through dispatch against
+            // `Seqable -seq`, reaching `(extend-type X Seqable -seq …)`
+            // overrides on defrecord / reified_instance receivers via the
+            // typed_instance descriptor + on native Tags via the row 7.3
+            // per-Tag descriptor registry. Raises protocol_no_satisfies
+            // when no MethodEntry is registered (supersedes the pre-7.7
+            // type_arg_invalid raise for non-seqable receivers).
+            var cs: dispatch.CallSite = .{};
+            break :blk try dispatch.dispatch(rt, env, &cs, coll, SEQABLE_FQCN, "-seq", args, loc);
+        },
     };
 }
 

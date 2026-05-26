@@ -124,4 +124,5 @@
 ;; ----------------------------------------------------------------
 
 (defprotocol IPersistentCollection (-count [c]))
+(defprotocol Seqable (-seq [c]))
 

@@ -90,3 +90,32 @@ if [[ "$diag" != *"satisfy"* ]] && [[ "$diag" != *"no method"* ]] && [[ "$diag" 
     fail "case4: expected protocol_no_satisfies diagnostic, got '$diag'"
 fi
 echo "PASS long_count_no_extend_raises_diagnostic"
+
+# --- Case 5 (cycle 2): defrecord reaches seq via Seqable extend-type ---
+# seq has no .typed_instance fast-path; today defrecord falls into the
+# outer else => raise. Row 7.7 cycle 2 rewires outer else through
+# dispatch.dispatch(..., "Seqable", "-seq", ...) so user
+# (extend-type Pair Seqable (-seq [_] …)) reaches seq.
+got=$("$BIN" - <<'EOF' 2>/dev/null
+(defrecord Pair [a b])
+(extend-type Pair Seqable (-seq [_] '(1 2)))
+(seq (->Pair 1 2))
+EOF
+) || fail "case5: non-zero exit ($got)"
+assert_eq 'defrecord_seq_via_extend_type' "$(last_line "$got")" '(1 2)'
+
+# --- Case 6 (cycle 2): native Tag (Long) reaches seq via outer-else slow-path ---
+got=$("$BIN" - <<'EOF' 2>/dev/null
+(def Long (rt/__native-type :integer))
+(extend-type Long Seqable (-seq [_] '(:a :b)))
+(seq 42)
+EOF
+) || fail "case6: non-zero exit ($got)"
+assert_eq 'long_seq_via_outer_else_slow_path' "$(last_line "$got")" '(:a :b)'
+
+# --- Case 7 (cycle 2): non-seqable native Tag without extend raises ---
+diag=$("$BIN" -e '(seq 42)' 2>&1 || true)
+if [[ "$diag" != *"satisfy"* ]] && [[ "$diag" != *"Seqable"* ]] && [[ "$diag" != *"no method"* ]]; then
+    fail "case7: expected protocol_no_satisfies diagnostic, got '$diag'"
+fi
+echo "PASS long_seq_no_extend_raises_diagnostic"
