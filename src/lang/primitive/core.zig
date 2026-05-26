@@ -18,6 +18,7 @@ const error_catalog = @import("../../runtime/error/catalog.zig");
 const SourceLocation = error_mod.SourceLocation;
 const dispatch = @import("../../runtime/dispatch.zig");
 const keyword_mod = @import("../../runtime/keyword.zig");
+const symbol_mod = @import("../../runtime/symbol.zig");
 const string_mod = @import("../../runtime/collection/string.zig");
 const print_mod = @import("../../runtime/print.zig");
 const charset_mod = @import("../../runtime/charset.zig");
@@ -320,9 +321,9 @@ pub fn natIntQ(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation
 
 /// `(keyword s)` / `(keyword ns s)` — intern a keyword Value.
 /// 1-arg: if `s` is already a keyword, return it (idempotent); if
-/// `s` is a string, intern `(nil, s)`. Other input types raise
-/// `feature_not_supported` for now (symbol → keyword conversion
-/// blocked on F-004 symbol Value).
+/// `s` is a string, intern `(nil, s)`; if `s` is a symbol, intern
+/// `(sym.ns, sym.name)` as a keyword. Other input types raise
+/// `feature_not_supported`.
 /// 2-arg: both must be strings; intern `(ns, name)`.
 pub fn keywordFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
     _ = env;
@@ -332,8 +333,12 @@ pub fn keywordFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocati
         if (x.tag() == .string) {
             return keyword_mod.intern(rt, null, string_mod.asString(x));
         }
+        if (x.tag() == .symbol) {
+            const s = symbol_mod.asSymbol(x);
+            return keyword_mod.intern(rt, s.ns, s.name);
+        }
         if (x.isNil()) return .nil_val;
-        return error_catalog.raise(.feature_not_supported, loc, .{ .name = "keyword conversion from non-string/non-keyword" });
+        return error_catalog.raise(.feature_not_supported, loc, .{ .name = "keyword conversion from non-string/non-keyword/non-symbol" });
     } else if (args.len == 2) {
         if (args[0].tag() != .string or args[1].tag() != .string)
             return error_catalog.raise(.feature_not_supported, loc, .{ .name = "keyword (2-arg) requires both ns and name to be strings" });
@@ -342,11 +347,38 @@ pub fn keywordFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocati
     return error_catalog.raise(.arity_out_of_range, loc, .{ .fn_name = "keyword", .got = args.len, .min = 1, .max = 2 });
 }
 
-/// `(name x)` — return the string name component of a keyword or
-/// string. For keywords, drops the `:` prefix and any `ns/` part.
-/// For strings, returns the string itself (idempotent). Other
-/// types raise `feature_not_supported` (symbol → name blocked on
-/// F-004 symbol Value).
+/// `(symbol s)` / `(symbol ns name)` — intern a Symbol Value
+/// (ADR-0037, F-004 Group A slot 1). 1-arg: if `s` is already a
+/// symbol, return it (idempotent); if `s` is a string, intern
+/// `(nil, s)`; if `s` is a keyword, intern `(kw.ns, kw.name)` as a
+/// symbol. Other input types raise `feature_not_supported`.
+/// 2-arg: both must be strings; intern `(ns, name)`.
+pub fn symbolFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = env;
+    if (args.len == 1) {
+        const x = args[0];
+        if (x.tag() == .symbol) return x;
+        if (x.tag() == .string) {
+            return symbol_mod.intern(rt, null, string_mod.asString(x));
+        }
+        if (x.tag() == .keyword) {
+            const kw = keyword_mod.asKeyword(x);
+            return symbol_mod.intern(rt, kw.ns, kw.name);
+        }
+        if (x.isNil()) return .nil_val;
+        return error_catalog.raise(.feature_not_supported, loc, .{ .name = "symbol conversion from non-string/non-symbol/non-keyword" });
+    } else if (args.len == 2) {
+        if (args[0].tag() != .string or args[1].tag() != .string)
+            return error_catalog.raise(.feature_not_supported, loc, .{ .name = "symbol (2-arg) requires both ns and name to be strings" });
+        return symbol_mod.intern(rt, string_mod.asString(args[0]), string_mod.asString(args[1]));
+    }
+    return error_catalog.raise(.arity_out_of_range, loc, .{ .fn_name = "symbol", .got = args.len, .min = 1, .max = 2 });
+}
+
+/// `(name x)` — return the string name component of a keyword,
+/// symbol, or string. For keywords + symbols, drops any `ns/` part
+/// (and keyword's `:` prefix). For strings, returns the string
+/// itself (idempotent).
 pub fn nameFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
     _ = env;
     try error_catalog.checkArity("name", args, 1, loc);
@@ -356,7 +388,11 @@ pub fn nameFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation)
         const kw = keyword_mod.asKeyword(x);
         return string_mod.alloc(rt, kw.name);
     }
-    return error_catalog.raise(.feature_not_supported, loc, .{ .name = "name on non-string/non-keyword" });
+    if (x.tag() == .symbol) {
+        const s = symbol_mod.asSymbol(x);
+        return string_mod.alloc(rt, s.name);
+    }
+    return error_catalog.raise(.feature_not_supported, loc, .{ .name = "name on non-string/non-keyword/non-symbol" });
 }
 
 /// `(println & args)` — render each arg human-readable to stdout
@@ -478,6 +514,7 @@ const ENTRIES = [_]Entry{
     .{ .name = "neg-int?", .f = &negIntQ },
     .{ .name = "nat-int?", .f = &natIntQ },
     .{ .name = "keyword", .f = &keywordFn },
+    .{ .name = "symbol", .f = &symbolFn },
     .{ .name = "name", .f = &nameFn },
     .{ .name = "println", .f = &printlnFn },
     .{ .name = "str", .f = &strFn },

@@ -44,6 +44,7 @@ const env_mod = @import("../../runtime/env.zig");
 const Env = env_mod.Env;
 const Var = env_mod.Var;
 const keyword = @import("../../runtime/keyword.zig");
+const symbol_mod = @import("../../runtime/symbol.zig");
 const string_collection = @import("../../runtime/collection/string.zig");
 const list_collection = @import("../../runtime/collection/list.zig");
 const big_int = @import("../../runtime/numeric/big_int.zig");
@@ -628,7 +629,7 @@ pub fn formToValue(rt: *Runtime, form: Form) AnalyzeError!Value {
         .keyword => |sym| try keyword.intern(rt, sym.ns, sym.name),
         .string => |s| try string_collection.alloc(rt, s),
         .list => |items| try listFormToValue(rt, items),
-        .symbol => error_catalog.raise(.feature_not_supported, form.location, .{ .name = "Quoted symbol as Value" }),
+        .symbol => |sym| try symbol_mod.intern(rt, sym.ns, sym.name),
         .vector => error_catalog.raise(.feature_not_supported, form.location, .{ .name = "Quoted vector as Value" }),
         .map => error_catalog.raise(.feature_not_supported, form.location, .{ .name = "Quoted map as Value" }),
         .set => error_catalog.raise(.feature_not_supported, form.location, .{ .name = "Quoted set as Value" }),
@@ -785,13 +786,21 @@ test "(do ...) gathers all sub-forms" {
     try testing.expectEqual(@as(usize, 3), n.do_node.forms.len);
 }
 
-test "(quote ...) lifts atoms; symbols still NotImplemented" {
+test "(quote ...) lifts atoms; symbols lift to interned Symbol Values" {
     var fix: TestFixture = undefined;
     try fix.init(testing.allocator);
     defer fix.deinit();
 
     try testing.expectEqual(Value.nil_val, (try fix.analyzeStr("(quote nil)")).quote_node.quoted);
-    try testing.expectError(AnalyzeError.NotImplemented, fix.analyzeStr("(quote x)"));
+
+    // ADR-0037 (T2, 2026-05-26): (quote sym) now interns a Symbol
+    // Value (F-004 Group A slot 1). The quoted slot carries a
+    // Value with .symbol tag, not the prior NotImplemented raise.
+    const sym_node = try fix.analyzeStr("(quote x)");
+    try testing.expect(sym_node.quote_node.quoted.tag() == .symbol);
+    const sym = symbol_mod.asSymbol(sym_node.quote_node.quoted);
+    try testing.expect(sym.ns == null);
+    try testing.expectEqualStrings("x", sym.name);
 }
 
 test "(let* [x 1] x) — single binding + body local_ref" {

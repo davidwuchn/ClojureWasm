@@ -37,6 +37,7 @@ const Writer = std.Io.Writer;
 const value_mod = @import("value/value.zig");
 const Value = value_mod.Value;
 const keyword = @import("keyword.zig");
+const symbol = @import("symbol.zig");
 const string_collection = @import("collection/string.zig");
 const list_collection = @import("collection/list.zig");
 const vector_collection = @import("collection/vector.zig");
@@ -75,6 +76,14 @@ pub fn printValue(w: *Writer, v: Value) Writer.Error!void {
                 try w.writeByte('/');
             }
             try w.writeAll(k.name);
+        },
+        .symbol => {
+            const s = symbol.asSymbol(v);
+            if (s.ns) |n| {
+                try w.writeAll(n);
+                try w.writeByte('/');
+            }
+            try w.writeAll(s.name);
         },
         .string => try printString(w, string_collection.asString(v)),
         .list => try printList(w, v),
@@ -274,6 +283,20 @@ test "keyword: with and without namespace" {
     var buf: [64]u8 = undefined;
     try testing.expectEqualStrings(":foo", try renderToBuf(&buf, k1));
     try testing.expectEqualStrings(":ns/bar", try renderToBuf(&buf, k2));
+}
+
+test "symbol: with and without namespace (no leading colon)" {
+    var th = std.Io.Threaded.init(testing.allocator, .{});
+    defer th.deinit();
+    var rt = Runtime.init(th.io(), testing.allocator);
+    defer rt.deinit();
+
+    const s1 = try symbol.intern(&rt, null, "foo");
+    const s2 = try symbol.intern(&rt, "ns", "bar");
+
+    var buf: [64]u8 = undefined;
+    try testing.expectEqualStrings("foo", try renderToBuf(&buf, s1));
+    try testing.expectEqualStrings("ns/bar", try renderToBuf(&buf, s2));
 }
 
 test "string: pr-str escapes" {

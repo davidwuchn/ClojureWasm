@@ -23,6 +23,7 @@
 
 const std = @import("std");
 const KeywordInterner = @import("keyword.zig").KeywordInterner;
+const SymbolInterner = @import("symbol.zig").SymbolInterner;
 const dispatch = @import("dispatch.zig");
 const gc_heap_mod = @import("gc/gc_heap.zig");
 const td_mod = @import("type_descriptor.zig");
@@ -44,9 +45,10 @@ pub const RequireResolverFn = *const fn (rt: *Runtime, ns_name: []const u8) anye
 /// Process-wide execution context.
 ///
 /// **Phase 2.1** carries `io` / `gpa` / `keywords` / `vtable` /
-/// `heap_objects`. Phase 5+ adds `gc: ?*MarkSweepGc`; Phase 3+ adds a
-/// `symbols: SymbolInterner`. Adding a field is OK; renaming or
-/// removing one is an ADR-level change.
+/// `heap_objects`. Phase 5+ adds `gc: ?*MarkSweepGc`; Phase 7 entry
+/// T2 (ADR-0037) added `symbols: SymbolInterner` parallel to
+/// `keywords`. Adding a field is OK; renaming or removing one is an
+/// ADR-level change.
 pub const Runtime = struct {
     /// IO hub. Every lock / unlock / file / net / sleep flows through
     /// this — Zig 0.16's mandatory IO DI.
@@ -60,6 +62,11 @@ pub const Runtime = struct {
     /// independent Runtimes (parallel tests / future multi-tenant
     /// nREPL) coexist without sharing a table.
     keywords: KeywordInterner,
+
+    /// Symbol interner. Parallel to `keywords` per ADR-0037 (F-004
+    /// Group A slot 1 impl). Same lifetime + ownership discipline:
+    /// interner-owned + gpa-allocated + pinned for Runtime lifetime.
+    symbols: SymbolInterner,
 
     /// Layer-0 → Layer-1+ dispatch table. Populated by the TreeWalk
     /// backend in Phase 2.6. While `null`, callers that would invoke
@@ -171,6 +178,7 @@ pub const Runtime = struct {
             .io = io,
             .gpa = gpa,
             .keywords = KeywordInterner.init(gpa),
+            .symbols = SymbolInterner.init(gpa),
             .gc = GcHeap.init(gpa),
             .types = std.StringHashMap(*const TypeDescriptor).init(gpa),
         };
@@ -218,6 +226,7 @@ pub const Runtime = struct {
         self.source_registry.deinit(self.gpa);
 
         self.gc.deinit();
+        self.symbols.deinit();
         self.keywords.deinit();
     }
 

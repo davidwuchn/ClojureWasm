@@ -170,3 +170,14 @@ test "diff: set_literal_node" {
     defer f.deinit();
     try f.check("(count #{1 2 3 4})", 4);
 }
+
+// ADR-0037 T2: Symbol heap Value reaches formToValue identically on
+// both backends via analyzeQuote (no Node variant added). This case
+// actively exercises ADR-0036 D1 parity contract for the new Value
+// class — both backends intern the same (ns, name) and compare via
+// pointer-eq, so `(name 'sym)` round-trip returns 3 chars.
+test "diff: symbol quote roundtrip + name" {
+    var f = try Fixture.init(testing.allocator);
+    defer f.deinit();
+    try f.check("(count (name 'foo))", 3);
+}
