@@ -89,6 +89,17 @@ dedicated cycle later. Runtime.deinit cleanup for diff_test
 process-lifetime descriptor handling deferred — surfaced at row
 7.6 cycle 4 when 2 of 4 planned diff_test cases needed deferral.
 
+## Stopped — user requested
+
+User explicit stop at HEAD `358e06f` (2026-05-26). Session closed
+rows 7.4 (defrecord, 6 cycles), 7.5 (reify, 4 cycles + ADR-0039),
+7.6 (.method dispatch + D-073 cluster, 2 cycles + ADR-0040). Gate
+green at stop: Mac 47/47 + OrbStack Ubuntu x86_64 46/46. Next
+session starts row 7.7 (D-069 polymorphic primitives + protocol
+extension) Step 0 survey. Stop-note triad (alt hypothesis / next
+experiment / blocker) in
+`private/notes/phase7-7.6-cycles-summary.md`.
+
 ## Guardrail refresh history
 
 See `git log -- .claude/rules .dev/decisions .dev/principle.md`
