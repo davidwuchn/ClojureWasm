@@ -149,10 +149,26 @@ pub fn isaCheck(hierarchy_ancestors: Value, child: Value, parent: Value) !bool {
     return try set_mod.contains(child_ancestors, parent);
 }
 
+/// Cycle 4b stub: dereference an IRef-shape hierarchy reference
+/// to the underlying hierarchy value. For Atom / Var values this
+/// would follow the ref; cycle 4b ships the identity path
+/// because no macro layer surfaces hierarchy IRefs yet (cycle 5
+/// adds `derive` / `(set-validator! global-hierarchy ...)`-shape
+/// surfaces that eventually carry Atom values). Test fixtures
+/// pass the hierarchy map directly via `hierarchy_ref`, which
+/// the identity path handles unchanged.
+pub fn derefHierarchy(rt: *Runtime, hierarchy_ref: Value) Value {
+    _ = rt;
+    return hierarchy_ref;
+}
+
 /// Resolve `dispatch_val` to a method Value on `mf`.
 ///
 /// Resolution order:
-///   0. `method_cache.get(dispatch_val)` → return (cycle 4a).
+///   0a. If `cached_hierarchy_snapshot` differs from the current
+///       `derefHierarchy(hierarchy_ref)` (identity), reset
+///       `method_cache` and update the snapshot.
+///   0b. `method_cache.get(dispatch_val)` → return.
 ///   1. Exact match in `method_table` → return.
 ///   2. Hierarchy walk via `isaCheck`. Zero matches → continue.
 ///      One match → return. >1 matches → `dominates` (prefer ∪
@@ -161,25 +177,24 @@ pub fn isaCheck(hierarchy_ancestors: Value, child: Value, parent: Value) !bool {
 ///   3. Default fallback (`default_dispatch_val`) → return.
 ///   4. No method anywhere → raise `multimethod_no_method`.
 ///
-/// Steps 1-4 update `method_cache` via `assoc` before returning
-/// so subsequent calls with the same `dispatch_val` short-circuit
-/// at step 0. Cache invalidation on hierarchy drift + `defmethod`
-/// table mutation lands at cycle 4b alongside the
-/// `cached_hierarchy_snapshot` identity-compare predicate. cycle
-/// 4a treats the cache as monotonic — primitives that mutate
-/// `method_table` (cycle 5's `__add_method!` /
-/// `__remove_method!`) are responsible for resetting
-/// `method_cache` then.
-///
-/// `mf.hierarchy_ref` carries the ancestors-map for cycle 2-3
-/// (no IRef indirection yet — cycle 4b wires `deref()` and full
-/// `:ancestors` extraction).
+/// Steps 1-4 update `method_cache` via `assoc` before returning.
+/// Cache invalidation on `defmethod` table mutation is the
+/// responsibility of the mutating primitives (cycle 5's
+/// `__add_method!` / `__remove_method!` reset `method_cache`
+/// themselves — JVM Clojure's `MultiFn.addMethod` follows the
+/// same pattern).
 pub fn getMethod(
     rt: *Runtime,
     mf: *MultiFn,
     dispatch_val: Value,
     loc: SourceLocation,
 ) anyerror!Value {
+    const current_hierarchy = derefHierarchy(rt, mf.hierarchy_ref);
+    if (@intFromEnum(current_hierarchy) != @intFromEnum(mf.cached_hierarchy_snapshot)) {
+        mf.method_cache = map_mod.empty();
+        mf.cached_hierarchy_snapshot = current_hierarchy;
+    }
+
     const cached = try map_mod.get(mf.method_cache, dispatch_val);
     if (cached.tag() != .nil) return cached;
 
@@ -607,6 +622,45 @@ test "getMethod: second call hits method_cache even after method_table is cleare
 
     const second = try getMethod(&fix.rt, mf, kw_a, .{});
     try testing.expectEqual(@intFromEnum(m_a), @intFromEnum(second));
+}
+
+test "getMethod: hierarchy change invalidates method_cache" {
+    var fix: TestFixture = undefined;
+    fix.init(testing.allocator);
+    defer fix.deinit();
+
+    const name_sym = try symbol.intern(&fix.rt, "test", "f");
+    const default_kw = try keyword.intern(&fix.rt, null, "default");
+    const dog = try keyword.intern(&fix.rt, null, "dog");
+    const animal = try keyword.intern(&fix.rt, null, "animal");
+    const mammal = try keyword.intern(&fix.rt, null, "mammal");
+    const m_animal = try keyword.intern(&fix.rt, null, "method-animal");
+    const m_mammal = try keyword.intern(&fix.rt, null, "method-mammal");
+
+    // hierarchy_1: {:dog #{:animal}}
+    const anc1_set = try set_mod.conj(&fix.rt, set_mod.empty(), animal);
+    const anc1 = try map_mod.assoc(&fix.rt, map_mod.empty(), dog, anc1_set);
+
+    // hierarchy_2: {:dog #{:mammal}}
+    const anc2_set = try set_mod.conj(&fix.rt, set_mod.empty(), mammal);
+    const anc2 = try map_mod.assoc(&fix.rt, map_mod.empty(), dog, anc2_set);
+
+    var mt = map_mod.empty();
+    mt = try map_mod.assoc(&fix.rt, mt, animal, m_animal);
+    mt = try map_mod.assoc(&fix.rt, mt, mammal, m_mammal);
+
+    const mf = try rt_gc_makeTestMultiFnWithHierarchy(&fix.rt, name_sym, mt, default_kw, anc1);
+
+    // First call resolves :dog via anc1 → :animal → m_animal, caches it.
+    const first = try getMethod(&fix.rt, mf, dog, .{});
+    try testing.expectEqual(@intFromEnum(m_animal), @intFromEnum(first));
+
+    // Swap the hierarchy. JVM's cachedHierarchy != hierarchy.deref()
+    // identity-compare must fire; cw v1's snapshot check is the same
+    // shape at the multimethod level.
+    mf.hierarchy_ref = anc2;
+    const second = try getMethod(&fix.rt, mf, dog, .{});
+    try testing.expectEqual(@intFromEnum(m_mammal), @intFromEnum(second));
 }
 
 test "getMethod: default-fallback result also fills method_cache" {
