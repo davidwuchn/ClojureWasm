@@ -812,15 +812,21 @@ fn expandWhenLet(
     return list(arena, if_let_items, loc);
 }
 
-// --- defrecord — §9.9 row 7.4 cycle 1 skeleton lowering ---
+// --- defrecord — §9.9 row 7.4 cycles 1-2 macro lowering ---
 //
-// `(defrecord Name [f1 f2 ...])` lowers to `(do (deftype Name [f1 f2 ...]))`.
-// Cycle 2 swaps the `deftype` form for a `(rt/__defrecord! Name [f...])`
-// primitive call that allocates a TypeDescriptor with `.kind = .defrecord`;
-// cycles 3-5 grow factory + protocol-method bodies. The cycle-1 shape
-// is the minimum that retires the STAGED_UNSUPPORTED_FORMS wedge — the
-// resulting TypeDescriptor still carries `.kind = .deftype` until
-// cycle 2 lands.
+// `(defrecord Name [f1 f2 ...])` lowers to
+//   `(do (rt/__defrecord! 'Name ['f1 'f2 ...]))`.
+//
+// Row 7.4 cycle 2 swapped the cycle-1 `(deftype ...)` placeholder for
+// the `rt/__defrecord!` Layer-2 primitive so the resulting
+// TypeDescriptor carries `.kind = .defrecord` (cycle 1 produced
+// `.kind = .deftype`). The primitive shares
+// `runtime/type_descriptor.zig::registerType` with `evalDeftype`.
+//
+// Cycles 3-5 grow the factory `->Name`, the protocol-method body
+// surface, and the implicit IPersistentMap arms in
+// `lang/primitive/collection.zig`; the `(do ...)` wrapper reserves
+// room for those additional forms.
 fn expandDefrecord(
     arena: std.mem.Allocator,
     rt: *Runtime,
@@ -835,22 +841,35 @@ fn expandDefrecord(
     if (args[1].data != .vector)
         return error_catalog.raise(.defrecord_fields_not_vector, args[1].location, .{});
 
-    for (args[1].data.vector) |field_form| {
+    const fields_in = args[1].data.vector;
+    const quoted_fields = try arena.alloc(Form, fields_in.len);
+    for (fields_in, 0..) |field_form, i| {
         if (field_form.data != .symbol or field_form.data.symbol.ns != null)
             return error_catalog.raise(.defrecord_field_invalid, field_form.location, .{});
+        var q = try arena.alloc(Form, 2);
+        q[0] = sym("quote", loc);
+        q[1] = field_form;
+        quoted_fields[i] = try list(arena, q, loc);
     }
+    const fields_vec = try vec(arena, quoted_fields, loc);
 
-    // (deftype Name [fields])
-    var deftype_items = try arena.alloc(Form, 3);
-    deftype_items[0] = sym("deftype", loc);
-    deftype_items[1] = args[0];
-    deftype_items[2] = args[1];
-    const deftype_form = try list(arena, deftype_items, loc);
+    // (quote Name)
+    var quoted_name_items = try arena.alloc(Form, 2);
+    quoted_name_items[0] = sym("quote", loc);
+    quoted_name_items[1] = args[0];
+    const quoted_name = try list(arena, quoted_name_items, loc);
 
-    // (do (deftype Name [fields]))
+    // (rt/__defrecord! 'Name ['f1 'f2 ...])
+    var call_items = try arena.alloc(Form, 3);
+    call_items[0] = .{ .data = .{ .symbol = .{ .ns = "rt", .name = "__defrecord!" } }, .location = loc };
+    call_items[1] = quoted_name;
+    call_items[2] = fields_vec;
+    const defrecord_call = try list(arena, call_items, loc);
+
+    // (do (rt/__defrecord! ...))
     var do_items = try arena.alloc(Form, 2);
     do_items[0] = sym("do", loc);
-    do_items[1] = deftype_form;
+    do_items[1] = defrecord_call;
     return list(arena, do_items, loc);
 }
 
@@ -1195,7 +1214,7 @@ test "expandExtendProtocol single section drops the (do ...) wrapper" {
 
 // --- row 7.4 cycle 1 — `expandDefrecord` ---
 
-test "expandDefrecord lowers (defrecord Name [f1 f2]) to (do (deftype Name [f1 f2]))" {
+test "expandDefrecord lowers (defrecord Name [f1 f2]) to (do (rt/__defrecord! 'Name ['f1 'f2]))" {
     var fix: TestFixture = undefined;
     try fix.init(testing.allocator);
     defer fix.deinit();
@@ -1213,14 +1232,25 @@ test "expandDefrecord lowers (defrecord Name [f1 f2]) to (do (deftype Name [f1 f
     try expectSymbolEq(out.data.list[0], "do");
     try testing.expectEqual(@as(usize, 2), out.data.list.len);
 
-    const deftype_form = out.data.list[1];
-    try testing.expect(deftype_form.data == .list);
-    try expectSymbolEq(deftype_form.data.list[0], "deftype");
-    try expectSymbolEq(deftype_form.data.list[1], "Foo");
-    try testing.expect(deftype_form.data.list[2].data == .vector);
-    try testing.expectEqual(@as(usize, 2), deftype_form.data.list[2].data.vector.len);
-    try expectSymbolEq(deftype_form.data.list[2].data.vector[0], "x");
-    try expectSymbolEq(deftype_form.data.list[2].data.vector[1], "y");
+    // (rt/__defrecord! (quote Foo) [(quote x) (quote y)])
+    const call_form = out.data.list[1];
+    try testing.expect(call_form.data == .list);
+    try testing.expectEqualStrings("rt", call_form.data.list[0].data.symbol.ns.?);
+    try testing.expectEqualStrings("__defrecord!", call_form.data.list[0].data.symbol.name);
+
+    const quoted_name = call_form.data.list[1];
+    try testing.expect(quoted_name.data == .list);
+    try expectSymbolEq(quoted_name.data.list[0], "quote");
+    try expectSymbolEq(quoted_name.data.list[1], "Foo");
+
+    const fields_out = call_form.data.list[2];
+    try testing.expect(fields_out.data == .vector);
+    try testing.expectEqual(@as(usize, 2), fields_out.data.vector.len);
+
+    const quoted_x = fields_out.data.vector[0];
+    try testing.expect(quoted_x.data == .list);
+    try expectSymbolEq(quoted_x.data.list[0], "quote");
+    try expectSymbolEq(quoted_x.data.list[1], "x");
 }
 
 test "expandDefrecord rejects missing field-vector via defrecord_form_incomplete" {

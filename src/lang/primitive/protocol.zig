@@ -248,6 +248,61 @@ pub fn nativeType(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocat
     });
 }
 
+/// `(rt/__defrecord! 'Name ['field-syms...])` — register a fresh
+/// TypeDescriptor with `.kind = .defrecord`. The macro
+/// `expandDefrecord` (row 7.4 cycle 1) emits this call; the
+/// underlying registration logic lives in
+/// `runtime/type_descriptor.zig::registerType` and is shared with
+/// `evalDeftype` per F-009. Returns `nil`.
+///
+/// Implements clojure.core/defrecord registration.
+/// Spec: `(defrecord Name [fields...])` creates a class Name with
+///   - declared positional fields
+///   - implicit IPersistentMap semantics (get/assoc/keys/vals over
+///     field-name keywords — landed across row 7.4 cycles 3-5).
+/// JVM reference: clojure.core/defrecord in clojure/core_deftype.clj L387.
+/// cw v1 tier: A (row 7.4 cycle 2 — descriptor kind landed).
+pub fn defrecordPrim(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = env;
+    try error_catalog.checkArity("__defrecord!", args, 2, loc);
+    if (args[0].tag() != .symbol) {
+        return error_catalog.raise(.type_arg_invalid, loc, .{
+            .fn_name = "__defrecord!",
+            .expected = "symbol",
+            .actual = @tagName(args[0].tag()),
+        });
+    }
+    if (args[1].tag() != .vector) {
+        return error_catalog.raise(.type_arg_invalid, loc, .{
+            .fn_name = "__defrecord!",
+            .expected = "vector",
+            .actual = @tagName(args[1].tag()),
+        });
+    }
+
+    const name_sym = symbol_mod.asSymbol(args[0]);
+    const len = vector_mod.count(args[1]);
+    // Collect field names; borrowed view into the Symbol Values
+    // (registerType `dupe`s each into process-lifetime storage).
+    const field_names = try rt.gpa.alloc([]const u8, len);
+    defer rt.gpa.free(field_names);
+    var i: u32 = 0;
+    while (i < len) : (i += 1) {
+        const elt = vector_mod.nth(args[1], i);
+        if (elt.tag() != .symbol) {
+            return error_catalog.raise(.type_arg_invalid, loc, .{
+                .fn_name = "__defrecord!",
+                .expected = "symbol",
+                .actual = @tagName(elt.tag()),
+            });
+        }
+        field_names[i] = symbol_mod.asSymbol(elt).name;
+    }
+
+    try td_mod.registerType(rt, name_sym.name, field_names, .defrecord);
+    return Value.nil_val;
+}
+
 /// `(rt/__satisfies? proto val)` — returns true iff `val`'s
 /// TypeDescriptor (or any ancestor on its `.parent` chain) carries
 /// a method entry for the protocol. typed_instance receivers carry
@@ -283,6 +338,7 @@ const ENTRIES = [_]Entry{
     .{ .name = "__extend-type!", .f = &extendType },
     .{ .name = "__satisfies?", .f = &satisfiesPrim },
     .{ .name = "__native-type", .f = &nativeType },
+    .{ .name = "__defrecord!", .f = &defrecordPrim },
 };
 
 pub fn register(env: *Env, rt_ns: *env_mod.Namespace) !void {
@@ -554,5 +610,52 @@ test "__extend-type! rejects a non-type_descriptor target" {
     try testing.expectError(
         error.TypeError,
         extendType(&fix.rt, &fix.env, &[_]Value{ Value.initInteger(7), proto_val, impls }, .{}),
+    );
+}
+
+// --- row 7.4 cycle 2 — __defrecord! primitive ---
+
+test "__defrecord! registers a TypeDescriptor with .kind = .defrecord" {
+    var fix: TestFixture = undefined;
+    try fix.init(testing.allocator);
+    defer fix.deinit();
+
+    const name_sym = try symbol_mod.intern(&fix.rt, null, "Point");
+    var fields_vec = vector_mod.empty();
+    fields_vec = try vector_mod.conj(&fix.rt, fields_vec, try symbol_mod.intern(&fix.rt, null, "x"));
+    fields_vec = try vector_mod.conj(&fix.rt, fields_vec, try symbol_mod.intern(&fix.rt, null, "y"));
+
+    const result = try defrecordPrim(&fix.rt, &fix.env, &[_]Value{ name_sym, fields_vec }, .{});
+    try testing.expectEqual(Value.nil_val, result);
+
+    const td = fix.rt.types.get("Point") orelse return error.TestUnexpectedResult;
+    try testing.expectEqual(td_mod.TypeKind.defrecord, td.kind);
+    const layout = td.field_layout orelse return error.TestUnexpectedResult;
+    try testing.expectEqual(@as(usize, 2), layout.len);
+    try testing.expectEqualStrings("x", layout[0].name);
+    try testing.expectEqualStrings("y", layout[1].name);
+}
+
+test "__defrecord! rejects a non-symbol name" {
+    var fix: TestFixture = undefined;
+    try fix.init(testing.allocator);
+    defer fix.deinit();
+
+    const fields_vec = vector_mod.empty();
+    try testing.expectError(
+        error.TypeError,
+        defrecordPrim(&fix.rt, &fix.env, &[_]Value{ Value.initInteger(42), fields_vec }, .{}),
+    );
+}
+
+test "__defrecord! rejects a non-vector fields argument" {
+    var fix: TestFixture = undefined;
+    try fix.init(testing.allocator);
+    defer fix.deinit();
+
+    const name_sym = try symbol_mod.intern(&fix.rt, null, "Foo");
+    try testing.expectError(
+        error.TypeError,
+        defrecordPrim(&fix.rt, &fix.env, &[_]Value{ name_sym, Value.initInteger(7) }, .{}),
     );
 }

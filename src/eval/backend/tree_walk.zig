@@ -391,46 +391,13 @@ fn evalSetLiteral(rt: *Runtime, env: *Env, locals: []Value, n: node_mod.SetLiter
 
 const type_descriptor_mod = @import("../../runtime/type_descriptor.zig");
 
-/// Evaluate a `(deftype Name [f1 f2 ...])` form. Allocates a fresh
-/// process-lifetime TypeDescriptor on `rt.gpa` and registers it in
-/// `rt.types` keyed on the declared name. Returns `nil` (Clojure's
-/// `deftype` return value).
+/// Evaluate a `(deftype Name [f1 f2 ...])` form. Thin wrapper over
+/// `type_descriptor.registerType` — row 7.4 cycle 2 lifted the alloc
+/// + register logic into the runtime so the `__defrecord!` Layer-2
+/// primitive can land `.kind = .defrecord` without duplicating the
+/// body.
 fn evalDeftype(rt: *Runtime, n: node_mod.DeftypeNode) !Value {
-    // Build the field_layout slice on rt.gpa (process-lifetime).
-    const layout = try rt.gpa.alloc(type_descriptor_mod.TypeDescriptor.FieldEntry, n.fields.len);
-    errdefer rt.gpa.free(layout);
-    for (n.fields, 0..) |fname, i| {
-        const dup = try rt.gpa.dupe(u8, fname);
-        layout[i] = .{ .name = dup, .index = @intCast(i) };
-    }
-
-    const td = try rt.gpa.create(type_descriptor_mod.TypeDescriptor);
-    errdefer rt.gpa.destroy(td);
-    const fqcn = try rt.gpa.dupe(u8, n.name);
-    td.* = .{
-        .fqcn = fqcn,
-        .kind = .deftype,
-        .field_layout = layout,
-        .protocol_impls = &.{},
-        .method_table = &.{},
-        .parent = null,
-        .meta = .nil_val,
-    };
-
-    // Re-register: replacing an existing entry frees the old one to
-    // keep `rt.types` consistent across REPL re-defs.
-    if (rt.types.fetchRemove(n.name)) |old| {
-        rt.gpa.free(old.key);
-        if (old.value.field_layout) |old_layout| {
-            for (old_layout) |fe| rt.gpa.free(fe.name);
-            rt.gpa.free(old_layout);
-        }
-        if (old.value.fqcn) |o_n| rt.gpa.free(o_n);
-        rt.gpa.destroy(@constCast(old.value));
-    }
-    const key = try rt.gpa.dupe(u8, n.name);
-    errdefer rt.gpa.free(key);
-    try rt.types.put(key, td);
+    try type_descriptor_mod.registerType(rt, n.name, n.fields, .deftype);
     return .nil_val;
 }
 

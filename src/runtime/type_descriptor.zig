@@ -194,6 +194,57 @@ pub const ReifiedInstance = extern struct {
     }
 };
 
+/// Allocate a TypeDescriptor on `rt.gpa` with the declared field
+/// layout and register it in `rt.types` under `name`. Re-registering
+/// the same name frees the previous descriptor (keeps the REPL
+/// re-`def` path clean). `field_names` is borrowed; each entry is
+/// `dupe`'d into the descriptor.
+///
+/// Shared by `evalDeftype` (TreeWalk + VM) and the `__defrecord!`
+/// Layer-2 primitive — both lower to the same Layer-0 surface per
+/// F-009 (feature-implementation neutrality). Row 7.4 cycle 2 lifted
+/// this body out of `evalDeftype` so the `defrecord` macro can land
+/// `.kind = .defrecord` without an analyzer Node fork.
+pub fn registerType(
+    rt: *Runtime,
+    name: []const u8,
+    field_names: []const []const u8,
+    kind: TypeKind,
+) !void {
+    const layout = try rt.gpa.alloc(TypeDescriptor.FieldEntry, field_names.len);
+    errdefer rt.gpa.free(layout);
+    for (field_names, 0..) |fname, i| {
+        const dup = try rt.gpa.dupe(u8, fname);
+        layout[i] = .{ .name = dup, .index = @intCast(i) };
+    }
+
+    const td = try rt.gpa.create(TypeDescriptor);
+    errdefer rt.gpa.destroy(td);
+    const fqcn = try rt.gpa.dupe(u8, name);
+    td.* = .{
+        .fqcn = fqcn,
+        .kind = kind,
+        .field_layout = layout,
+        .protocol_impls = &.{},
+        .method_table = &.{},
+        .parent = null,
+        .meta = Value.nil_val,
+    };
+
+    if (rt.types.fetchRemove(name)) |old| {
+        rt.gpa.free(old.key);
+        if (old.value.field_layout) |old_layout| {
+            for (old_layout) |fe| rt.gpa.free(fe.name);
+            rt.gpa.free(old_layout);
+        }
+        if (old.value.fqcn) |o_n| rt.gpa.free(o_n);
+        rt.gpa.destroy(@constCast(old.value));
+    }
+    const key = try rt.gpa.dupe(u8, name);
+    errdefer rt.gpa.free(key);
+    try rt.types.put(key, td);
+}
+
 /// Allocate a TypedInstance on the GC heap with `field_values` copied
 /// into a freshly-allocated `gc.infra` array. Returns a Value tagged
 /// `.typed_instance`.
