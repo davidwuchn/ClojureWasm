@@ -190,8 +190,10 @@ const SPECIAL_FORMS = std.StaticStringMap(SpecialFormKind).initComptime(.{
 /// amendment 2. Each entry raises `unsupported_feature` with the
 /// form name in the `.name` slot. Task 4.26.b later promotes these
 /// to named per-form Codes (`deftype_not_supported`, etc.).
+///
+/// Row 7.4 cycle 1 retired `"defrecord"` — it now lowers via
+/// `expandDefrecord` in `src/lang/macro_transforms.zig`.
 const STAGED_UNSUPPORTED_FORMS = std.StaticStringMap(void).initComptime(.{
-    .{ "defrecord", {} },
     .{ "reify", {} },
     .{ "definterface", {} },
 });
@@ -1049,8 +1051,11 @@ test "field access (.x inst) analyses into field_access_node" {
     try testing.expectEqualStrings("x", n.field_access_node.field_name);
 }
 
-test "defrecord / reify / definterface still raise unsupported_feature (5.12.b/c)" {
-    inline for ([_][]const u8{ "defrecord", "reify", "definterface" }) |form_name| {
+test "reify / definterface still raise unsupported_feature (5.12.c)" {
+    // Row 7.4 cycle 1: `defrecord` retired from STAGED_UNSUPPORTED_FORMS;
+    // lowered via `expandDefrecord` in src/lang/macro_transforms.zig.
+    // `reify` lands at row 7.5, `definterface` later.
+    inline for ([_][]const u8{ "reify", "definterface" }) |form_name| {
         var fix: TestFixture = undefined;
         try fix.init(testing.allocator);
         defer fix.deinit();
@@ -1063,6 +1068,11 @@ test "defrecord / reify / definterface still raise unsupported_feature (5.12.b/c
         try testing.expect(std.mem.find(u8, info.message, "not supported in ClojureWasm") != null);
     }
 }
+
+// Row 7.4 cycle 1: `defrecord` parses cleanly via `expandDefrecord`
+// (covered by `test/e2e/phase7_defrecord.sh` since the analyzer
+// TestFixture cannot register Layer-2 macros without an upward zone
+// import — see `.claude/rules/zone_deps.md`).
 
 // --- ADR-0033 D4 + D8: private + unsupported metadata checks ---
 

@@ -150,6 +150,10 @@ pub const Code = enum {
     defprotocol_form_incomplete,
     defprotocol_name_invalid,
     defprotocol_method_invalid,
+    defrecord_form_incomplete,
+    defrecord_name_invalid,
+    defrecord_fields_not_vector,
+    defrecord_field_invalid,
     extend_type_form_incomplete,
     extend_type_method_invalid,
     extend_protocol_form_incomplete,
@@ -577,6 +581,22 @@ pub fn entry(comptime code: Code) Entry {
         .defprotocol_method_invalid => .{
             .kind = .syntax_error, .phase = .macroexpand,
             .template = "defprotocol method signature must be a list `(method-name [params...])`",
+        },
+        .defrecord_form_incomplete => .{
+            .kind = .syntax_error, .phase = .macroexpand,
+            .template = "defrecord requires a name and a field vector",
+        },
+        .defrecord_name_invalid => .{
+            .kind = .syntax_error, .phase = .macroexpand,
+            .template = "defrecord name must be an unqualified symbol",
+        },
+        .defrecord_fields_not_vector => .{
+            .kind = .syntax_error, .phase = .macroexpand,
+            .template = "defrecord fields must be a vector",
+        },
+        .defrecord_field_invalid => .{
+            .kind = .syntax_error, .phase = .macroexpand,
+            .template = "defrecord field must be an unqualified symbol",
         },
         .extend_type_form_incomplete => .{
             .kind = .syntax_error, .phase = .macroexpand,

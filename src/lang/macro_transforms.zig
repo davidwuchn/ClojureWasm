@@ -93,6 +93,7 @@ const BOOTSTRAP = [_]Entry{
     .{ .name = "defprotocol", .expand = expandDefprotocol },
     .{ .name = "extend-type", .expand = expandExtendType },
     .{ .name = "extend-protocol", .expand = expandExtendProtocol },
+    .{ .name = "defrecord", .expand = expandDefrecord },
 };
 
 // --- Form-construction conveniences ---
@@ -811,6 +812,48 @@ fn expandWhenLet(
     return list(arena, if_let_items, loc);
 }
 
+// --- defrecord — §9.9 row 7.4 cycle 1 skeleton lowering ---
+//
+// `(defrecord Name [f1 f2 ...])` lowers to `(do (deftype Name [f1 f2 ...]))`.
+// Cycle 2 swaps the `deftype` form for a `(rt/__defrecord! Name [f...])`
+// primitive call that allocates a TypeDescriptor with `.kind = .defrecord`;
+// cycles 3-5 grow factory + protocol-method bodies. The cycle-1 shape
+// is the minimum that retires the STAGED_UNSUPPORTED_FORMS wedge — the
+// resulting TypeDescriptor still carries `.kind = .deftype` until
+// cycle 2 lands.
+fn expandDefrecord(
+    arena: std.mem.Allocator,
+    rt: *Runtime,
+    args: []const Form,
+    loc: SourceLocation,
+) macro_dispatch.ExpandError!Form {
+    _ = rt;
+    if (args.len < 2)
+        return error_catalog.raise(.defrecord_form_incomplete, loc, .{});
+    if (args[0].data != .symbol or args[0].data.symbol.ns != null)
+        return error_catalog.raise(.defrecord_name_invalid, args[0].location, .{});
+    if (args[1].data != .vector)
+        return error_catalog.raise(.defrecord_fields_not_vector, args[1].location, .{});
+
+    for (args[1].data.vector) |field_form| {
+        if (field_form.data != .symbol or field_form.data.symbol.ns != null)
+            return error_catalog.raise(.defrecord_field_invalid, field_form.location, .{});
+    }
+
+    // (deftype Name [fields])
+    var deftype_items = try arena.alloc(Form, 3);
+    deftype_items[0] = sym("deftype", loc);
+    deftype_items[1] = args[0];
+    deftype_items[2] = args[1];
+    const deftype_form = try list(arena, deftype_items, loc);
+
+    // (do (deftype Name [fields]))
+    var do_items = try arena.alloc(Form, 2);
+    do_items[0] = sym("do", loc);
+    do_items[1] = deftype_form;
+    return list(arena, do_items, loc);
+}
+
 // --- tests ---
 
 const testing = std.testing;
@@ -1148,4 +1191,44 @@ test "expandExtendProtocol single section drops the (do ...) wrapper" {
     const out = try expandExtendProtocol(arena, &fix.rt, &args, .{});
     try testing.expect(out.data == .list);
     try expectSymbolEq(out.data.list[0], "extend-type");
+}
+
+// --- row 7.4 cycle 1 — `expandDefrecord` ---
+
+test "expandDefrecord lowers (defrecord Name [f1 f2]) to (do (deftype Name [f1 f2]))" {
+    var fix: TestFixture = undefined;
+    try fix.init(testing.allocator);
+    defer fix.deinit();
+
+    const arena = fix.arena.allocator();
+    const name_sym = sym("Foo", .{});
+    const f1_sym = sym("x", .{});
+    const f2_sym = sym("y", .{});
+    const fields_v = try arena.dupe(Form, &.{ f1_sym, f2_sym });
+    const fields_form = Form{ .data = .{ .vector = fields_v }, .location = .{} };
+
+    const args = [_]Form{ name_sym, fields_form };
+    const out = try expandDefrecord(arena, &fix.rt, &args, .{});
+    try testing.expect(out.data == .list);
+    try expectSymbolEq(out.data.list[0], "do");
+    try testing.expectEqual(@as(usize, 2), out.data.list.len);
+
+    const deftype_form = out.data.list[1];
+    try testing.expect(deftype_form.data == .list);
+    try expectSymbolEq(deftype_form.data.list[0], "deftype");
+    try expectSymbolEq(deftype_form.data.list[1], "Foo");
+    try testing.expect(deftype_form.data.list[2].data == .vector);
+    try testing.expectEqual(@as(usize, 2), deftype_form.data.list[2].data.vector.len);
+    try expectSymbolEq(deftype_form.data.list[2].data.vector[0], "x");
+    try expectSymbolEq(deftype_form.data.list[2].data.vector[1], "y");
+}
+
+test "expandDefrecord rejects missing field-vector via defrecord_form_incomplete" {
+    var fix: TestFixture = undefined;
+    try fix.init(testing.allocator);
+    defer fix.deinit();
+
+    const arena = fix.arena.allocator();
+    const args = [_]Form{sym("Foo", .{})};
+    try testing.expectError(error.SyntaxError, expandDefrecord(arena, &fix.rt, &args, .{}));
 }
