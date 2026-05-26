@@ -112,6 +112,11 @@ pub fn loadCore(
     macro_table: *const macro_dispatch.Table,
 ) !void {
     for (FILES) |file| {
+        // ADR-0035 D7: register the file's bytes so the renderer's
+        // per-file SourceContext lookup hits during bootstrap-time
+        // errors. Idempotent — re-running loadCore (rare) reuses
+        // the first-writer entry.
+        try rt.registerSource(file.label, file.source);
         var reader = Reader.init(arena, file.source);
         while (true) {
             const form_opt = try reader.read();

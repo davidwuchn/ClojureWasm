@@ -19,6 +19,7 @@
 const std = @import("std");
 const Writer = std.Io.Writer;
 const error_mod = @import("info.zig");
+const runtime_mod = @import("../runtime.zig");
 
 /// Source context passed to the renderer. The caller (typically
 /// `main.zig`) knows the filename label and the full source text.
@@ -52,6 +53,26 @@ pub fn extractLine(source: []const u8, line_num: u32) ?[]const u8 {
     }
     if (current_line == line_num and line_start < source.len) return source[line_start..];
     return null;
+}
+
+/// Render `info` using `rt.source_registry` for source-line preview
+/// when `info.location.file` matches a registered label; otherwise
+/// fall back to `default_ctx.text`. ADR-0035 D7 / D-058 closure.
+/// Bootstrap-time errors land at the right file's bytes; user-input
+/// errors keep using their caller-supplied SourceContext.
+pub fn formatErrorWithRegistry(
+    info: error_mod.Info,
+    rt: *runtime_mod.Runtime,
+    default_ctx: SourceContext,
+    w: *Writer,
+    opts: Options,
+) Writer.Error!void {
+    const file = info.location.file;
+    const ctx = if (file.len > 0 and !std.mem.eql(u8, file, "unknown"))
+        (rt.lookupSource(file) orelse default_ctx)
+    else
+        default_ctx;
+    try formatErrorWithContext(info, ctx, w, opts);
 }
 
 /// Render `info` (with optional source context) to `w`. Always returns
@@ -201,4 +222,53 @@ test "formatErrorWithContext: prefers info.location.file when set" {
     var w: Writer = .fixed(&buf);
     try formatErrorWithContext(info, ctx, &w, .{});
     try testing.expect(std.mem.startsWith(u8, w.buffered(), "real.clj:1:0:"));
+}
+
+test "formatErrorWithRegistry uses registry entry when info.location.file matches" {
+    var th = std.Io.Threaded.init(testing.allocator, .{});
+    defer th.deinit();
+    var rt = runtime_mod.Runtime.init(th.io(), testing.allocator);
+    defer rt.deinit();
+
+    // Register two different files; only `<clojure.set>` should be
+    // consulted when info.location.file matches it.
+    try rt.registerSource("<bootstrap>", "(in-ns 'clojure.core)\n(def x 1)\n");
+    try rt.registerSource("<clojure.set>", "(in-ns 'clojure.set)\n(def union :stub)\n");
+
+    const info = error_mod.Info{
+        .kind = .syntax_error,
+        .phase = .parse,
+        .message = "demo",
+        .location = .{ .file = "<clojure.set>", .line = 2, .column = 0 },
+    };
+    const fallback = SourceContext{ .file = "<-e>", .text = "wrong-source" };
+
+    var buf: [256]u8 = undefined;
+    var w: Writer = .fixed(&buf);
+    try formatErrorWithRegistry(info, &rt, fallback, &w, .{});
+    // Source-line preview must use the per-file registry entry, not
+    // the fallback `<-e>` ctx text.
+    try testing.expect(std.mem.find(u8, w.buffered(), "(def union :stub)") != null);
+    try testing.expect(std.mem.find(u8, w.buffered(), "wrong-source") == null);
+}
+
+test "formatErrorWithRegistry falls back to default_ctx when label is unknown" {
+    var th = std.Io.Threaded.init(testing.allocator, .{});
+    defer th.deinit();
+    var rt = runtime_mod.Runtime.init(th.io(), testing.allocator);
+    defer rt.deinit();
+
+    const info = error_mod.Info{
+        .kind = .syntax_error,
+        .phase = .parse,
+        .message = "demo",
+        .location = .{ .file = "<-e>", .line = 1, .column = 0 },
+    };
+    const fallback = SourceContext{ .file = "<-e>", .text = "(+ 1 2)" };
+
+    var buf: [256]u8 = undefined;
+    var w: Writer = .fixed(&buf);
+    try formatErrorWithRegistry(info, &rt, fallback, &w, .{});
+    // No registry entry — must use fallback's text.
+    try testing.expect(std.mem.find(u8, w.buffered(), "(+ 1 2)") != null);
 }

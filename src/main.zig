@@ -143,9 +143,13 @@ pub fn main(init: std.process.Init) !void {
     // `<bootstrap>` source label and are routed through the same
     // catch path as user input — a broken prologue surfaces as a
     // diagnostic, not a panic.
+    // ADR-0035 D7 / D-058 closure: bootstrap-time errors render via
+    // `rt.source_registry`, which `bootstrap.loadCore` populates per
+    // file. `bootstrap_ctx` remains the fallback for the first-file
+    // case where the registry has not yet been populated.
     const bootstrap_ctx = error_print.SourceContext{ .file = bootstrap.SOURCE_LABEL, .text = bootstrap.CORE_SOURCE };
     bootstrap.loadCore(arena, &rt, &env, &macro_table) catch |err| {
-        renderAndExit(stderr, bootstrap_ctx, err);
+        renderAndExitRegistry(stderr, &rt, bootstrap_ctx, err);
     };
 
     // --- Read - Analyse - Eval - Print loop ---
@@ -207,6 +211,30 @@ fn renderAndExit(stderr: *Writer, ctx: error_print.SourceContext, err: anyerror)
         // stderr write failed (closed pipe?); proceed to exit anyway —
         // the alternative is swallowing the failure silently.
     };
+    std.process.exit(code);
+}
+
+/// Registry-aware variant of `renderAndExit`. ADR-0035 D7: looks up
+/// `info.location.file` in `rt.source_registry` for the per-file
+/// source-line preview; falls back to `default_ctx` when the location
+/// is unknown or not registered.
+fn renderAndExitRegistry(
+    stderr: *Writer,
+    rt: *Runtime,
+    default_ctx: error_print.SourceContext,
+    err: anyerror,
+) noreturn {
+    const code: u8 = if (error_mod.peekLastError()) |info|
+        kindToExitCode(info.kind)
+    else
+        1;
+    if (error_mod.getLastError()) |info| {
+        error_print.formatErrorWithRegistry(info, rt, default_ctx, stderr, .{}) catch {};
+        stderr.flush() catch {};
+    } else {
+        stderr.print("{s}: error: {s}\n", .{ default_ctx.file, @errorName(err) }) catch {};
+        stderr.flush() catch {};
+    }
     std.process.exit(code);
 }
 
