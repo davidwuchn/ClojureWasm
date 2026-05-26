@@ -91,4 +91,28 @@ EOF
 ) || fail "case5: non-zero exit ($got)"
 assert_eq 'recursive_defn_factorial' "$(last_line "$got")" '120'
 
-echo "OK — phase7_protocol smoke (5 cases) green"
+# --- Case 6 (cycle 8.5): extend-type Long round-trip via __native-type ---
+# Native types reach extend-type via the per-Tag descriptor registry.
+# rt/__native-type returns the .type_descriptor Value for a given Tag
+# keyword. cycle 8.5 + cycle 8.2 together let (m receiver) dispatch
+# on integer Tag receivers through the registered method.
+got=$("$BIN" - <<'EOF' 2>/dev/null
+(defprotocol IInc (inc-one [x]))
+(def Long (rt/__native-type :integer))
+(extend-type Long IInc (inc-one [x] (+ x 1)))
+(inc-one 41)
+EOF
+) || fail "case6: non-zero exit ($got)"
+assert_eq 'extend_type_long_native_dispatch' "$(last_line "$got")" '42'
+
+# --- Case 7 (cycle 8.5): satisfies? recognises native extension ---
+got=$("$BIN" - <<'EOF' 2>/dev/null
+(defprotocol IInc (inc-one [x]))
+(def Long (rt/__native-type :integer))
+(extend-type Long IInc (inc-one [x] (+ x 1)))
+(rt/__satisfies? IInc 7)
+EOF
+) || fail "case7: non-zero exit ($got)"
+assert_eq 'extend_type_satisfies_native_receiver' "$(last_line "$got")" 'true'
+
+echo "OK — phase7_protocol smoke (7 cases) green"

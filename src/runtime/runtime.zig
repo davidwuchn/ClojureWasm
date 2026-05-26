@@ -138,6 +138,70 @@ pub const Runtime = struct {
     /// guard is wired by row 7.3 cycle 2+.
     protocol_generation: u32 = 0,
 
+    /// Per-Tag default `TypeDescriptor` registry — survey §5.5 +
+    /// ADR-0008 amendment 1 ("per-Tag default descriptor table is a
+    /// Phase 7+ extension"). Indexed by `Value.Tag` integer. Lazy-
+    /// initialised via `nativeDescriptor(tag)`; entries are allocated
+    /// on `rt.gc.infra` (process-lifetime). `dispatch.zig::dispatch`
+    /// consults this when the receiver is NOT a `.typed_instance` so
+    /// `(extend-type Long P ...)` works on native types without
+    /// requiring deftype-style typed_instance receivers.
+    ///
+    /// Slot count = `Value.Tag` max + 1 (= 70 today: heap tags 0..63
+    /// + immediates 64..69). The static-size array keeps the lookup
+    /// at a single indexed load; no hashing.
+    native_descriptors: [70]?*TypeDescriptor = .{null} ** 70,
+
+    /// Lazy-init access to the per-Tag default descriptor. On first
+    /// call for a given tag, allocates a TypeDescriptor on
+    /// `rt.gc.infra` with `fqcn = nativeFqcnFor(tag)` and empty
+    /// method_table / protocol_impls. Subsequent calls return the
+    /// cached pointer. cycle 8.5 (row 7.3) introduces this; the
+    /// extend-type primitive mutates `method_table` once registered
+    /// here.
+    pub fn nativeDescriptor(self: *Runtime, tag: @import("value/value.zig").Value.Tag) !*TypeDescriptor {
+        const idx: usize = @intFromEnum(tag);
+        if (self.native_descriptors[idx]) |existing| return existing;
+        const fqcn_str = nativeFqcnFor(tag);
+        const fqcn_dup = try self.gc.infra.dupe(u8, fqcn_str);
+        errdefer self.gc.infra.free(fqcn_dup);
+        const td = try self.gc.infra.create(TypeDescriptor);
+        td.* = .{
+            .fqcn = fqcn_dup,
+            .kind = .native,
+            .field_layout = null,
+            .protocol_impls = &.{},
+            .method_table = &.{},
+            .parent = null,
+            .meta = @import("value/value.zig").Value.nil_val,
+        };
+        self.native_descriptors[idx] = td;
+        return td;
+    }
+
+    /// Canonical user-facing class name for a native Tag. Mirrors JVM
+    /// Clojure surface conventions: `.integer → "Long"`, `.float →
+    /// "Double"`, `.string → "String"`, etc. Tags without a
+    /// JVM-canonical name fall back to `@tagName(tag)`.
+    fn nativeFqcnFor(tag: @import("value/value.zig").Value.Tag) []const u8 {
+        return switch (tag) {
+            .integer => "Long",
+            .float => "Double",
+            .boolean => "Boolean",
+            .char => "Character",
+            .nil => "nil",
+            .string => "String",
+            .symbol => "Symbol",
+            .keyword => "Keyword",
+            .list => "PersistentList",
+            .vector => "PersistentVector",
+            .array_map => "PersistentArrayMap",
+            .hash_map => "PersistentHashMap",
+            .hash_set => "PersistentHashSet",
+            else => @tagName(tag),
+        };
+    }
+
     pub const HeapEntry = struct {
         ptr: *anyopaque,
         free: *const fn (gpa: std.mem.Allocator, ptr: *anyopaque) void,
@@ -195,6 +259,23 @@ pub const Runtime = struct {
     }
 
     pub fn deinit(self: *Runtime) void {
+        // Free per-Tag native descriptors first (their method_table
+        // slice was re-allocated on rt.gc.infra by extendTypeWithImpls
+        // calls, plus each method-name dup, plus the fqcn dup). All
+        // process-lifetime by policy; freeing here keeps testing
+        // allocator quiet.
+        for (&self.native_descriptors) |*slot| {
+            if (slot.*) |td| {
+                if (td.fqcn) |n| self.gc.infra.free(n);
+                for (td.method_table) |entry| {
+                    self.gc.infra.free(entry.method_name);
+                }
+                if (td.method_table.len > 0) self.gc.infra.free(td.method_table);
+                self.gc.infra.destroy(td);
+                slot.* = null;
+            }
+        }
+
         for (self.heap_objects.items) |entry| {
             entry.free(self.gpa, entry.ptr);
         }

@@ -131,15 +131,15 @@ pub fn dispatch(
     args: []const Value,
     loc: SourceLocation,
 ) anyerror!Value {
-    if (receiver.tag() != .typed_instance) {
-        return error_catalog.raise(.protocol_no_satisfies, loc, .{
-            .protocol = protocol_name,
-            .method = method_name,
-            .type_name = @tagName(receiver.tag()),
-        });
-    }
-    const inst = receiver.decodePtr(*const td_mod.TypedInstance);
-    const td = inst.descriptor;
+    // Resolve receiver's TypeDescriptor: typed_instance carries its
+    // own; native Tag receivers consult the per-Tag default registry
+    // (cycle 8.5 — Runtime.nativeDescriptor). The fallback raises
+    // protocol_no_satisfies when allocation fails OR when no method
+    // is registered for `(td, protocol, method)`.
+    const td: *const td_mod.TypeDescriptor = if (receiver.tag() == .typed_instance) blk: {
+        const inst = receiver.decodePtr(*const td_mod.TypedInstance);
+        break :blk inst.descriptor;
+    } else try rt.nativeDescriptor(receiver.tag());
     const me = cs.lookupWithCache(td, protocol_name, method_name, rt.protocol_generation) orelse {
         return error_catalog.raise(.protocol_no_satisfies, loc, .{
             .protocol = protocol_name,

@@ -128,6 +128,18 @@ test "diff: def_node recursive defn" {
     try f.check("(do (defn diff-rec [n] (if (= n 0) 0 (diff-rec (- n 1)))) (diff-rec 7))", 0);
 }
 
+// Row 7.3 protocol round-trip (defprotocol → extend-type → dispatch)
+// does NOT land as a diff_test case because the ProtocolDescriptor /
+// ProtocolFn / extend-type method_table allocations are infra-
+// allocated process-lifetime per cycles 1-6 policy; testing.allocator
+// detects them as leaks. The e2e at test/e2e/phase7_protocol.sh
+// exercises the full TreeWalk path; VM parity holds by construction
+// because the dispatch lives in runtime/ (both backends route through
+// vtable.callFn → treeWalkCall .protocol_fn arm → dispatch.dispatch).
+// A separate Runtime.trackHeap-based cleanup of cycle-6+ infra
+// allocations would unblock the diff coverage but is out of scope
+// for cycle 8.5 (the e2e is the protective oracle today).
+
 test "diff: do_node sequence" {
     var f = try Fixture.init(testing.allocator);
     defer f.deinit();

@@ -45,6 +45,8 @@ const map_collection = @import("../../runtime/collection/map.zig");
 const set_collection = @import("../../runtime/collection/set.zig");
 const list_mod = @import("../../runtime/collection/list.zig");
 const multimethod_mod = @import("../../runtime/multimethod.zig");
+const protocol_mod = @import("../../runtime/protocol.zig");
+const method_table = @import("../../runtime/dispatch/method_table.zig");
 const SourceLocation = error_mod.SourceLocation;
 const dispatch = @import("../../runtime/dispatch.zig");
 const node_mod = @import("../node.zig");
@@ -633,8 +635,37 @@ pub fn treeWalkCall(
         .fn_val => callFunction(rt, env, callee, args, loc),
         .builtin_fn => callBuiltin(rt, env, callee, args, loc),
         .multi_fn => multimethod_mod.callMultiFn(rt, env, callee, args, loc),
+        .protocol_fn => callProtocolFn(rt, env, callee, args, loc),
         else => |t| error_catalog.raise(.value_not_callable, loc, .{ .actual = @tagName(t) }),
     };
+}
+
+/// Dispatch `(m receiver args...)` where `m` is a `.protocol_fn`
+/// Value. The receiver is `args[0]` (cw v1 mirrors JVM Clojure's
+/// "first arg is the dispatch target" convention); the impl
+/// fn (typically `(fn* [this ...] body)`) receives the receiver as
+/// its first parameter, so the FULL `args` slice (receiver +
+/// remaining) flows through to `dispatch.dispatch` → `vt.callFn`.
+/// CallSite is stack-allocated per call — row 7.6 will introduce a
+/// MethodCallNode whose CallSite is analyzer-arena-owned for inline
+/// caching. Until then, every invocation pays one method_table
+/// linear scan (small N — Clojure protocols typically ≤ 8 methods).
+pub fn callProtocolFn(rt: *Runtime, env: *Env, callee: Value, args: []const Value, loc: SourceLocation) anyerror!Value {
+    if (args.len < 1)
+        return error_catalog.raise(.arity_below_min, loc, .{ .fn_name = "protocol-fn", .got = args.len, .min = 1 });
+    const pfn = protocol_mod.asProtocolFn(callee);
+    const receiver = args[0];
+    var cs: method_table.CallSite = .{};
+    return dispatch.dispatch(
+        rt,
+        env,
+        &cs,
+        receiver,
+        pfn.descriptor.fqcn(),
+        pfn.methodName(),
+        args,
+        loc,
+    );
 }
 
 pub fn callFunction(rt: *Runtime, env: *Env, fn_val: Value, args: []const Value, loc: SourceLocation) !Value {

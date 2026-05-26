@@ -30,6 +30,7 @@ const symbol_mod = @import("../../runtime/symbol.zig");
 const string_mod = @import("../../runtime/collection/string.zig");
 const vector_mod = @import("../../runtime/collection/vector.zig");
 const td_mod = @import("../../runtime/type_descriptor.zig");
+const keyword_mod = @import("../../runtime/keyword.zig");
 
 const MethodEntry = protocol_mod.MethodEntry;
 const ProtocolDescriptor = protocol_mod.ProtocolDescriptor;
@@ -210,14 +211,49 @@ pub fn extendType(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocat
     return args[0];
 }
 
+/// `(rt/__native-type tag-keyword)` — return the `.type_descriptor`
+/// Value wrapping the native TypeDescriptor for the given Tag. The
+/// keyword's name must match a `Value.Tag` enum tag name (e.g.
+/// `:integer`, `:string`, `:vector`). Lazy-allocates the descriptor
+/// on `rt.gc.infra` on first call per Tag; subsequent calls return
+/// the same handle. Cycle 8.5 surface — lets user code `(extend-type
+/// (rt/__native-type :integer) P (m [x] ...))` reach the dispatch
+/// path for native receivers without needing deftype-defined types.
+pub fn nativeType(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = env;
+    try error_catalog.checkArity("__native-type", args, 1, loc);
+    if (args[0].tag() != .keyword) {
+        return error_catalog.raise(.type_arg_invalid, loc, .{
+            .fn_name = "__native-type",
+            .expected = "keyword",
+            .actual = @tagName(args[0].tag()),
+        });
+    }
+    const kw = keyword_mod.asKeyword(args[0]);
+    // Find the Tag whose @tagName matches the keyword's name. Linear
+    // scan over Tag enum is fine — N ≤ 70 and this is a one-time
+    // per-feature lookup.
+    const tag_name = kw.name;
+    inline for (@typeInfo(Value.Tag).@"enum".fields) |field| {
+        if (std.mem.eql(u8, field.name, tag_name)) {
+            const tag: Value.Tag = @enumFromInt(field.value);
+            const td = try rt.nativeDescriptor(tag);
+            return td_mod.makeTypeDescriptorRef(rt, td);
+        }
+    }
+    return error_catalog.raise(.type_arg_invalid, loc, .{
+        .fn_name = "__native-type",
+        .expected = "valid Value.Tag keyword (e.g. :integer, :string, :vector)",
+        .actual = tag_name,
+    });
+}
+
 /// `(rt/__satisfies? proto val)` — returns true iff `val`'s
 /// TypeDescriptor (or any ancestor on its `.parent` chain) carries
-/// a method entry for the protocol. cycle 6 only resolves
-/// typed_instance receivers; native-Tag descriptor lookup arrives
-/// with the per-Tag descriptor registry (survey §5.5, cycle 6.5+).
-/// Returns false for any non-typed_instance receiver.
+/// a method entry for the protocol. typed_instance receivers carry
+/// their own descriptor; native-Tag receivers consult the per-Tag
+/// default registry (cycle 8.5 — `Runtime.nativeDescriptor`).
 pub fn satisfiesPrim(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
-    _ = rt;
     _ = env;
     try error_catalog.checkArity("__satisfies?", args, 2, loc);
     if (args[0].tag() != .protocol) {
@@ -227,10 +263,11 @@ pub fn satisfiesPrim(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLo
             .actual = @tagName(args[0].tag()),
         });
     }
-    if (args[1].tag() != .typed_instance) return Value.false_val;
     const proto = protocol_mod.asProtocol(args[0]);
-    const inst = args[1].decodePtr(*const td_mod.TypedInstance);
-    return Value.initBoolean(protocol_mod.satisfies(proto, inst.descriptor));
+    const td: *const td_mod.TypeDescriptor = if (args[1].tag() == .typed_instance) blk: {
+        break :blk args[1].decodePtr(*const td_mod.TypedInstance).descriptor;
+    } else try rt.nativeDescriptor(args[1].tag());
+    return Value.initBoolean(protocol_mod.satisfies(proto, td));
 }
 
 // --- registration ---
@@ -245,6 +282,7 @@ const ENTRIES = [_]Entry{
     .{ .name = "__make-protocol-fn!", .f = &makeProtocolFn },
     .{ .name = "__extend-type!", .f = &extendType },
     .{ .name = "__satisfies?", .f = &satisfiesPrim },
+    .{ .name = "__native-type", .f = &nativeType },
 };
 
 pub fn register(env: *Env, rt_ns: *env_mod.Namespace) !void {
