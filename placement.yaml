@@ -192,22 +192,22 @@ vars:
 
   clojure.string/replace:
     pattern: A
-    status: transient_zig
+    status: migrated
     leaf_deps: [-str-replace-string, -str-replace-pattern, -str-replace-char]
     composition_deps: [cond, instance?]
     target_loc: src/lang/clj/clojure/string.clj
     leaf_loc: src/lang/primitive/string.zig
-    recall_trigger: "Phase 6.16.e cycle 着手"
-    notes: "cond 分岐 (string / pattern / char) each arm に leaf 呼出"
+    recall_trigger: "Phase 7 row 7.12 cycle 3 着地 (2026-05-27)"
+    notes: "cond 分岐 (string / pattern / char) each arm に leaf 呼出。 regex-string `$N` literal pass-through PROVISIONAL (D-093, D-051 cycle 3 closure 待ち)。"
 
   clojure.string/replace-first:
     pattern: A
-    status: transient_zig
+    status: migrated
     leaf_deps: [-str-replace-first-string, -str-replace-first-pattern, -str-replace-first-char]
     composition_deps: [cond, instance?]
     target_loc: src/lang/clj/clojure/string.clj
     leaf_loc: src/lang/primitive/string.zig
-    recall_trigger: "Phase 6.16.e cycle 着手"
+    recall_trigger: "Phase 7 row 7.12 cycle 3 着地 (2026-05-27)"
 
   clojure.string/escape:
     pattern: A

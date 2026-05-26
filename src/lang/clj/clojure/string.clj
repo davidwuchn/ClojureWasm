@@ -90,3 +90,38 @@
                (if (nil? acc) (str x) (str acc (first args) x)))
              nil
              (first (rest args)))))))
+
+;; ----------------------------------------------------------------
+;; Row 7.12 cycle 3 (D-078): `replace` / `replace-first` Pattern A
+;; landing. The macro `instance?` (row 7.12 cycle 1) auto-quotes
+;; its Class symbol, so `(instance? String match)` dispatches
+;; through the runtime/class_name.zig registry without explicit
+;; quote. The 6 private leaves landed at row 7.12 cycle 2 carry
+;; the actual string / char / regex match logic; this Pattern A
+;; defn is the public Clojure surface routing on `match`'s tag.
+;; The regex-string `repl` arm treats `$N` as literal pass-through
+;; (PROVISIONAL — D-093, D-051 cycle 3 closure).
+;; ----------------------------------------------------------------
+
+;; Character literal reader / `(char N)` constructor are not yet
+;; user-accessible (see future debt — char Values land via primitive
+;; surfaces only today), so the Character arm below is correct but
+;; unreachable from .clj source until that lands. Tests cover it
+;; via the Zig leaf directly.
+(def replace
+  (fn* [s match repl]
+    (cond
+      (instance? String match)  (-str-replace-string s match repl)
+      (instance? Character match) (-str-replace-char s match repl)
+      (instance? Pattern match) (-str-replace-pattern s match repl)
+      :else (throw (ex-info "replace: unsupported match type"
+                            {:fn "replace" :match match})))))
+
+(def replace-first
+  (fn* [s match repl]
+    (cond
+      (instance? String match)  (-str-replace-first-string s match repl)
+      (instance? Character match) (-str-replace-first-char s match repl)
+      (instance? Pattern match) (-str-replace-first-pattern s match repl)
+      :else (throw (ex-info "replace-first: unsupported match type"
+                            {:fn "replace-first" :match match})))))

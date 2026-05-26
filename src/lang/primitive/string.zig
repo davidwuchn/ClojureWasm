@@ -650,13 +650,14 @@ const LEAF_ENTRIES = [_]Entry{
 };
 
 /// Vars that stay as Zig leaves at their public name for this cycle.
-/// 6.16.e.2+ migrates the YELLOW subset (`capitalize` / `join`) once
-/// `str` + `subs` Tier-A primitives land; `replace` / `replace-first`
-/// / `escape` (RED) stay until `instance?` + regex sub-leaf split
-/// land in a later cycle (D-NNN, post-6.16.e).
+/// Row 7.12 cycle 3 (D-078) flipped `replace` / `replace-first` from
+/// Zig public surface to Pattern A `.clj` defns (see
+/// `lang/clj/clojure/string.clj`) — the .clj defn dispatches on
+/// `instance?` across the 6 `-str-replace-*` private leaves landed at
+/// cycle 2. `escape` remains Zig for now (Pattern A migration is an
+/// opportunistic follow-up — D-094 row when the codepoint-walk
+/// primitives + cmap dispatch ergonomics mature).
 const ENTRIES = [_]Entry{
-    .{ .name = "replace", .f = &replace },
-    .{ .name = "replace-first", .f = &replaceFirst },
     .{ .name = "escape", .f = &escape },
 };
 
