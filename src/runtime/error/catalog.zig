@@ -253,6 +253,21 @@ pub const Code = enum {
     /// name the conflicting keys; cycle 2 only carries the name.
     multimethod_ambiguous_dispatch,
 
+    // --- Transient surface (Phase 8 row 8.5, D-074) ---
+    /// args: `.{ .fn_name = "conj!" | "persistent!" | "pop!" | "assoc!" }`
+    /// — raised when a mutating call (or `persistent!`) reaches a
+    /// transient whose `consumed` flag is already set. Matches the
+    /// JVM Clojure `IllegalAccessError("Transient used after
+    /// persistent! call")` semantics.
+    transient_used_after_persistent,
+    /// args: `.{ .fn_name = "...", .expected = "transient_vector" | ...,
+    /// .actual = "<tag-name>" }` — raised when a transient primitive
+    /// is called with an argument whose tag does not match the
+    /// transient kind (e.g. `(conj! a-vec :x)` where `a-vec` is
+    /// not a transient at all, or where the transient kind does not
+    /// accept the operation).
+    transient_kind_mismatch,
+
     /// Tier D forms — permanently outside cw scope (ADR-0013). One
     /// Code per form, each with a hand-written multi-sentence
     /// template that explains the reason and suggests the
@@ -744,6 +759,15 @@ pub fn entry(comptime code: Code) Entry {
             .kind = .not_implemented, .phase = .analysis,
             .template = "'{[sym]s}' is declared but not yet supported in ClojureWasm",
         },
+        .transient_used_after_persistent => .{
+            .kind = .value_error, .phase = .eval,
+            .template = "{[fn_name]s}: Transient used after persistent! call",
+        },
+        .transient_kind_mismatch => .{
+            .kind = .type_error, .phase = .eval,
+            .template = "{[fn_name]s}: expected {[expected]s}, got {[actual]s}",
+        },
+
         .tier_d_gen_class => .{
             .kind = .not_implemented, .phase = .analysis,
             .template =

@@ -83,6 +83,7 @@ test {
     _ = @import("runtime/collection/map.zig");
     _ = @import("runtime/collection/set.zig");
     _ = @import("runtime/collection/chunked_cons.zig");
+    _ = @import("runtime/collection/transient/transient_vector.zig");
     _ = @import("runtime/hash.zig");
     _ = @import("runtime/keyword.zig");
     _ = @import("runtime/symbol.zig");
@@ -114,6 +115,7 @@ test {
     _ = @import("lang/primitive/math.zig");
     _ = @import("lang/primitive/core.zig");
     _ = @import("lang/primitive/error.zig");
+    _ = @import("lang/primitive/transient.zig");
     _ = @import("lang/primitive/multimethod.zig");
     _ = @import("lang/primitive/protocol.zig");
     _ = @import("lang/primitive.zig");

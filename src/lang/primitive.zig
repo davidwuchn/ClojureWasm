@@ -28,6 +28,7 @@ const math = @import("primitive/math.zig");
 const core = @import("primitive/core.zig");
 const sequence = @import("primitive/sequence.zig");
 const collection = @import("primitive/collection.zig");
+const transient_prim = @import("primitive/transient.zig");
 const higher_order = @import("primitive/higher_order.zig");
 const error_prim = @import("primitive/error.zig");
 const uuid = @import("primitive/uuid.zig");
@@ -57,6 +58,7 @@ pub fn registerAll(env: *Env) !void {
     try core.register(env, rt_ns);
     try sequence.register(env, rt_ns);
     try collection.register(env, rt_ns);
+    try transient_prim.register(env, rt_ns);
     try higher_order.register(env, rt_ns, clojure_core_ns);
     try error_prim.register(env, rt_ns);
     try uuid.register(env, rt_ns);
