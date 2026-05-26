@@ -3,91 +3,98 @@
 > ≤ 100 lines. Driving doc; framing per
 > [`.claude/rules/handover_framing.md`](../.claude/rules/handover_framing.md).
 
-## Operating mode (user directive 2026-05-27)
+## Stopped — user requested
 
-完全自律で進める。`[x]` flip / feature_deps status flip / ADR
-"Selected:" 確定 / DA subagent の "Recommendation" 採用 等の
-framework boundary では **pause + PushNotification しない**。
-CLAUDE.md § The only stop の "only user explicit stop halts the
-loop" を operative rule として運用し、autonomous-tick framing の
-"Reaching for justifications, wait" heuristic は採らない。row /
-ADR / cycle 境界はそのまま次の Step 0 survey に roll する。
+User instruction (2026-05-27):
+「OK、すみません、コンテキストウィンドウ肥大につきここまでのサーベイをむだにせず、
+次のセッションに引き継ぎ作業続行できるようにしたい。いまとめてもいいかんじかな
+（区切り的に）」.
+
+Clean break — last commit is `6907b79` (row 8.4 close: `--compare`
+CLI flag). Row 8.5 (D-074 transients) has Step 0 survey at
+`private/notes/phase8-8.5-survey.md` (479 lines) — do NOT re-run;
+re-read at resume. No row 8.5 source landed; cycle 1 plan
+(TransientVector + transient! / persistent! / conj! / pop! /
+assoc!-arity-3 + 2 error codes) is recorded in the survey.
 
 ## Resume contract
 
-- **HEAD**: see `git log` (Phase 7 close + Phase 8 opened is HEAD).
-- **First commit on resume MUST be**: §9.10 row 8.1 — Step 0
-  survey for D-031 `main.zig` → `src/app/` split. The anticipated
-  `src/app/` layout lives in `.dev/structure_plan.md`; the split
-  must land before the self-host loader (Phase 10 nREPL) /
-  build-runner (Phase 12) modes pile on. Reference: ROADMAP §9.10
-  row 8.1 + D-031 in `.dev/debt.md` + `.dev/structure_plan.md`.
-- **Forbidden this session** (carried from Phase 7): (a) `return
-  error.NotImplemented` in VM compile arms without `// VM-DEFER:`
-  marker. (b) direct `TypeDescriptor.lookupMethod` — route via
-  `dispatch(...)`. (c) widening `BytecodeChunk.call_sites` /
-  `.libspecs` beyond ADR-0040 / row 7.10 cycle 3. (d) manual
-  `defer rt.gc.infra.destroy(...)` for ProtocolDescriptor /
-  ProtocolFn / TypeDescriptorRef. (e) accessing dropped flat
-  `FnNode.arity/.has_rest/.params/.body`. (f) cw v0 threadlocal
-  `apply_rest_is_seq` — row 7.9 ADR-0042 diverges. (g) widening
-  `isRestSeqShaped` tag set without ADR-0042 amendment. (h) cw v0
-  `pub var exception_matches_class` injection — row 7.11/7.12
-  diverge. (i) cw v0 vector-with-metadata zipper — row 7.13
-  ADR-0043 permanent finished form. (j) `(and ...)` macro in
-  non-core `.clj` defns — zip.clj cycle 1 surfaced a bug; use
-  explicit `if` until audit.
+- **HEAD**: `6907b79` (row 8.4 close — `cljw --compare` CLI flag).
+- **First commit on resume MUST be**: §9.10 row 8.5 cycle 1 —
+  TransientVector + 4-of-7 primitives (`transient!` / `persistent!`
+  / `conj!` / `pop!`) + `transient_used_after_persistent` +
+  `transient_kind_mismatch` error catalog Codes. Per
+  `private/notes/phase8-8.5-survey.md` cycle decomposition (a):
+  cycle 1 = TransientVector + scaffolding (3 of 7 primitives
+  vector-only) → cycle 2 = TransientArrayMap → cycle 3 =
+  TransientHashSet + discharge `feature_deps.yaml#clojure.set/map-invert`.
+  HAMT `TransientHashMap` blocked on D-045 — cycle 2 stays
+  ArrayMap-only.
+- **Forbidden this session**: (a-j) per row 8.1 close handover
+  carried forward (apply variadic threadlocal / pub-var injection
+  / vector-with-metadata zipper etc.). (k) cw v0's 6.2K-LOC
+  `collections.zig` mega-file shape — row 8.5 follows
+  `.dev/structure_plan.md` + ROADMAP A2 with `runtime/collection/
+  transient/{transient_vector,transient_array_map,transient_set}.zig`
+  one-file-per-type. (l) `(and ...)` macro in non-core .clj
+  defns — row 7.13 cycle 1 surfaced a bug; use explicit `if`.
 
 ## Cold-start reading order
 
 handover → CLAUDE.md (§ Project spirit + § Autonomous Workflow +
 § The only stop) → `.dev/project_facts.md` (F-001..F-009) →
 `.dev/principle.md` → `.dev/ROADMAP.md` §9.10 → `.dev/debt.md`
-Step 0.5 sweep (D-031 row 8.1 + D-007 / D-074 / D-089 entry
-debts + D-093 / D-094 carry-overs).
+Step 0.5 sweep (D-074 active; D-045 HAMT blocking TransientHashMap;
+D-093/D-094 opportunistic carry-overs) → re-read
+`private/notes/phase8-8.5-survey.md` for the row 8.5 cycle 1 plan.
 
 ## Current state
 
-**Phase 7 DONE** (closed 2026-05-27, commit `6a339c1`). Phase 8
-IN-PROGRESS — §9.10 expanded; row 8.0 boundary work
-[x] (absorbed into this commit). Row 8.1 next.
-Branch `cw-from-scratch`. Gate green at HEAD: Mac 58/58 +
-OrbStack Ubuntu x86_64 57/57.
+Phase 8 IN-PROGRESS — §9.10 rows 8.0..8.4 all [x]. Row 8.5 next.
+Branch `cw-from-scratch`. Gate green at HEAD: Mac 60/60 +
+OrbStack Ubuntu x86_64 59/59. ADR-0027 + bench/history.yaml +
+`bench/record.sh` + `scripts/check_bench_regression.sh` (1.2x
+informational gate, Mac/Linux locks seeded) + `cljw --compare`
+all landed across rows 8.2-8.4.
 
-## Active task — §9.10 row 8.1
+## Active task — §9.10 row 8.5
 
-D-031 — `main.zig` → `src/app/` split. The current `main.zig` is
-~270 LOC including bootstrap-loader, REPL wiring, top-level error
-renderer, build-options test, and the test-aggregator block.
-Phase 8 entry split before Phase-10 nREPL / Phase-12 build-runner
-modes pile on. `.dev/structure_plan.md` (F-003 structural plan)
-predicts an `src/app/` layout with `src/app/repl.zig` / `src/app/
-runner.zig` / `src/app/builder.zig` / `src/app/{cli,error_render}.zig`
-sub-files; the split itself is mechanical extraction with `main.zig`
-shrinking to a thin dispatcher (mode selector based on argv).
-Step 0 survey expected.
+D-074 — transients Tier-A surface (`transient!` / `persistent!` /
+`conj!` / `assoc!` / `disj!` / `dissoc!` / `pop!`). Per F-006
+3-layer allocator + `.dev/structure_plan.md` `runtime/collection/
+transient/` subtree. Survey at `private/notes/phase8-8.5-survey.md`
+recommends per-collection 3-cycle decomposition (TransientVector
+→ TransientArrayMap → TransientHashSet+map-invert discharge);
+TransientHashMap stays blocked on D-045 HAMT impl, cycle 2 raises
+`transient_kind_mismatch` on `.hash_map` source (transient stub
+shape, not silent fake). Tag slots 40/41/42 (transient_vector /
+transient_map / transient_set) already reserved at
+`src/runtime/value/heap_tag.zig:99-101` + `value.zig:87-89`; cycle
+1 lands the first GC-traced impl behind those reservations.
 
-## Open questions / blockers
+## Extended challenge (per `.claude/rules/extended_challenge.md`)
 
-None testable from inside the loop. Outstanding debt: D-007
-(self-host viability, Phase 8 entry candidate), D-074 (transient!
-surface, Phase 8 row 8.5), D-089 (row 7.7 retro-audit cluster,
-Phase 8+ row 8.6), D-081 (multimethod ergonomic, blocked-by D-012
-Phase 15), D-083/D-085/D-086/D-087/D-088/D-090/D-091/D-092
-(Phase 7+ opportunistic), D-093 (regex `$N` sugar — D-051
-cycle 3), D-094 (clojure.string/escape Pattern A migration).
-D-048 host-class wire-up unblocks shared `host_instance` arm.
+- **Alt hypothesis**: rather than per-collection 3 cycles, land
+  the TransientVector + TransientArrayMap + TransientHashSet trio
+  in a single cycle to discharge `map-invert` PROVISIONAL atomically
+  with all 7 primitives. Survey rejected this on smell-audit
+  window + Step 5 bisect difficulty; resume could revisit if the
+  per-collection scaffolding turns out near-zero overhead after
+  cycle 1.
+- **Next experiment**: write `src/runtime/collection/transient/
+  transient_vector.zig` (~150 LOC) + add `transient_used_after_persistent`
+  Code to `src/runtime/error/catalog.zig` + a TDD-red unit test
+  `(persistent! (conj! (transient empty-vec) 42))` expecting a
+  one-element persistent vector. Command: `zig build test 2>&1 |
+  tail -30` after each Edit.
+- **Explicit blocker**: none. All prereqs landed at HEAD.
 
 ## Guardrail refresh history
 
-See `git log -- .claude/rules .dev/decisions .dev/principle.md`.
-Phase 7 landmarks: ADR-0036 (dual-backend parity contract), 0037
-(symbol heap value), 0038 (analyzer def pre-register), 0039
-(reified instance), 0040 (VM method dispatch opcodes), 0041
-(multi-arity fn*), 0042 (apply variadic peel-and-pass), 0043
-(defrecord ZipLoc — clojure.zip representation). Row 7.11 +
-7.12 introduced `host_class.zig` + `class_name.zig` shared
-predicates (Layer 1 → Layer 0 direct import, cw v0 pub-var
-injection rejected). Row 7.13 closed clojure.zip 31 vars per
-ADR-0043 forward-commitment. Phase 7 closed at row 7.14 +
-7.15 (`6a339c1`).
+Phase 7 close + Phase 8 entry landmarks: ADR-0042 (apply variadic
+bind-direct) + 0043 (defrecord ZipLoc) at Phase 7 close; ADR-0027
+(bench/history.yaml schema, shape c per-commit aggregate +
+cw-v1 machine bucket + distribution amendments) at Phase 8 row
+8.2; row 8.1 `src/app/` split (cli/runner/error_render); row 8.3
+1.2x regression gate informational mode + Mac/Linux locks; row
+8.4 `cljw --compare` CLI flag (ADR-0005 full-bench remit).
