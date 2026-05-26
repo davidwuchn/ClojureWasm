@@ -138,3 +138,26 @@ if [[ "$diag" != *"satisfy"* ]] && [[ "$diag" != *"IPersistentCollection"* ]] &&
     fail "case9: expected protocol_no_satisfies diagnostic, got '$diag'"
 fi
 echo "PASS long_conj_no_extend_raises_diagnostic"
+
+# --- Case 10 (cycle 4): defrecord reaches reduce via IReduce -reduce ---
+# reduce's IReduce fast-path runs BEFORE the seq-walk. User impl wins
+# without the receiver needing a Seqable -seq extension; argument order
+# is receiver-first (Box, f) to match `(-reduce [c f] …)` user shape.
+got=$("$BIN" - <<'EOF' 2>/dev/null
+(defrecord Box [v])
+(extend-type Box IReduce (-reduce [_ _] 99))
+(reduce + (->Box 1))
+EOF
+) || fail "case10: non-zero exit ($got)"
+assert_eq 'defrecord_reduce_via_ireduce' "$(last_line "$got")" '99'
+
+# --- Case 11 (cycle 4): reduce falls back to seq-walk when no IReduce ---
+# Box has no IReduce extension but has Seqable. reduce should not raise
+# on the IReduce slow-path miss; instead it walks the seq.
+got=$("$BIN" - <<'EOF' 2>/dev/null
+(defrecord Pair2 [a b])
+(extend-type Pair2 Seqable (-seq [_] '(10 20 30)))
+(reduce + 0 (->Pair2 1 2))
+EOF
+) || fail "case11: non-zero exit ($got)"
+assert_eq 'defrecord_reduce_fallback_to_seq_walk' "$(last_line "$got")" '60'

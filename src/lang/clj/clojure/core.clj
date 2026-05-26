@@ -125,4 +125,5 @@
 
 (defprotocol IPersistentCollection (-count [c]) (-cons [c x]))
 (defprotocol Seqable (-seq [c]))
+(defprotocol IReduce (-reduce [c f]))
 

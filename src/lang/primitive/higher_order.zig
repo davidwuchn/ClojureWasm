@@ -125,6 +125,34 @@ pub fn reduceFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocatio
         });
     }
     const f = args[0];
+
+    // Row 7.7 cycle 4: IReduce protocol fast-path bypass. If the
+    // receiver carries an `IReduce -reduce` MethodEntry (via `extend-type`),
+    // call it directly with receiver-first argument order — `(reduce f
+    // coll)` becomes `(-reduce coll f)`, `(reduce f init coll)` becomes
+    // `(-reduce coll f init)`. Skips the `seq → first → rest` walk
+    // entirely, enabling JVM-style early termination on user types.
+    // Cycle 4 collapses JVM's IReduce + IReduceInit split into a single
+    // arity-overloaded `IReduce -reduce` per §7 DIVERGENCE in the row 7.7
+    // survey. Falls through to the seq-walk when no MethodEntry is
+    // registered (lazy_seq's own IReduce impl is row 7.9 / D-072).
+    const coll = args[args.len - 1];
+    var ireduce_args_buf: [3]Value = undefined;
+    const ireduce_args: []const Value = if (args.len == 3) blk: {
+        ireduce_args_buf[0] = coll;
+        ireduce_args_buf[1] = f;
+        ireduce_args_buf[2] = args[1];
+        break :blk ireduce_args_buf[0..3];
+    } else blk: {
+        ireduce_args_buf[0] = coll;
+        ireduce_args_buf[1] = f;
+        break :blk ireduce_args_buf[0..2];
+    };
+    var cs: dispatch.CallSite = .{};
+    if (try dispatch.dispatchOrNull(rt, env, &cs, coll, "IReduce", "-reduce", ireduce_args, loc)) |v| {
+        return if (reduced.isReduced(v)) reduced.unreduce(v) else v;
+    }
+
     var acc: Value = undefined;
     var cur: Value = undefined;
     if (args.len == 3) {
