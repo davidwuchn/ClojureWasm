@@ -156,6 +156,9 @@ pub const Code = enum {
     defrecord_field_invalid,
     /// args: `.{ .name = "<field-name>" }`
     defrecord_assoc_undeclared_key,
+    reify_form_incomplete,
+    reify_section_invalid,
+    reify_method_invalid,
     extend_type_form_incomplete,
     extend_type_method_invalid,
     extend_protocol_form_incomplete,
@@ -603,6 +606,18 @@ pub fn entry(comptime code: Code) Entry {
         .defrecord_assoc_undeclared_key => .{
             .kind = .not_implemented, .phase = .eval,
             .template = "assoc on defrecord with non-declared key '{[name]s}' is not yet supported",
+        },
+        .reify_form_incomplete => .{
+            .kind = .syntax_error, .phase = .macroexpand,
+            .template = "reify requires at least one protocol symbol and one method implementation",
+        },
+        .reify_section_invalid => .{
+            .kind = .syntax_error, .phase = .macroexpand,
+            .template = "reify section must lead with a protocol symbol followed by one or more method-impl lists",
+        },
+        .reify_method_invalid => .{
+            .kind = .syntax_error, .phase = .macroexpand,
+            .template = "reify method implementation must be a list `(method-name [params...] body)`",
         },
         .extend_type_form_incomplete => .{
             .kind = .syntax_error, .phase = .macroexpand,

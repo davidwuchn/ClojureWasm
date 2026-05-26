@@ -192,9 +192,9 @@ const SPECIAL_FORMS = std.StaticStringMap(SpecialFormKind).initComptime(.{
 /// to named per-form Codes (`deftype_not_supported`, etc.).
 ///
 /// Row 7.4 cycle 1 retired `"defrecord"` — it now lowers via
-/// `expandDefrecord` in `src/lang/macro_transforms.zig`.
+/// `expandDefrecord` in `src/lang/macro_transforms.zig`. Row 7.5
+/// cycle 1 retired `"reify"` — it now lowers via `expandReify`.
 const STAGED_UNSUPPORTED_FORMS = std.StaticStringMap(void).initComptime(.{
-    .{ "reify", {} },
     .{ "definterface", {} },
 });
 
@@ -1051,11 +1051,11 @@ test "field access (.x inst) analyses into field_access_node" {
     try testing.expectEqualStrings("x", n.field_access_node.field_name);
 }
 
-test "reify / definterface still raise unsupported_feature (5.12.c)" {
-    // Row 7.4 cycle 1: `defrecord` retired from STAGED_UNSUPPORTED_FORMS;
-    // lowered via `expandDefrecord` in src/lang/macro_transforms.zig.
-    // `reify` lands at row 7.5, `definterface` later.
-    inline for ([_][]const u8{ "reify", "definterface" }) |form_name| {
+test "definterface still raises unsupported_feature" {
+    // Row 7.4 cycle 1: `defrecord` retired (expandDefrecord macro).
+    // Row 7.5 cycle 1: `reify` retired (expandReify macro). Only
+    // `definterface` remains in the staged wedge.
+    inline for ([_][]const u8{"definterface"}) |form_name| {
         var fix: TestFixture = undefined;
         try fix.init(testing.allocator);
         defer fix.deinit();

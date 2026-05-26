@@ -306,6 +306,19 @@ pub fn defrecordPrim(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLo
     return td_mod.makeTypeDescriptorRef(rt, td);
 }
 
+/// `(rt/__reify! [interfaces] [[method-name proto fn-val]...])` —
+/// allocate an anonymous TypeDescriptor + ReifiedInstance pair.
+///
+/// Row 7.5 cycle 1 ships this as a transient stub raising
+/// `feature_not_supported`. Cycle 3 lands the happy path (descriptor
+/// + ReifiedInstance allocation + GC hook wiring + dispatch arm).
+pub fn reifyPrim(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = rt;
+    _ = env;
+    _ = args;
+    return error_catalog.raise(.feature_not_supported, loc, .{ .name = "reify (impl pending row 7.5 cycle 3)" });
+}
+
 /// `(rt/__satisfies? proto val)` — returns true iff `val`'s
 /// TypeDescriptor (or any ancestor on its `.parent` chain) carries
 /// a method entry for the protocol. typed_instance receivers carry
@@ -342,6 +355,7 @@ const ENTRIES = [_]Entry{
     .{ .name = "__satisfies?", .f = &satisfiesPrim },
     .{ .name = "__native-type", .f = &nativeType },
     .{ .name = "__defrecord!", .f = &defrecordPrim },
+    .{ .name = "__reify!", .f = &reifyPrim },
 };
 
 pub fn register(env: *Env, rt_ns: *env_mod.Namespace) !void {

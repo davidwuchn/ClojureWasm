@@ -94,6 +94,7 @@ const BOOTSTRAP = [_]Entry{
     .{ .name = "extend-type", .expand = expandExtendType },
     .{ .name = "extend-protocol", .expand = expandExtendProtocol },
     .{ .name = "defrecord", .expand = expandDefrecord },
+    .{ .name = "reify", .expand = expandReify },
 };
 
 // --- Form-construction conveniences ---
@@ -945,6 +946,110 @@ fn expandDefrecord(
     do_items[2] = def_arrow;
     @memcpy(do_items[3..], sections.items);
     return list(arena, do_items, loc);
+}
+
+// --- reify — §9.9 row 7.5 cycle 1 macro skeleton ---
+//
+// `(reify Proto1 (m1 [this] body) (m2 [this] body) Proto2 (m3 [this]
+// body))` lowers to:
+//
+//   (rt/__reify!
+//     ['Proto1 'Proto2]
+//     [["m1" Proto1 (fn* [this] body)]
+//      ["m2" Proto1 (fn* [this] body)]
+//      ["m3" Proto2 (fn* [this] body)]])
+//
+// The protocol-symbols flow through bare so `__reify!` resolves them
+// to `.protocol`-tagged Values at eval time (same shape as
+// `extend-type`'s target argument). Method bodies become `fn*`
+// expressions so the existing closure-capture machinery snapshots
+// outer locals into the resulting Function Value automatically
+// (survey §4 Option A — closure capture is free; no
+// `closure_bindings_ptr` on ReifiedInstance).
+//
+// Cycle 1 ships a thin `__reify!` primitive that raises
+// `feature_not_supported` (transient stub per
+// `provisional_marker.md` row 2). Cycle 3 implements the happy
+// path; cycle 4 wires the dispatch arm for `.reified_instance`.
+fn expandReify(
+    arena: std.mem.Allocator,
+    rt: *Runtime,
+    args: []const Form,
+    loc: SourceLocation,
+) macro_dispatch.ExpandError!Form {
+    _ = rt;
+    if (args.len == 0)
+        return error_catalog.raise(.reify_form_incomplete, loc, .{});
+
+    // Parse interfaces + methods: Symbol opens new section, List
+    // forms append method-impls to current section. Mirrors
+    // `expandExtendProtocol`.
+    if (args[0].data != .symbol)
+        return error_catalog.raise(.reify_section_invalid, args[0].location, .{});
+
+    var interfaces: std.ArrayList(Form) = .empty;
+    defer interfaces.deinit(arena);
+    var method_rows: std.ArrayList(Form) = .empty;
+    defer method_rows.deinit(arena);
+
+    var i: usize = 0;
+    while (i < args.len) {
+        if (args[i].data != .symbol)
+            return error_catalog.raise(.reify_section_invalid, args[i].location, .{});
+        const proto_form = args[i];
+        // Push 'Proto into interfaces vec (as the bare Symbol Value).
+        try interfaces.append(arena, proto_form);
+        i += 1;
+
+        const impls_start = i;
+        while (i < args.len and args[i].data == .list) : (i += 1) {}
+        const impls = args[impls_start..i];
+        if (impls.len == 0)
+            return error_catalog.raise(.reify_section_invalid, proto_form.location, .{});
+
+        for (impls) |impl| {
+            if (impl.data != .list or impl.data.list.len < 3 or
+                impl.data.list[0].data != .symbol or
+                impl.data.list[1].data != .vector)
+            {
+                return error_catalog.raise(.reify_method_invalid, impl.location, .{});
+            }
+            const method_name = impl.data.list[0].data.symbol.name;
+            const params_form = impl.data.list[1];
+            const body = impl.data.list[2..];
+
+            const body_form = if (body.len == 1) body[0] else blk: {
+                var do_items_local = try arena.alloc(Form, body.len + 1);
+                do_items_local[0] = sym("do", impl.location);
+                @memcpy(do_items_local[1..], body);
+                break :blk try list(arena, do_items_local, impl.location);
+            };
+
+            // (fn* params body)
+            var fn_items = try arena.alloc(Form, 3);
+            fn_items[0] = sym("fn*", impl.location);
+            fn_items[1] = params_form;
+            fn_items[2] = body_form;
+            const fn_form = try list(arena, fn_items, impl.location);
+
+            // ["m-name" Proto fn-form]
+            var row_items = try arena.alloc(Form, 3);
+            row_items[0] = .{ .data = .{ .string = method_name }, .location = impl.location };
+            row_items[1] = proto_form;
+            row_items[2] = fn_form;
+            try method_rows.append(arena, try vec(arena, row_items, impl.location));
+        }
+    }
+
+    const interfaces_vec = try vec(arena, interfaces.items, loc);
+    const methods_vec = try vec(arena, method_rows.items, loc);
+
+    // (rt/__reify! interfaces-vec methods-vec)
+    var call_items = try arena.alloc(Form, 3);
+    call_items[0] = .{ .data = .{ .symbol = .{ .ns = "rt", .name = "__reify!" } }, .location = loc };
+    call_items[1] = interfaces_vec;
+    call_items[2] = methods_vec;
+    return list(arena, call_items, loc);
 }
 
 // --- tests ---
