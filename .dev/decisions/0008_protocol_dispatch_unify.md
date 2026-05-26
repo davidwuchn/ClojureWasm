@@ -201,3 +201,136 @@ this ADR.
   injection per the survey's recommended scope.
 
   ROADMAP §9.9 row 7.1 flips to `[x]`.
+
+- 2026-05-26 (amendment 2 — Phase 7.2 multimethod shape): Land
+  `defmulti` / `defmethod` as Clojure-side macros in
+  `src/lang/clj/clojure/core.clj` that expand to primitive
+  constructor + `def` calls; multimethod dispatch lives in
+  `runtime/multimethod.zig::callMultiFn` invoked through a new
+  `.multi_fn` arm in `vtable.callFn` (Group B slot 1, F-004).
+  **No new analyzer Node variants. No new VM opcodes. No
+  VM-DEFER markers.** Both backends already handle the expansion
+  uniformly through the existing call-node path; the only new
+  dispatch surface is the runtime `.multi_fn` arm alongside the
+  existing `.fn_val` / `.builtin_fn` / `.keyword` arms.
+
+  This supersedes the row 7.2 step-0 survey
+  (`private/notes/phase7-7.2-survey.md`) §5.4 ("file layout")
+  + §8 ("differential coverage") portions that proposed
+  `DefMultiNode` / `DefMethodNode` analyzer variants + 3
+  VM-DEFER markers on `vm/compiler.zig`. Both are dropped — the
+  row 7.2 diff_test cases assert real TreeWalk-VM equivalence
+  (matching values from both backends) rather than the
+  asymmetric "VM raises feature_not_supported" oracle. ADR-0036
+  dual-backend parity contract is satisfied with zero markers,
+  zero deferral, zero new provisional behaviour.
+
+  **Devil's-advocate fork (depth-2, fresh context) verbatim
+  embedding** — produced 3 alternatives within F-002 / F-004 /
+  F-009 + ADR-0036 envelope (full text:
+  `private/notes/phase7-7.2-devils-advocate.md`):
+
+  > **Alt 1 — Smallest-diff**
+  > **Shape**: Land `defmulti` / `defmethod` as **no new
+  > analyzer Node types** — the reader sees them as ordinary
+  > call forms whose head symbol resolves at analyze time to a
+  > Clojure-ns primitive (`__defmulti!` / `__defmethod!`). The
+  > primitives are pure Layer-2 builtins that construct the
+  > MultiFn extern struct, bind the Var (for defmulti), or
+  > `assoc` into `method_table` (for defmethod). Multimethod
+  > CALL — `(my-mm arg)` — dispatches inside the runtime
+  > `vtable.callFn` via a `.multi_fn` tag arm beside the
+  > existing `fn_val` / `builtin_fn` / `keyword` arms.
+  > **Verdict within F-NNN**: clean. JVM Clojure's `defmulti`
+  > IS a macro expanding to `def + MultiFn-construction-primitive`,
+  > and `defmethod` IS interop-call to `addMethod` — both are
+  > surface forms over primitive constructors. The proposal's
+  > "two new analyzer Node variants" adds a layer JVM Clojure
+  > does not have; the proposal's shape mirrors how `def` got
+  > its own Node (DefNode) — but `def` needs an analyzer Node
+  > because it has special-form binding semantics (introduces a
+  > new binding visible to subsequent forms). `defmulti` does
+  > not — it's just `def` + a constructor call; both already
+  > work. Per F-002 this is the finished-form-clean shape; the
+  > proposal's two-Node draft is the smallest-diff bias toward
+  > "what looks like the v0 shape" without checking whether v0's
+  > analyzer Node was incidental or load-bearing.
+  >
+  > **Alt 2 — Finished-form-clean**
+  > **Shape**: Land VM compile arms in the SAME row (no
+  > VM-DEFER markers). Introduce two new opcodes at row 7.2 —
+  > `OP_DEFMULTI` and `OP_DEFMETHOD` — whose VM dispatch arms
+  > share their body with the TreeWalk path. The multimethod
+  > call-site emission is already covered by the existing
+  > call-node opcode; runtime `vtable.callFn` gains a `.multi_fn`
+  > arm just as Alt 1 does.
+  > **Verdict within F-NNN**: clean. ADR-0036 compliance with
+  > zero deferral. The proposal's VM-DEFER justification (`likely
+  > 7.6 MethodCallNode bytecode shape`) does not hold up — 7.6
+  > designs the dispatch shape for `.method` / `(.method obj
+  > args)` calls (protocol / host) keyed on receiver
+  > TypeDescriptor, NOT for multimethod calls keyed on
+  > (dispatch_fn args) → dispatch_val. The cache shapes differ
+  > (CallSite vs method_cache), the invalidation triggers differ
+  > (extend-type vs defmethod / hierarchy mutation), the operand
+  > encodings differ. The proposal carries the
+  > Reservation-as-bias smell (the deferral is a memo, not a
+  > contract).
+  >
+  > **Alt 3 — Wildcard**
+  > **Shape**: Skip the MultiFn extern struct entirely. Encode a
+  > multimethod as a `PersistentArrayMap` with sentinel keys
+  > wrapped in an Atom; Group B slot 1 stays reserved-but-empty.
+  > `defmethod` becomes `(swap! the-mm assoc-in [::methods
+  > dispatch-val] method-fn)`.
+  > **Verdict within F-NNN**: borderline. Does NOT violate F-004
+  > strictly (reservations are memos), but creates a
+  > reservation-table-vs-impl inconsistency. The "every
+  > multimethod is an Atom" twist breaks JVM Clojure's
+  > user-observable shape (`my-mm` IS callable in JVM Clojure;
+  > under Alt 3 `my-mm` is an Atom whose deref is callable) —
+  > F-002 finished-form drift. Also 3 map-traversals per dispatch
+  > vs 3 field-loads; the proposal's extern-struct shape is
+  > cheaper per-call.
+  >
+  > **No hard F-NNN violation surfaced.** Alt 3's borderline
+  > F-002 drift is recoverable but rejected.
+
+  **Selected**: Alt 1. The Devil's-advocate's framing labels
+  Alt 1 as "smallest-diff" and Alt 2 as "finished-form-clean",
+  but the body of Alt 1's verdict argues Alt 1 IS the finished
+  form because (a) JVM Clojure ships `defmulti` as a `defmacro`
+  (not a special form) — the analyzer-Node shape diverges from
+  upstream Clojure surface; (b) cw v1's existing convention
+  (`defn` / `defmacro` are macros over `def`) matches Alt 1's
+  shape — adding analyzer Nodes would break the pattern; (c)
+  the row 7.2 cycle ships zero new provisional behaviour
+  (zero VM-DEFER markers, zero new opcodes, zero new Node
+  variants), which is the finished-form-clean shape per F-002.
+  Alt 2 was the survey-draft's territory but is rejected as
+  Reservation-as-bias toward v0's incidental analyzer-Node
+  shape. Alt 3 rejected per advocate's own F-002 finding.
+
+  **VM-DEFER count delta vs survey draft**: -3 sites NOT
+  introduced. `D-014c-VM-sub` debt row NOT opened.
+  `feature_deps.yaml#runtime/vm/multimethod` entry NOT opened.
+
+  Files touched at row 7.2 under the Alt 1 shape: NEW
+  `src/runtime/multimethod.zig` (MultiFn extern struct +
+  getMethod + callMultiFn + cw-native isaCheck via
+  TypeDescriptor walk per survey §7 DIVERGENCE); NEW
+  `src/lang/primitive/multimethod.zig` (`__make_multifn` /
+  `__add_method` / `__remove_method` / `__methods` /
+  `__get_method` / `__prefer_method` / `__prefers` + `isa?` /
+  `derive` / `underive` / `parents` / `ancestors` /
+  `descendants` / `make-hierarchy` primitives); EXTEND
+  `src/lang/clj/clojure/core.clj` (`defmulti` / `defmethod`
+  macros over the primitives); EXTEND `src/runtime/dispatch.zig`
+  with `.multi_fn` arm in `vtable.callFn`; new `error_catalog`
+  Codes (`multimethod_no_method`, `multimethod_ambiguous_dispatch`,
+  `multimethod_cyclic_derive`, `multimethod_prefer_conflict`).
+
+  Cycle terminus condition: ROADMAP §9.9 row 7.2 [x] when
+  `defmulti` / `defmethod` / `prefer-method` / `derive` / `isa?` /
+  `make-hierarchy` all green on the diff_test layer with TreeWalk
+  ≡ VM equivalence (not asymmetry).
