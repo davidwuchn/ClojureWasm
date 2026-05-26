@@ -93,6 +93,38 @@ pub const MultiFn = extern struct {
     cached_hierarchy_snapshot: Value,
 };
 
+/// Cycle 3 — does `x` dominate `y` for multimethod resolution?
+/// JVM `MultiFn.dominates(x, y) = prefers(x, y) || isA(x, y)`.
+/// cw v1 calls these `isPreferred` and `isaCheck` respectively.
+///
+/// `prefer_table` shape: `{x #{y1 y2 ...}, ...}` where x is
+/// preferred over each y in the set (matches JVM
+/// `preferTable: IPersistentMap`). cycle 3 implements **direct**
+/// preference only; transitive `(prefers x y) ⇒ (prefers x z)`
+/// via hierarchy parents waits for cycle 4 (full-hierarchy deref
+/// will surface the `:parents` sub-map that transitive walks
+/// require).
+pub fn dominates(
+    prefer_table: Value,
+    hierarchy_ancestors: Value,
+    x: Value,
+    y: Value,
+) !bool {
+    if (try isPreferred(prefer_table, x, y)) return true;
+    return try isaCheck(hierarchy_ancestors, x, y);
+}
+
+/// Cycle 3 direct-only preference check. Returns true iff
+/// `prefer_table[x]` contains `y` (i.e. `(prefer-method f x y)`
+/// was called). Transitive resolution lands in cycle 4 alongside
+/// the full-hierarchy `:parents` access.
+pub fn isPreferred(prefer_table: Value, x: Value, y: Value) !bool {
+    if (prefer_table.tag() == .nil) return false;
+    const preferred_over = try map_mod.get(prefer_table, x);
+    if (preferred_over.tag() != .hash_set) return false;
+    return try set_mod.contains(preferred_over, y);
+}
+
 /// cw v1 `isa?` check, cycle-2 scope: equality + hierarchy
 /// ancestors-map lookup. Mirrors `clojure.core/isa?` steps 1 + 3.
 /// Step 2 (`Class.isAssignableFrom`) and step 4 (`supers` walk)
@@ -143,7 +175,11 @@ pub fn getMethod(
     const direct = try map_mod.get(mf.method_table, dispatch_val);
     if (direct.tag() != .nil) return direct;
 
-    var candidate: ?Value = null;
+    // Cycle 2-3 hierarchy resolution: collect isa? candidates;
+    // if ≥ 2 use `dominates` (prefer-method ∪ isa?) to pick the
+    // best; if no dominator survives the walk → raise ambiguity.
+    var best_key: ?Value = null;
+    var best_method: ?Value = null;
     var ambiguous = false;
     if (mf.method_table.tag() == .array_map) {
         const am = mf.method_table.decodePtr(*const map_mod.ArrayMap);
@@ -151,12 +187,19 @@ pub fn getMethod(
         while (i < am.count) : (i += 1) {
             const key = am.entries[2 * i];
             if (@intFromEnum(key) == @intFromEnum(dispatch_val)) continue;
-            if (try isaCheck(mf.hierarchy_ref, dispatch_val, key)) {
-                if (candidate != null) {
+            if (!(try isaCheck(mf.hierarchy_ref, dispatch_val, key))) continue;
+
+            if (best_key) |bk| {
+                if (try dominates(mf.prefer_table, mf.hierarchy_ref, key, bk)) {
+                    best_key = key;
+                    best_method = am.entries[2 * i + 1];
+                    ambiguous = false;
+                } else if (!(try dominates(mf.prefer_table, mf.hierarchy_ref, bk, key))) {
                     ambiguous = true;
-                } else {
-                    candidate = am.entries[2 * i + 1];
                 }
+            } else {
+                best_key = key;
+                best_method = am.entries[2 * i + 1];
             }
         }
     }
@@ -166,7 +209,7 @@ pub fn getMethod(
             .name = name_sym.name,
         });
     }
-    if (candidate) |c| return c;
+    if (best_method) |c| return c;
 
     const fallback = try map_mod.get(mf.method_table, mf.default_dispatch_val);
     if (fallback.tag() != .nil) return fallback;
@@ -413,4 +456,139 @@ fn rt_gc_makeTestMultiFnWithHierarchy(
         .cached_hierarchy_snapshot = Value.nil_val,
     };
     return mf;
+}
+
+// --- cycle 3: prefer-method + dominates() ---
+
+test "isPreferred: direct preference recognised" {
+    var fix: TestFixture = undefined;
+    fix.init(testing.allocator);
+    defer fix.deinit();
+
+    const a = try keyword.intern(&fix.rt, null, "a");
+    const b = try keyword.intern(&fix.rt, null, "b");
+
+    // (prefer-method f :a :b) → prefer_table[:a] = #{:b}
+    const a_over = try set_mod.conj(&fix.rt, set_mod.empty(), b);
+    const prefer = try map_mod.assoc(&fix.rt, map_mod.empty(), a, a_over);
+
+    try testing.expect(try isPreferred(prefer, a, b));
+    try testing.expect(!(try isPreferred(prefer, b, a)));
+}
+
+test "isPreferred: empty prefer table returns false" {
+    var fix: TestFixture = undefined;
+    fix.init(testing.allocator);
+    defer fix.deinit();
+
+    const a = try keyword.intern(&fix.rt, null, "a");
+    const b = try keyword.intern(&fix.rt, null, "b");
+    try testing.expect(!(try isPreferred(Value.nil_val, a, b)));
+    try testing.expect(!(try isPreferred(map_mod.empty(), a, b)));
+}
+
+test "dominates: prefer-method short-circuits over isa?" {
+    var fix: TestFixture = undefined;
+    fix.init(testing.allocator);
+    defer fix.deinit();
+
+    const a = try keyword.intern(&fix.rt, null, "a");
+    const b = try keyword.intern(&fix.rt, null, "b");
+
+    const a_over = try set_mod.conj(&fix.rt, set_mod.empty(), b);
+    const prefer = try map_mod.assoc(&fix.rt, map_mod.empty(), a, a_over);
+
+    // No hierarchy relation, prefer wins.
+    try testing.expect(try dominates(prefer, Value.nil_val, a, b));
+}
+
+test "getMethod: prefer-method resolves isa? ambiguity" {
+    var fix: TestFixture = undefined;
+    fix.init(testing.allocator);
+    defer fix.deinit();
+
+    const name_sym = try symbol.intern(&fix.rt, "test", "f");
+    const default_kw = try keyword.intern(&fix.rt, null, "default");
+    const dog = try keyword.intern(&fix.rt, null, "dog");
+    const animal = try keyword.intern(&fix.rt, null, "animal");
+    const mammal = try keyword.intern(&fix.rt, null, "mammal");
+    const animal_method = try keyword.intern(&fix.rt, null, "method-animal");
+    const mammal_method = try keyword.intern(&fix.rt, null, "method-mammal");
+
+    // (derive :dog :animal) (derive :dog :mammal) — both isa?.
+    var dog_ancestors = set_mod.empty();
+    dog_ancestors = try set_mod.conj(&fix.rt, dog_ancestors, animal);
+    dog_ancestors = try set_mod.conj(&fix.rt, dog_ancestors, mammal);
+    const hierarchy_anc = try map_mod.assoc(&fix.rt, map_mod.empty(), dog, dog_ancestors);
+
+    var mt = map_mod.empty();
+    mt = try map_mod.assoc(&fix.rt, mt, animal, animal_method);
+    mt = try map_mod.assoc(&fix.rt, mt, mammal, mammal_method);
+
+    // (prefer-method f :mammal :animal) — mammal beats animal.
+    const mammal_over_animal = try set_mod.conj(&fix.rt, set_mod.empty(), animal);
+    const prefer = try map_mod.assoc(&fix.rt, map_mod.empty(), mammal, mammal_over_animal);
+
+    const mf = try fix.rt.gc.alloc(MultiFn);
+    mf.* = .{
+        .header = HeapHeader.init(.multi_fn),
+        .name = name_sym,
+        .dispatch_fn = Value.nil_val,
+        .default_dispatch_val = default_kw,
+        .hierarchy_ref = hierarchy_anc,
+        .method_table = mt,
+        .prefer_table = prefer,
+        .method_cache = map_mod.empty(),
+        .cached_hierarchy_snapshot = Value.nil_val,
+    };
+
+    const got = try getMethod(&fix.rt, mf, dog, .{});
+    try testing.expectEqual(@intFromEnum(mammal_method), @intFromEnum(got));
+}
+
+test "getMethod: ambiguity persists when prefer-method goes the wrong way" {
+    var fix: TestFixture = undefined;
+    fix.init(testing.allocator);
+    defer fix.deinit();
+
+    const name_sym = try symbol.intern(&fix.rt, "test", "f");
+    const default_kw = try keyword.intern(&fix.rt, null, "default");
+    const dog = try keyword.intern(&fix.rt, null, "dog");
+    const animal = try keyword.intern(&fix.rt, null, "animal");
+    const mammal = try keyword.intern(&fix.rt, null, "mammal");
+    const carnivore = try keyword.intern(&fix.rt, null, "carnivore");
+    const animal_method = try keyword.intern(&fix.rt, null, "method-animal");
+    const mammal_method = try keyword.intern(&fix.rt, null, "method-mammal");
+
+    // (derive :dog :animal) (derive :dog :mammal); prefer :carnivore
+    // over something irrelevant → does NOT resolve animal/mammal.
+    var dog_ancestors = set_mod.empty();
+    dog_ancestors = try set_mod.conj(&fix.rt, dog_ancestors, animal);
+    dog_ancestors = try set_mod.conj(&fix.rt, dog_ancestors, mammal);
+    const hierarchy_anc = try map_mod.assoc(&fix.rt, map_mod.empty(), dog, dog_ancestors);
+
+    var mt = map_mod.empty();
+    mt = try map_mod.assoc(&fix.rt, mt, animal, animal_method);
+    mt = try map_mod.assoc(&fix.rt, mt, mammal, mammal_method);
+
+    const carn_over = try set_mod.conj(&fix.rt, set_mod.empty(), animal);
+    const prefer = try map_mod.assoc(&fix.rt, map_mod.empty(), carnivore, carn_over);
+
+    const mf = try fix.rt.gc.alloc(MultiFn);
+    mf.* = .{
+        .header = HeapHeader.init(.multi_fn),
+        .name = name_sym,
+        .dispatch_fn = Value.nil_val,
+        .default_dispatch_val = default_kw,
+        .hierarchy_ref = hierarchy_anc,
+        .method_table = mt,
+        .prefer_table = prefer,
+        .method_cache = map_mod.empty(),
+        .cached_hierarchy_snapshot = Value.nil_val,
+    };
+
+    try testing.expectError(
+        error.ValueError,
+        getMethod(&fix.rt, mf, dog, .{}),
+    );
 }
