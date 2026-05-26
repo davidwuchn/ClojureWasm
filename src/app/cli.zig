@@ -1,11 +1,15 @@
 // SPDX-License-Identifier: EPL-2.0
 //! CLI argv-dispatcher for `cljw`. Parses flags + positional args
 //! into a `source_text` + `source_label` pair, then hands off to
-//! `app/runner.zig::runSource`. Surface (Phase 3.1+):
+//! `app/runner.zig::runSource`. Surface (Phase 3.1+, row 8.4):
 //!   - With no arguments, prints `ClojureWasm` (smoke output).
 //!   - `-e <expr>` / `--eval <expr>`: in-line source string.
 //!   - `<file.clj>` (positional): file's contents.
 //!   - `-` (positional): stdin (heredoc-friendly).
+//!   - `--compare` (row 8.4): runs source through BOTH backends
+//!     via `eval/evaluator.compare`; prints `OK` + the value when
+//!     they agree, `MISMATCH` + both values when they diverge
+//!     (exit 1 on mismatch). ADR-0005 full-bench remit.
 //!   - `-h` / `--help`: usage message.
 //!
 //! Row 8.1 (D-031) extracted argv parsing from `src/main.zig` so
@@ -38,6 +42,7 @@ pub fn dispatch(init: std.process.Init) !void {
 
     var source_text: ?[]const u8 = null;
     var source_label: []const u8 = "<-e>";
+    var compare_mode: bool = false;
 
     while (args.next()) |arg| {
         if (std.mem.eql(u8, arg, "-h") or std.mem.eql(u8, arg, "--help")) {
@@ -46,11 +51,16 @@ pub fn dispatch(init: std.process.Init) !void {
                 \\  -e, --eval <expr>  Read, analyse, evaluate <expr>; print each result.
                 \\  <file.clj>         Read+evaluate the named source file.
                 \\  -                  Read+evaluate from stdin (heredoc-friendly).
+                \\  --compare          Run source through tree_walk AND vm backends;
+                \\                     print OK + value on agreement, MISMATCH + both
+                \\                     values (exit 1) on divergence.
                 \\  -h, --help         Show this help.
                 \\
             , .{});
             try stdout.flush();
             return;
+        } else if (std.mem.eql(u8, arg, "--compare")) {
+            compare_mode = true;
         } else if (std.mem.eql(u8, arg, "-e") or std.mem.eql(u8, arg, "--eval")) {
             const expr = args.next() orelse {
                 try stderr.print("Error: -e / --eval requires an argument\n", .{});
@@ -97,5 +107,9 @@ pub fn dispatch(init: std.process.Init) !void {
         return;
     }
 
-    try runner.runSource(io, gpa, arena, stdout, stderr, source_text.?, source_label);
+    if (compare_mode) {
+        try runner.runSourceCompare(io, gpa, arena, stdout, stderr, source_text.?, source_label);
+    } else {
+        try runner.runSource(io, gpa, arena, stdout, stderr, source_text.?, source_label);
+    }
 }

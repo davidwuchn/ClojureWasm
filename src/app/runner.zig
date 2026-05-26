@@ -19,6 +19,7 @@ const Reader = @import("../eval/reader.zig").Reader;
 const analyzeForm = @import("../eval/analyzer/analyzer.zig").analyze;
 const macro_dispatch = @import("../eval/macro_dispatch.zig");
 const driver = @import("../eval/driver.zig");
+const evaluator = @import("../eval/evaluator.zig");
 const Runtime = @import("../runtime/runtime.zig").Runtime;
 const Env = @import("../runtime/env.zig").Env;
 const Value = @import("../runtime/value/value.zig").Value;
@@ -101,4 +102,74 @@ pub fn runSource(
         try stdout.writeByte('\n');
     }
     try stdout.flush();
+}
+
+/// Row 8.4 / ADR-0005 — `--compare` mode. Runs `source_text` through
+/// both backends via `evaluator.compare`, prints `OK <value>` on
+/// parity (NaN-boxed bit-equal), or `MISMATCH` + both renderings
+/// on divergence (exit 1). Heap-allocated Values compare by
+/// pointer-equality which differs across separately-allocated heap
+/// objects even when the Clojure-level value matches — the
+/// `evaluator.compare` docstring documents this caveat
+/// (Phase 5+ `Value.eql` will widen the parity definition).
+pub fn runSourceCompare(
+    io: std.Io,
+    gpa: std.mem.Allocator,
+    arena: std.mem.Allocator,
+    stdout: *Writer,
+    stderr: *Writer,
+    source_text: []const u8,
+    source_label: []const u8,
+) !void {
+    _ = source_label;
+
+    var rt = Runtime.init(io, gpa);
+    defer rt.deinit();
+
+    var env = try Env.init(&rt);
+    defer env.deinit();
+
+    bootstrap.installEmbeddedResolver(&rt);
+    try primitive.registerAll(&env);
+
+    var macro_table = macro_dispatch.Table.init(gpa);
+    defer macro_table.deinit();
+    try macro_transforms.registerInto(&env, &macro_table);
+
+    // `evaluator.compare` swaps the vtable internally — but bootstrap
+    // needs ONE vtable installed first so `bootstrap.loadCore`'s
+    // expand+eval path works. Use tree_walk for bootstrap (matches
+    // production default); compare then re-installs per-run.
+    driver.installVTable(&rt);
+    bootstrap.loadCore(arena, &rt, &env, &macro_table) catch |err| {
+        try stderr.print("compare: bootstrap failed: {s}\n", .{@errorName(err)});
+        try stderr.flush();
+        std.process.exit(1);
+    };
+
+    const result = evaluator.compare(&rt, &env, &macro_table, arena, source_text);
+    if (result.equal) {
+        const value = result.tree_walk catch unreachable;
+        try stdout.writeAll("OK ");
+        try print.printValue(stdout, value);
+        try stdout.writeByte('\n');
+        try stdout.flush();
+        return;
+    }
+
+    try stdout.writeAll("MISMATCH\n  tree_walk: ");
+    if (result.tree_walk) |v| {
+        try print.printValue(stdout, v);
+    } else |err| {
+        try stdout.print("ERROR {s}", .{@errorName(err)});
+    }
+    try stdout.writeAll("\n  vm:        ");
+    if (result.vm) |v| {
+        try print.printValue(stdout, v);
+    } else |err| {
+        try stdout.print("ERROR {s}", .{@errorName(err)});
+    }
+    try stdout.writeByte('\n');
+    try stdout.flush();
+    std.process.exit(1);
 }
