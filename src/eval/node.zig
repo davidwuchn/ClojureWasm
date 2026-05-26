@@ -330,13 +330,21 @@ pub const InNsNode = struct {
     loc: SourceLocation = .{},
 };
 
-/// `(require 'ns.name)` analyser node. Phase 6.16.b-4 sub-cycle c.4
-/// supports the bare-symbol shape only; libspec opts (`:as` /
-/// `:refer` / `:reload`) land in the next sub-cycle alongside the
-/// `(ns ...)` special form (ADR-0035 D2). The `ns_name` slice is
+/// `(require 'ns.name)` / `(require '[ns.name :as a :refer [x y]])`
+/// analyser node. Phase 6.16.b-4 sub-cycle c.5 lifts beyond the
+/// bare-symbol shape to support `:as` (alias install via
+/// `env.setAlias`) and `:refer` (per-name refer install via
+/// `env.referOne`). `:reload` / `:as-alias` / `:refer :all` and
+/// multi-libspec land later within ADR-0035 scope. All slices are
 /// arena-owned.
 pub const RequireNode = struct {
     ns_name: []const u8,
+    /// `:as <alias>` — registered in the calling ns's alias table
+    /// when set. `null` = no alias requested.
+    alias: ?[]const u8 = null,
+    /// `:refer [a b c]` — explicit name list to refer. Empty slice
+    /// when not requested. Each element is an arena-owned slice.
+    refers: []const []const u8 = &.{},
     loc: SourceLocation = .{},
 };
 

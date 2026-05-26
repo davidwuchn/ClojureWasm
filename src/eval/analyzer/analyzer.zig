@@ -361,9 +361,14 @@ fn analyzeSymbol(
             return n;
         }
     }
-    // Global Var resolution.
+    // Global Var resolution. Qualified symbols `s/name` first
+    // consult the current ns's alias table (ADR-0035 D3) — alias
+    // names take precedence over real ns names (= JVM semantics:
+    // `(alias 'str 'clojure.string)` shadows any literal `str` ns).
     const ns = if (sym.ns) |ns_name|
-        env.findNs(ns_name) orelse return error_catalog.raise(.namespace_unknown, form.location, .{ .ns = ns_name })
+        (if (env.current_ns) |here| here.aliases.get(ns_name) else null) orelse
+            env.findNs(ns_name) orelse
+            return error_catalog.raise(.namespace_unknown, form.location, .{ .ns = ns_name })
     else
         env.current_ns orelse return error_catalog.raise(.current_namespace_missing, form.location, .{ .sym = sym.name });
     const v_ptr = ns.resolve(sym.name) orelse return error_catalog.raise(.symbol_unresolved, form.location, .{ .sym = symFullName(sym) });

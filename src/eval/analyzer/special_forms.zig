@@ -17,7 +17,8 @@
 //! are needed.
 
 const std = @import("std");
-const Form = @import("../form.zig").Form;
+const form_mod = @import("../form.zig");
+const Form = form_mod.Form;
 const node_mod = @import("../node.zig");
 const Node = node_mod.Node;
 const Value = @import("../../runtime/value/value.zig").Value;
@@ -203,43 +204,97 @@ pub fn analyzeQuote(
 /// `InNsNode` for the tree-walk evaluator to act on. Quoted-symbol
 /// form is unwrapped here because cw v1 has no symbol heap Value
 /// yet (F-004 Group A slot 1 reserved).
-/// `(require 'ns.name)` — bare-symbol shape only at Phase 6.16.b-4
-/// sub-cycle c.4. libspec opts (`:as` / `:refer` / `:reload` /
-/// `:as-alias`) and vector libspec shape land in sub-cycle c.5
-/// alongside the `(ns ...)` macro per ADR-0035 D2. Quoted-symbol
-/// form is unwrapped here because cw v1 has no symbol heap Value
-/// yet (F-004 Group A slot 1 reserved). Mirrors `analyzeInNs` shape.
+/// `(require 'ns.name)` or `(require '[ns.name :as a :refer [x y]])`.
+/// Phase 6.16.b-4 sub-cycle c.5 lifts vector libspecs with `:as` +
+/// `:refer`. ADR-0035 D2. Quoted-symbol / quoted-vector wrapper is
+/// unwrapped here because cw v1 has no symbol / vector heap Value
+/// usable as a runtime arg yet (F-004 reserved slots). Returns a
+/// `RequireNode` carrying ns_name + optional alias + refers slice.
 pub fn analyzeRequire(
     arena: std.mem.Allocator,
     items: []const Form,
     form: Form,
 ) AnalyzeError!*const Node {
     if (items.len != 2)
-        return error_catalog.raise(.feature_not_supported, form.location, .{ .name = "require with multiple libspecs (Phase 6.16.b-4 c.5)" });
+        return error_catalog.raise(.feature_not_supported, form.location, .{ .name = "require with multiple libspecs (Phase 6.16.b-4 c.6+)" });
 
     const arg = items[1];
-    const sym = sym: switch (arg.data) {
-        .symbol => |s| break :sym s,
-        .list => |inner| {
+    // Unwrap `'foo` -> `foo` (quoted form) when present.
+    const inner_form: Form = switch (arg.data) {
+        .list => |inner| blk: {
             if (inner.len == 2 and inner[0].data == .symbol and
                 inner[0].data.symbol.ns == null and
-                std.mem.eql(u8, inner[0].data.symbol.name, "quote") and
-                inner[1].data == .symbol)
+                std.mem.eql(u8, inner[0].data.symbol.name, "quote"))
             {
-                break :sym inner[1].data.symbol;
+                break :blk inner[1];
             }
-            return error_catalog.raise(.feature_not_supported, arg.location, .{ .name = "require with non-symbol libspec (Phase 6.16.b-4 c.5)" });
+            return error_catalog.raise(.feature_not_supported, arg.location, .{ .name = "require with non-quoted libspec (Phase 6.16.b-4 c.6+)" });
         },
-        else => return error_catalog.raise(.feature_not_supported, arg.location, .{ .name = "require with non-symbol libspec (Phase 6.16.b-4 c.5)" }),
+        .symbol => arg,
+        .vector => arg,
+        else => return error_catalog.raise(.feature_not_supported, arg.location, .{ .name = "require with non-symbol/vector libspec (Phase 6.16.b-4 c.6+)" }),
     };
 
-    const ns_name: []const u8 = if (sym.ns) |prefix|
-        try std.fmt.allocPrint(arena, "{s}/{s}", .{ prefix, sym.name })
+    // Two shapes: bare symbol `foo` or vector `[foo :as a :refer [x y]]`.
+    var ns_sym: form_mod.SymbolRef = undefined;
+    var alias_name: ?[]const u8 = null;
+    var refer_names: []const []const u8 = &.{};
+
+    switch (inner_form.data) {
+        .symbol => |s| ns_sym = s,
+        .vector => |vec| {
+            if (vec.len == 0 or vec[0].data != .symbol)
+                return error_catalog.raise(.feature_not_supported, inner_form.location, .{ .name = "require libspec must begin with a symbol" });
+            ns_sym = vec[0].data.symbol;
+
+            // Walk the rest pairwise: keyword + value.
+            var i: usize = 1;
+            while (i < vec.len) {
+                if (vec[i].data != .keyword)
+                    return error_catalog.raise(.feature_not_supported, vec[i].location, .{ .name = "require libspec options must be keyword/value pairs" });
+                const kw = vec[i].data.keyword;
+                if (kw.ns != null)
+                    return error_catalog.raise(.feature_not_supported, vec[i].location, .{ .name = "require libspec keyword must be unqualified" });
+                if (i + 1 >= vec.len)
+                    return error_catalog.raise(.feature_not_supported, vec[i].location, .{ .name = "require libspec keyword without value" });
+                const val = vec[i + 1];
+                if (std.mem.eql(u8, kw.name, "as")) {
+                    if (val.data != .symbol or val.data.symbol.ns != null)
+                        return error_catalog.raise(.feature_not_supported, val.location, .{ .name = "require :as value must be an unqualified symbol" });
+                    alias_name = try arena.dupe(u8, val.data.symbol.name);
+                } else if (std.mem.eql(u8, kw.name, "refer")) {
+                    if (val.data != .vector)
+                        return error_catalog.raise(.feature_not_supported, val.location, .{ .name = "require :refer value must be a vector of symbols (Phase 6.16.b-4 c.6+: :all)" });
+                    const refs = val.data.vector;
+                    const buf = try arena.alloc([]const u8, refs.len);
+                    var k: usize = 0;
+                    while (k < refs.len) : (k += 1) {
+                        if (refs[k].data != .symbol or refs[k].data.symbol.ns != null)
+                            return error_catalog.raise(.feature_not_supported, refs[k].location, .{ .name = "require :refer entries must be unqualified symbols" });
+                        buf[k] = try arena.dupe(u8, refs[k].data.symbol.name);
+                    }
+                    refer_names = buf;
+                } else {
+                    return error_catalog.raise(.feature_not_supported, vec[i].location, .{ .name = "require libspec keyword (only :as and :refer supported at c.5)" });
+                }
+                i += 2;
+            }
+        },
+        else => return error_catalog.raise(.feature_not_supported, inner_form.location, .{ .name = "require libspec must be symbol or vector" }),
+    }
+
+    const ns_name: []const u8 = if (ns_sym.ns) |prefix|
+        try std.fmt.allocPrint(arena, "{s}/{s}", .{ prefix, ns_sym.name })
     else
-        try arena.dupe(u8, sym.name);
+        try arena.dupe(u8, ns_sym.name);
 
     const n = try arena.create(Node);
-    n.* = .{ .require_node = .{ .ns_name = ns_name, .loc = form.location } };
+    n.* = .{ .require_node = .{
+        .ns_name = ns_name,
+        .alias = alias_name,
+        .refers = refer_names,
+        .loc = form.location,
+    } };
     return n;
 }
 

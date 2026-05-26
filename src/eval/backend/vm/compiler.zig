@@ -371,8 +371,15 @@ const Compiler = struct {
     }
 
     fn compileRequire(self: *Compiler, n: node_mod.RequireNode) Error!void {
-        // ADR-0035 D2 require VM path. Same shape as compileInNs: park
-        // the ns name as a String Value, emit op_require.
+        // ADR-0035 D2 require VM path. The bare-symbol shape parks
+        // the ns name as a String constant and emits op_require.
+        // `:as` / `:refer` libspec evaluation in VM mode is deferred
+        // to a future cycle (D-073 sibling) because op_require's
+        // single-operand encoding does not carry alias + refers; the
+        // tree-walk backend handles the full surface today.
+        if (n.alias != null or n.refers.len > 0) {
+            return error.NotImplemented;
+        }
         const name_val = try string_mod.alloc(self.rt, n.ns_name);
         const idx = try self.addConstant(name_val);
         try self.emit(.op_require, idx);

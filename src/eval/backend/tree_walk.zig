@@ -277,29 +277,56 @@ fn evalInNs(env: *Env, n: node_mod.InNsNode) !Value {
     return .nil_val;
 }
 
-/// `(require 'foo.bar)` — bare-symbol shape only at Phase 6.16.b-4
-/// sub-cycle c.4. ADR-0035 D2/D5/D8. Already-loaded namespaces (any
-/// of the 4 bootstrap namespaces, plus any future namespaces) are a
-/// no-op returning nil. Unknown names (= resolver returns null)
-/// raise `lib_not_found`. Source-loading of a not-yet-loaded
-/// namespace + libspec opts (`:as` / `:refer` / `:reload`) land in
-/// sub-cycle c.5 (needs macro_table threading + the (ns ...) macro).
+/// `(require 'foo.bar)` / `(require '[foo.bar :as a :refer [x y]])`.
+/// ADR-0035 D2/D3/D4/D5/D8. Phase 6.16.b-4 sub-cycle c.5 adds
+/// vector-libspec support: `:as` installs an alias in the calling
+/// ns; `:refer` installs explicit per-name refers (raising
+/// `private_access_error` on private targets, `symbol_unresolved`
+/// when the source ns lacks the name). Already-loaded namespaces
+/// skip the load step but still apply :as/:refer. Source-loading
+/// of a not-yet-loaded namespace remains deferred to sub-cycle c.6
+/// (needs macro_table threading).
 fn evalRequire(rt: *Runtime, env: *Env, n: node_mod.RequireNode) !Value {
-    if (env.findNs(n.ns_name)) |existing| {
-        if (existing.mappings.count() > 0) return .nil_val;
+    const target_ns = blk: {
+        if (env.findNs(n.ns_name)) |existing| {
+            if (existing.mappings.count() > 0) break :blk existing;
+        }
+        const resolver = rt.require_resolver orelse
+            return error_catalog.raise(.lib_not_found, n.loc, .{ .ns = n.ns_name });
+        const source_opt = try resolver(rt, n.ns_name);
+        if (source_opt == null)
+            return error_catalog.raise(.lib_not_found, n.loc, .{ .ns = n.ns_name });
+        return error_catalog.raise(.feature_not_supported, n.loc, .{
+            .name = "require: loading a not-yet-loaded namespace (Phase 6.16.b-4 c.6)",
+        });
+    };
+
+    const here = env.current_ns orelse
+        return error_catalog.raise(.current_namespace_missing, n.loc, .{ .sym = n.ns_name });
+
+    if (n.alias) |alias_name| {
+        try env.setAlias(here, alias_name, target_ns);
     }
-    const resolver = rt.require_resolver orelse
-        return error_catalog.raise(.lib_not_found, n.loc, .{ .ns = n.ns_name });
-    const source_opt = try resolver(rt, n.ns_name);
-    if (source_opt == null)
-        return error_catalog.raise(.lib_not_found, n.loc, .{ .ns = n.ns_name });
-    // Source-load path lands in sub-cycle c.5 (requires macro_table
-    // threading). Falling through here can only happen if the
-    // resolver covers a namespace the bootstrap loader did not
-    // load — which is impossible for the embedded resolver today.
-    return error_catalog.raise(.feature_not_supported, n.loc, .{
-        .name = "require: loading a not-yet-loaded namespace (Phase 6.16.b-4 c.5)",
-    });
+    for (n.refers) |refer_name| {
+        const outcome = try env.referOne(target_ns, here, refer_name);
+        switch (outcome) {
+            .installed => {},
+            .private_blocked => {
+                const full = try std.fmt.allocPrint(rt.gpa, "{s}/{s}", .{ n.ns_name, refer_name });
+                defer rt.gpa.free(full);
+                return error_catalog.raise(.private_access_error, n.loc, .{
+                    .sym = full,
+                    .ns = n.ns_name,
+                });
+            },
+            .not_found => {
+                const full = try std.fmt.allocPrint(rt.gpa, "{s}/{s}", .{ n.ns_name, refer_name });
+                defer rt.gpa.free(full);
+                return error_catalog.raise(.symbol_unresolved, n.loc, .{ .sym = full });
+            },
+        }
+    }
+    return .nil_val;
 }
 
 /// `[expr1 expr2 ...]` — evaluate each child, conj into an empty
