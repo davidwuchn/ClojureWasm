@@ -8,24 +8,20 @@
 
 - **HEAD**: see `git log` (HEAD refreshes only on Active-task-
   identifier change).
-- **First commit on resume MUST be**: open **Phase 6.16.b-4** cycle
-  — ADR-0035 (require spec) + D-071 Part 3 (`^:private` enforcement)
-  + bootstrap loader topo-sort + circular detection + `:as` / `:refer`
-  / `:require :reload` semantics. Devil's-advocate fork mandatory
-  (depth-3 ADR). Discharges the **11-marker / 3-yaml-entry
-  ns-machinery cluster** (`runtime/eval/in_ns_auto_refer` +
-  `runtime/bootstrap/refer_table` + `runtime/eval/bare_in_ns_decl`)
-  once `(ns ...)` macro ships. Survey via general-purpose
-  subagent first (output `private/notes/phase6-6.16.b-4-survey.md`).
-  6.16.b-1/-2/-3 already landed (ddb7203 / 7a915f7 / 6211d8a);
-  framework + spike + review-fixes landed
-  (1fdc342 / 0fed954 / 89b8fae / 64c697c / ef4f683).
-- **Forbidden this session**: (a) `__zig-` namespace prefix path. (b)
-  `clojure.X.impl/` sub-ns path. (c) `cljw build --source/--debug/
-  --aot` flag path. (d) mixing human + EDN in single stderr stream.
-  (e) ABI-level bytecode format commitment. (f) introducing new
-  PROVISIONAL markers without same-commit yaml + debt.md sync (the
-  hook will physically block — see `.claude/rules/provisional_marker.md`).
+- **First commit on resume MUST be**: open **Phase 6.16.c** —
+  clojure.walk 10 vars (`prewalk` / `postwalk` / `keywordize-keys`
+  / `stringify-keys` / `prewalk-replace` / `postwalk-replace` /
+  `prewalk-demo` / `postwalk-demo` Pattern A landing + `walk` B2
+  leaf preserved + `macroexpand-all` `^:unsupported` declare-only).
+  v5 §9.1; ROADMAP §9.8 row 6.16.c. Survey via general-purpose
+  subagent first (output `private/notes/phase6-6.16.c-survey.md`).
+- **Forbidden this session**: (a) `__zig-` namespace prefix path.
+  (b) `clojure.X.impl/` sub-ns path. (c) `cljw build --source/
+  --debug/--aot` flag path. (d) mixing human + EDN in single
+  stderr stream. (e) ABI-level bytecode format commitment.
+  (f) introducing new PROVISIONAL markers without same-commit
+  yaml + debt.md sync (the hook will physically block — see
+  `.claude/rules/provisional_marker.md`).
 
 ## Cold-start reading order
 
@@ -34,67 +30,50 @@ Workflow + § The only stop) → `.dev/project_facts.md` (F-001..F-009)
 → `.dev/principle.md` (Bad Smell + Devil's-advocate mandate) →
 **`private/notes/clj_vs_zig_split_proposal_v5.md` (placement /
 build / error 確定計画 SSOT)** → `.claude/rules/provisional_marker.md`
-(marker lifecycle + SSOT triad) → `feature_deps.yaml` (8 provisional
-entries / 16 marker sites) → `.dev/structure_plan.md` →
-`.dev/ROADMAP.md` §9.8.
+(marker lifecycle + SSOT triad) → `feature_deps.yaml` (5 provisional
+entries / 5 marker sites — post-ADR-0035 discharge) →
+`.dev/structure_plan.md` → `.dev/ROADMAP.md` §9.8.
 
 ## Current state
 
-- **Phase**: **Phase 6 IN-PROGRESS** — §9.8 14/24 `[x]` + 6.16.a-0
-  … a-3.2 + b-1 + b-2 + b-3 landed. Framework (1.1..1.6) +
-  spike (2.1..2.3) + review-fix all landed.
-  **Active task = Phase 6.16.b-4** (ADR-0035 + D-071 Part 3 +
-  bootstrap loader topo-sort).
+- **Phase**: **Phase 6 IN-PROGRESS** — §9.8. 6.16.b cluster
+  complete: a/b/c.1-c.7/d 全 10 commits landed for ADR-0035
+  (require + ns + per-file SourceContext + D-058/D-063/D-071
+  closures + 11 PROVISIONAL marker discharge).
+  **Active task = Phase 6.16.c** (clojure.walk Pattern A).
 - **Branch**: `cw-from-scratch`. v5 plan =
   `private/notes/clj_vs_zig_split_proposal_v5.md` (1593 lines).
-- **Gate**: Mac 33/33 + OrbStack Ubuntu x86_64 32/32 green at
-  ef4f683.
-- **Provisional markers**: 16 markers / 8 entries in
-  `feature_deps.yaml`. Hook (`scripts/check_provisional_sync.sh`)
-  live + wired in `.claude/settings.json`. Audit checks
-  E2.1..E2.4 in `audit_scaffolding`.
+- **Gate**: Mac 37/37 + OrbStack Ubuntu x86_64 36/36 green at
+  a762ca9.
+- **Provisional markers**: 5 markers / 5 entries remaining in
+  `feature_deps.yaml` after sub-cycle d discharge (D-070 join,
+  D-074 map-invert, D-075 project + rename, D-076 rename-keys,
+  D-077 catch_class_table). Hook live + wired.
 - **Chapter cadence**: dormant per ADR-0025 + F-007.
 
-## Active task — Phase 6.16.b-4 (ADR-0035 + D-071 Part 3)
+## Active task — Phase 6.16.c (clojure.walk Pattern A)
 
-ADR-0035 issuance (require spec + multi-file dependency topo-sort
-+ circular detection + `:as`/`:refer`/`:reload` semantics +
-bootstrap loader topo-sort extension + D-058 per-file
-SourceContext absorption + `(ns ...)` macro). Devil's-advocate
-fork mandatory (depth ≥ 3). Closes D-063 + D-071 (Part 1 already
-landed at 6.16.b-3; Part 3 `^:private` enforcement on
-`-*-eager` leaves lands here).
-
-Concurrent discharge: the 11-marker / 3-yaml-entry ns-machinery
-cluster (`runtime/eval/in_ns_auto_refer` + `runtime/bootstrap/
-refer_table` + `runtime/eval/bare_in_ns_decl`) — once `(ns ...)`
-macro ships these entries flip provisional → landed and the 11
-markers are removed in the same commit (the hook enforces sync).
-
-v5 follow-up amendments accumulating (fold into ADR-0033 amendment
-or next-cycle commit body):
-- §5.2 DIVERGENCE D1 wording (contains? on vector, 6.16.a-2)
-- §5.2 every?/some explicit Layer 2 designation (6.16.a-3.1)
-- §5.2 + §7 transducer arity cw v1 deviation + D-070 trigger spec
-- ADR-0033 D6a amendment (partial 着地、 D-070 後 back-fill)
-- 6.16.b-1..b-3 evalInNs + bootstrap.zig + core.clj provisional
-  (= ADR-0035 内包 discharge per spike 2.1)
+clojure.walk 10 vars landing in 1 cycle per v5 §9.1: keep current
+`walk` Zig leaf (B2 placement), add 8 Pattern A defns (`prewalk` /
+`postwalk` / `keywordize-keys` / `stringify-keys` / `prewalk-
+replace` / `postwalk-replace` / `prewalk-demo` / `postwalk-demo`),
+add `macroexpand-all` declare-only `^:unsupported` marker (Phase
+7 macro completion follow-up). e2e `clojure_walk_full.sh`. ADR-0035
+`(ns clojure.walk (:refer-clojure))` head + `(require ...)` are
+now available for the .clj defns.
 
 ## Open questions / blockers
 
 None testable from inside the loop. Step 0.5 sweep walks
-debt.md D-062..D-077; D-062 cluster anchored to placement.yaml.
+debt.md remaining open rows; ADR-0035 cluster closed sub-cycle d.
 
 ## Guardrail refresh history (condensed)
 
 Waves 1-14 (2026-05-23..25): spirit + Bad Smell + F-NNN +
 ADR-0029..0034 + v5 plan + ROADMAP §9.8 + debt D-062..D-073.
-**Wave 15-16 (2026-05-26)**: provisional-marker mechanisation
-+ 16-marker retrofit + hook_lib.sh + watch_findings.md +
+Wave 15-16 (2026-05-26): provisional-marker mechanisation +
+16-marker retrofit + hook_lib.sh + watch_findings.md +
 framework_completion + 3 Bad Smell + audit E2 expansion.
-
-## Stopped — user requested
-
-User instruction (2026-05-26): "ええと、このあたりで止めて
-ください" — Wave-15 + Wave-16 + W16-fix landed (11 commits).
-Resume at Phase 6.16.b-4.
+Phase 6.16.b-4 (2026-05-26, 10 commits 9dc3a8e..a762ca9):
+ADR-0035 issuance + D-058/D-063/D-071 closure + 11 PROVISIONAL
+marker discharge.
