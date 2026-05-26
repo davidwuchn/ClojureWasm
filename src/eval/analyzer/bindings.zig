@@ -89,6 +89,18 @@ pub fn analyzeFnStar(
     // shape. Single-arity is a 1-element slice (no sort needed).
     std.mem.sort(node_mod.FnMethod, methods.items, {}, lessByArity);
 
+    // Row 7.8 cycle 2 (ADR-0041): JVM rule 3 — no fixed method may
+    // require more args than the variadic's required count, otherwise
+    // call-site dispatch on `args.len == fixed.arity` would be
+    // ambiguous (both fixed-arity and variadic accept it).
+    if (variadic) |v| {
+        for (methods.items) |m| {
+            if (m.arity > v.arity) {
+                return error_catalog.raise(.fn_star_fixed_exceeds_variadic, form.location, .{ .fixed = m.arity, .variadic = v.arity });
+            }
+        }
+    }
+
     const n = try arena.create(Node);
     n.* = .{ .fn_node = .{
         .methods = try arena.dupe(node_mod.FnMethod, methods.items),

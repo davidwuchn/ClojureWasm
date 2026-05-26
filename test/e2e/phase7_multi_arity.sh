@@ -75,3 +75,30 @@ if [[ "$diag" != *"duplicate"* ]] && [[ "$diag" != *"two"* ]] && [[ "$diag" != *
     fail "case5: expected fn_star_arity_duplicate diagnostic, got '$diag'"
 fi
 echo "PASS fn_star_arity_duplicate_diagnostic"
+
+# --- Cycle 2: variadic + fixed coexistence ---
+
+# --- Case 6: fixed-arity wins on exact match; variadic catches the rest ---
+got=$("$BIN" -e '((fn* ([x] :one) ([x & rest] :many)) 1)' 2>/dev/null) || fail "case6a: non-zero exit ($got)"
+assert_eq 'fn_star_fixed_wins_on_exact_match' "$got" ':one'
+
+got=$("$BIN" -e '((fn* ([x] :one) ([x & rest] :many)) 1 2 3)' 2>/dev/null) || fail "case6b: non-zero exit ($got)"
+assert_eq 'fn_star_variadic_catches_extra' "$got" ':many'
+
+# --- Case 7: variadic body receives the rest as a seq-shaped collection ---
+got=$("$BIN" -e '((fn* ([& xs] xs)) 1 2 3)' 2>/dev/null) || fail "case7: non-zero exit ($got)"
+assert_eq 'fn_star_variadic_only_binds_rest' "$got" '(1 2 3)'
+
+# --- Case 8: JVM rule 3 — fixed arity > variadic req raises ---
+diag=$("$BIN" -e '(fn* ([x & rest] :v) ([a b c] :three))' 2>&1 || true)
+if [[ "$diag" != *"exceeds"* ]] && [[ "$diag" != *"more params"* ]] && [[ "$diag" != *"variadic"* ]]; then
+    fail "case8: expected fn_star_fixed_exceeds_variadic diagnostic, got '$diag'"
+fi
+echo "PASS fn_star_fixed_exceeds_variadic_diagnostic"
+
+# --- Case 9: JVM rule 1 — two variadics rejected ---
+diag=$("$BIN" -e '(fn* ([& a] :a) ([& b] :b))' 2>&1 || true)
+if [[ "$diag" != *"more than 1 variadic"* ]] && [[ "$diag" != *"duplicate"* ]] && [[ "$diag" != *"variadic"* ]]; then
+    fail "case9: expected fn_star_variadic_duplicate diagnostic, got '$diag'"
+fi
+echo "PASS fn_star_variadic_duplicate_diagnostic"

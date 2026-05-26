@@ -101,6 +101,10 @@ pub const Code = enum {
     /// More than one variadic `[& rest]` body. JVM rule 1 per ADR-0041
     /// / row 7.8 cycle 1.
     fn_star_variadic_duplicate,
+    /// Fixed-arity method has more params than the variadic's required
+    /// count — call-site dispatch would be ambiguous. JVM rule 3 per
+    /// ADR-0041 / row 7.8 cycle 2. args: `.{ .fixed = N, .variadic = M }`.
+    fn_star_fixed_exceeds_variadic,
 
     // --- Analysis (recur / throw / try / catch) ---
     recur_outside_target,
@@ -425,6 +429,10 @@ pub fn entry(comptime code: Code) Entry {
         .fn_star_variadic_duplicate => .{
             .kind = .syntax_error, .phase = .analysis,
             .template = "fn*: can't have more than 1 variadic overload",
+        },
+        .fn_star_fixed_exceeds_variadic => .{
+            .kind = .syntax_error, .phase = .analysis,
+            .template = "fn*: can't have fixed arity ({[fixed]d}) with more params than variadic ({[variadic]d})",
         },
 
         // --- Analysis (recur / throw / try / catch) ---
