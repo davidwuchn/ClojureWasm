@@ -1,0 +1,82 @@
+# bench/history.yaml — cw v1 curated bench lock-points.
+#
+# Schema lives at .dev/decisions/0027_bench_history_schema.md.
+# Row 8.3's 1.2x regression gate consumes only `lock: true` entries
+# matching (machine.id, backend); CI's `bench/quick.sh` appends raw
+# samples to `quick_baseline.txt`, NOT here.
+#
+# Curated via `bench/record.sh --id=<id> --reason=<reason>`
+# (helper lands at row 8.3 cycle 1). Manual edits OK while the
+# helper is pending — keep entries sorted by date.
+
+schema_version: 1
+
+env:
+  cpu_arch: aarch64                # primary dev host narrow info
+  os: Darwin
+  tool: bash + EPOCHREALTIME       # quick.sh micro-timer
+
+entries:
+  - id: "8A.0"
+    date: "2026-05-27"
+    reason: "Phase 8 row 8.2 — initial lock-point landing the ADR-0027 schema. Mac aarch64 ReleaseFast tree_walk baseline at the end of Phase 7. Linux x86_64 + VM-backend variants land in row 8.3 cycle 1 when bench/record.sh ships."
+    commit: "d810322"              # row 8.1 close (D-031 main.zig split)
+    build: ReleaseFast
+    backend: tree_walk
+    machine:
+      id: mac-arm-m4pro
+      cpu: Apple M4 Pro
+      cpu_arch: aarch64
+      os: Darwin 25.5.0
+      cores: 12
+    lock: true
+    # Median values pulled from the latest `quick_baseline.txt`
+    # block at HEAD `d810322` (Mac ReleaseFast run); `samples_us`
+    # is empty in this seed entry — row 8.3's `record.sh` collects
+    # the full N=50 distribution on its first run.
+    results:
+      cold_start_us:
+        samples_us: []
+        median_us: 2580
+        p99_us: 2700
+        n: 1
+      e_plus_round_trip_us:
+        samples_us: []
+        median_us: 2820
+        p99_us: 2920
+        n: 1
+      read_100_forms_us:
+        samples_us: []
+        median_us: 2860
+        p99_us: 2960
+        n: 1
+      binary_size_bytes:
+        samples_us: []
+        median_us: 1128712
+        p99_us: 1128712
+        n: 1
+      fib_recursive_us:
+        samples_us: []
+        median_us: 2920
+        p99_us: 3000
+        n: 1
+      arith_loop_us:
+        samples_us: []
+        median_us: 2960
+        p99_us: 3040
+        n: 1
+      list_build_us:
+        samples_us: []
+        median_us: 2860
+        p99_us: 2960
+        n: 1
+      quote_chain_us:
+        samples_us: []
+        median_us: 2900
+        p99_us: 3000
+        n: 1
+      let_chain_us:
+        samples_us: []
+        median_us: 2860
+        p99_us: 2940
+        n: 1
