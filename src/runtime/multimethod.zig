@@ -152,28 +152,42 @@ pub fn isaCheck(hierarchy_ancestors: Value, child: Value, parent: Value) !bool {
 /// Resolve `dispatch_val` to a method Value on `mf`.
 ///
 /// Resolution order:
+///   0. `method_cache.get(dispatch_val)` → return (cycle 4a).
 ///   1. Exact match in `method_table` → return.
 ///   2. Hierarchy walk via `isaCheck`. Zero matches → continue.
-///      One match → return. >1 matches → raise
-///      `multimethod_ambiguous_dispatch` (cycle 3 will use
-///      `prefer-method` to resolve before raising).
+///      One match → return. >1 matches → `dominates` (prefer ∪
+///      isa) selects best; no dominator → raise
+///      `multimethod_ambiguous_dispatch`.
 ///   3. Default fallback (`default_dispatch_val`) → return.
 ///   4. No method anywhere → raise `multimethod_no_method`.
 ///
-/// `mf.hierarchy_ref` carries the ancestors-map for cycle 2 (no
-/// IRef indirection yet — cycle 4 wires `deref()` and full
-/// `:ancestors` extraction). `mf.method_cache` is unused until
-/// cycle 4 lights it up.
+/// Steps 1-4 update `method_cache` via `assoc` before returning
+/// so subsequent calls with the same `dispatch_val` short-circuit
+/// at step 0. Cache invalidation on hierarchy drift + `defmethod`
+/// table mutation lands at cycle 4b alongside the
+/// `cached_hierarchy_snapshot` identity-compare predicate. cycle
+/// 4a treats the cache as monotonic — primitives that mutate
+/// `method_table` (cycle 5's `__add_method!` /
+/// `__remove_method!`) are responsible for resetting
+/// `method_cache` then.
+///
+/// `mf.hierarchy_ref` carries the ancestors-map for cycle 2-3
+/// (no IRef indirection yet — cycle 4b wires `deref()` and full
+/// `:ancestors` extraction).
 pub fn getMethod(
     rt: *Runtime,
-    mf: *const MultiFn,
+    mf: *MultiFn,
     dispatch_val: Value,
     loc: SourceLocation,
 ) anyerror!Value {
-    _ = rt;
+    const cached = try map_mod.get(mf.method_cache, dispatch_val);
+    if (cached.tag() != .nil) return cached;
 
     const direct = try map_mod.get(mf.method_table, dispatch_val);
-    if (direct.tag() != .nil) return direct;
+    if (direct.tag() != .nil) {
+        mf.method_cache = try map_mod.assoc(rt, mf.method_cache, dispatch_val, direct);
+        return direct;
+    }
 
     // Cycle 2-3 hierarchy resolution: collect isa? candidates;
     // if ≥ 2 use `dominates` (prefer-method ∪ isa?) to pick the
@@ -209,10 +223,16 @@ pub fn getMethod(
             .name = name_sym.name,
         });
     }
-    if (best_method) |c| return c;
+    if (best_method) |c| {
+        mf.method_cache = try map_mod.assoc(rt, mf.method_cache, dispatch_val, c);
+        return c;
+    }
 
     const fallback = try map_mod.get(mf.method_table, mf.default_dispatch_val);
-    if (fallback.tag() != .nil) return fallback;
+    if (fallback.tag() != .nil) {
+        mf.method_cache = try map_mod.assoc(rt, mf.method_cache, dispatch_val, fallback);
+        return fallback;
+    }
 
     const name_sym = symbol.asSymbol(mf.name);
     return error_catalog.raise(.multimethod_no_method, loc, .{
@@ -544,6 +564,67 @@ test "getMethod: prefer-method resolves isa? ambiguity" {
 
     const got = try getMethod(&fix.rt, mf, dog, .{});
     try testing.expectEqual(@intFromEnum(mammal_method), @intFromEnum(got));
+}
+
+// --- cycle 4a: method_cache fill + lookup ---
+
+test "getMethod: first call fills method_cache" {
+    var fix: TestFixture = undefined;
+    fix.init(testing.allocator);
+    defer fix.deinit();
+
+    const name_sym = try symbol.intern(&fix.rt, "test", "f");
+    const default_kw = try keyword.intern(&fix.rt, null, "default");
+    const kw_a = try keyword.intern(&fix.rt, null, "a");
+    const m_a = try keyword.intern(&fix.rt, null, "method-a");
+    const mt = try map_mod.assoc(&fix.rt, map_mod.empty(), kw_a, m_a);
+    const mf = try makeTestMultiFn(&fix.rt, name_sym, mt, default_kw);
+
+    _ = try getMethod(&fix.rt, mf, kw_a, .{});
+
+    const cached = try map_mod.get(mf.method_cache, kw_a);
+    try testing.expectEqual(@intFromEnum(m_a), @intFromEnum(cached));
+}
+
+test "getMethod: second call hits method_cache even after method_table is cleared" {
+    var fix: TestFixture = undefined;
+    fix.init(testing.allocator);
+    defer fix.deinit();
+
+    const name_sym = try symbol.intern(&fix.rt, "test", "f");
+    const default_kw = try keyword.intern(&fix.rt, null, "default");
+    const kw_a = try keyword.intern(&fix.rt, null, "a");
+    const m_a = try keyword.intern(&fix.rt, null, "method-a");
+    const mt = try map_mod.assoc(&fix.rt, map_mod.empty(), kw_a, m_a);
+    const mf = try makeTestMultiFn(&fix.rt, name_sym, mt, default_kw);
+
+    const first = try getMethod(&fix.rt, mf, kw_a, .{});
+    try testing.expectEqual(@intFromEnum(m_a), @intFromEnum(first));
+
+    // Pull the rug — without the cache, this would raise
+    // multimethod_no_method on the next call.
+    mf.method_table = map_mod.empty();
+
+    const second = try getMethod(&fix.rt, mf, kw_a, .{});
+    try testing.expectEqual(@intFromEnum(m_a), @intFromEnum(second));
+}
+
+test "getMethod: default-fallback result also fills method_cache" {
+    var fix: TestFixture = undefined;
+    fix.init(testing.allocator);
+    defer fix.deinit();
+
+    const name_sym = try symbol.intern(&fix.rt, "test", "f");
+    const default_kw = try keyword.intern(&fix.rt, null, "default");
+    const default_method = try keyword.intern(&fix.rt, null, "method-default");
+    const mt = try map_mod.assoc(&fix.rt, map_mod.empty(), default_kw, default_method);
+    const mf = try makeTestMultiFn(&fix.rt, name_sym, mt, default_kw);
+
+    const missing = try keyword.intern(&fix.rt, null, "missing");
+    _ = try getMethod(&fix.rt, mf, missing, .{});
+
+    const cached = try map_mod.get(mf.method_cache, missing);
+    try testing.expectEqual(@intFromEnum(default_method), @intFromEnum(cached));
 }
 
 test "getMethod: ambiguity persists when prefer-method goes the wrong way" {
