@@ -521,3 +521,27 @@ entries:
       unblocked from the VM-parity side, still gated on T2 Symbol
       Value.
 
+  - name: runtime/regex/replace_pattern_dollar_n
+    kind: runtime_layer
+    defined_in: src/lang/primitive/string.zig
+    status: provisional
+    requires_features: []
+    requires_debts:
+      - D-093
+    provisional_markers:
+      - src/lang/primitive/string.zig (strReplacePatternImpl — `$N` literal pass-through)
+    notes: |
+      Row 7.12 cycle 2 (2026-05-27) landed
+      `clojure.string/-str-replace-pattern` +
+      `-str-replace-first-pattern` private leaves. The regex-string
+      replacement arm appends the replacement literal verbatim;
+      JVM `Matcher.appendReplacement` interprets `$1` / `$2` / `$$`
+      escapes against the match's capture groups. cw v1 defers
+      `$N` interpretation until D-051 cycle 3 (capture groups +
+      `re-groups`) lands; at that point the marker discharges and
+      the literal pass-through is replaced with a tiny replacement
+      parser that consults `match.captures.slots`. The regex-fn arm
+      (`(replace s re #(str "<" % ">"))`) already works for the
+      common transformation case via whole-match. Survey § DIVERGENCE
+      D3 documents the trade-off.
+

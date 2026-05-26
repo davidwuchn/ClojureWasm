@@ -234,6 +234,141 @@ pub fn replaceFirst(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLoc
     return replaceImpl(rt, "replace-first", .first, args, loc);
 }
 
+// --- Row 7.12 cycle 2 (D-078): sub-leaf split of `replace` /
+//     `replace-first` into 6 private leaves per placement.yaml
+//     reservations (`-str-replace-string` / `-str-replace-char` /
+//     `-str-replace-pattern` × replace/replace-first). The Pattern A
+//     defn that lands in cycle 3 dispatches on (`instance?`) over
+//     these leaves; today they are private (`zig_leaf = true`) so
+//     user code does not depend on them directly. ---
+
+fn strReplaceStringImpl(rt: *Runtime, fn_name: []const u8, kind: ReplaceKind, args: []const Value, loc: SourceLocation) anyerror!Value {
+    try error_catalog.checkArity(fn_name, args, 3, loc);
+    if (args[0].tag() != .string)
+        return error_catalog.raise(.type_arg_not_string, loc, .{ .fn_name = fn_name, .actual = @tagName(args[0].tag()) });
+    if (args[1].tag() != .string)
+        return error_catalog.raise(.type_arg_not_string, loc, .{ .fn_name = fn_name, .actual = @tagName(args[1].tag()) });
+    if (args[2].tag() != .string)
+        return error_catalog.raise(.type_arg_not_string, loc, .{ .fn_name = fn_name, .actual = @tagName(args[2].tag()) });
+    const haystack = string_collection.asString(args[0]);
+    const needle = string_collection.asString(args[1]);
+    const replacement = string_collection.asString(args[2]);
+    const out = switch (kind) {
+        .all => try charset.replaceAllStringAlloc(rt.gc.infra, haystack, needle, replacement),
+        .first => try charset.replaceFirstStringAlloc(rt.gc.infra, haystack, needle, replacement),
+    };
+    defer rt.gc.infra.free(out);
+    return try string_collection.alloc(rt, out);
+}
+
+pub fn strReplaceString(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = env;
+    return strReplaceStringImpl(rt, "-str-replace-string", .all, args, loc);
+}
+
+pub fn strReplaceFirstString(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = env;
+    return strReplaceStringImpl(rt, "-str-replace-first-string", .first, args, loc);
+}
+
+fn strReplaceCharImpl(rt: *Runtime, fn_name: []const u8, kind: ReplaceKind, args: []const Value, loc: SourceLocation) anyerror!Value {
+    try error_catalog.checkArity(fn_name, args, 3, loc);
+    if (args[0].tag() != .string)
+        return error_catalog.raise(.type_arg_not_string, loc, .{ .fn_name = fn_name, .actual = @tagName(args[0].tag()) });
+    if (args[1].tag() != .char)
+        return error_catalog.raise(.type_arg_invalid, loc, .{ .fn_name = fn_name, .expected = "char", .actual = @tagName(args[1].tag()) });
+    if (args[2].tag() != .char)
+        return error_catalog.raise(.type_arg_invalid, loc, .{ .fn_name = fn_name, .expected = "char", .actual = @tagName(args[2].tag()) });
+    const haystack = string_collection.asString(args[0]);
+    const match_cp = args[1].asChar();
+    const repl_cp = args[2].asChar();
+
+    var out: std.ArrayList(u8) = .empty;
+    defer out.deinit(rt.gc.infra);
+    var iter = std.unicode.Utf8Iterator{ .bytes = haystack, .i = 0 };
+    var prev_i: usize = 0;
+    var replaced_any = false;
+    while (iter.nextCodepoint()) |cp| {
+        const cp_bytes = haystack[prev_i..iter.i];
+        if (cp == match_cp and (kind == .all or !replaced_any)) {
+            var enc_buf: [4]u8 = undefined;
+            const enc_len = try std.unicode.utf8Encode(repl_cp, &enc_buf);
+            try out.appendSlice(rt.gc.infra, enc_buf[0..enc_len]);
+            replaced_any = true;
+        } else {
+            try out.appendSlice(rt.gc.infra, cp_bytes);
+        }
+        prev_i = iter.i;
+    }
+    return try string_collection.alloc(rt, out.items);
+}
+
+pub fn strReplaceChar(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = env;
+    return strReplaceCharImpl(rt, "-str-replace-char", .all, args, loc);
+}
+
+pub fn strReplaceFirstChar(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = env;
+    return strReplaceCharImpl(rt, "-str-replace-first-char", .first, args, loc);
+}
+
+fn strReplacePatternImpl(rt: *Runtime, env: *Env, fn_name: []const u8, kind: ReplaceKind, args: []const Value, loc: SourceLocation) anyerror!Value {
+    try error_catalog.checkArity(fn_name, args, 3, loc);
+    if (args[0].tag() != .string)
+        return error_catalog.raise(.type_arg_not_string, loc, .{ .fn_name = fn_name, .actual = @tagName(args[0].tag()) });
+    if (args[1].tag() != .regex)
+        return error_catalog.raise(.type_arg_invalid, loc, .{ .fn_name = fn_name, .expected = "regex (Pattern)", .actual = @tagName(args[1].tag()) });
+    const haystack = string_collection.asString(args[0]);
+    const program = regex_value.asRegex(args[1]).program;
+
+    var out: std.ArrayList(u8) = .empty;
+    defer out.deinit(rt.gc.infra);
+    var pos: u32 = 0;
+    var any = false;
+    while (pos <= haystack.len) {
+        const match = (try regex_match.findFrom(rt.gc.infra, program, haystack, pos)) orelse break;
+        // Append unmatched prefix.
+        try out.appendSlice(rt.gc.infra, haystack[pos..match.start]);
+        const whole_match = haystack[match.start..match.end];
+        switch (args[2].tag()) {
+            .string => {
+                // PROVISIONAL: `$N` capture-group substitution pending D-051 cycle 3 capture support [refs: D-093, feature_deps.yaml#runtime/regex/replace_pattern_dollar_n]
+                try out.appendSlice(rt.gc.infra, string_collection.asString(args[2]));
+            },
+            .fn_val, .builtin_fn => {
+                const vt = rt.vtable orelse
+                    return error_catalog.raise(.feature_not_supported, loc, .{ .name = "regex-replace fn-arm before vtable install" });
+                const whole_val = try string_collection.alloc(rt, whole_match);
+                var call_args = [_]Value{whole_val};
+                const result = try vt.callFn(rt, env, args[2], &call_args, loc);
+                if (result.tag() != .string)
+                    return error_catalog.raise(.type_arg_invalid, loc, .{ .fn_name = fn_name, .expected = "fn returning string", .actual = @tagName(result.tag()) });
+                try out.appendSlice(rt.gc.infra, string_collection.asString(result));
+            },
+            else => return error_catalog.raise(.type_arg_invalid, loc, .{ .fn_name = fn_name, .expected = "string or fn", .actual = @tagName(args[2].tag()) }),
+        }
+        any = true;
+        // Advance past the match. Empty matches advance by 1 byte to
+        // avoid infinite loops (mirror JVM Matcher.replaceAll behaviour
+        // on `""` matches).
+        pos = if (match.end > match.start) match.end else match.start + 1;
+        if (kind == .first) break;
+    }
+    // Append tail.
+    if (pos <= haystack.len) try out.appendSlice(rt.gc.infra, haystack[pos..]);
+    if (!any and kind == .all) return args[0]; // identity fast-path
+    return try string_collection.alloc(rt, out.items);
+}
+
+pub fn strReplacePattern(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    return strReplacePatternImpl(rt, env, "-str-replace-pattern", .all, args, loc);
+}
+
+pub fn strReplaceFirstPattern(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    return strReplacePatternImpl(rt, env, "-str-replace-first-pattern", .first, args, loc);
+}
+
 /// `(clojure.string/reverse s)` — codepoint-reversed copy. UTF-8
 /// surrogate pairs are nonexistent so single-codepoint reversal is
 /// the natural semantics.
@@ -503,6 +638,15 @@ const LEAF_ENTRIES = [_]Entry{
     // the Pattern A defn.
     .{ .name = "-capitalize", .f = &capitalize },
     .{ .name = "-join", .f = &join },
+    // Row 7.12 cycle 2 (D-078): 6 replace sub-leaves per
+    // placement.yaml reservations. The Pattern A `(defn replace …)`
+    // lands in cycle 3 + dispatches on `instance?` across these.
+    .{ .name = "-str-replace-string", .f = &strReplaceString },
+    .{ .name = "-str-replace-first-string", .f = &strReplaceFirstString },
+    .{ .name = "-str-replace-char", .f = &strReplaceChar },
+    .{ .name = "-str-replace-first-char", .f = &strReplaceFirstChar },
+    .{ .name = "-str-replace-pattern", .f = &strReplacePattern },
+    .{ .name = "-str-replace-first-pattern", .f = &strReplaceFirstPattern },
 };
 
 /// Vars that stay as Zig leaves at their public name for this cycle.
