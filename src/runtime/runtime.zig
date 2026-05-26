@@ -128,6 +128,16 @@ pub const Runtime = struct {
     /// for Wasm pod resolvers.
     require_resolver: ?RequireResolverFn = null,
 
+    /// Monotonic counter bumped by `extend-type` / `extend-protocol`
+    /// (cycle 5+ primitives) so live `CallSite` caches can detect
+    /// stale `(TypeDescriptor, MethodEntry)` pointers. Per ADR-0008
+    /// amendment 1 Alt 1, the field was deferred from row 7.1 to
+    /// row 7.3 — extend-type is the consumer that gives the counter
+    /// a meaningful invalidation contract. CallSite's
+    /// `cached_generation` is checked against this on hit; the
+    /// guard is wired by row 7.3 cycle 2+.
+    protocol_generation: u32 = 0,
+
     pub const HeapEntry = struct {
         ptr: *anyopaque,
         free: *const fn (gpa: std.mem.Allocator, ptr: *anyopaque) void,

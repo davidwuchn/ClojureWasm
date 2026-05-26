@@ -9,6 +9,9 @@
 //! cache (4.25) can reference these types now.
 
 const std = @import("std");
+const Runtime = @import("runtime.zig").Runtime;
+const td_mod = @import("type_descriptor.zig");
+const TypeDescriptor = td_mod.TypeDescriptor;
 
 /// One method on a protocol — name + arity (Clojure protocols are
 /// arity-overloaded). The implementation pointer lives on the
@@ -33,6 +36,30 @@ pub const ProtocolDescriptor = struct {
     methods: []const MethodEntry,
 };
 
+/// Row 7.3 cycle 1: append `new_impls` to `td.method_table` and bump
+/// `rt.protocol_generation`. The TypeDescriptor's `method_table` is
+/// re-allocated on `rt.gc.infra` (process-lifetime) so the new slice
+/// pointer stays valid for the descriptor's lifetime; the old slice
+/// is leaked to infra rather than freed because live CallSite caches
+/// may still reference the stale pointer until the next dispatch
+/// invalidates them via the generation check.
+///
+/// Per survey §5.2 + ADR-0008 amendment 1 Alt 1 ("generation deferred
+/// to 7.3 / extend-type"). cycle 2 wires CallSite.cached_generation
+/// + the lookupWithCache predicate that consumes the bump.
+pub fn extendTypeWithImpls(
+    rt: *Runtime,
+    td: *TypeDescriptor,
+    new_impls: []const TypeDescriptor.MethodEntry,
+) !void {
+    const old = td.method_table;
+    const combined = try rt.gc.infra.alloc(TypeDescriptor.MethodEntry, old.len + new_impls.len);
+    @memcpy(combined[0..old.len], old);
+    @memcpy(combined[old.len..], new_impls);
+    td.method_table = combined;
+    rt.protocol_generation +%= 1;
+}
+
 // --- tests ---
 
 const testing = std.testing;
@@ -52,4 +79,47 @@ test "ProtocolDescriptor: fqcn + method list shape" {
     const pd: ProtocolDescriptor = .{ .fqcn = "user/ISeq", .methods = &methods };
     try testing.expectEqualStrings("user/ISeq", pd.fqcn);
     try testing.expectEqual(@as(usize, 3), pd.methods.len);
+}
+
+test "extendTypeWithImpls bumps protocol_generation and grows method_table" {
+    var th = std.Io.Threaded.init(testing.allocator, .{});
+    defer th.deinit();
+    var rt = Runtime.init(th.io(), testing.allocator);
+    defer rt.deinit();
+
+    // Synthetic descriptor with empty method_table on `rt.gc.infra`.
+    // Production deftype / defrecord analysers register descriptors
+    // into `rt.types` (which Runtime.deinit then walks); this test
+    // pre-empts that machinery by managing the descriptor's lifetime
+    // explicitly.
+    const td = try rt.gc.infra.create(TypeDescriptor);
+    defer rt.gc.infra.destroy(td);
+    td.* = .{
+        .fqcn = "user/Foo",
+        .kind = .deftype,
+        .field_layout = null,
+        .protocol_impls = &[_][]const u8{},
+        .method_table = &[_]TypeDescriptor.MethodEntry{},
+        .parent = null,
+        .meta = @import("value/value.zig").Value.nil_val,
+    };
+
+    try testing.expectEqual(@as(u32, 0), rt.protocol_generation);
+    try testing.expectEqual(@as(usize, 0), td.method_table.len);
+
+    const new_impls = [_]TypeDescriptor.MethodEntry{
+        .{ .protocol_name = "user/IFoo", .method_name = "bar", .fn_ptr = null },
+    };
+    try extendTypeWithImpls(&rt, td, &new_impls);
+    // Per the "re-alloc + swap, never free old" policy, the heap-
+    // allocated slice replacing the empty static one must be freed
+    // explicitly when the test exits. Production code accepts the
+    // leak because live CallSite caches may still reference the
+    // stale pointer until the generation check invalidates them.
+    defer rt.gc.infra.free(td.method_table);
+
+    try testing.expectEqual(@as(u32, 1), rt.protocol_generation);
+    try testing.expectEqual(@as(usize, 1), td.method_table.len);
+    try testing.expectEqualStrings("bar", td.method_table[0].method_name);
+    try testing.expectEqualStrings("user/IFoo", td.method_table[0].protocol_name);
 }
