@@ -406,29 +406,25 @@ entries:
   - name: runtime/vm/ns_filter
     kind: runtime_layer
     defined_in: src/eval/backend/vm/compiler.zig
-    status: provisional
+    status: landed
     requires_features: []
-    requires_debts:
-      - D-073
-    provisional_markers:
-      - src/eval/backend/vm/compiler.zig (compileNs — _ = n.refer_clojure field drop)
+    requires_debts: []
+    provisional_markers: []
     notes: |
-      `vm/compiler.zig::compileNs` discards `n.refer_clojure` and
-      lowers identically to `op_in_ns`. At HEAD this is dormant —
-      the analyzer always sets `refer_clojure = true` (the only
-      `(ns ...)` directive supported today is bare + `(:refer-clojure)`
-      without filters), and `op_in_ns` already auto-refers
-      clojure.core via the evalInNs auto-refer block, so observable
-      behaviour matches the tree_walk path by accident. The moment
-      the analyzer extends `NsNode` with `:exclude` / `:only`
-      filter fields (Phase 6.16.b-4 c.8+ owner decision per
-      `special_forms.zig:341-343` `feature_not_supported` raise),
-      the silent field-drop becomes a real divergence between
-      tree_walk and VM. The VM-DEFER marker per ADR-0036 makes the
-      gap grep-discoverable; discharge happens in the same commit
-      that extends `NsNode` with the filter encoding (VM emits a
-      new opcode pair, e.g. `op_ns_with_filter` + filter-list
-      constant, or sequenced `op_refer_exclude` ops).
+      Discharged at Phase 7 entry T3 (ADR-0035 D9 second amendment,
+      2026-05-26). The `_ = n.refer_clojure;` silent field-drop in
+      `compileNs` has been removed: T3 introduced opcode
+      `op_ns_with_refer_clojure` which is emitted when
+      `refer_clojure = true`, and bare `op_in_ns` is emitted when
+      false — `n.refer_clojure` is now consumed by the lowering.
+      The future `:exclude` / `:only` filter encoding remains a
+      separate concern (analyzer doesn't yet produce `NsNode`
+      filter fields per `special_forms.zig:341-343`
+      `feature_not_supported` raise); when those fields land, a
+      new entry will track that VM gap independently — keeping
+      this entry as the "refer_clojure drop" closure history
+      (entry stays in the file as SSOT linkage for D-073 sub-site
+      (e) discharge).
 
   - name: runtime/vm/require_libspec
     kind: runtime_layer

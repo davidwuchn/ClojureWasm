@@ -313,16 +313,35 @@ fn stepOnce(
             },
             .op_in_ns => {
                 // ADR-0032 in-ns — mirror of tree_walk::evalInNs.
+                // ADR-0035 D9 second amendment (Phase 7 entry T3,
+                // 2026-05-26): the prior auto-refer of rt +
+                // clojure.core has been removed. `(in-ns 'foo)` is
+                // now a naked ns switch. `.clj` heads use
+                // `(ns foo (:refer-clojure))` which compiles to
+                // `op_ns_with_refer_clojure` (= this opcode + both
+                // refers).
                 if (instr.operand >= chunk.constants.len)
                     return raiseInternal("vm: op_in_ns constant index out of range");
                 const name_val = chunk.constants[instr.operand];
                 if (!name_val.isString())
                     return raiseInternal("vm: op_in_ns constant is not a String");
                 env.current_ns = try env.findOrCreateNs(string_mod.asString(name_val));
-                // ADR-0035 D9 — mirror of tree_walk::evalInNs's
-                // convenience auto-refer. Bootstrap-time `.clj` heads
-                // use `(ns ...)` (compileNs); this op_in_ns path
-                // remains for direct user `(in-ns 'foo)` calls.
+                if (sp >= OPERAND_STACK_MAX)
+                    return raiseInternal("vm: operand stack overflow");
+                stack[sp] = Value.nil_val;
+                sp += 1;
+            },
+            .op_ns_with_refer_clojure => {
+                // ADR-0035 D9 second amendment + ADR-0036 dual-
+                // backend parity contract. Mirror of post-T3
+                // tree_walk::evalNs when `refer_clojure = true`.
+                // op_in_ns logic + referAll(rt) + referAll(clojure.core).
+                if (instr.operand >= chunk.constants.len)
+                    return raiseInternal("vm: op_ns_with_refer_clojure constant index out of range");
+                const name_val = chunk.constants[instr.operand];
+                if (!name_val.isString())
+                    return raiseInternal("vm: op_ns_with_refer_clojure constant is not a String");
+                env.current_ns = try env.findOrCreateNs(string_mod.asString(name_val));
                 if (env.findNs("rt")) |rt_ns| {
                     try env.referAll(rt_ns, env.current_ns.?);
                 }

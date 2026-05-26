@@ -263,37 +263,32 @@ pub fn eval(
 /// union (fn* [s1 s2] (reduce conj s1 s2)))` would fail symbol
 /// resolution on `reduce` / `conj`. The full `(ns ...)` macro +
 /// explicit `(refer 'clojure.core)` semantics arrive at ADR-0035
-/// (Phase 6.16.b-4); until then in-ns carries the convenience refer.
-/// Idempotent via `referAll`'s existing-key skip.
+/// `(in-ns 'foo)`. ADR-0035 D9 second amendment (Phase 7 entry T3,
+/// 2026-05-26): naked ns switch — no auto-refer. The prior
+/// convenience auto-refer of rt + clojure.core has been removed;
+/// user code must use `(ns foo (:refer-clojure))` (which fires the
+/// widened semantic) or explicit `(refer ...)` calls.
 fn evalInNs(env: *Env, n: node_mod.InNsNode) !Value {
     env.current_ns = try env.findOrCreateNs(n.ns_name);
-    // ADR-0035 D9 (Phase 6.16.b-4 sub-cycle d): `(in-ns ...)` carries
-    // a convenience auto-refer of rt + clojure.core for REPL-style ns
-    // hopping. The `(ns foo (:refer-clojure))` macro is the
-    // finished-form contract for bootstrap-time .clj heads (= evalNs
-    // does the same); this in-ns path remains for direct user calls.
-    if (env.findNs("rt")) |rt_ns| {
-        try env.referAll(rt_ns, env.current_ns.?);
-    }
-    if (env.findNs("clojure.core")) |clojure_core_ns| {
-        try env.referAll(clojure_core_ns, env.current_ns.?);
-    }
     return .nil_val;
 }
 
-/// `(ns foo)` / `(ns foo (:refer-clojure))`. ADR-0035 D1.
-/// Switches `env.current_ns` to the named ns (creating if absent),
-/// then — when `:refer-clojure` is in effect (default true) — refers
-/// the public Vars of clojure.core into the entering ns. cw v1
-/// keeps the rt-auto-refer of `evalInNs` for self-consistency with
-/// existing bootstrap-time semantics; the `(ns ...)` macro is the
-/// finished-form contract for that behaviour going forward.
+/// `(ns foo)` / `(ns foo (:refer-clojure))`. ADR-0035 D1 + D9
+/// second amendment. When `:refer-clojure` is in effect (default
+/// true), the cw v1 widened semantic refers BOTH `rt` AND
+/// `clojure.core` into the entering ns (divergence from JVM which
+/// has no rt ns). When `refer_clojure = false`, the ns switch is
+/// naked — same shape as `(in-ns 'foo)`. The widening makes the
+/// refer mechanism grep-traceable from the `.clj` head: every
+/// user-visible refer of rt + clojure.core comes from a
+/// `(:refer-clojure)` directive (boot-time fan-out for user/
+/// remains in bootstrap.zig + primitive.zig + macro_transforms.zig).
 fn evalNs(env: *Env, n: node_mod.NsNode) !Value {
     env.current_ns = try env.findOrCreateNs(n.name);
-    if (env.findNs("rt")) |rt_ns| {
-        try env.referAll(rt_ns, env.current_ns.?);
-    }
     if (n.refer_clojure) {
+        if (env.findNs("rt")) |rt_ns| {
+            try env.referAll(rt_ns, env.current_ns.?);
+        }
         if (env.findNs("clojure.core")) |cc_ns| {
             try env.referAll(cc_ns, env.current_ns.?);
         }

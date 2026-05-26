@@ -110,6 +110,18 @@ pub const Opcode = enum(u8) {
     /// non-null (source-load path lands in sub-cycle c.5).
     /// ADR-0035 D2/D5/D8.
     op_require = 0x16,
+    /// `(ns foo (:refer-clojure))` — operand = constants index of
+    /// the heap String holding the target namespace name. VM
+    /// dispatch performs op_in_ns logic (findOrCreateNs + set
+    /// current_ns), then fires `referAll(rt, here)` + `referAll(
+    /// clojure.core, here)`. cw v1 divergence from JVM: the
+    /// widened (:refer-clojure) semantic refers BOTH clojure.core
+    /// AND rt namespaces. Emitted by `compileNs` when NsNode's
+    /// `refer_clojure = true`; bare `(in-ns ...)` continues to
+    /// emit `op_in_ns` (no auto-refer post-ADR-0035 D9 second
+    /// amendment). Discharges D-073 cluster sub-site (e). Mirrors
+    /// `tree_walk::evalNs` post-T3 gating.
+    op_ns_with_refer_clojure = 0x17,
 };
 
 /// `op_def` operand layout — see the Opcode docstring.

@@ -373,20 +373,24 @@ const Compiler = struct {
     }
 
     fn compileNs(self: *Compiler, n: node_mod.NsNode) Error!void {
-        // ADR-0035 D1 ns VM path. Bare `(ns foo)` + `(:refer-clojure)`
-        // compile to op_in_ns + an implicit clojure.core auto-refer
-        // (matching evalInNs's existing auto-refer behaviour). The
-        // silent drop below is dormant today (analyzer always sets
-        // refer_clojure = true, op_in_ns auto-refers clojure.core).
-        // When NsNode extends with `:exclude` / `:only` filter
-        // fields, this becomes a real divergence; the VM-DEFER
-        // marker per ADR-0036 makes the gap discoverable until the
-        // filter encoding lands.
-        // VM-DEFER: ns :refer-clojure filter pending NsNode filter extension [refs: D-073, feature_deps.yaml#runtime/vm/ns_filter]
-        _ = n.refer_clojure;
+        // ADR-0035 D1 ns VM path + D9 second amendment (Phase 7
+        // entry T3, 2026-05-26). When `refer_clojure = true` emit
+        // `op_ns_with_refer_clojure` which performs op_in_ns logic
+        // + referAll(rt) + referAll(clojure.core) (cw v1 widened
+        // :refer-clojure semantic — divergence from JVM). When
+        // `refer_clojure = false` emit bare `op_in_ns` (no auto-
+        // refer; user must add explicit refers). Mirrors
+        // `tree_walk::evalNs` post-T3 gating. Discharges D-073
+        // cluster sub-site (e) per ADR-0036 D2 + dual_backend_parity
+        // discipline (VM-DEFER marker removed because the field is
+        // now consumed).
         const name_val = try string_mod.alloc(self.rt, n.name);
         const idx = try self.addConstant(name_val);
-        try self.emit(.op_in_ns, idx);
+        if (n.refer_clojure) {
+            try self.emit(.op_ns_with_refer_clojure, idx);
+        } else {
+            try self.emit(.op_in_ns, idx);
+        }
     }
 
     fn compileRequire(self: *Compiler, n: node_mod.RequireNode) Error!void {

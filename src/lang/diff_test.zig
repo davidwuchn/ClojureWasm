@@ -181,3 +181,15 @@ test "diff: symbol quote roundtrip + name" {
     defer f.deinit();
     try f.check("(count (name 'foo))", 3);
 }
+
+// ADR-0035 D9 second amendment (T3): widened (:refer-clojure)
+// semantic exercised. Tree_walk evalNs and VM op_ns_with_refer_clojure
+// must both install rt + clojure.core refers into ns t3-diff, after
+// which `count` resolves and `(count [10 20])` returns 2. The 99
+// tail anchors the do-form's return value to an integer for the
+// comparator.
+test "diff: ns refer-clojure widening (post-T3 path)" {
+    var f = try Fixture.init(testing.allocator);
+    defer f.deinit();
+    try f.check("(do (ns t3-diff (:refer-clojure)) (count [10 20]))", 2);
+}
