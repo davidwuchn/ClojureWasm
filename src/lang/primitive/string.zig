@@ -496,6 +496,13 @@ const LEAF_ENTRIES = [_]Entry{
     .{ .name = "-blank?", .f = &blank },
     .{ .name = "-split", .f = &split },
     .{ .name = "-split-lines", .f = &splitLines },
+    // Phase 6.16.e.2 (YELLOW pair): capitalize + join migrate to
+    // Pattern A defns over `str` + `subs` (now in rt). The Zig
+    // leaves stay as fallback / opt-in alternative until perf-
+    // sensitive callers prove they need it; the public name is
+    // the Pattern A defn.
+    .{ .name = "-capitalize", .f = &capitalize },
+    .{ .name = "-join", .f = &join },
 };
 
 /// Vars that stay as Zig leaves at their public name for this cycle.
@@ -507,8 +514,6 @@ const ENTRIES = [_]Entry{
     .{ .name = "replace", .f = &replace },
     .{ .name = "replace-first", .f = &replaceFirst },
     .{ .name = "escape", .f = &escape },
-    .{ .name = "capitalize", .f = &capitalize },
-    .{ .name = "join", .f = &join },
 };
 
 /// Create the `clojure.string` namespace (idempotent — uses

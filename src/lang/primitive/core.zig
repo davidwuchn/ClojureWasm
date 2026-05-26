@@ -20,6 +20,7 @@ const dispatch = @import("../../runtime/dispatch.zig");
 const keyword_mod = @import("../../runtime/keyword.zig");
 const string_mod = @import("../../runtime/collection/string.zig");
 const print_mod = @import("../../runtime/print.zig");
+const charset_mod = @import("../../runtime/charset.zig");
 
 /// `(nil? x)` — true iff `x` is the singleton nil Value.
 pub fn nilQ(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
@@ -387,6 +388,57 @@ pub fn printlnFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocati
     return .nil_val;
 }
 
+/// `(str & args)` — variadic string concatenation. Each arg is
+/// rendered human-readable (strings pass through unquoted; nil
+/// renders as ""; everything else goes through `print.printValue`).
+/// 0-arg form returns the empty string.
+pub fn strFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = env;
+    _ = loc;
+    var aw: std.Io.Writer.Allocating = .init(rt.gpa);
+    defer aw.deinit();
+    for (args) |arg| {
+        switch (arg.tag()) {
+            .nil => {},
+            .string => try aw.writer.writeAll(string_mod.asString(arg)),
+            else => try print_mod.printValue(&aw.writer, arg),
+        }
+    }
+    return try string_mod.alloc(rt, aw.writer.buffered());
+}
+
+/// `(subs s start)` / `(subs s start end)` — substring slice over
+/// codepoint indices (ADR-0014: cw v1 strings are UTF-8 internally
+/// but `count` and `subs` operate on codepoints). Returns a new
+/// heap String. Raises on negative bounds or out-of-range.
+pub fn subsFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = env;
+    if (args.len < 2 or args.len > 3)
+        return error_catalog.raise(.arity_out_of_range, loc, .{ .fn_name = "subs", .got = args.len, .min = 2, .max = 3 });
+    if (args[0].tag() != .string)
+        return error_catalog.raise(.type_arg_not_string, loc, .{ .fn_name = "subs", .actual = @tagName(args[0].tag()) });
+    if (args[1].tag() != .integer)
+        return error_catalog.raise(.type_arg_not_number, loc, .{ .fn_name = "subs", .actual = @tagName(args[1].tag()) });
+    const s = string_mod.asString(args[0]);
+    const start_i = args[1].asInteger();
+    if (start_i < 0)
+        return error_catalog.raise(.feature_not_supported, loc, .{ .name = "subs with negative start index" });
+    const start: usize = @intCast(start_i);
+    var end: usize = std.math.maxInt(usize);
+    if (args.len == 3) {
+        if (args[2].tag() != .integer)
+            return error_catalog.raise(.type_arg_not_number, loc, .{ .fn_name = "subs", .actual = @tagName(args[2].tag()) });
+        const end_i = args[2].asInteger();
+        if (end_i < start_i)
+            return error_catalog.raise(.feature_not_supported, loc, .{ .name = "subs with end < start" });
+        end = @intCast(end_i);
+    }
+    const slice = charset_mod.substring(s, start, end) catch {
+        return error_catalog.raise(.feature_not_supported, loc, .{ .name = "subs on invalid UTF-8 boundary" });
+    };
+    return string_mod.alloc(rt, slice);
+}
+
 // --- registration ---
 
 const Entry = struct {
@@ -428,6 +480,8 @@ const ENTRIES = [_]Entry{
     .{ .name = "keyword", .f = &keywordFn },
     .{ .name = "name", .f = &nameFn },
     .{ .name = "println", .f = &printlnFn },
+    .{ .name = "str", .f = &strFn },
+    .{ .name = "subs", .f = &subsFn },
 };
 
 pub fn register(env: *Env, rt_ns: *env_mod.Namespace) !void {
