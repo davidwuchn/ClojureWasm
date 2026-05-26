@@ -23,6 +23,35 @@ const string_mod = @import("../../runtime/collection/string.zig");
 const print_mod = @import("../../runtime/print.zig");
 const charset_mod = @import("../../runtime/charset.zig");
 const td_mod = @import("../../runtime/type_descriptor.zig");
+const class_name = @import("../../runtime/class_name.zig");
+
+/// `(__instance? 'Class x)` — row 7.12 cycle 1 Layer-2 primitive
+/// backing the public `instance?` macro. The macro (registered in
+/// `lang/macro_transforms.zig::expandInstanceQ`) auto-quotes the
+/// Class argument so callers write `(instance? String x)` without an
+/// explicit quote. Path A per the row 7.12 survey Q1 decision:
+/// Symbol-based primitive-side lookup. Unknown class names raise
+/// `class_name_unknown` (no silent-default-shift, per F-002 +
+/// `provisional_marker.md` permanent-no-op-forbidden discipline).
+/// Dispatches through `runtime/class_name.zig::isInstance` which
+/// covers native tags + interface-shaped multi-tag sets + Throwable
+/// hierarchy + user TypeDescriptor parent walk.
+pub fn instanceQPrim(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = rt;
+    _ = env;
+    try error_catalog.checkArity("instance?", args, 2, loc);
+    if (args[0].tag() != .symbol) {
+        return error_catalog.raise(.type_arg_invalid, loc, .{
+            .fn_name = "instance?",
+            .expected = "symbol (class name)",
+            .actual = @tagName(args[0].tag()),
+        });
+    }
+    const class_sym = symbol_mod.asSymbol(args[0]).name;
+    if (!class_name.isKnown(class_sym))
+        return error_catalog.raise(.class_name_unknown, loc, .{ .name = class_sym });
+    return if (class_name.isInstance(args[1], class_sym)) .true_val else .false_val;
+}
 
 /// `(nil? x)` — true iff `x` is the singleton nil Value.
 pub fn nilQ(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
@@ -500,6 +529,7 @@ const Entry = struct {
 };
 
 const ENTRIES = [_]Entry{
+    .{ .name = "__instance?", .f = &instanceQPrim },
     .{ .name = "nil?", .f = &nilQ },
     .{ .name = "true?", .f = &trueQ },
     .{ .name = "false?", .f = &falseQ },

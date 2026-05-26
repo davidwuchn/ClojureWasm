@@ -421,6 +421,37 @@ test "diff: row 7.11 catch FQCN java.lang.RuntimeException normalises" {
     try f.check("(try (throw (ex-info \"x\" {})) (catch java.lang.RuntimeException e 5))", 5);
 }
 
+// Row 7.12 cycle 1 (D-078 prep): `instance?` macro + `__instance?`
+// primitive + `runtime/class_name.zig` registry. Both backends share
+// the macro_dispatch lowering and the Layer-2 primitive, so dispatch
+// shape is identical by construction. Tests lock the 4 dispatch
+// arms: native exact-tag / Number interface / IFn interface / Throwable
+// hierarchy (false on non-throwable).
+
+test "diff: row 7.12 instance? native exact tag" {
+    var f = try Fixture.init(testing.allocator);
+    defer f.deinit();
+    try f.check("(if (instance? String \"abc\") 1 0)", 1);
+}
+
+test "diff: row 7.12 instance? Number matches integer + float" {
+    var f = try Fixture.init(testing.allocator);
+    defer f.deinit();
+    try f.check("(+ (if (instance? Number 42) 1 0) (if (instance? Number 3.14) 2 0))", 3);
+}
+
+test "diff: row 7.12 instance? IFn matches fn_val" {
+    var f = try Fixture.init(testing.allocator);
+    defer f.deinit();
+    try f.check("(if (instance? IFn (fn* [x] x)) 7 0)", 7);
+}
+
+test "diff: row 7.12 instance? Throwable false on non-throwable" {
+    var f = try Fixture.init(testing.allocator);
+    defer f.deinit();
+    try f.check("(+ (if (instance? Throwable nil) 100 0) (if (instance? Throwable 42) 200 0))", 0);
+}
+
 // ADR-0042 row 7.9: `apply` variadic-callee bind-direct gate. Both
 // backends share `tree_walk.callFunction` (vm.zig:573 wires
 // `treeWalkCall` into the VM vtable), so the gate fires identically

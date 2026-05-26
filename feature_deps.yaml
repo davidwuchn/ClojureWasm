@@ -389,17 +389,20 @@ entries:
       - D-048
     provisional_markers:
       - src/runtime/error/host_class.zig (matches — host_instance arm returns false)
+      - src/runtime/class_name.zig (isThrowableTag — host_instance not yet in throwable set)
     notes: |
-      `host_class.matches` returns false defensively when
-      `thrown.tag() == .host_instance`. Today there is no way to
-      produce a `.host_instance` Value (= host-class wire-up D-048
-      lands the constructor surface), so the arm has no live
-      consumer. When D-048 lands, the arm walks
-      `TypeDescriptor.parent` chain (analogous to JVM's
-      `Class.isInstance` walk) and the marker discharges. Split from
-      the cycle 3 close of `runtime/eval/catch_class_table` so that
-      entry could land cleanly without bundling the unrelated D-048
-      wait.
+      Two related sites both wait on D-048 host-class wire-up.
+      `host_class.matches` (cycle 7.11) returns false defensively
+      when `thrown.tag() == .host_instance`. `class_name.isThrowableTag`
+      (cycle 7.12) gates the `instance?` Throwable arm so the
+      eventual `.host_instance` Value will route through host_class's
+      hierarchy walk once D-048 lands. Today there is no way to
+      produce a `.host_instance` Value (= D-048 lands the constructor
+      surface), so both arms have no live consumer. When D-048 lands,
+      `host_class.matches` walks `TypeDescriptor.parent` chain
+      (analogous to JVM's `Class.isInstance` walk) and `class_name.
+      isThrowableTag` adds `.host_instance` to the throwable carrier
+      set; both markers discharge in the same commit.
 
   - name: runtime/vm/dispatch_family
     kind: runtime_layer

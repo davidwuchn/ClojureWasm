@@ -278,6 +278,7 @@ test {
     _ = @import("runtime/error/catalog.zig");
     _ = @import("runtime/error/print.zig");
     _ = @import("runtime/error/host_class.zig");
+    _ = @import("runtime/class_name.zig");
     _ = @import("runtime/gc/arena.zig");
     _ = @import("runtime/gc/tag_ops.zig");
     _ = @import("runtime/gc/gc_heap.zig");

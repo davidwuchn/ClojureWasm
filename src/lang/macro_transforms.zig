@@ -95,6 +95,7 @@ const BOOTSTRAP = [_]Entry{
     .{ .name = "extend-protocol", .expand = expandExtendProtocol },
     .{ .name = "defrecord", .expand = expandDefrecord },
     .{ .name = "reify", .expand = expandReify },
+    .{ .name = "instance?", .expand = expandInstanceQ },
 };
 
 // --- Form-construction conveniences ---
@@ -1074,6 +1075,48 @@ fn expandReify(
     call_items[0] = .{ .data = .{ .symbol = .{ .ns = "rt", .name = "__reify!" } }, .location = loc };
     call_items[1] = interfaces_vec;
     call_items[2] = methods_vec;
+    return list(arena, call_items, loc);
+}
+
+// --- instance? — row 7.12 cycle 1: `(instance? Class x)` →
+//     `(__instance? (quote Class) x)` so the analyzer never tries to
+//     resolve `Class` as a Var. Path A (Symbol-based primitive-side
+//     lookup) per the row 7.12 survey Q1 decision; the primitive
+//     receives the Class as a Symbol Value through the wrapped
+//     `quote` and consults `runtime/class_name.zig`'s registry. ---
+
+fn expandInstanceQ(
+    arena: std.mem.Allocator,
+    rt: *Runtime,
+    args: []const Form,
+    loc: SourceLocation,
+) macro_dispatch.ExpandError!Form {
+    _ = rt;
+    if (args.len != 2)
+        return error_catalog.raise(.arity_not_expected, loc, .{
+            .fn_name = "instance?",
+            .got = args.len,
+            .expected = 2,
+        });
+    const class_form = args[0];
+    if (class_form.data != .symbol)
+        return error_catalog.raise(.type_arg_invalid, loc, .{
+            .fn_name = "instance?",
+            .expected = "symbol (class name)",
+            .actual = @tagName(class_form.data),
+        });
+
+    // (quote ClassSym)
+    const quote_items = try arena.alloc(Form, 2);
+    quote_items[0] = sym("quote", class_form.location);
+    quote_items[1] = class_form;
+    const quoted = try list(arena, quote_items, class_form.location);
+
+    // (__instance? <quoted-class> x)
+    const call_items = try arena.alloc(Form, 3);
+    call_items[0] = sym("__instance?", loc);
+    call_items[1] = quoted;
+    call_items[2] = args[1];
     return list(arena, call_items, loc);
 }
 
