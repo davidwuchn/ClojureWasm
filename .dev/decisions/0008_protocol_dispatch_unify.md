@@ -334,3 +334,90 @@ this ADR.
   `defmulti` / `defmethod` / `prefer-method` / `derive` / `isa?` /
   `make-hierarchy` all green on the diff_test layer with TreeWalk
   ≡ VM equivalence (not asymmetry).
+
+- 2026-05-26 (amendment 3 — Phase 7.3 cycle 6.6 MethodEntry
+  storage refactor): Retire the `fn_ptr: ?*const anyopaque` raw
+  cast path on `TypeDescriptor.MethodEntry` in favour of a single
+  `method_val: Value` field; dispatch consults
+  `vtable.callFn(rt, env, method_val, args, loc)` uniformly.
+  Native deftype-inline impls now ride F-004 slot 69
+  (`.builtin_fn` immediate) via `Value.initBuiltinFn(&zigFn)`;
+  user-fn-val impls from `extend-type` drop straight into the
+  same Value slot. Converges with row 7.2 multimethod's
+  `vtable.callFn` routing (amendment 2) — one neutral dispatch
+  boundary for every callable Value shape.
+
+  Amendment 1's "casts `?*const anyopaque` back to `BuiltinFn`"
+  is hereby superseded. The cast was a Phase 7.1 expedient
+  before the protocol path had a consumer for the
+  `.builtin_fn` Value tag; cycle 6.6 is the natural retirement
+  moment because (a) row 7.3 introduces the
+  `extend-type`-driven user-fn-val impl path which cannot
+  meaningfully cast into `BuiltinFn`, and (b) row 7.2 already
+  established `vtable.callFn` as the canonical dispatcher.
+
+  **Devil's-advocate fork (depth-2, fresh context) verbatim
+  embedding** — produced 3 alternatives within F-002 / F-004 /
+  F-009 envelope (full text:
+  `private/notes/phase7-7.3-cycle6.6-devils-advocate.md`):
+
+  > **Alt 1 — smallest-diff (`fn_ptr` + `method_val` coexist)**
+  > **Shape**: Keep `fn_ptr: ?*const anyopaque`, add
+  > `method_val: Value = .nil_val`. Dispatch fans out by which
+  > slot is populated. `__extend-type!` populates `method_val`;
+  > deftype-inline keeps `fn_ptr`.
+  > **Verdict**: Borderline-NG on F-002 — two storage shapes
+  > for the same logical concept. Smell sensor reads as
+  > smallest-diff bias. Shippable but reads as deferral of the
+  > convergence row 7.2 already made.
+  >
+  > **Alt 2 — finished-form-clean (`fn_ptr` → `method_val`)**
+  > **Shape**: Replace `fn_ptr` with `method_val: Value`. All
+  > non-nil paths dispatch via `vt.callFn`. Native impls wrap
+  > as `Value.initBuiltinFn(&zigFn)`. The existing
+  > `dispatch.zig:279` test wraps the mock + installs a vtable
+  > with the mock callFn (canonical pattern at
+  > multimethod.zig:662-674).
+  > **Verdict**: Clean across F-002 / F-004 / F-009. F-004 slot
+  > 69 (`.builtin_fn` immediate) earns its keep instead of being
+  > bypassed by raw `anyopaque` cast. Surgery cost bounded:
+  > 8 test-literal edits + this amendment's narration.
+  > Convergence with row 7.2 closes the protocol-vs-multimethod
+  > dispatch divergence.
+  >
+  > **Alt 3 — wildcard (trampoline + heap closure)**
+  > **Shape**: `fn_ptr: BuiltinFn` (typed, non-anyopaque) +
+  > `closure: ?*const ProtocolMethodClosure`. Trampoline reads
+  > TLS slot to recover closure, calls `vt.callFn` on the
+  > closed-over fn-val.
+  > **Verdict**: NG on F-002 + NG-in-spirit on F-009. TLS
+  > coupling between dispatch and extend-type is the opposite
+  > of feature-implementation neutrality; re-entrant dispatch
+  > under Phase 15 concurrency would foot-gun. Strictly more
+  > work per dispatch (trampoline ON TOP of the `vt.callFn`
+  > call). Reservation-as-bias toward preserving `fn_ptr`.
+  >
+  > **No hard F-NNN violation surfaced** across any alternative;
+  > findings are F-002-leaning (finished-form discipline).
+  > Recommendation: Alt 2.
+
+  **Selected**: Alt 2. The candidate brief was Alt 1; the
+  Devil's-advocate upgrades to Alt 2 because (a) one storage
+  shape per logical concept is the finished form, (b) row 7.2
+  multimethod already chose `vt.callFn` so cycle 6.6 closes
+  the divergence that Alt 1 would carry forward, (c) slot 69
+  reserved at F-004 finally gets its consumer in the protocol
+  path. Alt 3 rejected per advocate's own F-002 + F-009
+  findings.
+
+  **Affected files**: `runtime/type_descriptor.zig` (MethodEntry
+  struct + 3 test literals); `runtime/dispatch.zig` (dispatch
+  fn body + 1 test literal + mock vtable install); `runtime/
+  protocol.zig` (2 test literals); `runtime/dispatch/
+  method_table.zig` (4 test literals + 1 struct-init literal);
+  `lang/primitive/protocol.zig` (1 test literal + new
+  `__extend-type!` primitive).
+
+  Phase 7.3 cycle 6.6 source commit follows this ADR
+  amendment commit per the depth-2 cycle protocol (ADR commit
+  first, source commit second; same row, same session).
