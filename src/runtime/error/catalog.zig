@@ -180,6 +180,17 @@ pub const Code = enum {
     /// `^:unsupported` metadata (declare-only placeholder).
     feature_not_supported_unsupported_var,
 
+    // --- Require / namespace loading (ADR-0035 D5/D8) ---
+    /// args: `.{ .chain = "a -> b -> a" }` — raised when
+    /// `requireOne` is called for a namespace already present in
+    /// `Runtime.require_in_progress`. The chain string shows the
+    /// load stack so the user can locate the cycle.
+    circular_require,
+    /// args: `.{ .ns = "..." }` — raised when the active
+    /// `Runtime.require_resolver` returns `null` for a requested
+    /// namespace name.
+    lib_not_found,
+
     /// Tier D forms — permanently outside cw scope (ADR-0013). One
     /// Code per form, each with a hand-written multi-sentence
     /// template that explains the reason and suggests the
@@ -264,6 +275,14 @@ pub fn entry(comptime code: Code) Entry {
         .private_access_error => .{
             .kind = .name_error, .phase = .analysis,
             .template = "Var '{[sym]s}' is private to namespace '{[ns]s}'",
+        },
+        .circular_require => .{
+            .kind = .name_error, .phase = .analysis,
+            .template = "Cyclic load dependency: {[chain]s}",
+        },
+        .lib_not_found => .{
+            .kind = .name_error, .phase = .analysis,
+            .template = "Could not locate '{[ns]s}' on the require resolver",
         },
         .bindings_form_incomplete => .{
             .kind = .syntax_error, .phase = .analysis,

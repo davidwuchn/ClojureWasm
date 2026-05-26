@@ -26,9 +26,20 @@ const KeywordInterner = @import("keyword.zig").KeywordInterner;
 const dispatch = @import("dispatch.zig");
 const gc_heap_mod = @import("gc/gc_heap.zig");
 const td_mod = @import("type_descriptor.zig");
+const print_mod = @import("error/print.zig");
 const VTable = dispatch.VTable;
 const GcHeap = gc_heap_mod.GcHeap;
 const TypeDescriptor = td_mod.TypeDescriptor;
+const SourceContext = print_mod.SourceContext;
+
+/// Resolver signature for `require`. Given a namespace name like
+/// `"clojure.set"`, return the namespace's source text or `null` if
+/// the resolver cannot find it (= `lib_not_found` raise). Bootstrap
+/// installs `embeddedResolver` which serves `@embedFile`'d
+/// `clojure.core` / `clojure.set` / `clojure.string` / `clojure.walk`.
+/// Phase 12+ swaps the slot for classpath / build-artifact resolvers;
+/// Phase 16+ swaps for Wasm pod resolvers. ADR-0035 D8.
+pub const RequireResolverFn = *const fn (rt: *Runtime, ns_name: []const u8) anyerror!?[]const u8;
 
 /// Process-wide execution context.
 ///
@@ -88,6 +99,27 @@ pub const Runtime = struct {
     /// constructor (`Foo. args`) and method-dispatch (`(.m inst)`)
     /// eval paths.
     types: std.StringHashMap(*const TypeDescriptor) = undefined,
+
+    /// Set of namespace names currently being loaded by `require`.
+    /// ADR-0035 D5: `requireOne` adds the target before loading and
+    /// removes it after (errdefer-safe). If the target is already in
+    /// the set when `requireOne` is called, raise `circular_require`.
+    /// Keys are gpa-owned slices duplicated on insertion.
+    require_in_progress: std.StringHashMapUnmanaged(void) = .empty,
+
+    /// Per-file source registry for the renderer. ADR-0035 D7 +
+    /// D-058 closure. Bootstrap loader + `requireOne` populate
+    /// entries keyed by file label (`<bootstrap>`, `<clojure.set>`,
+    /// ...). `runtime/error/print.zig::render` looks up
+    /// `info.location.file` here for the per-file source-line preview.
+    /// Keys + SourceContext field slices are gpa-owned.
+    source_registry: std.StringHashMapUnmanaged(SourceContext) = .empty,
+
+    /// Swappable resolver fn for `require`. ADR-0035 D8. `null` at
+    /// `init`; bootstrap installs the embedded resolver. Phase 12+
+    /// can swap for classpath / build-artifact resolvers; Phase 16+
+    /// for Wasm pod resolvers.
+    require_resolver: ?RequireResolverFn = null,
 
     pub const HeapEntry = struct {
         ptr: *anyopaque,
@@ -167,8 +199,56 @@ pub const Runtime = struct {
             self.gpa.destroy(@constCast(td));
         }
         self.types.deinit();
+
+        // ADR-0035 D5: free any in-progress require entries.
+        // Normally empty at process exit; non-empty here means a
+        // require raised mid-load — clean up so leak detectors stay
+        // quiet.
+        var rp_it = self.require_in_progress.iterator();
+        while (rp_it.next()) |entry| self.gpa.free(entry.key_ptr.*);
+        self.require_in_progress.deinit(self.gpa);
+
+        // ADR-0035 D7: free per-file source registry entries.
+        var sr_it = self.source_registry.iterator();
+        while (sr_it.next()) |entry| {
+            self.gpa.free(entry.key_ptr.*);
+            self.gpa.free(entry.value_ptr.file);
+            self.gpa.free(entry.value_ptr.text);
+        }
+        self.source_registry.deinit(self.gpa);
+
         self.gc.deinit();
         self.keywords.deinit();
+    }
+
+    /// Insert `(label, text)` into `source_registry`, duplicating
+    /// strings onto `gpa`. Idempotent against existing entries —
+    /// re-registration is silently ignored so bootstrap and
+    /// `requireOne` can both populate without contention.
+    /// ADR-0035 D7.
+    pub fn registerSource(
+        self: *Runtime,
+        label: []const u8,
+        text: []const u8,
+    ) !void {
+        if (self.source_registry.contains(label)) return;
+        const owned_label = try self.gpa.dupe(u8, label);
+        errdefer self.gpa.free(owned_label);
+        const owned_file = try self.gpa.dupe(u8, label);
+        errdefer self.gpa.free(owned_file);
+        const owned_text = try self.gpa.dupe(u8, text);
+        errdefer self.gpa.free(owned_text);
+        try self.source_registry.put(self.gpa, owned_label, .{
+            .file = owned_file,
+            .text = owned_text,
+        });
+    }
+
+    /// Look up a registered source. Returns `null` when `label` is
+    /// not registered (= renderer should fall back to its default
+    /// SourceContext).
+    pub fn lookupSource(self: *Runtime, label: []const u8) ?SourceContext {
+        return self.source_registry.get(label);
     }
 };
 
@@ -230,4 +310,53 @@ test "Runtime.vtable defaults to null and accepts assignment" {
     defer rt.deinit();
 
     try testing.expect(rt.vtable == null);
+}
+
+test "Runtime ADR-0035 fields default to empty / null" {
+    var th = std.Io.Threaded.init(testing.allocator, .{});
+    defer th.deinit();
+
+    var rt = Runtime.init(th.io(), testing.allocator);
+    defer rt.deinit();
+
+    try testing.expectEqual(@as(u32, 0), rt.require_in_progress.count());
+    try testing.expectEqual(@as(u32, 0), rt.source_registry.count());
+    try testing.expect(rt.require_resolver == null);
+}
+
+test "Runtime.registerSource roundtrips a label/text pair" {
+    var th = std.Io.Threaded.init(testing.allocator, .{});
+    defer th.deinit();
+
+    var rt = Runtime.init(th.io(), testing.allocator);
+    defer rt.deinit();
+
+    try rt.registerSource("<clojure.set>", "(in-ns 'clojure.set)\n");
+    const ctx = rt.lookupSource("<clojure.set>") orelse return error.TestUnexpectedResult;
+    try testing.expectEqualStrings("<clojure.set>", ctx.file);
+    try testing.expectEqualStrings("(in-ns 'clojure.set)\n", ctx.text);
+}
+
+test "Runtime.registerSource is idempotent against duplicate labels" {
+    var th = std.Io.Threaded.init(testing.allocator, .{});
+    defer th.deinit();
+
+    var rt = Runtime.init(th.io(), testing.allocator);
+    defer rt.deinit();
+
+    try rt.registerSource("<dup>", "first");
+    try rt.registerSource("<dup>", "second");
+    const ctx = rt.lookupSource("<dup>") orelse return error.TestUnexpectedResult;
+    // First-writer-wins (silent skip on re-registration).
+    try testing.expectEqualStrings("first", ctx.text);
+}
+
+test "Runtime.lookupSource returns null for unknown labels" {
+    var th = std.Io.Threaded.init(testing.allocator, .{});
+    defer th.deinit();
+
+    var rt = Runtime.init(th.io(), testing.allocator);
+    defer rt.deinit();
+
+    try testing.expect(rt.lookupSource("<missing>") == null);
 }
