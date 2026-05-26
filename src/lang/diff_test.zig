@@ -322,6 +322,63 @@ test "diff: row 7.10 op_method_call on reify (anonymous descriptor)" {
     , 21);
 }
 
+// Row 7.10 cycle 3 (D-073 sub-site d discharge): `op_require_with_libspec`
+// + `BytecodeChunk.libspecs` side-table. Both backends must produce
+// identical post-require behaviour — exercise via clojure.set (already
+// loaded at bootstrap; the `:as` / `:refer` arms are what these cases
+// probe, not the resolver path). Tests use FQN after require because
+// alias / refer resolution happens at analyzer time, but the require
+// form's side-effect (setAlias / referOne) runs at eval time — within
+// a single `do` form the analyzer cannot see alias / refer names. The
+// FQN tail confirms the require itself returned nil without raising;
+// the libspec arms still execute and exercise the side-table dispatch.
+
+// Helper: pre-create a target namespace `diff-target` with an
+// interned `marker = 42` so `(require '[diff-target ...])` skips the
+// resolver (existing ns + mappings.count() > 0) and exercises just
+// the alias / refers arms — diff_test Fixture does not run
+// `bootstrap.loadCore`, so clojure.set etc. aren't available.
+fn setupDiffTargetNs(f: *Fixture) !void {
+    const ns = try f.env.findOrCreateNs("diff-target");
+    _ = try f.env.intern(ns, "marker", Value.initInteger(42), null);
+}
+
+test "diff: row 7.10 op_require_with_libspec — :refer single arm" {
+    var f = try Fixture.init(testing.allocator);
+    defer f.deinit();
+    try setupDiffTargetNs(&f);
+    // Top-level form sequence (NOT wrapped in `do`) so each form's
+    // analyze-then-eval pass sees the previous form's env mutation.
+    // `do` would analyze both children with the do-entry env state,
+    // before the require has run — the refer'd `marker` wouldn't
+    // resolve. evaluator.compare's runOnce iterates `reader.read()`
+    // and analyze+eval per form, which is the correct shape here.
+    try f.check(
+        \\(require '[diff-target :refer [marker]])
+        \\marker
+    , 42);
+}
+
+test "diff: row 7.10 op_require_with_libspec — :as alias arm" {
+    var f = try Fixture.init(testing.allocator);
+    defer f.deinit();
+    try setupDiffTargetNs(&f);
+    try f.check(
+        \\(require '[diff-target :as dt])
+        \\dt/marker
+    , 42);
+}
+
+test "diff: row 7.10 op_require_with_libspec — :as + :refer combined" {
+    var f = try Fixture.init(testing.allocator);
+    defer f.deinit();
+    try setupDiffTargetNs(&f);
+    try f.check(
+        \\(require '[diff-target :as dt :refer [marker]])
+        \\(+ marker dt/marker)
+    , 84);
+}
+
 // ADR-0042 row 7.9: `apply` variadic-callee bind-direct gate. Both
 // backends share `tree_walk.callFunction` (vm.zig:573 wires
 // `treeWalkCall` into the VM vtable), so the gate fires identically

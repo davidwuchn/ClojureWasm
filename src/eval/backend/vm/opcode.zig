@@ -145,6 +145,19 @@ pub const Opcode = enum(u8) {
     /// via `cs.lookupWithCache(td, null, method_name, generation)`
     /// then `vt.callFn(rt, env, method_val, args, loc)`.
     op_method_call = 0x1B,
+    /// `(require '[ns :as alias :refer [v1 v2]])` — operand =
+    /// `libspec_idx` into `BytecodeChunk.libspecs`. Looks up the
+    /// LibspecEntry (`ns_name` + `?alias` + `[]refers`), runs the
+    /// same op_require prelude (env.findNs / require_resolver /
+    /// raise on null + on non-null), then applies the alias +
+    /// per-refer installation, mirroring `tree_walk::evalRequire`.
+    /// Row 7.10 cycle 3 (D-073 sub-site d discharge) — ADR-0036
+    /// dual-backend parity contract's first real-feature exercise.
+    /// Devil's-advocate Alt 2 (chunk side-table, parallel to
+    /// `call_sites`) selected over Vector-in-constant-pool (Option A)
+    /// for native field types (no empty-string sentinel for absent
+    /// alias) + F-008 zwasm-component-import shape alignment.
+    op_require_with_libspec = 0x1C,
 };
 
 /// `op_def` operand layout — see the Opcode docstring.
@@ -175,6 +188,18 @@ pub const CallSiteEntry = struct {
     cache: method_table.CallSite = .{},
 };
 
+/// Per-libspec side-table entry — row 7.10 cycle 3 (ADR-0036 first
+/// real-feature exercise). Each `op_require_with_libspec` instruction
+/// references one of these by index. All fields are compile-time
+/// fixed (analyzer-arena-owned, chunk lifetime). Native field types
+/// (no sentinel encoding for absent alias) keep the dispatch arm a
+/// straight mirror of `tree_walk::evalRequire`.
+pub const LibspecEntry = struct {
+    ns_name: []const u8,
+    alias: ?[]const u8 = null,
+    refers: []const []const u8 = &.{},
+};
+
 /// Compiled bytecode for a single function or top-level form.
 ///
 /// The chunk is immutable after compile (except for `call_sites[i].cache`
@@ -187,6 +212,9 @@ pub const BytecodeChunk = struct {
     /// Side-table indexed by `op_method_call` operand. Empty for
     /// chunks that contain no method-call sites.
     call_sites: []CallSiteEntry = &.{},
+    /// Side-table indexed by `op_require_with_libspec` operand. Empty
+    /// for chunks that contain no libspec require sites.
+    libspecs: []LibspecEntry = &.{},
 };
 
 test "opcode enum tags are stable u8 values" {
@@ -213,6 +241,12 @@ test "opcode enum tags are stable u8 values" {
     try std.testing.expectEqual(@as(u8, 0x14), @intFromEnum(Opcode.op_map_literal));
     try std.testing.expectEqual(@as(u8, 0x15), @intFromEnum(Opcode.op_set_literal));
     try std.testing.expectEqual(@as(u8, 0x16), @intFromEnum(Opcode.op_require));
+    try std.testing.expectEqual(@as(u8, 0x17), @intFromEnum(Opcode.op_ns_with_refer_clojure));
+    try std.testing.expectEqual(@as(u8, 0x18), @intFromEnum(Opcode.op_deftype));
+    try std.testing.expectEqual(@as(u8, 0x19), @intFromEnum(Opcode.op_ctor_call));
+    try std.testing.expectEqual(@as(u8, 0x1A), @intFromEnum(Opcode.op_field_access));
+    try std.testing.expectEqual(@as(u8, 0x1B), @intFromEnum(Opcode.op_method_call));
+    try std.testing.expectEqual(@as(u8, 0x1C), @intFromEnum(Opcode.op_require_with_libspec));
 }
 
 test "Instruction carries opcode and u16 operand" {

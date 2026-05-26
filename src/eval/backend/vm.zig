@@ -411,6 +411,57 @@ fn stepOnce(
                 stack[sp] = Value.nil_val;
                 sp += 1;
             },
+            .op_require_with_libspec => {
+                // Row 7.10 cycle 3 (D-073 sub-site d discharge,
+                // ADR-0036 first real-feature exercise) — mirror of
+                // tree_walk::evalRequire's full body. Pops the
+                // LibspecEntry from the chunk side-table, runs the
+                // op_require prelude, then applies alias + refers.
+                if (instr.operand >= chunk.libspecs.len)
+                    return raiseInternal("vm: op_require_with_libspec libspec index out of range");
+                const spec = chunk.libspecs[instr.operand];
+                const target_ns = blk: {
+                    if (env.findNs(spec.ns_name)) |existing| {
+                        if (existing.mappings.count() > 0) break :blk existing;
+                    }
+                    const resolver = rt.require_resolver orelse
+                        return error_catalog.raise(.lib_not_found, .{}, .{ .ns = spec.ns_name });
+                    const source_opt = try resolver(rt, spec.ns_name);
+                    if (source_opt == null)
+                        return error_catalog.raise(.lib_not_found, .{}, .{ .ns = spec.ns_name });
+                    return error_catalog.raise(.feature_not_supported, .{}, .{
+                        .name = "require: loading a not-yet-loaded namespace (Phase 6.16.b-4 c.5)",
+                    });
+                };
+                const here = env.current_ns orelse
+                    return error_catalog.raise(.current_namespace_missing, .{}, .{ .sym = spec.ns_name });
+                if (spec.alias) |alias_name| {
+                    try env.setAlias(here, alias_name, target_ns);
+                }
+                for (spec.refers) |refer_name| {
+                    const outcome = try env.referOne(target_ns, here, refer_name);
+                    switch (outcome) {
+                        .installed => {},
+                        .private_blocked => {
+                            const full = try std.fmt.allocPrint(rt.gpa, "{s}/{s}", .{ spec.ns_name, refer_name });
+                            defer rt.gpa.free(full);
+                            return error_catalog.raise(.private_access_error, .{}, .{
+                                .sym = full,
+                                .ns = spec.ns_name,
+                            });
+                        },
+                        .not_found => {
+                            const full = try std.fmt.allocPrint(rt.gpa, "{s}/{s}", .{ spec.ns_name, refer_name });
+                            defer rt.gpa.free(full);
+                            return error_catalog.raise(.symbol_unresolved, .{}, .{ .sym = full });
+                        },
+                    }
+                }
+                if (sp >= OPERAND_STACK_MAX)
+                    return raiseInternal("vm: operand stack overflow");
+                stack[sp] = Value.nil_val;
+                sp += 1;
+            },
             .op_vector_literal => {
                 // Closes D-060: pop N values from top of stack, build a
                 // PersistentVector via empty + conj, push result.

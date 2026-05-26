@@ -59,6 +59,7 @@ pub fn compile(
 }
 
 const CallSiteEntry = opcode_mod.CallSiteEntry;
+const LibspecEntry = opcode_mod.LibspecEntry;
 
 const Compiler = struct {
     rt: *Runtime,
@@ -68,6 +69,10 @@ const Compiler = struct {
     /// Row 7.6 cycle 4 (ADR-0040) — per-call-site cache side-table.
     /// Each `op_method_call` instruction's operand indexes here.
     call_sites: std.ArrayList(CallSiteEntry),
+    /// Row 7.10 cycle 3 (ADR-0036 first real-feature exercise) —
+    /// per-libspec side-table. Each `op_require_with_libspec`
+    /// instruction's operand indexes here.
+    libspecs: std.ArrayList(LibspecEntry),
     /// Innermost enclosing `loop*` frame, or `null` outside a loop.
     /// `compileRecur` reads this to know the back-edge target IP and
     /// the slot list to rebind. Saved/restored across nested loops.
@@ -88,6 +93,7 @@ const Compiler = struct {
             .instructions = .empty,
             .constants = .empty,
             .call_sites = .empty,
+            .libspecs = .empty,
             .current_loop = null,
         };
     }
@@ -96,6 +102,7 @@ const Compiler = struct {
         self.instructions.deinit(self.arena);
         self.constants.deinit(self.arena);
         self.call_sites.deinit(self.arena);
+        self.libspecs.deinit(self.arena);
     }
 
     fn compileNode(self: *Compiler, node: *const Node) Error!void {
@@ -459,14 +466,26 @@ const Compiler = struct {
 
     fn compileRequire(self: *Compiler, n: node_mod.RequireNode) Error!void {
         // ADR-0035 D2 require VM path. The bare-symbol shape parks
-        // the ns name as a String constant and emits op_require.
-        // Libspec lowering needs a new opcode (`op_require_with_libspec`
-        // or equivalent — encoding TBD) per ADR-0036 +
-        // Devil's-advocate Alt 2 refined; carved out of T1 as the
-        // first real-feature exercise of the parity contract.
+        // the ns name as a String constant and emits op_require. The
+        // libspec shape (alias or refers present) builds a LibspecEntry
+        // in `self.libspecs` and emits op_require_with_libspec with
+        // the side-table index — row 7.10 cycle 3 (ADR-0036 first
+        // real-feature exercise; Devil's-advocate Alt 2 = chunk
+        // side-table parallel to ADR-0040's `call_sites`).
         if (n.alias != null or n.refers.len > 0) {
-            // VM-DEFER: require libspec pending op_require_with_libspec design [refs: D-073, feature_deps.yaml#runtime/vm/require_libspec]
-            return error.NotImplemented;
+            if (self.libspecs.items.len > std.math.maxInt(u16)) return Error.TooManyConstants;
+            const idx: u16 = @intCast(self.libspecs.items.len);
+            const ns_dup = try self.arena.dupe(u8, n.ns_name);
+            const alias_dup: ?[]const u8 = if (n.alias) |a| try self.arena.dupe(u8, a) else null;
+            const refers_dup = try self.arena.alloc([]const u8, n.refers.len);
+            for (n.refers, 0..) |r, i| refers_dup[i] = try self.arena.dupe(u8, r);
+            try self.libspecs.append(self.arena, .{
+                .ns_name = ns_dup,
+                .alias = alias_dup,
+                .refers = refers_dup,
+            });
+            try self.emit(.op_require_with_libspec, idx);
+            return;
         }
         const name_val = try string_mod.alloc(self.rt, n.ns_name);
         const idx = try self.addConstant(name_val);
@@ -524,7 +543,8 @@ const Compiler = struct {
         const instrs = try self.arena.dupe(Instruction, self.instructions.items);
         const consts = try self.arena.dupe(Value, self.constants.items);
         const sites = try self.arena.dupe(CallSiteEntry, self.call_sites.items);
-        return .{ .instructions = instrs, .constants = consts, .call_sites = sites };
+        const specs = try self.arena.dupe(LibspecEntry, self.libspecs.items);
+        return .{ .instructions = instrs, .constants = consts, .call_sites = sites, .libspecs = specs };
     }
 };
 
