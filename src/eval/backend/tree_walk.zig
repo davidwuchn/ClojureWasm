@@ -242,6 +242,7 @@ pub fn eval(
         .field_access_node => |n| try evalFieldAccess(rt, env, locals, n),
         .in_ns_node => |n| try evalInNs(env, n),
         .require_node => |n| try evalRequire(rt, env, n),
+        .ns_node => |n| try evalNs(env, n),
         .vector_literal_node => |n| try evalVectorLiteral(rt, env, locals, n),
         .map_literal_node => |n| try evalMapLiteral(rt, env, locals, n),
         .set_literal_node => |n| try evalSetLiteral(rt, env, locals, n),
@@ -273,6 +274,26 @@ fn evalInNs(env: *Env, n: node_mod.InNsNode) !Value {
     // PROVISIONAL: in-ns auto-refers clojure.core pending (ns ...) macro [refs: D-071, feature_deps.yaml#runtime/eval/in_ns_auto_refer]
     if (env.findNs("clojure.core")) |clojure_core_ns| {
         try env.referAll(clojure_core_ns, env.current_ns.?);
+    }
+    return .nil_val;
+}
+
+/// `(ns foo)` / `(ns foo (:refer-clojure))`. ADR-0035 D1.
+/// Switches `env.current_ns` to the named ns (creating if absent),
+/// then — when `:refer-clojure` is in effect (default true) — refers
+/// the public Vars of clojure.core into the entering ns. cw v1
+/// keeps the rt-auto-refer of `evalInNs` for self-consistency with
+/// existing bootstrap-time semantics; the `(ns ...)` macro is the
+/// finished-form contract for that behaviour going forward.
+fn evalNs(env: *Env, n: node_mod.NsNode) !Value {
+    env.current_ns = try env.findOrCreateNs(n.name);
+    if (env.findNs("rt")) |rt_ns| {
+        try env.referAll(rt_ns, env.current_ns.?);
+    }
+    if (n.refer_clojure) {
+        if (env.findNs("clojure.core")) |cc_ns| {
+            try env.referAll(cc_ns, env.current_ns.?);
+        }
     }
     return .nil_val;
 }

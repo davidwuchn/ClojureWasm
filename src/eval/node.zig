@@ -74,6 +74,7 @@ pub const Node = union(enum) {
     field_access_node: FieldAccessNode,
     in_ns_node: InNsNode,
     require_node: RequireNode,
+    ns_node: NsNode,
     vector_literal_node: VectorLiteralNode,
     map_literal_node: MapLiteralNode,
     set_literal_node: SetLiteralNode,
@@ -327,6 +328,26 @@ pub const SetLiteralNode = struct {
 /// heap Value landing).
 pub const InNsNode = struct {
     ns_name: []const u8,
+    loc: SourceLocation = .{},
+};
+
+/// `(ns foo)` / `(ns foo (:refer-clojure))` analyser node. ADR-0035
+/// D1: cw v1 ships `(ns ...)` as an analyzer special form (not a
+/// macro) per the Devil's-advocate finished-form Alt 2. Phase
+/// 6.16.b-4 sub-cycle c.7 supports the bare ns name + an optional
+/// `(:refer-clojure)` directive (no `:exclude` / `:only` filter
+/// yet; deferred). `(:require ...)` / `(:use ...)` / `(:import ...)`
+/// / `(:gen-class ...)` raise transient `feature_not_supported`
+/// at this cycle — they will land when their downstream needs
+/// emerge. The arena-owned `name` slice is what `evalNs` passes to
+/// `findOrCreateNs`.
+pub const NsNode = struct {
+    name: []const u8,
+    /// User wrote `(:refer-clojure)`. Always treated as "yes refer
+    /// clojure.core" today; the field exists so a later cycle can
+    /// carry `:exclude` / `:only` filters without changing the node
+    /// shape.
+    refer_clojure: bool = true,
     loc: SourceLocation = .{},
 };
 

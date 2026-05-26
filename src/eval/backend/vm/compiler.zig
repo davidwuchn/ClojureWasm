@@ -117,6 +117,7 @@ const Compiler = struct {
             },
             .in_ns_node => |n| try self.compileInNs(n),
             .require_node => |n| try self.compileRequire(n),
+            .ns_node => |n| try self.compileNs(n),
             // Closes D-060 (Phase 6.16.a-3.2): emit each element + the
             // `op_vector_literal <n>` operand. VM dispatch pops N values
             // and builds a PersistentVector.
@@ -366,6 +367,18 @@ const Compiler = struct {
         // and emit op_in_ns. The dispatcher mutates env.current_ns
         // and pushes nil (matching tree_walk::evalInNs).
         const name_val = try string_mod.alloc(self.rt, n.ns_name);
+        const idx = try self.addConstant(name_val);
+        try self.emit(.op_in_ns, idx);
+    }
+
+    fn compileNs(self: *Compiler, n: node_mod.NsNode) Error!void {
+        // ADR-0035 D1 ns VM path. Bare `(ns foo)` + `(:refer-clojure)`
+        // compile to op_in_ns + an implicit clojure.core auto-refer
+        // (matching evalInNs's existing auto-refer behaviour). VM
+        // parity for the full ns directive surface lands in a Phase
+        // 7+ cycle (D-073 sibling).
+        _ = n.refer_clojure;
+        const name_val = try string_mod.alloc(self.rt, n.name);
         const idx = try self.addConstant(name_val);
         try self.emit(.op_in_ns, idx);
     }

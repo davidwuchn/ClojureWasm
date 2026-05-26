@@ -298,6 +298,60 @@ pub fn analyzeRequire(
     return n;
 }
 
+/// `(ns foo)` or `(ns foo (:refer-clojure))`. ADR-0035 D1.
+/// Phase 6.16.b-4 sub-cycle c.7 supports the bare ns name + an
+/// optional `(:refer-clojure)` directive only; other directives
+/// (`:require` / `:use` / `:import` / `:gen-class`) raise transient
+/// `feature_not_supported`. Bare ns symbol is required (not quoted).
+pub fn analyzeNs(
+    arena: std.mem.Allocator,
+    items: []const Form,
+    form: Form,
+) AnalyzeError!*const Node {
+    if (items.len < 2)
+        return error_catalog.raise(.feature_not_supported, form.location, .{ .name = "ns requires a name" });
+
+    const name_form = items[1];
+    if (name_form.data != .symbol)
+        return error_catalog.raise(.feature_not_supported, name_form.location, .{ .name = "ns name must be a bare symbol" });
+    const sym = name_form.data.symbol;
+    const ns_name: []const u8 = if (sym.ns) |prefix|
+        try std.fmt.allocPrint(arena, "{s}/{s}", .{ prefix, sym.name })
+    else
+        try arena.dupe(u8, sym.name);
+
+    var refer_clojure: bool = true;
+
+    // Walk references (items[2..]). Each must be a list starting with
+    // a keyword directive.
+    var i: usize = 2;
+    while (i < items.len) : (i += 1) {
+        const directive = items[i];
+        if (directive.data != .list)
+            return error_catalog.raise(.feature_not_supported, directive.location, .{ .name = "ns directive must be a list" });
+        const inner = directive.data.list;
+        if (inner.len == 0 or inner[0].data != .keyword)
+            return error_catalog.raise(.feature_not_supported, directive.location, .{ .name = "ns directive must begin with a keyword" });
+        const kw = inner[0].data.keyword;
+        if (kw.ns != null)
+            return error_catalog.raise(.feature_not_supported, directive.location, .{ .name = "ns directive keyword must be unqualified" });
+        if (std.mem.eql(u8, kw.name, "refer-clojure")) {
+            refer_clojure = true;
+            // :exclude / :only filters land in a later cycle.
+            if (inner.len > 1)
+                return error_catalog.raise(.feature_not_supported, directive.location, .{ .name = "ns :refer-clojure filters (:exclude / :only) (Phase 6.16.b-4 c.8+)" });
+        } else if (std.mem.eql(u8, kw.name, "require")) {
+            return error_catalog.raise(.feature_not_supported, directive.location, .{ .name = "ns :require directive (Phase 6.16.b-4 c.8+: use separate (require ...) calls for now)" });
+        } else {
+            return error_catalog.raise(.feature_not_supported, directive.location, .{ .name = "ns directive (only :refer-clojure supported at c.7)" });
+        }
+    }
+
+    const n = try arena.create(Node);
+    n.* = .{ .ns_node = .{ .name = ns_name, .refer_clojure = refer_clojure, .loc = form.location } };
+    return n;
+}
+
 pub fn analyzeInNs(
     arena: std.mem.Allocator,
     items: []const Form,
