@@ -51,6 +51,7 @@
 //! that smell at the root.
 
 const std = @import("std");
+const Value = @import("../value/value.zig").Value;
 
 /// One node of the recognised exception hierarchy. `parent == null`
 /// marks the chain root (Throwable). Names are simple (no package
@@ -153,6 +154,40 @@ pub fn isSubclassOf(child: []const u8, parent: []const u8) bool {
         if (std.mem.eql(u8, c, simple_parent)) return true;
         cursor = getParent(c);
     }
+    return false;
+}
+
+/// Class name a thrown Value matches against. Maps each currently-
+/// throwable Value tag to the simple class name a `(catch …)` clause
+/// would receive. Row 7.11 cycle 2 only `.ex_info` flows through here
+/// (the only throwable Value tag in cw v1 today). Future host-class
+/// wire-up (D-048) lands the `.host_instance` arm via TypeDescriptor
+/// parent walk inside `matches()` below.
+fn thrownClassName(thrown: Value) ?[]const u8 {
+    return switch (thrown.tag()) {
+        .ex_info => "ExceptionInfo",
+        else => null,
+    };
+}
+
+/// `(catch ClassName e ...)` match predicate. Replaces the prior
+/// `ExceptionInfo`-only silent match in `tree_walk.catchMatches` +
+/// `vm.matchExceptionClass` (row 7.11 cycle 2; D-077 discharge).
+///
+/// Match rules (mirror JVM `(catch ClassName e)` semantics):
+/// 1. `Throwable` catches every recognised throwable.
+/// 2. Otherwise the thrown Value's mapped class name must be a
+///    subclass (per `isSubclassOf`) of `class_name`.
+/// 3. Unknown class names return false defensively — cycle 3's
+///    analyzer-time `catch_class_unknown` raise eliminates this
+///    fallthrough at the source.
+pub fn matches(thrown: Value, class_name: []const u8) bool {
+    const simple = normalizeClassName(class_name);
+    if (std.mem.eql(u8, simple, "Throwable")) return true;
+    if (thrownClassName(thrown)) |thrown_simple| {
+        return isSubclassOf(thrown_simple, simple);
+    }
+    // PROVISIONAL: host_instance receiver arm pending D-048 host_class wire-up [refs: D-048, feature_deps.yaml#runtime/eval/catch_class_table]
     return false;
 }
 

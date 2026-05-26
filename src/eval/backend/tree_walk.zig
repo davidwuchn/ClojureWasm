@@ -40,6 +40,7 @@ const Env = env_mod.Env;
 const Var = env_mod.Var;
 const error_mod = @import("../../runtime/error/info.zig");
 const error_catalog = @import("../../runtime/error/catalog.zig");
+const host_class = @import("../../runtime/error/host_class.zig");
 const vector_collection = @import("../../runtime/collection/vector.zig");
 const map_collection = @import("../../runtime/collection/map.zig");
 const set_collection = @import("../../runtime/collection/set.zig");
@@ -669,11 +670,11 @@ fn evalTry(rt: *Runtime, env: *Env, locals: []Value, n: node_mod.TryNode) anyerr
 }
 
 fn catchMatches(class_name: []const u8, thrown: Value) bool {
-    if (std.mem.eql(u8, class_name, "ExceptionInfo")) {
-        return thrown.tag() == .ex_info;
-    }
-    // PROVISIONAL: ExceptionInfo-only catch-class match pending type-name table [refs: D-077, feature_deps.yaml#runtime/eval/catch_class_table]
-    return false;
+    // Row 7.11 cycle 2 (D-077): delegate to the shared host-class
+    // hierarchy table in `runtime/error/host_class.zig`. Both backends
+    // import the same `matches` function so dispatch shape stays
+    // identical (vm.zig:594 mirrors this single-line body).
+    return host_class.matches(thrown, class_name);
 }
 
 fn evalCall(rt: *Runtime, env: *Env, locals: []Value, n: node_mod.CallNode) !Value {

@@ -358,26 +358,30 @@ entries:
 
   - name: runtime/eval/catch_class_table
     kind: runtime_layer
-    defined_in: src/eval/backend/tree_walk.zig
+    defined_in: src/runtime/error/host_class.zig
     status: provisional
     requires_features: []
     requires_debts:
       - D-077
+      - D-048
     provisional_markers:
-      - src/eval/backend/tree_walk.zig (catchMatches — ExceptionInfo-only)
-      - src/eval/backend/vm.zig (matchExceptionClass — ExceptionInfo-only)
+      - src/runtime/error/host_class.zig (matches — host_instance arm awaiting D-048)
     notes: |
-      `(try ... (catch ClassName e ...))` accepts arbitrary class
-      symbols at analyse time so user code stays readable, but at
-      eval time both backends only match `ExceptionInfo` (= the
-      `.ex_info` tag). Any other class name silently fails to
-      match — the catch clause is dead code from the runtime's
-      perspective. JVM Clojure dispatches via `instance?` against
-      a real class hierarchy. cw v1 will land a class-name → tag
-      table when host class wiring (Phase 6 entry, D-048 + the
-      runtime/java/lang/Throwable Class skeleton) stabilises;
-      until then catchMatches is a single-class predicate. Two
-      mirrored sites (tree_walk + VM) discharge together.
+      Row 7.11 cycle 1 (2026-05-27) landed the comptime hierarchy
+      table at `src/runtime/error/host_class.zig` (Throwable / Error /
+      Exception / RuntimeException + 13 subclasses incl. ExceptionInfo
+      via clojure.lang). Cycle 2 (2026-05-27) replaced both backends'
+      single-class predicates with `host_class.matches(thrown,
+      class_name)` — `tree_walk.catchMatches` + `vm.matchExceptionClass`
+      now delegate to the same shared function (no pub-var injection
+      per ROADMAP §13). 2 of 3 prior provisional_markers cleared in
+      that step. Remaining marker: `host_class.matches` `host_instance`
+      receiver arm returns false pending D-048 host-class wire-up — at
+      that point the arm walks `TypeDescriptor.parent` and the entry
+      flips to `landed`. Cycle 3 adds analyzer-time
+      `catch_class_unknown` raise so unknown class symbols no longer
+      pass through (= silent-default-shift smell eliminated at the
+      source).
 
   - name: runtime/vm/dispatch_family
     kind: runtime_layer

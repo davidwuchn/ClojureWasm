@@ -29,6 +29,7 @@ const set_mod = @import("../../runtime/collection/set.zig");
 const dispatch = @import("../../runtime/dispatch.zig");
 const error_mod = @import("../../runtime/error/info.zig");
 const error_catalog = @import("../../runtime/error/catalog.zig");
+const host_class = @import("../../runtime/error/host_class.zig");
 const tree_walk = @import("tree_walk.zig");
 const ex_info_mod = @import("../../runtime/collection/ex_info.zig");
 const td_mod = @import("../../runtime/type_descriptor.zig");
@@ -592,11 +593,10 @@ fn stepOnce(
 }
 
 fn matchExceptionClass(class_name: []const u8, thrown: Value) bool {
-    if (std.mem.eql(u8, class_name, "ExceptionInfo")) {
-        return thrown.tag() == .ex_info;
-    }
-    // PROVISIONAL: ExceptionInfo-only catch-class match pending type-name table [refs: D-077, feature_deps.yaml#runtime/eval/catch_class_table]
-    return false;
+    // Row 7.11 cycle 2 (D-077): delegate to the shared host-class
+    // hierarchy table in `runtime/error/host_class.zig`. Mirror of
+    // tree_walk.catchMatches:671 — both backends share the predicate.
+    return host_class.matches(thrown, class_name);
 }
 
 fn raiseInternal(comptime detail: []const u8) anyerror {
