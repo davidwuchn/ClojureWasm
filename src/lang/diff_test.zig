@@ -301,3 +301,38 @@ test "diff: ctor_call_node second field" {
 // tree_walk.treeWalkCall), giving functional parity coverage. The
 // missing diff_test cases for op_method_call ride D-073 cluster's
 // future Runtime.deinit cleanup work.
+
+// ADR-0042 row 7.9: `apply` variadic-callee bind-direct gate. Both
+// backends share `tree_walk.callFunction` (vm.zig:573 wires
+// `treeWalkCall` into the VM vtable), so the gate fires identically
+// on both. Three positive cases (list / cons / leading + list tail)
+// + one negative case (vector still spreads to the rest slot).
+
+test "diff: row 7.9 apply variadic bind-direct (list tail, no leading)" {
+    var f = try Fixture.init(testing.allocator);
+    defer f.deinit();
+    try f.check("(apply (fn* [& xs] (count xs)) '(1 2 3 4 5))", 5);
+}
+
+test "diff: row 7.9 apply variadic bind-direct (list tail, with leading)" {
+    var f = try Fixture.init(testing.allocator);
+    defer f.deinit();
+    try f.check("(apply (fn* [a b & xs] (count xs)) 10 20 '(3 4 5))", 3);
+}
+
+test "diff: row 7.9 apply variadic bind-direct (identity through rest)" {
+    var f = try Fixture.init(testing.allocator);
+    defer f.deinit();
+    try f.check("(apply (fn* [& xs] (first xs)) '(99 100 101))", 99);
+}
+
+test "diff: row 7.9 apply variadic with vector tail (spread still works)" {
+    var f = try Fixture.init(testing.allocator);
+    defer f.deinit();
+    // Vector tail hits the eager-spread fallback (vectors are NOT in
+    // the bind-direct gate's seq-tag set); xs binds to (1 2 3 4 5),
+    // count returns 5. Locks the negative case so a future widening
+    // of the gate to include vector tags would fail this case
+    // (and need an explicit ADR amendment).
+    try f.check("(apply (fn* [& xs] (count xs)) [1 2 3 4 5])", 5);
+}

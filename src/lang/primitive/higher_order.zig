@@ -38,6 +38,7 @@ const dispatch = @import("../../runtime/dispatch.zig");
 const reduced = @import("../../runtime/collection/reduced.zig");
 const sequence = @import("sequence.zig");
 const collection = @import("collection.zig");
+const tree_walk = @import("../../eval/backend/tree_walk.zig");
 
 // --- apply ---
 
@@ -49,10 +50,16 @@ const collection = @import("collection.zig");
 /// JVM reference: clojure.lang.RT.applyTo / clojure.core/apply
 /// cw v1 tier: A (Phase 6.16.a-3.1)
 ///
-/// Phase 6.16.a-3.1 takes the simple path: collect all args into a
-/// flat Zig slice and call via `rt.vtable.callFn`. Lazy-seq tail
-/// integration (= JVM's `apply f (range)` infinite stream pattern)
-/// deferred per survey R3 to Phase 7 entry when `IReduce` lands.
+/// ADR-0042 (row 7.9): variadic-callee bind-direct fast-path. When `f`
+/// is a user Fn whose variadic arity exactly matches `leading.len` AND
+/// trailing has a seq-shaped tag (list / cons / chunked_cons /
+/// lazy_seq / nil), pass `args[1..]` (= `[leading..., trailing]`)
+/// straight through. `tree_walk.callFunction`'s rest-pack gate then
+/// binds trailing directly to the `& rest` slot — no walk, no
+/// realisation. Other callee shapes (fixed-arity, builtin, keyword,
+/// map-as-fn, ...) and non-seq trailings fall through to the eager
+/// spread path so the arity-matching contract on those callables is
+/// preserved.
 pub fn applyFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
     if (args.len < 2) {
         return error_catalog.raise(.arity_below_min, loc, .{
@@ -62,18 +69,19 @@ pub fn applyFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation
         });
     }
     const f = args[0];
-    // Leading positional args = args[1..args.len-1]
-    // Trailing seqable     = args[args.len-1]
     const trailing = args[args.len - 1];
     const leading = args[1 .. args.len - 1];
 
-    // Walk the trailing seqable, collecting into a flat slice.
+    if (canBindDirect(f, leading.len, trailing)) {
+        return try invokeCallable(rt, env, f, args[1..], loc);
+    }
+
+    // Eager spread: walk the trailing seqable, collecting into a flat slice.
     var collected: std.ArrayList(Value) = .empty;
     defer collected.deinit(rt.gpa);
     try collected.appendSlice(rt.gpa, leading);
 
     var cur: Value = trailing;
-    // Normalize: if not already seq-shaped, call seq to get a list view.
     if (!cur.isNil()) {
         switch (cur.tag()) {
             .list, .cons, .chunked_cons, .lazy_seq => {},
@@ -87,6 +95,17 @@ pub fn applyFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation
         cur = try sequence.restFn(rt, env, &.{cur}, loc);
     }
     return try invokeCallable(rt, env, f, collected.items, loc);
+}
+
+fn canBindDirect(f: Value, leading_count: usize, trailing: Value) bool {
+    if (f.tag() != .fn_val) return false;
+    const fn_ptr = f.decodePtr(*const tree_walk.Function);
+    const v = fn_ptr.variadic orelse return false;
+    if (v.arity != leading_count) return false;
+    return switch (trailing.tag()) {
+        .list, .cons, .chunked_cons, .lazy_seq, .nil => true,
+        else => false,
+    };
 }
 
 /// Invoke a callable Value (builtin or Function) with args via the

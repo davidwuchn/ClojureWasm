@@ -763,17 +763,29 @@ pub fn callFunction(rt: *Runtime, env: *Env, fn_val: Value, args: []const Value,
         locals[f.slot_base + i] = v;
     }
     if (m.has_rest) {
-        // Build a list of the trailing args (those past `m.arity`).
-        // JVM Clojure binds `& rest` to a seq view; cw v1 builds the
-        // simpler heap List (Cons chain). Empty trailing → nil per
-        // `(defn f [& xs] xs) → (f)` returning nil.
-        var rest_list: Value = .nil_val;
-        var i: usize = args.len;
-        while (i > m.arity) {
-            i -= 1;
-            rest_list = try list_mod.consHeap(rt, args[i], rest_list);
+        // ADR-0042: gated bind-direct fast-path. When the caller hands us
+        // exactly one trailing arg with a seq-shaped tag and that arg
+        // sits in the rest slot, bind it directly instead of cons-packing
+        // it into a fresh one-element list. The gate is generic — any
+        // caller (not just `apply`) passing this exact shape benefits.
+        // Vectors are intentionally excluded so JVM `(apply f x [y])`
+        // spread semantics stay (xs = (y) one-element list, not [y]).
+        // See ADR-0042 + higher_order.zig::applyFn for the producer.
+        if (args.len == m.arity + 1 and isRestSeqShaped(args[m.arity])) {
+            locals[f.slot_base + m.arity] = args[m.arity];
+        } else {
+            // Build a list of the trailing args (those past `m.arity`).
+            // JVM Clojure binds `& rest` to a seq view; cw v1 builds the
+            // simpler heap List (Cons chain). Empty trailing → nil per
+            // `(defn f [& xs] xs) → (f)` returning nil.
+            var rest_list: Value = .nil_val;
+            var i: usize = args.len;
+            while (i > m.arity) {
+                i -= 1;
+                rest_list = try list_mod.consHeap(rt, args[i], rest_list);
+            }
+            locals[f.slot_base + m.arity] = rest_list;
         }
-        locals[f.slot_base + m.arity] = rest_list;
     }
     // VM backend hook: when this method carries compiled bytecode and
     // the vtable has the `evalChunk` slot wired (vm.installVTable), run
@@ -785,6 +797,17 @@ pub fn callFunction(rt: *Runtime, env: *Env, fn_val: Value, args: []const Value,
         }
     }
     return eval(rt, env, &locals, m.body);
+}
+
+/// ADR-0042: tags eligible for the bind-direct rest-pack fast-path —
+/// already shape-compatible with Clojure's `& rest` binding (an ISeq).
+/// Vector / set / map / etc. are intentionally excluded so their spread
+/// semantics stay observable for `(apply f x [y])`-style calls.
+fn isRestSeqShaped(v: Value) bool {
+    return switch (v.tag()) {
+        .list, .cons, .chunked_cons, .lazy_seq, .nil => true,
+        else => false,
+    };
 }
 
 fn selectMethod(f: *const Function, n: usize) ?*const FunctionMethod {
