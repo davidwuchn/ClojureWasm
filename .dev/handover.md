@@ -6,17 +6,18 @@
 ## Resume contract
 
 - **HEAD**: see `git log`.
-- **First commit on resume MUST be**: §9.9 row 7.6 first red —
-  `(.method instance args)` general-arity protocol method dispatch
-  via CallSite cache. ROADMAP row 7.6 description: "5.12.d
-  carry-forward — `(.method instance args)` general-arity
-  protocol method dispatch via CallSite cache." Rows 7.4
-  (defrecord) and 7.5 (reify) closed in the prior session.
-  Row 7.6 lights up the `.method` form for arity > 0 (currently
-  only arity-2 `.field instance` works at Phase 5.12.a).
-  D-073 cluster's 3 deftype-family VM-DEFER sites discharge at
-  row 7.6 alongside the bytecode shape decision. Step 0 survey
-  required.
+- **First commit on resume MUST be**: §9.9 row 7.7 first red —
+  D-069 polymorphic primitives (count / seq / conj / reduce)
+  refactored to hybrid Zig Tag-switch fast-path + Protocol
+  extension point opens. ROADMAP row 7.7 description:
+  "D-069 — Phase 6.16.a-1/a-2 polymorphic primitives (count /
+  seq / conj / reduce) refactored to hybrid: Zig Tag-switch
+  fast-path + Protocol extension point opens
+  (= `extend-type` reaches them)." Row 7.6 (.method dispatch +
+  D-073 a/b/c/f) closed in the prior session. Step 0 survey
+  required (Clojure JVM `clojure.core` count/seq/conj/reduce
+  semantics + cw v1 current primitive shapes + extension hook
+  design).
 - **Forbidden this session**: (a) re-deriving Phase 7 entry triad
   (T1 ADR-0036 + T2 ADR-0037 + T3 ADR-0035 D9 second amendment).
   (b) commits adding VM compile arm bodies of the form
@@ -43,16 +44,18 @@ end-state → `feature_deps.yaml` → `.dev/debt.md` Step 0.5 sweep.
 ## Current state
 
 - **Phase**: Phase 7 IN-PROGRESS — §9.9 rows 7.0 / 7.1 / 7.2 / 7.3
-  / 7.4 / 7.5 all [x]. Row 7.4 (defrecord) closed across 6 cycles
-  (commit chain 202c794 → cycle 6). Row 7.5 (reify) closed across
-  4 cycles (10b06cc + d87e72b + 975cd3a + this commit): macro
-  skeleton → ADR-0039 ReifiedInstance minimal layout + dispatch
-  arm + GC hooks → `__reify!` happy path → D-082 discharge
-  (isaCheck typed_instance/reified_instance descriptor walk).
-  ADR-0039 + Devil's-advocate fork landed.
-  D-082 DISCHARGED. D-085 (keyword-as-fn) and D-086 (defrecord
-  `__extmap`) remain opportunistic. Active = row 7.6
-  (`.method instance args` dispatch + D-073 cluster discharge).
+  / 7.4 / 7.5 / 7.6 all [x]. Row 7.4 (defrecord) 6 cycles. Row
+  7.5 (reify) 4 cycles + ADR-0039 (DA fork). Row 7.6 (.method
+  dispatch + D-073 cluster) 2 cycles: cycle 1 (`40268e2`)
+  MethodCallNode + analyzer arm + evalMethodCall (lookupMethod
+  Path A2 widening); cycle 4 (`055a3cc`) ADR-0040 + 4 new opcodes
+  + BytecodeChunk.call_sites side-table + 4 compile arms + 4
+  dispatch arms + 2 diff_test cases. ADR-0039 + ADR-0040 +
+  Devil's-advocate forks landed. D-082 DISCHARGED. D-073 cluster
+  sub-sites a/b/c/f DISCHARGED (d require_libspec + e ns_filter
+  remain). D-085 (keyword-as-fn) and D-086 (defrecord
+  `__extmap`) remain opportunistic. Active = row 7.7 (D-069
+  polymorphic primitives + protocol extension point).
 - **Branch**: `cw-from-scratch`. v5 plan =
   `private/notes/clj_vs_zig_split_proposal_v5.md`.
 - **Gate**: Mac 44/44 + OrbStack Ubuntu x86_64 44/44 green at HEAD
@@ -64,24 +67,27 @@ end-state → `feature_deps.yaml` → `.dev/debt.md` Step 0.5 sweep.
   defrecord __extmap (2 markers in assocFn).
 - **Chapter cadence**: dormant per ADR-0025 + F-007.
 
-## Active task — §9.9 row 7.6 (`.method` dispatch + D-073 cluster)
+## Active task — §9.9 row 7.7 (D-069 polymorphic primitives + protocol extension)
 
-`(.method instance args)` general-arity protocol method dispatch
-via CallSite cache. Phase 5.12.a only ships arity-2 `.field instance`
-as a struct field read; row 7.6 extends to multi-arg form via the
-row 7.3 dispatch ABI. D-073 cluster's 3 deftype-family VM-DEFER
-sites (deftype_node / ctor_call_node / field_access_node in
-vm/compiler.zig) discharge at this row alongside the bytecode shape
-decision (op_method_call or extend op_call with method-resolution
-operand). ADR-0036 dual_backend_parity contract applies.
+D-069 — refactor Phase 6.16.a polymorphic primitives (`count` /
+`seq` / `conj` / `reduce`) to a hybrid shape: Zig Tag-switch
+fast-path for native collection tags + Protocol extension point
+that `extend-type` reaches. Today these primitives are closed
+switches that raise on unknown tags; row 7.7 opens them up so
+user-defined defrecord/reify can extend them via the row 7.3
+dispatch ABI. Step 0 survey required.
 
 ## Open questions / blockers
 
-None testable from inside the loop. D-081 (multimethod ergonomic
-surface) blocked-by D-012 (Atom + swap!, Phase 15 target).
-D-083 (multimethod diff_test parity) opportunistic. D-085
-(keyword-as-fn callable) opportunistic — needs Layer-0 lookup
-helper. D-086 (defrecord __extmap overflow) dedicated cycle later.
+None testable from inside the loop. D-073 cluster's d (require
+libspec) + e (ns_filter) sub-sites remain — opportunistic. D-081
+(multimethod ergonomic surface) blocked-by D-012 (Atom + swap!,
+Phase 15 target). D-083 (multimethod diff_test parity)
+opportunistic. D-085 (keyword-as-fn callable) opportunistic —
+needs Layer-0 lookup helper. D-086 (defrecord __extmap overflow)
+dedicated cycle later. Runtime.deinit cleanup for diff_test
+process-lifetime descriptor handling deferred — surfaced at row
+7.6 cycle 4 when 2 of 4 planned diff_test cases needed deferral.
 
 ## Guardrail refresh history
 
