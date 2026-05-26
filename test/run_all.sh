@@ -210,6 +210,13 @@ run_step "scan_panic_audit"    "bash scripts/scan_panic_audit.sh"  optional
 # numbers, never fails the build until §10.1 lock at Phase 8.
 run_step "bench_quick"         "PHASE_NAME=phase4 bash bench/quick.sh" optional
 
+# Row 8.3 (ADR-0027): 1.2x regression gate. Informational at this
+# wiring point — flips to `--gate` once row 8.7 exit-smoke confirms
+# stable thresholds across both hosts. Reads the latest
+# `bench/quick_baseline.txt` block for the current (machine, backend)
+# tuple + compares against the matching `bench/history.yaml` lock.
+run_step "bench_regression"    "bash scripts/check_bench_regression.sh --check" optional
+
 # Future suites (uncomment as their phase lands):
 #   run_step "diff_runner"  "zig build test -Dtest-filter='differential cases'"
 #   run_step "test_clj"     "bash scripts/run_clj_tests.sh"  # Phase 11

@@ -30,6 +30,16 @@ PHASE="${PHASE_NAME:-phase1}"
 # repeatable timestamp so reproducibility is obvious in diffs
 NOW="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
+# Row 8.3: machine_id 5th-column tag so `scripts/check_bench_regression.sh`
+# can filter latest-block-per-host. Old rows (pre-row-8.3) lack the
+# column; the gate treats them as `unknown` and skips. Canonical short
+# ids match `bench/record.sh` + the gate script.
+case "$(uname -sm)" in
+    "Darwin arm64") MACHINE_ID="mac-arm-m4pro" ;;
+    "Linux x86_64") MACHINE_ID="orbstack-ubuntu-x86_64" ;;
+    *)              MACHINE_ID="$(uname -sm | tr ' ' '-')" ;;
+esac
+
 echo "==> 1. Build (ReleaseFast)"
 zig build -Doptimize=ReleaseFast >/dev/null
 BIN="zig-out/bin/cljw"
@@ -66,7 +76,7 @@ bench_run() {
     elapsed_ms=$((end - start))
     local per_run_us=$(( (elapsed_ms * 1000) / iters ))
     echo "    $label = ${per_run_us} us/run (n=$iters)"
-    printf '%s\t%s\t%s\t%s\n' "$NOW" "$PHASE" "$label" "$per_run_us" >> "$BASELINE"
+    printf '%s\t%s\t%s\t%s\t%s\n' "$NOW" "$PHASE" "$label" "$per_run_us" "$MACHINE_ID" >> "$BASELINE"
 }
 
 echo "==> 2. Cold start (no-args)"
@@ -88,7 +98,7 @@ bench_run read_100_forms_us "$BIN" -e "$LONG"
         printf '# bench/quick_baseline.txt — Phase-1 baselines.\n'
         printf '# Columns: timestamp\tphase\tmetric\tvalue\n'
     fi
-    printf '%s\t%s\t%s\t%s\n' "$NOW" "$PHASE" "binary_size_bytes" "$size_bytes"
+    printf '%s\t%s\t%s\t%s\t%s\n' "$NOW" "$PHASE" "binary_size_bytes" "$size_bytes" "$MACHINE_ID"
 } >> "$BASELINE"
 
 echo "==> 5. fib_recursive (recursive user-fn dispatch)"
