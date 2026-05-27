@@ -2,7 +2,9 @@
 # bench/record.sh — Append a curated bench lock-point to
 # `bench/history.yaml`. Reads the most recent `bench/quick_baseline.txt`
 # block (= the rows sharing the latest timestamp) for the per-bench
-# median and emits an entry matching ADR-0027's schema.
+# median and emits an entry matching ADR-0044's schema (was
+# ADR-0027 pre-Phase-8→9 audit; renumbered to resolve the
+# slot-0027 collision with the NaN-box ADR).
 #
 # Usage:
 #   bash bench/record.sh --id=8A.1 --reason="Phase 8 row 8.3 close"

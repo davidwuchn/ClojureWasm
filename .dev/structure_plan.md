@@ -293,7 +293,7 @@ ClojureWasmFromScratch/
       └─ clj/                      Clojure source (bootstrap)
          └─ clojure/
             ├─ core.clj            (current)
-            └─ (Phase 9+: string/set/walk/zip/data/edn/pprint)
+            └─ (landed pre-Phase 9: string/set/walk/zip; Phase 9: edn + data/{json,csv} + tools/cli; Phase 10+: pprint)
 ```
 
 ## Cross-phase coordination notes
