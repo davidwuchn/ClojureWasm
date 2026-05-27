@@ -39,22 +39,40 @@ the module must reach the shared neutral impl directly via
 `src/runtime/<feature>.zig` per F-009 (feature-implementation
 neutrality).
 
-## File layout per module
+## File layout (deferred per D-095)
 
-Each subdirectory follows the same shape:
+`modules/` is a **reserved top-level directory** at row 9.1. The
+intended shape per `.dev/structure_plan.md` is one subdirectory
+per external Clojure module with both the `.clj` source and the
+matching Layer-2 Zig primitive co-located:
 
 ```
 modules/<area>/
 ├── _README.md            # one-line scope + JVM upstream link
 ├── <area>.clj            # the user-facing Clojure ns
 └── <area>.zig            # Layer-2 primitives the .clj defns route through
-                          # (only when Pattern B1 native impl is needed;
-                          # Pattern A pure-Clojure modules can omit this)
 ```
+
+Zig 0.16's `@import` + `@embedFile` reject cross-module-path
+access, so until `build.zig` declares `modules/` as a separate
+Zig module (with `addImport("cw_modules", modules_mod)`), the
+actual module content rides the existing in-source convention:
+
+- `.clj` source → `src/lang/clj/clojure/<area>.clj`
+  (mirroring `clojure.string` / `clojure.set` precedent).
+- Layer-2 Zig primitive → `src/lang/primitive/<area>.zig`
+  (mirroring `string.zig` / `walk.zig`).
+
+The `modules/` top-level remains in the tree as a structural
+reservation so the future build.zig migration has a target. The
+deferred migration is tracked at `.dev/debt.md` D-095.
 
 Module registration into the cw runtime happens via the bootstrap
 loader (cw v1's `(require '[clojure.data.json :as json])` discovery
 mechanism uses the `Runtime.require_resolver` per ADR-0035 D5).
+The bootstrap FILES table at `src/lang/bootstrap.zig` is the
+single SSOT for which namespace `.clj` sources get embedded at
+compile time.
 
 ## Why a peer to `src/`, not under `src/lang/`
 

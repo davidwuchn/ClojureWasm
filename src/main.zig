@@ -118,6 +118,7 @@ test {
     _ = @import("lang/primitive/core.zig");
     _ = @import("lang/primitive/error.zig");
     _ = @import("lang/primitive/transient.zig");
+    _ = @import("lang/primitive/edn.zig");
     _ = @import("lang/primitive/multimethod.zig");
     _ = @import("lang/primitive/protocol.zig");
     _ = @import("lang/primitive.zig");

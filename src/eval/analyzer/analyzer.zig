@@ -47,6 +47,9 @@ const keyword = @import("../../runtime/keyword.zig");
 const symbol_mod = @import("../../runtime/symbol.zig");
 const string_collection = @import("../../runtime/collection/string.zig");
 const list_collection = @import("../../runtime/collection/list.zig");
+const vector_collection = @import("../../runtime/collection/vector.zig");
+const map_collection = @import("../../runtime/collection/map.zig");
+const set_collection = @import("../../runtime/collection/set.zig");
 const big_int = @import("../../runtime/numeric/big_int.zig");
 const big_decimal = @import("../../runtime/numeric/big_decimal.zig");
 const regex_value = @import("../../runtime/regex/value.zig");
@@ -636,10 +639,63 @@ pub fn formToValue(rt: *Runtime, form: Form) AnalyzeError!Value {
         .string => |s| try string_collection.alloc(rt, s),
         .list => |items| try listFormToValue(rt, items),
         .symbol => |sym| try symbol_mod.intern(rt, sym.ns, sym.name),
-        .vector => error_catalog.raise(.feature_not_supported, form.location, .{ .name = "Quoted vector as Value" }),
-        .map => error_catalog.raise(.feature_not_supported, form.location, .{ .name = "Quoted map as Value" }),
-        .set => error_catalog.raise(.feature_not_supported, form.location, .{ .name = "Quoted set as Value" }),
+        .vector => |items| try vectorFormToValue(rt, items),
+        .map => |entries| try mapFormToValue(rt, entries, form.location),
+        .set => |items| try setFormToValue(rt, items),
     };
+}
+
+/// Build a persistent vector Value by recursively lifting each form
+/// element. §9.11 row 9.2: powers `clojure.edn/read-string "[1 2 3]"`
+/// + JVM-parity `(quote [1 2 3])` round-trip.
+fn vectorFormToValue(rt: *Runtime, items: []const Form) AnalyzeError!Value {
+    var out = vector_collection.empty();
+    for (items) |item| {
+        const v = try formToValue(rt, item);
+        out = try vector_collection.conj(rt, out, v);
+    }
+    return out;
+}
+
+/// Build a persistent map Value by recursively lifting key/value pairs.
+/// `map.assoc` raises Zig-internal errors (`HashMapNotImplemented` etc.)
+/// outside the cw catalog set when the map would grow past the
+/// ArrayMap cap before D-045 lands; translate those to
+/// `feature_not_supported` so the AnalyzeError envelope holds.
+fn mapFormToValue(rt: *Runtime, entries: []const Form, loc: SourceLocation) AnalyzeError!Value {
+    if (entries.len % 2 != 0) {
+        return error_catalog.raise(.map_literal_arity_odd, loc, .{});
+    }
+    var out = map_collection.empty();
+    var i: usize = 0;
+    while (i < entries.len) : (i += 2) {
+        const k = try formToValue(rt, entries[i]);
+        const val = try formToValue(rt, entries[i + 1]);
+        out = map_collection.assoc(rt, out, k, val) catch |err| switch (err) {
+            error.HashMapNotImplemented, error.HashMapPromotionNotImplemented => return error_catalog.raise(.feature_not_supported, loc, .{
+                .name = "Map literal beyond ArrayMap capacity (HAMT pending D-045)",
+            }),
+            error.AssocOnNonMap => unreachable, // out always starts at .array_map
+            else => |e| return e,
+        };
+    }
+    return out;
+}
+
+/// Build a persistent set Value by recursively lifting elements.
+fn setFormToValue(rt: *Runtime, items: []const Form) AnalyzeError!Value {
+    var out = set_collection.empty();
+    for (items) |item| {
+        const v = try formToValue(rt, item);
+        out = set_collection.conj(rt, out, v) catch |err| switch (err) {
+            error.HashMapNotImplemented, error.HashMapPromotionNotImplemented => return error_catalog.raise(.feature_not_supported, .{}, .{
+                .name = "Set literal beyond ArrayMap capacity (HAMT pending D-045)",
+            }),
+            error.AssocOnNonMap => unreachable, // out always starts at .hash_set
+            else => |e| return e,
+        };
+    }
+    return out;
 }
 
 /// Build a heap List Value by recursively lifting each element to a
