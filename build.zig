@@ -23,7 +23,7 @@ pub fn build(b: *std.Build) void {
     build_options.addOption(bool, "phase_at_least_5", true);
     build_options.addOption(bool, "phase_at_least_6", true);
     build_options.addOption(bool, "phase_at_least_7", true);
-    build_options.addOption(bool, "phase_at_least_11", false);
+    build_options.addOption(bool, "phase_at_least_11", true);
     build_options.addOption(bool, "phase_at_least_14", false);
     build_options.addOption(bool, "phase_at_least_15", false);
     build_options.addOption(bool, "phase_at_least_17", false);

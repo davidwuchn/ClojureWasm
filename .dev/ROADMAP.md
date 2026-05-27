@@ -1518,7 +1518,7 @@ top-3 host stdlib second-wave classes ship; namespace
 ergonomics polish lands; D-007 self-host viability re-verified
 post-Phase-10 surface additions. 🔒 OrbStack x86_64 gate passes.
 
-### 9.13 Phase 11 — task list (IN-PROGRESS; opened 2026-05-27)
+### 9.13 Phase 11 — task list (DONE; closed 2026-05-27)
 
 **Entry ADRs**: 0021 (Test layer taxonomy — Layer 5 Conformance
 opens) · 0013 (Tier D permanent).
@@ -1550,7 +1550,7 @@ rewrites `test/run_all.sh` to enforce the Tier A 100% PASS gate.
 | 11.2 | `clojure.test` minimum surface — `deftest` macro + `is` macro + `run-tests` + basic assertion reporting (PASS / FAIL count + failing-test names). Pattern A `.clj` defn under `src/lang/clj/clojure/test.clj`. Skip `are` / `testing` / fixtures (`use-fixtures`) for cycle 1; track absence as debt rows                                                                       | [x] (`is` Zig primitive 1-arity + `run-tests` Pattern A variadic-fn over explicit test fns; `deftest` deferred per D-099 — needs user defmacro; 6-case e2e)                                 |
 | 11.3 | Port 10+ upstream Clojure tests to `test/clj/` from `~/Documents/OSS/clojure/test/`. Pick tests that exercise the Phase-1-to-10 surface: arithmetic, collections, strings, sequences, defn / defrecord, multimethod / protocol, clojure.set / .string / .edn round-trips. Each ported test carries a `;; CLJW:` tier marker comment + `skip_taxonomy.yaml` entry when applicable | [x] (13 tests in `test/clj/cw_ported.clj` covering arithmetic / string / vector / map / set / seq / clojure.set/.edn / closure / loop-recur; `;; CLJW: A` markers; skip_taxonomy.yaml empty) |
 | 11.4 | Tier A 100% PASS gate wiring — `test/run_all.sh` gains a `test_clj` step that runs the ported corpus under `cljw` and asserts 100% PASS over the Tier A subset (`skip_taxonomy.yaml`-filtered). Phase 11 close = the gate is active                                                                                                                                             | [x] (`test/clj/run_tier_a.sh` wired as `test_clj_tier_a` run_step; asserts `[13 0]`; gate active)                                                                                            |
-| 11.5 | Phase 11 exit smoke + final activation — flip `build_options.phase_at_least_11 = true`; verify ported tests still pass with the flipped flag; flip Phase tracker DONE                                                                                                                                                                                                           | [ ]                                                                                                                                                                                          |
+| 11.5 | Phase 11 exit smoke + final activation — flip `build_options.phase_at_least_11 = true`; verify ported tests still pass with the flipped flag; flip Phase tracker DONE                                                                                                                                                                                                           | [x] (`build_options.phase_at_least_11 = true` flipped in build.zig + main.zig assert updated; `test/e2e/phase11_exit_smoke.sh` 3 cases incl. Tier A 13/13 re-verify; Phase tracker DONE)     |
 
 **Exit criterion**: ADR-0046 minted; clojure.test minimum
 surface green; ≥ 10 upstream tests ported with tier markers;
