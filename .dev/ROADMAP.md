@@ -1471,16 +1471,52 @@ from `runtime/` + `eval/`; D-007 self-host viability check
 verifies cw can run its own bootstrap; D-034 discharged.
 🔒 OrbStack x86_64 gate passes.
 
-### 9.12 Phase 10 — task list (PENDING, expand at Phase 10 entry)
+### 9.12 Phase 10 — task list (IN-PROGRESS; opened 2026-05-27)
 
-**Entry ADRs**: 0029 (Java + cljw surface layout — second wave host classes;
-supersedes ADR-0011).
-**Deliverables**: namespaces + `require` + standard library
-(Tier A) — `clojure.string` / `clojure.set` / `clojure.edn` /
-`clojure.pprint` tests green, host stdlib second wave
-(`java.time.LocalDateTime` / `Duration` / `ZonedDateTime` /
-`java.math.BigDecimal` / `java.util.regex.Matcher` and the
-remaining Phase-14-deferred classes from ADR-0029 §D5 schema).
+**Entry ADRs**: 0029 (Java + cljw surface layout — second wave
+host classes; supersedes ADR-0011).
+**Entry debts**: none load-bearing for opening; D-085
+(keyword-as-fn callable) + D-086 (defrecord `__extmap`) +
+D-091 (defn docstring + meta-map) remain opportunistic
+follow-ups that could land in any Phase 10 cycle that touches
+their area.
+**Scope reconciliation** (per the Phase 9 entry placeholder
+note + Phase 9 → 10 audit): namespaces + `require` +
+clojure.string / clojure.set / clojure.walk / clojure.zip
+landed pre-Phase 9 (rows 6.16+ / 7.13); clojure.edn /
+clojure.data.json / clojure.data.csv / clojure.tools.cli
+landed at Phase 9 rows 9.2-9.5. The original Phase 10 mission
+"namespaces + standard libraries Tier A" is therefore largely
+discharged — Phase 10 picks up the **remaining Tier-A surface**
+that the master-table §9 row enumerated but the per-phase
+expansions did not yet schedule:
+- `clojure.pprint` minimum surface (pprint / print-table /
+  cl-format subset)
+- host stdlib second wave per ADR-0029 D5
+  (`java.time.LocalDateTime` / `Duration` / `ZonedDateTime` /
+  `java.math.BigDecimal` / `java.util.regex.Matcher` etc.)
+- namespace ergonomics polish (`alias` / `refer` `:only` /
+  `:exclude` / `:rename`)
+**Deliverables**: `clojure.pprint` minimum surface +
+selected host stdlib second-wave classes (pick the highest-
+frequency 3-5 from ADR-0029 D5 frequency basis) + namespace
+ergonomics polish.
+**Final activation step**: no `build_options.phase_at_least_10`
+flag exists. Phase 10 close = exit smoke + Phase tracker flip.
+
+| #    | Description                                                                                                                                                                                                                                                                                                                                                                                                                                               | Status |
+|------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|--------|
+| 10.0 | Phase 9 → 10 boundary review chain follow-ups: ADR-0027 collision repaired via 3017e8b (bench-schema → ADR-0044); bench/record.sh ADR ref + structure_plan stale phase rephrase landed at bd2386e. Stale Phase-ref / simplify / security medium findings deferred to opportunistic cycles. ROADMAP §9 master table L854 (Phase 9 mission text) reconciliation rides row 10.1                                                                           | [x]    |
+| 10.1 | ROADMAP §9 master table Phase 9 row reconciliation per `.dev/ROADMAP.md` §17 amendment policy — published mission "Protocols + Multimethods + Interop deep module" overlaps Phase 6+7 territory; actually-landed Phase 9 was "modules/ + 4 external libraries". Amend §9 row 9 in place + ADR amendment / new ADR for the mission rewrite, then proceed                                                                                               | [ ]    |
+| 10.2 | `clojure.pprint` minimum surface — `pprint` + `print-table`. Implementation strategy: Pattern A `.clj` defns over `clojure.string/format` + `prn`. Skip full `cl-format` for cycle 1; track its absence as a debt row when the surface gap surfaces                                                                                                                                                                                                      | [ ]    |
+| 10.3 | Host stdlib second wave — pick top-3 from ADR-0029 D5 frequency basis (likely candidates: `java.util.regex.Matcher` since Phase 6.x regex already lives in src/runtime/regex/; `java.time.LocalDateTime` since `java.time.Instant` already lives; `java.math.BigDecimal` since the numeric tower has BigInt+Ratio already). Per ADR-0029 the surface lives under `runtime/java/<pkg>/<Class>.zig` + delegates to neutral impl. F-009 + G1-G3 gates apply | [ ]    |
+| 10.4 | Namespace ergonomics polish — `alias` + `refer :only [...]` + `refer :exclude [...]` + `refer :rename {...}` arms in the `(ns ...)` macro. Today `(ns foo (:refer-clojure))` is the only widely-tested arm; user code that wants `(refer 'clojure.string :only [join])` patterns hits raise paths. Open the surface that's commonly exercised in Tier-A test corpora                                                                                     | [ ]    |
+| 10.5 | Phase 10 exit smoke — `clojure.pprint/pprint` on a small data structure + host stdlib second-wave round-trip (one Matcher + one LocalDateTime smoke) + `(ns foo (:require [clojure.set :as cset]))` alias smoke. 🔒 OrbStack gate                                                                                                                                                                                                                         | [ ]    |
+
+**Exit criterion**: clojure.pprint minimum surface green;
+top-3 host stdlib second-wave classes ship; namespace
+ergonomics polish lands; D-007 self-host viability re-verified
+post-Phase-10 surface additions. 🔒 OrbStack x86_64 gate passes.
 
 ### 9.13 Phase 11 — task list (PENDING, expand at Phase 11 entry)
 
