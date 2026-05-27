@@ -1558,35 +1558,37 @@ surface green; ≥ 10 upstream tests ported with tier markers;
 `build_options.phase_at_least_11 = true`. 🔒 OrbStack x86_64
 gate passes.
 
-### 9.14 Phase 12 — task list (PENDING, expand at Phase 12 entry)
+### 9.14 Phase 12 — task list (IN-PROGRESS; opened 2026-05-27)
 
 **Entry ADRs**: 0004 (Day-1 enum — Opcode now stable) ·
 **ADR-0034 issuance** (cljw build single mode + Tier 0 metadata +
-structured EDN + post-mortem decode、 v5 §19.2 SSOT、 Phase 6.16.a-1
-cycle terminus で size budget measured 後に起票)。
+structured EDN + post-mortem decode, v5 §19.2 SSOT, mints at
+row 12.1 per the Phase-12-entry-time issuance pattern).
 **Entry debts**: **D-064** (cljw render-error post-mortem decoder
-archive 整備、 `cljw-formats/<version>.edn` v0.1.0 初版 commit + decoder
-skeleton) · **D-062** (placement.yaml transient_zig migration 完了
-prerequisite、 Phase 6.16.e cycle 終端で 0 になる想定)。
+archive — `cljw-formats/<version>.edn` v0.1.0 initial commit +
+decoder skeleton) · **D-062** (placement.yaml transient_zig
+migration — Phase 6.16.e cycle terminus expected at 0; verify
+at Phase 12 entry).
 **Deliverables**: bytecode cache (serialize + cache_gen) per
-ROADMAP §9 table row 12, cold start < 12 ms.
-**v5 §11-§14 拡張**:
-- bytecode embed pipeline 完成 (`cljw build app.clj -o app` internal API、
-  single mode、 flag ゼロ per v5 §11.1)
-- Tier 0 metadata serializer + deserializer (var/file/line/col、 interned
-  string table、 delta-encoded line/col per ADR-0034 D3/D4)
-- build-id injection (`{:git ... :cljw ... :built ...}` map per v5 §12.3)
-- Deno-style binary trailer + bootstrap cache build.zig 統合 (cw v0
-  Phase 32.2-32.3 形態維持)
-- `cljw render-error` post-mortem tool internal API (`src/app/render_error.zig`)
-- `cljw-formats/<version>.edn` archive 初版 commit (v0.1.0 freeze 前 working
-  形態、 Phase 14 で lock)
-- Error output stream-separated (TTY=human / pipe=structured EDN one-line per
-  v5 §13)、 `src/runtime/error/event.zig` 新規 + `src/runtime/error/render.zig`
-  TTY-aware 拡張
-- env var `CLJW_ERROR_FORMAT` / `CLJW_ERROR_LOG` (internal recognition)
-- format version は **ABI commitment 不要** per v5 §12.4 (self-contained
-  binary、 decoder-only 永久互換性)
+ROADMAP §9 master table row 12, cold start < 12 ms; cljw build
+single-mode CLI; structured error stream + post-mortem decoder.
+**Final activation step**: no `build_options.phase_at_least_12`
+flag minted by the autonomous loop today; if a phase-gated
+behaviour surfaces, mint at row 12.5.
+
+| #    | Description                                                                                                                                                                                                                                                                                                                                                                                   | Status |
+|------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|--------|
+| 12.0 | Phase 11 → 12 boundary review chain follow-ups: Phase 11 was lean (5 source-bearing commits), boundary diff minimal. Confirm D-062 placement.yaml transient_zig migration status + D-064 decoder archive readiness                                                                                                                                                                           | [ ]    |
+| 12.1 | **ADR-0034 issuance** — cljw build single mode + Tier 0 metadata serializer + structured EDN + post-mortem decode. Schema for `cljw-formats/<version>.edn` archive; format version policy ("decoder-only permanent compatibility" per v5 §12.4 — no ABI commitment); Tier 0 metadata layout (var/file/line/col + interned string table + delta-encoded line/col per ADR-0034 D3/D4)        | [ ]    |
+| 12.2 | Bytecode serializer + deserializer skeleton — `src/runtime/bytecode/serialize.zig` + `deserialize.zig`. Walks the VM's compiled chunk (`eval/backend/vm/opcode.zig` `Opcode` enum + arg tuples per ADR-0004) and writes a versioned byte stream. Round-trip property: `(deserialize (serialize chunk)) == chunk` bit-equal                                                                   | [ ]    |
+| 12.3 | `cljw build app.clj -o app` CLI — single-mode build pipeline per v5 §11.1 (flag-zero). `src/app/builder.zig` (placeholder file already named in `.dev/structure_plan.md` `src/app/`). Wires serializer + Deno-style binary trailer + bootstrap cache integration (cw v0 Phase 32.2-32.3 form preserved)                                                                                     | [ ]    |
+| 12.4 | `cljw render-error` post-mortem decoder tool — `src/app/render_error.zig` (placeholder reservation, internal API). Reads structured-EDN error events from a pipe + applies the archive's decoder layer + renders human form. `src/runtime/error/event.zig` new + `src/runtime/error/render.zig` TTY-aware extension (stream-separated: TTY=human / pipe=structured EDN one-line per v5 §13) | [ ]    |
+| 12.5 | Phase 12 exit smoke — bytecode round-trip green; `cljw build` produces a runnable artifact; `cljw render-error` decodes a sample structured-EDN error to human form; cold-start bench measures < 12 ms (or files D-NNN if the budget is missed). 🔒 OrbStack gate                                                                                                                             | [ ]    |
+
+**Exit criterion**: ADR-0034 minted + bytecode serialize +
+deserialize round-trip + `cljw build` end-to-end + `cljw
+render-error` decoder + cold-start < 12 ms (or measured + debt
+row). 🔒 OrbStack x86_64 gate passes.
 
 ### 9.15 Phase 13 — task list (PENDING, expand at Phase 13 entry)
 
