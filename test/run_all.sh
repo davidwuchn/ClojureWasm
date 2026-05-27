@@ -206,6 +206,7 @@ run_step "e2e_phase8_d089_seq_extend"        "bash test/e2e/phase8_d089_seq_exte
 run_step "e2e_phase8_d089_lookup_extend"     "bash test/e2e/phase8_d089_lookup_extend.sh"
 run_step "e2e_phase8_d089_assoc_extend"      "bash test/e2e/phase8_d089_assoc_extend.sh"
 run_step "e2e_phase8_d089_set_extend"        "bash test/e2e/phase8_d089_set_extend.sh"
+run_step "e2e_phase8_exit_smoke"             "bash test/e2e/phase8_exit_smoke.sh"
 
 # Informational scans (ADR-0024). Phase 5+ they become blocking.
 run_step "scan_catalog_only"   "bash scripts/scan_catalog_only.sh" optional
