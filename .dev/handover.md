@@ -5,67 +5,68 @@
 
 ## Resume contract
 
-- **HEAD**: see `git log` (Phase 8 close commits — row 8.5 cycle 1-3,
-  row 8.6 cycle 1-4, row 8.7 exit smoke).
-- **First commit on resume MUST be**: §9.11 Phase 9 task list
-  open commit. Run the Phase 8 → 9 boundary review chain
-  (`audit_scaffolding` + built-in `simplify` on the Phase 8 diff
+- **HEAD**: see `git log` (Phase 9 close commits — rows 9.0..9.6).
+- **First commit on resume MUST be**: §9.12 Phase 10 task list
+  open commit. Run the Phase 9 → 10 boundary review chain
+  (`audit_scaffolding` + built-in `simplify` on the Phase 9 diff
   + built-in `security-review` on unpushed commits — parallel
-  fan-out), then expand the §9.11 Phase 9 placeholder inline
-  (mirror §9.10 structure) and commit alone with
-  `git commit -m "roadmap: open Phase 9 task list"`.
-- **Forbidden this session**: re-shaping `clojure.set/map-invert`
-  back to persistent-reduce (D-074 cycle 3 flipped it to the JVM
-  transient form on 2026-05-27).
+  fan-out), then expand the §9.12 Phase 10 placeholder inline
+  (mirror §9.11 structure) and commit alone with
+  `git commit -m "roadmap: open Phase 10 task list"`.
+- **Forbidden this session**: re-introducing `modules/<name>/<name>.zig`
+  co-location without the build.zig surgery D-095 names — Zig
+  0.16 `@import`/`@embedFile` reject cross-module-path access.
 
 ## Cold-start reading order
 
 handover → CLAUDE.md (§ Project spirit + § Autonomous Workflow +
 § The only stop) → `.dev/project_facts.md` (F-001..F-009) →
-`.dev/principle.md` → `.dev/ROADMAP.md` §9.11 placeholder →
+`.dev/principle.md` → `.dev/ROADMAP.md` §9.12 placeholder →
 `.dev/debt.md` Step 0.5 sweep (D-045 HAMT still blocking
-TransientHashMap; D-085 keyword-as-fn callable; D-086 defrecord
-`__extmap` overflow).
+TransientHashMap + map-overflow paths; D-085 keyword-as-fn
+callable; D-086 defrecord `__extmap`; D-095 modules/<name>/.zig
+co-location pending build.zig surgery).
 
 ## Current state
 
-Phase 8 **DONE** — §9.10 rows 8.0..8.7 all [x]. Phase 9 (modules
-/ json / csv / edn) is the next PENDING phase per the §9 master
-table. Branch `cw-from-scratch`. Gate green: Mac 64/64 +
-OrbStack Ubuntu x86_64 63/63. Highlights of Phase 8:
+Phase 9 **DONE** — §9.11 rows 9.0..9.6 all [x]. Phase 10 is the
+next PENDING phase per the §9 master table. Branch
+`cw-from-scratch`. Gate green: Mac 69/69 + OrbStack Ubuntu
+x86_64 68/68. Highlights of Phase 9:
 
-- bench gate active in informational mode (1.2x ceiling wired,
-  Mac/Linux locks seeded; row 8.2 + 8.3)
-- `cljw --compare` dual-backend differential flag (row 8.4)
-- transient surface complete — 7 primitives + 2 catalog Codes +
-  3 TransientFoo structs (row 8.5)
-- D-089 retro-audit complete — 12 collection primitives now
-  user-`extend-type`-able (row 8.6)
+- `modules/` top-level reservation + zone rule (row 9.1, D-034
+  discharged)
+- `clojure.edn/read-string` + formToValue widened to vector/map/set
+  (row 9.2, side-effect: `(quote [1 2 3])` now JVM-parity)
+- `clojure.data.json/{read-str,write-str}` via std.json (row 9.3)
+- `clojure.data.csv/{read-csv,write-csv}` RFC 4180 hand-rolled (row 9.4)
+- `clojure.tools.cli/parse-opts` minimum surface (row 9.5)
+- Phase 9 exit smoke + D-007 self-host viability discharged (row 9.6)
+- Phase 8 → 9 audit absorbed: ADR-0027 collision repaired
+  (bench-schema renumbered to ADR-0044)
 
-## Active task — §9.11 Phase 9 entry
+## Active task — §9.12 Phase 10 entry
 
-Phase 9 placeholder reads "Protocols + Multimethods + Interop
-deep module" but the §9.11 entry note already flags scope
-reconciliation: protocols + multimethods landed at Phase 7,
-host stdlib first wave landed at Phase 6, so the Phase 9 entry
-owner must rewrite the Deliverables line to match the actual
-remaining scope (external Clojure modules — `clojure.data.json` /
-`.csv` / `.edn` / `tools.cli`) before opening the task table.
-D-034 (`modules/` top-level structure decision) is the Entry
-debt to resolve at Phase 9 entry.
+Phase 10 placeholder ("namespaces + require + standard libraries
+Tier A") needs scope reconciliation similar to Phase 9: cw v1
+already has `require` + `(ns ...)` (Phase 6.16+) + 5 standard
+libraries embedded (`clojure.string` / `.set` / `.walk` / `.zip`
++ Phase 9's `.edn` / `.data.json` / `.data.csv` / `.tools.cli`).
+Phase 10 entry owner reviews what's actually outstanding —
+likely candidates: `clojure.pprint`, `clojure.java.io` (cw-native
+rewrite), `clojure.java.shell`, host stdlib second wave per
+ADR-0029 D5 (Java time / regex / BigDecimal), namespace
+require/refer/alias polish.
 
 ## Extended challenge (per `.claude/rules/extended_challenge.md`)
 
-Not applicable — the loop is rolling through Phase 8 close into
-Phase 9 open; no user-requested stop is in flight.
+Not applicable — the loop is rolling through Phase 9 close into
+Phase 10 open; no user-requested stop is in flight.
 
 ## Guardrail refresh history
 
-Phase 8 landmarks (closed 2026-05-27): ADR-0044 (bench/history.yaml
-schema; minted as ADR-0027 at row 8.2 then renumbered at the Phase
-8 → 9 audit, slot-0027 was already held by the NaN-box ADR) +
-row 8.1 `src/app/` split + row 8.3 1.2x regression gate
-+ row 8.4 `--compare` CLI + row 8.5 transient surface + row 8.6
-D-089 retro-audit (6 new protocols: ISeq / ILookup / Indexed /
-Associative / IPersistentMap / IPersistentSet) + row 8.7 exit
-smoke (`test/e2e/phase8_exit_smoke.sh`).
+Phase 9 landmarks (closed 2026-05-27): formToValue collection
+lift (analyzer.zig) + 4 new namespaces + new top-level `modules/`
+reservation + ADR-0044 (renumbered from ADR-0027 bench schema)
++ D-034 / D-007 discharged + D-095 minted for the future
+build.zig modules co-location migration.
