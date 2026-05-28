@@ -225,7 +225,7 @@ pub fn analyze(
     return switch (form.data) {
         .nil => try makeConstant(arena, .nil_val, form),
         .boolean => |b| try makeConstant(arena, if (b) .true_val else .false_val, form),
-        .integer => |i| try makeConstant(arena, Value.initInteger(i), form),
+        .integer => |i| try makeConstant(arena, try integerLiteralToValue(rt, i), form),
         .float => |f| try makeConstant(arena, Value.initFloat(f), form),
         .big_int_literal => |s| try makeConstant(arena, try parseBigIntLiteral(rt, s, form.location), form),
         .big_decimal_literal => |s| try makeConstant(arena, try parseBigDecimalLiteral(rt, s, form.location), form),
@@ -255,6 +255,22 @@ pub fn analyze(
 // --- Helpers ---
 
 /// Parse `42N`-style digits into a BigInt Value via Managed.setString.
+/// Promote an i64 literal to a heap BigInt when it would otherwise
+/// overflow the NaN-box int_48 inline range (Phase 14 row 14.4 gap (a)
+/// — F-005 numeric-tower JVM-shape auto-promotion). `Value.initInteger`
+/// silently promotes out-of-range values to Float, which loses
+/// precision and routes `(* Long/MAX_VALUE 2)` through mulPromoting's
+/// Float arm instead of the BigInt arm. Used at literal lift sites in
+/// this file (analyze + quoteFormToValue) so source-typed integers
+/// keep their precision through to arithmetic.
+pub fn integerLiteralToValue(rt: *Runtime, i: i64) !Value {
+    const nb = @import("../../runtime/value/nan_box.zig");
+    if (i < nb.NB_I48_MIN or i > nb.NB_I48_MAX) {
+        return try big_int.allocFromI64(rt, i);
+    }
+    return Value.initInteger(i);
+}
+
 /// Used by both the atom-analyzer path and the quote-lift path.
 pub fn parseBigIntLiteral(rt: *Runtime, digits: []const u8, loc: error_mod.SourceLocation) !Value {
     var m = try std.math.big.int.Managed.init(rt.gc.infra);
@@ -652,7 +668,7 @@ pub fn formToValue(rt: *Runtime, form: Form) AnalyzeError!Value {
     return switch (form.data) {
         .nil => .nil_val,
         .boolean => |b| if (b) .true_val else .false_val,
-        .integer => |i| Value.initInteger(i),
+        .integer => |i| try integerLiteralToValue(rt, i),
         .float => |f| Value.initFloat(f),
         .big_int_literal => |s| try parseBigIntLiteral(rt, s, form.location),
         .big_decimal_literal => |s| try parseBigDecimalLiteral(rt, s, form.location),
