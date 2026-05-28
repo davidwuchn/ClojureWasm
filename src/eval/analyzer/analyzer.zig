@@ -1036,7 +1036,9 @@ test "(try 1 (catch ExceptionInfo e 2)) builds a try_node with one catch" {
     try testing.expect(n.* == .try_node);
     try testing.expect(n.try_node.body.* == .constant);
     try testing.expectEqual(@as(usize, 1), n.try_node.catch_clauses.len);
-    try testing.expectEqualStrings("ExceptionInfo", n.try_node.catch_clauses[0].class_name);
+    const target = n.try_node.catch_clauses[0].target;
+    try testing.expect(target == .class_name);
+    try testing.expectEqualStrings("ExceptionInfo", target.class_name);
     try testing.expectEqualStrings("e", n.try_node.catch_clauses[0].binding_name);
     try testing.expect(n.try_node.finally_body == null);
 }

@@ -16,6 +16,7 @@ const env_mod = @import("../../runtime/env.zig");
 const Env = env_mod.Env;
 const error_catalog = @import("../../runtime/error/catalog.zig");
 const host_class = @import("../../runtime/error/host_class.zig");
+const keyword_mod = @import("../../runtime/keyword.zig");
 const macro_dispatch = @import("../macro_dispatch.zig");
 const analyzer_mod = @import("analyzer.zig");
 const AnalyzeError = analyzer_mod.AnalyzeError;
@@ -104,23 +105,35 @@ fn analyzeCatchClause(
     const items = clause.data.list;
     if (items.len < 4)
         return error_catalog.raise(.catch_form_incomplete, clause.location, .{});
-    if (items[1].data != .symbol)
-        return error_catalog.raise(.catch_class_not_symbol, items[1].location, .{});
+    // Row 14.5 (D-014b): accept either a symbol (class-name match via
+    // host_class) or a keyword (ex-info `:type` match via interned
+    // identity). The two arms write to a `CatchTarget` union.
+    const target: node_mod.TryNode.CatchTarget = switch (items[1].data) {
+        .symbol => |class_sym| target_blk: {
+            // Row 7.11 cycle 3 (D-077 discharge): reject unknown catch
+            // class names at analyze time so `(catch FooBarException e
+            // ...)` no longer becomes silent dead code at eval. The
+            // host-class hierarchy is the authoritative list of
+            // recognised exception types; future host_class wire-up
+            // (D-048) expands it for user-defined deftype exceptions.
+            const class_full_name = analyzer_mod.symFullName(class_sym);
+            if (!host_class.isKnownException(class_full_name))
+                return error_catalog.raise(.catch_class_unknown, items[1].location, .{ .name = class_full_name });
+            break :target_blk .{ .class_name = class_full_name };
+        },
+        .keyword => |kw| target_blk: {
+            // Intern the literal keyword so the runtime can identity-
+            // compare against the thrown ex-info's `:type` value.
+            const kw_val = try keyword_mod.intern(rt, kw.ns, kw.name);
+            break :target_blk .{ .type_keyword = kw_val };
+        },
+        else => return error_catalog.raise(.catch_head_invalid, items[1].location, .{}),
+    };
     if (items[2].data != .symbol)
         return error_catalog.raise(.catch_binding_not_symbol, items[2].location, .{});
-    const class_sym = items[1].data.symbol;
     const bind_sym = items[2].data.symbol;
     if (bind_sym.ns != null)
         return error_catalog.raise(.catch_binding_namespace_qualified, items[2].location, .{});
-    // Row 7.11 cycle 3 (D-077 discharge): reject unknown catch class
-    // names at analyze time so `(catch FooBarException e ...)` no longer
-    // becomes silent dead code at eval. The host-class hierarchy
-    // (`runtime/error/host_class.zig`) is the authoritative list of
-    // recognised exception types; future host_class wire-up (D-048)
-    // expands it for user-defined deftype-based exceptions.
-    const class_full_name = analyzer_mod.symFullName(class_sym);
-    if (!host_class.isKnownException(class_full_name))
-        return error_catalog.raise(.catch_class_unknown, items[1].location, .{ .name = class_full_name });
 
     var child_scope = if (scope) |s| Scope.child(s) else Scope{};
     defer child_scope.deinit(arena);
@@ -141,7 +154,7 @@ fn analyzeCatchClause(
     };
 
     return .{
-        .class_name = analyzer_mod.symFullName(class_sym),
+        .target = target,
         .binding_name = bind_sym.name,
         .binding_index = slot,
         .body = body_node,

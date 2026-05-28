@@ -247,10 +247,12 @@ pub const TryNode = struct {
     loc: SourceLocation = .{},
 
     pub const CatchClause = struct {
-        /// Exception class name as written. Phase 3.9 only recognises
-        /// `"ExceptionInfo"`; other names are accepted at analyse time
-        /// and rejected at eval time once 3.10 lands `ex_info`.
-        class_name: []const u8,
+        /// Discriminates the catch head shape: either an exception class
+        /// name (matched against the thrown value's host-class chain) or
+        /// a keyword (matched against the thrown ex-info's `:type` value).
+        /// Row 14.5 (D-014b) introduces the keyword path; the class-name
+        /// path retains Phase 7's `host_class.matches` semantics.
+        target: CatchTarget,
         /// Local symbol the caught exception is bound to inside `body`.
         binding_name: []const u8,
         /// Slot index within the enclosing function's locals array.
@@ -260,6 +262,20 @@ pub const TryNode = struct {
         /// Catch body — already folded to a single Node.
         body: *const Node,
         loc: SourceLocation = .{},
+    };
+
+    /// What the catch clause matches against. JVM Clojure only supports
+    /// class names; cw v1 promotes the `ex-info` `:type` keyword pattern
+    /// to a 1st-class catch head per ADR-0007 + ADR-0018 + ADR-0036.
+    /// Keyword Values are interned, so the runtime can identity-compare
+    /// the catch keyword against the thrown ex-info's `:type` value.
+    pub const CatchTarget = union(enum) {
+        /// Fully-qualified exception class name (`"ExceptionInfo"`,
+        /// `"java.lang.Throwable"`, …). Resolved via `host_class.matches`.
+        class_name: []const u8,
+        /// Interned keyword Value. Catch matches when the thrown is an
+        /// ex-info whose data map carries `:type <kw>` equal to this.
+        type_keyword: Value,
     };
 };
 
@@ -538,7 +554,7 @@ test "TryNode carries body, catch_clauses (possibly empty), optional finally" {
     const catch_body = Node{ .constant = .{ .value = .nil_val } };
     const clauses = [_]TryNode.CatchClause{
         .{
-            .class_name = "ExceptionInfo",
+            .target = .{ .class_name = "ExceptionInfo" },
             .binding_name = "e",
             .binding_index = 0,
             .body = &catch_body,

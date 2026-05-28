@@ -43,6 +43,8 @@ const error_catalog = @import("../../runtime/error/catalog.zig");
 const host_class = @import("../../runtime/error/host_class.zig");
 const vector_collection = @import("../../runtime/collection/vector.zig");
 const map_collection = @import("../../runtime/collection/map.zig");
+const ex_info_collection = @import("../../runtime/collection/ex_info.zig");
+const keyword_mod = @import("../../runtime/keyword.zig");
 const set_collection = @import("../../runtime/collection/set.zig");
 const list_mod = @import("../../runtime/collection/list.zig");
 const multimethod_mod = @import("../../runtime/multimethod.zig");
@@ -638,7 +640,7 @@ fn evalTry(rt: *Runtime, env: *Env, locals: []Value, n: node_mod.TryNode) anyerr
             // Walk catch clauses linearly — Phase 3 only matches
             // `ExceptionInfo` against `.ex_info`-tagged Values.
             for (n.catch_clauses) |cc| {
-                if (catchMatches(cc.class_name, thrown)) {
+                if (try catchMatches(rt, cc.target, thrown)) {
                     dispatch.last_thrown_exception = null;
                     if (cc.binding_index >= locals.len)
                         return error_catalog.raise(.slot_out_of_range, cc.loc, .{ .form = "catch", .index = cc.binding_index, .max = locals.len });
@@ -669,12 +671,23 @@ fn evalTry(rt: *Runtime, env: *Env, locals: []Value, n: node_mod.TryNode) anyerr
     }
 }
 
-fn catchMatches(class_name: []const u8, thrown: Value) bool {
-    // Row 7.11 cycle 2 (D-077): delegate to the shared host-class
-    // hierarchy table in `runtime/error/host_class.zig`. Both backends
-    // import the same `matches` function so dispatch shape stays
-    // identical (vm.zig:594 mirrors this single-line body).
-    return host_class.matches(thrown, class_name);
+fn catchMatches(rt: *Runtime, target: node_mod.TryNode.CatchTarget, thrown: Value) !bool {
+    return switch (target) {
+        // Row 7.11 cycle 2 (D-077): delegate to the shared host-class
+        // hierarchy. The VM backend mirrors this arm at vm.zig:594.
+        .class_name => |name| host_class.matches(thrown, name),
+        // Row 14.5 (D-014b): keyword target matches when the thrown
+        // is an ex-info whose data map carries `:type` equal (by
+        // interned identity) to the catch keyword. The VM lowering
+        // for this arm rides ADR-0036 VM-DEFER per compiler.zig.
+        .type_keyword => |kw_val| blk: {
+            if (thrown.tag() != .ex_info) break :blk false;
+            const data_v = ex_info_collection.data(thrown);
+            const type_kw = (try keyword_mod.intern(rt, null, "type"));
+            const got = map_collection.get(data_v, type_kw) catch break :blk false;
+            break :blk @intFromEnum(got) == @intFromEnum(kw_val);
+        },
+    };
 }
 
 fn evalCall(rt: *Runtime, env: *Env, locals: []Value, n: node_mod.CallNode) !Value {

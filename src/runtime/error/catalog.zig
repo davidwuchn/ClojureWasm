@@ -112,7 +112,7 @@ pub const Code = enum {
     throw_arity_invalid,
     try_clause_after_finally,
     catch_form_incomplete,
-    catch_class_not_symbol,
+    catch_head_invalid,
     catch_class_unknown,
     class_name_unknown,
     catch_binding_not_symbol,
@@ -473,9 +473,9 @@ pub fn entry(comptime code: Code) Entry {
             .kind = .syntax_error, .phase = .analysis,
             .template = "catch requires (catch <Class> <binding> <body>...)",
         },
-        .catch_class_not_symbol => .{
+        .catch_head_invalid => .{
             .kind = .syntax_error, .phase = .analysis,
-            .template = "catch class must be a symbol",
+            .template = "catch head must be a symbol (class name) or a keyword (ex-info :type)",
         },
         .catch_class_unknown => .{
             .kind = .name_error, .phase = .analysis,

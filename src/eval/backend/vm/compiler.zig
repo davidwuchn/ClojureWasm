@@ -342,7 +342,12 @@ const Compiler = struct {
         try end_jump_indices.append(self.arena, success_jump_idx);
 
         for (n.catch_clauses) |cc| {
-            const class_val = try string_mod.alloc(self.rt, cc.class_name);
+            const class_name = switch (cc.target) {
+                .class_name => |name| name,
+                // VM-DEFER: keyword catch dispatch pending op_match_type_keyword design [refs: D-014b, feature_deps.yaml#runtime/eval/catch_type_keyword]
+                .type_keyword => return error.NotImplemented,
+            };
+            const class_val = try string_mod.alloc(self.rt, class_name);
             const class_idx = try self.addConstant(class_val);
             try self.emit(.op_match_class, class_idx);
             const skip_clause_idx = try self.emitJump(.op_jump_if_false);
@@ -959,7 +964,7 @@ test "compile try with one catch wires match_class + jump_if_false + store_local
     const body: Node = .{ .constant = .{ .value = Value.true_val } };
     const catch_body: Node = .{ .local_ref = .{ .name = "e", .index = 0 } };
     const clauses = [_]node_mod.TryNode.CatchClause{.{
-        .class_name = "ExceptionInfo",
+        .target = .{ .class_name = "ExceptionInfo" },
         .binding_name = "e",
         .binding_index = 0,
         .body = &catch_body,
