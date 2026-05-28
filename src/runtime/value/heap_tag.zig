@@ -121,5 +121,5 @@ pub const HeapTag = enum(u8) {
     tail_node = 60, // D12 — PersistentVector 32-element tail array (5.4.a)
     hamt_map_node = 61, // D13 — PersistentHashMap CHAMP-style HAMT node (5.5.a)
     hash_collision_map_node = 62, // D14 — PersistentHashMap collision bucket (5.5.c, declared here)
-    reserved_d15 = 63,
+    tval = 63, // D15 — STM Ref history-ring node (Phase 14 row 14.11.5, ADR-0010 amendment 4)
 };

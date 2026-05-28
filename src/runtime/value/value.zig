@@ -108,7 +108,7 @@ pub const Value = enum(u64) {
         tail_node = 60, // D12 — PersistentVector 32-element tail array (5.4.a)
         hamt_map_node = 61, // D13 — PersistentHashMap CHAMP-style HAMT node (5.5.a)
         hash_collision_map_node = 62, // D14 — PersistentHashMap collision bucket (5.5.c)
-        reserved_d15 = 63,
+        tval = 63, // D15 — STM Ref TVal (ADR-0010 amendment 4; HeapTag-only — TVal is not NaN-boxed as a Value)
         // Immediates (not in heap slot space; classified by top16 band,
         // not by integer-indexed lookup against HeapTag)
         nil = 64,
@@ -454,7 +454,7 @@ test "F-004 g2 64-slot layout: HeapTag and Tag are integer-aligned for heap entr
     try testing.expectEqual(@intFromEnum(HeapTag.typed_instance), @intFromEnum(Value.Tag.typed_instance));
     try testing.expectEqual(@intFromEnum(HeapTag.big_int), @intFromEnum(Value.Tag.big_int));
     try testing.expectEqual(@intFromEnum(HeapTag.wasm_funcref), @intFromEnum(Value.Tag.wasm_funcref));
-    try testing.expectEqual(@intFromEnum(HeapTag.reserved_d15), @intFromEnum(Value.Tag.reserved_d15));
+    try testing.expectEqual(@intFromEnum(HeapTag.tval), @intFromEnum(Value.Tag.tval));
 }
 
 test "F-004 day-1 Tag additions encode + decode through Group A" {
