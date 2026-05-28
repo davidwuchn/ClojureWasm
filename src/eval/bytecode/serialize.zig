@@ -1,34 +1,64 @@
 // SPDX-License-Identifier: EPL-2.0
-//! Bytecode serializer + deserializer skeleton — §9.14 row 12.2 cycle 1.
+//! Bytecode serializer + deserializer — §9.16 row 14.11(a), D-100(a).
 //!
-//! Wire format (versioned per ADR-0034 § format-version policy
-//! "decoder-only permanent compatibility"):
+//! Wire format v2 (extends cycle-1's instruction-only v1 per
+//! ADR-0034 §format-version policy "decoder-only permanent
+//! compatibility"):
 //!
-//!   [0..4]   magic  = "CLJW"
-//!   [4..6]   version (u16 little-endian, currently 1)
-//!   [6..10]  instr_count (u32 little-endian)
-//!   [10..]   instructions = instr_count * (opcode:u8 + operand:u16le)
+//!   [0..4]    magic  = "CLJW"
+//!   [4..6]    version (u16 LE, currently 2)
+//!   [6..10]   instr_count (u32 LE)
+//!   [10..]    instructions = instr_count * (opcode:u8 + operand:u16 LE)
+//!   [...]     constants_count (u32 LE)
+//!             for each constant: ValueTag:u8 + per-tag body
+//!   [...]     call_sites_count (u32 LE)
+//!             for each entry: method_name_len:u32 + bytes + arg_count:u16
+//!   [...]     libspecs_count (u32 LE)
+//!             for each entry: ns_name_len:u32 + bytes
+//!                           + has_alias:u8 + (alias_len:u32 + bytes)?
+//!                           + refers_count:u32
+//!                             + each: refer_len:u32 + bytes
 //!
-//! Cycle-1 scope: header + Instruction stream only. Constants pool,
-//! call_sites side-table, libspecs side-table all defer to D-100
-//! (Phase 12 substantive deliverables — multi-cycle work). The
-//! cycle-1 round-trip property proves the byte-framing + version
-//! handshake; subsequent cycles extend the body coverage without
-//! breaking the wire format (decoder reads `version` first +
-//! dispatches to the matching reader, per ADR-0034 D11
-//! `cljw-formats/<version>.edn` archive layer).
+//! Per-Value tag-byte approach (NOT raw 8-byte u64 bits) so the
+//! `cljw-formats/<version>.edn` archive (ADR-0034 D11) records a
+//! decoder-stable enum the decoder permanence policy can pin —
+//! independent of F-004 NaN-box slot evolution.
+//!
+//! v0.1.0 tag set is the realistic compiler-produced constant
+//! universe: immediates (nil / true / false / integer / float /
+//! char) + interned literals (string / symbol / keyword / var_ref
+//! / regex) + quoted collections (list / vector / array_map /
+//! hash_set). Out of scope (raise explicit `UnsupportedValueTag`):
+//! fn_val / atom / multi_fn / big_int / wasm_* / transient_* / any
+//! runtime-only Value (per `no_op_stub_forbidden.md` — no silent
+//! nil-substitution like v0's `else => write nil`).
 
 const std = @import("std");
 const opcode_mod = @import("../backend/vm/opcode.zig");
 const Instruction = opcode_mod.Instruction;
 const Opcode = opcode_mod.Opcode;
+const BytecodeChunk = opcode_mod.BytecodeChunk;
+const CallSiteEntry = opcode_mod.CallSiteEntry;
+const LibspecEntry = opcode_mod.LibspecEntry;
+const value_mod = @import("../../runtime/value/value.zig");
+const Value = value_mod.Value;
+const Runtime = @import("../../runtime/runtime.zig").Runtime;
+const string_collection = @import("../../runtime/collection/string.zig");
+const keyword_mod = @import("../../runtime/keyword.zig");
+const symbol_mod = @import("../../runtime/symbol.zig");
+const list_mod = @import("../../runtime/collection/list.zig");
+const vector_mod = @import("../../runtime/collection/vector.zig");
+const map_mod = @import("../../runtime/collection/map.zig");
+const set_mod = @import("../../runtime/collection/set.zig");
 
 pub const MAGIC: [4]u8 = .{ 'C', 'L', 'J', 'W' };
-pub const VERSION: u16 = 1;
+pub const VERSION: u16 = 2;
 
 pub const SerializeError = error{
     OutOfMemory,
     WriteFailed,
+    UnsupportedValueTag,
+    HashMapNotSerializable,
 };
 
 pub const DeserializeError = error{
@@ -36,103 +66,620 @@ pub const DeserializeError = error{
     BadMagic,
     UnsupportedVersion,
     UnknownOpcode,
+    UnknownValueTag,
+    OutOfMemory,
 };
 
-/// Serialize a slice of Instructions into a freshly-allocated
-/// byte buffer. Caller owns the returned slice (free via the same
-/// allocator).
-pub fn serializeInstructions(allocator: std.mem.Allocator, instrs: []const Instruction) ![]u8 {
+/// Wire-format Value classifier. **Stable enum** — the
+/// `cljw-formats/<version>.edn` archive records this byte for each
+/// constant. Adding a tag is a version bump; removing one is
+/// forbidden by the decoder-only-permanent policy.
+pub const ValueTag = enum(u8) {
+    nil = 0x00,
+    true_val = 0x01,
+    false_val = 0x02,
+    integer = 0x03,
+    float = 0x04,
+    char = 0x05,
+    string = 0x06,
+    symbol = 0x07,
+    keyword = 0x08,
+    list = 0x09,
+    vector = 0x0A,
+    array_map = 0x0B,
+    hash_set = 0x0C,
+    var_ref = 0x0D,
+    regex = 0x0E,
+};
+
+// --- Writer helpers (length-prefixed UTF-8) ---
+
+fn writeU8(w: *std.Io.Writer, n: u8) !void {
+    try w.writeByte(n);
+}
+fn writeU16(w: *std.Io.Writer, n: u16) !void {
+    try w.writeInt(u16, n, .little);
+}
+fn writeU32(w: *std.Io.Writer, n: u32) !void {
+    try w.writeInt(u32, n, .little);
+}
+fn writeI64(w: *std.Io.Writer, n: i64) !void {
+    try w.writeInt(i64, n, .little);
+}
+fn writeLenPrefixed(w: *std.Io.Writer, bytes: []const u8) !void {
+    try writeU32(w, @intCast(bytes.len));
+    try w.writeAll(bytes);
+}
+
+// --- Reader (byte-slice cursor) ---
+
+const ByteReader = struct {
+    bytes: []const u8,
+    pos: usize = 0,
+
+    fn need(self: *ByteReader, n: usize) !void {
+        if (self.pos + n > self.bytes.len) return DeserializeError.BytecodeTruncated;
+    }
+    fn readU8(self: *ByteReader) !u8 {
+        try self.need(1);
+        const v = self.bytes[self.pos];
+        self.pos += 1;
+        return v;
+    }
+    fn readU16(self: *ByteReader) !u16 {
+        try self.need(2);
+        const v = std.mem.readInt(u16, self.bytes[self.pos..][0..2], .little);
+        self.pos += 2;
+        return v;
+    }
+    fn readU32(self: *ByteReader) !u32 {
+        try self.need(4);
+        const v = std.mem.readInt(u32, self.bytes[self.pos..][0..4], .little);
+        self.pos += 4;
+        return v;
+    }
+    fn readI64(self: *ByteReader) !i64 {
+        try self.need(8);
+        const v = std.mem.readInt(i64, self.bytes[self.pos..][0..8], .little);
+        self.pos += 8;
+        return v;
+    }
+    fn readLenPrefixed(self: *ByteReader) ![]const u8 {
+        const len = try self.readU32();
+        try self.need(len);
+        const slice = self.bytes[self.pos .. self.pos + len];
+        self.pos += len;
+        return slice;
+    }
+};
+
+// --- Value serialize / deserialize (recursive) ---
+
+fn writeValue(w: *std.Io.Writer, v: Value) SerializeError!void {
+    switch (v.tag()) {
+        .nil => try writeU8(w, @intFromEnum(ValueTag.nil)),
+        .boolean => {
+            const t: ValueTag = if (v.asBoolean()) .true_val else .false_val;
+            try writeU8(w, @intFromEnum(t));
+        },
+        .integer => {
+            try writeU8(w, @intFromEnum(ValueTag.integer));
+            try writeI64(w, v.asInteger());
+        },
+        .float => {
+            try writeU8(w, @intFromEnum(ValueTag.float));
+            const bits: u64 = @bitCast(v.asFloat());
+            try w.writeInt(u64, bits, .little);
+        },
+        .char => {
+            try writeU8(w, @intFromEnum(ValueTag.char));
+            try writeU32(w, @as(u32, v.asChar()));
+        },
+        .string => {
+            try writeU8(w, @intFromEnum(ValueTag.string));
+            try writeLenPrefixed(w, string_collection.asString(v));
+        },
+        .symbol => {
+            const sym = symbol_mod.asSymbol(v);
+            try writeU8(w, @intFromEnum(ValueTag.symbol));
+            try writeLenPrefixed(w, sym.ns orelse "");
+            try writeLenPrefixed(w, sym.name);
+        },
+        .keyword => {
+            const kw = keyword_mod.asKeyword(v);
+            try writeU8(w, @intFromEnum(ValueTag.keyword));
+            try writeLenPrefixed(w, kw.ns orelse "");
+            try writeLenPrefixed(w, kw.name);
+        },
+        .list => {
+            try writeU8(w, @intFromEnum(ValueTag.list));
+            const n = list_mod.countOf(v);
+            try writeU32(w, n);
+            var cur = v;
+            var i: u32 = 0;
+            while (i < n) : (i += 1) {
+                try writeValue(w, list_mod.first(cur));
+                cur = list_mod.rest(cur);
+            }
+        },
+        .vector => {
+            try writeU8(w, @intFromEnum(ValueTag.vector));
+            const n = vector_mod.count(v);
+            try writeU32(w, n);
+            var i: u32 = 0;
+            while (i < n) : (i += 1) try writeValue(w, vector_mod.nth(v, i));
+        },
+        .array_map => {
+            try writeU8(w, @intFromEnum(ValueTag.array_map));
+            const am = v.decodePtr(*const map_mod.ArrayMap);
+            try writeU32(w, am.count);
+            var i: u32 = 0;
+            while (i < am.count) : (i += 1) {
+                try writeValue(w, am.entries[2 * i]);
+                try writeValue(w, am.entries[2 * i + 1]);
+            }
+        },
+        .hash_map => {
+            // HAMT body iteration (D-045) not landed at v0.1.0;
+            // raise explicit error so the user sees a concrete diagnostic
+            // rather than partial archive.
+            return SerializeError.HashMapNotSerializable;
+        },
+        .hash_set => {
+            try writeU8(w, @intFromEnum(ValueTag.hash_set));
+            const s = v.decodePtr(*const set_mod.PersistentHashSet);
+            if (s.map.tag() != .array_map) return SerializeError.HashMapNotSerializable;
+            const am = s.map.decodePtr(*const map_mod.ArrayMap);
+            try writeU32(w, am.count);
+            var i: u32 = 0;
+            while (i < am.count) : (i += 1) try writeValue(w, am.entries[2 * i]);
+        },
+        .var_ref => {
+            try writeU8(w, @intFromEnum(ValueTag.var_ref));
+            const var_ptr = v.decodePtr(*const @import("../../runtime/env.zig").Var);
+            try writeLenPrefixed(w, var_ptr.ns.name);
+            try writeLenPrefixed(w, var_ptr.name);
+        },
+        else => return SerializeError.UnsupportedValueTag,
+    }
+}
+
+fn readValue(r: *ByteReader, rt: *Runtime, env: *@import("../../runtime/env.zig").Env) DeserializeError!Value {
+    const tag_byte = try r.readU8();
+    const tag = std.enums.fromInt(ValueTag, tag_byte) orelse return DeserializeError.UnknownValueTag;
+    switch (tag) {
+        .nil => return .nil_val,
+        .true_val => return .true_val,
+        .false_val => return .false_val,
+        .integer => return Value.initInteger(try r.readI64()),
+        .float => {
+            try r.need(8);
+            const bits = std.mem.readInt(u64, r.bytes[r.pos..][0..8], .little);
+            r.pos += 8;
+            return Value.initFloat(@bitCast(bits));
+        },
+        .char => return Value.initChar(@intCast(try r.readU32())),
+        .string => {
+            const bytes = try r.readLenPrefixed();
+            return string_collection.alloc(rt, bytes) catch return DeserializeError.OutOfMemory;
+        },
+        .symbol => {
+            const ns_bytes = try r.readLenPrefixed();
+            const name_bytes = try r.readLenPrefixed();
+            const ns: ?[]const u8 = if (ns_bytes.len == 0) null else ns_bytes;
+            return symbol_mod.intern(rt, ns, name_bytes) catch return DeserializeError.OutOfMemory;
+        },
+        .keyword => {
+            const ns_bytes = try r.readLenPrefixed();
+            const name_bytes = try r.readLenPrefixed();
+            const ns: ?[]const u8 = if (ns_bytes.len == 0) null else ns_bytes;
+            return keyword_mod.intern(rt, ns, name_bytes) catch return DeserializeError.OutOfMemory;
+        },
+        .list => {
+            const n = try r.readU32();
+            // Read forward into a stack-allocated buffer, then cons-fold
+            // back to preserve the head-first source order. Caps at a
+            // bounded stack alloc; very-large quoted lists are rare in
+            // the constant pool — long sequences come through `list`
+            // primitive at runtime.
+            const buf = std.heap.page_allocator.alloc(Value, n) catch return DeserializeError.OutOfMemory;
+            defer std.heap.page_allocator.free(buf);
+            var i: u32 = 0;
+            while (i < n) : (i += 1) buf[i] = try readValue(r, rt, env);
+            var lst: Value = .nil_val;
+            i = n;
+            while (i > 0) {
+                i -= 1;
+                lst = list_mod.consHeap(rt, buf[i], lst) catch return DeserializeError.OutOfMemory;
+            }
+            return lst;
+        },
+        .vector => {
+            const n = try r.readU32();
+            var out = vector_mod.empty();
+            var i: u32 = 0;
+            while (i < n) : (i += 1) {
+                const elt = try readValue(r, rt, env);
+                out = vector_mod.conj(rt, out, elt) catch return DeserializeError.OutOfMemory;
+            }
+            return out;
+        },
+        .array_map => {
+            const n = try r.readU32();
+            var out = map_mod.empty();
+            var i: u32 = 0;
+            while (i < n) : (i += 1) {
+                const k = try readValue(r, rt, env);
+                const val = try readValue(r, rt, env);
+                out = map_mod.assoc(rt, out, k, val) catch return DeserializeError.OutOfMemory;
+            }
+            return out;
+        },
+        .hash_set => {
+            const n = try r.readU32();
+            var out = set_mod.empty();
+            var i: u32 = 0;
+            while (i < n) : (i += 1) {
+                const elt = try readValue(r, rt, env);
+                out = set_mod.conj(rt, out, elt) catch return DeserializeError.OutOfMemory;
+            }
+            return out;
+        },
+        .var_ref => {
+            const ns_bytes = try r.readLenPrefixed();
+            const name_bytes = try r.readLenPrefixed();
+            const ns = env.findNs(ns_bytes) orelse {
+                // ns missing at deserialize time: defer resolution to
+                // first use is out of v0.1.0 minimum scope; the
+                // bytecode chunk is built post-bootstrap so the ns
+                // should be present. Return a placeholder error.
+                return DeserializeError.UnknownValueTag;
+            };
+            const v_ptr = ns.resolve(name_bytes) orelse return DeserializeError.UnknownValueTag;
+            return Value.encodeHeapPtr(.var_ref, v_ptr);
+        },
+        .regex => {
+            // Regex source string; decoder re-compiles via the runtime
+            // regex_value.alloc constructor (matches reader's `#"..."`
+            // path). Flags carry no v0.1.0 surface (no `(?i)` etc. in
+            // the constant pool) — pass default Flags.
+            const src = try r.readLenPrefixed();
+            const regex_value = @import("../../runtime/regex/value.zig");
+            const regex_compile = @import("../../runtime/regex/compile.zig");
+            return regex_value.alloc(rt, src, regex_compile.Flags{}) catch return DeserializeError.OutOfMemory;
+        },
+    }
+}
+
+// --- Chunk serialize / deserialize ---
+
+pub fn serializeChunk(allocator: std.mem.Allocator, chunk: BytecodeChunk) ![]u8 {
     var aw: std.Io.Writer.Allocating = .init(allocator);
     errdefer aw.deinit();
-    try aw.writer.writeAll(&MAGIC);
-    try aw.writer.writeInt(u16, VERSION, .little);
-    try aw.writer.writeInt(u32, @intCast(instrs.len), .little);
-    for (instrs) |ins| {
-        try aw.writer.writeByte(@intFromEnum(ins.opcode));
-        try aw.writer.writeInt(u16, ins.operand, .little);
+    const w = &aw.writer;
+    try w.writeAll(&MAGIC);
+    try writeU16(w, VERSION);
+    try writeU32(w, @intCast(chunk.instructions.len));
+    for (chunk.instructions) |ins| {
+        try writeU8(w, @intFromEnum(ins.opcode));
+        try writeU16(w, ins.operand);
+    }
+    try writeU32(w, @intCast(chunk.constants.len));
+    for (chunk.constants) |c| try writeValue(w, c);
+    try writeU32(w, @intCast(chunk.call_sites.len));
+    for (chunk.call_sites) |cs| {
+        try writeLenPrefixed(w, cs.method_name);
+        try writeU16(w, cs.arg_count);
+    }
+    try writeU32(w, @intCast(chunk.libspecs.len));
+    for (chunk.libspecs) |ls| {
+        try writeLenPrefixed(w, ls.ns_name);
+        if (ls.alias) |a| {
+            try writeU8(w, 1);
+            try writeLenPrefixed(w, a);
+        } else {
+            try writeU8(w, 0);
+        }
+        try writeU32(w, @intCast(ls.refers.len));
+        for (ls.refers) |refer| try writeLenPrefixed(w, refer);
     }
     return try aw.toOwnedSlice();
 }
 
-/// Deserialize a byte buffer back into a freshly-allocated
-/// `[]Instruction`. Caller owns the returned slice (free via the
-/// same allocator).
-pub fn deserializeInstructions(allocator: std.mem.Allocator, bytes: []const u8) ![]Instruction {
+/// Deserialize a full BytecodeChunk. Returned chunk holds slices
+/// allocated via `allocator`; the caller frees via `freeChunk`.
+/// Constants are heap-allocated via `rt.gc.alloc` (string / list /
+/// vector / map / set / regex paths) — they participate in GC.
+pub fn deserializeChunk(allocator: std.mem.Allocator, rt: *Runtime, env: *@import("../../runtime/env.zig").Env, bytes: []const u8) !BytecodeChunk {
     if (bytes.len < 10) return DeserializeError.BytecodeTruncated;
     if (!std.mem.eql(u8, bytes[0..4], &MAGIC)) return DeserializeError.BadMagic;
     const version = std.mem.readInt(u16, bytes[4..6], .little);
     if (version != VERSION) return DeserializeError.UnsupportedVersion;
-    const count = std.mem.readInt(u32, bytes[6..10], .little);
-    const body_bytes_needed = @as(usize, count) * 3; // op(1) + operand(2)
-    if (bytes.len < 10 + body_bytes_needed) return DeserializeError.BytecodeTruncated;
 
-    const out = try allocator.alloc(Instruction, count);
-    errdefer allocator.free(out);
+    var r: ByteReader = .{ .bytes = bytes, .pos = 6 };
+    const instr_count = try r.readU32();
+    const instrs = try allocator.alloc(Instruction, instr_count);
+    errdefer allocator.free(instrs);
     var i: u32 = 0;
-    while (i < count) : (i += 1) {
-        const base = 10 + (@as(usize, i) * 3);
-        const op_raw = bytes[base];
+    while (i < instr_count) : (i += 1) {
+        const op_raw = try r.readU8();
         const op = std.enums.fromInt(Opcode, op_raw) orelse return DeserializeError.UnknownOpcode;
-        const operand = std.mem.readInt(u16, bytes[base + 1 ..][0..2], .little);
-        out[i] = .{ .opcode = op, .operand = operand };
+        const operand = try r.readU16();
+        instrs[i] = .{ .opcode = op, .operand = operand };
     }
-    return out;
+
+    const constants_count = try r.readU32();
+    const constants = try allocator.alloc(Value, constants_count);
+    errdefer allocator.free(constants);
+    i = 0;
+    while (i < constants_count) : (i += 1) constants[i] = try readValue(&r, rt, env);
+
+    const cs_count = try r.readU32();
+    const call_sites = try allocator.alloc(CallSiteEntry, cs_count);
+    errdefer allocator.free(call_sites);
+    i = 0;
+    while (i < cs_count) : (i += 1) {
+        const name_bytes = try r.readLenPrefixed();
+        const name_dup = try allocator.dupe(u8, name_bytes);
+        const arg_count = try r.readU16();
+        call_sites[i] = .{ .method_name = name_dup, .arg_count = arg_count };
+    }
+
+    const ls_count = try r.readU32();
+    const libspecs = try allocator.alloc(LibspecEntry, ls_count);
+    errdefer allocator.free(libspecs);
+    i = 0;
+    while (i < ls_count) : (i += 1) {
+        const ns_bytes = try r.readLenPrefixed();
+        const ns_dup = try allocator.dupe(u8, ns_bytes);
+        const has_alias = try r.readU8();
+        var alias_dup: ?[]const u8 = null;
+        if (has_alias != 0) {
+            const a = try r.readLenPrefixed();
+            alias_dup = try allocator.dupe(u8, a);
+        }
+        const refers_count = try r.readU32();
+        const refers = try allocator.alloc([]const u8, refers_count);
+        var j: u32 = 0;
+        while (j < refers_count) : (j += 1) {
+            const refer = try r.readLenPrefixed();
+            refers[j] = try allocator.dupe(u8, refer);
+        }
+        libspecs[i] = .{ .ns_name = ns_dup, .alias = alias_dup, .refers = refers };
+    }
+
+    return BytecodeChunk{
+        .instructions = instrs,
+        .constants = constants,
+        .call_sites = call_sites,
+        .libspecs = libspecs,
+    };
+}
+
+/// Free a chunk produced by `deserializeChunk`. Mirror of the
+/// allocator-owned slice set; does not touch the GC-allocated
+/// Values in `constants` (those are owned by `rt.gc`).
+pub fn freeChunk(allocator: std.mem.Allocator, chunk: BytecodeChunk) void {
+    allocator.free(chunk.instructions);
+    allocator.free(chunk.constants);
+    for (chunk.call_sites) |cs| allocator.free(cs.method_name);
+    allocator.free(chunk.call_sites);
+    for (chunk.libspecs) |ls| {
+        allocator.free(ls.ns_name);
+        if (ls.alias) |a| allocator.free(a);
+        for (ls.refers) |refer| allocator.free(refer);
+        allocator.free(ls.refers);
+    }
+    allocator.free(chunk.libspecs);
 }
 
 // --- tests ---
 
 const testing = std.testing;
 
-test "header magic + version round-trips on empty instruction list" {
-    const bytes = try serializeInstructions(testing.allocator, &.{});
+test "header magic + version round-trips on empty chunk" {
+    var th = std.Io.Threaded.init(testing.allocator, .{});
+    defer th.deinit();
+    var rt = Runtime.init(th.io(), testing.allocator);
+    defer rt.deinit();
+    var env = try @import("../../runtime/env.zig").Env.init(&rt);
+    defer env.deinit();
+    const empty: BytecodeChunk = .{ .instructions = &.{}, .constants = &.{} };
+    const bytes = try serializeChunk(testing.allocator, empty);
     defer testing.allocator.free(bytes);
-    try testing.expect(bytes.len == 10);
     try testing.expectEqualSlices(u8, &MAGIC, bytes[0..4]);
     try testing.expectEqual(@as(u16, VERSION), std.mem.readInt(u16, bytes[4..6], .little));
-    try testing.expectEqual(@as(u32, 0), std.mem.readInt(u32, bytes[6..10], .little));
-
-    const round = try deserializeInstructions(testing.allocator, bytes);
-    defer testing.allocator.free(round);
-    try testing.expectEqual(@as(usize, 0), round.len);
+    const round = try deserializeChunk(testing.allocator, &rt, &env, bytes);
+    defer freeChunk(testing.allocator, round);
+    try testing.expectEqual(@as(usize, 0), round.instructions.len);
+    try testing.expectEqual(@as(usize, 0), round.constants.len);
+    try testing.expectEqual(@as(usize, 0), round.call_sites.len);
+    try testing.expectEqual(@as(usize, 0), round.libspecs.len);
 }
 
-test "round-trips a 3-instruction chunk preserving opcode + operand" {
-    const original = [_]Instruction{
+test "round-trips instructions" {
+    var th = std.Io.Threaded.init(testing.allocator, .{});
+    defer th.deinit();
+    var rt = Runtime.init(th.io(), testing.allocator);
+    defer rt.deinit();
+    var env = try @import("../../runtime/env.zig").Env.init(&rt);
+    defer env.deinit();
+    const instrs = [_]Instruction{
         .{ .opcode = .op_const, .operand = 42 },
         .{ .opcode = .op_ret, .operand = 0 },
-        .{ .opcode = .op_pop, .operand = 7 },
     };
-    const bytes = try serializeInstructions(testing.allocator, &original);
+    const chunk: BytecodeChunk = .{ .instructions = &instrs, .constants = &.{} };
+    const bytes = try serializeChunk(testing.allocator, chunk);
     defer testing.allocator.free(bytes);
-    const round = try deserializeInstructions(testing.allocator, bytes);
-    defer testing.allocator.free(round);
-    try testing.expectEqual(original.len, round.len);
-    for (original, round) |a, b| {
-        try testing.expectEqual(a.opcode, b.opcode);
-        try testing.expectEqual(a.operand, b.operand);
-    }
+    const round = try deserializeChunk(testing.allocator, &rt, &env, bytes);
+    defer freeChunk(testing.allocator, round);
+    try testing.expectEqual(@as(usize, 2), round.instructions.len);
+    try testing.expectEqual(Opcode.op_const, round.instructions[0].opcode);
+    try testing.expectEqual(@as(u16, 42), round.instructions[0].operand);
+}
+
+test "round-trips immediate constants (nil / bool / int / float / char)" {
+    var th = std.Io.Threaded.init(testing.allocator, .{});
+    defer th.deinit();
+    var rt = Runtime.init(th.io(), testing.allocator);
+    defer rt.deinit();
+    var env = try @import("../../runtime/env.zig").Env.init(&rt);
+    defer env.deinit();
+    const consts = [_]Value{
+        .nil_val,
+        .true_val,
+        .false_val,
+        Value.initInteger(-42),
+        Value.initFloat(3.14),
+        Value.initChar('A'),
+    };
+    const chunk: BytecodeChunk = .{ .instructions = &.{}, .constants = &consts };
+    const bytes = try serializeChunk(testing.allocator, chunk);
+    defer testing.allocator.free(bytes);
+    const round = try deserializeChunk(testing.allocator, &rt, &env, bytes);
+    defer freeChunk(testing.allocator, round);
+    try testing.expectEqual(@as(usize, 6), round.constants.len);
+    try testing.expect(round.constants[0].tag() == .nil);
+    try testing.expect(round.constants[1].asBoolean());
+    try testing.expect(!round.constants[2].asBoolean());
+    try testing.expectEqual(@as(i64, -42), round.constants[3].asInteger());
+    try testing.expectApproxEqAbs(@as(f64, 3.14), round.constants[4].asFloat(), 0.0001);
+    try testing.expectEqual(@as(u21, 'A'), round.constants[5].asChar());
+}
+
+test "round-trips a string constant" {
+    var th = std.Io.Threaded.init(testing.allocator, .{});
+    defer th.deinit();
+    var rt = Runtime.init(th.io(), testing.allocator);
+    defer rt.deinit();
+    var env = try @import("../../runtime/env.zig").Env.init(&rt);
+    defer env.deinit();
+    const s = try string_collection.alloc(&rt, "hello");
+    const consts = [_]Value{s};
+    const chunk: BytecodeChunk = .{ .instructions = &.{}, .constants = &consts };
+    const bytes = try serializeChunk(testing.allocator, chunk);
+    defer testing.allocator.free(bytes);
+    const round = try deserializeChunk(testing.allocator, &rt, &env, bytes);
+    defer freeChunk(testing.allocator, round);
+    try testing.expectEqualStrings("hello", string_collection.asString(round.constants[0]));
+}
+
+test "round-trips keyword + symbol with and without ns" {
+    var th = std.Io.Threaded.init(testing.allocator, .{});
+    defer th.deinit();
+    var rt = Runtime.init(th.io(), testing.allocator);
+    defer rt.deinit();
+    var env = try @import("../../runtime/env.zig").Env.init(&rt);
+    defer env.deinit();
+    const k_bare = try keyword_mod.intern(&rt, null, "k");
+    const k_ns = try keyword_mod.intern(&rt, "user", "kw");
+    const s_bare = try symbol_mod.intern(&rt, null, "sym");
+    const consts = [_]Value{ k_bare, k_ns, s_bare };
+    const chunk: BytecodeChunk = .{ .instructions = &.{}, .constants = &consts };
+    const bytes = try serializeChunk(testing.allocator, chunk);
+    defer testing.allocator.free(bytes);
+    const round = try deserializeChunk(testing.allocator, &rt, &env, bytes);
+    defer freeChunk(testing.allocator, round);
+    try testing.expectEqualStrings("k", keyword_mod.asKeyword(round.constants[0]).name);
+    try testing.expect(keyword_mod.asKeyword(round.constants[0]).ns == null);
+    try testing.expectEqualStrings("user", keyword_mod.asKeyword(round.constants[1]).ns.?);
+    try testing.expectEqualStrings("kw", keyword_mod.asKeyword(round.constants[1]).name);
+    try testing.expectEqualStrings("sym", symbol_mod.asSymbol(round.constants[2]).name);
+}
+
+test "round-trips vector + list constants" {
+    var th = std.Io.Threaded.init(testing.allocator, .{});
+    defer th.deinit();
+    var rt = Runtime.init(th.io(), testing.allocator);
+    defer rt.deinit();
+    var env = try @import("../../runtime/env.zig").Env.init(&rt);
+    defer env.deinit();
+    var vec = vector_mod.empty();
+    vec = try vector_mod.conj(&rt, vec, Value.initInteger(1));
+    vec = try vector_mod.conj(&rt, vec, Value.initInteger(2));
+    vec = try vector_mod.conj(&rt, vec, Value.initInteger(3));
+    // Build (10 20) via cons.
+    var lst: Value = .nil_val;
+    lst = try list_mod.consHeap(&rt, Value.initInteger(20), lst);
+    lst = try list_mod.consHeap(&rt, Value.initInteger(10), lst);
+    const consts = [_]Value{ vec, lst };
+    const chunk: BytecodeChunk = .{ .instructions = &.{}, .constants = &consts };
+    const bytes = try serializeChunk(testing.allocator, chunk);
+    defer testing.allocator.free(bytes);
+    const round = try deserializeChunk(testing.allocator, &rt, &env, bytes);
+    defer freeChunk(testing.allocator, round);
+    try testing.expectEqual(@as(u32, 3), vector_mod.count(round.constants[0]));
+    try testing.expectEqual(@as(i64, 1), vector_mod.nth(round.constants[0], 0).asInteger());
+    try testing.expectEqual(@as(i64, 3), vector_mod.nth(round.constants[0], 2).asInteger());
+    try testing.expectEqual(@as(u32, 2), list_mod.countOf(round.constants[1]));
+    try testing.expectEqual(@as(i64, 10), list_mod.first(round.constants[1]).asInteger());
+}
+
+test "round-trips call_sites side-table" {
+    var th = std.Io.Threaded.init(testing.allocator, .{});
+    defer th.deinit();
+    var rt = Runtime.init(th.io(), testing.allocator);
+    defer rt.deinit();
+    var env = try @import("../../runtime/env.zig").Env.init(&rt);
+    defer env.deinit();
+    const cs = [_]CallSiteEntry{
+        .{ .method_name = "foo", .arg_count = 3 },
+        .{ .method_name = "bar-bar", .arg_count = 1 },
+    };
+    const chunk: BytecodeChunk = .{ .instructions = &.{}, .constants = &.{}, .call_sites = @constCast(&cs) };
+    const bytes = try serializeChunk(testing.allocator, chunk);
+    defer testing.allocator.free(bytes);
+    const round = try deserializeChunk(testing.allocator, &rt, &env, bytes);
+    defer freeChunk(testing.allocator, round);
+    try testing.expectEqual(@as(usize, 2), round.call_sites.len);
+    try testing.expectEqualStrings("foo", round.call_sites[0].method_name);
+    try testing.expectEqual(@as(u16, 3), round.call_sites[0].arg_count);
+    try testing.expectEqualStrings("bar-bar", round.call_sites[1].method_name);
+}
+
+test "round-trips libspecs side-table with alias and refers" {
+    var th = std.Io.Threaded.init(testing.allocator, .{});
+    defer th.deinit();
+    var rt = Runtime.init(th.io(), testing.allocator);
+    defer rt.deinit();
+    var env = try @import("../../runtime/env.zig").Env.init(&rt);
+    defer env.deinit();
+    const refers1 = [_][]const u8{ "x", "y" };
+    const ls = [_]LibspecEntry{
+        .{ .ns_name = "a.b", .alias = "ab", .refers = &refers1 },
+        .{ .ns_name = "c.d" },
+    };
+    const chunk: BytecodeChunk = .{ .instructions = &.{}, .constants = &.{}, .libspecs = @constCast(&ls) };
+    const bytes = try serializeChunk(testing.allocator, chunk);
+    defer testing.allocator.free(bytes);
+    const round = try deserializeChunk(testing.allocator, &rt, &env, bytes);
+    defer freeChunk(testing.allocator, round);
+    try testing.expectEqual(@as(usize, 2), round.libspecs.len);
+    try testing.expectEqualStrings("a.b", round.libspecs[0].ns_name);
+    try testing.expectEqualStrings("ab", round.libspecs[0].alias.?);
+    try testing.expectEqual(@as(usize, 2), round.libspecs[0].refers.len);
+    try testing.expectEqualStrings("x", round.libspecs[0].refers[0]);
+    try testing.expect(round.libspecs[1].alias == null);
 }
 
 test "bad magic rejected with BadMagic" {
-    const bytes = [_]u8{ 'X', 'X', 'X', 'X', 1, 0, 0, 0, 0, 0 };
-    try testing.expectError(
-        DeserializeError.BadMagic,
-        deserializeInstructions(testing.allocator, &bytes),
-    );
-}
-
-test "truncated buffer rejected with BytecodeTruncated" {
-    const bytes = [_]u8{'C'};
-    try testing.expectError(
-        DeserializeError.BytecodeTruncated,
-        deserializeInstructions(testing.allocator, &bytes),
-    );
+    var th = std.Io.Threaded.init(testing.allocator, .{});
+    defer th.deinit();
+    var rt = Runtime.init(th.io(), testing.allocator);
+    defer rt.deinit();
+    var env = try @import("../../runtime/env.zig").Env.init(&rt);
+    defer env.deinit();
+    const bytes = [_]u8{ 'X', 'X', 'X', 'X', 2, 0, 0, 0, 0, 0 };
+    try testing.expectError(DeserializeError.BadMagic, deserializeChunk(testing.allocator, &rt, &env, &bytes));
 }
 
 test "unsupported version rejected with UnsupportedVersion" {
+    var th = std.Io.Threaded.init(testing.allocator, .{});
+    defer th.deinit();
+    var rt = Runtime.init(th.io(), testing.allocator);
+    defer rt.deinit();
+    var env = try @import("../../runtime/env.zig").Env.init(&rt);
+    defer env.deinit();
     const bytes = [_]u8{ 'C', 'L', 'J', 'W', 99, 0, 0, 0, 0, 0 };
-    try testing.expectError(
-        DeserializeError.UnsupportedVersion,
-        deserializeInstructions(testing.allocator, &bytes),
-    );
+    try testing.expectError(DeserializeError.UnsupportedVersion, deserializeChunk(testing.allocator, &rt, &env, &bytes));
 }
