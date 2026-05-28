@@ -223,6 +223,90 @@ Phase 12 entry で internal API + decoder skeleton 着地 (D-064)、 Phase
 14 v0.1.0 release で `cljw-formats/0.1.0.edn` archive lock (以降 add
 only)。
 
+## v0.1.0 build envelope + build-time-eval semantics (amendment 1)
+
+D4 fixes the *full* trailer layout (bootstrap cache + user bytecode
++ Tier 0 metadata + build-id + size + magic). At the v0.1.0
+`cljw build` landing (D-100(b), row 14.11(b)) the **minimal correct
+subset** ships first; the remaining D4 blocks are deferred per D6.
+This amendment fixes the two things D4 left unspecified — the
+**payload envelope framing** and the **build-time evaluation
+semantics** — and records the deferral of the additive blocks so
+D3's "Tier 0 metadata 常時 ON" is not silently dropped.
+
+### A1-D1: payload = sequence of chunks (not a single `(do …)` chunk)
+
+The compiler produces **one `BytecodeChunk` per top-level form**
+(`vm_compiler.compile(rt, arena, node)`). A file is NOT wrapped in
+a synthetic `(do …)` — `analyzeDo` (`special_forms.zig`) analyzes
+all subforms in a single pass with no intervening eval, so an
+in-file `(defmacro m …)` / `(require [x :as a])` followed by `(m)`
+/ `(a/f)` would be analyzed before the macro / alias is registered
+(broken). The build instead mirrors the runner's per-form loop and
+emits a **sequence** of chunks:
+
+```
+[u32 n_chunks, LE]
+n_chunks × ( [u32 chunk_len, LE] [chunk_bytes (serializeChunk v2)] )
+```
+
+Per-chunk length framing is required because the v2 chunk format
+is not self-terminating for back-to-back concatenation. This
+**payload envelope** is archived in `cljw-formats/0.1.0.edn` as a
+`:payload-envelope` entry **distinct** from the `:chunk-format` v2
+entry, so framing and chunk semantics pin independently (matches
+D6 / D11 decoder-permanence intent).
+
+### A1-D2: build-time eval of top-level forms (Clojure AOT semantics)
+
+The build loop is the runner's loop (`src/app/runner.zig`
+L84-103) with a chunk sink: per top-level form
+`read → analyzeForm → vm_compiler.compile (→ append chunk) →
+driver.evalForm`. The **eval step is mandatory** — it registers
+macros / requires / defs into `env` + `macro_table` so the next
+form analyzes against an evolved environment. This matches Clojure
+AOT (`compile` evaluates top-level forms as it compiles them).
+
+**Consequence (documented, not a defect):** a top-level
+side-effecting form (e.g. `(println "hi")`) runs **during the
+build**, not only at run time — identical to Clojure AOT. This is
+surfaced in `cljw build` help text. The alternative (a classifier
+that evals only "env-shaping" forms and skips side-effecting ones)
+is undecidable in general and Clojure-divergent — see Alternatives
+amendment-1 Alt C. A build-time form that *throws* aborts the
+artifact with a non-zero exit + EDN error event (D11); it never
+embeds a half-payload.
+
+**F-009:** the per-form compile-then-eval loop is the same code
+`runner.zig` runs; it is factored into a neutral helper that both
+`runner.zig` (run mode, discards chunks) and `src/app/builder.zig`
+(build mode, collects chunks + aborts-on-throw) call, so run-mode
+and build-mode cannot drift.
+
+### A1-D3: deferred D4 blocks at v0.1.0 (tracked, not dropped)
+
+The v0.1.0 artifact ships `[runtime binary][payload envelope][u64
+payload_len][magic]` only. Deferred per D6 (format is not
+ABI-committed; a new `cljw build` regenerates, and a future
+archive entry decodes the richer format):
+
+- **bootstrap cache block** — the built binary re-runs
+  `bootstrap.loadCore` at startup (same `@embedFile`'d core
+  sources); the cold-start <12 ms target (D-100(d)) was already met
+  without a serialized cache (ebf2979b).
+- **Tier 0 metadata block** (D3 常時 ON) — deferred; stack-trace
+  symbolication for built binaries lands post-v0.1.0.
+- **build-id block** (D5) — deferred.
+
+Tracked by **D-131** so D3's always-on contract has an explicit
+recall owner rather than a silent gap.
+
+### A1-D4: trailer magic
+
+Trailer magic = **`"CLJC"`** (D4 literal), kept distinct from the
+serializer's internal chunk magic `"CLJW"` (`serialize.zig` L54),
+so the tail-detection key never aliases the payload head.
+
 ## Alternatives considered
 
 Devil's-advocate fork (general-purpose subagent、 fresh context、
@@ -255,6 +339,38 @@ output verbatim:
 - **欠点**: cljw user code の eval / REPL / dynamic var 再定義 が AOT 前提と root から衝突 (Clojure の dynamic recompilation surface を放棄することになる)、 DWARF への metadata mapping は platform-specific (Mac/Linux/Windows) で host abstraction の負担が爆発、 wasm 実行 path を build artifact から剥がすと cljw user code と zwasm wasm execution の path 分離が崩れる。
 - **F-NNN 関係**: **F-001 と直接衝突** — cljw が zwasm v2 を library として import し cljw user code path と wasm execution path を分離する前提が、 wasm AOT を cljw 側の build pipeline に組み込むことで融合してしまう。 F-004 / F-005 / F-006 とは独立に解決可能。 F-009 は build mode 単一固定の点で本提案と同等。
 - **F-NNN violation**: **あり (F-001)**。 zwasm v2 library import 前提を維持しながら AOT native binary を出すことは、 Clojure dynamic eval surface (F-009 の neutrality に含まれる REPL/eval 機能) を犠牲にせず実現する path が現時点で見えない。 finished-form-clean を志向する場合でも、 F-001 の amendment は user action であり、 主 loop は本 wildcard を採用すべきではない (= 記録のみ、 採用候補から除外)。
+
+### Amendment-1 Devil's-advocate fork (2026-05-29, D-100(b) payload format + build semantics, F-001/F-002/F-009 envelope) — verbatim
+
+**F-NNN gate check (leading entry):** None of the three shapes below requires violating F-001, F-002, or F-009. F-009 note: the build loop's *semantics* (read→analyze→compile→eval per top-level form) are the runner's existing pipeline (`src/app/runner.zig` L84-103) already living in neutral `src/eval/` + `src/lang/`. The builder (`src/app/`) is a Layer-3 driver that *orchestrates* those neutral pieces and appends the trailer; no impl logic needs to move. One caveat surfaced (see Alt B (c)): the per-form-eval loop is the same loop `runner.zig` runs, so the finished form should **extract that loop into a neutral helper** rather than have `builder.zig` re-implement it — that is the only F-009-relevant decision here, and it is satisfiable.
+
+#### Alt A — Smallest-diff: single-chunk `(do …)` wrap, ungated landing
+
+(a) **Concrete shape.** `builder.zig` reads the file, wraps all top-level forms in one synthetic `(do f1 f2 … fn)` Form, calls `analyzeForm` once → `analyzeDo` produces one `DoNode`, `vm_compiler.compile` produces **one** `BytecodeChunk`. Payload = `serializeChunk(chunk)` bytes verbatim (existing v2 format, no new framing). Trailer `[u64 payload_len]["CLJC"]` appended to the cljw binary. Startup: read tail, `deserializeChunk`, VM-run the single chunk. Landing: ungated via ADR-0015 amendment 5.
+
+(b) **Better than the others.** Zero new payload framing — reuses the existing single-chunk serializer untouched, so the `cljw-formats/0.1.0.edn` archive (D-100(e)) records exactly the v2 chunk format already serialized, no count-header byte to archive. Smallest startup path (one deserialize, one run).
+
+(c) **Breaks / risks.** **This is the established-broken shape:** `analyzeDo` analyzes all subforms in a single pass with no intervening eval, so an in-file `(defmacro m …)` followed by `(m)`, or `(require [x :as a])` followed by `(a/f)`, fails at analyze time. Diverges from Clojure AOT. It is not a smaller path to the *same* finished form — it is a path to a **different, broken** finished form, so under F-002 the smallest-diff tie-breaker does not apply. Not recommendable except as the throwaway red-test baseline that motivates Alt B.
+
+#### Alt B — Finished-form-clean: sequence-of-chunks + per-form compile-then-eval, ungated landing
+
+(a) **Concrete shape.** Build loop mirrors `runner.zig` L84-103, extracted into a neutral helper both `builder.zig` and `runner.zig` share (F-009): per top-level form `reader.read → analyzeForm → vm_compiler.compile → append chunk → driver.evalForm` (env evolves: macros/requires/defs register for form N+1). Payload `[u32 n_chunks]` then `n_chunks × [u32 chunk_len][chunk_bytes]`. Per-chunk length framing required (v2 chunk has no self-terminating end marker). Startup: read trailer → slice payload → read `n_chunks` → loop deserialize+VM-run each in order. Matches Clojure AOT. Landing ungated, ADR-0015 amendment 5.
+
+(b) **Better than the others.** Only shape *correct* for in-file macros + require-then-use, the realistic `cljw build app.clj` corpus (D-121 just landed Java-static dispatch precisely so build-able corpora can reference statics). Sharing the compile-unit loop with `runner.zig` removes run-vs-build drift. Per-chunk framing also forward-useful for D-103 (per-chunk peephole-version concerns localize).
+
+(c) **Breaks / risks.** (1) **Build-time side effects:** a top-level `(println "hi")` runs during the build — exactly Clojure AOT (`*compile-files*` runs top-level forms incl. side effects). Acceptable + expected, but MUST be documented in ADR Consequences + `cljw build` help. (2) **Archive interaction:** the `n_chunks` + per-chunk-`len` framing is a new outer envelope around the v2 chunk format; archive it as a **separate** `:payload-envelope` entry distinct from the `:chunk-format` v2 entry, so envelope framing and chunk semantics pin independently per ADR-0034 decoder-permanence (option ii-1, recommended). (3) build-time eval can *throw*; the builder must surface a build error (non-zero exit, EDN event per D11), not embed a half-payload.
+
+#### Alt C — Wildcard: analyze-only + separate macro/require registration pass (no build-time side effects)
+
+(a) **Concrete shape.** Two-pass build with no eval of arbitrary top-level forms. Pass 1 *selectively* evaluates only env-shaping forms (`defmacro`, `require`/`use`/`import`, macro-referenced `def`), skipping side-effecting forms; Pass 2 re-analyzes + compiles every form against the populated env. Side effects run only at run time. Framing identical to Alt B.
+
+(b) **Better than the others.** The only shape that resolves in-file macros/requires **without** build-time side effects. Cleaner mental model for "build = compile, run = execute".
+
+(c) **Breaks / risks — this is the trap.** Classifying "env-shaping vs side-effecting" is **undecidable in general** and diverges from Clojure. `(def x (compute-config))` where a downstream `(defmacro m [] @x)` depends on the side-effecting def — Clojure runs *everything* at compile time top-to-bottom; macros can depend on prior side effects. Alt C must either approximate the classifier and silently mis-handle the dependent-def case (a permanent-no-op / silent-semantics-drop smell — successful build, macro expanded against stale `x`), or re-introduce full eval and collapse into Alt B. It reaches a **Clojure-divergent** finished form the owner would unwind. Under F-002 this disqualifies it. Build-time side effects (Alt B's "cost") are not a defect to engineer away — they are the *correct Clojure AOT semantics*.
+
+#### Recommendation (non-binding)
+
+**Alt B.** Only shape reaching the correct Clojure-AOT finished form for the realistic corpus. Alt A reaches a *broken* finished form; Alt C reaches a *Clojure-divergent* one by suppressing side effects that are actually correct. Per F-002 the smallest-diff tie-breaker (Alt A's only virtue) does not apply — candidates reach **different** finished forms, the correct one wins regardless of extra framing bytes + the shared-loop extraction. Specifics: (i) build-time eval is acceptable + *required*, document it; (ii) `[u32 n_chunks]` + per-chunk `[u32 chunk_len]` framing, archived as a separate `:payload-envelope` entry; (iii) ungated landing risk low — `build` has no `phase_at_least_14` dependency, mirror ADR-0015 amendment 3 with amendment 5. **Shared-loop extraction (F-009) is mandatory, not optional** — the per-form compile-then-eval loop must be the same code `runner.zig` runs, in a neutral helper both call; re-implementing it in `builder.zig` invites run-vs-build drift.
 
 ## Selection rationale
 
@@ -337,3 +453,19 @@ Phase 12 entry 以降の Affected files (本 cycle 時点では未着地):
   contained) を SSOT として参照、 Tier 0 metadata size baseline
   measurement (Phase 6.16.a-1 d35dc3b terminus) を起票 prerequisite
   として参照。
+- 2026-05-29 (amendment 1): D-100(b) `cljw build app.clj -o app`
+  landing. Added "v0.1.0 build envelope + build-time-eval
+  semantics" section (A1-D1..A1-D4): payload = sequence of v2
+  chunks with `[u32 n_chunks]` + per-chunk `[u32 len]` framing
+  (NOT a single `(do …)` chunk — `analyzeDo` single-pass analysis
+  breaks in-file macros/requires); build loop = runner's per-form
+  read→analyze→compile→eval (Clojure AOT, build-time side effects
+  documented); D4 bootstrap-cache / Tier-0-metadata / build-id
+  blocks deferred at v0.1.0 per D6 and tracked by **D-131** so the
+  D3 常時-ON contract is not silently dropped; trailer magic
+  `"CLJC"` kept distinct from chunk magic `"CLJW"`. Devil's-advocate
+  fork (general-purpose, fresh context, F-001/F-002/F-009 envelope,
+  3 alternatives) output embedded verbatim in Alternatives
+  considered; Alt B (finished-form-clean) selected. Landing gate
+  narrated in ADR-0015 amendment 5 (ungated; `phase_at_least_14`
+  guards the io stub swap only).

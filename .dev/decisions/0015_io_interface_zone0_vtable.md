@@ -116,13 +116,13 @@ appropriate zone, **and** rewrites a small number of Phase 4-13
 src/ sites where today the dispatch row is a `feature_not_supported`
 catalog raise:
 
-| F    | Phase 14 landing path                                                           | Phase 4-13 placeholder rewritten                                 |
-|------|---------------------------------------------------------------------------------|------------------------------------------------------------------|
-| F140 | `src/host/io/http_server.zig` (new)                                             | `cljw.host.java.net` namespace dispatch row                      |
-| F141 | `src/host/io/http_client.zig` (new)                                             | `cljw.host.java.net` namespace dispatch row                      |
-| F142 | `src/app/nrepl.zig` (new; bencode under `src/runtime/bencode/` per amendment 3) | `src/app/main.zig` subcommand dispatch row for `nrepl`           |
-| F143 | `src/app/repl/line_editor.zig` (new)                                            | `src/app/main.zig` subcommand dispatch row for `repl`            |
-| F144 | `src/app/build/self_bundle.zig` (new)                                           | `src/app/main.zig` subcommand dispatch row for `component build` |
+| F    | Phase 14 landing path                                                                                                                              | Phase 4-13 placeholder rewritten                                                                      |
+|------|----------------------------------------------------------------------------------------------------------------------------------------------------|-------------------------------------------------------------------------------------------------------|
+| F140 | `src/host/io/http_server.zig` (new)                                                                                                                | `cljw.host.java.net` namespace dispatch row                                                           |
+| F141 | `src/host/io/http_client.zig` (new)                                                                                                                | `cljw.host.java.net` namespace dispatch row                                                           |
+| F142 | `src/app/nrepl.zig` (new; bencode under `src/runtime/bencode/` per amendment 3)                                                                    | `src/app/main.zig` subcommand dispatch row for `nrepl`                                                |
+| F143 | `src/app/repl/line_editor.zig` (new)                                                                                                               | `src/app/main.zig` subcommand dispatch row for `repl`                                                 |
+| F144 | `src/app/builder.zig` (new; bytecode self-bundle per amendment 5) — distinct from `cljw component build` (Wasm output, row 14.12, zwasm-v2-gated) | `src/app/cli.zig` `build` subcommand arm + startup `tryRunEmbedded` hook (ungated — see amendment 5) |
 
 Tier 2 isolation (per amendment 1) means that if Zig 0.17 / 0.18
 reshapes `std.Io` again before Phase 14, only `io_default.zig` is
@@ -166,3 +166,27 @@ coincides with the Phase 14 landing.
   a memo per CLAUDE.md spirit; the finished form amends in place.
   v0 disabled-feature F142 reactivation closed at commit 76e0c64c
   (row 14.10).
+- 2026-05-29 (amendment 5): F144 row narrowed + landed ungated.
+  Devil's-advocate for row 14.11(b) (`cljw build app.clj -o app`
+  bytecode self-bundle) confirmed `build` has **no** dependency on
+  the `phase_at_least_14` flag — that flag guards the io_interface
+  Tier-2 stub swap (`runtime/io/stub.zig` + HTTP/REPL/nREPL stubs,
+  F140-F143 host-I/O surface), not the Deno-style bytecode-trailer
+  mechanism (F-001-separate from zwasm). `build` therefore lands the
+  same way `repl` (14.9) / `nrepl` (14.10) did: a subcommand arm in
+  `src/app/cli.zig` + a startup `builder.tryRunEmbedded` detection
+  hook, both unconditional. Path moved from the amendment-2 memo
+  `src/app/build/self_bundle.zig` to `src/app/builder.zig` (single
+  file, under §A6 1000-LOC cap; the subdir split is reservation-as-
+  bias until growth forces it — same reasoning as amendment 3's
+  nrepl fold). The row-14.14 `phase_at_least_14` flip no longer owns
+  `build`'s landing; it confirms + flips the io stub flag only.
+  **`cljw component build`** (Wasm Component output, row 14.12)
+  remains a *distinct* F144-adjacent feature gated on zwasm v2
+  readiness (D-036/037/038/F-008) — it is not this bytecode
+  self-bundle. ADR-0015 a2's path table is a memo per CLAUDE.md
+  spirit; the finished form amends in place. The coupled payload-
+  format + build-time-eval decision (sequence-of-chunks, per-form
+  compile-then-eval matching Clojure AOT) lives in **ADR-0034
+  amendment 1** (the build-format owner); the Devil's-advocate
+  fork output is embedded verbatim there.
