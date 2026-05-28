@@ -19,6 +19,7 @@
 const std = @import("std");
 
 const runner = @import("runner.zig");
+const repl = @import("repl.zig");
 
 /// Top-level CLI dispatcher. Called from `src/main.zig::main` with
 /// the Juicy-Main `std.process.Init` bundle. Parses argv, decides
@@ -40,11 +41,43 @@ pub fn dispatch(init: std.process.Init) !void {
     var args = init.minimal.args.iterate();
     _ = args.skip(); // argv[0]
 
+    // Row 14.9 (ADR-0048): `cljw repl` subcommand — peek the first
+    // positional and route to the REPL when it matches. The REPL
+    // takes no further argv; trailing args are not allowed today
+    // (Phase 14.14 polish bundle may add `--init` / `--port`).
+    if (args.next()) |first| {
+        if (std.mem.eql(u8, first, "repl")) {
+            return repl.run(io, gpa, arena, stdout, stderr);
+        }
+        // Not a recognised subcommand — fall through to legacy flag
+        // parsing by re-routing `first` through the existing arm.
+        try dispatchArgsRest(io, gpa, arena, stdout, stderr, first, &args);
+        return;
+    }
+
+    // No argv at all → smoke output.
+    try stdout.writeAll("ClojureWasm\n");
+    try stdout.flush();
+}
+
+/// Legacy flag-parse loop for non-subcommand invocations. Lifted
+/// from the inline body to keep `dispatch` thin once subcommand
+/// routing arrived (row 14.9).
+fn dispatchArgsRest(
+    io: std.Io,
+    gpa: std.mem.Allocator,
+    arena: std.mem.Allocator,
+    stdout: *std.Io.Writer,
+    stderr: *std.Io.Writer,
+    first_arg: []const u8,
+    args: anytype,
+) !void {
     var source_text: ?[]const u8 = null;
     var source_label: []const u8 = "<-e>";
     var compare_mode: bool = false;
 
-    while (args.next()) |arg| {
+    var current_arg: ?[]const u8 = first_arg;
+    while (current_arg) |arg| : (current_arg = args.next()) {
         if (std.mem.eql(u8, arg, "-h") or std.mem.eql(u8, arg, "--help")) {
             try stdout.print(
                 \\Usage: cljw [options] [<file.clj> | -]
