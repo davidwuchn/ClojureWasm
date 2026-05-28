@@ -5,32 +5,37 @@
 
 ## Resume contract
 
-- **HEAD**: ≈ `23423532` (D-125/128/129 P0 batch landed; see
-  `git log` for exact HEAD).
-- **First commit on resume MUST be**: P1 item #1 = **D-121 Phase 7
-  Java static method dispatch infra** (`(Class/method)` analyzer
-  arm + Node + TreeWalk + VM + e2e for `(java.util.UUID/randomUUID)`).
+- **HEAD**: ≈ `33ca37ec` (P0 batch + ADR-0050 + D-121 unified
+  InteropCallNode landed; see `git log` for exact HEAD).
+- **First commit on resume MUST be**: P1 item #2 = **D-122 row-
+  assignment for D-102 Ref→TVal ring rewrite** — open row 14.x
+  in `.dev/ROADMAP.md` §9.16 + sequence vs D-100(a-e), then
+  implement D-102 (~150 LOC: TVal struct + history ring + lock
+  placeholder).
 - **Forbidden this session**: pulling v0.1.0 release tag (row
-  14.14) forward without D-121/D-122 + D-100(a)/(b)/(e) landed.
-  Re-opening any of rows 14.5-14.10 or D-100(c)/(d) (Discharged).
+  14.14) forward without D-122 + D-100(a)/(b)/(e) landed.
+  Re-opening any of rows 14.5-14.11 or D-121/D-125/D-128/D-129
+  (Discharged this session).
 
-## Active priority (P0 batch discharged 2026-05-28 session resume)
+## Active priority (D-121 discharged via ADR-0050)
 
-P0 (D-125 / D-128 / D-129) Discharged this resume: per-task note
-batch landed; orphan-prevention rule extracted; handover hook
-gained trim-Edit exemption. P1 now leads.
+P0 (D-125 / D-128 / D-129) + P1 #1 D-121 Discharged this session.
+D-121 landed via ADR-0050 unified `InteropCallNode` (depth-3
+surgery; cycle-budget defer rejected per the new Cycle-budget
+defer smell in `.dev/principle.md`). 3 retired Node variants +
+2 governance smells minted + 86/86 gate. P1 #2 leads.
 
-**P1 — v0.1.0 release blockers (must land before row 14.14 tag)**:
-1. **D-121** Phase 7 Java static method dispatch infra (~250 LOC,
-   analyzer arm + Node + TreeWalk + VM compile + e2e). 15 Java
-   surfaces (UUID/System/File/…) currently dead via `(Class/method)`
-   call. **Real release blocker** not currently in §9.16 row table.
-2. **D-122** open D-102 (Ref→TVal ring rewrite) as concrete row
+**P1 remaining — v0.1.0 release blockers (must land before row
+14.14 tag)**:
+1. **D-122** open D-102 (Ref→TVal ring rewrite) as concrete row
    14.x in §9.16, then implement D-102 (~150 LOC).
-3. **D-100 cluster** remainder: (a) BytecodeChunk constants pool
+2. **D-100 cluster** remainder: (a) BytecodeChunk constants pool
    (~300 LOC, foundation), (b) `cljw build` CLI (~200 LOC), (e)
    `cljw-formats/0.1.0.edn` archive lock (~80 LOC). Block on (a)
    first.
+3. **D-130** VM lowering of `interop_call_node` `.static_method`
+   (the D-121 follow-on — only a release blocker if v0.1.0
+   promises VM-mode parity for Java statics; TreeWalk works).
 4. **D-123** snapshot sequencing in §9.16: enumerate row 14.14a
    `v0.1.0 snapshot lock-points` (bench/history + cljw-formats
    archive) before row 14.14 tag.
@@ -56,9 +61,8 @@ debt.md (Active incl. D-121..D-127).
 
 ## Current state
 
-Phase 14 v0.1.0 IN-PROGRESS. Mac gate 85/85; ubuntunote 84/84
-last verified ADR-0049 2026-05-28. 8 rows closed in 2026-05-28
-session (14.5-14.10) + 14.11 partial + 14.13 partial; 2 ADRs
-minted (0048 / 0049); 22 debts minted across that session +
-resume (D-111..D-129); 7 Discharged
-(D-014b / D-066 / D-098 / D-099 / D-125 / D-128 / D-129).
+Phase 14 v0.1.0 IN-PROGRESS. Mac gate 86/86; ubuntunote re-
+verify at next Phase boundary per ADR-0049. ADR-0050 minted
+this resume (unified InteropCallNode). 23 debts minted across
+session (D-111..D-130); 8 Discharged (D-014b / D-066 / D-098 /
+D-099 / D-121 / D-125 / D-128 / D-129).
