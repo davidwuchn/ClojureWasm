@@ -855,7 +855,7 @@ Each phase has a goal and exit criteria. Phases marked 🔒 require an
 | 10    | Namespaces + require + standard libraries (Tier A)                                              | clojure.string / clojure.set etc. tests are green                                                           |      |
 | 11    | clojure.test framework + start porting upstream tests                                           | deftest / is / are work; 10+ upstream tests ported                                                          |      |
 | 12    | Bytecode cache (serialize + cache_gen)                                                          | Cold start `< 12 ms`; cache format versioning established                                                   |      |
-| 13    | VM optimisation: peephole.zig                                                                   | Five canonical benchmarks within 110 % of v1 24C.10                                                         |      |
+| 13    | VM optimisation: peephole.zig + STM `Ref`/`TVal` data structures (ADR-0010)                     | Five canonical benchmarks within 110 % of v1 24C.10; `Ref`/`TVal` + read-only `deref` land                  |      |
 | 14    | CLI + REPL + nREPL + deps.edn + Wasm Component build + **v0.1.0**                               | `cljw repl`, `cljw nrepl`, `cljw component build` all work; compat_tiers.yaml complete                      | 🔒    |
 | 15    | Concurrency (atom, agent, future, promise, pmap)                                                | `core.async` Tier-C stub; `(future ...)` deref works                                                        | 🔒    |
 | 16    | ClojureScript → JS compiler                                                                    | (v0.2.0 milestone)                                                                                          |      |
@@ -1599,13 +1599,58 @@ deserialize round-trip + `cljw build` end-to-end + `cljw
 render-error` decoder + cold-start < 12 ms (or measured + debt
 row). 🔒 OrbStack x86_64 gate passes.
 
-### 9.15 Phase 13 — task list (PENDING, expand at Phase 13 entry)
+### 9.15 Phase 13 — task list (IN-PROGRESS; opened 2026-05-28)
 
-**Entry ADRs**: 0010 (STM — Ref / TVal data structures).
-**Reference**: `private/JVM_TO_ZIG.md` §5 (STM Zig API).
-**Deliverables**: `Ref` and `TVal` data structures, VM optimisation
-peephole.zig, five canonical benchmarks within 110% of cw v0
-24C.10.
+> **Phase 13 entry note**: Phase 13 carries two mission threads —
+> (1) VM-optimisation `peephole.zig` (master-table headline: five
+> canonical benchmarks within 110% of cw v0 24C.10) and (2) STM
+> `Ref` / `TVal` **data structures** + read-only `deref` path per
+> ADR-0010 §"Phases" (Phase 13 row = "Ref / TVal data structure;
+> none yet — read-only path lands"). The full STM behaviour
+> (`dosync` / `alter` / `commute` / `ensure` / `ref-set` commit +
+> retry + barge) stays Phase 14-15 and must NOT be pulled forward.
+> ADR-0010's migration note claims a Phase-4-entry `runtime/stm/`
+> skeleton; that skeleton does **not** exist in the from-scratch
+> redesign (declined per skeleton-economy / F-002), so row 13.1
+> lands `Ref` / `TVal` fresh rather than activating a stub.
+
+**Entry ADRs**: 0010 (STM — Ref / TVal data structures; read
+**the "Phases" list + the Phase 13-15 migration note amendment 2**
+for the staged-Code activation table — Phase 13 removes no Codes).
+**Entry debts**: none Phase-13-specific. The 13.0 boundary row runs
+the Step 0.5 sweep on `## Active` rows naming a now-closed phase
+(audit flagged **D-014c** / **D-014d** as Discharge candidates —
+multimethod + protocol dispatch landed in Phase 7; **D-040** /
+**D-043** verify-then-flip) and refreshes three stale-phase-ref
+docstrings in `src/` (`uuid.zig` / `sequence.zig` / `higher_order.zig`
+cite "until Phase 7" in the future tense). STM commit-loop debts
+(**D-009** / **D-010** / **D-012** / **D-013** / **D-020** /
+**D-046**) stay Phase 14-15 — do **not** pull into Phase 13.
+**Reference**: `private/JVM_TO_ZIG.md` §5 (STM Zig API); cw v0
+`bench/` 24C.10 baseline for the five-canonical parity target.
+**Deliverables**: `Ref` and `TVal` data structures (F-004 Group C
+`ref` NaN-box slot + GC trace + read-only `deref`), VM optimisation
+`peephole.zig` post-compile pass (dual-backend differential gate
+stays green per ADR-0005), five canonical benchmarks within 110% of
+cw v0 24C.10.
+**Final activation step**: no `build_options.phase_at_least_13` flag
+minted by the autonomous loop today unless a phase-gated behaviour
+surfaces (mint at row 13.5 if so). Phase 13 removes no STM staged
+Codes (ADR-0010 amendment 2 Phase-13 row = "none yet").
+
+| #    | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                       | Status |
+|------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|--------|
+| 13.0 | Phase 12 → 13 boundary review chain follow-ups: absorb the audit_scaffolding findings (Step 0.5 debt sweep of closed-phase `## Active` rows — D-014c / D-014d Discharge candidates, D-040 / D-043 verify-then-flip; refresh 3 stale-phase-ref docstrings in `src/`), bench sweep, master-table row 13 STM-clause reconciliation, Phase tracker flipped (this row reflects boundary work; closes when expansion is complete)                                     | [ ]    |
+| 13.1 | STM `Ref` / `TVal` data structures land fresh in `src/runtime/stm/ref.zig` (no Phase-4 skeleton exists; owner picks file split within F-009 envelope). `Ref` { tvals history / min·max_history / watches / lock } + `TVal` { val / point / msecs / prior } per ADR-0010 §Decision. F-004 Group C `ref` NaN-box slot + trace fn + GC root registration. `(ref init)` constructor primitive. Unit + e2e: `(ref? (ref 5))`                                         | [ ]    |
+| 13.2 | STM read-only path: `deref` / `@` on a `Ref` returns current `TVal` value (no transaction needed — JVM allows ref read outside `dosync`). `dosync` / `alter` / `commute` / `ensure` / `ref-set` raise cleanly (transient stub — owner picks generic `feature_not_supported` vs granular `stm_*_not_supported` Codes per ADR-0010 a2 / ADR-0018 within envelope; Phase 13 wires NONE of them). e2e: `(deref (ref 5))` → 5                                       | [ ]    |
+| 13.3 | `peephole.zig` optimizer skeleton + first real pass — `src/eval/backend/optimize/peephole.zig` (owner confirms placement vs `eval/backend/vm/` within F-002 envelope). Post-compile pass over the Instruction stream; first demonstrable win drawn from cw v0 24C.10 (e.g. redundant load/pop elision, jump-to-jump collapse, adjacent const fold). Wired into the VM compile output path; dual-backend differential gate (TreeWalk ≡ VM, ADR-0005) stays green | [ ]    |
+| 13.4 | Five canonical benchmarks within 110% of cw v0 24C.10 — define the five canonical set (subset of `bench/` fixtures), lock the cw v0 24C.10 reference values, verify the peephole pass brings the VM within 110%. If the budget is missed, file a D-NNN row with the gap measurement rather than blocking                                                                                                                                                         | [ ]    |
+| 13.5 | Phase 13 exit smoke + final activation — peephole pass green on the differential gate; five-bench parity verified (or D-NNN filed); `Ref` / `TVal` read-only smoke (`(deref (ref ...))`); flip Phase tracker DONE. Mint `build_options.phase_at_least_13` only if a phase-gated behaviour surfaced. 🔒 OrbStack gate                                                                                                                                              | [ ]    |
+
+**Exit criterion**: `Ref` / `TVal` data structures + read-only
+`deref` path + `peephole.zig` optimizer pass (differential gate
+green) + five canonical benchmarks within 110% of cw v0 24C.10 (or
+measured + debt row). 🔒 OrbStack x86_64 gate passes.
 
 ### 9.16 Phase 14 — task list (PENDING, expand at Phase 14 entry, **v0.1.0 milestone**)
 
