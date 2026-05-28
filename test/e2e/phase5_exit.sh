@@ -47,9 +47,13 @@ assert_eq 'ratio_from_int_div' "$got" '1/3'
 got="$("$BIN" -e '(* 9223372036854775807N 2)')"
 assert_eq 'bigint_mul_promote' "$got" '18446744073709551614N'
 
-# 3. BigDecimal addition with scale alignment.
+# 3. BigDecimal addition with scale alignment. Phase 14 row 14.4
+# gap (c) discharged: printBigDecimal now places the decimal point
+# per JVM toPlainString. (1.50M scale 2 unscaled 150) + (0.5M scale
+# 1 unscaled 5) → align to scale 2: unscaled 150 + 50 = 200, scale 2
+# → "2.00M". Pre-fix the printer dropped the dot and rendered "200M".
 got="$("$BIN" -e '(+ 1.50M 0.5M)')"
-assert_eq 'bigdecimal_add' "$got" '200M'
+assert_eq 'bigdecimal_add' "$got" '2.00M'
 
 # 4. deftype + ctor + field access (the ROADMAP test target).
 got="$("$BIN" - <<'EOF'

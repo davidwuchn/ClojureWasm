@@ -119,16 +119,45 @@ fn printBigDecimal(w: *Writer, v: Value) Writer.Error!void {
     // `<unscaled>E<-scale>M` (rare; matches JVM `toPlainString` for
     // scale > 0, otherwise `toString`).
     const bd = v.decodePtr(*const big_decimal_mod.BigDecimal);
-    if (bd.scale > 0) {
+    if (bd.scale == 0) {
         try w.print("{f}M", .{bd.unscaled.m});
-        // Decimal-point insertion is left lossy in 5.16 — matches
-        // Clojure's pr-str of BigDecimal which uses the bare digit
-        // string for the unscaled value plus an `M`. Full
-        // toPlainString lands when BigDecimal arithmetic + Phase-6
-        // pprint care does.
-    } else {
-        try w.print("{f}M", .{bd.unscaled.m});
+        return;
     }
+    // Render unscaled digits into a scratch buffer first, then place
+    // the decimal point per JVM `BigDecimal.toPlainString` for
+    // scale > 0 (`1.5M` from unscaled=15, scale=1) or append trailing
+    // zeros for scale < 0 (`1500M` from unscaled=15, scale=-2).
+    // Phase 14 row 14.4 (D-014a) gap (c) discharge.
+    var buf: [128]u8 = undefined;
+    var sw: std.Io.Writer = .fixed(&buf);
+    sw.print("{f}", .{bd.unscaled.m}) catch {
+        // Unscaled wider than 128 chars — fall back to the lossy form
+        // rather than a panic; user can re-render via toString once
+        // arbitrary-width path lands.
+        return w.print("{f}M", .{bd.unscaled.m});
+    };
+    const written = buf[0..sw.end];
+    const neg = written.len > 0 and written[0] == '-';
+    const digits = if (neg) written[1..] else written;
+    if (neg) try w.writeByte('-');
+    if (bd.scale > 0) {
+        const scale_u: usize = @intCast(bd.scale);
+        if (scale_u >= digits.len) {
+            try w.writeAll("0.");
+            for (0..scale_u - digits.len) |_| try w.writeByte('0');
+            try w.writeAll(digits);
+        } else {
+            const dot_pos = digits.len - scale_u;
+            try w.writeAll(digits[0..dot_pos]);
+            try w.writeByte('.');
+            try w.writeAll(digits[dot_pos..]);
+        }
+    } else {
+        try w.writeAll(digits);
+        const trailing: usize = @intCast(-bd.scale);
+        for (0..trailing) |_| try w.writeByte('0');
+    }
+    try w.writeByte('M');
 }
 
 fn printTypedInstance(w: *Writer, v: Value) Writer.Error!void {
