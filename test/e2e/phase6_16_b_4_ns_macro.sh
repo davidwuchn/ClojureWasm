@@ -49,19 +49,18 @@ assert_eq 'ns_with_refer_clojure_reduce' "$got" '6'
 got="$("$BIN" -e "(ns demo) (def x 42) demo/x" | tail -n 1)"
 assert_eq 'ns_def_stays_in_ns' "$got" '42'
 
-# --- (4) `(:require ...)` inside ns raises feature_not_supported with hint ---
-got="$("$BIN" -e "(ns foo (:require [clojure.set :as cs]))" 2>&1 || true)"
-if ! grep -q 'not supported in ClojureWasm' <<<"$got"; then
-    fail "ns_require_directive: missing feature_not_supported tag (got '$got')"
-fi
-echo "PASS ns_require_directive_deferred"
+# --- (4) `(:require ...)` inside ns now lands (D-098 / row 14.7) ---
+# Earlier this cycle raised `feature_not_supported`; the row 14.7
+# landing makes the directive functional. Full coverage at
+# test/e2e/phase14_ns_directive.sh.
+got="$("$BIN" -e "(ns foo (:require [clojure.string :as s])) (s/upper-case \"hi\")" 2>&1 | tail -n 1)"
+[[ "$got" == '"HI"' ]] || fail "ns_require_directive: expected '\"HI\"', got '$got'"
+echo "PASS ns_require_directive_landed"
 
-# --- (5) `(:exclude ...)` filter raises feature_not_supported ---
-got="$("$BIN" -e "(ns foo (:refer-clojure :exclude [reduce]))" 2>&1 || true)"
-if ! grep -q 'not supported in ClojureWasm' <<<"$got"; then
-    fail "ns_refer_clojure_exclude: missing not yet supported (got '$got')"
-fi
-echo "PASS ns_refer_clojure_filters_deferred"
+# --- (5) `(:refer-clojure :exclude [...])` filter now lands (D-098) ---
+got="$("$BIN" -e "(ns foo (:refer-clojure :exclude [reduce])) (- 5 2)" 2>&1 | tail -n 1)"
+[[ "$got" == '3' ]] || fail "ns_refer_clojure_exclude: expected '3', got '$got'"
+echo "PASS ns_refer_clojure_exclude_landed"
 
 # --- (6) Unknown directive raises feature_not_supported ---
 got="$("$BIN" -e "(ns foo (:use [bar]))" 2>&1 || true)"

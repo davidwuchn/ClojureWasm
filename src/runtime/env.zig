@@ -274,11 +274,33 @@ pub const Env = struct {
     /// semantics). Use `referOne` for explicit `:refer [name ...]`
     /// where a private name should be a fail-fast error.
     pub fn referAll(self: *Env, from: *Namespace, to: *Namespace) !void {
+        return self.referAllWithFilter(from, to, &.{}, null);
+    }
+
+    /// Row 14.7 (D-098): filtered variant of `referAll`. When `only`
+    /// is non-null, ONLY names in that slice land (whitelist). The
+    /// `exclude` slice is always honoured (names listed there never
+    /// land). The `^:private` filter still applies regardless of the
+    /// caller-supplied filters. Both slices are linear-scanned;
+    /// typical N ≤ 10 so HashMap setup would cost more than it saves.
+    /// Powers `(ns foo (:refer-clojure :exclude [+] :only [...]))`.
+    pub fn referAllWithFilter(
+        self: *Env,
+        from: *Namespace,
+        to: *Namespace,
+        exclude: []const []const u8,
+        only: ?[]const []const u8,
+    ) !void {
         var it = from.mappings.iterator();
         while (it.next()) |entry| {
+            const name = entry.key_ptr.*;
             if (entry.value_ptr.*.flags.private) continue;
-            if (to.refers.contains(entry.key_ptr.*)) continue;
-            const owned_key = try self.alloc.dupe(u8, entry.key_ptr.*);
+            if (only) |whitelist| {
+                if (!containsName(whitelist, name)) continue;
+            }
+            if (containsName(exclude, name)) continue;
+            if (to.refers.contains(name)) continue;
+            const owned_key = try self.alloc.dupe(u8, name);
             errdefer self.alloc.free(owned_key);
             try to.refers.put(self.alloc, owned_key, entry.value_ptr.*);
         }
@@ -365,6 +387,13 @@ pub const Env = struct {
         return v;
     }
 };
+
+/// Linear-scan name match; used by `referAllWithFilter` to test
+/// `exclude` / `only` membership without a HashMap setup cost.
+fn containsName(names: []const []const u8, name: []const u8) bool {
+    for (names) |n| if (std.mem.eql(u8, n, name)) return true;
+    return false;
+}
 
 /// Copy MetadataMap fields onto the Var. Idempotent — re-interning
 /// with the same metadata is a no-op. Re-interning with a *different*

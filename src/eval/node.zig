@@ -391,11 +391,22 @@ pub const InNsNode = struct {
 /// `findOrCreateNs`.
 pub const NsNode = struct {
     name: []const u8,
-    /// User wrote `(:refer-clojure)`. Always treated as "yes refer
-    /// clojure.core" today; the field exists so a later cycle can
-    /// carry `:exclude` / `:only` filters without changing the node
-    /// shape.
+    /// User wrote `(:refer-clojure)`. When false the auto-refer step is
+    /// skipped entirely (cljw-shell-only mode).
     refer_clojure: bool = true,
+    /// Row 14.7 (D-098): `(:refer-clojure :exclude [name ...])` filter
+    /// — names listed here are dropped from the auto-refer pass. Empty
+    /// slice = no exclusion. Arena-owned slices.
+    refer_clojure_exclude: []const []const u8 = &.{},
+    /// Row 14.7 (D-098): `(:refer-clojure :only [name ...])` whitelist
+    /// — when `null`, all (non-private, non-excluded) names refer; when
+    /// non-null, ONLY the listed names refer. Arena-owned.
+    refer_clojure_only: ?[]const []const u8 = null,
+    /// Row 14.7 (D-098): `(:require [ns ...])` arms collected from the
+    /// ns directive. Each libspec mirrors a top-level `(require ...)`
+    /// shape and is materialised by `evalNs` after the refer-clojure
+    /// step. Arena-owned.
+    libspecs: []const RequireNode = &.{},
     loc: SourceLocation = .{},
 };
 

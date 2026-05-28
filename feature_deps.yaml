@@ -403,6 +403,32 @@ entries:
       isThrowableTag` adds `.host_instance` to the throwable carrier
       set; both markers discharge in the same commit.
 
+  - name: runtime/vm/ns_filter_and_libspec
+    kind: runtime_layer
+    defined_in: src/eval/backend/vm/compiler.zig
+    status: provisional
+    requires_features: []
+    requires_debts:
+      - D-098
+    provisional_markers:
+      - src/eval/backend/vm/compiler.zig (compileNs ns-filter / ns-libspec arms — VM-DEFER pending op_ns_with_filter + libspec side-table extension)
+    notes: |
+      Row 14.7 (D-098) landed `(ns foo (:refer-clojure :exclude /
+      :only [...]))` and `(ns foo (:require [other :as a :refer
+      [...]]))` on TreeWalk via `env.referAllWithFilter` + walking
+      `NsNode.libspecs`. VM compileNs short-circuits to
+      `error.NotImplemented` when ANY of the new fields are non-
+      default. The VM lowering needs (a) a new opcode like
+      `op_ns_with_filter <name_idx> <filter_idx>` carrying the
+      exclude/only sets via a side-table, plus (b) emitting the
+      libspec list through the existing libspec side-table
+      machinery (currently single-libspec; needs N-libspec
+      extension). Both intersect D-100 (a) bytecode chunk constants
+      pool design and are deferred until the cache format settles.
+      TreeWalk-only Layer-2 e2e coverage at
+      test/e2e/phase14_ns_directive.sh is acceptable during the
+      deferral.
+
   - name: runtime/eval/catch_type_keyword
     kind: runtime_layer
     defined_in: src/eval/backend/vm/compiler.zig

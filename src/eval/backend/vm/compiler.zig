@@ -453,14 +453,19 @@ const Compiler = struct {
         // ADR-0035 D1 ns VM path + D9 second amendment (Phase 7
         // entry T3, 2026-05-26). When `refer_clojure = true` emit
         // `op_ns_with_refer_clojure` which performs op_in_ns logic
-        // + referAll(rt) + referAll(clojure.core) (cw v1 widened
-        // :refer-clojure semantic — divergence from JVM). When
-        // `refer_clojure = false` emit bare `op_in_ns` (no auto-
-        // refer; user must add explicit refers). Mirrors
-        // `tree_walk::evalNs` post-T3 gating. Discharges D-073
-        // cluster sub-site (e) per ADR-0036 D2 + dual_backend_parity
-        // discipline (VM-DEFER marker removed because the field is
-        // now consumed).
+        // + referAll(rt) + referAll(clojure.core). When
+        // `refer_clojure = false` emit bare `op_in_ns`.
+        //
+        // Row 14.7 (D-098): the new fields `refer_clojure_exclude` /
+        // `refer_clojure_only` / `libspecs` are TreeWalk-only today;
+        // VM lowering needs a new opcode (`op_ns_with_filter <name_idx>
+        // <filter_idx>`) plus a per-libspec side-table emission loop.
+        // Both ride VM-DEFER until the bytecode side-table extension
+        // settles per D-100 (a) constants-pool design.
+        if (n.refer_clojure_exclude.len > 0 or n.refer_clojure_only != null or n.libspecs.len > 0) {
+            // VM-DEFER: ns filter + libspec list pending op_ns_with_filter + libspec side-table extension [refs: D-098, feature_deps.yaml#runtime/vm/ns_filter_and_libspec]
+            return error.NotImplemented;
+        }
         const name_val = try string_mod.alloc(self.rt, n.name);
         const idx = try self.addConstant(name_val);
         if (n.refer_clojure) {

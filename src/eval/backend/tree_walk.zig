@@ -317,7 +317,7 @@ pub fn eval(
         .method_call_node => |n| try evalMethodCall(rt, env, locals, n),
         .in_ns_node => |n| try evalInNs(env, n),
         .require_node => |n| try evalRequire(rt, env, n),
-        .ns_node => |n| try evalNs(env, n),
+        .ns_node => |n| try evalNs(rt, env, n),
         .vector_literal_node => |n| try evalVectorLiteral(rt, env, locals, n),
         .map_literal_node => |n| try evalMapLiteral(rt, env, locals, n),
         .set_literal_node => |n| try evalSetLiteral(rt, env, locals, n),
@@ -358,15 +358,24 @@ fn evalInNs(env: *Env, n: node_mod.InNsNode) !Value {
 /// user-visible refer of rt + clojure.core comes from a
 /// `(:refer-clojure)` directive (boot-time fan-out for user/
 /// remains in bootstrap.zig + primitive.zig + macro_transforms.zig).
-fn evalNs(env: *Env, n: node_mod.NsNode) !Value {
+fn evalNs(rt: *Runtime, env: *Env, n: node_mod.NsNode) !Value {
     env.current_ns = try env.findOrCreateNs(n.name);
     if (n.refer_clojure) {
+        // Row 14.7 (D-098): filters apply to both rt/ and clojure.core
+        // (the two auto-refer sources). `rt/` is cw-side primitives;
+        // its `+` / `-` / etc. are what `:exclude [+]` shadows.
         if (env.findNs("rt")) |rt_ns| {
-            try env.referAll(rt_ns, env.current_ns.?);
+            try env.referAllWithFilter(rt_ns, env.current_ns.?, n.refer_clojure_exclude, n.refer_clojure_only);
         }
         if (env.findNs("clojure.core")) |cc_ns| {
-            try env.referAll(cc_ns, env.current_ns.?);
+            try env.referAllWithFilter(cc_ns, env.current_ns.?, n.refer_clojure_exclude, n.refer_clojure_only);
         }
+    }
+    // Row 14.7 (D-098): walk ns-level (:require [...]) libspecs. Each
+    // mirrors the top-level (require '[...]) shape; evalRequire is
+    // factored so RequireNode can be applied directly.
+    for (n.libspecs) |libspec| {
+        _ = try evalRequire(rt, env, libspec);
     }
     return .nil_val;
 }

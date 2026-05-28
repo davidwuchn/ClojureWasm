@@ -336,7 +336,25 @@ pub fn analyzeRequire(
         else => return error_catalog.raise(.feature_not_supported, arg.location, .{ .name = "require with non-symbol/vector libspec (Phase 6.16.b-4 c.6+)" }),
     };
 
-    // Two shapes: bare symbol `foo` or vector `[foo :as a :refer [x y]]`.
+    const libspec = try parseLibspecForm(arena, inner_form, form.location);
+    const n = try arena.create(Node);
+    n.* = .{ .require_node = libspec };
+    return n;
+}
+
+/// Shared libspec-vector parser. Used by `analyzeRequire` (top-level
+/// `(require '[ns :as alias :refer [...]])`) AND by `analyzeNs`'s
+/// `:require` arm (row 14.7 / D-098). Accepts a bare-symbol shape or
+/// a `[ns :as alias :refer [names]]` vector; raises
+/// `feature_not_supported` cleanly for `:reload` / `:refer :all` /
+/// `:as-alias`. Returns a `node_mod.RequireNode` with arena-owned
+/// strings. NOT a top-level pub function — `analyzeRequire` and the
+/// new `parseNsLibspec` (below) are its only callers.
+fn parseLibspecForm(
+    arena: std.mem.Allocator,
+    inner_form: Form,
+    loc: @import("../../runtime/error/info.zig").SourceLocation,
+) AnalyzeError!node_mod.RequireNode {
     var ns_sym: form_mod.SymbolRef = undefined;
     var alias_name: ?[]const u8 = null;
     var refer_names: []const []const u8 = &.{};
@@ -347,8 +365,6 @@ pub fn analyzeRequire(
             if (vec.len == 0 or vec[0].data != .symbol)
                 return error_catalog.raise(.feature_not_supported, inner_form.location, .{ .name = "require libspec must begin with a symbol" });
             ns_sym = vec[0].data.symbol;
-
-            // Walk the rest pairwise: keyword + value.
             var i: usize = 1;
             while (i < vec.len) {
                 if (vec[i].data != .keyword)
@@ -376,7 +392,7 @@ pub fn analyzeRequire(
                     }
                     refer_names = buf;
                 } else {
-                    return error_catalog.raise(.feature_not_supported, vec[i].location, .{ .name = "require libspec keyword (only :as and :refer supported at c.5)" });
+                    return error_catalog.raise(.feature_not_supported, vec[i].location, .{ .name = "require libspec keyword (only :as and :refer supported)" });
                 }
                 i += 2;
             }
@@ -389,21 +405,22 @@ pub fn analyzeRequire(
     else
         try arena.dupe(u8, ns_sym.name);
 
-    const n = try arena.create(Node);
-    n.* = .{ .require_node = .{
+    return .{
         .ns_name = ns_name,
         .alias = alias_name,
         .refers = refer_names,
-        .loc = form.location,
-    } };
-    return n;
+        .loc = loc,
+    };
 }
 
-/// `(ns foo)` or `(ns foo (:refer-clojure))`. ADR-0035 D1.
-/// Phase 6.16.b-4 sub-cycle c.7 supports the bare ns name + an
-/// optional `(:refer-clojure)` directive only; other directives
-/// (`:require` / `:use` / `:import` / `:gen-class`) raise transient
-/// `feature_not_supported`. Bare ns symbol is required (not quoted).
+/// `(ns foo)` / `(ns foo (:refer-clojure))` /
+/// `(ns foo (:refer-clojure :exclude [+]))` /
+/// `(ns foo (:refer-clojure :only [reduce]))` /
+/// `(ns foo (:require [other :as a :refer [v1 v2]]))`. ADR-0035 D1.
+/// Row 14.7 (D-098): extended from bare `(:refer-clojure)`-only to
+/// `:exclude` / `:only` filters + ns-level `(:require [...])` arms.
+/// `:rename` remains a clean `feature_not_supported` raise pending
+/// D-112 (separate follow-up; rarely needed in Tier-A test corpora).
 pub fn analyzeNs(
     arena: std.mem.Allocator,
     items: []const Form,
@@ -422,9 +439,11 @@ pub fn analyzeNs(
         try arena.dupe(u8, sym.name);
 
     var refer_clojure: bool = true;
+    var refer_clojure_exclude: []const []const u8 = &.{};
+    var refer_clojure_only: ?[]const []const u8 = null;
+    var libspecs: std.ArrayList(node_mod.RequireNode) = .empty;
+    defer libspecs.deinit(arena);
 
-    // Walk references (items[2..]). Each must be a list starting with
-    // a keyword directive.
     var i: usize = 2;
     while (i < items.len) : (i += 1) {
         const directive = items[i];
@@ -438,19 +457,74 @@ pub fn analyzeNs(
             return error_catalog.raise(.feature_not_supported, directive.location, .{ .name = "ns directive keyword must be unqualified" });
         if (std.mem.eql(u8, kw.name, "refer-clojure")) {
             refer_clojure = true;
-            // :exclude / :only filters land in a later cycle.
-            if (inner.len > 1)
-                return error_catalog.raise(.feature_not_supported, directive.location, .{ .name = "ns :refer-clojure filters (:exclude / :only) (Phase 6.16.b-4 c.8+)" });
+            try parseReferClojureFilters(arena, inner[1..], &refer_clojure_exclude, &refer_clojure_only, directive.location);
         } else if (std.mem.eql(u8, kw.name, "require")) {
-            return error_catalog.raise(.feature_not_supported, directive.location, .{ .name = "ns :require directive (Phase 6.16.b-4 c.8+: use separate (require ...) calls for now)" });
+            for (inner[1..]) |libspec_form| {
+                const ls = try parseLibspecForm(arena, libspec_form, libspec_form.location);
+                try libspecs.append(arena, ls);
+            }
         } else {
-            return error_catalog.raise(.feature_not_supported, directive.location, .{ .name = "ns directive (only :refer-clojure supported at c.7)" });
+            return error_catalog.raise(.feature_not_supported, directive.location, .{ .name = "ns directive (only :refer-clojure and :require supported; :rename / :import / :use pending)" });
         }
     }
 
     const n = try arena.create(Node);
-    n.* = .{ .ns_node = .{ .name = ns_name, .refer_clojure = refer_clojure, .loc = form.location } };
+    n.* = .{ .ns_node = .{
+        .name = ns_name,
+        .refer_clojure = refer_clojure,
+        .refer_clojure_exclude = refer_clojure_exclude,
+        .refer_clojure_only = refer_clojure_only,
+        .libspecs = try arena.dupe(node_mod.RequireNode, libspecs.items),
+        .loc = form.location,
+    } };
     return n;
+}
+
+/// Walk `(:refer-clojure ...args)`'s argument list, materialising
+/// `:exclude` / `:only` filter sets into arena-owned slices.
+/// `:rename` raises `feature_not_supported` cleanly per D-112.
+fn parseReferClojureFilters(
+    arena: std.mem.Allocator,
+    args: []const Form,
+    exclude_out: *[]const []const u8,
+    only_out: *?[]const []const u8,
+    loc: @import("../../runtime/error/info.zig").SourceLocation,
+) AnalyzeError!void {
+    var i: usize = 0;
+    while (i < args.len) {
+        if (args[i].data != .keyword)
+            return error_catalog.raise(.feature_not_supported, args[i].location, .{ .name = ":refer-clojure args must be keyword/value pairs" });
+        const kw = args[i].data.keyword;
+        if (kw.ns != null)
+            return error_catalog.raise(.feature_not_supported, args[i].location, .{ .name = ":refer-clojure keyword must be unqualified" });
+        if (i + 1 >= args.len)
+            return error_catalog.raise(.feature_not_supported, args[i].location, .{ .name = ":refer-clojure keyword without value" });
+        const val = args[i + 1];
+        if (std.mem.eql(u8, kw.name, "exclude")) {
+            exclude_out.* = try parseSymbolVector(arena, val);
+        } else if (std.mem.eql(u8, kw.name, "only")) {
+            only_out.* = try parseSymbolVector(arena, val);
+        } else if (std.mem.eql(u8, kw.name, "rename")) {
+            return error_catalog.raise(.feature_not_supported, args[i].location, .{ .name = ":refer-clojure :rename (D-112 follow-up)" });
+        } else {
+            _ = loc;
+            return error_catalog.raise(.feature_not_supported, args[i].location, .{ .name = ":refer-clojure keyword (only :exclude / :only supported; :rename = D-112)" });
+        }
+        i += 2;
+    }
+}
+
+fn parseSymbolVector(arena: std.mem.Allocator, val: Form) AnalyzeError![]const []const u8 {
+    if (val.data != .vector)
+        return error_catalog.raise(.feature_not_supported, val.location, .{ .name = "expected a vector of unqualified symbols" });
+    const items = val.data.vector;
+    const buf = try arena.alloc([]const u8, items.len);
+    for (items, 0..) |entry, idx| {
+        if (entry.data != .symbol or entry.data.symbol.ns != null)
+            return error_catalog.raise(.feature_not_supported, entry.location, .{ .name = "expected an unqualified symbol" });
+        buf[idx] = try arena.dupe(u8, entry.data.symbol.name);
+    }
+    return buf;
 }
 
 pub fn analyzeInNs(
