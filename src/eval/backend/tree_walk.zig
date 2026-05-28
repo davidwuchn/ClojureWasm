@@ -54,6 +54,7 @@ const SourceLocation = error_mod.SourceLocation;
 const dispatch = @import("../../runtime/dispatch.zig");
 const node_mod = @import("../node.zig");
 const Node = node_mod.Node;
+const special_forms = @import("../analyzer/special_forms.zig");
 const opcode_mod = @import("vm/opcode.zig");
 const BytecodeChunk = opcode_mod.BytecodeChunk;
 
@@ -312,9 +313,7 @@ pub fn eval(
         .try_node => |n| try evalTry(rt, env, locals, n),
         .throw_node => |n| try evalThrow(rt, env, locals, n),
         .deftype_node => |n| try evalDeftype(rt, n),
-        .ctor_call_node => |n| try evalCtorCall(rt, env, locals, n),
-        .field_access_node => |n| try evalFieldAccess(rt, env, locals, n),
-        .method_call_node => |n| try evalMethodCall(rt, env, locals, n),
+        .interop_call_node => |n| try evalInteropCall(rt, env, locals, n),
         .in_ns_node => |n| try evalInNs(env, n),
         .require_node => |n| try evalRequire(rt, env, n),
         .ns_node => |n| try evalNs(rt, env, n),
@@ -482,19 +481,57 @@ fn evalDeftype(rt: *Runtime, n: node_mod.DeftypeNode) !Value {
     return .nil_val;
 }
 
-fn evalCtorCall(rt: *Runtime, env: *Env, locals: []Value, n: node_mod.CtorCallNode) !Value {
-    const td = rt.types.get(n.type_name) orelse
+/// Unified Java/host interop dispatch arm (ADR-0050). Routes on
+/// `n.kind` to the four kind-specific helpers below. The split keeps
+/// each arm small enough that the body-discipline + 4-arm scan reads
+/// linearly; combining into one body would dwarf the call-site code.
+fn evalInteropCall(rt: *Runtime, env: *Env, locals: []Value, n: node_mod.InteropCallNode) !Value {
+    return switch (n.kind) {
+        .constructor => evalConstructorCall(rt, env, locals, n),
+        .instance_field => evalInstanceFieldRead(rt, env, locals, n),
+        .instance_method => evalInstanceMethodCall(rt, env, locals, n),
+        .static_method => evalStaticMethodCall(rt, env, locals, n),
+    };
+}
+
+fn evalConstructorCall(rt: *Runtime, env: *Env, locals: []Value, n: node_mod.InteropCallNode) !Value {
+    const td = special_forms.resolveJavaSurface(rt, env, n.type_name) orelse
         return error_catalog.raise(.symbol_unresolved, n.loc, .{ .sym = n.type_name });
-    const expected = if (td.field_layout) |fl| fl.len else 0;
-    if (n.args.len != expected) {
-        return error_catalog.raise(.arity_not_expected, n.loc, .{ .got = n.args.len, .fn_name = n.type_name, .expected = expected });
+    // deftype / defrecord: arity matches field_layout; allocInstance
+    // returns a typed_instance Value carrying the descriptor + fields.
+    if (td.field_layout) |fl| {
+        if (n.args.len != fl.len) {
+            return error_catalog.raise(.arity_not_expected, n.loc, .{ .got = n.args.len, .fn_name = n.type_name, .expected = fl.len });
+        }
+        const buf = try rt.gpa.alloc(Value, n.args.len);
+        defer rt.gpa.free(buf);
+        for (n.args, 0..) |arg_node, i| {
+            buf[i] = try eval(rt, env, locals, &arg_node);
+        }
+        return try type_descriptor_mod.allocInstance(rt, td, buf);
     }
-    const buf = try rt.gpa.alloc(Value, n.args.len);
-    defer rt.gpa.free(buf);
-    for (n.args, 0..) |arg_node, i| {
-        buf[i] = try eval(rt, env, locals, &arg_node);
+    // Java surface: method_table carries a "<init>" entry. ADR-0050
+    // discharge of D-121 second-half: this is the cljw-prefix-clean
+    // ctor path that `(java.io.File. "path")` rides.
+    if (td.lookupMethod(null, "<init>")) |me| {
+        if (me.method_val.tag() == .nil) {
+            return error_catalog.raise(.feature_not_supported, n.loc, .{ .name = "constructor declared but not implemented" });
+        }
+        const buf = try rt.gpa.alloc(Value, n.args.len);
+        defer rt.gpa.free(buf);
+        for (n.args, 0..) |arg_node, i| {
+            buf[i] = try eval(rt, env, locals, &arg_node);
+        }
+        const vt = rt.vtable orelse return error.NoVTable;
+        return vt.callFn(rt, env, me.method_val, buf, n.loc);
     }
-    return try type_descriptor_mod.allocInstance(rt, td, buf);
+    // No field_layout AND no "<init>" entry — descriptor exists but
+    // doesn't accept ctor calls. Treat as unresolved per the v1
+    // arity-vs-name diagnostic shape (zero expected args).
+    if (n.args.len != 0) {
+        return error_catalog.raise(.arity_not_expected, n.loc, .{ .got = n.args.len, .fn_name = n.type_name, .expected = 0 });
+    }
+    return error_catalog.raise(.symbol_unresolved, n.loc, .{ .sym = n.type_name });
 }
 
 /// Row 7.6 cycle 1: `(.method instance args...)` general-arity
@@ -504,17 +541,18 @@ fn evalCtorCall(rt: *Runtime, env: *Env, locals: []Value, n: node_mod.CtorCallNo
 /// it via `vt.callFn` with the full arg list (receiver + remaining
 /// args). CallSite cache integration deferred to cycle 4 alongside
 /// the bytecode shape decision.
-fn evalMethodCall(rt: *Runtime, env: *Env, locals: []Value, n: node_mod.MethodCallNode) !Value {
-    const receiver = try eval(rt, env, locals, n.target);
+fn evalInstanceMethodCall(rt: *Runtime, env: *Env, locals: []Value, n: node_mod.InteropCallNode) !Value {
+    const target = n.target orelse return error.InternalError;
+    const receiver = try eval(rt, env, locals, target);
     const td: *const type_descriptor_mod.TypeDescriptor = if (receiver.tag() == .typed_instance) blk: {
         break :blk receiver.decodePtr(*const type_descriptor_mod.TypedInstance).descriptor;
     } else if (receiver.tag() == .reified_instance) blk: {
         break :blk receiver.decodePtr(*const type_descriptor_mod.ReifiedInstance).descriptor;
     } else try rt.nativeDescriptor(receiver.tag());
-    const me = td.lookupMethod(null, n.method_name) orelse {
+    const me = td.lookupMethod(null, n.name) orelse {
         return error_catalog.raise(.protocol_no_satisfies, n.loc, .{
             .protocol = "<.method>",
-            .method = n.method_name,
+            .method = n.name,
             .type_name = td.fqcn orelse "<anonymous>",
         });
     };
@@ -533,20 +571,47 @@ fn evalMethodCall(rt: *Runtime, env: *Env, locals: []Value, n: node_mod.MethodCa
     return vt.callFn(rt, env, me.method_val, args_buf, n.loc);
 }
 
-fn evalFieldAccess(rt: *Runtime, env: *Env, locals: []Value, n: node_mod.FieldAccessNode) !Value {
-    const target_val = try eval(rt, env, locals, n.target);
+fn evalInstanceFieldRead(rt: *Runtime, env: *Env, locals: []Value, n: node_mod.InteropCallNode) !Value {
+    const target = n.target orelse return error.InternalError;
+    const target_val = try eval(rt, env, locals, target);
     if (target_val.tag() != .typed_instance) {
         return error_catalog.raise(.type_arg_not_number, n.loc, .{ .fn_name = "field access", .actual = @tagName(target_val.tag()) });
     }
     const inst = target_val.decodePtr(*const type_descriptor_mod.TypedInstance);
     const layout = inst.descriptor.field_layout orelse
-        return error_catalog.raise(.symbol_unresolved, n.loc, .{ .sym = n.field_name });
+        return error_catalog.raise(.symbol_unresolved, n.loc, .{ .sym = n.name });
     for (layout) |fe| {
-        if (std.mem.eql(u8, fe.name, n.field_name)) {
+        if (std.mem.eql(u8, fe.name, n.name)) {
             return inst.fields()[fe.index];
         }
     }
-    return error_catalog.raise(.symbol_unresolved, n.loc, .{ .sym = n.field_name });
+    return error_catalog.raise(.symbol_unresolved, n.loc, .{ .sym = n.name });
+}
+
+/// `(Class/method args...)` static method dispatch (D-121 + ADR-0050).
+/// Descriptor pointer was resolved at analyze time; only the
+/// method-table linear lookup runs here. Eval is symmetric to
+/// `evalInstanceMethodCall` minus the receiver — no `args[0]` insert,
+/// just user args.
+fn evalStaticMethodCall(rt: *Runtime, env: *Env, locals: []Value, n: node_mod.InteropCallNode) !Value {
+    const td = n.descriptor orelse return error.InternalError;
+    const me = td.lookupMethod(null, n.name) orelse {
+        return error_catalog.raise(.protocol_no_satisfies, n.loc, .{
+            .protocol = "<static>",
+            .method = n.name,
+            .type_name = td.fqcn orelse "<anonymous>",
+        });
+    };
+    if (me.method_val.tag() == .nil) return error_catalog.raise(.feature_not_supported, n.loc, .{
+        .name = "static method declared but not implemented",
+    });
+    const buf = try rt.gpa.alloc(Value, n.args.len);
+    defer rt.gpa.free(buf);
+    for (n.args, 0..) |*a, i| {
+        buf[i] = try eval(rt, env, locals, a);
+    }
+    const vt = rt.vtable orelse return error.NoVTable;
+    return vt.callFn(rt, env, me.method_val, buf, n.loc);
 }
 
 fn evalDef(rt: *Runtime, env: *Env, locals: []Value, n: node_mod.DefNode) !Value {

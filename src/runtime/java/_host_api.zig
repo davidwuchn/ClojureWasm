@@ -42,8 +42,23 @@ pub const Extension = struct {
     /// registered into.
     descriptor: *const type_descriptor.TypeDescriptor,
     /// Optional initialiser. `null` means no setup required beyond
-    /// descriptor registration.
-    init: ?*const fn () anyerror!void = null,
+    /// descriptor registration. Receives the heap-copied descriptor
+    /// and the runtime's GPA so the init callback can populate fields
+    /// that cannot be initialised at module-scope comptime (notably
+    /// `method_table` entries — `Value.initBuiltinFn(&fn)` calls
+    /// `@intFromPtr(fn)` which is not comptime-known on Mac targets —
+    /// and `field_layout` slices whose names must match the GPA-owned
+    /// invariant that `Runtime.deinit` enforces).
+    ///
+    /// Allocator ownership contract: any heap allocation the init
+    /// callback makes (method_table slice + each MethodEntry's
+    /// method_name dup; field_layout slice + each FieldEntry's name
+    /// dup) MUST be on the passed `gpa` so `Runtime.deinit`'s pass
+    /// over `rt.types` frees it via the same allocator.
+    /// `MethodEntry.protocol_name` stays a borrowed slice (process-
+    /// lifetime literal or process-lifetime ProtocolDescriptor —
+    /// `Runtime.deinit` does not free it).
+    init: ?*const fn (td: *type_descriptor.TypeDescriptor, gpa: std.mem.Allocator) anyerror!void = null,
 };
 
 /// All Java-surface modules whose `___HOST_EXTENSION` declarations
@@ -110,7 +125,18 @@ pub fn installAll(env: *Env) !void {
                 gop.value_ptr.* = td;
             }
         }
-        if (ext.init) |f| try f();
+        if (ext.init) |f| {
+            // Look the heap td back up so `init` operates on the
+            // canonical descriptor (idempotent re-runs: the heap td
+            // exists already on second call, so `gop.value_ptr.*`
+            // above just re-resolved it). For idempotency, init
+            // callbacks check `td.method_table.len == 0` (or the
+            // equivalent for field_layout) before populating;
+            // otherwise the second `installAll` would leak the
+            // first call's allocation.
+            const td_ptr = rt.types.get(ext.descriptor.fqcn.?).?;
+            try f(@constCast(td_ptr), rt.gpa);
+        }
     }
 }
 

@@ -30,6 +30,29 @@ const macro_dispatch = @import("../macro_dispatch.zig");
 const analyzer_mod = @import("analyzer.zig");
 const AnalyzeError = analyzer_mod.AnalyzeError;
 const Scope = analyzer_mod.Scope;
+const type_descriptor_mod = @import("../../runtime/type_descriptor.zig");
+const TypeDescriptor = type_descriptor_mod.TypeDescriptor;
+
+/// Resolve a head namespace string from `(Class/method)` or `(Class. ...)`
+/// to a `*const TypeDescriptor` in `rt.types`. ADR-0029 D5 keys
+/// descriptors by their cljw-prefixed FQCN (e.g. `"cljw.java.util.UUID"`),
+/// but user source writes the JVM form (e.g. `"java.util.UUID"`). This
+/// helper bridges by trying:
+///   1. Literal `rt.types.get(head)`.
+///   2. `rt.types.get("cljw." ++ head)` for the Java prefix translation.
+/// Returns `null` if neither hits. The `env` parameter is currently
+/// reserved for a future short-name alias lookup (`UUID` alone resolving
+/// via the current ns) — not implemented at v0.1.0 per ADR-0050 § R3
+/// follow-up; pass `env` through to keep callsites stable for that
+/// landing.
+pub fn resolveJavaSurface(rt: *Runtime, env: *Env, head: []const u8) ?*const TypeDescriptor {
+    _ = env;
+    if (rt.types.get(head)) |td| return td;
+    var buf: [256]u8 = undefined;
+    const prefixed = std.fmt.bufPrint(&buf, "cljw.{s}", .{head}) catch return null;
+    if (rt.types.get(prefixed)) |td| return td;
+    return null;
+}
 
 pub fn analyzeDeftype(arena: std.mem.Allocator, items: []const Form, form: Form) AnalyzeError!*const Node {
     if (items.len < 3) {
@@ -65,6 +88,11 @@ pub fn analyzeDeftype(arena: std.mem.Allocator, items: []const Form, form: Form)
     return n;
 }
 
+/// `(Name. args...)` constructor analyzer arm. Per ADR-0050, builds an
+/// `InteropCallNode { .kind = .constructor }`. The type name is kept as
+/// a string for eval-time `resolveJavaSurface` lookup — this allows
+/// `(deftype Foo ...)` forms to forward-declare types referenced by a
+/// later `(Foo. ...)` call within the same `do` block.
 pub fn analyzeCtorCall(
     arena: std.mem.Allocator,
     rt: *Runtime,
@@ -81,7 +109,8 @@ pub fn analyzeCtorCall(
         args[i] = sub.*;
     }
     const n = try arena.create(Node);
-    n.* = .{ .ctor_call_node = .{
+    n.* = .{ .interop_call_node = .{
+        .kind = .constructor,
         .type_name = type_name,
         .args = args,
         .loc = form.location,
@@ -89,6 +118,8 @@ pub fn analyzeCtorCall(
     return n;
 }
 
+/// `(.field obj)` instance-field analyzer arm. Per ADR-0050, builds an
+/// `InteropCallNode { .kind = .instance_field }`.
 pub fn analyzeFieldAccess(
     arena: std.mem.Allocator,
     rt: *Runtime,
@@ -101,21 +132,23 @@ pub fn analyzeFieldAccess(
 ) AnalyzeError!*const Node {
     const target = try analyzer_mod.analyze(arena, rt, env, scope, target_form, macro_table);
     const n = try arena.create(Node);
-    n.* = .{ .field_access_node = .{
-        .field_name = field_name,
+    n.* = .{ .interop_call_node = .{
+        .kind = .instance_field,
         .target = target,
+        .name = field_name,
         .loc = form.location,
     } };
     return n;
 }
 
 /// Row 7.6 cycle 1: `(.method instance args...)` — general-arity
-/// protocol method dispatch. Mirrors `analyzeCtorCall`'s arg
-/// recursive analysis. Eval routes through the row 7.3 `dispatch`
-/// ABI; `TypeDescriptor.lookupMethod(null, method_name)` matches
-/// the first method whose name aligns across the receiver's
-/// method_table chain (Path A2 — protocol-agnostic lookup since
-/// the `.method` form does not name a protocol).
+/// protocol method dispatch, now consolidated as an
+/// `InteropCallNode { .kind = .instance_method }` per ADR-0050. Eval
+/// routes through the row 7.3 `dispatch` ABI;
+/// `TypeDescriptor.lookupMethod(null, method_name)` matches the first
+/// method whose name aligns across the receiver's method_table chain
+/// (Path A2 — protocol-agnostic lookup since the `.method` form does
+/// not name a protocol).
 pub fn analyzeMethodCall(
     arena: std.mem.Allocator,
     rt: *Runtime,
@@ -134,9 +167,43 @@ pub fn analyzeMethodCall(
         args[i] = sub.*;
     }
     const n = try arena.create(Node);
-    n.* = .{ .method_call_node = .{
-        .method_name = method_name,
+    n.* = .{ .interop_call_node = .{
+        .kind = .instance_method,
         .target = target,
+        .name = method_name,
+        .args = args,
+        .loc = form.location,
+    } };
+    return n;
+}
+
+/// `(Class/method args...)` static-method analyzer arm (D-121 + ADR-0050).
+/// The class is resolved at analyze time via `resolveJavaSurface`; the
+/// descriptor pointer is process-lifetime (heap-copied by
+/// `_host_api.installAll`), so the dispatch is one indirection + one
+/// linear method_table scan at eval. Args are analysed recursively (no
+/// receiver — static dispatch has no `this`).
+pub fn analyzeStaticMethodCall(
+    arena: std.mem.Allocator,
+    rt: *Runtime,
+    env: *Env,
+    scope: ?*const Scope,
+    descriptor: *const TypeDescriptor,
+    method_name: []const u8,
+    arg_forms: []const Form,
+    form: Form,
+    macro_table: *const macro_dispatch.Table,
+) AnalyzeError!*const Node {
+    const args = try arena.alloc(Node, arg_forms.len);
+    for (arg_forms, 0..) |af, i| {
+        const sub = try analyzer_mod.analyze(arena, rt, env, scope, af, macro_table);
+        args[i] = sub.*;
+    }
+    const n = try arena.create(Node);
+    n.* = .{ .interop_call_node = .{
+        .kind = .static_method,
+        .descriptor = descriptor,
+        .name = method_name,
         .args = args,
         .loc = form.location,
     } };

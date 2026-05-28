@@ -491,33 +491,35 @@ entries:
       test/e2e/phase14_catch_keyword.sh is acceptable during the
       deferral; differential test cases land with the VM lowering.
 
-  - name: runtime/vm/dispatch_family
+  - name: runtime/vm/interop_call_static_method
     kind: runtime_layer
     defined_in: src/eval/backend/vm/compiler.zig
     status: provisional
     requires_features: []
     requires_debts:
-      - D-073
+      - D-130
     provisional_markers:
-      - src/eval/backend/vm/compiler.zig (compileNode deftype_node arm — VM-DEFER pending row 7.6)
-      - src/eval/backend/vm/compiler.zig (compileNode ctor_call_node arm — VM-DEFER pending row 7.6)
-      - src/eval/backend/vm/compiler.zig (compileNode field_access_node arm — VM-DEFER pending row 7.6)
+      - src/eval/backend/vm/compiler.zig (compileInteropCall .static_method arm — VM-DEFER pending op_interop_call vs op_static_method_call decision)
     notes: |
-      VM compiler arms for the deftype-family Nodes (`deftype_node`
-      / `ctor_call_node` / `field_access_node`) ship as
-      `return error.NotImplemented` with VM-DEFER markers per
-      ADR-0036. Tree_walk handles these Nodes today; VM mode raises
-      `error.NotImplemented` (transient stub, not silent fake).
-      The bytecode shape for the entire dispatch family (deftype +
-      ctor + field-access + future method-call) is owned by
-      ROADMAP §9.9 row 7.6 (MethodCallNode landing). Row 7.6 will
-      decide the operand encoding (e.g., `op_ctor_call <type_idx>
-      <arg_count>` + `op_field_access <field_idx>` vs a generic
-      `op_invoke_protocol_method` sequence over the Phase 7.1
-      `CallSite` cache) and discharge all 3 markers in the same
-      commit. Landing throwaway VM lowering now would be the
-      Smallest-diff bias smell since the chosen shape is not yet
-      finished-form.
+      ADR-0050 unified Node variant `InteropCallNode` collapses the
+      previous `ctor_call_node` / `field_access_node` / `method_call_node`
+      family. Three kinds (.constructor / .instance_field /
+      .instance_method) re-use the existing op_ctor_call /
+      op_field_access / op_method_call opcodes from ADR-0040 row 7.10
+      and ship green on both backends. The fourth kind
+      (.static_method) is D-121's new dispatch shape; its bytecode
+      form lands at D-130 (whether to extend to a unified
+      `op_interop_call <call_site_idx>` with a kind tag in the
+      side-table, or add a sibling `op_static_method_call` opcode).
+      Until D-130 lands, the VM arm rides
+      `// VM-DEFER:` per ADR-0036 / `dual_backend_parity.md`.
+      Smallest-diff bias smell prevention: do NOT pick the bytecode
+      shape opportunistically — the unified-vs-sibling decision is
+      load-bearing for the Phase 7+ CallSite cache extension.
+      Historical context: this entry replaces the prior stale
+      `runtime/vm/dispatch_family` entry whose markers covered the
+      3 now-landed Nodes — those VM arms shipped real lowering at
+      row 7.10 (commit history under `op_method_call` / `op_ctor_call`).
 
   - name: runtime/vm/ns_filter
     kind: runtime_layer

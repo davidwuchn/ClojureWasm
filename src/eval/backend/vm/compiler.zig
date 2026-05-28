@@ -123,9 +123,7 @@ const Compiler = struct {
             .loop_node => |n| try self.compileLoop(n),
             .recur_node => |n| try self.compileRecur(n),
             .deftype_node => |n| try self.compileDeftype(n),
-            .ctor_call_node => |n| try self.compileCtorCall(n),
-            .field_access_node => |n| try self.compileFieldAccess(n),
-            .method_call_node => |n| try self.compileMethodCall(n),
+            .interop_call_node => |n| try self.compileInteropCall(n),
             .in_ns_node => |n| try self.compileInNs(n),
             .require_node => |n| try self.compileRequire(n),
             .ns_node => |n| try self.compileNs(n),
@@ -398,44 +396,51 @@ const Compiler = struct {
         try self.emit(.op_deftype, 0);
     }
 
-    /// `(Name. args...)` — evaluate each arg, emit op_ctor_call with
-    /// the type-name constant index packed with arity. Operand layout
-    /// matches the row 7.6 cycle 4 ABI: `(name_idx << 8) | arg_count`.
-    fn compileCtorCall(self: *Compiler, n: node_mod.CtorCallNode) Error!void {
-        for (n.args) |*a| try self.compileNode(a);
-        const name_val = try string_mod.alloc(self.rt, n.type_name);
-        const name_idx = try self.addConstant(name_val);
-        if (n.args.len > 0xFF) return Error.TooManyCallArgs;
-        const operand: u16 = (@as(u16, name_idx) << 8) | @as(u16, @intCast(n.args.len));
-        try self.emit(.op_ctor_call, operand);
-    }
-
-    /// `(.field instance)` — compile the target onto the stack, then
-    /// emit op_field_access with the field-name constant index.
-    fn compileFieldAccess(self: *Compiler, n: node_mod.FieldAccessNode) Error!void {
-        try self.compileNode(n.target);
-        const name_val = try string_mod.alloc(self.rt, n.field_name);
-        const name_idx = try self.addConstant(name_val);
-        try self.emit(.op_field_access, name_idx);
-    }
-
-    /// `(.method instance args...)` — compile receiver + each arg onto
-    /// the stack, allocate a CallSiteEntry in the side-table, emit
-    /// op_method_call with the call-site index. Total `arg_count` (in
-    /// the CallSiteEntry) covers receiver + args so dispatch can pop
-    /// the right number of values.
-    fn compileMethodCall(self: *Compiler, n: node_mod.MethodCallNode) Error!void {
-        try self.compileNode(n.target);
-        for (n.args) |*a| try self.compileNode(a);
-        if (self.call_sites.items.len > std.math.maxInt(u16)) return Error.TooManyConstants;
-        const cs_idx: u16 = @intCast(self.call_sites.items.len);
-        const method_name_dup = try self.arena.dupe(u8, n.method_name);
-        const total_args: u16 = @intCast(1 + n.args.len);
-        try self.call_sites.append(self.arena, .{
-            .method_name = method_name_dup,
-            .arg_count = total_args,
-        });
-        try self.emit(.op_method_call, cs_idx);
+    /// ADR-0050 unified InteropCallNode VM compile arm. Dispatches on
+    /// `n.kind`; three kinds (.constructor / .instance_field /
+    /// .instance_method) re-use the pre-existing op_ctor_call /
+    /// op_field_access / op_method_call opcodes per ADR-0040 row 7.10
+    /// (their VM lowering already landed and ships green). The fourth
+    /// kind (.static_method) is D-121's new dispatch shape; its
+    /// bytecode form (single op_interop_call with kind operand, or a
+    /// sibling op_static_method_call) lands at D-130 (row 7.6.b
+    /// successor). Until then static_method rides VM-DEFER.
+    fn compileInteropCall(self: *Compiler, n: node_mod.InteropCallNode) Error!void {
+        switch (n.kind) {
+            .constructor => {
+                for (n.args) |*a| try self.compileNode(a);
+                const name_val = try string_mod.alloc(self.rt, n.type_name);
+                const name_idx = try self.addConstant(name_val);
+                if (n.args.len > 0xFF) return Error.TooManyCallArgs;
+                const operand: u16 = (@as(u16, name_idx) << 8) | @as(u16, @intCast(n.args.len));
+                try self.emit(.op_ctor_call, operand);
+            },
+            .instance_field => {
+                const target = n.target orelse @panic("compileInteropCall: target null for non-static kind (analyzer bug)");
+                try self.compileNode(target);
+                const name_val = try string_mod.alloc(self.rt, n.name);
+                const name_idx = try self.addConstant(name_val);
+                try self.emit(.op_field_access, name_idx);
+            },
+            .instance_method => {
+                const target = n.target orelse @panic("compileInteropCall: target null for non-static kind (analyzer bug)");
+                try self.compileNode(target);
+                for (n.args) |*a| try self.compileNode(a);
+                if (self.call_sites.items.len > std.math.maxInt(u16)) return Error.TooManyConstants;
+                const cs_idx: u16 = @intCast(self.call_sites.items.len);
+                const method_name_dup = try self.arena.dupe(u8, n.name);
+                const total_args: u16 = @intCast(1 + n.args.len);
+                try self.call_sites.append(self.arena, .{
+                    .method_name = method_name_dup,
+                    .arg_count = total_args,
+                });
+                try self.emit(.op_method_call, cs_idx);
+            },
+            .static_method => {
+                // VM-DEFER: static method dispatch bytecode shape pending D-130 op_interop_call vs op_static_method_call decision [refs: D-130, feature_deps.yaml#runtime/vm/interop_call_static_method]
+                return error.NotImplemented;
+            },
+        }
     }
 
     fn compileInNs(self: *Compiler, n: node_mod.InNsNode) Error!void {

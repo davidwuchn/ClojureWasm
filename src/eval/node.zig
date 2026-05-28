@@ -52,6 +52,7 @@ const std = @import("std");
 const Value = @import("../runtime/value/value.zig").Value;
 const SourceLocation = @import("../runtime/error/info.zig").SourceLocation;
 const Var = @import("../runtime/env.zig").Var;
+const TypeDescriptor = @import("../runtime/type_descriptor.zig").TypeDescriptor;
 
 /// Analysed AST. `union(enum)` lets the backend `switch` exhaustively.
 pub const Node = union(enum) {
@@ -70,9 +71,7 @@ pub const Node = union(enum) {
     try_node: TryNode,
     throw_node: ThrowNode,
     deftype_node: DeftypeNode,
-    ctor_call_node: CtorCallNode,
-    field_access_node: FieldAccessNode,
-    method_call_node: MethodCallNode,
+    interop_call_node: InteropCallNode,
     in_ns_node: InNsNode,
     require_node: RequireNode,
     ns_node: NsNode,
@@ -300,40 +299,52 @@ pub const DeftypeNode = struct {
     loc: SourceLocation = .{},
 };
 
-/// `(Name. arg ...)` — constructor call. The analyzer recognises the
-/// trailing-dot symbol shape and emits this node. Eval looks up
-/// `type_name` in `rt.types` and calls `type_descriptor.allocInstance`.
-pub const CtorCallNode = struct {
-    /// Fully-qualified name without the trailing dot.
-    type_name: []const u8,
-    args: []const Node,
-    loc: SourceLocation = .{},
-};
+/// `(Class/method args...)` / `(.method recv args...)` / `(.field obj)` /
+/// `(Name. args...)` — unified Java/host interop dispatch (ADR-0050).
+/// Replaces the previously-separate `CtorCallNode` / `FieldAccessNode` /
+/// `MethodCallNode`. One Node carries every kind of interop call; the
+/// kind tag picks the args layout at eval/compile time.
+///
+/// Field usage per kind:
+///   - `.static_method`   : `descriptor` non-null (analyze-time resolved);
+///                          `name` = method; `args` = user args (no
+///                          receiver); `target` / `type_name` unused.
+///   - `.instance_method` : `target` non-null (eval-time receiver);
+///                          `name` = method; `args` = remaining args;
+///                          `descriptor` / `type_name` unused.
+///   - `.instance_field`  : `target` non-null; `name` = field;
+///                          `args` empty; `descriptor` / `type_name`
+///                          unused.
+///   - `.constructor`     : `type_name` non-null (eval-time lookup via
+///                          `resolveJavaSurface`, allows forward refs to
+///                          deftypes not yet registered at analyze time);
+///                          `args` = ctor args; `name` / `target` /
+///                          `descriptor` unused.
+///
+/// VM lowering: 3 kinds (.instance_method / .instance_field /
+/// .constructor) compile via the pre-existing `op_method_call` /
+/// `op_field_access` / `op_ctor_call` opcodes per row 7.10 ADR-0040.
+/// `.static_method` rides VM-DEFER pending the row 7.6.b decision on
+/// whether to unify into one `op_interop_call` or add a sibling
+/// `op_static_method_call` (D-130).
+pub const InteropCallNode = struct {
+    pub const Kind = enum { static_method, instance_method, instance_field, constructor };
 
-/// `(.field instance)` — instance field read. The analyzer recognises
-/// the leading-dot symbol shape and emits this node. Eval looks up
-/// the field name in the instance's TypeDescriptor.field_layout and
-/// returns `field_values[index]`.
-pub const FieldAccessNode = struct {
-    /// Field name without the leading dot.
-    field_name: []const u8,
-    target: *const Node,
-    loc: SourceLocation = .{},
-};
-
-/// `(.method instance args...)` — general-arity protocol method
-/// dispatch. The analyzer routes leading-dot heads with arity > 2 to
-/// this Node (arity 2 stays a `field_access_node` per Phase 5.12.a
-/// finished-form decision recorded in row 7.6 survey §4 Option A).
-/// Eval resolves the method via the row 7.3 `dispatch` ABI;
-/// `TypeDescriptor.lookupMethod` Path A2 extension lets the
-/// `.method`-form's protocol-agnostic shape match the first method
-/// whose name aligns across the descriptor's `method_table`.
-pub const MethodCallNode = struct {
-    /// Method name without the leading dot.
-    method_name: []const u8,
-    target: *const Node,
-    args: []const Node,
+    kind: Kind,
+    /// `.static_method`: analyze-time resolved descriptor pointer.
+    /// Other kinds: null.
+    descriptor: ?*const TypeDescriptor = null,
+    /// `.instance_method` / `.instance_field`: receiver expression.
+    /// Other kinds: null.
+    target: ?*const Node = null,
+    /// `.constructor`: type name string for eval-time `resolveJavaSurface`
+    /// lookup. Other kinds: empty string.
+    type_name: []const u8 = "",
+    /// `.static_method` / `.instance_method` / `.instance_field`:
+    /// method or field name. `.constructor`: ignored.
+    name: []const u8 = "",
+    /// Argument expressions. Empty for `.instance_field`.
+    args: []const Node = &.{},
     loc: SourceLocation = .{},
 };
 

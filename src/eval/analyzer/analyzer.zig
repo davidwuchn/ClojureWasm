@@ -491,6 +491,24 @@ fn analyzeList(
                 return error_catalog.raise(.feature_not_supported, form.location, .{ .name = head.name });
             }
         }
+        // D-121 + ADR-0050: qualified head `(Class/method args...)` —
+        // resolve the namespace head against `rt.types` (with cljw-prefix
+        // translation per ADR-0029 D5) and, if a method of the given
+        // name exists in the descriptor's method_table, build an
+        // InteropCallNode { .kind = .static_method }. If the class
+        // resolves but the method is absent, fall through to analyzeCall
+        // which will produce a `symbol_unresolved` error citing the
+        // full Class/method symbol — better than masking it with a
+        // class-resolves-but-method-missing intermediate diagnostic.
+        if (head.ns) |ns_head| {
+            if (special_forms.resolveJavaSurface(rt, env, ns_head)) |td| {
+                if (td.lookupMethod(null, head.name) != null) {
+                    return try special_forms.analyzeStaticMethodCall(
+                        arena, rt, env, scope, td, head.name, items[1..], form, macro_table,
+                    );
+                }
+            }
+        }
         // Macro path: only consult the table when we can actually
         // resolve `head` to a Var in the current ns. A failed lookup
         // here is **not** a name error — analyzeCall will produce
@@ -1236,25 +1254,27 @@ test "deftype is now a real special form (5.12.a) — analyses without unsupport
     try testing.expectEqual(@as(usize, 2), n.deftype_node.fields.len);
 }
 
-test "ctor call (Foo. ...) analyses into ctor_call_node" {
+test "ctor call (Foo. ...) analyses into interop_call_node .constructor" {
     var fix: TestFixture = undefined;
     try fix.init(testing.allocator);
     defer fix.deinit();
     const n = try fix.analyzeStr("(Foo. 1 2)");
-    try testing.expect(n.* == .ctor_call_node);
-    try testing.expectEqualStrings("Foo", n.ctor_call_node.type_name);
-    try testing.expectEqual(@as(usize, 2), n.ctor_call_node.args.len);
+    try testing.expect(n.* == .interop_call_node);
+    try testing.expect(n.interop_call_node.kind == .constructor);
+    try testing.expectEqualStrings("Foo", n.interop_call_node.type_name);
+    try testing.expectEqual(@as(usize, 2), n.interop_call_node.args.len);
 }
 
-test "field access (.x inst) analyses into field_access_node" {
+test "field access (.x inst) analyses into interop_call_node .instance_field" {
     var fix: TestFixture = undefined;
     try fix.init(testing.allocator);
     defer fix.deinit();
     // The target needs to be analyzable. Use a constant integer here
     // because field-access type-checking happens at eval, not analyse.
     const n = try fix.analyzeStr("(.x 1)");
-    try testing.expect(n.* == .field_access_node);
-    try testing.expectEqualStrings("x", n.field_access_node.field_name);
+    try testing.expect(n.* == .interop_call_node);
+    try testing.expect(n.interop_call_node.kind == .instance_field);
+    try testing.expectEqualStrings("x", n.interop_call_node.name);
 }
 
 test "definterface still raises unsupported_feature" {

@@ -97,7 +97,7 @@ test "diff: nested if branches" {
 // ADR-0036 T1 retrofit: 11 cases covering the previously-untested
 // non-deferred Node variants enumerated in
 // private/notes/phase7-T1-survey.md §2.3. The 5 VM-DEFER sites
-// (deftype_node / ctor_call_node / field_access_node /
+// (deftype_node / interop_call_node — formerly ctor_call_node / field_access_node /
 // require libspec / ns refer-clojure filter) do not yet land diff
 // cases — those join when the markers discharge.
 
@@ -275,14 +275,14 @@ test "diff: ns refer-clojure widening (post-T3 path)" {
 // ADR-0040 row 7.6 cycle 4: discharge the deftype-family +
 // method-dispatch cluster. 4 diff cases (one per new opcode).
 
-test "diff: deftype_node + ctor_call_node + field_access_node" {
+test "diff: deftype_node + interop_call_node .constructor + .instance_field" {
     var f = try Fixture.init(testing.allocator);
     defer f.deinit();
     // Combined exercise of op_deftype + op_ctor_call + op_field_access.
     try f.check("(do (deftype DiffPoint [x y]) (.x (DiffPoint. 7 9)))", 7);
 }
 
-test "diff: ctor_call_node second field" {
+test "diff: interop_call_node .constructor second field" {
     var f = try Fixture.init(testing.allocator);
     defer f.deinit();
     try f.check("(do (deftype DiffPair [a b]) (.b (DiffPair. 1 33)))", 33);
