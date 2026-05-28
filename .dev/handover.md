@@ -72,8 +72,7 @@ D-100 cluster remaining work:
   (a). ~300 LOC.
 - (e) `cljw-formats/0.1.0.edn` archive v0.1.0 lock — opcode
   table snapshot for cross-version cljw render-error decoding.
-  Depends on (a) opcode set being settled. ~80 LOC + the
-  archive doc itself.
+  Depends on (a) opcode set being settled. ~80 LOC + archive doc.
 
 After D-100 closes, row 14.12 (`cljw component build`, zwasm v2
 gated) + row 14.13 polish bundle remainder + row 14.14 release
@@ -84,18 +83,8 @@ tag complete Phase 14.
 User instruction (2026-05-28, paraphrased): "render-error を
 commit + push してから停止 (autonomous loop 再開は次 session)".
 Resume at §9.16 row 14.11 D-100(a) when `/continue` next fires.
-The OrbStack → ubuntunote migration (ADR-0049) landed in the
-same final commit cycle as a user-directed sideline; per-commit
-gate is now Mac-only with manual `bash scripts/run_remote_ubuntu.sh`
-at boundaries.
 
 ## Guardrail refresh history
 
 This session (2026-05-28): rows 14.5-14.10 closed + row 14.11
 (c)+(d) closed + row 14.13 D-066 Discharged; ADR-0048 issued
-+ REPL/nREPL charts filled; ADR-0015 a3 narrowed F142;
-**ADR-0049 OrbStack retire + ubuntunote migration verified**;
-D-111..D-120 minted (10 follow-up rows incl. CI Linux gate
-D-120, REPL line editor D-116, nREPL polish D-117, *out*/
-*err* capture D-118, mdoc man page D-119); D-014b/D-098/
-D-099/D-066 Discharged.
