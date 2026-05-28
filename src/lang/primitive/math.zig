@@ -23,6 +23,7 @@ const SourceLocation = error_mod.SourceLocation;
 const dispatch = @import("../../runtime/dispatch.zig");
 const promote = @import("../../runtime/numeric/promote.zig");
 const equal = @import("../../runtime/equal.zig");
+const compare_mod = @import("../../runtime/compare.zig");
 
 // --- numeric helpers ---
 
@@ -272,22 +273,18 @@ pub fn ge(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) any
     return pairwise(">=", args, loc, pGE);
 }
 
-/// `(compare x y)` — returns -1 / 0 / 1. Phase-2 covers numerics only.
+/// `(compare x y)` — general 3-way comparison returning -1 / 0 / 1
+/// (= `clojure.lang.Util.compare`). See `runtime/compare.zig` + ADR-0053.
 pub fn compare(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
-    _ = rt;
     _ = env;
     if (args.len != 2)
         return error_catalog.raise(.arity_not_expected, loc, .{ .fn_name = "compare", .got = args.len, .expected = @as(usize, 2) });
-    try ensureNumeric(args, "compare", loc);
-    if (anyFloat(args)) {
-        const a = toF64(args[0]);
-        const b = toF64(args[1]);
-        const c: i64 = if (a < b) -1 else if (a > b) 1 else 0;
-        return Value.initInteger(c);
-    }
-    const a = toI64(args[0]);
-    const b = toI64(args[1]);
-    const c: i64 = if (a < b) -1 else if (a > b) 1 else 0;
+    const order = try compare_mod.valueCompare(rt, args[0], args[1], loc);
+    const c: i64 = switch (order) {
+        .lt => -1,
+        .eq => 0,
+        .gt => 1,
+    };
     return Value.initInteger(c);
 }
 
