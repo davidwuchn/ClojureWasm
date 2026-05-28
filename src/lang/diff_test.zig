@@ -503,3 +503,25 @@ test "diff: ref holds heap value, deref then count" {
     defer f.deinit();
     try f.check("(count (deref (ref [1 2 3])))", 3);
 }
+
+// Phase 13 row 13.3 (ADR-0047): VM peephole optimizer. Both backends
+// must agree on (do ...) forms whose non-final pure-push forms get
+// elided by peephole (`op_const|op_load_local + op_pop` pair), and on
+// branch-bearing forms where the elision happens between a jump and
+// its target (peephole IP-remap must re-resolve the offset).
+
+test "diff: peephole — do with pure-push non-final form" {
+    var f = try Fixture.init(testing.allocator);
+    defer f.deinit();
+    // (do 1 2 3) compiles to `op_const 1; op_pop; op_const 2; op_pop;
+    // op_const 3; op_ret`. Peephole removes both push-pop pairs.
+    try f.check("(do 1 2 3)", 3);
+}
+
+test "diff: peephole — if with pure-push elision inside both branches" {
+    var f = try Fixture.init(testing.allocator);
+    defer f.deinit();
+    // Both branches contain a (do …) whose non-final pure push is
+    // elided; the if's op_jump must be re-resolved after compaction.
+    try f.check("(if true (do 9 7) (do 8 6))", 7);
+}

@@ -158,6 +158,48 @@ pub const Opcode = enum(u8) {
     /// for native field types (no empty-string sentinel for absent
     /// alias) + F-008 zwasm-component-import shape alignment.
     op_require_with_libspec = 0x1C,
+
+    /// True when this opcode pushes exactly one value with no side
+    /// effect and no other stack effect — so a pure push immediately
+    /// followed by `op_pop` is a removable no-op (peephole, ADR-0047).
+    /// Exhaustive by design: adding a new opcode forces a purity
+    /// decision here at compile time. Mis-classifying a side-effecting
+    /// op as pure would let peephole silently drop the effect and
+    /// break the ADR-0005 differential oracle, so the safe default for
+    /// any new op is `false` (loses optimization, never correctness).
+    pub fn isPurePush(self: Opcode) bool {
+        return switch (self) {
+            .op_const, .op_load_local => true,
+            .op_store_local,
+            .op_def,
+            .op_get_var,
+            .op_jump,
+            .op_jump_if_false,
+            .op_call,
+            .op_ret,
+            .op_pop,
+            .op_dup,
+            .op_throw,
+            .op_make_fn,
+            .op_recur,
+            .op_invoke_builtin,
+            .op_push_handler,
+            .op_pop_handler,
+            .op_match_class,
+            .op_in_ns,
+            .op_vector_literal,
+            .op_map_literal,
+            .op_set_literal,
+            .op_require,
+            .op_ns_with_refer_clojure,
+            .op_deftype,
+            .op_ctor_call,
+            .op_field_access,
+            .op_method_call,
+            .op_require_with_libspec,
+            => false,
+        };
+    }
 };
 
 /// `op_def` operand layout — see the Opcode docstring.

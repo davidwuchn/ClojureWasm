@@ -16,6 +16,7 @@
 const std = @import("std");
 const node_mod = @import("../../node.zig");
 const opcode_mod = @import("opcode.zig");
+const peephole = @import("peephole.zig");
 const value_mod = @import("../../../runtime/value/value.zig");
 const env_mod = @import("../../../runtime/env.zig");
 const runtime_mod = @import("../../../runtime/runtime.zig");
@@ -540,10 +541,16 @@ const Compiler = struct {
     }
 
     fn finalize(self: *Compiler) Error!BytecodeChunk {
-        const instrs = try self.arena.dupe(Instruction, self.instructions.items);
+        const raw = try self.arena.dupe(Instruction, self.instructions.items);
         const consts = try self.arena.dupe(Value, self.constants.items);
         const sites = try self.arena.dupe(CallSiteEntry, self.call_sites.items);
         const specs = try self.arena.dupe(LibspecEntry, self.libspecs.items);
+        // ADR-0047 row 13.3: peephole runs inside finalize so every
+        // chunk — top-level + every fn sub-chunk built via
+        // compileFnMethodBody → sub.finalize() — is optimized through
+        // the same path, and the Phase-12 serializer caches the
+        // optimized chunk transparently.
+        const instrs = try peephole.optimize(self.arena, raw);
         return .{ .instructions = instrs, .constants = consts, .call_sites = sites, .libspecs = specs };
     }
 };
@@ -989,11 +996,17 @@ test "compile try with finally duplicates the finally body on each exit path" {
     const chunk = try f.compile(&node);
 
     var pop_count: usize = 0;
-    for (chunk.instructions) |ins| {
-        if (ins.opcode == .op_pop) pop_count += 1;
+    for (chunk.instructions) |inst| {
+        if (inst.opcode == .op_pop) pop_count += 1;
     }
-    // Two finally copies → two op_pop pairs (one per finally exit).
-    try testing.expectEqual(@as(usize, 2), pop_count);
+    // Pre-ADR-0047 this asserted two op_pops, one per finally exit
+    // (success + re-raise). Post-peephole, the success-path finally is
+    // `op_const nil; op_pop` — a pure-push + discard — which peephole
+    // elides as semantically dead (a constant with no side effect
+    // dropped is correct). The re-raise-path finally is preserved
+    // because the handler-target lands on its op_const, so the removal
+    // guard blocks elision there. Net surviving op_pop count: 1.
+    try testing.expectEqual(@as(usize, 1), pop_count);
 }
 
 test "compile throw emits value-expr then op_throw" {
@@ -1025,13 +1038,16 @@ test "compile do pops intermediate forms and keeps the last" {
     const node: Node = .{ .do_node = .{ .forms = &forms } };
     const chunk = try f.compile(&node);
 
-    // Expected: op_const 0; op_pop; op_const 1; op_pop; op_const 2; op_ret
-    try testing.expectEqual(@as(usize, 6), chunk.instructions.len);
+    // Pre-ADR-0047 raw shape: `op_const 0; op_pop; op_const 1;
+    // op_pop; op_const 2; op_ret` (6 instructions). compileDo still
+    // emits a pop after each non-final form — but peephole then elides
+    // every `op_const X; op_pop` pair as a pure-push + discard. The
+    // final-form const + op_ret survive. Constants pool is untouched
+    // (peephole only rewrites instructions; orphan-constant pruning is
+    // a future pass) so all 3 constants stay.
+    try testing.expectEqual(@as(usize, 2), chunk.instructions.len);
     try testing.expectEqual(Opcode.op_const, chunk.instructions[0].opcode);
-    try testing.expectEqual(Opcode.op_pop, chunk.instructions[1].opcode);
-    try testing.expectEqual(Opcode.op_const, chunk.instructions[2].opcode);
-    try testing.expectEqual(Opcode.op_pop, chunk.instructions[3].opcode);
-    try testing.expectEqual(Opcode.op_const, chunk.instructions[4].opcode);
-    try testing.expectEqual(Opcode.op_ret, chunk.instructions[5].opcode);
+    try testing.expectEqual(@as(u16, 2), chunk.instructions[0].operand);
+    try testing.expectEqual(Opcode.op_ret, chunk.instructions[1].opcode);
     try testing.expectEqual(@as(usize, 3), chunk.constants.len);
 }
