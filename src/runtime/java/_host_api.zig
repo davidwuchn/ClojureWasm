@@ -57,7 +57,10 @@ const java_surfaces = [_]type{
     @import("lang/System.zig"),
     // Phase 14 row 14.2 (D-097) second wave begins ↓
     @import("math/BigDecimal.zig"),
-    // ↑ second wave (math)
+    // Phase 14 row 14.3 (D-097) third wave — backing impls under
+    // runtime/net/ + runtime/crypto/ deferred to D-106.
+    @import("net/Socket.zig"),
+    @import("security/MessageDigest.zig"),
     @import("time/Instant.zig"),
     // Phase 14 row 14.2 (D-097) second wave (time) — backing impls
     // for LocalDateTime / Duration / ZonedDateTime are deferred to
