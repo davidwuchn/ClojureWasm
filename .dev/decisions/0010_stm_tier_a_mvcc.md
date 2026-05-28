@@ -127,6 +127,100 @@ The rewrite is expected per ROADMAP §A25; principle.md depth 2 for
 each Phase that only deletes a Code arm; depth 3 when also
 rewriting `Ref` storage / `Transaction` retry control flow.
 
+## Phase 13 representation — single-cell, lock-free (amendment 3)
+
+Phase 13 entry (2026-05-28) lands the `Ref` data structure as a
+**single `current: Value` heap cell**, not the TVal history ring:
+
+```zig
+pub const Ref = extern struct {
+    header: HeapHeader,   // offset 0 — GC contract
+    _pad: [6]u8 = .{0,0,0,0,0,0},
+    current: Value,       // newest committed value (= JVM tvals.val)
+};
+```
+
+`(ref init)` seeds `current = init`; `deref` / `@r` **outside a
+transaction** returns `current` (JVM `Ref.deref` collapses to
+`currentVal()` reading the newest TVal when no transaction runs).
+`dosync` / `alter` / `commute` / `ensure` / `ref-set` keep raising
+their staged Codes (no Code removed at Phase 13, per amendment 2).
+File: `src/runtime/stm/ref.zig`; wiring modelled on
+`runtime/collection/reduced.zig` (single-Value cell + one-pointer
+GC trace).
+
+Three divergences from this ADR's §Decision sketch, each recorded
+here so the drift is not silent:
+
+1. **No lock in Phase 13.** The §Decision sketch writes
+   `lock: std.Thread.Mutex`; that type was **removed in Zig 0.16**
+   and is forbidden by ROADMAP §13. The Phase-13 read path is
+   single-threaded (no commit can race a read before Phase 15),
+   so it needs no lock — the D-046 lazy_seq "single-thread no-lock
+   until Phase 15" precedent governs. Omitting the lock also keeps
+   `Ref` a pure `extern struct` and avoids cw v0's forced
+   `RefObj`/`RefInner` two-allocation split (v0 split *only*
+   because a mutex cannot live in an `extern struct`). The lock
+   returns at Phase 15.1 (commit + retry) as `std.Io.Mutex` /
+   `std.atomic.Mutex`, decided by that owner.
+2. **No `TVal` type in Phase 13.** The §Phases line reads "`Ref`
+   and `TVal` data structures", but that pairing is prose in a
+   memo, not a contract (F-002 §4); the read-only path provably
+   needs only the newest value, which the scalar `current` holds.
+   Materialising an inert `TVal` node now (with `point=0` /
+   `prior=null` doing nothing until commits exist) is a larger
+   skeleton than the bounded field-swap it would save — it fails
+   F-002 §3's shrink-not-enlarge test. Phase 14 introduces `TVal`
+   { val / point / msecs / prior } + the history ring; `current`
+   becomes the ring head then (a bounded, documented field-swap,
+   tracked by **D-102**).
+3. **No `min_history` / `max_history` / `watches` fields.** Unused
+   until Phase 14 (ring growth) / Phase 15 (watches share atom
+   infra); declaring them now is Reservation-as-bias. Added by the
+   owner that first reads them.
+
+### Alternatives considered (Devil's-advocate fork, fresh context, 2026-05-28)
+
+F-NNN envelope check (leading entry): none of the three shapes
+violates F-002 / F-004 / F-006. The one textbook field that would —
+the embedded `std.Thread.Mutex` — is forbidden by ROADMAP §13 /
+zig_tips, a stale-memo problem, not an F-NNN conflict; no halt.
+
+- **Alt 1 — smallest-diff: `Ref { header, _pad, current: Value }`.**
+  Near-clone of `reduced.zig`; one inner Value, one-pointer trace.
+  Better: smallest surface, mechanically proven, zero reservation
+  bias, fastest to green. Breaks: Phase 14 *replaces* the scalar
+  `current` with a `?*TVal` ring head (field-type swap on a shipped
+  struct + `deref`-arm rewrite) — the "skeleton that gets rewritten,
+  not extended" shape F-002 §3 warns about, though bounded.
+- **Alt 2 — finished-form-clean: `Ref { header, tvals: ?*TVal }` +
+  `TVal { val, point, msecs, prior }`.** Ref holds a `?*TVal` head
+  seeded with a single self-terminating node; `deref` = `tvals.?.val`.
+  Better: Phase 14 *extends* (splice a TVal onto `prior`) rather than
+  replaces; mirrors JVM `Ref.deref → currentVal → tvals.val` 1:1; no
+  struct-layout churn. Breaks: **two heap allocations + a second
+  registered trace fn / GcHooks** for a path that only reads one
+  value; `point` / `msecs` written but never read until Phase 14; the
+  node is a Reservation-as-bias materialisation of ADR prose.
+- **Alt 3 — wildcard: Alt 1's single `current` cell, but in
+  `runtime/stm/ref.zig` with a module docstring stating the Phase-14
+  ring-rewrite contract + a `D-NNN` row owning the rewrite.** Better:
+  keeps Alt 1's minimal footprint *and* removes its only real risk (a
+  silent scaffold that loses its homing path); the Phase-14 owner
+  inherits an explicit tracked contract instead of a surprise
+  field-swap; honours F-003 (imagine-record-**defer**). Breaks: still
+  a field-type swap in Phase 14 (docstring makes it expected, not
+  eliminated); adds a debt row + docstring upkeep.
+- Findings: **(a)** lock does not belong in Phase 13 (Zig 0.16 removal
+  + single-thread + avoids v0's split); **(b)** `min/max_history` /
+  `watches` should NOT be declared now (Reservation-as-bias); **(c)**
+  a `TVal` *ring* is premature, a single node defensible, but
+  materialising it because the ADR pairs the two nouns is the trap
+  F-002 §4 names.
+- DA recommendation (non-binding): **Alt 3** — "the finished form is
+  cleaner *reached from* a deferred-and-documented scalar than
+  *anticipated by* a half-built ring." Main loop adopted Alt 3.
+
 ## References
 
 - ROADMAP §9.6 task 4.7 (try/throw/loop/recur — STM error message
@@ -147,3 +241,9 @@ rewriting `Ref` storage / `Transaction` retry control flow.
   section to narrate the staged catalog Code removal and test
   expectation rewrite across Phase 13 / 14 / 15.1-15.4 (per
   ROADMAP §A25 and ADR-0018 amendment 2 "Codes come and go").
+- 2026-05-28 (amendment 3): Phase 13 lands `Ref` as a single
+  lock-free `current: Value` heap cell (Devil's-advocate Alt 3);
+  `std.Thread.Mutex` sketch retired (Zig 0.16 removal), lock
+  deferred to Phase 15.1 as `std.Io.Mutex`; `TVal` ring +
+  `min/max_history` / `watches` deferred to Phase 14 (tracked by
+  D-102). File `src/runtime/stm/ref.zig`.
