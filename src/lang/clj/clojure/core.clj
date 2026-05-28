@@ -152,6 +152,40 @@
     (reduce (fn* [acc x] (reduce conj acc (f x))) [] coll)))
 
 ;; ----------------------------------------------------------------
+;; Phase 14 §9.16 row 14.13 — D-134 cluster 1. High-frequency eager
+;; collection helpers (Pattern A over reduce/conj/assoc/get/into/apply).
+;; ----------------------------------------------------------------
+
+;; `(update m k f & args)` — apply `f` (with trailing `args`) to the
+;; value at key `k`. The shallow sibling of `update-in`.
+(def update
+  (fn* [m k f & args]
+    (assoc m k (apply f (into [(get m k)] args)))))
+
+;; `(vec coll)` — eager coerce any collection to a vector.
+(def vec
+  (fn* [coll] (reduce conj [] coll)))
+
+;; `(mapv f coll)` — eager `map` returning a vector. Single-coll form.
+(def mapv
+  (fn* [f coll] (reduce (fn* [acc x] (conj acc (f x))) [] coll)))
+
+;; `(filterv pred coll)` — eager `filter` returning a vector.
+(def filterv
+  (fn* [pred coll]
+    (reduce (fn* [acc x] (if (pred x) (conj acc x) acc)) [] coll)))
+
+;; `(reverse coll)` — reverse order. conj onto an empty list prepends,
+;; so reducing left-to-right yields the reversed sequence (a list).
+;; `'()` (quoted) — a bare `()` is rejected as an empty-call expression.
+(def reverse
+  (fn* [coll] (reduce conj '() coll)))
+
+;; `(last coll)` — the final element, or nil for an empty collection.
+(def last
+  (fn* [coll] (reduce (fn* [_ x] x) nil coll)))
+
+;; ----------------------------------------------------------------
 ;; Phase 7 §9.9 row 7.7 — hybrid polymorphic primitives' protocol surface.
 ;;
 ;; The `count` / `seq` / `conj` / `reduce` primitives keep their
