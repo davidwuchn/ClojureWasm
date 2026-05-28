@@ -186,6 +186,38 @@
   (fn* [coll] (reduce (fn* [_ x] x) nil coll)))
 
 ;; ----------------------------------------------------------------
+;; D-134 cluster 2 — eager map/seq helpers (Pattern A).
+;; ----------------------------------------------------------------
+
+;; `(reduce-kv f init m)` — reduce over a map's entries, calling
+;; `(f acc k v)` for each key. Walks `(keys m)`.
+(def reduce-kv
+  (fn* [f init m]
+    (reduce (fn* [acc k] (f acc k (get m k))) init (keys m))))
+
+;; `(update-keys m f)` — new map with `(f k)` for each key, same vals.
+(def update-keys
+  (fn* [m f]
+    (reduce (fn* [acc k] (assoc acc (f k) (get m k))) {} (keys m))))
+
+;; `(update-vals m f)` — new map with `(f v)` for each val, same keys.
+(def update-vals
+  (fn* [m f]
+    (reduce (fn* [acc k] (assoc acc k (f (get m k)))) {} (keys m))))
+
+;; `(not-any? pred coll)` — true when `pred` is falsey for every item.
+(def not-any?
+  (fn* [pred coll] (not (some pred coll))))
+
+;; NOTE: `dedupe` / `distinct` / `frequencies` / `group-by` need a
+;; working universal `=` (cw v1 `=` is numeric-only — D-136); they land
+;; in the D-134 cluster that follows the `=` fix.
+
+;; `(butlast coll)` — all but the final element (eager list via reverse).
+(def butlast
+  (fn* [coll] (reverse (rest (reverse coll)))))
+
+;; ----------------------------------------------------------------
 ;; Phase 7 §9.9 row 7.7 — hybrid polymorphic primitives' protocol surface.
 ;;
 ;; The `count` / `seq` / `conj` / `reduce` primitives keep their
