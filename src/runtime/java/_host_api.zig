@@ -55,10 +55,22 @@ pub const Extension = struct {
 const java_surfaces = [_]type{
     @import("io/File.zig"),
     @import("lang/System.zig"),
+    // Phase 14 row 14.2 (D-097) second wave begins ↓
+    @import("math/BigDecimal.zig"),
+    // ↑ second wave (math)
     @import("time/Instant.zig"),
+    // Phase 14 row 14.2 (D-097) second wave (time) — backing impls
+    // for LocalDateTime / Duration / ZonedDateTime are deferred to
+    // D-105 (a focused runtime/time/ landing cycle).
+    @import("time/LocalDateTime.zig"),
+    @import("time/Duration.zig"),
+    @import("time/ZonedDateTime.zig"),
     @import("util/Date.zig"),
     @import("util/Random.zig"),
     @import("util/UUID.zig"),
+    // Phase 14 row 14.2 (D-097) second wave (regex) — backing impl
+    // shipped by Pattern's regex/match.zig.
+    @import("util/regex/Matcher.zig"),
     @import("util/regex/Pattern.zig"),
 };
 
