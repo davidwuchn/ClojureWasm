@@ -7,16 +7,17 @@
 
 - **HEAD**: ≈ `e2e99de8` (lazy-seq producer wired; see `git log` for
   exact HEAD — it advances each commit).
-- **First commit on resume MUST be**: **ADR-0054 cycle 2** — convert
-  `map` / `filter` / `keep` / `remove` to lazy `.clj` (delete the
-  `-*-eager` Zig leaves in `higher_order.zig` as their last caller
-  goes), thread `rt`/`env` into the `print.zig` print path so a lazy
-  seq renders (not `#<lazy_seq>`; bound infinite print via
-  `*print-length*`), and prove the laziness oracle
-  `(first (map inc (range))) => 1` (must not hang). `print.printValue`
-  has 11 callers (repl/nrepl/runner ×4/core writeArgsSpaced+str) +
-  internal recursion + a `Writer.Error`→`anyerror` widening — that
-  ripple IS the cycle-2 work (ADR-0054 D3, load-bearing).
+- **First commit on resume MUST be**: **ADR-0054 cycle 3** — convert
+  `concat` / `mapcat` / `drop` to lazy `.clj`; add the infinite 0-arg
+  `(range)` (lazy); and **lazy `=`** — `runtime/equal.zig`'s sequential
+  arm walks only vector/list today, so `(= (map inc [1 2]) '(2 3))`
+  must force-walk `.lazy_seq`. NOTE: `valueEqual(rt,a,b)` takes `rt`
+  but not `env`; forcing a lazy seq needs `env` — so cycle 3 threads
+  `env` into `valueEqual` + the `=` primitive call (a smaller sibling
+  of cycle 2's print-`rt/env` ripple). Then cycle 4: repeat/repeatedly/
+  cycle/take-while/drop-while/partition.
+  **Cycle 1 (producer) + cycle 2 (lazy map/filter/keep/remove + print
+  realize + 2 seq-protocol root-cause fixes) are DONE** (gate 100/100).
 - **Forbidden this session**: re-opening D-126/D-127/D-134/D-136/D-137
   or lazy-seq cycle 1 (all discharged). Pulling the v0.1.0 tag (row
   14.14) before lazy-seq (row 14.13.5) + the rest of the 14.13 bundle
@@ -25,7 +26,7 @@
 
 ## Current state
 
-Phase 14 v0.1.0 IN-PROGRESS. Mac gate **99/99**; ubuntunote re-verify
+Phase 14 v0.1.0 IN-PROGRESS. Mac gate **100/100**; ubuntunote re-verify
 at the next Phase boundary (ADR-0049). This session re-cut the interim
 goal + drove a large clojure.core coverage + correctness pass:
 
