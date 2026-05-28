@@ -244,6 +244,9 @@ pub const Runtime = struct {
         @import("collection/chunked_cons.zig").registerGcHooks();
         @import("collection/reduced.zig").registerGcHooks();
         @import("stm/ref.zig").registerGcHooks();
+        @import("delay.zig").registerGcHooks();
+        @import("promise.zig").registerGcHooks();
+        @import("future.zig").registerGcHooks();
         @import("collection/transient/transient_vector.zig").registerGcHooks();
         @import("collection/transient/transient_array_map.zig").registerGcHooks();
         @import("collection/transient/transient_hash_set.zig").registerGcHooks();

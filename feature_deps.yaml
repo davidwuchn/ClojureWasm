@@ -403,6 +403,26 @@ entries:
       isThrowableTag` adds `.host_instance` to the throwable carrier
       set; both markers discharge in the same commit.
 
+  - name: runtime/future/error_value_channel
+    kind: runtime_layer
+    defined_in: src/runtime/future.zig
+    status: provisional
+    requires_features: []
+    requires_debts:
+      - D-115
+    provisional_markers:
+      - src/runtime/future.zig (alloc — thunk-error attribution loses precision; cached.state = .realised_error but the original error tag/message is dropped)
+    notes: |
+      Row 14.8 (D-098 follow-up) landed Future eager-at-construction
+      semantics. When the thunk raises, the caught error tag is
+      discarded — only `state = .realised_error` is recorded, and
+      `(deref f)` raises a generic `future_thunk_failed` Code. JVM
+      Clojure's Future.get wraps the original in ExecutionException;
+      cw v1 needs a Value-carried exception channel (Ex Value held
+      alongside `cached`) so the original error tag + message can be
+      re-raised at deref time. Phase 15.1 lands this alongside the
+      `std.Thread.spawn` swap.
+
   - name: runtime/vm/ns_filter_and_libspec
     kind: runtime_layer
     defined_in: src/eval/backend/vm/compiler.zig

@@ -221,6 +221,7 @@ run_step "e2e_phase13_exit_smoke"            "bash test/e2e/phase13_exit_smoke.s
 run_step "e2e_phase14_catch_keyword"         "bash test/e2e/phase14_catch_keyword.sh"
 run_step "e2e_phase14_defmacro_user"         "bash test/e2e/phase14_defmacro_user.sh"
 run_step "e2e_phase14_ns_directive"          "bash test/e2e/phase14_ns_directive.sh"
+run_step "e2e_phase14_future_promise_delay"  "bash test/e2e/phase14_future_promise_delay.sh"
 
 # Informational scans (ADR-0024). Phase 5+ they become blocking.
 run_step "scan_catalog_only"   "bash scripts/scan_catalog_only.sh" optional

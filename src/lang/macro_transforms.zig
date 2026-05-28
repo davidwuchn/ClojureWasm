@@ -96,6 +96,8 @@ const BOOTSTRAP = [_]Entry{
     .{ .name = "defrecord", .expand = expandDefrecord },
     .{ .name = "reify", .expand = expandReify },
     .{ .name = "instance?", .expand = expandInstanceQ },
+    .{ .name = "delay", .expand = expandDelay },
+    .{ .name = "future", .expand = expandFuture },
 };
 
 // --- Form-construction conveniences ---
@@ -997,6 +999,67 @@ fn expandDefrecord(
 // `feature_not_supported` (transient stub per
 // `provisional_marker.md` row 2). Cycle 3 implements the happy
 // path; cycle 4 wires the dispatch arm for `.reified_instance`.
+// --- delay — `(delay expr...)` → `(__delay-create (fn* [] expr...))` ---
+//
+// Row 14.8 (D-098 follow-up). Wraps the body in a zero-arity thunk
+// that the `__delay-create` primitive (lang/primitive/stm.zig)
+// stashes in a Delay heap struct. `(deref d)` invokes the thunk on
+// first call and caches the result. Mirrors JVM `clojure.core/delay`
+// (which lowers to `(new clojure.lang.Delay (^{:once true} fn* []
+// body))` — the `:once` metadata is a JVM bytecode hint cw v1
+// doesn't need at Phase 14).
+fn expandDelay(
+    arena: std.mem.Allocator,
+    rt: *Runtime,
+    args: []const Form,
+    loc: SourceLocation,
+) macro_dispatch.ExpandError!Form {
+    _ = rt;
+    return expandThunkWrapper(arena, "__delay-create", args, loc);
+}
+
+// --- future — `(future expr...)` → `(__future-call (fn* [] expr...))` ---
+//
+// Row 14.8 (D-098 follow-up). On the Phase 14 single-thread runtime,
+// `__future-call` evaluates the thunk eagerly at construction time
+// and caches the result; the cached value is returned by `(deref
+// f)`. Phase 15.1 swaps the primitive's body for `std.Thread.spawn`
+// + a synchronisation primitive — the macro surface is unchanged.
+fn expandFuture(
+    arena: std.mem.Allocator,
+    rt: *Runtime,
+    args: []const Form,
+    loc: SourceLocation,
+) macro_dispatch.ExpandError!Form {
+    _ = rt;
+    return expandThunkWrapper(arena, "__future-call", args, loc);
+}
+
+/// Shared shape: `(MACRO body...)` → `(PRIMITIVE (fn* [] body...))`.
+/// The body forms are folded into the `fn*` body slice; an empty
+/// body raises with the macro name so the error attributes to the
+/// call site.
+fn expandThunkWrapper(
+    arena: std.mem.Allocator,
+    primitive_name: []const u8,
+    args: []const Form,
+    loc: SourceLocation,
+) macro_dispatch.ExpandError!Form {
+    if (args.len == 0)
+        return error_catalog.raise(.feature_not_supported, loc, .{ .name = "delay/future requires at least one body form" });
+    const empty_params = try arena.dupe(Form, &.{});
+    const params_form: Form = .{ .data = .{ .vector = empty_params }, .location = loc };
+    var fn_items = try arena.alloc(Form, 2 + args.len);
+    fn_items[0] = sym("fn*", loc);
+    fn_items[1] = params_form;
+    @memcpy(fn_items[2..], args);
+    const fn_form: Form = .{ .data = .{ .list = fn_items }, .location = loc };
+    var call_items = try arena.alloc(Form, 2);
+    call_items[0] = sym(primitive_name, loc);
+    call_items[1] = fn_form;
+    return list(arena, call_items, loc);
+}
+
 fn expandReify(
     arena: std.mem.Allocator,
     rt: *Runtime,
