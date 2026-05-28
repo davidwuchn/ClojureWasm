@@ -72,7 +72,34 @@ these — and on others that fit the same shape:
   move on" / "the next task is waiting". Forward momentum is a
   feature, but it must not bypass depth-3 / depth-4 surgery when
   the smell calls for it. "Let me finish 4.X first and come back"
-  rarely comes back.
+  rarely comes back. Specific surface forms that count as this
+  smell triggering: "defer to follow-up cycle", "defer to Phase
+  N mid", "open a debt row and pick it up later", "this would
+  exceed the LOC budget", "the fusion is the right shape but
+  too big for this cycle". When the deferral rationale is
+  *cycle-size-based* (not F-NNN-blocked), the smell has fired —
+  see also Cycle-budget defer smell.
+- **Cycle-budget defer smell** — declining a finished-form-clean
+  structural decision **because the current cycle would grow**
+  (LOC / file count / migration scope). cw v1 cycles are not
+  bounded by an external time budget; the only constraints are
+  F-NNN (`project_facts.md`) and the Bad Smell catalogue itself.
+  Cycle / diff size is **not** a project constraint and not a
+  sufficient reason to file a structural surgery as deferred
+  debt. Concrete trigger shape: a Devil's-advocate fork rates
+  Alt N as finished-form-clean within the F-NNN envelope, and
+  the main loop picks Alt M < N citing "cycle budget" / "this
+  expansion is too large now" / "Phase N mid is the right place
+  for the rest". That ranking IS the smell. Take the finished-
+  form-clean surgery in the same cycle, even when it doubles the
+  diff. The exception (= NOT this smell): when the deferral is
+  driven by a real F-NNN block (e.g. "the cleaner shape requires
+  F-006 to amend; F-006 is user-owned, so we cannot land it
+  unilaterally"). In that case the main loop picks the best
+  F-NNN-compliant alternative and continues; that is not a
+  cycle-budget defer — it is an F-NNN-respecting pick. The
+  smell sensor's first question: "is this defer driven by F-NNN
+  or by cycle size?" If cycle size, land the surgery.
 - **Silent default-shift smell** — a previously established
   default behaviour (decreed in docs OR established by past
   commit pattern) is being silently changed to a different

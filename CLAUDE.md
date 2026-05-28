@@ -428,7 +428,13 @@ subagent with **fresh context** and brief it:
 > finished-form-clean option requires violating an F-NNN, say
 > so explicitly — record that finding as the leading entry of
 > Alternatives considered so the main loop sees it, but do not
-> ask the loop to halt."
+> ask the loop to halt. **Cycle / diff / LOC size is not a
+> project constraint** — only F-NNN is. If your finished-form-
+> clean alternative would expand the cycle's diff substantially,
+> recommend it anyway citing F-002; do NOT downgrade your
+> recommendation to a smaller-diff alternative on cycle-budget
+> grounds (that recommendation pattern is itself the
+> Cycle-budget defer smell in `.dev/principle.md`)."
 
 The subagent's output is reflected verbatim into the ADR's
 "Alternatives considered" section. This counters goal-drift /
@@ -449,6 +455,19 @@ between candidate designs, the AI picks one (finished-form first,
 smallest-diff as the secondary tiebreaker per F-002), records the
 rejected alternatives in the ADR's "Alternatives considered"
 section, and continues.
+
+**When the DA fork rates Alt N as finished-form-clean and the
+main loop's instinct is to pick Alt M (smaller-diff)** citing
+cycle size / LOC budget / "Phase X mid is the right place for
+the rest" / "follow-up cycle will absorb the migration", **that
+instinct IS the Cycle-budget defer smell** (`.dev/principle.md`).
+Re-pick Alt N. Cycle / diff / LOC is not a project constraint;
+F-NNN is. The exception is a real F-NNN block — when the
+cleaner shape requires an F-NNN amendment (user-owned), pick the
+best F-NNN-compliant alternative and continue. The smell sensor's
+first question on every DA recommendation override: "is this
+defer driven by an F-NNN block, or by cycle size?" If cycle size,
+take the surgery.
 
 ## Skills (the runnable procedures)
 
