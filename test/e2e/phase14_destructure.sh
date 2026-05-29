@@ -46,4 +46,22 @@ assert_eq 'seq_in_map'  "$("$BIN" -e '(let [{[a b] :pair} {:pair [1 2]}] (+ a b)
 # map string-key lookup gap (D-151: `(get {"x" 5} "x")` → nil); its lowering
 # is correct + forward-compatible, so it is intentionally not asserted here.
 
-echo "OK — phase14_destructure smoke (16 cases) green"
+# --- cycle 3: fn / defn param destructuring (gensym param + body let) ---
+assert_eq 'fn_seq_param'  "$("$BIN" -e '((fn [[a b]] (+ a b)) [1 2])')"                  '3'
+assert_eq 'fn_map_param'  "$("$BIN" -e '((fn [{:keys [a b]}] (+ a b)) {:a 1 :b 2})')"    '3'
+assert_eq 'fn_rest_pat'   "$("$BIN" -e '((fn [a & [b c]] (+ a b c)) 1 2 3)')"            '6'
+assert_eq 'fn_plain_reg'  "$("$BIN" -e '((fn [a b] (+ a b)) 3 4)')"                      '7'
+defn_map=$("$BIN" - <<'CLJ' 2>/dev/null
+(defn f [{:keys [x]}] x)
+(f {:x 5})
+CLJ
+)
+assert_eq 'defn_map_param' "$(awk 'END{print}' <<< "$defn_map")" '5'
+defn_multi=$("$BIN" - <<'CLJ' 2>/dev/null
+(defn g ([[a]] a) ([[a b] c] (+ a b c)))
+[(g [9]) (g [1 2] 3)]
+CLJ
+)
+assert_eq 'defn_multi_destructure' "$(awk 'END{print}' <<< "$defn_multi")" '[9 6]'
+
+echo "OK — phase14_destructure smoke (22 cases) green"

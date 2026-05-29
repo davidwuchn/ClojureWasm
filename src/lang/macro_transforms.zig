@@ -622,7 +622,6 @@ fn expandDefn(
     args: []const Form,
     loc: SourceLocation,
 ) macro_dispatch.ExpandError!Form {
-    _ = rt;
     if (args.len < 2)
         return error_catalog.raise(.defn_form_incomplete, loc, .{});
     if (args[0].data != .symbol or args[0].data.symbol.ns != null)
@@ -635,13 +634,13 @@ fn expandDefn(
         if (args[1].data == .vector) {
             if (args.len < 3)
                 return error_catalog.raise(.defn_form_incomplete, loc, .{});
-            const params_form = args[1];
-            const body = args[2..];
-            const body_form = try wrapBodyInDo(arena, body, loc);
-            const fn_items = try arena.alloc(Form, 3);
+            const body_form = try wrapBodyInDo(arena, args[2..], loc);
+            // D-076 cycle 3: lower destructured params (gensym + body let).
+            const r = try transformFnArity(arena, rt, args[1], &.{body_form}, loc);
+            var fn_items = try arena.alloc(Form, 2 + r.body.len);
             fn_items[0] = sym("fn*", loc);
-            fn_items[1] = params_form;
-            fn_items[2] = body_form;
+            fn_items[1] = r.params;
+            @memcpy(fn_items[2..], r.body);
             break :blk try list(arena, fn_items, loc);
         }
         // Multi-arity: every args[1..] must be a `([params] body...)` list.
@@ -657,9 +656,10 @@ fn expandDefn(
             if (sub[0].data != .vector)
                 return error_catalog.raise(.defn_params_not_vector, sub[0].location, .{});
             const body_form = try wrapBodyInDo(arena, sub[1..], args[i].location);
-            const method_items = try arena.alloc(Form, 2);
-            method_items[0] = sub[0];
-            method_items[1] = body_form;
+            const r = try transformFnArity(arena, rt, sub[0], &.{body_form}, args[i].location);
+            var method_items = try arena.alloc(Form, 1 + r.body.len);
+            method_items[0] = r.params;
+            @memcpy(method_items[1..], r.body);
             fn_items[i] = try list(arena, method_items, args[i].location);
         }
         break :blk try list(arena, fn_items, loc);
@@ -673,27 +673,89 @@ fn expandDefn(
     return list(arena, def_items, loc);
 }
 
-/// `fn` macro. The no-name forms are shape-identical to `fn*`, so the
-/// transform just rewrites the head `fn` → `fn*` verbatim: `(fn [p]
-/// body...)` → `(fn* [p] body...)`, `(fn ([p] b) ...)` → `(fn* ([p] b)
-/// ...)`. Multi-arity / `& rest` / closures all ride fn* (ADR-0041).
-/// A self-name `(fn name [p] body)` needs an fn* self-name slot (a
-/// dual-backend extension, D-147) — raised as a clear transient error,
-/// NOT silently dropped (provisional_marker.md). Destructured params
-/// forward to fn*, which raises its existing not-supported path (D-076).
+/// One arity's param-destructuring lowering (D-076 cycle 3, shared by
+/// `fn` and `defn`). Pattern params (`[..]` / `{..}`) are replaced by a
+/// gensym and the body is wrapped in `(let [pattern gensym ...] body)`,
+/// reusing the `let` destructure (cycle 1+2) via recursive macroexpansion
+/// — the JVM `fn` shape. Plain-symbol params (incl. `&`) pass through;
+/// if no pattern is present the params + body are returned unchanged
+/// (zero regression). Caller guarantees `params_vec.data == .vector`.
+const ArityLowering = struct { params: Form, body: []const Form };
+fn transformFnArity(
+    arena: std.mem.Allocator,
+    rt: *Runtime,
+    params_vec: Form,
+    body: []const Form,
+    loc: SourceLocation,
+) macro_dispatch.ExpandError!ArityLowering {
+    const params = params_vec.data.vector;
+    var new_params: std.ArrayList(Form) = .empty;
+    var lets: std.ArrayList(Form) = .empty;
+    for (params) |p| {
+        switch (p.data) {
+            .vector, .map => {
+                const g = sym(try rt.gensym(arena, "p"), loc);
+                try new_params.append(arena, g);
+                try lets.append(arena, p);
+                try lets.append(arena, g);
+            },
+            // Plain symbols (incl. `&`) and anything else pass through —
+            // a genuinely-invalid param keeps fn*'s existing error path.
+            else => try new_params.append(arena, p),
+        }
+    }
+    if (lets.items.len == 0) return .{ .params = params_vec, .body = body };
+
+    const new_params_vec = try vec(arena, new_params.items, loc);
+    var let_items = try arena.alloc(Form, 2 + body.len);
+    let_items[0] = sym("let", loc);
+    let_items[1] = try vec(arena, lets.items, loc);
+    @memcpy(let_items[2..], body);
+    const wrapped = try arena.alloc(Form, 1);
+    wrapped[0] = try list(arena, let_items, loc);
+    return .{ .params = new_params_vec, .body = wrapped };
+}
+
+/// `fn` macro: `fn` → `fn*` + param destructuring (D-076 cycle 3). A
+/// self-name `(fn name [p] body)` needs an fn* self-name slot (D-147) —
+/// raised as a clear transient error, NOT silently dropped. Multi-arity
+/// / `& rest` / closures ride fn* (ADR-0041); each arity's pattern params
+/// lower via `transformFnArity`.
 fn expandFn(
     arena: std.mem.Allocator,
     rt: *Runtime,
     args: []const Form,
     loc: SourceLocation,
 ) macro_dispatch.ExpandError!Form {
-    _ = rt;
     if (args.len >= 1 and args[0].data == .symbol)
         return error_catalog.raise(.fn_named_not_supported, args[0].location, .{});
-    const fn_items = try arena.alloc(Form, args.len + 1);
-    fn_items[0] = sym("fn*", loc);
-    for (args, 0..) |a, i| fn_items[i + 1] = a;
-    return list(arena, fn_items, loc);
+
+    // Single-arity: `(fn [params] body...)`.
+    if (args.len >= 1 and args[0].data == .vector) {
+        const r = try transformFnArity(arena, rt, args[0], args[1..], loc);
+        var items = try arena.alloc(Form, 2 + r.body.len);
+        items[0] = sym("fn*", loc);
+        items[1] = r.params;
+        @memcpy(items[2..], r.body);
+        return list(arena, items, loc);
+    }
+
+    // Multi-arity: each `([params] body...)` arity lowered independently.
+    var items = try arena.alloc(Form, args.len + 1);
+    items[0] = sym("fn*", loc);
+    for (args, 0..) |a, i| {
+        if (a.data == .list and a.data.list.len >= 1 and a.data.list[0].data == .vector) {
+            const sub = a.data.list;
+            const r = try transformFnArity(arena, rt, sub[0], sub[1..], a.location);
+            var m = try arena.alloc(Form, 1 + r.body.len);
+            m[0] = r.params;
+            @memcpy(m[1..], r.body);
+            items[i + 1] = try list(arena, m, a.location);
+        } else {
+            items[i + 1] = a;
+        }
+    }
+    return list(arena, items, loc);
 }
 
 fn wrapBodyInDo(arena: std.mem.Allocator, body: []const Form, loc: SourceLocation) macro_dispatch.ExpandError!Form {
