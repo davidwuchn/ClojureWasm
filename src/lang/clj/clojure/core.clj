@@ -341,6 +341,17 @@
           (-concat2 (f (first s)) (mapcat f (rest s)))
           nil)))))
 
+;; `(tree-seq branch? children root)` — a lazy depth-first (pre-order) seq
+;; of all nodes. `branch?` says whether a node can have children; `children`
+;; returns them. Recurses through `tree-seq` itself (a top-level recursive
+;; def) so it avoids a named local fn (D-147); `mapcat` keeps it lazy (D-134).
+(def tree-seq
+  (fn* [branch? children root]
+    (lazy-seq
+      (cons root
+        (when (branch? root)
+          (mapcat (fn* [c] (tree-seq branch? children c)) (children root)))))))
+
 ;; ----------------------------------------------------------------
 ;; Phase 14 §9.16 row 14.13 — D-134 cluster 1. High-frequency eager
 ;; collection helpers (Pattern A over reduce/conj/assoc/get/into/apply).
