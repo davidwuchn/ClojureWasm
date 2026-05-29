@@ -5,81 +5,63 @@
 
 ## Resume contract
 
-- **HEAD**: see `git log` (≈ `4d32b716`). Recent coverage-floor landings (all
-  pushed): interop cluster (`.instance_member` am1 / `Math` static + `java.lang`
-  auto-import / `.static_method` VM am2); overnight self-perpetuation hooks
-  (`scripts/{post_commit_remind,gate_continue_remind}.sh`); **D-076 destructuring
-  COMPLETE** (cycles 1-4: `let` seq+assoc, `fn`/`defn` params, `loop` macro+
-  destructure — `macro_transforms.zig`); **D-151 cycle 1** (array_map keys
-  String by value — `equal.keyEqValue`, 4d32b716). Mac gate 113/113.
-- **First commit on resume MUST be**: **D-045 cycle A — HAMT read+grow**
-  (= D-151 cycle 2). The Step 0 survey is DONE:
-  `private/notes/phaseA26-d045-hamt-survey.md` (cycle split A/B/C, the
-  valueHash design, raise-site line refs, GC-trace verdict). **Implement
-  cycle A**: a `valueHash(v) u32` in `equal.zig` (the ONLY must-get-right
-  rule: byte-hash strings; everything else hashes raw bits, hash-consistent
-  with `keyEqValue` for free incl. the big_int/ratio identity residual) +
-  the HAMT `get`/`contains` (read) + `assoc` with array_map→hash_map
-  promotion. The `HamtMapNode` struct + tags already exist (map.zig:74,
-  5.5.a); only op bodies are stubbed (8 raise sites tabulated in the survey).
-  GC trace needs NO change (the existing conservative 64-slot
-  `traceHamtMapNode` is correct). After cycle A, >8-key maps build/grow/read;
-  dissoc/seq/keys/vals (cycle B) + hash-collision node (cycle C) still raise
-  explicit errors (no silent-wrong). **The survey rates cycle A MODERATE-HIGH
-  (the popcount + CoW path-copy HAMT insert is intricate) and recommends a
-  FRESH DEDICATED context — give it focused attention, TDD hard (build 9/20/50-
-  key maps, string keys at scale, both backends), a wrong popcount index
-  silently corrupts maps.** Smallest red: `(get (into {} (map (fn [i]
-  [(str i) i]) (range 20))) "5")` → 5; `(count (into {} (map (fn [i] [i i])
-  (range 50))))` → 50 (today raise `HashMapPromotionNotImplemented`).
-- **Forbidden this session**: re-opening interop / D-076 (all DONE). Putting
-  destructure anywhere but `macro_transforms.zig` (single Layer-1 home).
-  Threading `rt`/`env` through `map.get`/`contains`/`assoc` for key equality
-  (the no-`rt` `keyEqValue` is the contract — ~68 call sites). Flipping
-  `phase_at_least_14` / tagging v0.1.0 (release HELD). Opening Phase 15
-  (concurrency/STM) — it deserves a fresh-context entry; the coverage floor
-  (D-045 HAMT, the >8-key wall) is the JIT prerequisite (D-133) and the right
-  interim work. Dispatching a CPU-heavy survey subagent CONCURRENTLY with a
-  gate (contends with cold_start → false fail; gate_continue_remind.sh warns).
+- **HEAD**: see `git log` (≈ `b8de8224`).
+- **First commit on resume MUST be**: continue **D — AOT-bootstrap ADR**
+  (user-directed 2026-05-30, the headline edge-startup feature). Read
+  `private/notes/phaseA26-d-aot-bootstrap-survey.md` (the Step-0 survey),
+  then draft `.dev/decisions/00NN_aot_bootstrap.md` with a Devil's-advocate
+  subagent over the four shapes (D1 env-snapshot / D2 AOT-bytecode-bundle /
+  D3 lazy-bootstrap / D4 heap-image), pick the v1-fitted shape, then
+  implement incrementally. Mission anchor: ROADMAP §1 "cold start ≤ 10ms,
+  edge execution". Crux: core.clj is hundreds of `(def f (fn …))` = `fn_val`,
+  which `src/eval/bytecode/serialize.zig` excludes; the default backend is
+  tree_walk (ADR-0036) so bootstrap fns are AST closures, not bytecode — AOT
+  needs a VM-recompile-of-bootstrap (the v0 `vmRecompileAll` equivalent).
+- **Forbidden this session**: re-opening D-096 (println stdout — DISCHARGED),
+  the test-speed work (build-skip / zone_check / ReleaseSafe — all landed),
+  or the macro batches (threading / conditional / iteration / case / condp —
+  all landed). Dispatching a CPU-heavy subagent CONCURRENTLY with a gate
+  (contends with cold_start → false fail; `gate_continue_remind.sh` warns).
+  Flipping `phase_at_least_14` / tagging v0.1.0 (release HELD).
 
 ## Current state
 
-Phase 14 v0.1.0 substantive work DONE; release HELD. Mac gate 113/113.
-Interop coverage cluster CLOSED (both backends). Destructuring (D-076)
-COMPLETE — `let`/`fn`/`defn`/`loop`, sequential+associative+nested+`&`+
-`:as`/`:or`/`:keys`/`:syms`/`:strs`. Map string keys work by value (D-151
-cycle 1, array_map). Advancing the coverage floor (D-133, JIT prereq);
-the live wall is maps >8 entries (D-045 HAMT, next). F-010-ordered gaps
-(JIT / nREPL / line-editor / Wasm-Component / deps) deferred. Overnight
-loop self-perpetuates via the commit + gate reminder hooks.
+Mac gate **125/125** green, **~80s** (was 390s). Test-speed work landed:
+build-once-per-gate (`CLJW_SKIP_BUILD`), `zone_check.sh` pure-bash
+(15s→0.6s), and the e2e cljw binary in **ReleaseSafe** (`CLJW_OPT`,
+compute-heavy e2e 8s→0.6s; unit tests stay Debug). **D-096 discharged** —
+shared `Runtime.stdout` writer; `(println …)` now reaches stdout in
+`-e`/`-`/file modes (`emitToStdout`, `phase14_println_stdout`). clojure.core
+macro coverage extended this session: `as->`/`cond->`/`cond->>`/`some->`/
+`some->>` + `if-some`/`when-some`/`doto` + `dotimes`/`while`/`when-first` +
+`case` + `condp` (all in `macro_transforms.zig`, e2e-covered).
 
 ## Next milestone (F-010 M = Phase 15 完遂 + cw-v0-level JIT)
 
-Coverage floor (D-133 prereq for the JIT): D-045 HAMT (next — the >8-key
-map wall) + core-cluster residuals → **Phase 15** (concurrency;
-STM/agents/locking, ADRs 0009/0010; unblocks D-117/D-118 nREPL — a
-fresh-context entry) → superinstruction/fusion → narrow ARM64 JIT
-(D-133) → **M** → quality-elevation loop (`docs/works/`). cw-v0 gap plan
-in `.dev/cw_v0_parity_and_gap_plan.md` (§A26).
+Active user-directed work = **D (AOT-bootstrap)**, serving the edge mission
+ahead of the default coverage sequence. After D: coverage floor (D-045 HAMT
+>8-key wall) → **Phase 15** concurrency (ADRs 0009/0010; unblocks D-117/118
+nREPL) → superinstruction/fusion → narrow ARM64 JIT (D-133) → **M** →
+quality loop (`docs/works/`). cw-v0 gap plan in
+`.dev/cw_v0_parity_and_gap_plan.md` (§A26).
 
 ## Open debts (named; full rows in `.dev/debt.md`)
 
 - **D-045** HAMT `.hash_map` body + `valueHash` (the >8-key map wall;
-  D-151 cycle 2). **D-150** VM `op_ctor_call` cljw-prefix parity gap.
-  **D-148** `Math/PI`/`Math/E` static-field read. **D-149** whole-float
-  `.0` print. **D-147** `fn*` self-name slot. **D-134** clojure.core
-  (`partition` 4-arg pad + comp/juxt multi-arity). **D-143** apply
-  multi-arity spread. **D-142** Env-scope `*error-context*`. **D-141**
-  bench multi-lock. **D-105/D-106** time/net+crypto. **D-116** line-editor.
-  **D-117/D-118** nREPL (Phase-15-gated). **D-075** metadata. **D-133** JIT
-  floor. (D-076 / D-130 / D-136 / D-137 discharged.)
+  survey done `private/notes/phaseA26-d045-hamt-survey.md`). **D-085**
+  keyword-as-fn `(:k m)` (also blocks keyword thread-steps). **D-134**
+  residual macros **letfn / doseq / for** (involved: letrec / `:when`/`:let`/
+  `:while` modifiers / laziness — fresh-context). **D-150** VM `op_ctor_call`
+  cljw-prefix parity. **D-147** `fn*` self-name. **D-152** diff oracle can't
+  cover `.clj` closures. **D-153** `(cons x lazy-seq)` count/print.
+  **D-148** `Math/PI` static-field. **D-117/118** nREPL (Phase-15). **D-133**
+  JIT floor. (D-076 / D-096 / D-130 / D-136 / D-137 discharged.)
 
 ## Cold-start reading order
 
-handover → CLAUDE.md (§ Project spirit + § Autonomous Workflow + § The
-only stop) → `.dev/project_facts.md` (esp. F-010) → `.dev/principle.md`
-→ `private/notes/phaseA26-d151-map-string-key-survey.md` (the map-key
-survey; the D-045 HAMT cycle 2 is §"Cycle 2") + `private/notes/phase5-5.5-survey.md`
-(the original HAMT layout) → `src/runtime/collection/map.zig` (the
-`.hash_map` arms that raise) + `src/runtime/equal.zig` (`keyEqValue`, the
-`valueHash` sibling-to-add) → ROADMAP §A26 + `.dev/cw_v0_parity_and_gap_plan.md`.
+handover → CLAUDE.md (§ Project spirit + § Autonomous Workflow + § The only
+stop) → `.dev/project_facts.md` (esp. F-010 + the edge mission) →
+`.dev/principle.md` → `private/notes/phaseA26-d-aot-bootstrap-survey.md` (D
+survey) → `src/eval/bytecode/serialize.zig` + `src/app/builder.zig` +
+`src/lang/bootstrap.zig` (the cljw-build + bootstrap path) → ROADMAP §1
+(mission) + §A26.
