@@ -244,6 +244,33 @@ pub fn decimalQ(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocatio
     return if (args[0].tag() == .big_decimal) .true_val else .false_val;
 }
 
+/// `(NaN? x)` — true iff x is the float NaN. JVM `(NaN? ^double x)` coerces
+/// its arg, so an integer is never-NaN (→ false) and a non-number is a type
+/// error (the `(double x)` cast fails on JVM).
+pub fn nanQ(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = rt;
+    _ = env;
+    try error_catalog.checkArity("NaN?", args, 1, loc);
+    return switch (args[0].tag()) {
+        .float => if (std.math.isNan(args[0].asFloat())) .true_val else .false_val,
+        .integer => .false_val,
+        else => |t| error_catalog.raise(.type_arg_not_number, loc, .{ .fn_name = "NaN?", .actual = @tagName(t) }),
+    };
+}
+
+/// `(infinite? x)` — true iff x is positive or negative float infinity.
+/// Same coercion contract as `NaN?` (integer → false, non-number → error).
+pub fn infiniteQ(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = rt;
+    _ = env;
+    try error_catalog.checkArity("infinite?", args, 1, loc);
+    return switch (args[0].tag()) {
+        .float => if (std.math.isInf(args[0].asFloat())) .true_val else .false_val,
+        .integer => .false_val,
+        else => |t| error_catalog.raise(.type_arg_not_number, loc, .{ .fn_name = "infinite?", .actual = @tagName(t) }),
+    };
+}
+
 /// `(some? x)` — true iff `x` is not nil. The non-nil counterpart of
 /// `nil?`. Matches clojure.core/some?.
 pub fn someQ(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
@@ -591,6 +618,12 @@ const ENTRIES = [_]Entry{
     .{ .name = "identical?", .f = &identicalQ },
     .{ .name = "string?", .f = &stringQ },
     .{ .name = "integer?", .f = &integerQ },
+    // int? and double? are exact aliases: cw v1 has a single integer tag and
+    // a single float tag, so int? ≡ integer? and double? ≡ float?.
+    .{ .name = "int?", .f = &integerQ },
+    .{ .name = "double?", .f = &floatQ },
+    .{ .name = "NaN?", .f = &nanQ },
+    .{ .name = "infinite?", .f = &infiniteQ },
     .{ .name = "number?", .f = &numberQ },
     .{ .name = "symbol?", .f = &symbolQ },
     .{ .name = "keyword?", .f = &keywordQ },
