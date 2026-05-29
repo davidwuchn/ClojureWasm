@@ -566,6 +566,23 @@
         (if (and s (pred (first s)))
           (drop-while pred (rest s))
           s)))))
+;; `(split-with pred coll)` → `[(take-while …) (drop-while …)]`.
+(def split-with
+  (fn* [pred coll] [(take-while pred coll) (drop-while pred coll)]))
+;; `(take-nth n coll)` — every nth item (lazy).
+(def take-nth
+  (fn* [n coll]
+    (lazy-seq
+      (let [s (seq coll)]
+        (if s (cons (first s) (take-nth n (drop n s))) nil)))))
+;; `(list* a* tail)` — prepend the leading args onto the final seq arg.
+;; Explicit 1-4 arg forms (the common cases incl. the `(list* a args)`
+;; macro idiom); 5+-arg variadic deferred (needs a primitive-only spread).
+(def list*
+  (fn* ([args] (seq args))
+       ([a args] (cons a args))
+       ([a b args] (cons a (cons b args)))
+       ([a b c args] (cons a (cons b (cons c args))))))
 
 ;; `(partition n coll)` / `(partition n step coll)` — lazy seq of n-item
 ;; groups stepping by `step` (default n); the final incomplete group is
