@@ -141,12 +141,84 @@ fn max(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerr
     return Value.initFloat(@max(a, b));
 }
 
+// Unary Double→Double transcendentals. A comptime factory keeps the table
+// declarative — one std.math / builtin reference per row — rather than ~16
+// near-identical 6-line methods. Each always returns a Double (JVM Math
+// surface; F-005). Builtins (@log/@sin/…) can't be taken as fn pointers, so
+// each row names a thin f64→f64 wrapper.
+fn Unary(comptime name: []const u8, comptime f: fn (f64) f64) type {
+    return struct {
+        fn call(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+            _ = rt;
+            _ = env;
+            try error_catalog.checkArity("Math/" ++ name, args, 1, loc);
+            return Value.initFloat(f(try error_catalog.expectNumber(args[0], "Math/" ++ name, loc)));
+        }
+    };
+}
+
+fn fLog(x: f64) f64 { return @log(x); }
+fn fLog10(x: f64) f64 { return @log10(x); }
+fn fExp(x: f64) f64 { return @exp(x); }
+fn fSin(x: f64) f64 { return @sin(x); }
+fn fCos(x: f64) f64 { return @cos(x); }
+fn fTan(x: f64) f64 { return @tan(x); }
+fn fCbrt(x: f64) f64 { return std.math.cbrt(x); }
+fn fAsin(x: f64) f64 { return std.math.asin(x); }
+fn fAcos(x: f64) f64 { return std.math.acos(x); }
+fn fAtan(x: f64) f64 { return std.math.atan(x); }
+fn fSinh(x: f64) f64 { return std.math.sinh(x); }
+fn fCosh(x: f64) f64 { return std.math.cosh(x); }
+fn fTanh(x: f64) f64 { return std.math.tanh(x); }
+fn fToRadians(x: f64) f64 { return x * std.math.pi / 180.0; }
+fn fToDegrees(x: f64) f64 { return x * 180.0 / std.math.pi; }
+/// JVM Math.signum: ±1.0 for ±, and the input itself for 0.0 / -0.0 / NaN.
+fn fSignum(x: f64) f64 { return if (x > 0) 1.0 else if (x < 0) -1.0 else x; }
+
+/// Implements `(Math/atan2 y x)` — angle of the (x, y) vector, always Double.
+fn atan2(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = rt;
+    _ = env;
+    try error_catalog.checkArity("Math/atan2", args, 2, loc);
+    const y = try error_catalog.expectNumber(args[0], "Math/atan2", loc);
+    const x = try error_catalog.expectNumber(args[1], "Math/atan2", loc);
+    return Value.initFloat(std.math.atan2(y, x));
+}
+
+/// Implements `(Math/hypot a b)` — sqrt(a²+b²) without overflow, always Double.
+fn hypot(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = rt;
+    _ = env;
+    try error_catalog.checkArity("Math/hypot", args, 2, loc);
+    const a = try error_catalog.expectNumber(args[0], "Math/hypot", loc);
+    const b = try error_catalog.expectNumber(args[1], "Math/hypot", loc);
+    return Value.initFloat(std.math.hypot(a, b));
+}
+
 fn initMath(td: *type_descriptor.TypeDescriptor, gpa: std.mem.Allocator) anyerror!void {
     if (td.method_table.len != 0) return; // idempotent re-run
     const specs = .{
         .{ "abs", &abs },   .{ "sqrt", &sqrt }, .{ "floor", &floor },
         .{ "ceil", &ceil }, .{ "round", &round }, .{ "pow", &pow },
         .{ "min", &min },   .{ "max", &max },
+        // transcendentals (Double→Double via the Unary factory)
+        .{ "log", &Unary("log", fLog).call },
+        .{ "log10", &Unary("log10", fLog10).call },
+        .{ "exp", &Unary("exp", fExp).call },
+        .{ "cbrt", &Unary("cbrt", fCbrt).call },
+        .{ "sin", &Unary("sin", fSin).call },
+        .{ "cos", &Unary("cos", fCos).call },
+        .{ "tan", &Unary("tan", fTan).call },
+        .{ "asin", &Unary("asin", fAsin).call },
+        .{ "acos", &Unary("acos", fAcos).call },
+        .{ "atan", &Unary("atan", fAtan).call },
+        .{ "sinh", &Unary("sinh", fSinh).call },
+        .{ "cosh", &Unary("cosh", fCosh).call },
+        .{ "tanh", &Unary("tanh", fTanh).call },
+        .{ "signum", &Unary("signum", fSignum).call },
+        .{ "toRadians", &Unary("toRadians", fToRadians).call },
+        .{ "toDegrees", &Unary("toDegrees", fToDegrees).call },
+        .{ "atan2", &atan2 }, .{ "hypot", &hypot },
     };
     const entries = try gpa.alloc(type_descriptor.TypeDescriptor.MethodEntry, specs.len);
     inline for (specs, 0..) |spec, i| {
