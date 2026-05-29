@@ -11,7 +11,8 @@
   `src/app/builder.zig`** (the `cljw build` CLI). Step 1 (payload
   envelope `serializeEnvelope`/`deserializeEnvelope`/`freeEnvelope` in
   `serialize.zig`, `[u32 n_chunks]` + per-chunk `[u32 len][bytes]`)
-  landed @4c8f1c20. D-100 (a) (full BytecodeChunk serializer) is ALREADY
+  landed (envelope in `serialize.zig`; see git log). D-100 (a) (full
+  BytecodeChunk serializer) is ALREADY
   DISCHARGED @194eefaf — **do NOT re-implement (a) or the envelope.**
   Step 2 = new Layer-3 `builder.zig`: extract `runner.zig`'s `runSource`
   per-form compile-then-eval loop (@runner.zig:64-) into a neutral
