@@ -223,11 +223,26 @@ pub fn setupCoreAot(
     core_blob: []const u8,
 ) !void {
     try setupCorePrefix(rt, env, macro_table);
+    try loadCoreAot(arena, rt, env, macro_table, core_blob);
+    try error_context.register(env);
+}
+
+/// The AOT analog of `loadCore` (no prefix, no error_context — same scope
+/// as `loadCore`): restore clojure.core from `core_blob`, load the
+/// remaining `.clj` files from source, finalize the user ns. Callers that
+/// already ran their own prefix (the REPL / nREPL) use this directly, just
+/// as they used `loadCore`; `setupCoreAot` is prefix + this + error_context.
+pub fn loadCoreAot(
+    arena: std.mem.Allocator,
+    rt: *Runtime,
+    env: *Env,
+    macro_table: *const macro_dispatch.Table,
+    core_blob: []const u8,
+) !void {
     try rt.registerSource(FILES[0].label, FILES[0].source);
     try driver.runEnvelope(rt, env, arena, core_blob);
     try loadCoreFiles(arena, rt, env, macro_table, FILES[1..]);
     try finalizeUserNs(env);
-    try error_context.register(env);
 }
 
 // --- tests ---

@@ -145,7 +145,10 @@ pub fn tryRunEmbedded(io: std.Io, gpa: std.mem.Allocator, arena: std.mem.Allocat
     vm.installVTable(&rt); // wires evalChunk so deserialized fns run on the VM
     var macro_table = macro_dispatch.Table.init(gpa);
     defer macro_table.deinit();
-    try bootstrap.setupCore(arena, &rt, &env, &macro_table);
+    // ADR-0056 Cycle 2c: a built app also AOT-restores clojure.core (it no
+    // longer re-parses+evals core.clj at startup), then runs the embedded
+    // user payload — advancing the D-131 built-app re-bootstrap gap.
+    try bootstrap.setupCoreAot(arena, &rt, &env, &macro_table, @import("bootstrap_cache").data);
 
     try driver.runEnvelope(&rt, &env, arena, payload);
     return true;

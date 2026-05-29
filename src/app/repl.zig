@@ -70,7 +70,9 @@ pub fn run(
     try macro_transforms.registerInto(&env, &macro_table);
 
     const bootstrap_ctx = error_print.SourceContext{ .file = bootstrap.SOURCE_LABEL, .text = bootstrap.CORE_SOURCE };
-    bootstrap.loadCore(arena, &rt, &env, &macro_table) catch |err| {
+    // ADR-0056 Cycle 2c: restore clojure.core from the embedded AOT envelope
+    // (prefix already done above); the rest of the .clj files load from source.
+    bootstrap.loadCoreAot(arena, &rt, &env, &macro_table, @import("bootstrap_cache").data) catch |err| {
         error_render.renderAndExitRegistry(stderr, &rt, bootstrap_ctx, err);
     };
 

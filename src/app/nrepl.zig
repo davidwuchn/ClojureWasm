@@ -101,7 +101,8 @@ pub fn run(
     defer macro_table.deinit();
     try macro_transforms.registerInto(&env, &macro_table);
 
-    bootstrap.loadCore(arena, &rt, &env, &macro_table) catch |err| {
+    // ADR-0056 Cycle 2c: AOT-restore clojure.core (prefix done above).
+    bootstrap.loadCoreAot(arena, &rt, &env, &macro_table, @import("bootstrap_cache").data) catch |err| {
         try stderr.print("nrepl: bootstrap failed: {s}\n", .{@errorName(err)});
         try stderr.flush();
         return err;
