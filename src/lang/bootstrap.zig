@@ -172,14 +172,25 @@ pub fn loadCore(
 /// lifetimes. The runner, the `cljw build` core, and the embedded-run
 /// startup all share this instead of re-deriving the chain inline.
 pub fn setupCore(arena: std.mem.Allocator, rt: *Runtime, env: *Env, macro_table: *macro_dispatch.Table) !void {
-    installEmbeddedResolver(rt);
-    try primitive.registerAll(env);
-    try macro_transforms.registerInto(env, macro_table);
+    try setupCorePrefix(rt, env, macro_table);
     try loadCore(arena, rt, env, macro_table);
     // cw v1's first dynamic var — interned after loadCore creates the
     // `cljw.error` ns (via the embedded file's `(in-ns ...)`), then the
     // raise-time snapshot provider is wired (ADR-0055 D2/D3).
     try error_context.register(env);
+}
+
+/// The bootstrap prefix WITHOUT `loadCore`: install the embedded require
+/// resolver + register the kernel primitives + bootstrap macros. Splitting
+/// this out lets the AOT-bootstrap path (ADR-0056) build a fresh env to
+/// the same pre-`.clj`-eval state, then run the embedded bytecode envelope
+/// (`driver.runEnvelope`) in place of `loadCore`'s parse+analyze+eval.
+/// Macros + primitives are Zig-side, so they register identically on the
+/// source-eval and AOT paths.
+pub fn setupCorePrefix(rt: *Runtime, env: *Env, macro_table: *macro_dispatch.Table) !void {
+    installEmbeddedResolver(rt);
+    try primitive.registerAll(env);
+    try macro_transforms.registerInto(env, macro_table);
 }
 
 // --- tests ---

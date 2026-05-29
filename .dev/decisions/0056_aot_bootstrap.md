@@ -260,3 +260,20 @@ From the survey's design space (rejected before the DA pass):
   pulled forward into the rollout (VM-dispatch hybrid → new Cycle 0;
   D-139 param-name discharge → Cycle 1) per F-002 (surgery over the
   smaller diff), not deferred.
+- **2026-05-30 (Cycle 1 landed)**: `driver.runEnvelope` extracted (Alt-2
+  one-primitive) + `bootstrap.setupCorePrefix` + an AOT round-trip test
+  (build core.clj → envelope → restore into a fresh env → run a
+  core.clj-only fn). **Implementation finding (not in the survey/ADR
+  plan):** `serialize.zig`'s var_ref deserialize resolved eagerly and
+  could not handle core.clj's **self-recursive / forward var_refs** (e.g.
+  `(def map (fn … (map …)))` — the constant pool is read before the
+  chunk's `op_def` runs). This is v0's `DeferredVarRef` problem
+  (survey §1.2), documented as out-of-v0.1.0-scope at the old
+  `serialize.zig:376`. Fixed by **forward-declaring** on a resolve-miss
+  (`env.intern` get-or-create with a nil placeholder root; the later
+  `op_def` binds the same var) — Clojure-correct, consistent with cljw's
+  no-unbound-sentinel nil-root model, and it also fixes a latent
+  recursive-fn gap in the `cljw build` embedded-run. D-139 (param-name
+  fidelity) deferred to Cycle 2, where AOT core becomes the runtime
+  default and error frames would otherwise regress (Cycle 1 is the
+  in-process proof; `loadCore` remains the production path).

@@ -373,13 +373,24 @@ fn readValue(allocator: std.mem.Allocator, r: *ByteReader, rt: *Runtime, env: *@
             const ns_bytes = try r.readLenPrefixed();
             const name_bytes = try r.readLenPrefixed();
             const ns = env.findNs(ns_bytes) orelse {
-                // ns missing at deserialize time: defer resolution to
-                // first use is out of v0.1.0 minimum scope; the
-                // bytecode chunk is built post-bootstrap so the ns
-                // should be present. Return a placeholder error.
+                // ns missing at deserialize time — a var_ref into a
+                // namespace no chunk has created yet. Lazy-require /
+                // cross-ns forward refs are a later cycle (ADR-0056 D3);
+                // a present-ns forward ref is handled below.
                 return DeserializeError.UnknownValueTag;
             };
-            const v_ptr = ns.resolve(name_bytes) orelse return DeserializeError.UnknownValueTag;
+            // A var_ref may target a var the SAME chunk `def`s later — a
+            // self-recursive `(def map (fn … (map …)))` whose constant
+            // pool is read before the chunk's `op_def` runs — or a
+            // forward ref to a not-yet-run later chunk. Forward-declare
+            // it: `env.intern` is get-or-create, so the eventual `op_def`
+            // binds this very var, and the captured var_ref points at it.
+            // cljw has no unbound sentinel, so the placeholder root is
+            // nil until the def runs — consistent with any not-yet-def'd
+            // var's nil-root default (ADR-0056 Cycle 1; this also fixes a
+            // latent recursive-fn gap in the `cljw build` embedded-run).
+            const v_ptr = ns.resolve(name_bytes) orelse
+                (env.intern(ns, name_bytes, .nil_val, null) catch return DeserializeError.OutOfMemory);
             return Value.encodeHeapPtr(.var_ref, v_ptr);
         },
         .regex => {

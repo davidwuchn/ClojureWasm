@@ -220,6 +220,61 @@ test "buildEnvelope evaluates each form so later forms see earlier env (ADR-0034
     try testing.expect(chunks[1].instructions.len > 0);
 }
 
+test "aot: core.clj round-trips — build envelope, restore into a fresh env, run a core.clj fn (ADR-0056 Cycle 1)" {
+    const A = testing.allocator;
+
+    // --- Build phase: compile core.clj to a bytecode envelope under a
+    //     prefix-only env (primitives + macros, NO loadCore). The chunks
+    //     are self-contained (serializeEnvelope copies the bytes), so they
+    //     outlive this scope's arena/env. ---
+    var core_bytes: []u8 = undefined;
+    {
+        var th = std.Io.Threaded.init(A, .{});
+        defer th.deinit();
+        var rt = Runtime.init(th.io(), A);
+        defer rt.deinit();
+        var env = try Env.init(&rt);
+        defer env.deinit();
+        var arena_state = std.heap.ArenaAllocator.init(A);
+        defer arena_state.deinit();
+        const arena = arena_state.allocator();
+        driver.installVTable(&rt);
+        var table = macro_dispatch.Table.init(A);
+        defer table.deinit();
+        try bootstrap.setupCorePrefix(&rt, &env, &table);
+        core_bytes = try buildEnvelope(A, &rt, &env, &table, arena, bootstrap.CORE_SOURCE);
+    }
+    defer A.free(core_bytes);
+
+    // --- Restore phase: a FRESH env gets clojure.core from the bytecode
+    //     envelope via driver.runEnvelope — no parse/analyze/eval of .clj
+    //     source. ---
+    var th = std.Io.Threaded.init(A, .{});
+    defer th.deinit();
+    var rt = Runtime.init(th.io(), A);
+    defer rt.deinit();
+    var env = try Env.init(&rt);
+    defer env.deinit();
+    var arena_state = std.heap.ArenaAllocator.init(A);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    driver.installVTable(&rt); // tree_walk vtable + Cycle-0 evalChunk
+    var table = macro_dispatch.Table.init(A);
+    defer table.deinit();
+    try bootstrap.setupCorePrefix(&rt, &env, &table);
+    try driver.runEnvelope(&rt, &env, arena, core_bytes);
+
+    // --- Verify: `comp` is core.clj-defined (NOT a primitive), so its
+    //     presence proves the AOT restore ran; the restored fn is bytecode
+    //     and dispatches through the tree_walk vtable's evalChunk (Cycle 0).
+    var reader = Reader.init(arena, "((comp inc inc inc) 0)");
+    const form = (try reader.read()).?;
+    const node = try analyzeForm(arena, &rt, &env, null, form, &table);
+    var locals: [driver.MAX_LOCALS]Value = [_]Value{.nil_val} ** driver.MAX_LOCALS;
+    const result = try driver.evalForm(&rt, &env, &locals, arena, node);
+    try testing.expectEqual(@as(i64, 3), result.asInteger());
+}
+
 test "fn_val constant round-trips through serialize (ADR-0034 am2)" {
     var th = std.Io.Threaded.init(testing.allocator, .{});
     defer th.deinit();
