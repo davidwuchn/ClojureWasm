@@ -50,6 +50,8 @@ const list_mod = @import("../../runtime/collection/list.zig");
 const vector_mod = @import("../../runtime/collection/vector.zig");
 const map_mod = @import("../../runtime/collection/map.zig");
 const set_mod = @import("../../runtime/collection/set.zig");
+const tree_walk = @import("../backend/tree_walk.zig");
+const Function = tree_walk.Function;
 
 pub const MAGIC: [4]u8 = .{ 'C', 'L', 'J', 'W' };
 pub const VERSION: u16 = 2;
@@ -59,6 +61,10 @@ pub const SerializeError = error{
     WriteFailed,
     UnsupportedValueTag,
     HashMapNotSerializable,
+    /// A `fn_val` constant carries `closure_bindings != null` — a runtime
+    /// closure, which is never a compile-time constant (ADR-0034 am2 A2-D2).
+    /// Raised as an invariant guard, not a feature gate.
+    ClosureNotSerializable,
 };
 
 pub const DeserializeError = error{
@@ -90,6 +96,9 @@ pub const ValueTag = enum(u8) {
     hash_set = 0x0C,
     var_ref = 0x0D,
     regex = 0x0E,
+    /// Function constant (ADR-0034 am2). Body is its method bytecode
+    /// chunk(s), serialized recursively via `serializeChunk`.
+    fn_val = 0x0F,
 };
 
 // --- Writer helpers (length-prefixed UTF-8) ---
@@ -155,7 +164,7 @@ const ByteReader = struct {
 
 // --- Value serialize / deserialize (recursive) ---
 
-fn writeValue(w: *std.Io.Writer, v: Value) SerializeError!void {
+fn writeValue(allocator: std.mem.Allocator, w: *std.Io.Writer, v: Value) SerializeError!void {
     switch (v.tag()) {
         .nil => try writeU8(w, @intFromEnum(ValueTag.nil)),
         .boolean => {
@@ -198,7 +207,7 @@ fn writeValue(w: *std.Io.Writer, v: Value) SerializeError!void {
             var cur = v;
             var i: u32 = 0;
             while (i < n) : (i += 1) {
-                try writeValue(w, list_mod.first(cur));
+                try writeValue(allocator, w, list_mod.first(cur));
                 cur = list_mod.rest(cur);
             }
         },
@@ -207,7 +216,7 @@ fn writeValue(w: *std.Io.Writer, v: Value) SerializeError!void {
             const n = vector_mod.count(v);
             try writeU32(w, n);
             var i: u32 = 0;
-            while (i < n) : (i += 1) try writeValue(w, vector_mod.nth(v, i));
+            while (i < n) : (i += 1) try writeValue(allocator, w, vector_mod.nth(v, i));
         },
         .array_map => {
             try writeU8(w, @intFromEnum(ValueTag.array_map));
@@ -215,8 +224,8 @@ fn writeValue(w: *std.Io.Writer, v: Value) SerializeError!void {
             try writeU32(w, am.count);
             var i: u32 = 0;
             while (i < am.count) : (i += 1) {
-                try writeValue(w, am.entries[2 * i]);
-                try writeValue(w, am.entries[2 * i + 1]);
+                try writeValue(allocator, w, am.entries[2 * i]);
+                try writeValue(allocator, w, am.entries[2 * i + 1]);
             }
         },
         .hash_map => {
@@ -232,7 +241,7 @@ fn writeValue(w: *std.Io.Writer, v: Value) SerializeError!void {
             const am = s.map.decodePtr(*const map_mod.ArrayMap);
             try writeU32(w, am.count);
             var i: u32 = 0;
-            while (i < am.count) : (i += 1) try writeValue(w, am.entries[2 * i]);
+            while (i < am.count) : (i += 1) try writeValue(allocator, w, am.entries[2 * i]);
         },
         .var_ref => {
             try writeU8(w, @intFromEnum(ValueTag.var_ref));
@@ -240,11 +249,46 @@ fn writeValue(w: *std.Io.Writer, v: Value) SerializeError!void {
             try writeLenPrefixed(w, var_ptr.ns.name);
             try writeLenPrefixed(w, var_ptr.name);
         },
+        .fn_val => {
+            // ADR-0034 am2: serialize a function constant by its CONTENTS.
+            // A `fn_val` that appears as a compile-time constant always has
+            // `closure_bindings == null`; a runtime closure is never a
+            // constant, so non-null here is a corrupt-invariant guard.
+            const f = v.decodePtr(*const Function);
+            if (f.closure_bindings != null) return SerializeError.ClosureNotSerializable;
+            try writeU8(w, @intFromEnum(ValueTag.fn_val));
+            try writeU16(w, f.slot_base);
+            try writeU32(w, @intCast(f.methods.len));
+            for (f.methods) |m| try writeFnMethod(allocator, w, m);
+            if (f.variadic) |variadic| {
+                try writeU8(w, 1);
+                try writeFnMethod(allocator, w, variadic);
+            } else {
+                try writeU8(w, 0);
+            }
+        },
         else => return SerializeError.UnsupportedValueTag,
     }
 }
 
-fn readValue(r: *ByteReader, rt: *Runtime, env: *@import("../../runtime/env.zig").Env) DeserializeError!Value {
+/// Serialize one function method: `arity` + `has_rest` + a length-prefixed
+/// recursive `serializeChunk` of the method body (the body IS a
+/// BytecodeChunk). `has_bytecode == 0` is allowed for forward-compat with a
+/// future lazy-JIT method, though the v0.1.0 compiler always emits bytecode.
+fn writeFnMethod(allocator: std.mem.Allocator, w: *std.Io.Writer, m: tree_walk.FunctionMethod) SerializeError!void {
+    try writeU16(w, m.arity);
+    try writeU8(w, @intFromBool(m.has_rest));
+    if (m.bytecode) |chunk| {
+        try writeU8(w, 1);
+        const chunk_bytes = try serializeChunk(allocator, chunk.*);
+        defer allocator.free(chunk_bytes);
+        try writeLenPrefixed(w, chunk_bytes);
+    } else {
+        try writeU8(w, 0);
+    }
+}
+
+fn readValue(allocator: std.mem.Allocator, r: *ByteReader, rt: *Runtime, env: *@import("../../runtime/env.zig").Env) DeserializeError!Value {
     const tag_byte = try r.readU8();
     const tag = std.enums.fromInt(ValueTag, tag_byte) orelse return DeserializeError.UnknownValueTag;
     switch (tag) {
@@ -285,7 +329,7 @@ fn readValue(r: *ByteReader, rt: *Runtime, env: *@import("../../runtime/env.zig"
             const buf = std.heap.page_allocator.alloc(Value, n) catch return DeserializeError.OutOfMemory;
             defer std.heap.page_allocator.free(buf);
             var i: u32 = 0;
-            while (i < n) : (i += 1) buf[i] = try readValue(r, rt, env);
+            while (i < n) : (i += 1) buf[i] = try readValue(allocator, r, rt, env);
             var lst: Value = .nil_val;
             i = n;
             while (i > 0) {
@@ -299,7 +343,7 @@ fn readValue(r: *ByteReader, rt: *Runtime, env: *@import("../../runtime/env.zig"
             var out = vector_mod.empty();
             var i: u32 = 0;
             while (i < n) : (i += 1) {
-                const elt = try readValue(r, rt, env);
+                const elt = try readValue(allocator, r, rt, env);
                 out = vector_mod.conj(rt, out, elt) catch return DeserializeError.OutOfMemory;
             }
             return out;
@@ -309,8 +353,8 @@ fn readValue(r: *ByteReader, rt: *Runtime, env: *@import("../../runtime/env.zig"
             var out = map_mod.empty();
             var i: u32 = 0;
             while (i < n) : (i += 1) {
-                const k = try readValue(r, rt, env);
-                const val = try readValue(r, rt, env);
+                const k = try readValue(allocator, r, rt, env);
+                const val = try readValue(allocator, r, rt, env);
                 out = map_mod.assoc(rt, out, k, val) catch return DeserializeError.OutOfMemory;
             }
             return out;
@@ -320,7 +364,7 @@ fn readValue(r: *ByteReader, rt: *Runtime, env: *@import("../../runtime/env.zig"
             var out = set_mod.empty();
             var i: u32 = 0;
             while (i < n) : (i += 1) {
-                const elt = try readValue(r, rt, env);
+                const elt = try readValue(allocator, r, rt, env);
                 out = set_mod.conj(rt, out, elt) catch return DeserializeError.OutOfMemory;
             }
             return out;
@@ -348,7 +392,46 @@ fn readValue(r: *ByteReader, rt: *Runtime, env: *@import("../../runtime/env.zig"
             const regex_compile = @import("../../runtime/regex/compile.zig");
             return regex_value.alloc(rt, src, regex_compile.Flags{}) catch return DeserializeError.OutOfMemory;
         },
+        .fn_val => {
+            // ADR-0034 am2: reconstruct a Function from its serialized
+            // contents. Method bytecode sub-chunks are owned by `allocator`
+            // (freed by `freeChunk` recursion); the Function itself is
+            // gpa+trackHeap like a compiled top-level fn (params dropped per
+            // D-139, body = sentinel, closure_bindings = null).
+            const slot_base = try r.readU16();
+            const methods_count = try r.readU32();
+            const methods = allocator.alloc(tree_walk.SerializedMethod, methods_count) catch return DeserializeError.OutOfMemory;
+            defer allocator.free(methods);
+            var i: u32 = 0;
+            while (i < methods_count) : (i += 1) methods[i] = try readFnMethod(allocator, r, rt, env);
+            const has_variadic = try r.readU8();
+            const variadic: ?tree_walk.SerializedMethod = if (has_variadic != 0)
+                try readFnMethod(allocator, r, rt, env)
+            else
+                null;
+            return tree_walk.allocFunctionFromSerialized(rt, slot_base, methods, variadic) catch return DeserializeError.OutOfMemory;
+        },
     }
+}
+
+/// Read one function method (arity + has_rest + optional length-prefixed
+/// recursive chunk). The chunk is deserialized into a fresh `allocator`-
+/// owned `*BytecodeChunk`; the reconstructed Function borrows it and
+/// `freeChunk` frees it. May itself contain nested `fn_val` constants
+/// (handled by `deserializeChunk` → `readValue` recursion).
+fn readFnMethod(allocator: std.mem.Allocator, r: *ByteReader, rt: *Runtime, env: *@import("../../runtime/env.zig").Env) DeserializeError!tree_walk.SerializedMethod {
+    const arity = try r.readU16();
+    const has_rest = (try r.readU8()) != 0;
+    const has_bytecode = try r.readU8();
+    var bytecode: ?*const BytecodeChunk = null;
+    if (has_bytecode != 0) {
+        const chunk_bytes = try r.readLenPrefixed();
+        const sub = allocator.create(BytecodeChunk) catch return DeserializeError.OutOfMemory;
+        errdefer allocator.destroy(sub);
+        sub.* = try deserializeChunk(allocator, rt, env, chunk_bytes);
+        bytecode = sub;
+    }
+    return .{ .arity = arity, .has_rest = has_rest, .bytecode = bytecode };
 }
 
 // --- Chunk serialize / deserialize ---
@@ -365,7 +448,7 @@ pub fn serializeChunk(allocator: std.mem.Allocator, chunk: BytecodeChunk) ![]u8 
         try writeU16(w, ins.operand);
     }
     try writeU32(w, @intCast(chunk.constants.len));
-    for (chunk.constants) |c| try writeValue(w, c);
+    for (chunk.constants) |c| try writeValue(allocator, w, c);
     try writeU32(w, @intCast(chunk.call_sites.len));
     for (chunk.call_sites) |cs| {
         try writeLenPrefixed(w, cs.method_name);
@@ -412,7 +495,7 @@ pub fn deserializeChunk(allocator: std.mem.Allocator, rt: *Runtime, env: *@impor
     const constants = try allocator.alloc(Value, constants_count);
     errdefer allocator.free(constants);
     i = 0;
-    while (i < constants_count) : (i += 1) constants[i] = try readValue(&r, rt, env);
+    while (i < constants_count) : (i += 1) constants[i] = try readValue(allocator, &r, rt, env);
 
     const cs_count = try r.readU32();
     const call_sites = try allocator.alloc(CallSiteEntry, cs_count);
@@ -459,8 +542,39 @@ pub fn deserializeChunk(allocator: std.mem.Allocator, rt: *Runtime, env: *@impor
 /// Free a chunk produced by `deserializeChunk`. Mirror of the
 /// allocator-owned slice set; does not touch the GC-allocated
 /// Values in `constants` (those are owned by `rt.gc`).
+/// Free the method bytecode sub-chunks a deserialized `fn_val` constant
+/// owns (ADR-0034 am2 A2-D3). Non-`fn_val` constants own nothing here.
+/// Recurses via `freeChunk` so nested `fn_val`s inside a method body are
+/// freed too. Does NOT free the Function struct / methods slice — those
+/// are gpa+trackHeap, freed by `freeFunction` at `rt.deinit`.
+fn freeValueOwnedChunks(allocator: std.mem.Allocator, v: Value) void {
+    if (v.tag() != .fn_val) return;
+    const f = v.decodePtr(*const Function);
+    for (f.methods) |m| {
+        if (m.bytecode) |chunk| {
+            freeChunk(allocator, chunk.*);
+            allocator.destroy(@constCast(chunk));
+        }
+    }
+    if (f.variadic) |variadic| {
+        if (variadic.bytecode) |chunk| {
+            freeChunk(allocator, chunk.*);
+            allocator.destroy(@constCast(chunk));
+        }
+    }
+}
+
 pub fn freeChunk(allocator: std.mem.Allocator, chunk: BytecodeChunk) void {
     allocator.free(chunk.instructions);
+    // ADR-0034 am2: a deserialized `fn_val` constant owns its method
+    // bytecode sub-chunks via this `allocator`; free them recursively
+    // before the constants array. This reads the Function's gpa-owned
+    // `methods` slice, so `freeChunk`/`freeEnvelope` MUST run before
+    // `rt.deinit` (which frees that slice via `freeFunction`); the run
+    // sequence + defer-LIFO satisfy this. Compiled (non-deserialized)
+    // fns hold arena-owned chunks and never reach this path because their
+    // top chunk is arena-freed, not `freeChunk`-freed.
+    for (chunk.constants) |c| freeValueOwnedChunks(allocator, c);
     allocator.free(chunk.constants);
     for (chunk.call_sites) |cs| allocator.free(cs.method_name);
     allocator.free(chunk.call_sites);

@@ -283,6 +283,67 @@ fn freeFunction(gpa: std.mem.Allocator, ptr: *anyopaque) void {
     gpa.destroy(f);
 }
 
+/// Sentinel body for deserialized (VM-only) functions (ADR-0034 am2 A2-D3).
+/// A deserialized fn carries `bytecode`, so the VM `evalChunk` path runs and
+/// the body Node is never walked; it has no source Node. This immortal
+/// module-const stands in for `FunctionMethod.body`; the guard at the
+/// tree_walk fn-body site raises if it is ever reached.
+const deserialized_fn_body: Node = .{ .constant = .{ .value = .nil_val } };
+
+/// One method's worth of deserialized data (ADR-0034 am2 A2-D3). Param names
+/// are dropped (D-139); `bytecode` is an `allocator`-owned chunk the caller
+/// (`serialize.zig`) frees via `freeChunk` recursion.
+pub const SerializedMethod = struct {
+    arity: u16,
+    has_rest: bool,
+    bytecode: ?*const BytecodeChunk,
+};
+
+/// Reconstruct a Function from deserialized data (ADR-0034 am2 A2-D3). gpa +
+/// trackHeap like a compiled top-level fn (so `freeFunction` is unchanged),
+/// `closure_bindings = null` (a constant fn never captures runtime locals),
+/// `params = &.{}` (D-139), `body = &deserialized_fn_body`. The method
+/// `bytecode` chunks are borrowed — owned by `serialize.zig`'s allocator and
+/// freed by `freeChunk` recursion before `rt.deinit`.
+pub fn allocFunctionFromSerialized(
+    rt: *Runtime,
+    slot_base: u16,
+    methods: []const SerializedMethod,
+    variadic: ?SerializedMethod,
+) !Value {
+    const out = try rt.gpa.alloc(FunctionMethod, methods.len);
+    errdefer rt.gpa.free(out);
+    for (methods, 0..) |m, i| {
+        out[i] = .{
+            .arity = m.arity,
+            .has_rest = m.has_rest,
+            .params = &.{},
+            .body = &deserialized_fn_body,
+            .bytecode = m.bytecode,
+        };
+    }
+    var variadic_method: ?FunctionMethod = null;
+    if (variadic) |vm| variadic_method = .{
+        .arity = vm.arity,
+        .has_rest = vm.has_rest,
+        .params = &.{},
+        .body = &deserialized_fn_body,
+        .bytecode = vm.bytecode,
+    };
+
+    const f = try rt.gpa.create(Function);
+    errdefer rt.gpa.destroy(f);
+    f.* = .{
+        .header = HeapHeader.init(.fn_val),
+        .slot_base = slot_base,
+        .methods = out,
+        .variadic = variadic_method,
+        .closure_bindings = null,
+    };
+    try rt.trackHeap(.{ .ptr = @ptrCast(f), .free = freeFunction });
+    return Value.encodeHeapPtr(.fn_val, f);
+}
+
 // --- Top-level eval ---
 
 /// Evaluate one Node into a Value. `locals` is the slot array owned
@@ -884,6 +945,15 @@ pub fn callFunction(rt: *Runtime, env: *Env, fn_val: Value, args: []const Value,
             if (vt.evalChunk) |ec| return ec(rt, env, &locals, @ptrCast(chunk));
         }
     }
+    // A deserialized (AOT) fn has bytecode but only a sentinel body; it must
+    // run via the VM `evalChunk` path above. Reaching the tree_walk body
+    // here means a deserialized fn was called on a backend without
+    // `evalChunk` wired — surface it rather than silently walking the nil
+    // sentinel (ADR-0034 am2 A2-D3).
+    if (m.body == &deserialized_fn_body)
+        return error_catalog.raise(.feature_not_supported, .{}, .{
+            .name = "deserialized function on a backend without VM evalChunk",
+        });
     return eval(rt, env, &locals, m.body);
 }
 
