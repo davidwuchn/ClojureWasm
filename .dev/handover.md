@@ -7,18 +7,22 @@
 
 - **HEAD**: ≈ `8edcc217` (ADR-0054 lazy-seq Layer-2 COMPLETE + cycle-3/4
   repair; see `git log` for exact HEAD — it advances each commit).
-- **First commit on resume MUST be**: **row 14.11 — D-100 (a)
-  BytecodeChunk serializer**, the foundation the `cljw build` CLI (b)
-  consumes. (a) = constants-pool serializer with NaN-box Value
-  round-trip + `call_sites`/`libspecs` side-tables (design: ADR-0034
-  am1 + ADR-0015 am5; skeleton at `src/eval/bytecode/serialize.zig` —
-  magic+version+instruction stream already round-trips). Start with a
-  failing test: serialize → deserialize a `BytecodeChunk` whose
-  constants pool mixes int/string/keyword/collection. Then (b)
-  `cljw build app.clj -o app` (`src/app/builder.zig`, new; Deno-style
-  binary trailer) and (e) `cljw-formats/0.1.0.edn` archive lock.
+- **First commit on resume MUST be**: **row 14.11 — D-100 (b) `cljw
+  build`, step 1: the multi-chunk payload envelope.** D-100 (a) (full
+  BytecodeChunk serializer) is ALREADY DISCHARGED @194eefaf —
+  `src/eval/bytecode/serialize.zig` has serializeChunk/deserializeChunk
+  + constants pool + call_sites/libspecs (13 green tests). **Do NOT
+  re-implement (a).** Step 1 = add `serializeEnvelope([]const
+  BytecodeChunk)` / `deserializeEnvelope` (`[u32 n_chunks]` + per-chunk
+  `[u32 len][bytes]`, wrapping serializeChunk verbatim) with a Layer-1
+  round-trip unit test. Then `src/app/builder.zig` (new, Layer 3):
+  extract `runner.zig`'s per-form compile-then-eval loop into a neutral
+  helper shared with the builder (F-009), add the `"CLJC"` trailer + an
+  e2e test. (e) `cljw-formats/0.1.0.edn` archive lock follows. Design:
+  ADR-0034 am1 (Alt B) + ADR-0015 am5; survey
+  `private/notes/phase14-14.11-survey.md`.
 - **Resume disambiguation**: §9.16's numerically-first `[ ]` row IS
-  14.11 (`[ ] partial` — (c)/(d) done, (a)/(b)/(e) outstanding) and it
+  14.11 (`[ ] partial` — (a)/(c)/(d) done, (b)/(e) outstanding) and it
   is now the resume target (lazy-seq row 14.13.5 closed). 14.12 is
   zwasm-v2-gated (defer per F-010). 14.13 polish + 14.14 release follow.
 - **Forbidden this session**: re-opening D-126/D-127/D-134/D-136/D-137
@@ -47,17 +51,17 @@ row 14.13.5 `[x]`:
 
 ## Active task
 
-**Row 14.11 — D-100 (a)/(b)/(e)** (BytecodeChunk serializer → `cljw
-build` CLI `src/app/builder.zig` → cljw-formats archive lock) — see
-Resume contract. Start at (a); (b) depends on (a)'s constants-pool
-round-trip.
+**Row 14.11 — D-100 (b) + (e)** (`cljw build` CLI `src/app/builder.zig`
+→ cljw-formats archive lock) — see Resume contract. (a) BytecodeChunk
+serializer is done @194eefaf; start (b) at the payload envelope in
+`serialize.zig`.
 
 ## Open debts (named; full rows in `.dev/debt.md`)
 
-- **D-100** (a)/(b)/(e): the row-14.11 work above. (a) full
-  BytecodeChunk (constants pool NaN-box round-trip + call_sites/libspecs
-  side-tables); (b) `cljw build` (`builder.zig` not yet written;
-  ADR-0034 am1 + ADR-0015 am5); (e) cljw-formats archive lock.
+- **D-100** (b)/(e) outstanding (a/c/d done): (b) `cljw build`
+  (`builder.zig` not yet written; payload envelope + per-form
+  compile-then-eval + `"CLJC"` trailer; ADR-0034 am1 + ADR-0015 am5);
+  (e) cljw-formats archive lock.
 - **D-131** ADR-0034 deferred trailer blocks (post-v0.1.0). **D-103**
   bytecode-cache version scope must include peephole rule set (latent
   until D-100(b) ships). **D-092** keyEq→valueEqual + structural
