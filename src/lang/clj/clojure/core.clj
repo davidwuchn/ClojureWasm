@@ -385,6 +385,18 @@
   (fn* [pred coll]
     (reduce (fn* [acc x] (if (pred x) (conj acc x) acc)) [] coll)))
 
+;; `(shuffle coll)` — a random permutation of coll as a vector. Fisher-Yates
+;; over an immutable vector: for i from n-1 down to 1, swap index i with a
+;; random index in [0, i] via two assocs. Placed after `vec` (D-134).
+(def shuffle
+  (fn* [coll]
+    (let [v0 (vec coll)]
+      (loop [v v0 i (dec (count v0))]
+        (if (< i 1)
+          v
+          (let [j (rand-int (inc i))]
+            (recur (assoc (assoc v i (nth v j)) j (nth v i)) (dec i))))))))
+
 ;; `(reverse coll)` — reverse order. conj onto an empty list prepends,
 ;; so reducing left-to-right yields the reversed sequence (a list).
 ;; `'()` (quoted) — a bare `()` is rejected as an empty-call expression.
