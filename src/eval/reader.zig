@@ -42,6 +42,9 @@ pub const Reader = struct {
     max_depth: u32 = 1024,
     /// Optional file name; embedded into every emitted Form's location.
     file_name: []const u8 = "unknown",
+    /// True while reading a `#(...)` body, so a nested `#(` is rejected
+    /// (JVM-compatible — `%` would be ambiguous across levels). D-146.
+    in_fn_lit: bool = false,
 
     pub fn init(allocator: std.mem.Allocator, source: []const u8) Reader {
         return .{
@@ -90,6 +93,7 @@ pub const Reader = struct {
             .lbracket => self.readVector(tok),
             .lbrace => self.readMap(tok),
             .set_open => self.readSet(tok),
+            .fn_lit => self.readFnLit(tok),
             .quote => self.readQuote(tok),
             .symbolic => self.readSymbolic(tok),
             .discard => self.readDiscard(tok),
@@ -211,6 +215,89 @@ pub const Reader = struct {
         const loc = self.locOf(tok);
         const items = try self.readDelimited(.rbrace, loc);
         return Form{ .data = .{ .set = items }, .location = loc };
+    }
+
+    /// Accumulator for the `#()` body walk: the highest positional `%N`
+    /// seen (`%` counts as `%1`) and whether `%&` (rest) was used.
+    const FnLitCtx = struct { max_positional: usize = 0, rest: bool = false };
+
+    /// `#(body...)` anonymous fn → `(fn* [%1 … & %&] (body...))`. The
+    /// `#(` was consumed by the tokenizer (`.fn_lit`); read the
+    /// `)`-delimited body, canonicalise bare `%` → `%1` while collecting
+    /// the arity, and synthesise the fn* form. Nested `#()` is rejected
+    /// (JVM-compatible). The params are the literal `%1`…`%N`/`%&`
+    /// symbols the body references — no gensym needed since nesting is
+    /// forbidden (D-146).
+    fn readFnLit(self: *Reader, tok: Token) ReadError!Form {
+        const loc = self.locOf(tok);
+        if (self.in_fn_lit)
+            return error_catalog.raise(.fn_lit_nested, loc, .{});
+        self.in_fn_lit = true;
+        defer self.in_fn_lit = false;
+
+        const raw_body = try self.readDelimited(.rparen, loc);
+
+        var ctx: FnLitCtx = .{};
+        const body_items = self.allocator.alloc(Form, raw_body.len) catch return error.OutOfMemory;
+        for (raw_body, 0..) |f, i| body_items[i] = try self.transformFnLit(f, &ctx);
+        const body = Form{ .data = .{ .list = body_items }, .location = loc };
+
+        const n = ctx.max_positional;
+        const param_count = n + (if (ctx.rest) @as(usize, 2) else 0); // `&` + `%&`
+        const params = self.allocator.alloc(Form, param_count) catch return error.OutOfMemory;
+        var k: usize = 1;
+        while (k <= n) : (k += 1)
+            params[k - 1] = Form{ .data = .{ .symbol = .{ .name = try pctName(self.allocator, k) } }, .location = loc };
+        if (ctx.rest) {
+            params[n] = Form{ .data = .{ .symbol = .{ .name = "&" } }, .location = loc };
+            params[n + 1] = Form{ .data = .{ .symbol = .{ .name = "%&" } }, .location = loc };
+        }
+        const params_vec = Form{ .data = .{ .vector = params }, .location = loc };
+
+        const fn_items = self.allocator.alloc(Form, 3) catch return error.OutOfMemory;
+        fn_items[0] = Form{ .data = .{ .symbol = .{ .name = "fn*" } }, .location = loc };
+        fn_items[1] = params_vec;
+        fn_items[2] = body;
+        return Form{ .data = .{ .list = fn_items }, .location = loc };
+    }
+
+    /// Recursively copy a `#()` body Form, rewriting bare `%` → `%1` and
+    /// recording `%N`/`%&` usage into `ctx`. Scalars pass through; only
+    /// `%`-symbols are rewritten, so the copy is shallow where possible.
+    fn transformFnLit(self: *Reader, f: Form, ctx: *FnLitCtx) ReadError!Form {
+        switch (f.data) {
+            .symbol => |s| {
+                if (s.ns == null and s.name.len >= 1 and s.name[0] == '%') {
+                    if (s.name.len == 1) { // bare `%` ≡ `%1`
+                        if (ctx.max_positional < 1) ctx.max_positional = 1;
+                        return Form{ .data = .{ .symbol = .{ .name = "%1" } }, .location = f.location };
+                    }
+                    if (std.mem.eql(u8, s.name, "%&")) {
+                        ctx.rest = true;
+                        return f;
+                    }
+                    if (std.fmt.parseInt(usize, s.name[1..], 10) catch null) |nn| {
+                        if (ctx.max_positional < nn) ctx.max_positional = nn;
+                    }
+                }
+                return f;
+            },
+            .list => |items| return Form{ .data = .{ .list = try self.mapFnLit(items, ctx) }, .location = f.location },
+            .vector => |items| return Form{ .data = .{ .vector = try self.mapFnLit(items, ctx) }, .location = f.location },
+            .map => |items| return Form{ .data = .{ .map = try self.mapFnLit(items, ctx) }, .location = f.location },
+            .set => |items| return Form{ .data = .{ .set = try self.mapFnLit(items, ctx) }, .location = f.location },
+            else => return f,
+        }
+    }
+
+    fn mapFnLit(self: *Reader, items: []const Form, ctx: *FnLitCtx) ReadError![]const Form {
+        const out = self.allocator.alloc(Form, items.len) catch return error.OutOfMemory;
+        for (items, 0..) |c, i| out[i] = try self.transformFnLit(c, ctx);
+        return out;
+    }
+
+    fn pctName(alloc: std.mem.Allocator, n: usize) ReadError![]const u8 {
+        return std.fmt.allocPrint(alloc, "%{d}", .{n}) catch return error.OutOfMemory;
     }
 
     fn readDelimited(self: *Reader, closing: TokenKind, opener_loc: SourceLocation) ReadError![]const Form {

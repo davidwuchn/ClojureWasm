@@ -48,6 +48,10 @@ pub const TokenKind = enum(u8) {
     /// `#{` set-literal opener. The reader emits a `.set` Form
     /// by reading delimited elements up to the matching `}`.
     set_open,
+    /// `#(` anonymous-fn-literal opener (consumes the `(`). The reader
+    /// reads `)`-delimited body forms and rewrites them to a `fn*` Form
+    /// (D-146); `%`/`%N`/`%&` become the params.
+    fn_lit,
 
     eof,
     invalid,
@@ -274,6 +278,10 @@ pub const Tokenizer = struct {
             '{' => {
                 self.advance();
                 return self.makeToken(.set_open, start, start_line, start_col);
+            },
+            '(' => {
+                self.advance();
+                return self.makeToken(.fn_lit, start, start_line, start_col);
             },
             else => return self.makeToken(.invalid, start, start_line, start_col),
         }

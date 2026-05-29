@@ -149,6 +149,9 @@ pub const Code = enum {
     symbolic_value_incomplete,
     symbolic_value_unknown,
     discard_reader_macro_incomplete,
+    /// `#(... #(...) ...)` — nested anonymous-fn literals. JVM forbids
+    /// this because `%` would be ambiguous across levels (D-146).
+    fn_lit_nested,
     string_escape_trailing_backslash,
     unicode_escape_truncated,
     unicode_escape_invalid_hex,
@@ -584,6 +587,10 @@ pub fn entry(comptime code: Code) Entry {
         .discard_reader_macro_incomplete => .{
             .kind = .syntax_error, .phase = .parse,
             .template = "Discard '#_' has no following form",
+        },
+        .fn_lit_nested => .{
+            .kind = .syntax_error, .phase = .parse,
+            .template = "Nested #() anonymous functions are not allowed",
         },
         .string_escape_trailing_backslash => .{
             .kind = .string_error, .phase = .parse,
