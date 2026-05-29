@@ -37,20 +37,31 @@ const TypeDescriptor = type_descriptor_mod.TypeDescriptor;
 /// to a `*const TypeDescriptor` in `rt.types`. ADR-0029 D5 keys
 /// descriptors by their cljw-prefixed FQCN (e.g. `"cljw.java.util.UUID"`),
 /// but user source writes the JVM form (e.g. `"java.util.UUID"`). This
-/// helper bridges by trying:
-///   1. Literal `rt.types.get(head)`.
-///   2. `rt.types.get("cljw." ++ head)` for the Java prefix translation.
-/// Returns `null` if neither hits. The `env` parameter is currently
-/// reserved for a future short-name alias lookup (`UUID` alone resolving
-/// via the current ns) — not implemented at v0.1.0 per ADR-0050 § R3
-/// follow-up; pass `env` through to keep callsites stable for that
-/// landing.
+/// helper bridges by trying, in order:
+///   1. Literal `rt.types.get(head)` (e.g. `"java.util.UUID"`; also a
+///      user `(deftype Math …)` shadowing the auto-import — local wins).
+///   2. `rt.types.get("cljw." ++ head)` for the Java prefix translation
+///      (`"java.util.UUID"` → `"cljw.java.util.UUID"`).
+///   3. `rt.types.get("cljw.java.lang." ++ head)` for the `java.lang.*`
+///      auto-import (ADR-0050 § R3): a bare class name like `Math` /
+///      `System` resolves the way JVM Clojure default-imports
+///      `java.lang.*` into every ns. Gated to dot-free heads so a
+///      qualified head (already handled by 1/2) is not re-probed.
+/// Returns `null` if none hit. The `env` parameter is reserved for a
+/// future per-ns user-import map (distinct from the always-on java.lang
+/// auto-import this helper handles); pass it through to keep callsites
+/// stable for that landing.
 pub fn resolveJavaSurface(rt: *Runtime, env: *Env, head: []const u8) ?*const TypeDescriptor {
     _ = env;
     if (rt.types.get(head)) |td| return td;
     var buf: [256]u8 = undefined;
     const prefixed = std.fmt.bufPrint(&buf, "cljw.{s}", .{head}) catch return null;
     if (rt.types.get(prefixed)) |td| return td;
+    if (std.mem.findScalar(u8, head, '.') == null) {
+        var buf2: [256]u8 = undefined;
+        const auto = std.fmt.bufPrint(&buf2, "cljw.java.lang.{s}", .{head}) catch return null;
+        if (rt.types.get(auto)) |td| return td;
+    }
     return null;
 }
 

@@ -125,7 +125,15 @@ tiers:
       - { fqn: "java.lang.Integer",                      native_ns: "cljw.host.java.lang.Integer",                      phase: 5 }
       - { fqn: "java.lang.Double",                       native_ns: "cljw.host.java.lang.Double",                       phase: 5 }
       - { fqn: "java.lang.Boolean",                      native_ns: "cljw.host.java.lang.Boolean",                      phase: 5 }
-      - { fqn: "java.lang.Math",                         native_ns: "cljw.host.java.lang.Math",                         phase: 5 }
+      - fqn: java.lang.Math
+        cljw_ns: cljw.java.lang.Math
+        keyword: math
+        tier: A
+        phase: 14
+        files:
+          surface: runtime/java/lang/Math.zig
+        methods: [abs, sqrt, floor, ceil, round, pow, min, max]
+        clojure_peer_vars: []
       - fqn: java.lang.System
         cljw_ns: cljw.java.lang.System
         keyword: clock
