@@ -154,3 +154,71 @@ entries:
         median_us: 8160
         p99_us: 8160
         n: 1
+  - id: 14A.0
+    date: "2026-05-29"
+    reason: Phase 14 row 14.13 — v0.1.0 lock-point baseline (Mac aarch64 ReleaseFast tree_walk)
+    commit: 8ffaf690
+    build: ReleaseFast
+    backend: tree_walk
+    machine:
+      id: mac-arm-m4pro
+      cpu: Apple M4 Pro
+      cpu_arch: aarch64
+      os: Darwin 25.5.0
+      cores: 12
+    lock: true
+    results:
+      cold_start_us:
+        samples_us:
+          - 2660
+        median_us: 2660
+        p99_us: 2660
+        n: 1
+      e_plus_round_trip_us:
+        samples_us:
+          - 3280
+        median_us: 3280
+        p99_us: 3280
+        n: 1
+      read_100_forms_us:
+        samples_us:
+          - 3460
+        median_us: 3460
+        p99_us: 3460
+        n: 1
+      binary_size_bytes:
+        samples_us:
+          - 1427640
+        median_us: 1427640
+        p99_us: 1427640
+        n: 1
+      fib_recursive_us:
+        samples_us:
+          - 3600
+        median_us: 3600
+        p99_us: 3600
+        n: 1
+      arith_loop_us:
+        samples_us:
+          - 3640
+        median_us: 3640
+        p99_us: 3640
+        n: 1
+      list_build_us:
+        samples_us:
+          - 3840
+        median_us: 3840
+        p99_us: 3840
+        n: 1
+      quote_chain_us:
+        samples_us:
+          - 3300
+        median_us: 3300
+        p99_us: 3300
+        n: 1
+      let_chain_us:
+        samples_us:
+          - 3420
+        median_us: 3420
+        p99_us: 3420
+        n: 1
