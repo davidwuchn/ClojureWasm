@@ -13,6 +13,11 @@ Project-level design and operational metadata. Tracked in git. English.
   enforced** via [`.claude/rules/handover_framing.md`](../.claude/rules/handover_framing.md)
   (≤ 100 lines, no log accumulation, no forecast tables, no stop-
   rationalisation phrases).
+- [`cw_v0_parity_and_gap_plan.md`](./cw_v0_parity_and_gap_plan.md) — the
+  2026-05-29 cw-v0-vs-cw-v1 parity snapshot + the plan for incorporating
+  v0's gaps into cw v1 (redesigned, not copied; per-gap ordering +
+  ROADMAP-amendment hooks). Consulted when opening Phase 15+ / minting
+  quality-loop rows (ROADMAP §A26). F-003 foresight.
 - [`orbstack_setup.md`](./orbstack_setup.md) — one-time VM setup,
   iteration loop, and gate integration for the 🔒 OrbStack x86_64
   cross-platform gate (ROADMAP §11.5).
