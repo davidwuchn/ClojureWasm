@@ -36,11 +36,28 @@
 ;; `(first (drop 100 (range)))` → 100). `take` stays bounded-eager (it
 ;; realizes only N, so it already terminates on an infinite source).
 ;; The `-*-eager` map/filter/keep/remove/drop leaves are deleted.
+;; `map` — 1/2/3-coll. Multi-coll walks colls in parallel, stops at the
+;; shortest (D-134). N-coll variadic (`& colls`) deferred: it needs
+;; every?/identity which are later core.clj defns (def-order; fn-body
+;; symbols resolve at def time), so it would need a primitive-only seq-all.
 (def map
-  (fn* [f coll]
-    (lazy-seq
-      (let [s (seq coll)]
-        (if s (cons (f (first s)) (map f (rest s))) nil)))))
+  (fn* ([f coll]
+        (lazy-seq
+          (let [s (seq coll)]
+            (if s (cons (f (first s)) (map f (rest s))) nil))))
+       ([f c1 c2]
+        (lazy-seq
+          (let [s1 (seq c1) s2 (seq c2)]
+            (if (and s1 s2)
+              (cons (f (first s1) (first s2)) (map f (rest s1) (rest s2)))
+              nil))))
+       ([f c1 c2 c3]
+        (lazy-seq
+          (let [s1 (seq c1) s2 (seq c2) s3 (seq c3)]
+            (if (and s1 s2 s3)
+              (cons (f (first s1) (first s2) (first s3))
+                    (map f (rest s1) (rest s2) (rest s3)))
+              nil))))))
 (def filter
   (fn* [pred coll]
     (lazy-seq
@@ -86,7 +103,7 @@
 ;; Single-arg only at this cycle (transducer arities + multi-arg
 ;; pred deferred per D-NEW-2).
 (def complement
-  (fn* [pred] (fn* [x] (not (pred x)))))
+  (fn* [pred] (fn* [& args] (not (apply pred args)))))
 
 ;; `(partial f & args)` partially applies f to the leading args.
 ;; The trailing arg list and the partial's captured args meet via
@@ -236,6 +253,10 @@
 ;; `(vec coll)` — eager coerce any collection to a vector.
 (def vec
   (fn* [coll] (reduce conj [] coll)))
+;; `(vector & args)` — construct a vector from its args (D-134). Unblocks
+;; the common `(map vector ks vs)` / `(apply vector …)` idioms.
+(def vector
+  (fn* [& args] (vec args)))
 
 ;; `(mapv f coll)` — eager `map` returning a vector. Single-coll form.
 (def mapv
