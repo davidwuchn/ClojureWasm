@@ -251,6 +251,72 @@ pub fn analyzeLetStar(
     return n;
 }
 
+/// `(binding [*v1* e1 *v2* e2 ...] body)`. Unlike `let*`, the
+/// even-position names resolve to **existing dynamic Vars** (no lexical
+/// slots) and the init-exprs + body analyse in the OUTER `scope` (JVM
+/// parallel-eval semantics). The dynamic-ness of each target is checked
+/// at eval/push time (JVM-faithful site), not here — a Var's
+/// `flags.dynamic` could in principle change between analysis and eval.
+pub fn analyzeBinding(
+    arena: std.mem.Allocator,
+    rt: *Runtime,
+    env: *Env,
+    scope: ?*const Scope,
+    items: []const Form,
+    form: Form,
+    macro_table: *const macro_dispatch.Table,
+) AnalyzeError!*const Node {
+    if (items.len < 3)
+        return error_catalog.raise(.bindings_form_incomplete, form.location, .{ .form = "binding" });
+    if (items[1].data != .vector)
+        return error_catalog.raise(.bindings_not_vector, items[1].location, .{ .form = "binding" });
+    const binding_forms = items[1].data.vector;
+    if (binding_forms.len % 2 != 0)
+        return error_catalog.raise(.bindings_arity_odd, items[1].location, .{ .form = "binding" });
+
+    var pairs = try arena.alloc(node_mod.BindingNode.Pair, binding_forms.len / 2);
+    var bi: usize = 0;
+    var fi: usize = 0;
+    while (fi < binding_forms.len) : (fi += 2) {
+        if (binding_forms[fi].data != .symbol)
+            return error_catalog.raise(.binding_name_not_symbol, binding_forms[fi].location, .{ .form = "binding" });
+        const name_sym = binding_forms[fi].data.symbol;
+        // Resolve the target to its existing Var (qualified → alias then
+        // findNs, else current ns), mirroring analyzeSymbol's global path.
+        // `binding` rebinds an existing Var; it never declares a slot.
+        const target_ns = if (name_sym.ns) |ns_name|
+            (if (env.current_ns) |here| here.aliases.get(ns_name) else null) orelse
+                env.findNs(ns_name) orelse
+                return error_catalog.raise(.namespace_unknown, binding_forms[fi].location, .{ .ns = ns_name })
+        else
+            env.current_ns orelse
+                return error_catalog.raise(.current_namespace_missing, binding_forms[fi].location, .{ .sym = name_sym.name });
+        const var_ptr = target_ns.resolve(name_sym.name) orelse
+            return error_catalog.raise(.symbol_unresolved, binding_forms[fi].location, .{ .sym = analyzer_mod.symFullName(name_sym) });
+        // Init-expr analyses in the OUTER scope (parallel-eval): it sees
+        // the surrounding bindings, NOT the other binding pairs.
+        const value_node = try analyzer_mod.analyze(arena, rt, env, scope, binding_forms[fi + 1], macro_table);
+        pairs[bi] = .{ .var_ptr = var_ptr, .value_expr = value_node };
+        bi += 1;
+    }
+
+    // Body analyses in the OUTER scope too — `binding` introduces no
+    // lexical slots. At top level (`scope == null`) an empty scope
+    // stands in (there are no enclosing locals to resolve against).
+    var empty_scope = Scope{};
+    defer empty_scope.deinit(arena);
+    const body_scope: *const Scope = scope orelse &empty_scope;
+    const body_node = try analyzeBody(arena, rt, env, body_scope, items[2..], form, macro_table);
+
+    const n = try arena.create(Node);
+    n.* = .{ .binding_node = .{
+        .pairs = pairs,
+        .body = body_node,
+        .loc = form.location,
+    } };
+    return n;
+}
+
 pub fn analyzeLoopStar(
     arena: std.mem.Allocator,
     rt: *Runtime,

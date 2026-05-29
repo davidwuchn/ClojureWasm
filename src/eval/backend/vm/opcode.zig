@@ -159,6 +159,18 @@ pub const Opcode = enum(u8) {
     /// alias) + F-008 zwasm-component-import shape alignment.
     op_require_with_libspec = 0x1C,
 
+    /// `(binding [*v* e ...])` — operand = pair count N. Pops 2N stack
+    /// entries `[encVar0, val0, encVar1, val1, …]` (each `encVar` a
+    /// `var_ref`-encoded Value), builds a per-thread `BindingFrame`
+    /// (validating each target's `flags.dynamic`, else raising
+    /// `binding_target_not_dynamic`), and installs it on the env
+    /// threadlocal. Paired with `op_pop_binding_frame`; the compiler
+    /// wraps the body in a cleanup handler so a thrown exception pops
+    /// the frame before escaping (= JVM `finally`).
+    op_push_binding_frame = 0x1D,
+    /// Pop + free the innermost binding frame. Operand unused.
+    op_pop_binding_frame = 0x1E,
+
     /// True when this opcode carries a **signed-i16 instruction-position
     /// offset** in `operand`, relative to the instruction after itself
     /// (vm.zig:188-201 + :317 `applyJump`). Peephole's IP-remap pass
@@ -196,6 +208,8 @@ pub const Opcode = enum(u8) {
             .op_field_access,
             .op_method_call,
             .op_require_with_libspec,
+            .op_push_binding_frame,
+            .op_pop_binding_frame,
             => false,
         };
     }
@@ -238,6 +252,8 @@ pub const Opcode = enum(u8) {
             .op_field_access,
             .op_method_call,
             .op_require_with_libspec,
+            .op_push_binding_frame,
+            .op_pop_binding_frame,
             => false,
         };
     }

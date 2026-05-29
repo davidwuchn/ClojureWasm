@@ -328,6 +328,47 @@ fn stepOnce(
                     return raiseInternal("vm: op_pop_handler on empty handler stack");
                 handler_count -= 1;
             },
+            .op_push_binding_frame => {
+                // Pops 2N entries [encVar0, val0, …] and installs a
+                // per-thread BindingFrame on the env threadlocal (shared
+                // with TreeWalk — single-threaded per session, so
+                // `Var.deref` stays backend-agnostic). The compiler wraps
+                // the body in a cleanup handler so `op_pop_binding_frame`
+                // runs on both the success and the exception edge.
+                const n_pairs: usize = instr.operand;
+                if (sp < n_pairs * 2)
+                    return raiseInternal("vm: op_push_binding_frame stack underflow");
+                const base = sp - n_pairs * 2;
+                const frame = rt.gpa.create(env_mod.BindingFrame) catch
+                    return raiseInternal("vm: op_push_binding_frame frame alloc");
+                frame.* = .{};
+                var pi: usize = 0;
+                while (pi < n_pairs) : (pi += 1) {
+                    const var_ptr = stack[base + pi * 2].decodePtr(*const Var);
+                    const val = stack[base + pi * 2 + 1];
+                    if (!var_ptr.flags.dynamic) {
+                        frame.bindings.deinit(rt.gpa);
+                        rt.gpa.destroy(frame);
+                        var name_buf: [512]u8 = undefined;
+                        const qualified = std.fmt.bufPrint(&name_buf, "{s}/{s}", .{ var_ptr.ns.name, var_ptr.name }) catch var_ptr.name;
+                        return error_catalog.raise(.binding_target_not_dynamic, .{}, .{ .@"var" = qualified });
+                    }
+                    frame.bindings.put(rt.gpa, var_ptr, val) catch {
+                        frame.bindings.deinit(rt.gpa);
+                        rt.gpa.destroy(frame);
+                        return raiseInternal("vm: op_push_binding_frame put");
+                    };
+                }
+                sp = @intCast(base);
+                env_mod.pushFrame(frame);
+            },
+            .op_pop_binding_frame => {
+                const f = env_mod.current_frame orelse
+                    return raiseInternal("vm: op_pop_binding_frame on empty frame stack");
+                env_mod.popFrame();
+                f.bindings.deinit(rt.gpa);
+                rt.gpa.destroy(f);
+            },
             .op_match_class => {
                 if (sp == 0)
                     return raiseInternal("vm: op_match_class on empty stack");

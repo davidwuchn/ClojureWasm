@@ -370,6 +370,7 @@ pub fn eval(
         .let_node => |n| try evalLet(rt, env, locals, n),
         .call_node => |n| try evalCall(rt, env, locals, n),
         .loop_node => |n| try evalLoop(rt, env, locals, n),
+        .binding_node => |n| try evalBinding(rt, env, locals, n),
         .recur_node => |n| try evalRecur(rt, env, locals, n),
         .try_node => |n| try evalTry(rt, env, locals, n),
         .throw_node => |n| try evalThrow(rt, env, locals, n),
@@ -711,6 +712,34 @@ fn evalLet(rt: *Runtime, env: *Env, locals: []Value, n: node_mod.LetNode) !Value
             return error_catalog.raise(.slot_out_of_range, n.loc, .{ .form = "let*", .index = b.index, .max = locals.len });
         locals[b.index] = try eval(rt, env, locals, b.value_expr);
     }
+    return eval(rt, env, locals, n.body);
+}
+
+/// `(binding [*v* e ...] body)` — push a per-thread dynamic frame.
+/// JVM parallel-eval: all inits evaluate in the OUTER context first,
+/// then all targets are validated dynamic (mirroring
+/// `pushThreadBindings`'s per-Var check), then one frame is pushed for
+/// the body. `defer popFrame()` pops on both normal return and an
+/// error unwind (= JVM `finally`).
+fn evalBinding(rt: *Runtime, env: *Env, locals: []Value, n: node_mod.BindingNode) anyerror!Value {
+    var frame: env_mod.BindingFrame = .{};
+    defer frame.bindings.deinit(rt.gpa);
+    // Pass 1: eval inits in the outer scope (side effects happen here,
+    // before any validation — matches JVM hash-map construction order).
+    for (n.pairs) |pair| {
+        const val = try eval(rt, env, locals, pair.value_expr);
+        try frame.bindings.put(rt.gpa, pair.var_ptr, val);
+    }
+    // Pass 2: validate dynamic-ness before installing the frame.
+    for (n.pairs) |pair| {
+        if (!pair.var_ptr.flags.dynamic) {
+            var name_buf: [512]u8 = undefined;
+            const qualified = std.fmt.bufPrint(&name_buf, "{s}/{s}", .{ pair.var_ptr.ns.name, pair.var_ptr.name }) catch pair.var_ptr.name;
+            return error_catalog.raise(.binding_target_not_dynamic, n.loc, .{ .@"var" = qualified });
+        }
+    }
+    env_mod.pushFrame(&frame);
+    defer env_mod.popFrame();
     return eval(rt, env, locals, n.body);
 }
 

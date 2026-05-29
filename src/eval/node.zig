@@ -67,6 +67,7 @@ pub const Node = union(enum) {
     let_node: LetNode,
     call_node: CallNode,
     loop_node: LoopNode,
+    binding_node: BindingNode,
     recur_node: RecurNode,
     try_node: TryNode,
     throw_node: ThrowNode,
@@ -220,6 +221,26 @@ pub const LoopNode = struct {
     bindings: []const LetNode.Binding,
     body: *const Node,
     loc: SourceLocation = .{},
+};
+
+/// `(binding [*v1* e1 *v2* e2 ...] body)`. Unlike `LetNode`, the bound
+/// names resolve to **existing dynamic Vars** (no lexical slots), so each
+/// pair carries the resolved `*const Var` directly. Each `value_expr`
+/// analyses in the OUTER scope (JVM parallel-eval: inits see the
+/// surrounding bindings, not each other); the backend evaluates all
+/// inits, pushes one `BindingFrame` for the body's dynamic extent, then
+/// pops it (Zig `defer` / VM cleanup handler = JVM `finally`). A target
+/// that is not `flags.dynamic` raises `binding_target_not_dynamic` at
+/// push time (JVM-faithful site — dynamic-ness is a runtime Var flag).
+pub const BindingNode = struct {
+    pairs: []const Pair,
+    body: *const Node,
+    loc: SourceLocation = .{},
+
+    pub const Pair = struct {
+        var_ptr: *const Var,
+        value_expr: *const Node,
+    };
 };
 
 /// `(recur args...)`. The analyser has already verified that some

@@ -76,6 +76,37 @@ test "diff: fn* immediate invocation" {
     try f.check("((fn* [x y] (+ x y)) 3 4)", 7);
 }
 
+test "diff: binding rebinds a dynamic var (both backends)" {
+    var f = try Fixture.init(testing.allocator);
+    defer f.deinit();
+    // No `^:dynamic` reader-metadata surface yet (D-075); mark a Var
+    // dynamic directly (the env.zig unit-test pattern) so the binding
+    // special form has a target on both backends.
+    const user = f.env.findNs("user").?;
+    const v = try f.env.intern(user, "*tv*", Value.initInteger(1), null);
+    v.flags.dynamic = true;
+    try f.check("(binding [*tv* 2] *tv*)", 2);
+}
+
+test "diff: binding restores the root after the dynamic extent" {
+    var f = try Fixture.init(testing.allocator);
+    defer f.deinit();
+    const user = f.env.findNs("user").?;
+    const v = try f.env.intern(user, "*tv*", Value.initInteger(1), null);
+    v.flags.dynamic = true;
+    // Inner binding yields 2; after it pops, *tv* is the root 1 again.
+    try f.check("(do (binding [*tv* 2] *tv*) *tv*)", 1);
+}
+
+test "diff: nested binding — innermost shadows" {
+    var f = try Fixture.init(testing.allocator);
+    defer f.deinit();
+    const user = f.env.findNs("user").?;
+    const v = try f.env.intern(user, "*tv*", Value.initInteger(1), null);
+    v.flags.dynamic = true;
+    try f.check("(binding [*tv* 2] (binding [*tv* 3] *tv*))", 3);
+}
+
 test "diff: loop*/recur countdown" {
     var f = try Fixture.init(testing.allocator);
     defer f.deinit();

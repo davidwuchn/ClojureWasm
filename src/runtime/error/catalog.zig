@@ -77,6 +77,9 @@ pub const Code = enum {
     binding_name_not_symbol,
     /// args: `.{ .form = "let*"|"loop*" }`
     binding_name_namespace_qualified,
+    /// `(binding [v ...])` targeted a Var that is not `^:dynamic`.
+    /// args: `.{ .var = "ns/name" }`
+    binding_target_not_dynamic,
     /// loop* / recur arity exceeds the internal slot-index width.
     /// args: `.{ .form = "loop*"|"recur", .got = N, .max = 65535 }`
     arity_too_large,
@@ -397,6 +400,10 @@ pub fn entry(comptime code: Code) Entry {
         .binding_name_namespace_qualified => .{
             .kind = .syntax_error, .phase = .analysis,
             .template = "{[form]s} binding name must not be namespace-qualified",
+        },
+        .binding_target_not_dynamic => .{
+            .kind = .value_error, .phase = .eval,
+            .template = "Can't dynamically bind non-dynamic var: {[var]s}",
         },
         .arity_too_large => .{
             .kind = .not_implemented, .phase = .analysis,

@@ -121,6 +121,7 @@ const Compiler = struct {
             .throw_node => |n| try self.compileThrow(n),
             .try_node => |n| try self.compileTry(n),
             .loop_node => |n| try self.compileLoop(n),
+            .binding_node => |n| try self.compileBinding(n),
             .recur_node => |n| try self.compileRecur(n),
             .deftype_node => |n| try self.compileDeftype(n),
             .interop_call_node => |n| try self.compileInteropCall(n),
@@ -373,6 +374,45 @@ const Compiler = struct {
     fn compileFinallyPreservingTop(self: *Compiler, fb: *const node_mod.Node) Error!void {
         try self.compileNode(fb);
         try self.emit(.op_pop, 0);
+    }
+
+    fn compileBinding(self: *Compiler, n: node_mod.BindingNode) Error!void {
+        // Lowering shape (mirrors evalBinding + reuses compileTry's
+        // duplicate-cleanup-on-each-edge so a thrown exception pops the
+        // frame before escaping = JVM finally):
+        //
+        //   for each pair: op_const <encVar>          ; var_ref-encoded Var
+        //                  <value_expr>                ; init in outer scope
+        //   op_push_binding_frame  N                  ; pops 2N, installs frame
+        //   op_push_handler  +cleanup
+        //   <body>
+        //   op_pop_handler
+        //   op_pop_binding_frame                       ; success-path pop
+        //   op_jump  +end
+        // cleanup:                                     ; thrown on stack
+        //   op_pop_binding_frame                       ; exception-path pop
+        //   op_throw                                   ; re-raises
+        // end:
+        if (n.pairs.len > std.math.maxInt(u16)) return Error.TooManyConstants;
+        for (n.pairs) |pair| {
+            // var_ref-encode the resolved Var into the constant pool, same
+            // shape op_def / op_get_var use for Var references.
+            try self.emitConst(Value.encodeHeapPtr(.var_ref, pair.var_ptr));
+            try self.compileNode(pair.value_expr);
+        }
+        try self.emit(.op_push_binding_frame, @intCast(n.pairs.len));
+
+        const handler_idx = try self.emitJump(.op_push_handler);
+        try self.compileNode(n.body);
+        try self.emit(.op_pop_handler, 0);
+        try self.emit(.op_pop_binding_frame, 0);
+        const end_jump = try self.emitJump(.op_jump);
+
+        try self.patchJump(handler_idx);
+        try self.emit(.op_pop_binding_frame, 0);
+        try self.emit(.op_throw, 0);
+
+        try self.patchJump(end_jump);
     }
 
     fn compileThrow(self: *Compiler, n: node_mod.ThrowNode) Error!void {
