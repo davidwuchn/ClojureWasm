@@ -54,7 +54,7 @@ row 14.13.5 `[x]`:
 
 **Row 14.11 — D-100 (b) step 2: `src/app/builder.zig`.** Step 1 (payload
 envelope `serializeEnvelope`/`deserializeEnvelope` in `serialize.zig`)
-landed @4c8f1c20, gate 102. Step 2 = the `cljw build app.clj -o app`
+landed (serialize.zig), gate 102. Step 2 = the `cljw build app.clj -o app`
 CLI: extract `runner.zig`'s per-form compile-then-eval loop (`runSource`
 @runner.zig:64-) into a neutral helper, have the builder compile each
 form to a BytecodeChunk → `serializeEnvelope`, append the `"CLJC"`
