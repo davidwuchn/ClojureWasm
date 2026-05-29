@@ -5,73 +5,45 @@
 
 ## Resume contract
 
-- **HEAD**: ≈ `7b104659`+ (row 14.13 compat_tiers done; bench + handover
-  commits sit on top — see `git log` for exact HEAD).
-- **First commit on resume MUST be**: **row 14.13 deliverable (2) —
-  `bench/history.yaml` v0.1.0 lock-point.** Run `PHASE_NAME=v0.1.0
-  bash bench/quick.sh` (ReleaseFast; appends medians to
-  `quick_baseline.txt`), then `bash bench/record.sh --id=14A.0
-  --reason="Phase 14 row 14.13 — v0.1.0 lock-point baseline (Mac
-  aarch64 ReleaseFast tree_walk)"` (reads the latest quick_baseline
-  block, appends an ADR-0044 `lock: true` entry to `history.yaml`).
-  Commit history.yaml. THEN deliverable (3) `cljw.error/with-context`.
-- **Forbidden this session**: re-opening row 14.13 slice (a)/(b)
-  compat_tiers (DONE @7b104659 — D5 migration of 6 shipped host_classes
-  + Matcher/Socket added + zip kept Tier A; gate green 103/103). Re-doing
-  D-100 / lazy-seq (ADR-0054 complete). Widening wasm FFI / row 14.12
-  (F-010 de-prioritised). Pulling the v0.1.0 tag (row 14.14) before
-  14.13 (2)+(3) land. Down-tiering zip to B (decided: stays A).
+- **HEAD**: `c3aa601c` (with-context + read-side). Row 14.13 closed
+  2026-05-29 — see `git log`.
+- **First commit on resume MUST be**: §9.16 **row 14.14** — Phase 14
+  exit smoke + v0.1.0 release + final activation. Three parts: **(a)**
+  exit-smoke 5+ cases (repl / nrepl / build / render-error /
+  component-build / future-promise-delay / host-stdlib); **(b)** flip
+  `build_options.phase_at_least_14 = true` — swaps `runtime/io/stub.zig`
+  + REPL/nREPL stubs to real impls, rewrites `src/app/main.zig` dispatch
+  per ADR-0015 a2 F140-F144 (do Step 0 survey first); **(c)** tag
+  v0.1.0. Begin with (a) or (b).
+- **Forbidden this session**: tagging v0.1.0 before the Linux
+  **ubuntunote** gate (`bash scripts/run_remote_ubuntu.sh`) is green —
+  CLAUDE.md requires the Linux gate before the v0.1.0 tag. Re-opening
+  row 14.13 (DONE — bench 14A.0 `3f5aa415`; `binding` `15d7e21f`;
+  with-context `c3aa601c`; ADR-0055 + ADR-0042 am1; compat slices +
+  D-066 earlier).
 
 ## Current state
 
-Phase 14 v0.1.0 IN-PROGRESS. Mac gate **103/103** green (on-disk log
-@7b104659). Row 14.13 progress: slice (a)/(b) **compat_tiers
-reconciliation DONE @7b104659** — shipped host_classes migrated to
-ADR-0029 D5 (Pattern/BigDecimal full; LocalDateTime/Duration/
-ZonedDateTime/MessageDigest/Socket reservation w/ `status:` field;
-Matcher added), `clojure.zip` stays Tier A (comprehensive impl,
-e2e-tested), G3 --gate passes (14 D5 keyword entries). `cljw build`
-ships end-to-end (D-100 discharged). ADR-0054 lazy-seq Layer-2 complete.
-
-## Active task
-
-**Row 14.13 — v0.1.0 polish bundle (2 deliverables remain).**
-
-- **(2) `bench/history.yaml` v0.1.0 lock-point** (ADR-0044). Infra
-  verified present: `bench/quick.sh` (ReleaseFast build, appends
-  `quick_baseline.txt`), `bench/record.sh --id=… --reason=… [--backend=]`
-  (reads latest quick_baseline block → appends `lock: true` entry to
-  `history.yaml`; needs `yq`). Machine id auto = `mac-arm-m4pro`.
-- **(3) `cljw.error/with-context` macro** (v5 §13.6 + ADR-0034 L172/
-  L516). Spec: `(cljw.error/with-context {:request-id … :trace-id …}
-  body)` — a dynamic var stacks context, merged as top-level fields when
-  an error event is emitted (`src/app/error_render.zig`). **Prerequisite
-  (verified narrow 2026-05-29)**: `^:dynamic` def-meta is ALREADY wired —
-  both backends set `Var.flags.dynamic` (tree_walk.zig:683 / vm.zig:170
-  `DEF_FLAG_DYNAMIC`) and `Var.deref` consults the threadlocal
-  `BindingFrame` stack via `findBinding` (env.zig:99/195). The ONLY
-  missing piece is the `binding` special form itself: `env.pushFrame` /
-  `popFrame` exist but have ZERO call sites, and `binding` is not in the
-  analyzer special-form set. So (3)'s prerequisite is narrow — implement
-  `binding` (analyzer + tree_walk + vm: push a BindingFrame from the
-  binding-vector, eval body, popFrame), then with-context is a thin
-  `.clj` macro over it. New ns lives at `src/lang/clj/cljw/error.clj` +
-  a `@embedFile` row in `src/lang/bootstrap.zig` (no `src/lang/clj/cljw/`
-  dir exists yet).
+Phase 14 v0.1.0 IN-PROGRESS. Mac gate **105/105** green (on-disk
+`/tmp/gate_wc2.log` @c3aa601c). Rows 14.13 + 14.13.5 (lazy-seq Layer-2)
+both `[x]`. cw v1 now has its first dynamic var (`cljw.error/*error-context*`,
+Zig-registered) + the `binding` special form (real VM arm, no VM-DEFER).
+Per-task note for the 14.13 (3) cluster (binding + with-context +
+ADR-0042 am1 cascade) in `private/notes/phase14-task14_13_d3_with_context.md`.
 
 ## Open debts (named; full rows in `.dev/debt.md`)
 
-- **D-119** `cljw` man-page rendering (opportunistic; no Clojure surface
-  depends on it). **D-139** AOT fns drop param-name labels in error
-  frames. **D-140** `cljw` startup reads whole self-exe for trailer.
-- **D-105** time backing impls (LocalDateTime/Duration/ZonedDateTime).
-  **D-106** net+crypto backing (Socket/MessageDigest). These are the
-  reservations the compat_tiers D5 `status:` fields point at.
+- **D-141** bench multi-lock anchor policy. **D-142** Env-scope the
+  `*error-context*` slot (multi-Env nREPL). **D-143** apply multi-arity
+  spread vs fixed-method selection. **D-144** user `(throw ex-info)` →
+  structured EDN event + context. **D-105/D-106** time / net+crypto
+  backing impls. **D-119/D-139/D-140** opportunistic (man-page / AOT
+  param-names / startup self-exe read).
 
 ## Cold-start reading order
 
 handover → CLAUDE.md (§ Project spirit + § Autonomous Workflow + § The
-only stop) → `.dev/project_facts.md` (esp. F-010) → `.dev/principle.md`
-→ ROADMAP §9.16 row 14.13 → `bench/{quick,record}.sh` + ADR-0044 →
-v5 §13.6 (`private/notes/clj_vs_zig_split_proposal_v5.md`) +
-`src/runtime/env.zig` (dynamic var runtime).
+only stop) → `.dev/project_facts.md` (esp. F-010 + F-004) →
+`.dev/principle.md` → ROADMAP §9.16 row 14.14 → ADR-0015 a2 (F140-F144
+activation table) + `build_options` + `src/runtime/io/stub.zig` →
+`.dev/ubuntunote_setup.md` (Linux gate, run before the v0.1.0 tag).
