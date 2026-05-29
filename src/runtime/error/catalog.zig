@@ -209,6 +209,7 @@ pub const Code = enum {
     condp_form_incomplete,
     if_not_form_incomplete,
     when_not_form_incomplete,
+    assert_form_incomplete,
 
     // --- Eval (type) ---
     type_arg_not_number,
@@ -719,6 +720,10 @@ pub fn entry(comptime code: Code) Entry {
         .when_not_form_incomplete => .{
             .kind = .syntax_error, .phase = .macroexpand,
             .template = "when-not requires a test and at least one body form",
+        },
+        .assert_form_incomplete => .{
+            .kind = .syntax_error, .phase = .macroexpand,
+            .template = "assert requires an expression (message optional)",
         },
         .defn_form_incomplete => .{
             .kind = .syntax_error, .phase = .macroexpand,

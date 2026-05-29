@@ -224,6 +224,12 @@
 (def set
   (fn* [coll] (reduce conj #{} coll)))
 
+;; `(distinct? x …)` — true iff no two arguments are equal (by value).
+;; A set dedups by `=`, so distinct ⇔ the set keeps every element.
+;; Defined after `set` (it folds args through it).
+(def distinct?
+  (fn* [& args] (= (count args) (count (set args)))))
+
 ;; ----------------------------------------------------------------
 ;; Phase 14 §9.16 row 14.13 — D-126 clojure.core daily-driver cluster.
 ;; Pattern A composition over reduce / get / assoc / first / next /

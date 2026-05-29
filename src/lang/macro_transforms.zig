@@ -84,6 +84,7 @@ const BOOTSTRAP = [_]Entry{
     .{ .name = "cond", .expand = expandCond },
     .{ .name = "if-not", .expand = expandIfNot },
     .{ .name = "comment", .expand = expandComment },
+    .{ .name = "assert", .expand = expandAssert },
     .{ .name = "->", .expand = expandThreadFirst },
     .{ .name = "->>", .expand = expandThreadLast },
     .{ .name = "as->", .expand = expandAsThread },
@@ -965,6 +966,25 @@ fn expandComment(arena: std.mem.Allocator, rt: *Runtime, args: []const Form, loc
     _ = rt;
     _ = args;
     return nilForm(loc);
+}
+
+/// `(assert expr)` / `(assert expr msg)` →
+/// `(if expr nil (throw (ex-info MSG {:form (quote expr)})))`.
+/// MSG is the supplied msg form, or the string "Assert failed".
+fn expandAssert(arena: std.mem.Allocator, rt: *Runtime, args: []const Form, loc: SourceLocation) macro_dispatch.ExpandError!Form {
+    _ = rt;
+    if (args.len < 1 or args.len > 2)
+        return error_catalog.raise(.assert_form_incomplete, loc, .{});
+    const expr = args[0];
+    const msg: Form = if (args.len == 2) args[1] else .{ .data = .{ .string = "Assert failed" }, .location = loc };
+    // {:form (quote expr)}
+    const map_items = try arena.alloc(Form, 2);
+    map_items[0] = .{ .data = .{ .keyword = .{ .name = "form" } }, .location = loc };
+    map_items[1] = try makeCall(arena, "quote", &.{expr}, loc);
+    const data_map: Form = .{ .data = .{ .map = map_items }, .location = loc };
+    const exinfo = try makeCall(arena, "ex-info", &.{ msg, data_map }, loc);
+    const throw_form = try makeCall(arena, "throw", &.{exinfo}, loc);
+    return makeIf(arena, expr, nilForm(loc), throw_form, loc);
 }
 
 const ThreadDir = enum { first, last };
