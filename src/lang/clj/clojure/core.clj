@@ -197,6 +197,12 @@
         (rest coll)
         (throw (ex-info "Can't pop empty list" {}))))))
 
+;; `(find m k)` — the map entry `[k v]` for key k if present, else nil
+;; (distinguishes "absent" from "present with nil value" via contains?).
+;; cw v1 represents the entry as a 2-vector (no distinct MapEntry type).
+(def find
+  (fn* [m k] (if (contains? m k) [k (get m k)] nil)))
+
 ;; ----------------------------------------------------------------
 ;; Phase 6.16.b-3 helpers — used by clojure.set Group C (project /
 ;; rename / index / join). Pattern A composition; no Zig leaves.
