@@ -7,21 +7,30 @@
 
 - **HEAD**: ≈ `8edcc217` (ADR-0054 lazy-seq Layer-2 COMPLETE + cycle-3/4
   repair; see `git log` for exact HEAD — it advances each commit).
-- **First commit on resume MUST be**: **row 14.11 — D-100 (b) step 2,
-  `src/app/builder.zig`** (the `cljw build` CLI). Step 1 (payload
-  envelope `serializeEnvelope`/`deserializeEnvelope`/`freeEnvelope` in
-  `serialize.zig`, `[u32 n_chunks]` + per-chunk `[u32 len][bytes]`)
-  landed (envelope in `serialize.zig`; see git log). D-100 (a) (full
-  BytecodeChunk serializer) is ALREADY
-  DISCHARGED @194eefaf — **do NOT re-implement (a) or the envelope.**
-  Step 2 = new Layer-3 `builder.zig`: extract `runner.zig`'s `runSource`
-  per-form compile-then-eval loop (@runner.zig:64-) into a neutral
-  helper shared with the builder (F-009 mandatory), compile each form to
-  a BytecodeChunk → `serializeEnvelope`, append a `"CLJC"` trailer
-  (Deno-style), wire `build` into `cli.zig` dispatch, add an e2e test.
-  (e) `cljw-formats/0.1.0.edn` archive lock follows. Design: ADR-0034
-  am1 (Alt B) + ADR-0015 am5; survey
-  `private/notes/phase14-14.11-survey.md`.
+- **First commit on resume MUST be**: **row 14.11 — D-100 (b) step 3b:
+  self-embedding `cljw build` CLI + startup trailer-detect.** DONE: (a)
+  BytecodeChunk serializer @194eefaf; (b) step 1 envelope
+  (`serialize.serializeEnvelope`/`deserializeEnvelope`); step 2
+  compile-core (`builder.zig::buildEnvelope`); step 3a artifact trailer
+  (`serialize.frameArtifact`/`extractPayload`,
+  `[runtime][payload][u64 len]["CLJC"]`). **Do NOT re-implement (a) /
+  envelope / buildEnvelope / trailer.** Exact APIs (probed): self-exe =
+  `std.Io.File.openSelfExe(io, .{})`; read a file =
+  `std.Io.Dir.cwd().openFile(io, path, .{})` then
+  `f.reader(io,&buf).interface.allocRemaining(gpa,.unlimited)` (mirror
+  `cli.zig:163-171`); `cli.dispatch(init)` has `io=init.io /
+  gpa=init.gpa / arena=init.arena.allocator()` + a `first`-arg
+  subcommand chain at `cli.zig:33-69` (add a `build` arm there). Step
+  3b: (1) `builder.buildFile(io,gpa,arena,in,out)` = read source →
+  setup+`buildEnvelope` → `frameArtifact(self_exe_bytes,payload)` →
+  write `out` (createFile+writeAll) + chmod 0o755; (2) `build` dispatch
+  arm parsing `<in.clj> -o <out>`; (3) startup: at `dispatch` top,
+  `extractPayload(self_exe_bytes)` — if non-null, deserializeEnvelope +
+  `vm.eval` each chunk after `loadCore` (D-131) instead of REPL/argv;
+  (4) e2e `cljw build fx.clj -o /tmp/out && /tmp/out` (and `tail -c4 ==
+  CLJC`). F-009-extract the shared bootstrap setup (runner + builder).
+  Then (e) `cljw-formats/0.1.0.edn` archive lock. Design: ADR-0034 am1
+  (Alt B) + ADR-0015 am5; survey `private/notes/phase14-14.11-survey.md`.
 - **Resume disambiguation**: §9.16's numerically-first `[ ]` row IS
   14.11 (`[ ] partial` — (a)/(c)/(d) done, (b)/(e) outstanding) and it
   is now the resume target (lazy-seq row 14.13.5 closed). 14.12 is
