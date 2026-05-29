@@ -21,6 +21,12 @@ const Env = env_mod.Env;
 const Value = @import("../runtime/value/value.zig").Value;
 const primitive = @import("primitive.zig");
 const macro_transforms = @import("macro_transforms.zig");
+const Reader = @import("../eval/reader.zig").Reader;
+const analyze = @import("../eval/analyzer/analyzer.zig").analyze;
+const driver = @import("../eval/driver.zig");
+const vm_compiler = @import("../eval/backend/vm/compiler.zig");
+const serialize = @import("../eval/bytecode/serialize.zig");
+const tree_walk = @import("../eval/backend/tree_walk.zig");
 
 const testing = std.testing;
 
@@ -666,4 +672,39 @@ test "diff: peephole — if with pure-push elision inside both branches" {
     // Both branches contain a (do …) whose non-final pure push is
     // elided; the if's op_jump must be re-resolved after compaction.
     try f.check("(if true (do 9 7) (do 8 6))", 7);
+}
+
+// ADR-0056 Cycle 0 — the VM-dispatch knot. A DESERIALIZED (AOT) fn carries
+// a sentinel `body` + bytecode only, so calling it MUST route through the
+// vtable's `evalChunk` slot. After Cycle 0, `driver.installVTable` wires
+// `evalChunk` into the tree_walk vtable too, so a tree_walk-default runtime
+// (the production runner) can host AOT-restored bootstrap fns. A
+// freshly-compiled fn would mask this (it retains a real AST body), so the
+// test round-trips through the serializer to force the sentinel-body form.
+test "aot: deserialized bytecode fn dispatches via tree_walk vtable evalChunk" {
+    var f = try Fixture.init(testing.allocator);
+    defer f.deinit();
+    driver.installVTable(&f.rt);
+
+    const arena = f.arena.allocator();
+    var reader = Reader.init(arena, "(fn* [x] (+ x 1))");
+    const form = (try reader.read()).?;
+    const node = try analyze(arena, &f.rt, &f.env, null, form, &f.table);
+    const chunk = try vm_compiler.compile(&f.rt, arena, node);
+
+    const bytes = try serialize.serializeChunk(testing.allocator, chunk);
+    defer testing.allocator.free(bytes);
+    const chunk2 = try serialize.deserializeChunk(arena, &f.rt, &f.env, bytes);
+
+    var fn_val: Value = .nil_val;
+    for (chunk2.constants) |c| {
+        if (c.tag() == .fn_val) {
+            fn_val = c;
+            break;
+        }
+    }
+    try testing.expect(fn_val.tag() == .fn_val);
+
+    const result = try tree_walk.callFunction(&f.rt, &f.env, fn_val, &.{Value.initInteger(5)}, .{});
+    try testing.expectEqual(@as(i64, 6), result.asInteger());
 }

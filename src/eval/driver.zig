@@ -51,5 +51,13 @@ pub fn installVTable(rt: *Runtime) void {
         vm.installVTable(rt);
     } else {
         tree_walk.installVTable(rt);
+        // ADR-0056 Cycle 0: a tree_walk-default runtime still dispatches
+        // bytecode-backed fns (AOT-restored bootstrap / `cljw build`
+        // payloads) on the VM via the per-method `bytecode`/`body` hybrid
+        // (`tree_walk.zig:1004`). Inert until such a fn exists — pure
+        // source-eval'd tree_walk fns carry `bytecode == null` and never
+        // consult this slot. The VM eval loop is already linked in (the
+        // `cljw build` path references it), so this adds no code bloat.
+        rt.vtable.?.evalChunk = &vm.evalChunkErased;
     }
 }

@@ -705,7 +705,14 @@ pub fn installVTable(rt: *Runtime) void {
 /// Trampoline that casts the Layer-0 `*const anyopaque` chunk pointer
 /// back to `*const BytecodeChunk` (the concrete VM type) so the vtable
 /// stays Layer-0-only (per `zone_deps.md`).
-fn evalChunkErased(
+///
+/// `pub` so `driver.installVTable` can wire it into the **tree_walk**
+/// vtable too (ADR-0056 Cycle 0): a tree_walk-default runtime must
+/// dispatch bytecode-backed fns (AOT-restored bootstrap / `cljw build`)
+/// on the VM via the per-method `bytecode`/`body` hybrid
+/// (`tree_walk.zig:1004`). Inert until a bytecode fn exists in the
+/// runtime (pure-source tree_walk fns have `bytecode == null`).
+pub fn evalChunkErased(
     rt: *Runtime,
     env: *Env,
     locals: []Value,
