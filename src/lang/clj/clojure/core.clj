@@ -203,6 +203,13 @@
 (def find
   (fn* [m k] (if (contains? m k) [k (get m k)] nil)))
 
+;; `(subvec v start [end])` — the elements of v in [start, end) (end
+;; defaults to (count v)) as a vector. cw v1 builds a fresh vector (O(n))
+;; via take/drop rather than JVM's O(1) shared-structure view (D-134).
+(def subvec
+  (fn* ([v start] (into [] (drop start v)))
+       ([v start end] (into [] (take (- end start) (drop start v))))))
+
 ;; ----------------------------------------------------------------
 ;; Phase 6.16.b-3 helpers — used by clojure.set Group C (project /
 ;; rename / index / join). Pattern A composition; no Zig leaves.
