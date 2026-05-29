@@ -23,8 +23,6 @@ const evaluator = @import("../eval/evaluator.zig");
 const Runtime = @import("../runtime/runtime.zig").Runtime;
 const Env = @import("../runtime/env.zig").Env;
 const Value = @import("../runtime/value/value.zig").Value;
-const primitive = @import("../lang/primitive.zig");
-const macro_transforms = @import("../lang/macro_transforms.zig");
 const bootstrap = @import("../lang/bootstrap.zig");
 const error_print = @import("../runtime/error/print.zig");
 const print = @import("../runtime/print.zig");
@@ -56,8 +54,6 @@ pub fn runSource(
     defer env.deinit();
 
     driver.installVTable(&rt);
-    bootstrap.installEmbeddedResolver(&rt);
-    try primitive.registerAll(&env);
 
     // Bootstrap macros (Phase 3.7): intern `let` / `when` / `cond` /
     // `->` / `->>` / `and` / `or` / `if-let` / `when-let` as macro
@@ -65,19 +61,19 @@ pub fn runSource(
     // for the entire eval loop; no per-form re-construction.
     var macro_table = macro_dispatch.Table.init(gpa);
     defer macro_table.deinit();
-    try macro_transforms.registerInto(&env, &macro_table);
 
-    // Stage-1 prologue (Phase 3.13): read+analyse+eval the embedded
-    // `clj/clojure/core.clj`. Errors here use the synthetic
-    // `<bootstrap>` source label and are routed through the same
-    // catch path as user input — a broken prologue surfaces as a
-    // diagnostic, not a panic.
+    // Stage-1 prologue (Phase 3.13): install resolver + primitives +
+    // macros, then read+analyse+eval the embedded `clj/clojure/core.clj`
+    // — the one shared bootstrap chain (F-009, `bootstrap.setupCore`).
+    // Errors here use the synthetic `<bootstrap>` source label and are
+    // routed through the same catch path as user input — a broken
+    // prologue surfaces as a diagnostic, not a panic.
     // ADR-0035 D7 / D-058 closure: bootstrap-time errors render via
     // `rt.source_registry`, which `bootstrap.loadCore` populates per
     // file. `bootstrap_ctx` remains the fallback for the first-file
     // case where the registry has not yet been populated.
     const bootstrap_ctx = error_print.SourceContext{ .file = bootstrap.SOURCE_LABEL, .text = bootstrap.CORE_SOURCE };
-    bootstrap.loadCore(arena, &rt, &env, &macro_table) catch |err| {
+    bootstrap.setupCore(arena, &rt, &env, &macro_table) catch |err| {
         error_render.renderAndExitRegistry(stderr, &rt, bootstrap_ctx, err);
     };
 
@@ -129,19 +125,16 @@ pub fn runSourceCompare(
     var env = try Env.init(&rt);
     defer env.deinit();
 
-    bootstrap.installEmbeddedResolver(&rt);
-    try primitive.registerAll(&env);
-
     var macro_table = macro_dispatch.Table.init(gpa);
     defer macro_table.deinit();
-    try macro_transforms.registerInto(&env, &macro_table);
 
     // `evaluator.compare` swaps the vtable internally — but bootstrap
     // needs ONE vtable installed first so `bootstrap.loadCore`'s
     // expand+eval path works. Use tree_walk for bootstrap (matches
-    // production default); compare then re-installs per-run.
+    // production default); compare then re-installs per-run. Shared
+    // one-chain bootstrap (F-009, `bootstrap.setupCore`).
     driver.installVTable(&rt);
-    bootstrap.loadCore(arena, &rt, &env, &macro_table) catch |err| {
+    bootstrap.setupCore(arena, &rt, &env, &macro_table) catch |err| {
         try stderr.print("compare: bootstrap failed: {s}\n", .{@errorName(err)});
         try stderr.flush();
         std.process.exit(1);

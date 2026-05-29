@@ -11,11 +11,11 @@
 //! Backend: surface-only (Layer 3 → eval/runtime impl). Impl deps:
 //! serialize, vm/compiler, analyzer. Clojure peer: none.
 //!
-//! F-009 note: `runner.runSource` already owns the bootstrap chain
-//! (Runtime / Env / macro_table / loadCore) and is documented as the
-//! shared entry for "the build-runner"; this core takes that state as
-//! parameters rather than re-deriving it, so the eventual CLI path wires
-//! the same setup once and feeds both run and build.
+//! F-009 note: the install-resolver + primitives + macros + loadCore
+//! chain lives in one neutral home, `bootstrap.setupCore`, shared by the
+//! runner, `buildFile`, and the embedded-run startup. `buildEnvelope`
+//! takes already-bootstrapped state as parameters rather than re-deriving
+//! it; `buildFile` / `tryRunEmbedded` derive it via `setupCore`.
 
 const std = @import("std");
 const Runtime = @import("../runtime/runtime.zig").Runtime;
@@ -30,8 +30,6 @@ const driver = @import("../eval/driver.zig");
 const Value = @import("../runtime/value/value.zig").Value;
 const vm = @import("../eval/backend/vm.zig");
 const bootstrap = @import("../lang/bootstrap.zig");
-const primitive = @import("../lang/primitive.zig");
-const macro_transforms = @import("../lang/macro_transforms.zig");
 
 /// Compile every top-level form in `source_text` to a `BytecodeChunk`
 /// and return the serialized payload envelope (caller frees the bytes
@@ -73,19 +71,6 @@ pub fn buildEnvelope(
 
 // === cljw build CLI core + embedded-run startup (D-100(b) step 3b) ===
 
-/// Shared bootstrap: install the embedded resolver + primitives + macros +
-/// load the `clojure.core` prologue into an already-init'd rt/env/macro_table.
-/// The caller installs the backend vtable first (tree_walk for build, vm for
-/// the embedded run) and owns the rt/env/macro_table lifetimes. F-009: the
-/// build + embedded-run paths share this instead of each re-deriving the
-/// chain (runner migrates onto it in a follow-up cycle).
-fn setupRuntime(arena: std.mem.Allocator, rt: *Runtime, env: *Env, macro_table: *macro_dispatch.Table) !void {
-    bootstrap.installEmbeddedResolver(rt);
-    try primitive.registerAll(env);
-    try macro_transforms.registerInto(env, macro_table);
-    try bootstrap.loadCore(arena, rt, env, macro_table);
-}
-
 /// Read an entire file into a freshly `gpa`-allocated slice (caller frees).
 fn readFileAll(io: std.Io, gpa: std.mem.Allocator, path: []const u8) ![]u8 {
     const f = try std.Io.Dir.cwd().openFile(io, path, .{});
@@ -119,7 +104,7 @@ pub fn buildFile(io: std.Io, gpa: std.mem.Allocator, arena: std.mem.Allocator, i
     driver.installVTable(&rt);
     var macro_table = macro_dispatch.Table.init(gpa);
     defer macro_table.deinit();
-    try setupRuntime(arena, &rt, &env, &macro_table);
+    try bootstrap.setupCore(arena, &rt, &env, &macro_table);
 
     const payload = try buildEnvelope(gpa, &rt, &env, &macro_table, arena, source);
     defer gpa.free(payload);
@@ -160,7 +145,7 @@ pub fn tryRunEmbedded(io: std.Io, gpa: std.mem.Allocator, arena: std.mem.Allocat
     vm.installVTable(&rt); // wires evalChunk so deserialized fns run on the VM
     var macro_table = macro_dispatch.Table.init(gpa);
     defer macro_table.deinit();
-    try setupRuntime(arena, &rt, &env, &macro_table);
+    try bootstrap.setupCore(arena, &rt, &env, &macro_table);
 
     var it = try serialize.EnvelopeIterator.init(payload);
     var locals: [driver.MAX_LOCALS]Value = [_]Value{.nil_val} ** driver.MAX_LOCALS;
@@ -189,12 +174,9 @@ test "buildEnvelope compiles two forms into a two-chunk envelope" {
     const arena = arena_state.allocator();
 
     driver.installVTable(&rt);
-    bootstrap.installEmbeddedResolver(&rt);
-    try primitive.registerAll(&env);
     var macro_table = macro_dispatch.Table.init(testing.allocator);
     defer macro_table.deinit();
-    try macro_transforms.registerInto(&env, &macro_table);
-    try bootstrap.loadCore(arena, &rt, &env, &macro_table);
+    try bootstrap.setupCore(arena, &rt, &env, &macro_table);
 
     const bytes = try buildEnvelope(testing.allocator, &rt, &env, &macro_table, arena, "(+ 1 2) (* 3 4)");
     defer testing.allocator.free(bytes);
@@ -222,12 +204,9 @@ test "buildEnvelope evaluates each form so later forms see earlier env (ADR-0034
     const arena = arena_state.allocator();
 
     driver.installVTable(&rt);
-    bootstrap.installEmbeddedResolver(&rt);
-    try primitive.registerAll(&env);
     var macro_table = macro_dispatch.Table.init(testing.allocator);
     defer macro_table.deinit();
-    try macro_transforms.registerInto(&env, &macro_table);
-    try bootstrap.loadCore(arena, &rt, &env, &macro_table);
+    try bootstrap.setupCore(arena, &rt, &env, &macro_table);
 
     // Form 2 `(s/union …)` only ANALYSES once form 1's `(require …:as s)`
     // has been EVALUATED — the alias `s` is registered when the
@@ -259,12 +238,9 @@ test "fn_val constant round-trips through serialize (ADR-0034 am2)" {
     const arena = arena_state.allocator();
 
     driver.installVTable(&rt);
-    bootstrap.installEmbeddedResolver(&rt);
-    try primitive.registerAll(&env);
     var macro_table = macro_dispatch.Table.init(testing.allocator);
     defer macro_table.deinit();
-    try macro_transforms.registerInto(&env, &macro_table);
-    try bootstrap.loadCore(arena, &rt, &env, &macro_table);
+    try bootstrap.setupCore(arena, &rt, &env, &macro_table);
 
     // `(def add2 (fn* [x] (+ x 2)))` compiles a `fn_val` CONSTANT
     // (op_make_fn's operand). The serializer must round-trip it (ADR-0034
@@ -302,12 +278,9 @@ test "deserialized fn_val executes through the VM (ADR-0034 am2)" {
     defer arena_state.deinit();
     const arena = arena_state.allocator();
     driver.installVTable(&rt);
-    bootstrap.installEmbeddedResolver(&rt);
-    try primitive.registerAll(&env);
     var macro_table = macro_dispatch.Table.init(testing.allocator);
     defer macro_table.deinit();
-    try macro_transforms.registerInto(&env, &macro_table);
-    try bootstrap.loadCore(arena, &rt, &env, &macro_table);
+    try bootstrap.setupCore(arena, &rt, &env, &macro_table);
     // Two forms: `def` a fn in chunk 1, CALL it in chunk 2. Proves both
     // fn_val execution AND the interleaved startup model — chunk 2's
     // `var_ref` to `add2` only resolves because chunk 1 has already RUN
@@ -328,12 +301,9 @@ test "deserialized fn_val executes through the VM (ADR-0034 am2)" {
     defer arena2_state.deinit();
     const arena2 = arena2_state.allocator();
     vm.installVTable(&rt2); // wires evalChunk so deserialized fns run on the VM
-    bootstrap.installEmbeddedResolver(&rt2);
-    try primitive.registerAll(&env2);
     var macro_table2 = macro_dispatch.Table.init(testing.allocator);
     defer macro_table2.deinit();
-    try macro_transforms.registerInto(&env2, &macro_table2);
-    try bootstrap.loadCore(arena2, &rt2, &env2, &macro_table2);
+    try bootstrap.setupCore(arena2, &rt2, &env2, &macro_table2);
 
     // Interleave deserialize + run per chunk into a run-lifetime arena: the
     // chunks (and add2's method sub-chunk) must outlive every chunk's eval

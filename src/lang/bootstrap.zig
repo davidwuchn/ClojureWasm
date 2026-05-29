@@ -29,6 +29,8 @@ const Reader = @import("../eval/reader.zig").Reader;
 const analyzeForm = @import("../eval/analyzer/analyzer.zig").analyze;
 const macro_dispatch = @import("../eval/macro_dispatch.zig");
 const driver = @import("../eval/driver.zig");
+const primitive = @import("primitive.zig");
+const macro_transforms = @import("macro_transforms.zig");
 const Runtime = @import("../runtime/runtime.zig").Runtime;
 const env_mod = @import("../runtime/env.zig");
 const Env = env_mod.Env;
@@ -159,11 +161,23 @@ pub fn loadCore(
     }
 }
 
+/// Bootstrap an already-init'd runtime in one shared chain (F-009):
+/// install the embedded require resolver, register the kernel primitives +
+/// bootstrap macros, then load the `clojure.core` prologue. The CALLER
+/// installs the backend vtable (tree_walk / vm) BEFORE calling this —
+/// `loadCore`'s per-form eval needs it — and owns the rt/env/macro_table
+/// lifetimes. The runner, the `cljw build` core, and the embedded-run
+/// startup all share this instead of re-deriving the chain inline.
+pub fn setupCore(arena: std.mem.Allocator, rt: *Runtime, env: *Env, macro_table: *macro_dispatch.Table) !void {
+    installEmbeddedResolver(rt);
+    try primitive.registerAll(env);
+    try macro_transforms.registerInto(env, macro_table);
+    try loadCore(arena, rt, env, macro_table);
+}
+
 // --- tests ---
 
 const testing = std.testing;
-const primitive = @import("primitive.zig");
-const macro_transforms = @import("macro_transforms.zig");
 
 const Fixture = struct {
     threaded: std.Io.Threaded,
