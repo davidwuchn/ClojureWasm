@@ -12,18 +12,26 @@
   COMPLETE** (cycles 1-4: `let` seq+assoc, `fn`/`defn` params, `loop` macro+
   destructure — `macro_transforms.zig`); **D-151 cycle 1** (array_map keys
   String by value — `equal.keyEqValue`, 4d32b716). Mac gate 113/113.
-- **First commit on resume MUST be**: **D-045 — HAMT (`.hash_map`) +
-  `valueHash`** (= D-151 cycle 2). Today maps >8 entries hit a HARD WALL:
-  `map.zig` `.hash_map` arms raise `HashMapPromotionNotImplemented` (assoc past
-  the 8-entry array_map threshold) / `HashMapNotImplemented` (get on a hash_map)
-  — so any map literal or `assoc`/`into` growing beyond 8 keys ERRORS. Implement
-  the CHAMP-style HAMT body per `private/notes/phase5-5.5-survey.md` (the day-1
-  struct shapes exist in `map.zig`) + a `valueHash(v) u32` (sibling to
-  `equal.keyEqValue`, byte-hash strings) honouring the equal/hash contract
-  (a=b ⇒ hash(a)=hash(b)). **Step 0 survey FIRST** (run AFTER any gate, never
-  concurrent — perf-gate contention). Smallest red: `(get (into {} (map (fn [i]
-  [(str i) i]) (range 20))) "5")` → 5 (today raises). This also lifts the
-  D-151 string-key fix to >8-key maps + the `:strs` destructure at scale.
+- **First commit on resume MUST be**: **D-045 cycle A — HAMT read+grow**
+  (= D-151 cycle 2). The Step 0 survey is DONE:
+  `private/notes/phaseA26-d045-hamt-survey.md` (cycle split A/B/C, the
+  valueHash design, raise-site line refs, GC-trace verdict). **Implement
+  cycle A**: a `valueHash(v) u32` in `equal.zig` (the ONLY must-get-right
+  rule: byte-hash strings; everything else hashes raw bits, hash-consistent
+  with `keyEqValue` for free incl. the big_int/ratio identity residual) +
+  the HAMT `get`/`contains` (read) + `assoc` with array_map→hash_map
+  promotion. The `HamtMapNode` struct + tags already exist (map.zig:74,
+  5.5.a); only op bodies are stubbed (8 raise sites tabulated in the survey).
+  GC trace needs NO change (the existing conservative 64-slot
+  `traceHamtMapNode` is correct). After cycle A, >8-key maps build/grow/read;
+  dissoc/seq/keys/vals (cycle B) + hash-collision node (cycle C) still raise
+  explicit errors (no silent-wrong). **The survey rates cycle A MODERATE-HIGH
+  (the popcount + CoW path-copy HAMT insert is intricate) and recommends a
+  FRESH DEDICATED context — give it focused attention, TDD hard (build 9/20/50-
+  key maps, string keys at scale, both backends), a wrong popcount index
+  silently corrupts maps.** Smallest red: `(get (into {} (map (fn [i]
+  [(str i) i]) (range 20))) "5")` → 5; `(count (into {} (map (fn [i] [i i])
+  (range 50))))` → 50 (today raise `HashMapPromotionNotImplemented`).
 - **Forbidden this session**: re-opening interop / D-076 (all DONE). Putting
   destructure anywhere but `macro_transforms.zig` (single Layer-1 home).
   Threading `rt`/`env` through `map.get`/`contains`/`assoc` for key equality
