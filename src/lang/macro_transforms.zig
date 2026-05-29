@@ -99,6 +99,7 @@ const BOOTSTRAP = [_]Entry{
     .{ .name = "while", .expand = expandWhile },
     .{ .name = "when-first", .expand = expandWhenFirst },
     .{ .name = "case", .expand = expandCase },
+    .{ .name = "condp", .expand = expandCondp },
     .{ .name = "fn", .expand = expandFn },
     .{ .name = "defn", .expand = expandDefn },
     .{ .name = "defmulti", .expand = expandDefmulti },
@@ -820,8 +821,9 @@ fn caseTest(arena: std.mem.Allocator, g: Form, test_const: Form, loc: SourceLoca
     return caseConstEq(arena, g, test_const, loc);
 }
 
-/// `(throw (ex-info "No matching clause" {:value g}))` — the no-default fallback.
-fn caseNoMatchThrow(arena: std.mem.Allocator, g: Form, loc: SourceLocation) macro_dispatch.ExpandError!Form {
+/// `(throw (ex-info "No matching clause" {:value v}))` — the no-default
+/// fallback shared by case and condp.
+fn noMatchThrow(arena: std.mem.Allocator, g: Form, loc: SourceLocation) macro_dispatch.ExpandError!Form {
     const map_items = try arena.alloc(Form, 2);
     map_items[0] = .{ .data = .{ .keyword = .{ .name = "value" } }, .location = loc };
     map_items[1] = g;
@@ -845,7 +847,7 @@ fn expandCase(arena: std.mem.Allocator, rt: *Runtime, args: []const Form, loc: S
     const npairs = clauses.len / 2;
     const g = sym(try rt.gensym(arena, "case"), loc);
 
-    var acc: Form = if (has_default) clauses[clauses.len - 1] else try caseNoMatchThrow(arena, g, loc);
+    var acc: Form = if (has_default) clauses[clauses.len - 1] else try noMatchThrow(arena, g, loc);
     var p: usize = npairs;
     while (p > 0) {
         p -= 1;
@@ -860,6 +862,76 @@ fn expandCase(arena: std.mem.Allocator, rt: *Runtime, args: []const Form, loc: S
     binding[0] = g;
     binding[1] = args[0];
     return buildLetStarBody(arena, binding, acc, loc);
+}
+
+// --- condp (D-134) ---
+
+/// `(head call_args…)` from an arbitrary head Form (vs makeCall's name string).
+fn callForm(arena: std.mem.Allocator, head: Form, call_args: []const Form, loc: SourceLocation) macro_dispatch.ExpandError!Form {
+    const items = try arena.alloc(Form, 1 + call_args.len);
+    items[0] = head;
+    @memcpy(items[1..], call_args);
+    return list(arena, items, loc);
+}
+
+/// `(if test then else)`.
+fn makeIf(arena: std.mem.Allocator, test_f: Form, then_f: Form, else_f: Form, loc: SourceLocation) macro_dispatch.ExpandError!Form {
+    const items = try arena.alloc(Form, 4);
+    items[0] = sym("if", loc);
+    items[1] = test_f;
+    items[2] = then_f;
+    items[3] = else_f;
+    return list(arena, items, loc);
+}
+
+/// True when `f` is the ordinary keyword `:>>` used to mark a condp result-fn.
+fn isCondpArrow(f: Form) bool {
+    return f.data == .keyword and f.data.keyword.ns == null and std.mem.eql(u8, f.data.keyword.name, ">>");
+}
+
+/// Recursive emit mirroring JVM condp: a clause is 3 forms when its second
+/// is `:>>` (result-fn applied to the predicate's truthy value), else 2; a
+/// lone trailing form is the default; nothing left throws.
+fn condpEmit(arena: std.mem.Allocator, rt: *Runtime, gpred: Form, gexpr: Form, args: []const Form, loc: SourceLocation) macro_dispatch.ExpandError!Form {
+    if (args.len == 0) return noMatchThrow(arena, gexpr, loc);
+    const take: usize = if (args.len >= 2 and isCondpArrow(args[1])) 3 else 2;
+    const n = @min(take, args.len);
+    if (n == 1) return args[0]; // trailing default
+    const pred_call = try callForm(arena, gpred, &.{ args[0], gexpr }, loc);
+    if (n == 2) {
+        const more = try condpEmit(arena, rt, gpred, gexpr, args[2..], loc);
+        return makeIf(arena, pred_call, args[1], more, loc);
+    }
+    // n == 3: (if-let [p (gpred a gexpr)] (result-fn p) <more>)
+    const more = try condpEmit(arena, rt, gpred, gexpr, args[3..], loc);
+    const p = sym(try rt.gensym(arena, "condp_p"), loc);
+    const fn_call = try callForm(arena, args[2], &.{p}, loc);
+    const binding = try arena.alloc(Form, 2);
+    binding[0] = p;
+    binding[1] = pred_call;
+    const ifl = try arena.alloc(Form, 4);
+    ifl[0] = sym("if-let", loc);
+    ifl[1] = .{ .data = .{ .vector = binding }, .location = loc };
+    ifl[2] = fn_call;
+    ifl[3] = more;
+    return list(arena, ifl, loc);
+}
+
+/// `(condp pred expr clause*)` → `(let* [gp pred ge expr] <emit clauses>)`.
+/// pred + expr are each evaluated once; see condpEmit for the clause shapes.
+fn expandCondp(arena: std.mem.Allocator, rt: *Runtime, args: []const Form, loc: SourceLocation) macro_dispatch.ExpandError!Form {
+    if (args.len < 2)
+        return error_catalog.raise(.condp_form_incomplete, loc, .{});
+    const gpred = sym(try rt.gensym(arena, "condp_pred"), loc);
+    const gexpr = sym(try rt.gensym(arena, "condp_expr"), loc);
+    const body = try condpEmit(arena, rt, gpred, gexpr, args[2..], loc);
+
+    const binds = try arena.alloc(Form, 4);
+    binds[0] = gpred;
+    binds[1] = args[0];
+    binds[2] = gexpr;
+    binds[3] = args[1];
+    return buildLetStarBody(arena, binds, body, loc);
 }
 
 const ThreadDir = enum { first, last };
