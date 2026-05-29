@@ -7,24 +7,21 @@
 
 - **HEAD**: ≈ `e5a58552` (row 14.11 closed; see `git log` for exact HEAD —
   it advances each commit).
-- **First commit on resume MUST be**: **row 14.13 — `compat_tiers.yaml`
-  honesty-reconciliation.** Step 0 survey DONE + VERIFIED
-  (`private/notes/phase14-14.13-compat-tiers-survey.md`): the SSOT lies
-  about what ships. Concrete fixes (do Step 0.6 then implement; the sync
-  gate `check_compat_tiers_sync.sh` is informational so nothing enforces
-  truth — hand-fix): (1) **down-tier the over-claimed Tier A**:
-  `clojure.math` / `clojure.spec.alpha` / `clojure.spec.gen.alpha`
-  (compat_tiers.yaml ~L66-70 + target_phase L37) are declared Tier A
-  "full" but have ZERO impl (no `math.clj`, no `spec/` — verified) — they
-  are quality-loop work, not v0.1.0 (F-010); (2) **promote the
-  under-claimed**: `clojure.edn`/`pprint`/`tools.cli` are `status:planned`
-  but have working `.clj`; `clojure.data.json`/`data.csv` implemented but
-  unlisted; `clojure.zip` (Tier A) is really Tier B; (3) fix stale
-  metadata (`version 0.1.1-draft`, `last_updated 2026-05-24`) + the 36
-  retired `cljw.host.*` prefixes. Then sub-deliverables (2)
-  `bench/history.yaml` v0.1.0 lock-point (ADR-0044) + (3)
-  `cljw.error/with-context` macro (v5 §13.6). D-066 already Discharged;
-  man page = D-119 (opportunistic).
+- **First commit on resume MUST be**: **row 14.13 — finish `compat_tiers`
+  reconciliation, then bench/history + with-context.** Survey
+  `private/notes/phase14-14.13-compat-tiers-survey.md`. DONE this session:
+  math/spec down-tier from Tier A @57d4e3f9; edn/pprint/tools.cli/data.json/
+  data.csv promoted from "planned" to verified-implemented @22624c40;
+  metadata refresh. REMAINING compat_tiers: (a) the ~40 `native_ns:
+  "cljw.host.java.*"` host_classes entries — **NOT a blanket sed**: the
+  L103-107 comment says they migrate to `cljw_ns: "cljw.java.*"` (ADR-0029)
+  **per-class as each host class lands**, so migrate only entries whose
+  class is actually implemented; no tooling reads `native_ns` (doc-metadata
+  only — G3 reads `keyword:`/`files:`); (b) `clojure.zip` Tier A→B
+  precision (it's implemented, so a tier-label call, not a lie). Then row
+  14.13 (2) `bench/history.yaml` v0.1.0 lock-point (ADR-0044) + (3)
+  `cljw.error/with-context` macro (v5 §13.6). D-066 already Discharged; man
+  page = D-119 (opportunistic).
 - **Forbidden this session**: re-opening D-100 (a-e ALL discharged —
   `cljw build` ships end-to-end) or the lazy-seq cluster (ADR-0054
   complete). Widening wasm FFI / row 14.12 (zwasm-v2-gated, F-010
