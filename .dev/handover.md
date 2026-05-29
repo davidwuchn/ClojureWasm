@@ -5,8 +5,8 @@
 
 ## Resume contract
 
-- **HEAD**: ≈ `8edcc217` (ADR-0054 lazy-seq Layer-2 COMPLETE + cycle-3/4
-  repair; see `git log` for exact HEAD — it advances each commit).
+- **HEAD**: ≈ `ec9ccfed` (ADR-0054 lazy-seq Layer-2 actually landed; gate
+  102/102; see `git log` for exact HEAD — it advances each commit).
 - **First commit on resume MUST be**: **row 14.11 — D-100 (b) step 3b:
   self-embedding `cljw build` CLI + startup trailer-detect.** DONE: (a)
   BytecodeChunk serializer @194eefaf; (b) step 1 envelope
@@ -45,19 +45,16 @@
 
 ## Current state
 
-Phase 14 v0.1.0 IN-PROGRESS. Mac gate **102/102** (verified from the
-on-disk log; ubuntunote re-verify at the next Phase boundary per
-ADR-0049). **ADR-0054 lazy-seq Layer-2 is now COMPLETE** (all 4 cycles),
-row 14.13.5 `[x]`:
-
-- cycle 1 (e2e99de8): producer triad + `iterate`.
-- cycle 2 (e14d024c): lazy map/filter/keep/remove + print realize.
-- cycle 3 (8e0ce4db): lazy concat/mapcat/drop + infinite 0-arg `(range)`
-  via `(iterate inc 0)` + lazy `=` force-walk in `equal.zig` (rt/env).
-- cycle 4 + repair (8edcc217): lazy repeat/repeatedly/cycle/take-while/
-  drop-while/partition. NOTE: 8e0ce4db/3661d7f5 shipped red during an
-  infra-flakiness incident (range forward-ref to `iterate`; cycle-4
-  fns missing); 8edcc217 repaired both — gate green again.
+Phase 14 v0.1.0 IN-PROGRESS. Mac gate **102/102** (read from the on-disk
+log; ubuntunote re-verify at the next Phase boundary per ADR-0049).
+**ADR-0054 lazy-seq Layer-2 is COMPLETE** (row 14.13.5 `[x]`). cycle 4
+(repeat/repeatedly/cycle/take-while/drop-while/partition) + `list`
+actually landed at `ec9ccfed`: the earlier "repair" (8f7a1e63) and
+roadmap flip (240749ed) had claimed it, but the six fns + `list` were
+never in core.clj (red gate masked by flaky output). Caught on resume by
+reading run_all.sh from the log; also removed a duplicate `iterate` and
+realigned the phase6 private_leaf test to ADR-0054's `-drop-eager`
+deletion.
 
 ## Active task
 
