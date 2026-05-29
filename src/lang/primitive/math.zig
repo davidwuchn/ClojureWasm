@@ -166,7 +166,8 @@ pub fn starStrict(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocat
 
 /// `(/ ...)` — 1 arg returns `1/x` (matches Clojure); N args
 /// divides the first by each subsequent. Integer / integer not
-/// evenly divisible produces a Ratio; b == 0 raises divide_by_zero.
+/// evenly divisible produces a Ratio; integer division by zero raises
+/// divide_by_zero, but float division by zero yields IEEE ±Inf / NaN.
 pub fn slash(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
     _ = env;
     try ensureNumeric(args, "/", loc);

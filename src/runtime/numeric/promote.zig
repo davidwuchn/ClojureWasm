@@ -243,9 +243,10 @@ pub fn mulStrict(rt: *Runtime, a: Value, b: Value) !Value {
 /// Mirrors `Numbers.divide(Number, Number)` in JVM Clojure.
 pub fn divPromoting(rt: *Runtime, a: Value, b: Value) !Value {
     if (a.isFloat() or b.isFloat()) {
-        const bf = toF64(rt, b);
-        if (bf == 0.0) return error.DivideByZero;
-        return Value.initFloat(toF64(rt, a) / bf);
+        // IEEE-754 float division: x/0.0 → ±Inf, 0.0/0.0 → NaN (Zig float
+        // division does not trap). JVM Clojure throws DivideByZero only on
+        // the integer/integer path below — float division never throws.
+        return Value.initFloat(toF64(rt, a) / toF64(rt, b));
     }
 
     // Integer / integer path: build Managed for both, compute gcd,
@@ -377,6 +378,24 @@ test "divPromoting (5 / 0) raises DivideByZero" {
     defer fix.deinit();
 
     try testing.expectError(error.DivideByZero, divPromoting(&fix.rt, Value.initInteger(5), Value.initInteger(0)));
+}
+
+test "divPromoting float division by zero yields IEEE Inf / NaN (no trap)" {
+    var fix = Fixture.init();
+    defer fix.deinit();
+
+    const inf = try divPromoting(&fix.rt, Value.initFloat(1.0), Value.initFloat(0.0));
+    try testing.expect(std.math.isPositiveInf(inf.asFloat()));
+
+    const ninf = try divPromoting(&fix.rt, Value.initFloat(-1.0), Value.initFloat(0.0));
+    try testing.expect(std.math.isNegativeInf(ninf.asFloat()));
+
+    const nan = try divPromoting(&fix.rt, Value.initFloat(0.0), Value.initFloat(0.0));
+    try testing.expect(std.math.isNan(nan.asFloat()));
+
+    // mixed integer/float still goes IEEE (either operand float → float path)
+    const mixed = try divPromoting(&fix.rt, Value.initInteger(1), Value.initFloat(0.0));
+    try testing.expect(std.math.isPositiveInf(mixed.asFloat()));
 }
 
 test "divPromoting (1.0 / 2) returns float 0.5" {
