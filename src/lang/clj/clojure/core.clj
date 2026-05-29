@@ -210,6 +210,15 @@
   (fn* ([v start] (into [] (drop start v)))
        ([v start end] (into [] (take (- end start) (drop start v))))))
 
+;; `(bounded-count n coll)` — counts up to n elements (so it terminates on
+;; infinite / expensive seqs). cw v1 always walks (≤ n steps); JVM short-
+;; circuits to `(count coll)` for already-counted colls — a perf nicety,
+;; same result for finite colls of size ≤ n (D-134).
+(def bounded-count
+  (fn* [n coll]
+    (loop [c 0 s (seq coll)]
+      (if (if s (< c n) false) (recur (inc c) (next s)) c))))
+
 ;; ----------------------------------------------------------------
 ;; Phase 6.16.b-3 helpers — used by clojure.set Group C (project /
 ;; rename / index / join). Pattern A composition; no Zig leaves.
