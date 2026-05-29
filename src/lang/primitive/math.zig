@@ -233,12 +233,11 @@ fn pEQ(a: f64, b: f64) bool {
 /// All args must equal the first (transitive). Never raises on type
 /// mismatch — see `runtime/equal.zig` + ADR-0052.
 pub fn equals(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
-    _ = env;
     _ = loc;
     if (args.len < 2) return Value.true_val; // (=) and (= x) are true
     var i: usize = 1;
     while (i < args.len) : (i += 1) {
-        if (!try equal.valueEqual(rt, args[0], args[i])) return Value.false_val;
+        if (!try equal.valueEqual(rt, env, args[0], args[i])) return Value.false_val;
     }
     return Value.true_val;
 }

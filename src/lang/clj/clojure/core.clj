@@ -25,11 +25,12 @@
 ;; 2 wiring and multi-arity `fn*` both land.
 ;; ----------------------------------------------------------------
 
-;; map / filter / keep / remove are LAZY (ADR-0054 cycle 2): each wraps
-;; its step in `lazy-seq` so it composes with infinite producers
-;; (`(first (map inc (iterate inc 0)))` → 1, no hang). `take`/`drop`
-;; stay eager-bounded for now (take realizes only N; drop's lazy form
-;; is cycle 3). The `-*-eager` map/filter/keep/remove leaves are deleted.
+;; map / filter / keep / remove / drop are LAZY (ADR-0054 cycle 2/3):
+;; each wraps its step in `lazy-seq` so it composes with infinite
+;; producers (`(first (map inc (iterate inc 0)))` → 1, no hang;
+;; `(first (drop 100 (range)))` → 100). `take` stays bounded-eager (it
+;; realizes only N, so it already terminates on an infinite source).
+;; The `-*-eager` map/filter/keep/remove/drop leaves are deleted.
 (def map
   (fn* [f coll]
     (lazy-seq
@@ -45,7 +46,13 @@
             (filter pred (rest s)))
           nil)))))
 (def take (fn* [n coll] (-take-eager n coll)))
-(def drop (fn* [n coll] (-drop-eager n coll)))
+(def drop
+  (fn* [n coll]
+    (lazy-seq
+      (let [s (seq coll)]
+        (if (and (> n 0) s)
+          (drop (dec n) (rest s))
+          s)))))
 (def keep
   (fn* [f coll]
     (lazy-seq
@@ -133,9 +140,9 @@
 ;; Phase 14 §9.16 row 14.13 — D-126 clojure.core daily-driver cluster.
 ;; Pattern A composition over reduce / get / assoc / first / next /
 ;; conj / into / apply. get-in/assoc-in/update-in walk a key path;
-;; concat/mapcat are EAGER (DIVERGENCE: return a vector, not a lazy
-;; seq — consistent with this file's eager map/filter surface; true
-;; lazy lands with the lazy-seq Layer-2 wiring).
+;; concat/mapcat are LAZY (ADR-0054 cycle 3): `-concat2` is the 2-coll
+;; lazy-cons primitive both fold over, so they compose with infinite
+;; producers (`(take 5 (concat [1 2] (range)))`).
 ;; ----------------------------------------------------------------
 
 ;; `(get-in m ks)` — walk the key path `ks` through nested associatives.
@@ -163,18 +170,34 @@
         (assoc m k (apply update-in (into [(get m k) nks f] args)))
         (assoc m k (apply f (into [(get m k)] args)))))))
 
-;; `(concat & colls)` — eager left-to-right catenation into a vector.
-;; DIVERGENCE from JVM (lazy seq); see cluster header.
+;; `(-concat2 x y)` — lazy catenation of two seqables. Walks `x`
+;; element-by-element under `lazy-seq`, then hands off to `(seq y)`.
+;; The shared lazy-cons primitive for `concat` and `mapcat`.
+(def -concat2
+  (fn* [x y]
+    (lazy-seq
+      (let [s (seq x)]
+        (if s
+          (cons (first s) (-concat2 (rest s) y))
+          (seq y))))))
+
+;; `(concat & colls)` — lazy left-to-right catenation (JVM-idiom).
+;; Folds the (finite) arg list with `-concat2`; element realization
+;; stays lazy. `(concat)` → nil; `(concat a)` → `(seq a)`.
 (def concat
   (fn* [& colls]
-    (reduce (fn* [acc c] (reduce conj acc c)) [] colls)))
+    (reduce -concat2 nil colls)))
 
-;; `(mapcat f coll)` — map `f` over `coll`, eager-catenating the
-;; per-element collections. Single-coll form (multi-coll deferred,
-;; like `map`). DIVERGENCE from JVM (lazy seq); see cluster header.
+;; `(mapcat f coll)` — lazy `concat` of `(map f coll)`. Single-coll
+;; form (multi-coll deferred, like `map`). Recurses under `lazy-seq`
+;; so it composes with an infinite `coll`.
 (def mapcat
   (fn* [f coll]
-    (reduce (fn* [acc x] (reduce conj acc (f x))) [] coll)))
+    (lazy-seq
+      (let [s (seq coll)]
+        (if s
+          (-concat2 (f (first s)) (mapcat f (rest s)))
+          nil)))))
 
 ;; ----------------------------------------------------------------
 ;; Phase 14 §9.16 row 14.13 — D-134 cluster 1. High-frequency eager
@@ -392,19 +415,22 @@
     (-msort (fn* [a b] (compare (f a) (f b))) (vec coll))))
 
 ;; ----------------------------------------------------------------
-;; D-134 eager-finite range + index fns. Eager vectors (DIVERGENCE:
-;; JVM returns lazy seqs; the infinite 0-arg `(range)` awaits the
-;; lazy-seq Layer-2 gap and is intentionally absent).
+;; D-134 range + index fns. The finite arities `(range n)` /
+;; `(range start end)` stay eager vectors (a tracked DIVERGENCE: JVM
+;; returns lazy seqs — cheap-count consumers like `(count (range n))`
+;; keep the eager form until lazy count/nth land). The 0-arg infinite
+;; `(range)` IS lazy (ADR-0054 cycle 3) via `(iterate inc 0)`.
 ;; ----------------------------------------------------------------
 
 ;; Accumulate [start..end-1] into a vector (the eager range body).
 (def -range-acc
   (fn* [i n acc] (if (>= i n) acc (-range-acc (inc i) n (conj acc i)))))
 
-;; `(range n)` → [0..n-1]; `(range start end)` → [start..end-1]. Step
-;; arity + infinite 0-arity await lazy-seq / multi-arity follow-ups.
+;; `(range)` → infinite lazy 0,1,2,…; `(range n)` → [0..n-1];
+;; `(range start end)` → [start..end-1]. Step arity awaits a follow-up.
 (def range
-  (fn* ([n] (-range-acc 0 n []))
+  (fn* ([] (iterate inc 0))
+       ([n] (-range-acc 0 n []))
        ([start end] (-range-acc start end []))))
 
 ;; ----------------------------------------------------------------

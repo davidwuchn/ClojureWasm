@@ -2,7 +2,7 @@
 //! Universal value equality for `clojure.core/=` (= `clojure.lang.Util.equiv`).
 //! ADR-0052.
 //!
-//! `valueEqual(rt, a, b)` is by-value across nil / bool / number / char /
+//! `valueEqual(rt, env, a, b)` is by-value across nil / bool / number / char /
 //! keyword / symbol / string, structural for sequentials (vector / list,
 //! cross-type) and array-maps / sets, and **numeric category-gated per
 //! F-005** (`(= 1 1.0)` → false; `==` in `math.zig` is the widening
@@ -10,9 +10,10 @@
 //! (different/unhandled value → false); only real errors (OOM, a
 //! collection accessor) propagate via the error union.
 //!
-//! Scope (ADR-0052 D2/D3): sequential cursor covers vector + list (the
-//! literal-constructible sequentials); range / array_seq / lazy_seq
-//! sequential equality is deferred (env / lazy-realization dependency).
+//! Scope: sequential cursor covers vector + list + lazy_seq — the lazy
+//! arm force-walks via the lazy_seq protocol (`env` threaded so a thunk
+//! can read dynamic vars), ADR-0054 cycle 3. range / array_seq /
+//! string_seq join when a producer mints those tags.
 //! Map / set key matching rides the existing bit-pattern `keyEq`, so
 //! collection-keyed lookup is correct only for by-identity keys
 //! (keyword / int / symbol) — structural collection keys await D-092.
@@ -22,6 +23,8 @@
 const std = @import("std");
 const Value = @import("value/value.zig").Value;
 const Runtime = @import("runtime.zig").Runtime;
+const Env = @import("env.zig").Env;
+const lazy_seq = @import("lazy_seq.zig");
 const string_mod = @import("collection/string.zig");
 const vector = @import("collection/vector.zig");
 const list = @import("collection/list.zig");
@@ -45,6 +48,14 @@ fn numCat(v: Value) NumCat {
 
 fn isSequential(v: Value) bool {
     const t = v.tag();
+    return t == .vector or t == .list or t == .lazy_seq;
+}
+
+/// O(1)-countable sequentials (length short-circuit eligible). A
+/// lazy_seq has no cheap length (possibly infinite), so equality on a
+/// lazy seq walks element-by-element instead of comparing lengths.
+fn isCountable(v: Value) bool {
+    const t = v.tag();
     return t == .vector or t == .list;
 }
 
@@ -61,15 +72,20 @@ fn seqLen(v: Value) u32 {
 const Cursor = union(enum) {
     vec: struct { v: Value, i: u32, n: u32 },
     lst: Value,
+    /// A (possibly lazy) seq walked via the lazy_seq force protocol —
+    /// handles `.lazy_seq` layers + the realized `.list` cons chain
+    /// underneath (cons cells are `.list`-tagged per collection/list).
+    lzy: Value,
 
     fn init(v: Value) Cursor {
         return switch (v.tag()) {
             .vector => .{ .vec = .{ .v = v, .i = 0, .n = vector.count(v) } },
-            else => .{ .lst = v },
+            .list => .{ .lst = v },
+            else => .{ .lzy = v },
         };
     }
 
-    fn next(self: *Cursor) ?Value {
+    fn next(self: *Cursor, rt: *Runtime, env: *Env) anyerror!?Value {
         switch (self.*) {
             .vec => |*s| {
                 if (s.i >= s.n) return null;
@@ -81,6 +97,13 @@ const Cursor = union(enum) {
                 if (node.tag() != .list or list.countOf(node.*) == 0) return null;
                 const e = list.first(node.*);
                 node.* = list.rest(node.*);
+                return e;
+            },
+            .lzy => |*node| {
+                const s = try lazy_seq.seq(rt, env, node.*);
+                if (s.isNil()) return null;
+                const e = try lazy_seq.first(rt, env, s);
+                node.* = try lazy_seq.rest(rt, env, s);
                 return e;
             },
         }
@@ -103,26 +126,30 @@ fn intEqual(a: Value, b: Value) bool {
     return as_i == @as(i64, small.asInteger());
 }
 
-fn seqEqual(rt: *Runtime, a: Value, b: Value) anyerror!bool {
-    if (seqLen(a) != seqLen(b)) return false;
+fn seqEqual(rt: *Runtime, env: *Env, a: Value, b: Value) anyerror!bool {
+    // Length short-circuit only when BOTH are O(1)-countable (vector /
+    // list); a lazy seq is walked element-by-element (no cheap length,
+    // possibly infinite — the walk terminates as soon as the finite
+    // side ends).
+    if (isCountable(a) and isCountable(b) and seqLen(a) != seqLen(b)) return false;
     var ca = Cursor.init(a);
     var cb = Cursor.init(b);
     while (true) {
-        const ea = ca.next();
-        const eb = cb.next();
+        const ea = try ca.next(rt, env);
+        const eb = try cb.next(rt, env);
         if (ea == null and eb == null) return true;
         if (ea == null or eb == null) return false;
-        if (!try valueEqual(rt, ea.?, eb.?)) return false;
+        if (!try valueEqual(rt, env, ea.?, eb.?)) return false;
     }
 }
 
-fn mapEqual(rt: *Runtime, a: Value, b: Value) anyerror!bool {
+fn mapEqual(rt: *Runtime, env: *Env, a: Value, b: Value) anyerror!bool {
     if (map.count(a) != map.count(b)) return false;
     var ks = try map.keys(rt, a);
     while (ks.tag() == .list and list.countOf(ks) > 0) {
         const k = list.first(ks);
         if (!try map.contains(b, k)) return false;
-        if (!try valueEqual(rt, try map.get(a, k), try map.get(b, k))) return false;
+        if (!try valueEqual(rt, env, try map.get(a, k), try map.get(b, k))) return false;
         ks = list.rest(ks);
     }
     return true;
@@ -139,7 +166,7 @@ fn setEqual(rt: *Runtime, a: Value, b: Value) anyerror!bool {
 }
 
 /// `(= a b)` semantics. See module docstring + ADR-0052.
-pub fn valueEqual(rt: *Runtime, a: Value, b: Value) anyerror!bool {
+pub fn valueEqual(rt: *Runtime, env: *Env, a: Value, b: Value) anyerror!bool {
     // 1. Identity fast path: nil / bool / int / char / builtin_fn /
     //    interned keyword·symbol / pointer-identical heap.
     if (@intFromEnum(a) == @intFromEnum(b)) return true;
@@ -159,7 +186,7 @@ pub fn valueEqual(rt: *Runtime, a: Value, b: Value) anyerror!bool {
     }
 
     // 3. Sequential cross-type (vector / list).
-    if (isSequential(a) and isSequential(b)) return seqEqual(rt, a, b);
+    if (isSequential(a) and isSequential(b)) return seqEqual(rt, env, a, b);
 
     // 4. Same-tag content arms; any other tag pairing → false.
     const ta = a.tag();
@@ -168,7 +195,7 @@ pub fn valueEqual(rt: *Runtime, a: Value, b: Value) anyerror!bool {
     // identity fast path above; a non-bit-identical pair is unequal.
     return switch (ta) {
         .string => std.mem.eql(u8, string_mod.asString(a), string_mod.asString(b)),
-        .array_map, .hash_map => mapEqual(rt, a, b),
+        .array_map, .hash_map => mapEqual(rt, env, a, b),
         .hash_set => setEqual(rt, a, b),
         else => false,
     };

@@ -284,9 +284,10 @@ pub fn someQFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation
 // analyzer grows multi-arity support (tracked at D-NEW-2 per
 // 6.16.a-3.2 commit body).
 
-// `-map-eager` / `-filter-eager` deleted — map/filter are lazy `.clj`
-// now (ADR-0054 cycle 2). `-take-eager` / `-drop-eager` remain (take is
-// bounded-eager; drop's lazy form is cycle 3).
+// `-map-eager` / `-filter-eager` / `-drop-eager` deleted — map/filter
+// are lazy `.clj` (ADR-0054 cycle 2), drop is lazy `.clj` (cycle 3).
+// `-take-eager` remains (take is bounded-eager: it realizes only N, so
+// it already terminates on an infinite source).
 
 /// `(-take-eager n coll)` — eager list of first n elements.
 pub fn takeEagerFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
@@ -309,25 +310,6 @@ pub fn takeEagerFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLoca
         cur = try sequence.nextFn(rt, env, &.{cur}, loc);
     }
     return try buildListFromSlice(rt, collected.items);
-}
-
-/// `(-drop-eager n coll)` — eager list of elements after first n.
-pub fn dropEagerFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
-    try error_catalog.checkArity("-drop-eager", args, 2, loc);
-    const n_val = args[0];
-    if (n_val.tag() != .integer) {
-        return error_catalog.raise(.type_arg_not_integer, loc, .{
-            .fn_name = "-drop-eager",
-            .actual = @tagName(n_val.tag()),
-        });
-    }
-    var cur = try sequence.seqFn(rt, env, &.{args[1]}, loc);
-    var remaining: i64 = n_val.asInteger();
-    while (!cur.isNil() and remaining > 0) : (remaining -= 1) {
-        cur = try sequence.nextFn(rt, env, &.{cur}, loc);
-    }
-    // The remaining seq is already a valid list/cons head; return as-is.
-    return cur;
 }
 
 // `-keep-eager` / `-remove-eager` deleted — keep/remove are lazy `.clj`
@@ -389,7 +371,6 @@ const ENTRIES = [_]Entry{
 /// `private_access_error` — the intended ADR-0033 D4 contract.
 const LEAF_ENTRIES = [_]Entry{
     .{ .name = "-take-eager", .f = &takeEagerFn },
-    .{ .name = "-drop-eager", .f = &dropEagerFn },
 };
 
 pub fn register(
