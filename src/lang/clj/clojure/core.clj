@@ -426,6 +426,13 @@
 (def -range-acc
   (fn* [i n acc] (if (>= i n) acc (-range-acc (inc i) n (conj acc i)))))
 
+;; `(iterate f x)` — infinite lazy seq: x, (f x), (f (f x)), …. Defined
+;; before `range` because `(range)`'s 0-arg body calls it: cw v1 resolves
+;; a fn body's free symbols at analysis time, so a forward ref to a Var
+;; def'd later in the file fails to resolve.
+(def iterate
+  (fn* [f x] (lazy-seq (cons x (iterate f (f x))))))
+
 ;; `(range)` → infinite lazy 0,1,2,…; `(range n)` → [0..n-1];
 ;; `(range start end)` → [start..end-1]. Step arity awaits a follow-up.
 (def range
