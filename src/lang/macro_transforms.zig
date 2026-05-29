@@ -185,7 +185,7 @@ fn destructureInto(
             try out.append(arena, value_form);
         },
         .vector => |elems| try sequentialDestructure(out, arena, rt, elems, value_form, loc),
-        .map => return error_catalog.raise(.feature_not_supported, pat.location, .{ .name = "associative (map) destructuring" }),
+        .map => |pairs| try associativeDestructure(out, arena, rt, pairs, value_form, loc),
         else => return error_catalog.raise(.binding_name_not_symbol, pat.location, .{ .form = "let" }),
     }
 }
@@ -229,6 +229,100 @@ fn sequentialDestructure(
         try destructureInto(out, arena, rt, e, nth_val, loc);
         idx += 1;
     }
+}
+
+/// `{:keys [x y] :strs [s] :syms [q] :or {x 0} :as m, local kexpr}`
+/// lowering: bind `value_form` once to a gensym, then each name to
+/// `(get g <key> <default>)`. `:keys`→keyword key, `:strs`→string key,
+/// `:syms`→quoted-symbol key; bare `{local kexpr}`→`(get g kexpr)` with
+/// `local` recursable (nested); `:or` supplies the 3rd `get` arg keyed
+/// by binding-symbol name; `:as`→the gensym. D-076 cycle 2.
+fn associativeDestructure(
+    out: *std.ArrayList(Form),
+    arena: std.mem.Allocator,
+    rt: *Runtime,
+    pairs: []const Form,
+    value_form: Form,
+    loc: SourceLocation,
+) macro_dispatch.ExpandError!void {
+    const g = sym(try rt.gensym(arena, "map"), loc);
+    try out.append(arena, g);
+    try out.append(arena, value_form);
+
+    // Pass 1: locate `:or` (a `{sym default}` map) so its defaults are
+    // available regardless of key order.
+    var or_pairs: ?[]const Form = null;
+    var i: usize = 0;
+    while (i + 1 < pairs.len) : (i += 2) {
+        const k = pairs[i];
+        if (k.data == .keyword and k.data.keyword.ns == null and std.mem.eql(u8, k.data.keyword.name, "or")) {
+            if (pairs[i + 1].data != .map)
+                return error_catalog.raise(.feature_not_supported, loc, .{ .name = "destructuring `:or` value must be a map" });
+            or_pairs = pairs[i + 1].data.map;
+        }
+    }
+
+    // Pass 2: emit bindings for each directive / bare entry.
+    i = 0;
+    while (i + 1 < pairs.len) : (i += 2) {
+        const k = pairs[i];
+        const v = pairs[i + 1];
+        if (k.data == .keyword and k.data.keyword.ns == null) {
+            const kn = k.data.keyword.name;
+            if (std.mem.eql(u8, kn, "or")) continue;
+            if (std.mem.eql(u8, kn, "as")) {
+                if (v.data != .symbol)
+                    return error_catalog.raise(.feature_not_supported, loc, .{ .name = "destructuring `:as` without a symbol binding" });
+                try out.append(arena, v);
+                try out.append(arena, g);
+                continue;
+            }
+            if (std.mem.eql(u8, kn, "keys") or std.mem.eql(u8, kn, "strs") or std.mem.eql(u8, kn, "syms")) {
+                if (v.data != .vector)
+                    return error_catalog.raise(.feature_not_supported, loc, .{ .name = "destructuring `:keys`/`:strs`/`:syms` needs a symbol vector" });
+                for (v.data.vector) |s| {
+                    if (s.data != .symbol or s.data.symbol.ns != null)
+                        return error_catalog.raise(.feature_not_supported, loc, .{ .name = "destructuring `:keys`/`:strs`/`:syms` entries must be plain symbols" });
+                    const nm = s.data.symbol.name;
+                    const key_form: Form = if (std.mem.eql(u8, kn, "keys"))
+                        .{ .data = .{ .keyword = .{ .ns = null, .name = nm } }, .location = loc }
+                    else if (std.mem.eql(u8, kn, "strs"))
+                        .{ .data = .{ .string = nm }, .location = loc }
+                    else
+                        try makeCall(arena, "quote", &.{sym(nm, loc)}, loc);
+                    try out.append(arena, s);
+                    try out.append(arena, try makeGet(arena, g, key_form, findOrDefault(or_pairs, nm), loc));
+                }
+                continue;
+            }
+            return error_catalog.raise(.feature_not_supported, loc, .{ .name = "unsupported map-destructuring directive keyword" });
+        }
+        // Bare `{local kexpr}`: bind `local` (recursable) to `(get g kexpr <default>)`.
+        const default_form: ?Form = if (k.data == .symbol) findOrDefault(or_pairs, k.data.symbol.name) else null;
+        try destructureInto(out, arena, rt, k, try makeGet(arena, g, v, default_form, loc), loc);
+    }
+}
+
+/// `(get g key)` or `(get g key default)` when `default` is non-null.
+fn makeGet(
+    arena: std.mem.Allocator,
+    g: Form,
+    key: Form,
+    default: ?Form,
+    loc: SourceLocation,
+) macro_dispatch.ExpandError!Form {
+    if (default) |d| return makeCall(arena, "get", &.{ g, key, d }, loc);
+    return makeCall(arena, "get", &.{ g, key }, loc);
+}
+
+/// Look up a binding symbol's `:or` default by name. `null` if absent.
+fn findOrDefault(or_pairs: ?[]const Form, name: []const u8) ?Form {
+    const ps = or_pairs orelse return null;
+    var i: usize = 0;
+    while (i + 1 < ps.len) : (i += 2) {
+        if (ps[i].data == .symbol and std.mem.eql(u8, ps[i].data.symbol.name, name)) return ps[i + 1];
+    }
+    return null;
 }
 
 fn intForm(i: i64, loc: SourceLocation) Form {

@@ -33,9 +33,17 @@ assert_eq 'seq_rest_only' "$("$BIN" -e '(let [[& r] [1 2 3]] r)')"             '
 # Fast path (all plain symbols) — must be byte-for-byte unchanged.
 assert_eq 'fastpath'    "$("$BIN" -e '(let [x 1 y 2] (+ x y))')"                '3'
 
-# --- deferred scope raises a clear error (not a silent wrong answer) ---
-diag=$("$BIN" -e '(let [{:keys [a]} {:a 1}] a)' 2>&1 || true)
-[[ "$diag" == *"associative"* ]] || fail "assoc_deferred: expected 'associative ... destructuring' error, got '$diag'"
-echo "PASS assoc_deferred_raises"
+# --- cycle 2: associative {:keys/:syms/:or/:as/bare} ---
+assert_eq 'map_keys'    "$("$BIN" -e '(let [{:keys [a b]} {:a 1 :b 2}] (+ a b))')"           '3'
+assert_eq 'map_or'      "$("$BIN" -e '(let [{:keys [a b] :or {b 10}} {:a 1}] (+ a b))')"     '11'
+assert_eq 'map_as'      "$("$BIN" -e '(let [{:keys [a] :as m} {:a 1 :b 2}] [a (count m)])')" '[1 2]'
+assert_eq 'map_bare'    "$("$BIN" -e '(let [{a :alpha b :beta} {:alpha 1 :beta 2}] (+ a b))')" '3'
+assert_eq 'map_syms'    "$("$BIN" -e "(let [{:syms [q]} {'q 5}] q)")"                         '5'
+assert_eq 'map_missing' "$("$BIN" -e '(let [{:keys [z]} {:a 1}] z)')"                         'nil'
+assert_eq 'map_in_seq'  "$("$BIN" -e '(let [[{:keys [a]} c] [{:a 1} 2]] (+ a c))')"           '3'
+assert_eq 'seq_in_map'  "$("$BIN" -e '(let [{[a b] :pair} {:pair [1 2]}] (+ a b))')"          '3'
+# Note: `:strs` (string keys) is functionally blocked by the pre-existing
+# map string-key lookup gap (D-151: `(get {"x" 5} "x")` → nil); its lowering
+# is correct + forward-compatible, so it is intentionally not asserted here.
 
-echo "OK — phase14_destructure smoke (9 cases) green"
+echo "OK — phase14_destructure smoke (16 cases) green"
