@@ -494,28 +494,24 @@ entries:
   - name: runtime/vm/interop_call_static_method
     kind: runtime_layer
     defined_in: src/eval/backend/vm/compiler.zig
-    status: provisional
+    status: landed
     requires_features: []
-    requires_debts:
-      - D-130
-    provisional_markers:
-      - src/eval/backend/vm/compiler.zig (compileInteropCall .static_method arm — VM-DEFER pending op_interop_call vs op_static_method_call decision)
+    requires_debts: []
+    provisional_markers: []
     notes: |
-      ADR-0050 unified Node variant `InteropCallNode` collapses the
-      previous `ctor_call_node` / `field_access_node` / `method_call_node`
-      family. Three kinds (.constructor / .instance_field /
-      .instance_method) re-use the existing op_ctor_call /
-      op_field_access / op_method_call opcodes from ADR-0040 row 7.10
-      and ship green on both backends. The fourth kind
-      (.static_method) is D-121's new dispatch shape; its bytecode
-      form lands at D-130 (whether to extend to a unified
-      `op_interop_call <call_site_idx>` with a kind tag in the
-      side-table, or add a sibling `op_static_method_call` opcode).
-      Until D-130 lands, the VM arm rides
-      `// VM-DEFER:` per ADR-0036 / `dual_backend_parity.md`.
-      Smallest-diff bias smell prevention: do NOT pick the bytecode
-      shape opportunistically — the unified-vs-sibling decision is
-      load-bearing for the Phase 7+ CallSite cache extension.
+      ADR-0050 unified Node variant `InteropCallNode` (kinds, after am1:
+      `.static_method` / `.instance_member` / `.constructor`).
+      `.instance_member` (op_method_call, field-first; am1 retired the
+      separate op_field_access) and `.constructor` (op_ctor_call) ship
+      green on both backends. `.static_method` LANDED on the VM at
+      ADR-0050 am2 / D-130: the bytecode shape is a sibling opcode
+      `op_static_method_call <call_site_idx>` (0x1E) reusing `CallSiteEntry`
+      with a non-null `descriptor` (the analyze-time descriptor pointer),
+      raw `lookupMethod(null, name)` matching TreeWalk's cache-free static
+      path (no CallSite cache for static). The unified-vs-sibling decision
+      the row deferred resolved to sibling (am2 § Decision rebuts the D-130
+      row's unification lean). Differential coverage:
+      `src/lang/diff_test.zig` static_method (Math/max)/(Math/abs).
       Historical context: this entry replaces the prior stale
       `runtime/vm/dispatch_family` entry whose markers covered the
       3 now-landed Nodes — those VM arms shipped real lowering at

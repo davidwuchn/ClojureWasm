@@ -634,6 +634,35 @@ fn stepOnce(
                     sp += 1;
                 }
             },
+            .op_static_method_call => {
+                // operand = call_site_idx. ADR-0050 am2 (D-130): static
+                // dispatch — the descriptor is the analyze-time pointer in
+                // the call-site (no receiver to derive it from). Raw
+                // `lookupMethod` matches TreeWalk's evalStaticMethodCall
+                // (no CallSite cache); arg_count is user args only.
+                if (instr.operand >= chunk.call_sites.len)
+                    return raiseInternal("vm: op_static_method_call call_site index out of range");
+                const cs_entry = &chunk.call_sites[instr.operand];
+                const arg_count: u16 = cs_entry.arg_count;
+                if (sp < arg_count) return raiseInternal("vm: op_static_method_call underflow");
+                const td = cs_entry.descriptor orelse
+                    return raiseInternal("vm: op_static_method_call missing descriptor (compiler bug)");
+                const me = td.lookupMethod(null, cs_entry.method_name) orelse {
+                    return error_catalog.raise(.protocol_no_satisfies, .{}, .{
+                        .protocol = "<static>",
+                        .method = cs_entry.method_name,
+                        .type_name = td.fqcn orelse "<anonymous>",
+                    });
+                };
+                if (me.method_val.tag() == .nil)
+                    return error_catalog.raise(.feature_not_supported, .{}, .{ .name = "static method declared but not implemented" });
+                const args_slice = stack[sp - arg_count .. sp];
+                const vt = rt.vtable orelse return error.NoVTable;
+                const result = try vt.callFn(rt, env, me.method_val, args_slice, .{});
+                sp -= arg_count;
+                stack[sp] = result;
+                sp += 1;
+            },
     }
     return null;
 }

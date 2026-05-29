@@ -436,16 +436,15 @@ const Compiler = struct {
         try self.emit(.op_deftype, 0);
     }
 
-    /// ADR-0050 (am1) unified InteropCallNode VM compile arm. Two kinds
-    /// ship real bytecode: `.constructor` (op_ctor_call) and
+    /// ADR-0050 (am1 + am2) unified InteropCallNode VM compile arm. All
+    /// three kinds ship real bytecode: `.constructor` (op_ctor_call);
     /// `.instance_member` (op_method_call — am1 folded the retired
     /// op_field_access into op_method_call's receiver-keyed resolver, so a
     /// field read and a method call share one call-site + opcode; the
-    /// `field_only` flag carries the `.-name` form's field-only intent).
-    /// `.static_method` is D-121's new dispatch shape; its bytecode form
-    /// (single op_interop_call with kind operand, or a sibling
-    /// op_static_method_call) lands at D-130 (row 7.6.b successor). Until
-    /// then static_method rides VM-DEFER.
+    /// `field_only` flag carries the `.-name` form's field-only intent);
+    /// and `.static_method` (op_static_method_call — am2 / D-130: a sibling
+    /// opcode reusing `CallSiteEntry` with a non-null `descriptor`, the
+    /// analyze-time descriptor pointer, and NO receiver).
     fn compileInteropCall(self: *Compiler, n: node_mod.InteropCallNode) Error!void {
         switch (n.kind) {
             .constructor => {
@@ -472,8 +471,19 @@ const Compiler = struct {
                 try self.emit(.op_method_call, cs_idx);
             },
             .static_method => {
-                // VM-DEFER: static method dispatch bytecode shape pending D-130 op_interop_call vs op_static_method_call decision [refs: D-130, feature_deps.yaml#runtime/vm/interop_call_static_method]
-                return error.NotImplemented;
+                const td = n.descriptor orelse @panic("compileInteropCall: descriptor null for .static_method (analyzer bug)");
+                for (n.args) |*a| try self.compileNode(a);
+                if (self.call_sites.items.len > std.math.maxInt(u16)) return Error.TooManyConstants;
+                const cs_idx: u16 = @intCast(self.call_sites.items.len);
+                const method_name_dup = try self.arena.dupe(u8, n.name);
+                // No receiver: arg_count is the user-arg count only.
+                const arg_count: u16 = @intCast(n.args.len);
+                try self.call_sites.append(self.arena, .{
+                    .method_name = method_name_dup,
+                    .arg_count = arg_count,
+                    .descriptor = td,
+                });
+                try self.emit(.op_static_method_call, cs_idx);
             },
         }
     }

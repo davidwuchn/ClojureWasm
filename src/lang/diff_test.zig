@@ -360,6 +360,23 @@ test "diff: instance_member field-only (.-name) on deftype" {
     try f.check("(do (deftype DiffDash [a b]) (.-b (DiffDash. 1 33)))", 33);
 }
 
+// ADR-0050 am2 (D-130): `.static_method` now lowers to op_static_method_call
+// on the VM, so static dispatch is differential-testable. Deterministic
+// integer-returning statics only (the Phase-4 comparator is bit-pattern;
+// heap/non-deterministic statics like UUID/randomUUID can't be diffed).
+
+test "diff: static_method (Math/max) on both backends" {
+    var f = try Fixture.init(testing.allocator);
+    defer f.deinit();
+    try f.check("(Math/max 3 7)", 7);
+}
+
+test "diff: static_method (Math/abs) on both backends" {
+    var f = try Fixture.init(testing.allocator);
+    defer f.deinit();
+    try f.check("(Math/abs -5)", 5);
+}
+
 
 // Row 7.10 cycle 2 (D-073 diff_test descriptor cleanup): the 2
 // previously-deferred ADR-0040 op_method_call diff cases now land.

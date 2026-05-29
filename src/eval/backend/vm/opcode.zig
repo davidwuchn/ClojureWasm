@@ -20,6 +20,7 @@
 const std = @import("std");
 const Value = @import("../../../runtime/value/value.zig").Value;
 const method_table = @import("../../../runtime/dispatch/method_table.zig");
+const TypeDescriptor = @import("../../../runtime/type_descriptor.zig").TypeDescriptor;
 
 /// Bytecode operations dispatched by the VM.
 ///
@@ -170,6 +171,16 @@ pub const Opcode = enum(u8) {
     op_push_binding_frame = 0x1C,
     /// Pop + free the innermost binding frame. Operand unused.
     op_pop_binding_frame = 0x1D,
+    /// `(Class/method args...)` — operand = `call_site_idx` into
+    /// `BytecodeChunk.call_sites`. The entry's `descriptor` is non-null
+    /// (the analyze-time `InteropCallNode.descriptor`); pops `arg_count`
+    /// user args (NO receiver), raw `descriptor.lookupMethod(null, name)`
+    /// (matching TreeWalk's cache-free `evalStaticMethodCall` — the
+    /// CallSite cache is intentionally skipped, ADR-0050 am2 / D-130),
+    /// then `vt.callFn`. Sibling to `op_method_call` (one opcode per
+    /// dispatch discipline; am2 reuses `CallSiteEntry` rather than minting
+    /// a parallel struct).
+    op_static_method_call = 0x1E,
 
     /// True when this opcode carries a **signed-i16 instruction-position
     /// offset** in `operand`, relative to the instruction after itself
@@ -209,6 +220,7 @@ pub const Opcode = enum(u8) {
             .op_require_with_libspec,
             .op_push_binding_frame,
             .op_pop_binding_frame,
+            .op_static_method_call,
             => false,
         };
     }
@@ -252,6 +264,7 @@ pub const Opcode = enum(u8) {
             .op_require_with_libspec,
             .op_push_binding_frame,
             .op_pop_binding_frame,
+            .op_static_method_call,
             => false,
         };
     }
@@ -285,6 +298,13 @@ pub const CallSiteEntry = struct {
     /// ADR-0050 am1: set for the `(.-name recv)` reader form. When true the
     /// resolver reads a field only and never falls back to a method call.
     field_only: bool = false,
+    /// ADR-0050 am2: non-null ⇒ STATIC dispatch (op_static_method_call) —
+    /// the analyze-time `InteropCallNode.descriptor`; `arg_count` is the
+    /// user-arg count with NO receiver, and `cache` is unused (static uses
+    /// the raw `lookupMethod` matching TreeWalk). `null` ⇒ instance
+    /// dispatch (op_method_call) — descriptor derived from the receiver's
+    /// runtime tag, `cache` active. One shared entry, two modes.
+    descriptor: ?*const TypeDescriptor = null,
     cache: method_table.CallSite = .{},
 };
 
@@ -346,6 +366,7 @@ test "opcode enum tags are stable u8 values" {
     try std.testing.expectEqual(@as(u8, 0x19), @intFromEnum(Opcode.op_ctor_call));
     try std.testing.expectEqual(@as(u8, 0x1A), @intFromEnum(Opcode.op_method_call));
     try std.testing.expectEqual(@as(u8, 0x1B), @intFromEnum(Opcode.op_require_with_libspec));
+    try std.testing.expectEqual(@as(u8, 0x1E), @intFromEnum(Opcode.op_static_method_call));
 }
 
 test "Instruction carries opcode and u16 operand" {
