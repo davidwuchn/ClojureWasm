@@ -266,3 +266,194 @@ be unwound by that finished form = smallest-diff bias, so it was rejected.
   catalog-error path (`(/ 1 0)` carries `:request-id`); user
   `(throw ex-info)` does NOT (it bypasses `setErrorFmt`) — recorded as
   D-144.
+- 2026-05-29 amendment 2 (D-144 discharge): user-throw structured EDN
+  rendering. See § Amendment 2 below.
+
+## Amendment 2 (2026-05-29) — user-throw structured EDN rendering (D-144)
+
+### Context
+
+D3 left a read-side gap: a user `(throw v)` raises `error.ThrownValue`
+(payload in `dispatch.last_thrown_exception`), NOT a catalog `raise`, so
+`setErrorFmt` never runs and the threadlocal `Info` stays null. The
+renderer's null-Info fallback emitted a degraded event
+(`{:cljw/error true :file … :kind :unknown :message "ThrownValue"}`) with
+**no `*error-context*` fields** — so `(with-context {…} (throw (ex-info …)))`
+dropped its context while `(with-context {…} (/ 1 0))` (a catalog error)
+carried it. D3 explicitly foresaw this: *"Field is specific `Info.context`,
+not a generic `Info.data` ex-info payload … It can generalize when ex-info
+`Info`-payload lands."* This amendment is that landing.
+
+### D5: model user-throw as `Info.origin == .thrown`, not a new `Kind`
+
+- **`Info.origin: Origin = .catalog`** (`enum { catalog, thrown }`) +
+  **`Info.data: ?Value = null`** (the thrown ex-info's ex-data, distinct
+  from the ambient `context`). A new `Info.kindLabel()` is the single
+  category-label source both renderers consult: `@tagName(kind)` for
+  `.catalog`, `"exception"` for `.thrown`.
+- **Why not a `Kind.exception` variant** (the original draft): `info.zig`
+  documents a 1:1 `Kind` ⇄ `ClojureWasmError` mapping, but a user throw
+  raises `error.ThrownValue` (not a `ClojureWasmError`). A new `Kind`
+  would have no honest error tag — forcing a vestigial
+  `ClojureWasmError.Exception` or an `unreachable`/lie arm in the
+  exhaustive `kindToError`. Modelling user-throw as a distinct *origin*
+  keeps `Kind` the honest catalog-category enum it was designed as, and
+  matches reality: a user can `(throw 42)` — there is no catalog `Kind`
+  for "the integer 42".
+- **Throw-time context snapshot**: `dispatch.last_thrown_context: ?Value`,
+  set in `evalThrow` (TreeWalk) + `op_throw` (VM) via
+  `info.snapshotContext()` while the `binding` frame is live, cleared with
+  `last_thrown_exception` on catch. Same constraint the catalog path
+  solves inside `setErrorFmt` (the frame is popped by `defer popFrame`
+  during unwind, before render).
+- **Render-time synthesis**: `error_render.zig::buildThrownInfo` builds a
+  `{ origin = .thrown, message = ex-message | printValue, data = ex-data |
+  null, context = last_thrown_context }` Info from
+  `dispatch.last_thrown_exception`; both text + EDN route through it (one
+  printer, per D3). `formatErrorEdn` emits `:kind :exception`, a
+  `:data <ex-data>` field (when present), and the merged context.
+- **Exit code unchanged**: `renderAndExit` reads `peekLastError()` (null
+  for throws) → exit 1, the existing user-error code. The synthetic Info
+  is render-only and never round-trips through `kindToError`.
+- **`class_name` deferred**: a per-exception class label
+  (`"ExceptionInfo"`) was considered and deferred — cw v1 has no class
+  hierarchy yet (ex_info.zig comment), so a class field would be a
+  Reservation-as-bias bet on a not-yet-landed multi-class-catch future
+  (F-002). When multi-class catch lands (Phase 5+), that cycle adds it.
+
+### Alternatives considered (amendment 2)
+
+(Devil's-advocate subagent, fresh context, F-NNN envelope — output
+verbatim. The DA's leading finding — the `Kind` ⇄ `ClojureWasmError` 1:1
+break — drove the selection of the `origin` discriminator over the
+draft's `Kind.exception`.)
+
+> **F-NNN clearance summary (all three):** None requires violating an
+> F-NNN. All keep the snapshot-at-throw-time discipline (forced by the
+> `defer popFrame()` constraint — `evalBinding` pops during unwind,
+> `formatErrorEdn` runs at the CLI boundary after the frame is gone, so
+> render-time deref is structurally impossible). All keep the impl
+> namespace-neutral (the snapshot helper and the printer live in
+> `runtime/`, never in a `java/`/`cljw/` surface — F-009 + R4 hold).
+> None touches NaN-box layout or per-value metadata (F-004). The
+> decision space is purely: how user-throw exceptions get represented in
+> the `Info`/`Kind` model, where the throw-time context snapshot is
+> owned, and whether `Info.data` generalizes now.
+>
+> **Leading finding — the `Kind` ⇄ `ClojureWasmError` 1:1 invariant is
+> the real load-bearing decision, and the draft's `Kind.exception` breaks
+> it.** `info.zig` documents a strict 1:1 mapping between every `Kind`
+> and a `ClojureWasmError` tag; `kindToError` is exhaustive returning a
+> non-optional `ClojureWasmError`. A user throw raises `error.ThrownValue`
+> (not a `ClojureWasmError`). So a new `Kind.exception` has no honest
+> counterpart — forcing a vestigial `ClojureWasmError.Exception` or an
+> `unreachable`/lie arm. Both are smells the project would unwind. Not an
+> F-NNN violation (F-NNN is silent on the `Kind` model) but the single
+> most important thing to get right; resolvable internally, no halt.
+>
+> **Alt 1 — Smallest-diff: reuse an existing `Kind`, synthesize `Info` at
+> render time, no new enum variant.** Add only `last_thrown_context`;
+> build a synthetic Info reusing `Kind.value_error` ("a thrown Value is
+> evaluation producing a raised value"); special-case `:data` off
+> `thrown.tag() == .ex_info` directly in `formatErrorEdn`. *Better:* zero
+> change to the `Kind` enum / `ClojureWasmError` / `kindToError` — the
+> 1:1 invariant stays pristine; no premature `Info.data`. Smallest
+> surface that fixes the observable bug; text path gets message + context
+> free. *Breaks:* `:kind :value_error` for a user throw is a category lie
+> to a log consumer (conflates user exceptions with analyzer value
+> errors); the `:data` special-case scatters ex-info knowledge into the
+> printer; `(throw 42)` gets arbitrary `:value_error`. *F-NNN:* clean;
+> the `value_error` reuse is an F-002 cleanliness compromise, not a
+> block.
+>
+> **Alt 2 — Finished-form-clean: model user-throw OUTSIDE the
+> `Kind`⇄`ClojureWasmError` coupling via an `Info` origin discriminator.**
+> Add `Origin = enum { catalog, thrown }` + `origin` field (+ optional
+> `class_name` string + `data`); `Kind`/`ClojureWasmError` untouched. EDN
+> `:kind` becomes a function of `origin`: `@tagName(kind)` for `.catalog`,
+> the ex-info class / `:exception` for `.thrown`. Throw-time snapshot +
+> Info-build via a neutral helper shared by both backends. *Better:* the
+> finished form — `Kind` stays the honest catalog-category type; no
+> vestigial error, no `unreachable`; `class_name` is truthful and
+> forward-compatible with multi-class catch; the text path renders via an
+> `originLabel` helper fixing text + EDN in one place (D3's "one
+> printer", extended). *Breaks:* larger — touches `formatErrorWithContext`
+> (hard-codes `@tagName(info.kind)`), `formatError`, `kindToExitCode`;
+> `Info` grows fields. Unlike `Kind.exception`, none of it lies. *F-NNN:*
+> clean; neutral helper honors F-009; zone-clean.
+>
+> **Alt 3 — Wildcard: populate a full `Info` AT THROW TIME inside
+> `evalThrow`/`op_throw`, not at render time.** Have the throw site call a
+> `setErrorFmt`-equivalent (message, data, context-while-live,
+> `origin = .thrown`) into `last_error`, then return `error.ThrownValue`;
+> the render path's null-Info fallback then rarely fires. *Better:*
+> eliminates render-time reconstruction; `error_render.zig` stays a pure
+> Info reader; snapshot-at-throw-time satisfied by construction; unifies
+> the two error families at the Info layer. *Breaks:* the dangerous one —
+> a `(try (throw …) (catch …))` that recovers leaves a populated
+> `last_error` that MUST be cleared at every catch site (two backends,
+> easy to miss → silent-wrong-output), and it makes throw-time a second
+> writer of `last_error` (the `error_catalog_only.md` rule reserves that
+> for the catalog — needs a carve-out). Re-raise/nested-try interaction
+> is fiddly; always-on formatting cost on caught-in-loop throws. *F-NNN:*
+> clean on F-004/F-009/zones, but collides with the `error_catalog_only`
+> rule (a project rule, not F-NNN); stale-Info-after-catch is the real
+> reason it is the wildcard.
+>
+> **Recommendation (non-binding): Alt 2**, with the throw-time context
+> snapshot owned by `dispatch.last_thrown_context` and the Info-synthesis
+> at render time (avoiding Alt 3's stale-Info hazard by keeping
+> `last_error` catalog-owned). It is the only alternative that does not
+> lie about the `Kind`⇄`ClojureWasmError` 1:1 invariant; the draft and
+> Alt 1 are smallest-diff biases against this, and preferring them on
+> "the amendment is only ~150-250 lines" grounds is the Cycle-budget
+> defer smell. `Info.data` should land, but as the scoped ex-data sibling
+> of `context` (the concrete field this feature needs), not a speculative
+> generic payload. Snapshot lives in `dispatch` (sibling to
+> `last_thrown_exception`); the label indirection (`kindLabel`) fixes text
+> + EDN together. *Where it could be wrong:* if Phase 5+ folds user
+> exceptions and catalog errors into one unified taxonomy, Alt 3's
+> "everything is an Info by the boundary" might be truer — judged
+> unlikely (`ClojureWasmError` is host-failure-bound, structurally
+> distinct from user-thrown arbitrary Values).
+
+### Selection rationale (amendment 2)
+
+Took **Alt 2**, the DA's recommendation, per F-002 (finished-form wins —
+the larger diff is correct because the draft's `Kind.exception` is the
+shape a finished-form owner would unwind). Declined `class_name` for this
+cycle (Reservation-as-bias on multi-class catch — deferred to the Phase
+5+ owner), keeping the amendment to the `origin` + `data` + `kindLabel`
+core. Kept the synthesis render-side (not Alt 3's throw-time `last_error`
+write) to preserve the `error_catalog_only` invariant and dodge the
+stale-Info-after-catch hazard. Snapshot owned by
+`dispatch.last_thrown_context` (sibling to `last_thrown_exception`); set +
+cleared together so it is valid iff a thrown exception is pending.
+
+### Affected files (amendment 2)
+
+- `src/runtime/error/info.zig` (+`Origin`, +`Info.origin`/`Info.data`,
+  +`Info.kindLabel`, +`snapshotContext`; `formatError` uses `kindLabel`)
+- `src/runtime/dispatch.zig` (+`last_thrown_context` threadlocal)
+- `src/eval/backend/tree_walk.zig` (`evalThrow` snapshots context;
+  `evalTry` clears it on catch)
+- `src/eval/backend/vm.zig` (`op_throw` snapshots; handler clears)
+- `src/runtime/error/print.zig` (`formatErrorWithContext` uses `kindLabel`)
+- `src/app/error_render.zig` (`buildThrownInfo` + thrown branch in
+  `renderError`; `formatErrorEdn` uses `kindLabel` + emits `:data`)
+- `docs/spec/error_format.md` (`:exception` kind + `:data` key)
+- `test/e2e/phase14_user_throw.sh` (new) + `test/run_all.sh` (register)
+- `.dev/debt.md` (D-144 discharged)
+
+### Consequences (amendment 2)
+
+- The EDN error schema gains `:kind :exception` (user throws) + an
+  optional `:data` key (ex-data). `:data` was already listed as an
+  anticipated forward-compatible key; `:exception` is a new `:kind`
+  value. v0.1.0 is HELD/un-tagged, so no released contract is broken;
+  the spec doc is amended to list both.
+- `(with-context {…} (throw (ex-info …)))` now carries context into the
+  EDN event — the with-context read-side is complete for both catalog
+  errors and user throws.
+- D-142 (multi-Env nREPL slot race) is unchanged — the throw path reuses
+  the same process-global provider; the latent race is the same.

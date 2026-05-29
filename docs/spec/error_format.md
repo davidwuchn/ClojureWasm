@@ -22,14 +22,17 @@ Selects the stderr render format.
 
 ```clojure
 {:cljw/error true
- :kind <keyword>      ; one of: :syntax_error :number_error :string_error :name_error
-                      ;          :arity_error :value_error :not_implemented :type_error
-                      ;          :arithmetic_error :index_error :io_error :internal_error
+ :kind <keyword>      ; catalog error: one of :syntax_error :number_error :string_error
+                      ;   :name_error :arity_error :value_error :not_implemented :type_error
+                      ;   :arithmetic_error :index_error :io_error :internal_error
+                      ; user (throw v):  :exception
  :phase <keyword>     ; one of: :tokenize :parse :analysis :macroexpand :eval
  :file <string>       ; source file path or synthetic label ("<-e>", "<stdin>", "<repl:N>")
  :line <int>          ; 1-based; 0 if unknown
  :column <int>        ; 1-based; 0 if unknown
- :message <string>    ; rendered error message (no source-line preview)
+ :message <string>    ; rendered message (ex-message for a thrown ex-info; the
+                      ;   printed value for a non-ex-info throw)
+ :data <edn>          ; (thrown ex-info only) the ex-data map; absent otherwise
 }
 ```
 
@@ -37,13 +40,20 @@ Selects the stderr render format.
 - The `:cljw/error true` discriminator MUST appear first so the
   event survives stdout/stderr interleaving in mixed log output.
 - Strings are EDN-escaped: `"` → `\"`, `\` → `\\`, `\n` → `\\n`.
+- A user `(throw v)` renders `:kind :exception` (it raises a thrown
+  Value, not a catalog error). For `(throw (ex-info msg data))`,
+  `:message` is `msg` and `:data` is `data`; for any other thrown Value
+  (e.g. `(throw 42)`), `:message` is the printed value and `:data` is
+  absent. Any `cljw.error/*error-context*` bound via `with-context` at
+  throw time merges in as top-level fields, same as the catalog path.
 
 ### Forward compatibility
 
-- Future keys MAY be added (e.g. `:cause`, `:trace`, `:data`); a
-  reader MUST tolerate unknown keys.
-- The 12 `:kind` values and 5 `:phase` values listed above are
-  stable from v0.1.0; new variants ride a MAJOR bump.
+- Future keys MAY be added (e.g. `:cause`, `:trace`); a reader MUST
+  tolerate unknown keys.
+- The 13 `:kind` values (12 catalog + `:exception`) and 5 `:phase`
+  values listed above are stable from v0.1.0; new variants ride a
+  MAJOR bump.
 - `:file` / `:line` / `:column` carry the analyzer's known
   location; today some locations surface as `"unknown"` /
   `0` / `0` (the analyzer doesn't yet populate the field from
