@@ -35,7 +35,7 @@ SKIP_STEPS=""
 ONLY_STEPS=""
 # Functional e2e steps run concurrently (they are independent cljw spawns);
 # they make up ~60% of the gate wall-time and are embarrassingly parallel.
-# Perf-sensitive steps stay serial — see PERF_SERIAL below. --serial-e2e
+# Steps that must stay serial are listed in SERIAL_STEPS below. --serial-e2e
 # forces the old sequential path (used to validate parity).
 PARALLEL_E2E=1
 E2E_JOBS="${E2E_JOBS:-8}"
@@ -371,6 +371,7 @@ run_step "e2e_phase14_rand"                "bash test/e2e/phase14_rand.sh"
 run_step "e2e_phase14_shuffle"             "bash test/e2e/phase14_shuffle.sh"
 run_step "e2e_phase14_float_div"           "bash test/e2e/phase14_float_div.sh"
 run_step "e2e_phase14_num_predicates"      "bash test/e2e/phase14_num_predicates.sh"
+run_step "e2e_phase14_bit_ops"              "bash test/e2e/phase14_bit_ops.sh"
 run_step "e2e_phase14_cljw_build"            "bash test/e2e/phase14_cljw_build.sh"
 run_step "e2e_phase14_core_cluster"          "bash test/e2e/phase14_core_cluster.sh"
 run_step "e2e_phase14_print_family"          "bash test/e2e/phase14_print_family.sh"

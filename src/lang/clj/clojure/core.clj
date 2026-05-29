@@ -179,6 +179,14 @@
 (def nnext (fn* [x] (next (next x))))
 (def run! (fn* [f coll] (reduce (fn* [_ x] (f x)) nil coll) nil))
 
+;; Bit-position ops over the bitwise primitives (n = bit index, 0 = LSB).
+;; JVM Numbers.java inlines these; cw v1 composes them in .clj per the
+;; clj/zig split (bit-and/or/xor/not/shift-left are the Zig primitives).
+(def bit-set   (fn* [x n] (bit-or x (bit-shift-left 1 n))))
+(def bit-clear (fn* [x n] (bit-and x (bit-not (bit-shift-left 1 n)))))
+(def bit-flip  (fn* [x n] (bit-xor x (bit-shift-left 1 n))))
+(def bit-test  (fn* [x n] (not (zero? (bit-and x (bit-shift-left 1 n))))))
+
 ;; `(peek coll)` / `(pop coll)` — stack ops. Vector: peek = last element,
 ;; pop = drop the last (returns a vector). List/seq: peek = first, pop =
 ;; rest. peek of empty is nil; pop of empty throws (JVM parity). D-134.
