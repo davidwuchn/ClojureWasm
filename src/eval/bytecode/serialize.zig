@@ -529,6 +529,48 @@ pub fn freeEnvelope(allocator: std.mem.Allocator, chunks: []BytecodeChunk) void 
     allocator.free(chunks);
 }
 
+// === Deno-style self-contained artifact trailer (D-100(b), ADR-0034) ===
+//
+// `cljw build` appends the bytecode payload to a copy of the cljw runtime
+// binary, then a 12-byte footer `[u64 payload_len][4-byte "CLJC"]`. At
+// startup the runtime reads its own tail: a valid footer means "run the
+// embedded payload" instead of the REPL / argv path. The footer lives at
+// the very end so the prepended runtime stays a valid executable.
+// (D-131 defers the richer ADR-0034 D4 blocks — bootstrap cache /
+// build-id / Tier-0 metadata — to post-v0.1.0; the built binary re-runs
+// `bootstrap.loadCore` at startup for now.)
+
+pub const ARTIFACT_MAGIC: [4]u8 = .{ 'C', 'L', 'J', 'C' };
+const ARTIFACT_FOOTER_LEN: usize = 12; // u64 len + 4-byte magic
+
+/// Frame `runtime ++ payload ++ [u64 payload_len][\"CLJC\"]`.
+pub fn frameArtifact(allocator: std.mem.Allocator, runtime: []const u8, payload: []const u8) ![]u8 {
+    var aw: std.Io.Writer.Allocating = .init(allocator);
+    errdefer aw.deinit();
+    const w = &aw.writer;
+    try w.writeAll(runtime);
+    try w.writeAll(payload);
+    var len_buf: [8]u8 = undefined;
+    std.mem.writeInt(u64, &len_buf, @intCast(payload.len), .little);
+    try w.writeAll(&len_buf);
+    try w.writeAll(&ARTIFACT_MAGIC);
+    return try aw.toOwnedSlice();
+}
+
+/// If `bytes` ends with a valid `"CLJC"` footer, return the embedded
+/// payload sub-slice (a view into `bytes`); else null (a bare runtime /
+/// non-artifact). Validates the declared length fits before the footer.
+pub fn extractPayload(bytes: []const u8) ?[]const u8 {
+    if (bytes.len < ARTIFACT_FOOTER_LEN) return null;
+    const footer = bytes[bytes.len - 4 ..];
+    if (!std.mem.eql(u8, footer, &ARTIFACT_MAGIC)) return null;
+    const len = std.mem.readInt(u64, bytes[bytes.len - ARTIFACT_FOOTER_LEN ..][0..8], .little);
+    const payload_len: usize = @intCast(len);
+    if (payload_len + ARTIFACT_FOOTER_LEN > bytes.len) return null;
+    const end = bytes.len - ARTIFACT_FOOTER_LEN;
+    return bytes[end - payload_len .. end];
+}
+
 // --- tests ---
 
 const testing = std.testing;
@@ -560,6 +602,25 @@ test "payload envelope round-trips two chunks in order" {
     try testing.expect(out[0].constants[1].tag() == .keyword);
     try testing.expectEqual(@as(usize, 1), out[1].constants.len);
     try testing.expectEqual(@as(i64, 99), out[1].constants[0].asInteger());
+}
+
+test "artifact trailer frames and extracts the payload" {
+    const runtime = "RUNTIME_BINARY_BYTES";
+    const payload = "PAYLOAD_ENVELOPE_BYTES";
+    const art = try frameArtifact(testing.allocator, runtime, payload);
+    defer testing.allocator.free(art);
+
+    // Runtime stays a prefix; payload recoverable from the footer.
+    try testing.expectEqualStrings(runtime, art[0..runtime.len]);
+    const got = extractPayload(art) orelse return error.NoTrailer;
+    try testing.expectEqualStrings(payload, got);
+
+    // A bare runtime (no footer) is not mistaken for an artifact.
+    try testing.expect(extractPayload(runtime) == null);
+    // An empty payload still frames + extracts cleanly.
+    const empty_art = try frameArtifact(testing.allocator, runtime, "");
+    defer testing.allocator.free(empty_art);
+    try testing.expectEqual(@as(usize, 0), (extractPayload(empty_art) orelse return error.NoTrailer).len);
 }
 
 test "header magic + version round-trips on empty chunk" {

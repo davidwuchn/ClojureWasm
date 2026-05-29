@@ -8493,3 +8493,8 @@
 2026-05-29T00:51:26Z	phase4	list_build_us	3460	mac-arm-m4pro
 2026-05-29T00:51:26Z	phase4	quote_chain_us	3400	mac-arm-m4pro
 2026-05-29T00:51:26Z	phase4	let_chain_us	3380	mac-arm-m4pro
+2026-05-29T00:57:56Z	phase1	cold_start_us	10060	mac-arm-m4pro
+2026-05-29T00:57:56Z	phase1	e_plus_round_trip_us	3260	mac-arm-m4pro
+2026-05-29T00:57:56Z	phase1	read_100_forms_us	203180	mac-arm-m4pro
+2026-05-29T00:57:56Z	phase1	binary_size_bytes	1391480	mac-arm-m4pro
+2026-05-29T00:57:56Z	phase1	fib_recursive_us	282260	mac-arm-m4pro
