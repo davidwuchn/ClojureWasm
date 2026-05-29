@@ -159,10 +159,18 @@ fi
 # scripts to skip their own `zig build` (each was a ~0.3s cache-hit ×
 # ~108 scripts ≈ 32s of redundant rebuilds + process spawns per gate).
 # The 3 backend-forcing e2e (phase4_*) keep their own `-Dbackend=…`
-# builds (unguarded) and restore tree_walk at their end, so the shared
-# binary is the default for every guarded e2e. Standalone e2e runs (env
-# unset) still build normally — the guard is a no-op outside the gate.
-run_step "build_cljw"           "zig build"
+# builds (which honour CLJW_OPT) and restore tree_walk at their end, so
+# the shared binary stays the default+CLJW_OPT for every guarded e2e.
+# Standalone e2e runs (env unset) still build normally — the guard is a
+# no-op outside the gate.
+#
+# CLJW_OPT=ReleaseSafe: the e2e binary is OPTIMISED but keeps ALL safety
+# checks (overflow / bounds / unreachable) so regressions are still
+# caught — Debug-mode interpretation made compute-heavy e2e ~13x slower
+# (e.g. transducer 8s -> 0.6s). Unit tests (zig_build_test above) stay
+# Debug for the richest assertion diagnostics; they are a separate exe.
+export CLJW_OPT="${CLJW_OPT:-ReleaseSafe}"
+run_step "build_cljw"           "zig build -Doptimize=$CLJW_OPT"
 export CLJW_SKIP_BUILD=1
 
 run_step "e2e_phase2_exit"     "bash test/e2e/phase2_exit.sh"
