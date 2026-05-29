@@ -52,13 +52,14 @@ row 14.13.5 `[x]`:
 
 ## Active task
 
-**Row 14.11 — D-100 (b) step 3: `cljw build` CLI dispatch + trailer.**
-Done: (b) step 1 payload envelope + step 2 compile-core
-(`builder.zig::buildEnvelope`, unit-tested @b2d33f4f, gate 103). Step 3 =
-wire `build` into `cli.zig` dispatch, read file → `buildEnvelope` →
-Deno-style `"CLJC"` trailer → write binary; F-009-extract the shared
-bootstrap setup (runner + builder); e2e test. Then (e)
-`cljw-formats/0.1.0.edn` archive lock. F-009: the
+**Row 14.11 — D-100 (b) step 3b: self-embedding `cljw build` CLI.**
+Done: (b) step 1 envelope + step 2 compile-core + step 3a artifact
+trailer (`serialize.frameArtifact`/`extractPayload`, unit-tested). Step
+3b = self-exe read (`std.Io.Dir`, Juicy-Main `init.io`) + `buildFile`
+(read→buildEnvelope→frameArtifact→write+chmod) + `cli.zig` `build`
+dispatch + startup `extractPayload` detect + e2e. F-009-extract the
+shared bootstrap setup (runner + builder). Then (e)
+`cljw-formats/0.1.0.edn` archive lock. See Resume contract. F-009: the
 per-form helper is shared by runner + builder, not duplicated.
 
 ## Open debts (named; full rows in `.dev/debt.md`)
