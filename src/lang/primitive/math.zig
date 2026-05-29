@@ -523,6 +523,48 @@ pub fn max(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) an
     return best;
 }
 
+/// `(int x)` — coerce to a Long. A float truncates toward zero; a char
+/// yields its codepoint; an integer passes through. (clojure.core/int's
+/// Long / Double / Character cases; ratio / bigdec coercion is a follow-up.)
+pub fn intCoerce(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = rt;
+    _ = env;
+    try error_catalog.checkArity("int", args, 1, loc);
+    const v = args[0];
+    return switch (v.tag()) {
+        .integer => v,
+        .float => blk: {
+            const f = v.asFloat();
+            // Guard the i64 range BEFORE @intFromFloat (a safe-mode build
+            // panics on an out-of-range conversion).
+            if (!std.math.isFinite(f) or f >= 9.223372036854776e18 or f <= -9.223372036854776e18)
+                return error_catalog.raise(.type_arg_invalid, loc, .{ .fn_name = "int", .expected = "a finite float within Long range", .actual = "out-of-range float" });
+            break :blk Value.initInteger(@intFromFloat(f));
+        },
+        .char => Value.initInteger(@intCast(v.asChar())),
+        else => |t| return error_catalog.raise(.type_arg_not_number, loc, .{ .fn_name = "int", .actual = @tagName(t) }),
+    };
+}
+
+/// `(char n)` — the character whose Unicode codepoint is the integer `n`
+/// (0..0x10FFFF), or a char passed through.
+pub fn charCoerce(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = rt;
+    _ = env;
+    try error_catalog.checkArity("char", args, 1, loc);
+    const v = args[0];
+    return switch (v.tag()) {
+        .char => v,
+        .integer => blk: {
+            const n = v.asInteger();
+            if (n < 0 or n > 0x10FFFF)
+                return error_catalog.raise(.type_arg_invalid, loc, .{ .fn_name = "char", .expected = "a codepoint in 0..0x10FFFF", .actual = "out-of-range integer" });
+            break :blk Value.initChar(@intCast(n));
+        },
+        else => |t| return error_catalog.raise(.type_arg_not_number, loc, .{ .fn_name = "char", .actual = @tagName(t) }),
+    };
+}
+
 // --- registration ---
 
 const Entry = struct {
@@ -567,6 +609,8 @@ const ENTRIES = [_]Entry{
     .{ .name = "unsigned-bit-shift-right", .f = &unsignedBitShiftRight },
     .{ .name = "min", .f = &min },
     .{ .name = "max", .f = &max },
+    .{ .name = "int", .f = &intCoerce },
+    .{ .name = "char", .f = &charCoerce },
 };
 
 /// Register the math primitives into `rt_ns`.
