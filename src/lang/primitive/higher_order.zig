@@ -73,7 +73,11 @@ pub fn applyFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation
     const leading = args[1 .. args.len - 1];
 
     if (canBindDirect(f, leading.len, trailing)) {
-        return try invokeCallable(rt, env, f, args[1..], loc);
+        // ADR-0042 am1: bind the trailing seq straight to `& rest`
+        // (apply's lazy-preserving spread) via the dedicated entry — NOT
+        // the generic callFunction, which always cons-wraps. canBindDirect
+        // has verified `f` is a variadic fn_val whose `& rest` matches.
+        return try tree_walk.callFunctionBindingRest(rt, env, f, args[1..], loc);
     }
 
     // Eager spread: walk the trailing seqable, collecting into a flat slice.

@@ -918,9 +918,34 @@ pub fn callProtocolFn(rt: *Runtime, env: *Env, callee: Value, args: []const Valu
     );
 }
 
-pub fn callFunction(rt: *Runtime, env: *Env, fn_val: Value, args: []const Value, loc: SourceLocation) !Value {
-    const f = fn_val.decodePtr(*Function);
+/// How `& rest` is bound from the trailing args. `wrap` cons-packs the
+/// trailing args into a fresh one-element-or-more list — the correct,
+/// default behaviour for EVERY normal call (incl. a single seq-shaped
+/// arg: `((fn [a & xs] xs) 1 '(2 3))` → `xs = ((2 3))`). `bind_direct`
+/// binds a single seq-shaped trailing arg straight to `& rest` (no
+/// re-cons, lazy-preserving) — used ONLY by `apply`'s spread (ADR-0042
+/// am1). The mode is an explicit typed parameter, not shared state: the
+/// original shape-only gate (and cw v0's `apply_rest_is_seq` threadlocal)
+/// conflated apply-spread with a normal single-seq-arg call (a
+/// correctness bug ADR-0042's own Decision rejected on F-002 grounds).
+const RestMode = enum { wrap, bind_direct };
 
+/// Generic fn call — the entry every backend reaches via `vtable.callFn`.
+/// Always cons-wraps `& rest` (unconditionally correct).
+pub fn callFunction(rt: *Runtime, env: *Env, fn_val: Value, args: []const Value, loc: SourceLocation) !Value {
+    return callMethodImpl(rt, env, fn_val.decodePtr(*Function), args, loc, .wrap);
+}
+
+/// ADR-0042 am1: `apply`'s lazy-preserving entry. `args = [leading…,
+/// rest_seq]`; `applyFn::canBindDirect` has verified the callee is a
+/// variadic fn whose `& rest` should bind `rest_seq` DIRECTLY. Distinct
+/// from `callFunction` so the generic path stays wrap-only — no flag, no
+/// shared mutable state, the signal is the in-band `RestMode` argument.
+pub fn callFunctionBindingRest(rt: *Runtime, env: *Env, fn_val: Value, args: []const Value, loc: SourceLocation) !Value {
+    return callMethodImpl(rt, env, fn_val.decodePtr(*Function), args, loc, .bind_direct);
+}
+
+fn callMethodImpl(rt: *Runtime, env: *Env, f: *Function, args: []const Value, loc: SourceLocation, rest_mode: RestMode) !Value {
     // Row 7.8 cycle 1 (ADR-0041): linear scan over `methods`, fixed-
     // arity wins on exact match; fall through to `variadic` when
     // `args.len >= variadic.arity`. Single-arity fns produce a
@@ -941,19 +966,14 @@ pub fn callFunction(rt: *Runtime, env: *Env, fn_val: Value, args: []const Value,
         locals[f.slot_base + i] = v;
     }
     if (m.has_rest) {
-        // ADR-0042: gated bind-direct fast-path. When the caller hands us
-        // exactly one trailing arg with a seq-shaped tag and that arg
-        // sits in the rest slot, bind it directly instead of cons-packing
-        // it into a fresh one-element list. The gate is generic — any
-        // caller (not just `apply`) passing this exact shape benefits.
-        // Vectors are intentionally excluded so JVM `(apply f x [y])`
-        // spread semantics stay (xs = (y) one-element list, not [y]).
-        // See ADR-0042 + higher_order.zig::applyFn for the producer.
-        if (args.len == m.arity + 1 and isRestSeqShaped(args[m.arity])) {
+        // bind_direct only fires on apply's exact shape (one seq-shaped
+        // trailing arg); vectors are excluded so JVM `(apply f x [y])`
+        // spread stays (xs = (y), not [y]). Everything else cons-wraps.
+        if (rest_mode == .bind_direct and args.len == m.arity + 1 and isRestSeqShaped(args[m.arity])) {
             locals[f.slot_base + m.arity] = args[m.arity];
         } else {
-            // Build a list of the trailing args (those past `m.arity`).
-            // JVM Clojure binds `& rest` to a seq view; cw v1 builds the
+            // Cons-wrap the trailing args (those past `m.arity`). JVM
+            // Clojure binds `& rest` to a seq view; cw v1 builds the
             // simpler heap List (Cons chain). Empty trailing → nil per
             // `(defn f [& xs] xs) → (f)` returning nil.
             var rest_list: Value = .nil_val;

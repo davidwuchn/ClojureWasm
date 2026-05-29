@@ -344,3 +344,103 @@ based on `f.tag() == .fn_val ∧ fn.variadic != null`.
 - JVM `RestFn.applyTo` at
   `~/Documents/OSS/clojure/src/jvm/clojure/lang/RestFn.java:132-160`
   — the semantics anchor.
+
+## Amendment 1 (2026-05-29) — the shape-only gate was a correctness bug
+
+**Status**: Accepted (Devil's-advocate fork landed 2026-05-29).
+
+The Alt-3 "gated bind-direct in `callFunction`" shipped a gate keyed on
+the **shape** alone (`args.len == m.arity + 1 and isRestSeqShaped(...)`),
+with the Decision claiming "the gate is generic — any caller benefits."
+That claim is **false**: a NORMAL call passing a single seq-shaped
+trailing arg has the identical shape to apply's spread but needs the
+**opposite** binding. `((fn [a & xs] xs) 1 '(2 3))` must bind
+`xs = ((2 3))` (cons-wrap the single list arg, per JVM Clojure), but the
+shape-only gate bound `xs = (2 3)` — and `callFunction` cannot see its
+caller, so it cannot distinguish "apply spread" from "literal single
+list arg". Surfaced wiring `cljw.error/with-context` (row 14.13 /
+ADR-0055): `(defmacro m [a & body] (cons 'do body))` with a single body
+form produced `(do + 1 1)` instead of `(do (+ 1 1))`.
+
+**Fix.** The bind-vs-wrap decision becomes an explicit typed parameter,
+not caller-invisible shape inference:
+
+- `callFunction` (the generic entry every backend reaches via
+  `vtable.callFn`) always cons-wraps — unconditionally correct.
+- A dedicated `callFunctionBindingRest` is `apply`'s lazy-preserving
+  entry; `applyFn::canBindDirect` calls it directly (Layer 2 → Layer 1,
+  no vtable change). Both delegate to a private `callMethodImpl(…,
+  rest_mode: RestMode)` (`.wrap` / `.bind_direct`) — no frame-setup
+  duplication, no shared mutable state.
+
+This is **not** cw v0's `apply_rest_is_seq` threadlocal (which the
+original Decision §"Why Alt 3" rejected on F-002 grounds as "shared
+mutable state with temporal coupling"). The `RestMode` parameter is
+in-band, type-checked, leak-free. The original Alt-1 (widen
+`vtable.callFn` with `prebound_rest`) is also avoided — `applyFn` is in
+`lang/` and calls `tree_walk` directly, so the vtable stays pristine for
+F-001's Phase-16 integration. Verified: `((fn [a & xs] xs) 1 '(9 9))` →
+`((9 9))`; `(apply (fn [a & xs] xs) 1 '(2 3))` → `(2 3)`; `(apply +
+'(1 2 3 4))` → `10`.
+
+**Known residual (pre-existing, out of scope):** `canBindDirect` keys on
+`v.arity == leading_count` and does not account for a fixed method whose
+arity equals the *spread* length — `(apply (fn ([a b] :two) ([a & r]
+:var)) x '(y))` binds-direct to the variadic where JVM spreads to
+`(f x y)` → fixed `:two`. Single-method variadics (the common case) are
+unaffected. Tracked as D-143.
+
+### Amendment 1 — Alternatives considered (Devil's-advocate, verbatim)
+
+> Constraints: F-002 (finished-form wins, diff not a constraint), F-009
+> (impl neutral), env.zig "threadlocals load-bearing not incidental".
+> None of the three violate an F-NNN.
+>
+> **Alt 1 — Smallest-diff: the threadlocal flag (first fix attempt).**
+> `pub threadlocal var apply_rest_prebound`; applyFn sets, callFunction
+> reads+clears on entry. *Better*: zero signature churn, zero call-site
+> touches; read+clear closes the leak window (verified). *Breaks*: the
+> EXACT shape ADR-0042's own Decision (§"Why Alt 3", the cw v0
+> `apply_rest_is_seq` rejection) declined on F-002 grounds — re-adopting
+> reverses that finding without superseding it. A transient one-bit
+> round-trip = the textbook *incidental* threadlocal env.zig warns
+> against. Latent: if a future `canBindDirect` edit lets the set-flag
+> path reach a `builtin_fn`, the flag leaks to the next call — and that
+> invariant lives in a different file from the clear. *F-NNN*: **F-002
+> negative.**
+>
+> **Alt 2 — Finished-form-clean: explicit sibling entry, generic path
+> always wraps.** Delete flag + shape gate from the generic path (always
+> cons-wraps). applyFn's direct-bind branch calls a
+> `callFunctionBindingRest`; share a private frame-setup helper.
+> *Better*: in-band typed signal, no thread-global, no read/clear
+> window; generic path simpler + removes the `isRestSeqShaped` tag-set
+> sync liability the original ADR flagged; does NOT widen
+> `vtable.callFn` (applyFn Layer 2 imports tree_walk Layer 1 directly),
+> so F-001 Phase-16 vtable property preserved. *Breaks*: a second
+> frame-entry the VM must eventually mirror (ADR-0036) — visible/gated,
+> diff-lockable, not a hidden thread-global. *F-NNN*: **F-002 strongly
+> positive**, F-009 positive, F-001 neutral.
+>
+> **Alt 3 — Wildcard: apply owns spreading, callFunction owns wrapping.**
+> Generic always wraps; apply calls a tiny `invokeVariadicWithRest`.
+> *Better*: cleanest one-sentence invariant; no flag/gate/tag-sync.
+> *Breaks*: duplicates the non-trivial frame epilogue (closure snapshot,
+> AOT `evalChunk` hook, `deserialized_fn_body` guard) — a fresh F-002
+> liability unless the epilogue is shared, at which point it collapses
+> into Alt 2. *F-NNN*: **F-002 mixed.**
+>
+> **Recommendation (non-binding): Alt 2.** The flag is correct/verified
+> but finished-form-regressive — it re-adopts verbatim the shape this
+> ADR rejected on F-002 grounds, and the invariant keeping its leak
+> closed lives in a different file from the clear. Alt 2 makes the
+> generic path unconditionally correct, deletes the gate + tag-set-sync,
+> threads intent as in-band typed data, leaves the vtable pristine. Per
+> F-002 the larger diff is not a reason to prefer the flag.
+
+The main loop adopted **Alt 2**, refined to a private
+`callMethodImpl(…, rest_mode)` with two thin public wrappers — Alt 2's
+in-band-typed signal with Alt 3's no-duplication (sharing the impl, not
+a helper). The `canBindDirect ⇒ fn_val` invariant the DA flagged is
+moot: applyFn calls `callFunctionBindingRest` directly, so no
+`canBindDirect` edit can route a builtin into a bind-direct path.

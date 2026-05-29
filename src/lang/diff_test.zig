@@ -76,6 +76,23 @@ test "diff: fn* immediate invocation" {
     try f.check("((fn* [x y] (+ x y)) 3 4)", 7);
 }
 
+test "diff: variadic single seq-shaped rest arg cons-wraps (ADR-0042 am1)" {
+    var f = try Fixture.init(testing.allocator);
+    defer f.deinit();
+    // A NORMAL call with one list trailing arg binds `xs = ((9 9))`
+    // (count 1), NOT `(9 9)` (count 2). The shape-only ADR-0042 gate
+    // got this wrong on both backends; the RestMode split fixes it.
+    try f.check("(count ((fn* [a & xs] xs) 1 (quote (9 9))))", 1);
+}
+
+test "diff: apply spread still binds the trailing seq directly" {
+    var f = try Fixture.init(testing.allocator);
+    defer f.deinit();
+    // apply's bind-direct path is preserved: xs = (2 3), count 2.
+    try f.check("(count (apply (fn* [a & xs] xs) 1 (quote (2 3))))", 2);
+    try f.check("(apply + (quote (1 2 3 4)))", 10);
+}
+
 test "diff: binding rebinds a dynamic var (both backends)" {
     var f = try Fixture.init(testing.allocator);
     defer f.deinit();
