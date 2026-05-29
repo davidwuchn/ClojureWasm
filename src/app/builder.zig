@@ -28,6 +28,10 @@ const serialize = @import("../eval/bytecode/serialize.zig");
 const BytecodeChunk = @import("../eval/backend/vm/opcode.zig").BytecodeChunk;
 const driver = @import("../eval/driver.zig");
 const Value = @import("../runtime/value/value.zig").Value;
+const vm = @import("../eval/backend/vm.zig");
+const bootstrap = @import("../lang/bootstrap.zig");
+const primitive = @import("../lang/primitive.zig");
+const macro_transforms = @import("../lang/macro_transforms.zig");
 
 /// Compile every top-level form in `source_text` to a `BytecodeChunk`
 /// and return the serialized payload envelope (caller frees the bytes
@@ -67,14 +71,110 @@ pub fn buildEnvelope(
     return serialize.serializeEnvelope(allocator, chunks.items);
 }
 
+// === cljw build CLI core + embedded-run startup (D-100(b) step 3b) ===
+
+/// Shared bootstrap: install the embedded resolver + primitives + macros +
+/// load the `clojure.core` prologue into an already-init'd rt/env/macro_table.
+/// The caller installs the backend vtable first (tree_walk for build, vm for
+/// the embedded run) and owns the rt/env/macro_table lifetimes. F-009: the
+/// build + embedded-run paths share this instead of each re-deriving the
+/// chain (runner migrates onto it in a follow-up cycle).
+fn setupRuntime(arena: std.mem.Allocator, rt: *Runtime, env: *Env, macro_table: *macro_dispatch.Table) !void {
+    bootstrap.installEmbeddedResolver(rt);
+    try primitive.registerAll(env);
+    try macro_transforms.registerInto(env, macro_table);
+    try bootstrap.loadCore(arena, rt, env, macro_table);
+}
+
+/// Read an entire file into a freshly `gpa`-allocated slice (caller frees).
+fn readFileAll(io: std.Io, gpa: std.mem.Allocator, path: []const u8) ![]u8 {
+    const f = try std.Io.Dir.cwd().openFile(io, path, .{});
+    defer f.close(io);
+    var buf: [4096]u8 = undefined;
+    var fr = f.reader(io, &buf);
+    return fr.interface.allocRemaining(gpa, .unlimited);
+}
+
+/// Read the running executable's own bytes (the runtime binary
+/// `frameArtifact` prepends to the payload). `openSelfExe` does not exist in
+/// Zig 0.16 — resolve the path via `std.process.executablePathAlloc`.
+fn readSelfExe(io: std.Io, gpa: std.mem.Allocator) ![]u8 {
+    const path = try std.process.executablePathAlloc(io, gpa);
+    defer gpa.free(path);
+    return readFileAll(io, gpa, path);
+}
+
+/// `cljw build <in.clj> -o <out>`: compile the source to a payload envelope
+/// and append it to a copy of the running cljw binary as a self-contained
+/// artifact with a `"CLJC"` trailer (ADR-0034 amendment 1/2). Build-time
+/// eval runs top-level side effects (A1-D2). The output is executable.
+pub fn buildFile(io: std.Io, gpa: std.mem.Allocator, arena: std.mem.Allocator, in_path: []const u8, out_path: []const u8) !void {
+    const source = try readFileAll(io, gpa, in_path);
+    defer gpa.free(source);
+
+    var rt = Runtime.init(io, gpa);
+    defer rt.deinit();
+    var env = try Env.init(&rt);
+    defer env.deinit();
+    driver.installVTable(&rt);
+    var macro_table = macro_dispatch.Table.init(gpa);
+    defer macro_table.deinit();
+    try setupRuntime(arena, &rt, &env, &macro_table);
+
+    const payload = try buildEnvelope(gpa, &rt, &env, &macro_table, arena, source);
+    defer gpa.free(payload);
+
+    const self_bytes = try readSelfExe(io, gpa);
+    defer gpa.free(self_bytes);
+
+    const artifact = try serialize.frameArtifact(gpa, self_bytes, payload);
+    defer gpa.free(artifact);
+
+    const out = try std.Io.Dir.cwd().createFile(io, out_path, .{ .truncate = true, .permissions = .executable_file });
+    defer out.close(io);
+    var wbuf: [4096]u8 = undefined;
+    var ow = out.writer(io, &wbuf);
+    try ow.interface.writeAll(artifact);
+    try ow.interface.flush();
+}
+
+/// Startup hook: if the running binary carries an embedded payload trailer,
+/// deserialize + run it on the VM and return true; otherwise return false so
+/// normal CLI dispatch proceeds. Per-chunk INTERLEAVED deserialize+run (a
+/// later chunk's var_ref to an earlier chunk's def needs that def to have
+/// RUN); chunks live in `arena` for the whole run (a fn def'd in one chunk
+/// may be called in a later one), bulk-freed by the caller's arena. The
+/// payload's own `(println …)` etc. write straight to process stdout via
+/// `rt.io`, so no writer is threaded here.
+pub fn tryRunEmbedded(io: std.Io, gpa: std.mem.Allocator, arena: std.mem.Allocator) !bool {
+    // D-140: reads the whole self-exe to check the tail; a footer-only seek
+    // would avoid the full read on every normal startup.
+    const self_bytes = try readSelfExe(io, gpa);
+    defer gpa.free(self_bytes);
+    const payload = serialize.extractPayload(self_bytes) orelse return false;
+
+    var rt = Runtime.init(io, gpa);
+    defer rt.deinit();
+    var env = try Env.init(&rt);
+    defer env.deinit();
+    vm.installVTable(&rt); // wires evalChunk so deserialized fns run on the VM
+    var macro_table = macro_dispatch.Table.init(gpa);
+    defer macro_table.deinit();
+    try setupRuntime(arena, &rt, &env, &macro_table);
+
+    var it = try serialize.EnvelopeIterator.init(payload);
+    var locals: [driver.MAX_LOCALS]Value = [_]Value{.nil_val} ** driver.MAX_LOCALS;
+    while (try it.next()) |chunk_bytes| {
+        var chunk = try serialize.deserializeChunk(arena, &rt, &env, chunk_bytes);
+        _ = try vm.eval(&rt, &env, &locals, &chunk);
+    }
+    return true;
+}
+
 // --- tests ---
 
 const testing = std.testing;
-const primitive = @import("../lang/primitive.zig");
-const macro_transforms = @import("../lang/macro_transforms.zig");
-const bootstrap = @import("../lang/bootstrap.zig");
 const tree_walk = @import("../eval/backend/tree_walk.zig");
-const vm = @import("../eval/backend/vm.zig");
 
 test "buildEnvelope compiles two forms into a two-chunk envelope" {
     var th = std.Io.Threaded.init(testing.allocator, .{});

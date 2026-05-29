@@ -21,6 +21,7 @@ const std = @import("std");
 const runner = @import("runner.zig");
 const repl = @import("repl.zig");
 const nrepl = @import("nrepl.zig");
+const builder = @import("builder.zig");
 const render_error_mod = @import("render_error.zig");
 const error_render = @import("error_render.zig");
 
@@ -51,6 +52,12 @@ pub fn dispatch(init: std.process.Init) !void {
         error_render.logFilePath = path;
         error_render.logIo = io;
     }
+
+    // Self-contained artifact check (ADR-0034 / D-100(b)): if this binary
+    // carries an embedded bytecode payload trailer, run it and exit —
+    // argv is ignored for a built artifact at v0.1.0. A plain `cljw` has
+    // no trailer, so this is a no-op and normal dispatch proceeds.
+    if (try builder.tryRunEmbedded(io, gpa, arena)) return;
 
     var args = init.minimal.args.iterate();
     _ = args.skip(); // argv[0]
@@ -91,6 +98,36 @@ pub fn dispatch(init: std.process.Init) !void {
                 }
             }
             return nrepl.run(io, gpa, arena, stdout, stderr, port);
+        }
+        if (std.mem.eql(u8, first, "build")) {
+            // Row 14.11 D-100(b): `cljw build <in.clj> -o <out>` — compile
+            // the source into a self-contained binary (ADR-0034 am1/am2).
+            const in_path = args.next() orelse {
+                try stderr.writeAll("build: missing <in.clj>\n");
+                try stderr.flush();
+                std.process.exit(1);
+            };
+            const flag = args.next() orelse {
+                try stderr.writeAll("build: missing -o <out>\n");
+                try stderr.flush();
+                std.process.exit(1);
+            };
+            if (!std.mem.eql(u8, flag, "-o")) {
+                try stderr.print("build: expected -o, got '{s}'\n", .{flag});
+                try stderr.flush();
+                std.process.exit(1);
+            }
+            const out_path = args.next() orelse {
+                try stderr.writeAll("build: -o requires a path\n");
+                try stderr.flush();
+                std.process.exit(1);
+            };
+            builder.buildFile(io, gpa, arena, in_path, out_path) catch |err| {
+                try stderr.print("build failed: {s}\n", .{@errorName(err)});
+                try stderr.flush();
+                std.process.exit(1);
+            };
+            return;
         }
         // Not a recognised subcommand — fall through to legacy flag
         // parsing by re-routing `first` through the existing arm.
