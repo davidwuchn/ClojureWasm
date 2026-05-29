@@ -138,6 +138,39 @@
                   []
                   (cons f (cons g fs)))))))
 
+;; `(some-fn p1 p2 …)` → a fn returning the first logical-true
+;; `(pi & args)`, else nil. `(every-pred p1 p2 …)` → a fn returning
+;; true iff every `(pi & args)` is logical-true, else false (D-134).
+(def some-fn
+  (fn* [& preds]
+    (fn* [& args]
+      (loop [ps preds]
+        (when (seq ps)
+          (let* [r (apply (first ps) args)]
+            (if r r (recur (rest ps)))))))))
+
+(def every-pred
+  (fn* [& preds]
+    (fn* [& args]
+      (loop [ps preds]
+        (if (seq ps)
+          (if (apply (first ps) args) (recur (rest ps)) false)
+          true)))))
+
+;; `(trampoline f & args)` — call f; while the result is a fn, call it
+;; (mutual-recursion without growing the stack). Self-recursive def.
+(def trampoline
+  (fn* ([f] (let* [ret (f)] (if (fn? ret) (trampoline ret) ret)))
+       ([f & args] (trampoline (fn* [] (apply f args))))))
+
+;; `(replace smap coll)` — replace elements of coll that are keys in
+;; smap with their values. Vector in → vector out; seq in → lazy seq.
+(def replace
+  (fn* [smap coll]
+    (if (vector? coll)
+      (reduce (fn* [acc x] (conj acc (if (contains? smap x) (get smap x) x))) [] coll)
+      (map (fn* [x] (if (contains? smap x) (get smap x) x)) coll))))
+
 ;; ----------------------------------------------------------------
 ;; Phase 6.16.b-3 helpers — used by clojure.set Group C (project /
 ;; rename / index / join). Pattern A composition; no Zig leaves.
