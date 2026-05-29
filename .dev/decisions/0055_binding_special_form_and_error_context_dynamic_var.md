@@ -238,16 +238,31 @@ be unwound by that finished form = smallest-diff bias, so it was rejected.
 - `src/eval/backend/vm/compiler.zig` (`compileBinding`)
 - `src/eval/backend/vm.zig` (dispatch arms + binding-frame stack)
 - `src/runtime/error/catalog.zig` (+`binding_target_not_dynamic`)
-- `src/runtime/error/info.zig` (+`Info.context` + `*error-context*` Var slot + snapshot)
+- `src/runtime/error/info.zig` (+`Info.context` + `context_provider` hook + raise-time snapshot)
+- `src/runtime/error/context.zig` (new — the `*Var` slot + `current`/`clear` + `register`)
+- `src/runtime/env.zig` (+`on_deinit_hook` so the slot can't dangle past its Env)
 - `src/app/error_render.zig` (`formatErrorEdn` context merge via `printValue`)
 - `src/lang/clj/cljw/error.clj` (new — `with-context`)
-- `src/lang/bootstrap.zig` (embed row + `*error-context*` registration)
+- `src/lang/bootstrap.zig` (embed row + `error_context.register` in setupCore)
 - `src/lang/diff_test.zig` (+`binding` case)
 - `test/e2e/phase14_binding.sh` + `test/e2e/phase14_with_context.sh` (new)
-- `.dev/debt.md` (D-142 multi-Env nREPL EDN-error context slot)
+- `.dev/debt.md` (D-142 multi-Env nREPL slot; D-144 user-throw EDN context)
 
 ## Revision history
 
 - 2026-05-29 created: row 14.13 (3) re-lay after the Step-0.6
   prerequisite-gap finding (no production dynamic var; `^:dynamic`
   reader metadata = D-075, F-004-gated). Devil's-advocate fork landed.
+- 2026-05-29 amendment 1 (implementation): D3 originally claimed "Zig
+  unit tests ... never set the slot." **False** — `src/app/builder.zig`
+  test blocks call `setupCore` → `register`, so a test Env that
+  registered left the process-global slot pointing at a freed Var,
+  UAF-ing the next `setErrorFmt` (caught by the `info.zig` setErrorFmt
+  unit test). Fix: `register` arms `Env.on_deinit_hook = clear`
+  (env.zig) — every `Env.deinit` drops the slot before freeing its
+  Vars. The slot + provider live in a new `runtime/error/context.zig`
+  (not `info.zig`) so `info.zig` stays free of an `env.zig` import (the
+  provider is a plain fn-pointer hook). Read-side verified for the
+  catalog-error path (`(/ 1 0)` carries `:request-id`); user
+  `(throw ex-info)` does NOT (it bypasses `setErrorFmt`) — recorded as
+  D-144.

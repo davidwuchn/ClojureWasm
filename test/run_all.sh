@@ -222,6 +222,7 @@ run_step "e2e_phase11_exit_smoke"            "bash test/e2e/phase11_exit_smoke.s
 run_step "e2e_phase13_exit_smoke"            "bash test/e2e/phase13_exit_smoke.sh"
 run_step "e2e_phase14_catch_keyword"         "bash test/e2e/phase14_catch_keyword.sh"
 run_step "e2e_phase14_binding"               "bash test/e2e/phase14_binding.sh"
+run_step "e2e_phase14_with_context"          "bash test/e2e/phase14_with_context.sh"
 run_step "e2e_phase14_defmacro_user"         "bash test/e2e/phase14_defmacro_user.sh"
 run_step "e2e_phase14_ns_directive"          "bash test/e2e/phase14_ns_directive.sh"
 run_step "e2e_phase14_future_promise_delay"  "bash test/e2e/phase14_future_promise_delay.sh"

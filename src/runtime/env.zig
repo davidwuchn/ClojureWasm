@@ -177,6 +177,13 @@ pub const BindingFrame = struct {
 /// threadlocal is actually load-bearing rather than incidental.
 pub threadlocal var current_frame: ?*BindingFrame = null;
 
+/// Optional teardown callback invoked at the START of `Env.deinit`,
+/// before the Env's Vars are freed. Set by subsystems that cache a
+/// process-global pointer into an Env's Vars so the pointer cannot
+/// dangle past the Env (currently `runtime/error/context.zig`). Single
+/// slot — chain here if a second consumer ever appears.
+pub var on_deinit_hook: ?*const fn () void = null;
+
 /// Push a frame at `binding` entry. Pair every push with `popFrame`,
 /// typically via `defer` at the call site.
 pub fn pushFrame(frame: *BindingFrame) void {
@@ -240,6 +247,14 @@ pub const Env = struct {
     }
 
     pub fn deinit(self: *Env) void {
+        // Clear any process-global slot that points INTO this Env's
+        // Vars before they are freed, so the slot can never dangle.
+        // Currently the sole consumer is `runtime/error/context.zig`'s
+        // `*error-context*` Var slot (ADR-0055 D3): a stale slot would
+        // UAF on the next `setErrorFmt` (e.g. across `setupCore`-using
+        // tests). Production runs one Env for the process lifetime, so
+        // this fires only at exit.
+        if (on_deinit_hook) |h| h();
         var it = self.namespaces.iterator();
         while (it.next()) |entry| {
             self.alloc.free(entry.key_ptr.*);

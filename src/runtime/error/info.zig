@@ -72,7 +72,23 @@ pub const Info = struct {
     phase: Phase,
     message: []const u8,
     location: SourceLocation = .{},
+    /// `cljw.error/*error-context*` snapshotted at raise time (ADR-0055
+    /// D3) — a map Value whose entries the EDN renderer emits as
+    /// top-level event fields. null when no provider is installed or the
+    /// dynamic var is unbound. Snapshotted (not deref'd at render time)
+    /// because the `binding` frame is popped during unwind, before the
+    /// renderer runs.
+    context: ?Value = null,
 };
+
+/// Installed by `runtime/error/context.zig` at bootstrap so `setErrorFmt`
+/// can snapshot the live `*error-context*` value without `info.zig`
+/// importing `env.zig` (kept dependency-free; the provider owns the Var).
+var context_provider: ?*const fn () ?Value = null;
+
+pub fn setContextProvider(p: *const fn () ?Value) void {
+    context_provider = p;
+}
 
 /// Zig error tags. 1:1 with `Kind`.
 pub const ClojureWasmError = error{
@@ -149,6 +165,9 @@ pub fn setErrorFmt(
         .phase = phase,
         .message = msg,
         .location = location,
+        // Snapshot the live dynamic error-context now — the `binding`
+        // frame is popped during unwind, before the renderer reads this.
+        .context = if (context_provider) |p| p() else null,
     };
     return kindToError(kind);
 }

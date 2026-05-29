@@ -18,6 +18,8 @@ const Writer = std.Io.Writer;
 const error_mod = @import("../runtime/error/info.zig");
 const error_print = @import("../runtime/error/print.zig");
 const Runtime = @import("../runtime/runtime.zig").Runtime;
+const print_value = @import("../runtime/print.zig").printValue;
+const map_collection = @import("../runtime/collection/map.zig");
 
 /// Render a caught error to stderr. Prefers the structured threadlocal
 /// `Info` (when populated by `setErrorFmt`); falls back to bare
@@ -124,7 +126,25 @@ fn formatErrorEdn(info: error_mod.Info, ctx: error_print.SourceContext, w: *Writ
             else => try w.writeByte(c),
         }
     }
-    try w.writeAll("\"}\n");
+    try w.writeByte('"');
+    // Merge the snapshotted `cljw.error/*error-context*` entries as
+    // top-level event fields (ADR-0055 D3). array_map only — context
+    // maps are small (the >8-entry hash_map path mirrors printMap's
+    // limitation; a large context is rare and never silently truncated
+    // because count ≤ 8 stays array_map).
+    if (info.context) |ctx_map| {
+        if (ctx_map.tag() == .array_map) {
+            const am = ctx_map.decodePtr(*const map_collection.ArrayMap);
+            var i: u32 = 0;
+            while (i < am.count) : (i += 1) {
+                try w.writeByte(' ');
+                try print_value(w, am.entries[2 * i]);
+                try w.writeByte(' ');
+                try print_value(w, am.entries[2 * i + 1]);
+            }
+        }
+    }
+    try w.writeAll("}\n");
 }
 
 /// Map a `Kind` to the process exit code per ADR-0019. The catalog

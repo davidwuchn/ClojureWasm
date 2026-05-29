@@ -35,6 +35,7 @@ const Runtime = @import("../runtime/runtime.zig").Runtime;
 const env_mod = @import("../runtime/env.zig");
 const Env = env_mod.Env;
 const Value = @import("../runtime/value/value.zig").Value;
+const error_context = @import("../runtime/error/context.zig");
 
 /// One entry in the bootstrap file table. `label` is the synthetic
 /// source label the renderer attributes to errors raised while
@@ -61,6 +62,7 @@ pub const FILES: []const FileEntry = &.{
     .{ .label = "<clojure.tools.cli>", .source = @embedFile("clj/clojure/tools/cli.clj") },
     .{ .label = "<clojure.pprint>", .source = @embedFile("clj/clojure/pprint.clj") },
     .{ .label = "<clojure.test>", .source = @embedFile("clj/clojure/test.clj") },
+    .{ .label = "<cljw.error>", .source = @embedFile("clj/cljw/error.clj") },
 };
 
 /// First file's source — exposed so `main.zig`'s renderer can fall
@@ -92,6 +94,7 @@ fn lookupEmbeddedFile(ns_name: []const u8) ?FileEntry {
     if (std.mem.eql(u8, ns_name, "clojure.tools.cli")) return FILES[8];
     if (std.mem.eql(u8, ns_name, "clojure.pprint")) return FILES[9];
     if (std.mem.eql(u8, ns_name, "clojure.test")) return FILES[10];
+    if (std.mem.eql(u8, ns_name, "cljw.error")) return FILES[11];
     return null;
 }
 
@@ -173,6 +176,10 @@ pub fn setupCore(arena: std.mem.Allocator, rt: *Runtime, env: *Env, macro_table:
     try primitive.registerAll(env);
     try macro_transforms.registerInto(env, macro_table);
     try loadCore(arena, rt, env, macro_table);
+    // cw v1's first dynamic var — interned after loadCore creates the
+    // `cljw.error` ns (via the embedded file's `(in-ns ...)`), then the
+    // raise-time snapshot provider is wired (ADR-0055 D2/D3).
+    try error_context.register(env);
 }
 
 // --- tests ---
