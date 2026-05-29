@@ -109,12 +109,16 @@ const vec = macro_dispatch.makeVector;
 const sym = macro_dispatch.makeSymbol;
 const nilForm = macro_dispatch.makeNil;
 
-// --- let — for now, plain rename to let* ---
+// --- let — `let*` rename + destructuring lowering (D-076) ---
 //
-// Clojure's `let` adds destructuring on top of `let*`; we ship the
-// rename today and revisit destructuring in a later phase. This keeps
-// the macro dispatch path exercised even though the transform itself
-// is trivial.
+// Clojure's `let` adds destructuring on top of `let*`. Per the JVM
+// `clojure.core/destructure` shape, patterns lower to plain-symbol
+// `let*` bindings + `nth`/`nthnext` calls — but as a Layer-1 Form
+// transform here (NOT a `.clj` macro: `let`/`fn` are already Zig macros,
+// so a `.clj` destructure would hit bootstrap-order fragility).
+// D-076 cycle 1: SEQUENTIAL vector patterns (`[a b]`, `[a b & rest]`,
+// `[a b :as all]`, nested). Associative `{:keys ...}`, fn-param, and
+// `loop*` destructuring are deferred follow-up cycles.
 
 fn expandLet(
     arena: std.mem.Allocator,
@@ -122,15 +126,125 @@ fn expandLet(
     args: []const Form,
     loc: SourceLocation,
 ) macro_dispatch.ExpandError!Form {
-    _ = rt;
     if (args.len < 2)
         return error_catalog.raise(.let_form_incomplete, loc, .{});
     if (args[0].data != .vector)
         return error_catalog.raise(.bindings_not_vector, args[0].location, .{ .form = "let" });
 
+    const binds = args[0].data.vector;
+
+    // Fast path: every binding target is already a plain symbol AND the
+    // vector is well-formed (even) — keep the trivial `let` → `let*`
+    // rename so non-destructuring code is byte-for-byte unchanged (zero
+    // regression) and `let*` keeps ownership of the odd-bindings error.
+    const needs_destructure = blk: {
+        if (binds.len % 2 != 0) break :blk false;
+        var k: usize = 0;
+        while (k < binds.len) : (k += 2) {
+            if (binds[k].data != .symbol) break :blk true;
+        }
+        break :blk false;
+    };
+    if (!needs_destructure) {
+        var items = try arena.alloc(Form, args.len + 1);
+        items[0] = sym("let*", loc);
+        @memcpy(items[1..], args);
+        return list(arena, items, loc);
+    }
+
+    // Destructure path: lower every pattern into plain-symbol bindings.
+    var out: std.ArrayList(Form) = .empty;
+    var k: usize = 0;
+    while (k < binds.len) : (k += 2) {
+        try destructureInto(&out, arena, rt, binds[k], binds[k + 1], loc);
+    }
+    const new_binds = try vec(arena, out.items, loc);
+
     var items = try arena.alloc(Form, args.len + 1);
     items[0] = sym("let*", loc);
-    @memcpy(items[1..], args);
+    items[1] = new_binds;
+    @memcpy(items[2..], args[1..]);
+    return list(arena, items, loc);
+}
+
+/// Append flat `let*` bindings (`[name, value, ...]`) that bind `pat` to
+/// `value_form`. Recursive for nested vector patterns. D-076 cycle 1:
+/// symbol + sequential-vector; associative `{...}` raises
+/// `feature_not_supported` (deferred).
+fn destructureInto(
+    out: *std.ArrayList(Form),
+    arena: std.mem.Allocator,
+    rt: *Runtime,
+    pat: Form,
+    value_form: Form,
+    loc: SourceLocation,
+) macro_dispatch.ExpandError!void {
+    switch (pat.data) {
+        .symbol => {
+            try out.append(arena, pat);
+            try out.append(arena, value_form);
+        },
+        .vector => |elems| try sequentialDestructure(out, arena, rt, elems, value_form, loc),
+        .map => return error_catalog.raise(.feature_not_supported, pat.location, .{ .name = "associative (map) destructuring" }),
+        else => return error_catalog.raise(.binding_name_not_symbol, pat.location, .{ .form = "let" }),
+    }
+}
+
+/// `[a b & rest :as all]` lowering: bind `value_form` once to a gensym,
+/// then each positional element to `(nth g i nil)`, `& rest` to
+/// `(nthnext g i)`, `:as all` to the gensym. Recurses for nested elems.
+fn sequentialDestructure(
+    out: *std.ArrayList(Form),
+    arena: std.mem.Allocator,
+    rt: *Runtime,
+    elems: []const Form,
+    value_form: Form,
+    loc: SourceLocation,
+) macro_dispatch.ExpandError!void {
+    const g = sym(try rt.gensym(arena, "vec"), loc);
+    try out.append(arena, g);
+    try out.append(arena, value_form);
+
+    var idx: i64 = 0;
+    var i: usize = 0;
+    while (i < elems.len) : (i += 1) {
+        const e = elems[i];
+        if (e.data == .symbol and e.data.symbol.ns == null and std.mem.eql(u8, e.data.symbol.name, "&")) {
+            if (i + 1 >= elems.len)
+                return error_catalog.raise(.feature_not_supported, loc, .{ .name = "destructuring `&` with no rest binding" });
+            const rest_val = try makeCall(arena, "nthnext", &.{ g, intForm(idx, loc) }, loc);
+            try destructureInto(out, arena, rt, elems[i + 1], rest_val, loc);
+            i += 1;
+            continue;
+        }
+        if (e.data == .keyword and e.data.keyword.ns == null and std.mem.eql(u8, e.data.keyword.name, "as")) {
+            if (i + 1 >= elems.len or elems[i + 1].data != .symbol)
+                return error_catalog.raise(.feature_not_supported, loc, .{ .name = "destructuring `:as` without a symbol binding" });
+            try out.append(arena, elems[i + 1]);
+            try out.append(arena, g);
+            i += 1;
+            continue;
+        }
+        const nth_val = try makeCall(arena, "nth", &.{ g, intForm(idx, loc), nilForm(loc) }, loc);
+        try destructureInto(out, arena, rt, e, nth_val, loc);
+        idx += 1;
+    }
+}
+
+fn intForm(i: i64, loc: SourceLocation) Form {
+    return .{ .data = .{ .integer = i }, .location = loc };
+}
+
+/// Build a call Form `(fn_name args...)`.
+fn makeCall(
+    arena: std.mem.Allocator,
+    fn_name: []const u8,
+    call_args: []const Form,
+    loc: SourceLocation,
+) macro_dispatch.ExpandError!Form {
+    var items = try arena.alloc(Form, 1 + call_args.len);
+    items[0] = sym(fn_name, loc);
+    @memcpy(items[1..], call_args);
     return list(arena, items, loc);
 }
 

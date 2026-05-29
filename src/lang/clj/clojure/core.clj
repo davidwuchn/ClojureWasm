@@ -58,6 +58,11 @@
         (if (and (> n 0) s)
           (drop (dec n) (rest s))
           s)))))
+;; nthnext/nthrest: [coll n] arg order (JVM clojure.core). The sequential
+;; destructure `& rest` lowering (D-076) emits (nthnext g idx). nthnext
+;; seqs (nil when empty); nthrest returns the rest coll as-is.
+(def nthnext (fn* [coll n] (seq (drop n coll))))
+(def nthrest (fn* [coll n] (drop n coll)))
 (def keep
   (fn* [f coll]
     (lazy-seq

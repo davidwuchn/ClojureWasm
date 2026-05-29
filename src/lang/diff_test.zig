@@ -377,6 +377,22 @@ test "diff: static_method (Math/abs) on both backends" {
     try f.check("(Math/abs -5)", 5);
 }
 
+// D-076 cycle 1: `let` sequential destructuring lowers at the macro layer
+// (expandLet → let* + nth), so both backends see the same let* AST and
+// must agree. Integer result survives the bit-pattern comparator.
+
+test "diff: let sequential destructure both backends" {
+    var f = try Fixture.init(testing.allocator);
+    defer f.deinit();
+    try f.check("(let [[a b] [1 2]] (+ a b))", 3);
+}
+
+test "diff: let nested destructure both backends" {
+    var f = try Fixture.init(testing.allocator);
+    defer f.deinit();
+    try f.check("(let [[[a b] c] [[1 2] 3]] (+ a b c))", 6);
+}
+
 
 // Row 7.10 cycle 2 (D-073 diff_test descriptor cleanup): the 2
 // previously-deferred ADR-0040 op_method_call diff cases now land.
