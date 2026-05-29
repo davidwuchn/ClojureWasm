@@ -5,8 +5,8 @@
 
 ## Resume contract
 
-- **HEAD**: ≈ `7b104659`+ (row 14.13 compat_tiers done; a bench-
-  accumulation commit may sit on top — see `git log` for exact HEAD).
+- **HEAD**: ≈ `7b104659`+ (row 14.13 compat_tiers done; bench + handover
+  commits sit on top — see `git log` for exact HEAD).
 - **First commit on resume MUST be**: **row 14.13 deliverable (2) —
   `bench/history.yaml` v0.1.0 lock-point.** Run `PHASE_NAME=v0.1.0
   bash bench/quick.sh` (ReleaseFast; appends medians to
@@ -45,16 +45,19 @@ ships end-to-end (D-100 discharged). ADR-0054 lazy-seq Layer-2 complete.
 - **(3) `cljw.error/with-context` macro** (v5 §13.6 + ADR-0034 L172/
   L516). Spec: `(cljw.error/with-context {:request-id … :trace-id …}
   body)` — a dynamic var stacks context, merged as top-level fields when
-  an error event is emitted (`src/app/error_render.zig`). **Verify
-  prerequisite first**: the dynamic-binding runtime EXISTS in
-  `src/runtime/env.zig` (`BindingFrame` threadlocal stack +
-  `VarFlags.dynamic` + `Var.deref` walk), but `binding` is NOT yet a
-  wired special form (analyzer `bindings.zig` handles only `let*`/
-  `loop*`; no `(binding …)` / `^:dynamic` in the `.clj` corpus). So (3)
-  likely needs a prerequisite: wire the `binding` special form +
-  `^:dynamic` def-meta → frame push/pop (may be ADR-level — DA fork).
-  New ns lives at `src/lang/clj/cljw/error.clj` + a `@embedFile` row in
-  `src/lang/bootstrap.zig` (no `src/lang/clj/cljw/` dir exists yet).
+  an error event is emitted (`src/app/error_render.zig`). **Prerequisite
+  (verified narrow 2026-05-29)**: `^:dynamic` def-meta is ALREADY wired —
+  both backends set `Var.flags.dynamic` (tree_walk.zig:683 / vm.zig:170
+  `DEF_FLAG_DYNAMIC`) and `Var.deref` consults the threadlocal
+  `BindingFrame` stack via `findBinding` (env.zig:99/195). The ONLY
+  missing piece is the `binding` special form itself: `env.pushFrame` /
+  `popFrame` exist but have ZERO call sites, and `binding` is not in the
+  analyzer special-form set. So (3)'s prerequisite is narrow — implement
+  `binding` (analyzer + tree_walk + vm: push a BindingFrame from the
+  binding-vector, eval body, popFrame), then with-context is a thin
+  `.clj` macro over it. New ns lives at `src/lang/clj/cljw/error.clj` +
+  a `@embedFile` row in `src/lang/bootstrap.zig` (no `src/lang/clj/cljw/`
+  dir exists yet).
 
 ## Open debts (named; full rows in `.dev/debt.md`)
 
