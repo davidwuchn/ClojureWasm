@@ -422,4 +422,15 @@ fi
 # they already ran inline).
 flush_e2e_queue
 
-print_summary
+if print_summary; then
+    # On a FULL green gate (no --only / --skip), record the verified
+    # source-state fingerprint so scripts/check_gate_cadence.sh can
+    # authorise the matching commit and reset the additive batch counter
+    # (.claude/rules/gate_cadence.md). A partial run must not stamp a
+    # full-gate pass.
+    if [[ -z "$ONLY_STEPS" && -z "$SKIP_STEPS" ]]; then
+        bash scripts/gate_state_hash.sh > .dev/.gate_pass 2>/dev/null || true
+    fi
+else
+    exit 1
+fi

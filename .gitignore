@@ -24,3 +24,8 @@ private/
 
 # Claude Code local-only settings (per-developer)
 .claude/settings.local.json
+
+# Gate-cadence local state (scripts/check_gate_cadence.sh): the source-state
+# fingerprint of the last full-gate pass + the additive batch counter.
+.dev/.gate_pass
+.dev/.gate_cadence
