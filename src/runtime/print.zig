@@ -52,33 +52,68 @@ const td_mod = @import("type_descriptor.zig");
 const lazy_seq_mod = @import("lazy_seq.zig");
 const env_mod = @import("env.zig");
 
-/// Realize a (possibly lazy) seq into a concrete list for printing, then
-/// render it. `printValue` is a pure `(w, v)` renderer with no `rt`/`env`,
-/// so it cannot force a `.lazy_seq`; the user-facing print entry points
-/// (REPL / `-e` result, nREPL, `prn`/`print`/`str`) — which DO have
-/// `rt`/`env` — call this instead so a lazy result renders as `(…)`
-/// rather than `#<lazy_seq>`. ADR-0054 cycle 2. Top-level only for now;
-/// nested lazy (a lazy seq inside a vector/map) realization rides a
-/// follow-up (rare in REPL output).
+/// Realize any lazy seqs nested in `v` into concrete lists, then render.
+/// `printValue` is a pure `(w, v)` renderer with no `rt`/`env`, so it
+/// cannot force a `.lazy_seq`; the user-facing entry points (REPL / `-e`
+/// result, nREPL, `prn`/`print`/`str`) — which DO have `rt`/`env` — call
+/// this so lazy results render as `(…)`, not `#<lazy_seq>`. ADR-0054
+/// cycle 2 originally realized only the TOP level; this now realizes
+/// nested lazy seqs in the seq family (lazy_seq / list / vector), fixing
+/// `(partition-by …)` / `(split-at …)` / `(into [] (partition-all …))`
+/// which produced `(#<lazy_seq> …)`. Lazy seqs nested as map values /
+/// set elements are a rare residual (still `#<lazy_seq>`).
 pub fn printResult(rt: *Runtime, env: *env_mod.Env, w: *Writer, v: Value) anyerror!void {
-    if (v.tag() != .lazy_seq) return printValue(w, v);
-    // Walk first/rest to full realization, collecting into a list.
-    var items: std.ArrayList(Value) = .empty;
-    defer items.deinit(rt.gpa);
-    var cur = v;
-    while (true) {
-        const s = try lazy_seq_mod.seq(rt, env, cur);
-        if (s.tag() == .nil) break;
-        try items.append(rt.gpa, try lazy_seq_mod.first(rt, env, s));
-        cur = try lazy_seq_mod.rest(rt, env, s);
-    }
+    try printValue(w, try deepRealize(rt, env, v));
+}
+
+fn listFromItems(rt: *Runtime, items: []const Value) !Value {
     var realized = Value.nil_val;
-    var i = items.items.len;
+    var i = items.len;
     while (i > 0) {
         i -= 1;
-        realized = try list_collection.consHeap(rt, items.items[i], realized);
+        realized = try list_collection.consHeap(rt, items[i], realized);
     }
-    try printValue(w, realized);
+    return realized;
+}
+
+/// Deep-realize lazy seqs in the seq family so the pure `printValue` sees
+/// concrete contents. Scalars / maps / sets pass through unchanged (lazy
+/// nested in a map value / set element is a rare residual).
+fn deepRealize(rt: *Runtime, env: *env_mod.Env, v: Value) anyerror!Value {
+    switch (v.tag()) {
+        .lazy_seq => {
+            var items: std.ArrayList(Value) = .empty;
+            defer items.deinit(rt.gpa);
+            var cur = v;
+            while (true) {
+                const s = try lazy_seq_mod.seq(rt, env, cur);
+                if (s.tag() == .nil) break;
+                try items.append(rt.gpa, try deepRealize(rt, env, try lazy_seq_mod.first(rt, env, s)));
+                cur = try lazy_seq_mod.rest(rt, env, s);
+            }
+            return listFromItems(rt, items.items);
+        },
+        .list => {
+            var items: std.ArrayList(Value) = .empty;
+            defer items.deinit(rt.gpa);
+            var cur = v;
+            while (cur.tag() == .list and list_collection.countOf(cur) > 0) {
+                try items.append(rt.gpa, try deepRealize(rt, env, list_collection.first(cur)));
+                cur = list_collection.rest(cur);
+            }
+            return listFromItems(rt, items.items);
+        },
+        .vector => {
+            const n = vector_collection.count(v);
+            var out = vector_collection.empty();
+            var i: u32 = 0;
+            while (i < n) : (i += 1) {
+                out = try vector_collection.conj(rt, out, try deepRealize(rt, env, vector_collection.nth(v, i)));
+            }
+            return out;
+        },
+        else => return v,
+    }
 }
 
 /// Render an f64 in Clojure surface form. A Clojure double ALWAYS

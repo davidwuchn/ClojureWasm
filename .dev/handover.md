@@ -5,70 +5,64 @@
 
 ## Resume contract
 
-- **HEAD**: see `git log` (≈ `b852ac59`).
+- **HEAD**: see `git log` (≈ `c296967c`, several commits behind by resume).
 - **Direction (user, 2026-05-30)**: raise **functional completeness FIRST**,
   before optimization complexity (no premature JIT/superinstruction). Work
   **corpus-driven**, not AI-probed. Keep strong cross-session state. Clone /
   copy liberally. Fully autonomous; flexible replanning encouraged.
-- **First task on resume**: continue the **core-coverage gap sweep** driven
-  by [`.dev/core_coverage_gaps.md`](core_coverage_gaps.md) (the unbiased
-  real-`clojure.core`-vs-cljw diff, ~355 missing, triaged). Work the **P0
-  batch first** — `hash` (expose `equal.valueHash`), `gensym` (expose
-  `rt.gensym`), `volatile!`/`vreset!`/`vswap!`/`volatile?` (mutable box,
-  mirror `runtime/atom.zig`), `comparator` (core.clj), `bigint`/`bigdec`
-  (wrap existing numeric) — additive, batch the gate (cadence ≤5). Then P1
-  (memoize / sorted-map+set / metadata / transducers) → P2 (isa?/hierarchy,
-  resolve/ns introspection). **letfn** still queued (surveyed:
-  `private/notes/phaseA26-letfn-survey.md`). Always confirm a gap with a
-  `cljw -e` probe before implementing (static map has minor false-positives,
-  e.g. `subvec` works). Do NOT ask (Direction-ask smell).
-- **Forbidden this session**: re-opening anything landed this session
-  (ratio arithmetic, **D-045** HAMT, **D-085** keyword/data-as-IFn, **atoms**)
-  or earlier (AOT, format, doseq/for, numeric-coercion batch). Optimization
-  work (JIT / superinstruction) — functional completeness first per user.
-  `AskUserQuestion` to pick the next task. CPU-heavy subagent during a gate.
-  Flipping `phase_at_least_14` / tagging v0.1.0 (release HELD).
+- **First commit on resume MUST be**: continue the **corpus-style robustness
+  sweep** driven by [`.dev/core_coverage_gaps.md`](core_coverage_gaps.md) —
+  probe common `clojure.core` ops on large / edge inputs (`cljw -e`) to surface
+  crashes + wrong answers (the sweep already found 3 segfaults + several gaps;
+  see the gap-map's CRASH FIXES + GAPS sections). When the sweep quiets, take
+  the remaining gap-map structural items in order: **isa?/hierarchy** →
+  **resolve / ns-introspection** (needs first-class var Value) → **trampoline**
+  → bigint/bigdec (deprioritized) → **letfn** (surveyed:
+  `private/notes/phaseA26-letfn-survey.md`). Always `cljw -e`-probe a gap before
+  implementing. Do NOT ask (Direction-ask smell).
+- **Forbidden this session**: re-opening anything landed this session (sorted
+  collections, transducers cycles 1-5, D-159 sort-comparator, the range/sort/
+  interleave crash fixes, mapv multi-coll, nested-lazy print) or earlier (AOT,
+  ratio-arith, HAMT, keyword/data-as-IFn, atoms). Optimization work (JIT /
+  superinstruction) — functional completeness first. Flipping
+  `phase_at_least_14` / tagging v0.1.0 (release HELD).
 
 ## Current state
 
-Mac gate **157/157** green, **~50s** (parallel e2e pool, `-P8`, `wait -n`;
-`SERIAL_STEPS` serial). Gate cadence mechanically enforced (additive batches
-≤5; shared-code gates every time; `.dev/.gate_pass` content-hash). AOT-
-bootstrap LIVE (ADR-0056). Landed this session (git log is the SSOT):
-**ratio arithmetic** (`+ - * /` over ratio / mixed / float, collapse-to-Long),
-**D-045 HAMT** (maps/sets > 8 entries fully work — build/read/assoc/dissoc/
-keys/vals/seq/print/=; residuals D-155 collision-bucket + D-156 dissoc
-inline-collapse), **D-085 keyword/data-as-IFn** (`(:k m)`/`(m k)`/`(#{} x)`/
-`([v] i)` + `(map :k coll)` + `(-> m :k)` — one chokepoint `treeWalkCall` +
-Layer-0 `lookup.zig`). Verified working: destructuring, cond->/as->, threading,
-cond/case/condp, assoc-in/get-in/update-in.
+Mac gate **166/166** green, **~55s** (parallel e2e pool; `SERIAL_STEPS`
+serial). Gate cadence mechanically enforced (additive ≤5; shared-code gates
+every time; `.dev/.gate_pass` content-hash). AOT-bootstrap LIVE (ADR-0056).
+Landed this session (git log is the SSOT): **sorted collections** fully
+complete (ADR-0057 persistent LLRB — build/get/contains/count/keys/vals/seq/
+assoc/conj/LLRB-delete/`-by` comparators/rseq/reversible?/subseq/rsubseq +
+print + IFn + GC); **transducers core-complete** (`reduced` surface + every
+stateless/stateful arity + cat + completing/transduce/3-arg-into + halt-when;
+`sequence`/`eduction` deferred = D-160); **D-159** sort/sort-by comparators;
+**3 crash fixes** (range / sort / interleave stack overflows → loop/recur);
+**mapv** multi-coll; **nested-lazy print** (deepRealize — partition-by/split-at
+render `(…)` not `#<lazy_seq>`).
 
 ## Next milestone (F-010 M = Phase 15 完遂 + cw-v0-level JIT)
 
-AOT-bootstrap done. Coverage floor heavily advanced (ratio-arith, HAMT,
-keyword/data-as-IFn all landed). Remaining toward M: atoms/letfn →
-**Phase 15** concurrency (ADRs 0009/0010 — atoms pull-forward decision lives
-here) → superinstruction/fusion → narrow ARM64 JIT (D-133) → **M** → quality
-loop. cw-v0 gaps in `.dev/cw_v0_parity_and_gap_plan.md`.
+Coverage floor heavily advanced. Remaining toward M: finish the corpus-style
+coverage/robustness sweep → **Phase 15** concurrency (ADRs 0009/0010) →
+superinstruction/fusion → narrow ARM64 JIT (D-133) → **M** → quality loop.
+cw-v0 gaps in `.dev/cw_v0_parity_and_gap_plan.md`.
 
 ## Open debts (named; full rows in `.dev/debt.md`)
 
-- **D-139** AOT param-name fidelity. **D-134** letfn + re-seq +
-  mapcat-multi-coll residuals (ratio-arith/format/doseq/for/coercions done).
-  **D-155** HAMT collision bucket (rare). **D-156** HAMT dissoc inline-collapse
-  (micro-opt). **D-150** VM ctor parity. **D-153** `(cons x lazy)` count.
-  **D-152** diff oracle `.clj` closures (Fixture has no core.clj — keep diff
-  cases primitive-only). **D-131** built-app non-core files. **D-117/118**
-  nREPL (Phase-15). **D-133** JIT floor. (D-045/D-076/D-085/D-096/D-130/D-136/
-  D-137/D-154 discharged.)
-- **New gaps found 2026-05-30** (not yet D-rows): **atoms** absent (`atom`/
-  `swap!`/`reset!`/`@` → name_error) = next unit; **defrecord** keyword field
-  access returns nil (`(:x (->P 1 2))` → nil) — Phase-7 follow-up.
+- **D-160** sequence/eduction (need push→pull transducer bridge). **D-158**
+  corpus-driven validation (clojuredocs walkthrough → lib test suites). **D-139**
+  AOT param-name fidelity. **D-134** letfn + re-seq + mapcat-multi-coll residuals.
+  **D-155/156** HAMT collision-bucket / dissoc inline-collapse. **D-150** VM ctor
+  parity. **D-153** `(cons x lazy)` count. **D-152** diff oracle `.clj` closures.
+  **D-131** built-app non-core. **D-117/118** nREPL (Phase-15). **D-133** JIT floor.
+- **Sweep gaps (not yet fixed)**: `mapv`/`interleave` N-coll variadic; `reductions`
+  & `distinct` are O(n²) (perf, not crash); lazy-as-map-value still `#<lazy_seq>`.
 
 ## Cold-start reading order
 
 handover → CLAUDE.md (§ Project spirit + § Autonomous Workflow + § The only
 stop) → `.dev/project_facts.md` (F-010 + edge mission) → `.dev/principle.md`
-→ `.dev/decisions/0056_aot_bootstrap.md` (+ revision history) →
-`private/notes/phaseA26-*.md` → `src/lang/bootstrap.zig` +
-`src/eval/driver.zig` + `build.zig` (AOT) → ROADMAP §1 (mission) + §A26.
+→ `.dev/core_coverage_gaps.md` (the active sweep work-queue) →
+`private/notes/phaseA26-*.md` (sorted / transducers survey + task notes).

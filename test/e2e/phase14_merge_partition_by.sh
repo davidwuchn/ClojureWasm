@@ -30,5 +30,10 @@ assert_eq 'pb_runs'      "$("$BIN" -e '(mapv vec (partition-by odd? [1 1 2 2 3 3
 assert_eq 'pb_single'    "$("$BIN" -e '(mapv vec (partition-by identity [1 1 1]))')"   '[[1 1 1]]'
 assert_eq 'pb_alt'       "$("$BIN" -e '(mapv vec (partition-by (fn* [x] (> x 2)) [1 2 3 4 1]))')" '[[1 2] [3 4] [1]]'
 assert_eq 'pb_count'     "$("$BIN" -e '(count (partition-by odd? [1 1 2 2 3 3]))')"     '3'
+# nested-lazy print: inner partition seqs render as (…) not #<lazy_seq>
+# (deepRealize in print.zig; was the ADR-0054 cycle-2 "top-level only" gap)
+assert_eq 'pb_print'     "$("$BIN" -e '(partition-by odd? [1 1 2 2 3])')"              '((1 1) (2 2) (3))'
+assert_eq 'pb_into_print' "$("$BIN" -e '(into [] (partition-by odd? [1 1 2 2 3]))')"   '[(1 1) (2 2) (3)]'
+assert_eq 'split_print'  "$("$BIN" -e '(split-at 2 [1 2 3 4])')"                       '[(1 2) (3 4)]'
 
-echo "OK — phase14_merge_partition_by smoke (8 cases) green"
+echo "OK — phase14_merge_partition_by smoke (11 cases) green"
