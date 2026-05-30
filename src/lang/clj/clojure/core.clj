@@ -534,8 +534,14 @@
 ;; intermediate, starting with init (eager vector). 3-arg form;
 ;; the 2-arg `(reductions f coll)` awaits multi-arity.
 (def reductions
-  (fn* [f init coll]
-    (reduce (fn* [acc x] (conj acc (f (last acc) x))) [init] coll)))
+  (fn*
+    ([f coll]
+      (let [s (seq coll)]
+        (if s
+          (reductions f (first s) (rest s))
+          (vector (f)))))
+    ([f init coll]
+      (reduce (fn* [acc x] (conj acc (f (last acc) x))) [init] coll))))
 
 ;; ----------------------------------------------------------------
 ;; D-134 cluster 6 — trivial accessors (no compare dependency).
@@ -708,6 +714,12 @@
 ;; `(split-with pred coll)` → `[(take-while …) (drop-while …)]`.
 (def split-with
   (fn* [pred coll] [(take-while pred coll) (drop-while pred coll)]))
+;; `(split-at n coll)` — `[(take n coll) (drop n coll)]`. The pair holds lazy
+;; seqs (JVM-faithful); printing the pair directly shows `#<lazy_seq>` per the
+;; nested-lazy printer limit (D-134 note / ADR-0054 cycle-2), but the values
+;; and destructured/realized use are correct.
+(def split-at
+  (fn* [n coll] [(take n coll) (drop n coll)]))
 ;; `(take-nth n coll)` — every nth item (lazy).
 (def take-nth
   (fn* [n coll]
