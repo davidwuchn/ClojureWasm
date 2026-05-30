@@ -378,6 +378,19 @@ That is it. There are no other stop conditions. Specifically:
   off.
 - Long-running work, large diffs, big context — do not stop.
   Auto-compaction is transparent; size is never the reason.
+- **Next-task / direction ambiguity — does not stop, and is NEVER
+  resolved by asking the user.** When the clean/obvious work runs
+  low, the loop SELF-SELECTS the next unit (finished-form first per
+  F-002) and keeps raising precision: coverage while it lasts, then
+  quality work — tests, robustness, error-path fidelity, refactors,
+  moderate features, audits. Using `AskUserQuestion` (or any
+  "which should I do next / A vs B vs wind-down?" prompt) to choose
+  the next task or the next direction is the **Direction-ask smell**
+  and is forbidden — the AI decides and proceeds; the user interjects
+  if they want a different direction. (`AskUserQuestion` remains fine
+  for a genuine in-task fact the AI cannot derive — an external
+  credential, a product preference with no sensible default — never
+  for "what should I work on next".)
 
 A user "stop" directive applies to **the session in which it was
 issued**. It does not carry across to the next session — the next

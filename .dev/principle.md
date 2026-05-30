@@ -100,6 +100,19 @@ these — and on others that fit the same shape:
   cycle-budget defer — it is an F-NNN-respecting pick. The
   smell sensor's first question: "is this defer driven by F-NNN
   or by cycle size?" If cycle size, land the surgery.
+- **Direction-ask smell** — when the clean / obvious work thins,
+  reaching for `AskUserQuestion` (or any "which should I do next /
+  A vs B vs wind-down?" prompt) to have the user choose the next
+  task or direction. The autonomous loop SELF-SELECTS the next unit
+  (finished-form first) and keeps raising precision — coverage while
+  it lasts, then quality work (tests, robustness, error-path
+  fidelity, refactors, moderate features, audits). "Clean-trivial is
+  exhausted" / "the next items differ in character" / "the user has
+  been hands-on" are NOT reasons to ask — they are the moment to pick
+  the best next unit yourself. (`AskUserQuestion` is still fine for a
+  genuine in-task fact you cannot derive — an external credential, a
+  product preference with no default — never for "what next".) See
+  CLAUDE.md § The only stop.
 - **Silent default-shift smell** — a previously established
   default behaviour (decreed in docs OR established by past
   commit pattern) is being silently changed to a different
