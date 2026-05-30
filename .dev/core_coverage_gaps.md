@@ -70,12 +70,14 @@ Caveat: the static var-set extraction has minor false-positives (e.g.
   - **DONE D-092** (vector keys by value): `keyEqValue`/`valueHash` recurse over vector elements,
     fixing `(frequencies [[1] [1] [2]])` → `{[1] 2, [2] 1}` + vector-keyed maps/sets/distinct.
     Residual: LIST / map / set keys + cross-type vec≡list keys still identity-compared.
-  - **DONE**: `memoize` (96f9b857 — keys by `(vec args)`; defined at end of core.clj for dep order).
-  - **next (pick by ROI/tractability)**: `bigint`/`bigdec`/`biginteger` (medium, numeric coerce →
-    Managed → big_int.allocFromManaged); **metadata** with-meta/meta/vary-meta (HIGH ROI but
-    value-model: investigate whether collections carry a meta slot or need one — likely foundational);
-    **sorted-map/sorted-set** (new tree — heap_tag C14/C15 reserved); **transducers** transduce/
-    sequence/eduction (big); `isa?`/hierarchy + `resolve`/ns introspection (P2, medium).
+  - **DONE**: `memoize` (96f9b857); **metadata** `meta`/`with-meta`/`vary-meta` over collections
+    (the per-type `meta` field already existed; ArrayMap gained one; ops preserve meta) — substantially
+    discharges D-075. Residuals: clojure.set project/rename wrap-restoration (live PROVISIONAL markers —
+    a clean next follow-up now that with-meta exists), symbol meta, alter-meta!/reset-meta!, reader `^`.
+  - **next (pick by ROI/tractability)**: clojure.set wrap-restoration (small, closes 2 PROVISIONAL +
+    fully discharges D-075); `bigint`/`bigdec` (numeric coerce → Managed → big_int.allocFromManaged);
+    **sorted-map/sorted-set** (new tree — heap_tag C14/C15 reserved); **transducers** (big);
+    `isa?`/hierarchy + `resolve`/ns introspection (P2).
   - **also found**: `(sort cmp coll)` comparator-arg = D-159; regex capture groups; `resolve` missing.
 - **New gaps found while sweeping** (not yet chased): `(sort cmp coll)` with a 2-arg COMPARATOR fn
   errors — cljw `sort`'s 2-arg form treats the fn as a 1-arg key-fn, not a comparator (= **D-159**);

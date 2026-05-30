@@ -177,6 +177,19 @@ pub fn registerGcHooks() void {
     tag_ops.registerTrace(.lazy_seq, &traceLazySeq);
 }
 
+/// Metadata of a lazy seq (or nil).
+pub fn metaOf(v: Value) Value {
+    return v.decodePtr(*const LazySeq).meta;
+}
+
+/// `(with-meta ls newmeta)` — shallow copy sharing thunk/realized, meta set.
+pub fn withMeta(rt: *Runtime, v: Value, m: Value) !Value {
+    const ls = v.decodePtr(*const LazySeq);
+    const nls = try rt.gc.alloc(LazySeq);
+    nls.* = .{ .header = HeapHeader.init(.lazy_seq), .realized_flag = ls.realized_flag, .thunk = ls.thunk, .realized = ls.realized, .meta = m };
+    return Value.encodeHeapPtr(.lazy_seq, nls);
+}
+
 // --- tests ---
 
 const testing = std.testing;

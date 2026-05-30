@@ -235,6 +235,12 @@ pub const Code = enum {
     divide_by_zero,
     integer_overflow,
 
+    // --- Metadata (with-meta) ---
+    /// `with-meta`'s metadata arg was not a map or nil. args: `.{ .actual = "..." }`.
+    with_meta_meta_not_map,
+    /// `with-meta` target is not an IObj (cannot carry metadata). args: `.{ .actual = "..." }`.
+    with_meta_target_not_iobj,
+
     // --- Eval (arity at call) ---
     arity_below_min,
     arity_out_of_range,
@@ -886,6 +892,14 @@ pub fn entry(comptime code: Code) Entry {
         .value_not_callable => .{
             .kind = .type_error, .phase = .eval,
             .template = "Cannot call value of type '{[actual]s}'",
+        },
+        .with_meta_meta_not_map => .{
+            .kind = .type_error, .phase = .eval,
+            .template = "with-meta: metadata must be a map or nil, got {[actual]s}",
+        },
+        .with_meta_target_not_iobj => .{
+            .kind = .type_error, .phase = .eval,
+            .template = "with-meta: cannot attach metadata to {[actual]s}",
         },
 
         // --- Eval (arithmetic) ---

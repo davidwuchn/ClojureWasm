@@ -393,6 +393,17 @@ fn newVector(
     return Value.encodeHeapPtr(.vector, v);
 }
 
+/// Metadata of a vector (or nil).
+pub fn metaOf(v: Value) Value {
+    return v.decodePtr(*const Vector).meta;
+}
+
+/// `(with-meta v newmeta)` — shallow copy sharing root/tail, meta set.
+pub fn withMeta(rt: *Runtime, v: Value, m: Value) !Value {
+    const vec = v.decodePtr(*const Vector);
+    return newVector(rt, vec.count, vec.shift, vec.root, vec.tail, m);
+}
+
 /// `pushTail` — recursive descent that installs a tail-promoted leaf
 /// at the right slot. Returns the new root for the subtree.
 fn pushTail(

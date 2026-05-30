@@ -141,6 +141,17 @@ test "diff: vector keys by value (D-092) — keyEqValue/valueHash backend-shared
     try f.check("(if (contains? {[1 2] :a} [1 2]) 10 20)", 10);
 }
 
+test "diff: runtime metadata (meta / with-meta) — backend-shared" {
+    var f = try Fixture.init(testing.allocator);
+    defer f.deinit();
+    // meta storage + the primitives live in runtime/; vary-meta is core.clj
+    // (excluded from the Fixture). with-meta/meta agree across backends.
+    try f.check("(get (meta (with-meta [1] {:a 7})) :a)", 7);
+    try f.check("(if (nil? (meta [1 2])) 10 20)", 10);
+    try f.check("(count (meta (with-meta {} {:a 1 :b 2})))", 2);
+    try f.check("(get (meta (assoc (with-meta {:a 1} {:m 5}) :b 2)) :m)", 5);
+}
+
 test "diff: binding rebinds a dynamic var (both backends)" {
     var f = try Fixture.init(testing.allocator);
     defer f.deinit();

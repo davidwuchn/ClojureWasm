@@ -848,3 +848,8 @@
             (let* [v (apply f args)]
               (do (swap! cache assoc k v) v))))))))
 
+;; `(vary-meta obj f & args)` → obj with metadata `(apply f (meta obj) args)`.
+(def vary-meta
+  (fn* [obj f & args]
+    (with-meta obj (apply f (meta obj) args))))
+

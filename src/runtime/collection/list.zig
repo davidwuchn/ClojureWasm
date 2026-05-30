@@ -127,6 +127,20 @@ pub fn asCons(val: Value) *Cons {
     return val.decodePtr(*Cons);
 }
 
+/// Metadata of a list (or nil).
+pub fn metaOf(v: Value) Value {
+    return v.decodePtr(*const Cons).meta;
+}
+
+/// `(with-meta lst newmeta)` — shallow copy of the head Cons sharing the
+/// rest chain, meta set. (`.list`-tagged; raw `.cons` with-meta deferred.)
+pub fn withMeta(rt: *Runtime, v: Value, m: Value) !Value {
+    const c = v.decodePtr(*const Cons);
+    const nc = try rt.gc.alloc(Cons);
+    nc.* = .{ .header = HeapHeader.init(.list), .first = c.first, .rest = c.rest, .meta = m, .count = c.count };
+    return Value.encodeHeapPtr(.list, nc);
+}
+
 // --- tests ---
 
 const testing = std.testing;

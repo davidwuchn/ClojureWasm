@@ -46,6 +46,7 @@ const multimethod_prim = @import("primitive/multimethod.zig");
 const protocol_prim = @import("primitive/protocol.zig");
 const stm_prim = @import("primitive/stm.zig");
 const atom_prim = @import("primitive/atom.zig");
+const metadata_prim = @import("primitive/metadata.zig");
 
 pub const RegisterError = error{
     RtNamespaceMissing,
@@ -88,6 +89,7 @@ pub fn registerAll(env: *Env) !void {
     try protocol_prim.register(env, rt_ns);
     try stm_prim.register(env, rt_ns);
     try atom_prim.register(env, rt_ns);
+    try metadata_prim.register(env, rt_ns);
 
     // Phase 14 row 14.1 (D-079 discharge): walk every
     // `runtime/java/<pkg>/<Class>.zig`'s `___HOST_EXTENSION`

@@ -58,6 +58,9 @@ pub const ArrayMap = extern struct {
     _pad: [2]u8 = .{ 0, 0 },
     count: u32 = 0,
     entries: [2 * ARRAY_MAP_THRESHOLD]Value = @splat(Value.nil_val),
+    /// Metadata map (or nil). Same-type ops (assoc/dissoc) preserve it;
+    /// `with-meta` sets it on a copy. D-075 / metadata cycle 2026-05-30.
+    meta: Value = Value.nil_val,
 
     comptime {
         std.debug.assert(@alignOf(ArrayMap) >= 8);
@@ -164,7 +167,7 @@ fn assocArrayMap(rt: *Runtime, am: *const ArrayMap, k: Value, val: Value) !Value
     if (found_idx) |idx| {
         // Replace value at idx — copy the map with the one slot updated.
         const new_am = try rt.gc.alloc(ArrayMap);
-        new_am.* = .{ .header = HeapHeader.init(.array_map), .count = am.count, .entries = am.entries };
+        new_am.* = .{ .header = HeapHeader.init(.array_map), .count = am.count, .entries = am.entries, .meta = am.meta };
         new_am.entries[2 * idx + 1] = val;
         return Value.encodeHeapPtr(.array_map, new_am);
     }
@@ -175,7 +178,7 @@ fn assocArrayMap(rt: *Runtime, am: *const ArrayMap, k: Value, val: Value) !Value
     }
 
     const new_am = try rt.gc.alloc(ArrayMap);
-    new_am.* = .{ .header = HeapHeader.init(.array_map), .count = am.count + 1, .entries = am.entries };
+    new_am.* = .{ .header = HeapHeader.init(.array_map), .count = am.count + 1, .entries = am.entries, .meta = am.meta };
     new_am.entries[2 * am.count] = k;
     new_am.entries[2 * am.count + 1] = val;
     return Value.encodeHeapPtr(.array_map, new_am);
@@ -212,6 +215,7 @@ fn dissocArrayMap(rt: *Runtime, am: *const ArrayMap, original: Value, k: Value) 
         .header = HeapHeader.init(.array_map),
         .count = am.count - 1,
         .entries = @splat(Value.nil_val),
+        .meta = am.meta,
     };
     var write: u32 = 0;
     var read: u32 = 0;
@@ -234,6 +238,7 @@ pub fn traceArrayMap(gc_ptr: *anyopaque, header: *HeapHeader) void {
         if (am.entries[2 * i].heapHeader()) |h| mark_sweep.mark(gc, h);
         if (am.entries[2 * i + 1].heapHeader()) |h| mark_sweep.mark(gc, h);
     }
+    if (am.meta.heapHeader()) |h| mark_sweep.mark(gc, h);
 }
 
 pub fn tracePersistentHashMap(gc_ptr: *anyopaque, header: *HeapHeader) void {
@@ -624,7 +629,7 @@ fn promoteArrayMap(rt: *Runtime, am: *const ArrayMap, k: Value, val: Value) !Val
         .header = HeapHeader.init(.hash_map),
         .count = am.count + 1,
         .root = res.node,
-        .meta = Value.nil_val,
+        .meta = am.meta,
     };
     return Value.encodeHeapPtr(.hash_map, phm);
 }
@@ -773,6 +778,35 @@ fn dissocHashMap(rt: *Runtime, phm: *const PersistentHashMap, original: Value, k
         .meta = phm.meta,
     };
     return Value.encodeHeapPtr(.hash_map, new_phm);
+}
+
+/// `(with-meta m newmeta)` — shallow copy of the map (sharing entries /
+/// root) with `meta` set. Handles both `.array_map` and `.hash_map`.
+pub fn withMeta(rt: *Runtime, v: Value, m: Value) !Value {
+    switch (v.tag()) {
+        .array_map => {
+            const am = v.decodePtr(*const ArrayMap);
+            const new_am = try rt.gc.alloc(ArrayMap);
+            new_am.* = .{ .header = HeapHeader.init(.array_map), .count = am.count, .entries = am.entries, .meta = m };
+            return Value.encodeHeapPtr(.array_map, new_am);
+        },
+        .hash_map => {
+            const phm = v.decodePtr(*const PersistentHashMap);
+            const new_phm = try rt.gc.alloc(PersistentHashMap);
+            new_phm.* = .{ .header = HeapHeader.init(.hash_map), .count = phm.count, .root = phm.root, .meta = m };
+            return Value.encodeHeapPtr(.hash_map, new_phm);
+        },
+        else => unreachable, // caller (metadata primitive) gates the tag
+    }
+}
+
+/// Metadata of a map (or nil). Handles both map tags.
+pub fn metaOf(v: Value) Value {
+    return switch (v.tag()) {
+        .array_map => v.decodePtr(*const ArrayMap).meta,
+        .hash_map => v.decodePtr(*const PersistentHashMap).meta,
+        else => Value.nil_val,
+    };
 }
 
 // --- tests ---

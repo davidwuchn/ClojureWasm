@@ -140,6 +140,19 @@ pub fn registerGcHooks() void {
     initEmptySingleton();
 }
 
+/// Metadata of a set (or nil).
+pub fn metaOf(v: Value) Value {
+    return v.decodePtr(*const PersistentHashSet).meta;
+}
+
+/// `(with-meta s newmeta)` — shallow copy sharing the backing map, meta set.
+pub fn withMeta(rt: *Runtime, v: Value, m: Value) !Value {
+    const s = v.decodePtr(*const PersistentHashSet);
+    const ns = try rt.gc.alloc(PersistentHashSet);
+    ns.* = .{ .header = HeapHeader.init(.hash_set), .count = s.count, .map = s.map, .meta = m };
+    return Value.encodeHeapPtr(.hash_set, ns);
+}
+
 // --- tests ---
 
 const testing = std.testing;
