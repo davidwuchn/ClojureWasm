@@ -115,4 +115,22 @@ EOF
 ) || fail "case7: non-zero exit ($got)"
 assert_eq 'extend_type_satisfies_native_receiver' "$(last_line "$got")" 'true'
 
-echo "OK — phase7_protocol smoke (7 cases) green"
+# --- Case 8: public satisfies? wrapper false on unextended receiver ---
+got=$("$BIN" - <<'EOF' 2>/dev/null
+(defprotocol IPing (ping [this]))
+(satisfies? IPing 42)
+EOF
+) || fail "case8: non-zero exit ($got)"
+assert_eq 'satisfies_wrapper_false_on_integer' "$(last_line "$got")" 'false'
+
+# --- Case 9: public satisfies? wrapper true after native extend-type ---
+got=$("$BIN" - <<'EOF' 2>/dev/null
+(defprotocol IInc (inc-one [x]))
+(def Long (rt/__native-type :integer))
+(extend-type Long IInc (inc-one [x] (+ x 1)))
+(satisfies? IInc 7)
+EOF
+) || fail "case9: non-zero exit ($got)"
+assert_eq 'satisfies_wrapper_true_native_receiver' "$(last_line "$got")" 'true'
+
+echo "OK — phase7_protocol smoke (9 cases) green"

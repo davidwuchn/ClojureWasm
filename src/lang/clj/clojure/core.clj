@@ -1039,6 +1039,13 @@
 (defprotocol IPersistentMap (-without [m k]) (-keys [m]) (-vals [m]))
 (defprotocol IPersistentSet (-disjoin [s k]))
 
+;; `(satisfies? protocol x)` — true iff x's type implements protocol.
+;; Thin wrapper over the rt/__satisfies? primitive, which consults x's
+;; TypeDescriptor (typed_instance / reified_instance / native-Tag
+;; default registry) for a method entry naming the protocol.
+(def satisfies?
+  (fn* [protocol x] (rt/__satisfies? protocol x)))
+
 ;; `(memoize f)` returns a cached version of f: each distinct argument
 ;; tuple computes f once, then returns the stored result. Keys the
 ;; atom-backed cache by `(vec args)` — vectors compare by value (D-092),
