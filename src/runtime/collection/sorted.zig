@@ -7,9 +7,10 @@
 //! the HAMT / vector trie honour); the chosen LLRB shape was taken over
 //! a flat sorted array per ADR-0057's Devil's-advocate fork (F-002).
 //!
-//! Cycle A (this file's first landing): build (assoc/conj) + get /
-//! contains? / count / seq / keys / vals + sorted-map/sorted-set + sorted?.
-//! dissoc / disj (the LLRB delete) + custom `-by` comparators are cycle B;
+//! Cycle A: build (assoc/conj) + get / contains? / count / seq / keys /
+//! vals + sorted-map/sorted-set + sorted?. Cycle B1 (this landing): the
+//! functional LLRB delete (dissoc / disj — Sedgewick moveRedLeft /
+//! moveRedRight / deleteMin). Custom `-by` comparators are cycle B2;
 //! subseq / rsubseq / rseq are cycle C.
 
 const std = @import("std");
@@ -165,6 +166,103 @@ fn makeBlack(rt: *Runtime, root: Value) !Value {
     return newNode(rt, rn.key, rn.val, rn.left, rn.right, BLACK);
 }
 
+// --- functional LLRB delete (Sedgewick deleteMin/moveRedLeft/moveRedRight) ---
+
+inline fn leftOf(v: Value) Value {
+    return if (v.tag() == .rb_node) v.decodePtr(*const RbNode).left else Value.nil_val;
+}
+
+/// Leftmost node of a non-empty subtree (the minimum key).
+fn minNode(h: Value) Value {
+    var cur = h;
+    while (true) {
+        const n = cur.decodePtr(*const RbNode);
+        if (n.left.tag() != .rb_node) return cur;
+        cur = n.left;
+    }
+}
+
+/// Borrow a red from the right sibling so the left child can become red
+/// (precondition for descending left during a delete).
+fn moveRedLeft(rt: *Runtime, h: Value) !Value {
+    var n = try flipColors(rt, h);
+    const nn = n.decodePtr(*const RbNode);
+    if (isRed(leftOf(nn.right))) {
+        const nr = try rotateRight(rt, nn.right);
+        n = try newNode(rt, nn.key, nn.val, nn.left, nr, nn.color);
+        n = try rotateLeft(rt, n);
+        n = try flipColors(rt, n);
+    }
+    return n;
+}
+
+/// Mirror of moveRedLeft for descending right.
+fn moveRedRight(rt: *Runtime, h: Value) !Value {
+    var n = try flipColors(rt, h);
+    const nn = n.decodePtr(*const RbNode);
+    if (isRed(leftOf(nn.left))) {
+        n = try rotateRight(rt, n);
+        n = try flipColors(rt, n);
+    }
+    return n;
+}
+
+/// Delete the minimum-key node; returns the rebalanced subtree (nil if it
+/// became empty).
+fn deleteMin(rt: *Runtime, h: Value) !Value {
+    const hn = h.decodePtr(*const RbNode);
+    if (hn.left.tag() != .rb_node) return Value.nil_val;
+    var n = h;
+    var nn = n.decodePtr(*const RbNode);
+    if (!isRed(nn.left) and !isRed(leftOf(nn.left))) {
+        n = try moveRedLeft(rt, n);
+        nn = n.decodePtr(*const RbNode);
+    }
+    const new_left = try deleteMin(rt, nn.left);
+    n = try newNode(rt, nn.key, nn.val, new_left, nn.right, nn.color);
+    return balance(rt, n);
+}
+
+/// Delete `key` from a non-empty subtree known to contain it; returns the
+/// rebalanced subtree (nil if it became empty).
+fn deleteNode(rt: *Runtime, comparator: Value, h: Value, key: Value, loc: SourceLocation) !Value {
+    var n = h;
+    if (try compareKeys(rt, comparator, key, n.decodePtr(*const RbNode).key, loc) == .lt) {
+        var nn = n.decodePtr(*const RbNode);
+        if (!isRed(nn.left) and !isRed(leftOf(nn.left))) {
+            n = try moveRedLeft(rt, n);
+            nn = n.decodePtr(*const RbNode);
+        }
+        const new_left = try deleteNode(rt, comparator, nn.left, key, loc);
+        n = try newNode(rt, nn.key, nn.val, new_left, nn.right, nn.color);
+    } else {
+        var nn = n.decodePtr(*const RbNode);
+        if (isRed(nn.left)) {
+            n = try rotateRight(rt, n);
+            nn = n.decodePtr(*const RbNode);
+        }
+        // Leaf with matching key (after the right-lean fix): drop it.
+        if (try compareKeys(rt, comparator, key, nn.key, loc) == .eq and nn.right.tag() != .rb_node) {
+            return Value.nil_val;
+        }
+        if (!isRed(nn.right) and !isRed(leftOf(nn.right))) {
+            n = try moveRedRight(rt, n);
+            nn = n.decodePtr(*const RbNode);
+        }
+        if (try compareKeys(rt, comparator, key, nn.key, loc) == .eq) {
+            // Replace with in-order successor (min of right subtree), then
+            // delete that successor from the right subtree.
+            const succ = minNode(nn.right).decodePtr(*const RbNode);
+            const new_right = try deleteMin(rt, nn.right);
+            n = try newNode(rt, succ.key, succ.val, nn.left, new_right, nn.color);
+        } else {
+            const new_right = try deleteNode(rt, comparator, nn.right, key, loc);
+            n = try newNode(rt, nn.key, nn.val, nn.left, new_right, nn.color);
+        }
+    }
+    return balance(rt, n);
+}
+
 // --- SortedMap public API ---
 
 pub fn emptyMap(rt: *Runtime) !Value {
@@ -226,6 +324,28 @@ pub fn contains(rt: *Runtime, m_val: Value, key: Value, loc: SourceLocation) !bo
         }
     }
     return false;
+}
+
+pub fn dissoc(rt: *Runtime, m_val: Value, key: Value, loc: SourceLocation) !Value {
+    const m = m_val.decodePtr(*const SortedMap);
+    if (m.root.tag() != .rb_node) return m_val;
+    if (!try contains(rt, m_val, key, loc)) return m_val; // absent → no-op (count stays)
+    var root = m.root;
+    const rn = root.decodePtr(*const RbNode);
+    // Set the root red so the first borrow has a red to move down.
+    if (!isRed(rn.left) and !isRed(rn.right)) {
+        root = try newNode(rt, rn.key, rn.val, rn.left, rn.right, RED);
+    }
+    root = try makeBlack(rt, try deleteNode(rt, m.comparator, root, key, loc));
+    const nm = try rt.gc.alloc(SortedMap);
+    nm.* = .{
+        .header = HeapHeader.init(.sorted_map),
+        .count = m.count - 1,
+        .comparator = m.comparator,
+        .root = root,
+        .meta = m.meta,
+    };
+    return Value.encodeHeapPtr(.sorted_map, nm);
 }
 
 // In-order walk variants. `consHeap` prepends, so processing
@@ -306,6 +426,14 @@ pub fn setContains(rt: *Runtime, set_val: Value, elem: Value, loc: SourceLocatio
     return contains(rt, mapOf(set_val), elem, loc);
 }
 
+pub fn disjSet(rt: *Runtime, set_val: Value, elem: Value, loc: SourceLocation) !Value {
+    const s = set_val.decodePtr(*const SortedSet);
+    const new_map = try dissoc(rt, s.map, elem, loc);
+    const ns = try rt.gc.alloc(SortedSet);
+    ns.* = .{ .header = HeapHeader.init(.sorted_set), .count = new_map.decodePtr(*const SortedMap).count, .map = new_map, .meta = s.meta };
+    return Value.encodeHeapPtr(.sorted_set, ns);
+}
+
 // --- GC traces ---
 
 pub fn traceRbNode(gc_ptr: *anyopaque, header: *HeapHeader) void {
@@ -367,4 +495,67 @@ test "SortedMap assoc keeps key order + get + count + dup-replace" {
     try testing.expectEqual(@as(u32, 50), count(m));
     try testing.expectEqual(@as(i48, -1), (try get(&rt, m, Value.initInteger(7), noloc)).asInteger());
     try testing.expect(!try contains(&rt, m, Value.initInteger(999), noloc));
+}
+
+/// Recursively verify the LLRB invariants and return the subtree's black
+/// height. A buggy delete typically passes membership smoke tests but
+/// violates one of these (the strong canary). Asserts: BST order,
+/// left-leaning (no red right link), no two consecutive red links,
+/// equal black height on both sides.
+fn checkInvariants(h: Value) !usize {
+    if (h.tag() != .rb_node) return 1; // null links are black
+    const hn = h.decodePtr(*const RbNode);
+    // left-lean: a red right link is forbidden
+    try testing.expect(!isRed(hn.right));
+    // no two consecutive reds
+    if (isRed(h)) try testing.expect(!isRed(hn.left) and !isRed(hn.right));
+    // BST order against immediate children
+    if (hn.left.tag() == .rb_node) {
+        try testing.expect(hn.left.decodePtr(*const RbNode).key.asInteger() < hn.key.asInteger());
+    }
+    if (hn.right.tag() == .rb_node) {
+        try testing.expect(hn.right.decodePtr(*const RbNode).key.asInteger() > hn.key.asInteger());
+    }
+    const lh = try checkInvariants(hn.left);
+    const rh = try checkInvariants(hn.right);
+    try testing.expectEqual(lh, rh); // equal black height
+    return lh + @as(usize, if (hn.color == BLACK) 1 else 0);
+}
+
+test "SortedMap delete: remove half, invariants + membership hold" {
+    var th = std.Io.Threaded.init(testing.allocator, .{});
+    defer th.deinit();
+    var rt = Runtime.init(th.io(), testing.allocator);
+    defer rt.deinit();
+
+    const noloc: SourceLocation = .{};
+    var m = try emptyMap(&rt);
+    // build with shuffled insert order (i*17 mod 50 is a permutation)
+    var i: i48 = 0;
+    while (i < 50) : (i += 1) {
+        const k = @mod(i * 17, 50);
+        m = try assoc(&rt, m, Value.initInteger(k), Value.initInteger(k * 10), noloc);
+    }
+    // delete every even key
+    i = 0;
+    while (i < 50) : (i += 2) {
+        m = try dissoc(&rt, m, Value.initInteger(i), noloc);
+    }
+    try testing.expectEqual(@as(u32, 25), count(m));
+    _ = try checkInvariants(m.decodePtr(*const SortedMap).root);
+    i = 0;
+    while (i < 50) : (i += 1) {
+        const present = try contains(&rt, m, Value.initInteger(i), noloc);
+        try testing.expectEqual(@mod(i, 2) == 1, present); // only odds survive
+    }
+    // deleting an absent key is a no-op (count unchanged)
+    m = try dissoc(&rt, m, Value.initInteger(0), noloc);
+    try testing.expectEqual(@as(u32, 25), count(m));
+    // delete all remaining → empty
+    i = 1;
+    while (i < 50) : (i += 2) {
+        m = try dissoc(&rt, m, Value.initInteger(i), noloc);
+    }
+    try testing.expectEqual(@as(u32, 0), count(m));
+    try testing.expect(m.decodePtr(*const SortedMap).root.isNil());
 }

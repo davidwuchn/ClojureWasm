@@ -131,6 +131,7 @@ pub fn disjFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation)
     if (coll.isNil()) return .nil_val;
     return switch (coll.tag()) {
         .hash_set => try set.disj(rt, coll, args[1]),
+        .sorted_set => try sorted.disjSet(rt, coll, args[1], loc),
         else => blk: {
             // D-089 row 8.6 cycle 4: IPersistentSet -disjoin slow-path
             // (close cycle for the retro-audit cluster).
@@ -522,6 +523,14 @@ pub fn dissocFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocatio
             var i: usize = 1;
             while (i < args.len) : (i += 1) {
                 acc = try map.dissoc(rt, acc, args[i]);
+            }
+            break :blk acc;
+        },
+        .sorted_map => blk: {
+            var acc: Value = coll;
+            var i: usize = 1;
+            while (i < args.len) : (i += 1) {
+                acc = try sorted.dissoc(rt, acc, args[i], loc);
             }
             break :blk acc;
         },

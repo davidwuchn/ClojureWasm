@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
-# test/e2e/phase14_sorted.sh — sorted-map / sorted-set cycle A (ADR-0057,
+# test/e2e/phase14_sorted.sh — sorted-map / sorted-set (ADR-0057,
 # persistent LLRB red-black tree, default valueCompare): build / get /
 # contains? / count / keys / vals / seq (in key order) / assoc / conj /
-# sorted?. dissoc / disj / -by / subseq are cycle B/C.
+# sorted? (cycle A) + dissoc / disj (LLRB delete, cycle B1). Custom -by
+# comparators (B2) / subseq / rsubseq / rseq (C) still pending.
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 BIN="zig-out/bin/cljw"
@@ -33,4 +34,14 @@ assert_eq 'set_print' "$("$BIN" -e '(str (sorted-set 3 1 2))')"           '"#{1 
 assert_eq 'sortedQ_m' "$("$BIN" -e '(sorted? (sorted-map))')"            'true'
 assert_eq 'sortedQ_s' "$("$BIN" -e '(sorted? (sorted-set))')"            'true'
 assert_eq 'sortedQ_n' "$("$BIN" -e '(sorted? {})')"                      'false'
-echo "OK — phase14_sorted smoke (21 cases) green"
+# dissoc / disj — LLRB delete (cycle B1), ordering preserved
+assert_eq 'dissoc'    "$("$BIN" -e '(keys (dissoc (sorted-map :a 1 :b 2 :c 3) :b))')" '(:a :c)'
+assert_eq 'dissoc_cnt' "$("$BIN" -e '(count (dissoc (sorted-map :a 1 :b 2 :c 3) :b))')" '2'
+assert_eq 'dissoc_multi' "$("$BIN" -e '(keys (dissoc (sorted-map :a 1 :b 2 :c 3 :d 4) :b :d))')" '(:a :c)'
+assert_eq 'dissoc_miss' "$("$BIN" -e '(count (dissoc (sorted-map :a 1) :z))')" '1'
+assert_eq 'dissoc_empty' "$("$BIN" -e '(count (dissoc (sorted-map :a 1) :a))')" '0'
+assert_eq 'disj'      "$("$BIN" -e '(seq (disj (sorted-set 1 2 3 4 5) 3))')" '(1 2 4 5)'
+assert_eq 'disj_cnt'  "$("$BIN" -e '(count (disj (sorted-set 1 2 3) 2))')" '2'
+assert_eq 'disj_drain' "$("$BIN" -e '(count (disj (disj (sorted-set 1 2) 1) 2))')" '0'
+assert_eq 'dissoc_reorder' "$("$BIN" -e '(vec (keys (reduce dissoc (into (sorted-map) (map (fn [i] [i i]) (range 10))) [3 7 1 9])))')" '[0 2 4 5 6 8]'
+echo "OK — phase14_sorted smoke (30 cases) green"

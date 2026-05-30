@@ -85,9 +85,14 @@ Caveat: the static var-set extraction has minor false-positives (e.g.
     - **Cycle A — DONE**: RbNode struct + GC trace + valueCompare-ordered build / get / contains /
       count / keys / vals / seq / assoc / conj + `sorted-map`/`sorted-set` ctors + `sorted?` + print +
       IFn. 21-case e2e `phase14_sorted` green; gate 165/165. delete/-by/subseq raise/skeleton until B/C.
-    - **Cycle B — NEXT**: LLRB delete (dissoc/disj/delete — moveRedLeft/moveRedRight/deleteMin, the
-      hardest piece; build-N-then-delete-half canary e2e) + `sorted-map-by`/`sorted-set-by` (callFn
-      comparator, currently `SortedCustomComparatorNotImplemented` skeleton).
+    - **Cycle B1 — DONE**: functional LLRB delete (dissoc/disj — Sedgewick moveRedLeft/moveRedRight/
+      deleteMin). Strong canary: build-50-shuffled → delete-half → assert full LLRB invariants (BST
+      order, left-lean, no consecutive reds, equal black-height) + drain-to-empty. 9 new e2e (30 total).
+    - **Cycle B2 — NEXT**: `sorted-map-by`/`sorted-set-by` (custom comparator via callFn from Layer 0).
+      OPEN QUESTION: `compareKeys` is in runtime/ (Layer 0) and would need to invoke a user fn — the
+      VTable `callFn` (dispatch.zig:97) takes `(rt, env, fnVal, args)` but sorted.zig ops only thread
+      `rt`, not `env`. Either thread env through assoc/get/contains/dissoc, or find an rt-held env. The
+      `sort`-with-comparator precedent doesn't exist yet (= D-159), so this is greenfield.
     - **Cycle C**: in-order seqFrom + .clj subseq/rsubseq/rseq + flip `reversible?` (vector too).
   - **then**: **transducers** (HIGH ROI, BIG — survey-worthy: transducer protocol over reduce/reduced,
     1-arg HOF arities); MEDIUM fill-ins: `isa?`/hierarchy, `resolve`/ns (needs first-class var Value?),
