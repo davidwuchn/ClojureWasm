@@ -392,6 +392,7 @@ run_step "e2e_phase14_map_helpers"           "bash test/e2e/phase14_map_helpers.
 run_step "e2e_phase14_hamt_map"              "bash test/e2e/phase14_hamt_map.sh"
 run_step "e2e_phase14_ifn_callable"          "bash test/e2e/phase14_ifn_callable.sh"
 run_step "e2e_phase14_atom"                  "bash test/e2e/phase14_atom.sh"
+run_step "e2e_phase14_hash_gensym"           "bash test/e2e/phase14_hash_gensym.sh"
 run_step "e2e_phase14_equality"              "bash test/e2e/phase14_equality.sh"
 run_step "e2e_phase14_dedup_group"           "bash test/e2e/phase14_dedup_group.sh"
 run_step "e2e_phase14_seq_helpers2"          "bash test/e2e/phase14_seq_helpers2.sh"

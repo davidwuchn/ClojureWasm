@@ -20,6 +20,7 @@ const dispatch = @import("../../runtime/dispatch.zig");
 const keyword_mod = @import("../../runtime/keyword.zig");
 const symbol_mod = @import("../../runtime/symbol.zig");
 const string_mod = @import("../../runtime/collection/string.zig");
+const equal_mod = @import("../../runtime/equal.zig");
 const print_mod = @import("../../runtime/print.zig");
 const charset_mod = @import("../../runtime/charset.zig");
 const td_mod = @import("../../runtime/type_descriptor.zig");
@@ -740,7 +741,44 @@ const Entry = struct {
     f: dispatch.BuiltinFn,
 };
 
+/// `(hash x)` — content hash, the `=`/hash contract partner
+/// (`equal.valueHash`, also the HAMT key hash). Returned as a signed
+/// 32-bit int (JVM `hash` is a 32-bit `int`); cljw's value is internally
+/// consistent but not bit-identical to the JVM Murmur output.
+pub fn hashFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = rt;
+    _ = env;
+    try error_catalog.checkArity("hash", args, 1, loc);
+    return Value.initInteger(@as(i32, @bitCast(equal_mod.valueHash(args[0]))));
+}
+
+/// `(gensym)` / `(gensym prefix)` — a fresh unguessable symbol
+/// `<prefix><n>` (default prefix `G__`). Uses the runtime gensym counter
+/// directly (the `__auto__`-suffixed `rt.gensym` is the syntax-quote `x#`
+/// form, a different surface).
+pub fn gensymFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = env;
+    if (args.len > 1)
+        return error_catalog.raise(.arity_out_of_range, loc, .{ .fn_name = "gensym", .got = args.len, .min = 0, .max = 1 });
+    var prefix: []const u8 = "G__";
+    if (args.len == 1) {
+        const p = args[0];
+        prefix = switch (p.tag()) {
+            .string => string_mod.asString(p),
+            .symbol => symbol_mod.asSymbol(p).name,
+            else => return error_catalog.raise(.type_arg_invalid, loc, .{ .fn_name = "gensym", .expected = "string or symbol prefix", .actual = @tagName(p.tag()) }),
+        };
+    }
+    const n = rt.gensym_counter;
+    rt.gensym_counter += 1;
+    const name = try std.fmt.allocPrint(rt.gc.infra, "{s}{d}", .{ prefix, n });
+    defer rt.gc.infra.free(name);
+    return symbol_mod.intern(rt, null, name);
+}
+
 const ENTRIES = [_]Entry{
+    .{ .name = "hash", .f = &hashFn },
+    .{ .name = "gensym", .f = &gensymFn },
     .{ .name = "__instance?", .f = &instanceQPrim },
     .{ .name = "nil?", .f = &nilQ },
     .{ .name = "true?", .f = &trueQ },
