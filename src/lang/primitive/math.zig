@@ -26,6 +26,8 @@ const equal = @import("../../runtime/equal.zig");
 const compare_mod = @import("../../runtime/compare.zig");
 const random_mod = @import("../../runtime/random.zig");
 const ratio_mod = @import("../../runtime/numeric/ratio.zig");
+const big_int_mod = @import("../../runtime/numeric/big_int.zig");
+const big_decimal_mod = @import("../../runtime/numeric/big_decimal.zig");
 const string_mod = @import("../../runtime/collection/string.zig");
 
 // --- numeric helpers ---
@@ -604,6 +606,35 @@ fn numCoerce(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) 
     return args[0];
 }
 
+/// `(double x)` / `(float x)` — coerce any number to a float (cw v1 has one
+/// f64 float type, so both map to it). Matches clojure.core/double + /float.
+/// Covers the whole numeric tower: integer / char (exact), big_int / ratio /
+/// big_decimal (lossy, round-to-nearest — float-contagion is a Clojure
+/// feature). Non-number is a type error.
+fn floatCoerce(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = rt;
+    _ = env;
+    try error_catalog.checkArity("double", args, 1, loc);
+    const v = args[0];
+    const f: f64 = switch (v.tag()) {
+        .float => v.asFloat(),
+        .integer => @floatFromInt(v.asInteger()),
+        .char => @floatFromInt(v.asChar()),
+        .big_int => big_int_mod.asManaged(v).toFloat(f64, .nearest_even)[0],
+        .ratio => blk: {
+            const r = v.decodePtr(*const ratio_mod.Ratio);
+            break :blk r.numer.m.toFloat(f64, .nearest_even)[0] / r.denom.m.toFloat(f64, .nearest_even)[0];
+        },
+        .big_decimal => blk: {
+            const bd = v.decodePtr(*const big_decimal_mod.BigDecimal);
+            const unscaled = bd.unscaled.m.toFloat(f64, .nearest_even)[0];
+            break :blk unscaled * std.math.pow(f64, 10.0, -@as(f64, @floatFromInt(bd.scale)));
+        },
+        else => |t| return error_catalog.raise(.type_arg_not_number, loc, .{ .fn_name = "double", .actual = @tagName(t) }),
+    };
+    return Value.initFloat(f);
+}
+
 // --- string parsers (clojure.core 1.11) ---
 
 /// `(parse-long s)` — parse a base-10 long from string `s`; `nil` if `s` is
@@ -724,6 +755,8 @@ const ENTRIES = [_]Entry{
     // long ≡ int in cw v1 (a single i64 integer type — no 32-bit int).
     .{ .name = "long", .f = &intCoerce },
     .{ .name = "num", .f = &numCoerce },
+    .{ .name = "double", .f = &floatCoerce },
+    .{ .name = "float", .f = &floatCoerce },
     .{ .name = "char", .f = &charCoerce },
     .{ .name = "parse-long", .f = &parseLong },
     .{ .name = "parse-double", .f = &parseDouble },
