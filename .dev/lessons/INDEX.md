@@ -30,6 +30,13 @@
 
 ### Cluster E: Debugging and tooling
 
+- [`structural_defect_hunting.md`](structural_defect_hunting.md) —
+  corpus-driven large-input/edge probing surfaces STRUCTURAL defects
+  (eager non-TCO recursion class; designed-but-unconnected scaffolding;
+  missing eval-time reachability; representation divergence; hidden
+  O(n²)) that gap-filling misses. The hunting method + the patterns found
+  2026-05-30 + the known structural work-queue (D-160/D-161/D-162). Fix
+  per F-002 (finished form), not ad-hoc.
 - See cross-cluster reference: `phase_deferred_scaffolds.md`
   (Cluster A) covers the test-orphan + compile-error-orphan
   diagnostic + the `check_test_reach.sh` gate that catches them.

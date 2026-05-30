@@ -6,22 +6,28 @@
 ## Resume contract
 
 - **HEAD**: see `git log` (≈ `c296967c`, several commits behind by resume).
-- **Direction (user, 2026-05-30)**: raise **functional completeness FIRST**,
-  before optimization complexity (no premature JIT/superinstruction). Work
-  **corpus-driven**, not AI-probed. Keep strong cross-session state. Clone /
-  copy liberally. Fully autonomous; flexible replanning encouraged.
-- **First commit on resume MUST be**: take the next remaining feature gap from
-  [`.dev/core_coverage_gaps.md`](core_coverage_gaps.md). The corpus robustness
-  sweep is done for the common surface (6 batches — crash class CLOSED;
-  destructuring/nil-punning/threading/coercion all validated). Remaining gaps,
-  in rough priority: **`eval`** (needs a Value→Node/Form path — analyzer works
-  on Forms, not runtime Values), **`type`/`class`** (needs a cljw
-  type-representation design decision — no JVM Class), regex **capture groups**
-  (regex cycle 3, currently `not_implemented`), **resolve / ns-introspection**
-  (needs first-class var Value), **D-161** (wire defmulti dispatch to the
-  global hierarchy via isa? — a focused Layer-0 unit, plan in the debt row).
-  Cheap parallel: keep running `cljw -e` sweep batches on unswept surface.
-  Always probe before implementing. Do NOT ask (Direction-ask smell).
+- **Direction (user, 2026-05-30)**: raise **functional completeness FIRST**
+  (no premature JIT/superinstruction), **corpus-driven** not AI-probed. The
+  emphasis is now **STRUCTURAL-DEFECT HUNTING, not ad-hoc gap-filling**: when a
+  large-input/edge probe surfaces a wiring fault / unconnected scaffold /
+  representation divergence / hidden O(n²) / non-TCO recursion, fix the
+  **finished form (F-002)** — do the rework, don't ad-hoc patch the symptom.
+  The METHOD + the catalog of patterns found so far live in
+  [`.dev/lessons/structural_defect_hunting.md`](lessons/structural_defect_hunting.md)
+  (read it on resume). Keep strong cross-session state; clone/copy liberally;
+  fully autonomous; flexible replanning.
+- **First commit on resume MUST be**: resume **structural-defect hunting** per
+  [`.dev/lessons/structural_defect_hunting.md`](lessons/structural_defect_hunting.md).
+  Take a known structural defect from the queue (fix per finished form, not
+  ad-hoc): **D-162** `eval` (store `macro_table` on `rt` at setupCore →
+  valueToForm→analyzeForm→evalForm), **D-161** defmulti↔hierarchy isa? wiring
+  (Layer-0 dispatch — survey prefer/dominates/cache first), **D-160**
+  sequence/eduction push→pull bridge; AND keep running large-input/edge
+  `cljw -e` sweep batches on unswept surface (interop, dynamic vars, IO,
+  deftype/defrecord field access, protocol edge) to find more. Pure missing
+  fns (name_error) are the floor — fill if clean, else record the
+  architectural blocker as a debt. Always probe first. Do NOT ask
+  (Direction-ask smell).
 - **Forbidden this session**: re-opening anything landed this session (sorted
   collections, transducers 1-5, D-159, the range/sort/interleave/zipmap crash
   fixes, dedupe/distinct O(n²) fix, mapv/fnil arities, nested-lazy print,
@@ -60,12 +66,28 @@ cw-v0 gaps in `.dev/cw_v0_parity_and_gap_plan.md`.
   **D-155/156** HAMT collision-bucket / dissoc inline-collapse. **D-150** VM ctor
   parity. **D-153** `(cons x lazy)` count. **D-152** diff oracle `.clj` closures.
   **D-131** built-app non-core. **D-117/118** nREPL (Phase-15). **D-133** JIT floor.
-- **Sweep gaps (not yet fixed)**: `mapv`/`interleave` N-coll variadic; `reductions`
-  & `distinct` are O(n²) (perf, not crash); lazy-as-map-value still `#<lazy_seq>`.
+- **D-161** defmulti↔hierarchy isa? wiring. **D-162** eval needs macro_table on rt.
+- **Sweep gaps (low priority)**: `mapv`/`interleave` N-coll variadic; `reductions`
+  O(n²); `uuid?`/`type`/`class` (representation/JVM-Class divergence — design first);
+  lazy-as-map-value still `#<lazy_seq>` (deepRealize covers the seq family only).
 
 ## Cold-start reading order
 
 handover → CLAUDE.md (§ Project spirit + § Autonomous Workflow + § The only
 stop) → `.dev/project_facts.md` (F-010 + edge mission) → `.dev/principle.md`
-→ `.dev/core_coverage_gaps.md` (the active sweep work-queue) →
+(Bad Smell + four depths + structural imagination) →
+`.dev/lessons/structural_defect_hunting.md` (the resume MODE + defect catalog)
+→ `.dev/core_coverage_gaps.md` (sweep work-queue) →
 `private/notes/phaseA26-*.md` (sorted / transducers survey + task notes).
+
+## Stopped — user requested
+
+User instruction (2026-05-30): keep advancing autonomously but emphasise
+**structural defects, not ad-hoc gaps** — when found, follow F-002
+(finished-form-clean) and do the rework without sparing effort. Before this
+session ends: audit the continuation wiring / reference chain so a CLEAR
+session resumes this mode via `continue`, writing out anything missing. Then
+stop and clear. (Done: chain audited — wiring intact; the mode + defect
+catalog written to `lessons/structural_defect_hunting.md` and wired into the
+Direction + First-commit + cold-start order above.) Resume = structural-defect
+hunting per the lesson.
