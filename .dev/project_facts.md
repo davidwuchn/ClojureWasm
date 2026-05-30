@@ -693,3 +693,87 @@ it digests.
   FFI breadth; refactor-gate discipline mandatory. F-001 re-sequenced
   (not superseded) per user decision; `docs/works/` opted in outside
   F-007 per user decision.
+
+---
+
+## F-011 — Commonization + clean code + behavioural equivalence are prioritised over effort cost; verify equivalence against real Clojure (`clj`)
+
+**Status**: `confirmed` — direction of travel is law. Amendable only
+by user direction + Revision history entry.
+
+**Declared**: 2026-05-31 (user chat, during the structural-defect
+hunting session).
+
+**Verbatim**:
+1. 「いくら労力がかかっても、 共通化やきれいなコード、 動作等価
+   （内部動作や表現とかは色々変わってもいいが）を優先してね」
+2. （最適化観点について）「コメントやad-hoc感がないように共通機構が
+   あるとうれしいが、 難しければまあ局所最適化でもいいか。 cw v0の状況
+   なんかも参考程度にはしてください（ただし完コピというよりも、 この
+   プロジェクトにふさわしい形で取り込むか、 発想のタネにする）」
+3. （差分オラクルについて）「入力 => 出力 であれば、 本家 clj を実際に
+   実行させてみることで差分（もちろん異常系も、 ただし、 フォーマットは
+   違うかもしれんが）を検知することもできます」+「それらも新セッション
+   でもワークするように、 配線しておいてね」
+
+**What this changes for the loop**:
+
+1. **Commonization (DRY / shared mechanism) outranks effort.** When a
+   fix can land either as a per-site ad-hoc patch OR as a single shared
+   mechanism, the **shared mechanism wins regardless of how much more
+   work it is**. "ad-hoc 感 / コメントで言い訳する" local fixes are the
+   failure mode this forbids. This strengthens F-002: not only does the
+   finished form win, but the *commonised* finished form wins over the
+   duplicated one. Example landed this session: record associative read
+   unified into `lookup.recordGet` (one Layer-0 source for both `(:k
+   rec)` and `(get rec k)`) rather than two copies.
+2. **Behavioural equivalence is the correctness target; internals are
+   free.** Observable input→output (including error CASES) must match
+   real Clojure. Internal mechanics + representation may diverge freely
+   (NaN-box layout, GC, no-JVM-Class, the `.type_descriptor` / synthetic
+   exception-class-name bridge, etc.). This is F-005's "JVM surface
+   compat, Zig-native internal" generalised to *all* observable
+   behaviour, not just the numeric tower. Where cljw deliberately
+   diverges on a SURFACE detail (e.g. `(class 5)` prints `Long` not
+   `java.lang.Long` per the no-JVM rule), that divergence is a recorded
+   ADR decision, not an accident.
+3. **The clj differential oracle is a first-class tool, wired durably.**
+   `clj` (`/opt/homebrew/bin/clj`, Clojure CLI) is the ground-truth
+   oracle for input→output equivalence, **including error cases** (the
+   error MESSAGE FORMAT differs — cljw vs `Execution error
+   (<Class>)…` — but the exception CLASS and the VALUE must match).
+   The loop runs `clj -M -e '<expr>'` to derive the expected output
+   when probing, rather than guessing. See
+   `.dev/reference_clones.md` (oracle entry) +
+   `.dev/lessons/structural_defect_hunting.md` (oracle in the probe
+   sweep) — both wired so a fresh session picks the oracle up.
+4. **Optimization prefers a shared mechanism; cw v0 is an
+   inspiration-seed, not a copy.** Perf work (D-163 interpreter
+   per-element overhead, future JIT/fusion) should land as a common
+   mechanism (superinstruction/fusion, a reduce-over-range fast-path)
+   rather than ad-hoc per-call-site hacks. Local optimization is the
+   fallback only when a shared mechanism is genuinely infeasible. cw v0
+   (`~/Documents/MyProducts/ClojureWasm`) is consulted as a
+   precedent/seed and re-derived in a cljw-appropriate shape, never
+   copied verbatim (per `no_copy_from_v1.md`).
+5. **Effort / cycle / diff size is NOT a reason to pick the ad-hoc
+   path.** This closes the same loophole F-002 + the Cycle-budget-defer
+   smell close, from the commonization angle: "the shared mechanism is
+   more work" is never a sufficient reason to ship the duplicated /
+   local form.
+
+**Cross-references**: F-002 (finished-form wins — F-011 adds the
+commonization + behavioural-equivalence axes) · F-005 (numeric-tower
+surface compat — the behavioural-equivalence precedent F-011
+generalises) · F-009 (feature neutrality — shared impl home) ·
+`no_copy_from_v1.md` (v0 as seed not copy) · `no_jvm_specific_assumption.md`
+(internals diverge) · D-163 (perf: shared mechanism over ad-hoc) ·
+`.dev/reference_clones.md` + `.dev/lessons/structural_defect_hunting.md`
+(clj oracle wiring) · `private/notes/phaseA26-clj-differential-oracle.md`
+(the running oracle log).
+
+### Revision history
+
+- 2026-05-31 added: commonization + clean-code + behavioural-equivalence
+  prioritised over effort; clj differential oracle wired as a first-class
+  tool; optimization prefers shared mechanism with cw v0 as seed.

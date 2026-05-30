@@ -23,6 +23,37 @@ Never edit or commit from them. Code reading only.
 - `~/Documents/OSS/openjdk24/` — **OpenJDK 24 source**
   - Use: JVM internals reference for memory model, GC, lock, concurrent primitives. Read when designing cw equivalents.
 
+## Executable oracle — real Clojure (`clj`)
+
+**`clj` is installed and is the first-class input→output differential
+oracle** (`/opt/homebrew/bin/clj`, Clojure CLI 1.12.x). Per F-011, the
+loop verifies behavioural equivalence against real Clojure rather than
+guessing expected output — **including error cases**.
+
+```sh
+clj -M -e '<expr>'                       # ground-truth value
+clj -M -e '<expr>' 2>&1 | grep -oE '\(([A-Za-z]+Exception|[A-Za-z]+Error)\)'  # error class
+```
+
+- **Use**: when probing a behaviour, run it through `clj` to get the
+  canonical output; diff against `zig-out/bin/cljw -e '<expr>'`.
+- **Error-case caveat**: the message FORMAT differs (cljw renders its
+  own `[kind]` header; `clj` renders `Execution error (<Class>) at
+  user/eval… \n <message>`). The **exception CLASS** and the **value**
+  must match; the surrounding format need not. Extract the class with
+  the grep above.
+- **Cost**: `clj` startup is ~1–2 s/call — batch probes; do not call it
+  per-element in a loop.
+- **Deliberate divergences** (recorded in ADRs) are NOT oracle
+  failures: e.g. `(class 5)` prints `Long` in cljw vs `java.lang.Long`
+  in `clj` (no-JVM rule). The oracle flags a mismatch; the loop decides
+  whether it is a real defect or a recorded surface divergence.
+- Running log of oracle findings:
+  `private/notes/phaseA26-clj-differential-oracle.md`.
+
+This is the executable form of `~/Documents/OSS/clojure/` (the source).
+Read the source for *why*; run `clj` for *what*.
+
 ## Reference WASM stacks
 
 - `~/Documents/OSS/wasmtime/` — **wasmtime (Rust)**

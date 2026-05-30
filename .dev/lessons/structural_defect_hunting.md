@@ -60,9 +60,20 @@ gap-filling.
 
 ## The HUNTING METHOD (how to keep finding these)
 
+0. **Use the real Clojure (`clj`) differential oracle** (F-011 +
+   `.dev/reference_clones.md`). Instead of guessing the expected output,
+   run the same form through `clj -M -e '<expr>'` and diff against
+   `cljw -e '<expr>'` — **including error cases** (the message format
+   differs, but the exception CLASS and the value must match; extract
+   the class with `grep -oE '\(([A-Za-z]+Exception|[A-Za-z]+Error)\)'`).
+   `clj` startup is ~1–2 s, so batch probes. A mismatch that is a
+   recorded ADR divergence (e.g. `(class 5)` → `Long` not
+   `java.lang.Long`) is not a defect; everything else is a candidate.
+   Running log: `private/notes/phaseA26-clj-differential-oracle.md`.
 1. Run **systematic large-input + edge `cljw -e` probes** over a category
    (every coll-fn, then string/regex/arith, then nil-punning/destructuring/
-   threading, …). Tag each result OK / crash / timeout / name_error.
+   threading, …). Tag each result OK / crash / timeout / name_error /
+   **diverges-from-clj**.
 2. A **crash or timeout** is almost always structural (recursion class,
    O(n²)) — fix the finished form (loop/recur, transducer delegation).
 3. A **wrong-but-no-crash** result or a **feature that works standalone
