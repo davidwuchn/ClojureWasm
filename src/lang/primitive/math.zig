@@ -219,6 +219,64 @@ fn denominator(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation
     return promote.wrapManaged(rt, r.denom.m);
 }
 
+/// `(rationalize x)` — convert to an exact rational. Integer / BigInt / Ratio
+/// pass through; a float converts via its DECIMAL representation (so 0.1 →
+/// 1/10, matching clojure.core/rationalize, not the exact binary fraction
+/// 3602879701896397/36028797018963968). cw v1 floats render full-decimal
+/// (no exponent), so the parse is just sign / integer / fractional digits:
+/// numerator = the digits with the point removed, denominator = 10^(frac
+/// digit count), then gcd-reduce. NaN / Inf raise.
+fn rationalize(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = env;
+    try error_catalog.checkArity("rationalize", args, 1, loc);
+    const v = args[0];
+    switch (v.tag()) {
+        .integer, .big_int, .ratio => return v,
+        .float => {},
+        else => |t| return error_catalog.raise(.type_arg_not_number, loc, .{ .fn_name = "rationalize", .actual = @tagName(t) }),
+    }
+    const f = v.asFloat();
+    if (!std.math.isFinite(f))
+        return error_catalog.raise(.type_arg_invalid, loc, .{ .fn_name = "rationalize", .expected = "a finite number", .actual = "NaN or Infinity" });
+
+    var buf: [512]u8 = undefined;
+    const s = std.fmt.bufPrint(&buf, "{d}", .{f}) catch
+        return error_catalog.raise(.type_arg_invalid, loc, .{ .fn_name = "rationalize", .expected = "a float within decimal-render range", .actual = "out-of-range float" });
+
+    // numerator digits = s with the '.' removed (sign retained); scale = the
+    // number of fractional digits.
+    var numbuf: [512]u8 = undefined;
+    var nlen: usize = 0;
+    var scale: usize = 0;
+    if (std.mem.findScalar(u8, s, '.')) |dot| {
+        @memcpy(numbuf[0..dot], s[0..dot]);
+        nlen = dot;
+        const frac = s[dot + 1 ..];
+        @memcpy(numbuf[nlen .. nlen + frac.len], frac);
+        nlen += frac.len;
+        scale = frac.len;
+    } else {
+        @memcpy(numbuf[0..s.len], s);
+        nlen = s.len;
+    }
+
+    var num_m = try std.math.big.int.Managed.init(rt.gc.infra);
+    defer num_m.deinit();
+    try num_m.setString(10, numbuf[0..nlen]);
+    if (scale == 0) return promote.wrapManaged(rt, &num_m);
+
+    // denominator = 10^scale, written as "1" followed by `scale` zeros.
+    var denbuf: [520]u8 = undefined;
+    denbuf[0] = '1';
+    @memset(denbuf[1 .. 1 + scale], '0');
+    var den_m = try std.math.big.int.Managed.init(rt.gc.infra);
+    defer den_m.deinit();
+    try den_m.setString(10, denbuf[0 .. 1 + scale]);
+
+    if (try ratio_mod.allocFromManagedPair(rt, &num_m, &den_m)) |ratio_v| return ratio_v;
+    return promote.wrapManaged(rt, &num_m);
+}
+
 // --- comparison ---
 
 /// Run `pred` pairwise across `args`, short-circuiting on `false`.
@@ -719,6 +777,7 @@ const ENTRIES = [_]Entry{
     .{ .name = "/", .f = &slash },
     .{ .name = "numerator", .f = &numerator },
     .{ .name = "denominator", .f = &denominator },
+    .{ .name = "rationalize", .f = &rationalize },
     .{ .name = "+'", .f = &plusStrict },
     .{ .name = "-'", .f = &minusStrict },
     .{ .name = "*'", .f = &starStrict },
