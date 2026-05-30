@@ -5,36 +5,39 @@
 
 ## Resume contract
 
-- **HEAD**: see `git log` (≈ `eaeef874`).
-- **First commit on resume MUST be**: pick the next intricate-tier item —
-  the clean `.clj`/macro coverage is harvested; what remains needs focused
-  context. **Recommended: `doseq` + `for`** (the highest-frequency missing
-  macros; need the `:when`/`:let`/`:while` modifier grammar + multi-binding
-  + (for `for`) laziness — a recursive modifier-aware expansion, ~JVM
-  core.clj's `doseq`/`for`). Alternatives, all queued: **ADR-0056 Cycle 3**
-  (lazy non-core bootstrap files — eager-dep analysis; `cljw.error` is
-  eager-required), **D-045** (HAMT >8-key map wall — survey done), **D-139**
-  (AOT param-name fidelity — memory-ownership marker). `letfn` needs letrec.
+- **HEAD**: see `git log` (≈ `bb0ce0c5`).
+- **First commit on resume MUST be**: confirm the gate-cadence hook is
+  live (it activates on this restart). Verify: an additive source commit
+  prints `[gate_cadence] N/5`; a risky commit (build.zig* or an existing
+  src/test line modified) with no fresh gate is blocked. Then resume the
+  clojure.core coverage sweep — next clean batch is **numerator /
+  denominator** (ratio accessors; investigated: `v.decodePtr(*const
+  ratio.Ratio)` → `r.numer.m`/`r.denom.m` Managed → `big_int.allocFromManaged`;
+  add `type_arg_not_ratio` to the catalog for the non-ratio case). After the
+  clean batch is exhausted, the queued **intricate tier**: `doseq`/`for`
+  (modifier grammar + laziness), **ADR-0056 Cycle 3** (lazy non-core
+  bootstrap), **D-045** (HAMT >8-key), **D-139** (AOT param-name memory).
+  `letfn` needs letrec.
 - **Forbidden this session**: re-opening anything landed (AOT Cycles 0-2c,
-  D-096, D-154, the test-speed work, the ~20 macros / ~17 fns). Rushing
-  D-139's param-ownership or doseq/for modifier grammar at session-tail
-  (subtle-bug risk — F-002). CPU-heavy subagent during a gate (cold_start
-  false fail). Flipping `phase_at_least_14` / tagging v0.1.0 (release HELD).
+  D-096, D-154, gate parallelization + gate-cadence hook, the RNG/float-div/
+  predicate/bit-op/Math-transcendental coverage). Rushing D-139 or doseq/for
+  modifier grammar at session-tail (subtle-bug risk — F-002). CPU-heavy
+  subagent during a gate (cold_start false fail). Flipping
+  `phase_at_least_14` / tagging v0.1.0 (release HELD).
 
 ## Current state
 
-Mac gate **135/135** green, **~80s** (was 390s: build-once + zone_check
-pure-bash + ReleaseSafe e2e). **AOT-bootstrap LIVE** (ADR-0056): build-time
-`cache_gen` (build.zig) VM-compiles core.clj → an embedded bytecode
-envelope; ALL startup paths (runner/repl/nrepl/built-apps) `runEnvelope`-
-restore clojure.core instead of parse+analyze+eval (`bootstrap.setupCoreAot`/
-`loadCoreAot`). Gate-faithful; edge/Wasm per-instance cold-start is the win.
-**D-096** (println stdout) + **D-154** (JVM-faithful char printing)
-discharged. This session added ~20 clojure.core macros (threading/
-conditional/iteration/case/condp/when-not/if-not/comment/assert) + ~17 fns/
-primitives (some-fn/every-pred/trampoline/replace/distinct?/partition-all/
-splitv-at/not=/fnext/nnext/run!/peek/pop/find/subvec/int/char + earlier
-merge-with/partition-by/etc.). gate 113→135.
+Mac gate **144/144** green, **~50s** (parallel e2e pool, `-P8`, `wait -n`;
+was ~74s serial / 390s pre-opt). Perf + shared-binary-mutator steps stay
+serial via `SERIAL_STEPS`; `--serial-e2e` restores the old path. **Gate
+cadence now mechanically enforced** (`check_gate_cadence.sh` + `.dev/.gate_pass`):
+additive coverage batches ≤5 per full gate, shared-code gates every time.
+**AOT-bootstrap LIVE** (ADR-0056): all startup paths `runEnvelope`-restore
+clojure.core from an embedded bytecode envelope (edge cold-start win).
+This session also: **D-096**/**D-154** discharged; ~20 macros + many fns
+(earlier); then RNG cluster (rand/rand-int/rand-nth/shuffle), **IEEE float
+division** (`/ 1.0 0.0` → ±Inf/NaN, F-005 fix in promote.zig), int?/double?/
+NaN?/infinite?, bit-set/clear/flip/test, 18 `Math` transcendentals.
 
 ## Next milestone (F-010 M = Phase 15 完遂 + cw-v0-level JIT)
 
@@ -47,8 +50,9 @@ narrow ARM64 JIT (D-133) → **M** → quality loop. cw-v0 gaps in
 ## Open debts (named; full rows in `.dev/debt.md`)
 
 - **D-045** HAMT >8-key wall. **D-139** AOT param-name fidelity (memory-
-  ownership). **D-134** doseq/for/letfn + format/re-seq/shuffle/rand-nth/
-  tree-seq/lazy-cat residuals. **D-085** keyword-as-fn `(:k m)`. **D-150**
+  ownership). **D-134** doseq/for/letfn + format/re-seq + numerator/
+  denominator residuals (RNG/bit-ops/Math-transcendental/tree-seq done).
+  **D-085** keyword-as-fn `(:k m)`. **D-150**
   VM ctor parity. **D-153** `(cons x lazy)` count. **D-152** diff oracle
   `.clj` closures. **D-131** built-app non-core files (partially advanced).
   **D-117/118** nREPL (Phase-15). **D-133** JIT floor. (D-076/D-096/D-130/
