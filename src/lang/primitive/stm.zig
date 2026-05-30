@@ -51,6 +51,9 @@ pub fn derefFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation
             error_catalog.raise(.promise_undelivered_error, loc, .{}),
         .future => future_mod.deref(v) orelse
             error_catalog.raise(.future_thunk_failed, loc, .{}),
+        // `@#'x` / `(deref a-var)` reads the Var's active value, mirroring
+        // the analyzer's var_ref node (tree_walk.zig). resolve returns one.
+        .var_ref => v.decodePtr(*const env_mod.Var).deref(),
         else => error_catalog.raise(.feature_not_supported, loc, .{ .name = "deref of non-IDeref value" }),
     };
 }

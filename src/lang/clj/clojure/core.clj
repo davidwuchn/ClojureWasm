@@ -1062,6 +1062,11 @@
 ;; `(type x)` — (:type (meta x)) when present, else (class x).
 (def type (fn* [x] (or (:type (meta x)) (class x))))
 
+;; `(resolve sym)` — the Var sym names in the current namespace (or the
+;; named ns when qualified), or nil. Returns a var_ref that derefs to the
+;; Var's value and prints #'ns/name.
+(def resolve (fn* [sym] (rt/__resolve sym)))
+
 ;; `(memoize f)` returns a cached version of f: each distinct argument
 ;; tuple computes f once, then returns the stored result. Keys the
 ;; atom-backed cache by `(vec args)` — vectors compare by value (D-092),

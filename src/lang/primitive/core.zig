@@ -776,9 +776,35 @@ pub fn gensymFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocatio
     return symbol_mod.intern(rt, null, name);
 }
 
+/// `(rt/__resolve sym)` — the Var that `sym` resolves to, as a `.var_ref`
+/// Value. A qualified `ns/name` symbol consults that namespace; an
+/// unqualified name the current namespace (own mappings, then refers).
+/// nil when the symbol — or its named namespace — does not resolve. The
+/// `.clj` `resolve` wraps this; the var_ref derefs to the Var's value and
+/// prints `#'ns/name`.
+pub fn resolvePrim(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = rt;
+    try error_catalog.checkArity("__resolve", args, 1, loc);
+    if (args[0].tag() != .symbol) {
+        return error_catalog.raise(.type_arg_invalid, loc, .{
+            .fn_name = "__resolve",
+            .expected = "symbol",
+            .actual = @tagName(args[0].tag()),
+        });
+    }
+    const sym = symbol_mod.asSymbol(args[0]);
+    const ns: *env_mod.Namespace = if (sym.ns) |ns_name|
+        (env.findNs(ns_name) orelse return Value.nil_val)
+    else
+        (env.current_ns orelse return Value.nil_val);
+    const var_ptr = ns.resolve(sym.name) orelse return Value.nil_val;
+    return Value.encodeHeapPtr(.var_ref, var_ptr);
+}
+
 const ENTRIES = [_]Entry{
     .{ .name = "hash", .f = &hashFn },
     .{ .name = "gensym", .f = &gensymFn },
+    .{ .name = "__resolve", .f = &resolvePrim },
     .{ .name = "__instance?", .f = &instanceQPrim },
     .{ .name = "nil?", .f = &nilQ },
     .{ .name = "true?", .f = &trueQ },
