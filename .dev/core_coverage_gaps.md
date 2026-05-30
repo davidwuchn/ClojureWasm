@@ -70,9 +70,13 @@ Caveat: the static var-set extraction has minor false-positives (e.g.
   - **DONE D-092** (vector keys by value): `keyEqValue`/`valueHash` recurse over vector elements,
     fixing `(frequencies [[1] [1] [2]])` → `{[1] 2, [2] 1}` + vector-keyed maps/sets/distinct.
     Residual: LIST / map / set keys + cross-type vec≡list keys still identity-compared.
-  - **next**: `memoize` (.clj over atom, keys by `(vec args)` — UNBLOCKED by D-092).
-  - **then P1**: sorted-map/sorted-set (new tree), metadata (with-meta/meta — value-model),
-    transducers, bigint/bigdec (wrap numeric), isa?/hierarchy (P2), resolve/ns introspection (P2).
+  - **DONE**: `memoize` (96f9b857 — keys by `(vec args)`; defined at end of core.clj for dep order).
+  - **next (pick by ROI/tractability)**: `bigint`/`bigdec`/`biginteger` (medium, numeric coerce →
+    Managed → big_int.allocFromManaged); **metadata** with-meta/meta/vary-meta (HIGH ROI but
+    value-model: investigate whether collections carry a meta slot or need one — likely foundational);
+    **sorted-map/sorted-set** (new tree — heap_tag C14/C15 reserved); **transducers** transduce/
+    sequence/eduction (big); `isa?`/hierarchy + `resolve`/ns introspection (P2, medium).
+  - **also found**: `(sort cmp coll)` comparator-arg = D-159; regex capture groups; `resolve` missing.
 - **New gaps found while sweeping** (not yet chased): `(sort cmp coll)` with a 2-arg COMPARATOR fn
   errors — cljw `sort`'s 2-arg form treats the fn as a 1-arg key-fn, not a comparator (= **D-159**);
   regex capture groups unsupported ("cycle 1"); `resolve` itself missing (P2).
