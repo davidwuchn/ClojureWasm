@@ -63,6 +63,9 @@ assert_eq 'every_empty_true' "$("$BIN" -e '(every? pos? [])')"                 '
 # --- some ---
 assert_eq 'some_finds'       "$("$BIN" -e '(some pos? [-1 -2 3])')"            'true'
 assert_eq 'some_none'        "$("$BIN" -e '(some pos? [-1 -2 -3])')"           'nil'
+# --- not-every? (sibling of not-any?) ---
+assert_eq 'not_every_t'      "$("$BIN" -e '(not-every? even? [2 4 5])')"       'true'
+assert_eq 'not_every_f'      "$("$BIN" -e '(not-every? even? [2 4 6])')"       'false'
 
 # --- some? ---
 assert_eq 'some_q_nil'       "$("$BIN" -e '(some? nil)')"                      'false'

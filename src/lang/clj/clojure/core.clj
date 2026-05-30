@@ -565,6 +565,10 @@
 (def not-any?
   (fn* [pred coll] (not (some pred coll))))
 
+;; `(not-every? pred coll)` — true when `pred` is falsey for at least one item.
+(def not-every?
+  (fn* [pred coll] (not (every? pred coll))))
+
 ;; D-134 cluster 3 — unblocked by D-136 (universal `=`).
 
 ;; `(dedupe coll)` — drop consecutive duplicates (eager vector).
