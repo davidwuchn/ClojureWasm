@@ -24,6 +24,11 @@ const tree_walk = @import("backend/tree_walk.zig");
 const vm = @import("backend/vm.zig");
 const vm_compiler = @import("backend/vm/compiler.zig");
 const serialize = @import("bytecode/serialize.zig");
+const analyzer = @import("analyzer/analyzer.zig");
+const macro_dispatch = @import("macro_dispatch.zig");
+const Form = @import("form.zig").Form;
+const error_catalog = @import("../runtime/error/catalog.zig");
+const SourceLocation = @import("../runtime/error/info.zig").SourceLocation;
 
 pub const MAX_LOCALS = tree_walk.MAX_LOCALS;
 
@@ -64,6 +69,36 @@ pub fn evalForm(
     } else {
         return tree_walk.eval(rt, env, locals, node);
     }
+}
+
+/// Evaluate a runtime data Value as code — the typed Layer-1 verb the
+/// `eval` primitive (and future `load-string` / REPL read+eval) consume
+/// (ADR-0058). Reconstructs a Form from the Value (`valueToForm`),
+/// analyses it with the borrowed canonical macro table (so built-in
+/// macros expand; user macros resolve via env Vars), then evaluates the
+/// Node. `arena` holds the transient Form + Node; the result Value is
+/// GC-allocated and survives the caller freeing the arena. `loc` is the
+/// eval call site, stamped onto the reconstructed forms.
+///
+/// `rt.macro_table` must be installed (`bootstrap.setupCorePrefix`); a
+/// null is an internal error (eval before bootstrap). This is the one
+/// site that casts the type-erased `rt.macro_table` back to its Layer-1
+/// type — callers stay typed.
+pub fn evalValue(
+    rt: *Runtime,
+    env: *Env,
+    locals: []Value,
+    arena: std.mem.Allocator,
+    value: Value,
+    loc: SourceLocation,
+) anyerror!Value {
+    const table_opaque = rt.macro_table orelse
+        return error_catalog.raiseInternal(loc, "eval: macro_table not installed");
+    const table: *const macro_dispatch.Table = @ptrCast(@alignCast(table_opaque));
+    const form = try arena.create(Form);
+    form.* = try analyzer.valueToForm(arena, value, loc);
+    const node = try analyzer.analyze(arena, rt, env, null, form, table);
+    return evalForm(rt, env, locals, arena, node);
 }
 
 /// Install the active backend's vtable. Called once at startup, after

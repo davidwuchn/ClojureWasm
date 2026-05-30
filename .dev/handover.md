@@ -19,10 +19,9 @@
 - **First commit on resume MUST be**: resume **structural-defect hunting** per
   [`.dev/lessons/structural_defect_hunting.md`](lessons/structural_defect_hunting.md).
   Take a known structural defect from the queue (fix per finished form, not
-  ad-hoc): **D-162** `eval` (store `macro_table` on `rt` at setupCore →
-  valueToForm→analyzeForm→evalForm), **D-161** defmulti↔hierarchy isa? wiring
-  (Layer-0 dispatch — survey prefer/dominates/cache first), **D-160**
-  sequence/eduction push→pull bridge; AND keep running large-input/edge
+  ad-hoc): **D-161** defmulti↔hierarchy isa? wiring (Layer-0 dispatch — survey
+  prefer/dominates/cache first), **D-160** sequence/eduction push→pull bridge
+  (D-162 `eval` DONE 2026-05-31 via ADR-0058); AND keep running large-input/edge
   `cljw -e` sweep batches on unswept surface (interop, dynamic vars, IO,
   deftype/defrecord field access, protocol edge) to find more. Pure missing
   fns (name_error) are the floor — fill if clean, else record the
@@ -37,7 +36,7 @@
 
 ## Current state
 
-Mac gate **168/168** green (parallel e2e pool; `SERIAL_STEPS` serial). Gate
+Mac gate **169/169** green (parallel e2e pool; `SERIAL_STEPS` serial). Gate
 cadence mechanically enforced (additive ≤5; shared-code gates every time;
 `.dev/.gate_pass` content-hash). AOT-bootstrap LIVE (ADR-0056). Landed this
 session (git log is the SSOT): **sorted collections** complete (ADR-0057 LLRB —
@@ -49,7 +48,8 @@ overflows → loop/recur — class CLOSED via systematic probe); **dedupe/distin
 O(n²)→O(n) (transducer delegation); **mapv** multi-coll + **fnil** 2/3-default;
 **nested-lazy print** (deepRealize); **ad-hoc hierarchies** (isa?/derive/…,
 atom-backed, class? branches dropped); **re-seq** (+ re-find-from); **read-string**
-(core==edn, no eval-reader).
+(core==edn, no eval-reader); **eval** (ADR-0058 D-162: typed `driver.evalValue`
+verb + `rt.macro_table` borrow; built-in macros expand, user macros via env Vars).
 
 ## Next milestone (F-010 M = Phase 15 完遂 + cw-v0-level JIT)
 
@@ -66,7 +66,7 @@ cw-v0 gaps in `.dev/cw_v0_parity_and_gap_plan.md`.
   **D-155/156** HAMT collision-bucket / dissoc inline-collapse. **D-150** VM ctor
   parity. **D-153** `(cons x lazy)` count. **D-152** diff oracle `.clj` closures.
   **D-131** built-app non-core. **D-117/118** nREPL (Phase-15). **D-133** JIT floor.
-- **D-161** defmulti↔hierarchy isa? wiring. **D-162** eval needs macro_table on rt.
+- **D-161** defmulti↔hierarchy isa? wiring.
 - **Sweep gaps (low priority)**: `mapv`/`interleave` N-coll variadic; `reductions`
   O(n²); `uuid?`/`type`/`class` (representation/JVM-Class divergence — design first);
   lazy-as-map-value still `#<lazy_seq>` (deepRealize covers the seq family only).

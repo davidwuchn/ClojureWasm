@@ -87,6 +87,22 @@ pub const Runtime = struct {
     /// expansion is **not** on this table; see ADR 0001.
     vtable: ?VTable = null,
 
+    /// Borrowed pointer to the built-in macro-expansion table
+    /// (`eval/macro_dispatch.Table`, a Layer-1 type). Type-erased to
+    /// `?*const anyopaque` because Layer 0 must not import Layer 1
+    /// (`zone_deps.md`) — the same concession `VTable.evalChunk` makes
+    /// for a `BytecodeChunk` pointer. Set once in
+    /// `bootstrap.setupCorePrefix` after `registerInto`; the runtime
+    /// `eval` primitive reads it back behind the typed
+    /// `driver.evalValue` verb (ADR-0058). The table is a process
+    /// constant (always `macro_transforms.registerInto`'s output);
+    /// user macros resolve via env Vars and need no table. NOTE: this
+    /// is a BORROW of the entry point's stack-owned table — valid for
+    /// the setup frame's lifetime (the whole session for
+    /// repl/runner/builder). Do not heap-promote a Runtime past that
+    /// frame without revisiting this borrow.
+    macro_table: ?*const anyopaque = null,
+
     /// Monotonic counter for `gensym` / auto-gensym (`foo#`). Lives on
     /// the Runtime so multiple macros within one analyse pass share a
     /// single sequence; per-Runtime so parallel tests don't collide.

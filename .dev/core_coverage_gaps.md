@@ -84,7 +84,7 @@ Caveat: the static var-set extraction has minor false-positives (e.g.
 - **resolve / ns-resolve / requiring-resolve / find-var / intern / the-ns / find-ns / all-ns / create-ns /
   ns-name / ns-publics / ns-map / ns-aliases / ns-interns / ns-refers / ns-imports / ns-unmap / alias** —
   var/ns introspection (also unblocks a future resolve-based coverage harness).
-- **eval / read / read-line / read+string / load-string / load-file / load-reader** — eval/read surface. **read-string DONE** 2026-05-30 (rt, reuses edn readOne→formToValue; cljw has no #= eval-reader so core==edn read-string). **`eval` = D-162** (needs macro_table reachable at eval-time; valueToForm exists). Also DONE: `not-every?`. Batch-7 gaps: `uuid?` (cljw UUIDs are STRINGS, not a tag — representation divergence); `mapcat` multi-coll (single-coll only); `iteration`/`realized?` (involved).
+- **eval / read / read-line / read+string / load-string / load-file / load-reader** — eval/read surface. **read-string DONE** 2026-05-30 (rt, reuses edn readOne→formToValue; cljw has no #= eval-reader so core==edn read-string). **`eval` DONE** 2026-05-31 (ADR-0058: typed `driver.evalValue` verb + `rt.macro_table` borrow; built-in macros expand, user macros via env Vars; fidelity limit: char/bignum/hash_map literals raise `macro_return_not_data` until `valueToForm` is extended). Also DONE: `not-every?`. Batch-7 gaps: `uuid?` (cljw UUIDs are STRINGS, not a tag — representation divergence); `mapcat` multi-coll (single-coll only); `iteration`/`realized?` (involved).
 
 ### Deferred / out-of-scope (NOT gaps to chase now)
 - **Phase 15 (concurrency)**: agent / send / send-off / await / restart-agent / agent-error / shutdown-agents /
