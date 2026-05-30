@@ -25,6 +25,7 @@ const set = @import("set.zig");
 const vector = @import("vector.zig");
 const sorted = @import("sorted.zig");
 const Runtime = @import("../runtime.zig").Runtime;
+const Env = @import("../env.zig").Env;
 const error_catalog = @import("../error/catalog.zig");
 const SourceLocation = @import("../error/info.zig").SourceLocation;
 
@@ -69,7 +70,7 @@ fn vectorIndex(v: Value, i_val: Value, loc: SourceLocation) !Value {
 /// arguments, callee excluded). The caller (`treeWalkCall`) guarantees
 /// `callee.tag()` is one of keyword/symbol/array_map/hash_map/hash_set/
 /// vector.
-pub fn invoke(rt: *Runtime, callee: Value, args: []const Value, loc: SourceLocation) !Value {
+pub fn invoke(rt: *Runtime, env: *Env, callee: Value, args: []const Value, loc: SourceLocation) !Value {
     switch (callee.tag()) {
         .keyword, .symbol => {
             // callee is the KEY; args[0] is the collection.
@@ -82,9 +83,10 @@ pub fn invoke(rt: *Runtime, callee: Value, args: []const Value, loc: SourceLocat
             return lookupWithDefault(callee, args[0], args.len == 2, if (args.len == 2) args[1] else Value.nil_val);
         },
         .sorted_map => {
-            // callee is the sorted MAP; args[0] is the key. Needs rt (valueCompare).
+            // callee is the sorted MAP; args[0] is the key. Needs rt+env (the
+            // comparator may be a user fn invoked via vtable.callFn).
             if (args.len < 1 or args.len > 2) return arityError("sorted-map", args.len, 1, 2, loc);
-            if (try sorted.contains(rt, callee, args[0], loc)) return try sorted.get(rt, callee, args[0], loc);
+            if (try sorted.contains(rt, env, callee, args[0], loc)) return try sorted.get(rt, env, callee, args[0], loc);
             return if (args.len == 2) args[1] else Value.nil_val;
         },
         .hash_set => {
@@ -93,7 +95,7 @@ pub fn invoke(rt: *Runtime, callee: Value, args: []const Value, loc: SourceLocat
         },
         .sorted_set => {
             if (args.len != 1) return arityError("sorted-set", args.len, 1, 1, loc);
-            return if (try sorted.setContains(rt, callee, args[0], loc)) args[0] else Value.nil_val;
+            return if (try sorted.setContains(rt, env, callee, args[0], loc)) args[0] else Value.nil_val;
         },
         .vector => {
             if (args.len != 1) return arityError("vector", args.len, 1, 1, loc);
@@ -127,42 +129,48 @@ const noloc: SourceLocation = .{};
 test "keyword-as-fn: (:k m) gets, (:k m default) falls back, (:k non-map) nil" {
     var fix = Fixture.init();
     defer fix.deinit();
+    var env = try Env.init(&fix.rt);
+    defer env.deinit();
 
     const kw = try keyword_mod.intern(&fix.rt, null, "k");
     const m = try map.assoc(&fix.rt, map.empty(), kw, Value.initInteger(42));
-    try std_testing.expectEqual(@as(i48, 42), (try invoke(&fix.rt,kw, &.{m}, noloc)).asInteger());
+    try std_testing.expectEqual(@as(i48, 42), (try invoke(&fix.rt, &env,kw, &.{m}, noloc)).asInteger());
 
     const missing = try keyword_mod.intern(&fix.rt, null, "absent");
-    try std_testing.expect((try invoke(&fix.rt,missing, &.{m}, noloc)).isNil());
-    try std_testing.expectEqual(@as(i48, 7), (try invoke(&fix.rt,missing, &.{ m, Value.initInteger(7) }, noloc)).asInteger());
+    try std_testing.expect((try invoke(&fix.rt, &env,missing, &.{m}, noloc)).isNil());
+    try std_testing.expectEqual(@as(i48, 7), (try invoke(&fix.rt, &env,missing, &.{ m, Value.initInteger(7) }, noloc)).asInteger());
     // keyword on a non-map yields default / nil
-    try std_testing.expect((try invoke(&fix.rt,kw, &.{Value.initInteger(5)}, noloc)).isNil());
+    try std_testing.expect((try invoke(&fix.rt, &env,kw, &.{Value.initInteger(5)}, noloc)).isNil());
 }
 
 test "map-as-fn: (m k) gets; vector-as-fn: ([..] i) nth; OOB throws" {
     var fix = Fixture.init();
     defer fix.deinit();
+    var env = try Env.init(&fix.rt);
+    defer env.deinit();
 
     const kw = try keyword_mod.intern(&fix.rt, null, "a");
     const m = try map.assoc(&fix.rt, map.empty(), kw, Value.initInteger(9));
-    try std_testing.expectEqual(@as(i48, 9), (try invoke(&fix.rt,m, &.{kw}, noloc)).asInteger());
+    try std_testing.expectEqual(@as(i48, 9), (try invoke(&fix.rt, &env,m, &.{kw}, noloc)).asInteger());
 
     var vec = vector.empty();
     vec = try vector.conj(&fix.rt, vec, Value.initInteger(10));
     vec = try vector.conj(&fix.rt, vec, Value.initInteger(20));
-    try std_testing.expectEqual(@as(i48, 20), (try invoke(&fix.rt,vec, &.{Value.initInteger(1)}, noloc)).asInteger());
-    try std_testing.expectError(error.TypeError, invoke(&fix.rt,vec, &.{Value.initInteger(5)}, noloc)); // OOB
-    try std_testing.expectError(error.TypeError, invoke(&fix.rt,vec, &.{Value.initInteger(-1)}, noloc)); // negative
+    try std_testing.expectEqual(@as(i48, 20), (try invoke(&fix.rt, &env,vec, &.{Value.initInteger(1)}, noloc)).asInteger());
+    try std_testing.expectError(error.TypeError, invoke(&fix.rt, &env,vec, &.{Value.initInteger(5)}, noloc)); // OOB
+    try std_testing.expectError(error.TypeError, invoke(&fix.rt, &env,vec, &.{Value.initInteger(-1)}, noloc)); // negative
 }
 
 test "set-as-fn: (#{..} x) returns x or nil; arity errors" {
     var fix = Fixture.init();
     defer fix.deinit();
+    var env = try Env.init(&fix.rt);
+    defer env.deinit();
 
     var s = set.empty();
     s = try set.conj(&fix.rt, s, Value.initInteger(3));
-    try std_testing.expectEqual(@as(i48, 3), (try invoke(&fix.rt,s, &.{Value.initInteger(3)}, noloc)).asInteger());
-    try std_testing.expect((try invoke(&fix.rt,s, &.{Value.initInteger(99)}, noloc)).isNil());
+    try std_testing.expectEqual(@as(i48, 3), (try invoke(&fix.rt, &env,s, &.{Value.initInteger(3)}, noloc)).asInteger());
+    try std_testing.expect((try invoke(&fix.rt, &env,s, &.{Value.initInteger(99)}, noloc)).isNil());
     // set is 1-arg only
-    try std_testing.expectError(error.ArityError, invoke(&fix.rt,s, &.{ Value.initInteger(3), Value.initInteger(4) }, noloc));
+    try std_testing.expectError(error.ArityError, invoke(&fix.rt, &env,s, &.{ Value.initInteger(3), Value.initInteger(4) }, noloc));
 }

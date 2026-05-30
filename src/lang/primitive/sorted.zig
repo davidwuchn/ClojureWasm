@@ -17,23 +17,43 @@ const sorted = @import("../../runtime/collection/sorted.zig");
 
 /// `(sorted-map & kvs)` — build a sorted map (default `compare` order).
 pub fn sortedMapFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
-    _ = env;
     if (args.len % 2 != 0)
         return error_catalog.raise(.map_literal_arity_odd, loc, .{});
-    var m = try sorted.emptyMap(rt);
+    return buildMap(rt, env, Value.nil_val, args, loc);
+}
+
+/// `(sorted-map-by comparator & kvs)` — sorted map ordered by `comparator`.
+pub fn sortedMapByFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    if (args.len == 0) return error_catalog.raise(.arity_not_expected, loc, .{ .fn_name = "sorted-map-by", .expected = 1, .got = 0 });
+    if ((args.len - 1) % 2 != 0)
+        return error_catalog.raise(.map_literal_arity_odd, loc, .{});
+    return buildMap(rt, env, args[0], args[1..], loc);
+}
+
+fn buildMap(rt: *Runtime, env: *Env, comparator: Value, kvs: []const Value, loc: SourceLocation) anyerror!Value {
+    var m = try sorted.emptyMapBy(rt, comparator);
     var i: usize = 0;
-    while (i < args.len) : (i += 2) {
-        m = try sorted.assoc(rt, m, args[i], args[i + 1], loc);
+    while (i < kvs.len) : (i += 2) {
+        m = try sorted.assoc(rt, env, m, kvs[i], kvs[i + 1], loc);
     }
     return m;
 }
 
 /// `(sorted-set & xs)` — build a sorted set (default `compare` order).
 pub fn sortedSetFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
-    _ = env;
-    var s = try sorted.emptySet(rt);
-    for (args) |x| {
-        s = try sorted.conjSet(rt, s, x, loc);
+    return buildSet(rt, env, Value.nil_val, args, loc);
+}
+
+/// `(sorted-set-by comparator & xs)` — sorted set ordered by `comparator`.
+pub fn sortedSetByFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    if (args.len == 0) return error_catalog.raise(.arity_not_expected, loc, .{ .fn_name = "sorted-set-by", .expected = 1, .got = 0 });
+    return buildSet(rt, env, args[0], args[1..], loc);
+}
+
+fn buildSet(rt: *Runtime, env: *Env, comparator: Value, xs: []const Value, loc: SourceLocation) anyerror!Value {
+    var s = try sorted.emptySetBy(rt, comparator);
+    for (xs) |x| {
+        s = try sorted.conjSet(rt, env, s, x, loc);
     }
     return s;
 }
@@ -56,7 +76,9 @@ const Entry = struct {
 
 const ENTRIES = [_]Entry{
     .{ .name = "sorted-map", .f = &sortedMapFn },
+    .{ .name = "sorted-map-by", .f = &sortedMapByFn },
     .{ .name = "sorted-set", .f = &sortedSetFn },
+    .{ .name = "sorted-set-by", .f = &sortedSetByFn },
     .{ .name = "sorted?", .f = &sortedQFn },
 };
 

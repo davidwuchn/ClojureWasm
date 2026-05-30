@@ -72,8 +72,8 @@ pub fn conjFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation)
         .vector => try vector.conj(rt, coll, x),
         .list, .cons => try list.consHeap(rt, x, coll),
         .hash_set => try set.conj(rt, coll, x),
-        .sorted_set => try sorted.conjSet(rt, coll, x, loc),
-        .sorted_map => sortedMapConj(rt, coll, x, loc),
+        .sorted_set => try sorted.conjSet(rt, env, coll, x, loc),
+        .sorted_map => sortedMapConj(rt, env, coll, x, loc),
         .array_map, .hash_map => mapConj(rt, coll, x, loc),
         else => blk: {
             // Row 7.7 cycle 3: outer-else routes through dispatch against
@@ -107,7 +107,7 @@ fn mapConj(rt: *Runtime, m: Value, entry: Value, loc: SourceLocation) anyerror!V
     return try map.assoc(rt, m, vector.nth(entry, 0), vector.nth(entry, 1));
 }
 
-fn sortedMapConj(rt: *Runtime, m: Value, entry: Value, loc: SourceLocation) anyerror!Value {
+fn sortedMapConj(rt: *Runtime, env: *Env, m: Value, entry: Value, loc: SourceLocation) anyerror!Value {
     // (conj sorted-map [k v]) — same [k v]-pair contract as hash/array map.
     if (entry.tag() != .vector or vector.count(entry) != 2) {
         return error_catalog.raise(.type_arg_invalid, loc, .{
@@ -116,7 +116,7 @@ fn sortedMapConj(rt: *Runtime, m: Value, entry: Value, loc: SourceLocation) anye
             .actual = @tagName(entry.tag()),
         });
     }
-    return try sorted.assoc(rt, m, vector.nth(entry, 0), vector.nth(entry, 1), loc);
+    return try sorted.assoc(rt, env, m, vector.nth(entry, 0), vector.nth(entry, 1), loc);
 }
 
 // --- disj ---
@@ -131,7 +131,7 @@ pub fn disjFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation)
     if (coll.isNil()) return .nil_val;
     return switch (coll.tag()) {
         .hash_set => try set.disj(rt, coll, args[1]),
-        .sorted_set => try sorted.disjSet(rt, coll, args[1], loc),
+        .sorted_set => try sorted.disjSet(rt, env, coll, args[1], loc),
         else => blk: {
             // D-089 row 8.6 cycle 4: IPersistentSet -disjoin slow-path
             // (close cycle for the retro-audit cluster).
@@ -163,8 +163,8 @@ pub fn containsQFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLoca
     const k = args[1];
     return switch (coll.tag()) {
         .hash_set => if (try set.contains(coll, k)) .true_val else .false_val,
-        .sorted_set => if (try sorted.setContains(rt, coll, k, loc)) .true_val else .false_val,
-        .sorted_map => if (try sorted.contains(rt, coll, k, loc)) .true_val else .false_val,
+        .sorted_set => if (try sorted.setContains(rt, env, coll, k, loc)) .true_val else .false_val,
+        .sorted_map => if (try sorted.contains(rt, env, coll, k, loc)) .true_val else .false_val,
         .array_map, .hash_map => if (try map.contains(coll, k)) .true_val else .false_val,
         else => blk: {
             // D-089 row 8.6 cycle 3: Associative -contains-key? slow-path.
@@ -199,8 +199,8 @@ pub fn getFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) 
     const k = args[1];
     return switch (coll.tag()) {
         .sorted_map => blk: {
-            if (try sorted.contains(rt, coll, k, loc)) {
-                break :blk try sorted.get(rt, coll, k, loc);
+            if (try sorted.contains(rt, env, coll, k, loc)) {
+                break :blk try sorted.get(rt, env, coll, k, loc);
             }
             break :blk default;
         },
@@ -390,7 +390,7 @@ pub fn assocFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation
             var acc: Value = coll;
             var i: usize = 1;
             while (i + 1 < args.len) : (i += 2) {
-                acc = try sorted.assoc(rt, acc, args[i], args[i + 1], loc);
+                acc = try sorted.assoc(rt, env, acc, args[i], args[i + 1], loc);
             }
             break :blk acc;
         },
@@ -530,7 +530,7 @@ pub fn dissocFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocatio
             var acc: Value = coll;
             var i: usize = 1;
             while (i < args.len) : (i += 1) {
-                acc = try sorted.dissoc(rt, acc, args[i], loc);
+                acc = try sorted.dissoc(rt, env, acc, args[i], loc);
             }
             break :blk acc;
         },

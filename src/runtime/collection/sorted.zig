@@ -8,9 +8,12 @@
 //! a flat sorted array per ADR-0057's Devil's-advocate fork (F-002).
 //!
 //! Cycle A: build (assoc/conj) + get / contains? / count / seq / keys /
-//! vals + sorted-map/sorted-set + sorted?. Cycle B1 (this landing): the
-//! functional LLRB delete (dissoc / disj — Sedgewick moveRedLeft /
-//! moveRedRight / deleteMin). Custom `-by` comparators are cycle B2;
+//! vals + sorted-map/sorted-set + sorted?. Cycle B1: functional LLRB
+//! delete (dissoc / disj — Sedgewick moveRedLeft / moveRedRight /
+//! deleteMin). Cycle B2 (this landing): custom `-by` comparators — a
+//! Clojure fn invoked per comparison via `rt.vtable.callFn` (env threaded
+//! through every comparing op); Boolean result = less-than predicate,
+//! numeric result = sign (mirrors Clojure `AFunction.compare`).
 //! subseq / rsubseq / rseq are cycle C.
 
 const std = @import("std");
@@ -18,6 +21,7 @@ const value = @import("../value/value.zig");
 const Value = value.Value;
 const HeapHeader = value.HeapHeader;
 const Runtime = @import("../runtime.zig").Runtime;
+const Env = @import("../env.zig").Env;
 const tag_ops = @import("../gc/tag_ops.zig");
 const gc_heap_mod = @import("../gc/gc_heap.zig");
 const mark_sweep = @import("../gc/mark_sweep.zig");
@@ -86,10 +90,20 @@ fn newNode(rt: *Runtime, key: Value, val: Value, left: Value, right: Value, colo
 }
 
 /// Three-way key order. Default (nil comparator) = valueCompare; a custom
-/// comparator (sorted-map-by) is cycle B.
-fn compareKeys(rt: *Runtime, comparator: Value, a: Value, b: Value, loc: SourceLocation) !std.math.Order {
+/// comparator (sorted-map-by) is a user fn invoked via `rt.vtable.callFn`.
+/// Mirrors Clojure's `AFunction.compare`: a Boolean result is read as a
+/// less-than predicate (`(c a b)` true → lt; else `(c b a)` true → gt;
+/// else eq); a numeric result is read by its sign.
+fn compareKeys(rt: *Runtime, env: *Env, comparator: Value, a: Value, b: Value, loc: SourceLocation) !std.math.Order {
     if (comparator.isNil()) return compare_mod.valueCompare(rt, a, b, loc);
-    return error.SortedCustomComparatorNotImplemented; // cycle B
+    const vt = rt.vtable orelse return error.NoVTable;
+    const r = try vt.callFn(rt, env, comparator, &.{ a, b }, loc);
+    if (r == Value.true_val or r == Value.false_val) {
+        if (r.isTruthy()) return .lt;
+        const back = try vt.callFn(rt, env, comparator, &.{ b, a }, loc);
+        return if (back.isTruthy()) .gt else .eq;
+    }
+    return compare_mod.valueCompare(rt, r, Value.initInteger(0), loc);
 }
 
 // --- functional LLRB rotations (all allocate fresh nodes — persistent) ---
@@ -133,22 +147,22 @@ fn balance(rt: *Runtime, h: Value) !Value {
 
 const InsResult = struct { node: Value, added: bool };
 
-fn insert(rt: *Runtime, comparator: Value, h: Value, key: Value, val: Value, loc: SourceLocation) !InsResult {
+fn insert(rt: *Runtime, env: *Env, comparator: Value, h: Value, key: Value, val: Value, loc: SourceLocation) !InsResult {
     if (h.tag() != .rb_node) {
         return .{ .node = try newNode(rt, key, val, Value.nil_val, Value.nil_val, RED), .added = true };
     }
     const hn = h.decodePtr(*const RbNode);
-    const order = try compareKeys(rt, comparator, key, hn.key, loc);
+    const order = try compareKeys(rt, env, comparator, key, hn.key, loc);
     var added = false;
     var built: Value = undefined;
     switch (order) {
         .lt => {
-            const r = try insert(rt, comparator, hn.left, key, val, loc);
+            const r = try insert(rt, env, comparator, hn.left, key, val, loc);
             added = r.added;
             built = try newNode(rt, hn.key, hn.val, r.node, hn.right, hn.color);
         },
         .gt => {
-            const r = try insert(rt, comparator, hn.right, key, val, loc);
+            const r = try insert(rt, env, comparator, hn.right, key, val, loc);
             added = r.added;
             built = try newNode(rt, hn.key, hn.val, hn.left, r.node, hn.color);
         },
@@ -225,15 +239,15 @@ fn deleteMin(rt: *Runtime, h: Value) !Value {
 
 /// Delete `key` from a non-empty subtree known to contain it; returns the
 /// rebalanced subtree (nil if it became empty).
-fn deleteNode(rt: *Runtime, comparator: Value, h: Value, key: Value, loc: SourceLocation) !Value {
+fn deleteNode(rt: *Runtime, env: *Env, comparator: Value, h: Value, key: Value, loc: SourceLocation) !Value {
     var n = h;
-    if (try compareKeys(rt, comparator, key, n.decodePtr(*const RbNode).key, loc) == .lt) {
+    if (try compareKeys(rt, env, comparator, key, n.decodePtr(*const RbNode).key, loc) == .lt) {
         var nn = n.decodePtr(*const RbNode);
         if (!isRed(nn.left) and !isRed(leftOf(nn.left))) {
             n = try moveRedLeft(rt, n);
             nn = n.decodePtr(*const RbNode);
         }
-        const new_left = try deleteNode(rt, comparator, nn.left, key, loc);
+        const new_left = try deleteNode(rt, env, comparator, nn.left, key, loc);
         n = try newNode(rt, nn.key, nn.val, new_left, nn.right, nn.color);
     } else {
         var nn = n.decodePtr(*const RbNode);
@@ -242,21 +256,21 @@ fn deleteNode(rt: *Runtime, comparator: Value, h: Value, key: Value, loc: Source
             nn = n.decodePtr(*const RbNode);
         }
         // Leaf with matching key (after the right-lean fix): drop it.
-        if (try compareKeys(rt, comparator, key, nn.key, loc) == .eq and nn.right.tag() != .rb_node) {
+        if (try compareKeys(rt, env, comparator, key, nn.key, loc) == .eq and nn.right.tag() != .rb_node) {
             return Value.nil_val;
         }
         if (!isRed(nn.right) and !isRed(leftOf(nn.right))) {
             n = try moveRedRight(rt, n);
             nn = n.decodePtr(*const RbNode);
         }
-        if (try compareKeys(rt, comparator, key, nn.key, loc) == .eq) {
+        if (try compareKeys(rt, env, comparator, key, nn.key, loc) == .eq) {
             // Replace with in-order successor (min of right subtree), then
             // delete that successor from the right subtree.
             const succ = minNode(nn.right).decodePtr(*const RbNode);
             const new_right = try deleteMin(rt, nn.right);
             n = try newNode(rt, succ.key, succ.val, nn.left, new_right, nn.color);
         } else {
-            const new_right = try deleteNode(rt, comparator, nn.right, key, loc);
+            const new_right = try deleteNode(rt, env, comparator, nn.right, key, loc);
             n = try newNode(rt, nn.key, nn.val, nn.left, new_right, nn.color);
         }
     }
@@ -266,8 +280,15 @@ fn deleteNode(rt: *Runtime, comparator: Value, h: Value, key: Value, loc: Source
 // --- SortedMap public API ---
 
 pub fn emptyMap(rt: *Runtime) !Value {
+    return emptyMapBy(rt, Value.nil_val);
+}
+
+/// Empty sorted-map ordered by a custom comparator (nil = default
+/// valueCompare). The comparator is a Clojure fn Value invoked per
+/// comparison via `compareKeys`.
+pub fn emptyMapBy(rt: *Runtime, comparator: Value) !Value {
     const m = try rt.gc.alloc(SortedMap);
-    m.* = .{ .header = HeapHeader.init(.sorted_map) };
+    m.* = .{ .header = HeapHeader.init(.sorted_map), .comparator = comparator };
     return Value.encodeHeapPtr(.sorted_map, m);
 }
 
@@ -283,9 +304,9 @@ pub fn count(v: Value) u32 {
     };
 }
 
-pub fn assoc(rt: *Runtime, m_val: Value, key: Value, val: Value, loc: SourceLocation) !Value {
+pub fn assoc(rt: *Runtime, env: *Env, m_val: Value, key: Value, val: Value, loc: SourceLocation) !Value {
     const m = m_val.decodePtr(*const SortedMap);
-    const r = try insert(rt, m.comparator, m.root, key, val, loc);
+    const r = try insert(rt, env, m.comparator, m.root, key, val, loc);
     const black = try makeBlack(rt, r.node);
     const nm = try rt.gc.alloc(SortedMap);
     nm.* = .{
@@ -298,12 +319,12 @@ pub fn assoc(rt: *Runtime, m_val: Value, key: Value, val: Value, loc: SourceLoca
     return Value.encodeHeapPtr(.sorted_map, nm);
 }
 
-pub fn get(rt: *Runtime, m_val: Value, key: Value, loc: SourceLocation) !Value {
+pub fn get(rt: *Runtime, env: *Env, m_val: Value, key: Value, loc: SourceLocation) !Value {
     const m = m_val.decodePtr(*const SortedMap);
     var h = m.root;
     while (h.tag() == .rb_node) {
         const hn = h.decodePtr(*const RbNode);
-        switch (try compareKeys(rt, m.comparator, key, hn.key, loc)) {
+        switch (try compareKeys(rt, env, m.comparator, key, hn.key, loc)) {
             .lt => h = hn.left,
             .gt => h = hn.right,
             .eq => return hn.val,
@@ -312,12 +333,12 @@ pub fn get(rt: *Runtime, m_val: Value, key: Value, loc: SourceLocation) !Value {
     return Value.nil_val;
 }
 
-pub fn contains(rt: *Runtime, m_val: Value, key: Value, loc: SourceLocation) !bool {
+pub fn contains(rt: *Runtime, env: *Env, m_val: Value, key: Value, loc: SourceLocation) !bool {
     const m = m_val.decodePtr(*const SortedMap);
     var h = m.root;
     while (h.tag() == .rb_node) {
         const hn = h.decodePtr(*const RbNode);
-        switch (try compareKeys(rt, m.comparator, key, hn.key, loc)) {
+        switch (try compareKeys(rt, env, m.comparator, key, hn.key, loc)) {
             .lt => h = hn.left,
             .gt => h = hn.right,
             .eq => return true,
@@ -326,17 +347,17 @@ pub fn contains(rt: *Runtime, m_val: Value, key: Value, loc: SourceLocation) !bo
     return false;
 }
 
-pub fn dissoc(rt: *Runtime, m_val: Value, key: Value, loc: SourceLocation) !Value {
+pub fn dissoc(rt: *Runtime, env: *Env, m_val: Value, key: Value, loc: SourceLocation) !Value {
     const m = m_val.decodePtr(*const SortedMap);
     if (m.root.tag() != .rb_node) return m_val;
-    if (!try contains(rt, m_val, key, loc)) return m_val; // absent → no-op (count stays)
+    if (!try contains(rt, env, m_val, key, loc)) return m_val; // absent → no-op (count stays)
     var root = m.root;
     const rn = root.decodePtr(*const RbNode);
     // Set the root red so the first borrow has a red to move down.
     if (!isRed(rn.left) and !isRed(rn.right)) {
         root = try newNode(rt, rn.key, rn.val, rn.left, rn.right, RED);
     }
-    root = try makeBlack(rt, try deleteNode(rt, m.comparator, root, key, loc));
+    root = try makeBlack(rt, try deleteNode(rt, env, m.comparator, root, key, loc));
     const nm = try rt.gc.alloc(SortedMap);
     nm.* = .{
         .header = HeapHeader.init(.sorted_map),
@@ -404,7 +425,12 @@ inline fn mapOf(set_val: Value) Value {
 }
 
 pub fn emptySet(rt: *Runtime) !Value {
-    const inner = try emptyMap(rt);
+    return emptySetBy(rt, Value.nil_val);
+}
+
+/// Empty sorted-set ordered by a custom comparator (nil = default).
+pub fn emptySetBy(rt: *Runtime, comparator: Value) !Value {
+    const inner = try emptyMapBy(rt, comparator);
     const s = try rt.gc.alloc(SortedSet);
     s.* = .{ .header = HeapHeader.init(.sorted_set), .map = inner };
     return Value.encodeHeapPtr(.sorted_set, s);
@@ -414,21 +440,21 @@ pub fn isSortedSet(v: Value) bool {
     return v.tag() == .sorted_set;
 }
 
-pub fn conjSet(rt: *Runtime, set_val: Value, elem: Value, loc: SourceLocation) !Value {
+pub fn conjSet(rt: *Runtime, env: *Env, set_val: Value, elem: Value, loc: SourceLocation) !Value {
     const s = set_val.decodePtr(*const SortedSet);
-    const new_map = try assoc(rt, s.map, elem, elem, loc);
+    const new_map = try assoc(rt, env, s.map, elem, elem, loc);
     const ns = try rt.gc.alloc(SortedSet);
     ns.* = .{ .header = HeapHeader.init(.sorted_set), .count = new_map.decodePtr(*const SortedMap).count, .map = new_map, .meta = s.meta };
     return Value.encodeHeapPtr(.sorted_set, ns);
 }
 
-pub fn setContains(rt: *Runtime, set_val: Value, elem: Value, loc: SourceLocation) !bool {
-    return contains(rt, mapOf(set_val), elem, loc);
+pub fn setContains(rt: *Runtime, env: *Env, set_val: Value, elem: Value, loc: SourceLocation) !bool {
+    return contains(rt, env, mapOf(set_val), elem, loc);
 }
 
-pub fn disjSet(rt: *Runtime, set_val: Value, elem: Value, loc: SourceLocation) !Value {
+pub fn disjSet(rt: *Runtime, env: *Env, set_val: Value, elem: Value, loc: SourceLocation) !Value {
     const s = set_val.decodePtr(*const SortedSet);
-    const new_map = try dissoc(rt, s.map, elem, loc);
+    const new_map = try dissoc(rt, env, s.map, elem, loc);
     const ns = try rt.gc.alloc(SortedSet);
     ns.* = .{ .header = HeapHeader.init(.sorted_set), .count = new_map.decodePtr(*const SortedMap).count, .map = new_map, .meta = s.meta };
     return Value.encodeHeapPtr(.sorted_set, ns);
@@ -476,25 +502,28 @@ test "SortedMap assoc keeps key order + get + count + dup-replace" {
     var rt = Runtime.init(th.io(), testing.allocator);
     defer rt.deinit();
 
+    var env = try Env.init(&rt);
+    defer env.deinit();
+
     const noloc: SourceLocation = .{};
     var m = try emptyMap(&rt);
     // insert 0..49 in a shuffled-ish order (i*17 mod 50 is a permutation)
     var i: i48 = 0;
     while (i < 50) : (i += 1) {
         const k = @mod(i * 17, 50);
-        m = try assoc(&rt, m, Value.initInteger(k), Value.initInteger(k * 10), noloc);
+        m = try assoc(&rt, &env, m, Value.initInteger(k), Value.initInteger(k * 10), noloc);
     }
     try testing.expectEqual(@as(u32, 50), count(m));
     // every key reads back
     i = 0;
     while (i < 50) : (i += 1) {
-        try testing.expectEqual(@as(i48, i * 10), (try get(&rt, m, Value.initInteger(i), noloc)).asInteger());
+        try testing.expectEqual(@as(i48, i * 10), (try get(&rt, &env, m, Value.initInteger(i), noloc)).asInteger());
     }
     // dup key replaces, count unchanged
-    m = try assoc(&rt, m, Value.initInteger(7), Value.initInteger(-1), noloc);
+    m = try assoc(&rt, &env, m, Value.initInteger(7), Value.initInteger(-1), noloc);
     try testing.expectEqual(@as(u32, 50), count(m));
-    try testing.expectEqual(@as(i48, -1), (try get(&rt, m, Value.initInteger(7), noloc)).asInteger());
-    try testing.expect(!try contains(&rt, m, Value.initInteger(999), noloc));
+    try testing.expectEqual(@as(i48, -1), (try get(&rt, &env, m, Value.initInteger(7), noloc)).asInteger());
+    try testing.expect(!try contains(&rt, &env, m, Value.initInteger(999), noloc));
 }
 
 /// Recursively verify the LLRB invariants and return the subtree's black
@@ -528,33 +557,36 @@ test "SortedMap delete: remove half, invariants + membership hold" {
     var rt = Runtime.init(th.io(), testing.allocator);
     defer rt.deinit();
 
+    var env = try Env.init(&rt);
+    defer env.deinit();
+
     const noloc: SourceLocation = .{};
     var m = try emptyMap(&rt);
     // build with shuffled insert order (i*17 mod 50 is a permutation)
     var i: i48 = 0;
     while (i < 50) : (i += 1) {
         const k = @mod(i * 17, 50);
-        m = try assoc(&rt, m, Value.initInteger(k), Value.initInteger(k * 10), noloc);
+        m = try assoc(&rt, &env, m, Value.initInteger(k), Value.initInteger(k * 10), noloc);
     }
     // delete every even key
     i = 0;
     while (i < 50) : (i += 2) {
-        m = try dissoc(&rt, m, Value.initInteger(i), noloc);
+        m = try dissoc(&rt, &env, m, Value.initInteger(i), noloc);
     }
     try testing.expectEqual(@as(u32, 25), count(m));
     _ = try checkInvariants(m.decodePtr(*const SortedMap).root);
     i = 0;
     while (i < 50) : (i += 1) {
-        const present = try contains(&rt, m, Value.initInteger(i), noloc);
+        const present = try contains(&rt, &env, m, Value.initInteger(i), noloc);
         try testing.expectEqual(@mod(i, 2) == 1, present); // only odds survive
     }
     // deleting an absent key is a no-op (count unchanged)
-    m = try dissoc(&rt, m, Value.initInteger(0), noloc);
+    m = try dissoc(&rt, &env, m, Value.initInteger(0), noloc);
     try testing.expectEqual(@as(u32, 25), count(m));
     // delete all remaining → empty
     i = 1;
     while (i < 50) : (i += 2) {
-        m = try dissoc(&rt, m, Value.initInteger(i), noloc);
+        m = try dissoc(&rt, &env, m, Value.initInteger(i), noloc);
     }
     try testing.expectEqual(@as(u32, 0), count(m));
     try testing.expect(m.decodePtr(*const SortedMap).root.isNil());

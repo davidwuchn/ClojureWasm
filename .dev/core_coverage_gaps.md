@@ -88,12 +88,16 @@ Caveat: the static var-set extraction has minor false-positives (e.g.
     - **Cycle B1 — DONE**: functional LLRB delete (dissoc/disj — Sedgewick moveRedLeft/moveRedRight/
       deleteMin). Strong canary: build-50-shuffled → delete-half → assert full LLRB invariants (BST
       order, left-lean, no consecutive reds, equal black-height) + drain-to-empty. 9 new e2e (30 total).
-    - **Cycle B2 — NEXT**: `sorted-map-by`/`sorted-set-by` (custom comparator via callFn from Layer 0).
-      OPEN QUESTION: `compareKeys` is in runtime/ (Layer 0) and would need to invoke a user fn — the
-      VTable `callFn` (dispatch.zig:97) takes `(rt, env, fnVal, args)` but sorted.zig ops only thread
-      `rt`, not `env`. Either thread env through assoc/get/contains/dissoc, or find an rt-held env. The
-      `sort`-with-comparator precedent doesn't exist yet (= D-159), so this is greenfield.
-    - **Cycle C**: in-order seqFrom + .clj subseq/rsubseq/rseq + flip `reversible?` (vector too).
+    - **Cycle B2 — DONE**: `sorted-map-by`/`sorted-set-by` custom comparators. Resolved the Layer-0
+      callFn question by threading `env` through every comparing op (assoc/get/contains/dissoc/conjSet/
+      setContains/disjSet + lookup.invoke + tree_walk:905), mirroring `multimethod.zig`'s established
+      pattern. `compareKeys` calls `rt.vtable.callFn`; Boolean result = less-than predicate, numeric =
+      sign (Clojure `AFunction.compare`). 8 new e2e (38 total); `>`/`<`/numeric/str-len comparators all
+      green incl. get/disj/as-fn parity. **The env-threaded callFn-from-primitive pattern now unblocks
+      D-159** (`(sort cmp coll)` 2-arg comparator) — same AFunction.compare logic.
+    - **Cycle C — NEXT**: `rseq` (vector reverse + sorted descending walk — currently name_error) +
+      flip `reversible?` core.clj:736 `(fn* [x] (vector? x))` → also `sorted?` + `subseq`/`rsubseq`
+      (range queries; tree-navigated seqFrom is the finished form, filter-the-full-seq is the floor).
   - **then**: **transducers** (HIGH ROI, BIG — survey-worthy: transducer protocol over reduce/reduced,
     1-arg HOF arities); MEDIUM fill-ins: `isa?`/hierarchy, `resolve`/ns (needs first-class var Value?),
     `bigint`/`bigdec` (LOW-med ROI + fiddly 5 coerce arms + string parsers — deprioritized).

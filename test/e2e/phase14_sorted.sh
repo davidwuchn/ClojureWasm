@@ -44,4 +44,13 @@ assert_eq 'disj'      "$("$BIN" -e '(seq (disj (sorted-set 1 2 3 4 5) 3))')" '(1
 assert_eq 'disj_cnt'  "$("$BIN" -e '(count (disj (sorted-set 1 2 3) 2))')" '2'
 assert_eq 'disj_drain' "$("$BIN" -e '(count (disj (disj (sorted-set 1 2) 1) 2))')" '0'
 assert_eq 'dissoc_reorder' "$("$BIN" -e '(vec (keys (reduce dissoc (into (sorted-map) (map (fn [i] [i i]) (range 10))) [3 7 1 9])))')" '[0 2 4 5 6 8]'
-echo "OK — phase14_sorted smoke (30 cases) green"
+# sorted-map-by / sorted-set-by — custom comparator (cycle B2)
+assert_eq 'set_by_gt'   "$("$BIN" -e '(seq (sorted-set-by > 1 5 3 2 4))')"   '(5 4 3 2 1)'
+assert_eq 'set_by_lt'   "$("$BIN" -e '(seq (sorted-set-by < 5 3 1 4 2))')"   '(1 2 3 4 5)'
+assert_eq 'map_by_gt'   "$("$BIN" -e '(keys (sorted-map-by > 1 :a 3 :c 2 :b))')" '(3 2 1)'
+assert_eq 'by_get'      "$("$BIN" -e '(get (sorted-map-by > 1 :a 2 :b) 2)')" ':b'
+assert_eq 'by_disj'     "$("$BIN" -e '(seq (disj (sorted-set-by > 1 2 3 4 5) 3))')" '(5 4 2 1)'
+assert_eq 'by_as_fn'    "$("$BIN" -e '((sorted-set-by > 1 2 3) 2)')"         '2'
+assert_eq 'by_numeric'  "$("$BIN" -e '(seq (sorted-set-by (fn [a b] (- b a)) 1 2 3))')" '(3 2 1)'
+assert_eq 'by_str_len'  "$("$BIN" -e '(vec (sorted-set-by (fn [a b] (- (count a) (count b))) "ccc" "a" "bb"))')" '["a" "bb" "ccc"]'
+echo "OK — phase14_sorted smoke (38 cases) green"
