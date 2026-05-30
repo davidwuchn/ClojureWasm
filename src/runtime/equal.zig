@@ -178,15 +178,31 @@ fn setEqual(rt: *Runtime, a: Value, b: Value) anyerror!bool {
 ///     JVM's category-based `=` for keys);
 ///   - `.string` — byte-equality (the D-151 target: non-interned String
 ///     Values with equal bytes but distinct heap pointers).
-/// Collection keys (vector/map/set) and ratio/big_decimal/big_int keys
-/// need the recursive / category-aware `valueEqual` (which needs `rt`)
-/// and stay identity-compared — a pre-existing, rare residual tracked on
-/// D-151, NOT a regression (they were identity-compared before too).
+/// VECTOR keys now compare + hash BY VALUE (D-092, recursive over
+/// elements — fixes `(frequencies [[1] [1]])` & vector-keyed maps).
+/// List / map / set keys and ratio/big_decimal/big_int keys still stay
+/// identity-compared (residual: the recursive / category-aware
+/// `valueEqual` needs `rt`; cross-type vec≡list keys also pending).
 pub fn keyEqValue(a: Value, b: Value) bool {
     if (@intFromEnum(a) == @intFromEnum(b)) return true;
     if (a.tag() == .string and b.tag() == .string)
         return std.mem.eql(u8, string_mod.asString(a), string_mod.asString(b));
+    // Vector keys by value (D-092): element-wise, recursively (so nested
+    // vectors + the int/string/kw element comparison all ride keyEqValue).
+    // List / cross-type vec≡list keys remain a residual.
+    if (a.tag() == .vector and b.tag() == .vector)
+        return vectorKeyEq(a, b);
     return false;
+}
+
+fn vectorKeyEq(a: Value, b: Value) bool {
+    const n = vector.count(a);
+    if (n != vector.count(b)) return false;
+    var i: u32 = 0;
+    while (i < n) : (i += 1) {
+        if (!keyEqValue(vector.nth(a, i), vector.nth(b, i))) return false;
+    }
+    return true;
 }
 
 /// HAMT key hash — the hash partner of `keyEqValue`. MUST satisfy
@@ -204,8 +220,24 @@ pub fn valueHash(v: Value) u32 {
         .integer => hash.hashLong(@as(i64, v.asInteger())),
         .float => hash.hashLong(@bitCast(v.asFloat())),
         .nil => 0,
+        // Vector keys hash by content (ordered, recursive) so two equal
+        // vectors land in the same bucket — the partner of vectorKeyEq (D-092).
+        .vector => vectorHash(v),
         else => hash.hashLong(@bitCast(@intFromEnum(v))),
     };
+}
+
+/// Order-dependent content hash of a vector (mirrors `hash.hashOrdered`
+/// inline to avoid materialising an element-hash slice; recurses through
+/// `valueHash` so nested vectors hash by content too).
+fn vectorHash(v: Value) u32 {
+    const n = vector.count(v);
+    var h: u32 = 1;
+    var i: u32 = 0;
+    while (i < n) : (i += 1) {
+        h = h *% 31 +% valueHash(vector.nth(v, i));
+    }
+    return hash.mixCollHash(h, n);
 }
 
 /// `(= a b)` semantics. See module docstring + ADR-0052.

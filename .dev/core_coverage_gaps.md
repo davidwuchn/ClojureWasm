@@ -67,10 +67,12 @@ Caveat: the static var-set extraction has minor false-positives (e.g.
 - 2026-05-30: map generated + validated. P0 progress:
   - **DONE**: `hash`, `gensym` (35721849); `volatile!`/`vreset!`/`vswap!`/`volatile?` (e3281deb);
     `comparator` (this batch).
-  - **next P0**: `bigint`/`bigdec`/`biginteger` (wrap existing numeric — medium, not trivial:
-    needs forcing a Long into the arbitrary-precision repr).
-  - **then P1**: `memoize` (.clj over atom — now unblocked), sorted-map/sorted-set (new tree),
-    metadata (with-meta/meta — value-model investigation), transducers.
+  - **DONE D-092** (vector keys by value): `keyEqValue`/`valueHash` recurse over vector elements,
+    fixing `(frequencies [[1] [1] [2]])` → `{[1] 2, [2] 1}` + vector-keyed maps/sets/distinct.
+    Residual: LIST / map / set keys + cross-type vec≡list keys still identity-compared.
+  - **next**: `memoize` (.clj over atom, keys by `(vec args)` — UNBLOCKED by D-092).
+  - **then P1**: sorted-map/sorted-set (new tree), metadata (with-meta/meta — value-model),
+    transducers, bigint/bigdec (wrap numeric), isa?/hierarchy (P2), resolve/ns introspection (P2).
 - **New gaps found while sweeping** (not yet chased): `(sort cmp coll)` with a 2-arg COMPARATOR fn
   errors — cljw `sort`'s 2-arg form treats the fn as a 1-arg key-fn, not a comparator (= **D-159**);
   regex capture groups unsupported ("cycle 1"); `resolve` itself missing (P2).

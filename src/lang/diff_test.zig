@@ -131,6 +131,16 @@ test "diff: atom — atom/deref/@/swap!/reset!/compare-and-set! (D-085 sibling)"
     try f.check("(if (volatile? (volatile! 1)) 10 20)", 10);
 }
 
+test "diff: vector keys by value (D-092) — keyEqValue/valueHash backend-shared" {
+    var f = try Fixture.init(testing.allocator);
+    defer f.deinit();
+    // map ops + equal.keyEqValue/valueHash live in runtime/ (both backends
+    // share them), so a vector-keyed lookup agrees across backends.
+    try f.check("(get {[1 2] 42} [1 2])", 42);
+    try f.check("(get (assoc {[1] 1} [1] 9) [1])", 9);
+    try f.check("(if (contains? {[1 2] :a} [1 2]) 10 20)", 10);
+}
+
 test "diff: binding rebinds a dynamic var (both backends)" {
     var f = try Fixture.init(testing.allocator);
     defer f.deinit();
