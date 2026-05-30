@@ -21,6 +21,7 @@ const delay_mod = @import("../../runtime/delay.zig");
 const promise_mod = @import("../../runtime/promise.zig");
 const future_mod = @import("../../runtime/future.zig");
 const atom_mod = @import("../../runtime/atom.zig");
+const volatile_mod = @import("../../runtime/volatile.zig");
 
 /// `(ref init)` — construct a Tier A STM Ref seeded with `init`.
 /// JVM `clojure.core/ref` also accepts `:meta` / `:validator` /
@@ -41,6 +42,7 @@ pub fn derefFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation
     const v = args[0];
     return switch (v.tag()) {
         .atom => atom_mod.current(v),
+        .@"volatile" => volatile_mod.current(v),
         .ref => ref_mod.current(v),
         .delay => try delay_mod.force(rt, env, v, loc),
         .promise => promise_mod.deref(v) orelse

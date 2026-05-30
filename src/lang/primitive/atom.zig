@@ -18,6 +18,7 @@ const error_catalog = @import("../../runtime/error/catalog.zig");
 const SourceLocation = error_mod.SourceLocation;
 const dispatch = @import("../../runtime/dispatch.zig");
 const atom_mod = @import("../../runtime/atom.zig");
+const volatile_mod = @import("../../runtime/volatile.zig");
 const higher_order = @import("higher_order.zig");
 
 fn requireAtom(name: []const u8, v: Value, loc: SourceLocation) !void {
@@ -82,6 +83,57 @@ pub fn compareAndSetFn(rt: *Runtime, env: *Env, args: []const Value, loc: Source
     return Value.false_val;
 }
 
+// --- volatile (unsynchronized mutable box: volatile! / vreset! / vswap! / volatile?) ---
+
+fn requireVolatile(name: []const u8, v: Value, loc: SourceLocation) !void {
+    if (!volatile_mod.isVolatile(v)) {
+        return error_catalog.raise(.type_arg_invalid, loc, .{ .fn_name = name, .expected = "volatile", .actual = @tagName(v.tag()) });
+    }
+}
+
+/// `(volatile! x)` — construct a volatile holding x.
+pub fn volatileBangFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = env;
+    try error_catalog.checkArity("volatile!", args, 1, loc);
+    return try volatile_mod.alloc(rt, args[0]);
+}
+
+/// `(vreset! v newval)` — set the volatile to newval, return newval.
+pub fn vresetFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = rt;
+    _ = env;
+    try error_catalog.checkArity("vreset!", args, 2, loc);
+    try requireVolatile("vreset!", args[0], loc);
+    volatile_mod.setCurrent(args[0], args[1]);
+    return args[1];
+}
+
+/// `(vswap! v f & args)` — set the volatile to `(apply f current args)`,
+/// return the new value. No CAS / retry (volatiles are unsynchronized).
+pub fn vswapFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    if (args.len < 2) {
+        return error_catalog.raise(.arity_below_min, loc, .{ .fn_name = "vswap!", .got = args.len, .min = 2 });
+    }
+    try requireVolatile("vswap!", args[0], loc);
+    const vol = args[0];
+    const f = args[1];
+    var call_args: std.ArrayList(Value) = .empty;
+    defer call_args.deinit(rt.gpa);
+    try call_args.append(rt.gpa, volatile_mod.current(vol));
+    try call_args.appendSlice(rt.gpa, args[2..]);
+    const newval = try higher_order.invokeCallable(rt, env, f, call_args.items, loc);
+    volatile_mod.setCurrent(vol, newval);
+    return newval;
+}
+
+/// `(volatile? x)` — true iff x is a volatile.
+pub fn volatileQFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = rt;
+    _ = env;
+    try error_catalog.checkArity("volatile?", args, 1, loc);
+    return if (volatile_mod.isVolatile(args[0])) Value.true_val else Value.false_val;
+}
+
 // --- registration ---
 
 const Entry = struct {
@@ -94,6 +146,10 @@ const ENTRIES = [_]Entry{
     .{ .name = "swap!", .f = &swapFn },
     .{ .name = "reset!", .f = &resetFn },
     .{ .name = "compare-and-set!", .f = &compareAndSetFn },
+    .{ .name = "volatile!", .f = &volatileBangFn },
+    .{ .name = "vreset!", .f = &vresetFn },
+    .{ .name = "vswap!", .f = &vswapFn },
+    .{ .name = "volatile?", .f = &volatileQFn },
 };
 
 pub fn register(env: *Env, rt_ns: *env_mod.Namespace) !void {
