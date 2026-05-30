@@ -720,6 +720,12 @@
 ;; and destructured/realized use are correct.
 (def split-at
   (fn* [n coll] [(take n coll) (drop n coll)]))
+
+;; `(counted? x)` — true iff x supports O(1) count (vector / map / set /
+;; list in cw v1). Lazy seqs and strings are NOT counted. `(reversible? x)`
+;; — true iff x supports rseq; cw v1 has only the vector (no sorted coll).
+(def counted? (fn* [x] (or (vector? x) (map? x) (set? x) (list? x))))
+(def reversible? (fn* [x] (vector? x)))
 ;; `(take-nth n coll)` — every nth item (lazy).
 (def take-nth
   (fn* [n coll]

@@ -377,6 +377,7 @@ run_step "e2e_phase14_long_num_bitandnot"   "bash test/e2e/phase14_long_num_bita
 run_step "e2e_phase14_parse"                "bash test/e2e/phase14_parse.sh"
 run_step "e2e_phase14_double_float"        "bash test/e2e/phase14_double_float.sh"
 run_step "e2e_phase14_reductions_splitat"  "bash test/e2e/phase14_reductions_splitat.sh"
+run_step "e2e_phase14_counted_reversible"  "bash test/e2e/phase14_counted_reversible.sh"
 run_step "e2e_phase14_bit_ops"              "bash test/e2e/phase14_bit_ops.sh"
 run_step "e2e_phase14_cljw_build"            "bash test/e2e/phase14_cljw_build.sh"
 run_step "e2e_phase14_core_cluster"          "bash test/e2e/phase14_core_cluster.sh"
