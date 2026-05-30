@@ -40,8 +40,17 @@ Caveat: the static var-set extraction has minor false-positives (e.g.
 - **rseq** (reverse seq of vector/sorted) — needs reversible support.
 - **metadata: with-meta / meta / vary-meta / alter-meta! / reset-meta!** — FOUNDATIONAL
   (value-model meta slot; investigate whether HeapHeader carries meta or a side-table is needed). Used everywhere.
-- **transducers: transduce / sequence / eduction / completing / cat / halt-when / ensure-reduced / unreduced** —
-  big feature (transducer protocol over the existing reduce/reduced). MEDIUM-HIGH.
+- **transducers** (survey: `private/notes/phaseA26-transducers-survey.md`; foundation already exists —
+  Reduced sentinel + `reduce` honors it + `volatile!` + multi-arity `fn*`). 5-cycle plan:
+  - **Cycle 1 — DONE**: `reduced`/`reduced?`/`unreduced`/`ensure-reduced` Clojure-visible (Zig wrappers
+    over reduced.zig) + `deref` `.reduced` arm. 8 e2e (`phase14_transducers.sh`).
+  - **Cycle 2 — NEXT**: transducer arities `(map f)`/`(filter pred)`/`(remove pred)`/`(keep f)` + `completing`
+    + `transduce` (all .clj). cat deferred (needs preserving-reduced). conj 0/1-arg arities needed later
+    for bare-`conj` `into`.
+  - **Cycle 3**: 3-arg `into` (one Zig widen) + conj 0/1-arg + stateful `take`/`drop`/`map-indexed`.
+  - **Cycle 4**: `dedupe`/`distinct`/`partition-all` (1-arg completion flush) + `cat` (preserving-reduced).
+  - **Cycle 5**: `halt-when` + `sequence`/`eduction` (DIVERGENCE D1: eager-PROVISIONAL or defer — cljw
+    lacks the lazy pull machinery upstream's TransformerIterator uses).
 - **trampoline** — core.clj defn (loop on fn results).
 
 ### P2 — type / hierarchy / var+ns introspection
