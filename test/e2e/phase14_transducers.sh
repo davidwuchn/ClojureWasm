@@ -42,4 +42,15 @@ assert_eq 'into2_map'   "$("$BIN" -e '(into {} [[:a 1] [:b 2]])')"            '{
 assert_eq 'into3_map'   "$("$BIN" -e '(into [] (map inc) [1 2 3])')"          '[2 3 4]'
 assert_eq 'into3_comp'  "$("$BIN" -e '(into [] (comp (filter even?) (map inc)) [1 2 3 4])')" '[3 5]'
 assert_eq 'into3_set'   "$("$BIN" -e '(into #{} (map inc) [1 1 2 3])')"       '#{2 3 4}'
-echo "OK — phase14_transducers (25 cases, cycles 1-3a) green"
+# cycle 3b: stateful transducers (take / drop / map-indexed)
+assert_eq 'td_take'     "$("$BIN" -e '(into [] (take 3) [1 2 3 4 5])')"       '[1 2 3]'
+assert_eq 'td_drop'     "$("$BIN" -e '(into [] (drop 2) [1 2 3 4 5])')"       '[3 4 5]'
+assert_eq 'td_mapidx'   "$("$BIN" -e '(into [] (map-indexed (fn [i x] [i x])) [:a :b :c])')" '[[0 :a] [1 :b] [2 :c]]'
+assert_eq 'td_comptake' "$("$BIN" -e '(into [] (comp (map inc) (take 2)) [1 2 3 4 5])')" '[2 3]'
+assert_eq 'td_dropTake' "$("$BIN" -e '(into [] (comp (drop 1) (take 2)) [10 20 30 40])')" '[20 30]'
+# take's ensure-reduced stops early even on an INFINITE lazy source
+assert_eq 'td_take_inf' "$("$BIN" -e '(into [] (take 3) (iterate inc 0))')"   '[0 1 2]'
+# regression: the lazy collection arities still work
+assert_eq 'lazy_take'   "$("$BIN" -e '(into [] (take 3 [1 2 3 4 5]))')"       '[1 2 3]'
+assert_eq 'lazy_drop'   "$("$BIN" -e '(into [] (drop 2 [1 2 3 4 5]))')"       '[3 4 5]'
+echo "OK — phase14_transducers (33 cases, cycles 1-3) green"

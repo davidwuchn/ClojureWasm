@@ -47,9 +47,16 @@ Caveat: the static var-set extraction has minor false-positives (e.g.
   - **Cycle 2 — DONE**: transducer arities `(map f)`/`(filter pred)`/`(remove pred)`/`(keep f)` + `completing`
     + `transduce` (all .clj). `(transduce (comp (map inc) (filter even?)) + 0 coll)` works; lazy coll
     arities + infinite-source intact. 9 new e2e (17 total). cat deferred (preserving-reduced).
-  - **Cycle 3 — NEXT**: 3-arg `into` (relocate to core.clj over reduce/transduce — Zig intoFn has no
-    other callers; first `into` use is line 165 so define after transduce ~150) + conj 0/1-arg arities
-    (Zig, finished-form) + stateful `take`/`drop`/`map-indexed` transducer arities.
+  - **Cycle 3a — DONE**: variadic `conj` (0→[]/1→coll/N→conj-each) + 3-arg `into` relocated to core.clj
+    over reduce/transduce (rt/into retired — no other Zig callers). 8 e2e.
+  - **Cycle 3b — DONE**: stateful `take`/`drop`/`map-indexed` transducer arities (volatile! state,
+    ensure-reduced for take's early stop — verified on INFINITE `(iterate inc 0)`). 8 e2e (33 total).
+  - **Cycle 4 — NEXT**: `dedupe`/`distinct`/`partition-all` (1-arg completion flush) + `cat`
+    (preserving-reduced). Cycle 5: `halt-when` + `sequence`/`eduction` (DIVERGENCE D1 eager/defer).
+- **BUG FOUND (transducer testing 2026-05-30)**: `(range N)` for N≳100k **SEGFAULTS** — `-range-acc`
+  (core.clj:720) is non-TCO self-recursion, blows the stack. Eager-range DIVERGENCE is intentional but
+  the recursion is a crash. Fix: rewrite `-range-acc` with `loop`/`recur` (constant-stack). **NEXT unit
+  after cycle 3** (a crash on common input — high priority).
   - **Cycle 4**: `dedupe`/`distinct`/`partition-all` (1-arg completion flush) + `cat` (preserving-reduced).
   - **Cycle 5**: `halt-when` + `sequence`/`eduction` (DIVERGENCE D1: eager-PROVISIONAL or defer — cljw
     lacks the lazy pull machinery upstream's TransformerIterator uses).

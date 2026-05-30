@@ -79,14 +79,36 @@
                 (cons (first s) (filter pred (rest s)))
                 (filter pred (rest s)))
               nil))))))
-(def take (fn* [n coll] (-take-eager n coll)))
+(def take
+  (fn* ([n]
+        ;; transducer arity: stateful (counts down n), ensure-reduced to stop
+        (fn* [rf]
+          (let [nv (volatile! n)]
+            (fn* ([] (rf))
+                 ([result] (rf result))
+                 ([result input]
+                  (let [m @nv
+                        nm (vswap! nv dec)
+                        result (if (> m 0) (rf result input) result)]
+                    (if (not (> nm 0)) (ensure-reduced result) result)))))))
+       ([n coll] (-take-eager n coll))))
 (def drop
-  (fn* [n coll]
-    (lazy-seq
-      (let [s (seq coll)]
-        (if (and (> n 0) s)
-          (drop (dec n) (rest s))
-          s)))))
+  (fn* ([n]
+        ;; transducer arity: stateful (skips the first n inputs)
+        (fn* [rf]
+          (let [nv (volatile! n)]
+            (fn* ([] (rf))
+                 ([result] (rf result))
+                 ([result input]
+                  (let [m @nv]
+                    (vswap! nv dec)
+                    (if (> m 0) result (rf result input))))))))
+       ([n coll]
+        (lazy-seq
+          (let [s (seq coll)]
+            (if (and (> n 0) s)
+              (drop (dec n) (rest s))
+              s))))))
 ;; nthnext/nthrest: [coll n] arg order (JVM clojure.core). The sequential
 ;; destructure `& rest` lowering (D-076) emits (nthnext g idx). nthnext
 ;; seqs (nil when empty); nthrest returns the rest coll as-is.
@@ -732,8 +754,15 @@
 
 ;; `(map-indexed f coll)` — eager map passing (index, item) to f.
 (def map-indexed
-  (fn* [f coll]
-    (mapv (fn* [i] (f i (nth coll i))) (range (count coll)))))
+  (fn* ([f]
+        ;; transducer arity: stateful index starting at 0
+        (fn* [rf]
+          (let [iv (volatile! -1)]
+            (fn* ([] (rf))
+                 ([result] (rf result))
+                 ([result input] (rf result (f (vswap! iv inc) input)))))))
+       ([f coll]
+        (mapv (fn* [i] (f i (nth coll i))) (range (count coll))))))
 
 ;; `(keep-indexed f coll)` — like map-indexed but drops nil results.
 (def keep-indexed
