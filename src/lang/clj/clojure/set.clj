@@ -110,15 +110,13 @@
 ;; `ks` for each map in `xrel`.
 (def project
   (fn* [xrel ks]
-    ;; PROVISIONAL: drops with-meta wrap pending value metadata system [refs: D-075, feature_deps.yaml#clojure.set/project]
-    (set (map (fn* [m] (select-keys m ks)) xrel))))
+    (with-meta (set (map (fn* [m] (select-keys m ks)) xrel)) (meta xrel))))
 
 ;; `(rename xrel kmap)` — return a rel with the keys in each map
 ;; renamed per kmap.
 (def rename
   (fn* [xrel kmap]
-    ;; PROVISIONAL: drops with-meta wrap pending value metadata system [refs: D-075, feature_deps.yaml#clojure.set/rename]
-    (set (map (fn* [m] (rename-keys m kmap)) xrel))))
+    (with-meta (set (map (fn* [m] (rename-keys m kmap)) xrel)) (meta xrel))))
 
 ;; `(index xrel ks)` — return a map of (selected-keys → set-of-maps).
 (def index

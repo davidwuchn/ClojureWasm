@@ -255,38 +255,29 @@ entries:
   - name: clojure.set/project
     kind: var
     defined_in: src/lang/clj/clojure/set.clj
-    status: provisional
+    status: landed
     requires_features:
       - clojure.core/set
       - clojure.core/map
       - clojure.core/select-keys
-    requires_debts:
-      - D-075
-    provisional_markers:
-      - src/lang/clj/clojure/set.clj (project — drops with-meta wrap)
+    provisional_markers: []
     notes: |
-      JVM wraps the result in `(with-meta result (meta xrel))` to
-      preserve metadata across the projection. cw v1 has no value-
-      metadata system (D-075, Phase 7+ target), so the wrap is
-      omitted. Observable divergence: callers carrying metadata
-      on `xrel` lose it. When D-075 lands the wrap is added and
-      this entry flips to `landed`.
+      LANDED 2026-05-30: the `(with-meta result (meta xrel))` wrap was
+      restored once runtime metadata (D-075 core: meta/with-meta) landed,
+      so a projected rel now preserves the source rel's metadata.
 
   - name: clojure.set/rename
     kind: var
     defined_in: src/lang/clj/clojure/set.clj
-    status: provisional
+    status: landed
     requires_features:
       - clojure.core/set
       - clojure.core/map
       - clojure.set/rename-keys
-    requires_debts:
-      - D-075
-    provisional_markers:
-      - src/lang/clj/clojure/set.clj (rename — drops with-meta wrap)
+    provisional_markers: []
     notes: |
-      Same as `clojure.set/project`: drops `with-meta` because
-      D-075 (metadata system) is pending. Mirror divergence.
+      LANDED 2026-05-30: `(with-meta result (meta xrel))` wrap restored
+      with runtime metadata (D-075 core). Mirror of clojure.set/project.
 
   - name: clojure.set/rename-keys
     kind: var

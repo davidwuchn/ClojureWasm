@@ -30,4 +30,7 @@ assert_eq 'preserve_v' "$("$BIN" -e '(meta (conj (with-meta [1] {:m 1}) 2))')" '
 # errors: non-IObj target, non-map meta
 assert_has 'err_target' "$("$BIN" -e '(with-meta 5 {:a 1})' 2>&1)"         'meta'
 assert_has 'err_notmap' "$("$BIN" -e '(with-meta [1] 5)' 2>&1)"            'meta'
-echo "OK — phase14_metadata smoke (15 cases) green"
+# clojure.set/project + rename now preserve the source rel's meta (D-075 wrap restored)
+assert_eq 'set_project' "$("$BIN" -e '(meta (clojure.set/project (with-meta #{{:a 1}} {:r 1}) [:a]))')" '{:r 1}'
+assert_eq 'set_rename'  "$("$BIN" -e '(meta (clojure.set/rename (with-meta #{{:a 1}} {:r 1}) {:a :b}))')" '{:r 1}'
+echo "OK — phase14_metadata smoke (17 cases) green"
