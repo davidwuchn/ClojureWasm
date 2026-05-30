@@ -292,8 +292,30 @@ pub fn printVector(w: *Writer, v: Value) Writer.Error!void {
 }
 
 /// Render an ArrayMap (Phase 6.10 cycle 2) in `{k v k v ...}` form.
-/// hash_map-backed maps are not iterated yet (D-045 promotion path
-/// has no callable consumers — sets/maps stay ArrayMap-only).
+/// Walk a HAMT node pre-order, writing each entry. `kv` true → "k v"
+/// pairs (map), false → bare elements (set). `first` threads the
+/// separator across the recursion. Alloc-free — the printer has no
+/// allocator, so it reads `slots` directly rather than materialising a
+/// seq (front-loaded KV pairs, back-loaded children per map.zig).
+fn printHamtEntries(w: *Writer, node: *const map_collection.HamtMapNode, first: *bool, comptime kv: bool) Writer.Error!void {
+    const data_count = @popCount(node.data_map);
+    var i: u32 = 0;
+    while (i < data_count) : (i += 1) {
+        if (!first.*) try w.writeAll(if (kv) ", " else " ");
+        first.* = false;
+        try printValue(w, node.slots[2 * i]);
+        if (kv) {
+            try w.writeByte(' ');
+            try printValue(w, node.slots[2 * i + 1]);
+        }
+    }
+    const child_count = @popCount(node.node_map);
+    var j: u32 = 0;
+    while (j < child_count) : (j += 1) {
+        try printHamtEntries(w, node.slots[63 - j].decodePtr(*const map_collection.HamtMapNode), first, kv);
+    }
+}
+
 pub fn printMap(w: *Writer, v: Value) Writer.Error!void {
     try w.writeByte('{');
     if (v.tag() == .array_map) {
@@ -304,6 +326,12 @@ pub fn printMap(w: *Writer, v: Value) Writer.Error!void {
             try printValue(w, am.entries[2 * i]);
             try w.writeByte(' ');
             try printValue(w, am.entries[2 * i + 1]);
+        }
+    } else {
+        const phm = v.decodePtr(*const map_collection.PersistentHashMap);
+        if (phm.root) |root| {
+            var first = true;
+            try printHamtEntries(w, root, &first, true);
         }
     }
     try w.writeByte('}');
@@ -317,17 +345,21 @@ pub fn printSet(w: *Writer, v: Value) Writer.Error!void {
     try w.writeAll("#{");
     const s = v.decodePtr(*const set_collection.PersistentHashSet);
     if (s.map.tag() == .array_map) {
-        const am = s.map.decodePtr(*const @import("collection/map.zig").ArrayMap);
+        const am = s.map.decodePtr(*const map_collection.ArrayMap);
         var i: u32 = 0;
         while (i < am.count) : (i += 1) {
             if (i > 0) try w.writeByte(' ');
             try printValue(w, am.entries[2 * i]);
         }
+    } else {
+        // hash_map-backed set (> 8 elements): walk the backing map's HAMT
+        // keys directly (the set stores each element as a map key).
+        const phm = s.map.decodePtr(*const map_collection.PersistentHashMap);
+        if (phm.root) |root| {
+            var first = true;
+            try printHamtEntries(w, root, &first, false);
+        }
     }
-    // hash_map-backed sets (count > 8 after D-045 lands) skip the
-    // body — they currently can't exist because PersistentHashSet
-    // raises HashMapPromotionNotImplemented during conj. Add the
-    // iteration path when D-045 closes.
     try w.writeByte('}');
 }
 

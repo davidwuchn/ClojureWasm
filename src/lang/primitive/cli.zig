@@ -198,12 +198,7 @@ pub fn parseOptsFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLoca
     var options_map = map_collection.empty();
     var op_i: usize = 0;
     while (op_i + 1 < options_pairs.items.len) : (op_i += 2) {
-        options_map = map_collection.assoc(rt, options_map, options_pairs.items[op_i], options_pairs.items[op_i + 1]) catch |err| switch (err) {
-            error.HashMapNotImplemented, error.HashMapPromotionNotImplemented => return error_catalog.raise(.feature_not_supported, loc, .{
-                .name = "parse-opts result map beyond ArrayMap capacity (HAMT pending D-045)",
-            }),
-            else => |e| return e,
-        };
+        options_map = try map_collection.assoc(rt, options_map, options_pairs.items[op_i], options_pairs.items[op_i + 1]);
     }
 
     var args_vec_out = vector_collection.empty();

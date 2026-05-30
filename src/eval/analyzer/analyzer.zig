@@ -730,10 +730,6 @@ fn vectorFormToValue(rt: *Runtime, items: []const Form) AnalyzeError!Value {
 }
 
 /// Build a persistent map Value by recursively lifting key/value pairs.
-/// `map.assoc` raises Zig-internal errors (`HashMapNotImplemented` etc.)
-/// outside the cw catalog set when the map would grow past the
-/// ArrayMap cap before D-045 lands; translate those to
-/// `feature_not_supported` so the AnalyzeError envelope holds.
 fn mapFormToValue(rt: *Runtime, entries: []const Form, loc: SourceLocation) AnalyzeError!Value {
     if (entries.len % 2 != 0) {
         return error_catalog.raise(.map_literal_arity_odd, loc, .{});
@@ -744,8 +740,11 @@ fn mapFormToValue(rt: *Runtime, entries: []const Form, loc: SourceLocation) Anal
         const k = try formToValue(rt, entries[i]);
         const val = try formToValue(rt, entries[i + 1]);
         out = map_collection.assoc(rt, out, k, val) catch |err| switch (err) {
-            error.HashMapNotImplemented, error.HashMapPromotionNotImplemented => return error_catalog.raise(.feature_not_supported, loc, .{
-                .name = "Map literal beyond ArrayMap capacity (HAMT pending D-045)",
+            // Astronomically rare: two literal keys share a full 32-bit
+            // hash (collision-bucket handling is unimplemented). Convert
+            // the internal error so the AnalyzeError envelope holds.
+            error.HashCollision => return error_catalog.raise(.feature_not_supported, loc, .{
+                .name = "a map with hash-colliding keys",
             }),
             error.AssocOnNonMap => unreachable, // out always starts at .array_map
             else => |e| return e,
@@ -760,8 +759,8 @@ fn setFormToValue(rt: *Runtime, items: []const Form) AnalyzeError!Value {
     for (items) |item| {
         const v = try formToValue(rt, item);
         out = set_collection.conj(rt, out, v) catch |err| switch (err) {
-            error.HashMapNotImplemented, error.HashMapPromotionNotImplemented => return error_catalog.raise(.feature_not_supported, .{}, .{
-                .name = "Set literal beyond ArrayMap capacity (HAMT pending D-045)",
+            error.HashCollision => return error_catalog.raise(.feature_not_supported, .{}, .{
+                .name = "a set with hash-colliding elements",
             }),
             error.AssocOnNonMap => unreachable, // out always starts at .hash_set
             else => |e| return e,

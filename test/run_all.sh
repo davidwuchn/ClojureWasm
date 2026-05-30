@@ -389,6 +389,7 @@ run_step "e2e_phase14_core_cluster"          "bash test/e2e/phase14_core_cluster
 run_step "e2e_phase14_print_family"          "bash test/e2e/phase14_print_family.sh"
 run_step "e2e_phase14_coll_helpers"          "bash test/e2e/phase14_coll_helpers.sh"
 run_step "e2e_phase14_map_helpers"           "bash test/e2e/phase14_map_helpers.sh"
+run_step "e2e_phase14_hamt_map"              "bash test/e2e/phase14_hamt_map.sh"
 run_step "e2e_phase14_equality"              "bash test/e2e/phase14_equality.sh"
 run_step "e2e_phase14_dedup_group"           "bash test/e2e/phase14_dedup_group.sh"
 run_step "e2e_phase14_seq_helpers2"          "bash test/e2e/phase14_seq_helpers2.sh"

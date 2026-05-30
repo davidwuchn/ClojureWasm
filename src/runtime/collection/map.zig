@@ -144,7 +144,7 @@ fn keyEq(a: Value, b: Value) bool {
 pub fn assoc(rt: *Runtime, v: Value, k: Value, val: Value) !Value {
     return switch (v.tag()) {
         .array_map => try assocArrayMap(rt, v.decodePtr(*const ArrayMap), k, val),
-        .hash_map => error.HashMapNotImplemented,
+        .hash_map => try assocHashMap(rt, v.decodePtr(*const PersistentHashMap), k, val),
         .nil => try assocArrayMap(rt, &EMPTY_ARRAY_MAP, k, val),
         else => error.AssocOnNonMap,
     };
@@ -171,7 +171,7 @@ fn assocArrayMap(rt: *Runtime, am: *const ArrayMap, k: Value, val: Value) !Value
 
     // Append — promote to HamtMap if count would exceed threshold.
     if (am.count >= ARRAY_MAP_THRESHOLD) {
-        return error.HashMapPromotionNotImplemented; // 5.5.b.2 lands the promote path
+        return try promoteArrayMap(rt, am, k, val);
     }
 
     const new_am = try rt.gc.alloc(ArrayMap);
@@ -188,7 +188,7 @@ fn assocArrayMap(rt: *Runtime, am: *const ArrayMap, k: Value, val: Value) !Value
 pub fn dissoc(rt: *Runtime, v: Value, k: Value) !Value {
     return switch (v.tag()) {
         .array_map => try dissocArrayMap(rt, v.decodePtr(*const ArrayMap), v, k),
-        .hash_map => error.HashMapNotImplemented,
+        .hash_map => try dissocHashMap(rt, v.decodePtr(*const PersistentHashMap), v, k),
         .nil => Value.nil_val,
         else => error.DissocOnNonMap,
     };
@@ -276,7 +276,11 @@ pub fn contains(v: Value, k: Value) !bool {
             }
             break :blk false;
         },
-        .hash_map => error.HashMapNotImplemented,
+        .hash_map => blk: {
+            const phm = v.decodePtr(*const PersistentHashMap);
+            const root = phm.root orelse break :blk false;
+            break :blk hamtContains(root, k, equal.valueHash(k), 0);
+        },
         .nil => false,
         else => false,
     };
@@ -288,7 +292,7 @@ pub fn contains(v: Value, k: Value) !bool {
 pub fn keys(rt: *Runtime, v: Value) !Value {
     return switch (v.tag()) {
         .array_map => try keysArrayMap(rt, v.decodePtr(*const ArrayMap)),
-        .hash_map => error.HashMapNotImplemented,
+        .hash_map => try keysHashMap(rt, v.decodePtr(*const PersistentHashMap)),
         .nil => Value.nil_val,
         else => error.KeysOnNonMap,
     };
@@ -312,7 +316,7 @@ fn keysArrayMap(rt: *Runtime, am: *const ArrayMap) !Value {
 pub fn vals(rt: *Runtime, v: Value) !Value {
     return switch (v.tag()) {
         .array_map => try valsArrayMap(rt, v.decodePtr(*const ArrayMap)),
-        .hash_map => error.HashMapNotImplemented,
+        .hash_map => try valsHashMap(rt, v.decodePtr(*const PersistentHashMap)),
         .nil => Value.nil_val,
         else => error.ValsOnNonMap,
     };
@@ -338,7 +342,7 @@ fn valsArrayMap(rt: *Runtime, am: *const ArrayMap) !Value {
 pub fn seq(rt: *Runtime, v: Value) !Value {
     return switch (v.tag()) {
         .array_map => try seqArrayMap(rt, v.decodePtr(*const ArrayMap)),
-        .hash_map => error.HashMapNotImplemented,
+        .hash_map => try seqHashMap(rt, v.decodePtr(*const PersistentHashMap)),
         .nil => Value.nil_val,
         else => error.SeqOnNonMap,
     };
@@ -371,10 +375,404 @@ pub fn get(v: Value, k: Value) !Value {
             }
             break :blk Value.nil_val;
         },
-        .hash_map => error.HashMapNotImplemented, // 5.5.b body lands
+        .hash_map => blk: {
+            const phm = v.decodePtr(*const PersistentHashMap);
+            const root = phm.root orelse break :blk Value.nil_val;
+            break :blk hamtGet(root, k, equal.valueHash(k), 0);
+        },
         .nil => Value.nil_val,
         else => Value.nil_val,
     };
+}
+
+// --- HAMT body (D-045 cycle A): CHAMP trie over `equal.valueHash` ---
+//
+// HamtMapNode.slots is a single `[64]Value` region: KV pairs are
+// front-loaded (data entry i at slots[2*i], slots[2*i+1]); child
+// pointers are back-loaded (child entry j at slots[63-j]). `data_map`
+// marks hash-buckets holding a KV pair, `node_map` marks buckets holding
+// a child — they are disjoint, so 2*popcount(data_map)+popcount(node_map)
+// <= 64 always. shift advances 5 bits/level (0,5,…,30). A full 32-bit
+// hash collision (depth exhausted past shift 30) raises
+// `error.HashCollision` (a transient stub; cycle C lands a collision
+// bucket — D-155). keys/vals/seq/dissoc on `.hash_map` still raise
+// (cycle B).
+
+const HAMT_SHIFT_STEP: u32 = 5;
+const HAMT_MAX_SHIFT: u32 = 30;
+
+inline fn hamtBit(hash_val: u32, shift: u32) u32 {
+    const idx: u5 = @intCast((hash_val >> @intCast(shift)) & 0x1F);
+    return @as(u32, 1) << idx;
+}
+
+/// Number of set bits below `bit` in `bitmap` = the entry's position in
+/// the front (data) or back (node) region.
+inline fn sparseIndex(bitmap: u32, bit: u32) u32 {
+    return @popCount(bitmap & (bit - 1));
+}
+
+fn copyHamtNode(rt: *Runtime, node: *const HamtMapNode) !*HamtMapNode {
+    const new = try rt.gc.alloc(HamtMapNode);
+    new.* = .{
+        .header = HeapHeader.init(.hamt_map_node),
+        .data_map = node.data_map,
+        .node_map = node.node_map,
+        .slots = node.slots,
+    };
+    return new;
+}
+
+/// Build a node holding two distinct keys (assoc push-down + promotion
+/// when two keys share a bucket). Raises `error.HashCollision` on a full
+/// 32-bit hash match (cycle C replaces with a collision bucket).
+fn createTwoNode(
+    rt: *Runtime,
+    k1: Value,
+    v1: Value,
+    h1: u32,
+    k2: Value,
+    v2: Value,
+    h2: u32,
+    shift: u32,
+) !*HamtMapNode {
+    if (shift > HAMT_MAX_SHIFT) return error.HashCollision;
+    const bit1 = hamtBit(h1, shift);
+    const bit2 = hamtBit(h2, shift);
+    const node = try rt.gc.alloc(HamtMapNode);
+    if (bit1 == bit2) {
+        // same bucket — one level deeper, store as a single child
+        const sub = try createTwoNode(rt, k1, v1, h1, k2, v2, h2, shift + HAMT_SHIFT_STEP);
+        node.* = .{
+            .header = HeapHeader.init(.hamt_map_node),
+            .data_map = 0,
+            .node_map = bit1,
+            .slots = @splat(Value.nil_val),
+        };
+        node.slots[63] = Value.encodeHeapPtr(.hamt_map_node, sub);
+    } else {
+        node.* = .{
+            .header = HeapHeader.init(.hamt_map_node),
+            .data_map = bit1 | bit2,
+            .node_map = 0,
+            .slots = @splat(Value.nil_val),
+        };
+        const di1 = sparseIndex(bit1 | bit2, bit1);
+        const di2 = sparseIndex(bit1 | bit2, bit2);
+        node.slots[2 * di1] = k1;
+        node.slots[2 * di1 + 1] = v1;
+        node.slots[2 * di2] = k2;
+        node.slots[2 * di2 + 1] = v2;
+    }
+    return node;
+}
+
+fn hamtGet(node: *const HamtMapNode, key: Value, hash_val: u32, shift: u32) Value {
+    const bit = hamtBit(hash_val, shift);
+    if (node.data_map & bit != 0) {
+        const di = sparseIndex(node.data_map, bit);
+        if (keyEq(node.slots[2 * di], key)) return node.slots[2 * di + 1];
+        return Value.nil_val;
+    }
+    if (node.node_map & bit != 0) {
+        const ni = sparseIndex(node.node_map, bit);
+        const child = node.slots[63 - ni].decodePtr(*const HamtMapNode);
+        return hamtGet(child, key, hash_val, shift + HAMT_SHIFT_STEP);
+    }
+    return Value.nil_val;
+}
+
+fn hamtContains(node: *const HamtMapNode, key: Value, hash_val: u32, shift: u32) bool {
+    const bit = hamtBit(hash_val, shift);
+    if (node.data_map & bit != 0) {
+        const di = sparseIndex(node.data_map, bit);
+        return keyEq(node.slots[2 * di], key);
+    }
+    if (node.node_map & bit != 0) {
+        const ni = sparseIndex(node.node_map, bit);
+        const child = node.slots[63 - ni].decodePtr(*const HamtMapNode);
+        return hamtContains(child, key, hash_val, shift + HAMT_SHIFT_STEP);
+    }
+    return false;
+}
+
+const HamtAssocResult = struct { node: *HamtMapNode, added: bool };
+
+fn hamtAssoc(
+    rt: *Runtime,
+    node: *const HamtMapNode,
+    key: Value,
+    val: Value,
+    hash_val: u32,
+    shift: u32,
+) !HamtAssocResult {
+    const bit = hamtBit(hash_val, shift);
+    if (node.data_map & bit != 0) {
+        const di = sparseIndex(node.data_map, bit);
+        const ek = node.slots[2 * di];
+        if (keyEq(ek, key)) {
+            const new = try copyHamtNode(rt, node);
+            new.slots[2 * di + 1] = val;
+            return .{ .node = new, .added = false };
+        }
+        // push-down: existing KV + new KV into a sub-node one level down
+        const ev = node.slots[2 * di + 1];
+        const sub = try createTwoNode(rt, ek, ev, equal.valueHash(ek), key, val, hash_val, shift + HAMT_SHIFT_STEP);
+        const new = try pushDownDataToNode(rt, node, bit, di, sub);
+        return .{ .node = new, .added = true };
+    }
+    if (node.node_map & bit != 0) {
+        const ni = sparseIndex(node.node_map, bit);
+        const child = node.slots[63 - ni].decodePtr(*const HamtMapNode);
+        const res = try hamtAssoc(rt, child, key, val, hash_val, shift + HAMT_SHIFT_STEP);
+        const new = try copyHamtNode(rt, node);
+        new.slots[63 - ni] = Value.encodeHeapPtr(.hamt_map_node, res.node);
+        return .{ .node = new, .added = res.added };
+    }
+    // empty bucket — insert a fresh data entry, shifting later pairs right
+    const new = try insertDataEntry(rt, node, bit, key, val);
+    return .{ .node = new, .added = true };
+}
+
+/// Copy `node` with a new data entry inserted at `bit`'s data-index,
+/// shifting the existing front pairs at or after it right by one pair.
+/// Back-loaded children keep their slots (the new bit was free, so the
+/// front never reaches the back region).
+fn insertDataEntry(rt: *Runtime, node: *const HamtMapNode, bit: u32, key: Value, val: Value) !*HamtMapNode {
+    const new = try copyHamtNode(rt, node);
+    new.data_map = node.data_map | bit;
+    const di = sparseIndex(node.data_map, bit);
+    const old_d = @popCount(node.data_map);
+    var j = old_d;
+    while (j > di) : (j -= 1) {
+        new.slots[2 * j] = new.slots[2 * (j - 1)];
+        new.slots[2 * j + 1] = new.slots[2 * (j - 1) + 1];
+    }
+    new.slots[2 * di] = key;
+    new.slots[2 * di + 1] = val;
+    return new;
+}
+
+/// Build a fresh node from `node` with the data entry at `di` removed and
+/// `sub` added as the child for `bit` (the mirror of `insertDataEntry`'s
+/// front growth — the layout changes, so this rebuilds rather than copies).
+fn pushDownDataToNode(rt: *Runtime, node: *const HamtMapNode, bit: u32, di: u32, sub: *HamtMapNode) !*HamtMapNode {
+    const new = try rt.gc.alloc(HamtMapNode);
+    new.* = .{
+        .header = HeapHeader.init(.hamt_map_node),
+        .data_map = node.data_map & ~bit,
+        .node_map = node.node_map | bit,
+        .slots = @splat(Value.nil_val),
+    };
+    const old_d = @popCount(node.data_map);
+    const old_n = @popCount(node.node_map);
+    var w: u32 = 0;
+    var r: u32 = 0;
+    while (r < old_d) : (r += 1) {
+        if (r == di) continue;
+        new.slots[2 * w] = node.slots[2 * r];
+        new.slots[2 * w + 1] = node.slots[2 * r + 1];
+        w += 1;
+    }
+    const ni = sparseIndex(node.node_map | bit, bit);
+    var j: u32 = 0;
+    while (j < ni) : (j += 1) {
+        new.slots[63 - j] = node.slots[63 - j];
+    }
+    new.slots[63 - ni] = Value.encodeHeapPtr(.hamt_map_node, sub);
+    j = ni;
+    while (j < old_n) : (j += 1) {
+        new.slots[63 - (j + 1)] = node.slots[63 - j];
+    }
+    return new;
+}
+
+/// assoc on a promoted `.hash_map`: HAMT insert/replace → fresh root +
+/// fresh PersistentHashMap (count grows only when a new key was added).
+fn assocHashMap(rt: *Runtime, phm: *const PersistentHashMap, k: Value, val: Value) !Value {
+    const res = try hamtAssoc(rt, phm.root.?, k, val, equal.valueHash(k), 0);
+    const new_phm = try rt.gc.alloc(PersistentHashMap);
+    new_phm.* = .{
+        .header = HeapHeader.init(.hash_map),
+        .count = if (res.added) phm.count + 1 else phm.count,
+        .root = res.node,
+        .meta = phm.meta,
+    };
+    return Value.encodeHeapPtr(.hash_map, new_phm);
+}
+
+/// ArrayMap at the 8-entry threshold gaining a 9th distinct key: build a
+/// HAMT root from the 8 existing pairs + the new pair, wrap in a
+/// PersistentHashMap.
+fn promoteArrayMap(rt: *Runtime, am: *const ArrayMap, k: Value, val: Value) !Value {
+    var root = try rt.gc.alloc(HamtMapNode);
+    root.* = .{
+        .header = HeapHeader.init(.hamt_map_node),
+        .data_map = 0,
+        .node_map = 0,
+        .slots = @splat(Value.nil_val),
+    };
+    var i: u32 = 0;
+    while (i < am.count) : (i += 1) {
+        const ek = am.entries[2 * i];
+        const res = try hamtAssoc(rt, root, ek, am.entries[2 * i + 1], equal.valueHash(ek), 0);
+        root = res.node;
+    }
+    const res = try hamtAssoc(rt, root, k, val, equal.valueHash(k), 0);
+    const phm = try rt.gc.alloc(PersistentHashMap);
+    phm.* = .{
+        .header = HeapHeader.init(.hash_map),
+        .count = am.count + 1,
+        .root = res.node,
+        .meta = Value.nil_val,
+    };
+    return Value.encodeHeapPtr(.hash_map, phm);
+}
+
+// --- HAMT body (D-045 cycle B): dissoc + keys/vals/seq ---
+//
+// keys/vals/seq walk the trie pre-order, materialising a list (order is
+// hash-bucket order, unspecified for a hash map — matches JVM). dissoc
+// removes the entry and prunes an emptied child, but does NOT inline a
+// single-entry sub-node back into its parent (a canonical-form
+// micro-optimisation; cw has no trie-shape-dependent operation, so a
+// non-inlined node is observationally identical — D-156). Per survey
+// DIVERGENCE 3 there is no HAMT -> ArrayMap demotion (JVM-faithful): a
+// map that dissocs back to <= 8 entries stays `.hash_map`.
+
+fn hamtKeysInto(rt: *Runtime, node: *const HamtMapNode, acc: Value) !Value {
+    var result = acc;
+    const nc = @popCount(node.node_map);
+    var j: u32 = 0;
+    while (j < nc) : (j += 1) {
+        result = try hamtKeysInto(rt, node.slots[63 - j].decodePtr(*const HamtMapNode), result);
+    }
+    var i: u32 = @popCount(node.data_map);
+    while (i > 0) {
+        i -= 1;
+        result = try list_mod.consHeap(rt, node.slots[2 * i], result);
+    }
+    return result;
+}
+
+fn hamtValsInto(rt: *Runtime, node: *const HamtMapNode, acc: Value) !Value {
+    var result = acc;
+    const nc = @popCount(node.node_map);
+    var j: u32 = 0;
+    while (j < nc) : (j += 1) {
+        result = try hamtValsInto(rt, node.slots[63 - j].decodePtr(*const HamtMapNode), result);
+    }
+    var i: u32 = @popCount(node.data_map);
+    while (i > 0) {
+        i -= 1;
+        result = try list_mod.consHeap(rt, node.slots[2 * i + 1], result);
+    }
+    return result;
+}
+
+fn hamtSeqInto(rt: *Runtime, node: *const HamtMapNode, acc: Value) !Value {
+    var result = acc;
+    const nc = @popCount(node.node_map);
+    var j: u32 = 0;
+    while (j < nc) : (j += 1) {
+        result = try hamtSeqInto(rt, node.slots[63 - j].decodePtr(*const HamtMapNode), result);
+    }
+    var i: u32 = @popCount(node.data_map);
+    while (i > 0) {
+        i -= 1;
+        var pair = vector_mod.empty();
+        pair = try vector_mod.conj(rt, pair, node.slots[2 * i]);
+        pair = try vector_mod.conj(rt, pair, node.slots[2 * i + 1]);
+        result = try list_mod.consHeap(rt, pair, result);
+    }
+    return result;
+}
+
+const HamtDissocResult = struct { node: ?*HamtMapNode, found: bool };
+
+fn hamtDissoc(rt: *Runtime, node: *const HamtMapNode, key: Value, hash_val: u32, shift: u32) !HamtDissocResult {
+    const bit = hamtBit(hash_val, shift);
+    if (node.data_map & bit != 0) {
+        const di = sparseIndex(node.data_map, bit);
+        if (!keyEq(node.slots[2 * di], key)) return .{ .node = null, .found = false };
+        const new = try removeDataEntry(rt, node, bit, di);
+        if (new.data_map == 0 and new.node_map == 0) return .{ .node = null, .found = true };
+        return .{ .node = new, .found = true };
+    }
+    if (node.node_map & bit != 0) {
+        const ni = sparseIndex(node.node_map, bit);
+        const child = node.slots[63 - ni].decodePtr(*const HamtMapNode);
+        const res = try hamtDissoc(rt, child, key, hash_val, shift + HAMT_SHIFT_STEP);
+        if (!res.found) return .{ .node = null, .found = false };
+        if (res.node) |new_child| {
+            const new = try copyHamtNode(rt, node);
+            new.slots[63 - ni] = Value.encodeHeapPtr(.hamt_map_node, new_child);
+            return .{ .node = new, .found = true };
+        }
+        // child emptied — drop the node entry
+        const new = try removeNodeEntry(rt, node, bit, ni);
+        if (new.data_map == 0 and new.node_map == 0) return .{ .node = null, .found = true };
+        return .{ .node = new, .found = true };
+    }
+    return .{ .node = null, .found = false };
+}
+
+/// Copy `node` with the data entry at `di` removed (clear `bit`, shift
+/// later front pairs left, nil the vacated slot).
+fn removeDataEntry(rt: *Runtime, node: *const HamtMapNode, bit: u32, di: u32) !*HamtMapNode {
+    const new = try copyHamtNode(rt, node);
+    new.data_map = node.data_map & ~bit;
+    const old_d = @popCount(node.data_map);
+    var j = di;
+    while (j + 1 < old_d) : (j += 1) {
+        new.slots[2 * j] = node.slots[2 * (j + 1)];
+        new.slots[2 * j + 1] = node.slots[2 * (j + 1) + 1];
+    }
+    new.slots[2 * (old_d - 1)] = Value.nil_val;
+    new.slots[2 * (old_d - 1) + 1] = Value.nil_val;
+    return new;
+}
+
+/// Copy `node` with the child entry at node-index `ni` removed (clear
+/// `bit`, shift later back children toward the back, nil the vacated slot).
+fn removeNodeEntry(rt: *Runtime, node: *const HamtMapNode, bit: u32, ni: u32) !*HamtMapNode {
+    const new = try copyHamtNode(rt, node);
+    new.node_map = node.node_map & ~bit;
+    const old_n = @popCount(node.node_map);
+    var j = ni;
+    while (j + 1 < old_n) : (j += 1) {
+        new.slots[63 - j] = node.slots[63 - (j + 1)];
+    }
+    new.slots[63 - (old_n - 1)] = Value.nil_val;
+    return new;
+}
+
+fn keysHashMap(rt: *Runtime, phm: *const PersistentHashMap) !Value {
+    const root = phm.root orelse return Value.nil_val;
+    return try hamtKeysInto(rt, root, Value.nil_val);
+}
+
+fn valsHashMap(rt: *Runtime, phm: *const PersistentHashMap) !Value {
+    const root = phm.root orelse return Value.nil_val;
+    return try hamtValsInto(rt, root, Value.nil_val);
+}
+
+fn seqHashMap(rt: *Runtime, phm: *const PersistentHashMap) !Value {
+    const root = phm.root orelse return Value.nil_val;
+    return try hamtSeqInto(rt, root, Value.nil_val);
+}
+
+fn dissocHashMap(rt: *Runtime, phm: *const PersistentHashMap, original: Value, k: Value) !Value {
+    const res = try hamtDissoc(rt, phm.root.?, k, equal.valueHash(k), 0);
+    if (!res.found) return original;
+    const new_phm = try rt.gc.alloc(PersistentHashMap);
+    new_phm.* = .{
+        .header = HeapHeader.init(.hash_map),
+        .count = phm.count - 1,
+        .root = res.node,
+        .meta = phm.meta,
+    };
+    return Value.encodeHeapPtr(.hash_map, new_phm);
 }
 
 // --- tests ---
@@ -493,18 +891,28 @@ test "assoc appends up to ARRAY_MAP_THRESHOLD = 8 entries" {
     }
 }
 
-test "assoc at threshold: 9th distinct key raises HashMapPromotionNotImplemented (5.5.b.2 lands the promote)" {
+test "assoc at threshold: 9th distinct key promotes ArrayMap -> .hash_map, all readable" {
     var fix = RuntimeFixture.init();
     defer fix.deinit();
 
     var m = empty();
     for (0..ARRAY_MAP_THRESHOLD) |i| {
-        m = try assoc(&fix.rt, m, Value.initInteger(@intCast(i)), Value.initInteger(@intCast(i)));
+        m = try assoc(&fix.rt, m, Value.initInteger(@intCast(i)), Value.initInteger(@intCast(i * 10)));
     }
-    try testing.expectError(
-        error.HashMapPromotionNotImplemented,
-        assoc(&fix.rt, m, Value.initInteger(99), Value.initInteger(99)),
-    );
+    try testing.expect(m.tag() == .array_map);
+    m = try assoc(&fix.rt, m, Value.initInteger(99), Value.initInteger(990));
+    try testing.expect(m.tag() == .hash_map);
+    try testing.expectEqual(@as(u32, 9), count(m));
+    // every key reads back through the trie
+    for (0..ARRAY_MAP_THRESHOLD) |i| {
+        try testing.expectEqual(
+            @as(i48, @intCast(i * 10)),
+            (try get(m, Value.initInteger(@intCast(i)))).asInteger(),
+        );
+    }
+    try testing.expectEqual(@as(i48, 990), (try get(m, Value.initInteger(99))).asInteger());
+    try testing.expect(try contains(m, Value.initInteger(99)));
+    try testing.expect(!try contains(m, Value.initInteger(1000)));
 }
 
 test "assoc on nil: starts from EMPTY (treats nil as empty map per Clojure)" {
@@ -622,13 +1030,92 @@ test "seq returns a list of [k v] vector pairs (nil for empty)" {
     try testing.expectEqual(@as(i48, 100), vector_mod.nth(first_pair, 1).asInteger());
 }
 
-test "get on .hash_map raises HashMapNotImplemented at 5.5.a" {
-    // Build a stub PersistentHashMap (no root) to verify the dispatch
-    // routes to the 5.5.b stub. Once 5.5.b lands, this test updates.
-    var phm: PersistentHashMap align(8) = .{
-        .header = HeapHeader.init(.hash_map),
-        .count = 0,
-    };
-    const v = Value.encodeHeapPtr(.hash_map, &phm);
-    try testing.expectError(error.HashMapNotImplemented, get(v, Value.initInteger(1)));
+test "HAMT round-trip: build 100 int keys by assoc, read every key back (corruption canary)" {
+    var fix = RuntimeFixture.init();
+    defer fix.deinit();
+
+    const N = 100;
+    var m = empty();
+    var i: i48 = 0;
+    while (i < N) : (i += 1) {
+        m = try assoc(&fix.rt, m, Value.initInteger(i), Value.initInteger(i * i));
+    }
+    try testing.expect(m.tag() == .hash_map);
+    try testing.expectEqual(@as(u32, N), count(m));
+    i = 0;
+    while (i < N) : (i += 1) {
+        try testing.expectEqual(@as(i48, i * i), (try get(m, Value.initInteger(i))).asInteger());
+        try testing.expect(try contains(m, Value.initInteger(i)));
+    }
+    try testing.expect(!try contains(m, Value.initInteger(N)));
+    try testing.expect((try get(m, Value.initInteger(N))).tag() == .nil);
+
+    // replace an existing key — count unchanged, value updated
+    m = try assoc(&fix.rt, m, Value.initInteger(50), Value.initInteger(-1));
+    try testing.expectEqual(@as(u32, N), count(m));
+    try testing.expectEqual(@as(i48, -1), (try get(m, Value.initInteger(50))).asInteger());
+
+    // insert a new key — count grows
+    m = try assoc(&fix.rt, m, Value.initInteger(12345), Value.initInteger(7));
+    try testing.expectEqual(@as(u32, N + 1), count(m));
+    try testing.expectEqual(@as(i48, 7), (try get(m, Value.initInteger(12345))).asInteger());
+}
+
+test "HAMT round-trip: string keys hash by bytes (D-151) through the trie" {
+    var fix = RuntimeFixture.init();
+    defer fix.deinit();
+
+    const string_mod = @import("string.zig");
+    var m = empty();
+    var i: usize = 0;
+    var buf: [16]u8 = undefined;
+    while (i < 30) : (i += 1) {
+        const s = try std.fmt.bufPrint(&buf, "key{d}", .{i});
+        const ks = try string_mod.alloc(&fix.rt, s);
+        m = try assoc(&fix.rt, m, ks, Value.initInteger(@intCast(i)));
+    }
+    try testing.expect(m.tag() == .hash_map);
+    try testing.expectEqual(@as(u32, 30), count(m));
+    // look up with a FRESH String Value (distinct pointer, equal bytes)
+    const probe = try string_mod.alloc(&fix.rt, "key17");
+    try testing.expectEqual(@as(i48, 17), (try get(m, probe)).asInteger());
+    try testing.expect(try contains(m, probe));
+    const miss = try string_mod.alloc(&fix.rt, "key99");
+    try testing.expect((try get(m, miss)).tag() == .nil);
+}
+
+test "HAMT dissoc: remove half of 60 keys, survivors intact, count tracks (no leak)" {
+    var fix = RuntimeFixture.init();
+    defer fix.deinit();
+
+    const N = 60;
+    var m = empty();
+    var i: i48 = 0;
+    while (i < N) : (i += 1) {
+        m = try assoc(&fix.rt, m, Value.initInteger(i), Value.initInteger(i + 1000));
+    }
+    // dissoc every even key
+    i = 0;
+    while (i < N) : (i += 2) {
+        m = try dissoc(&fix.rt, m, Value.initInteger(i));
+    }
+    try testing.expectEqual(@as(u32, N / 2), count(m));
+    try testing.expect(m.tag() == .hash_map); // no demotion (survey DIVERGENCE 3)
+    i = 0;
+    while (i < N) : (i += 1) {
+        if (@mod(i, 2) == 0) {
+            try testing.expect((try get(m, Value.initInteger(i))).tag() == .nil);
+            try testing.expect(!try contains(m, Value.initInteger(i)));
+        } else {
+            try testing.expectEqual(@as(i48, i + 1000), (try get(m, Value.initInteger(i))).asInteger());
+        }
+    }
+    // dissoc an absent key returns the same map unchanged
+    const before = m;
+    m = try dissoc(&fix.rt, m, Value.initInteger(9999));
+    try testing.expectEqual(@intFromEnum(before), @intFromEnum(m));
+    // keys/vals/seq materialise the right number of entries
+    try testing.expectEqual(@as(u32, N / 2), list_mod.countOf(try keys(&fix.rt, m)));
+    try testing.expectEqual(@as(u32, N / 2), list_mod.countOf(try vals(&fix.rt, m)));
+    try testing.expectEqual(@as(u32, N / 2), list_mod.countOf(try seq(&fix.rt, m)));
 }

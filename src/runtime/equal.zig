@@ -26,6 +26,7 @@ const Runtime = @import("runtime.zig").Runtime;
 const Env = @import("env.zig").Env;
 const lazy_seq = @import("lazy_seq.zig");
 const string_mod = @import("collection/string.zig");
+const hash = @import("hash.zig");
 const vector = @import("collection/vector.zig");
 const list = @import("collection/list.zig");
 const map = @import("collection/map.zig");
@@ -186,6 +187,25 @@ pub fn keyEqValue(a: Value, b: Value) bool {
     if (a.tag() == .string and b.tag() == .string)
         return std.mem.eql(u8, string_mod.asString(a), string_mod.asString(b));
     return false;
+}
+
+/// HAMT key hash — the hash partner of `keyEqValue`. MUST satisfy
+/// `keyEqValue(a,b) ⇒ valueHash(a) == valueHash(b)`. Since `keyEqValue`
+/// is bit-identity OR (string AND byte-equal), the ONLY branch needing
+/// care is `.string`: two distinct String Values with equal bytes are
+/// key-equal, so strings hash by BYTES, never by pointer. Every other
+/// key is bit-identity-compared, so hashing the raw NaN-box bits is
+/// contract-consistent. int/float use the JVM-shaped numeric hash so
+/// `{1 :a}` and `1.0` stay distinct (their bits already differ in
+/// `keyEqValue`). nil → 0.
+pub fn valueHash(v: Value) u32 {
+    return switch (v.tag()) {
+        .string => hash.hashString(string_mod.asString(v)),
+        .integer => hash.hashLong(@as(i64, v.asInteger())),
+        .float => hash.hashLong(@bitCast(v.asFloat())),
+        .nil => 0,
+        else => hash.hashLong(@bitCast(@intFromEnum(v))),
+    };
 }
 
 /// `(= a b)` semantics. See module docstring + ADR-0052.

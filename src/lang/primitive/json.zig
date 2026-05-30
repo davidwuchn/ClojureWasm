@@ -94,9 +94,6 @@ fn jsonToCw(rt: *Runtime, jv: std.json.Value, loc: SourceLocation) anyerror!Valu
                 const k = try string_collection.alloc(rt, entry.key_ptr.*);
                 const v = try jsonToCw(rt, entry.value_ptr.*, loc);
                 out = map_collection.assoc(rt, out, k, v) catch |err| switch (err) {
-                    error.HashMapNotImplemented, error.HashMapPromotionNotImplemented => return error_catalog.raise(.feature_not_supported, loc, .{
-                        .name = "JSON object beyond ArrayMap capacity (HAMT pending D-045)",
-                    }),
                     error.AssocOnNonMap => unreachable,
                     else => |e| return e,
                 };
