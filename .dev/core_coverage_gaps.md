@@ -74,10 +74,15 @@ Caveat: the static var-set extraction has minor false-positives (e.g.
     (the per-type `meta` field already existed; ArrayMap gained one; ops preserve meta) — substantially
     discharges D-075. Residuals: clojure.set project/rename wrap-restoration (live PROVISIONAL markers —
     a clean next follow-up now that with-meta exists), symbol meta, alter-meta!/reset-meta!, reader `^`.
-  - **next (pick by ROI/tractability)**: clojure.set wrap-restoration (small, closes 2 PROVISIONAL +
-    fully discharges D-075); `bigint`/`bigdec` (numeric coerce → Managed → big_int.allocFromManaged);
-    **sorted-map/sorted-set** (new tree — heap_tag C14/C15 reserved); **transducers** (big);
-    `isa?`/hierarchy + `resolve`/ns introspection (P2).
+  - **DONE**: clojure.set project/rename meta-wrap restored (4b3cee2e) → D-075 fully discharged bar
+    symbol meta / alter-meta! / reset-meta! / reader `^`.
+  - **next (reordered by ROI 2026-05-30)**: the high-ROI items deserve a fresh turn + Step-0 survey:
+    **transducers** (transduce/sequence/eduction/completing/cat + comp-of-xforms — HIGH ROI in modern
+    Clojure, BIG: transducer protocol over the existing reduce/reduced) and **sorted-map/sorted-set**
+    (HIGH ROI, new tree — heap_tag C14/C15 reserved, like the HAMT cycle). MEDIUM fill-ins:
+    `isa?`/hierarchy (multimethod hierarchy structure), `resolve`/ns introspection (needs a first-class
+    var Value — check), `bigint`/`bigdec`/`biginteger` (LOW-med ROI + fiddly: 5 coerce arms + the
+    big_int/big_decimal string parsers nLiteral/parseBigDecimalLiteral — deprioritized).
   - **also found**: `(sort cmp coll)` comparator-arg = D-159; regex capture groups; `resolve` missing.
 - **New gaps found while sweeping** (not yet chased): `(sort cmp coll)` with a 2-arg COMPARATOR fn
   errors — cljw `sort`'s 2-arg form treats the fn as a 1-arg key-fn, not a comparator (= **D-159**);
