@@ -138,6 +138,15 @@
               ret (reduce rf init coll)]
           (rf (unreduced ret))))))
 
+;; `(into to from)` conj every item of `from` onto `to`; `(into to xform
+;; from)` does so through the transducer `xform`. Defined here (Layer 2)
+;; over reduce/transduce — supersedes the rt/into eager primitive (which
+;; had no other Zig callers). `conj`'s 1-arg completion arity makes the
+;; bare-`conj` reducing fn work for the transduce path.
+(def into
+  (fn* ([to from] (reduce conj to from))
+       ([to xform from] (transduce xform conj to from))))
+
 ;; ----------------------------------------------------------------
 ;; Pure Clojure HOF (no Zig leaf) — pattern A per ADR-0033 D3.
 ;; ----------------------------------------------------------------

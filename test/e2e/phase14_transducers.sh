@@ -33,4 +33,13 @@ assert_eq 'td_keep'     "$("$BIN" -e '(transduce (keep (fn [x] (if (even? x) x n
 assert_eq 'lazy_map'    "$("$BIN" -e '(into [] (map inc [1 2 3]))')"           '[2 3 4]'
 assert_eq 'lazy_filter' "$("$BIN" -e '(into [] (filter even? [1 2 3 4]))')"    '[2 4]'
 assert_eq 'lazy_inf'    "$("$BIN" -e '(first (map inc (iterate inc 0)))')"     '1'
-echo "OK — phase14_transducers (17 cases, cycles 1-2) green"
+# cycle 3a: conj 0/1/variadic arities + 3-arg into (transducer-aware)
+assert_eq 'conj_0'      "$("$BIN" -e '(conj)')"                               '[]'
+assert_eq 'conj_1'      "$("$BIN" -e '(conj [1 2])')"                         '[1 2]'
+assert_eq 'conj_vararg' "$("$BIN" -e '(conj [1] 2 3 4)')"                     '[1 2 3 4]'
+assert_eq 'into2_vec'   "$("$BIN" -e '(into [] [1 2 3])')"                     '[1 2 3]'
+assert_eq 'into2_map'   "$("$BIN" -e '(into {} [[:a 1] [:b 2]])')"            '{:a 1, :b 2}'
+assert_eq 'into3_map'   "$("$BIN" -e '(into [] (map inc) [1 2 3])')"          '[2 3 4]'
+assert_eq 'into3_comp'  "$("$BIN" -e '(into [] (comp (filter even?) (map inc)) [1 2 3 4])')" '[3 5]'
+assert_eq 'into3_set'   "$("$BIN" -e '(into #{} (map inc) [1 1 2 3])')"       '#{2 3 4}'
+echo "OK — phase14_transducers (25 cases, cycles 1-3a) green"

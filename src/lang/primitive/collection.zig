@@ -64,9 +64,19 @@ const keyword_mod = @import("../../runtime/keyword.zig");
 /// JVM reference: clojure.lang.RT.conj
 /// cw v1 tier: A (Phase 6.16.a-2)
 pub fn conjFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
-    try error_catalog.checkArity("conj", args, 2, loc);
-    const coll = args[0];
-    const x = args[1];
+    // Clojure conj is variadic: `(conj)` → [], `(conj coll)` → coll,
+    // `(conj coll x y …)` → conj each. The 0/1-arg arities are what a
+    // bare-`conj` reducing fn (transducer completion / init) relies on.
+    if (args.len == 0) return vector.empty();
+    var acc = args[0];
+    var i: usize = 1;
+    while (i < args.len) : (i += 1) {
+        acc = try conjOne(rt, env, acc, args[i], loc);
+    }
+    return acc;
+}
+
+fn conjOne(rt: *Runtime, env: *Env, coll: Value, x: Value, loc: SourceLocation) anyerror!Value {
     if (coll.isNil()) return try list.consHeap(rt, x, .nil_val);
     return switch (coll.tag()) {
         .vector => try vector.conj(rt, coll, x),
@@ -83,7 +93,7 @@ pub fn conjFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation)
             // reified_instance / native-Tag receivers via the row 7.3
             // per-Tag descriptor registry.
             var cs: dispatch.CallSite = .{};
-            break :blk try dispatch.dispatch(rt, env, &cs, coll, "IPersistentCollection", "-cons", args, loc);
+            break :blk try dispatch.dispatch(rt, env, &cs, coll, "IPersistentCollection", "-cons", &.{ coll, x }, loc);
         },
     };
 }

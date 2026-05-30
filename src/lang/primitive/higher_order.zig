@@ -37,7 +37,6 @@ const dispatch = @import("../../runtime/dispatch.zig");
 
 const reduced = @import("../../runtime/collection/reduced.zig");
 const sequence = @import("sequence.zig");
-const collection = @import("collection.zig");
 const tree_walk = @import("../../eval/backend/tree_walk.zig");
 
 // --- apply ---
@@ -203,27 +202,10 @@ pub fn reduceFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocatio
     return acc;
 }
 
-// --- into ---
-
-/// Implements clojure.core/into (2-arg eager form).
-/// Spec: `(into to from)` — `(reduce conj to from)`.
-/// JVM reference: clojure.core/into
-/// cw v1 tier: A (Phase 6.16.a-3.1, 2-arg eager only;
-/// 3-arg `(into to xform from)` transducer-aware form lands at .a-3.2
-/// when xform protocol formal registration completes)
-pub fn intoFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
-    try error_catalog.checkArity("into", args, 2, loc);
-    const to = args[0];
-    const from = args[1];
-    var acc: Value = to;
-    var cur = try sequence.seqFn(rt, env, &.{from}, loc);
-    while (!cur.isNil()) {
-        const elt = try sequence.firstFn(rt, env, &.{cur}, loc);
-        acc = try collection.conjFn(rt, env, &.{ acc, elt }, loc);
-        cur = try sequence.nextFn(rt, env, &.{cur}, loc);
-    }
-    return acc;
-}
+// `into` moved to core.clj (Layer 2) as a multi-arity def over
+// reduce/transduce — it gained the 3-arg `(into to xform from)`
+// transducer form, which the Zig 2-arg primitive could not host. No
+// other Zig code called the primitive, so it is fully retired here.
 
 // --- every? ---
 
@@ -351,7 +333,6 @@ const Entry = struct {
 const ENTRIES = [_]Entry{
     .{ .name = "apply", .f = &applyFn },
     .{ .name = "reduce", .f = &reduceFn },
-    .{ .name = "into", .f = &intoFn },
     .{ .name = "every?", .f = &everyQFn },
     .{ .name = "some", .f = &someFn },
     .{ .name = "some?", .f = &someQFn },
