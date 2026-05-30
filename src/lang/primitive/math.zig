@@ -26,7 +26,6 @@ const equal = @import("../../runtime/equal.zig");
 const compare_mod = @import("../../runtime/compare.zig");
 const random_mod = @import("../../runtime/random.zig");
 const ratio_mod = @import("../../runtime/numeric/ratio.zig");
-const big_int_mod = @import("../../runtime/numeric/big_int.zig");
 const string_mod = @import("../../runtime/collection/string.zig");
 
 // --- numeric helpers ---

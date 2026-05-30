@@ -40,8 +40,10 @@ So: **batch additive, gate shared-code.**
   content — not a diff vs HEAD — makes the fingerprint independent of HEAD
   position and of staging, so it still matches after `git add` and survives
   a `git add && git commit` batched into one shell command.
-- **`test/run_all.sh`** — on a full green gate writes that fingerprint to
-  `.dev/.gate_pass` (gitignored).
+- **`test/run_all.sh`** — on a full green gate (no `--only`/`--skip`) writes
+  that fingerprint to `.dev/.gate_pass` AND clears the batch counter
+  `.dev/.gate_cadence` to 0 (both gitignored): a full green gate validates
+  everything up to now, so the additive batch restarts.
 - **`scripts/check_gate_cadence.sh`** — PreToolUse hook on `git commit`.
   Classifies the change from **`git diff HEAD` + an untracked listing**
   (NOT `git diff --cached`): a PreToolUse hook fires *before* the command,
@@ -71,9 +73,10 @@ beside an unrelated commit.
 
 - Additive coverage sprint: edit → fast smoke (`zig build` + `cljw -e`
   + the new e2e) → commit. Up to 5 such commits ride without the full
-  gate. Run `bash test/run_all.sh` on the 5th (or whenever convenient)
-  to reset the batch — the commit whose state the gate verified is
-  authorised and the counter zeroes.
+  gate. Run `bash test/run_all.sh` on the 5th (or whenever convenient) —
+  a full green gate clears the batch counter, so the next 5 additive
+  commits ride again. (A subsequent commit whose exact content the gate
+  verified is also authorised as "fresh" and zeroes the counter.)
 - Shared-code change: edit → `bash test/run_all.sh` → commit (the gate
   stamped `.dev/.gate_pass` for this state, so the commit is authorised).
 

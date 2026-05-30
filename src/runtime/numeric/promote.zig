@@ -78,9 +78,11 @@ fn wrapI64(rt: *Runtime, x: i64) !Value {
 /// hold a Managed (e.g. the ratio numerator/denominator accessors), so a
 /// small numerator prints as `3`, not `3N`.
 pub fn wrapManaged(rt: *Runtime, m: *const Managed) !Value {
-    if (m.toInt(i64)) |x| {
+    // `toInt` errors when the value exceeds i64; `catch null` folds that into
+    // "doesn't fit a Long" so the BigInt path below handles it.
+    if (m.toInt(i64) catch null) |x| {
         if (inI48(x)) return Value.initInteger(x);
-    } else |_| {}
+    }
     return try big_int.allocFromManaged(rt, m);
 }
 

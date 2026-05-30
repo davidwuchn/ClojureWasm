@@ -426,13 +426,14 @@ fi
 flush_e2e_queue
 
 if print_summary; then
-    # On a FULL green gate (no --only / --skip), record the verified
-    # source-state fingerprint so scripts/check_gate_cadence.sh can
-    # authorise the matching commit and reset the additive batch counter
-    # (.claude/rules/gate_cadence.md). A partial run must not stamp a
-    # full-gate pass.
+    # On a FULL green gate (no --only / --skip): (1) record the verified
+    # source-state fingerprint so scripts/check_gate_cadence.sh can authorise
+    # the matching commit, and (2) clear the additive batch counter — a full
+    # green gate validates everything up to now, so the batch restarts
+    # (.claude/rules/gate_cadence.md). A partial run must not stamp either.
     if [[ -z "$ONLY_STEPS" && -z "$SKIP_STEPS" ]]; then
         bash scripts/gate_state_hash.sh > .dev/.gate_pass 2>/dev/null || true
+        echo 0 > .dev/.gate_cadence 2>/dev/null || true
     fi
 else
     exit 1
