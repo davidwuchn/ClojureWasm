@@ -25,8 +25,8 @@ BIN="zig-out/bin/cljw"
 
 fail() { echo "FAIL $1" >&2; exit 1; }
 # Each top-level form's value is printed; the assertion checks the
-# LAST line so the `defmacro` itself (which prints `#<var_ref>`) does
-# not have to be filtered separately.
+# LAST line so the `defmacro` itself (which prints the var-quote form
+# `#'ns/name`) does not have to be filtered separately.
 last_line() { tail -n 1; }
 assert_eq() {
     local name="$1"; local got="$2"; local want="$3"

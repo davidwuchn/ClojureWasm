@@ -261,9 +261,10 @@ got=$("$BIN" - <<'EOF' 2>&1
 (f 2)
 EOF
 ) || fail "defn macro: non-zero exit"
-# Each top-level form prints; `def` evaluates to a var_ref Value, so the
-# first line is `#<var_ref>` and the second is the call result.
-[[ "$got" == $'#<var_ref>\n3' ]] || fail "defn macro: want '#<var_ref>\\n3', got '$got'"
+# Each top-level form prints; `defn` evaluates to the var, which renders
+# as the var-quote form `#'user/f` (ADR-0059 sibling: var_ref print arm),
+# and the second line is the call result.
+[[ "$got" == $'#\'user/f\n3' ]] || fail "defn macro: want '#'\''user/f\\n3', got '$got'"
 echo "    ✓ (defn f [x] (+ x 1)) (f 2) → 3"
 
 # --- Case 30: defn handles multi-form bodies via implicit do ---
@@ -272,7 +273,7 @@ got=$("$BIN" - <<'EOF' 2>&1
 (g 5)
 EOF
 ) || fail "defn multi-body: non-zero exit"
-[[ "$got" == $'#<var_ref>\n105' ]] || fail "defn multi-body: want last form value, got '$got'"
+[[ "$got" == $'#\'user/g\n105' ]] || fail "defn multi-body: want last form value, got '$got'"
 echo "    ✓ (defn g [x] (+ x 10) (+ x 100)) → last body wins (105)"
 
 echo

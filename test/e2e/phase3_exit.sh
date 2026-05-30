@@ -56,16 +56,16 @@ run_case() {
 echo "==> Phase-3 exit criteria"
 
 # --- Exit 1: `defn` lowering + top-level fn call ---
-# Two top-level forms; `def` evaluates to the var_ref, then the call
-# yields the integer.
+# Two top-level forms; `defn` evaluates to the var, rendered as the
+# var-quote form `#'user/f`, then the call yields the integer.
 got=$("$BIN" - <<'EOF' 2>&1
 (defn f [x] (+ x 1))
 (f 2)
 EOF
 ) || { echo "✗ defn exit: cljw exited non-zero" >&2; echo "  output: $got" >&2; exit 1; }
-if [[ "$got" != $'#<var_ref>\n3' ]]; then
+if [[ "$got" != $'#\'user/f\n3' ]]; then
     echo "✗ defn exit form" >&2
-    echo "  want: '#<var_ref>\\n3'" >&2
+    echo "  want: '#'\''user/f\\n3'" >&2
     echo "  got:  '$got'" >&2
     exit 1
 fi

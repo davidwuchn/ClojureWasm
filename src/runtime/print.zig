@@ -206,6 +206,7 @@ pub fn printValue(w: *Writer, v: Value) Writer.Error!void {
         .big_decimal => try printBigDecimal(w, v),
         .typed_instance => try printTypedInstance(w, v),
         .type_descriptor => try printTypeDescriptor(w, v),
+        .var_ref => try printVarRef(w, v),
         else => |t| try w.print("#<{s}>", .{@tagName(t)}),
     }
 }
@@ -294,6 +295,14 @@ fn printTypeDescriptor(w: *Writer, v: Value) Writer.Error!void {
     } else {
         try w.writeAll("#<type>");
     }
+}
+
+/// Render a `.var_ref` Value (what `(def x ..)` / `(defn ..)` / `resolve`
+/// yield) as Clojure's var-quote form `#'ns/name`, reading the owning
+/// namespace + symbol name off the Var.
+fn printVarRef(w: *Writer, v: Value) Writer.Error!void {
+    const var_ptr = v.decodePtr(*const env_mod.Var);
+    try w.print("#'{s}/{s}", .{ var_ptr.ns.name, var_ptr.name });
 }
 
 /// Render an `ex-info` Value in `#error{ :message "..." :data ... }`
