@@ -831,3 +831,20 @@
 (defprotocol IPersistentMap (-without [m k]) (-keys [m]) (-vals [m]))
 (defprotocol IPersistentSet (-disjoin [s k]))
 
+;; `(memoize f)` returns a cached version of f: each distinct argument
+;; tuple computes f once, then returns the stored result. Keys the
+;; atom-backed cache by `(vec args)` — vectors compare by value (D-092),
+;; and the captured `cache` atom is shared by reference across calls so
+;; swap! mutations persist despite snapshot closure capture. Defined at
+;; the end of core.clj so `vec` / `contains?` / `get` / `assoc` (earlier
+;; defns) are all resolvable (core.clj is analysed top-to-bottom).
+(def memoize
+  (fn* [f]
+    (let* [cache (atom {})]
+      (fn* [& args]
+        (let* [k (vec args)]
+          (if (contains? (deref cache) k)
+            (get (deref cache) k)
+            (let* [v (apply f args)]
+              (do (swap! cache assoc k v) v))))))))
+
