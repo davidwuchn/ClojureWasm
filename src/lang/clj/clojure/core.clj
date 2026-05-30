@@ -1057,3 +1057,76 @@
   (fn* [obj f & args]
     (with-meta obj (apply f (meta obj) args))))
 
+;; ----------------------------------------------------------------
+;; Ad-hoc hierarchies — make-hierarchy / derive / underive / isa? /
+;; parents / ancestors / descendants over a global hierarchy.
+;; DIVERGENCE: cljw has no JVM Class, so clojure.core's class? branches
+;; are dropped (keyword / symbol / vector tags only). The global
+;; hierarchy is an atom (cljw has no alter-var-root). derive is lenient
+;; on namespacing (clojure.core asserts namespaced tags). Map entries are
+;; [k v] vectors → nth for key/val.
+;; ----------------------------------------------------------------
+
+(def make-hierarchy
+  (fn* [] {:parents {} :descendants {} :ancestors {}}))
+
+(def -global-hierarchy (atom (make-hierarchy)))
+
+;; Propagate a target relationship across source and source's sources.
+(def -derive-tf
+  (fn* [m source sources target targets]
+    (reduce (fn* [ret k]
+              (assoc ret k (reduce conj (get targets k #{}) (cons target (get targets target)))))
+            m (cons source (get sources source)))))
+
+(def derive
+  (fn* ([tag parent] (swap! -global-hierarchy derive tag parent) nil)
+       ([h tag parent]
+        (let [tp (:parents h) td (:descendants h) ta (:ancestors h)]
+          (if (contains? (get tp tag) parent)
+            h
+            (if (contains? (get ta tag) parent)
+              (throw (ex-info (str tag " already has " parent " as ancestor") {}))
+              (if (contains? (get ta parent) tag)
+                (throw (ex-info (str "Cyclic derivation: " parent " has " tag " as ancestor") {}))
+                {:parents (assoc tp tag (conj (get tp tag #{}) parent))
+                 :ancestors (-derive-tf ta tag td parent ta)
+                 :descendants (-derive-tf td parent ta tag td)})))))))
+
+(def isa?
+  (fn* ([child parent] (isa? (deref -global-hierarchy) child parent))
+       ([h child parent]
+        (or (= child parent)
+            (contains? (get (:ancestors h) child) parent)
+            (and (vector? parent) (vector? child)
+                 (= (count parent) (count child))
+                 (loop [ret true i 0]
+                   (if (or (not ret) (= i (count parent)))
+                     ret
+                     (recur (isa? h (nth child i) (nth parent i)) (inc i)))))))))
+
+(def parents
+  (fn* ([tag] (parents (deref -global-hierarchy) tag))
+       ([h tag] (not-empty (get (:parents h) tag)))))
+
+(def ancestors
+  (fn* ([tag] (ancestors (deref -global-hierarchy) tag))
+       ([h tag] (not-empty (get (:ancestors h) tag)))))
+
+(def descendants
+  (fn* ([tag] (descendants (deref -global-hierarchy) tag))
+       ([h tag] (not-empty (get (:descendants h) tag)))))
+
+(def underive
+  (fn* ([tag parent] (swap! -global-hierarchy underive tag parent) nil)
+       ([h tag parent]
+        (let [pm (:parents h)
+              cps (if (get pm tag) (disj (get pm tag) parent) #{})
+              new-parents (if (not-empty cps) (assoc pm tag cps) (dissoc pm tag))
+              deriv-seq (flatten (map (fn* [e] (cons (nth e 0) (interpose (nth e 0) (nth e 1))))
+                                      (seq new-parents)))]
+          (if (contains? (get pm tag) parent)
+            (reduce (fn* [hh pr] (derive hh (nth pr 0) (nth pr 1)))
+                    (make-hierarchy) (partition 2 deriv-seq))
+            h)))))
+
