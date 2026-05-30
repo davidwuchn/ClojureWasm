@@ -10,37 +10,40 @@
   before optimization complexity (no premature JIT/superinstruction). Work
   **corpus-driven**, not AI-probed. Keep strong cross-session state. Clone /
   copy liberally. Fully autonomous; flexible replanning encouraged.
-- **First commit on resume MUST be**: continue the **corpus-style robustness
-  sweep** driven by [`.dev/core_coverage_gaps.md`](core_coverage_gaps.md) —
-  probe common `clojure.core` ops on large / edge inputs (`cljw -e`) to surface
-  crashes + wrong answers (the sweep already found 3 segfaults + several gaps;
-  see the gap-map's CRASH FIXES + GAPS sections). When the sweep quiets, take
-  the remaining gap-map structural items in order: **isa?/hierarchy** →
-  **resolve / ns-introspection** (needs first-class var Value) → **trampoline**
-  → bigint/bigdec (deprioritized) → **letfn** (surveyed:
-  `private/notes/phaseA26-letfn-survey.md`). Always `cljw -e`-probe a gap before
-  implementing. Do NOT ask (Direction-ask smell).
+- **First commit on resume MUST be**: take the next remaining feature gap from
+  [`.dev/core_coverage_gaps.md`](core_coverage_gaps.md). The corpus robustness
+  sweep is done for the common surface (6 batches — crash class CLOSED;
+  destructuring/nil-punning/threading/coercion all validated). Remaining gaps,
+  in rough priority: **`eval`** (needs a Value→Node/Form path — analyzer works
+  on Forms, not runtime Values), **`type`/`class`** (needs a cljw
+  type-representation design decision — no JVM Class), regex **capture groups**
+  (regex cycle 3, currently `not_implemented`), **resolve / ns-introspection**
+  (needs first-class var Value), **D-161** (wire defmulti dispatch to the
+  global hierarchy via isa? — a focused Layer-0 unit, plan in the debt row).
+  Cheap parallel: keep running `cljw -e` sweep batches on unswept surface.
+  Always probe before implementing. Do NOT ask (Direction-ask smell).
 - **Forbidden this session**: re-opening anything landed this session (sorted
-  collections, transducers cycles 1-5, D-159 sort-comparator, the range/sort/
-  interleave crash fixes, mapv multi-coll, nested-lazy print) or earlier (AOT,
-  ratio-arith, HAMT, keyword/data-as-IFn, atoms). Optimization work (JIT /
-  superinstruction) — functional completeness first. Flipping
-  `phase_at_least_14` / tagging v0.1.0 (release HELD).
+  collections, transducers 1-5, D-159, the range/sort/interleave/zipmap crash
+  fixes, dedupe/distinct O(n²) fix, mapv/fnil arities, nested-lazy print,
+  ad-hoc hierarchies, re-seq, read-string) or earlier (AOT, ratio-arith, HAMT,
+  keyword/data-as-IFn, atoms). Optimization work (JIT / superinstruction) —
+  functional completeness first. Flipping `phase_at_least_14` / v0.1.0 (HELD).
 
 ## Current state
 
-Mac gate **166/166** green, **~55s** (parallel e2e pool; `SERIAL_STEPS`
-serial). Gate cadence mechanically enforced (additive ≤5; shared-code gates
-every time; `.dev/.gate_pass` content-hash). AOT-bootstrap LIVE (ADR-0056).
-Landed this session (git log is the SSOT): **sorted collections** fully
-complete (ADR-0057 persistent LLRB — build/get/contains/count/keys/vals/seq/
-assoc/conj/LLRB-delete/`-by` comparators/rseq/reversible?/subseq/rsubseq +
-print + IFn + GC); **transducers core-complete** (`reduced` surface + every
-stateless/stateful arity + cat + completing/transduce/3-arg-into + halt-when;
-`sequence`/`eduction` deferred = D-160); **D-159** sort/sort-by comparators;
-**3 crash fixes** (range / sort / interleave stack overflows → loop/recur);
-**mapv** multi-coll; **nested-lazy print** (deepRealize — partition-by/split-at
-render `(…)` not `#<lazy_seq>`).
+Mac gate **168/168** green (parallel e2e pool; `SERIAL_STEPS` serial). Gate
+cadence mechanically enforced (additive ≤5; shared-code gates every time;
+`.dev/.gate_pass` content-hash). AOT-bootstrap LIVE (ADR-0056). Landed this
+session (git log is the SSOT): **sorted collections** complete (ADR-0057 LLRB —
+build/read/delete/`-by`/rseq/reversible?/subseq/rsubseq + print/IFn/GC);
+**transducers core-complete** (reduced surface + all arities + cat + completing/
+transduce/3-arg-into + halt-when; `sequence`/`eduction` = D-160); **D-159**
+sort/sort-by comparators; **4 crash fixes** (range/sort/interleave/zipmap stack
+overflows → loop/recur — class CLOSED via systematic probe); **dedupe/distinct**
+O(n²)→O(n) (transducer delegation); **mapv** multi-coll + **fnil** 2/3-default;
+**nested-lazy print** (deepRealize); **ad-hoc hierarchies** (isa?/derive/…,
+atom-backed, class? branches dropped); **re-seq** (+ re-find-from); **read-string**
+(core==edn, no eval-reader).
 
 ## Next milestone (F-010 M = Phase 15 完遂 + cw-v0-level JIT)
 
