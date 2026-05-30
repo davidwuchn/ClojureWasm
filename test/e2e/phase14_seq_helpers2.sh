@@ -27,7 +27,14 @@ assert_eq 'interpose'    "$("$BIN" -e '(into [] (interpose :s [1 2 3]))')"    '[
 assert_eq 'interpose_one' "$("$BIN" -e '(into [] (interpose :s [1]))')"       '[1]'
 assert_eq 'fnil_nil'     "$("$BIN" -e '((fnil inc 0) nil)')"                  '1'
 assert_eq 'fnil_val'     "$("$BIN" -e '((fnil inc 0) 5)')"                    '6'
+# fnil 2/3-default arities + variadic-pass-through (was 1-default, 1-arg only)
+assert_eq 'fnil_2def'    "$("$BIN" -e '((fnil + 0 0) nil nil)')"             '0'
+assert_eq 'fnil_2mix'    "$("$BIN" -e '((fnil + 10 20) nil 5)')"            '15'
+assert_eq 'fnil_trail'   "$("$BIN" -e '((fnil + 0) nil 1 2 3)')"            '6'
 assert_eq 'zipmap'       "$("$BIN" -e '(get (zipmap [:a :b] [1 2]) :b)')"     '2'
+# zipmap: dup keys last-wins (Clojure semantics) + no stack overflow at scale
+assert_eq 'zipmap_dup'   "$("$BIN" -e '(zipmap [:a :a] [1 2])')"            '{:a 2}'
+assert_eq 'zipmap_large' "$("$BIN" -e '(count (zipmap (range 5000) (range 5000)))')" '5000'
 assert_eq 'interleave'   "$("$BIN" -e '(into [] (interleave [1 2] [:a :b]))')" '[1 :a 2 :b]'
 assert_eq 'interleave_unequal' "$("$BIN" -e '(into [] (interleave [1 2 3] [:a :b]))')" '[1 :a 2 :b]'
 # large interleave must not blow the stack (loop/recur, was non-tail recursion)

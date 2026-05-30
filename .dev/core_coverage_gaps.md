@@ -61,12 +61,17 @@ Caveat: the static var-set extraction has minor false-positives (e.g.
 - **CRASH FIXES — eager non-TCO recursion class (found via testing 2026-05-30, all FIXED)**: `(range N)`
   N≳100k, `(sort coll)` ≳5k, and `(interleave a b)` ≳1k each **segfaulted** — non-TCO recursion
   (`-range-acc` fn-deep; `-merge-sorted` + `interleave` non-tail `(into [..] (SELF …))`). All rewritten
-  with `loop`/`recur` (constant-stack). **Class audit now THOROUGH** (public fns too, not just `-`
-  helpers): probed take-while/take-nth/partition-by/range-step/tree-seq at 5-10k — all lazy-seq-wrapped
-  (safe); `-msort` log-depth (safe). interleave was the last offender.
-- **GAPS found in the robustness sweep (not crashes, not yet fixed)**: `mapv` is single-coll only
-  (`(mapv + [1 2] [3 4])` → arity_error; Clojure mapv is multi-coll); `interleave`/`mapv` lack the
-  variadic N-coll arity. Lower priority than crashes; chase opportunistically.
+  with `loop`/`recur` (constant-stack). A 4th — `zipmap` (`(assoc (zipmap (rest…)…) …)`) — was caught
+  by a SYSTEMATIC large-input probe of every coll-fn; fixed with loop/recur (also corrected a latent
+  dup-key bug: now last-wins per Clojure). The systematic probe found NO other crashes → crash class
+  CLOSED. (Safe: take-while/take-nth/partition-by/range/tree-seq lazy-seq-wrapped; -msort log-depth.)
+- **PERF (O(n²)) found + FIXED in the sweep**: `dedupe` (`(last acc)` per step) and `distinct`
+  (linear `some` scan per element) coll arities timed out at ~5000 → both now delegate to their O(n)
+  cycle-4 transducer (`(into [] (dedupe)/(distinct) coll)`). (`reductions` is still O(n²) via `(last
+  acc)` — noted, lower priority.)
+- **GAPS found + FIXED**: `mapv` multi-coll; `fnil` 2/3-default + variadic-pass-through (was 1-default,
+  1-arg-only). **Still open (low priority)**: `interleave`/`mapv` N-coll variadic; lazy-as-map-value
+  still prints `#<lazy_seq>` (deepRealize covers seq family only).
 - **trampoline** — core.clj defn (loop on fn results).
 
 ### P2 — type / hierarchy / var+ns introspection

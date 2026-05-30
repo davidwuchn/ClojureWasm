@@ -582,7 +582,9 @@
                     (vreset! pv input)
                     (if (if had (= prior input) false) result (rf result input))))))))
        ([coll]
-        (reduce (fn* [acc x] (if (= x (last acc)) acc (conj acc x))) [] coll))))
+        ;; O(n) via the transducer (the old `(last acc)` per step was O(n²)
+        ;; — `(dedupe (range 5000))` timed out).
+        (into [] (dedupe) coll))))
 
 ;; `(distinct coll)` — drop all duplicates, first occurrence wins.
 ;; Linear `=` scan (structural, so strings/collections dedupe); O(n^2).
@@ -598,10 +600,10 @@
                     result
                     (do (vswap! seen conj input) (rf result input))))))))
        ([coll]
-        (reduce (fn* [acc x]
-                  (if (some (fn* [y] (= y x)) acc) acc (conj acc x)))
-                []
-                coll))))
+        ;; O(n) via the transducer's volatile seen-set (the old linear
+        ;; `some` scan per element was O(n²) — `(distinct (range 5000))`
+        ;; timed out).
+        (into [] (distinct) coll))))
 
 ;; `(frequencies coll)` — map of item -> occurrence count. Keys via map
 ;; assoc (bit-pattern keyEq → number/keyword keys; structural keys D-092).
@@ -627,8 +629,13 @@
 
 ;; `(fnil f x)` — f with its first arg defaulted to x when nil.
 ;; 1-arg patched form (multi-arg fnil awaits multi-arity follow-up).
+;; `(fnil f x)` / `(fnil f x y)` / `(fnil f x y z)` — wrap f so its first
+;; 1/2/3 args are replaced by the defaults when nil; trailing args pass
+;; through (the returned fn is variadic, matching Clojure).
 (def fnil
-  (fn* [f x] (fn* [a] (f (if (nil? a) x a)))))
+  (fn* ([f x] (fn* [a & args] (apply f (if (nil? a) x a) args)))
+       ([f x y] (fn* [a b & args] (apply f (if (nil? a) x a) (if (nil? b) y b) args)))
+       ([f x y z] (fn* [a b c & args] (apply f (if (nil? a) x a) (if (nil? b) y b) (if (nil? c) z c) args)))))
 
 ;; `(interpose sep coll)` — sep between consecutive items (eager).
 ;; Prepend sep before each, then drop the leading sep with `rest`.
@@ -638,11 +645,16 @@
 
 ;; `(zipmap ks vs)` — map pairing keys with values, stopping at the
 ;; shorter. Recursive parallel walk.
+;; loop/recur (NOT fn* self-recursion): the original `(assoc (zipmap …) …)`
+;; was non-tail and segfaulted at ~5000 pairs. Looping head-first also makes
+;; duplicate keys last-wins (Clojure semantics; the old recurse-first was
+;; head-wins).
 (def zipmap
   (fn* [ks vs]
-    (if (or (empty? ks) (empty? vs))
-      {}
-      (assoc (zipmap (rest ks) (rest vs)) (first ks) (first vs)))))
+    (loop [ks (seq ks) vs (seq vs) acc {}]
+      (if (and ks vs)
+        (recur (next ks) (next vs) (assoc acc (first ks) (first vs)))
+        acc))))
 
 ;; `(interleave c1 c2)` — alternate items from two colls, stopping at
 ;; the shorter (eager vector). Two-coll form. loop/recur (NOT fn* self-

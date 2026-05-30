@@ -25,6 +25,10 @@ assert_eq() {
 
 assert_eq 'dedupe_runs'    "$("$BIN" -e '(into [] (dedupe [1 1 2 2 3 1]))')"            '[1 2 3 1]'
 assert_eq 'distinct_int'   "$("$BIN" -e '(into [] (distinct [1 2 1 3 2]))')"            '[1 2 3]'
+# dedupe/distinct coll arities are O(n) (delegate to the transducer) — the
+# old (last acc) / linear-some scans were O(n²) and timed out at ~5000
+assert_eq 'dedupe_large'   "$("$BIN" -e '(count (dedupe (range 5000)))')"               '5000'
+assert_eq 'distinct_large' "$("$BIN" -e '(count (distinct (concat (range 2000) (range 2000))))')" '2000'
 assert_eq 'distinct_str'   "$("$BIN" -e '(into [] (distinct ["a" "b" "a"]))')"          '["a" "b"]'
 assert_eq 'frequencies_int' "$("$BIN" -e '(get (frequencies [1 1 2]) 1)')"             '2'
 assert_eq 'frequencies_kw'  "$("$BIN" -e '(get (frequencies [:a :a :b]) :a)')"         '2'
