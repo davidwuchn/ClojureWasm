@@ -34,7 +34,7 @@
 //!     C0 atom           C4 future         C8 trans_vector    C12 array_chunk
 //!     C1 agent          C5 promise        C9 trans_map       C13 persist_queue
 //!     C2 ref            C6 reduced        C10 trans_set      C14 sorted_map
-//!     C3 volatile       C7 ex_info        C11 reserved       C15 sorted_set
+//!     C3 volatile       C7 ex_info        C11 rb_node        C15 sorted_set
 //!
 //!   Group D — Numeric + wasm + extension (slots 48..63):
 //!     D0 big_int        D4 wasm_module    D8 matcher         D12 reserved
@@ -99,7 +99,7 @@ pub const HeapTag = enum(u8) {
     transient_vector = 40,
     transient_map = 41,
     transient_set = 42,
-    reserved_c11 = 43,
+    rb_node = 43, // persistent LLRB red-black tree node (sorted-map/set, ADR-0057)
     array_chunk = 44,
     persistent_queue = 45,
     sorted_map = 46,

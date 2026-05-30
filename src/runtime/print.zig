@@ -43,6 +43,7 @@ const list_collection = @import("collection/list.zig");
 const vector_collection = @import("collection/vector.zig");
 const set_collection = @import("collection/set.zig");
 const map_collection = @import("collection/map.zig");
+const sorted_collection = @import("collection/sorted.zig");
 const ex_info_collection = @import("collection/ex_info.zig");
 const big_int_mod = @import("numeric/big_int.zig");
 const ratio_mod = @import("numeric/ratio.zig");
@@ -161,6 +162,8 @@ pub fn printValue(w: *Writer, v: Value) Writer.Error!void {
         .list => try printList(w, v),
         .vector => try printVector(w, v),
         .hash_set => try printSet(w, v),
+        .sorted_set => try printSortedSet(w, v),
+        .sorted_map => try printSortedMap(w, v),
         .array_map, .hash_map => try printMap(w, v),
         .ex_info => try printExInfo(w, v),
         .big_int => try printBigInt(w, v),
@@ -360,6 +363,39 @@ pub fn printSet(w: *Writer, v: Value) Writer.Error!void {
             try printHamtEntries(w, root, &first, false);
         }
     }
+    try w.writeByte('}');
+}
+
+/// In-order (ascending) walk of an LLRB tree, alloc-free (the printer has
+/// no allocator). `kv` true → "k v" pairs (map), false → bare keys (set).
+fn printSortedEntries(w: *Writer, root: Value, first: *bool, comptime kv: bool) Writer.Error!void {
+    if (root.tag() != .rb_node) return;
+    const n = root.decodePtr(*const sorted_collection.RbNode);
+    try printSortedEntries(w, n.left, first, kv);
+    if (!first.*) try w.writeAll(if (kv) ", " else " ");
+    first.* = false;
+    try printValue(w, n.key);
+    if (kv) {
+        try w.writeByte(' ');
+        try printValue(w, n.val);
+    }
+    try printSortedEntries(w, n.right, first, kv);
+}
+
+pub fn printSortedMap(w: *Writer, v: Value) Writer.Error!void {
+    try w.writeByte('{');
+    const m = v.decodePtr(*const sorted_collection.SortedMap);
+    var first = true;
+    try printSortedEntries(w, m.root, &first, true);
+    try w.writeByte('}');
+}
+
+pub fn printSortedSet(w: *Writer, v: Value) Writer.Error!void {
+    try w.writeAll("#{");
+    const s = v.decodePtr(*const sorted_collection.SortedSet);
+    const m = s.map.decodePtr(*const sorted_collection.SortedMap);
+    var first = true;
+    try printSortedEntries(w, m.root, &first, false);
     try w.writeByte('}');
 }
 

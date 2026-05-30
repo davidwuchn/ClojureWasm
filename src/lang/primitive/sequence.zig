@@ -45,6 +45,7 @@ const dispatch = @import("../../runtime/dispatch.zig");
 const list = @import("../../runtime/collection/list.zig");
 const vector = @import("../../runtime/collection/vector.zig");
 const map = @import("../../runtime/collection/map.zig");
+const sorted = @import("../../runtime/collection/sorted.zig");
 const set = @import("../../runtime/collection/set.zig");
 const string_collection = @import("../../runtime/collection/string.zig");
 const chunked_cons = @import("../../runtime/collection/chunked_cons.zig");
@@ -91,6 +92,7 @@ pub fn countFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation
         .list, .cons => Value.initInteger(@intCast(list.countOf(coll))),
         .vector => Value.initInteger(@intCast(vector.count(coll))),
         .array_map, .hash_map => Value.initInteger(@intCast(map.count(coll))),
+        .sorted_map, .sorted_set => Value.initInteger(@intCast(sorted.count(coll))),
         .hash_set => Value.initInteger(@intCast(set.count(coll))),
         .chunked_cons => Value.initInteger(@intCast(chunked_cons.count(coll))),
         .typed_instance => blk: {
@@ -156,6 +158,7 @@ pub fn seqFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) 
         .list, .cons => list.seq(coll),
         .vector => if (vector.count(coll) > 0) try vectorToList(rt, coll) else .nil_val,
         .array_map, .hash_map => if (map.count(coll) > 0) try map.seq(rt, coll) else .nil_val,
+        .sorted_map, .sorted_set => if (sorted.count(coll) > 0) try sorted.seq(rt, coll) else .nil_val,
         .hash_set => if (set.count(coll) > 0) try set.seq(rt, coll) else .nil_val,
         .chunked_cons => coll,
         .lazy_seq => try lazy_seq.seq(rt, env, coll),

@@ -255,6 +255,7 @@ pub const Runtime = struct {
         @import("lazy_seq.zig").registerGcHooks();
         @import("collection/chunked_cons.zig").registerGcHooks();
         @import("collection/reduced.zig").registerGcHooks();
+        @import("collection/sorted.zig").registerGcHooks();
         @import("atom.zig").registerGcHooks();
         @import("volatile.zig").registerGcHooks();
         @import("stm/tval.zig").registerGcHooks();

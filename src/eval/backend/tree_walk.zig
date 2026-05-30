@@ -902,7 +902,7 @@ pub fn treeWalkCall(
         // Data structures + keywords as IFn (D-085): (:k m) / (m k) /
         // (#{…} x) / ([…] i). Routes through the same dispatch so the VM,
         // `apply`, and `(map :k coll)` all get it for free.
-        .keyword, .symbol, .array_map, .hash_map, .hash_set, .vector => lookup_mod.invoke(callee, args, loc),
+        .keyword, .symbol, .array_map, .hash_map, .hash_set, .vector, .sorted_map, .sorted_set => lookup_mod.invoke(rt, callee, args, loc),
         else => |t| error_catalog.raise(.value_not_callable, loc, .{ .actual = @tagName(t) }),
     };
 }

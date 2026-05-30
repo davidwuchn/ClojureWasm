@@ -76,16 +76,19 @@ Caveat: the static var-set extraction has minor false-positives (e.g.
     a clean next follow-up now that with-meta exists), symbol meta, alter-meta!/reset-meta!, reader `^`.
   - **DONE**: clojure.set project/rename meta-wrap restored (4b3cee2e) → D-075 fully discharged bar
     symbol meta / alter-meta! / reset-meta! / reader `^`.
-  - **NEXT (surveyed + ADR'd, ready to implement): sorted-map / sorted-set = persistent LLRB
-    red-black tree** per **ADR-0057** (the Step-0.6 DA fork OVERTURNED the survey's flat-array on
-    F-002: a flat array's O(n)-copy-on-assoc breaks structural-sharing + makes `(into (sorted-map)
-    coll)` O(n²); "RB is hard" is the Cycle-budget-defer smell). `rb_node` tag = reserved_c11;
-    set-wraps-sorted-map; default valueCompare (ADR-0053) + custom -by via callFn. New
-    `runtime/collection/sorted.zig`; dispatch arms at collection.zig/sequence.zig/lookup.zig/print.zig.
-    **Cycle A** (next): RbNode struct + GC trace + valueCompare-ordered build / get / contains / count /
-    seq + `sorted-map`/`sorted-set` ctors + `sorted?` (delete raises explicit error until cycle B). →
-    **B** insert-rebalance + LLRB delete (hardest piece — build-N-delete-half canary) + dup-collapse +
-    `-by`. → **C** in-order seqFrom + .clj subseq/rsubseq/rseq + flip `reversible?` (vector too).
+  - **sorted-map / sorted-set = persistent LLRB red-black tree** per **ADR-0057** (the Step-0.6 DA
+    fork OVERTURNED the survey's flat-array on F-002: a flat array's O(n)-copy-on-assoc breaks
+    structural-sharing + makes `(into (sorted-map) coll)` O(n²); "RB is hard" is the Cycle-budget-defer
+    smell). `rb_node` tag (= renamed reserved_c11); set-wraps-sorted-map; default valueCompare
+    (ADR-0053) + custom -by via callFn. New `runtime/collection/sorted.zig`; dispatch arms at
+    collection.zig/sequence.zig/lookup.zig/print.zig.
+    - **Cycle A — DONE**: RbNode struct + GC trace + valueCompare-ordered build / get / contains /
+      count / keys / vals / seq / assoc / conj + `sorted-map`/`sorted-set` ctors + `sorted?` + print +
+      IFn. 21-case e2e `phase14_sorted` green; gate 165/165. delete/-by/subseq raise/skeleton until B/C.
+    - **Cycle B — NEXT**: LLRB delete (dissoc/disj/delete — moveRedLeft/moveRedRight/deleteMin, the
+      hardest piece; build-N-then-delete-half canary e2e) + `sorted-map-by`/`sorted-set-by` (callFn
+      comparator, currently `SortedCustomComparatorNotImplemented` skeleton).
+    - **Cycle C**: in-order seqFrom + .clj subseq/rsubseq/rseq + flip `reversible?` (vector too).
   - **then**: **transducers** (HIGH ROI, BIG — survey-worthy: transducer protocol over reduce/reduced,
     1-arg HOF arities); MEDIUM fill-ins: `isa?`/hierarchy, `resolve`/ns (needs first-class var Value?),
     `bigint`/`bigdec` (LOW-med ROI + fiddly 5 coerce arms + string parsers — deprioritized).

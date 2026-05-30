@@ -23,6 +23,8 @@ const Value = value_mod.Value;
 const map = @import("map.zig");
 const set = @import("set.zig");
 const vector = @import("vector.zig");
+const sorted = @import("sorted.zig");
+const Runtime = @import("../runtime.zig").Runtime;
 const error_catalog = @import("../error/catalog.zig");
 const SourceLocation = @import("../error/info.zig").SourceLocation;
 
@@ -67,7 +69,7 @@ fn vectorIndex(v: Value, i_val: Value, loc: SourceLocation) !Value {
 /// arguments, callee excluded). The caller (`treeWalkCall`) guarantees
 /// `callee.tag()` is one of keyword/symbol/array_map/hash_map/hash_set/
 /// vector.
-pub fn invoke(callee: Value, args: []const Value, loc: SourceLocation) !Value {
+pub fn invoke(rt: *Runtime, callee: Value, args: []const Value, loc: SourceLocation) !Value {
     switch (callee.tag()) {
         .keyword, .symbol => {
             // callee is the KEY; args[0] is the collection.
@@ -79,9 +81,19 @@ pub fn invoke(callee: Value, args: []const Value, loc: SourceLocation) !Value {
             if (args.len < 1 or args.len > 2) return arityError("map", args.len, 1, 2, loc);
             return lookupWithDefault(callee, args[0], args.len == 2, if (args.len == 2) args[1] else Value.nil_val);
         },
+        .sorted_map => {
+            // callee is the sorted MAP; args[0] is the key. Needs rt (valueCompare).
+            if (args.len < 1 or args.len > 2) return arityError("sorted-map", args.len, 1, 2, loc);
+            if (try sorted.contains(rt, callee, args[0], loc)) return try sorted.get(rt, callee, args[0], loc);
+            return if (args.len == 2) args[1] else Value.nil_val;
+        },
         .hash_set => {
             if (args.len != 1) return arityError("set", args.len, 1, 1, loc);
             return if (try set.contains(callee, args[0])) args[0] else Value.nil_val;
+        },
+        .sorted_set => {
+            if (args.len != 1) return arityError("sorted-set", args.len, 1, 1, loc);
+            return if (try sorted.setContains(rt, callee, args[0], loc)) args[0] else Value.nil_val;
         },
         .vector => {
             if (args.len != 1) return arityError("vector", args.len, 1, 1, loc);
@@ -94,7 +106,6 @@ pub fn invoke(callee: Value, args: []const Value, loc: SourceLocation) !Value {
 // --- tests ---
 
 const std_testing = std.testing;
-const Runtime = @import("../runtime.zig").Runtime;
 const keyword_mod = @import("../keyword.zig");
 
 const Fixture = struct {
@@ -119,13 +130,13 @@ test "keyword-as-fn: (:k m) gets, (:k m default) falls back, (:k non-map) nil" {
 
     const kw = try keyword_mod.intern(&fix.rt, null, "k");
     const m = try map.assoc(&fix.rt, map.empty(), kw, Value.initInteger(42));
-    try std_testing.expectEqual(@as(i48, 42), (try invoke(kw, &.{m}, noloc)).asInteger());
+    try std_testing.expectEqual(@as(i48, 42), (try invoke(&fix.rt,kw, &.{m}, noloc)).asInteger());
 
     const missing = try keyword_mod.intern(&fix.rt, null, "absent");
-    try std_testing.expect((try invoke(missing, &.{m}, noloc)).isNil());
-    try std_testing.expectEqual(@as(i48, 7), (try invoke(missing, &.{ m, Value.initInteger(7) }, noloc)).asInteger());
+    try std_testing.expect((try invoke(&fix.rt,missing, &.{m}, noloc)).isNil());
+    try std_testing.expectEqual(@as(i48, 7), (try invoke(&fix.rt,missing, &.{ m, Value.initInteger(7) }, noloc)).asInteger());
     // keyword on a non-map yields default / nil
-    try std_testing.expect((try invoke(kw, &.{Value.initInteger(5)}, noloc)).isNil());
+    try std_testing.expect((try invoke(&fix.rt,kw, &.{Value.initInteger(5)}, noloc)).isNil());
 }
 
 test "map-as-fn: (m k) gets; vector-as-fn: ([..] i) nth; OOB throws" {
@@ -134,14 +145,14 @@ test "map-as-fn: (m k) gets; vector-as-fn: ([..] i) nth; OOB throws" {
 
     const kw = try keyword_mod.intern(&fix.rt, null, "a");
     const m = try map.assoc(&fix.rt, map.empty(), kw, Value.initInteger(9));
-    try std_testing.expectEqual(@as(i48, 9), (try invoke(m, &.{kw}, noloc)).asInteger());
+    try std_testing.expectEqual(@as(i48, 9), (try invoke(&fix.rt,m, &.{kw}, noloc)).asInteger());
 
     var vec = vector.empty();
     vec = try vector.conj(&fix.rt, vec, Value.initInteger(10));
     vec = try vector.conj(&fix.rt, vec, Value.initInteger(20));
-    try std_testing.expectEqual(@as(i48, 20), (try invoke(vec, &.{Value.initInteger(1)}, noloc)).asInteger());
-    try std_testing.expectError(error.TypeError, invoke(vec, &.{Value.initInteger(5)}, noloc)); // OOB
-    try std_testing.expectError(error.TypeError, invoke(vec, &.{Value.initInteger(-1)}, noloc)); // negative
+    try std_testing.expectEqual(@as(i48, 20), (try invoke(&fix.rt,vec, &.{Value.initInteger(1)}, noloc)).asInteger());
+    try std_testing.expectError(error.TypeError, invoke(&fix.rt,vec, &.{Value.initInteger(5)}, noloc)); // OOB
+    try std_testing.expectError(error.TypeError, invoke(&fix.rt,vec, &.{Value.initInteger(-1)}, noloc)); // negative
 }
 
 test "set-as-fn: (#{..} x) returns x or nil; arity errors" {
@@ -150,8 +161,8 @@ test "set-as-fn: (#{..} x) returns x or nil; arity errors" {
 
     var s = set.empty();
     s = try set.conj(&fix.rt, s, Value.initInteger(3));
-    try std_testing.expectEqual(@as(i48, 3), (try invoke(s, &.{Value.initInteger(3)}, noloc)).asInteger());
-    try std_testing.expect((try invoke(s, &.{Value.initInteger(99)}, noloc)).isNil());
+    try std_testing.expectEqual(@as(i48, 3), (try invoke(&fix.rt,s, &.{Value.initInteger(3)}, noloc)).asInteger());
+    try std_testing.expect((try invoke(&fix.rt,s, &.{Value.initInteger(99)}, noloc)).isNil());
     // set is 1-arg only
-    try std_testing.expectError(error.ArityError, invoke(s, &.{ Value.initInteger(3), Value.initInteger(4) }, noloc));
+    try std_testing.expectError(error.ArityError, invoke(&fix.rt,s, &.{ Value.initInteger(3), Value.initInteger(4) }, noloc));
 }

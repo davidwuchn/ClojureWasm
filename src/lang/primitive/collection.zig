@@ -48,6 +48,7 @@ const vector = @import("../../runtime/collection/vector.zig");
 const list = @import("../../runtime/collection/list.zig");
 const map = @import("../../runtime/collection/map.zig");
 const set = @import("../../runtime/collection/set.zig");
+const sorted = @import("../../runtime/collection/sorted.zig");
 const td_mod = @import("../../runtime/type_descriptor.zig");
 const keyword_mod = @import("../../runtime/keyword.zig");
 
@@ -71,6 +72,8 @@ pub fn conjFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation)
         .vector => try vector.conj(rt, coll, x),
         .list, .cons => try list.consHeap(rt, x, coll),
         .hash_set => try set.conj(rt, coll, x),
+        .sorted_set => try sorted.conjSet(rt, coll, x, loc),
+        .sorted_map => sortedMapConj(rt, coll, x, loc),
         .array_map, .hash_map => mapConj(rt, coll, x, loc),
         else => blk: {
             // Row 7.7 cycle 3: outer-else routes through dispatch against
@@ -102,6 +105,18 @@ fn mapConj(rt: *Runtime, m: Value, entry: Value, loc: SourceLocation) anyerror!V
         });
     }
     return try map.assoc(rt, m, vector.nth(entry, 0), vector.nth(entry, 1));
+}
+
+fn sortedMapConj(rt: *Runtime, m: Value, entry: Value, loc: SourceLocation) anyerror!Value {
+    // (conj sorted-map [k v]) — same [k v]-pair contract as hash/array map.
+    if (entry.tag() != .vector or vector.count(entry) != 2) {
+        return error_catalog.raise(.type_arg_invalid, loc, .{
+            .fn_name = "conj",
+            .expected = "2-element [k v] vector when conj-ing into a map",
+            .actual = @tagName(entry.tag()),
+        });
+    }
+    return try sorted.assoc(rt, m, vector.nth(entry, 0), vector.nth(entry, 1), loc);
 }
 
 // --- disj ---
@@ -147,6 +162,8 @@ pub fn containsQFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLoca
     const k = args[1];
     return switch (coll.tag()) {
         .hash_set => if (try set.contains(coll, k)) .true_val else .false_val,
+        .sorted_set => if (try sorted.setContains(rt, coll, k, loc)) .true_val else .false_val,
+        .sorted_map => if (try sorted.contains(rt, coll, k, loc)) .true_val else .false_val,
         .array_map, .hash_map => if (try map.contains(coll, k)) .true_val else .false_val,
         else => blk: {
             // D-089 row 8.6 cycle 3: Associative -contains-key? slow-path.
@@ -180,6 +197,12 @@ pub fn getFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) 
     if (coll.isNil()) return default;
     const k = args[1];
     return switch (coll.tag()) {
+        .sorted_map => blk: {
+            if (try sorted.contains(rt, coll, k, loc)) {
+                break :blk try sorted.get(rt, coll, k, loc);
+            }
+            break :blk default;
+        },
         .array_map, .hash_map => blk: {
             if (try map.contains(coll, k)) {
                 break :blk try map.get(coll, k);
@@ -362,6 +385,14 @@ pub fn assocFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation
         return acc;
     }
     return switch (coll.tag()) {
+        .sorted_map => blk: {
+            var acc: Value = coll;
+            var i: usize = 1;
+            while (i + 1 < args.len) : (i += 2) {
+                acc = try sorted.assoc(rt, acc, args[i], args[i + 1], loc);
+            }
+            break :blk acc;
+        },
         .array_map, .hash_map => blk: {
             var acc: Value = coll;
             var i: usize = 1;
@@ -520,6 +551,10 @@ pub fn keysFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation)
     const coll = args[0];
     if (coll.isNil()) return .nil_val;
     return switch (coll.tag()) {
+        .sorted_map => blk: {
+            if (sorted.count(coll) == 0) break :blk .nil_val;
+            break :blk try sorted.keys(rt, coll);
+        },
         .array_map, .hash_map => blk: {
             if (map.count(coll) == 0) break :blk .nil_val;
             break :blk try map.keys(rt, coll);
@@ -567,6 +602,10 @@ pub fn valsFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation)
     const coll = args[0];
     if (coll.isNil()) return .nil_val;
     return switch (coll.tag()) {
+        .sorted_map => blk: {
+            if (sorted.count(coll) == 0) break :blk .nil_val;
+            break :blk try sorted.vals(rt, coll);
+        },
         .array_map, .hash_map => blk: {
             if (map.count(coll) == 0) break :blk .nil_val;
             break :blk try map.vals(rt, coll);
