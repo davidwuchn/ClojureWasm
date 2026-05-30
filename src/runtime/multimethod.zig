@@ -40,6 +40,7 @@ const symbol = @import("symbol.zig");
 const keyword = @import("keyword.zig");
 const dispatch_mod = @import("dispatch.zig");
 const td_mod = @import("type_descriptor.zig");
+const atom = @import("atom.zig");
 
 const SourceLocation = error_catalog.SourceLocation;
 
@@ -192,16 +193,17 @@ fn typeDescriptorIsa(td: *const td_mod.TypeDescriptor, parent_name: []const u8) 
     return false;
 }
 
-/// Cycle 4b stub: dereference an IRef-shape hierarchy reference
-/// to the underlying hierarchy value. For Atom / Var values this
-/// would follow the ref; cycle 4b ships the identity path
-/// because no macro layer surfaces hierarchy IRefs yet (cycle 5
-/// adds `derive` / `(set-validator! global-hierarchy ...)`-shape
-/// surfaces that eventually carry Atom values). Test fixtures
-/// pass the hierarchy map directly via `hierarchy_ref`, which
-/// the identity path handles unchanged.
+/// Dereference an IRef-shape hierarchy reference to its held map.
+/// `defmulti` threads the `-global-hierarchy` atom (D-161), so an
+/// atom ref is deref'd to its current value — and crucially each
+/// `derive` (`swap!`) yields a NEW immutable map, so the deref'd
+/// value's identity changes, which is exactly what `getMethod`'s
+/// `cached_hierarchy_snapshot` identity-compare needs to invalidate
+/// the method cache. A non-atom ref (nil, or a hierarchy map passed
+/// directly by a unit-test fixture) is returned unchanged.
 pub fn derefHierarchy(rt: *Runtime, hierarchy_ref: Value) Value {
     _ = rt;
+    if (atom.isAtom(hierarchy_ref)) return atom.current(hierarchy_ref);
     return hierarchy_ref;
 }
 
@@ -247,6 +249,15 @@ pub fn getMethod(
         return direct;
     }
 
+    // The isa? walk consumes the `:ancestors` sub-map of the derefed
+    // hierarchy `{:parents .. :ancestors .. :descendants ..}`; extract it
+    // only here (the cache-hit / exact-match paths above never need it).
+    // nil (no hierarchy) → nil ancestors → equality-only dispatch.
+    const ancestors = if (current_hierarchy.tag() == .nil)
+        Value.nil_val
+    else
+        try map_mod.get(current_hierarchy, try keyword.intern(rt, null, "ancestors"));
+
     // Cycle 2-3 hierarchy resolution: collect isa? candidates;
     // if ≥ 2 use `dominates` (prefer-method ∪ isa?) to pick the
     // best; if no dominator survives the walk → raise ambiguity.
@@ -259,14 +270,14 @@ pub fn getMethod(
         while (i < am.count) : (i += 1) {
             const key = am.entries[2 * i];
             if (@intFromEnum(key) == @intFromEnum(dispatch_val)) continue;
-            if (!(try isaCheck(mf.hierarchy_ref, dispatch_val, key))) continue;
+            if (!(try isaCheck(ancestors, dispatch_val, key))) continue;
 
             if (best_key) |bk| {
-                if (try dominates(mf.prefer_table, mf.hierarchy_ref, key, bk)) {
+                if (try dominates(mf.prefer_table, ancestors, key, bk)) {
                     best_key = key;
                     best_method = am.entries[2 * i + 1];
                     ambiguous = false;
-                } else if (!(try dominates(mf.prefer_table, mf.hierarchy_ref, bk, key))) {
+                } else if (!(try dominates(mf.prefer_table, ancestors, bk, key))) {
                     ambiguous = true;
                 }
             } else {
@@ -545,7 +556,7 @@ test "getMethod: hierarchy walk returns ancestor's method on isa? match" {
     const hierarchy_anc = try map_mod.assoc(&fix.rt, map_mod.empty(), dog, dog_ancestors_set);
     const mt = try map_mod.assoc(&fix.rt, map_mod.empty(), animal, animal_method);
 
-    const mf = try rt_gc_makeTestMultiFnWithHierarchy(&fix.rt, name_sym, mt, default_kw, hierarchy_anc);
+    const mf = try rt_gc_makeTestMultiFnWithHierarchy(&fix.rt, name_sym, mt, default_kw, try wrapAncestors(&fix.rt, hierarchy_anc));
     const got = try getMethod(&fix.rt, mf, dog, .{});
     try testing.expectEqual(@intFromEnum(animal_method), @intFromEnum(got));
 }
@@ -575,7 +586,7 @@ test "getMethod: hierarchy walk raises multimethod_ambiguous_dispatch on multipl
     mt = try map_mod.assoc(&fix.rt, mt, animal, animal_method);
     mt = try map_mod.assoc(&fix.rt, mt, mammal, mammal_method);
 
-    const mf = try rt_gc_makeTestMultiFnWithHierarchy(&fix.rt, name_sym, mt, default_kw, hierarchy_anc);
+    const mf = try rt_gc_makeTestMultiFnWithHierarchy(&fix.rt, name_sym, mt, default_kw, try wrapAncestors(&fix.rt, hierarchy_anc));
     try testing.expectError(
         error.ValueError,
         getMethod(&fix.rt, mf, dog, .{}),
@@ -604,9 +615,18 @@ test "getMethod: hierarchy walk falls through to default when no isa? match" {
     try testing.expectEqual(@intFromEnum(default_method), @intFromEnum(got));
 }
 
+/// Wrap an `:ancestors` sub-map into a full hierarchy map
+/// `{:ancestors <map>}` — the shape `getMethod` derefs and indexes
+/// after D-161. Unit fixtures build the bare ancestors-map, then wrap.
+fn wrapAncestors(rt: *Runtime, ancestors_map: Value) !Value {
+    const anc_kw = try keyword.intern(rt, null, "ancestors");
+    return map_mod.assoc(rt, map_mod.empty(), anc_kw, ancestors_map);
+}
+
 /// Like `makeTestMultiFn` but lets the caller supply a non-nil
-/// `hierarchy_ref`. cycle 2 test fixtures pass the ancestors-map
-/// directly via this arg (no IRef indirection yet).
+/// `hierarchy_ref`. Fixtures wrap their ancestors-map via
+/// `wrapAncestors` so the deref'd `:ancestors` extraction in
+/// `getMethod` finds it (D-161).
 fn rt_gc_makeTestMultiFnWithHierarchy(
     rt: *Runtime,
     name_sym: Value,
@@ -706,7 +726,7 @@ test "getMethod: prefer-method resolves isa? ambiguity" {
         .name = name_sym,
         .dispatch_fn = Value.nil_val,
         .default_dispatch_val = default_kw,
-        .hierarchy_ref = hierarchy_anc,
+        .hierarchy_ref = try wrapAncestors(&fix.rt, hierarchy_anc),
         .method_table = mt,
         .prefer_table = prefer,
         .method_cache = map_mod.empty(),
@@ -855,7 +875,7 @@ test "getMethod: hierarchy change invalidates method_cache" {
     mt = try map_mod.assoc(&fix.rt, mt, animal, m_animal);
     mt = try map_mod.assoc(&fix.rt, mt, mammal, m_mammal);
 
-    const mf = try rt_gc_makeTestMultiFnWithHierarchy(&fix.rt, name_sym, mt, default_kw, anc1);
+    const mf = try rt_gc_makeTestMultiFnWithHierarchy(&fix.rt, name_sym, mt, default_kw, try wrapAncestors(&fix.rt, anc1));
 
     // First call resolves :dog via anc1 → :animal → m_animal, caches it.
     const first = try getMethod(&fix.rt, mf, dog, .{});
@@ -864,7 +884,7 @@ test "getMethod: hierarchy change invalidates method_cache" {
     // Swap the hierarchy. JVM's cachedHierarchy != hierarchy.deref()
     // identity-compare must fire; cw v1's snapshot check is the same
     // shape at the multimethod level.
-    mf.hierarchy_ref = anc2;
+    mf.hierarchy_ref = try wrapAncestors(&fix.rt, anc2);
     const second = try getMethod(&fix.rt, mf, dog, .{});
     try testing.expectEqual(@intFromEnum(m_mammal), @intFromEnum(second));
 }
@@ -921,7 +941,7 @@ test "getMethod: ambiguity persists when prefer-method goes the wrong way" {
         .name = name_sym,
         .dispatch_fn = Value.nil_val,
         .default_dispatch_val = default_kw,
-        .hierarchy_ref = hierarchy_anc,
+        .hierarchy_ref = try wrapAncestors(&fix.rt, hierarchy_anc),
         .method_table = mt,
         .prefer_table = prefer,
         .method_cache = map_mod.empty(),

@@ -5,7 +5,7 @@
 
 ## Resume contract
 
-- **HEAD**: see `git log` (≈ `c296967c`, several commits behind by resume).
+- **HEAD**: see `git log` (D-161 defmulti↔hierarchy + e2e-clobber fix landed 2026-05-31).
 - **Direction (user, 2026-05-30)**: raise **functional completeness FIRST**
   (no premature JIT/superinstruction), **corpus-driven** not AI-probed. The
   emphasis is now **STRUCTURAL-DEFECT HUNTING, not ad-hoc gap-filling**: when a
@@ -19,14 +19,15 @@
 - **First commit on resume MUST be**: resume **structural-defect hunting** per
   [`.dev/lessons/structural_defect_hunting.md`](lessons/structural_defect_hunting.md).
   Take a known structural defect from the queue (fix per finished form, not
-  ad-hoc): **D-161** defmulti↔hierarchy isa? wiring (Layer-0 dispatch — survey
-  prefer/dominates/cache first), **D-160** sequence/eduction push→pull bridge
-  (D-162 `eval` DONE 2026-05-31 via ADR-0058); AND keep running large-input/edge
-  `cljw -e` sweep batches on unswept surface (interop, dynamic vars, IO,
+  ad-hoc): **D-160** sequence/eduction push→pull bridge (D-161 defmulti↔hierarchy
+  DONE 2026-05-31; D-162 `eval` DONE via ADR-0058); AND keep running large-input/
+  edge `cljw -e` sweep batches on unswept surface (interop, dynamic vars, IO,
   deftype/defrecord field access, protocol edge) to find more. Pure missing
   fns (name_error) are the floor — fill if clean, else record the
   architectural blocker as a debt. Always probe first. Do NOT ask
-  (Direction-ask smell).
+  (Direction-ask smell). **Build-race caution (this env)**: chain `zig build &&
+  <probe>` — probing on a not-yet-relinked binary gives STALE results (cost a
+  long false "AOT aliasing" detour 2026-05-31).
 - **Forbidden this session**: re-opening anything landed this session (sorted
   collections, transducers 1-5, D-159, the range/sort/interleave/zipmap crash
   fixes, dedupe/distinct O(n²) fix, mapv/fnil arities, nested-lazy print,
@@ -49,7 +50,12 @@ O(n²)→O(n) (transducer delegation); **mapv** multi-coll + **fnil** 2/3-defaul
 **nested-lazy print** (deepRealize); **ad-hoc hierarchies** (isa?/derive/…,
 atom-backed, class? branches dropped); **re-seq** (+ re-find-from); **read-string**
 (core==edn, no eval-reader); **eval** (ADR-0058 D-162: typed `driver.evalValue`
-verb + `rt.macro_table` borrow; built-in macros expand, user macros via env Vars).
+verb + `rt.macro_table` borrow; built-in macros expand, user macros via env Vars);
+**D-161 defmulti↔hierarchy** (expandDefmulti threads `-global-hierarchy` →
+derefHierarchy derefs atom → getMethod extracts `:ancestors` + cache invalidates
+on snapshot identity; 5 new dispatch e2e); **e2e clobber fix** (phase14_hierarchy.sh
+had been byte-overwritten with phase7_multimethod.sh — silent zero-coverage; restored
++ added `check_e2e_dup.sh` gate guard).
 
 ## Next milestone (F-010 M = Phase 15 完遂 + cw-v0-level JIT)
 
@@ -66,7 +72,6 @@ cw-v0 gaps in `.dev/cw_v0_parity_and_gap_plan.md`.
   **D-155/156** HAMT collision-bucket / dissoc inline-collapse. **D-150** VM ctor
   parity. **D-153** `(cons x lazy)` count. **D-152** diff oracle `.clj` closures.
   **D-131** built-app non-core. **D-117/118** nREPL (Phase-15). **D-133** JIT floor.
-- **D-161** defmulti↔hierarchy isa? wiring.
 - **Sweep gaps (low priority)**: `mapv`/`interleave` N-coll variadic; `reductions`
   O(n²); `uuid?`/`type`/`class` (representation/JVM-Class divergence — design first);
   lazy-as-map-value still `#<lazy_seq>` (deepRealize covers the seq family only).

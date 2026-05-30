@@ -77,9 +77,11 @@ Caveat: the static var-set extraction has minor false-positives (e.g.
 ### P2 — type / hierarchy / var+ns introspection
 - **isa? / ancestors / descendants / parents / derive / underive / make-hierarchy** — **DONE** 2026-05-30
   (core.clj, atom-backed `-global-hierarchy`; DIVERGENCE: class? branches dropped — no JVM Class; derive
-  lenient on namespacing). 14 e2e (`phase14_hierarchy.sh`). FOLLOW-UP = **D-161**: wire `defmulti`
-  dispatch to consult the global hierarchy via isa? (the `multimethod.zig` isa?-walk scaffolding exists
-  but is unconnected — makeMultiFn hierarchy_ref=nil, derefHierarchy no-op). Distinct Layer-0 unit.
+  lenient on namespacing). 19 e2e (`phase14_hierarchy.sh`, incl. the D-161 dispatch cases).
+  **D-161 DONE** 2026-05-31: `defmulti` dispatch now consults the global hierarchy via isa? —
+  `expandDefmulti` threads `-global-hierarchy` into the MultiFn, `derefHierarchy` derefs the atom,
+  `getMethod` extracts `(:ancestors …)` and invalidates the method cache on hierarchy snapshot identity.
+  Follow-ups (new rows if pursued): `isPreferred` transitive parent-walk, `:hierarchy` option, re-eval no-op.
 - **type / class / class? / satisfies? / extends? / extenders** — type queries.
 - **resolve / ns-resolve / requiring-resolve / find-var / intern / the-ns / find-ns / all-ns / create-ns /
   ns-name / ns-publics / ns-map / ns-aliases / ns-interns / ns-refers / ns-imports / ns-unmap / alias** —

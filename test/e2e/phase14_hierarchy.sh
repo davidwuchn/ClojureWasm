@@ -32,4 +32,12 @@ assert_eq 'isa_vec_no'  "$("$BIN" -e '(do (derive :dog :animal) (isa? [:dog :cat
 # underive removes the relationship
 assert_eq 'underive'    "$("$BIN" -e '(do (derive :a :b) (underive :a :b) (isa? :a :b))')" 'false'
 assert_eq 'underive_keep' "$("$BIN" -e '(do (derive :a :b) (derive :a :c) (underive :a :b) [(isa? :a :b) (isa? :a :c)])')" '[false true]'
-echo "OK — phase14_hierarchy (14 cases) green"
+# defmulti dispatch consults the global hierarchy via isa? (D-161). The macro
+# threads -global-hierarchy into the MultiFn, so derive (even after defmulti)
+# is seen; the method cache invalidates on the hierarchy's snapshot identity.
+assert_eq 'mm_derive_dispatch' "$("$BIN" -e '(do (defmulti area :shape) (defmethod area :rect [r] :rect-fn) (derive :square :rect) (area {:shape :square}))')" ':rect-fn'
+assert_eq 'mm_cache_invalidate' "$("$BIN" -e '(do (defmulti area :shape) (defmethod area :rect [r] :rect-fn) (defmethod area :default [r] :def-fn) (area {:shape :square}) (derive :square :rect) (area {:shape :square}))')" ':rect-fn'
+assert_eq 'mm_transitive' "$("$BIN" -e '(do (defmulti area :shape) (defmethod area :s3 [r] :s3-fn) (derive :square :rect) (derive :rect :s3) (area {:shape :square}))')" ':s3-fn'
+assert_eq 'mm_default_no_rel' "$("$BIN" -e '(do (defmulti area :shape) (defmethod area :rect [r] :rect-fn) (defmethod area :default [r] :def-fn) (area {:shape :tri}))')" ':def-fn'
+assert_eq 'mm_prefer' "$("$BIN" -e '(do (defmulti area :shape) (defmethod area :rect [r] :r) (defmethod area :round [r] :ro) (derive :square :rect) (derive :square :round) (prefer-method area :rect :round) (area {:shape :square}))')" ':r'
+echo "OK — phase14_hierarchy (19 cases) green"

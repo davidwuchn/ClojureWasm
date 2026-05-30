@@ -1541,7 +1541,7 @@ fn wrapBodyInDo(arena: std.mem.Allocator, body: []const Form, loc: SourceLocatio
 // --- defmulti — multimethod definition (ADR-0008 Phase 7.2 amendment, Alt 1) ---
 //
 // `(defmulti name dispatch-fn)` →
-//   `(def name (rt/__make-multifn (quote name) dispatch-fn :default))`
+//   `(def name (rt/__make-multifn (quote name) dispatch-fn :default -global-hierarchy))`
 //
 // JVM Clojure's `defmulti` macro has additional re-eval-no-op
 // semantics (preserves method_table across REPL reloads). cw v1
@@ -1569,12 +1569,16 @@ fn expandDefmulti(
     quote_items[1] = name_form;
     const quoted_name = try list(arena, quote_items, loc);
 
-    // (rt/__make-multifn (quote name) dispatch-fn :default)
-    var call_items = try arena.alloc(Form, 4);
+    // (rt/__make-multifn (quote name) dispatch-fn :default -global-hierarchy)
+    // The bare `-global-hierarchy` symbol resolves to the public atom in the
+    // calling ns (referred from clojure.core at boot) so dispatch consults the
+    // live, mutable hierarchy — `derive` after `defmulti` is seen (D-161).
+    var call_items = try arena.alloc(Form, 5);
     call_items[0] = .{ .data = .{ .symbol = .{ .ns = "rt", .name = "__make-multifn" } }, .location = loc };
     call_items[1] = quoted_name;
     call_items[2] = dispatch_fn_form;
     call_items[3] = .{ .data = .{ .keyword = .{ .ns = null, .name = "default" } }, .location = loc };
+    call_items[4] = sym("-global-hierarchy", loc);
     const call_form = try list(arena, call_items, loc);
 
     // (def name call_form)

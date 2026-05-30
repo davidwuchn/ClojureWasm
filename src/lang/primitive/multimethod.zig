@@ -35,16 +35,17 @@ fn expectMultiFn(arg: Value, loc: SourceLocation) anyerror!*MultiFn {
     return arg.decodePtr(*MultiFn);
 }
 
-/// `(rt/__make-multifn name dispatch-fn default-val)` — allocate a
-/// fresh MultiFn Value. `name` is the user-visible symbol
-/// (`'my-fn`); `dispatch-fn` is the function that produces the
-/// dispatch value from call args; `default-val` is the dispatch
-/// value used when no method matches (Clojure's `:default`).
-/// `hierarchy_ref` defaults to nil (= no per-instance hierarchy;
-/// the global hierarchy is consulted at the Clojure layer).
+/// `(rt/__make-multifn name dispatch-fn default-val hierarchy)` —
+/// allocate a fresh MultiFn Value. `name` is the user-visible symbol
+/// (`'my-fn`); `dispatch-fn` produces the dispatch value from call
+/// args; `default-val` is the dispatch value used when no method
+/// matches (Clojure's `:default`); `hierarchy` is the IRef (atom)
+/// whose held map dispatch consults via `isa?` — `defmulti` threads
+/// the public `-global-hierarchy` atom (D-161). A `nil` hierarchy
+/// means equality-only dispatch.
 pub fn makeMultiFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
     _ = env;
-    try error_catalog.checkArity("__make-multifn", args, 3, loc);
+    try error_catalog.checkArity("__make-multifn", args, 4, loc);
     if (args[0].tag() != .symbol) {
         return error_catalog.raise(.type_arg_invalid, loc, .{
             .fn_name = "__make-multifn",
@@ -58,7 +59,7 @@ pub fn makeMultiFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLoca
         .name = args[0],
         .dispatch_fn = args[1],
         .default_dispatch_val = args[2],
-        .hierarchy_ref = Value.nil_val,
+        .hierarchy_ref = args[3],
         .method_table = map_mod.empty(),
         .prefer_table = map_mod.empty(),
         .method_cache = map_mod.empty(),
@@ -200,7 +201,7 @@ test "__make-multifn allocates a MultiFn Value with the given name + default" {
     const name = try symbol_mod.intern(&fix.rt, null, "my-fn");
     const default_kw = try keyword.intern(&fix.rt, null, "default");
 
-    const result = try makeMultiFn(&fix.rt, &fix.env, &[_]Value{ name, Value.nil_val, default_kw }, .{});
+    const result = try makeMultiFn(&fix.rt, &fix.env, &[_]Value{ name, Value.nil_val, default_kw, Value.nil_val }, .{});
     try testing.expect(result.tag() == .multi_fn);
 
     const mf = result.decodePtr(*MultiFn);
@@ -215,7 +216,7 @@ test "__add-method! mutates method_table and clears method_cache" {
 
     const name = try symbol_mod.intern(&fix.rt, null, "my-fn");
     const default_kw = try keyword.intern(&fix.rt, null, "default");
-    const multi = try makeMultiFn(&fix.rt, &fix.env, &[_]Value{ name, Value.nil_val, default_kw }, .{});
+    const multi = try makeMultiFn(&fix.rt, &fix.env, &[_]Value{ name, Value.nil_val, default_kw, Value.nil_val }, .{});
     const mf = multi.decodePtr(*MultiFn);
 
     const kw_a = try keyword.intern(&fix.rt, null, "a");
@@ -239,7 +240,7 @@ test "__get-method returns the method on a known dispatch_val" {
 
     const name = try symbol_mod.intern(&fix.rt, null, "my-fn");
     const default_kw = try keyword.intern(&fix.rt, null, "default");
-    const multi = try makeMultiFn(&fix.rt, &fix.env, &[_]Value{ name, Value.nil_val, default_kw }, .{});
+    const multi = try makeMultiFn(&fix.rt, &fix.env, &[_]Value{ name, Value.nil_val, default_kw, Value.nil_val }, .{});
 
     const kw_a = try keyword.intern(&fix.rt, null, "a");
     const m_a = try keyword.intern(&fix.rt, null, "method-a");
@@ -256,7 +257,7 @@ test "__get-method returns nil when no method matches" {
 
     const name = try symbol_mod.intern(&fix.rt, null, "my-fn");
     const default_kw = try keyword.intern(&fix.rt, null, "default");
-    const multi = try makeMultiFn(&fix.rt, &fix.env, &[_]Value{ name, Value.nil_val, default_kw }, .{});
+    const multi = try makeMultiFn(&fix.rt, &fix.env, &[_]Value{ name, Value.nil_val, default_kw, Value.nil_val }, .{});
 
     const kw_missing = try keyword.intern(&fix.rt, null, "missing");
     const got = try getMethodPrim(&fix.rt, &fix.env, &[_]Value{ multi, kw_missing }, .{});
@@ -270,7 +271,7 @@ test "__remove-method! removes an entry and resets cache" {
 
     const name = try symbol_mod.intern(&fix.rt, null, "my-fn");
     const default_kw = try keyword.intern(&fix.rt, null, "default");
-    const multi = try makeMultiFn(&fix.rt, &fix.env, &[_]Value{ name, Value.nil_val, default_kw }, .{});
+    const multi = try makeMultiFn(&fix.rt, &fix.env, &[_]Value{ name, Value.nil_val, default_kw, Value.nil_val }, .{});
     const mf = multi.decodePtr(*MultiFn);
 
     const kw_a = try keyword.intern(&fix.rt, null, "a");
