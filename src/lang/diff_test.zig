@@ -126,6 +126,9 @@ test "diff: atom — atom/deref/@/swap!/reset!/compare-and-set! (D-085 sibling)"
     try f.check("(let* [a (atom 0)] (swap! a inc) @a)", 1);
     try f.check("(let* [a (atom 5)] (reset! a 9) @a)", 9);
     try f.check("(if (compare-and-set! (atom 1) 1 2) 100 200)", 100);
+    // volatile shares the mutable-cell mechanism (primitives, no core.clj).
+    try f.check("(let* [v (volatile! 0)] (vswap! v inc) @v)", 1);
+    try f.check("(if (volatile? (volatile! 1)) 10 20)", 10);
 }
 
 test "diff: binding rebinds a dynamic var (both backends)" {

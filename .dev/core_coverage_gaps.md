@@ -64,4 +64,13 @@ Caveat: the static var-set extraction has minor false-positives (e.g.
   memfn, munge, system-time, add-tap/tap>/remove-tap.
 
 ## Status
-- 2026-05-30: map generated + validated. Starting P0 batch (hash / gensym / volatile! / comparator / bigint).
+- 2026-05-30: map generated + validated. P0 progress:
+  - **DONE**: `hash`, `gensym` (35721849); `volatile!`/`vreset!`/`vswap!`/`volatile?` (e3281deb);
+    `comparator` (this batch).
+  - **next P0**: `bigint`/`bigdec`/`biginteger` (wrap existing numeric — medium, not trivial:
+    needs forcing a Long into the arbitrary-precision repr).
+  - **then P1**: `memoize` (.clj over atom — now unblocked), sorted-map/sorted-set (new tree),
+    metadata (with-meta/meta — value-model investigation), transducers.
+- **New gaps found while sweeping** (not yet chased): `(sort cmp coll)` with a 2-arg COMPARATOR fn
+  errors — cljw `sort`'s 2-arg form treats the fn as a 1-arg key-fn, not a comparator (= **D-159**);
+  regex capture groups unsupported ("cycle 1"); `resolve` itself missing (P2).

@@ -105,6 +105,14 @@
 (def complement
   (fn* [pred] (fn* [& args] (not (apply pred args)))))
 
+;; `(comparator pred)` builds a 3-way compare fn (-1 / 0 / 1) from a
+;; 2-arg boolean `pred` (like `<`). Nested `if` (not `cond`) so it does
+;; not depend on macro availability during bootstrap.
+(def comparator
+  (fn* [pred]
+    (fn* [a b]
+      (if (pred a b) -1 (if (pred b a) 1 0)))))
+
 ;; `(partial f & args)` partially applies f to the leading args.
 ;; The trailing arg list and the partial's captured args meet via
 ;; `(into (into [] args) more)` since cw v1 doesn't yet have
