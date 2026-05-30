@@ -169,6 +169,24 @@
   (fn* ([to from] (reduce conj to from))
        ([to xform from] (transduce xform conj to from))))
 
+;; `(-preserving-reduced rf)` wraps rf so that a Reduced result from an
+;; INNER reduce (cat uses one) is double-wrapped — the outer reduce then
+;; sees the early-stop instead of cat swallowing it.
+(def -preserving-reduced
+  (fn* [rf]
+    (fn* [a b]
+      (let [ret (rf a b)]
+        (if (reduced? ret) (reduced ret) ret)))))
+
+;; `cat` — a transducer that concatenates the contents of each input
+;; (each input is itself reduced into the downstream rf).
+(def cat
+  (fn* [rf]
+    (let [rrf (-preserving-reduced rf)]
+      (fn* ([] (rf))
+           ([result] (rf result))
+           ([result input] (reduce rrf result input))))))
+
 ;; ----------------------------------------------------------------
 ;; Pure Clojure HOF (no Zig leaf) — pattern A per ADR-0033 D3.
 ;; ----------------------------------------------------------------
@@ -529,18 +547,40 @@
 ;; D-134 cluster 3 — unblocked by D-136 (universal `=`).
 
 ;; `(dedupe coll)` — drop consecutive duplicates (eager vector).
+;; `(dedupe)` — the transducer (stateful: remembers the previous input via
+;; two volatiles, avoiding a sentinel value that data could collide with).
 (def dedupe
-  (fn* [coll]
-    (reduce (fn* [acc x] (if (= x (last acc)) acc (conj acc x))) [] coll)))
+  (fn* ([]
+        (fn* [rf]
+          (let [pv (volatile! nil) seen (volatile! false)]
+            (fn* ([] (rf))
+                 ([result] (rf result))
+                 ([result input]
+                  (let [had @seen prior @pv]
+                    (vreset! seen true)
+                    (vreset! pv input)
+                    (if (if had (= prior input) false) result (rf result input))))))))
+       ([coll]
+        (reduce (fn* [acc x] (if (= x (last acc)) acc (conj acc x))) [] coll))))
 
 ;; `(distinct coll)` — drop all duplicates, first occurrence wins.
 ;; Linear `=` scan (structural, so strings/collections dedupe); O(n^2).
 (def distinct
-  (fn* [coll]
-    (reduce (fn* [acc x]
-              (if (some (fn* [y] (= y x)) acc) acc (conj acc x)))
-            []
-            coll)))
+  (fn* ([]
+        ;; transducer: a volatile set of already-seen inputs
+        (fn* [rf]
+          (let [seen (volatile! #{})]
+            (fn* ([] (rf))
+                 ([result] (rf result))
+                 ([result input]
+                  (if (contains? @seen input)
+                    result
+                    (do (vswap! seen conj input) (rf result input))))))))
+       ([coll]
+        (reduce (fn* [acc x]
+                  (if (some (fn* [y] (= y x)) acc) acc (conj acc x)))
+                []
+                coll))))
 
 ;; `(frequencies coll)` — map of item -> occurrence count. Keys via map
 ;; assoc (bit-pattern keyEq → number/keyword keys; structural keys D-092).
@@ -906,7 +946,23 @@
 ;; `(partition-all n [step] coll)` — like `partition` but KEEPS the final
 ;; short partition (no length check, no pad). Lazy (D-134).
 (def partition-all
-  (fn* ([n coll] (partition-all n n coll))
+  (fn* ([n]
+        ;; transducer: buffer inputs in a volatile vector, emit each full
+        ;; partition; the 1-arg completion flushes the short final one.
+        (fn* [rf]
+          (let [a (volatile! [])]
+            (fn* ([] (rf))
+                 ([result]
+                  (let [result (if (empty? @a)
+                                 result
+                                 (let [v @a] (vreset! a []) (unreduced (rf result v))))]
+                    (rf result)))
+                 ([result input]
+                  (vswap! a conj input)
+                  (if (= n (count @a))
+                    (let [v @a] (vreset! a []) (rf result v))
+                    result))))))
+       ([n coll] (partition-all n n coll))
        ([n step coll]
         (lazy-seq
           (let [s (seq coll)]

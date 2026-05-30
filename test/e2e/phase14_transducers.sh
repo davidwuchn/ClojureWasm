@@ -53,4 +53,13 @@ assert_eq 'td_take_inf' "$("$BIN" -e '(into [] (take 3) (iterate inc 0))')"   '[
 # regression: the lazy collection arities still work
 assert_eq 'lazy_take'   "$("$BIN" -e '(into [] (take 3 [1 2 3 4 5]))')"       '[1 2 3]'
 assert_eq 'lazy_drop'   "$("$BIN" -e '(into [] (drop 2 [1 2 3 4 5]))')"       '[3 4 5]'
-echo "OK — phase14_transducers (33 cases, cycles 1-3) green"
+# cycle 4: dedupe / distinct / partition-all transducers + cat
+assert_eq 'td_dedupe'   "$("$BIN" -e '(into [] (dedupe) [1 1 2 2 2 3 1 1])')" '[1 2 3 1]'
+assert_eq 'td_distinct' "$("$BIN" -e '(into [] (distinct) [1 2 1 3 2 4])')"   '[1 2 3 4]'
+assert_eq 'td_partall'  "$("$BIN" -e '(into [] (partition-all 2) [1 2 3 4 5])')" '[[1 2] [3 4] [5]]'
+assert_eq 'td_cat'      "$("$BIN" -e '(into [] cat [[1 2] [3 4] [5]])')"      '[1 2 3 4 5]'
+assert_eq 'td_cat_map'  "$("$BIN" -e '(into [] (comp cat (map inc)) [[1 2] [3 4]])')" '[2 3 4 5]'
+# cat + take: preserving-reduced must propagate the early-stop through cat
+assert_eq 'td_cat_take' "$("$BIN" -e '(into [] (comp cat (take 3)) [[1 2] [3 4] [5 6]])')" '[1 2 3]'
+assert_eq 'td_full'     "$("$BIN" -e '(into [] (comp (map inc) (filter even?) (distinct)) [1 1 2 3 3 4])')" '[2 4]'
+echo "OK — phase14_transducers (40 cases, cycles 1-4) green"
