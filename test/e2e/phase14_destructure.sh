@@ -72,4 +72,11 @@ assert_eq 'loop_rest'   "$("$BIN" -e '(loop [sum 0 [x & xs] [1 2 3]] (if x (recu
 assert_eq 'loop_map'    "$("$BIN" -e '(loop [{:keys [n]} {:n 5}] (if (> n 0) (recur {:n (dec n)}) :done))')" ':done'
 assert_eq 'loop_star'   "$("$BIN" -e '(loop* [x 0] (if (< x 2) (recur (inc x)) x))')"              '2'
 
-echo "OK — phase14_destructure smoke (27 cases) green"
+# --- cycle 5: keyword-args destructuring (& {:keys [...]}) — a seq operand
+# in a map-destructure is coerced to a map (Clojure (apply hash-map …)). ---
+assert_eq 'kwargs_keys'      "$("$BIN" -e '((fn [& {:keys [x y]}] [x y]) :x 1 :y 2)')"        '[1 2]'
+assert_eq 'kwargs_with_lead' "$("$BIN" -e '((fn [a & {:keys [x]}] [a x]) 1 :x 2)')"          '[1 2]'
+assert_eq 'kwargs_or'        "$("$BIN" -e '((fn [& {:keys [x] :or {x 9}}] x))')"             '9'
+assert_eq 'map_destr_of_seq' "$("$BIN" -e "(let [{:keys [x]} '(:x 1)] x)")"                  '1'
+
+echo "OK — phase14_destructure smoke (31 cases) green"

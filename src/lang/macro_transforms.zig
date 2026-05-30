@@ -269,6 +269,17 @@ fn associativeDestructure(
     const g = sym(try rt.gensym(arena, "map"), loc);
     try out.append(arena, g);
     try out.append(arena, value_form);
+    // Map-destructuring of a SEQ operand (the kwargs idiom `& {:keys [...]}`,
+    // where the rest args arrive as a seq) coerces it to a map so the
+    // `(get g key)` lookups hit — mirrors Clojure's
+    // `(if (seq? g) (apply hash-map g) g)`. value_form is evaluated once
+    // (bound above); rebinding g in the same let* shadows the raw value.
+    try out.append(arena, g);
+    try out.append(arena, try makeCall(arena, "if", &.{
+        try makeCall(arena, "seq?", &.{g}, loc),
+        try makeCall(arena, "apply", &.{ sym("hash-map", loc), g }, loc),
+        g,
+    }, loc));
 
     // Pass 1: locate `:or` (a `{sym default}` map) so its defaults are
     // available regardless of key order.
