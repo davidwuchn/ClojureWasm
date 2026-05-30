@@ -215,4 +215,45 @@ assert_eq 'deftype_record_pred_false' "$(last_line "$got")" 'false'
 got=$("$BIN" -e '(record? {:a 1})' 2>/dev/null) || fail "case21: non-zero exit"
 assert_eq 'map_record_pred_false' "$(last_line "$got")" 'false'
 
-echo "OK — phase7_defrecord smoke (21 cases) green"
+# --- Case 22: record value equality — same type + same fields ---
+got=$("$BIN" - <<'EOF' 2>/dev/null
+(defrecord Point [x y])
+(= (->Point 1 2) (->Point 1 2))
+EOF
+) || fail "case22: non-zero exit ($got)"
+assert_eq 'defrecord_value_equality_true' "$(last_line "$got")" 'true'
+
+# --- Case 23: record inequality — same type, differing field ---
+got=$("$BIN" - <<'EOF' 2>/dev/null
+(defrecord Point [x y])
+(= (->Point 1 2) (->Point 1 3))
+EOF
+) || fail "case23: non-zero exit ($got)"
+assert_eq 'defrecord_value_equality_false_field' "$(last_line "$got")" 'false'
+
+# --- Case 24: a record is NOT equal to a plain map (defrecord class check) ---
+got=$("$BIN" - <<'EOF' 2>/dev/null
+(defrecord Point [x y])
+(= (->Point 1 2) {:x 1 :y 2})
+EOF
+) || fail "case24: non-zero exit ($got)"
+assert_eq 'defrecord_not_eq_map' "$(last_line "$got")" 'false'
+
+# --- Case 25: distinct record types with equal fields are unequal ---
+got=$("$BIN" - <<'EOF' 2>/dev/null
+(defrecord A [v])
+(defrecord B [v])
+(= (->A 1) (->B 1))
+EOF
+) || fail "case25: non-zero exit ($got)"
+assert_eq 'defrecord_distinct_types_unequal' "$(last_line "$got")" 'false'
+
+# --- Case 26: equal records are usable as map keys (= ⇒ same hash bucket) ---
+got=$("$BIN" - <<'EOF' 2>/dev/null
+(defrecord Point [x y])
+(get {(->Point 1 2) :hit} (->Point 1 2))
+EOF
+) || fail "case26: non-zero exit ($got)"
+assert_eq 'defrecord_as_map_key' "$(last_line "$got")" ':hit'
+
+echo "OK — phase7_defrecord smoke (26 cases) green"

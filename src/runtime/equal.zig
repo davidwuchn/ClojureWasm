@@ -34,6 +34,7 @@ const set = @import("collection/set.zig");
 const big_int = @import("numeric/big_int.zig");
 const ratio = @import("numeric/ratio.zig");
 const big_decimal = @import("numeric/big_decimal.zig");
+const td_mod = @import("type_descriptor.zig");
 
 const NumCat = enum { integer, floating, ratio, decimal, none };
 
@@ -192,7 +193,27 @@ pub fn keyEqValue(a: Value, b: Value) bool {
     // List / cross-type vec≡list keys remain a residual.
     if (a.tag() == .vector and b.tag() == .vector)
         return vectorKeyEq(a, b);
+    // defrecord keys by value (partner of typedInstanceEqual): same
+    // descriptor + each field keyEqValue. deftype stays identity (a
+    // non-bit-identical pair already fell through the identity check).
+    if (a.tag() == .typed_instance and b.tag() == .typed_instance)
+        return typedInstanceKeyEq(a, b);
     return false;
+}
+
+fn typedInstanceKeyEq(a: Value, b: Value) bool {
+    const ia = a.decodePtr(*const td_mod.TypedInstance);
+    const ib = b.decodePtr(*const td_mod.TypedInstance);
+    if (ia.descriptor != ib.descriptor) return false;
+    if (ia.descriptor.kind != .defrecord) return false;
+    const fa = ia.fields();
+    const fb = ib.fields();
+    if (fa.len != fb.len) return false;
+    var i: usize = 0;
+    while (i < fa.len) : (i += 1) {
+        if (!keyEqValue(fa[i], fb[i])) return false;
+    }
+    return true;
 }
 
 fn vectorKeyEq(a: Value, b: Value) bool {
@@ -223,8 +244,27 @@ pub fn valueHash(v: Value) u32 {
         // Vector keys hash by content (ordered, recursive) so two equal
         // vectors land in the same bucket — the partner of vectorKeyEq (D-092).
         .vector => vectorHash(v),
+        // defrecord keys hash by descriptor + fields (partner of
+        // typedInstanceKeyEq); deftype keeps the identity bit-hash.
+        .typed_instance => blk: {
+            const inst = v.decodePtr(*const td_mod.TypedInstance);
+            if (inst.descriptor.kind == .defrecord) break :blk typedInstanceHash(inst);
+            break :blk hash.hashLong(@bitCast(@intFromEnum(v)));
+        },
         else => hash.hashLong(@bitCast(@intFromEnum(v))),
     };
+}
+
+/// Content hash of a defrecord instance: seed with the descriptor pointer
+/// (so distinct record types with equal fields hash apart) then fold each
+/// field through `valueHash`. Partner of `typedInstanceKeyEq`.
+fn typedInstanceHash(inst: *const td_mod.TypedInstance) u32 {
+    const fields = inst.fields();
+    var h: u32 = @truncate(@intFromPtr(inst.descriptor));
+    for (fields) |fv| {
+        h = h *% 31 +% valueHash(fv);
+    }
+    return hash.mixCollHash(h, @intCast(fields.len));
 }
 
 /// Order-dependent content hash of a vector (mirrors `hash.hashOrdered`
@@ -272,6 +312,27 @@ pub fn valueEqual(rt: *Runtime, env: *Env, a: Value, b: Value) anyerror!bool {
         .string => std.mem.eql(u8, string_mod.asString(a), string_mod.asString(b)),
         .array_map, .hash_map => mapEqual(rt, env, a, b),
         .hash_set => setEqual(rt, a, b),
+        .typed_instance => typedInstanceEqual(rt, env, a, b),
         else => false,
     };
+}
+
+/// Record value equality (Clojure defrecord overrides equals): same
+/// descriptor (type) + every declared field equal, recursively. deftype
+/// keeps identity semantics (no auto equals) — two distinct deftype
+/// instances reach here non-bit-identical, so `false` is correct. A
+/// record is never `=` to a plain map: the caller's same-tag gate already
+/// excludes the map tags before this arm.
+fn typedInstanceEqual(rt: *Runtime, env: *Env, a: Value, b: Value) anyerror!bool {
+    const ia = a.decodePtr(*const td_mod.TypedInstance);
+    const ib = b.decodePtr(*const td_mod.TypedInstance);
+    if (ia.descriptor != ib.descriptor) return false;
+    if (ia.descriptor.kind != .defrecord) return false; // deftype = identity
+    const fa = ia.fields();
+    const fb = ib.fields();
+    if (fa.len != fb.len) return false;
+    for (fa, fb) |va, vb| {
+        if (!try valueEqual(rt, env, va, vb)) return false;
+    }
+    return true;
 }
