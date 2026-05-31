@@ -223,3 +223,69 @@ comptime-vs-init asymmetry comment on `static_fields`.
 - `test/e2e/phase14_static_fields.sh` — clj-parity cases (incl. the
   D-165 BigInt-N pin for `Long/MAX_VALUE`).
 - `.dev/debt.md` — D-165 cross-reference (Long/MAX_VALUE field inherits it).
+
+## Revision history
+
+### 2026-05-31 — `StaticFieldValue` gains `.bool` (Boolean/TRUE/FALSE), cluster A26 cycle F
+
+`java.lang.Boolean` needs `Boolean/TRUE` → `true` / `Boolean/FALSE` →
+`false` static fields, whose values are booleans — outside the original
+`int`/`float`-only `StaticFieldValue`. Amendment: add `.bool: bool` to
+`StaticFieldValue`; `analyzeSymbol`'s lift switch gains
+`.bool => |b| Value.initBoolean(b)` (the existing `value.zig` helper,
+matching the `.float => Value.initFloat(f)` arm). A cljw boolean is an
+inline `NB_CONST_TAG` immediate (comptime-const), so the §2 comptime-const
+property (no `init`/`deinit`) holds; the descriptor slot, resolution path,
+and dual-backend parity are unchanged. **Forward note (do not
+over-anticipate)**: `Double/POSITIVE_INFINITY` / `NEGATIVE_INFINITY` /
+`NaN` need NO new variant — they are comptime f64 (`std.math.inf` / `-inf`
+/ `nan`) carried by the existing `.float`; only a future
+`Character/MAX_VALUE` (a char) would add a `.char: u21` variant.
+
+Devil's-advocate (mandatory at depth ≥ 2) ran fresh-context; its verbatim
+output (3 alternatives + ranked recommendation) follows. The main loop
+adopts its #1 (Alt 1: `.bool` variant + `Value.initBoolean`).
+
+> ## Devil's-advocate: Alternatives considered (StaticFieldValue grows a bool)
+>
+> **F-NNN gate result up front:** None of the three alternatives below requires violating an F-NNN. A cljw boolean is an inline `NB_CONST_TAG` immediate Value (`value.zig:34-35` `true_val`/`false_val`; F-004) — comptime-const exactly like the existing `int`/`float` scalars, so every alternative preserves the `static_fields` comptime-const property (no `init` alloc, no `deinit` free) that ADR-0061 §2 made load-bearing. All three emit a `.constant` Node at analyze time, so ADR-0036 dual-backend parity is untouched (confirmed per-alternative below). F-011 commonization (one descriptor-keyed lookup shape) is the axis the alternatives are judged on. The clean shape is reachable; no forced F-NNN-block disclosure needed.
+>
+> One verified-fact sharpening the alternatives lean on: `value.zig:192` already ships `Value.initBoolean(b: bool) Value` = `if (b) true_val else false_val`. The draft's inline `if (b) Value.true_val else Value.false_val` re-spells this helper at the call site; the alternatives prefer the named helper for symmetry with the existing `.float => Value.initFloat(f)` arm.
+>
+> ### Alternative 1 — Smallest-diff: add `.bool: bool` to `StaticFieldValue`, lift via `Value.initBoolean` (the draft, using the existing helper)
+>
+> The draft as written, with the one-line tightening: the lift arm is `.bool => |b| Value.initBoolean(b)` (reusing `value.zig:192`) rather than an inline `if`. `StaticFieldValue` becomes `union(enum) { int: i64, float: f64, bool: bool }`; `Boolean.zig` declares `boolean_static_fields = [_]StaticField{ .{ .name="TRUE", .value=.{.bool=true} }, .{ .name="FALSE", .value=.{.bool=false} } }`.
+>
+> **What it does better:** Minimal, and each variant maps 1:1 to the analyzer arm that lifts it — `int → integerLiteralToValue`, `float → initFloat`, `bool → initBoolean`. The union stays a flat list of the primitive scalar kinds Clojure static fields actually carry, each comptime-const. Grep-local (`rg TRUE src/runtime/java/lang/Boolean.zig` hits). The lift switch stays exhaustive (`zig_tips.md` narrow-enum rule), so a future variant added without a matching arm is a compile error — a real regression guard.
+>
+> **What it breaks / risks:** Each new scalar shape costs one variant + one arm. Today's question already names the next ones: `Double/POSITIVE_INFINITY`/`NEGATIVE_INFINITY`/`NaN` are **comptime f64 values — already covered by `.float`** (`std.math.inf(f64)` / `-inf` / `nan` are comptime-const, `Value.initFloat` lifts them, no new variant). `Long/SIZE = 64` fits `.int`. The *one* genuinely-new shape on the horizon is `Character/MAX_VALUE` (a char `￿`), which would need a `.char: u21` variant + a `.char => |c| Value.initChar(c)` arm (`value.zig:216`). So the union's realistic end state is 4 variants (`int`/`float`/`bool`/`char`) — small and closed; Clojure host static fields are scalars, never collections. The risk is purely "N small edits over time" — but each is a one-line variant + one-line arm, and the exhaustiveness check makes them safe. This is finished-form-clean, not merely smallest-diff: the union models "the primitive Value kinds a constant field carries", which is exactly what it is.
+>
+> **Explicit answers:** (a) comptime-const for all future kinds incl. `Double` inf (`.float`, already covered) and `Character/MAX_VALUE` (`.char`, comptime u21): **yes** — every kind is an inline immediate or a comptime scalar. (b) regress the BigInt path? **No** — `.int => integerLiteralToValue` is untouched; `Long/MAX_VALUE` still lifts to a heap BigInt at analyze time exactly as ADR-0061 specifies. (c) dual-backend parity: **unaffected** — `.bool` emits a `.constant` Node like every other arm; both backends see the identical inline `true_val`/`false_val`.
+>
+> ### Alternative 2 — `.value: Value` single variant holding any comptime-const Value
+>
+> Collapse the union into one variant `StaticFieldValue = struct { value: Value }` (or drop the union entirely: `StaticField = struct { name, value: Value }`). `Boolean.zig` writes `.value = Value.true_val`; `Math.zig`-style float fields write `.value = Value.initFloat(...)`; the analyzer arm becomes a trivial `makeConstant(arena, sf.value, form)` — **no lift switch at all**.
+>
+> **What it does better:** One variant covers bool, char, float, and any in-range int with **zero** future edits — `Character/MAX_VALUE` is just `.value = Value.initChar(0xFFFF)` in the surface, no `type_descriptor.zig` touch ever again. The analyzer arm shrinks to one line (no switch).
+>
+> **What it breaks / risks — this is the disqualifier:** It **regresses the `Long/MAX_VALUE` BigInt path**, which is the whole reason ADR-0061 stored a *raw scalar* rather than a `Value` in the first place (see the field docstring, `type_descriptor.zig:109-113`: *"the value is kept as a raw scalar (not a `Value`) because a heap `Value` (BigInt for `Long/MAX_VALUE`) cannot be comptime-const"*). `9223372036854775807` exceeds i48 (F-004), so its Value is a **heap BigInt** — which is **not comptime-const** (it needs a `rt.gc` allocation). A `static_fields` array of `Value` therefore cannot hold `Long/MAX_VALUE` as a comptime literal: you would either (i) lose `Long/MAX_VALUE` (a shipped ADR-0061 target — regression), or (ii) reintroduce an `init`-time heap-build + `deinit`-free for the array, destroying the comptime-const property ADR-0061 §2 made load-bearing and explicitly forbade. Either branch breaks a confirmed invariant. The raw-scalar union exists *precisely* to defer the i48→BigInt lift to analyze time (where `rt.gc` is available) via `integerLiteralToValue`; `.value: Value` cannot defer it. This is a Reservation-as-convenience trap: it looks like the cleanest "any Value" generalization, but it collides with F-004's i48 NaN-box ceiling.
+>
+> **Explicit answers:** (a) comptime-const for all future kinds: **no** — fails for any field whose Value is a heap type, and `Long/MAX_VALUE` is one **today**. (b) regress BigInt? **Yes, directly** — this is the central failure. (c) dual-backend parity: would be fine in isolation (constant Node), but moot given (a)/(b).
+>
+> ### Alternative 3 — Wildcard: store a `comptime`-evaluated thunk `*const fn() Value` per field
+>
+> Make `StaticFieldValue` hold a function pointer `produce: *const fn(rt: *Runtime) anyerror!Value`, so each field declares how to build its own Value (`Boolean/TRUE` → returns `true_val`; `Long/MAX_VALUE` → returns the BigInt build). The analyzer arm calls `sf.value.produce(env.rt)`.
+>
+> **What it does better:** Maximally general — any Value, including heap ones, with no union growth and no analyzer switch; the per-field producer encapsulates the lift.
+>
+> **What it breaks / risks:** It reintroduces the exact non-comptime-fn-pointer hazard ADR-0061 §2 identified as the reason `method_table` (which holds `Value.initBuiltinFn(&fn)`) must be `init`-built and `deinit`-freed: `@intFromPtr(fn)` is **not comptime on Mac**. A `produce: *const fn(...)` field makes `static_fields` non-comptime *in the same way method_table is*, forcing it back into `init`/`deinit` — re-merging the asymmetry ADR-0061 deliberately split (its strongest structural argument). It also over-engineers a constant read into a runtime call for zero benefit: static fields are pure constants with no per-field behaviour to encapsulate. Strictly more machinery, and it forfeits the comptime-const property that is F-004/§2's load-bearing win.
+>
+> **Explicit answers:** (a) comptime-const: **no** — fn pointers are non-comptime on Mac (the documented `_host_api.zig:46-61` constraint). (b) regress BigInt? It *handles* BigInt, but only by paying the `init`/`deinit` cost the whole design avoids. (c) dual-backend parity: still a constant Node, but the producer runs at analyze time — parity-fine yet irrelevant given (a).
+>
+> ### Non-binding ranked recommendation
+>
+> 1. **Alt 1 (`.bool: bool` variant + `.bool => Value.initBoolean(b)` arm).** Finished-form-clean: `StaticFieldValue` stays a flat closed list of the primitive scalar kinds a Clojure host static field carries (`int`/`float`/`bool`, +`char` when `Character/MAX_VALUE` lands), each comptime-const, each with a 1:1 exhaustive lift arm reusing the existing literal path. It preserves the `Long/MAX_VALUE` raw-scalar→analyze-time-BigInt deferral, keeps the §2 comptime-const invariant, and stays grep-local + descriptor-keyed (F-011 symmetry). Tightening over the draft: use `Value.initBoolean(b)` in the arm. Record that `Double` infinities need no variant (existing `.float`); only `Character/MAX_VALUE` later adds `.char`.
+> 2. **Alt 2 (`.value: Value`).** Tempting as "the one generalization that never needs another variant", right in a world without the i48 ceiling — but it **regresses `Long/MAX_VALUE`** (non-comptime heap BigInt), and forcing it comptime needs the `init`/`deinit` machinery §2 forbids. F-004 disqualifies it.
+> 3. **Alt 3 (per-field `*const fn() Value` producer).** Reintroduces the non-comptime-fn-pointer cost ADR-0061 §2 split away from, over-engineers a constant read into a runtime call. Most machinery, forfeits the comptime-const win.
+>
+> **Cross-cutting (ADR-0036 parity):** all three resolve `Boolean/TRUE`/`FALSE` to a `.constant` Node at analyze time holding an inline immediate; TreeWalk and VM see the identical constant. Parity-trivial by construction. Confirmed: no alternative touches the parity contract.
