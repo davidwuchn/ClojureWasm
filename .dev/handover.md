@@ -5,17 +5,17 @@
 
 ## Resume contract
 
-- **HEAD**: `b132baf6` (`cw-from-scratch`; see `git log` for drift). Tree clean,
+- **HEAD**: `7f1c8342` (`cw-from-scratch`; see `git log` for drift). Tree clean,
   **0 unpushed**. Mac gate green (179).
-- **First commit on resume MUST be**: the next clj-differential-sweep unit =
-  **Integer/Long bit static methods** (`Integer/bitCount`,
-  `Long/numberOfLeadingZeros`, `numberOfTrailingZeros`, `highestOneBit`,
-  `reverse`). Verified gaps (clj `(Integer/bitCount 7)`→3, `(Long/numberOf
-  LeadingZeros 1)`→63; cljw errors "No namespace"). Add to the EXISTING
-  `runtime/java/lang/{Integer,Long}.zig` method_table (`@popCount`/`@clz`/
-  `@ctz`); same `___HOST_EXTENSION` pattern, no new infra. Step 0 may be
-  skipped (clear continuation of the landed statics; survey note already
-  covers Integer/Long).
+- **First commit on resume MUST be**: **D-166 float printer scientific
+  notation**. cljw's double printer (`print.zig::printFloat`, Zig `{d}`)
+  always emits full decimal; clj/Java `Double.toString` switches to
+  `<d>.<dd>E<exp>` outside `1e-3 ≤ |x| < 1e7`. The shortest-digit string is
+  already correct (`(/ 1.0 3.0)` matches clj) — this is a RE-LAYOUT, not a
+  digit-algorithm change. Ground via clj oracle (thresholds: `1e7`→`1.0E7`,
+  `0.0001`→`1.0E-4`, `12345678.0`→`1.2345678E7`, `6.022e23`→`6.022E23`;
+  decimal side unchanged). Step 0 survey REQUIRED (new behaviour; cw v0
+  double-print precedent).
 - **Operating mode** = clj differential sweep (F-011): probe a category through
   BOTH `clj` and `cljw`, diff, fix every divergence at the finished form;
   commonise rather than per-op patch. Deep/unresolvable → master ledger entry +
@@ -45,10 +45,14 @@
 
 java.lang scalar-class **static cluster COMPLETE** (cluster A26, cycles A-G,
 `678b78ba..b132baf6`): Integer / Long / Double / Character / Boolean static
-methods + fields, Math PI/E/floorDiv/floorMod. Landed the static-field
-resolution mechanism (**ADR-0061** + amendment: `TypeDescriptor.static_fields`,
-`.bool` variant) and a shared `runtime/numeric/parse.zig` leaf. Invariants:
-**F-011** (commonisation/behavioural-equivalence; clj oracle wired) + F-010.
+methods + fields, Math PI/E/floorDiv/floorMod. Integer/Long **bit statics**
+added (`7f1c8342`: bitCount/nlz/ntz/highestOneBit/reverse; `promote.wrapI64`
+made pub, parseI64 folded). Landed the static-field resolution mechanism
+(**ADR-0061** + amendment: `TypeDescriptor.static_fields`, `.bool` variant)
+and a shared `runtime/numeric/parse.zig` leaf. Now pivoting from Java-static
+coverage to the **D-166 correctness item** (float printer) per F-002/F-010.
+Invariants: **F-011** (commonisation/behavioural-equivalence; clj oracle
+wired) + F-010.
 
 ## Master divergence ledger (compaction-survival)
 
@@ -61,9 +65,8 @@ notes: `private/notes/phaseA26-*.md`.
 ## Open debts (full rows in `.dev/debt.md`)
 
 - **D-166** float printer never uses scientific notation (clj/Java switch at
-  |x|≥1e7 or <1e-3); affects ALL extreme doubles. Higher-value correctness item
-  the loop may pick over bit-method coverage (Java Double.toString thresholds +
-  shortest round-trip in print.zig). open.
+  |x|≥1e7 or <1e-3); affects ALL extreme doubles. **ACTIVE this session** —
+  re-layout of the (already-correct) shortest digits in `print.zig`. open.
 - **D-164** empty-seq≡nil: cljw collapses `()` to nil. The biggest structural
   parity gap (own cycle). open.
 - **D-165** i48→i64 long range prints as BigInt `N` (value exact; F-004 NaN-box).
@@ -79,11 +82,3 @@ notes: `private/notes/phaseA26-*.md`.
 handover → master ledger (above) → CLAUDE.md (§ Project spirit + Autonomous
 Workflow + The only stop) → `.dev/project_facts.md` (F-011 + F-010) →
 `.dev/principle.md` (Bad Smell) → `.dev/reference_clones.md` (clj oracle).
-
-## Stopped — user requested
-
-User instruction (2026-05-31): "では、もとの作業をきりのよいところまで進めて、
-クリアセッションからのcontinueのために、配線・参照チェーンを確認して修正したら、
-止めておいてください". cluster A26 Java statics advanced to a clean point (cluster
-complete, gate 179, all pushed); wiring/reference chain verified. Resume per the
-Resume-contract First-commit line — Integer/Long bit static methods.
