@@ -232,6 +232,15 @@ test "diff: def_node" {
     try f.check("(do (def diff-x 42) diff-x)", 42);
 }
 
+test "diff: var special form const-folds to a stable var_ref" {
+    var f = try Fixture.init(testing.allocator);
+    defer f.deinit();
+    // D-183(a): `(var x)` const-folds to a `.constant` var_ref Node on
+    // both backends; deref recovers the Var's root. Verifies the shared
+    // `.constant` arm yields the same stable `*Var` under TreeWalk + VM.
+    try f.check("(do (def diff-vx 7) (deref (var diff-vx)))", 7);
+}
+
 test "diff: def_node forward ref inside (do)" {
     var f = try Fixture.init(testing.allocator);
     defer f.deinit();

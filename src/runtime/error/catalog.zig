@@ -62,6 +62,9 @@ pub const Code = enum {
     def_name_namespace_qualified,
     if_arity_invalid,
     quote_arity_invalid,
+    var_arity_invalid,
+    var_arg_not_symbol,
+    var_unresolved,
     symbol_unresolved,
     /// args: `.{ .sym = "ns/name", .ns = "ns" }` — raised when a
     /// `^:private` var is referenced as a symbol from outside its
@@ -395,6 +398,18 @@ pub fn entry(comptime code: Code) Entry {
         .quote_arity_invalid => .{
             .kind = .syntax_error, .phase = .analysis,
             .template = "quote expects 1 arg, got {[got]d}",
+        },
+        .var_arity_invalid => .{
+            .kind = .syntax_error, .phase = .analysis,
+            .template = "var expects 1 arg, got {[got]d}",
+        },
+        .var_arg_not_symbol => .{
+            .kind = .syntax_error, .phase = .analysis,
+            .template = "var expects a symbol, got {[actual]s}",
+        },
+        .var_unresolved => .{
+            .kind = .name_error, .phase = .analysis,
+            .template = "Unable to resolve var: '{[sym]s}' in this context",
         },
         .symbol_unresolved => .{
             .kind = .name_error, .phase = .analysis,

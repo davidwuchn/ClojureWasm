@@ -322,6 +322,38 @@ pub fn analyzeQuote(
     return n;
 }
 
+/// `(var sym)` — the Var that `sym` resolves to, as a `.var_ref` Value.
+/// `#'sym` reads to this form. Const-folded at analyse time: `env.intern`
+/// is idempotent and a `*Var` is stable across re-`def` / `alter-var-root`
+/// (which mutate the Var's root, not its identity), so a constant
+/// `.var_ref` to the resolved `*Var` stays correct. This rides the
+/// existing `.constant` Node (both backends already lower it) — no new
+/// Node variant, so the dual-backend parity contract is not engaged.
+pub fn analyzeVar(
+    arena: std.mem.Allocator,
+    rt: *Runtime,
+    env: *Env,
+    items: []const Form,
+    form: Form,
+) AnalyzeError!*const Node {
+    _ = rt;
+    if (items.len != 2)
+        return error_catalog.raise(.var_arity_invalid, form.location, .{ .got = items.len - 1 });
+    const target = items[1];
+    if (target.data != .symbol)
+        return error_catalog.raise(.var_arg_not_symbol, form.location, .{ .actual = target.typeName() });
+    const sym = target.data.symbol;
+    const ns: *env_mod.Namespace = if (sym.ns) |ns_name|
+        (env.findNs(ns_name) orelse return error_catalog.raise(.var_unresolved, form.location, .{ .sym = sym.name }))
+    else
+        (env.current_ns orelse return error_catalog.raise(.var_unresolved, form.location, .{ .sym = sym.name }));
+    const var_ptr = ns.resolve(sym.name) orelse
+        return error_catalog.raise(.var_unresolved, form.location, .{ .sym = sym.name });
+    const n = try arena.create(Node);
+    n.* = .{ .constant = .{ .value = Value.encodeHeapPtr(.var_ref, var_ptr), .loc = form.location } };
+    return n;
+}
+
 /// `(in-ns 'foo.bar)` or `(in-ns foo.bar)` — both shapes accepted.
 /// Per ADR-0032 the analyzer extracts the symbol's full namespace
 /// name (combining `ns/name` parts when present) and emits an

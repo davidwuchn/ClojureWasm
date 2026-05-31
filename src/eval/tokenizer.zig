@@ -53,6 +53,8 @@ pub const TokenKind = enum(u8) {
     /// reads `)`-delimited body forms and rewrites them to a `fn*` Form
     /// (D-146); `%`/`%N`/`%&` become the params.
     fn_lit,
+    /// `#'` var-quote reader macro → `(var x)` (mirrors `quote`/`deref`).
+    var_quote,
 
     eof,
     invalid,
@@ -284,6 +286,10 @@ pub const Tokenizer = struct {
             '(' => {
                 self.advance();
                 return self.makeToken(.fn_lit, start, start_line, start_col);
+            },
+            '\'' => {
+                self.advance();
+                return self.makeToken(.var_quote, start, start_line, start_col);
             },
             else => return self.makeToken(.invalid, start, start_line, start_col),
         }
