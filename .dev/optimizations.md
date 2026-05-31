@@ -58,20 +58,28 @@ mac-arm-m4pro, startup baseline 0.48s subtracted where noted.
    in-place editable-CHAMP transient that would make maps faster is
    deferred to D-181. The vector arm is the measured O-003 win.)*
 
-2. **cljw startup ≈ 0.48s per invocation** — every `cljw -e` / test /
-   probe re-parses + analyses + evaluates ~1000-line `core.clj`. The
-   e2e suite's ~138s parallel block is dominated by this (hundreds of
-   invocations × 0.48s). **Highest dev-velocity ROI** (every iteration
-   pays it) but **architectural** (a pre-analysed bootstrap cache, à la
-   ClojureScript's analyzer cache). Tracked: D-140.
+2. **cljw startup ≈ 0.48s per invocation** — D-140. **NOTE (corrected
+   2026-05-31): clojure.core is ALREADY AOT-restored from an embedded
+   bytecode envelope, NOT re-parsed.** ADR-0056 (Cycle 2b) built
+   `cache_gen` → AOT-compiles `core.clj` to a bytecode envelope at build
+   time → `@embedFile`'d into the cljw binary as `bootstrap_cache`;
+   `runner.zig` `setupCoreAot` restores core from it on every `cljw -e`/
+   file/stdin run (the prior "re-parses+analyses+evaluates core.clj"
+   description was stale — it predates Cycle 2b). So the residual ~0.48s
+   is NOT core re-eval; it is (unprofiled) the envelope RESTORE
+   (deserialize + run the `op_def` chunks to intern ~hundreds of core
+   vars on the VM) + `primitive.registerAll` + process spawn + the
+   full-self-exe read `tryRunEmbedded` does to check for a trailer (a
+   footer-only seek would avoid it — noted in `builder.zig:135`). The
+   11 non-core `.clj` files (string/set/walk/…) are lazy on `require`,
+   so a minimal `cljw -e 1` does not load them. **Next step = PROFILE
+   the 0.48s** (the bottleneck moved since the docs were written), then
+   targeted tuning (footer seek / faster restore) + ADR-0056 Cycle 3
+   (AOT or lazy-defer the non-core files). Architecture already exists
+   (ADR-0056); this is profile-and-tune, not a new cache. Highest
+   dev-velocity ROI (every test/probe pays it).
 
 ## Out-of-scope future optimizations (tracked, not yet implemented)
 
-- **Map/filter/take reduce-fusion** (cw v0 `fusedReduce`: collapse a
-  `(reduce f (map g (filter p (range n))))` chain to a single 0-alloc
-  pass over the base). The compact `.range` value (O-001) is the
-  substrate this operates over. **Measured: `(count (map inc (range
-  1e5)))` = 42s ≈ 420µs/element** (the lazy_seq per-element thunk
-  realisation). Deferred to the D-163 perf window as its own ADR. cw v0
-  measured 1336x on lazy_chain — see D-163's cw-v0
-  blueprint note.
+- *(none currently — the map/filter/take reduce-fusion that was listed
+  here landed as O-004 / D-163 first cycle.)*
