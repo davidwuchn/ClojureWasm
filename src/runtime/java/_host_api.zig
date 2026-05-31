@@ -70,6 +70,7 @@ pub const Extension = struct {
 const java_surfaces = [_]type{
     @import("io/File.zig"),
     @import("lang/Integer.zig"),
+    @import("lang/Long.zig"),
     @import("lang/Math.zig"),
     @import("lang/System.zig"),
     // Phase 14 row 14.2 (D-097) second wave begins ↓
