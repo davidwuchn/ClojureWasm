@@ -45,6 +45,7 @@ const ASSOCIATIVE_FQCN: []const u8 = "Associative";
 const IPM_FQCN: []const u8 = "IPersistentMap";
 const IPS_FQCN: []const u8 = "IPersistentSet";
 
+const sequence = @import("sequence.zig");
 const vector = @import("../../runtime/collection/vector.zig");
 const list = @import("../../runtime/collection/list.zig");
 const map = @import("../../runtime/collection/map.zig");
@@ -81,7 +82,11 @@ fn conjOne(rt: *Runtime, env: *Env, coll: Value, x: Value, loc: SourceLocation) 
     if (coll.isNil()) return try list.consHeap(rt, x, .nil_val);
     return switch (coll.tag()) {
         .vector => try vector.conj(rt, coll, x),
-        .list, .cons => try list.consHeap(rt, x, coll),
+        // conj onto any ISeq is a prepend ≡ `(cons x coll)`. Delegate to
+        // the cons primitive so per-seq-tag handling (unforced lazy_seq
+        // tail / seq-view over range / string_seq / array_seq) stays
+        // single-sourced (F-011) instead of being re-encoded here.
+        .list, .cons, .lazy_seq, .chunked_cons, .range, .string_seq, .array_seq => try sequence.consFn(rt, env, &.{ x, coll }, loc),
         .hash_set => try set.conj(rt, coll, x),
         .sorted_set => try sorted.conjSet(rt, env, coll, x, loc),
         .sorted_map => sortedMapConj(rt, env, coll, x, loc),
@@ -314,6 +319,15 @@ pub fn nthFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) 
                 }
             }
             break :blk list.first(cur);
+        },
+        // Seq family (lazy producers): `(nth (range n) i)` / `(rand-nth
+        // (range n))` / `(nth (map f xs) i)`. JVM `RT.nth` walks any seq;
+        // route through the shared seq-walk (forces lazy layers). D-168
+        // made `range` a lazy seq, so this is the path it now takes.
+        .lazy_seq, .chunked_cons => blk: {
+            if (try sequence.nthSeq(rt, env, coll, idx, loc)) |v| break :blk v;
+            if (has_default) break :blk default;
+            break :blk error_catalog.raise(.index_out_of_range, loc, .{ .fn_name = "nth" });
         },
         else => blk: {
             // D-089 row 8.6 cycle 2: Indexed -nth slow-path. The

@@ -800,20 +800,14 @@
           (seq (-msort (fn* [a b] (c (f a) (f b))) (vec coll)))))))
 
 ;; ----------------------------------------------------------------
-;; D-134 range + index fns. The finite arities `(range n)` /
-;; `(range start end)` stay eager vectors (a tracked DIVERGENCE: JVM
-;; returns lazy seqs — cheap-count consumers like `(count (range n))`
-;; keep the eager form until lazy count/nth land). The 0-arg infinite
-;; `(range)` IS lazy (ADR-0054 cycle 3) via `(iterate inc 0)`.
+;; D-134 range + index fns. All finite arities are lazy seqs (D-168):
+;; the 1/2-arg arms delegate to the 3-arg lazy-seq form, so `(range n)`
+;; matches JVM (`seq?` true, `(take 5 (range 1e9))` returns without
+;; realizing the whole range). The F-004 chunked LongRange is the
+;; eventual finished form for cheap count/reduce; this lazy-seq
+;; unification is the interim shared shape (F-011 — one mechanism, no
+;; per-arity divergence).
 ;; ----------------------------------------------------------------
-
-;; Accumulate [start..end-1] into a vector (the eager range body).
-;; loop/recur (NOT fn* self-recursion) so large ranges don't blow the
-;; stack — `(range 100000)` was a segfault when this recursed fn-deep.
-(def -range-acc
-  (fn* [i n acc]
-    (loop [i i acc acc]
-      (if (>= i n) acc (recur (inc i) (conj acc i))))))
 
 ;; `(iterate f x)` — infinite lazy seq: x, (f x), (f (f x)), …. Defined
 ;; before `range` because `(range)`'s 0-arg body calls it: cw v1 resolves
@@ -822,17 +816,17 @@
 (def iterate
   (fn* [f x] (lazy-seq (cons x (iterate f (f x))))))
 
-;; `(range)` → infinite lazy 0,1,2,…; `(range n)` → [0..n-1];
-;; `(range start end)` → [start..end-1] (eager vectors). `(range start
-;; end step)` → lazy seq; inline lazy recursion (NOT take-while — that is
-;; def'd later in the file, and a fn body's free symbols resolve at
-;; analysis time). Continuation matches JVM: step>0 while x<end, step<0
-;; while x>end, step=0 while x≠end (so `(range 0 10 0)` is infinite 0s,
-;; `(range 5 5 0)` is empty).
+;; `(range)` → infinite lazy 0,1,2,…; `(range n)` → 0..n-1;
+;; `(range start end)` → start..end-1; `(range start end step)` → stepped.
+;; The 1/2-arg arms reduce to the 3-arg lazy-seq body (inline lazy
+;; recursion, NOT take-while — that is def'd later in the file, and a fn
+;; body's free symbols resolve at analysis time). Continuation matches
+;; JVM: step>0 while x<end, step<0 while x>end, step=0 while x≠end (so
+;; `(range 0 10 0)` is infinite 0s, `(range 5 5 0)` is empty).
 (def range
   (fn* ([] (iterate inc 0))
-       ([n] (-range-acc 0 n []))
-       ([start end] (-range-acc start end []))
+       ([n] (range 0 n 1))
+       ([start end] (range start end 1))
        ([start end step]
         (lazy-seq
           (if (if (> step 0)

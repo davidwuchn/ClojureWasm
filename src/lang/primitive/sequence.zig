@@ -89,7 +89,6 @@ pub fn countFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation
                 });
             break :blk Value.initInteger(@intCast(n));
         },
-        .list, .cons => Value.initInteger(@intCast(list.countOf(coll))),
         .vector => Value.initInteger(@intCast(vector.count(coll))),
         .array_map, .hash_map => Value.initInteger(@intCast(map.count(coll))),
         .sorted_map, .sorted_set => Value.initInteger(@intCast(sorted.count(coll))),
@@ -112,8 +111,14 @@ pub fn countFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation
                 .type_name = inst.descriptor.fqcn orelse "<anonymous>",
             });
         },
-        .lazy_seq => {
-            // O(n) walk: realize and count via seq chain.
+        .list, .cons, .lazy_seq => {
+            // O(n) generic walk. A `.list` cons may hold a non-list seq as
+            // its rest (a "Cons over a seq", e.g. `(cons x (map …))` /
+            // `(conj (range 3) 99)`), so the O(1) `.count` field is a lie
+            // for mixed chains — walk instead, forcing lazy layers and
+            // advancing through whatever tag the rest takes. Pure-list O(1)
+            // count is the F-004 finished form once the `.list` / `.cons`
+            // tags split (PersistentList vs Cons); see debt D-178.
             var n: i64 = 0;
             var cur = try lazy_seq.seq(rt, env, coll);
             while (!cur.isNil()) : (n += 1) {
@@ -449,6 +454,25 @@ fn restStringCodepoint(rt: *Runtime, s: Value) Value {
     const first_len = std.unicode.utf8ByteSequenceLength(bytes[0]) catch return .nil_val;
     if (bytes.len <= first_len) return .nil_val;
     return string_collection.alloc(rt, bytes[first_len..]) catch .nil_val;
+}
+
+/// nth over a seq by walking (clojure.lang.RT.nth's seq path): force the
+/// head, advance `idx` steps via `seqNext`, return the element — or null
+/// when `idx` is negative or past the end (the caller maps null to the
+/// `nth` default / index-out-of-range). Forces lazy layers as it walks, so
+/// `(nth (range n) i)` / `(nth (map f xs) i)` / `(rand-nth (range n))`
+/// index like JVM seqs. Shared by `collection.zig::nthFn` (F-011) so the
+/// seq-walk lives next to `seqNext` / `firstOfSeq`.
+pub fn nthSeq(rt: *Runtime, env: *Env, coll: Value, idx: i64, loc: SourceLocation) anyerror!?Value {
+    if (idx < 0) return null;
+    var cur = try lazy_seq.seq(rt, env, coll);
+    var remaining = idx;
+    while (remaining > 0) : (remaining -= 1) {
+        cur = try seqNext(rt, env, cur);
+        if (cur.isNil()) return null;
+    }
+    if (cur.isNil()) return null;
+    return try firstOfSeq(rt, env, cur, loc);
 }
 
 /// First-of-seq: assumes input is already a seq (list / cons / etc).

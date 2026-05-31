@@ -81,7 +81,13 @@ fn listFromItems(rt: *Runtime, items: []const Value) !Value {
 /// nested in a map value / set element is a rare residual).
 fn deepRealize(rt: *Runtime, env: *env_mod.Env, v: Value) anyerror!Value {
     switch (v.tag()) {
-        .lazy_seq => {
+        // `.list` shares the generic seq walk: a `.list` cons may carry a
+        // non-list seq as its rest (a "Cons over a seq", e.g.
+        // `(conj (range 3) 99)` / `(cons x (map …))`), so a `.list`-only
+        // walk would drop the lazy tail. `lazy_seq_mod.seq/first/rest`
+        // force lazy layers and route `.list` cells to the list ops, so
+        // one loop realizes both (F-011 commonisation).
+        .lazy_seq, .list => {
             var items: std.ArrayList(Value) = .empty;
             defer items.deinit(rt.gpa);
             var cur = v;
@@ -90,16 +96,6 @@ fn deepRealize(rt: *Runtime, env: *env_mod.Env, v: Value) anyerror!Value {
                 if (s.tag() == .nil) break;
                 try items.append(rt.gpa, try deepRealize(rt, env, try lazy_seq_mod.first(rt, env, s)));
                 cur = try lazy_seq_mod.rest(rt, env, s);
-            }
-            return listFromItems(rt, items.items);
-        },
-        .list => {
-            var items: std.ArrayList(Value) = .empty;
-            defer items.deinit(rt.gpa);
-            var cur = v;
-            while (cur.tag() == .list and list_collection.countOf(cur) > 0) {
-                try items.append(rt.gpa, try deepRealize(rt, env, list_collection.first(cur)));
-                cur = list_collection.rest(cur);
             }
             return listFromItems(rt, items.items);
         },
