@@ -62,4 +62,21 @@ check '(parse-long "1_000")'         'nil'   parse_long_underscore_rejected
 check '(parse-long "42")'            '42'    parse_long_no_regression
 check '(parse-long "abc")'           'nil'   parse_long_invalid_nil
 
+# --- bit-twiddling statics (i32 width; @popCount/@clz/@ctz/@bitReverse).
+#     Every result fits i48 (counts are 0-32; highestOneBit/reverse
+#     sign-extend an i32), so each returns a plain Long. clj-grounded. ---
+check '(Integer/bitCount 7)'                  '3'           integer_bitCount
+check '(Integer/bitCount -1)'                 '32'          integer_bitCount_neg
+check '(Integer/bitCount 0)'                  '0'           integer_bitCount_zero
+check '(Integer/numberOfLeadingZeros 1)'      '31'          integer_nlz
+check '(Integer/numberOfLeadingZeros 0)'      '32'          integer_nlz_zero
+check '(Integer/numberOfTrailingZeros 8)'     '3'           integer_ntz
+check '(Integer/numberOfTrailingZeros 0)'     '32'          integer_ntz_zero
+check '(Integer/highestOneBit 100)'           '64'          integer_highestOneBit
+check '(Integer/highestOneBit -1)'            '-2147483648' integer_highestOneBit_neg
+check '(Integer/highestOneBit 0)'             '0'           integer_highestOneBit_zero
+check '(Integer/reverse 1)'                   '-2147483648' integer_reverse_one
+check '(Integer/reverse 2)'                   '1073741824'  integer_reverse_two
+check '(Integer/reverse -1)'                  '-1'          integer_reverse_allones
+
 echo "ALL PASS phase14_integer_statics"

@@ -49,4 +49,21 @@ check '(try (Long/parseLong "1_000") (catch NumberFormatException e :caught))' '
 #     so the known divergence can't silently change. ---
 check '(Long/parseLong "999999999999999")' '999999999999999N' long_parseLong_i48_overflow_bigint
 
+# --- bit-twiddling statics (i64 width). Counts (bitCount/nlz/ntz) are
+#     small Longs; highestOneBit/reverse route through promote.wrapI64 so
+#     a result beyond i48 stays exact as a BigInt (D-165) — value correct,
+#     print form diverges from JVM's primitive long. clj-grounded. ---
+check '(Long/bitCount 7)'                 '3'   long_bitCount
+check '(Long/bitCount -1)'                '64'  long_bitCount_neg
+check '(Long/numberOfLeadingZeros 1)'     '63'  long_nlz
+check '(Long/numberOfLeadingZeros 0)'     '64'  long_nlz_zero
+check '(Long/numberOfTrailingZeros 8)'    '3'   long_ntz
+check '(Long/highestOneBit 100)'          '64'  long_highestOneBit
+check '(Long/highestOneBit 0)'            '0'   long_highestOneBit_zero
+check '(Long/reverse -1)'                 '-1'  long_reverse_allones
+check '(Long/reverse 0)'                  '0'   long_reverse_zero
+# i48-overflow results print as BigInt N (D-165, value exact):
+check '(Long/highestOneBit -1)'  '-9223372036854775808N' long_highestOneBit_neg_bigint
+check '(Long/reverse 1)'         '-9223372036854775808N' long_reverse_one_bigint
+
 echo "ALL PASS phase14_long_statics"

@@ -7,10 +7,13 @@
 //!
 //! Thin wrapper over the shared `runtime/numeric/parse.zig` leaf (same
 //! acceptance as `Integer/parseInt` / `clojure.core/parse-long`, F-011
-//! DRY) at i64 width + Zig `std.fmt` radix formatting. parseLong wraps
-//! through `promote.wrapManaged`, matching parse-long: a value beyond
-//! the i48 NaN-box payload stays exact as a BigInt rather than a lossy
-//! Float. That makes `(Long/parseLong "999999999999999")` print
+//! DRY) at i64 width + Zig `std.fmt` radix formatting, plus the
+//! bit-twiddling statics (`bitCount` / `numberOfLeadingZeros` /
+//! `numberOfTrailingZeros` / `highestOneBit` / `reverse`) over Zig bit
+//! builtins. parseLong wraps through `promote.wrapI64`, matching
+//! parse-long: a value beyond the i48 NaN-box payload stays exact as a
+//! BigInt rather than a lossy Float. That makes
+//! `(Long/parseLong "999999999999999")` print
 //! `…N` (BigInt) where JVM keeps a primitive Long — a recorded
 //! representation divergence (D-165, F-004 NaN-box i48 boundary); the
 //! value is exact. Parse failure raises a `number_error`-Kind Code →
@@ -28,15 +31,13 @@ const parse = @import("../../numeric/parse.zig");
 const promote = @import("../../numeric/promote.zig");
 const string_mod = @import("../../collection/string.zig");
 
-/// Parse `s` as an i64 in `radix`, wrapping through `promote.wrapManaged`
+/// Parse `s` as an i64 in `radix`, wrapping through `promote.wrapI64`
 /// (collapses to a Long in i48 range, BigInt beyond — D-165). On failure
 /// raise NumberFormatException. Shared by `parseLong` and `valueOf`.
 fn parseI64(rt: *Runtime, s: []const u8, radix: u8, fn_name: []const u8, loc: SourceLocation) anyerror!Value {
     const v = parse.parseSigned(i64, s, radix) catch
         return error_catalog.raise(.number_format_invalid, loc, .{ .fn_name = fn_name, .text = s });
-    var m = try std.math.big.int.Managed.initSet(rt.gc.infra, v);
-    defer m.deinit();
-    return promote.wrapManaged(rt, &m);
+    return promote.wrapI64(rt, v);
 }
 
 /// Implements `(Long/parseLong s)` and `(Long/parseLong s radix)`.
@@ -97,6 +98,43 @@ fn RadixString(comptime verb: []const u8, comptime name: []const u8) type {
     };
 }
 
+/// The five bit-twiddling statics, identified by the Zig builtin each one
+/// reduces to at 64-bit (`long`) width.
+const BitMethod = enum { bit_count, leading_zeros, trailing_zeros, highest_one_bit, reverse };
+
+/// `Long/bitCount` / `numberOfLeadingZeros` / `numberOfTrailingZeros` /
+/// `highestOneBit` / `reverse`: view the value's full 64 bits as Java's
+/// `long` width, apply the bit op, and wrap the i64 result through
+/// `promote.wrapI64`. The count ops yield a small Long; `highestOneBit` /
+/// `reverse` can exceed i48 (e.g. `(Long/reverse 1)` = Long.MIN_VALUE) and
+/// then print as BigInt `…N` (D-165) — exact value, divergent print from
+/// JVM's primitive long. Mirrors Integer.zig's factory at 64-bit width
+/// (per ADR-0029 R4 the two surfaces cannot share a factory across the
+/// java/ tree). The comptime `op` selects the builtin.
+fn BitOp(comptime op: BitMethod, comptime name: []const u8) type {
+    return struct {
+        fn call(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+            _ = env;
+            try error_catalog.checkArity("Long/" ++ name, args, 1, loc);
+            const n = try error_catalog.expectInteger(args[0], "Long/" ++ name, loc);
+            const wide: i64 = n; // expectInteger yields i48; sign-extend to i64
+            const u: u64 = @bitCast(wide);
+            const result: i64 = switch (op) {
+                .bit_count => @as(i64, @popCount(u)),
+                .leading_zeros => @as(i64, @clz(u)),
+                .trailing_zeros => @as(i64, @ctz(u)),
+                .highest_one_bit => blk: {
+                    if (u == 0) break :blk @as(i64, 0);
+                    const shift: u6 = @intCast(63 - @clz(u));
+                    break :blk @as(i64, @bitCast(@as(u64, 1) << shift));
+                },
+                .reverse => @as(i64, @bitCast(@bitReverse(u))),
+            };
+            return promote.wrapI64(rt, result);
+        }
+    };
+}
+
 fn initLong(td: *type_descriptor.TypeDescriptor, gpa: std.mem.Allocator) anyerror!void {
     if (td.method_table.len != 0) return; // idempotent re-run
     const specs = .{
@@ -105,6 +143,11 @@ fn initLong(td: *type_descriptor.TypeDescriptor, gpa: std.mem.Allocator) anyerro
         .{ "toBinaryString", &RadixString("b", "toBinaryString").call },
         .{ "toHexString", &RadixString("x", "toHexString").call },
         .{ "toOctalString", &RadixString("o", "toOctalString").call },
+        .{ "bitCount", &BitOp(.bit_count, "bitCount").call },
+        .{ "numberOfLeadingZeros", &BitOp(.leading_zeros, "numberOfLeadingZeros").call },
+        .{ "numberOfTrailingZeros", &BitOp(.trailing_zeros, "numberOfTrailingZeros").call },
+        .{ "highestOneBit", &BitOp(.highest_one_bit, "highestOneBit").call },
+        .{ "reverse", &BitOp(.reverse, "reverse").call },
     };
     const entries = try gpa.alloc(type_descriptor.TypeDescriptor.MethodEntry, specs.len);
     inline for (specs, 0..) |spec, i| {

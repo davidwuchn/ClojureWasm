@@ -70,8 +70,13 @@ fn coerceToManaged(rt: *Runtime, v: Value) !Managed {
 }
 
 /// Wrap an i64 result as a Value, choosing immediate-Long
-/// (`Value.initInteger`) when it fits in i48, else BigInt.
-fn wrapI64(rt: *Runtime, x: i64) !Value {
+/// (`Value.initInteger`) when it fits in i48, else BigInt. This is the
+/// canonical "exact i64 → Value" entry: unlike `Value.initInteger` (which
+/// silently demotes an out-of-i48 value to a lossy Float), it keeps a
+/// 64-bit value exact by promoting to BigInt. Callers producing a full-width
+/// i64 (arithmetic carry-out, `Long/parseLong`, the `Long` bit statics) must
+/// route through here rather than `initInteger`.
+pub fn wrapI64(rt: *Runtime, x: i64) !Value {
     if (inI48(x)) return Value.initInteger(x);
     var m = try Managed.init(rt.gc.infra);
     defer m.deinit();
@@ -80,9 +85,9 @@ fn wrapI64(rt: *Runtime, x: i64) !Value {
 }
 
 /// Collapse a Managed integer to a Value: immediate-Long when it fits i48,
-/// else BigInt. Public counterpart of `wrapI64` for callers that already
-/// hold a Managed (e.g. the ratio numerator/denominator accessors), so a
-/// small numerator prints as `3`, not `3N`.
+/// else BigInt. The Managed-input counterpart of `wrapI64` for callers that
+/// already hold a Managed (e.g. the ratio numerator/denominator accessors),
+/// so a small numerator prints as `3`, not `3N`.
 pub fn wrapManaged(rt: *Runtime, m: *const Managed) !Value {
     // `toInt` errors when the value exceeds i64; `catch null` folds that into
     // "doesn't fit a Long" so the BigInt path below handles it.

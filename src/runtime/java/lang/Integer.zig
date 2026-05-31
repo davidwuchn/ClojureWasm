@@ -7,8 +7,11 @@
 //!
 //! Thin wrapper over the neutral `runtime/numeric/parse.zig` leaf
 //! (shared with `clojure.core/parse-long`, F-011 DRY) + Zig `std.fmt`
-//! radix formatting. Static methods reach these as `(Integer/parseInt …)`
-//! after the `java.lang.*` auto-import in `resolveJavaSurface`.
+//! radix formatting, plus the bit-twiddling statics (`bitCount` /
+//! `numberOfLeadingZeros` / `numberOfTrailingZeros` / `highestOneBit` /
+//! `reverse`) over Zig bit builtins. Static methods reach these as
+//! `(Integer/parseInt …)` after the `java.lang.*` auto-import in
+//! `resolveJavaSurface`.
 //!
 //! cljw has no boxed `Integer` type (single `.integer` tag, F-005); a
 //! parsed value is returned as a Long, and `(class Integer/MAX_VALUE)`
@@ -96,6 +99,42 @@ fn RadixString(comptime verb: []const u8, comptime name: []const u8) type {
     };
 }
 
+/// The five bit-twiddling statics, identified by the Zig builtin each one
+/// reduces to at 32-bit (`int`) width.
+const BitMethod = enum { bit_count, leading_zeros, trailing_zeros, highest_one_bit, reverse };
+
+/// `Integer/bitCount` / `numberOfLeadingZeros` / `numberOfTrailingZeros` /
+/// `highestOneBit` / `reverse`: view the value's low 32 bits as Java's `int`
+/// width, apply the bit op, and return the result as a Long. Every result
+/// fits i48 — counts are 0-32, and the full-width ops (`highestOneBit` /
+/// `reverse`) sign-extend an i32 (e.g. `(Integer/reverse 1)` =
+/// Integer.MIN_VALUE = -2147483648) — so `Value.initInteger` is exact here.
+/// The comptime `op` selects the builtin.
+fn BitOp(comptime op: BitMethod, comptime name: []const u8) type {
+    return struct {
+        fn call(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+            _ = rt;
+            _ = env;
+            try error_catalog.checkArity("Integer/" ++ name, args, 1, loc);
+            const n = try error_catalog.expectInteger(args[0], "Integer/" ++ name, loc);
+            const wide: i64 = n; // expectInteger yields i48; view low 32 bits
+            const u: u32 = @truncate(@as(u64, @bitCast(wide)));
+            const result: i64 = switch (op) {
+                .bit_count => @as(i64, @popCount(u)),
+                .leading_zeros => @as(i64, @clz(u)),
+                .trailing_zeros => @as(i64, @ctz(u)),
+                .highest_one_bit => blk: {
+                    if (u == 0) break :blk @as(i64, 0);
+                    const shift: u5 = @intCast(31 - @clz(u));
+                    break :blk @as(i64, @as(i32, @bitCast(@as(u32, 1) << shift)));
+                },
+                .reverse => @as(i64, @as(i32, @bitCast(@bitReverse(u)))),
+            };
+            return Value.initInteger(result);
+        }
+    };
+}
+
 fn initInteger(td: *type_descriptor.TypeDescriptor, gpa: std.mem.Allocator) anyerror!void {
     if (td.method_table.len != 0) return; // idempotent re-run
     const specs = .{
@@ -104,6 +143,11 @@ fn initInteger(td: *type_descriptor.TypeDescriptor, gpa: std.mem.Allocator) anye
         .{ "toBinaryString", &RadixString("b", "toBinaryString").call },
         .{ "toHexString", &RadixString("x", "toHexString").call },
         .{ "toOctalString", &RadixString("o", "toOctalString").call },
+        .{ "bitCount", &BitOp(.bit_count, "bitCount").call },
+        .{ "numberOfLeadingZeros", &BitOp(.leading_zeros, "numberOfLeadingZeros").call },
+        .{ "numberOfTrailingZeros", &BitOp(.trailing_zeros, "numberOfTrailingZeros").call },
+        .{ "highestOneBit", &BitOp(.highest_one_bit, "highestOneBit").call },
+        .{ "reverse", &BitOp(.reverse, "reverse").call },
     };
     const entries = try gpa.alloc(type_descriptor.TypeDescriptor.MethodEntry, specs.len);
     inline for (specs, 0..) |spec, i| {
