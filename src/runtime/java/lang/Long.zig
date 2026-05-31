@@ -123,12 +123,20 @@ pub const ___HOST_EXTENSION: host_api.Extension = .{
     .init = &initLong,
 };
 
+// Static fields (ADR-0061) — comptime-const. Both exceed i48 → BigInt
+// (`…N`), exact value but diverges from JVM's bare-Long print (D-165).
+const long_static_fields = [_]type_descriptor.TypeDescriptor.StaticField{
+    .{ .name = "MAX_VALUE", .value = .{ .int = std.math.maxInt(i64) } },
+    .{ .name = "MIN_VALUE", .value = .{ .int = std.math.minInt(i64) } },
+};
+
 var descriptor: type_descriptor.TypeDescriptor = .{
     .fqcn = "cljw.java.lang.Long",
     .kind = .native,
     .field_layout = null,
     .protocol_impls = &.{},
     .method_table = &.{},
+    .static_fields = &long_static_fields,
     .parent = null,
     .meta = .nil_val,
 };

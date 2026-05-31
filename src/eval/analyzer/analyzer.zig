@@ -422,12 +422,27 @@ fn analyzeSymbol(
     // consult the current ns's alias table (ADR-0035 D3) — alias
     // names take precedence over real ns names (= JVM semantics:
     // `(alias 'str 'clojure.string)` shadows any literal `str` ns).
-    const ns = if (sym.ns) |ns_name|
-        (if (env.current_ns) |here| here.aliases.get(ns_name) else null) orelse
-            env.findNs(ns_name) orelse
-            return error_catalog.raise(.namespace_unknown, form.location, .{ .ns = ns_name })
-    else
-        env.current_ns orelse return error_catalog.raise(.current_namespace_missing, form.location, .{ .sym = sym.name });
+    const ns = if (sym.ns) |ns_name| ns_blk: {
+        if (env.current_ns) |here| {
+            if (here.aliases.get(ns_name)) |aliased| break :ns_blk aliased;
+        }
+        if (env.findNs(ns_name)) |found| break :ns_blk found;
+        // ADR-0061: bare `Class/FIELD` static field read (no parens). The
+        // ns head is not a Clojure ns/alias; resolve it as a Java surface
+        // (same `resolveJavaSurface` the static-METHOD path uses) and, if
+        // the descriptor carries a static field of this name, the symbol
+        // IS that constant — emit it directly (no Var resolution follows).
+        if (special_forms.resolveJavaSurface(env.rt, env, ns_name)) |td| {
+            if (td.lookupStaticField(sym.name)) |sf| {
+                const fv: Value = switch (sf.value) {
+                    .int => |i| try integerLiteralToValue(env.rt, i),
+                    .float => |f| Value.initFloat(f),
+                };
+                return try makeConstant(arena, fv, form);
+            }
+        }
+        return error_catalog.raise(.namespace_unknown, form.location, .{ .ns = ns_name });
+    } else env.current_ns orelse return error_catalog.raise(.current_namespace_missing, form.location, .{ .sym = sym.name });
     const v_ptr = ns.resolve(sym.name) orelse return error_catalog.raise(.symbol_unresolved, form.location, .{ .sym = symFullName(sym) });
     // ADR-0033 D4 + D8: `^:private` vars cannot be referenced as a
     // symbol from outside their owning namespace. The check fires only

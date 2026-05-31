@@ -85,12 +85,21 @@ pub const ___HOST_EXTENSION: host_api.Extension = .{
     .init = &initDouble,
 };
 
+// Static fields (ADR-0061) — comptime-const. Java Double.MAX_VALUE /
+// MIN_VALUE = the largest finite double / smallest positive denormal.
+// Values are exact; their scientific-notation print form is D-166.
+const double_static_fields = [_]type_descriptor.TypeDescriptor.StaticField{
+    .{ .name = "MAX_VALUE", .value = .{ .float = std.math.floatMax(f64) } },
+    .{ .name = "MIN_VALUE", .value = .{ .float = std.math.floatTrueMin(f64) } },
+};
+
 var descriptor: type_descriptor.TypeDescriptor = .{
     .fqcn = "cljw.java.lang.Double",
     .kind = .native,
     .field_layout = null,
     .protocol_impls = &.{},
     .method_table = &.{},
+    .static_fields = &double_static_fields,
     .parent = null,
     .meta = .nil_val,
 };

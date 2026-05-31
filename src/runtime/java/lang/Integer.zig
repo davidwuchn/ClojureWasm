@@ -122,12 +122,20 @@ pub const ___HOST_EXTENSION: host_api.Extension = .{
     .init = &initInteger,
 };
 
+// Static fields (ADR-0061) — comptime-const, set directly in the
+// descriptor literal (no init/deinit). Both fit i48 → clean Long.
+const integer_static_fields = [_]type_descriptor.TypeDescriptor.StaticField{
+    .{ .name = "MAX_VALUE", .value = .{ .int = 2147483647 } },
+    .{ .name = "MIN_VALUE", .value = .{ .int = -2147483648 } },
+};
+
 var descriptor: type_descriptor.TypeDescriptor = .{
     .fqcn = "cljw.java.lang.Integer",
     .kind = .native,
     .field_layout = null,
     .protocol_impls = &.{},
     .method_table = &.{},
+    .static_fields = &integer_static_fields,
     .parent = null,
     .meta = .nil_val,
 };

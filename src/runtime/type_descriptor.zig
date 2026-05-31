@@ -52,6 +52,19 @@ pub const TypeDescriptor = struct {
     /// Method table populated at deftype / defrecord / reify analyse
     /// time. `lookupMethod` searches this slice linearly.
     method_table: []const MethodEntry,
+    /// Static fields for host-class surfaces — Java `Integer/MAX_VALUE`
+    /// etc. (ADR-0061). Resolved by `analyzeSymbol` via the same
+    /// `resolveJavaSurface` the static-METHOD path (`analyzeList`) uses,
+    /// so a `Class/FIELD` read and a `(Class/method …)` call share one
+    /// descriptor-keyed lookup. **Comptime-const** (scalar value +
+    /// literal name, no fn pointer) — so, UNLIKE `method_table` (whose
+    /// `Value.initBuiltinFn(&fn)` is not comptime on Mac, forcing an
+    /// `init`-time alloc + `deinit` free), it needs NEITHER: each surface
+    /// sets `.static_fields = &array` directly in its descriptor literal
+    /// and `installAll`'s `td.* = ext.descriptor.*` duplicates the slice
+    /// pointer to the process-lifetime comptime array. Do NOT move it
+    /// into `init` or free it in `deinit`.
+    static_fields: []const StaticField = &.{},
     /// Parent descriptor, when `kind == .defrecord` extends another
     /// record (rare but valid in Clojure). `null` otherwise.
     parent: ?*const TypeDescriptor,
@@ -92,6 +105,38 @@ pub const TypeDescriptor = struct {
         /// convergence.
         method_val: Value = Value.nil_val,
     };
+
+    /// A host-class static field: a constant name → scalar value. The
+    /// value is kept as a raw scalar (not a `Value`) because a heap
+    /// `Value` (BigInt for `Long/MAX_VALUE`) cannot be comptime-const;
+    /// `analyzeSymbol` lifts it to a `Value` at analyse time via the
+    /// existing literal path (`integerLiteralToValue` / `initFloat`).
+    pub const StaticField = struct {
+        name: []const u8,
+        value: StaticFieldValue,
+    };
+
+    /// The two scalar shapes a static field can carry. `int` lifts via
+    /// `integerLiteralToValue` (i48 → Long, beyond → BigInt); `float`
+    /// via `Value.initFloat`.
+    pub const StaticFieldValue = union(enum) {
+        int: i64,
+        float: f64,
+    };
+
+    /// Find a static field by name (ADR-0061). Linear — field tables are
+    /// tiny (≤ 2 today). Parallel to `lookupMethod`; walks the parent
+    /// chain for symmetry though host surfaces have no parent.
+    pub fn lookupStaticField(
+        self: *const TypeDescriptor,
+        name: []const u8,
+    ) ?*const StaticField {
+        for (self.static_fields) |*sf| {
+            if (std.mem.eql(u8, sf.name, name)) return sf;
+        }
+        if (self.parent) |p| return p.lookupStaticField(name);
+        return null;
+    }
 
     /// Find the method record for `(protocol, method)` on this
     /// descriptor. Linear search — method tables are small (Clojure
