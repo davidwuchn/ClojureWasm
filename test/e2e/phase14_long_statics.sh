@@ -65,5 +65,12 @@ check '(Long/reverse 0)'                  '0'   long_reverse_zero
 # i48-overflow results print as BigInt N (D-165, value exact):
 check '(Long/highestOneBit -1)'  '-9223372036854775808N' long_highestOneBit_neg_bigint
 check '(Long/reverse 1)'         '-9223372036854775808N' long_reverse_one_bigint
+# D-173: lowestOneBit / reverseBytes / signum / rotateLeft / rotateRight
+check '(Long/lowestOneBit 12)'   '4'  long_lowestOneBit
+check '(Long/signum -5)'         '-1' long_signum_neg
+check '(Long/signum 0)'          '0'  long_signum_zero
+check '(Long/rotateLeft 1 4)'    '16' long_rotateLeft
+check '(Long/rotateRight 16 4)'  '1'  long_rotateRight
+check '(Long/reverseBytes 1)'    '72057594037927936N' long_reverseBytes_bigint
 
 echo "ALL PASS phase14_long_statics"

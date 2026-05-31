@@ -100,7 +100,7 @@ fn RadixString(comptime verb: []const u8, comptime name: []const u8) type {
 
 /// The five bit-twiddling statics, identified by the Zig builtin each one
 /// reduces to at 64-bit (`long`) width.
-const BitMethod = enum { bit_count, leading_zeros, trailing_zeros, highest_one_bit, reverse };
+const BitMethod = enum { bit_count, leading_zeros, trailing_zeros, highest_one_bit, reverse, lowest_one_bit, reverse_bytes, signum };
 
 /// `Long/bitCount` / `numberOfLeadingZeros` / `numberOfTrailingZeros` /
 /// `highestOneBit` / `reverse`: view the value's full 64 bits as Java's
@@ -129,8 +129,31 @@ fn BitOp(comptime op: BitMethod, comptime name: []const u8) type {
                     break :blk @as(i64, @bitCast(@as(u64, 1) << shift));
                 },
                 .reverse => @as(i64, @bitCast(@bitReverse(u))),
+                // D-173: `n & -n` isolates the lowest set bit; `@byteSwap`
+                // reverses byte order; `signum` is the i64 sign (-1/0/1).
+                .lowest_one_bit => @as(i64, @bitCast(u & (0 -% u))),
+                .reverse_bytes => @as(i64, @bitCast(@byteSwap(u))),
+                .signum => if (wide > 0) @as(i64, 1) else if (wide < 0) @as(i64, -1) else @as(i64, 0),
             };
             return promote.wrapI64(rt, result);
+        }
+    };
+}
+
+/// D-173: `Long/rotateLeft` / `rotateRight` — arity-2 `(value, distance)`.
+/// Java rotates by `distance` bits at 64-bit width (only the low 6 bits of
+/// `distance` matter — `rotl`/`rotr` are equivalent under a 64-bit modulus).
+fn RotateOp(comptime left: bool, comptime name: []const u8) type {
+    return struct {
+        fn call(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+            _ = env;
+            try error_catalog.checkArity("Long/" ++ name, args, 2, loc);
+            const n = try error_catalog.expectInteger(args[0], "Long/" ++ name, loc);
+            const d = try error_catalog.expectInteger(args[1], "Long/" ++ name, loc);
+            const u: u64 = @bitCast(@as(i64, n));
+            const dist: u6 = @truncate(@as(u64, @bitCast(@as(i64, d))));
+            const r = if (left) std.math.rotl(u64, u, dist) else std.math.rotr(u64, u, dist);
+            return promote.wrapI64(rt, @as(i64, @bitCast(r)));
         }
     };
 }
@@ -148,6 +171,11 @@ fn initLong(td: *type_descriptor.TypeDescriptor, gpa: std.mem.Allocator) anyerro
         .{ "numberOfTrailingZeros", &BitOp(.trailing_zeros, "numberOfTrailingZeros").call },
         .{ "highestOneBit", &BitOp(.highest_one_bit, "highestOneBit").call },
         .{ "reverse", &BitOp(.reverse, "reverse").call },
+        .{ "lowestOneBit", &BitOp(.lowest_one_bit, "lowestOneBit").call },
+        .{ "reverseBytes", &BitOp(.reverse_bytes, "reverseBytes").call },
+        .{ "signum", &BitOp(.signum, "signum").call },
+        .{ "rotateLeft", &RotateOp(true, "rotateLeft").call },
+        .{ "rotateRight", &RotateOp(false, "rotateRight").call },
     };
     const entries = try gpa.alloc(type_descriptor.TypeDescriptor.MethodEntry, specs.len);
     inline for (specs, 0..) |spec, i| {

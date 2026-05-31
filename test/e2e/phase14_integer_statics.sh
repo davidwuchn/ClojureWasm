@@ -78,5 +78,12 @@ check '(Integer/highestOneBit 0)'             '0'           integer_highestOneBi
 check '(Integer/reverse 1)'                   '-2147483648' integer_reverse_one
 check '(Integer/reverse 2)'                   '1073741824'  integer_reverse_two
 check '(Integer/reverse -1)'                  '-1'          integer_reverse_allones
+# D-173: lowestOneBit / reverseBytes / signum / rotateLeft / rotateRight
+check '(Integer/lowestOneBit 12)'             '4'           integer_lowestOneBit
+check '(Integer/reverseBytes 1)'              '16777216'    integer_reverseBytes
+check '(Integer/signum -5)'                   '-1'          integer_signum_neg
+check '(Integer/signum 0)'                    '0'           integer_signum_zero
+check '(Integer/rotateLeft 1 4)'              '16'          integer_rotateLeft
+check '(Integer/rotateRight 16 4)'            '1'           integer_rotateRight
 
 echo "ALL PASS phase14_integer_statics"

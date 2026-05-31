@@ -101,7 +101,7 @@ fn RadixString(comptime verb: []const u8, comptime name: []const u8) type {
 
 /// The five bit-twiddling statics, identified by the Zig builtin each one
 /// reduces to at 32-bit (`int`) width.
-const BitMethod = enum { bit_count, leading_zeros, trailing_zeros, highest_one_bit, reverse };
+const BitMethod = enum { bit_count, leading_zeros, trailing_zeros, highest_one_bit, reverse, lowest_one_bit, reverse_bytes, signum };
 
 /// `Integer/bitCount` / `numberOfLeadingZeros` / `numberOfTrailingZeros` /
 /// `highestOneBit` / `reverse`: view the value's low 32 bits as Java's `int`
@@ -129,8 +129,36 @@ fn BitOp(comptime op: BitMethod, comptime name: []const u8) type {
                     break :blk @as(i64, @as(i32, @bitCast(@as(u32, 1) << shift)));
                 },
                 .reverse => @as(i64, @as(i32, @bitCast(@bitReverse(u)))),
+                // D-173: `n & -n` isolates the lowest set bit (sign-extended
+                // from i32); `@byteSwap` reverses the 4 bytes; `signum` is the
+                // i32 sign (-1/0/1).
+                .lowest_one_bit => @as(i64, @as(i32, @bitCast(u & (0 -% u)))),
+                .reverse_bytes => @as(i64, @as(i32, @bitCast(@byteSwap(u)))),
+                .signum => blk: {
+                    const iv: i32 = @bitCast(u);
+                    break :blk if (iv > 0) @as(i64, 1) else if (iv < 0) @as(i64, -1) else @as(i64, 0);
+                },
             };
             return Value.initInteger(result);
+        }
+    };
+}
+
+/// D-173: `Integer/rotateLeft` / `rotateRight` — arity-2 `(value, distance)`.
+/// Java rotates by `distance` bits at 32-bit width (only the low 5 bits of
+/// `distance` matter). Result sign-extends the rotated i32.
+fn RotateOp(comptime left: bool, comptime name: []const u8) type {
+    return struct {
+        fn call(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+            _ = rt;
+            _ = env;
+            try error_catalog.checkArity("Integer/" ++ name, args, 2, loc);
+            const n = try error_catalog.expectInteger(args[0], "Integer/" ++ name, loc);
+            const d = try error_catalog.expectInteger(args[1], "Integer/" ++ name, loc);
+            const u: u32 = @truncate(@as(u64, @bitCast(@as(i64, n))));
+            const dist: u5 = @truncate(@as(u64, @bitCast(@as(i64, d))));
+            const r = if (left) std.math.rotl(u32, u, dist) else std.math.rotr(u32, u, dist);
+            return Value.initInteger(@as(i64, @as(i32, @bitCast(r))));
         }
     };
 }
@@ -148,6 +176,11 @@ fn initInteger(td: *type_descriptor.TypeDescriptor, gpa: std.mem.Allocator) anye
         .{ "numberOfTrailingZeros", &BitOp(.trailing_zeros, "numberOfTrailingZeros").call },
         .{ "highestOneBit", &BitOp(.highest_one_bit, "highestOneBit").call },
         .{ "reverse", &BitOp(.reverse, "reverse").call },
+        .{ "lowestOneBit", &BitOp(.lowest_one_bit, "lowestOneBit").call },
+        .{ "reverseBytes", &BitOp(.reverse_bytes, "reverseBytes").call },
+        .{ "signum", &BitOp(.signum, "signum").call },
+        .{ "rotateLeft", &RotateOp(true, "rotateLeft").call },
+        .{ "rotateRight", &RotateOp(false, "rotateRight").call },
     };
     const entries = try gpa.alloc(type_descriptor.TypeDescriptor.MethodEntry, specs.len);
     inline for (specs, 0..) |spec, i| {
