@@ -27,5 +27,13 @@ out="$("$BIN" -e '(char 9999999999)' 2>&1 || true)"; [[ "$out" == *"codepoint"* 
 assert_eq 'str_first_char' "$("$BIN" -e '(char? (first "abc"))')"          'true'
 assert_eq 'str_seq_int'    "$("$BIN" -e '(into [] (map int "abc"))')"      '[97 98 99]'
 assert_eq 'str_freq_char'  "$("$BIN" -e '(get (frequencies "aab") (char 97))')" '2'
+# (rest "abc") / (next "abc") are a CHAR-SEQ, not a substring (D-174, clj-verified:
+# (string? (rest "abc"))->false, (seq? ...)->true). map int avoids char-literal escaping.
+assert_eq 'str_rest_notstr' "$("$BIN" -e '(string? (rest "abc"))')"        'false'
+assert_eq 'str_rest_seq'    "$("$BIN" -e '(seq? (rest "abc"))')"           'true'
+assert_eq 'str_rest_char'   "$("$BIN" -e '(char? (first (rest "abc")))')"  'true'
+assert_eq 'str_rest_int'    "$("$BIN" -e '(into [] (map int (rest "abc")))')" '[98 99]'
+assert_eq 'str_next_notstr' "$("$BIN" -e '(string? (next "abc"))')"        'false'
+assert_eq 'str_next_int'    "$("$BIN" -e '(into [] (map int (next "abc")))')" '[98 99]'
 
-echo "OK — phase14_int_char smoke (13 cases) green"
+echo "OK — phase14_int_char smoke (19 cases) green"

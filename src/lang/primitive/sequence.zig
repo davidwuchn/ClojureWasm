@@ -288,9 +288,12 @@ pub fn restFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation)
         .vector => if (vector.count(coll) > 1) try vectorTailAsList(rt, coll, 1) else .nil_val,
         .chunked_cons => try chunked_cons.rest(rt, coll),
         .lazy_seq => try lazy_seq.rest(rt, env, coll),
-        .string => restStringCodepoint(rt, coll),
-        // .range seqs to a chunked_cons (seqFn), then rest is the chunk walk.
-        .array_map, .hash_map, .hash_set, .range => blk: {
+        // A string seqs to a char list (codepoints, not a substring): D-174
+        // `(rest "abc")` is a char-seq, not a String. Route through seqFn so
+        // `(string? (rest s))` is false and `(seq? …)` is true (one mechanism
+        // with the map/set/range arm; the lazy `.string_seq` substrate is the
+        // F-004 finished form, D-179).
+        .string, .array_map, .hash_map, .hash_set, .range => blk: {
             const sv = try seqFn(rt, env, args, loc);
             if (sv.isNil()) break :blk .nil_val;
             break :blk try restOfSeq(rt, env, sv, loc);
@@ -339,9 +342,9 @@ pub fn nextFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation)
             if (r.isNil()) break :blk .nil_val;
             break :blk r;
         },
-        .string => restStringCodepoint(rt, coll),
-        // .range seqs to a chunked_cons (seqFn); next is rest with nil-empty.
-        .array_map, .hash_map, .hash_set, .range => blk: {
+        // A string seqs to a char list (D-174): `(next "abc")` is a char-seq,
+        // not a substring. Same seqFn route + nil-empty as the map/set/range arm.
+        .string, .array_map, .hash_map, .hash_set, .range => blk: {
             const sv = try seqFn(rt, env, args, loc);
             if (sv.isNil()) break :blk .nil_val;
             break :blk try restOfSeq(rt, env, sv, loc);
@@ -466,15 +469,6 @@ fn firstStringCodepoint(s: Value) Value {
     if (bytes.len == 0) return .nil_val;
     const cp = charset.codepointAt(bytes, 0) catch return .nil_val;
     return Value.initChar(@intCast(cp));
-}
-
-/// Helper: rest of a string as a string Value (drop first codepoint).
-fn restStringCodepoint(rt: *Runtime, s: Value) Value {
-    const bytes = string_collection.asString(s);
-    if (bytes.len == 0) return .nil_val;
-    const first_len = std.unicode.utf8ByteSequenceLength(bytes[0]) catch return .nil_val;
-    if (bytes.len <= first_len) return .nil_val;
-    return string_collection.alloc(rt, bytes[first_len..]) catch .nil_val;
 }
 
 /// nth over a seq by walking (clojure.lang.RT.nth's seq path): force the
