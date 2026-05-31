@@ -31,10 +31,21 @@ loop verifies behavioural equivalence against real Clojure rather than
 guessing expected output — **including error cases**.
 
 ```sh
-clj -M -e '<expr>'                       # ground-truth value
-clj -M -e '<expr>' 2>&1 | grep -oE '\(([A-Za-z]+Exception|[A-Za-z]+Error)\)'  # error class
+timeout 20 clj -M -e '<expr>'            # ground-truth value (ALWAYS timeout-wrap)
+timeout 20 clj -M -e '<expr>' 2>&1 | grep -oE '\(([A-Za-z]+Exception|[A-Za-z]+Error)\)'  # error class
 ```
 
+- **ALWAYS `timeout`-wrap the oracle.** `clojure.main -e` *prints* its
+  result, so probing an **infinite lazy seq** (`(iterate inc 0)`,
+  `(range)`, `(repeat 1)`, `(cycle [1])`, `(line-seq …)`) realises it
+  **forever** — a JVM pinned at ~160 % CPU. If the parent session dies it
+  re-parents to PID 1 and the `cleanup_orphans.sh` SessionStart hook does
+  **not** reap `java`/`clj` (only zig/cljw/orb/grep), so it survives for
+  hours and drives host load past 40 (2026-05-31 incident: a `(iterate
+  inc 0)` orphan held 1.6 cores for 60 min, garbling the tool channel).
+  `timeout 20` makes the probe self-terminate. Never run a bare `clj -M
+  -e` on a sequence-producing form — bound it (`(take 5 …)`) **and**
+  timeout-wrap it. See `.claude/rules/orphan_prevention.md` § clj oracle.
 - **Use**: when probing a behaviour, run it through `clj` to get the
   canonical output; diff against `zig-out/bin/cljw -e '<expr>'`.
 - **Error-case caveat**: the message FORMAT differs (cljw renders its

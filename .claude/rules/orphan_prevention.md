@@ -122,6 +122,44 @@ launch it with `setsid` to detach from the controlling terminal,
 and pair it with an explicit `pkill -f 'cljw nrepl'` cleanup at
 session end — but this is exotic; the default is to avoid it.
 
+## clj oracle (JVM) — timeout-wrap every probe
+
+The F-011 clj differential oracle (`clj -M -e '<expr>'`,
+`.dev/reference_clones.md`) is a **second orphan surface** the
+original rule (cljw REPL pipes) did not cover. `clojure.main -e`
+**prints** its result, so probing an infinite lazy seq realises it
+forever:
+
+- `(iterate inc 0)`, `(range)`, `(repeat 1)`, `(cycle [1])`,
+  `(line-seq …)` — all infinite. `clj -M -e '(iterate inc 0)'`
+  pins ~160 % CPU until killed.
+- On parent-session death the JVM re-parents to PID 1. The
+  SessionStart `cleanup_orphans.sh` historically reaped only
+  zig/cljw/orb/grep; it now also reaps `clojure.main -e` + high-CPU
+  orphans (2026-05-31), but an interactive `clj` REPL
+  (`clojure.main` without `-e`) is deliberately left alone.
+
+**2026-05-31 incident**: a prior session's `(iterate inc 0)` oracle
+probe orphaned and held 1.6 cores for 60 min; combined with
+Defender + OrbStack + iOS-sim + 3 concurrent claude sessions it
+drove host load to ~48 on a 12-core machine, which garbled the tool
+channel (commands returning seconds-to-minutes late, "operation
+aborted"). Root-caused by `ps -Ao pid,ppid,%cpu,etime,command -r`
+(the orphan was `ppid=1`, `cwd=this project`).
+
+### The rule (clj oracle)
+
+- **Always `timeout 20 clj -M -e '…'`** — the probe self-terminates
+  even on an unbounded seq.
+- **Bound sequence-producing forms** with `(take N …)` in addition
+  to the timeout (`timeout 20 clj -M -e '(take 5 (iterate inc 0))'`).
+- **Reap recipe** when a stray oracle JVM is suspected:
+  `pkill -f 'clojure.main.*-e'` (scoped — does not touch IntelliJ /
+  Gradle / interactive REPLs, which do not run `clojure.main -e`).
+
+✅ `timeout 20 clj -M -e '(take 5 (range))'` — bounded + wrapped.
+❌ `clj -M -e '(range)'` — unbounded infinite-seq print, no timeout.
+
 ## Discovery recipe (for framework-completion sweep)
 
 Following `.claude/rules/framework_completion.md`, the discovery
