@@ -13,6 +13,18 @@
 > optimized form, why is it faster, and what verifies they agree?*
 > The naive form is the behavioural contract; the optimization must be
 > observably equivalent (F-011) — only the internal mechanics change.
+>
+> ⚠️ **Measurement mode (2026-06-01 correction).** Many absolute numbers
+> in the O-001…O-004 rows below were measured on a **Debug** binary
+> (`zig build` defaults to Debug; a Debug tree-walk interpreter is
+> ~10-100× slower than the shipped build). They are **NOT** representative
+> of shipped speed — e.g. `(count (vec (range 1e6)))` reads ~121s in Debug
+> but **~0.02s in ReleaseFast**, and startup is ~0.48s Debug vs **~ms**
+> Release (cljw already meets the ms-level cold-start mission target;
+> cw v0 claims ~4ms). The algorithmic wins are real (O(n) beats
+> O(n log n); chunked beats per-element in any mode), but the urgency was
+> Debug-inflated. **Future O-NNN numbers MUST be Release** — measure only
+> via `scripts/perf.sh` (see `.claude/rules/perf_measure_release.md`).
 
 ## How to read / maintain
 

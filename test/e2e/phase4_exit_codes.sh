@@ -29,7 +29,7 @@ assert_exit() {
 }
 
 echo "==> Building (tree-walk)"
-zig build -Dbackend=tree_walk -Doptimize="${CLJW_OPT:-Debug}" >/dev/null
+zig build -Dbackend=tree_walk -Doptimize="${CLJW_OPT:-ReleaseSafe}" >/dev/null
 [[ -x "$BIN" ]] || fail "binary missing"
 
 # (+ 1 :foo) — type_error during eval. Kind=.type_error → exit 1.

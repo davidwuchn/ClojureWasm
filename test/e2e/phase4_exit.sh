@@ -40,14 +40,14 @@ run_smoke() {
 }
 
 echo "==> Building (tree-walk)"
-zig build -Dbackend=tree_walk -Doptimize="${CLJW_OPT:-Debug}" >/dev/null
+zig build -Dbackend=tree_walk -Doptimize="${CLJW_OPT:-ReleaseSafe}" >/dev/null
 [[ -x "$BIN" ]] || fail "tree-walk binary missing"
 run_smoke tree_walk
 
 echo "==> Building (vm)"
-zig build -Dbackend=vm -Doptimize="${CLJW_OPT:-Debug}" >/dev/null
+zig build -Dbackend=vm -Doptimize="${CLJW_OPT:-ReleaseSafe}" >/dev/null
 [[ -x "$BIN" ]] || fail "vm binary missing"
 run_smoke vm
 
 # Restore default build for subsequent steps.
-zig build -Dbackend=tree_walk -Doptimize="${CLJW_OPT:-Debug}" >/dev/null
+zig build -Dbackend=tree_walk -Doptimize="${CLJW_OPT:-ReleaseSafe}" >/dev/null
