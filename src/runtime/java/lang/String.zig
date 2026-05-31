@@ -207,6 +207,26 @@ fn repeat(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) any
     return string_collection.alloc(rt, buf);
 }
 
+/// Implements `(.replace s match repl)` for both overloads JVM exposes:
+/// `replace(char,char)` (replace every char) and
+/// `replace(CharSequence,CharSequence)` (replace every substring). The
+/// receiver is `s`; `match`/`repl` are both chars OR both strings — a
+/// mixed pair is a type error. JVM reference: java.lang.String#replace.
+/// cw v1 tier: A. Shares `charset.replaceCharAlloc` /
+/// `replaceAllStringAlloc` with `clojure.string/replace` (F-009/F-011).
+fn replace(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = env;
+    try error_catalog.checkArity(".replace", args, 3, loc);
+    const out: []u8 = if (args[1].tag() == .char and args[2].tag() == .char)
+        try charset.replaceCharAlloc(rt.gpa, string_collection.asString(args[0]), args[1].asChar(), args[2].asChar(), false)
+    else if (args[1].tag() == .string and args[2].tag() == .string)
+        try charset.replaceAllStringAlloc(rt.gpa, string_collection.asString(args[0]), string_collection.asString(args[1]), string_collection.asString(args[2]))
+    else
+        return error_catalog.raise(.type_arg_not_string, loc, .{ .fn_name = ".replace", .actual = @tagName(args[1].tag()) });
+    defer rt.gpa.free(out);
+    return string_collection.alloc(rt, out);
+}
+
 /// Populate the per-Runtime native `.string` descriptor's `method_table`
 /// with String instance methods. Driven from `lang/primitive.zig` at
 /// runtime init (Layer 2 — Layer 0 `runtime/` may not import this
@@ -226,7 +246,7 @@ pub fn installNativeMethods(rt: *Runtime) !void {
         .{ "charAt", &charAt },           .{ "contains", &contains },
         .{ "startsWith", &startsWith },   .{ "endsWith", &endsWith },
         .{ "isEmpty", &isEmpty },         .{ "concat", &concat },
-        .{ "repeat", &repeat },
+        .{ "repeat", &repeat },           .{ "replace", &replace },
     };
     const entries = try gpa.alloc(type_descriptor.TypeDescriptor.MethodEntry, specs.len);
     inline for (specs, 0..) |spec, i| {
@@ -264,6 +284,7 @@ test "installNativeMethods populates the native .string descriptor" {
     try testing.expect(td.lookupMethod(null, "isEmpty") != null);
     try testing.expect(td.lookupMethod(null, "concat") != null);
     try testing.expect(td.lookupMethod(null, "repeat") != null);
+    try testing.expect(td.lookupMethod(null, "replace") != null);
     try testing.expect(td.lookupMethod(null, "noSuchMethod") == null);
 
     // Idempotent: a second call leaves the table length unchanged.

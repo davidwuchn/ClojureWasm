@@ -267,6 +267,33 @@ pub fn reverseCodepointsAlloc(alloc: std.mem.Allocator, s: []const u8) ![]u8 {
     return out;
 }
 
+/// Replace codepoint `match_cp` with `repl_cp` in `s`, returning a fresh
+/// UTF-8 byte slice. When `first_only` is true only the first occurrence
+/// is replaced (JVM `String.replace(char,char)` replaces all; Clojure
+/// `replace-first` replaces one — both share this impl). Caller owns the
+/// returned slice. Neutral impl per F-009: `clojure.string/replace`'s
+/// char path AND `java.lang.String#replace(char,char)` both wrap it.
+pub fn replaceCharAlloc(alloc: std.mem.Allocator, s: []const u8, match_cp: u21, repl_cp: u21, first_only: bool) ![]u8 {
+    var out: std.ArrayList(u8) = .empty;
+    defer out.deinit(alloc);
+    var iter = std.unicode.Utf8Iterator{ .bytes = s, .i = 0 };
+    var prev_i: usize = 0;
+    var replaced_any = false;
+    while (iter.nextCodepoint()) |cp| {
+        const cp_bytes = s[prev_i..iter.i];
+        if (cp == match_cp and !(first_only and replaced_any)) {
+            var enc_buf: [4]u8 = undefined;
+            const enc_len = try std.unicode.utf8Encode(repl_cp, &enc_buf);
+            try out.appendSlice(alloc, enc_buf[0..enc_len]);
+            replaced_any = true;
+        } else {
+            try out.appendSlice(alloc, cp_bytes);
+        }
+        prev_i = iter.i;
+    }
+    return try out.toOwnedSlice(alloc);
+}
+
 // --- tests ---
 
 const testing = std.testing;
@@ -407,4 +434,28 @@ test "substring slices on codepoint boundaries" {
     try testing.expectEqualStrings("あb", try substring(s, 1, 3));
     try testing.expectEqualStrings("いc", try substring(s, 3, 5));
     try testing.expectEqualStrings("", try substring(s, 2, 2));
+}
+
+test "replaceCharAlloc replaces every occurrence (all)" {
+    const out = try replaceCharAlloc(testing.allocator, "abcabc", 'b', 'B', false);
+    defer testing.allocator.free(out);
+    try testing.expectEqualStrings("aBcaBc", out);
+}
+
+test "replaceCharAlloc first_only replaces just the first" {
+    const out = try replaceCharAlloc(testing.allocator, "abcabc", 'b', 'B', true);
+    defer testing.allocator.free(out);
+    try testing.expectEqualStrings("aBcabc", out);
+}
+
+test "replaceCharAlloc handles multibyte codepoints" {
+    const out = try replaceCharAlloc(testing.allocator, "aあbあc", 0x3042, 'X', false); // あ → X
+    defer testing.allocator.free(out);
+    try testing.expectEqualStrings("aXbXc", out);
+}
+
+test "replaceCharAlloc no match returns a copy" {
+    const out = try replaceCharAlloc(testing.allocator, "abc", 'z', 'Z', false);
+    defer testing.allocator.free(out);
+    try testing.expectEqualStrings("abc", out);
 }

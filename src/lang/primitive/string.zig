@@ -280,27 +280,9 @@ fn strReplaceCharImpl(rt: *Runtime, fn_name: []const u8, kind: ReplaceKind, args
     if (args[2].tag() != .char)
         return error_catalog.raise(.type_arg_invalid, loc, .{ .fn_name = fn_name, .expected = "char", .actual = @tagName(args[2].tag()) });
     const haystack = string_collection.asString(args[0]);
-    const match_cp = args[1].asChar();
-    const repl_cp = args[2].asChar();
-
-    var out: std.ArrayList(u8) = .empty;
-    defer out.deinit(rt.gc.infra);
-    var iter = std.unicode.Utf8Iterator{ .bytes = haystack, .i = 0 };
-    var prev_i: usize = 0;
-    var replaced_any = false;
-    while (iter.nextCodepoint()) |cp| {
-        const cp_bytes = haystack[prev_i..iter.i];
-        if (cp == match_cp and (kind == .all or !replaced_any)) {
-            var enc_buf: [4]u8 = undefined;
-            const enc_len = try std.unicode.utf8Encode(repl_cp, &enc_buf);
-            try out.appendSlice(rt.gc.infra, enc_buf[0..enc_len]);
-            replaced_any = true;
-        } else {
-            try out.appendSlice(rt.gc.infra, cp_bytes);
-        }
-        prev_i = iter.i;
-    }
-    return try string_collection.alloc(rt, out.items);
+    const out = try charset.replaceCharAlloc(rt.gc.infra, haystack, args[1].asChar(), args[2].asChar(), kind == .first);
+    defer rt.gc.infra.free(out);
+    return try string_collection.alloc(rt, out);
 }
 
 pub fn strReplaceChar(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {

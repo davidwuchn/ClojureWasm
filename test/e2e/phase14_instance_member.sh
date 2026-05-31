@@ -63,6 +63,11 @@ assert_eq 'native_method_isEmpty'     "$("$BIN" -e '(.isEmpty "")')"            
 assert_eq 'native_method_isEmpty_no'  "$("$BIN" -e '(.isEmpty "x")')"           'false'
 assert_eq 'native_method_concat'      "$("$BIN" -e '(.concat "abc" "def")')"    '"abcdef"'
 assert_eq 'native_method_repeat'      "$("$BIN" -e '(.repeat "ab" 3)')"         '"ababab"'
+assert_eq 'native_method_replace_ss'  "$("$BIN" -e '(.replace "abcabc" "bc" "XY")')" '"aXYaXY"'
+# char/char overload. Use (char N) not \a literals — shell mangles the
+# backslash in -e (same reason phase14_int_char.sh round-trips via (char N)).
+# clj-verified: (.replace "abcabc" \a \X) => "XbcXbc".
+assert_eq 'native_method_replace_cc'  "$("$BIN" -e '(.replace "abcabc" (char 97) (char 88))')" '"XbcXbc"'
 
 # --- Case 4: deftype field read still works (field-first, no regression) ---
 got=$("$BIN" - <<'EOF' 2>/dev/null
