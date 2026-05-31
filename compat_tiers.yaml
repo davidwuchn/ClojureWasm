@@ -139,7 +139,15 @@ tiers:
           surface: runtime/java/lang/Integer.zig
         methods: [parseInt, valueOf, toBinaryString, toHexString, toOctalString]
         clojure_peer_vars: [parse-long]
-      - { fqn: "java.lang.Double",                       native_ns: "cljw.host.java.lang.Double",                       phase: 5 }
+      - fqn: java.lang.Double
+        cljw_ns: cljw.java.lang.Double
+        keyword: double
+        tier: A
+        phase: 14
+        files:
+          surface: runtime/java/lang/Double.zig
+        methods: [parseDouble, isNaN, isInfinite]
+        clojure_peer_vars: [parse-double]
       - { fqn: "java.lang.Boolean",                      native_ns: "cljw.host.java.lang.Boolean",                      phase: 5 }
       - fqn: java.lang.Math
         cljw_ns: cljw.java.lang.Math

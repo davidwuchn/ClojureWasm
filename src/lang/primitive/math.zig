@@ -720,7 +720,10 @@ fn parseDouble(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation
     try error_catalog.checkArity("parse-double", args, 1, loc);
     if (args[0].tag() != .string)
         return error_catalog.raise(.type_arg_not_string, loc, .{ .fn_name = "parse-double", .actual = @tagName(args[0].tag()) });
-    const f = std.fmt.parseFloat(f64, string_mod.asString(args[0])) catch return .nil_val;
+    // Shared neutral leaf (F-011 DRY): trims whitespace + rejects `_` like
+    // Java Double.parseDouble, so `(parse-double " 3.14 ")` is 3.14 as in
+    // real clj (Zig's bare parseFloat would reject the surrounding space).
+    const f = parse_mod.parseFloat(string_mod.asString(args[0])) catch return .nil_val;
     return Value.initFloat(f);
 }
 
