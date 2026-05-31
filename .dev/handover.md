@@ -5,77 +5,83 @@
 
 ## Resume contract
 
-- **HEAD**: see `git log` (class/type ADR-0059 + record-equality + keyword-on-record landed 2026-05-31).
-- **Direction (user, 2026-05-30)**: raise **functional completeness FIRST**
-  (no premature JIT/superinstruction). Operating mode is **STRUCTURAL-DEFECT
-  HUNTING, not ad-hoc gap-filling**: a large-input/edge `cljw -e` probe sweep that
-  surfaces a wiring fault / unconnected scaffold / representation divergence /
-  hidden O(n²) / non-TCO recursion → fix the **finished form (F-002)**, do the
-  rework. METHOD + catalog in
-  [`.dev/lessons/structural_defect_hunting.md`](lessons/structural_defect_hunting.md).
-  Fully autonomous; flexible replanning.
-- **First commit on resume MUST be**: continue the **structural-defect probe
-  sweep** on unswept surface (dynamic vars / IO / seq edges / deftype field
-  access). Concrete clean units queued: **var_ref print arm** — `(def x 1)`
-  returns a runtime `.var_ref` Value that prints `#<var_ref>`; print.zig (env
-  already imported) needs a `.var_ref => #'<ns>/<name>` arm via
-  `var_ptr.ns.name`/`var_ptr.name`; then **`resolve`** — returns that same
-  var_ref Value via `env.current_ns.resolve(name) ?*Var` (qualified → findNs).
-  Always probe first (3x). Do NOT ask (Direction-ask smell). **Build-race
-  caution**: chain `zig build && <probe>` — a stale binary gives STALE results.
-- **Forbidden this session**: re-opening anything landed (sorted collections,
-  transducers 1-5, D-159/160/161/162, crash fixes, dedupe/distinct O(n²),
-  ad-hoc hierarchies, re-seq, read-string, eval, **satisfies?/extends? wrappers,
-  class/type ADR-0059, defrecord value-equality, keyword-on-record**) or earlier
-  (AOT, ratio-arith, HAMT, atoms). JIT/superinstruction (completeness first).
-  Flipping `phase_at_least_14` / v0.1.0 (HELD).
+- **HEAD**: see `git log` (a long clj-differential parity run landed 2026-05-31).
+- **Direction (user, 2026-05-31 night)**: **resolve ALL clj input→output
+  differences**, prioritising **structure / simplicity / beauty / DRY** (F-011).
+  Use real Clojure (`clj -M -e`) as the oracle (`.dev/reference_clones.md` §
+  Executable oracle). Operating mode = **clj differential sweep**: probe a
+  category through BOTH `clj` and `cljw -e`, diff, fix every divergence at the
+  finished form (F-002/F-011 — internals may diverge, observable output must
+  match; commonise rather than per-op patch). Unresolvable / deep ones get a
+  **detailed entry in the master ledger**
+  [`private/notes/phaseA26-clj-differential-oracle.md`](../private/notes/phaseA26-clj-differential-oracle.md)
+  + a `.dev/debt.md` D-NNN row. Fully autonomous all night; do NOT stop.
+- **First commit on resume MUST be**: continue the **clj differential sweep**.
+  The master ledger lists swept categories + remaining items; pick the next
+  unswept category (host interop / Math / java.* statics / numeric edges /
+  string fns / regex / map-set ops / metadata / atoms-refs / printing). Always
+  diff vs `clj` (batch — clj startup ~1-2s). **Build-race**: chain
+  `zig build && <probe>`. **Channel/load**: under load, tool output can be
+  empty/duplicated/contradictory (memory `tool-channel-corrupts-under-load`) —
+  write to SENTINEL /tmp files, poll the gate log for `SENTINEL-…-EXIT=`, run
+  critical probes 3x; a premature task-completion notification can fire while a
+  gate is still at the e2e step (wait for the EXIT line, not the notification).
+- **Forbidden**: re-opening anything landed (git log is the SSOT). In particular
+  the clj-parity fixes already done (see Current state) + all earlier Phase ≤14
+  work. JIT/superinstruction (completeness first; perf deferred per D-163).
 
 ## Current state
 
-Mac gate green (169; gate cadence mechanically enforced). AOT-bootstrap LIVE
-(ADR-0056). This session (git log is the SSOT): `satisfies?`/`extends?` wrappers
-(+ `rt/__extends?`), **class/type → interned `.type_descriptor`** (ADR-0059:
-`makeTypeDescriptorRef` interns one boxed Value/descriptor → bit-identity =
-value-identity, zero equal.zig arms), and two structural-defect fixes from the
-probe sweep: **defrecord value-equality** (`.typed_instance` arms in
-valueEqual/keyEqValue/valueHash, defrecord structural / deftype identity) +
-**keyword-on-record** (`(:k rec)` ≡ `(get rec :k)` via shared
-`lookup.recordGet`). Prior: ADR-0057 sorted, transducers, eval (ADR-0058), D-161.
+Mac gate green (171). AOT-bootstrap LIVE. This session (git log = SSOT), in two
+arcs:
+1. **Structural-defect hunting**: satisfies?/extends? wrappers; class/type =
+   interned `.type_descriptor` (ADR-0059); defrecord value-equality;
+   keyword-on-record (`(:k rec)`≡`(get rec :k)` via shared `lookup.recordGet`);
+   var_ref print `#'ns/name` + `resolve` + deref-on-var; kwargs destructuring
+   (`& {:keys}` seq→map coerce); **internal errors catchable by try/catch**
+   (ADR-0060: try-boundary synthesises a class_name-bearing ex_info; both
+   backends; nth→index_error).
+2. **clj differential parity** (user-directed, F-011): flatten/sort/sort-by/
+   distinct/dedupe/reductions/map-indexed/keep-indexed return SEQS not vectors;
+   interleave variadic+seq; format `%0` zero-pad; **string seq/first yield
+   CHARACTERS not 1-char strings**.
 
-## Next milestone (F-010 M = Phase 15 完遂 + cw-v0-level JIT)
+New invariant **F-011** (commonisation/clean/behavioural-equivalence over
+effort; clj oracle wired). New ADRs **0059** (class/type), **0060** (catch).
 
-Coverage floor heavily advanced. Toward M: finish corpus-style coverage/
-robustness sweep → **Phase 15** concurrency (ADRs 0009/0010) → superinstruction/
-fusion → narrow ARM64 JIT (D-133) → **M** → quality loop. cw-v0 gaps in
-`.dev/cw_v0_parity_and_gap_plan.md`.
+## Master divergence ledger (compaction-survival)
 
-## Open debts (named; full rows in `.dev/debt.md`)
+[`private/notes/phaseA26-clj-differential-oracle.md`](../private/notes/phaseA26-clj-differential-oracle.md)
+holds every clj diff found this run (fixed + unresolved + acceptable), the
+oracle recipe, and the swept categories. **Read it first on resume** — it is the
+night-work state. Per-task notes: `private/notes/phaseA26-*.md`.
 
-- **D-160** sequence/eduction (push→pull transducer bridge). **D-158** corpus-
-  driven validation. **D-139** AOT param-name. **D-134** letfn + mapcat-multi-
-  coll. **D-155/156** HAMT collision/dissoc-collapse. **D-150** VM ctor parity.
-  **D-153** `(cons x lazy)` count. **D-152** diff oracle `.clj` closures.
-  **D-131** built-app non-core. **D-117/118** nREPL (Phase-15). **D-133** JIT.
-- **Verified-real gaps (clean 3x probe)**: `resolve`/`find-ns`/`ns-name`/
-  `ns-publics`/`create-ns`/`intern`/`all-ns` → name_error (need Var/Namespace
-  value reps; var_ref Value EXISTS, `.namespace` tag does NOT). `re-find` w/
-  #"regex" literal → not_implemented. **`Long`/`String` etc not bound as Vars**
-  → `(defmethod f Long …)` fails (class-dispatch multimethod half-works; native
-  class-name binding decision pending). `supers`/`bases`/deftype `->Name`/
-  `map->Name` missing.
-- **Sweep gaps (low)**: `mapv`/`interleave` N-coll variadic; `reductions` O(n²);
-  `uuid?` repr; `(class (class 5))`→`type_descriptor`, `(class fn)`→`fn_val`
-  (`@tagName` fallback, acceptable); lazy-as-map-value `#<lazy_seq>`.
+## Open debts (deep clj divergences deferred; full rows in `.dev/debt.md`)
+
+- **D-164** empty-seq≡nil: cljw collapses `()` to nil (`(list? '())`/`(seq? '())`
+  false, `(= () nil)` true, empty filter/map/rest/flatten print "nil" not "()").
+  Structural empty-seq-representation cycle. The seq-vs-vector fixes inherit this
+  (empty → nil). **The biggest remaining clj parity gap.**
+- **D-163** perf: collection/lazy/higher-order ops ~100µs/element (large reduce/
+  range timeout). Deferred to F-010 post-M perf phase (NOT premature JIT).
+- Earlier: D-160 sequence/eduction, D-155/156 HAMT, D-150 VM ctor, D-133 JIT.
+- **Acceptable divergences (recorded, not bugs)**: `(class 5)`→`Long` not
+  `java.lang.Long` (no-JVM, ADR-0059); `(float 1/3)` f64 not f32 (no f32 type);
+  set print order (unordered); `(rest "abc")` substring not char-seq (O(1) opt,
+  transitively char-correct via `(seq (rest …))`).
+
+## Remaining clj-parity work (next sweep targets)
+
+Unswept categories to probe vs clj: host interop (Math/* static methods,
+String/Integer/Long statics), regex edge (`re-find`/`re-matches` groups),
+metadata (`meta`/`with-meta`/`vary-meta`), atoms/refs/volatile, ns-introspection
+(`find-ns`/`ns-name`/`resolve`-class — needs `.namespace` value rep), printing
+(`pr-str`/`prn` of nested/edge values), more seq fns (`mapv`/`partition`/
+`tree-seq`/`iterate` edges). Record each find in the master ledger.
 
 ## Cold-start reading order
 
-handover → CLAUDE.md (§ Project spirit + Autonomous Workflow + The only stop) →
-`.dev/project_facts.md` (F-010) → `.dev/principle.md` (Bad Smell + depths) →
-`.dev/lessons/structural_defect_hunting.md` (resume MODE) →
-`.dev/core_coverage_gaps.md` (sweep queue) → `private/notes/phaseA26-*.md`
-(this session's probe-sweep finds + the var_ref/resolve next units).
-
-Channel/load discipline (if tool output looks empty/duplicated/contradictory):
-memory `tool-channel-corrupts-under-load` — suspect host load (`uptime`), write
-to SENTINEL-marked /tmp files, run critical probes 3x. `Smell-audited: <DIGIT>:`
-(hook rejects `depth`).
+handover → master ledger (above) → CLAUDE.md (§ Project spirit + Autonomous
+Workflow + The only stop) → `.dev/project_facts.md` (F-011 + F-010) →
+`.dev/principle.md` (Bad Smell) → `.dev/reference_clones.md` (clj oracle) →
+`.dev/lessons/structural_defect_hunting.md`.
