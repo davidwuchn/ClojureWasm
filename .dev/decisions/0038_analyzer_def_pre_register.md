@@ -216,3 +216,26 @@ forces user-visible divergence from JVM Clojure or hides it via a
 ## Revision history
 
 - 2026-05-26: Status: Proposed -> Accepted (initial landing).
+- 2026-06-01 (amendment, D-184): **pre-registration becomes _declare_, never
+  _reset_.** The original implementation pre-registered via `env.intern(ns,
+  name, .nil_val, null)`, which on an existing Var did `existing.root =
+  nil_val` — RESETTING a prior root at analyze time. That contradicted this
+  ADR's own "a failed `def` body leaves the Var at the previous value" intent
+  (a throwing re-`def` wiped the old root before the body ran) and blocked
+  `defmulti`'s defonce-style re-eval no-op (D-184). Fix: a new
+  `env.internDeclare(ns, name)` (register-if-absent, root untouched if
+  present) replaces the `intern(...nil...)` call in `analyzeDef` +
+  `analyzeDefmacro`. Resolvability (the pre-register's sole purpose —
+  recursive defn / forward refs) only needs the Var to EXIST, not to be nil;
+  `evalDef`/`op_def` set the value at eval time as before. Uses `ns.mappings`
+  (local only, NOT `resolve` — a refer'd name must not suppress a shadowing
+  local def). Consequence: `(def x 5) (def x (/ 1 0)) x` → 5 (JVM parity), and
+  `__make-multifn` can return the existing MultiFn so re-`defmulti` keeps its
+  `defmethod`s. A `general-purpose` Devil's-advocate fork (fresh context,
+  F-002/F-011) confirmed this is a **spec-drift fix, not a contract change**
+  (the ADR already claimed JVM error semantics the code violated), walked the
+  5 def cases (recursive / forward-ref / refer-shadow / plain-redef / throwing
+  -redef) as all correct, and rejected the back-door-`__defmulti!` wildcard as
+  a Workaround smell. Tests: 4 e2e (phase14_redef) + phase7_multimethod case
+  6; `--compare` OK on both. Blast radius = every def/defn re-eval, gated by
+  the 191-test suite + dual-backend diff oracle.
