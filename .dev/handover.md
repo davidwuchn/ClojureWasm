@@ -9,14 +9,20 @@
   Tree clean, 0 unpushed. Mac gate green (180).
 - **First on resume MUST be**: **ROADMAP §9.2.S Performance tuning campaign**
   (user-directed pull-forward, ADR-0063, ROI-ordered, PERF-marked →
-  `.dev/optimizations.md` SSOT). Start at **D-163 — map/filter/take
-  reduce-fusion** (cw v0 `fusedReduce`: collapse a lazy chain to a 0-alloc
-  pass over the base; `.range` O-001 + the chunked-cons seq are the
-  substrate). **Own ADR** (separate from ADR-0063). `(count (map inc (range
-  1e5)))` ≈ 42s ≈ 420µs/elem (lazy_seq thunk per element). Then D-140
-  startup bootstrap cache. DONE: O-001 range `72d7bfcc`, O-002 reduce-vector
-  `0898ba2c`, **O-003/D-180** bulk `vector.fromSlice` (persistent! O(n) +
-  into/vec transient routing; `(count (vec (range 1e6)))` 121s → 2.4s).
+  `.dev/optimizations.md` SSOT). Start at **D-163 — lazy-chain reduce perf,
+  ADR-0065 first cycle (Alt C)**: chunked seqs for the implicit `(reduce f
+  (map g coll))` path + the EXISTING transducers for the explicit 0-alloc
+  opt-in (JVM finished form; NOT cw-v0 meta-fuse — that would be an F-011
+  second mechanism, REJECTED by ADR-0065). First cycle, all landing
+  together (the reduce arm alone is inert — map's `cons` shreds chunks):
+  (1) `chunked_cons` arm in `higher_order.zig::reduceFn`; (2) `.clj` chunk
+  primitives (`chunk-buffer`/`chunk-append`/`chunk`/`chunk-cons`/`chunk-first`/
+  `chunk-rest`/`chunked-seq?`) backed by `chunked_cons.zig`; (3) chunk-aware
+  `map`/`filter`/`keep`/`remove` 2-arg bodies in core.clj. Gate on `(count
+  (map inc (range 1e5)))`. Realistic **~4-7×** (per-element `f` vtable
+  residual = D-133). Then D-140 startup cache. DONE: O-001 `72d7bfcc`,
+  O-002 `0898ba2c`, **O-003/D-180 + ADR-0064** (`9188820b`: bulk
+  `vector.fromSlice` 121s→2.4s + transient HAMT map >8).
 - **Then** quality-loop floor (D-169/170 quot/int on tower, D-171 json float,
   D-172 Math *Exact, D-174 rest char-seq; D-173 low) — D-168 DONE.
 - **Operating mode** = clj differential sweep (F-011) + perf campaign (§9.2.S):
