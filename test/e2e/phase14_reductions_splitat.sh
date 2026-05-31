@@ -11,10 +11,10 @@ BIN="zig-out/bin/cljw"
 fail() { echo "FAIL $1" >&2; exit 1; }
 assert_eq() { local n="$1" g="$2" w="$3"; [[ "$g" == "$w" ]] || fail "$n: got '$g' want '$w'"; echo "PASS $n -> $w"; }
 # reductions — 2-arg (was broken) + 3-arg (unchanged)
-assert_eq 'red2_sum'  "$("$BIN" -e '(reductions + [1 2 3])')"    '[1 3 6]'
-assert_eq 'red2_mul'  "$("$BIN" -e '(reductions * [1 2 3 4])')"  '[1 2 6 24]'
-assert_eq 'red2_empt' "$("$BIN" -e '(reductions + [])')"        '[0]'
-assert_eq 'red3_init' "$("$BIN" -e '(reductions + 10 [1 2 3])')" '[10 11 13 16]'
+assert_eq 'red2_sum'  "$("$BIN" -e '(reductions + [1 2 3])')"    '(1 3 6)'
+assert_eq 'red2_mul'  "$("$BIN" -e '(reductions * [1 2 3 4])')"  '(1 2 6 24)'
+assert_eq 'red2_empt' "$("$BIN" -e '(reductions + [])')"        '(0)'
+assert_eq 'red3_init' "$("$BIN" -e '(reductions + 10 [1 2 3])')" '(10 11 13 16)'
 # split-at — values via realize/destructure
 assert_eq 'sa_first'  "$("$BIN" -e '(first (split-at 2 [1 2 3 4]))')"  '(1 2)'
 assert_eq 'sa_second' "$("$BIN" -e '(second (split-at 2 [1 2 3 4]))')" '(3 4)'

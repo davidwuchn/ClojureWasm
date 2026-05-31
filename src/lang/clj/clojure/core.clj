@@ -587,8 +587,8 @@
                     (if (if had (= prior input) false) result (rf result input))))))))
        ([coll]
         ;; O(n) via the transducer (the old `(last acc)` per step was O(n²)
-        ;; — `(dedupe (range 5000))` timed out).
-        (into [] (dedupe) coll))))
+        ;; — `(dedupe (range 5000))` timed out). Returns a SEQ (JVM parity).
+        (seq (into [] (dedupe) coll)))))
 
 ;; `(distinct coll)` — drop all duplicates, first occurrence wins.
 ;; Linear `=` scan (structural, so strings/collections dedupe); O(n^2).
@@ -606,8 +606,8 @@
        ([coll]
         ;; O(n) via the transducer's volatile seen-set (the old linear
         ;; `some` scan per element was O(n²) — `(distinct (range 5000))`
-        ;; timed out).
-        (into [] (distinct) coll))))
+        ;; timed out). Returns a SEQ (JVM parity).
+        (seq (into [] (distinct) coll)))))
 
 ;; `(frequencies coll)` — map of item -> occurrence count. Keys via map
 ;; assoc (bit-pattern keyEq → number/keyword keys; structural keys D-092).
@@ -700,15 +700,17 @@
 ;; `(reductions f init coll)` — like reduce but collects every
 ;; intermediate, starting with init (eager vector). 3-arg form;
 ;; the 2-arg `(reductions f coll)` awaits multi-arity.
+;; Returns a SEQ (JVM parity). (last acc) per step is O(n²) — a perf
+;; residual tracked alongside D-163, not the seq-vs-vector concern here.
 (def reductions
   (fn*
     ([f coll]
       (let [s (seq coll)]
         (if s
           (reductions f (first s) (rest s))
-          (vector (f)))))
+          (seq (vector (f))))))
     ([f init coll]
-      (reduce (fn* [acc x] (conj acc (f (last acc) x))) [init] coll))))
+      (seq (reduce (fn* [acc x] (conj acc (f (last acc) x))) [init] coll)))))
 
 ;; ----------------------------------------------------------------
 ;; D-134 cluster 6 — trivial accessors (no compare dependency).
@@ -854,15 +856,17 @@
                  ([result] (rf result))
                  ([result input] (rf result (f (vswap! iv inc) input)))))))
        ([f coll]
-        (mapv (fn* [i] (f i (nth coll i))) (range (count coll))))))
+        ;; Returns a SEQ (JVM parity).
+        (seq (mapv (fn* [i] (f i (nth coll i))) (range (count coll)))))))
 
 ;; `(keep-indexed f coll)` — like map-indexed but drops nil results.
+;; Returns a SEQ (JVM parity).
 (def keep-indexed
   (fn* [f coll]
-    (reduce (fn* [acc i]
-              (let [r (f i (nth coll i))] (if (nil? r) acc (conj acc r))))
-            []
-            (range (count coll)))))
+    (seq (reduce (fn* [acc i]
+                   (let [r (f i (nth coll i))] (if (nil? r) acc (conj acc r))))
+                 []
+                 (range (count coll))))))
 
 ;; `(butlast coll)` — all but the final element (eager list via reverse).
 (def butlast

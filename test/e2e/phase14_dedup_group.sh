@@ -33,5 +33,9 @@ assert_eq 'distinct_str'   "$("$BIN" -e '(into [] (distinct ["a" "b" "a"]))')"  
 assert_eq 'frequencies_int' "$("$BIN" -e '(get (frequencies [1 1 2]) 1)')"             '2'
 assert_eq 'frequencies_kw'  "$("$BIN" -e '(get (frequencies [:a :a :b]) :a)')"         '2'
 assert_eq 'group_by_even'   "$("$BIN" -e '(into [] (get (group-by (fn* [x] (rem x 2)) [1 2 3 4]) 0))')" '[2 4]'
+# dedupe / distinct return a SEQ, not a vector (JVM parity, clj-verified)
+assert_eq 'dedupe_seq'   "$("$BIN" -e '(dedupe [1 1 2 2 1])')"     '(1 2 1)'
+assert_eq 'distinct_seq' "$("$BIN" -e '(distinct [1 1 2 3 3])')"   '(1 2 3)'
+assert_eq 'distinct_isseq' "$("$BIN" -e '(seq? (distinct [1 2]))')" 'true'
 
 echo "ALL phase14_dedup_group PASS"
