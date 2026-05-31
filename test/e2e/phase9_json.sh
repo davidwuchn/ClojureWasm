@@ -101,4 +101,12 @@ EOF
 ) || fail "write_float: non-zero exit"
 assert_eq 'write_float' "$(last_line "$got")" '"[1.0E7,1.0E-4,3.14,1.5E-5,2.5E16]"'
 
-echo "phase9_json: 12/12 cases pass"
+# --- BigInt write: JVM data.json writes `(str x)` → plain digits, no `N`
+# suffix (printBigInt's `N` is pr-str-only). D-182 write-side. ---
+got=$("$BIN" - <<'EOF' 2>/dev/null
+(clojure.data.json/write-str [10N 12345678901234567890N])
+EOF
+) || fail "write_bigint: non-zero exit"
+assert_eq 'write_bigint' "$(last_line "$got")" '"[10,12345678901234567890]"'
+
+echo "phase9_json: 13/13 cases pass"

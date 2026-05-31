@@ -39,6 +39,7 @@ const string_collection = @import("../../runtime/collection/string.zig");
 const vector_collection = @import("../../runtime/collection/vector.zig");
 const map_collection = @import("../../runtime/collection/map.zig");
 const print = @import("../../runtime/print.zig");
+const big_int_mod = @import("../../runtime/numeric/big_int.zig");
 
 pub fn readStrFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
     _ = env;
@@ -136,6 +137,10 @@ fn cwToJson(v: Value, w: *std.Io.Writer, loc: SourceLocation) JsonWriteError!voi
         // notation outside the decimal window) — share cljw's single float
         // formatter rather than Zig's `{d}` (D-171, sibling of D-166).
         .float => try print.printFloat(w, v.asFloat()),
+        // JVM data.json writes a BigInt via `(str x)` → plain digits, NO
+        // `N` suffix. `Managed.format` (`{f}`) renders just the digits
+        // (printBigInt adds the `N` for pr-str; JSON must not). (D-182)
+        .big_int => try w.print("{f}", .{big_int_mod.asManaged(v)}),
         .string => try writeJsonString(w, string_collection.asString(v)),
         .keyword => {
             // Keywords serialise as their name string (JVM data.json
