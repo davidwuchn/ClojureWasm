@@ -109,4 +109,18 @@ EOF
 ) || fail "write_bigint: non-zero exit"
 assert_eq 'write_bigint' "$(last_line "$got")" '"[10,12345678901234567890]"'
 
-echo "phase9_json: 13/13 cases pass"
+# --- BigInt read: a JSON integer beyond i48 (but within i64) lifts to a
+# BigInt (JVM data.json parses large ints as Long/BigInt); value-exact, with
+# cljw's i48-overflow `N` print (D-165). D-182 read-side (integer part). ---
+got=$("$BIN" - <<'EOF' 2>/dev/null
+(clojure.data.json/read-str "[1, 999999999999999999, 2]")
+EOF
+) || fail "read_bigint: non-zero exit"
+assert_eq 'read_bigint' "$(last_line "$got")" '[1 999999999999999999N 2]'
+got=$("$BIN" - <<'EOF' 2>/dev/null
+(= (clojure.data.json/read-str "999999999999999999") 999999999999999999)
+EOF
+) || fail "read_bigint_eq: non-zero exit"
+assert_eq 'read_bigint_eq' "$(last_line "$got")" 'true'
+
+echo "phase9_json: 15/15 cases pass"

@@ -69,10 +69,13 @@ fn jsonToCw(rt: *Runtime, jv: std.json.Value, loc: SourceLocation) anyerror!Valu
         .null => Value.nil_val,
         .bool => |b| if (b) Value.true_val else Value.false_val,
         .integer => |i| blk: {
+            // D-182: a JSON integer beyond i48 (but within i64) lifts to a
+            // BigInt — JVM data.json parses large integers as Long/BigInt;
+            // value-exact (cljw prints the i48-overflow as `…N`, D-165).
+            // Integers beyond i64 arrive as `.number_string` (still deferred,
+            // needs a digit-string→BigInt parse).
             if (i < std.math.minInt(i48) or i > std.math.maxInt(i48)) {
-                break :blk error_catalog.raise(.feature_not_supported, loc, .{
-                    .name = "JSON integer outside i48 range (BigInt path pending)",
-                });
+                break :blk try big_int_mod.allocFromI64(rt, i);
             }
             break :blk Value.initInteger(i);
         },
