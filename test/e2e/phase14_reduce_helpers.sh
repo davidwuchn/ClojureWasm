@@ -25,6 +25,9 @@ assert_eq 'max_key'      "$("$BIN" -e '(max-key count [1] [1 2 3] [1 2])')"   '[
 assert_eq 'min_key'      "$("$BIN" -e '(min-key count [1 2 3] [1] [1 2])')"   '[1]'
 assert_eq 'flatten'      "$("$BIN" -e '(into [] (flatten [1 [2 [3 4]] 5]))')" '[1 2 3 4 5]'
 assert_eq 'flatten_flat' "$("$BIN" -e '(into [] (flatten [1 2 3]))')"         '[1 2 3]'
+# flatten returns a SEQ, not a vector (JVM parity, clj-verified)
+assert_eq 'flatten_seq'  "$("$BIN" -e '(flatten [1 [2] 3])')"                 '(1 2 3)'
+assert_eq 'flatten_isseq' "$("$BIN" -e '(seq? (flatten [1 2]))')"             'true'
 assert_eq 'reductions'   "$("$BIN" -e '(into [] (reductions + 0 [1 2 3]))')"  '[0 1 3 6]'
 
 echo "ALL phase14_reduce_helpers PASS"

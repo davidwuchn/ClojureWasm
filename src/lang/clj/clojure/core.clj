@@ -687,13 +687,15 @@
   (fn* [f & xs]
     (reduce (fn* [a b] (if (<= (f a) (f b)) a b)) xs)))
 
-;; `(flatten coll)` — recursively splice nested sequentials into one
-;; flat eager vector. Non-sequential leaves are kept.
+;; `(flatten coll)` — the contents of any nested sequential as a single
+;; flat SEQUENCE (matches JVM: a lazy seq, not a vector). Non-sequential
+;; leaves are kept; an empty/non-sequential input yields an empty seq.
+;; (cljw collapses the empty seq to nil — the empty-seq≡nil divergence,
+;; D-164 — so `(flatten [])` is nil rather than `()`.)
 (def flatten
   (fn* [coll]
-    (reduce (fn* [acc x] (if (sequential? x) (into acc (flatten x)) (conj acc x)))
-            []
-            coll)))
+    (filter (fn* [x] (not (sequential? x)))
+            (rest (tree-seq sequential? seq coll)))))
 
 ;; `(reductions f init coll)` — like reduce but collects every
 ;; intermediate, starting with init (eager vector). 3-arg form;
