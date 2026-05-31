@@ -397,12 +397,22 @@ test "diff: ns refer-clojure widening (post-T3 path)" {
 // ADR-0040 row 7.6 cycle 4: discharge the deftype-family +
 // method-dispatch cluster. 4 diff cases (one per new opcode).
 
-test "diff: deftype_node + interop_call_node .constructor + .instance_member field" {
+test "diff: deftype macro + interop_call_node .constructor + .instance_member field" {
     var f = try Fixture.init(testing.allocator);
     defer f.deinit();
-    // Combined exercise of op_deftype + op_ctor_call + op_method_call's
-    // field-first resolver (ADR-0050 am1 — op_field_access retired).
+    // ADR-0066: deftype is a macro lowering to rt/__deftype! (a primitive
+    // call both backends execute), op_ctor_call + op_method_call's
+    // field-first resolver. Registration is no longer a backend-specific
+    // op_deftype nil-push, so the VM registers the type itself (BUG-1 fix).
     try f.check("(do (deftype DiffPoint [x y]) (.x (DiffPoint. 7 9)))", 7);
+}
+
+test "diff: deftype macro binds ->Name + applies protocol body (ADR-0066/D-087)" {
+    var f = try Fixture.init(testing.allocator);
+    defer f.deinit();
+    // Both backends must agree that the positional ->Name constructor is
+    // bound and the protocol impl runs (was silently dropped pre-ADR-0066).
+    try f.check("(do (defprotocol IDiffP (dval [t])) (deftype DiffV [v] IDiffP (dval [_] (.v _))) (dval (->DiffV 5)))", 5);
 }
 
 test "diff: interop_call_node .constructor second field" {

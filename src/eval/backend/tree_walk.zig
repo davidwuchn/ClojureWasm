@@ -375,7 +375,6 @@ pub fn eval(
         .recur_node => |n| try evalRecur(rt, env, locals, n),
         .try_node => |n| try evalTry(rt, env, locals, n),
         .throw_node => |n| try evalThrow(rt, env, locals, n),
-        .deftype_node => |n| try evalDeftype(rt, n),
         .interop_call_node => |n| try evalInteropCall(rt, env, locals, n),
         .in_ns_node => |n| try evalInNs(env, n),
         .require_node => |n| try evalRequire(rt, env, n),
@@ -534,15 +533,6 @@ fn evalSetLiteral(rt: *Runtime, env: *Env, locals: []Value, n: node_mod.SetLiter
 
 const type_descriptor_mod = @import("../../runtime/type_descriptor.zig");
 
-/// Evaluate a `(deftype Name [f1 f2 ...])` form. Thin wrapper over
-/// `type_descriptor.registerType` — row 7.4 cycle 2 lifted the alloc
-/// + register logic into the runtime so the `__defrecord!` Layer-2
-/// primitive can land `.kind = .defrecord` without duplicating the
-/// body.
-fn evalDeftype(rt: *Runtime, n: node_mod.DeftypeNode) !Value {
-    _ = try type_descriptor_mod.registerType(rt, n.name, n.fields, .deftype);
-    return .nil_val;
-}
 
 /// Unified Java/host interop dispatch arm (ADR-0050, am1). Routes on
 /// `n.kind` to the three kind-specific helpers below.

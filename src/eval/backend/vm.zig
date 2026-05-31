@@ -568,15 +568,6 @@ fn stepOnce(
                 stack[sp] = s;
                 sp += 1;
             },
-            .op_deftype => {
-                // Row 7.6 cycle 4 (ADR-0040). Analyzer-time `registerType`
-                // already populated rt.types; the dispatch just pushes
-                // nil (matches TreeWalk's evalDeftype).
-                if (sp >= OPERAND_STACK_MAX)
-                    return raiseInternal("vm: operand stack overflow");
-                stack[sp] = Value.nil_val;
-                sp += 1;
-            },
             .op_ctor_call => {
                 // operand = (name_idx << 8) | arg_count
                 const name_idx: u16 = instr.operand >> 8;

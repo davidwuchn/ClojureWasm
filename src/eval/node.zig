@@ -71,7 +71,6 @@ pub const Node = union(enum) {
     recur_node: RecurNode,
     try_node: TryNode,
     throw_node: ThrowNode,
-    deftype_node: DeftypeNode,
     interop_call_node: InteropCallNode,
     in_ns_node: InNsNode,
     require_node: RequireNode,
@@ -310,16 +309,6 @@ pub const ThrowNode = struct {
 
 /// `(deftype Name [f1 f2 ...] ...)` — per ADR-0007 Option β. Phase
 /// 5.12.a lands declaration only; protocol-method bodies arrive in
-/// 5.12.d (per ADR-0008 a1). Eval registers a fresh TypeDescriptor
-/// into `rt.types` keyed on `name`.
-pub const DeftypeNode = struct {
-    /// Fully-qualified class name (e.g. `user.Point`).
-    name: []const u8,
-    /// Field names in declaration order.
-    fields: []const []const u8,
-    loc: SourceLocation = .{},
-};
-
 /// `(Class/method args...)` / `(.member recv args...)` / `(.-field recv)` /
 /// `(Name. args...)` — unified Java/host interop dispatch (ADR-0050, am1).
 /// One Node carries every kind of interop call; the kind tag picks the

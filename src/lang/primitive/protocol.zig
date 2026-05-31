@@ -261,11 +261,9 @@ pub fn nativeType(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocat
 }
 
 /// `(rt/__defrecord! 'Name ['field-syms...])` — register a fresh
-/// TypeDescriptor with `.kind = .defrecord`. The macro
-/// `expandDefrecord` (row 7.4 cycle 1) emits this call; the
-/// underlying registration logic lives in
-/// `runtime/type_descriptor.zig::registerType` and is shared with
-/// `evalDeftype` per F-009. Returns `nil`.
+/// TypeDescriptor with `.kind = .defrecord`. The macro `expandDefrecord`
+/// emits this call; registration is shared with `__deftype!` via
+/// `registerTypePrim` → `type_descriptor.registerType` (F-009).
 ///
 /// Implements clojure.core/defrecord registration.
 /// Spec: `(defrecord Name [fields...])` creates a class Name with
@@ -276,17 +274,45 @@ pub fn nativeType(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocat
 /// cw v1 tier: A (row 7.4 cycle 2 — descriptor kind landed).
 pub fn defrecordPrim(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
     _ = env;
-    try error_catalog.checkArity("__defrecord!", args, 2, loc);
+    return registerTypePrim(rt, args, loc, .defrecord, "__defrecord!");
+}
+
+/// `(rt/__deftype! 'Name ['field-syms...])` — register a fresh
+/// TypeDescriptor with `.kind = .deftype`. The macro `expandDeftype`
+/// (ADR-0066) emits this call; identical registration to `__defrecord!`
+/// minus the descriptor kind (deftype gets NO implicit IPersistentMap
+/// semantics — the map-protocol arms gate on `kind != .defrecord`).
+///
+/// Implements clojure.core/deftype registration (JVM reference:
+/// clojure.core/deftype in clojure/core_deftype.clj). cw v1 tier: A.
+pub fn deftypePrim(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = env;
+    return registerTypePrim(rt, args, loc, .deftype, "__deftype!");
+}
+
+/// Shared registration body for `__defrecord!` / `__deftype!` — the two
+/// differ only in the registered `TypeDescriptor.kind` and the error
+/// fn-name (F-011 commonization; ADR-0066 DA correction 1). Returns a
+/// TypeDescriptorRef Value so the macro lowering's `(def Name (rt/__…! …))`
+/// + downstream `extend-type` resolve `Name` to a usable Value.
+fn registerTypePrim(
+    rt: *Runtime,
+    args: []const Value,
+    loc: SourceLocation,
+    kind: td_mod.TypeKind,
+    comptime prim_name: []const u8,
+) anyerror!Value {
+    try error_catalog.checkArity(prim_name, args, 2, loc);
     if (args[0].tag() != .symbol) {
         return error_catalog.raise(.type_arg_invalid, loc, .{
-            .fn_name = "__defrecord!",
+            .fn_name = prim_name,
             .expected = "symbol",
             .actual = @tagName(args[0].tag()),
         });
     }
     if (args[1].tag() != .vector) {
         return error_catalog.raise(.type_arg_invalid, loc, .{
-            .fn_name = "__defrecord!",
+            .fn_name = prim_name,
             .expected = "vector",
             .actual = @tagName(args[1].tag()),
         });
@@ -303,7 +329,7 @@ pub fn defrecordPrim(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLo
         const elt = vector_mod.nth(args[1], i);
         if (elt.tag() != .symbol) {
             return error_catalog.raise(.type_arg_invalid, loc, .{
-                .fn_name = "__defrecord!",
+                .fn_name = prim_name,
                 .expected = "symbol",
                 .actual = @tagName(elt.tag()),
             });
@@ -311,10 +337,7 @@ pub fn defrecordPrim(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLo
         field_names[i] = symbol_mod.asSymbol(elt).name;
     }
 
-    const td = try td_mod.registerType(rt, name_sym.name, field_names, .defrecord);
-    // Wrap as a TypeDescriptorRef Value so the macro lowering can
-    // `(def Name (rt/__defrecord! ...))` and downstream `extend-type`
-    // forms resolve `Name` to a usable Value (cycle 5).
+    const td = try td_mod.registerType(rt, name_sym.name, field_names, kind);
     return td_mod.makeTypeDescriptorRef(rt, td);
 }
 
@@ -534,6 +557,7 @@ const ENTRIES = [_]Entry{
     .{ .name = "__class", .f = &classPrim },
     .{ .name = "__native-type", .f = &nativeType },
     .{ .name = "__defrecord!", .f = &defrecordPrim },
+    .{ .name = "__deftype!", .f = &deftypePrim },
     .{ .name = "__reify!", .f = &reifyPrim },
 };
 

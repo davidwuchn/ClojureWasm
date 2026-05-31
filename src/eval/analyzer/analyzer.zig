@@ -168,7 +168,6 @@ const SpecialFormKind = enum {
     binding_form,
     try_form,
     throw_form,
-    deftype_form,
     in_ns_form,
     require_form,
     ns_form,
@@ -194,7 +193,6 @@ const SPECIAL_FORMS = std.StaticStringMap(SpecialFormKind).initComptime(.{
     .{ "binding", .binding_form },
     .{ "try", .try_form },
     .{ "throw", .throw_form },
-    .{ "deftype", .deftype_form },
     .{ "in-ns", .in_ns_form },
     .{ "require", .require_form },
     .{ "ns", .ns_form },
@@ -691,7 +689,6 @@ fn analyzeSpecial(
         .binding_form => bindings.analyzeBinding(arena, rt, env, scope, items, form, macro_table),
         .try_form => try_form.analyzeTry(arena, rt, env, scope, items, form, macro_table),
         .throw_form => special_forms.analyzeThrow(arena, rt, env, scope, items, form, macro_table),
-        .deftype_form => special_forms.analyzeDeftype(arena, items, form),
         .in_ns_form => special_forms.analyzeInNs(arena, items, form),
         .require_form => special_forms.analyzeRequire(arena, items, form),
         .ns_form => special_forms.analyzeNs(arena, items, form),
@@ -1264,15 +1261,10 @@ test "recur arity mismatch reports the loop's expected arity" {
     try testing.expectEqual(error_mod.Kind.arity_error, info.kind);
 }
 
-test "deftype is now a real special form (5.12.a) — analyses without unsupported" {
-    var fix: TestFixture = undefined;
-    try fix.init(testing.allocator);
-    defer fix.deinit();
-    const n = try fix.analyzeStr("(deftype Foo [x y])");
-    try testing.expect(n.* == .deftype_node);
-    try testing.expectEqualStrings("Foo", n.deftype_node.name);
-    try testing.expectEqual(@as(usize, 2), n.deftype_node.fields.len);
-}
+// ADR-0066 retired the deftype special form (now a macro lowering to
+// rt/__deftype!), so the former analyzer-level deftype_node test is gone —
+// macro-expansion behaviour is covered at the e2e + differential layers
+// (phase14_deftype, diff_test.zig) where the full runtime resolves rt/.
 
 test "ctor call (Foo. ...) analyses into interop_call_node .constructor" {
     var fix: TestFixture = undefined;

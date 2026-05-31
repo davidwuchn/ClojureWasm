@@ -116,6 +116,7 @@ const BOOTSTRAP = [_]Entry{
     .{ .name = "extend-type", .expand = expandExtendType },
     .{ .name = "extend-protocol", .expand = expandExtendProtocol },
     .{ .name = "defrecord", .expand = expandDefrecord },
+    .{ .name = "deftype", .expand = expandDeftype },
     .{ .name = "reify", .expand = expandReify },
     .{ .name = "instance?", .expand = expandInstanceQ },
     .{ .name = "delay", .expand = expandDelay },
@@ -1941,9 +1942,9 @@ fn expandWhenLet(
 //
 // Row 7.4 cycle 2 swapped the cycle-1 `(deftype ...)` placeholder for
 // the `rt/__defrecord!` Layer-2 primitive so the resulting
-// TypeDescriptor carries `.kind = .defrecord` (cycle 1 produced
-// `.kind = .deftype`). The primitive shares
-// `runtime/type_descriptor.zig::registerType` with `evalDeftype`.
+// TypeDescriptor carries `.kind = .defrecord`. Since ADR-0066 `deftype`
+// is a sibling macro (`expandDeftype`) sharing `lowerDefType`; its
+// `rt/__deftype!` primitive shares `registerType` (kind = .deftype).
 //
 // Cycles 3-5 grow the factory `->Name`, the protocol-method body
 // surface, and the implicit IPersistentMap arms in
@@ -1954,6 +1955,34 @@ fn expandDefrecord(
     rt: *Runtime,
     args: []const Form,
     loc: SourceLocation,
+) macro_dispatch.ExpandError!Form {
+    return lowerDefType(arena, rt, args, loc, "__defrecord!");
+}
+
+/// `(deftype Name [fields] Proto (m [..] ..)...)` — ADR-0066. deftype and
+/// defrecord lower identically (same Name + ->Name + extend-type sections);
+/// they differ only in the registration primitive (`__deftype!` registers
+/// `.kind = .deftype`, so no implicit IPersistentMap semantics). Shares
+/// `lowerDefType` (F-011 commonization). Retires the former special form.
+fn expandDeftype(
+    arena: std.mem.Allocator,
+    rt: *Runtime,
+    args: []const Form,
+    loc: SourceLocation,
+) macro_dispatch.ExpandError!Form {
+    return lowerDefType(arena, rt, args, loc, "__deftype!");
+}
+
+/// Shared `defrecord`/`deftype` lowering. `ctor_prim` is the `rt/`-namespaced
+/// registration primitive (`__defrecord!` | `__deftype!`). Emits
+/// `(do (def Name (rt/<ctor_prim> 'Name ['fields])) (def ->Name (fn* [..]
+/// (Name. ..))) extend-type-sections...)`.
+fn lowerDefType(
+    arena: std.mem.Allocator,
+    rt: *Runtime,
+    args: []const Form,
+    loc: SourceLocation,
+    comptime ctor_prim: []const u8,
 ) macro_dispatch.ExpandError!Form {
     _ = rt;
     if (args.len < 2)
@@ -1981,9 +2010,9 @@ fn expandDefrecord(
     quoted_name_items[1] = args[0];
     const quoted_name = try list(arena, quoted_name_items, loc);
 
-    // (rt/__defrecord! 'Name ['f1 'f2 ...])
+    // (rt/<ctor_prim> 'Name ['f1 'f2 ...])
     var call_items = try arena.alloc(Form, 3);
-    call_items[0] = .{ .data = .{ .symbol = .{ .ns = "rt", .name = "__defrecord!" } }, .location = loc };
+    call_items[0] = .{ .data = .{ .symbol = .{ .ns = "rt", .name = ctor_prim } }, .location = loc };
     call_items[1] = quoted_name;
     call_items[2] = fields_vec_form;
     const defrecord_call = try list(arena, call_items, loc);

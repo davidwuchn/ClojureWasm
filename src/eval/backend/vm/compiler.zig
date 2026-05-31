@@ -123,7 +123,6 @@ const Compiler = struct {
             .loop_node => |n| try self.compileLoop(n),
             .binding_node => |n| try self.compileBinding(n),
             .recur_node => |n| try self.compileRecur(n),
-            .deftype_node => |n| try self.compileDeftype(n),
             .interop_call_node => |n| try self.compileInteropCall(n),
             .in_ns_node => |n| try self.compileInNs(n),
             .require_node => |n| try self.compileRequire(n),
@@ -440,16 +439,7 @@ const Compiler = struct {
         try self.emit(.op_throw, 0);
     }
 
-    // --- Row 7.6 cycle 4 (ADR-0040) deftype-family + method-dispatch ---
-
-    /// `(deftype Name [fields])` — analyzer-time `registerType`
-    /// already populated `rt.types`. The VM op pushes nil to match
-    /// TreeWalk's `evalDeftype` return. Operand is unused for now
-    /// (reserved for future per-deftype side-table metadata).
-    fn compileDeftype(self: *Compiler, n: node_mod.DeftypeNode) Error!void {
-        _ = n;
-        try self.emit(.op_deftype, 0);
-    }
+    // --- Row 7.6 cycle 4 (ADR-0040) method-dispatch ---
 
     /// ADR-0050 (am1 + am2) unified InteropCallNode VM compile arm. All
     /// three kinds ship real bytecode: `.constructor` (op_ctor_call);

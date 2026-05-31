@@ -307,11 +307,11 @@ pub fn finaliseReifiedInstance(gc_ptr: *anyopaque, header: *HeapHeader) void {
 /// re-`def` path clean). `field_names` is borrowed; each entry is
 /// `dupe`'d into the descriptor.
 ///
-/// Shared by `evalDeftype` (TreeWalk + VM) and the `__defrecord!`
-/// Layer-2 primitive — both lower to the same Layer-0 surface per
-/// F-009 (feature-implementation neutrality). Row 7.4 cycle 2 lifted
-/// this body out of `evalDeftype` so the `defrecord` macro can land
-/// `.kind = .defrecord` without an analyzer Node fork.
+/// Shared by the `__deftype!` and `__defrecord!` Layer-2 primitives —
+/// both lower to the same Layer-0 surface per F-009 (feature-impl
+/// neutrality), differing only in the `kind` argument. Since ADR-0066
+/// both `deftype` and `defrecord` are macros emitting their respective
+/// `rt/__…!` registration call (no analyzer Node fork, no backend op).
 pub fn registerType(
     rt: *Runtime,
     name: []const u8,

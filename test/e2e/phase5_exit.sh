@@ -13,10 +13,10 @@
 #   Java interop (`Long/MAX_VALUE` static-field access); the
 #   equivalent reachable in Phase 5 is the `9223372036854775807N`
 #   BigInt-literal form (per 5.10.d).
-# - VM backend currently raises NotImplemented for deftype / ctor /
-#   field-access nodes (per ADR-0030's Phase 5 narrowing); the
-#   Evaluator.compare line in ROADMAP §9.7 5.16 is satisfied only
-#   for the non-deftype cases.
+# - Since ADR-0066 `deftype` is a macro (not a special form): it lowers
+#   to `(do (def Name (rt/__deftype! ...)) (def ->Name ...))`, so the form
+#   returns the last def's var (`#'user/->Point`), matching defrecord —
+#   not the old special-form `nil`.
 
 set -euo pipefail
 cd "$(dirname "$0")/../.."
@@ -61,7 +61,7 @@ got="$("$BIN" - <<'EOF'
 (.x (Point. 1 2))
 EOF
 )"
-assert_eq 'deftype_ctor_field' "$got" $'nil\n1'
+assert_eq 'deftype_ctor_field' "$got" $'#\x27user/->Point\n1'
 
 echo
 echo "Phase 5 exit smoke: all cases passed."

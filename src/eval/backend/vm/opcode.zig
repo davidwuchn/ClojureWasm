@@ -124,15 +124,10 @@ pub const Opcode = enum(u8) {
     /// amendment). Discharges D-073 cluster sub-site (e). Mirrors
     /// `tree_walk::evalNs` post-T3 gating.
     op_ns_with_refer_clojure = 0x17,
-    /// Row 7.6 cycle 4 (ADR-0040): deftype-family + method-dispatch
-    /// cluster opcodes. Replace the D-073 VM-DEFER stubs (sub-sites
-    /// a+b+c+f).
-    ///
-    /// `(deftype Name [fields])` — operand = constants index of a
-    /// pre-built `TypeDescriptorRef` Value. Analyzer-time
-    /// `registerType` already populated `rt.types`; the op pushes
-    /// `nil` (matches `evalDeftype` return).
-    op_deftype = 0x18,
+    /// Row 7.6 cycle 4 (ADR-0040): method-dispatch cluster opcodes.
+    /// (0x18 was `op_deftype`, retired by ADR-0066 when deftype became a
+    /// macro lowering to `rt/__deftype!` — registration is now a
+    /// backend-neutral primitive call, no dedicated opcode.)
     /// `(Name. args)` — operand = `(name_const_idx << 8) |
     /// arg_count`. Pops `arg_count` values, looks up descriptor via
     /// `rt.types.get(name)`, allocates a TypedInstance via
@@ -214,7 +209,6 @@ pub const Opcode = enum(u8) {
             .op_set_literal,
             .op_require,
             .op_ns_with_refer_clojure,
-            .op_deftype,
             .op_ctor_call,
             .op_method_call,
             .op_require_with_libspec,
@@ -258,7 +252,6 @@ pub const Opcode = enum(u8) {
             .op_set_literal,
             .op_require,
             .op_ns_with_refer_clojure,
-            .op_deftype,
             .op_ctor_call,
             .op_method_call,
             .op_require_with_libspec,
@@ -362,7 +355,6 @@ test "opcode enum tags are stable u8 values" {
     try std.testing.expectEqual(@as(u8, 0x15), @intFromEnum(Opcode.op_set_literal));
     try std.testing.expectEqual(@as(u8, 0x16), @intFromEnum(Opcode.op_require));
     try std.testing.expectEqual(@as(u8, 0x17), @intFromEnum(Opcode.op_ns_with_refer_clojure));
-    try std.testing.expectEqual(@as(u8, 0x18), @intFromEnum(Opcode.op_deftype));
     try std.testing.expectEqual(@as(u8, 0x19), @intFromEnum(Opcode.op_ctor_call));
     try std.testing.expectEqual(@as(u8, 0x1A), @intFromEnum(Opcode.op_method_call));
     try std.testing.expectEqual(@as(u8, 0x1B), @intFromEnum(Opcode.op_require_with_libspec));
