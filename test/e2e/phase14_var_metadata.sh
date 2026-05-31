@@ -43,4 +43,12 @@ assert_last 'meta_tag'     '(def ^Foo s 1) (str (:tag (meta #'"'"'s)))'    '"Foo
 # --- stacked metas merge, outer wins on dup keys ---
 assert_last 'meta_stack'   '(def ^:a ^:b w 5) [(:a (meta #'"'"'w)) (:b (meta #'"'"'w))]' '[true true]'
 
+# --- D-186: ^meta on a COLLECTION LITERAL in expression position (lowers to
+# (with-meta lit meta); meta map values are evaluated, matching JVM) ---
+assert_last 'coll_vec'     '(meta ^:foo [1 2 3])'              '{:foo true}'
+assert_last 'coll_map'     '(:k (meta ^{:k 9} {:a 1}))'        '9'
+assert_last 'coll_set'     '(:foo (meta ^:foo #{1 2}))'        'true'
+assert_last 'coll_eval'    '(:a (meta ^{:a (+ 1 2)} [1]))'     '3'
+assert_last 'coll_value'   '(conj ^:foo [1 2] 3)'              '[1 2 3]'
+
 echo "ALL phase14_var_metadata PASS"

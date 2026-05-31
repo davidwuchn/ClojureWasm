@@ -253,13 +253,23 @@ pub fn analyze(
             return try makeConstant(arena, v, form);
         },
         // Vector literal in expression position — analyze each child
-        // form, emit VectorLiteralNode (Phase 6.9 cycle 4).
-        .vector => |items| try analyzeVectorLiteral(arena, rt, env, scope, items, form, macro_table),
+        // form, emit VectorLiteralNode (Phase 6.9 cycle 4). A reader
+        // `^meta` (D-186) lowers to `(with-meta <literal> <meta>)`.
+        .vector => |items| if (form.meta) |mf|
+            try analyzeMetaColl(arena, rt, env, scope, form, mf, macro_table)
+        else
+            try analyzeVectorLiteral(arena, rt, env, scope, items, form, macro_table),
         // `{...}` and `#{...}` literals (Phase 6.16.b-2 closes D-059
         // + D-061). Each emits its own LiteralNode shape; eval walks
         // the children and folds into an empty ArrayMap / HashSet.
-        .map => |items| try analyzeMapLiteral(arena, rt, env, scope, items, form, macro_table),
-        .set => |items| try analyzeSetLiteral(arena, rt, env, scope, items, form, macro_table),
+        .map => |items| if (form.meta) |mf|
+            try analyzeMetaColl(arena, rt, env, scope, form, mf, macro_table)
+        else
+            try analyzeMapLiteral(arena, rt, env, scope, items, form, macro_table),
+        .set => |items| if (form.meta) |mf|
+            try analyzeMetaColl(arena, rt, env, scope, form, mf, macro_table)
+        else
+            try analyzeSetLiteral(arena, rt, env, scope, items, form, macro_table),
     };
 }
 
@@ -606,6 +616,32 @@ fn analyzeCall(
 }
 
 /// `[expr1 expr2 ...]` lift — analyze each element with the full
+/// D-186: a collection literal carrying reader `^meta` lowers to
+/// `(with-meta <bare-literal> <meta-map>)` and re-analyzes — reusing the
+/// `with-meta` primitive on the shared call path, so BOTH backends attach
+/// the metadata with no per-literal-Node meta field (the dual-backend
+/// parity contract stays unengaged). Quoted / data collection meta rides
+/// `formToValue` instead. `bare.meta` is cleared so the re-analysis of the
+/// literal does not loop.
+fn analyzeMetaColl(
+    arena: std.mem.Allocator,
+    rt: *Runtime,
+    env: *Env,
+    scope: ?*const Scope,
+    form: Form,
+    meta_form: *const Form,
+    macro_table: *const macro_dispatch.Table,
+) AnalyzeError!*const Node {
+    var bare = form;
+    bare.meta = null;
+    const items = try arena.alloc(Form, 3);
+    items[0] = macro_dispatch.makeSymbol("with-meta", form.location);
+    items[1] = bare;
+    items[2] = meta_form.*;
+    const call_form = Form{ .data = .{ .list = items }, .location = form.location };
+    return analyze(arena, rt, env, scope, call_form, macro_table);
+}
+
 /// special-form / call-form pipeline, package into VectorLiteralNode.
 fn analyzeVectorLiteral(
     arena: std.mem.Allocator,
@@ -718,7 +754,7 @@ const try_form = @import("try_form.zig");
 /// later phases. **pub** so `analyzer/special_forms.zig::analyzeQuote`
 /// can call back into it (cyclic-import contract).
 pub fn formToValue(rt: *Runtime, form: Form) AnalyzeError!Value {
-    return switch (form.data) {
+    const base: Value = switch (form.data) {
         .nil => .nil_val,
         .boolean => |b| if (b) .true_val else .false_val,
         .integer => |i| try integerLiteralToValue(rt, i),
@@ -735,6 +771,22 @@ pub fn formToValue(rt: *Runtime, form: Form) AnalyzeError!Value {
         .map => |entries| try mapFormToValue(rt, entries, form.location),
         .set => |items| try setFormToValue(rt, items),
     };
+    // D-186: honour a reader `^meta` map on a collection literal. The reader
+    // (readMeta) parks normalised meta on `Form.meta`; lift + attach it to an
+    // IObj value (vector/map/set/list). Non-IObj values (numbers, keywords,
+    // strings, …) cannot carry metadata in cljw — matching JVM — so the meta
+    // is dropped there rather than erroring.
+    if (form.meta) |meta_form| {
+        const m = try formToValue(rt, meta_form.*);
+        return switch (base.tag()) {
+            .vector => try vector_collection.withMeta(rt, base, m),
+            .array_map, .hash_map => try map_collection.withMeta(rt, base, m),
+            .hash_set => try set_collection.withMeta(rt, base, m),
+            .list => try list_collection.withMeta(rt, base, m),
+            else => base,
+        };
+    }
+    return base;
 }
 
 /// Build a persistent vector Value by recursively lifting each form

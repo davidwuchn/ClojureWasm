@@ -258,6 +258,14 @@ test "diff: defn attr-map reaches Var.meta" {
     // them identically under both backends (shared macroexpand+analyze).
     try f.check("(do (defn diff-dn {:v 9} [a] a) (:v (meta (var diff-dn))))", 9);
 }
+test "diff: ^meta on collection literal lowers to with-meta (D-186)" {
+    var f = try Fixture.init(testing.allocator);
+    defer f.deinit();
+    // The analyzer rewrites `^{m} [..]` to `(with-meta [..] {m})` (shared
+    // call path), so both backends attach + read the metadata identically.
+    try f.check("(:foo (meta ^{:foo 7} [1 2]))", 7);
+}
+
 test "diff: empty-list literal () self-evaluates (D-188)" {
     var f = try Fixture.init(testing.allocator);
     defer f.deinit();
