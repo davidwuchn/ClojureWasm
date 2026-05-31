@@ -780,19 +780,21 @@
           r)))))
 
 ;; `(sort coll)` — natural order via `compare`. `(sort comp coll)` — order by
-;; the (boolean-or-number) comparator `comp`. Stable (merge sort).
+;; the (boolean-or-number) comparator `comp`. Stable (merge sort). Returns a
+;; SEQ (JVM parity, clj-verified), not a vector; `-msort` sorts a vector
+;; internally and `seq` exposes it as a sequence (empty → nil per D-164).
 (def sort
-  (fn* ([coll] (-msort compare (vec coll)))
-       ([comp coll] (-msort (-comparator comp) (vec coll)))))
+  (fn* ([coll] (seq (-msort compare (vec coll))))
+       ([comp coll] (seq (-msort (-comparator comp) (vec coll))))))
 
 ;; `(sort-by f coll)` — order by `(compare (f a) (f b))`. `(sort-by f comp coll)`
-;; — order by `(comp (f a) (f b))`. Stable.
+;; — order by `(comp (f a) (f b))`. Stable. Returns a SEQ (see `sort`).
 (def sort-by
   (fn* ([f coll]
-        (-msort (fn* [a b] (compare (f a) (f b))) (vec coll)))
+        (seq (-msort (fn* [a b] (compare (f a) (f b))) (vec coll))))
        ([f comp coll]
         (let [c (-comparator comp)]
-          (-msort (fn* [a b] (c (f a) (f b))) (vec coll))))))
+          (seq (-msort (fn* [a b] (c (f a) (f b))) (vec coll)))))))
 
 ;; ----------------------------------------------------------------
 ;; D-134 range + index fns. The finite arities `(range n)` /

@@ -7,7 +7,8 @@ BIN="zig-out/bin/cljw"
 [ -n "${CLJW_SKIP_BUILD:-}" ] || zig build >/dev/null
 fail() { echo "FAIL $1" >&2; exit 1; }
 assert_eq() { local n="$1" g="$2" w="$3"; [[ "$g" == "$w" ]] || fail "$n: got '$g' want '$w'"; echo "PASS $n -> $w"; }
-assert_eq 'sh_perm'    "$("$BIN" -e '(sort (shuffle [3 1 2 5 4]))')" '[1 2 3 4 5]'
+# sort returns a SEQ (JVM parity), so the sorted permutation prints (..) not [..]
+assert_eq 'sh_perm'    "$("$BIN" -e '(sort (shuffle [3 1 2 5 4]))')" '(1 2 3 4 5)'
 assert_eq 'sh_set'     "$("$BIN" -e '(= (set (shuffle [:a :b :c])) #{:a :b :c})')" 'true'
 assert_eq 'sh_count'   "$("$BIN" -e '(count (shuffle [1 2 3 4 5 6 7]))')" '7'
 assert_eq 'sh_single'  "$("$BIN" -e '(shuffle [42])')" '[42]'

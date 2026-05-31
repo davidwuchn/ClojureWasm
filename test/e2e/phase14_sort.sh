@@ -39,5 +39,9 @@ assert_eq 'sortby_gt'   "$("$BIN" -e '(into [] (sort-by count > ["aa" "b" "ccc"]
 assert_eq 'sort_large'  "$("$BIN" -e '(count (sort (reverse (range 5000))))')" '5000'
 assert_eq 'sort_large_min' "$("$BIN" -e '(first (sort (reverse (range 5000))))')" '0'
 assert_eq 'sort_large_max' "$("$BIN" -e '(last (sort (reverse (range 5000))))')" '4999'
+# sort / sort-by return a SEQ, not a vector (JVM parity, clj-verified)
+assert_eq 'sort_seq'    "$("$BIN" -e '(sort [3 1 2])')"            '(1 2 3)'
+assert_eq 'sort_isseq'  "$("$BIN" -e '(seq? (sort [3 1 2]))')"     'true'
+assert_eq 'sortby_seq'  "$("$BIN" -e '(sort-by - [3 1 2])')"       '(3 2 1)'
 
 echo "ALL phase14_sort PASS"
