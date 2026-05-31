@@ -5,24 +5,24 @@
 
 ## Resume contract
 
-- **HEAD**: `7a73d27d` (`cw-from-scratch`; see `git log` for drift). Tree clean,
-  **0 unpushed**. Mac gate green (180; scaffolding diet is docs-only).
-- **First commit on resume MUST be**: **drain the quality-loop floor**,
-  highest-value-first, per CLAUDE.md Step 0.5 "Quality-loop floor drain"
-  (read all `quality-loop floor:` debt rows; backlog = 13). Start with
-  **D-168 — `(range n)`/`(range a b)` return an EAGER VECTOR, not a seq**
-  (`(seq? (range 3))`→cljw false / clj true; `(conj (range 3) 99)` diverges
-  append-vs-prepend). Fix = align the 1/2-arg arms with cljw's already-correct
-  3-arg lazy-seq `range` (a `(seq …)` wrap = CONSISTENCY, not ad-hoc); chunked
-  LongRange is the F-004 finished form. clj-grounded. Then D-169/170 (quot/int
-  on the tower), D-171 (json float → pub `printFloat`), D-172 (Math *Exact),
-  D-174 (rest char-seq); D-173 low. Index: `.dev/tech_debt_consolidation.md`.
-- **Operating mode** = clj differential sweep (F-011): probe a category through
-  BOTH `clj` and `cljw`, diff, fix every divergence at the finished form;
-  commonise rather than per-op patch. Deep/unresolvable → master ledger entry +
-  `.dev/debt.md` D-NNN. Fully autonomous; loop self-selects per F-002 (may
-  weigh the higher-value structural items in Open debts over bit-method
-  coverage).
+- **HEAD**: see `git log` (perf-campaign commits on `cw-from-scratch`).
+  Tree clean, 0 unpushed. Mac gate green (180).
+- **First on resume MUST be**: **ROADMAP §9.2.S Performance tuning campaign**
+  (user-directed pull-forward, ADR-0063, ROI-ordered, PERF-marked →
+  `.dev/optimizations.md` SSOT). Start at **D-180 — bulk `persistent!` /
+  `vector.fromSlice`**: `transient_vector.toPersistent` rebuilds via N
+  persistent conjs (O(n log n)) → `(vec (range 1e6))` = 121s; build the HAMT
+  from the flat buffer in O(n), then re-land the reverted O-003 transient
+  `into`/`vec` pair (they land together). **Core Vector → exhaustive boundary
+  tests** (n∈{0,1,31,32,33,63,64,65,1023,1024,1025,1e5}: build → nth-all +
+  count + `=` vs conj-built). Then D-163 fusion (own ADR), D-140 startup.
+  DONE: O-001 range `72d7bfcc`, O-002 reduce-vector `0898ba2c`.
+- **Then** quality-loop floor (D-169/170 quot/int on tower, D-171 json float,
+  D-172 Math *Exact, D-174 rest char-seq; D-173 low) — D-168 DONE.
+- **Operating mode** = clj differential sweep (F-011) + perf campaign (§9.2.S):
+  probe via BOTH `clj`+`cljw`, fix at the finished form, commonise; perf =
+  measure before/after + `// PERF:` marker + optimizations.md row per win.
+  Autonomous; loop self-selects per F-002 / ROI.
 - **Forbidden**: re-opening anything landed (git log = SSOT). JIT/superinstruction
   (perf deferred, D-163). Touching `tree_walk.zig`/`vm.zig` for statics/fields
   (they resolve to `.constant` Node / shared builtins — backend-agnostic; the

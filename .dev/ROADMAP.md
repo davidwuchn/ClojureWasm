@@ -947,6 +947,49 @@ What this changes vs the §9.2 mapping:
 ledger, explicitly **outside** F-007's dormant `learn_clojurewasm`
 chapter cadence). Full grounding: `private/notes/recut-goal-synthesis.md`.
 
+### 9.2.S Performance tuning campaign (ACTIVE — resume here; ADR-0063, 2026-05-31)
+
+**User-directed pull-forward.** The §9.2.R sequence parks perf (the
+JIT/fusion chain) after Phase 15. But per-element interpreter overhead
+(`reduce`/`map`/`into`/`vec` over large inputs, lazy-seq realisation,
+cljw startup) became a **dev-iteration bottleneck** before then, so the
+user pulled a perf campaign forward (2026-05-31): *"あからさまに遅いと
+数々のこれからのイテレーションのボトルネックになるので、 前倒しでもやって
+おく価値があります … cw v0 なども参考に、 このプロジェクトの作り方で最適な
+もので速度チューニング … ROI の高いものから自律的に判断して進め、 手戻りも
+していい（コミットこまめにするとrevertしやすい）"*.
+
+This is a **repeatable, ROI-ordered, refactor-gated** cluster (the F-010
+discipline applied to perf): each unit is its own commit (revert-
+friendly), held to F-002 finished-form + F-011 commonisation, gated
+individually, and **measured before/after**. Every speed-for-simplicity
+trade carries a `// PERF:` marker + a row in
+[`.dev/optimizations.md`](./optimizations.md) (the SSOT, ADR-0063); the
+naive form stays the behavioural contract (F-011 equivalence vs `clj`).
+cw v0 (`Meta.range` / `fusedReduce` / incremental-trie transients) is
+the precedent, re-derived cljw-appropriately (not copied; F-004 standalone
+slots, not slot-cram).
+
+**Units, ROI-ordered** (impact × frequency / effort·risk). Measured on
+mac-arm-m4pro, 0.48s startup baseline subtracted:
+
+| Unit  | What                                                                                                                                                                                                                                  | Status                       | ROI note                                                                                                                                                                                                                 |
+|-------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|------------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| O-001 | Compact `.range` value (O(1) count/nth, tight reduce, chunked seq)                                                                                                                                                                    | **DONE** `72d7bfcc`          | `(count (range 1e6))` ~118s → 0ms                                                                                                                                                                                       |
+| O-002 | `reduce` over a vector index-walks (no `seqFn`→`vectorToList` eager N-cons)                                                                                                                                                          | **DONE** `0898ba2c`          | `(reduce + (vec (range 1e6)))` 182s → 123s (residual = build side, D-180)                                                                                                                                               |
+| D-180 | **Bulk `persistent!` / `vector.fromSlice`** — `toPersistent` rebuilds via N persistent conjs (O(n log n)); build the HAMT from the transient's flat buffer in O(n) + route `into`/`vec` through transients (the reverted O-003 pair) | **NEXT** (highest remaining) | `(vec (range 1e6))` = 121s, almost all `persistent!`. into/vec ubiquitous. Core-type change → exhaustive boundary tests (n ∈ {0,1,31,32,33,63,64,65,1023,1024,1025,1e5}: build → nth-all + count + `=` vs conj-built) |
+| D-163 | **map/filter/take reduce-fusion** (cw v0 `fusedReduce`: collapse a lazy chain to a 0-alloc pass over the base; `.range` O-001 is the substrate)                                                                                       | after D-180                  | `(count (map inc (range 1e5)))` = 42s ≈ 420µs/elem (lazy_seq thunk per element). Own ADR. cw v0 1336x                                                                                                                   |
+| D-140 | **cljw startup bootstrap cache** — re-parse+analyse+eval ~1000-line `core.clj` per invocation ≈ 0.48s                                                                                                                               | after D-163 (architectural)  | **Highest dev-velocity ROI** (every test/probe pays it; e2e suite's ~138s parallel block is dominated by it). Pre-analysed bootstrap cache à la ClojureScript                                                           |
+
+**Resume contract**: start at **D-180** (the bulk `persistent!` — it is
+the highest-ROI contained win and pairs with the reverted transient
+`into`/`vec`). Then D-163 fusion (its own ADR), then D-140 startup.
+Re-measure each before/after; record the win in `optimizations.md`.
+This cluster runs ahead of the §9.2.R Phase-15/JIT sequence and does not
+renumber it (F-003: §9.2.R's ordering is intact; this is a pulled-forward
+overlay). Granularity (whether D-163/D-140 become numbered phases) defers
+to their entry per F-003.
+
 ### 9.3 Phase 1 — task list (expanded; this is the active phase)
 
 > Convention: each `[ ]` becomes one or more source commits, eventually

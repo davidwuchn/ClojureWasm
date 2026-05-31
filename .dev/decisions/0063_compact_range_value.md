@@ -259,3 +259,23 @@ D-163 (perf window + cw v0 fusedReduce blueprint) · D-168 (range→lazy
 seq, the immediate predecessor) · D-164 / D-165 / D-178 (inherited) ·
 ADR-0033 D4 (`:zig-leaf` producer pattern) · survey
 `private/notes/perf-range-value-survey.md`.
+
+## Revision history
+
+- **2026-05-31 — formalised into a ROADMAP perf campaign.** The user
+  extended the one-off range pull-forward into a sustained, ROI-ordered
+  speed-tuning campaign (*"ROI の高いものから自律的に判断して進め、 手戻りも
+  していい … 正式な計画に組み込みましょう … クリアセッションからまっさきに
+  腰を据えてやってくれるよう配線"*). This ADR's governance (the `// PERF:`
+  marker + `.dev/optimizations.md` SSOT) now covers the whole campaign,
+  recorded as **ROADMAP §9.2.S Performance tuning campaign** (ACTIVE
+  resume target, ahead of the §9.2.R Phase-15/JIT sequence; F-003: no
+  renumber). Landed since this ADR: **O-002** (reduce index-walks a
+  vector, `0898ba2c`). NEXT: **D-180** (bulk `persistent!` /
+  `vector.fromSlice` — `toPersistent`'s N-persistent-conj rebuild is the
+  `into`/`vec` bottleneck; pairs with the reverted transient `into`/`vec`
+  / O-003). Then D-163 (map/filter reduce-fusion) + D-140 (startup
+  bootstrap cache). The campaign carries its own focused units because
+  D-180 touches the core Vector type (needs exhaustive boundary tests) —
+  a deliberate "腰を据えて" treatment rather than a rushed mega-session
+  addition.
