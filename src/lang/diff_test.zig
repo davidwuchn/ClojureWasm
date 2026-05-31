@@ -258,6 +258,14 @@ test "diff: defn attr-map reaches Var.meta" {
     // them identically under both backends (shared macroexpand+analyze).
     try f.check("(do (defn diff-dn {:v 9} [a] a) (:v (meta (var diff-dn))))", 9);
 }
+test "diff: empty-list literal () self-evaluates (D-188)" {
+    var f = try Fixture.init(testing.allocator);
+    defer f.deinit();
+    // `()` lowers to a `.constant` nil Node in the shared analyzer, so both
+    // backends agree. `()` is nil (empty≡nil, D-164) → falsey → 2.
+    try f.check("(if () 1 2)", 2);
+}
+
 // NOTE: `sequence`'s dual-backend parity is NOT diff-tested here — the
 // Fixture loads primitives + macro_transforms only, NOT core.clj, so the
 // `.clj` `sequence`/`map` are absent. Its TreeWalk↔VM parity is verified by

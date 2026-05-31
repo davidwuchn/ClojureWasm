@@ -477,10 +477,14 @@ fn analyzeList(
     macro_table: *const macro_dispatch.Table,
 ) AnalyzeError!*const Node {
     if (items.len == 0) {
-        // The empty-list literal `()` evaluates to () in Clojure, which
-        // requires a heap List Value the analyser doesn't have yet
-        // (Phase 5 collections). Defer cleanly.
-        return error_catalog.raise(.feature_not_supported, form.location, .{ .name = "Empty list as expression value" });
+        // `()` self-evaluates to the empty list (Clojure: PersistentList/
+        // EMPTY). cljw represents the empty list as nil today (empty≡nil;
+        // the distinct empty-list Value is D-164's structural overhaul), so
+        // `()` lowers to the same nil_val that `(list)` / `'()` yield —
+        // consistent, no longer a spurious error (D-188). The prior
+        // feature_not_supported deferral cited Phase-5 collections, which
+        // have long since shipped.
+        return makeConstant(arena, .nil_val, form);
     }
     if (items[0].data == .symbol) {
         const head = items[0].data.symbol;
