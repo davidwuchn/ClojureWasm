@@ -26,6 +26,7 @@ const Runtime = @import("../../runtime.zig").Runtime;
 const Env = @import("../../env.zig").Env;
 const SourceLocation = @import("../../error/info.zig").SourceLocation;
 const error_catalog = @import("../../error/catalog.zig");
+const promote = @import("../../numeric/promote.zig");
 
 /// Implements `(Math/abs n)`.
 /// Spec: absolute value, type-preserving — `int→long`, `double→double`.
@@ -222,6 +223,83 @@ fn floorMod(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) a
     return Value.initInteger(@mod(@as(i64, a), @as(i64, b)));
 }
 
+/// Read an exact `long` operand for the `Math/*Exact` family. A float /
+/// ratio has no matching `long` overload (type error); a BigInt beyond
+/// i64 cannot be a `long` (overflow). Shared extractor via `promote`.
+fn exactArg(v: Value, comptime jname: []const u8, loc: SourceLocation) anyerror!i64 {
+    return promote.exactI64(v) catch |err| switch (err) {
+        error.OutOfRange => error_catalog.raise(.integer_overflow, loc, .{}),
+        error.NotAnInteger => error_catalog.raise(.type_arg_not_integer, loc, .{ .fn_name = "Math/" ++ jname, .actual = @tagName(v.tag()) }),
+    };
+}
+
+const ExactOp = enum { add, sub, mul };
+
+/// `Math/addExact` / `subtractExact` / `multiplyExact` — i64 arithmetic
+/// that throws `ArithmeticException` (catalog `integer_overflow`) on
+/// overflow instead of wrapping. A distinct mechanism from `floorDiv` /
+/// `floorMod` (which never overflow). JVM reference: java.lang.Math.
+fn ExactBin(comptime op: ExactOp, comptime jname: []const u8) type {
+    return struct {
+        fn call(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+            _ = env;
+            try error_catalog.checkArity("Math/" ++ jname, args, 2, loc);
+            const a = try exactArg(args[0], jname, loc);
+            const b = try exactArg(args[1], jname, loc);
+            const res, const overflowed = switch (op) {
+                .add => @addWithOverflow(a, b),
+                .sub => @subWithOverflow(a, b),
+                .mul => @mulWithOverflow(a, b),
+            };
+            if (overflowed != 0) return error_catalog.raise(.integer_overflow, loc, .{});
+            return promote.wrapI64(rt, res);
+        }
+    };
+}
+
+/// `Math/negateExact a` — `-a` with i64 overflow detection (only `MIN`
+/// overflows). JVM reference: java.lang.Math#negateExact.
+fn negateExact(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = env;
+    try error_catalog.checkArity("Math/negateExact", args, 1, loc);
+    const a = try exactArg(args[0], "negateExact", loc);
+    const res, const overflowed = @subWithOverflow(@as(i64, 0), a);
+    if (overflowed != 0) return error_catalog.raise(.integer_overflow, loc, .{});
+    return promote.wrapI64(rt, res);
+}
+
+/// `Math/incrementExact a` — `a + 1` with i64 overflow detection.
+fn incrementExact(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = env;
+    try error_catalog.checkArity("Math/incrementExact", args, 1, loc);
+    const a = try exactArg(args[0], "incrementExact", loc);
+    const res, const overflowed = @addWithOverflow(a, @as(i64, 1));
+    if (overflowed != 0) return error_catalog.raise(.integer_overflow, loc, .{});
+    return promote.wrapI64(rt, res);
+}
+
+/// `Math/decrementExact a` — `a - 1` with i64 overflow detection.
+fn decrementExact(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = env;
+    try error_catalog.checkArity("Math/decrementExact", args, 1, loc);
+    const a = try exactArg(args[0], "decrementExact", loc);
+    const res, const overflowed = @subWithOverflow(a, @as(i64, 1));
+    if (overflowed != 0) return error_catalog.raise(.integer_overflow, loc, .{});
+    return promote.wrapI64(rt, res);
+}
+
+/// `Math/toIntExact a` — assert `a` fits a 32-bit int, else throw. cljw
+/// has no i32 type, so the result is still a Long; only the range check
+/// is observable. JVM reference: java.lang.Math#toIntExact.
+fn toIntExact(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = env;
+    try error_catalog.checkArity("Math/toIntExact", args, 1, loc);
+    const a = try exactArg(args[0], "toIntExact", loc);
+    if (a < std.math.minInt(i32) or a > std.math.maxInt(i32))
+        return error_catalog.raise(.integer_overflow, loc, .{});
+    return promote.wrapI64(rt, a);
+}
+
 fn initMath(td: *type_descriptor.TypeDescriptor, gpa: std.mem.Allocator) anyerror!void {
     if (td.method_table.len != 0) return; // idempotent re-run
     const specs = .{
@@ -247,6 +325,14 @@ fn initMath(td: *type_descriptor.TypeDescriptor, gpa: std.mem.Allocator) anyerro
         .{ "toDegrees", &Unary("toDegrees", fToDegrees).call },
         .{ "atan2", &atan2 }, .{ "hypot", &hypot },
         .{ "floorDiv", &floorDiv }, .{ "floorMod", &floorMod },
+        // *Exact family: i64 arithmetic that throws on overflow (§A26 / D-172)
+        .{ "addExact", &ExactBin(.add, "addExact").call },
+        .{ "subtractExact", &ExactBin(.sub, "subtractExact").call },
+        .{ "multiplyExact", &ExactBin(.mul, "multiplyExact").call },
+        .{ "negateExact", &negateExact },
+        .{ "incrementExact", &incrementExact },
+        .{ "decrementExact", &decrementExact },
+        .{ "toIntExact", &toIntExact },
     };
     const entries = try gpa.alloc(type_descriptor.TypeDescriptor.MethodEntry, specs.len);
     inline for (specs, 0..) |spec, i| {

@@ -519,6 +519,20 @@ pub fn truncToI64(rt: *Runtime, v: Value) !i64 {
     }
 }
 
+/// Read an EXACT integer Value as an i64 — no truncation, no widening.
+/// `error.NotAnInteger` for a float / ratio / non-numeric (the JVM
+/// `Math/*Exact` family takes `long` params, so those have no matching
+/// overload); `error.OutOfRange` when a BigInt exceeds i64. Distinct from
+/// `truncToI64` (which truncates floats / ratios toward zero). Shared by
+/// the `Math/*Exact` statics.
+pub fn exactI64(v: Value) !i64 {
+    return switch (v.tag()) {
+        .integer => @as(i64, v.asInteger()),
+        .big_int => big_int.asManaged(v).toInt(i64) catch error.OutOfRange,
+        else => error.NotAnInteger,
+    };
+}
+
 /// `10^exp` as an owned Managed (exp ≥ 0). Caller must `deinit`.
 fn tenPow(rt: *Runtime, exp: i32) !Managed {
     var acc = try Managed.init(rt.gc.infra);
@@ -796,4 +810,20 @@ test "truncToI64 over the tower (int / float / bigint / ratio)" {
 
     try testing.expectError(error.NotANumber, truncToI64(&fix.rt, Value.nil_val));
     try testing.expectError(error.OutOfRange, truncToI64(&fix.rt, Value.initFloat(1e30)));
+}
+
+test "exactI64 accepts integer / in-range BigInt; rejects float / ratio" {
+    var fix = Fixture.init();
+    defer fix.deinit();
+
+    try testing.expectEqual(@as(i64, 42), try exactI64(Value.initInteger(42)));
+
+    // A literal beyond i48 is a BigInt in cljw (D-165); exactI64 reads it.
+    const big = try mulPromoting(&fix.rt, Value.initInteger((1 << 47) - 1), Value.initInteger(2));
+    try testing.expect(big.tag() == .big_int);
+    try testing.expectEqual(@as(i64, ((1 << 47) - 1) * 2), try exactI64(big));
+
+    try testing.expectError(error.NotAnInteger, exactI64(Value.initFloat(3.0)));
+    const half = try divPromoting(&fix.rt, Value.initInteger(1), Value.initInteger(2));
+    try testing.expectError(error.NotAnInteger, exactI64(half));
 }
