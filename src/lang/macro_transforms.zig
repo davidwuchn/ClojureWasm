@@ -1397,8 +1397,6 @@ fn expandIfLet(
 // `(defn name ([params...] body...) ([params...] body...) ...)` →
 //   `(def name (fn* ([params...] (do body...)) ([params...] (do body...)) ...))`
 //
-// Docstring + metadata-map deferred per survey §11 Q6 to a separate
-// D-NNN follow-up row.
 fn expandDefn(
     arena: std.mem.Allocator,
     rt: *Runtime,
@@ -1412,38 +1410,51 @@ fn expandDefn(
 
     const name_form = args[0];
 
+    // JVM defn: `(defn name doc-string? attr-map? [params] body)` (and the
+    // multi-arity equivalent). Skip a leading docstring (string) and a
+    // leading attr-map (map) immediately after the name (D-091). They are
+    // parsed and dropped here — :doc / attr metadata attachment to the Var
+    // awaits var-metadata support (a separate gap; cljw has no `#'`/`var`
+    // reader yet). A string AFTER the params is the body, not a docstring,
+    // because this scan only fires at the name+1 position.
+    var head: usize = 1;
+    if (head < args.len and args[head].data == .string) head += 1;
+    if (head < args.len and args[head].data == .map) head += 1;
+    if (head >= args.len)
+        return error_catalog.raise(.defn_form_incomplete, loc, .{});
+    const body_forms = args[head..];
+
     // Two body shapes: vector ⇒ single-arity (existing); list ⇒ multi-arity.
     const fn_form = blk: {
-        if (args[1].data == .vector) {
-            if (args.len < 3)
+        if (body_forms[0].data == .vector) {
+            if (body_forms.len < 2)
                 return error_catalog.raise(.defn_form_incomplete, loc, .{});
-            const body_form = try wrapBodyInDo(arena, args[2..], loc);
+            const body_form = try wrapBodyInDo(arena, body_forms[1..], loc);
             // D-076 cycle 3: lower destructured params (gensym + body let).
-            const r = try transformFnArity(arena, rt, args[1], &.{body_form}, loc);
+            const r = try transformFnArity(arena, rt, body_forms[0], &.{body_form}, loc);
             var fn_items = try arena.alloc(Form, 2 + r.body.len);
             fn_items[0] = sym("fn*", loc);
             fn_items[1] = r.params;
             @memcpy(fn_items[2..], r.body);
             break :blk try list(arena, fn_items, loc);
         }
-        // Multi-arity: every args[1..] must be a `([params] body...)` list.
-        var fn_items = try arena.alloc(Form, args.len);
+        // Multi-arity: every body_forms entry must be a `([params] body...)` list.
+        var fn_items = try arena.alloc(Form, 1 + body_forms.len);
         fn_items[0] = sym("fn*", loc);
-        var i: usize = 1;
-        while (i < args.len) : (i += 1) {
-            if (args[i].data != .list)
-                return error_catalog.raise(.defn_params_not_vector, args[i].location, .{});
-            const sub = args[i].data.list;
+        for (body_forms, 0..) |arity_form, j| {
+            if (arity_form.data != .list)
+                return error_catalog.raise(.defn_params_not_vector, arity_form.location, .{});
+            const sub = arity_form.data.list;
             if (sub.len < 2)
-                return error_catalog.raise(.defn_form_incomplete, args[i].location, .{});
+                return error_catalog.raise(.defn_form_incomplete, arity_form.location, .{});
             if (sub[0].data != .vector)
                 return error_catalog.raise(.defn_params_not_vector, sub[0].location, .{});
-            const body_form = try wrapBodyInDo(arena, sub[1..], args[i].location);
-            const r = try transformFnArity(arena, rt, sub[0], &.{body_form}, args[i].location);
+            const body_form = try wrapBodyInDo(arena, sub[1..], arity_form.location);
+            const r = try transformFnArity(arena, rt, sub[0], &.{body_form}, arity_form.location);
             var method_items = try arena.alloc(Form, 1 + r.body.len);
             method_items[0] = r.params;
             @memcpy(method_items[1..], r.body);
-            fn_items[i] = try list(arena, method_items, args[i].location);
+            fn_items[1 + j] = try list(arena, method_items, arity_form.location);
         }
         break :blk try list(arena, fn_items, loc);
     };
