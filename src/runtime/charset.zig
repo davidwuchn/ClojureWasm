@@ -104,7 +104,7 @@ pub fn isAllWhitespace(s: []const u8) !bool {
     return true;
 }
 
-fn isWhitespaceCodepoint(cp: u21) bool {
+pub fn isWhitespaceCodepoint(cp: u21) bool {
     return switch (cp) {
         // ASCII whitespace (matches std.ascii.isWhitespace).
         ' ', '\t', '\n', '\r', 0x0B, 0x0C => true,
@@ -117,6 +117,46 @@ fn isWhitespaceCodepoint(cp: u21) bool {
         0x2008...0x200A => true,
         else => false,
     };
+}
+
+// Single-codepoint character classification + case folding, shared by the
+// `java.lang.Character` static surface (runtime/java/lang/Character.zig).
+// ASCII-only, matching cljw's existing string case folding (D-057 Unicode
+// caveat): the JVM uses full Unicode tables, cljw recognises ASCII a-z/A-Z/
+// 0-9 only. The oracle-verified common cases all fall in ASCII.
+
+/// JVM `Character.isDigit` mirror (ASCII 0-9; D-057 Unicode caveat).
+pub fn isDigitCodepoint(cp: u21) bool {
+    return cp >= '0' and cp <= '9';
+}
+
+/// JVM `Character.isLetter` mirror (ASCII a-z/A-Z; D-057 Unicode caveat).
+pub fn isLetterCodepoint(cp: u21) bool {
+    return (cp >= 'a' and cp <= 'z') or (cp >= 'A' and cp <= 'Z');
+}
+
+/// JVM `Character.toUpperCase` mirror — ASCII a-z → A-Z, all else
+/// unchanged (matches `(Character/toUpperCase \5)` → `\5`). D-057 caveat.
+pub fn toUpperCodepoint(cp: u21) u21 {
+    return if (cp >= 'a' and cp <= 'z') cp - ('a' - 'A') else cp;
+}
+
+/// JVM `Character.toLowerCase` mirror — ASCII A-Z → a-z, all else unchanged.
+pub fn toLowerCodepoint(cp: u21) u21 {
+    return if (cp >= 'A' and cp <= 'Z') cp + ('a' - 'A') else cp;
+}
+
+/// JVM `Character.digit` mirror — the value of `cp` as a digit in `radix`
+/// (0-9 then a-z/A-Z = 10-35), or `null` if `cp` is not such a digit or
+/// its value is ≥ radix. `(Character/digit \f 16)` → 15; `\z 16` → null.
+pub fn digitValue(cp: u21, radix: u8) ?u8 {
+    const v: u8 = switch (cp) {
+        '0'...'9' => @intCast(cp - '0'),
+        'a'...'z' => @intCast(cp - 'a' + 10),
+        'A'...'Z' => @intCast(cp - 'A' + 10),
+        else => return null,
+    };
+    return if (v < radix) v else null;
 }
 
 /// Slice off leading whitespace codepoints per `isAllWhitespace`'s

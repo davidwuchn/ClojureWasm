@@ -343,6 +343,7 @@ run_step "e2e_phase14_java_static_dispatch"  "bash test/e2e/phase14_java_static_
 run_step "e2e_phase14_integer_statics"       "bash test/e2e/phase14_integer_statics.sh"
 run_step "e2e_phase14_long_statics"          "bash test/e2e/phase14_long_statics.sh"
 run_step "e2e_phase14_double_statics"        "bash test/e2e/phase14_double_statics.sh"
+run_step "e2e_phase14_character_statics"     "bash test/e2e/phase14_character_statics.sh"
 run_step "e2e_phase14_instance_member"       "bash test/e2e/phase14_instance_member.sh"
 run_step "e2e_phase14_math"                  "bash test/e2e/phase14_math.sh"
 run_step "e2e_phase14_math_transcendental" "bash test/e2e/phase14_math_transcendental.sh"
