@@ -159,10 +159,14 @@ fn analyzeFnMethod(
         arity += 1;
     }
 
+    // A variadic fn's `recur` rebinds the rest param too, so the recur
+    // target accepts `arity + 1` args (the trailing one is the rest seq) —
+    // matches JVM `(fn [a & r] (recur x ys))` (D-090).
+    const recur_arity: u16 = arity + @intFromBool(has_rest);
     var child_scope = if (scope) |s|
-        Scope.childWithRecur(s, .{ .arity = arity, .slot_base = slot_base, .kind = .fn_kw })
+        Scope.childWithRecur(s, .{ .arity = recur_arity, .slot_base = slot_base, .kind = .fn_kw })
     else
-        Scope{ .recur_target = .{ .arity = arity, .slot_base = 0, .kind = .fn_kw } };
+        Scope{ .recur_target = .{ .arity = recur_arity, .slot_base = 0, .kind = .fn_kw } };
     defer child_scope.deinit(arena);
     for (param_names.items) |name| {
         _ = try child_scope.declare(arena, name);

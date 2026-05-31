@@ -189,6 +189,21 @@ test "diff: loop*/recur countdown" {
     try f.check("(loop* [i 0] (if (< i 3) (recur (+ i 1)) i))", 3);
 }
 
+test "diff: fn*-body recur (D-090, both backends re-enter the param frame)" {
+    var f = try Fixture.init(testing.allocator);
+    defer f.deinit();
+    // recur in fn tail position rebinds the param slots and re-enters —
+    // both TreeWalk (callMethodImpl loop) and VM (compileFnMethodBody
+    // recur frame) must agree.
+    try f.check("((fn* [n acc] (if (< n 1) acc (recur (- n 1) (+ acc n)))) 5 0)", 15);
+}
+
+test "diff: variadic fn*-body recur rebinds the rest param" {
+    var f = try Fixture.init(testing.allocator);
+    defer f.deinit();
+    try f.check("((fn* [a & r] (if (nil? (seq r)) a (recur (+ a (first r)) (rest r)))) 0 1 2 3 4)", 10);
+}
+
 test "diff: closure capture via let-then-fn" {
     var f = try Fixture.init(testing.allocator);
     defer f.deinit();

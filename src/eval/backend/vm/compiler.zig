@@ -222,10 +222,10 @@ const Compiler = struct {
         // instructions after each nested chunk finalizes.
         const method_chunks = try self.arena.alloc(?*const BytecodeChunk, n.methods.len);
         for (n.methods, 0..) |m, i| {
-            method_chunks[i] = try self.compileFnMethodBody(m.body);
+            method_chunks[i] = try self.compileFnMethodBody(m, n.slot_base);
         }
         const variadic_chunk: ?*const BytecodeChunk = if (n.variadic) |v|
-            try self.compileFnMethodBody(v.body)
+            try self.compileFnMethodBody(v, n.slot_base)
         else
             null;
 
@@ -243,10 +243,25 @@ const Compiler = struct {
         try self.emit(.op_make_fn, idx);
     }
 
-    fn compileFnMethodBody(self: *Compiler, body: *const Node) Error!*const BytecodeChunk {
+    fn compileFnMethodBody(self: *Compiler, m: node_mod.FnMethod, slot_base: u16) Error!*const BytecodeChunk {
         var sub: Compiler = .init(self.rt, self.arena);
         defer sub.deinit();
-        try sub.compileNode(body);
+        // A tail `recur` in the fn body re-enters the body with the param
+        // slots rebound — JVM treats a fn as an implicit `loop*` over its
+        // params (D-090). Seed the sub-compiler's recur frame with the
+        // param slots (`[slot_base, slot_base + arity (+rest)]`) and
+        // `top_ip = 0` (body start); compileRecur then emits op_store_local
+        // + a back-edge op_jump to ip 0, matching TreeWalk's callMethodImpl
+        // recur loop. A `recur` inside an enclosing `loop*` overrides
+        // current_loop (save/restore in compileLoop), so only fn-tail
+        // recurs target this frame.
+        const n_slots: u16 = m.arity + @intFromBool(m.has_rest);
+        const binds = try self.arena.alloc(node_mod.LetNode.Binding, n_slots);
+        for (binds, 0..) |*b, i| {
+            b.* = .{ .name = "", .index = slot_base + @as(u16, @intCast(i)), .value_expr = m.body };
+        }
+        sub.current_loop = .{ .top_ip = 0, .bindings = binds };
+        try sub.compileNode(m.body);
         try sub.emit(.op_ret, 0);
         const body_chunk = try sub.finalize();
         const chunk_ptr = try self.arena.create(BytecodeChunk);

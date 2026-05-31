@@ -1040,7 +1040,28 @@ fn callMethodImpl(rt: *Runtime, env: *Env, f: *Function, args: []const Value, lo
         return error_catalog.raise(.feature_not_supported, .{}, .{
             .name = "deserialized function on a backend without VM evalChunk",
         });
-    return eval(rt, env, &locals, m.body);
+    // A tail `recur` in the fn body re-enters here with the parameter
+    // slots rebound — JVM treats a fn as an implicit `loop*` over its
+    // params (D-090). Mirrors `evalLoop`'s catch, targeting the param
+    // slots `[slot_base, slot_base + arity (+rest)]`. A `recur` inside an
+    // enclosing `loop*` unwinds to that `evalLoop` first (inner frame), so
+    // only fn-tail recurs reach this catch.
+    const recur_arity: u16 = m.arity + @intFromBool(m.has_rest);
+    while (true) {
+        if (eval(rt, env, &locals, m.body)) |result| {
+            return result;
+        } else |err| switch (err) {
+            error.RecurSignaled => {
+                if (pending_recur_len != recur_arity)
+                    return error_catalog.raise(.recur_arity_mismatch, loc, .{ .target = "fn*", .expected = recur_arity, .got = pending_recur_len });
+                for (0..recur_arity) |i| {
+                    locals[f.slot_base + i] = pending_recur_buf[i];
+                }
+                pending_recur_len = 0;
+            },
+            else => return err,
+        }
+    }
 }
 
 /// ADR-0042: tags eligible for the bind-direct rest-pack fast-path —
