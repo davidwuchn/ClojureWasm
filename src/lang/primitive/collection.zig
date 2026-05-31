@@ -46,6 +46,7 @@ const IPM_FQCN: []const u8 = "IPersistentMap";
 const IPS_FQCN: []const u8 = "IPersistentSet";
 
 const sequence = @import("sequence.zig");
+const range_mod = @import("../../runtime/collection/range.zig");
 const vector = @import("../../runtime/collection/vector.zig");
 const list = @import("../../runtime/collection/list.zig");
 const map = @import("../../runtime/collection/map.zig");
@@ -320,10 +321,17 @@ pub fn nthFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) 
             }
             break :blk list.first(cur);
         },
-        // Seq family (lazy producers): `(nth (range n) i)` / `(rand-nth
-        // (range n))` / `(nth (map f xs) i)`. JVM `RT.nth` walks any seq;
-        // route through the shared seq-walk (forces lazy layers). D-168
-        // made `range` a lazy seq, so this is the path it now takes.
+        // PERF: O(1) nth on a compact range — `start + i*step`, no walk [refs: O-001]
+        .range => blk: {
+            if (idx < 0 or idx >= range_mod.countOf(coll)) {
+                if (has_default) break :blk default;
+                break :blk error_catalog.raise(.index_out_of_range, loc, .{ .fn_name = "nth" });
+            }
+            break :blk range_mod.elementAt(coll, idx);
+        },
+        // Seq family (lazy producers): `(nth (map f xs) i)`. JVM `RT.nth`
+        // walks any seq; route through the shared seq-walk (forces lazy
+        // layers). D-168 made `map`/`filter` results lazy seqs.
         .lazy_seq, .chunked_cons => blk: {
             if (try sequence.nthSeq(rt, env, coll, idx, loc)) |v| break :blk v;
             if (has_default) break :blk default;

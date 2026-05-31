@@ -29,6 +29,7 @@ const string_mod = @import("collection/string.zig");
 const hash = @import("hash.zig");
 const vector = @import("collection/vector.zig");
 const list = @import("collection/list.zig");
+const range = @import("collection/range.zig");
 const map = @import("collection/map.zig");
 const set = @import("collection/set.zig");
 const big_int = @import("numeric/big_int.zig");
@@ -50,7 +51,7 @@ fn numCat(v: Value) NumCat {
 
 fn isSequential(v: Value) bool {
     const t = v.tag();
-    return t == .vector or t == .list or t == .lazy_seq;
+    return t == .vector or t == .list or t == .lazy_seq or t == .range;
 }
 
 /// O(1)-countable sequentials (length short-circuit eligible). A
@@ -73,6 +74,9 @@ fn seqLen(v: Value) u32 {
 /// so the two can be compared element-wise regardless of concrete type.
 const Cursor = union(enum) {
     vec: struct { v: Value, i: u32, n: u32 },
+    /// A compact `.range` walked by index via `start + i*step` — O(1) per
+    /// element, no allocation (the seq-walk would materialise chunks).
+    rng: struct { v: Value, i: i64, n: i64 },
     lst: Value,
     /// A (possibly lazy) seq walked via the lazy_seq force protocol —
     /// handles `.lazy_seq` layers + the realized `.list` cons chain
@@ -82,6 +86,7 @@ const Cursor = union(enum) {
     fn init(v: Value) Cursor {
         return switch (v.tag()) {
             .vector => .{ .vec = .{ .v = v, .i = 0, .n = vector.count(v) } },
+            .range => .{ .rng = .{ .v = v, .i = 0, .n = range.countOf(v) } },
             .list => .{ .lst = v },
             else => .{ .lzy = v },
         };
@@ -92,6 +97,12 @@ const Cursor = union(enum) {
             .vec => |*s| {
                 if (s.i >= s.n) return null;
                 const e = vector.nth(s.v, s.i);
+                s.i += 1;
+                return e;
+            },
+            .rng => |*s| {
+                if (s.i >= s.n) return null;
+                const e = range.elementAt(s.v, s.i);
                 s.i += 1;
                 return e;
             },

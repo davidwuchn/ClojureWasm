@@ -49,6 +49,7 @@ const sorted = @import("../../runtime/collection/sorted.zig");
 const set = @import("../../runtime/collection/set.zig");
 const string_collection = @import("../../runtime/collection/string.zig");
 const chunked_cons = @import("../../runtime/collection/chunked_cons.zig");
+const range = @import("../../runtime/collection/range.zig");
 const lazy_seq = @import("../../runtime/lazy_seq.zig");
 const charset = @import("../../runtime/charset.zig");
 const td_mod = @import("../../runtime/type_descriptor.zig");
@@ -94,6 +95,8 @@ pub fn countFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation
         .sorted_map, .sorted_set => Value.initInteger(@intCast(sorted.count(coll))),
         .hash_set => Value.initInteger(@intCast(set.count(coll))),
         .chunked_cons => Value.initInteger(@intCast(chunked_cons.count(coll))),
+        // PERF: O(1) precomputed range length, no element walk [refs: O-001]
+        .range => Value.initInteger(range.countOf(coll)),
         .typed_instance => blk: {
             // Row 7.7 R3a (ADR-0008 amendment 4): consult the protocol
             // method_table first; user `(extend-type X IPersistentCollection
@@ -166,6 +169,9 @@ pub fn seqFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) 
         .sorted_map, .sorted_set => if (sorted.count(coll) > 0) try sorted.seq(rt, coll) else .nil_val,
         .hash_set => if (set.count(coll) > 0) try set.seq(rt, coll) else .nil_val,
         .chunked_cons => coll,
+        // A range's seq view is a chunked_cons (≤32 materialised + a smaller
+        // `.range` tail) — generic walkers then pay 1 alloc / 32 elements.
+        .range => try range.seqChunk(rt, coll),
         .lazy_seq => try lazy_seq.seq(rt, env, coll),
         else => blk: {
             // Row 7.7 cycle 2: outer-else routes through dispatch against
@@ -231,6 +237,8 @@ pub fn firstFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation
         else
             .nil_val,
         .chunked_cons => chunked_cons.first(coll),
+        // PERF: O(1) head (start), no chunk materialised for just first [refs: O-001]
+        .range => range.first(coll),
         .lazy_seq => try lazy_seq.first(rt, env, coll),
         .string => firstStringCodepoint(coll),
         .array_map, .hash_map, .hash_set => blk: {
@@ -271,7 +279,8 @@ pub fn restFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation)
         .chunked_cons => try chunked_cons.rest(rt, coll),
         .lazy_seq => try lazy_seq.rest(rt, env, coll),
         .string => restStringCodepoint(rt, coll),
-        .array_map, .hash_map, .hash_set => blk: {
+        // .range seqs to a chunked_cons (seqFn), then rest is the chunk walk.
+        .array_map, .hash_map, .hash_set, .range => blk: {
             const sv = try seqFn(rt, env, args, loc);
             if (sv.isNil()) break :blk .nil_val;
             break :blk try restOfSeq(rt, env, sv, loc);
@@ -320,7 +329,8 @@ pub fn nextFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation)
             break :blk r;
         },
         .string => restStringCodepoint(rt, coll),
-        .array_map, .hash_map, .hash_set => blk: {
+        // .range seqs to a chunked_cons (seqFn); next is rest with nil-empty.
+        .array_map, .hash_map, .hash_set, .range => blk: {
             const sv = try seqFn(rt, env, args, loc);
             if (sv.isNil()) break :blk .nil_val;
             break :blk try restOfSeq(rt, env, sv, loc);
@@ -480,6 +490,7 @@ fn firstOfSeq(rt: *Runtime, env: *Env, sv: Value, loc: SourceLocation) anyerror!
     return switch (sv.tag()) {
         .list, .cons => list.first(sv),
         .chunked_cons => chunked_cons.first(sv),
+        .range => range.first(sv),
         .lazy_seq => try lazy_seq.first(rt, env, sv),
         else => return error_catalog.raise(.type_arg_invalid, loc, .{
             .fn_name = "first",
@@ -494,6 +505,7 @@ fn restOfSeq(rt: *Runtime, env: *Env, sv: Value, loc: SourceLocation) anyerror!V
     return switch (sv.tag()) {
         .list, .cons => list.rest(sv),
         .chunked_cons => try chunked_cons.rest(rt, sv),
+        .range => try chunked_cons.rest(rt, try range.seqChunk(rt, sv)),
         .lazy_seq => try lazy_seq.rest(rt, env, sv),
         else => return error_catalog.raise(.type_arg_invalid, loc, .{
             .fn_name = "rest",
@@ -512,6 +524,7 @@ fn seqNext(rt: *Runtime, env: *Env, cur: Value) anyerror!Value {
         // tail reads as non-nil). Mirrors the `next` fix in `nextFn`.
         .list, .cons => try lazy_seq.seq(rt, env, list.rest(cur)),
         .chunked_cons => try chunked_cons.rest(rt, cur),
+        .range => try chunked_cons.rest(rt, try range.seqChunk(rt, cur)),
         .lazy_seq => try lazy_seq.next(rt, env, cur),
         else => .nil_val,
     };

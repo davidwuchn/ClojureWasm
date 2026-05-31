@@ -50,6 +50,7 @@ const ratio_mod = @import("numeric/ratio.zig");
 const big_decimal_mod = @import("numeric/big_decimal.zig");
 const td_mod = @import("type_descriptor.zig");
 const lazy_seq_mod = @import("lazy_seq.zig");
+const range_collection = @import("collection/range.zig");
 const env_mod = @import("env.zig");
 
 /// Realize any lazy seqs nested in `v` into concrete lists, then render.
@@ -241,6 +242,7 @@ pub fn printValue(w: *Writer, v: Value) Writer.Error!void {
         },
         .string => try printString(w, string_collection.asString(v)),
         .list => try printList(w, v),
+        .range => try printRange(w, v),
         .vector => try printVector(w, v),
         .hash_set => try printSet(w, v),
         .sorted_set => try printSortedSet(w, v),
@@ -380,6 +382,21 @@ pub fn printList(w: *Writer, v: Value) Writer.Error!void {
         first_iter = false;
         try printValue(w, list_collection.first(cur));
         cur = list_collection.rest(cur);
+    }
+    try w.writeByte(')');
+}
+
+/// Render a compact `.range` as a list `(0 1 2 …)` (JVM parity). Computes
+/// each element with pure scalar math (`start + i*step`) so it needs no
+/// `rt` and allocates nothing — unlike a generic seq-walk. A huge range
+/// prints every element (same as realizing a lazy seq).
+pub fn printRange(w: *Writer, v: Value) Writer.Error!void {
+    try w.writeByte('(');
+    const n = range_collection.countOf(v);
+    var i: i64 = 0;
+    while (i < n) : (i += 1) {
+        if (i > 0) try w.writeByte(' ');
+        try printValue(w, range_collection.elementAt(v, i));
     }
     try w.writeByte(')');
 }

@@ -36,6 +36,7 @@ const SourceLocation = error_mod.SourceLocation;
 const dispatch = @import("../../runtime/dispatch.zig");
 
 const reduced = @import("../../runtime/collection/reduced.zig");
+const range_mod = @import("../../runtime/collection/range.zig");
 const sequence = @import("sequence.zig");
 const tree_walk = @import("../../eval/backend/tree_walk.zig");
 
@@ -175,6 +176,22 @@ pub fn reduceFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocatio
         return if (reduced.isReduced(v)) reduced.unreduce(v) else v;
     }
 
+    // PERF: tight i64 reduce over a compact range — element `i` is
+    // `start + i*step`, so no seq node / chunk is allocated per element
+    // (the generic walk below would materialise a chunked_cons). A live
+    // `.range` always has count ≥ 1 (empty → nil). [refs: O-001, D-163]
+    if (coll.tag() == .range) {
+        const n = range_mod.countOf(coll);
+        var racc: Value = if (args.len == 3) args[1] else range_mod.elementAt(coll, 0);
+        var ri: i64 = if (args.len == 3) 0 else 1;
+        while (ri < n) : (ri += 1) {
+            const rstep = try invokeCallable(rt, env, f, &.{ racc, range_mod.elementAt(coll, ri) }, loc);
+            if (reduced.isReduced(rstep)) return reduced.unreduce(rstep);
+            racc = rstep;
+        }
+        return racc;
+    }
+
     var acc: Value = undefined;
     var cur: Value = undefined;
     if (args.len == 3) {
@@ -298,6 +315,26 @@ pub fn takeEagerFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLoca
     return try buildListFromSlice(rt, collected.items);
 }
 
+/// `(-range start end step)` — produce a compact `.range` value (ADR-0063,
+/// O-001) for a finite integer range, or nil for an empty one. core.clj's
+/// `range` 3-arg arm calls this only when all args are fixed-precision
+/// integers and step≠0 (the `int?` + `(not= step 0)` gate); float / bigint /
+/// step-0 ranges stay the lazy `.clj` body. The integer-tag guard here is
+/// defensive — a direct mis-call raises rather than mis-producing.
+pub fn rangeLeafFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = env;
+    try error_catalog.checkArity("-range", args, 3, loc);
+    for (args) |a| {
+        if (a.tag() != .integer) {
+            return error_catalog.raise(.type_arg_not_integer, loc, .{
+                .fn_name = "-range",
+                .actual = @tagName(a.tag()),
+            });
+        }
+    }
+    return range_mod.fromBounds(rt, args[0].asInteger(), args[1].asInteger(), args[2].asInteger());
+}
+
 // `-keep-eager` / `-remove-eager` deleted — keep/remove are lazy `.clj`
 // now (ADR-0054 cycle 2; remove = filter-complement).
 
@@ -356,6 +393,7 @@ const ENTRIES = [_]Entry{
 /// `private_access_error` — the intended ADR-0033 D4 contract.
 const LEAF_ENTRIES = [_]Entry{
     .{ .name = "-take-eager", .f = &takeEagerFn },
+    .{ .name = "-range", .f = &rangeLeafFn },
 };
 
 pub fn register(

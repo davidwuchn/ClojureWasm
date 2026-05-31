@@ -828,12 +828,18 @@
        ([n] (range 0 n 1))
        ([start end] (range start end 1))
        ([start end step]
-        (lazy-seq
-          (if (if (> step 0)
-                (< start end)
-                (if (< step 0) (> start end) (not (= start end))))
-            (cons start (range (+ start step) end step))
-            nil)))))
+        ;; Finite fixed-precision integer ranges become a compact `.range`
+        ;; value (ADR-0063 / O-001: O(1) count/nth, tight reduce, chunked
+        ;; seq). Float / bigint / step-0 (infinite) ranges stay the lazy
+        ;; cons body below — `-range` only mints for the integer case.
+        (if (and (int? start) (int? end) (int? step) (not (= step 0)))
+          (-range start end step)
+          (lazy-seq
+            (if (if (> step 0)
+                  (< start end)
+                  (if (< step 0) (> start end) (not (= start end))))
+              (cons start (range (+ start step) end step))
+              nil))))))
 
 ;; ----------------------------------------------------------------
 ;; D-134 index/accessor cluster. `iterate` is defined above `range` (its

@@ -42,6 +42,8 @@ const tag_ops = @import("gc/tag_ops.zig");
 const gc_heap_mod = @import("gc/gc_heap.zig");
 const mark_sweep = @import("gc/mark_sweep.zig");
 const list_mod = @import("collection/list.zig");
+const chunked_cons_mod = @import("collection/chunked_cons.zig");
+const range_mod = @import("collection/range.zig");
 
 /// LazySeq — extern struct with HeapHeader at offset 0; thunk +
 /// realized + meta Values; realized_flag discriminator since both
@@ -132,6 +134,11 @@ pub fn first(rt: *Runtime, env: *env_mod.Env, v: Value) !Value {
     }
     return switch (current.tag()) {
         .list => list_mod.first(current),
+        // Generic seq head: a lazy tail may realize to / be cons'd over a
+        // chunked_cons or a compact range (e.g. `(cons x (range n))`), so
+        // these are part of the Layer-0 seq-accessor protocol too.
+        .chunked_cons => chunked_cons_mod.first(current),
+        .range => range_mod.first(current),
         .nil => Value.nil_val,
         else => Value.nil_val,
     };
@@ -147,6 +154,8 @@ pub fn rest(rt: *Runtime, env: *env_mod.Env, v: Value) !Value {
     }
     return switch (current.tag()) {
         .list => list_mod.rest(current),
+        .chunked_cons => try chunked_cons_mod.rest(rt, current),
+        .range => try chunked_cons_mod.rest(rt, try range_mod.seqChunk(rt, current)),
         .nil => Value.nil_val,
         else => Value.nil_val,
     };

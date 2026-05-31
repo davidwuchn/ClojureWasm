@@ -49,6 +49,16 @@ assert_eq 'conj_lazy_filter' "$("$BIN" -e '(conj (filter odd? [1 2 3]) 0)')" '(0
 assert_eq 'nth_range'      "$("$BIN" -e '(nth (range 50) 3)')"               '3'
 assert_eq 'nth_lazy_map'   "$("$BIN" -e '(nth (map inc [10 20 30]) 1)')"     '21'
 assert_eq 'nth_range_dflt' "$("$BIN" -e '(nth (range 5) 10 :none)')"         ':none'
+# ADR-0063 / O-001: finite integer range is a compact `.range` value. It is
+# `=` to the list / vector of the same elements, and count / nth are O(1)
+# (a million-element count / nth returns instantly, no per-element walk).
+assert_eq 'range_eq_list'   "$("$BIN" -e "(= (range 5) '(0 1 2 3 4))")"       'true'
+assert_eq 'range_eq_vec'    "$("$BIN" -e '(= (range 5) [0 1 2 3 4])')"        'true'
+assert_eq 'range_count_1m'  "$("$BIN" -e '(count (range 1000000))')"          '1000000'
+assert_eq 'range_nth_1m'    "$("$BIN" -e '(nth (range 1000000) 999999)')"     '999999'
+assert_eq 'range_reduce'    "$("$BIN" -e '(reduce + (range 101))')"           '5050'
+assert_eq 'range_neg_step'  "$("$BIN" -e '(range 10 0 -2)')"                   '(10 8 6 4 2)'
+assert_eq 'range_step0_inf' "$("$BIN" -e '(into [] (take 3 (range 0 10 0)))')" '[0 0 0]'
 # 3-arg step (lazy): positive step, negative step, non-divisor end,
 # start=end empty, and the step-0 infinite edge (matches JVM not=).
 assert_eq 'range_step_pos'  "$("$BIN" -e '(into [] (range 0 10 2))')"    '[0 2 4 6 8]'
