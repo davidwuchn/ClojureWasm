@@ -92,4 +92,13 @@ EOF
 ) || fail "round_trip: non-zero exit"
 assert_eq 'round_trip' "$(last_line "$got")" '[1 "x" nil true]'
 
-echo "phase9_json: 11/11 cases pass"
+# --- float write: JVM data.json delegates to Double.toString (scientific
+# notation outside the decimal window) — must match cljw's pr-str float
+# form, NOT Zig's `{d}`. D-171 (sibling of D-166 print.printFloat). ---
+got=$("$BIN" - <<'EOF' 2>/dev/null
+(clojure.data.json/write-str [1.0e7 0.0001 3.14 1.5e-5 2.5e16])
+EOF
+) || fail "write_float: non-zero exit"
+assert_eq 'write_float' "$(last_line "$got")" '"[1.0E7,1.0E-4,3.14,1.5E-5,2.5E16]"'
+
+echo "phase9_json: 12/12 cases pass"
