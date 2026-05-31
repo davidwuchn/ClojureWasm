@@ -70,15 +70,6 @@ night-work state. Per-task notes: `private/notes/phaseA26-*.md`.
   set print order (unordered); `(rest "abc")` substring not char-seq (O(1) opt,
   transitively char-correct via `(seq (rest …))`).
 
-## Remaining clj-parity work (next sweep targets)
-
-Unswept categories to probe vs clj: host interop (Math/* static methods,
-String/Integer/Long statics), regex edge (`re-find`/`re-matches` groups),
-metadata (`meta`/`with-meta`/`vary-meta`), atoms/refs/volatile, ns-introspection
-(`find-ns`/`ns-name`/`resolve`-class — needs `.namespace` value rep), printing
-(`pr-str`/`prn` of nested/edge values), more seq fns (`mapv`/`partition`/
-`tree-seq`/`iterate` edges). Record each find in the master ledger.
-
 ## Cold-start reading order
 
 handover → master ledger (above) → CLAUDE.md (§ Project spirit + Autonomous
