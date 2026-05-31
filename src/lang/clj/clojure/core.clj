@@ -660,16 +660,17 @@
         (recur (next ks) (next vs) (assoc acc (first ks) (first vs)))
         acc))))
 
-;; `(interleave c1 c2)` — alternate items from two colls, stopping at
-;; the shorter (eager vector). Two-coll form. loop/recur (NOT fn* self-
-;; recursion): the original `(into [x y] (interleave …))` was non-tail and
-;; segfaulted at ~1000 elements per coll.
+;; `(interleave & colls)` — alternate items from N colls, stopping when the
+;; shortest is exhausted. Returns a SEQ (JVM parity). Variadic over any
+;; number of colls. loop/recur (constant stack); the eager accumulator is a
+;; cljw divergence from JVM's lazy interleave (acceptable — observable
+;; output matches; empty result → nil per D-164).
 (def interleave
-  (fn* [c1 c2]
-    (loop [s1 (seq c1) s2 (seq c2) acc []]
-      (if (and s1 s2)
-        (recur (next s1) (next s2) (conj (conj acc (first s1)) (first s2)))
-        acc))))
+  (fn* [& colls]
+    (loop [seqs (map seq colls) acc []]
+      (if (every? identity seqs)
+        (recur (map next seqs) (reduce conj acc (map first seqs)))
+        (seq acc)))))
 
 ;; ----------------------------------------------------------------
 ;; D-134 cluster 5 — reduce-shaped helpers (Pattern A).

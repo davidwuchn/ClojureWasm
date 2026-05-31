@@ -39,5 +39,9 @@ assert_eq 'interleave'   "$("$BIN" -e '(into [] (interleave [1 2] [:a :b]))')" '
 assert_eq 'interleave_unequal' "$("$BIN" -e '(into [] (interleave [1 2 3] [:a :b]))')" '[1 :a 2 :b]'
 # large interleave must not blow the stack (loop/recur, was non-tail recursion)
 assert_eq 'interleave_large' "$("$BIN" -e '(count (interleave (range 50000) (range 50000)))')" '100000'
+# variadic (3+ colls) + SEQ return (JVM parity, clj-verified)
+assert_eq 'interleave_3'   "$("$BIN" -e '(interleave [1 2] [3 4] [5 6])')" '(1 3 5 2 4 6)'
+assert_eq 'interleave_1'   "$("$BIN" -e '(interleave [1 2])')"             '(1 2)'
+assert_eq 'interleave_seq' "$("$BIN" -e '(seq? (interleave [1] [2]))')"    'true'
 
 echo "ALL phase14_seq_helpers2 PASS"
