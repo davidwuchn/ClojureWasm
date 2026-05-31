@@ -45,7 +45,7 @@ timeout 20 clj -M -e '<expr>' 2>&1 | grep -oE '\(([A-Za-z]+Exception|[A-Za-z]+Er
   inc 0)` orphan held 1.6 cores for 60 min, garbling the tool channel).
   `timeout 20` makes the probe self-terminate. Never run a bare `clj -M
   -e` on a sequence-producing form — bound it (`(take 5 …)`) **and**
-  timeout-wrap it. See `.claude/rules/orphan_prevention.md` § clj oracle.
+  timeout-wrap it. See `.claude/rules/orphan_prevention.md` § The rules (rule 2).
 - **Use**: when probing a behaviour, run it through `clj` to get the
   canonical output; diff against `zig-out/bin/cljw -e '<expr>'`.
 - **Error-case caveat**: the message FORMAT differs (cljw renders its

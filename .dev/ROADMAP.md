@@ -2276,8 +2276,7 @@ points; this section enumerates every required file).
 - `.claude/rules/clojure_spec_citation.md` — Clojure semantics citation per primitive (per ADR-0013 / A11)
 - `.claude/rules/debt_dedup.md` — debt.md row de-duplication discipline (per A13)
 - `.claude/rules/exploration_vs_done.md` — exploration / Done boundary (Pollaroid-derived)
-- `.claude/rules/java_cljw_surface_layout.md` — `src/runtime/{java,cljw}/` surface layout (per ADR-0029, supersedes ADR-0011)
-- `.claude/rules/feature_name_consistency.md` — keyword consistency + Backend marker (per ADR-0029 D4)
+- `.claude/rules/feature_name_consistency.md` — keyword consistency + Backend marker + `src/runtime/{java,cljw}/` surface layout (per ADR-0029 D1-D6; absorbed the former `java_cljw_surface_layout.md`, deleted per ADR-0062)
 - `.claude/rules/error_catalog_only.md` — catalog SSOT enforcement (per ADR-0018)
 - `.claude/rules/no_copy_from_v1.md` — re-derive, do not verbatim-copy cw v0
 - `.claude/rules/no_jvm_specific_assumption.md` — cw v1 is not a JVM reimplementation
