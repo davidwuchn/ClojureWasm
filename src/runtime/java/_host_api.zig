@@ -69,6 +69,7 @@ pub const Extension = struct {
 /// alternative to a generated build.zig codegen step.
 const java_surfaces = [_]type{
     @import("io/File.zig"),
+    @import("lang/Boolean.zig"),
     @import("lang/Character.zig"),
     @import("lang/Double.zig"),
     @import("lang/Integer.zig"),

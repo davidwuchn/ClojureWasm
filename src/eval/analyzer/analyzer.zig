@@ -437,6 +437,7 @@ fn analyzeSymbol(
                 const fv: Value = switch (sf.value) {
                     .int => |i| try integerLiteralToValue(env.rt, i),
                     .float => |f| Value.initFloat(f),
+                    .bool => |b| Value.initBoolean(b),
                 };
                 return try makeConstant(arena, fv, form);
             }

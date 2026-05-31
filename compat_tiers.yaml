@@ -148,7 +148,16 @@ tiers:
           surface: runtime/java/lang/Double.zig
         methods: [parseDouble, isNaN, isInfinite]
         clojure_peer_vars: [parse-double]
-      - { fqn: "java.lang.Boolean",                      native_ns: "cljw.host.java.lang.Boolean",                      phase: 5 }
+      - fqn: java.lang.Boolean
+        cljw_ns: cljw.java.lang.Boolean
+        keyword: boolean
+        tier: A
+        phase: 14
+        files:
+          surface: runtime/java/lang/Boolean.zig
+        methods: [parseBoolean, valueOf, toString]
+        static_fields: [TRUE, FALSE]
+        clojure_peer_vars: []
       - fqn: java.lang.Character
         cljw_ns: cljw.java.lang.Character
         keyword: character

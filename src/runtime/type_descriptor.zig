@@ -122,6 +122,7 @@ pub const TypeDescriptor = struct {
     pub const StaticFieldValue = union(enum) {
         int: i64,
         float: f64,
+        bool: bool, // Boolean/TRUE, Boolean/FALSE (ADR-0061 am 2026-05-31)
     };
 
     /// Find a static field by name (ADR-0061). Linear — field tables are
