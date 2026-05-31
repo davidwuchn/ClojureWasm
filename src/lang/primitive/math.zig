@@ -33,25 +33,26 @@ const string_mod = @import("../../runtime/collection/string.zig");
 
 // --- numeric helpers ---
 
-fn anyFloat(args: []const Value) bool {
-    for (args) |v| {
-        if (v.tag() == .float) return true;
-    }
-    return false;
-}
-
+/// Convert any numeric Value to f64 (lossy for big_int / ratio /
+/// big_decimal — Clojure float contagion). Caller must have
+/// type-checked; a non-number returns 0.0. Shared by the comparison
+/// f64 path and the `double`/`float` primitive (F-011).
 fn toF64(v: Value) f64 {
     return switch (v.tag()) {
         .float => v.asFloat(),
         .integer => @floatFromInt(v.asInteger()),
+        .char => @floatFromInt(v.asChar()),
+        .big_int => big_int_mod.asManaged(v).toFloat(f64, .nearest_even)[0],
+        .ratio => blk: {
+            const r = v.decodePtr(*const ratio_mod.Ratio);
+            break :blk r.numer.m.toFloat(f64, .nearest_even)[0] / r.denom.m.toFloat(f64, .nearest_even)[0];
+        },
+        .big_decimal => blk: {
+            const bd = v.decodePtr(*const big_decimal_mod.BigDecimal);
+            const unscaled = bd.unscaled.m.toFloat(f64, .nearest_even)[0];
+            break :blk unscaled * std.math.pow(f64, 10.0, -@as(f64, @floatFromInt(bd.scale)));
+        },
         else => 0.0, // caller has already type-checked
-    };
-}
-
-fn toI64(v: Value) i64 {
-    return switch (v.tag()) {
-        .integer => v.asInteger(),
-        else => 0,
     };
 }
 
@@ -282,22 +283,49 @@ fn rationalize(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation
 
 /// Run `pred` pairwise across `args`, short-circuiting on `false`.
 /// Used by `<` / `>` / `<=` / `>=`.
-fn pairwise(name: []const u8, args: []const Value, loc: SourceLocation, comptime pred: fn (a: f64, b: f64) bool) !Value {
+/// True when `a` and `b` are in the SAME numeric category (int/big_int,
+/// or ratio/ratio, or big_decimal/big_decimal) and neither is a float —
+/// the pairs `compare.valueCompare` orders EXACTLY without hitting its
+/// cross-category f64 fallback (which raises on big numbers). Mirrors
+/// `compare.zig::numericOrder`'s same-category arms.
+fn exactComparable(a: Value, b: Value) bool {
+    const ta = a.tag();
+    const tb = b.tag();
+    const int_a = ta == .integer or ta == .big_int;
+    const int_b = tb == .integer or tb == .big_int;
+    if (int_a and int_b) return true;
+    if (ta == .ratio and tb == .ratio) return true;
+    if (ta == .big_decimal and tb == .big_decimal) return true;
+    return false;
+}
+
+/// Pairwise numeric comparison for `< > <= >= ==`. Same-category big
+/// numbers (BigInt / Ratio / BigDecimal — and plain int) compare EXACTLY
+/// through the numeric tower (`opred` over `compare.valueCompare`); f64
+/// would lose precision/sign (D-167). A float operand or a cross-category
+/// pair takes the f64 path (`fpred` over `toF64`): float contagion +
+/// correct IEEE NaN (every NaN comparison false, where a total Order maps
+/// NaN to `.gt`). The exact cross-category combine ladder at huge
+/// magnitude (e.g. Ratio vs Int) is the still-deferred D-014a tail — f64
+/// there is a lossy approximation, not the old zeroing bug.
+fn pairwise(
+    rt: *Runtime,
+    name: []const u8,
+    args: []const Value,
+    loc: SourceLocation,
+    comptime fpred: fn (a: f64, b: f64) bool,
+    comptime opred: fn (o: std.math.Order) bool,
+) !Value {
     try ensureNumeric(args, name, loc);
     if (args.len < 2) return Value.true_val; // (< 1) and (<) are true in Clojure
-    if (anyFloat(args)) {
-        var i: usize = 1;
-        while (i < args.len) : (i += 1) {
-            if (!pred(toF64(args[i - 1]), toF64(args[i]))) return Value.false_val;
-        }
-    } else {
-        var i: usize = 1;
-        while (i < args.len) : (i += 1) {
-            const a = toI64(args[i - 1]);
-            const b = toI64(args[i]);
-            // Compare via f64 so the predicate is defined once. i48
-            // values fit losslessly in f64.
-            if (!pred(@floatFromInt(a), @floatFromInt(b))) return Value.false_val;
+    var i: usize = 1;
+    while (i < args.len) : (i += 1) {
+        const a = args[i - 1];
+        const b = args[i];
+        if (exactComparable(a, b)) {
+            if (!opred(try compare_mod.valueCompare(rt, a, b, loc))) return Value.false_val;
+        } else {
+            if (!fpred(toF64(a), toF64(b))) return Value.false_val;
         }
     }
     return Value.true_val;
@@ -318,6 +346,22 @@ fn pGE(a: f64, b: f64) bool {
 fn pEQ(a: f64, b: f64) bool {
     return a == b;
 }
+// Order-domain mirrors of the f64 predicates (the exact-comparison path).
+fn oLT(o: std.math.Order) bool {
+    return o == .lt;
+}
+fn oGT(o: std.math.Order) bool {
+    return o == .gt;
+}
+fn oLE(o: std.math.Order) bool {
+    return o != .gt;
+}
+fn oGE(o: std.math.Order) bool {
+    return o != .lt;
+}
+fn oEQ(o: std.math.Order) bool {
+    return o == .eq;
+}
 
 /// `(= ...)` — universal value equality (= `clojure.lang.Util.equiv`).
 /// All args must equal the first (transitive). Never raises on type
@@ -336,30 +380,25 @@ pub fn equals(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation)
 /// Numeric-only (raises on non-numbers); widens across categories, so
 /// `(== 1 1.0)` → true (where `(= 1 1.0)` → false). ADR-0052.
 pub fn equiv(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
-    _ = rt;
     _ = env;
-    return pairwise("==", args, loc, pEQ);
+    return pairwise(rt, "==", args, loc, pEQ, oEQ);
 }
 
 pub fn lt(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
-    _ = rt;
     _ = env;
-    return pairwise("<", args, loc, pLT);
+    return pairwise(rt, "<", args, loc, pLT, oLT);
 }
 pub fn gt(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
-    _ = rt;
     _ = env;
-    return pairwise(">", args, loc, pGT);
+    return pairwise(rt, ">", args, loc, pGT, oGT);
 }
 pub fn le(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
-    _ = rt;
     _ = env;
-    return pairwise("<=", args, loc, pLE);
+    return pairwise(rt, "<=", args, loc, pLE, oLE);
 }
 pub fn ge(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
-    _ = rt;
     _ = env;
-    return pairwise(">=", args, loc, pGE);
+    return pairwise(rt, ">=", args, loc, pGE, oGE);
 }
 
 /// `(compare x y)` — general 3-way comparison returning -1 / 0 / 1
@@ -675,23 +714,11 @@ fn floatCoerce(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation
     _ = env;
     try error_catalog.checkArity("double", args, 1, loc);
     const v = args[0];
-    const f: f64 = switch (v.tag()) {
-        .float => v.asFloat(),
-        .integer => @floatFromInt(v.asInteger()),
-        .char => @floatFromInt(v.asChar()),
-        .big_int => big_int_mod.asManaged(v).toFloat(f64, .nearest_even)[0],
-        .ratio => blk: {
-            const r = v.decodePtr(*const ratio_mod.Ratio);
-            break :blk r.numer.m.toFloat(f64, .nearest_even)[0] / r.denom.m.toFloat(f64, .nearest_even)[0];
-        },
-        .big_decimal => blk: {
-            const bd = v.decodePtr(*const big_decimal_mod.BigDecimal);
-            const unscaled = bd.unscaled.m.toFloat(f64, .nearest_even)[0];
-            break :blk unscaled * std.math.pow(f64, 10.0, -@as(f64, @floatFromInt(bd.scale)));
-        },
+    switch (v.tag()) {
+        .float, .integer, .char, .big_int, .ratio, .big_decimal => {},
         else => |t| return error_catalog.raise(.type_arg_not_number, loc, .{ .fn_name = "double", .actual = @tagName(t) }),
-    };
-    return Value.initFloat(f);
+    }
+    return Value.initFloat(toF64(v)); // shared converter (F-011)
 }
 
 // --- string parsers (clojure.core 1.11) ---
