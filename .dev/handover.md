@@ -7,9 +7,8 @@
 
 - **HEAD**: see `git log` (quality-loop commits on `cw-from-scratch`).
   Tree clean, 0 unpushed. Mac gate green (192). **Gate hazard**: the -P8
-  parallel e2e pool intermittently times out under host load — run
-  `timeout 1800 bash test/run_all.sh --serial-e2e` for a deterministic green
-  (memory `gate-parallel-e2e-timeout`).
+  e2e pool intermittently times out under host load — use `timeout 1800 bash
+  test/run_all.sh --serial-e2e` (memory `gate-parallel-e2e-timeout`).
 - **The reasonably-scoped quality-loop floor is FULLY DRAINED** (incl. the
   structural D-184). **First on resume**: pick ONE remaining LARGER STRUCTURAL
   feature, each a fresh deliberate cycle (Step-0 survey + ADR/DA-fork where
