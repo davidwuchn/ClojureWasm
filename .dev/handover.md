@@ -77,20 +77,50 @@ Workflow + The only stop) → `.dev/project_facts.md` (F-011 + F-010) →
 `.dev/principle.md` (Bad Smell) → `.dev/reference_clones.md` (clj oracle) →
 `.dev/lessons/structural_defect_hunting.md`.
 
-## Stopped — user requested
+## Stopped — clean point for user-initiated PC restart (2026-05-31 ~12:40)
 
-User instruction (2026-05-31 night, close paraphrase): stop at a clean point
-and wire up new-session continuity. Working tree clean, all pushed (HEAD
-6db3b141). Resume per the First-commit line — continue the clj differential
-sweep; the next queued unit is Java interop (Integer/Long/Double statics +
-more String instance methods, per the master ledger's Java-interop section).
+**Why stopped**: host CPU saturation traced to (a) an orphaned `clj -M -e
+'(iterate inc 0)'` (killed) and (b) **Microsoft Defender** (`managed_by: MDM`,
+`tamper_protection: block`) scanning the ever-changing zig build artefacts at
+150–170% CPU. User is doing a **manual PC restart**; this session must resume
+cleanly via `/continue` afterwards.
 
-Problems surfaced this run (none blocking, all recorded): (1) **high host
-load** (5-min avg peaked ~17) slowed gates and triggered channel garbling +
-premature notifications; accrued orphan `run_all.sh` were killed — start the
-morning on a clean machine. (2) **Premature gate-completion notifications**
-fire while a gate is still at its e2e step (memory
-`premature-gate-notification`) — verify `SENTINEL-…-EXIT=0` + `gate_state_hash`
-== `.dev/.gate_pass` before committing, not the notification. (3) **D-164**
-(empty-seq≡nil) is the biggest remaining clj-parity gap (structural; deferred).
-(4) **D-163** perf (large reduce/range timeout; deferred to the perf phase).
+**State is restart-safe**: HEAD `62cb796a` (`cw-from-scratch`), **tree clean,
+0 unpushed** (all on `origin/cw-from-scratch`). No work is lost on reboot.
+
+**Defender exclusions added this session** (persist across reboot; via `mdatp
+exclusion`, which succeeded despite MDM/tamper-block): process `zig` + folders
+`{ClojureWasmFromScratch,zwasm,zwasm_from_scratch}/{.zig-cache,zig-out}` +
+`~/.cache/zig`. Verify post-reboot with `mdatp exclusion list`; re-add any that
+did not persist. This should remove the main Defender CPU drain.
+
+**Other claude sessions on this machine** (do NOT kill; user-owned): pid in
+`zwasm_from_scratch` (autonomous) + `myskill`. Same-repo duplicate-claude race
+is NOT a risk here (only one claude in ClojureWasmFromScratch).
+
+**Resume = `/continue`. Next unit (Step 0 survey first)**: **Java statics
+`Integer`/`Long`/`Double`/`Character`** — new `runtime/java/lang/Integer.zig`
+etc. (these FQCNs are in `compat_tiers.yaml` but have no surface file yet).
+clj-verified targets (master ledger § remaining Java interop gap):
+`Integer/parseInt` (+radix), `toBinaryString`, `toHexString`, `MAX_VALUE`/
+`MIN_VALUE`, `Long/parseLong`, `Double/parseDouble`, `Character/isDigit`/
+`isLetter`/`toUpperCase`. Pattern: `___HOST_EXTENSION` static-descriptor (like
+`System.zig`/`Math.zig`), thin wrapper over neutral impl (F-009); delegate
+parse to the existing `parse-long`/`parse-double` impl in `lang/primitive/
+math.zig` where possible (F-011 DRY).
+
+**Process discipline learned this session (now in memory + rules)**: (1) never
+poll a background gate with `sleep N; cmd` — launch `run_in_background`, yield,
+act on the completion notification (memory `feedback-no-poll-background-tasks`);
+(2) `clj -M -e` must be `timeout 20`-wrapped (infinite-seq orphan hazard;
+`reference_clones.md` + `orphan_prevention.md` + `cleanup_orphans.sh` updated);
+(3) never pass `\a`-style char literals through `cljw -e` (shell eats the
+backslash) — use `(char N)` (memory `char-literal-e2e-oracle`); (4) under load,
+capture probe output to `/tmp/*.txt` and Read it (channel-independent), don't
+trust a bare surprising read.
+
+Done this session (all pushed): String `.charAt/.contains/.startsWith/
+.endsWith/.isEmpty/.concat/.repeat` (14e7ab00); String `.replace` char/char +
+string/string with char-replace commonised into `charset.replaceCharAlloc`
+shared by `clojure.string/replace` (62cb796a); clj-oracle timeout hardening
+(334824d1). Mac gate green 171/171 at each.
