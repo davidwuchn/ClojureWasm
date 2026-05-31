@@ -5,17 +5,18 @@
 
 ## Resume contract
 
-- **HEAD**: `7f1c8342` (`cw-from-scratch`; see `git log` for drift). Tree clean,
-  **0 unpushed**. Mac gate green (179).
-- **First commit on resume MUST be**: **D-166 float printer scientific
-  notation**. cljw's double printer (`print.zig::printFloat`, Zig `{d}`)
-  always emits full decimal; clj/Java `Double.toString` switches to
-  `<d>.<dd>E<exp>` outside `1e-3 ≤ |x| < 1e7`. The shortest-digit string is
-  already correct (`(/ 1.0 3.0)` matches clj) — this is a RE-LAYOUT, not a
-  digit-algorithm change. Ground via clj oracle (thresholds: `1e7`→`1.0E7`,
-  `0.0001`→`1.0E-4`, `12345678.0`→`1.2345678E7`, `6.022e23`→`6.022E23`;
-  decimal side unchanged). Step 0 survey REQUIRED (new behaviour; cw v0
-  double-print precedent).
+- **HEAD**: `a9f35018` (`cw-from-scratch`; see `git log` for drift). Tree clean,
+  **0 unpushed**. Mac gate green (180).
+- **First commit on resume MUST be**: **drain the quality-loop floor**,
+  highest-value-first, per CLAUDE.md Step 0.5 "Quality-loop floor drain"
+  (read all `quality-loop floor:` debt rows; backlog = 13). Start with
+  **D-168 — `(range n)`/`(range a b)` return an EAGER VECTOR, not a seq**
+  (`(seq? (range 3))`→cljw false / clj true; `(conj (range 3) 99)` diverges
+  append-vs-prepend). Fix = align the 1/2-arg arms with cljw's already-correct
+  3-arg lazy-seq `range` (a `(seq …)` wrap = CONSISTENCY, not ad-hoc); chunked
+  LongRange is the F-004 finished form. clj-grounded. Then D-169/170 (quot/int
+  on the tower), D-171 (json float → pub `printFloat`), D-172 (Math *Exact),
+  D-174 (rest char-seq); D-173 low. Index: `.dev/tech_debt_consolidation.md`.
 - **Operating mode** = clj differential sweep (F-011): probe a category through
   BOTH `clj` and `cljw`, diff, fix every divergence at the finished form;
   commonise rather than per-op patch. Deep/unresolvable → master ledger entry +
@@ -45,14 +46,15 @@
 
 java.lang scalar-class **static cluster COMPLETE** (cluster A26, cycles A-G,
 `678b78ba..b132baf6`): Integer / Long / Double / Character / Boolean static
-methods + fields, Math PI/E/floorDiv/floorMod. Integer/Long **bit statics**
-added (`7f1c8342`: bitCount/nlz/ntz/highestOneBit/reverse; `promote.wrapI64`
-made pub, parseI64 folded). Landed the static-field resolution mechanism
-(**ADR-0061** + amendment: `TypeDescriptor.static_fields`, `.bool` variant)
-and a shared `runtime/numeric/parse.zig` leaf. Now pivoting from Java-static
-coverage to the **D-166 correctness item** (float printer) per F-002/F-010.
-Invariants: **F-011** (commonisation/behavioural-equivalence; clj oracle
-wired) + F-010.
+methods + fields, Math PI/E/floorDiv/floorMod. Integer/Long bit statics
+(`7f1c8342`) + **D-166 float printer** (`4af003c6`: JVM `Double.toString`
+scientific notation, single `printFloat` via F-011 fold) both DONE.
+Then a user-directed **tech-debt consolidation テコ入れ** landed
+(`b76e9574`/`9c951756`/`a9f35018`): 5-lens audit → standing
+**`quality-loop floor:` Barrier** mechanism + **CLAUDE.md Step 0.5 drain
+step** + `check_debt_id_refs.sh` guardrail (now in the gate) + 8 floor rows
+(D-168–175) + Phase-7.x re-anchor. Invariants: **F-011** + **F-010**
+(the floor IS the F-010 quality loop's drain queue).
 
 ## Master divergence ledger (compaction-survival)
 
@@ -64,21 +66,35 @@ notes: `private/notes/phaseA26-*.md`.
 
 ## Open debts (full rows in `.dev/debt.md`)
 
-- **D-166** float printer never uses scientific notation (clj/Java switch at
-  |x|≥1e7 or <1e-3); affects ALL extreme doubles. **ACTIVE this session** —
-  re-layout of the (already-correct) shortest digits in `print.zig`. open.
-- **D-164** empty-seq≡nil: cljw collapses `()` to nil. The biggest structural
-  parity gap (own cycle). open.
-- **D-165** i48→i64 long range prints as BigInt `N` (value exact; F-004 NaN-box).
-  open, numeric-tower owner.
-- **D-163** perf ~100µs/element (F-010 post-M perf phase, NOT premature JIT).
-- **D-167 DISCHARGED** (3a79ce6d): `<`/`>`/`neg?`/`pos?` now correct for
-  BigInt/Ratio/BigDecimal.
-- **Acceptable divergences**: `(class 5)`→`Long` not `java.lang.Long` (ADR-0059);
-  `(float 1/3)` f64 not f32; set print order; `(rest "abc")` substring.
+- **Quality-loop floor (drain queue, backlog 13)** — the F-010 loop drains
+  these highest-value-first (CLAUDE.md Step 0.5): D-168 range-vector (HIGH),
+  D-169/170 quot/int on the tower, D-171 json float, D-172 Math *Exact, D-174
+  rest char-seq, D-173 bit tail (low); re-anchored D-086/087/088/090/091
+  (deftype/recur/docstring); D-175 = remaining Lens-C re-anchor + M5 housekeeping.
+- **D-166 / D-167 / D-161 DISCHARGED**.
+- **Structural-deferred (F-003, owner-Phase trigger)**: D-164 empty-seq≡nil
+  (front-of-loop once corpus hits it), D-165 i48→i64 long prints `N`, D-163
+  perf (F-010 post-M), D-006/036/037/039 zwasm v2.
+- **Acceptable divergences**: `(class 5)`→`Long` (ADR-0059); `(float 1/3)` f64;
+  set print order; subnormal `5.0E-324` vs JVM `4.9E-324` (same double).
 
 ## Cold-start reading order
 
-handover → master ledger (above) → CLAUDE.md (§ Project spirit + Autonomous
-Workflow + The only stop) → `.dev/project_facts.md` (F-011 + F-010) →
-`.dev/principle.md` (Bad Smell) → `.dev/reference_clones.md` (clj oracle).
+handover → master ledger (above) → **`.dev/tech_debt_consolidation.md`** (the
+quality-loop-floor index + action list) → CLAUDE.md (§ Project spirit +
+Autonomous Workflow + **Step 0.5 Quality-loop floor drain** + The only stop) →
+`.dev/project_facts.md` (F-011 + F-010) → `.dev/principle.md` (Bad Smell) →
+`.dev/reference_clones.md` (clj oracle).
+
+## Stopped — user requested
+
+User instruction (2026-05-31): directed a tech-debt consolidation テコ入れ
+(aggregate every silently-dropped "should-do", wire it into the debt /
+dependency trigger system so autonomous dev resolves it), then "(a)(b) を
+やったあと、クリアなセッションから continue 継続できるか配線・参照チェーンを
+チェック修正してから、このセッションはクリアします". Done: (a) D-NNN guardrail
+wired into the gate, (b) Phase-7.x stranded rows re-anchored; reference chain
+verified; HEAD `a9f35018`, gate green 180, all pushed, tree clean. Resume per
+the Resume-contract First-commit line — drain the quality-loop floor starting
+at D-168. Extended-challenge 3 items live in
+`private/notes/phaseA26-tech-debt-consolidation.md`.
