@@ -1172,6 +1172,31 @@
 (defprotocol IPersistentMap (-without [m k]) (-keys [m]) (-vals [m]))
 (defprotocol IPersistentSet (-disjoin [s k]))
 
+;; `(eduction xform* coll)` — a reducible + seqable view that applies the
+;; composed transducer on demand (D-160 residual, ADR-0067). A `deftype`
+;; rather than an alias for `sequence`: that makes eduction RE-ITERABLE
+;; (each `reduce` re-runs the whole pipeline via `-reduce`→`transduce`, so a
+;; side-effecting xform fires every time — the JVM contract) and DISTINCT
+;; from `sequence` (a cached lazy-seq). `-reduce` is declared `[c f]` on
+;; IReduce but implemented variadic to also serve `reduce`'s 3-arg
+;; `(-reduce c f init)` call (which `into` uses). `(completing f)` supplies
+;; the 0/1-arity the transducer protocol needs for an arbitrary `f` (e.g.
+;; `conj`, which has no 1-arg completion). The seqable half delegates to the
+;; `sequence` lazy bridge. (`first`/`rest` directly on an Eduction need the
+;; Seqable→seq coercion that cljw's first/rest lack — D-189; `(seq e)` works.)
+(deftype Eduction [xform coll]
+  IReduce
+  (-reduce [this f & more]
+    (if (seq more)
+      (transduce (.xform this) (completing f) (first more) (.coll this))
+      (transduce (.xform this) (completing f) (.coll this))))
+  Seqable
+  (-seq [this] (seq (sequence (.xform this) (.coll this)))))
+
+(def eduction
+  (fn* [& args]
+    (->Eduction (apply comp (butlast args)) (last args))))
+
 ;; `(satisfies? protocol x)` — true iff x's type implements protocol.
 ;; Thin wrapper over the rt/__satisfies? primitive, which consults x's
 ;; TypeDescriptor (typed_instance / reified_instance / native-Tag

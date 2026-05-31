@@ -80,4 +80,12 @@ assert_eq 'seq_part'    "$("$BIN" -e '(into [] (sequence (partition-all 2) [1 2 
 assert_eq 'seq_mapcat'  "$("$BIN" -e '(into [] (sequence (mapcat (fn [x] [x x])) [1 2 3]))')" '[1 1 2 2 3 3]'
 assert_eq 'seq_1arg'    "$("$BIN" -e '(into [] (sequence [1 2 3]))')"                       '[1 2 3]'
 assert_eq 'seq_empty'   "$("$BIN" -e '(into [] (sequence (map inc) []))')"                  '[]'
-echo "OK — phase14_transducers (cycles 1-6; sequence lazy bridge D-160; eduction follow-up) green"
+# cycle 7 (D-160 / ADR-0067): `eduction` — a re-iterable reducible+seqable
+# deftype (NOT an alias for sequence). ed_reiter is the contract test: a
+# cached lazy-seq would count 3, the re-iterable eduction counts 6.
+assert_eq 'ed_into'      "$("$BIN" -e '(into [] (eduction (map inc) (filter even?) [1 2 3 4]))')" '[2 4]'
+assert_eq 'ed_reduce'    "$("$BIN" -e '(reduce + (eduction (map inc) [1 2 3]))')"             '9'
+assert_eq 'ed_reduce_in' "$("$BIN" -e '(reduce + 100 (eduction (map inc) [1 2 3]))')"         '109'
+assert_eq 'ed_seqview'   "$("$BIN" -e '(into [] (map str (eduction (map inc) [1 2 3])))')"    '["2" "3" "4"]'
+assert_eq 'ed_reiter'    "$("$BIN" -e '(let [c (atom 0) e (eduction (map (fn [x] (swap! c inc) x)) [1 2 3])] (reduce + 0 e) (reduce + 0 e) @c)')" '6'
+echo "OK — phase14_transducers (cycles 1-7; sequence D-160 + eduction ADR-0067) green"
