@@ -194,6 +194,19 @@ phase (`Phase N entry` / `Phase N target` / `Phase N+ ...`) — these
 are the structural-imagination outputs from earlier sessions that
 the current Phase owner is meant to resolve.
 
+**Quality-loop floor drain (post-M / F-010 operating mode).** The
+post-M quality-elevation loop is a *repeatable* mode, not a Phase, so
+its debt is anchored on a standing **`quality-loop floor: <category>`**
+Barrier instead of a one-time Phase entry (see
+`.dev/tech_debt_consolidation.md`). When self-selecting the next
+quality-loop unit (per § The only stop's next-task rule), **first read
+every open `quality-loop floor:` row and drain it highest-value-first,
+by category, before opening a fresh sweep category** — this makes the
+loop debt-driven so floor items cannot silently rot (the failure mode
+the 2026-05-31 audit found). A correctness floor row outranks new
+coverage. Re-run the 5-lens consolidation audit (D-175) at each Phase
+boundary so new orphans are caught within one Phase.
+
 **Step 0.6 — Re-laying against finished-form (main agent)**
 The main agent (not a subagent) reads the survey output and
 spends up to 30 minutes:
