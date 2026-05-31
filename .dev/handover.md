@@ -64,37 +64,28 @@ notes: `private/notes/phaseA26-*.md`.
 
 ## Open debts (full rows in `.dev/debt.md`)
 
-- **Quality-loop floor (drain queue, backlog 13)** — the F-010 loop drains
-  these highest-value-first (CLAUDE.md Step 0.5): D-168 range-vector (HIGH),
-  D-169/170 quot/int on the tower, D-171 json float, D-172 Math *Exact, D-174
-  rest char-seq, D-173 bit tail (low); re-anchored D-086/087/088/090/091
-  (deftype/recur/docstring); D-175 = remaining Lens-C re-anchor + M5 housekeeping.
-- **D-166 / D-167 / D-161 DISCHARGED**.
-- **Structural-deferred (F-003, owner-Phase trigger)**: D-164 empty-seq≡nil
-  (front-of-loop once corpus hits it), D-165 i48→i64 long prints `N`, D-163
-  perf (F-010 post-M), D-006/036/037/039 zwasm v2.
+- **Perf campaign (ROADMAP §9.2.S, ACTIVE)** — **D-180** bulk `persistent!` /
+  `vector.fromSlice` (NEXT) → **D-163** map/filter reduce-fusion (own ADR) →
+  **D-140** startup bootstrap cache. Done: O-001/O-002. Index: `.dev/optimizations.md`.
+- **Quality-loop floor (after the perf campaign)** — D-169/170 quot/int on the
+  tower, D-171 json float, D-172 Math *Exact, D-174 rest char-seq, D-173 (low);
+  re-anchored D-086/087/088/090/091; D-175 Lens-C + M5. Index:
+  `.dev/tech_debt_consolidation.md`.
+- **D-166 / D-167 / D-161 / D-168 DISCHARGED**.
+- **Structural-deferred (F-003)**: D-164 empty-seq≡nil, D-165 i48→i64 long prints
+  `N`, D-178 `.list`/`.cons` split, D-179 `.string_seq`/`.array_seq`,
+  D-006/036/037/039 zwasm v2.
 - **Acceptable divergences**: `(class 5)`→`Long` (ADR-0059); `(float 1/3)` f64;
   set print order; subnormal `5.0E-324` vs JVM `4.9E-324` (same double).
 
 ## Cold-start reading order
 
-handover → master ledger (above) → **`.dev/tech_debt_consolidation.md`** (the
-quality-loop-floor index + action list) → CLAUDE.md (§ Project spirit +
-Autonomous Workflow + **Step 0.5 Quality-loop floor drain** + The only stop) →
-`.dev/project_facts.md` (F-011 + F-010) → `.dev/principle.md` (Bad Smell) →
-`.dev/reference_clones.md` (clj oracle).
-
-## Stopped — user requested
-
-User instruction (2026-05-31): directed a scaffolding diet — measure the
-auto-injected per-turn footprint, cut stale/duplicated/obsolete guards while
-keeping load-bearing ones, research compaction best practices, cap the window
-(→ 200K); disable this project's unused MCP servers
-(datadog/figma/slack/notion/chrome-devtools/playwright) via project override;
-then "新クリアセッションから continue で続行できる状態にし、配線・参照チェーンも
-監査". Done: ADR-0062 landed (`7a73d27d`); reference chain audited + 4 dangling
-refs fixed (this commit); resume contract unchanged. **Post-restart**: 200K
-window + MCP disable take effect on reload — verify via `/model` + the MCP tool
-list (fallback: `/plugin` menu if project `enabledPlugins:false` is not
-honored). Resume per the Resume contract — drain the quality-loop floor at
-D-168.
+handover → **`.dev/ROADMAP.md` §9.2.S** (the active perf campaign + ROI-ordered
+units) → **`.dev/optimizations.md`** (O-001/O-002 done; D-180/D-140 candidates +
+measured numbers) → **ADR-0063** (`.dev/decisions/0063_compact_range_value.md` —
+perf-pull-forward + PERF-marker/SSOT governance) → **D-180 row in `.dev/debt.md`**
+→ CLAUDE.md (§ Project spirit + Autonomous Workflow + The only stop) →
+`.dev/project_facts.md` (F-002 / F-010 / F-011) → `.dev/principle.md` (Bad Smell)
+→ `.dev/reference_clones.md` (clj oracle + cw v0 precedent). Quality-loop-floor
+fallback (after the perf campaign): `.dev/tech_debt_consolidation.md` + master
+ledger `private/notes/phaseA26-clj-differential-oracle.md`.
