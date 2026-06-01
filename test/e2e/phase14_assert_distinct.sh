@@ -35,4 +35,16 @@ out="$("$BIN" -e '(assert (= 1 2) "one is not two")' 2>&1 || true)"
 [[ "$out" == *"one is not two"* ]] || fail "assert_fail_msg: got '$out'"
 echo "PASS assert_fail_msg -> one is not two"
 
-echo "OK — phase14_assert_distinct smoke (8 cases) green"
+# --- D-192: assert throws an AssertionError (under Error, NOT Exception) ---
+assert_eq 'assert_catch_assertion_error' "$("$BIN" -e '(try (assert false "nope") (catch AssertionError e :ae))')" ':ae'
+assert_eq 'assert_catch_error' "$("$BIN" -e '(try (assert false) (catch Error e :err))')" ':err'
+assert_eq 'assert_catch_throwable' "$("$BIN" -e '(try (assert (= 1 2)) (catch Throwable t :thr))')" ':thr'
+# AssertionError has no ex-data (unlike a real ex-info)
+assert_eq 'assert_no_ex_data' "$("$BIN" -e '(ex-data (try (assert false) (catch Throwable t t)))')" 'nil'
+# (catch Exception …) must NOT catch an assert failure (Error ∉ Exception);
+# the error propagates → non-zero exit, "Assert failed" on stderr.
+out="$("$BIN" -e '(try (assert false) (catch Exception e :wrong))' 2>&1 || true)"
+[[ "$out" == *"Assert failed"* && "$out" != *":wrong"* ]] || fail "assert_not_exception: got '$out'"
+echo "PASS assert_not_caught_by_exception"
+
+echo "OK — phase14_assert_distinct smoke (13 cases) green"

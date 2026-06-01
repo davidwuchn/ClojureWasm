@@ -84,6 +84,18 @@ pub fn exCause(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation
     return ex_info.cause(v);
 }
 
+/// `(__assertion-error msg)` — internal carrier that `(assert …)` throws
+/// (D-192). Unlike `ex-info`, it has a class name (`AssertionError`) so it is
+/// catchable as `AssertionError` / `Error` / `Throwable` but NOT `Exception`,
+/// and carries no ex-data — matching JVM `new AssertionError(msg)`.
+pub fn assertionError(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = env;
+    try error_catalog.checkArity("__assertion-error", args, 1, loc);
+    if (args[0].tag() != .string)
+        return error_catalog.raise(.type_arg_not_string, loc, .{ .fn_name = "__assertion-error", .actual = @tagName(args[0].tag()) });
+    return ex_info.allocException(rt, string_collection.asString(args[0]), "AssertionError");
+}
+
 // --- registration ---
 
 const Entry = struct {
@@ -96,6 +108,7 @@ const ENTRIES = [_]Entry{
     .{ .name = "ex-message", .f = &exMessage },
     .{ .name = "ex-data", .f = &exData },
     .{ .name = "ex-cause", .f = &exCause },
+    .{ .name = "__assertion-error", .f = &assertionError },
 };
 
 /// Intern `ex-info` / `ex-message` / `ex-data` builtins into `rt_ns`.

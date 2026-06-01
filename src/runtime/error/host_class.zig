@@ -72,6 +72,8 @@ pub const ENTRIES = [_]Entry{
 
     .{ .name = "Error", .parent = "Throwable" },
     .{ .name = "OutOfMemoryError", .parent = "Error" },
+    // `(assert …)` throws an AssertionError (under Error, NOT Exception) — D-192.
+    .{ .name = "AssertionError", .parent = "Error" },
 
     .{ .name = "Exception", .parent = "Throwable" },
     .{ .name = "IOException", .parent = "Exception" },
