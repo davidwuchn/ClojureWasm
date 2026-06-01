@@ -30,6 +30,11 @@ confirmed exprs into a `*.txt` corpus here via `--corpus`.
   {ident,keyword,symbol}?.
 - **JSON (data.json)** — read/write number parity incl. BigInt both directions
   (D-182). `:bigdec` opt + ratio write are minor residuals.
+- **vector / associative ops** — subvec (2+3-arity, empty), mapv/filterv,
+  into (coll/xform/set/map), assoc (set + append-at-count), update (+args),
+  get/nth (not-found), peek/pop, assoc-in/update-in/get-in (deep + not-found),
+  replace, reduce-kv, into-sorted-map — all at parity (no gaps). Corpus
+  `vec_assoc_ops`.
 - **transients** — `transient`/`persistent!` round-trip (vector/map/set),
   `conj!`/`pop!`/`disj!`/`dissoc!`, `reduce conj!`, `reduce assoc!` at parity.
   Gap found+fixed: `assoc!` was 3-arity only — now `(assoc! t k1 v1 k2 v2 …)`
