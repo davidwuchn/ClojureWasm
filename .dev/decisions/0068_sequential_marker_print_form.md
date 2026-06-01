@@ -70,22 +70,35 @@ consumers (print-realize + `sequential?`) — F-011 commonisation.
    method signature".
 
 2. **Define `(defprotocol Sequential)` marker in core.clj**, and extend it on
-   `Eduction` (and any seq-family `deftype` that should print as a seq). The
-   `deftype`/`reify` descriptor builder already records "one entry per declared
-   interface" in `protocol_impls` independent of methods, so the marker
-   registers.
+   `Eduction`. **Marker protocols must work end-to-end on a `deftype`** — and at
+   grounding time they did NOT (see § Grounding correction). The machinery:
+   - `lowerDefType` + `expandExtendType`: a zero-impl protocol section / a
+     2-arg `(extend-type Name Marker)` is now allowed (was rejected) — it is a
+     marker extension, not a malformed form.
+   - `__extend-type!` (`extendType`): records `proto.fqcn()` into the
+     descriptor's `protocol_impls` via the new `protocol.addProtocolImpl`
+     (dedup, infra-realloc mirroring `extendTypeWithImpls`) — so a zero-method
+     marker (no `method_table` entry) is still detectable, and `protocol_impls`
+     becomes an honest "implements P" set. Teardown frees the slice (not the
+     borrowed fqcn entries) in `Runtime.deinit` (user + native) + `registerType`
+     re-register.
 
 3. **Commonise `sequential?`** (`core.zig:sequentialQ`): keep the native-tag
-   fast path; ADD — for a `.typed_instance` — a `Sequential`-in-`protocol_impls`
-   check. `(sequential? eduction)` → `true`, matching clj. The same marker the
-   print path consumes drives the predicate (no second source of truth).
+   fast path; ADD — for a `.typed_instance` — a `descriptor.declaresProtocol(
+   "Sequential")` check (the shared `TypeDescriptor.declaresProtocol` helper that
+   walks `protocol_impls` + parent). `(sequential? eduction)` → `true`, matching
+   clj. The same marker + helper the print path consumes drives the predicate
+   (one SSOT, no second source of truth).
 
 4. **print.zig — realize (eduction):** `deepRealize` gains a `.typed_instance`
-   arm: if the descriptor satisfies `Sequential`, drive the existing
-   `lazy_seq_mod.seq` realize loop (the one the `.lazy_seq`/`.list` arm uses) →
-   a list → prints as `(2 3 4)`. Zone-legal: print.zig (Layer-0) reads
-   `descriptor.protocol_impls` directly / calls `dispatch.zig` (Layer-0); it does
-   NOT import `lang/`.
+   arm: if `descriptor.declaresProtocol("Sequential")`, coerce via the `Seqable
+   -seq` protocol (`dispatch.dispatchOrNull`, Layer-0 — `lazy_seq_mod` cannot
+   coerce a typed_instance itself; that is the seq primitive's job, Layer-2 /
+   D-189), then `deepRealize` the coerced lazy_seq/list → prints as `(2 3 4)`.
+   `dispatchOrNull` (not `dispatch`) so a Sequential-but-not-Seqable deftype
+   falls back to the default render instead of raising mid-print. Zone-legal:
+   print.zig (Layer-0) reads `protocol_impls` + calls `dispatch.zig` (Layer-0);
+   it does NOT import `lang/`.
 
 5. **print.zig — render (record):** `printTypedInstance` branches on
    `inst.descriptor.kind == .defrecord` → emit `#<fqcn>{:name val, …}` from
@@ -104,6 +117,22 @@ survive verbatim as that multimethod's `:default` / `Sequential` / record method
 bodies (DA-confirmed). The scope boundary is answered on merits, not diff size:
 "is *user-extensible* `print-method` in D-190's finished form?" → No; overriding
 how a type prints is a separate feature from cljw's own types printing correctly.
+
+## Grounding correction (Step 0.6 honesty)
+
+The pre-implementation grounding asserted "the deftype/reify descriptor builder
+already records one entry per declared interface in `protocol_impls`, so the
+marker registers." **This was only true for the `reify` path.** The
+`deftype`/`defrecord` path (`registerType`) leaves `protocol_impls = &.{}` and
+records protocols solely via `method_table` (`__extend-type!`), AND the macro
+lowering *rejected* a zero-impl protocol section (`lowerDefType` /
+`expandExtendType` raised `extend_*_invalid`). So a marker on a `deftype` was
+unrepresentable. Decision step 2 above is the corrected shape — the marker
+machinery (guard relaxations + `addProtocolImpl` + teardown) is part of this
+ADR, surfaced during implementation per the Step 0.6 re-laying discipline. This
+is a genuine capability gain (marker protocols now work on `deftype`), not just
+a D-190 patch — consistent with F-002 (the cleaner finished form is worth the
+extra surgery).
 
 ## Deferred (future ADR, not this cycle)
 
@@ -124,6 +153,12 @@ how a type prints is a separate feature from cljw's own types printing correctly
 - **Plain non-Seqable `deftype`.** clj prints `#object[user.Foo 0x… "…"]`; cljw
   prints `#Foo[..]`. Untouched here — a separate acceptable divergence (cljw's
   form is arguably more useful and is not D-190's subject).
+- **`(satisfies? Marker x)` on a marker protocol.** cljw's `satisfies?` checks
+  `method_table` (`protocol.satisfies`), so a zero-method marker returns
+  `false` where JVM returns `true`. Out of D-190 scope (print + `sequential?`
+  both consult `protocol_impls` via `declaresProtocol`, which IS marker-aware).
+  Aligning `satisfies?` to also consult `protocol_impls` is a clean follow-up
+  if marker-`satisfies?` is ever needed; filed as the D-190 spinoff note.
 
 ## Alternatives considered
 
@@ -242,12 +277,21 @@ question, never on diff size".
 
 ## Affected files
 
-- `src/lang/macro_transforms.zig` — `expandDefprotocol` guard relaxation.
+- `src/lang/macro_transforms.zig` — `expandDefprotocol` guard `< 2`→`< 1`;
+  `lowerDefType` + `expandExtendType` zero-impl-section / 2-arg allowance.
 - `src/runtime/error/catalog.zig` — `defprotocol_form_incomplete` template.
 - `src/lang/clj/clojure/core.clj` — `(defprotocol Sequential)`; extend on
   `Eduction`.
-- `src/lang/primitive/core.zig` — `sequentialQ` protocol-aware arm.
-- `src/runtime/print.zig` — `deepRealize` `.typed_instance` Sequential-realize
-  arm; `printTypedInstance` record map-style branch.
-- `test/e2e/phase14_*.sh` — RED → green print-form cases.
+- `src/runtime/protocol.zig` — `addProtocolImpl` (record protocol in
+  `protocol_impls`).
+- `src/lang/primitive/protocol.zig` — `extendType` calls `addProtocolImpl`.
+- `src/runtime/type_descriptor.zig` — `declaresProtocol` helper; `registerType`
+  re-register frees `protocol_impls`.
+- `src/runtime/runtime.zig` — `deinit` frees `protocol_impls` (user + native).
+- `src/lang/primitive/core.zig` — `sequentialQ` `declaresProtocol` arm.
+- `src/runtime/print.zig` — `deepRealize` `.typed_instance` Sequential coerce-
+  and-realize arm (`dispatchOrNull` `-seq`); `printTypedInstance` record
+  map-style branch; `realizeSeqWalk`/`typedInstanceIsSequential` helpers.
+- `test/e2e/phase14_transducers.sh` + `test/e2e/phase7_defrecord.sh` — RED →
+  green print-form cases.
 - `.dev/debt.md` — D-190 → Discharged.
