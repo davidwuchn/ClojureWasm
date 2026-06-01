@@ -84,7 +84,15 @@ nses="$(printf '%s\n' "${exprs[@]}" \
 for ns in $nses; do
     printf "(try (require '%s) (catch Throwable _ nil))\n" "$ns" >> "$batch"
 done
-for e in "${exprs[@]}"; do printf '(prn %s)\n' "$e" >> "$batch"; done
+# Each form is try/catch-wrapped so an expr that THROWS (an error-case probe,
+# e.g. a multimethod no-match) prints one `<clj-error> <Class>` line instead
+# of aborting the rest of the single-process batch (which would map every
+# later expr to <clj-missing>). One output line per expr preserves the
+# clj_lines↔exprs mapping; cljw's error line will DIFF (format differs by
+# design — compare the exception CLASS, not the message, per F-011).
+for e in "${exprs[@]}"; do
+    printf '(try (prn %s) (catch Throwable e (println (str "<clj-error> " (.getName (class e))))))\n' "$e" >> "$batch"
+done
 clj_out="$(timeout 60 "$CLJ" -M "$batch" 2>/dev/null)"
 mapfile -t clj_lines <<< "$clj_out"
 
