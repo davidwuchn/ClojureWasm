@@ -123,5 +123,12 @@ assert_eq 'bd_add_ratio' "$("$BIN" -e '(+ 1.5M 1/2)' 2>/dev/null | tail -1)" '2.
 assert_eq 'bd_sub_bigint' "$("$BIN" -e '(* 1.5M (bigint 3))' 2>/dev/null | tail -1)" '4.5M'
 # Non-terminating ratio contagion → arithmetic error.
 "$BIN" -e '(+ 1.5M 1/3)' >/dev/null 2>&1 && fail 'bd_nonterm: expected error' || true
+# BigDecimal division (exact or ArithmeticException) + quot/rem (D-194 Unit B).
+assert_eq 'bd_div_exact' "$("$BIN" -e '(/ 1.5M 2)' 2>/dev/null | tail -1)" '0.75M'
+assert_eq 'bd_div_int'   "$("$BIN" -e '(/ 6M 2)' 2>/dev/null | tail -1)" '3M'
+assert_eq 'bd_quot'      "$("$BIN" -e '(quot 7.5M 2)' 2>/dev/null | tail -1)" '3.0M'
+assert_eq 'bd_rem'       "$("$BIN" -e '(rem 1.50M 0.7M)' 2>/dev/null | tail -1)" '0.10M'
+assert_eq 'bd_mod'       "$("$BIN" -e '(mod 7.5M 2)' 2>/dev/null | tail -1)" '1.5M'
+"$BIN" -e '(/ 1M 3)' >/dev/null 2>&1 && fail 'bd_div_nonterm: expected error' || true
 
-echo "OK — phase14_class_type (44 cases) green"
+echo "OK — phase14_class_type (50 cases) green"

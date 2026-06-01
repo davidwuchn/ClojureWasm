@@ -199,6 +199,7 @@ pub fn slash(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) 
     if (args.len == 1) {
         return promote.divPromoting(rt, Value.initInteger(1), args[0]) catch |err| switch (err) {
             error.DivideByZero => return error_catalog.raise(.divide_by_zero, loc, .{}),
+            error.NonTerminatingDecimal => return error_catalog.raise(.non_terminating_decimal, loc, .{}),
             else => return err,
         };
     }
@@ -207,6 +208,7 @@ pub fn slash(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) 
     while (i < args.len) : (i += 1) {
         acc = promote.divPromoting(rt, acc, args[i]) catch |err| switch (err) {
             error.DivideByZero => return error_catalog.raise(.divide_by_zero, loc, .{}),
+            error.NonTerminatingDecimal => return error_catalog.raise(.non_terminating_decimal, loc, .{}),
             else => return err,
         };
     }
@@ -526,9 +528,10 @@ pub fn abs(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) an
 /// Map the shared numeric-tower errors a quot/rem/mod helper can raise
 /// onto user-facing catalog errors (F-011: one translation, three sites).
 fn raiseTowerDivError(name: []const u8, err: anyerror, loc: SourceLocation) anyerror {
+    _ = name;
     return switch (err) {
         error.DivideByZero => error_catalog.raise(.divide_by_zero, loc, .{}),
-        error.UnsupportedBigDecimal => error_catalog.raise(.feature_not_supported, loc, .{ .name = name }),
+        error.NonTerminatingDecimal => error_catalog.raise(.non_terminating_decimal, loc, .{}),
         else => err,
     };
 }

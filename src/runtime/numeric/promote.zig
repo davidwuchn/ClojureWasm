@@ -385,6 +385,12 @@ pub fn divPromoting(rt: *Runtime, a: Value, b: Value) !Value {
         return Value.initFloat(toF64(rt, a) / toF64(rt, b));
     }
 
+    if (a.tag() == .big_decimal or b.tag() == .big_decimal) {
+        const ba = try coerceToBigDecimal(rt, a);
+        const bb = try coerceToBigDecimal(rt, b);
+        return try big_decimal_mod.allocDiv(rt, ba, bb);
+    }
+
     if (a.tag() == .ratio or b.tag() == .ratio) {
         return try ratioArith(rt, a, b, .div);
     }
@@ -446,9 +452,9 @@ fn numSign(v: Value) std.math.Order {
 /// tower. Mirrors JVM `Numbers.quotient`: any float operand → float
 /// trunc; a BigInt/Ratio operand → BigInt result (category contagion);
 /// both Long → Long. Divide-by-zero raises for EVERY category including
-/// float (unlike `/`, where the float path yields IEEE Inf). BigDecimal
-/// operands raise `error.UnsupportedBigDecimal` (the same deferral the
-/// module's BigDecimal-mixed arithmetic carries — see the module doc).
+/// float (unlike `/`, where the float path yields IEEE Inf). A BigDecimal
+/// operand → BigDecimal integral quotient (`big_decimal.allocQuotient`,
+/// scale `max(0, sa−sb)`); a non-terminating ratio operand → arith error.
 pub fn quotPromoting(rt: *Runtime, a: Value, b: Value) !Value {
     if (a.isFloat() or b.isFloat()) {
         const bd = toF64(rt, b);
@@ -456,7 +462,9 @@ pub fn quotPromoting(rt: *Runtime, a: Value, b: Value) !Value {
         return Value.initFloat(@trunc(toF64(rt, a) / bd));
     }
     if (a.tag() == .big_decimal or b.tag() == .big_decimal) {
-        return error.UnsupportedBigDecimal;
+        const ba = try coerceToBigDecimal(rt, a);
+        const bb = try coerceToBigDecimal(rt, b);
+        return try big_decimal_mod.allocQuotient(rt, ba, bb);
     }
 
     // Exact path (Long / BigInt / Ratio). a/b = (an*bd)/(ad*bn); the

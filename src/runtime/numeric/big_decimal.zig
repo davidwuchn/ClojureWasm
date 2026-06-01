@@ -81,20 +81,39 @@ pub fn allocFromManagedScale(
     return Value.encodeHeapPtr(.big_decimal, bd);
 }
 
-/// Exact BigDecimal of a gcd-reduced rational `numer/denom` (`denom > 0`), or
-/// `error.NonTerminatingDecimal` when the decimal expansion does not terminate.
-/// A reduced `n/d` terminates iff `d = 2^a · 5^b`; then `scale = max(a, b)` and
-/// the unscaled integer is `n · 5^(a−b)` (a ≥ b) or `n · 2^(b−a)` (b > a).
-/// Shared by `clojure.core/bigdec` (a ratio arg) and BigDecimal÷/ratio
-/// contagion. JVM reference: `BigDecimal(numer).divide(BigDecimal(denom))`.
+/// Exact BigDecimal of a rational `numer/denom` (`denom ≠ 0`; need not be
+/// reduced), or `error.NonTerminatingDecimal` when the decimal expansion does
+/// not terminate. The pair is gcd-reduced and sign-normalised (denom > 0)
+/// first, then — since a reduced `n/d` terminates iff `d = 2^a · 5^b` —
+/// `scale = max(a, b)` and the unscaled integer is `n · 5^(a−b)` (a ≥ b) or
+/// `n · 2^(b−a)` (b > a). Shared by `clojure.core/bigdec` (a ratio arg) and
+/// BigDecimal `÷` contagion. JVM ref: `BigDecimal(n).divide(BigDecimal(d))`.
 pub fn allocFromRatioParts(
     rt: *Runtime,
     numer: *const std.math.big.int.Managed,
     denom: *const std.math.big.int.Managed,
 ) !Value {
     const infra = rt.gc.infra;
-    var d = try denom.clone();
+    if (denom.eqlZero()) return error.DivideByZero;
+
+    // gcd-reduce and force denom > 0 (sign rides the numerator) so the 2/5
+    // termination test below sees the genuine reduced denominator.
+    var g = try std.math.big.int.Managed.init(infra);
+    defer g.deinit();
+    try g.gcd(numer, denom);
+    var n = try std.math.big.int.Managed.init(infra);
+    defer n.deinit();
+    var d = try std.math.big.int.Managed.init(infra);
     defer d.deinit();
+    var rscratch = try std.math.big.int.Managed.init(infra);
+    defer rscratch.deinit();
+    try n.divTrunc(&rscratch, numer, &g);
+    try d.divTrunc(&rscratch, denom, &g);
+    if (!d.isPositive()) {
+        n.negate();
+        d.negate();
+    }
+
     var q = try std.math.big.int.Managed.init(infra);
     defer q.deinit();
     var rmd = try std.math.big.int.Managed.init(infra);
@@ -122,7 +141,7 @@ pub fn allocFromRatioParts(
         return error.NonTerminatingDecimal;
 
     const scale: i32 = @intCast(@max(a, b));
-    var unscaled = try numer.clone();
+    var unscaled = try n.clone();
     defer unscaled.deinit();
     if (a != b) {
         var factor = try std.math.big.int.Managed.init(infra);
@@ -136,6 +155,82 @@ pub fn allocFromRatioParts(
         unscaled.swap(&prod);
     }
     return allocFromManagedScale(rt, &unscaled, scale);
+}
+
+/// The two BigDecimals `a, b` as an exact rational `n/d` with the decimal
+/// points cleared: `a/b = (ua·10^−sa)/(ub·10^−sb) = (ua·10^max(0,sb−sa)) /
+/// (ub·10^max(0,sa−sb))`. Caller owns and must `deinit` both Manageds.
+const AlignedRational = struct { n: std.math.big.int.Managed, d: std.math.big.int.Managed };
+
+fn alignedRational(rt: *Runtime, a: Value, b: Value) !AlignedRational {
+    const infra = rt.gc.infra;
+    var n = try asUnscaled(a).m.clone();
+    errdefer n.deinit();
+    var d = try asUnscaled(b).m.clone();
+    errdefer d.deinit();
+    const e: i64 = @as(i64, asScale(b)) - @as(i64, asScale(a)); // a/b = (ua/ub)·10^e
+    if (e != 0) {
+        var ten = try std.math.big.int.Managed.initSet(infra, 10);
+        defer ten.deinit();
+        var p = try std.math.big.int.Managed.init(infra);
+        defer p.deinit();
+        try p.pow(&ten, @intCast(@abs(e)));
+        var prod = try std.math.big.int.Managed.init(infra);
+        defer prod.deinit();
+        if (e > 0) {
+            try prod.mul(&n, &p);
+            n.swap(&prod);
+        } else {
+            try prod.mul(&d, &p);
+            d.swap(&prod);
+        }
+    }
+    return .{ .n = n, .d = d };
+}
+
+/// `a ÷ b` for two BigDecimals → the exact decimal quotient, or
+/// `error.NonTerminatingDecimal` / `error.DivideByZero`. JVM ref:
+/// `BigDecimal.divide` with no MathContext (exact or ArithmeticException).
+pub fn allocDiv(rt: *Runtime, a: Value, b: Value) !Value {
+    var ar = try alignedRational(rt, a, b);
+    defer {
+        ar.n.deinit();
+        ar.d.deinit();
+    }
+    return allocFromRatioParts(rt, &ar.n, &ar.d);
+}
+
+/// Integral quotient `a ÷ b` truncated toward zero, as a BigDecimal with scale
+/// `max(0, a.scale − b.scale)` (JVM `divideToIntegralValue` preferred scale,
+/// floored at 0). `error.DivideByZero` when `b` is zero.
+pub fn allocQuotient(rt: *Runtime, a: Value, b: Value) !Value {
+    const infra = rt.gc.infra;
+    var ar = try alignedRational(rt, a, b);
+    defer {
+        ar.n.deinit();
+        ar.d.deinit();
+    }
+    if (ar.d.eqlZero()) return error.DivideByZero;
+    var q = try std.math.big.int.Managed.init(infra);
+    defer q.deinit();
+    var r = try std.math.big.int.Managed.init(infra);
+    defer r.deinit();
+    try q.divTrunc(&r, &ar.n, &ar.d); // toward zero
+
+    const diff: i64 = @as(i64, asScale(a)) - @as(i64, asScale(b));
+    const scale: i32 = @intCast(@max(@as(i64, 0), diff));
+    if (scale > 0) {
+        var ten = try std.math.big.int.Managed.initSet(infra, 10);
+        defer ten.deinit();
+        var p = try std.math.big.int.Managed.init(infra);
+        defer p.deinit();
+        try p.pow(&ten, @intCast(scale));
+        var prod = try std.math.big.int.Managed.init(infra);
+        defer prod.deinit();
+        try prod.mul(&q, &p);
+        q.swap(&prod);
+    }
+    return allocFromManagedScale(rt, &q, scale);
 }
 
 /// Decode a BigDecimal Value into its unscaled significand.
