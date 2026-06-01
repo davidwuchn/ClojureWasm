@@ -86,4 +86,16 @@ EOF
 ) || fail "case9: non-zero exit ($got)"
 assert_eq 'finally_runs' "$(ll "$got")" ':c'
 
-echo "OK — phase14_catch_internal (9 cases) green"
+# --- Case 10: (ex-cause x) returns the 3-arg ex-info cause, else nil ---
+got=$("$BIN" - <<'EOF' 2>/dev/null
+(ex-message (ex-cause (ex-info "outer" {} (ex-info "inner" {}))))
+EOF
+) || fail "case10: non-zero exit ($got)"
+assert_eq 'ex_cause_message' "$(ll "$got")" '"inner"'
+got=$("$BIN" - <<'EOF' 2>/dev/null
+(ex-cause (ex-info "no-cause" {}))
+EOF
+) || fail "case10b: non-zero exit ($got)"
+assert_eq 'ex_cause_nil' "$(ll "$got")" 'nil'
+
+echo "OK — phase14_catch_internal (11 cases) green"

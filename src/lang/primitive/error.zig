@@ -72,6 +72,18 @@ pub fn exData(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation)
     return ex_info.data(v);
 }
 
+/// `(ex-cause x)` — the cause exception passed as the optional 3rd arg of
+/// `(ex-info msg data cause)`, or nil (also nil for a non-ex_info or a
+/// causeless ex-info). Matches `Throwable.getCause`.
+pub fn exCause(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = rt;
+    _ = env;
+    try error_catalog.checkArity("ex-cause", args, 1, loc);
+    const v = args[0];
+    if (v.tag() != .ex_info) return .nil_val;
+    return ex_info.cause(v);
+}
+
 // --- registration ---
 
 const Entry = struct {
@@ -83,6 +95,7 @@ const ENTRIES = [_]Entry{
     .{ .name = "ex-info", .f = &exInfo },
     .{ .name = "ex-message", .f = &exMessage },
     .{ .name = "ex-data", .f = &exData },
+    .{ .name = "ex-cause", .f = &exCause },
 };
 
 /// Intern `ex-info` / `ex-message` / `ex-data` builtins into `rt_ns`.
