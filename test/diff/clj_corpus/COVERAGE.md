@@ -30,6 +30,12 @@ confirmed exprs into a `*.txt` corpus here via `--corpus`.
   {ident,keyword,symbol}?.
 - **JSON (data.json)** — read/write number parity incl. BigInt both directions
   (D-182). `:bigdec` opt + ratio write are minor residuals.
+- **sequence fns (lazy tail)** — iterate/cycle/repeat/repeatedly/lazy-cat/
+  split-at/split-with/butlast/take-while/nthrest/partition-all/keep/mapcat/
+  reductions/range-step, infinite-bounded-by-take. Gap found+fixed:
+  `interleave` was EAGER (returned empty for two infinite colls) — rewritten
+  LAZY (JVM parity): `(take 4 (interleave (range) (repeat :x)))`→`(0 :x 1 :x)`;
+  finite/uneven/1-arity preserved (0-arity → nil per D-164). Corpus `seq_tail`.
 - **atom / swap! family** — atom/deref, swap! (fn / +args / update), reset!,
   compare-and-set! (hit + miss), swap-vals!/reset-vals! ([old new]), swap-over-
   collection, dotimes-swap, reset-then-swap — all at parity. Corpus `atom_swap`.

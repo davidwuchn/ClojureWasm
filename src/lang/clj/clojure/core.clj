@@ -842,16 +842,18 @@
         acc))))
 
 ;; `(interleave & colls)` — alternate items from N colls, stopping when the
-;; shortest is exhausted. Returns a SEQ (JVM parity). Variadic over any
-;; number of colls. loop/recur (constant stack); the eager accumulator is a
-;; cljw divergence from JVM's lazy interleave (acceptable — observable
-;; output matches; empty result → nil per D-164).
+;; shortest is exhausted. LAZY (JVM parity, F-011): `(take 4 (interleave (range)
+;; (repeat :x)))`→`(0 :x 1 :x)` — two infinite colls now work (the prior eager
+;; loop returned empty). `(seq colls)` guards 0-arity from vacuous infinite
+;; recursion. Self-recursive → two-step `(def … nil)` so the body resolves it.
+(def interleave nil)
 (def interleave
   (fn* [& colls]
-    (loop [seqs (map seq colls) acc []]
-      (if (every? identity seqs)
-        (recur (map next seqs) (reduce conj acc (map first seqs)))
-        (seq acc)))))
+    (lazy-seq
+      (let* [ss (map seq colls)]
+        (if (and (seq colls) (every? identity ss))
+          (concat (map first ss) (apply interleave (map rest ss)))
+          nil)))))
 
 ;; ----------------------------------------------------------------
 ;; D-134 cluster 5 — reduce-shaped helpers (Pattern A).
