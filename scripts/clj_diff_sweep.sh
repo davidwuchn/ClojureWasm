@@ -68,8 +68,22 @@ n=${#exprs[@]}
 [ "$n" -gt 0 ] || { echo "no expressions" >&2; exit 2; }
 
 # --- clj batch (one prn per line) ---
+# A qualified symbol like `clojure.set/union` needs its namespace required
+# first — clj does NOT auto-load it, and an un-required reference aborts the
+# WHOLE batch at line 1 (every later prn then maps to <clj-missing>, a false
+# all-DIFF signal). Auto-detect every `dotted.ns/` prefix in the exprs and
+# emit a require ahead of the prn lines. The requires are NOT prn-wrapped, so
+# they add no stdout line and the clj_lines[i] ↔ exprs[i] mapping is preserved.
+# A non-requireable prefix (e.g. a Java FQCN `java.util.UUID/…`) is swallowed
+# by the try/catch so it never aborts the batch — Java classes need no require.
 batch="$(mktemp /tmp/clj_diff_batch.XXXXXX.clj)"
 trap 'rm -f "$batch"' EXIT
+nses="$(printf '%s\n' "${exprs[@]}" \
+    | grep -oE '[a-zA-Z][a-zA-Z0-9._-]*\.[a-zA-Z0-9._-]+/' \
+    | sed 's:/$::' | sort -u)"
+for ns in $nses; do
+    printf "(try (require '%s) (catch Throwable _ nil))\n" "$ns" >> "$batch"
+done
 for e in "${exprs[@]}"; do printf '(prn %s)\n' "$e" >> "$batch"; done
 clj_out="$(timeout 60 "$CLJ" -M "$batch" 2>/dev/null)"
 mapfile -t clj_lines <<< "$clj_out"
