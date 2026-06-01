@@ -74,7 +74,8 @@ assert_eq 'leftmost' "$got" '10'
 got=$("$BIN" -e '(clojure.zip/node (clojure.zip/rightmost (clojure.zip/down (clojure.zip/vector-zip [10 20 30]))))' 2>/dev/null)
 assert_eq 'rightmost' "$got" '30'
 
-# --- lefts / rights raw field reads ---
+# --- lefts / rights — JVM returns a SEQ, not the raw vector field
+# (clojure.zip sweep 2026-06-02: `(lefts …)`→`(10 20)` not `[10 20]`). ---
 got=$("$BIN" - <<'EOF' 2>/dev/null
 (clojure.zip/lefts
   (clojure.zip/right
@@ -82,7 +83,7 @@ got=$("$BIN" - <<'EOF' 2>/dev/null
       (clojure.zip/down (clojure.zip/vector-zip [10 20 30 40])))))
 EOF
 )
-assert_eq 'lefts_field' "$got" '[10 20]'
+assert_eq 'lefts_field' "$got" '(10 20)'
 
 got=$("$BIN" - <<'EOF' 2>/dev/null
 (clojure.zip/rights
@@ -90,7 +91,7 @@ got=$("$BIN" - <<'EOF' 2>/dev/null
     (clojure.zip/down (clojure.zip/vector-zip [10 20 30 40]))))
 EOF
 )
-assert_eq 'rights_field' "$got" '[30 40]'
+assert_eq 'rights_field' "$got" '(30 40)'
 
 # --- path walks parent chain, root-down, excluding current ---
 got=$("$BIN" - <<'EOF' 2>/dev/null

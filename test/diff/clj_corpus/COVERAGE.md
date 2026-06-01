@@ -30,6 +30,11 @@ confirmed exprs into a `*.txt` corpus here via `--corpus`.
   {ident,keyword,symbol}?.
 - **JSON (data.json)** — read/write number parity incl. BigInt both directions
   (D-182). `:bigdec` opt + ratio write are minor residuals.
+- **clojure.zip** — vector-zip nav (down/up/right/left/next/node/root/edit/
+  branch?/children/end?/append-child/insert-child) at parity. Gap found+fixed:
+  `lefts`/`rights` returned the raw vector field; JVM returns a SEQ (`(1)` not
+  `[1]`, empty→nil) — public fns now wrap `(seq …)` (internal nav still reads
+  the vector fields). Corpus `zip`.
 - **clojure.data/diff** (new ns) — recursive `[only-a only-b both]` over
   atom/map/set/sequential + nested, equal-shortcut, nil, growth. Pattern-A
   re-derivation over cljw predicates (no Java-interface protocols). Surfaced
@@ -84,7 +89,8 @@ confirmed exprs into a `*.txt` corpus here via `--corpus`.
   no 0-arity → ArityException) — low-value edge; `macroexpand-all` is a stub.
 - **Unswept areas** worth a focused pass: EDN tagged literals
   (`#inst`/`#uuid`/custom `:readers`), `alter-meta!` (needs var-metadata
-  D-183), `clojure.zip` surface.
+  D-183), `clojure.walk/macroexpand-all` (stub), `seq?`-vs-vector return
+  divergences (sort returns vector — like the zip lefts/rights class).
 - **`random-sample`** — undefined (1-arg transducer + 2-arg; non-deterministic).
 - **Remaining Java interop** (structural-deferred, array/regex repr):
   `.split`/`.toCharArray`/`.getBytes` (needs F-004 Group-D `array` slot);

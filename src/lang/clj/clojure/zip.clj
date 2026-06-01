@@ -144,14 +144,17 @@
             (.make-node-fn src)
             (.kind src)))
 
-;; `(lefts loc)` / `(rights loc)` / `(path loc)` — raw field reads
-;; matching JVM clojure.zip's public accessors. `path` returns the
-;; vector of node values walked from root down to (but not
-;; including) `(node loc)`; cw v1's ZipLoc encodes this as a parent
-;; ZipLoc chain rather than a vector, so `(path)` walks the chain
-;; building the vector on demand.
-(defn lefts  [loc] (.lefts loc))
-(defn rights [loc] (.rights loc))
+;; `(lefts loc)` / `(rights loc)` / `(path loc)` — public accessors.
+;; JVM `lefts`/`rights` return a SEQ of sibling nodes (`(seq …)`), so
+;; `(lefts (down z))`→`(1)` not `[1]` and an empty side → nil. The
+;; `.lefts`/`.rights` FIELDS stay vectors for internal navigation
+;; (down/right read them directly); only the public fns wrap in `seq`.
+;; `path` returns the vector of node values walked from root down to
+;; (but not including) `(node loc)`; cw v1's ZipLoc encodes this as a
+;; parent ZipLoc chain rather than a vector, so `(path)` walks the
+;; chain building the vector on demand.
+(defn lefts  [loc] (seq (.lefts loc)))
+(defn rights [loc] (seq (.rights loc)))
 
 (defn path [loc]
   (loop* [p (.path loc) acc nil]

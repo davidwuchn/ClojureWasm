@@ -1,0 +1,30 @@
+(clojure.zip/node (clojure.zip/vector-zip [1 2 3]))
+;;=> [1 2 3]
+(clojure.zip/node (clojure.zip/down (clojure.zip/vector-zip [1 [2 3]])))
+;;=> 1
+(clojure.zip/node (clojure.zip/right (clojure.zip/down (clojure.zip/vector-zip [1 [2 3]]))))
+;;=> [2 3]
+(clojure.zip/node (clojure.zip/right (clojure.zip/right (clojure.zip/down (clojure.zip/vector-zip [1 2 3])))))
+;;=> 3
+(clojure.zip/root (clojure.zip/vector-zip [1 2 3]))
+;;=> [1 2 3]
+(clojure.zip/root (clojure.zip/edit (clojure.zip/down (clojure.zip/vector-zip [1 2 3])) inc))
+;;=> [2 2 3]
+(clojure.zip/branch? (clojure.zip/vector-zip [1 2 3]))
+;;=> true
+(clojure.zip/branch? (clojure.zip/down (clojure.zip/vector-zip [1 2 3])))
+;;=> false
+(clojure.zip/children (clojure.zip/vector-zip [1 2 3]))
+;;=> (1 2 3)
+(clojure.zip/node (clojure.zip/up (clojure.zip/down (clojure.zip/vector-zip [1 2 3]))))
+;;=> [1 2 3]
+(clojure.zip/end? (clojure.zip/next (clojure.zip/next (clojure.zip/next (clojure.zip/next (clojure.zip/vector-zip [1 2]))))))
+;;=> true
+(clojure.zip/root (clojure.zip/append-child (clojure.zip/vector-zip [1 2]) 3))
+;;=> [1 2 3]
+(clojure.zip/root (clojure.zip/insert-child (clojure.zip/vector-zip [1 2]) 0))
+;;=> [0 1 2]
+(clojure.zip/lefts (clojure.zip/right (clojure.zip/down (clojure.zip/vector-zip [1 2 3]))))
+;;=> (1)
+(clojure.zip/rights (clojure.zip/down (clojure.zip/vector-zip [1 2 3])))
+;;=> (2 3)
