@@ -44,12 +44,12 @@ EOF
 )
 assert_eq 'replace_first_regex_fn' "$got" '"abc<123>def456ghi"'
 
-# --- Case 5: regex-string literal pass-through (PROVISIONAL — $N is literal) ---
+# --- Case 5: $0 is the whole match (D-093 discharge — was a literal PROVISIONAL) ---
 got=$("$BIN" - <<'EOF' 2>/dev/null
 (clojure.string/replace "abc123" #"\d+" "$0")
 EOF
 )
-assert_eq 'replace_regex_string_literal_dollar' "$got" '"abc$0"'
+assert_eq 'replace_regex_string_dollar_zero' "$got" '"abc123"'
 
 # --- Case 6: unsupported match type raises (cond :else clause) ---
 # The top-level renders the thrown ex-info's message + the `exception`
@@ -73,6 +73,19 @@ got=$("$BIN" - <<'EOF' 2>/dev/null
 EOF
 )
 assert_eq 'replace_unsupported_caught' "$got" '"replace: unsupported match type"'
+
+# --- $N capture-group backreferences in the replacement (D-093 discharge) ---
+got=$("$BIN" -e '(clojure.string/replace "abc" #"(.)" "$1$1")' 2>/dev/null)
+assert_eq 'replace_dollar_group_double' "$got" '"aabbcc"'
+got=$("$BIN" -e '(clojure.string/replace "2024-01" #"(\d+)-(\d+)" "$2/$1")' 2>/dev/null)
+assert_eq 'replace_dollar_swap' "$got" '"01/2024"'
+got=$("$BIN" -e '(clojure.string/replace "x" #"(x)" "$0!")' 2>/dev/null)
+assert_eq 'replace_dollar_zero_whole' "$got" '"x!"'
+got=$("$BIN" -e '(clojure.string/replace "ab" #"a(b)?" "[$1]")' 2>/dev/null)
+assert_eq 'replace_dollar_nonparticipating' "$got" '"[b]"'
+# --- fn replacement receives the match vector when the pattern has groups ---
+got=$("$BIN" -e '(clojure.string/replace "ab" #"(\w)" (fn [[whole g1]] (clojure.string/upper-case g1)))' 2>/dev/null)
+assert_eq 'replace_fn_match_vector' "$got" '"AB"'
 
 echo
 echo "Phase 7 row 7.12 cycle 3 replace Pattern A e2e: all green."

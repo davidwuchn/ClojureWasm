@@ -29,6 +29,7 @@ const map_collection = @import("../../runtime/collection/map.zig");
 const vector_collection = @import("../../runtime/collection/vector.zig");
 const regex_value = @import("../../runtime/regex/value.zig");
 const regex_match = @import("../../runtime/regex/match.zig");
+const regex_prim = @import("regex.zig");
 
 /// `(clojure.string/upper-case s)` — ASCII upper-case fold per cycle
 /// 1. Non-ASCII codepoints pass through unchanged; full Unicode case
@@ -312,17 +313,16 @@ fn strReplacePatternImpl(rt: *Runtime, env: *Env, fn_name: []const u8, kind: Rep
         const match = (try regex_match.findFrom(rt.gc.infra, program, haystack, pos)) orelse break;
         // Append unmatched prefix.
         try out.appendSlice(rt.gc.infra, haystack[pos..match.start]);
-        const whole_match = haystack[match.start..match.end];
         switch (args[2].tag()) {
-            .string => {
-                // PROVISIONAL: `$N` capture-group substitution pending D-051 cycle 3 capture support [refs: D-093, feature_deps.yaml#runtime/regex/replace_pattern_dollar_n]
-                try out.appendSlice(rt.gc.infra, string_collection.asString(args[2]));
-            },
+            .string => try expandReplacement(rt, &out, string_collection.asString(args[2]), match, program, haystack),
             .fn_val, .builtin_fn => {
                 const vt = rt.vtable orelse
                     return error_catalog.raise(.feature_not_supported, loc, .{ .name = "regex-replace fn-arm before vtable install" });
-                const whole_val = try string_collection.alloc(rt, whole_match);
-                var call_args = [_]Value{whole_val};
+                // The replacement fn receives the `re-find` shape: the match
+                // vector `[whole g1 …]` when the pattern has capturing groups,
+                // else the whole-match string (D-093; reuses buildMatchResult).
+                const arg_val = try regex_prim.buildMatchResult(rt, program, haystack, match);
+                var call_args = [_]Value{arg_val};
                 const result = try vt.callFn(rt, env, args[2], &call_args, loc);
                 if (result.tag() != .string)
                     return error_catalog.raise(.type_arg_invalid, loc, .{ .fn_name = fn_name, .expected = "fn returning string", .actual = @tagName(result.tag()) });
@@ -341,6 +341,43 @@ fn strReplacePatternImpl(rt: *Runtime, env: *Env, fn_name: []const u8, kind: Rep
     if (pos <= haystack.len) try out.appendSlice(rt.gc.infra, haystack[pos..]);
     if (!any and kind == .all) return args[0]; // identity fast-path
     return try string_collection.alloc(rt, out.items);
+}
+
+/// Expand a string replacement template against `match`, JVM
+/// `Matcher.appendReplacement`-style: `$N` (single digit) is group N's text
+/// (`$0` = the whole match; a non-participating group contributes nothing),
+/// `\c` emits `c` literally, everything else is copied verbatim (D-093).
+fn expandReplacement(
+    rt: *Runtime,
+    out: *std.ArrayList(u8),
+    template: []const u8,
+    match: regex_match.MatchResult,
+    program: *const @import("../../runtime/regex/compile.zig").Program,
+    haystack: []const u8,
+) anyerror!void {
+    var i: usize = 0;
+    while (i < template.len) {
+        const c = template[i];
+        if (c == '\\' and i + 1 < template.len) {
+            try out.append(rt.gc.infra, template[i + 1]);
+            i += 2;
+            continue;
+        }
+        if (c == '$' and i + 1 < template.len and template[i + 1] >= '0' and template[i + 1] <= '9') {
+            const g: u16 = template[i + 1] - '0';
+            i += 2;
+            if (g == 0) {
+                try out.appendSlice(rt.gc.infra, haystack[match.start..match.end]);
+            } else if (g <= program.capture_count) {
+                const s = match.captures.slots[@as(usize, 2) * g];
+                const e = match.captures.slots[@as(usize, 2) * g + 1];
+                if (s >= 0 and e >= 0) try out.appendSlice(rt.gc.infra, haystack[@intCast(s)..@intCast(e)]);
+            }
+            continue;
+        }
+        try out.append(rt.gc.infra, c);
+        i += 1;
+    }
 }
 
 pub fn strReplacePattern(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {

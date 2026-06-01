@@ -600,24 +600,20 @@ entries:
   - name: runtime/regex/replace_pattern_dollar_n
     kind: runtime_layer
     defined_in: src/lang/primitive/string.zig
-    status: provisional
+    status: landed
     requires_features: []
     requires_debts:
       - D-093
-    provisional_markers:
-      - src/lang/primitive/string.zig (strReplacePatternImpl — `$N` literal pass-through)
+    provisional_markers: []
     notes: |
-      Row 7.12 cycle 2 (2026-05-27) landed
-      `clojure.string/-str-replace-pattern` +
-      `-str-replace-first-pattern` private leaves. The regex-string
-      replacement arm appends the replacement literal verbatim;
-      JVM `Matcher.appendReplacement` interprets `$1` / `$2` / `$$`
-      escapes against the match's capture groups. cw v1 defers
-      `$N` interpretation until D-051 cycle 3 (capture groups +
-      `re-groups`) lands; at that point the marker discharges and
-      the literal pass-through is replaced with a tiny replacement
-      parser that consults `match.captures.slots`. The regex-fn arm
-      (`(replace s re #(str "<" % ">"))`) already works for the
-      common transformation case via whole-match. Survey § DIVERGENCE
-      D3 documents the trade-off.
+      DISCHARGED 2026-06-01 (§A26): once capture groups landed
+      (re-find/re-matches/re-seq return group vectors), the
+      `clojure.string/replace` string arm's literal pass-through was
+      replaced with `expandReplacement` (a `$N`/`$0`/`\c` template
+      parser over `match.captures.slots`), and the fn arm now passes
+      the match vector `[whole g1 …]` via `regex.buildMatchResult`
+      (so `(replace s re (fn [[whole g1]] …))` destructures). clj-MATCH
+      on `$1$1`/`$2/$1`/`$0`/non-participating-group cases. History:
+      row 7.12 cycle 2 landed the literal pass-through; D-051 cycle 3 /
+      §A26 capture groups unblocked the discharge.
 

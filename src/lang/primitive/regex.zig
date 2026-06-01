@@ -83,7 +83,7 @@ pub fn reFind(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation)
 /// string when the pattern has no capturing groups, else a vector
 /// `[whole g1 g2 …]` (a group that did not participate is nil). Group 0 is the
 /// whole match (`result.start..end`); group `i` is `captures.slots[2i..2i+1]`.
-fn buildMatchResult(rt: *Runtime, program: *const compile_mod.Program, input: []const u8, result: regex_match.MatchResult) anyerror!Value {
+pub fn buildMatchResult(rt: *Runtime, program: *const compile_mod.Program, input: []const u8, result: regex_match.MatchResult) anyerror!Value {
     if (program.capture_count == 0) {
         return string_collection.alloc(rt, input[result.start..result.end]);
     }
