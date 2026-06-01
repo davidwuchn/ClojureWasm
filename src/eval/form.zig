@@ -15,6 +15,11 @@ const print = @import("../runtime/print.zig");
 pub const SymbolRef = struct {
     ns: ?[]const u8 = null,
     name: []const u8,
+    /// Set by the reader for an auto-resolved keyword `::name` / `::alias/name`.
+    /// The analyzer resolves it against the current namespace (or a require
+    /// alias) at analyze time, since the reader is namespace-unaware. Always
+    /// false for symbols and plain `:kw` keywords.
+    auto_resolve: bool = false,
 };
 
 /// Reader-level shape. Maps cleanly to printable EDN.

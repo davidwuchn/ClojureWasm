@@ -225,6 +225,22 @@ const STAGED_UNSUPPORTED_FORMS = std.StaticStringMap(void).initComptime(.{
 /// expansion is itself expanded on the next pass. Callers that don't
 /// need macros (early bootstrap, micro-tests) can pass an empty
 /// Table — non-macro Vars short-circuit through `expandIfMacro`.
+/// Resolve a `::name` / `::alias/name` auto-resolved keyword (D-195). `::name`
+/// (sym.ns == null) takes the current namespace; `::alias/name` resolves the
+/// require-alias to its target ns. The current ns is present during analysis;
+/// an unknown alias raises (matches clj's read-time rejection). Quoted `::`
+/// (formToValue path) lacks an env and stays unresolved — a tracked residual.
+fn resolveAutoKeyword(rt: *Runtime, env: *Env, sym: SymbolRef, loc: SourceLocation) AnalyzeError!Value {
+    const cur = env.current_ns orelse
+        return error_catalog.raise(.current_namespace_missing, loc, .{ .sym = sym.name });
+    if (sym.ns) |alias| {
+        const target = cur.aliases.get(alias) orelse
+            return error_catalog.raise(.namespace_unknown, loc, .{ .ns = alias });
+        return keyword.intern(rt, target.name, sym.name);
+    }
+    return keyword.intern(rt, cur.name, sym.name);
+}
+
 pub fn analyze(
     arena: std.mem.Allocator,
     rt: *Runtime,
@@ -244,7 +260,10 @@ pub fn analyze(
         .ratio_literal => |s| try makeConstant(arena, try parseRatioLiteral(rt, s, form.location), form),
         .regex_literal => |s| try makeConstant(arena, try parseRegexLiteral(rt, s, form.location), form),
         .keyword => |sym| {
-            const v = try keyword.intern(rt, sym.ns, sym.name);
+            const v = if (sym.auto_resolve)
+                try resolveAutoKeyword(rt, env, sym, form.location)
+            else
+                try keyword.intern(rt, sym.ns, sym.name);
             return try makeConstant(arena, v, form);
         },
         .symbol => |sym| try analyzeSymbol(arena, env, scope, sym, form),

@@ -157,6 +157,17 @@ test "diff: map/set/list keys by value (D-092) — keyEqValue/valueHash backend-
     try f.check("(count (conj #{{:a 1}} {:a 1}))", 1); // set elem content dedup
 }
 
+test "diff: ::name auto-resolved keyword (D-195) — analyzer-shared resolution" {
+    var f = try Fixture.init(testing.allocator);
+    defer f.deinit();
+    // `::name` resolves to the current ns (user) in the analyzer, which both
+    // backends share. The Fixture's Env.init sets current_ns = user.
+    try f.check("(if (= ::foo :user/foo) 1 0)", 1);
+    try f.check("(count (name ::bar))", 3); // "bar"
+    try f.check("(if (= ::a ::a) 1 0)", 1);
+    try f.check("(get {::k 7} ::k)", 7); // map-literal key resolves
+}
+
 test "diff: runtime metadata (meta / with-meta) — backend-shared" {
     var f = try Fixture.init(testing.allocator);
     defer f.deinit();

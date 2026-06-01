@@ -206,8 +206,18 @@ pub const Reader = struct {
     }
 
     fn readKeyword(self: *Reader, tok: Token) ReadError!Form {
-        const txt = tok.text(self.source)[1..]; // drop leading ':'
-        return Form{ .data = .{ .keyword = parseSymbolRef(txt) }, .location = self.locOf(tok) };
+        var txt = tok.text(self.source)[1..]; // drop leading ':'
+        // `::name` / `::alias/name` — auto-resolved against the current ns at
+        // analyze time (the reader is namespace-unaware). Drop the second ':'
+        // and flag it; parseSymbolRef then splits an `alias/name`.
+        var auto = false;
+        if (txt.len > 0 and txt[0] == ':') {
+            auto = true;
+            txt = txt[1..];
+        }
+        var sref = parseSymbolRef(txt);
+        sref.auto_resolve = auto;
+        return Form{ .data = .{ .keyword = sref }, .location = self.locOf(tok) };
     }
 
     /// `#"..."` token text includes the leading `#` + bracketing

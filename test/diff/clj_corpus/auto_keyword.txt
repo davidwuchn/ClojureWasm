@@ -1,0 +1,24 @@
+(name ::foo)
+;;=> "foo"
+(namespace ::foo)
+;;=> "user"
+(= ::foo :user/foo)
+;;=> true
+(str ::foo)
+;;=> ":user/foo"
+(keyword? ::foo)
+;;=> true
+(sort (map name (keys {::a 1 ::b 2})))
+;;=> ("a" "b")
+(do (derive ::dog ::animal) (isa? ::dog ::animal))
+;;=> true
+(do (derive ::cat ::animal) (derive ::animal ::thing) (isa? ::cat ::thing))
+;;=> true
+(do (derive ::sq ::shape) (map name (parents ::sq)))
+;;=> ("shape")
+(do (defmulti akw-a identity) (defmethod akw-a ::x [_] :hit) (akw-a ::x))
+;;=> :hit
+(= ::foo ::foo)
+;;=> true
+(get {::k 42} ::k)
+;;=> 42

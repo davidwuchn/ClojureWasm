@@ -35,8 +35,12 @@ confirmed exprs into a `*.txt` corpus here via `--corpus`.
   `isa?` / `parents` / `ancestors` / `descendants` / `prefer-method`; gap
   found+fixed: `methods` / `get-method` / `remove-method` / `prefers` had no
   public wrapper over the rt/ primitives. no-match throws IllegalArgumentException
-  (catchable; message format differs per F-011). Corpus `multimethod`. Residual:
-  `::` auto-resolved keyword (D-195) — use fully-qualified `:ns/x` keywords.
+  (catchable; message format differs per F-011). Corpus `multimethod`.
+- **`::` auto-resolved keyword** (D-195 discharged) — `::name`→current-ns,
+  `::alias/name`→require-alias target ns; `(name ::foo)`/`(namespace ::foo)`/
+  print/`=`/map-literal keys/multimethod `::` dispatch all at parity. Corpus
+  `auto_keyword`. Residual: quoted `'::foo` interns `:foo` (formToValue has no
+  env).
 - **reduce / reduced / transduce** — reduce init/no-init/empty/nil, early
   `reduced`/`reduced?`/`unreduced`/`ensure-reduced`/`@reduced`, reduce-kv,
   reduce over map(entry)/set/string/range, transduce + xform compose. All at
@@ -61,7 +65,7 @@ confirmed exprs into a `*.txt` corpus here via `--corpus`.
   no 0-arity → ArityException) — low-value edge; `macroexpand-all` is a stub.
 - **Unswept areas** worth a focused pass: metadata (`vary-meta`/`alter-meta!`/
   `with-meta` on more types), `clojure.edn` round-trips, destructuring corners,
-  `clojure.data/diff`, `::` auto-resolved keyword (D-195).
+  `clojure.data/diff`.
 - **`random-sample`** — undefined (1-arg transducer + 2-arg; non-deterministic).
 - **Remaining Java interop** (structural-deferred, array/regex repr):
   `.split`/`.toCharArray`/`.getBytes` (needs F-004 Group-D `array` slot);
