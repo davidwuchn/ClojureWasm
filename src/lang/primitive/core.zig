@@ -681,7 +681,7 @@ pub fn formatFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocatio
             try w.writeByte('\n');
             continue;
         }
-        if (prec != null and conv != 'f')
+        if (prec != null and conv != 'f' and conv != 'e' and conv != 'E')
             return error_catalog.raise(.format_spec_invalid, loc, .{ .spec = "%." });
 
         // Render the conversion into a temp, then space-pad to `width` into w.
@@ -717,6 +717,11 @@ pub fn formatFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocatio
             'f' => {
                 if (ai >= args.len) return error_catalog.raise(.format_args_insufficient, loc, .{});
                 try writeFloatPrec(tw, try error_catalog.expectNumber(args[ai], "format", loc), prec orelse 6);
+                ai += 1;
+            },
+            'e', 'E' => {
+                if (ai >= args.len) return error_catalog.raise(.format_args_insufficient, loc, .{});
+                try writeScientific(tw, try error_catalog.expectNumber(args[ai], "format", loc), prec orelse 6, conv == 'E');
                 ai += 1;
             },
             else => {
@@ -783,6 +788,49 @@ fn writeDecimal(tw: *std.Io.Writer, n: i48, group: bool, plus: bool, space: bool
     }
 
     if (neg and paren) try tw.writeByte(')');
+}
+
+/// Render `f` in `%e` scientific form (`[-]d.dddddde±dd`). Zig's `{e:.N}`
+/// produces the mantissa + exponent; this normalises the exponent to Java's
+/// shape: an explicit `+`/`-` sign and at least two digits (`1.234568e+04`).
+/// `upper` selects `E`. Precision is comptime in Zig's `print`, so it is
+/// dispatched over the printf-common range (mirrors `writeFloatPrec`).
+fn writeScientific(w: *std.Io.Writer, f: f64, prec: usize, upper: bool) !void {
+    var buf: [64]u8 = undefined;
+    var fbs: std.Io.Writer = .fixed(&buf);
+    switch (prec) {
+        0 => try fbs.print("{e:.0}", .{f}),
+        1 => try fbs.print("{e:.1}", .{f}),
+        2 => try fbs.print("{e:.2}", .{f}),
+        3 => try fbs.print("{e:.3}", .{f}),
+        4 => try fbs.print("{e:.4}", .{f}),
+        5 => try fbs.print("{e:.5}", .{f}),
+        6 => try fbs.print("{e:.6}", .{f}),
+        7 => try fbs.print("{e:.7}", .{f}),
+        8 => try fbs.print("{e:.8}", .{f}),
+        9 => try fbs.print("{e:.9}", .{f}),
+        10 => try fbs.print("{e:.10}", .{f}),
+        else => try fbs.print("{e:.6}", .{f}),
+    }
+    const zig = fbs.buffered();
+    const epos = std.mem.findScalar(u8, zig, 'e') orelse std.mem.findScalar(u8, zig, 'E') orelse {
+        try w.writeAll(zig);
+        return;
+    };
+    try w.writeAll(zig[0..epos]);
+    try w.writeByte(if (upper) 'E' else 'e');
+    var exp_str = zig[epos + 1 ..];
+    var exp_neg = false;
+    if (exp_str.len > 0 and (exp_str[0] == '+' or exp_str[0] == '-')) {
+        exp_neg = exp_str[0] == '-';
+        exp_str = exp_str[1..];
+    }
+    const exp_val = std.fmt.parseInt(u32, exp_str, 10) catch 0;
+    try w.writeByte(if (exp_neg) '-' else '+');
+    var ebuf: [16]u8 = undefined;
+    const edigits = std.fmt.bufPrint(&ebuf, "{d}", .{exp_val}) catch unreachable;
+    if (edigits.len < 2) try w.writeByte('0');
+    try w.writeAll(edigits);
 }
 
 /// `(subs s start)` / `(subs s start end)` — substring slice over
