@@ -209,6 +209,11 @@ pub fn setupCorePrefix(rt: *Runtime, env: *Env, macro_table: *macro_dispatch.Tab
     installEmbeddedResolver(rt);
     try primitive.registerAll(env);
     try macro_transforms.registerInto(env, macro_table);
+    // D-197: borrow the entry point's table so the `eval` primitive's
+    // `driver.evalValue` verb can analyse forms with the canonical macros.
+    // The comment on `Runtime.macro_table` documented this but the
+    // assignment was missing (eval was dead until D-197 wired it).
+    rt.macro_table = macro_table;
 }
 
 /// AOT bootstrap (ADR-0056 Cycle 2b): restore `clojure.core` from the

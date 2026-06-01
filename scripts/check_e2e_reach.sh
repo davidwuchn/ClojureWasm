@@ -18,12 +18,12 @@ set -uo pipefail
 cd "$(dirname "$0")/.."
 
 # Intentionally-not-gated e2e (feature pending). Format: "<basename> # D-NNN why".
-ALLOWLIST=(
-    "phase14_eval.sh"   # D-197 — clojure.core/eval unimplemented on BOTH backends
-)
+# (Empty — phase14_eval graduated to run_all.sh when D-197 landed eval.)
+ALLOWLIST=()
 
 allowed() {
     local b="$1"
+    [ "${#ALLOWLIST[@]}" -eq 0 ] && return 1
     for a in "${ALLOWLIST[@]}"; do
         [ "${a%% *}" = "$b" ] && return 0
     done

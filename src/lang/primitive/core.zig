@@ -26,6 +26,7 @@ const print_mod = @import("../../runtime/print.zig");
 const charset_mod = @import("../../runtime/charset.zig");
 const td_mod = @import("../../runtime/type_descriptor.zig");
 const class_name = @import("../../runtime/class_name.zig");
+const driver = @import("../../eval/driver.zig");
 
 /// `(__instance? 'Class x)` — row 7.12 cycle 1 Layer-2 primitive
 /// backing the public `instance?` macro. The macro (registered in
@@ -944,6 +945,21 @@ const Entry = struct {
 /// (`equal.valueHash`, also the HAMT key hash). Returned as a signed
 /// 32-bit int (JVM `hash` is a 32-bit `int`); cljw's value is internally
 /// consistent but not bit-identical to the JVM Murmur output.
+/// `(eval form)` — evaluate a runtime data Value as code (ADR-0058 / D-197).
+/// Delegates to `driver.evalValue` (valueToForm → analyze → evalForm), which
+/// dispatches to the active backend, so eval is backend-neutral. A top-level
+/// form has no enclosing locals; the transient arena holds the reconstructed
+/// form + node and is freed after (the result Value is GC-allocated, survives).
+pub fn evalFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    try error_catalog.checkArity("eval", args, 1, loc);
+    var arena = std.heap.ArenaAllocator.init(rt.gpa);
+    defer arena.deinit();
+    // A fresh top-level locals frame (the eval'd form's own `let*` / macro
+    // expansions index into it), sized like the runner's top-level frame.
+    var locals: [driver.MAX_LOCALS]Value = [_]Value{.nil_val} ** driver.MAX_LOCALS;
+    return driver.evalValue(rt, env, &locals, arena.allocator(), args[0], loc);
+}
+
 pub fn hashFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
     _ = rt;
     _ = env;
@@ -1002,6 +1018,7 @@ pub fn resolvePrim(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLoca
 
 const ENTRIES = [_]Entry{
     .{ .name = "hash", .f = &hashFn },
+    .{ .name = "eval", .f = &evalFn },
     .{ .name = "gensym", .f = &gensymFn },
     .{ .name = "__resolve", .f = &resolvePrim },
     .{ .name = "__instance?", .f = &instanceQPrim },

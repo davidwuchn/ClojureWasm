@@ -95,8 +95,9 @@ pub fn evalValue(
     const table_opaque = rt.macro_table orelse
         return error_catalog.raiseInternal(loc, "eval: macro_table not installed");
     const table: *const macro_dispatch.Table = @ptrCast(@alignCast(table_opaque));
-    const form = try arena.create(Form);
-    form.* = try analyzer.valueToForm(arena, value, loc);
+    // `analyze` takes a Form by value (D-197: this verb was dead code until the
+    // `eval` primitive wired it, so the old `*Form` arg never type-checked).
+    const form = try analyzer.valueToForm(arena, value, loc);
     const node = try analyzer.analyze(arena, rt, env, null, form, table);
     return evalForm(rt, env, locals, arena, node);
 }
