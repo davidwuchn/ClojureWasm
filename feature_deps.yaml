@@ -282,7 +282,7 @@ entries:
   - name: clojure.set/rename-keys
     kind: var
     defined_in: src/lang/clj/clojure/set.clj
-    status: provisional
+    status: landed
     requires_features:
       - clojure.core/reduce
       - clojure.core/contains?
@@ -290,17 +290,16 @@ entries:
       - clojure.core/dissoc
       - clojure.core/get
       - clojure.core/nth
-    requires_debts:
-      - D-076
-    provisional_markers:
-      - src/lang/clj/clojure/set.clj (rename-keys — nth destructure)
+    requires_debts: []
+    provisional_markers: []
     notes: |
-      JVM uses vector destructure inside `let`: `(fn [m [old new]]
-      ...)`. cw v1 `let*` does not yet support sequential
-      destructuring (D-076, Phase 7+ target), so the body uses
-      `(nth kv 0)` / `(nth kv 1)` against the map-entry vector.
-      When D-076 lands the body switches to destructure form and
-      this entry flips to `landed`.
+      LANDED 2026-06-02 (D-175 floor drain): the PROVISIONAL marker was
+      stale. D-076 landed destructure in `let` / fn / defn / loop, NOT in
+      `let*` — the primitive special form never gains destructure. This
+      Pattern-A bootstrap file uses `let*`, so `(nth kv 0)` / `(nth kv 1)`
+      over the map-entry vector IS the finished form (mirrors the sibling
+      `map-invert`, whose marker D-074 discharged the same way). No
+      behaviour change; marker removed.
 
   - name: special_form/fn_multi_arity
     kind: special_form

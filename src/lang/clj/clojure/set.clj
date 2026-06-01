@@ -70,7 +70,10 @@
 (def rename-keys
   (fn* [m kmap]
     (reduce (fn* [acc kv]
-              ;; PROVISIONAL: nth-based destructure pending let* vector destructure [refs: D-076, feature_deps.yaml#clojure.set/rename-keys]
+              ;; nth over the map-entry vector is the Pattern-A finished form
+              ;; (mirrors map-invert below); `let*` is the primitive special
+              ;; form and never gains destructure — that is `let`'s job, which
+              ;; this bootstrap-layer file deliberately avoids.
               (let* [old (nth kv 0)
                      new-k (nth kv 1)]
                 (if (contains? m old)
