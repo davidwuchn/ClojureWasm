@@ -30,6 +30,10 @@ confirmed exprs into a `*.txt` corpus here via `--corpus`.
   {ident,keyword,symbol}?.
 - **JSON (data.json)** — read/write number parity incl. BigInt both directions
   (D-182). `:bigdec` opt + ratio write are minor residuals.
+- **atom / swap! family** — atom/deref, swap! (fn / +args / update), reset!,
+  compare-and-set! (hit + miss), swap-vals!/reset-vals! ([old new]), swap-over-
+  collection, dotimes-swap, reset-then-swap — all at parity. Corpus `atom_swap`.
+  (Watch family `add-watch`/`remove-watch` is Phase-15-deferred, D-157.)
 - **clojure.string deeper edges** — split (limit + regex), replace
   (literal-string / regex / `$N` capture / fn), replace-first, includes?/
   starts-with?/ends-with?, blank?(+nil), triml/trimr, capitalize, join,
