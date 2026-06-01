@@ -80,9 +80,22 @@ fn jsonToCw(rt: *Runtime, jv: std.json.Value, loc: SourceLocation) anyerror!Valu
             break :blk Value.initInteger(i);
         },
         .float => |f| Value.initFloat(f),
-        .number_string => error_catalog.raise(.feature_not_supported, loc, .{
-            .name = "JSON arbitrary-precision number (BigInt path pending)",
-        }),
+        .number_string => |s| blk: {
+            // std.json hands back a number_string when the value does not fit
+            // i64. JVM data.json (default opts): a decimal → Double, an integer
+            // beyond Long → BigInteger. So a `.`/`e`/`E` mantissa parses to f64,
+            // otherwise the digit string lifts to a BigInt (≥2^64 inherits the
+            // D-047 setString Linux divergence, same as `…N` literals).
+            if (std.mem.findAny(u8, s, ".eE") != null) {
+                break :blk Value.initFloat(std.fmt.parseFloat(f64, s) catch
+                    return error_catalog.raise(.number_format_invalid, loc, .{ .fn_name = "read-str", .text = s }));
+            }
+            var m = try std.math.big.int.Managed.init(rt.gc.infra);
+            defer m.deinit();
+            m.setString(10, s) catch
+                return error_catalog.raise(.number_format_invalid, loc, .{ .fn_name = "read-str", .text = s });
+            break :blk try big_int_mod.allocFromManaged(rt, &m);
+        },
         .string => |s| try string_collection.alloc(rt, s),
         .array => |arr| blk: {
             var out = vector_collection.empty();
