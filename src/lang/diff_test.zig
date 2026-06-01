@@ -141,6 +141,22 @@ test "diff: vector keys by value (D-092) — keyEqValue/valueHash backend-shared
     try f.check("(if (contains? {[1 2] :a} [1 2]) 10 20)", 10);
 }
 
+test "diff: map/set/list keys by value (D-092) — keyEqValue/valueHash backend-shared" {
+    var f = try Fixture.init(testing.allocator);
+    defer f.deinit();
+    // Collection-as-key content hash + equality (equal.zig + map/set.zig)
+    // are runtime/, shared by both backends, so the lookups agree.
+    // Collection KEYS are literals (the minimal fixture lacks core.clj, so
+    // a runtime-call key like `(list 1 2)` is exercised in the e2e instead).
+    try f.check("(get {{:a 1} 42} {:a 1})", 42); // map key
+    try f.check("(count (assoc {} {:k 1} 1 {:k 1} 2))", 1); // dedup
+    try f.check("(get {#{1 2} 7} #{2 1})", 7); // set key (order-indep)
+    try f.check("(get {'(1 2) 5} '(1 2))", 5); // list key
+    try f.check("(get {[1 2] 9} '(1 2))", 9); // cross vec≡list
+    try f.check("(count #{{:a 1} {:a 1} {:a 2}})", 2); // set-literal dedup of map elems
+    try f.check("(count (conj #{{:a 1}} {:a 1}))", 1); // set elem content dedup
+}
+
 test "diff: runtime metadata (meta / with-meta) — backend-shared" {
     var f = try Fixture.init(testing.allocator);
     defer f.deinit();

@@ -46,6 +46,7 @@ const mark_sweep = @import("../gc/mark_sweep.zig");
 const list_mod = @import("list.zig");
 const vector_mod = @import("vector.zig");
 const equal = @import("../equal.zig");
+const hash = @import("../hash.zig");
 
 /// ArrayMap threshold: at most 8 K/V pairs before promotion to
 /// HamtMap. Per ROADMAP row 5.5 wording + survey recommendation.
@@ -388,6 +389,112 @@ pub fn get(v: Value, k: Value) !Value {
         .nil => Value.nil_val,
         else => Value.nil_val,
     };
+}
+
+// --- Map-as-key content hash + equality (D-092) ----------------------
+//
+// rt-free so they can partner `equal.valueHash` / `equal.keyEqValue`
+// (whose ~68 call sites lack a Runtime). A map's hash folds each entry's
+// (keyHash, valHash) and combines entries by an order-independent sum, so
+// two maps built by different insertion paths hash equal. The ratio /
+// big_decimal element residual is shared with the vector-key path.
+
+inline fn entryHash(k: Value, v: Value) u32 {
+    return equal.valueHash(k) *% 31 +% equal.valueHash(v);
+}
+
+fn hamtFoldHash(node: *const HamtMapNode, acc: *u32, comptime keys_only: bool) void {
+    const dc = @popCount(node.data_map);
+    var i: u32 = 0;
+    while (i < dc) : (i += 1) {
+        acc.* +%= if (keys_only)
+            equal.valueHash(node.slots[2 * i])
+        else
+            entryHash(node.slots[2 * i], node.slots[2 * i + 1]);
+    }
+    const nc = @popCount(node.node_map);
+    var j: u32 = 0;
+    while (j < nc) : (j += 1)
+        hamtFoldHash(node.slots[63 - j].decodePtr(*const HamtMapNode), acc, keys_only);
+}
+
+fn foldHash(v: Value, comptime keys_only: bool) u32 {
+    var acc: u32 = 0;
+    switch (v.tag()) {
+        .array_map => {
+            const am = v.decodePtr(*const ArrayMap);
+            var i: u32 = 0;
+            while (i < am.count) : (i += 1)
+                acc +%= if (keys_only)
+                    equal.valueHash(am.entries[2 * i])
+                else
+                    entryHash(am.entries[2 * i], am.entries[2 * i + 1]);
+        },
+        .hash_map => if (v.decodePtr(*const PersistentHashMap).root) |root|
+            hamtFoldHash(root, &acc, keys_only),
+        else => {},
+    }
+    return hash.mixCollHash(acc, count(v));
+}
+
+/// Content hash of a map (rt-free): order-independent over entries.
+pub fn contentHash(v: Value) u32 {
+    return foldHash(v, false);
+}
+
+/// Order-independent hash over a map's keys only — the set hash partner
+/// (a set is a map with sentinel values, so folding values would mix the
+/// sentinel in; sets fold element hashes directly).
+pub fn keysetHash(v: Value) u32 {
+    return foldHash(v, true);
+}
+
+fn entryMatches(k: Value, v: Value, b: Value, comptime check_val: bool) bool {
+    if (!(contains(b, k) catch return false)) return false;
+    if (!check_val) return true;
+    return equal.keyEqValue(v, get(b, k) catch return false);
+}
+
+fn hamtSubset(node: *const HamtMapNode, b: Value, comptime check_val: bool) bool {
+    const dc = @popCount(node.data_map);
+    var i: u32 = 0;
+    while (i < dc) : (i += 1)
+        if (!entryMatches(node.slots[2 * i], node.slots[2 * i + 1], b, check_val)) return false;
+    const nc = @popCount(node.node_map);
+    var j: u32 = 0;
+    while (j < nc) : (j += 1)
+        if (!hamtSubset(node.slots[63 - j].decodePtr(*const HamtMapNode), b, check_val)) return false;
+    return true;
+}
+
+fn subsetOf(a: Value, b: Value, comptime check_val: bool) bool {
+    switch (a.tag()) {
+        .array_map => {
+            const am = a.decodePtr(*const ArrayMap);
+            var i: u32 = 0;
+            while (i < am.count) : (i += 1)
+                if (!entryMatches(am.entries[2 * i], am.entries[2 * i + 1], b, check_val)) return false;
+            return true;
+        },
+        .hash_map => {
+            const root = a.decodePtr(*const PersistentHashMap).root orelse return true;
+            return hamtSubset(root, b, check_val);
+        },
+        else => return false,
+    }
+}
+
+/// Content equality of two maps as keys (rt-free): same count + every
+/// entry of `a` present in `b` with a key-equal value.
+pub fn contentEq(a: Value, b: Value) bool {
+    if (count(a) != count(b)) return false;
+    return subsetOf(a, b, true);
+}
+
+/// Every key of `a` is contained in `b` (values ignored) — the set
+/// equality partner.
+pub fn keysSubsetOf(a: Value, b: Value) bool {
+    return subsetOf(a, b, false);
 }
 
 // --- HAMT body (D-045 cycle A): CHAMP trie over `equal.valueHash` ---

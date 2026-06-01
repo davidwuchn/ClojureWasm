@@ -1,0 +1,40 @@
+(get {{:a 1} :found} {:a 1})
+;;=> :found
+(contains? {{:a 1} 0} {:a 1})
+;;=> true
+(count (assoc {} {:k 1} :x {:k 1} :y))
+;;=> 1
+(get (assoc {} {:k 1} :x {:k 1} :y) {:k 1})
+;;=> :y
+(get {#{1 2} :s} #{2 1})
+;;=> :s
+(count (set [#{1 2} #{2 1}]))
+;;=> 1
+(get {'(1 2) :l} '(1 2))
+;;=> :l
+(get {[1 2] :v} '(1 2))
+;;=> :v
+(get {'(1 2) :l} [1 2])
+;;=> :l
+(get (frequencies [{:a 1} {:a 1} {:b 2}]) {:a 1})
+;;=> 2
+(count (set [{:a 1} {:a 1} {:a 2}]))
+;;=> 2
+(count (distinct [{:a 1} {:a 1} {:b 2}]))
+;;=> 2
+(get (zipmap [{:a 1} {:b 2}] [10 20]) {:a 1})
+;;=> 10
+(count (clojure.set/index #{{:a 1 :b 1} {:a 1 :b 2} {:a 2 :b 3}} [:a]))
+;;=> 2
+(count (clojure.set/join #{{:a 1 :b 2}} #{{:a 1 :c 3}}))
+;;=> 1
+(= (hash {:a 1 :b 2}) (hash {:b 2 :a 1}))
+;;=> true
+(= (hash #{1 2}) (hash #{2 1}))
+;;=> true
+(= (hash [1 2]) (hash '(1 2)))
+;;=> true
+(get {{:m {:k 1}} :deep} {:m {:k 1}})
+;;=> :deep
+(get (into {} (map (fn [i] [{:i i} i]) (range 20))) {:i 7})
+;;=> 7

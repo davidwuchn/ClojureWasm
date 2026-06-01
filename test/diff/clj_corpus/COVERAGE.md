@@ -30,15 +30,27 @@ confirmed exprs into a `*.txt` corpus here via `--corpus`.
   {ident,keyword,symbol}?.
 - **JSON (data.json)** — read/write number parity incl. BigInt both directions
   (D-182). `:bigdec` opt + ratio write are minor residuals.
+- **Collections as keys / set elements** (D-092 discharged) — map / set / list
+  AND cross-type vector≡list hash + compare by content (`(get {{:a 1} :x} {:a 1})`,
+  `(get {[1 2] :v} '(1 2))`, set/`distinct`/`frequencies` dedup of collections,
+  `clojure.set/index`/`join` map-key merge). `(hash coll)` is content-based +
+  order-independent for maps/sets. Corpus `collection_keys`. Lazy/range keys
+  stay identity (rt-free residual).
 
 ## Next-sweep candidates (gap-confirmed or unswept)
 
 - **Low-value bit ops** (unswept, low call-frequency): Integer/Long
   `lowestOneBit`/`reverseBytes`/`rotateLeft`(2-arg)/`rotateRight`(2-arg)/`signum`.
-- **Unswept areas** worth a focused pass: `clojure.set` / `clojure.walk` deeper
-  edges, metadata (`vary-meta`/`alter-meta!`/`with-meta` on more types), `reduce`/
-  `reduced` edge cases, `clojure.edn` round-trips, destructuring corners,
-  multimethod (`defmulti`/`defmethod` hierarchy), `clojure.data/diff`.
+- **`clojure.set` / `clojure.walk`** — swept 2026-06-02 (§A26): union/intersection/
+  difference/subset?/superset?/select/project/rename/rename-keys/map-invert/index/
+  join + prewalk/postwalk/*-replace/keywordize-keys/stringify-keys/walk all at
+  parity (only set print order + the now-fixed collection-key bug diverged).
+  Residual: `intersection`/`difference` 0-arity (cljw variadic returns nil; JVM has
+  no 0-arity → ArityException) — low-value edge; `macroexpand-all` is a stub.
+- **Unswept areas** worth a focused pass: metadata (`vary-meta`/`alter-meta!`/
+  `with-meta` on more types), `reduce`/`reduced` edge cases, `clojure.edn`
+  round-trips, destructuring corners, multimethod (`defmulti`/`defmethod`
+  hierarchy), `clojure.data/diff`.
 - **`random-sample`** — undefined (1-arg transducer + 2-arg; non-deterministic).
 - **Remaining Java interop** (structural-deferred, array/regex repr):
   `.split`/`.toCharArray`/`.getBytes` (needs F-004 Group-D `array` slot);

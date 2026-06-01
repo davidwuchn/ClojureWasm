@@ -197,19 +197,35 @@ fn setEqual(rt: *Runtime, a: Value, b: Value) anyerror!bool {
 /// `valueEqual` needs `rt`; cross-type vec≡list keys also pending).
 pub fn keyEqValue(a: Value, b: Value) bool {
     if (@intFromEnum(a) == @intFromEnum(b)) return true;
-    if (a.tag() == .string and b.tag() == .string)
+    const ta = a.tag();
+    const tb = b.tag();
+    if (ta == .string and tb == .string)
         return std.mem.eql(u8, string_mod.asString(a), string_mod.asString(b));
-    // Vector keys by value (D-092): element-wise, recursively (so nested
-    // vectors + the int/string/kw element comparison all ride keyEqValue).
-    // List / cross-type vec≡list keys remain a residual.
-    if (a.tag() == .vector and b.tag() == .vector)
-        return vectorKeyEq(a, b);
+    // Sequential keys (vector / list) by value, element-wise + recursive,
+    // any cross-pairing (a vector key is = a list key with equal elements,
+    // matching Clojure's sequential =) (D-092). Lazy / range keys are a
+    // residual (cannot realize rt-free).
+    if (isSeqKeyTag(ta) and isSeqKeyTag(tb))
+        return seqKeyEq(a, b);
+    // Map / set keys by value, rt-free via the collection module (D-092).
+    if (isMapTag(ta) and isMapTag(tb))
+        return map.contentEq(a, b);
+    if (ta == .hash_set and tb == .hash_set)
+        return set.contentEq(a, b);
     // defrecord keys by value (partner of typedInstanceEqual): same
     // descriptor + each field keyEqValue. deftype stays identity (a
     // non-bit-identical pair already fell through the identity check).
-    if (a.tag() == .typed_instance and b.tag() == .typed_instance)
+    if (ta == .typed_instance and tb == .typed_instance)
         return typedInstanceKeyEq(a, b);
     return false;
+}
+
+inline fn isSeqKeyTag(t: Value.Tag) bool {
+    return t == .vector or t == .list;
+}
+
+inline fn isMapTag(t: Value.Tag) bool {
+    return t == .array_map or t == .hash_map;
 }
 
 fn typedInstanceKeyEq(a: Value, b: Value) bool {
@@ -227,34 +243,33 @@ fn typedInstanceKeyEq(a: Value, b: Value) bool {
     return true;
 }
 
-fn vectorKeyEq(a: Value, b: Value) bool {
-    const n = vector.count(a);
-    if (n != vector.count(b)) return false;
-    var i: u32 = 0;
-    while (i < n) : (i += 1) {
-        if (!keyEqValue(vector.nth(a, i), vector.nth(b, i))) return false;
-    }
-    return true;
-}
-
-/// HAMT key hash — the hash partner of `keyEqValue`. MUST satisfy
-/// `keyEqValue(a,b) ⇒ valueHash(a) == valueHash(b)`. Since `keyEqValue`
-/// is bit-identity OR (string AND byte-equal), the ONLY branch needing
-/// care is `.string`: two distinct String Values with equal bytes are
-/// key-equal, so strings hash by BYTES, never by pointer. Every other
-/// key is bit-identity-compared, so hashing the raw NaN-box bits is
-/// contract-consistent. int/float use the JVM-shaped numeric hash so
-/// `{1 :a}` and `1.0` stay distinct (their bits already differ in
-/// `keyEqValue`). nil → 0.
+/// HAMT key hash — also the user-facing `(hash x)` (core.hashFn delegates
+/// here). MUST satisfy `keyEqValue(a,b) ⇒ valueHash(a) == valueHash(b)`.
+/// By-value branches mirror keyEqValue's by-value arms: strings hash by
+/// BYTES; sequentials (vector / list) by ordered content (one shared
+/// formula → vec≡list collide); maps / sets by order-independent content;
+/// defrecords by descriptor + fields. int/float use the numeric hash so
+/// `{1 :a}` and `1.0` stay distinct. Everything else (immediates, interned
+/// keyword·symbol, lazy / range, deftype) is identity-compared in
+/// keyEqValue, so hashing the raw NaN-box bits is contract-consistent.
+/// nil → 0. cljw's value is internally consistent, not bit-identical to
+/// the JVM Murmur output.
 pub fn valueHash(v: Value) u32 {
     return switch (v.tag()) {
         .string => hash.hashString(string_mod.asString(v)),
         .integer => hash.hashLong(@as(i64, v.asInteger())),
         .float => hash.hashLong(@bitCast(v.asFloat())),
         .nil => 0,
-        // Vector keys hash by content (ordered, recursive) so two equal
-        // vectors land in the same bucket — the partner of vectorKeyEq (D-092).
-        .vector => vectorHash(v),
+        // Sequential keys (vector / list) hash by content, ordered +
+        // recursive, via the SAME formula so an equal vector and list
+        // collide into one bucket (Clojure's sequential =). Partner of
+        // seqKeyEq (D-092).
+        .vector, .list => seqHash(v),
+        // Map / set keys hash by content (order-independent), rt-free via
+        // the collection module's structure walk (D-092). Partner of
+        // map.contentEq / set.contentEq.
+        .array_map, .hash_map => map.contentHash(v),
+        .hash_set => set.contentHash(v),
         // defrecord keys hash by descriptor + fields (partner of
         // typedInstanceKeyEq); deftype keeps the identity bit-hash.
         .typed_instance => blk: {
@@ -278,17 +293,67 @@ fn typedInstanceHash(inst: *const td_mod.TypedInstance) u32 {
     return hash.mixCollHash(h, @intCast(fields.len));
 }
 
-/// Order-dependent content hash of a vector (mirrors `hash.hashOrdered`
-/// inline to avoid materialising an element-hash slice; recurses through
-/// `valueHash` so nested vectors hash by content too).
-fn vectorHash(v: Value) u32 {
-    const n = vector.count(v);
+/// An rt-free element cursor over an already-realized sequential
+/// (vector by index, list by first/rest). Unlike the `Cursor` above it
+/// takes no `rt`/`env`, so it can serve `valueHash` / `keyEqValue` (whose
+/// call sites lack a Runtime). Lazy / range keys stay identity (cannot be
+/// realized rt-free) — a documented residual shared with their hash.
+const SeqKeyCursor = union(enum) {
+    vec: struct { v: Value, i: u32, n: u32 },
+    lst: Value,
+
+    fn init(v: Value) SeqKeyCursor {
+        return switch (v.tag()) {
+            .vector => .{ .vec = .{ .v = v, .i = 0, .n = vector.count(v) } },
+            else => .{ .lst = v },
+        };
+    }
+
+    fn next(self: *SeqKeyCursor) ?Value {
+        switch (self.*) {
+            .vec => |*s| {
+                if (s.i >= s.n) return null;
+                const e = vector.nth(s.v, s.i);
+                s.i += 1;
+                return e;
+            },
+            .lst => |*node| {
+                if (node.tag() != .list or list.countOf(node.*) == 0) return null;
+                const e = list.first(node.*);
+                node.* = list.rest(node.*);
+                return e;
+            },
+        }
+    }
+};
+
+/// Order-dependent content hash of a sequential (vector / list), the
+/// `hash.hashOrdered` formula inlined over a `SeqKeyCursor` so vectors and
+/// lists with equal elements produce one hash; recurses through
+/// `valueHash` so nested collections hash by content too.
+fn seqHash(v: Value) u32 {
     var h: u32 = 1;
-    var i: u32 = 0;
-    while (i < n) : (i += 1) {
-        h = h *% 31 +% valueHash(vector.nth(v, i));
+    var n: u32 = 0;
+    var c = SeqKeyCursor.init(v);
+    while (c.next()) |e| {
+        h = h *% 31 +% valueHash(e);
+        n += 1;
     }
     return hash.mixCollHash(h, n);
+}
+
+/// Element-wise equality of two sequential keys (vector / list, any
+/// cross-pairing), rt-free over `SeqKeyCursor`. Partner of `seqHash`.
+fn seqKeyEq(a: Value, b: Value) bool {
+    var ca = SeqKeyCursor.init(a);
+    var cb = SeqKeyCursor.init(b);
+    while (true) {
+        const ea = ca.next();
+        const eb = cb.next();
+        if (ea == null and eb == null) return true;
+        if (ea == null or eb == null) return false;
+        if (!keyEqValue(ea.?, eb.?)) return false;
+    }
 }
 
 /// `(= a b)` semantics. See module docstring + ADR-0052.

@@ -79,6 +79,25 @@ pub fn contains(v: Value, e: Value) !bool {
     };
 }
 
+/// Content hash of a set as a key (rt-free, order-independent) — folds
+/// element hashes over the backing map's keys. Partner of
+/// `equal.valueHash` / `equal.keyEqValue` set arms (D-092).
+pub fn contentHash(v: Value) u32 {
+    return switch (v.tag()) {
+        .hash_set => map_mod.keysetHash(v.decodePtr(*const PersistentHashSet).map),
+        else => 0,
+    };
+}
+
+/// Content equality of two sets as keys (rt-free): same count + every
+/// element of `a` present in `b`. Rides the backing maps' key subset.
+pub fn contentEq(a: Value, b: Value) bool {
+    if (count(a) != count(b)) return false;
+    const am = a.decodePtr(*const PersistentHashSet).map;
+    const bm = b.decodePtr(*const PersistentHashSet).map;
+    return map_mod.keysSubsetOf(am, bm);
+}
+
 /// `(conj s e)` — returns a new set with `e` added. Idempotent —
 /// re-adding an existing element returns an equivalent set
 /// (current implementation may copy; identity-preservation deferred).
