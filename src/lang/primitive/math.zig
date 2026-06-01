@@ -685,8 +685,19 @@ pub fn bigintCoerce(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLoc
     try error_catalog.checkArity("bigint", args, 1, loc);
     const v = args[0];
     if (v.tag() == .big_int) return v;
+    if (v.tag() == .string) {
+        // `(bigint "999…")` → arbitrary-precision N. setString(10) accepts
+        // `[-]ddd` and rejects `.` / `e` / non-digits, matching clj's
+        // NumberFormatException on those. (`bigint` large-float: D-191.)
+        const s = string_mod.asString(v);
+        var m = try std.math.big.int.Managed.init(rt.gc.infra);
+        defer m.deinit();
+        m.setString(10, s) catch
+            return error_catalog.raise(.number_format_invalid, loc, .{ .fn_name = "bigint", .text = s });
+        return big_int_mod.allocFromManaged(rt, &m);
+    }
     const i = promote.truncToI64(rt, v) catch |err| switch (err) {
-        error.OutOfRange => return error_catalog.raise(.type_arg_invalid, loc, .{ .fn_name = "bigint", .expected = "a value within Long range (large-float / string bigint: D-191)", .actual = "out-of-range number" }),
+        error.OutOfRange => return error_catalog.raise(.type_arg_invalid, loc, .{ .fn_name = "bigint", .expected = "a value within Long range (large-float bigint: D-191)", .actual = "out-of-range number" }),
         error.NotANumber => return error_catalog.raise(.type_arg_not_number, loc, .{ .fn_name = "bigint", .actual = @tagName(v.tag()) }),
         else => return err,
     };

@@ -84,6 +84,10 @@ assert_eq 'bigint_int'    "$("$BIN" -e '(bigint 100)' 2>/dev/null | tail -1)" '1
 assert_eq 'bigint_trunc'  "$("$BIN" -e '(bigint 3.9)' 2>/dev/null | tail -1)" '3N'
 assert_eq 'bigint_negtrunc' "$("$BIN" -e '(bigint -3.9)' 2>/dev/null | tail -1)" '-3N'
 assert_eq 'bigint_ratio'  "$("$BIN" -e '(bigint 1/2)' 2>/dev/null | tail -1)" '0N'
+# (bigint "..."): arbitrary-precision via setString (D-191 string arm).
+assert_eq 'bigint_str'    "$("$BIN" -e '(bigint "100")' 2>/dev/null | tail -1)" '100N'
+assert_eq 'bigint_str_neg' "$("$BIN" -e '(bigint "-5")' 2>/dev/null | tail -1)" '-5N'
+assert_eq 'bigint_str_big' "$("$BIN" -e '(bigint "999999999999999999999999999")' 2>/dev/null | tail -1)" '999999999999999999999999999N'
 # --- (bigdec x): int/BigInt→scale0, BigDecimal passthrough, float via toString ---
 assert_eq 'bigdec_int'    "$("$BIN" -e '(bigdec 100)' 2>/dev/null | tail -1)" '100M'
 assert_eq 'bigdec_float'  "$("$BIN" -e '(bigdec 1.5)' 2>/dev/null | tail -1)" '1.5M'
@@ -96,4 +100,4 @@ assert_eq 'bigdec_str_frac' "$("$BIN" -e '(bigdec "1.50")' 2>/dev/null | tail -1
 assert_eq 'bigdec_str_int'  "$("$BIN" -e '(bigdec "100")' 2>/dev/null | tail -1)" '100M'
 assert_eq 'bigdec_str_neg'  "$("$BIN" -e '(bigdec "-3.14")' 2>/dev/null | tail -1)" '-3.14M'
 
-echo "OK — phase14_class_type (26 cases) green"
+echo "OK — phase14_class_type (29 cases) green"
