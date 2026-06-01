@@ -10,16 +10,16 @@
   e2e pool intermittently times out under host load — use `timeout 1800 bash
   test/run_all.sh --serial-e2e` (memory `gate-parallel-e2e-timeout`).
 - **The reasonably-scoped quality-loop floor is FULLY DRAINED** (incl. the
-  structural D-184). **First on resume**: pick ONE remaining LARGER STRUCTURAL
-  feature, each a fresh deliberate cycle (Step-0 survey + ADR/DA-fork where
-  noted) — NOT a quick coverage drain:
-  - **D-160 3-arg multi-coll `sequence`** — needs multi-arg transducer steps
-    (every xform's step becomes variadic); broad transducer-protocol change.
+  structural D-184; **D-190 DONE 2026-06-01 / ADR-0068** — Sequential marker
+  protocol: seq-print + record map-style + `sequential?`; marker protocols now
+  work end-to-end on deftype). **First commit MUST be: D-160 3-arg multi-coll
+  `sequence`** (fresh deliberate cycle: Step-0 survey + DA-fork) — needs
+  multi-arg transducer steps (every xform's step becomes variadic); broad
+  transducer-protocol change. Then other LARGER STRUCTURAL features (NOT a
+  quick coverage drain):
   - **D-182 read `.number_string`** — i64-overflow JSON integers need the
     cljw BigInt digit-string parser (analyzer-internal, `setString` avoided)
     extracted to a callable layer + the `:bigdec`-vs-Double decimal decision.
-  - **D-190** eduction prints `#Eduction[..]` not its seq — needs print-method
-    infra (a `print-method`-equivalent / `Sequential` marker).
   - **D-086** defrecord `__extmap` (TypedInstance layout, Phase 8, +ADR);
     **D-088** protocol fqcn ns-scope (tied to D-058/D-079 ns surface).
   - Standing F-003 structural: D-164 empty≡nil, D-165 i48→i64, D-178/179.
