@@ -264,6 +264,12 @@ export CLJW_OPT="${CLJW_OPT:-ReleaseSafe}"
 run_step "build_cljw"           "zig build -Doptimize=$CLJW_OPT"
 export CLJW_SKIP_BUILD=1
 
+# clj-diff corpus regression (cljw-only replay of golden `;;=> …` pairs —
+# no clj/network). Makes a "X/Y landed" discharge claim mechanically
+# re-checkable (anti D-177 false-positive-discharge) + catches behaviour
+# drift. See .claude/rules/clj_diff_sweep.md.
+run_step "corpus_regression"   "bash scripts/check_corpus_regression.sh"
+
 run_step "e2e_phase2_exit"     "bash test/e2e/phase2_exit.sh"
 run_step "e2e_phase3_cli"      "bash test/e2e/phase3_cli.sh"
 run_step "e2e_phase3_exit"     "bash test/e2e/phase3_exit.sh"

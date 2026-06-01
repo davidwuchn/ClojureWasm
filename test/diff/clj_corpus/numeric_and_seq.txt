@@ -1,0 +1,42 @@
+(bigdec 1/4)
+;;=> 0.25M
+(bigdec "1.50")
+;;=> 1.50M
+(bigint "12345678901234567890")
+;;=> 12345678901234567890N
+(bigdec 1e30)
+;;=> 1.0E+30M
+(* 1.5M 2)
+;;=> 3.0M
+(* 1.5M 2.0)
+;;=> 3.0
+(/ 1.5M 2)
+;;=> 0.75M
+(quot 7.5M 2)
+;;=> 3.0M
+(rem 1.50M 0.7M)
+;;=> 0.10M
+(get-in {:a {:b 5}} [:a :b] :nf)
+;;=> 5
+(get-in {:a nil} [:a] :nf)
+;;=> nil
+(drop-last 2 [1 2 3 4])
+;;=> (1 2)
+(into [] (take-while pos?) [1 2 -1 3])
+;;=> [1 2]
+(into [] (take-nth 2) [1 2 3 4 5])
+;;=> [1 3 5]
+(into [] (interpose 0) [1 2 3])
+;;=> [1 0 2 0 3]
+(into [] (partition-by odd?) [1 1 2 3])
+;;=> [[1 1] [2] [3]]
+(into [] (keep-indexed (fn [i x] (when (odd? i) x))) [:a :b :c :d])
+;;=> [:b :d]
+(rational? 1/2)
+;;=> true
+(seqable? "x")
+;;=> true
+(qualified-keyword? :a/b)
+;;=> true
+(re-pattern "a.c")
+;;=> #"a.c"
