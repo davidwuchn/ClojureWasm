@@ -424,13 +424,16 @@
   (fn* ([f] (let* [ret (f)] (if (fn? ret) (trampoline ret) ret)))
        ([f & args] (trampoline (fn* [] (apply f args))))))
 
-;; `(replace smap coll)` — replace elements of coll that are keys in
-;; smap with their values. Vector in → vector out; seq in → lazy seq.
+;; `(replace smap)` / `(replace smap coll)` — replace elements that are keys in
+;; smap with their values. The 1-arg form is a transducer (`(map …)`); the 2-arg
+;; form keeps vector in → vector out, seq in → lazy seq.
 (def replace
-  (fn* [smap coll]
-    (if (vector? coll)
-      (reduce (fn* [acc x] (conj acc (if (contains? smap x) (get smap x) x))) [] coll)
-      (map (fn* [x] (if (contains? smap x) (get smap x) x)) coll))))
+  (fn* ([smap]
+        (map (fn* [x] (if (contains? smap x) (get smap x) x))))
+       ([smap coll]
+        (if (vector? coll)
+          (reduce (fn* [acc x] (conj acc (if (contains? smap x) (get smap x) x))) [] coll)
+          (map (fn* [x] (if (contains? smap x) (get smap x) x)) coll)))))
 
 ;; `(not= x …)` — logical complement of `=`. `(fnext x)` = `(first (next x))`,
 ;; `(nnext x)` = `(next (next x))` — the first/next combinators. `(run! f
@@ -1040,14 +1043,23 @@
         ;; Returns a SEQ (JVM parity).
         (seq (mapv (fn* [i] (f i (nth coll i))) (range (count coll)))))))
 
-;; `(keep-indexed f coll)` — like map-indexed but drops nil results.
-;; Returns a SEQ (JVM parity).
+;; `(keep-indexed f)` / `(keep-indexed f coll)` — like map-indexed but drops
+;; nil results. The 1-arg form is a stateful transducer (running index); the
+;; 2-arg form returns a SEQ (JVM parity).
 (def keep-indexed
-  (fn* [f coll]
-    (seq (reduce (fn* [acc i]
-                   (let [r (f i (nth coll i))] (if (nil? r) acc (conj acc r))))
-                 []
-                 (range (count coll))))))
+  (fn* ([f]
+        (fn* [rf]
+          (let [iv (volatile! -1)]
+            (fn* ([] (rf))
+                 ([result] (rf result))
+                 ([result input]
+                  (let [i (vswap! iv inc) v (f i input)]
+                    (if (nil? v) result (rf result v))))))))
+       ([f coll]
+        (seq (reduce (fn* [acc i]
+                       (let [r (f i (nth coll i))] (if (nil? r) acc (conj acc r))))
+                     []
+                     (range (count coll)))))))
 
 ;; `(butlast coll)` — all but the final element (eager list via reverse).
 (def butlast
@@ -1082,15 +1094,24 @@
           nil)))))
 
 ;; `(take-while pred coll)` — leading run for which pred is truthy (lazy).
+;; `(take-while pred)` / `(take-while pred coll)` — the leading pred-truthy run.
+;; The 1-arg form is a transducer that `reduced`s the result on the first
+;; falsey item; the 2-arg form is lazy.
 (def take-while
-  (fn* [pred coll]
-    (lazy-seq
-      (let [s (seq coll)]
-        (if s
-          (if (pred (first s))
-            (cons (first s) (take-while pred (rest s)))
-            nil)
-          nil)))))
+  (fn* ([pred]
+        (fn* [rf]
+          (fn* ([] (rf))
+               ([result] (rf result))
+               ([result input]
+                (if (pred input) (rf result input) (reduced result))))))
+       ([pred coll]
+        (lazy-seq
+          (let [s (seq coll)]
+            (if s
+              (if (pred (first s))
+                (cons (first s) (take-while pred (rest s)))
+                nil)
+              nil))))))
 
 ;; `(drop-while pred)` / `(drop-while pred coll)` — drop the leading pred-truthy
 ;; run. The 1-arg form is a stateful transducer (drop until the first falsey,
@@ -1127,12 +1148,22 @@
 ;; — true iff x supports rseq: vector + sorted map/set (LLRB, ADR-0057).
 (def counted? (fn* [x] (or (vector? x) (map? x) (set? x) (list? x))))
 (def reversible? (fn* [x] (or (vector? x) (sorted? x))))
-;; `(take-nth n coll)` — every nth item (lazy).
+;; `(take-nth n)` / `(take-nth n coll)` — every nth item. The 1-arg form is a
+;; stateful transducer (emit when the running index is a multiple of n); the
+;; 2-arg form is lazy.
 (def take-nth
-  (fn* [n coll]
-    (lazy-seq
-      (let [s (seq coll)]
-        (if s (cons (first s) (take-nth n (drop n s))) nil)))))
+  (fn* ([n]
+        (fn* [rf]
+          (let [iv (volatile! -1)]
+            (fn* ([] (rf))
+                 ([result] (rf result))
+                 ([result input]
+                  (let [i (vswap! iv inc)]
+                    (if (zero? (rem i n)) (rf result input) result)))))))
+       ([n coll]
+        (lazy-seq
+          (let [s (seq coll)]
+            (if s (cons (first s) (take-nth n (drop n s))) nil))))))
 ;; `(list* a* tail)` — prepend the leading args onto the final seq arg.
 ;; Explicit 1-4 arg forms (the common cases incl. the `(list* a args)`
 ;; macro idiom); 5+-arg variadic deferred (needs a primitive-only spread).
@@ -1147,14 +1178,38 @@
 ;; onto a lazy_seq caches a wrong `count` (D-153), but a lazy_seq counts
 ;; by realizing — and `(f (first s)) = fv` so the first element is in run.
 (def partition-by
-  (fn* [f coll]
-    (lazy-seq
-      (let [s (seq coll)]
-        (if s
-          (let [fv (f (first s))
-                run (take-while (fn* [x] (= (f x) fv)) s)]
-            (cons run (partition-by f (drop (count run) s))))
-          nil)))))
+  (fn* ([f]
+        ;; Stateful transducer: accumulate a run in `a`; on an `f`-value change
+        ;; flush the run downstream, then (unless reduced) start a new run with
+        ;; the boundary element. The completion arm flushes the final run.
+        (fn* [rf]
+          (let [a (volatile! [])
+                pv (volatile! nil)
+                started (volatile! false)]
+            (fn* ([] (rf))
+                 ([result]
+                  (let [result (if (zero? (count @a))
+                                 result
+                                 (let [v @a] (vreset! a []) (unreduced (rf result v))))]
+                    (rf result)))
+                 ([result input]
+                  (let [val (f input) prev @pv was @started]
+                    (vreset! pv val)
+                    (vreset! started true)
+                    (if (or (not was) (= val prev))
+                      (do (vswap! a conj input) result)
+                      (let [v @a]
+                        (vreset! a [])
+                        (let [ret (rf result v)]
+                          (if (reduced? ret) ret (do (vswap! a conj input) ret)))))))))))
+       ([f coll]
+        (lazy-seq
+          (let [s (seq coll)]
+            (if s
+              (let [fv (f (first s))
+                    run (take-while (fn* [x] (= (f x) fv)) s)]
+                (cons run (partition-by f (drop (count run) s))))
+              nil))))))
 
 ;; `(partition n coll)` / `(partition n step coll)` — lazy seq of n-item
 ;; groups stepping by `step` (default n); the final incomplete group is

@@ -102,4 +102,12 @@ assert_eq 'ed_next'      "$("$BIN" -e '(into [] (next (eduction (map inc) [5 6 7
 # seq, and (sequential? eduction) is true (was #Eduction[..] / false).
 assert_eq 'ed_print'     "$("$BIN" -e '(eduction (map inc) [1 2 3])')"                        '(2 3 4)'
 assert_eq 'ed_sequential' "$("$BIN" -e '(sequential? (eduction (map inc) [1 2 3]))')"         'true'
-echo "OK — phase14_transducers (cycles 1-7; sequence D-160 + eduction ADR-0067; D-189; D-190 print) green"
+# §A26 sweep: transducer single-arities that D-177's discharge had missed —
+# take-while / take-nth / keep-indexed / replace / partition-by.
+assert_eq 'xf_take_while' "$("$BIN" -e '(into [] (take-while pos?) [1 2 -1 3])')"             '[1 2]'
+assert_eq 'xf_take_nth'   "$("$BIN" -e '(into [] (take-nth 2) [1 2 3 4 5])')"                 '[1 3 5]'
+assert_eq 'xf_keep_idx'   "$("$BIN" -e '(into [] (keep-indexed (fn [i x] (when (odd? i) x))) [:a :b :c :d])')" '[:b :d]'
+assert_eq 'xf_replace'    "$("$BIN" -e '(into [] (replace {1 :a}) [1 2 1])')"                 '[:a 2 :a]'
+assert_eq 'xf_part_by'    "$("$BIN" -e '(into [] (partition-by odd?) [1 1 2 3])')"            '[[1 1] [2] [3]]'
+assert_eq 'xf_part_by_red' "$("$BIN" -e '(into [] (comp (partition-by odd?) (take 2)) [1 1 2 3 5])')" '[[1 1] [2]]'
+echo "OK — phase14_transducers (cycles 1-7; sequence D-160 + eduction ADR-0067; D-189; D-190 print; §A26 xform arities) green"
