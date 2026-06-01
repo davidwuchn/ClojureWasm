@@ -75,4 +75,14 @@ EOF
 ) || fail "case6b: non-zero exit ($got)"
 assert_eq 'class_user_record_eq_var' "$(last_line "$got")" 'true'
 
-echo "OK — phase14_class_type (10 cases) green"
+# --- Numeric-tower class simple names (clj sweep) ---
+assert_eq 'class_bigint'  "$("$BIN" -e '(class (bigint 5))' 2>/dev/null | tail -1)" 'BigInt'
+assert_eq 'class_ratio'   "$("$BIN" -e '(class 1/2)' 2>/dev/null | tail -1)" 'Ratio'
+assert_eq 'class_bigdec'  "$("$BIN" -e '(class 1.5M)' 2>/dev/null | tail -1)" 'BigDecimal'
+# --- (bigint x) constructor: BigInt passthrough, else truncate toward zero ---
+assert_eq 'bigint_int'    "$("$BIN" -e '(bigint 100)' 2>/dev/null | tail -1)" '100N'
+assert_eq 'bigint_trunc'  "$("$BIN" -e '(bigint 3.9)' 2>/dev/null | tail -1)" '3N'
+assert_eq 'bigint_negtrunc' "$("$BIN" -e '(bigint -3.9)' 2>/dev/null | tail -1)" '-3N'
+assert_eq 'bigint_ratio'  "$("$BIN" -e '(bigint 1/2)' 2>/dev/null | tail -1)" '0N'
+
+echo "OK — phase14_class_type (17 cases) green"

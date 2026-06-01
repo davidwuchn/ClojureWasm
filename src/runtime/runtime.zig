@@ -226,6 +226,9 @@ pub const Runtime = struct {
             .array_map => "PersistentArrayMap",
             .hash_map => "PersistentHashMap",
             .hash_set => "PersistentHashSet",
+            .big_int => "BigInt",
+            .ratio => "Ratio",
+            .big_decimal => "BigDecimal",
             else => @tagName(tag),
         };
     }

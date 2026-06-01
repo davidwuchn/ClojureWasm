@@ -673,6 +673,25 @@ pub fn intCoerce(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocati
     return promote.wrapI64(rt, i);
 }
 
+/// `(bigint x)` — coerce to an arbitrary-precision integer (`…N`). A BigInt
+/// passes through; any other number truncates toward zero (int / float / ratio
+/// / BigDecimal — e.g. `(bigint 3.9)`→`3N`, `(bigint 1/2)`→`0N`). Beyond Long
+/// range (a large float) or a string is not yet coerced (D-191): those need a
+/// double→arbitrary-int path and a BigInt string parser respectively.
+/// JVM reference: clojure.core/bigint. cw v1 tier: A (§A26 sweep).
+pub fn bigintCoerce(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = env;
+    try error_catalog.checkArity("bigint", args, 1, loc);
+    const v = args[0];
+    if (v.tag() == .big_int) return v;
+    const i = promote.truncToI64(rt, v) catch |err| switch (err) {
+        error.OutOfRange => return error_catalog.raise(.type_arg_invalid, loc, .{ .fn_name = "bigint", .expected = "a value within Long range (large-float / string bigint: D-191)", .actual = "out-of-range number" }),
+        error.NotANumber => return error_catalog.raise(.type_arg_not_number, loc, .{ .fn_name = "bigint", .actual = @tagName(v.tag()) }),
+        else => return err,
+    };
+    return big_int_mod.allocFromI64(rt, i);
+}
+
 /// `(char n)` — the character whose Unicode codepoint is the integer `n`
 /// (0..0x10FFFF), or a char passed through.
 pub fn charCoerce(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
@@ -845,6 +864,7 @@ const ENTRIES = [_]Entry{
     .{ .name = "int", .f = &intCoerce },
     // long ≡ int in cw v1 (a single i64 integer type — no 32-bit int).
     .{ .name = "long", .f = &intCoerce },
+    .{ .name = "bigint", .f = &bigintCoerce },
     .{ .name = "num", .f = &numCoerce },
     .{ .name = "double", .f = &floatCoerce },
     .{ .name = "float", .f = &floatCoerce },
