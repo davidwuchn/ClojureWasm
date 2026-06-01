@@ -1374,6 +1374,15 @@
 ;; Var's value and prints #'ns/name.
 (def resolve (fn* [sym] (rt/__resolve sym)))
 
+;; Multimethod introspection — thin fn wrappers over the rt/ primitives
+;; (defmulti / defmethod / prefer-method are macros in macro_transforms).
+;; `methods` → dispatch-val→method map; `get-method` → the method (or nil);
+;; `remove-method` → the multifn; `prefers` → the prefer table.
+(def methods (fn* [multifn] (rt/__methods multifn)))
+(def get-method (fn* [multifn dispatch-val] (rt/__get-method multifn dispatch-val)))
+(def remove-method (fn* [multifn dispatch-val] (rt/__remove-method! multifn dispatch-val)))
+(def prefers (fn* [multifn] (rt/__prefers multifn)))
+
 ;; `(memoize f)` returns a cached version of f: each distinct argument
 ;; tuple computes f once, then returns the stored result. Keys the
 ;; atom-backed cache by `(vec args)` — vectors compare by value (D-092),

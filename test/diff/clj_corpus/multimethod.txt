@@ -1,0 +1,16 @@
+(do (defmulti mm-f identity) (defmethod mm-f :x [_] :x-hit) (contains? (methods mm-f) :x))
+;;=> true
+(do (defmulti mm-j identity) (defmethod mm-j :a [_] :A) (remove-method mm-j :a) (nil? (get-method mm-j :a)))
+;;=> true
+(do (defmulti mm-m identity) (defmethod mm-m :a [_] :A) (some? (get-method mm-m :a)))
+;;=> true
+(do (defmulti mm-n identity) (defmethod mm-n :a [_] :A) (count (methods mm-n)))
+;;=> 1
+(do (derive :my/sq :my/shape) (parents :my/sq))
+;;=> #{:my/shape}
+(do (derive :my/s2 :my/shape2) (derive :my/shape2 :my/form2) (sort (map name (ancestors :my/s2))))
+;;=> ("form2" "shape2")
+(do (derive :my/p :my/base) (map name (descendants :my/base)))
+;;=> ("p")
+(do (derive :my/wd :my/weekday) (derive :my/we :my/weekend) (defmulti mm-k2 identity) (defmethod mm-k2 :my/weekday [_] :wd) (prefer-method mm-k2 :my/weekday :my/weekend) (count (prefers mm-k2)))
+;;=> 1

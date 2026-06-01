@@ -30,6 +30,13 @@ confirmed exprs into a `*.txt` corpus here via `--corpus`.
   {ident,keyword,symbol}?.
 - **JSON (data.json)** — read/write number parity incl. BigInt both directions
   (D-182). `:bigdec` opt + ratio write are minor residuals.
+- **multimethod / hierarchy** — defmulti/defmethod dispatch, `:default`,
+  custom dispatch fn, vector dispatch val, re-defmethod override; `derive` /
+  `isa?` / `parents` / `ancestors` / `descendants` / `prefer-method`; gap
+  found+fixed: `methods` / `get-method` / `remove-method` / `prefers` had no
+  public wrapper over the rt/ primitives. no-match throws IllegalArgumentException
+  (catchable; message format differs per F-011). Corpus `multimethod`. Residual:
+  `::` auto-resolved keyword (D-195) — use fully-qualified `:ns/x` keywords.
 - **reduce / reduced / transduce** — reduce init/no-init/empty/nil, early
   `reduced`/`reduced?`/`unreduced`/`ensure-reduced`/`@reduced`, reduce-kv,
   reduce over map(entry)/set/string/range, transduce + xform compose. All at
@@ -54,7 +61,7 @@ confirmed exprs into a `*.txt` corpus here via `--corpus`.
   no 0-arity → ArityException) — low-value edge; `macroexpand-all` is a stub.
 - **Unswept areas** worth a focused pass: metadata (`vary-meta`/`alter-meta!`/
   `with-meta` on more types), `clojure.edn` round-trips, destructuring corners,
-  multimethod (`defmulti`/`defmethod` hierarchy), `clojure.data/diff`.
+  `clojure.data/diff`, `::` auto-resolved keyword (D-195).
 - **`random-sample`** — undefined (1-arg transducer + 2-arg; non-deterministic).
 - **Remaining Java interop** (structural-deferred, array/regex repr):
   `.split`/`.toCharArray`/`.getBytes` (needs F-004 Group-D `array` slot);
