@@ -245,6 +245,7 @@ pub const Code = enum {
     // --- Eval (arithmetic) ---
     divide_by_zero,
     integer_overflow,
+    non_terminating_decimal,
 
     // --- Metadata (with-meta) ---
     /// `with-meta`'s metadata arg was not a map or nil. args: `.{ .actual = "..." }`.
@@ -948,6 +949,10 @@ pub fn entry(comptime code: Code) Entry {
         .integer_overflow => .{
             .kind = .arithmetic_error, .phase = .eval,
             .template = "integer overflow",
+        },
+        .non_terminating_decimal => .{
+            .kind = .arithmetic_error, .phase = .eval,
+            .template = "Non-terminating decimal expansion; no exact representable decimal result.",
         },
 
         // --- Eval (arity) ---

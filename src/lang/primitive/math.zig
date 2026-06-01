@@ -704,13 +704,67 @@ pub fn bigintCoerce(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLoc
     return big_int_mod.allocFromI64(rt, i);
 }
 
+/// `(bigdec n/d)` — exact decimal of a Ratio, or ArithmeticException when the
+/// expansion does not terminate (clj parity). A gcd-reduced `n/d` with `d > 0`
+/// terminates iff `d = 2^a · 5^b`; then `scale = max(a, b)` and the unscaled
+/// integer is `n · 5^(a−b)` (a ≥ b) or `n · 2^(b−a)` (b > a). A non-{2,5}
+/// factor in `d` is non-terminating → `non_terminating_decimal`.
+fn bigdecFromRatio(rt: *Runtime, v: Value, loc: SourceLocation) anyerror!Value {
+    const infra = rt.gc.infra;
+    const r = v.decodePtr(*const ratio_mod.Ratio);
+
+    var d = try r.denom.m.clone();
+    defer d.deinit();
+    var q = try std.math.big.int.Managed.init(infra);
+    defer q.deinit();
+    var rmd = try std.math.big.int.Managed.init(infra);
+    defer rmd.deinit();
+    var two = try std.math.big.int.Managed.initSet(infra, 2);
+    defer two.deinit();
+    var five = try std.math.big.int.Managed.initSet(infra, 5);
+    defer five.deinit();
+
+    var a: u32 = 0;
+    while (true) {
+        try q.divTrunc(&rmd, &d, &two);
+        if (!rmd.eqlZero()) break;
+        d.swap(&q);
+        a += 1;
+    }
+    var b: u32 = 0;
+    while (true) {
+        try q.divTrunc(&rmd, &d, &five);
+        if (!rmd.eqlZero()) break;
+        d.swap(&q);
+        b += 1;
+    }
+    if (d.toConst().orderAgainstScalar(1) != .eq)
+        return error_catalog.raise(.non_terminating_decimal, loc, .{});
+
+    const scale: i32 = @intCast(@max(a, b));
+    var unscaled = try r.numer.m.clone();
+    defer unscaled.deinit();
+    if (a != b) {
+        var factor = try std.math.big.int.Managed.init(infra);
+        defer factor.deinit();
+        const base: *std.math.big.int.Managed = if (a > b) &five else &two;
+        const exp: u32 = if (a > b) a - b else b - a;
+        try factor.pow(base, exp);
+        var prod = try std.math.big.int.Managed.init(infra);
+        defer prod.deinit();
+        try prod.mul(&unscaled, &factor);
+        unscaled.swap(&prod);
+    }
+    return big_decimal_mod.allocFromManagedScale(rt, &unscaled, scale);
+}
+
 /// `(bigdec x)` — coerce to a BigDecimal (`…M`). A BigDecimal passes through;
 /// an integer / BigInt becomes scale-0; a float reproduces JVM `(bigdec d)` =
 /// `BigDecimal(Double.toString(d))` by rendering via `printFloat` (cw's
-/// Double.toString, D-166) then parsing its plain-decimal form. A scientific or
-/// >Long-unscaled float, a ratio, or a string is deferred (D-191): those need a
-/// terminating-decimal check / a wider unscaled / a decimal-literal parser.
-/// JVM reference: clojure.core/bigdec. cw v1 tier: A (§A26 sweep).
+/// Double.toString, D-166) then parsing its plain-decimal form; a string parses
+/// its plain-decimal form; a ratio yields its exact decimal (see
+/// `bigdecFromRatio`). A scientific / >Long-unscaled float-string is deferred
+/// (D-191). JVM reference: clojure.core/bigdec. cw v1 tier: A (§A26 sweep).
 pub fn bigdecCoerce(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
     _ = env;
     try error_catalog.checkArity("bigdec", args, 1, loc);
@@ -733,15 +787,13 @@ pub fn bigdecCoerce(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLoc
             return (try parseDecimalToBigDec(rt, s)) orelse
                 error_catalog.raise(.number_format_invalid, loc, .{ .fn_name = "bigdec", .text = s });
         },
-        else => |t| return switch (t) {
-            .ratio => bigdecDeferred(loc), // terminating-decimal check (D-191)
-            else => error_catalog.raise(.type_arg_not_number, loc, .{ .fn_name = "bigdec", .actual = @tagName(t) }),
-        },
+        .ratio => return bigdecFromRatio(rt, v, loc),
+        else => |t| return error_catalog.raise(.type_arg_not_number, loc, .{ .fn_name = "bigdec", .actual = @tagName(t) }),
     }
 }
 
 fn bigdecDeferred(loc: SourceLocation) anyerror {
-    return error_catalog.raise(.feature_not_supported, loc, .{ .name = "bigdec of a ratio, string, or scientific/large float (D-191)" });
+    return error_catalog.raise(.feature_not_supported, loc, .{ .name = "bigdec of a scientific/large float (D-191)" });
 }
 
 /// Parse a plain-decimal string (`[-]ddd[.ddd]`, no exponent) into a

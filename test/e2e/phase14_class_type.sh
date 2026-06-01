@@ -99,5 +99,11 @@ assert_eq 'bigdec_pass'   "$("$BIN" -e '(bigdec 1.5M)' 2>/dev/null | tail -1)" '
 assert_eq 'bigdec_str_frac' "$("$BIN" -e '(bigdec "1.50")' 2>/dev/null | tail -1)" '1.50M'
 assert_eq 'bigdec_str_int'  "$("$BIN" -e '(bigdec "100")' 2>/dev/null | tail -1)" '100M'
 assert_eq 'bigdec_str_neg'  "$("$BIN" -e '(bigdec "-3.14")' 2>/dev/null | tail -1)" '-3.14M'
+# (bigdec n/d): exact decimal when d=2^a*5^b, else ArithmeticException (D-191 ratio arm).
+assert_eq 'bigdec_ratio_q'  "$("$BIN" -e '(bigdec 1/4)' 2>/dev/null | tail -1)" '0.25M'
+assert_eq 'bigdec_ratio_25' "$("$BIN" -e '(bigdec 7/20)' 2>/dev/null | tail -1)" '0.35M'
+assert_eq 'bigdec_ratio_neg' "$("$BIN" -e '(bigdec -1/4)' 2>/dev/null | tail -1)" '-0.25M'
+# Non-terminating ratio → arithmetic error (exit non-zero).
+"$BIN" -e '(bigdec 1/3)' >/dev/null 2>&1 && fail 'bigdec_ratio_nonterm: expected error' || true
 
-echo "OK — phase14_class_type (29 cases) green"
+echo "OK — phase14_class_type (33 cases) green"
