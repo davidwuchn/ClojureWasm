@@ -52,7 +52,7 @@
 ;; these as "Pattern A" because the surface is pure Clojure
 ;; composition; the underlying string scanning is still in Zig).
 (def blank?          (fn* [s] (-blank? s)))
-(def split           (fn* [s re] (-split s re)))
+(def split           (fn* ([s re] (-split s re)) ([s re limit] (-split s re limit))))
 (def split-lines     (fn* [s] (-split-lines s)))
 
 ;; Phase 6.16.e.2 — YELLOW pair (capitalize / join) per v5 §9.2.

@@ -462,49 +462,73 @@ fn coerceRegex(rt: *Runtime, v: Value, loc: SourceLocation, fn_name: []const u8)
 /// `regex_match.findFrom` over `s`, producing a vector of byte
 /// substrings between matches. Zero-width matches advance by one
 /// codepoint to guarantee termination. Empty input yields `[""]`
-/// (matches JVM behaviour). Trailing-empty removal + the 3-arity
-/// `limit` form land in a later cycle (no debt row — both lift
-/// naturally when more `clojure.string` callers exercise them).
+/// (matches JVM behaviour).
+///
+/// `limit` (optional 3rd arg, default 0) matches `Pattern.split`:
+///   - `> 0`: at most `limit` parts; the unmatched remainder is the last.
+///   - `== 0` (default): unlimited parts, **trailing empty strings removed**.
+///   - `< 0`: unlimited parts, trailing empties kept.
+/// A no-match input returns `[s]` (single element, never stripped) — JVM's
+/// `index == 0` short-circuit; the strip only fires once a match was consumed.
 pub fn split(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
     _ = env;
-    try error_catalog.checkArity("split", args, 2, loc);
+    if (args.len < 2 or args.len > 3)
+        return error_catalog.raise(.arity_out_of_range, loc, .{ .fn_name = "split", .got = args.len, .min = 2, .max = 3 });
     if (args[0].tag() != .string)
         return error_catalog.raise(.type_arg_not_string, loc, .{ .fn_name = "split", .actual = @tagName(args[0].tag()) });
     const r = try coerceRegex(rt, args[1], loc, "split");
     const s = string_collection.asString(args[0]);
+    const limit: i64 = if (args.len == 3) try error_catalog.expectInteger(args[2], "split", loc) else 0;
 
-    var result = vector_collection.empty();
+    var parts: std.ArrayList(Value) = .empty;
+    defer parts.deinit(rt.gpa);
+
     if (s.len == 0) {
-        const empty_s = try string_collection.alloc(rt, "");
-        return try vector_collection.conj(rt, result, empty_s);
-    }
-
-    var pos: u32 = 0;
-    while (true) {
-        const match = (try regex_match.findFrom(rt.gpa, r.program, s, pos)) orelse {
-            const tail_v = try string_collection.alloc(rt, s[pos..]);
-            result = try vector_collection.conj(rt, result, tail_v);
-            break;
-        };
-        const before_v = try string_collection.alloc(rt, s[pos..match.start]);
-        result = try vector_collection.conj(rt, result, before_v);
-        if (match.end == match.start) {
-            // Zero-width — advance by one byte to make progress.
-            // Strictly cycle 4 limitation; codepoint-aware advance
-            // for non-ASCII zero-width patterns is a future refinement.
-            if (match.end >= s.len) {
+        try parts.append(rt.gpa, try string_collection.alloc(rt, ""));
+    } else {
+        var pos: u32 = 0;
+        var nsplits: i64 = 0;
+        var matched = false;
+        while (true) {
+            // limit > 0: after limit-1 splits the rest is one whole chunk.
+            if (limit > 0 and nsplits >= limit - 1) {
+                try parts.append(rt.gpa, try string_collection.alloc(rt, s[pos..]));
                 break;
             }
-            pos = match.end + 1;
-        } else {
-            pos = match.end;
+            const match = (try regex_match.findFrom(rt.gpa, r.program, s, pos)) orelse {
+                try parts.append(rt.gpa, try string_collection.alloc(rt, s[pos..]));
+                break;
+            };
+            matched = true;
+            nsplits += 1;
+            try parts.append(rt.gpa, try string_collection.alloc(rt, s[pos..match.start]));
+            if (match.end == match.start) {
+                // Zero-width — advance by one byte to make progress.
+                // Codepoint-aware advance for non-ASCII zero-width patterns is
+                // a future refinement.
+                if (match.end >= s.len) break;
+                pos = match.end + 1;
+            } else {
+                pos = match.end;
+            }
+            if (pos >= s.len) {
+                try parts.append(rt.gpa, try string_collection.alloc(rt, s[pos..]));
+                break;
+            }
         }
-        if (pos >= s.len) {
-            const tail_v = try string_collection.alloc(rt, s[pos..]);
-            result = try vector_collection.conj(rt, result, tail_v);
-            break;
+        // limit == 0: strip trailing empty strings — but only once a match was
+        // consumed (a no-match `[s]` keeps its single element, JVM parity).
+        if (limit == 0 and matched) {
+            while (parts.items.len > 0 and
+                string_collection.asString(parts.items[parts.items.len - 1]).len == 0)
+            {
+                _ = parts.pop();
+            }
         }
     }
+
+    var result = vector_collection.empty();
+    for (parts.items) |p| result = try vector_collection.conj(rt, result, p);
     return result;
 }
 

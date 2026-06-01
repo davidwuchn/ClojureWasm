@@ -60,6 +60,21 @@ assert_eq 'split_multi_match' "$got" '["a" "b" "c" "d"]'
 got="$("$BIN" -e '(clojure.string/split "" #",")')"
 assert_eq 'split_empty_string' "$got" '[""]'
 
+# default (limit 0) drops trailing empty strings; leading/interior kept (clj parity)
+got="$("$BIN" -e '(clojure.string/split "a,b,," #",")')"
+assert_eq 'split_drop_trailing_empties' "$got" '["a" "b"]'
+got="$("$BIN" -e '(clojure.string/split ",a,,b" #",")')"
+assert_eq 'split_keep_leading_interior' "$got" '["" "a" "" "b"]'
+got="$("$BIN" -e '(clojure.string/split "," #",")')"
+assert_eq 'split_all_empty_collapses' "$got" '[]'
+# negative limit keeps trailing empties; positive limit caps the part count
+got="$("$BIN" -e '(clojure.string/split "a,b,," #"," -1)')"
+assert_eq 'split_neg_limit_keeps' "$got" '["a" "b" "" ""]'
+got="$("$BIN" -e '(clojure.string/split "a,b,c,d" #"," 2)')"
+assert_eq 'split_pos_limit_2' "$got" '["a" "b,c,d"]'
+got="$("$BIN" -e '(clojure.string/split "a,b,c,d" #"," 1)')"
+assert_eq 'split_pos_limit_1' "$got" '["a,b,c,d"]'
+
 # --- split-lines ---
 
 got=$("$BIN" - <<'EOF'
