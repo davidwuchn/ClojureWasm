@@ -128,16 +128,24 @@ pub fn disjBangFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocat
 /// cw v1 tier: A (Phase 8.5 cycle 2)
 pub fn assocBangFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
     _ = env;
-    try error_catalog.checkArity("assoc!", args, 3, loc);
-    const tcoll = args[0];
-    return switch (tcoll.tag()) {
-        .transient_map => try transient_array_map.assoc(rt, tcoll, args[1], args[2], loc),
-        else => error_catalog.raise(.transient_kind_mismatch, loc, .{
+    // `(assoc! tmap k v)` + `(assoc! tmap k1 v1 k2 v2 …)` — odd arg count ≥ 3
+    // (clj's `[coll key val & kvs]`). Even = a key without a value.
+    if (args.len % 2 == 0)
+        return error_catalog.raise(.map_literal_arity_odd, loc, .{});
+    if (args.len < 3)
+        return error_catalog.raise(.arity_out_of_range, loc, .{ .fn_name = "assoc!", .got = args.len, .min = 3, .max = 3 });
+    var tcoll = args[0];
+    if (tcoll.tag() != .transient_map)
+        return error_catalog.raise(.transient_kind_mismatch, loc, .{
             .fn_name = "assoc!",
             .expected = "transient_map",
             .actual = @tagName(tcoll.tag()),
-        }),
-    };
+        });
+    var i: usize = 1;
+    while (i < args.len) : (i += 2) {
+        tcoll = try transient_array_map.assoc(rt, tcoll, args[i], args[i + 1], loc);
+    }
+    return tcoll;
 }
 
 /// Implements clojure.core/dissoc!.

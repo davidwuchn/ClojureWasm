@@ -1,0 +1,28 @@
+(persistent! (assoc! (transient {}) :a 1))
+;;=> {:a 1}
+(get (persistent! (assoc! (transient {}) :k :v)) :k)
+;;=> :v
+(get (persistent! (assoc! (transient {}) :a 1 :b 2)) :b)
+;;=> 2
+(count (persistent! (disj! (transient #{1 2 3}) 2)))
+;;=> 2
+(persistent! (pop! (conj! (transient [1 2]) 3)))
+;;=> [1 2]
+(get (persistent! (dissoc! (assoc! (transient {}) :a 1 :b 2) :a)) :b)
+;;=> 2
+(contains? (persistent! (dissoc! (assoc! (transient {}) :a 1 :b 2) :a)) :a)
+;;=> false
+(count (persistent! (reduce conj! (transient []) (range 100))))
+;;=> 100
+(count (persistent! (reduce conj! (transient #{}) (range 50))))
+;;=> 50
+(get (persistent! (reduce (fn [t i] (assoc! t i (* i i))) (transient {}) (range 10))) 7)
+;;=> 49
+(persistent! (transient [1 2 3]))
+;;=> [1 2 3]
+(persistent! (transient {:a 1}))
+;;=> {:a 1}
+(persistent! (assoc! (transient {}) :a 1 :b 2 :c 3))
+;;=> {:a 1, :b 2, :c 3}
+(count (persistent! (assoc! (transient {}) :a 1 :b 2 :c 3)))
+;;=> 3

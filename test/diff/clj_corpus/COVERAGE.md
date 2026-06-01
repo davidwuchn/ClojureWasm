@@ -30,6 +30,12 @@ confirmed exprs into a `*.txt` corpus here via `--corpus`.
   {ident,keyword,symbol}?.
 - **JSON (data.json)** — read/write number parity incl. BigInt both directions
   (D-182). `:bigdec` opt + ratio write are minor residuals.
+- **transients** — `transient`/`persistent!` round-trip (vector/map/set),
+  `conj!`/`pop!`/`disj!`/`dissoc!`, `reduce conj!`, `reduce assoc!` at parity.
+  Gap found+fixed: `assoc!` was 3-arity only — now `(assoc! t k1 v1 k2 v2 …)`
+  multi-pair (clj's `[coll key val & kvs]`). `conj!` is single-element in BOTH
+  (multi-arg → ArityException, catchable as such — F-011 class match). Corpus
+  `transients`.
 - **seq-return type class** — sort/sort-by/keys/vals/reverse/rest/next/seq/map/
   filter/distinct/take/drop/concat/remove/map-indexed/interpose/partition/
   flatten all return SEQS matching clj (NOT vectors — the feared sort-returns-
