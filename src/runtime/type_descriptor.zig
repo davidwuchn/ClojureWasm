@@ -163,6 +163,20 @@ pub const TypeDescriptor = struct {
         if (self.parent) |p| return p.lookupMethod(protocol_name, method_name);
         return null;
     }
+
+    /// True iff this descriptor (or a parent) declares `protocol_name` in
+    /// its `protocol_impls`. Unlike `protocol.satisfies` (which checks the
+    /// `method_table`), this consults the declared-interface list, so it
+    /// detects a zero-method MARKER protocol (`Sequential`) that has no
+    /// method entry (D-190 / ADR-0068). Shared by the printer's seq-print
+    /// discriminator and `sequential?` — one SSOT for both.
+    pub fn declaresProtocol(self: *const TypeDescriptor, protocol_name: []const u8) bool {
+        for (self.protocol_impls) |p| {
+            if (std.mem.eql(u8, p, protocol_name)) return true;
+        }
+        if (self.parent) |par| return par.declaresProtocol(protocol_name);
+        return false;
+    }
 };
 
 /// A `deftype` / `defrecord` runtime value. **Extern struct** so
@@ -353,6 +367,9 @@ pub fn registerType(
             rt.gpa.free(mentry.method_name);
         }
         if (old.value.method_table.len > 0) rt.gpa.free(old.value.method_table);
+        // `protocol_impls` (D-190 / ADR-0068): borrowed fqcn slices, free
+        // the slice only (mirrors the Runtime.deinit cleanup).
+        if (old.value.protocol_impls.len > 0) rt.gpa.free(old.value.protocol_impls);
         rt.gpa.destroy(@constCast(old.value));
     }
     const key = try rt.gpa.dupe(u8, name);

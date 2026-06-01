@@ -330,6 +330,12 @@ pub fn sequentialQ(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLoca
     _ = env;
     try error_catalog.checkArity("sequential?", args, 1, loc);
     const t = args[0].tag();
+    // A `deftype` carrying the `Sequential` marker (e.g. `Eduction`) is
+    // sequential? true — same SSOT marker the printer consults (D-190/ADR-0068).
+    if (t == .typed_instance) {
+        const inst = args[0].decodePtr(*const td_mod.TypedInstance);
+        return if (inst.descriptor.declaresProtocol("Sequential")) .true_val else .false_val;
+    }
     return switch (t) {
         .list, .vector, .cons, .lazy_seq, .chunked_cons, .range, .string_seq, .array_seq, .persistent_queue => .true_val,
         else => .false_val,

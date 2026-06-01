@@ -283,4 +283,14 @@ EOF
 ) || fail "case29: non-zero exit ($got)"
 assert_eq 'defrecord_protocol_method_keyword_field' "$(last_line "$got")" '16'
 
-echo "OK — phase7_defrecord smoke (29 cases) green"
+# --- Case 30: a record prints map-style #Name{:k v} (D-190 / ADR-0068) ---
+# The {:k v} map shape is the fix (was #Pt[1 2]); the ns-prefix (#user.Pt)
+# is deferred to the ns surface (D-058/079).
+got=$("$BIN" - <<'EOF' 2>/dev/null
+(defrecord Pt [x y])
+(->Pt 1 2)
+EOF
+) || fail "case30: non-zero exit ($got)"
+assert_eq 'defrecord_print_map_style' "$(last_line "$got")" '#Pt{:x 1, :y 2}'
+
+echo "OK — phase7_defrecord smoke (30 cases) green"

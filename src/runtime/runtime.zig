@@ -310,6 +310,7 @@ pub const Runtime = struct {
                     self.gc.infra.free(entry.method_name);
                 }
                 if (td.method_table.len > 0) self.gc.infra.free(td.method_table);
+                if (td.protocol_impls.len > 0) self.gc.infra.free(td.protocol_impls);
                 self.gc.infra.destroy(td);
                 slot.* = null;
             }
@@ -336,13 +337,16 @@ pub const Runtime = struct {
             // (same backing as gpa per F-006 / GcHeap), so free both
             // the per-entry method_name dup and the slice itself.
             // `protocol_name` is a borrowed slice from the
-            // ProtocolDescriptor (process-lifetime via rt.trackHeap),
-            // and `protocol_impls` stays empty for user-defined types
-            // (no populator yet).
+            // ProtocolDescriptor (process-lifetime via rt.trackHeap).
+            // `protocol_impls` (D-190 / ADR-0068) is populated by
+            // `addProtocolImpl` (`__extend-type!`) with borrowed
+            // ProtocolDescriptor fqcn slices — free the slice only, not
+            // the entries.
             for (td.method_table) |mentry| {
                 self.gpa.free(mentry.method_name);
             }
             if (td.method_table.len > 0) self.gpa.free(td.method_table);
+            if (td.protocol_impls.len > 0) self.gpa.free(td.protocol_impls);
             self.gpa.destroy(@constCast(td));
         }
         self.types.deinit();

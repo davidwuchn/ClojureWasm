@@ -220,6 +220,25 @@ pub fn extendTypeWithImpls(
     rt.protocol_generation +%= 1;
 }
 
+/// Record `proto_name` in `td.protocol_impls` if absent (dedup). The
+/// declared-interface list is the SSOT for "does this type implement
+/// protocol P" INDEPENDENT of method bodies — a zero-method MARKER
+/// protocol (`Sequential`) has no `method_table` entry and lives here
+/// only (D-190 / ADR-0068). Re-allocates on `rt.gc.infra` (process-
+/// lifetime, mirroring `method_table`); `proto_name` is stored by
+/// reference (ProtocolDescriptor lifetime, like `MethodEntry.protocol_name`).
+pub fn addProtocolImpl(rt: *Runtime, td: *TypeDescriptor, proto_name: []const u8) !void {
+    for (td.protocol_impls) |p| {
+        if (std.mem.eql(u8, p, proto_name)) return;
+    }
+    const old = td.protocol_impls;
+    const combined = try rt.gc.infra.alloc([]const u8, old.len + 1);
+    @memcpy(combined[0..old.len], old);
+    combined[old.len] = proto_name;
+    td.protocol_impls = combined;
+    if (old.len > 0) rt.gc.infra.free(old);
+}
+
 // --- tests ---
 
 const testing = std.testing;

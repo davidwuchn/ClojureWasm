@@ -1753,7 +1753,11 @@ fn expandDefprotocol(
     loc: SourceLocation,
 ) macro_dispatch.ExpandError!Form {
     _ = rt;
-    if (args.len < 2)
+    // A name suffices; method signatures are optional so a zero-method
+    // marker protocol — `(defprotocol Sequential)` — is definable, matching
+    // JVM (`(defprotocol Marker)` → `(satisfies? Marker x)` true). The empty
+    // `method_sigs` expands to `(rt/__make-protocol! 'name [])` (D-190/ADR-0068).
+    if (args.len < 1)
         return error_catalog.raise(.defprotocol_form_incomplete, loc, .{});
     if (args[0].data != .symbol or args[0].data.symbol.ns != null)
         return error_catalog.raise(.defprotocol_name_invalid, args[0].location, .{});
@@ -1840,7 +1844,10 @@ fn expandExtendType(
     loc: SourceLocation,
 ) macro_dispatch.ExpandError!Form {
     _ = rt;
-    if (args.len < 3)
+    // target + protocol minimum; zero method-impls is a MARKER protocol
+    // extension (e.g. `Sequential`), recorded into `protocol_impls` by
+    // `__extend-type!` (D-190 / ADR-0068).
+    if (args.len < 2)
         return error_catalog.raise(.extend_type_form_incomplete, loc, .{});
 
     const target_form = args[0];
@@ -2130,8 +2137,9 @@ fn lowerDefType(
         const impls_start = i;
         while (i < args.len and args[i].data == .list) : (i += 1) {}
         const impls = args[impls_start..i];
-        if (impls.len == 0)
-            return error_catalog.raise(.extend_protocol_section_invalid, proto_form.location, .{});
+        // A zero-impl section is a MARKER protocol (e.g. `Sequential`):
+        // it lowers to `(extend-type Name Marker)` with no method forms,
+        // which `__extend-type!` records into `protocol_impls` (D-190/ADR-0068).
 
         var ext_items = try arena.alloc(Form, 3 + impls.len);
         ext_items[0] = sym("extend-type", proto_form.location);
@@ -2614,14 +2622,21 @@ test "expandDefprotocol lowers to (do (def P ...) (def m1 ...))" {
     try testing.expectEqualStrings("m1", make_fn_call.data.list[2].data.string);
 }
 
-test "expandDefprotocol rejects 0-method form via defprotocol_form_incomplete" {
+test "expandDefprotocol accepts a 0-method MARKER protocol (D-190/ADR-0068)" {
     var fix: TestFixture = undefined;
     try fix.init(testing.allocator);
     defer fix.deinit();
 
     const arena = fix.arena.allocator();
+    // `(defprotocol P)` — name only — is a marker; expands to
+    // `(do (def P (rt/__make-protocol! 'P [])))`, no method defs.
     const args = [_]Form{sym("P", .{})};
-    try testing.expectError(error.SyntaxError, expandDefprotocol(arena, &fix.rt, &args, .{}));
+    const out = try expandDefprotocol(arena, &fix.rt, &args, .{});
+    try testing.expect(out.data == .list);
+    try testing.expectEqualStrings("do", out.data.list[0].data.symbol.name);
+    // do has exactly the proto-def (no per-method Var defs).
+    try testing.expectEqual(@as(usize, 2), out.data.list.len);
+    try testing.expectEqualStrings("def", out.data.list[1].data.list[0].data.symbol.name);
 }
 
 test "expandExtendType lowers to (rt/__extend-type! target proto [[\"m\" (fn* ...)]])" {

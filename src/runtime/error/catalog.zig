@@ -839,7 +839,7 @@ pub fn entry(comptime code: Code) Entry {
         },
         .defprotocol_form_incomplete => .{
             .kind = .syntax_error, .phase = .macroexpand,
-            .template = "defprotocol requires a name and at least one method signature",
+            .template = "defprotocol requires a name",
         },
         .defprotocol_name_invalid => .{
             .kind = .syntax_error, .phase = .macroexpand,

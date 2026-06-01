@@ -93,4 +93,8 @@ assert_eq 'ed_reiter'    "$("$BIN" -e '(let [c (atom 0) e (eduction (map (fn [x]
 assert_eq 'ed_first'     "$("$BIN" -e '(first (eduction (map inc) [5 6 7]))')"               '6'
 assert_eq 'ed_rest'      "$("$BIN" -e '(into [] (rest (eduction (map inc) [5 6 7])))')"       '[7 8]'
 assert_eq 'ed_next'      "$("$BIN" -e '(into [] (next (eduction (map inc) [5 6 7])))')"       '[7 8]'
-echo "OK — phase14_transducers (cycles 1-7; sequence D-160 + eduction ADR-0067; D-189) green"
+# D-190 / ADR-0068: an eduction (Sequential marker) prints as its realized
+# seq, and (sequential? eduction) is true (was #Eduction[..] / false).
+assert_eq 'ed_print'     "$("$BIN" -e '(eduction (map inc) [1 2 3])')"                        '(2 3 4)'
+assert_eq 'ed_sequential' "$("$BIN" -e '(sequential? (eduction (map inc) [1 2 3]))')"         'true'
+echo "OK — phase14_transducers (cycles 1-7; sequence D-160 + eduction ADR-0067; D-189; D-190 print) green"

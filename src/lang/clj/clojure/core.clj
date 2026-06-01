@@ -1171,6 +1171,11 @@
 (defprotocol Associative (-assoc [c k v]) (-contains-key? [c k]))
 (defprotocol IPersistentMap (-without [m k]) (-keys [m]) (-vals [m]))
 (defprotocol IPersistentSet (-disjoin [s k]))
+;; `Sequential` is a zero-method MARKER protocol (JVM `clojure.lang.Sequential`):
+;; a type that declares it prints as its seq and answers `sequential?` true
+;; (D-190 / ADR-0068). The native seq tags carry sequential-ness by tag; this
+;; marker is for `deftype`s like `Eduction`.
+(defprotocol Sequential)
 
 ;; `(eduction xform* coll)` — a reducible + seqable view that applies the
 ;; composed transducer on demand (D-160 residual, ADR-0067). A `deftype`
@@ -1185,6 +1190,7 @@
 ;; `sequence` lazy bridge. (`first`/`rest` directly on an Eduction need the
 ;; Seqable→seq coercion that cljw's first/rest lack — D-189; `(seq e)` works.)
 (deftype Eduction [xform coll]
+  Sequential
   IReduce
   (-reduce [this f & more]
     (if (seq more)

@@ -220,6 +220,11 @@ pub fn extendType(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocat
     // `rt.gc.infra` and swaps it onto `td.method_table`; the input
     // `new_impls` slice is no longer referenced, so free it back.
     rt.gc.infra.free(new_impls);
+    // Record the protocol in the declared-interface list so a zero-method
+    // MARKER protocol (`Sequential`, no method_table entry) is still
+    // detectable, and `protocol_impls` stays an honest "implements P" set
+    // (D-190 / ADR-0068).
+    try protocol_mod.addProtocolImpl(rt, td, proto.fqcn());
     return args[0];
 }
 
@@ -865,16 +870,21 @@ test "__extend-type! appends method_val rows + bumps protocol_generation" {
     const gen_before = fix.rt.protocol_generation;
     const result = try extendType(&fix.rt, &fix.env, &[_]Value{ td_ref, proto_val, impls }, .{});
     // Per the per-task note's test-only cleanup policy, the infra-
-    // allocated method_table slice + each method-name dup must be
-    // freed when the test exits (production leaks them on purpose).
+    // allocated method_table slice + each method-name dup + the
+    // protocol_impls slice (D-190/ADR-0068: addProtocolImpl records "P")
+    // must be freed when the test exits (production leaks them on purpose).
     defer {
         for (td.method_table) |entry| fix.rt.gc.infra.free(entry.method_name);
         fix.rt.gc.infra.free(td.method_table);
+        if (td.protocol_impls.len > 0) fix.rt.gc.infra.free(td.protocol_impls);
     }
 
     try testing.expectEqual(@intFromEnum(td_ref), @intFromEnum(result));
     try testing.expectEqual(gen_before +% 1, fix.rt.protocol_generation);
     try testing.expectEqual(@as(usize, 1), td.method_table.len);
+    // addProtocolImpl recorded "P" in the declared-interface list.
+    try testing.expectEqual(@as(usize, 1), td.protocol_impls.len);
+    try testing.expectEqualStrings("P", td.protocol_impls[0]);
     try testing.expectEqualStrings("P", td.method_table[0].protocol_name);
     try testing.expectEqualStrings("m", td.method_table[0].method_name);
     try testing.expectEqual(@intFromEnum(impl_fn), @intFromEnum(td.method_table[0].method_val));

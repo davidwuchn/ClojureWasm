@@ -5,7 +5,7 @@
 # Validates the cycle 6 + cycle 6.6 + cycle 7 surface end-to-end:
 #   - (defprotocol P (m [x])) binds P as a `.protocol`-tagged Var.
 #   - rt/__satisfies? returns false on a non-typed_instance receiver.
-#   - defprotocol with 0 methods raises defprotocol_form_incomplete.
+#   - defprotocol with 0 methods is a MARKER protocol (D-190/ADR-0068).
 #
 # Cycle 7.1 limitation: defprotocol does NOT emit per-method-Var
 # defs — the macro lowering hits an analyzer pre-register gap on
@@ -61,12 +61,23 @@ EOF
 ) || fail "case2: non-zero exit ($got)"
 assert_eq 'defprotocol_multi_method_satisfies_false' "$(last_line "$got")" 'false'
 
-# --- Case 3: defprotocol with 0 methods is a syntax error ---
+# --- Case 3 (D-190/ADR-0068): defprotocol with 0 methods is a MARKER protocol ---
+# A name-only `(defprotocol Empty)` is now accepted (JVM-faithful) and a
+# deftype can extend the marker without error.
 diag=$("$BIN" -e '(defprotocol Empty)' 2>&1 || true)
-if [[ "$diag" != *"defprotocol requires"* ]]; then
-    fail "case3: expected defprotocol_form_incomplete diagnostic, got '$diag'"
+if [[ "$diag" != *"user/Empty"* ]]; then
+    fail "case3: marker defprotocol should define Empty, got '$diag'"
 fi
-echo "PASS defprotocol_zero_methods_diagnostic"
+ext=$("$BIN" - <<'EOF' 2>&1
+(defprotocol Mark)
+(deftype T [a] Mark)
+(prn (vector? [(->T 1)]))
+EOF
+)
+if [[ "$ext" != *"true"* ]]; then
+    fail "case3b: deftype extending a marker protocol failed, got '$ext'"
+fi
+echo "PASS defprotocol_zero_method_marker"
 
 # --- Case 4 (ADR-0038): defprotocol binds per-method-Var ---
 # Post-cycle 8.1 defprotocol emits `(do (def P ...) (def m P ...))`;

@@ -52,6 +52,8 @@ const td_mod = @import("type_descriptor.zig");
 const lazy_seq_mod = @import("lazy_seq.zig");
 const range_collection = @import("collection/range.zig");
 const env_mod = @import("env.zig");
+const dispatch_mod = @import("dispatch.zig");
+const SourceLocation = @import("error/info.zig").SourceLocation;
 
 /// Realize any lazy seqs nested in `v` into concrete lists, then render.
 /// `printValue` is a pure `(w, v)` renderer with no `rt`/`env`, so it
@@ -88,17 +90,29 @@ fn deepRealize(rt: *Runtime, env: *env_mod.Env, v: Value) anyerror!Value {
         // walk would drop the lazy tail. `lazy_seq_mod.seq/first/rest`
         // force lazy layers and route `.list` cells to the list ops, so
         // one loop realizes both (F-011 commonisation).
-        .lazy_seq, .list => {
-            var items: std.ArrayList(Value) = .empty;
-            defer items.deinit(rt.gpa);
-            var cur = v;
-            while (true) {
-                const s = try lazy_seq_mod.seq(rt, env, cur);
-                if (s.tag() == .nil) break;
-                try items.append(rt.gpa, try deepRealize(rt, env, try lazy_seq_mod.first(rt, env, s)));
-                cur = try lazy_seq_mod.rest(rt, env, s);
+        .lazy_seq, .list => return realizeSeqWalk(rt, env, v),
+        // A `Sequential` deftype (e.g. `Eduction`) prints as its realized
+        // seq, not the deftype default `#Name[..]` (D-190 / ADR-0068). The
+        // marker — NOT `Seqable` — is the discriminator: a record is Seqable
+        // yet prints map-style, so only `Sequential` types route through the
+        // same `-seq` walk. Non-Sequential typed_instances pass through to
+        // `printTypedInstance` (records render map-style there).
+        .typed_instance => {
+            if (typedInstanceIsSequential(v)) {
+                // Coerce via the `Seqable -seq` protocol first: `realizeSeqWalk`'s
+                // `lazy_seq_mod` helpers cannot coerce a typed_instance (that
+                // coercion is the seq primitive's job, Layer-2 / D-189). The
+                // coerced result is a lazy_seq/list that deepRealize then walks.
+                // `dispatchOrNull` (not `dispatch`) so a Sequential-but-not-
+                // Seqable deftype falls back to the default render instead of
+                // raising mid-print.
+                var cs: dispatch_mod.CallSite = .{};
+                const noloc: SourceLocation = .{};
+                if (try dispatch_mod.dispatchOrNull(rt, env, &cs, v, "Seqable", "-seq", &.{v}, noloc)) |s| {
+                    return deepRealize(rt, env, s);
+                }
             }
-            return listFromItems(rt, items.items);
+            return v;
         },
         .vector => {
             const n = vector_collection.count(v);
@@ -111,6 +125,32 @@ fn deepRealize(rt: *Runtime, env: *env_mod.Env, v: Value) anyerror!Value {
         },
         else => return v,
     }
+}
+
+/// Realize a seq-family value into a concrete list by walking its
+/// `seq`/`first`/`rest`. Shared by the `.lazy_seq`/`.list` arm and the
+/// `Sequential` typed_instance arm (F-011 commonisation): `lazy_seq_mod`
+/// forces lazy layers, routes `.list` cells to the list ops, and coerces a
+/// Seqable deftype through its `-seq` (D-189), so one loop realizes all.
+fn realizeSeqWalk(rt: *Runtime, env: *env_mod.Env, v: Value) anyerror!Value {
+    var items: std.ArrayList(Value) = .empty;
+    defer items.deinit(rt.gpa);
+    var cur = v;
+    while (true) {
+        const s = try lazy_seq_mod.seq(rt, env, cur);
+        if (s.tag() == .nil) break;
+        try items.append(rt.gpa, try deepRealize(rt, env, try lazy_seq_mod.first(rt, env, s)));
+        cur = try lazy_seq_mod.rest(rt, env, s);
+    }
+    return listFromItems(rt, items.items);
+}
+
+/// True iff a `.typed_instance`'s descriptor declares the `Sequential`
+/// marker protocol — the discriminator for "prints as a seq" (D-190 /
+/// ADR-0068). Shares `declaresProtocol` with `sequential?` (one SSOT).
+fn typedInstanceIsSequential(v: Value) bool {
+    const inst = v.decodePtr(*const td_mod.TypedInstance);
+    return inst.descriptor.declaresProtocol("Sequential");
 }
 
 /// Render an f64 in Clojure surface form, matching JVM `Double.toString`.
@@ -340,6 +380,23 @@ fn printBigDecimal(w: *Writer, v: Value) Writer.Error!void {
 fn printTypedInstance(w: *Writer, v: Value) Writer.Error!void {
     const inst = v.decodePtr(*const td_mod.TypedInstance);
     const fqcn = inst.descriptor.fqcn orelse "<anonymous>";
+    // A record prints map-style `#Name{:k v, …}` from its declared field
+    // layout (D-190 / ADR-0068). The `user.`-ns prefix JVM emits is deferred
+    // to the ns surface (D-058/079); declared fields only — assoc'd extra
+    // keys (`__extmap`, D-086) are a separate residual.
+    if (inst.descriptor.kind == .defrecord) {
+        if (inst.descriptor.field_layout) |layout| {
+            const fs = inst.fields();
+            try w.print("#{s}{{", .{fqcn});
+            for (layout, 0..) |fe, i| {
+                if (i > 0) try w.writeAll(", ");
+                try w.print(":{s} ", .{fe.name});
+                try printValue(w, fs[fe.index]);
+            }
+            try w.writeByte('}');
+            return;
+        }
+    }
     try w.print("#{s}[", .{fqcn});
     for (inst.fields(), 0..) |fv, i| {
         if (i > 0) try w.writeByte(' ');
