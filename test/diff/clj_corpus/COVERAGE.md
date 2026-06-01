@@ -30,6 +30,11 @@ confirmed exprs into a `*.txt` corpus here via `--corpus`.
   {ident,keyword,symbol}?.
 - **JSON (data.json)** — read/write number parity incl. BigInt both directions
   (D-182). `:bigdec` opt + ratio write are minor residuals.
+- **reduce / reduced / transduce** — reduce init/no-init/empty/nil, early
+  `reduced`/`reduced?`/`unreduced`/`ensure-reduced`/`@reduced`, reduce-kv,
+  reduce over map(entry)/set/string/range, transduce + xform compose. All at
+  parity. Gap found+fixed: `key`/`val` were undefined (map entry = 2-vector →
+  `(nth e 0/1)`). Corpus `reduce_reduced`.
 - **Collections as keys / set elements** (D-092 discharged) — map / set / list
   AND cross-type vector≡list hash + compare by content (`(get {{:a 1} :x} {:a 1})`,
   `(get {[1 2] :v} '(1 2))`, set/`distinct`/`frequencies` dedup of collections,
@@ -48,9 +53,8 @@ confirmed exprs into a `*.txt` corpus here via `--corpus`.
   Residual: `intersection`/`difference` 0-arity (cljw variadic returns nil; JVM has
   no 0-arity → ArityException) — low-value edge; `macroexpand-all` is a stub.
 - **Unswept areas** worth a focused pass: metadata (`vary-meta`/`alter-meta!`/
-  `with-meta` on more types), `reduce`/`reduced` edge cases, `clojure.edn`
-  round-trips, destructuring corners, multimethod (`defmulti`/`defmethod`
-  hierarchy), `clojure.data/diff`.
+  `with-meta` on more types), `clojure.edn` round-trips, destructuring corners,
+  multimethod (`defmulti`/`defmethod` hierarchy), `clojure.data/diff`.
 - **`random-sample`** — undefined (1-arg transducer + 2-arg; non-deterministic).
 - **Remaining Java interop** (structural-deferred, array/regex repr):
   `.split`/`.toCharArray`/`.getBytes` (needs F-004 Group-D `array` slot);

@@ -1,0 +1,64 @@
+(reduce + [])
+;;=> 0
+(reduce + [5])
+;;=> 5
+(reduce + [1 2 3 4])
+;;=> 10
+(reduce + 10 [])
+;;=> 10
+(reduce + 10 [1 2 3])
+;;=> 16
+(reduce conj [] [1 2 3])
+;;=> [1 2 3]
+(reduce + 0 (range 5))
+;;=> 10
+(reduce + 1 nil)
+;;=> 1
+(reduce (fn [a b] a) :init [])
+;;=> :init
+(reduce (fn [a b] (reduced :stop)) :init [1 2 3])
+;;=> :stop
+(reduce (fn [acc x] (if (= x 3) (reduced acc) (conj acc x))) [] [1 2 3 4 5])
+;;=> [1 2]
+(reduce (fn [acc x] (if (> acc 5) (reduced acc) (+ acc x))) 0 [1 2 3 4 5])
+;;=> 6
+(reduced? (reduced 5))
+;;=> true
+(reduced? 5)
+;;=> false
+(unreduced (reduced 5))
+;;=> 5
+(unreduced 5)
+;;=> 5
+(deref (reduced 5))
+;;=> 5
+(reduced? (ensure-reduced 5))
+;;=> true
+(reduced? (ensure-reduced (reduced 5)))
+;;=> true
+(unreduced (ensure-reduced 7))
+;;=> 7
+(reduce-kv (fn [acc k v] (+ acc v)) 0 {:a 1 :b 2})
+;;=> 3
+(reduce-kv (fn [acc k v] (assoc acc v k)) {} {:a 1 :b 2})
+;;=> {1 :a, 2 :b}
+(reduce (fn [acc e] (+ acc (val e))) 0 {:a 1 :b 2})
+;;=> 3
+(reduce + 0 #{1 2 3})
+;;=> 6
+(reduce str "" "abc")
+;;=> "abc"
+(reduce (fn [acc x] (reduced (+ acc x))) 100 [1 2 3])
+;;=> 101
+(reduce max [3 1 4 1 5 9 2 6])
+;;=> 9
+(reduce + (range 1 5))
+;;=> 10
+(into [] (map inc) [1 2 3])
+;;=> [2 3 4]
+(transduce (map inc) + 0 [1 2 3])
+;;=> 9
+(transduce (take 2) conj [] [1 2 3 4])
+;;=> [1 2]
+(transduce (comp (filter even?) (map inc)) + 0 (range 10))
+;;=> 25

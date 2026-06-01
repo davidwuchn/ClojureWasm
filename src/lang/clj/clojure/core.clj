@@ -905,6 +905,12 @@
 ;; `(ffirst coll)` — `(first (first coll))`.
 (def ffirst (fn* [coll] (first (first coll))))
 
+;; `(key e)` / `(val e)` — the key / value of a map entry. cw v1 represents
+;; map entries as 2-element vectors (`(first {:a 1})` → `[:a 1]`), so these
+;; index positionally rather than calling a JVM Map.Entry accessor.
+(def key (fn* [e] (nth e 0)))
+(def val (fn* [e] (nth e 1)))
+
 ;; `(not-empty coll)` — coll if it has items, else nil.
 (def not-empty (fn* [coll] (if (empty? coll) nil coll)))
 
