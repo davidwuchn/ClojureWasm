@@ -58,5 +58,15 @@ assert_eq 'name_of_string' "$got" '"hi"'
 got="$("$BIN" -e '(name (keyword "x"))')"
 assert_eq 'roundtrip_keyword_name' "$got" '"x"'
 
+# --- namespace on keyword / symbol (nil when unqualified) ---
+got="$("$BIN" -e '(namespace :my.ns/foo)')"
+assert_eq 'namespace_qualified_keyword' "$got" '"my.ns"'
+got="$("$BIN" -e '(namespace :foo)')"
+assert_eq 'namespace_unqualified_nil' "$got" 'nil'
+got="$("$BIN" -e "(namespace 'a/b)")"
+assert_eq 'namespace_qualified_symbol' "$got" '"a"'
+got="$("$BIN" -e "(namespace 'x)")"
+assert_eq 'namespace_unqualified_symbol_nil' "$got" 'nil'
+
 echo ""
 echo "=== phase6_16_c_keyword_name: all assertions passed ==="

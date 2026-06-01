@@ -478,6 +478,27 @@ pub fn nameFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation)
     return error_catalog.raise(.feature_not_supported, loc, .{ .name = "name on non-string/non-keyword/non-symbol" });
 }
 
+/// `(namespace x)` — the namespace string of a qualified keyword or symbol,
+/// or nil when unqualified (`(namespace :foo)`→nil, `(namespace :a/b)`→"a").
+/// A non-Named value (string, number, …) is a type error — JVM throws
+/// ClassCastException because String is not `clojure.lang.Named`.
+pub fn namespaceFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = env;
+    try error_catalog.checkArity("namespace", args, 1, loc);
+    const x = args[0];
+    switch (x.tag()) {
+        .keyword => {
+            const kw = keyword_mod.asKeyword(x);
+            return if (kw.ns) |ns| string_mod.alloc(rt, ns) else Value.nil_val;
+        },
+        .symbol => {
+            const s = symbol_mod.asSymbol(x);
+            return if (s.ns) |ns| string_mod.alloc(rt, ns) else Value.nil_val;
+        },
+        else => |t| return error_catalog.raise(.type_arg_invalid, loc, .{ .fn_name = "namespace", .expected = "a keyword or symbol", .actual = @tagName(t) }),
+    }
+}
+
 /// Render `args` to `w`, space-separated. `readable` = `pr`-style
 /// (every arg quoted via `printValue`, so top-level strings/chars get
 /// their `"` / `\` escapes); `!readable` = `print`-style human form
@@ -1020,6 +1041,7 @@ const ENTRIES = [_]Entry{
     .{ .name = "keyword", .f = &keywordFn },
     .{ .name = "symbol", .f = &symbolFn },
     .{ .name = "name", .f = &nameFn },
+    .{ .name = "namespace", .f = &namespaceFn },
     .{ .name = "println", .f = &printlnFn },
     .{ .name = "print", .f = &printFn },
     .{ .name = "prn", .f = &prnFn },
