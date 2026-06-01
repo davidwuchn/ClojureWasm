@@ -12,6 +12,7 @@ const std = @import("std");
 const Value = @import("../../runtime/value/value.zig").Value;
 const Runtime = @import("../../runtime/runtime.zig").Runtime;
 const env_mod = @import("../../runtime/env.zig");
+const regex_value = @import("../../runtime/regex/value.zig");
 const Env = env_mod.Env;
 const error_mod = @import("../../runtime/error/info.zig");
 const error_catalog = @import("../../runtime/error/catalog.zig");
@@ -600,6 +601,9 @@ pub fn strFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) 
                 const n = std.unicode.utf8Encode(arg.asChar(), &buf) catch 0;
                 try aw.writer.writeAll(buf[0..n]);
             },
+            // `(str #"\d+")` → `\d+`: regex `toString` is the raw pattern, NOT
+            // the `#"…"` reader form that `print-method` (pr/println) emits.
+            .regex => try aw.writer.writeAll(regex_value.asRegex(arg).source()),
             else => try print_mod.printResult(rt, env, &aw.writer, arg),
         }
     }

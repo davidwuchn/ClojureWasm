@@ -48,6 +48,7 @@ const ex_info_collection = @import("collection/ex_info.zig");
 const big_int_mod = @import("numeric/big_int.zig");
 const ratio_mod = @import("numeric/ratio.zig");
 const big_decimal_mod = @import("numeric/big_decimal.zig");
+const regex_mod = @import("regex/value.zig");
 const td_mod = @import("type_descriptor.zig");
 const lazy_seq_mod = @import("lazy_seq.zig");
 const range_collection = @import("collection/range.zig");
@@ -312,6 +313,16 @@ pub fn printValue(w: *Writer, v: Value) Writer.Error!void {
         .typed_instance => try printTypedInstance(w, v),
         .type_descriptor => try printTypeDescriptor(w, v),
         .var_ref => try printVarRef(w, v),
+        .regex => {
+            // `#"<source>"` for every printer that routes through `print-method`
+            // — pr / prn / print / println all show the reader form (JVM
+            // `print-method Pattern`). Only `str` (Pattern.toString → the raw
+            // pattern) differs, and `strFn` special-cases regex before reaching
+            // here. The source is shown verbatim (not re-escaped).
+            try w.writeAll("#\"");
+            try w.writeAll(regex_mod.asRegex(v).source());
+            try w.writeByte('"');
+        },
         else => |t| try w.print("#<{s}>", .{@tagName(t)}),
     }
 }

@@ -106,5 +106,17 @@ assert_eq 'group_re_seq' "$got" '(["12" "1" "2"] ["34" "3" "4"])'
 # no groups → whole-match string (no regression)
 got="$("$BIN" -e '(re-find #"\w+" "hi")')"
 assert_eq 'group_none_string' "$got" '"hi"'
+# pr/prn/println render the `#"…"` reader form (JVM print-method Pattern);
+# str renders the raw pattern (Pattern.toString). §A26 regex-print sweep.
+got="$("$BIN" - <<'CLJ'
+(prn (re-pattern "a.c"))
+CLJ
+)"
+assert_eq 'regex_pr_reader_form' "$(printf '%s' "$got" | head -1)" '#"a.c"'
+got="$("$BIN" - <<'CLJ'
+(prn (str #"a.c"))
+CLJ
+)"
+assert_eq 'regex_str_raw' "$(printf '%s' "$got" | head -1)" '"a.c"'
 
-echo "phase6_regex_cycle1: all 22 cases passed"
+echo "phase6_regex_cycle1: all 24 cases passed"
