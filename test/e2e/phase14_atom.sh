@@ -26,4 +26,8 @@ assert_eq 'cas_ok'    "$("$BIN" -e '(let [a (atom 5)] [(compare-and-set! a 5 6) 
 assert_eq 'cas_no'    "$("$BIN" -e '(let [a (atom 5)] [(compare-and-set! a 99 6) @a])')" '[false 5]'
 # identity preserved across swaps (same atom object)
 assert_eq 'identity'  "$("$BIN" -e '(let [a (atom 0)] (swap! a inc) (identical? a a))')" 'true'
-echo "OK — phase14_atom smoke (13 cases) green"
+# swap-vals! / reset-vals! return [old new] (clj sweep)
+assert_eq 'swap_vals'  "$("$BIN" -e '(let [a (atom 1)] (swap-vals! a inc))')"          '[1 2]'
+assert_eq 'swap_vals_args' "$("$BIN" -e '(let [a (atom 1)] (swap-vals! a + 10 20))')"  '[1 31]'
+assert_eq 'reset_vals' "$("$BIN" -e '(let [a (atom 5)] (reset-vals! a 9))')"            '[5 9]'
+echo "OK — phase14_atom smoke (16 cases) green"
