@@ -233,6 +233,7 @@ run_step "feature_keyword"      "bash scripts/check_feature_keyword.sh --gate"
 # analysis silently skips its tests). See zig_tips.md "Test
 # discovery via @import" + scripts/check_test_reach.sh.
 run_step "test_reach"           "bash scripts/check_test_reach.sh --gate"
+run_step "e2e_reach"            "bash scripts/check_e2e_reach.sh --gate"
 # Informational (no --gate): every D-NNN cited in source/docs must resolve
 # to a debt.md row (kills phantom IDs), + prints the quality-loop-floor
 # backlog so the F-010 loop sees it. Tech-debt consolidation 2026-05-31 /
@@ -340,6 +341,11 @@ run_step "e2e_phase14_catch_internal"        "bash test/e2e/phase14_catch_intern
 run_step "e2e_phase14_binding"               "bash test/e2e/phase14_binding.sh"
 run_step "e2e_phase14_with_context"          "bash test/e2e/phase14_with_context.sh"
 run_step "e2e_phase14_user_throw"            "bash test/e2e/phase14_user_throw.sh"
+run_step "e2e_phase14_collection_keys"       "bash test/e2e/phase14_collection_keys.sh"
+run_step "e2e_phase14_key_val"               "bash test/e2e/phase14_key_val.sh"
+run_step "e2e_phase14_multifn_introspect"    "bash test/e2e/phase14_multifn_introspect.sh"
+run_step "e2e_phase14_auto_keyword"          "bash test/e2e/phase14_auto_keyword.sh"
+run_step "e2e_phase14_data_diff"             "bash test/e2e/phase14_data_diff.sh"
 run_step "e2e_phase14_fn_macro"              "bash test/e2e/phase14_fn_macro.sh"
 run_step "e2e_phase14_anon_fn_reader"        "bash test/e2e/phase14_anon_fn_reader.sh"
 run_step "e2e_phase14_defmacro_user"         "bash test/e2e/phase14_defmacro_user.sh"

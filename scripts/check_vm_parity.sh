@@ -27,7 +27,8 @@ BLOCKERS=(
     phase14_java_static_dispatch   # .static_method call (VM-DEFER node.zig:338)
     phase14_with_context           # dynamic error-context propagation (undocumented)
     phase14_user_throw             # ex-info :data + error-context on throw
-    phase14_eval                   # (eval (read-string …)) on VM
+    # NOTE: phase14_eval is NOT a VM blocker — `eval` is unimplemented on BOTH
+    # backends (name_error), tracked separately as D-197. Do not add here.
 )
 
 restore() { zig build -Doptimize=ReleaseSafe >/dev/null 2>&1 || true; }
