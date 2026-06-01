@@ -81,6 +81,63 @@ pub fn allocFromManagedScale(
     return Value.encodeHeapPtr(.big_decimal, bd);
 }
 
+/// Exact BigDecimal of a gcd-reduced rational `numer/denom` (`denom > 0`), or
+/// `error.NonTerminatingDecimal` when the decimal expansion does not terminate.
+/// A reduced `n/d` terminates iff `d = 2^a · 5^b`; then `scale = max(a, b)` and
+/// the unscaled integer is `n · 5^(a−b)` (a ≥ b) or `n · 2^(b−a)` (b > a).
+/// Shared by `clojure.core/bigdec` (a ratio arg) and BigDecimal÷/ratio
+/// contagion. JVM reference: `BigDecimal(numer).divide(BigDecimal(denom))`.
+pub fn allocFromRatioParts(
+    rt: *Runtime,
+    numer: *const std.math.big.int.Managed,
+    denom: *const std.math.big.int.Managed,
+) !Value {
+    const infra = rt.gc.infra;
+    var d = try denom.clone();
+    defer d.deinit();
+    var q = try std.math.big.int.Managed.init(infra);
+    defer q.deinit();
+    var rmd = try std.math.big.int.Managed.init(infra);
+    defer rmd.deinit();
+    var two = try std.math.big.int.Managed.initSet(infra, 2);
+    defer two.deinit();
+    var five = try std.math.big.int.Managed.initSet(infra, 5);
+    defer five.deinit();
+
+    var a: u32 = 0;
+    while (true) {
+        try q.divTrunc(&rmd, &d, &two);
+        if (!rmd.eqlZero()) break;
+        d.swap(&q);
+        a += 1;
+    }
+    var b: u32 = 0;
+    while (true) {
+        try q.divTrunc(&rmd, &d, &five);
+        if (!rmd.eqlZero()) break;
+        d.swap(&q);
+        b += 1;
+    }
+    if (d.toConst().orderAgainstScalar(1) != .eq)
+        return error.NonTerminatingDecimal;
+
+    const scale: i32 = @intCast(@max(a, b));
+    var unscaled = try numer.clone();
+    defer unscaled.deinit();
+    if (a != b) {
+        var factor = try std.math.big.int.Managed.init(infra);
+        defer factor.deinit();
+        const base: *std.math.big.int.Managed = if (a > b) &five else &two;
+        const exp: u32 = if (a > b) a - b else b - a;
+        try factor.pow(base, exp);
+        var prod = try std.math.big.int.Managed.init(infra);
+        defer prod.deinit();
+        try prod.mul(&unscaled, &factor);
+        unscaled.swap(&prod);
+    }
+    return allocFromManagedScale(rt, &unscaled, scale);
+}
+
 /// Decode a BigDecimal Value into its unscaled significand.
 pub fn asUnscaled(v: Value) *const BigInt {
     std.debug.assert(v.tag() == .big_decimal);

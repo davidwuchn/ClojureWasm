@@ -115,5 +115,13 @@ assert_eq 'bigdec_plain_sm'  "$("$BIN" -e '(bigdec 1e-5)' 2>/dev/null | tail -1)
 # (bigint large-float): bigdec(d).toBigInteger() truncation (D-191, D-047-safe).
 assert_eq 'bigint_lgfloat'   "$("$BIN" -e '(bigint 1e30)' 2>/dev/null | tail -1)" '1000000000000000000000000000000N'
 assert_eq 'bigint_lgfloat_n' "$("$BIN" -e '(bigint -1e20)' 2>/dev/null | tail -1)" '-100000000000000000000N'
+# BigDecimal contagion: bigdec ⊗ {int,bigint,ratio} → bigdec; ⊗ float → float.
+assert_eq 'bd_mul_int'   "$("$BIN" -e '(* 1.5M 2)' 2>/dev/null | tail -1)" '3.0M'
+assert_eq 'bd_add_int'   "$("$BIN" -e '(+ 1 0.5M)' 2>/dev/null | tail -1)" '1.5M'
+assert_eq 'bd_mul_float' "$("$BIN" -e '(* 1.5M 2.0)' 2>/dev/null | tail -1)" '3.0'
+assert_eq 'bd_add_ratio' "$("$BIN" -e '(+ 1.5M 1/2)' 2>/dev/null | tail -1)" '2.0M'
+assert_eq 'bd_sub_bigint' "$("$BIN" -e '(* 1.5M (bigint 3))' 2>/dev/null | tail -1)" '4.5M'
+# Non-terminating ratio contagion → arithmetic error.
+"$BIN" -e '(+ 1.5M 1/3)' >/dev/null 2>&1 && fail 'bd_nonterm: expected error' || true
 
-echo "OK — phase14_class_type (39 cases) green"
+echo "OK — phase14_class_type (44 cases) green"

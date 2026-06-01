@@ -78,7 +78,10 @@ pub fn plus(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) a
     var acc = args[0];
     var i: usize = 1;
     while (i < args.len) : (i += 1) {
-        acc = try promote.addPromoting(rt, acc, args[i]);
+        acc = promote.addPromoting(rt, acc, args[i]) catch |err| switch (err) {
+            error.NonTerminatingDecimal => return error_catalog.raise(.non_terminating_decimal, loc, .{}),
+            else => return err,
+        };
     }
     return acc;
 }
@@ -91,12 +94,18 @@ pub fn minus(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) 
     if (args.len == 0)
         return error_catalog.raise(.arity_below_min, loc, .{ .got = @as(usize, 0), .fn_name = "-", .min = @as(usize, 1) });
     if (args.len == 1) {
-        return try promote.subPromoting(rt, Value.initInteger(0), args[0]);
+        return promote.subPromoting(rt, Value.initInteger(0), args[0]) catch |err| switch (err) {
+            error.NonTerminatingDecimal => return error_catalog.raise(.non_terminating_decimal, loc, .{}),
+            else => return err,
+        };
     }
     var acc = args[0];
     var i: usize = 1;
     while (i < args.len) : (i += 1) {
-        acc = try promote.subPromoting(rt, acc, args[i]);
+        acc = promote.subPromoting(rt, acc, args[i]) catch |err| switch (err) {
+            error.NonTerminatingDecimal => return error_catalog.raise(.non_terminating_decimal, loc, .{}),
+            else => return err,
+        };
     }
     return acc;
 }
@@ -110,7 +119,10 @@ pub fn star(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) a
     var acc = args[0];
     var i: usize = 1;
     while (i < args.len) : (i += 1) {
-        acc = try promote.mulPromoting(rt, acc, args[i]);
+        acc = promote.mulPromoting(rt, acc, args[i]) catch |err| switch (err) {
+            error.NonTerminatingDecimal => return error_catalog.raise(.non_terminating_decimal, loc, .{}),
+            else => return err,
+        };
     }
     return acc;
 }
@@ -126,6 +138,7 @@ pub fn plusStrict(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocat
     while (i < args.len) : (i += 1) {
         acc = promote.addStrict(rt, acc, args[i]) catch |err| switch (err) {
             error.IntegerOverflow => return error_catalog.raise(.integer_overflow, loc, .{}),
+            error.NonTerminatingDecimal => return error_catalog.raise(.non_terminating_decimal, loc, .{}),
             else => return err,
         };
     }
@@ -141,6 +154,7 @@ pub fn minusStrict(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLoca
     if (args.len == 1) {
         return promote.subStrict(rt, Value.initInteger(0), args[0]) catch |err| switch (err) {
             error.IntegerOverflow => return error_catalog.raise(.integer_overflow, loc, .{}),
+            error.NonTerminatingDecimal => return error_catalog.raise(.non_terminating_decimal, loc, .{}),
             else => return err,
         };
     }
@@ -149,6 +163,7 @@ pub fn minusStrict(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLoca
     while (i < args.len) : (i += 1) {
         acc = promote.subStrict(rt, acc, args[i]) catch |err| switch (err) {
             error.IntegerOverflow => return error_catalog.raise(.integer_overflow, loc, .{}),
+            error.NonTerminatingDecimal => return error_catalog.raise(.non_terminating_decimal, loc, .{}),
             else => return err,
         };
     }
@@ -165,6 +180,7 @@ pub fn starStrict(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocat
     while (i < args.len) : (i += 1) {
         acc = promote.mulStrict(rt, acc, args[i]) catch |err| switch (err) {
             error.IntegerOverflow => return error_catalog.raise(.integer_overflow, loc, .{}),
+            error.NonTerminatingDecimal => return error_catalog.raise(.non_terminating_decimal, loc, .{}),
             else => return err,
         };
     }
@@ -764,52 +780,11 @@ fn bigdecTruncToBigInt(rt: *Runtime, bd: Value) anyerror!Value {
 /// integer is `n · 5^(a−b)` (a ≥ b) or `n · 2^(b−a)` (b > a). A non-{2,5}
 /// factor in `d` is non-terminating → `non_terminating_decimal`.
 fn bigdecFromRatio(rt: *Runtime, v: Value, loc: SourceLocation) anyerror!Value {
-    const infra = rt.gc.infra;
     const r = v.decodePtr(*const ratio_mod.Ratio);
-
-    var d = try r.denom.m.clone();
-    defer d.deinit();
-    var q = try std.math.big.int.Managed.init(infra);
-    defer q.deinit();
-    var rmd = try std.math.big.int.Managed.init(infra);
-    defer rmd.deinit();
-    var two = try std.math.big.int.Managed.initSet(infra, 2);
-    defer two.deinit();
-    var five = try std.math.big.int.Managed.initSet(infra, 5);
-    defer five.deinit();
-
-    var a: u32 = 0;
-    while (true) {
-        try q.divTrunc(&rmd, &d, &two);
-        if (!rmd.eqlZero()) break;
-        d.swap(&q);
-        a += 1;
-    }
-    var b: u32 = 0;
-    while (true) {
-        try q.divTrunc(&rmd, &d, &five);
-        if (!rmd.eqlZero()) break;
-        d.swap(&q);
-        b += 1;
-    }
-    if (d.toConst().orderAgainstScalar(1) != .eq)
-        return error_catalog.raise(.non_terminating_decimal, loc, .{});
-
-    const scale: i32 = @intCast(@max(a, b));
-    var unscaled = try r.numer.m.clone();
-    defer unscaled.deinit();
-    if (a != b) {
-        var factor = try std.math.big.int.Managed.init(infra);
-        defer factor.deinit();
-        const base: *std.math.big.int.Managed = if (a > b) &five else &two;
-        const exp: u32 = if (a > b) a - b else b - a;
-        try factor.pow(base, exp);
-        var prod = try std.math.big.int.Managed.init(infra);
-        defer prod.deinit();
-        try prod.mul(&unscaled, &factor);
-        unscaled.swap(&prod);
-    }
-    return big_decimal_mod.allocFromManagedScale(rt, &unscaled, scale);
+    return big_decimal_mod.allocFromRatioParts(rt, r.numer.m, r.denom.m) catch |err| switch (err) {
+        error.NonTerminatingDecimal => error_catalog.raise(.non_terminating_decimal, loc, .{}),
+        else => err,
+    };
 }
 
 /// `(bigdec x)` — coerce to a BigDecimal (`…M`). A BigDecimal passes through;

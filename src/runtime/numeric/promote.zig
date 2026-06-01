@@ -42,6 +42,11 @@ fn toF64(rt: *Runtime, v: Value) f64 {
         const r = v.decodePtr(*const ratio_mod.Ratio);
         return managedToF64(rt, r.numer.m) / managedToF64(rt, r.denom.m);
     }
+    if (v.tag() == .big_decimal) {
+        // value = unscaled · 10^(−scale). Lossy (float-contagion semantics).
+        const bd = v.decodePtr(*const big_decimal_mod.BigDecimal);
+        return managedToF64(rt, bd.unscaled.m) * std.math.pow(f64, 10.0, @floatFromInt(-bd.scale));
+    }
     return 0.0; // unreachable for caller that ran ensureNumeric
 }
 
@@ -181,14 +186,46 @@ fn ratioArith(rt: *Runtime, a: Value, b: Value, op: RatioOp) !Value {
     return try wrapManaged(rt, &q);
 }
 
+const BdOp = enum { add, sub, mul };
+
+/// Promote a non-float numeric operand to BigDecimal: a BigDecimal passes
+/// through; int / BigInt become scale-0; a ratio yields its exact decimal (or
+/// `error.NonTerminatingDecimal`). Caller guarantees `v` is non-float numeric.
+fn coerceToBigDecimal(rt: *Runtime, v: Value) !Value {
+    return switch (v.tag()) {
+        .big_decimal => v,
+        .big_int => try big_decimal_mod.allocFromManagedScale(rt, big_int.asManaged(v), 0),
+        .ratio => blk: {
+            const r = v.decodePtr(*const ratio_mod.Ratio);
+            break :blk try big_decimal_mod.allocFromRatioParts(rt, r.numer.m, r.denom.m);
+        },
+        else => try big_decimal_mod.allocFromI64Scale(rt, @as(i64, v.asInteger()), 0),
+    };
+}
+
+/// BigDecimal contagion for +/−/×: at least one operand is a BigDecimal and
+/// neither is a float (float wins, handled by the caller's earlier branch).
+/// Both operands are promoted to BigDecimal, then exact BigDecimal arithmetic
+/// runs. JVM: a BigDecimal makes the whole expression BigDecimal unless a
+/// double is present.
+fn bigdecContagion(rt: *Runtime, a: Value, b: Value, op: BdOp) !Value {
+    const ba = try coerceToBigDecimal(rt, a);
+    const bb = try coerceToBigDecimal(rt, b);
+    return switch (op) {
+        .add => big_decimal_mod.allocAdd(rt, ba, bb),
+        .sub => big_decimal_mod.allocSub(rt, ba, bb),
+        .mul => big_decimal_mod.allocMul(rt, ba, bb),
+    };
+}
+
 /// `a + b` with auto-promotion. Both inputs MUST be numeric (caller
 /// runs `ensureNumeric` first).
 pub fn addPromoting(rt: *Runtime, a: Value, b: Value) !Value {
     if (a.isFloat() or b.isFloat()) {
         return Value.initFloat(toF64(rt, a) + toF64(rt, b));
     }
-    if (a.tag() == .big_decimal and b.tag() == .big_decimal) {
-        return try big_decimal_mod.allocAdd(rt, a, b);
+    if (a.tag() == .big_decimal or b.tag() == .big_decimal) {
+        return try bigdecContagion(rt, a, b, .add);
     }
     if (a.tag() == .ratio or b.tag() == .ratio) {
         return try ratioArith(rt, a, b, .add);
@@ -217,8 +254,8 @@ pub fn subPromoting(rt: *Runtime, a: Value, b: Value) !Value {
     if (a.isFloat() or b.isFloat()) {
         return Value.initFloat(toF64(rt, a) - toF64(rt, b));
     }
-    if (a.tag() == .big_decimal and b.tag() == .big_decimal) {
-        return try big_decimal_mod.allocSub(rt, a, b);
+    if (a.tag() == .big_decimal or b.tag() == .big_decimal) {
+        return try bigdecContagion(rt, a, b, .sub);
     }
     if (a.tag() == .ratio or b.tag() == .ratio) {
         return try ratioArith(rt, a, b, .sub);
@@ -246,8 +283,8 @@ pub fn mulPromoting(rt: *Runtime, a: Value, b: Value) !Value {
     if (a.isFloat() or b.isFloat()) {
         return Value.initFloat(toF64(rt, a) * toF64(rt, b));
     }
-    if (a.tag() == .big_decimal and b.tag() == .big_decimal) {
-        return try big_decimal_mod.allocMul(rt, a, b);
+    if (a.tag() == .big_decimal or b.tag() == .big_decimal) {
+        return try bigdecContagion(rt, a, b, .mul);
     }
     if (a.tag() == .ratio or b.tag() == .ratio) {
         return try ratioArith(rt, a, b, .mul);
@@ -277,6 +314,9 @@ pub fn addStrict(rt: *Runtime, a: Value, b: Value) !Value {
     if (a.isFloat() or b.isFloat()) {
         return Value.initFloat(toF64(rt, a) + toF64(rt, b));
     }
+    if (a.tag() == .big_decimal or b.tag() == .big_decimal) {
+        return try bigdecContagion(rt, a, b, .add);
+    }
     if (a.isInt() and b.isInt()) {
         const ai: i64 = @as(i64, a.asInteger());
         const bi: i64 = @as(i64, b.asInteger());
@@ -296,6 +336,9 @@ pub fn subStrict(rt: *Runtime, a: Value, b: Value) !Value {
     if (a.isFloat() or b.isFloat()) {
         return Value.initFloat(toF64(rt, a) - toF64(rt, b));
     }
+    if (a.tag() == .big_decimal or b.tag() == .big_decimal) {
+        return try bigdecContagion(rt, a, b, .sub);
+    }
     if (a.isInt() and b.isInt()) {
         const ai: i64 = @as(i64, a.asInteger());
         const bi: i64 = @as(i64, b.asInteger());
@@ -313,6 +356,9 @@ pub fn subStrict(rt: *Runtime, a: Value, b: Value) !Value {
 pub fn mulStrict(rt: *Runtime, a: Value, b: Value) !Value {
     if (a.isFloat() or b.isFloat()) {
         return Value.initFloat(toF64(rt, a) * toF64(rt, b));
+    }
+    if (a.tag() == .big_decimal or b.tag() == .big_decimal) {
+        return try bigdecContagion(rt, a, b, .mul);
     }
     if (a.isInt() and b.isInt()) {
         const ai: i64 = @as(i64, a.asInteger());
