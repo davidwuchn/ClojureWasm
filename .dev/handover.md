@@ -9,23 +9,23 @@
   Tree clean, 0 unpushed. Mac gate green (192). **Gate hazard**: the -P8
   e2e pool intermittently times out under host load — use `timeout 1800 bash
   test/run_all.sh --serial-e2e` (memory `gate-parallel-e2e-timeout`).
-- **The reasonably-scoped quality-loop floor is FULLY DRAINED** (incl. the
-  structural D-184; **D-190 DONE 2026-06-01 / ADR-0068** — Sequential marker
-  protocol: seq-print + record map-style + `sequential?`; marker protocols now
-  work end-to-end on deftype). **First commit MUST be: D-160 3-arg multi-coll
-  `sequence`** (fresh deliberate cycle: Step-0 survey + DA-fork) — needs
-  multi-arg transducer steps (every xform's step becomes variadic); broad
-  transducer-protocol change. Then other LARGER STRUCTURAL features (NOT a
-  quick coverage drain):
-  - **D-182 read `.number_string`** — i64-overflow JSON integers need the
-    cljw BigInt digit-string parser (analyzer-internal, `setString` avoided)
-    extracted to a callable layer + the `:bigdec`-vs-Double decimal decision.
-  - **D-086** defrecord `__extmap` (TypedInstance layout, Phase 8, +ADR);
-    **D-088** protocol fqcn ns-scope (tied to D-058/D-079 ns surface).
-  - Standing F-003 structural: D-164 empty≡nil, D-165 i48→i64, D-178/179.
-- **This session (35 commits)**: full var-metadata (D-183 a-d + D-187 +
-  `doc`) + transducer (D-177, D-160 sequence+eduction ADR-0067) surfaces +
-  correctness (D-185/188/186/189/182/173) + structural **D-184/ADR-0038**.
+- **§A26 F-011 differential-sweep is the active operating loop.** Landed a large
+  run of clj-fidelity units (2026-06-01/02): D-190 Sequential marker (ADR-0068);
+  D-160 3-arg multi-coll `sequence` + a **root `next`/`apply` lazy-empty-tail
+  bug**; Integer/Long `toString`; `clojure.string/split` trailing/limit; the whole
+  **format** conversion+flag family (`%X`/`%o`/`%e`/`%E`/`%g`/`%G` + `+`/space/
+  `(`/`,`); `bigint`/`bigdec` ctors + BigInt/Ratio/BigDecimal class names;
+  `namespace`; **regex capturing groups** (Pike submatch — re-find/re-matches/
+  re-seq + replace `$N`/fn-vector, D-093 discharged); `ex-cause`; assert→
+  **AssertionError** (D-192); `swap-vals!`/`reset-vals!`. **First commit on
+  resume: continue the F-011 sweep** — cljw individual files + clj batch (memory
+  `clj-diff-sweep-methodology`); **check F-NNN before "fixing"** (overflow
+  auto-promote / `+'`-throws are intentional per F-005).
+- **Remaining gaps are F-003-deferred (do NOT seize) or minor.** F-003/Phase-N:
+  D-086 `__extmap`, D-088 ns-fqcn, **D-157 atom watches (add-watch, Phase 15)**,
+  D-164 empty≡nil, D-165 i48→i64, D-178/179 seq-slots. Minor residuals: D-191
+  bigdec ratio/string + bigint large/string; D-192 `(class ex_info)` class-name +
+  assert msg format; extended regex (>8 groups, named, `\1`). D-182 read landed.
 - **Perf campaign §9.2.S — CLOSED (Debug-measurement correction 2026-06-01).**
   Landed: O-001 `72d7bfcc`, O-002 `0898ba2c`, **O-003/D-180 + ADR-0064**
   `9188820b`, **O-004/D-163 first cycle** `50ccbf3b`. **BUT the alarming
