@@ -43,10 +43,12 @@ pub const Captures = struct {
     used: usize = 0,
 };
 
-/// One live Pike VM thread. Cycle 1 keeps only the PC; cycle 3
-/// adds the capture-slot snapshot.
+/// One live Pike VM thread: the PC plus the capture-slot snapshot it carries
+/// (Pike submatch — the first thread to reach a `.match`, in priority order,
+/// owns the leftmost-greedy captures). `-1` slots are unset.
 pub const Thread = struct {
     pc: u32,
+    caps: [MAX_SLOTS_INLINE]i32 = [_]i32{-1} ** MAX_SLOTS_INLINE,
 };
 
 /// Match result returned by `find` / `match`. `null` slot ends
@@ -104,7 +106,7 @@ pub fn matchFull(
 /// within a single input position (key Pike-VM invariant that
 /// bounds runtime at O(n·m)).
 const ThreadList = struct {
-    pcs: std.ArrayList(u32) = .empty,
+    threads: std.ArrayList(Thread) = .empty,
     seen: []bool,
 
     fn init(alloc: std.mem.Allocator, n_insts: usize) MatchError!ThreadList {
@@ -114,12 +116,12 @@ const ThreadList = struct {
     }
 
     fn deinit(self: *ThreadList, alloc: std.mem.Allocator) void {
-        self.pcs.deinit(alloc);
+        self.threads.deinit(alloc);
         alloc.free(self.seen);
     }
 
     fn clear(self: *ThreadList) void {
-        self.pcs.clearRetainingCapacity();
+        self.threads.clearRetainingCapacity();
         @memset(self.seen, false);
     }
 };
@@ -138,22 +140,30 @@ fn addThread(
     pc: u32,
     pos: u32,
     input: []const u8,
+    caps: [MAX_SLOTS_INLINE]i32,
 ) MatchError!void {
     if (list.seen[pc]) return;
     list.seen[pc] = true;
     switch (program.insts[pc]) {
-        .jmp => |target| try addThread(list, alloc, program, target, pos, input),
+        .jmp => |target| try addThread(list, alloc, program, target, pos, input, caps),
         .split => |s| {
-            try addThread(list, alloc, program, s.a, pos, input);
-            try addThread(list, alloc, program, s.b, pos, input);
+            try addThread(list, alloc, program, s.a, pos, input, caps);
+            try addThread(list, alloc, program, s.b, pos, input, caps);
         },
-        .save => try addThread(list, alloc, program, pc + 1, pos, input),
+        .save => |slot| {
+            // Record the capture-slot boundary at the current position, then
+            // continue with the updated snapshot (a copy — sibling threads keep
+            // the pre-save caps).
+            var c2 = caps;
+            if (slot < MAX_SLOTS_INLINE) c2[slot] = @intCast(pos);
+            try addThread(list, alloc, program, pc + 1, pos, input, c2);
+        },
         .anchor => |a| {
             if (anchorMatches(a, pos, input)) {
-                try addThread(list, alloc, program, pc + 1, pos, input);
+                try addThread(list, alloc, program, pc + 1, pos, input, caps);
             }
         },
-        else => try list.pcs.append(alloc, pc),
+        else => try list.threads.append(alloc, .{ .pc = pc, .caps = caps }),
     }
 }
 
@@ -198,28 +208,31 @@ fn tryMatchAt(
 
     var best: ?MatchResult = null;
     var pos: u32 = start;
-    try addThread(&current, alloc, program, 0, pos, input);
+    const empty: [MAX_SLOTS_INLINE]i32 = [_]i32{-1} ** MAX_SLOTS_INLINE;
+    try addThread(&current, alloc, program, 0, pos, input, empty);
 
     while (true) {
-        // Record any .match in the current set — greedy semantics
-        // keep extending so the final best holds the longest match.
-        for (current.pcs.items) |pc| {
-            if (program.insts[pc] == .match) {
-                best = .{ .start = start, .end = pos, .captures = .{} };
+        // Record any .match in the current set — greedy semantics keep
+        // extending so the final best holds the longest match. Threads are in
+        // priority order, so the FIRST `.match` owns the leftmost-greedy
+        // captures (Pike submatch).
+        for (current.threads.items) |t| {
+            if (program.insts[t.pc] == .match) {
+                best = .{ .start = start, .end = pos, .captures = .{ .slots = t.caps, .used = @as(usize, program.capture_count) * 2 } };
                 break;
             }
         }
 
         if (pos >= input.len) break;
-        if (current.pcs.items.len == 0) break;
+        if (current.threads.items.len == 0) break;
 
         const c = input[pos];
         const next_pos = pos + 1;
-        for (current.pcs.items) |pc| {
-            switch (program.insts[pc]) {
-                .char => |cc| if (c == cc) try addThread(&next, alloc, program, pc + 1, next_pos, input),
-                .class => |cls| if (cls.contains(c)) try addThread(&next, alloc, program, pc + 1, next_pos, input),
-                .range => |r| if (c >= r.lo and c <= r.hi) try addThread(&next, alloc, program, pc + 1, next_pos, input),
+        for (current.threads.items) |t| {
+            switch (program.insts[t.pc]) {
+                .char => |cc| if (c == cc) try addThread(&next, alloc, program, t.pc + 1, next_pos, input, t.caps),
+                .class => |cls| if (cls.contains(c)) try addThread(&next, alloc, program, t.pc + 1, next_pos, input, t.caps),
+                .range => |r| if (c >= r.lo and c <= r.hi) try addThread(&next, alloc, program, t.pc + 1, next_pos, input, t.caps),
                 .match => {},
                 else => {}, // epsilon ops are pre-expanded by addThread
             }

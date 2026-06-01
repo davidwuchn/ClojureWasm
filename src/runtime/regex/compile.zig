@@ -132,8 +132,9 @@ pub const CompileError = error{
 pub fn compile(alloc: std.mem.Allocator, pattern: []const u8, flags: Flags) CompileError!Program {
     var arena = std.heap.ArenaAllocator.init(alloc);
     defer arena.deinit();
-    const node = try parsePattern(arena.allocator(), pattern, flags);
-    return try emit(alloc, node, flags);
+    var group_count: u16 = 0;
+    const node = try parsePattern(arena.allocator(), pattern, flags, &group_count);
+    return try emit(alloc, node, flags, group_count);
 }
 
 /// Recursive-descent parser entry: produces an AST `Node` tree
@@ -151,12 +152,13 @@ pub fn compile(alloc: std.mem.Allocator, pattern: []const u8, flags: Flags) Comp
 /// class_item := escape | byte ('-' byte)?
 /// escape  := '\' ('d'|'D'|'w'|'W'|'s'|'S'|'t'|'n'|'r'|'f'|meta_byte)
 /// ```
-pub fn parsePattern(arena: std.mem.Allocator, pattern: []const u8, flags: Flags) CompileError!*const Node {
+pub fn parsePattern(arena: std.mem.Allocator, pattern: []const u8, flags: Flags, group_count_out: *u16) CompileError!*const Node {
     _ = flags;
     if (pattern.len == 0) return CompileError.NotImplemented;
     var parser: Parser = .{ .src = pattern, .pos = 0, .arena = arena };
     const node = try parser.parseAlt();
     if (!parser.atEnd()) return CompileError.UnexpectedToken;
+    group_count_out.* = parser.group_count;
     return node;
 }
 
@@ -164,6 +166,9 @@ const Parser = struct {
     src: []const u8,
     pos: usize,
     arena: std.mem.Allocator,
+    /// Next capturing-group index to assign (1-based; group 0 is the whole
+    /// match, carried by MatchResult.start/end, not a slot pair).
+    group_count: u16 = 0,
 
     fn atEnd(self: Parser) bool {
         return self.pos >= self.src.len;
@@ -201,6 +206,7 @@ const Parser = struct {
         while (true) {
             const p = self.peek() orelse break;
             if (p == '|') break;
+            if (p == ')') break; // close of the enclosing group
             // Quantifier with no operand: '*' / '+' / '?' here is a syntax error.
             if (p == '*' or p == '+' or p == '?') return CompileError.UnexpectedToken;
             // Cycle-1 supports `.`, `[`, and `\`. Other metas
@@ -258,8 +264,27 @@ const Parser = struct {
             node.* = .{ .anchor = .line_end };
             return node;
         }
+        if (c == '(') {
+            // `(?:e)` non-capturing vs `(e)` capturing. Other `(?…)` forms
+            // (lookaround, named groups, inline flags) are not yet supported.
+            var capturing = true;
+            var idx: u16 = 0;
+            if (self.peek() == @as(?u8, '?')) {
+                _ = self.advance();
+                if (self.advance() != @as(?u8, ':')) return CompileError.NotImplemented;
+                capturing = false;
+            } else {
+                self.group_count += 1;
+                idx = self.group_count;
+                if (idx >= 8) return CompileError.NotImplemented; // MAX_SLOTS_INLINE/2
+            }
+            const child = try self.parseAlt();
+            if (self.advance() != @as(?u8, ')')) return CompileError.UnclosedGroup;
+            node.* = if (capturing) .{ .group = .{ .child = child, .index = idx } } else .{ .non_capture = child };
+            return node;
+        }
         if (c == ']') return CompileError.UnexpectedToken;
-        // Remaining cycle-1 unsupported metas: (, ), {, }.
+        // Remaining cycle-1 unsupported metas: ), {, }.
         if (isMetaChar(c)) return CompileError.NotImplemented;
         node.* = .{ .lit = c };
         return node;
@@ -391,14 +416,14 @@ fn isMetaChar(c: u8) bool {
 
 /// IR emitter: walks the AST and emits Pike-VM instructions
 /// into a flat `Inst` slice.
-fn emit(alloc: std.mem.Allocator, node: *const Node, flags: Flags) CompileError!Program {
+fn emit(alloc: std.mem.Allocator, node: *const Node, flags: Flags, capture_count: u16) CompileError!Program {
     var list: std.ArrayList(Inst) = .empty;
     errdefer list.deinit(alloc);
     try emitNode(&list, alloc, node);
     try list.append(alloc, .{ .match = {} });
     return Program{
         .insts = try list.toOwnedSlice(alloc),
-        .capture_count = 0,
+        .capture_count = capture_count,
         .flags = flags,
     };
 }
@@ -415,6 +440,14 @@ fn emitNode(list: *std.ArrayList(Inst), alloc: std.mem.Allocator, node: *const N
         .star => |child| try emitStar(list, alloc, child),
         .plus => |child| try emitPlus(list, alloc, child),
         .quest => |child| try emitQuest(list, alloc, child),
+        .group => |g| {
+            // save(2*idx) … child … save(2*idx+1): slot pair brackets the
+            // sub-match so the matcher records group `idx`'s [start,end).
+            try list.append(alloc, .{ .save = @as(u32, 2) * g.index });
+            try emitNode(list, alloc, g.child);
+            try list.append(alloc, .{ .save = @as(u32, 2) * g.index + 1 });
+        },
+        .non_capture => |child| try emitNode(list, alloc, child),
         else => return CompileError.NotImplemented,
     }
 }

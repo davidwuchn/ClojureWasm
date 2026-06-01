@@ -28,6 +28,7 @@ const string_collection = @import("../../runtime/collection/string.zig");
 const vector_collection = @import("../../runtime/collection/vector.zig");
 const regex_value = @import("../../runtime/regex/value.zig");
 const regex_match = @import("../../runtime/regex/match.zig");
+const compile_mod = @import("../../runtime/regex/compile.zig");
 
 // Pulls runtime/regex/{compile,match}.zig into the compile + test
 // graph. value.zig is referenced directly via regex_value above;
@@ -75,7 +76,30 @@ pub fn reFind(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation)
     }
     const input = string_collection.asString(args[1]);
     const result = (try regex_match.find(rt.gpa, r.program, input)) orelse return .nil_val;
-    return try string_collection.alloc(rt, input[result.start..result.end]);
+    return try buildMatchResult(rt, r.program, input, result);
+}
+
+/// Shape a match into the JVM `re-find`/`re-matches` return: the whole-match
+/// string when the pattern has no capturing groups, else a vector
+/// `[whole g1 g2 …]` (a group that did not participate is nil). Group 0 is the
+/// whole match (`result.start..end`); group `i` is `captures.slots[2i..2i+1]`.
+fn buildMatchResult(rt: *Runtime, program: *const compile_mod.Program, input: []const u8, result: regex_match.MatchResult) anyerror!Value {
+    if (program.capture_count == 0) {
+        return string_collection.alloc(rt, input[result.start..result.end]);
+    }
+    var vec = vector_collection.empty();
+    vec = try vector_collection.conj(rt, vec, try string_collection.alloc(rt, input[result.start..result.end]));
+    var g: u16 = 1;
+    while (g <= program.capture_count) : (g += 1) {
+        const s = result.captures.slots[@as(usize, 2) * g];
+        const e = result.captures.slots[@as(usize, 2) * g + 1];
+        const gv = if (s >= 0 and e >= 0)
+            try string_collection.alloc(rt, input[@intCast(s)..@intCast(e)])
+        else
+            Value.nil_val;
+        vec = try vector_collection.conj(rt, vec, gv);
+    }
+    return vec;
 }
 
 /// `(re-matches re s)` — succeeds iff `re` matches the entire
@@ -93,7 +117,7 @@ pub fn reMatches(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocati
     }
     const input = string_collection.asString(args[1]);
     const result = (try regex_match.matchFull(rt.gpa, r.program, input)) orelse return .nil_val;
-    return try string_collection.alloc(rt, input[result.start..result.end]);
+    return try buildMatchResult(rt, r.program, input, result);
 }
 
 /// `(re-find-from re s start)` — like re-find but scanning from byte
@@ -115,7 +139,9 @@ pub fn reFindFrom(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocat
     if (start_i < 0 or start_i > input.len) return .nil_val;
     const result = (try regex_match.findFrom(rt.gpa, r.program, input, @intCast(start_i))) orelse return .nil_val;
     var v = vector_collection.empty();
-    v = try vector_collection.conj(rt, v, try string_collection.alloc(rt, input[result.start..result.end]));
+    // The match element is the `re-find` shape (group vector when the pattern
+    // has groups, else the whole-match string); start/end advance the re-seq loop.
+    v = try vector_collection.conj(rt, v, try buildMatchResult(rt, r.program, input, result));
     v = try vector_collection.conj(rt, v, Value.initInteger(@intCast(result.start)));
     v = try vector_collection.conj(rt, v, Value.initInteger(@intCast(result.end)));
     return v;

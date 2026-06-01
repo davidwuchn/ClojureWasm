@@ -83,4 +83,28 @@ assert_eq 'reseq_none' "$got" 'nil'
 got="$("$BIN" -e '(re-find-from #"\d+" "a1b22" 2)')"
 assert_eq 'refindfrom' "$got" '["22" 3 5]'
 
-echo "phase6_regex_cycle1: all 14 cases passed"
+# --- capturing groups (D-093): re-find/re-matches/re-seq return [whole g1 …] ---
+got="$("$BIN" -e '(re-find #"(\w)(\w)" "ab")')"
+assert_eq 'group_re_find' "$got" '["ab" "a" "b"]'
+got="$("$BIN" -e '(re-matches #"(\d)(\d)" "42")')"
+assert_eq 'group_re_matches' "$got" '["42" "4" "2"]'
+# nested groups number outer-then-inner; alternation participates
+got="$("$BIN" -e '(re-find #"((\d)(\d))" "42")')"
+assert_eq 'group_nested' "$got" '["42" "42" "4" "2"]'
+# an optional group that does not participate is nil
+got="$("$BIN" -e '(re-find #"(a)(b)?" "a")')"
+assert_eq 'group_optional_nil' "$got" '["a" "a" nil]'
+# non-capturing (?:…) is skipped in the group vector
+got="$("$BIN" -e '(re-find #"(?:\w)(\w)" "ab")')"
+assert_eq 'group_non_capturing' "$got" '["ab" "b"]'
+# greedy backtracking still finds the leftmost-greedy submatch
+got="$("$BIN" -e '(re-matches #"(a+)(a+)" "aaaa")')"
+assert_eq 'group_greedy' "$got" '["aaaa" "aaa" "a"]'
+# re-seq yields a group vector per match
+got="$("$BIN" -e '(re-seq #"(\d)(\d)" "1234")')"
+assert_eq 'group_re_seq' "$got" '(["12" "1" "2"] ["34" "3" "4"])'
+# no groups → whole-match string (no regression)
+got="$("$BIN" -e '(re-find #"\w+" "hi")')"
+assert_eq 'group_none_string' "$got" '"hi"'
+
+echo "phase6_regex_cycle1: all 22 cases passed"
