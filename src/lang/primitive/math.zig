@@ -714,9 +714,16 @@ pub fn bigdecCoerce(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLoc
             print_mod.printFloat(&fw, v.asFloat()) catch return bigdecDeferred(loc);
             return (try parseDecimalToBigDec(rt, fw.buffered())) orelse bigdecDeferred(loc);
         },
+        .string => {
+            // `(bigdec "1.50")` → `1.50M` (scale from the decimal point). A
+            // scientific / >i64-unscaled / malformed string is a number-format
+            // error (clj NumberFormatException). Ratio stays deferred (D-191).
+            const s = string_mod.asString(v);
+            return (try parseDecimalToBigDec(rt, s)) orelse
+                error_catalog.raise(.number_format_invalid, loc, .{ .fn_name = "bigdec", .text = s });
+        },
         else => |t| return switch (t) {
-            // ratio / string are valid `bigdec` inputs in clj but deferred here.
-            .ratio, .string => bigdecDeferred(loc),
+            .ratio => bigdecDeferred(loc), // terminating-decimal check (D-191)
             else => error_catalog.raise(.type_arg_not_number, loc, .{ .fn_name = "bigdec", .actual = @tagName(t) }),
         },
     }

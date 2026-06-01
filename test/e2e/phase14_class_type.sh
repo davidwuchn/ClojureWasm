@@ -91,5 +91,9 @@ assert_eq 'bigdec_float2' "$("$BIN" -e '(bigdec 0.25)' 2>/dev/null | tail -1)" '
 assert_eq 'bigdec_whole'  "$("$BIN" -e '(bigdec 100.0)' 2>/dev/null | tail -1)" '100.0M'
 assert_eq 'bigdec_bigint' "$("$BIN" -e '(bigdec (bigint 5))' 2>/dev/null | tail -1)" '5M'
 assert_eq 'bigdec_pass'   "$("$BIN" -e '(bigdec 1.5M)' 2>/dev/null | tail -1)" '1.5M'
+# (bigdec "..."): scale taken from the decimal point (D-191 string arm).
+assert_eq 'bigdec_str_frac' "$("$BIN" -e '(bigdec "1.50")' 2>/dev/null | tail -1)" '1.50M'
+assert_eq 'bigdec_str_int'  "$("$BIN" -e '(bigdec "100")' 2>/dev/null | tail -1)" '100M'
+assert_eq 'bigdec_str_neg'  "$("$BIN" -e '(bigdec "-3.14")' 2>/dev/null | tail -1)" '-3.14M'
 
-echo "OK — phase14_class_type (23 cases) green"
+echo "OK — phase14_class_type (26 cases) green"
