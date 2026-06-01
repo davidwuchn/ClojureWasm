@@ -1,0 +1,64 @@
+# clj-diff sweep coverage ledger (tracked)
+
+Resume-time SSOT for "what the F-011 differential sweep has covered and what
+to sweep next". Promoted to git from the gitignored running ledger
+`private/notes/phaseA26-clj-differential-oracle.md` so a clean session's
+`/continue` reaches it without depending on scratch. Run the sweep with
+`scripts/clj_diff_sweep.sh` (see `.claude/rules/clj_diff_sweep.md`); land
+confirmed exprs into a `*.txt` corpus here via `--corpus`.
+
+## Swept & at parity (don't re-sweep wholesale)
+
+- **Numeric tower** — `bigint`/`bigdec` constructors (int/BigInt/ratio/string/
+  scientific/large-float), bigdec `+ - * / quot rem mod` contagion incl.
+  float→f64, ratio terminating-decimal + ArithmeticException. (D-191/D-194
+  discharged.)
+- **Integer/Long bit + Math `*Exact`** — bitCount/clz/ctz/highestOneBit/reverse;
+  addExact/multiplyExact/… (D-172). Remaining low-value: see Next.
+- **String / regex** — clojure.string surface, `format` conversion+flag family,
+  re-find/re-matches/re-seq + capturing groups + `$N`/fn replace; regex prints
+  `#"src"` (pr) / raw (str).
+- **Sequence / collection** — partition/interleave/reductions/mapcat/frequencies/
+  group-by/dedupe/distinct/flatten/tree-seq/zipmap/merge-with/sort/sort-by/
+  min-key/max-key/update(-in)/assoc-in/get-in (2+3-arity)/reduce-kv/juxt/comp/
+  partial/subvec/replace/peek/pop/rseq/nthrest/take-last/drop-last (1+2-arity).
+- **Transducer 1-arg (xform) arities** — map/filter/take/drop/keep/remove/
+  map-indexed/keep-indexed/replace/take-while/drop-while/take-nth/partition-by/
+  partition-all/dedupe/distinct/interpose/cat/mapcat (D-177 over-claim corrected).
+- **Predicates** — number?/integer?/rational?/float?/double?/decimal?/ratio?/
+  pos-int?/seqable?/coll?/associative?/indexed?/ident?/{simple,qualified}-
+  {ident,keyword,symbol}?.
+- **JSON (data.json)** — read/write number parity incl. BigInt both directions
+  (D-182). `:bigdec` opt + ratio write are minor residuals.
+
+## Next-sweep candidates (gap-confirmed or unswept)
+
+- **Low-value bit ops** (unswept, low call-frequency): Integer/Long
+  `lowestOneBit`/`reverseBytes`/`rotateLeft`(2-arg)/`rotateRight`(2-arg)/`signum`.
+- **Unswept areas** worth a focused pass: `clojure.set` / `clojure.walk` deeper
+  edges, metadata (`vary-meta`/`alter-meta!`/`with-meta` on more types), `reduce`/
+  `reduced` edge cases, `clojure.edn` round-trips, destructuring corners,
+  multimethod (`defmulti`/`defmethod` hierarchy), `clojure.data/diff`.
+- **`random-sample`** — undefined (1-arg transducer + 2-arg; non-deterministic).
+- **Remaining Java interop** (structural-deferred, array/regex repr):
+  `.split`/`.toCharArray`/`.getBytes` (needs F-004 Group-D `array` slot);
+  `.replaceAll`/`.matches` (Pattern surface).
+
+## Acceptable divergences (NOT bugs — do not "fix")
+
+- Set / non-sorted-map **print order** differs from clj hash order.
+- `(class 5)` → `Long` not `java.lang.Long` (ADR-0059 no-JVM rule); `(type …)` too.
+- `(float 1/3)` is f64 (cljw has no f32).
+- Subnormal `5.0E-324` vs JVM `4.9E-324` (same double).
+- `Double/parseDouble` lower-case `inf`/`nan` + trailing `d`/`f` + hex-float —
+  full Java FloatingDecimal grammar not reimplemented (rare edge).
+
+## Structural-deferred (F-003 — big-bang, do NOT seize incrementally)
+
+- **D-164** — `()` vs `nil` empty-seq unification (the single highest-leverage
+  parity fix; collapses a whole class of diffs). `()` literal currently lowers
+  to nil; empty lazy_seq prints `nil`; `rest`/`drop` collapse to nil.
+- **D-165** — i48→i64 long print (`(2^47, 2^63]` long → BigInt `…N`); value-exact,
+  print + `(class)` only. F-004 NaN-box payload consequence.
+- D-086/D-088 (defrecord `__extmap` / protocol fqcn ns) · D-178/D-179 (seq-slot
+  `.list`/`.cons`, `.string_seq`/`.array_seq` splits) · D-105 (java.time).

@@ -69,7 +69,10 @@ gap-filling.
    `clj` startup is ~1–2 s, so batch probes. A mismatch that is a
    recorded ADR divergence (e.g. `(class 5)` → `Long` not
    `java.lang.Long`) is not a defect; everything else is a candidate.
-   Running log: `private/notes/phaseA26-clj-differential-oracle.md`.
+   Use the harness `scripts/clj_diff_sweep.sh` (rule
+   `.claude/rules/clj_diff_sweep.md`); the tracked sweep state is
+   `test/diff/clj_corpus/COVERAGE.md`. Gitignored scratch log (optional):
+   `private/notes/phaseA26-clj-differential-oracle.md`.
 1. Run **systematic large-input + edge `cljw -e` probes** over a category
    (every coll-fn, then string/regex/arith, then nil-punning/destructuring/
    threading, …). Tag each result OK / crash / timeout / name_error /

@@ -59,8 +59,11 @@ timeout 20 clj -M -e '<expr>' 2>&1 | grep -oE '\(([A-Za-z]+Exception|[A-Za-z]+Er
   failures: e.g. `(class 5)` prints `Long` in cljw vs `java.lang.Long`
   in `clj` (no-JVM rule). The oracle flags a mismatch; the loop decides
   whether it is a real defect or a recorded surface divergence.
-- Running log of oracle findings:
-  `private/notes/phaseA26-clj-differential-oracle.md`.
+- **Tracked sweep state (the resume SSOT)**: `test/diff/clj_corpus/COVERAGE.md`
+  (swept areas / next candidates / acceptable divergences) + the golden
+  corpora beside it. Harness: `scripts/clj_diff_sweep.sh` per
+  `.claude/rules/clj_diff_sweep.md`. Gitignored running scratch (optional, NOT
+  load-bearing): `private/notes/phaseA26-clj-differential-oracle.md`.
 
 This is the executable form of `~/Documents/OSS/clojure/` (the source).
 Read the source for *why*; run `clj` for *what*.
