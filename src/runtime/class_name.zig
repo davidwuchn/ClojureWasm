@@ -220,6 +220,15 @@ fn isThrowableTag(t: Tag) bool {
 
 fn matchNativeExact(v: Value, simple: []const u8) bool {
     const t = v.tag();
+    // Heap-boxed Long and genuine BigInt share tag `.big_int`; the `origin`
+    // flag disambiguates `(instance? Long …)` vs `(instance? BigInt …)`
+    // (D-165 / ADR-0080). An inline Long (tag `.integer`) is handled by the
+    // generic table below.
+    if (t == .big_int) {
+        const is_long = @import("numeric/big_int.zig").originOf(v) == .long;
+        if (std.mem.eql(u8, simple, "Long")) return is_long;
+        if (std.mem.eql(u8, simple, "BigInt")) return !is_long;
+    }
     inline for (NATIVE_ENTRIES) |e| {
         if (std.mem.eql(u8, e.name, simple)) return t == e.tag;
     }

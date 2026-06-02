@@ -69,13 +69,12 @@ fn jsonToCw(rt: *Runtime, jv: std.json.Value, loc: SourceLocation) anyerror!Valu
         .null => Value.nil_val,
         .bool => |b| if (b) Value.true_val else Value.false_val,
         .integer => |i| blk: {
-            // D-182: a JSON integer beyond i48 (but within i64) lifts to a
-            // BigInt — JVM data.json parses large integers as Long/BigInt;
-            // value-exact (cljw prints the i48-overflow as `…N`, D-165).
-            // Integers beyond i64 arrive as `.number_string` (still deferred,
-            // needs a digit-string→BigInt parse).
+            // D-182: a JSON integer beyond i48 (but within i64) is a Long
+            // (JVM data.json parses integers as Long) — heap-boxed `.long`
+            // (D-165): value-exact, prints WITHOUT `N`, class Long. Integers
+            // beyond i64 arrive as `.number_string` (still deferred).
             if (i < std.math.minInt(i48) or i > std.math.maxInt(i48)) {
-                break :blk try big_int_mod.allocFromI64(rt, i);
+                break :blk try big_int_mod.allocFromI64(rt, i, .long);
             }
             break :blk Value.initInteger(i);
         },
@@ -93,7 +92,9 @@ fn jsonToCw(rt: *Runtime, jv: std.json.Value, loc: SourceLocation) anyerror!Valu
             var m = big_int_mod.parseBase10(rt, s) catch
                 return error_catalog.raise(.number_format_invalid, loc, .{ .fn_name = "read-str", .text = s });
             defer m.deinit();
-            break :blk try big_int_mod.allocFromManaged(rt, &m);
+            // A number_string integer is one too large for the i64 `.integer`
+            // arm above → genuinely > i64 → a BigInt (clj data.json, D-165).
+            break :blk try big_int_mod.allocFromManaged(rt, &m, .bigint);
         },
         .string => |s| try string_collection.alloc(rt, s),
         .array => |arr| blk: {

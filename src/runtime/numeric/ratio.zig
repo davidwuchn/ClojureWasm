@@ -112,8 +112,10 @@ pub fn allocFromManagedPair(
         return null;
     }
 
-    const numer_val = try big_int_mod.allocFromManaged(rt, &r_num);
-    const denom_val = try big_int_mod.allocFromManaged(rt, &r_den);
+    // Ratio numerator/denominator are internal BigInts (never printed
+    // standalone); `.bigint` origin is the harmless fixed choice (D-165).
+    const numer_val = try big_int_mod.allocFromManaged(rt, &r_num, .bigint);
+    const denom_val = try big_int_mod.allocFromManaged(rt, &r_den, .bigint);
 
     const r = try rt.gc.alloc(Ratio);
     r.* = .{

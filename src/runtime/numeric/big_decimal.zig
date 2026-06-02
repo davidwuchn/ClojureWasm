@@ -89,7 +89,7 @@ fn buildNormalized(rt: *Runtime, unscaled: *const std.math.big.int.Managed, scal
             norm_scale -= 1;
         }
     }
-    const norm_unscaled = try big_int_mod.allocFromManaged(rt, &n);
+    const norm_unscaled = try big_int_mod.allocFromManaged(rt, &n, .bigint);
     return .{ .unscaled = norm_unscaled, .scale = norm_scale };
 }
 
@@ -109,7 +109,7 @@ pub fn allocFromManagedScale(
     unscaled: *const std.math.big.int.Managed,
     scale: i32,
 ) !Value {
-    const unscaled_val = try big_int_mod.allocFromManaged(rt, unscaled);
+    const unscaled_val = try big_int_mod.allocFromManaged(rt, unscaled, .bigint);
     const norm = try buildNormalized(rt, unscaled, scale);
 
     const bd = try rt.gc.alloc(BigDecimal);

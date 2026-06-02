@@ -317,7 +317,11 @@ pub fn analyze(
 pub fn integerLiteralToValue(rt: *Runtime, i: i64) !Value {
     const nb = @import("../../runtime/value/nan_box.zig");
     if (i < nb.NB_I48_MIN or i > nb.NB_I48_MAX) {
-        return try big_int.allocFromI64(rt, i);
+        // A no-`N` integer literal past i48 (but ≤ i64, since the param is
+        // i64) is a primitive Long (D-165): heap-boxed but `.long` origin →
+        // prints without `N`, class Long. (Past-i64 literals route through
+        // `parseBigIntLiteral` → `.bigint`.)
+        return try big_int.allocFromI64(rt, i, .long);
     }
     return Value.initInteger(i);
 }
@@ -327,7 +331,9 @@ pub fn parseBigIntLiteral(rt: *Runtime, digits: []const u8, loc: error_mod.Sourc
     var m = big_int.parseBase10(rt, digits) catch
         return error_catalog.raise(.integer_literal_invalid, loc, .{ .text = digits });
     defer m.deinit();
-    return try big_int.allocFromManaged(rt, &m);
+    // `5N` and a past-i64 no-`N` literal both reach here — both are genuine
+    // BigInts (clj: `5N`→BigInt, `99999999999999999999`→BigInt `…N`). D-165.
+    return try big_int.allocFromManaged(rt, &m, .bigint);
 }
 
 /// Parse `1.5M`-style digits into a BigDecimal Value. The unscaled

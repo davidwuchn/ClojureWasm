@@ -396,10 +396,16 @@ pub fn printValue(w: *Writer, v: Value) Writer.Error!void {
 }
 
 fn printBigInt(w: *Writer, v: Value) Writer.Error!void {
-    // BigInt's Managed.format renders just the digits; suffix with
-    // `N` to disambiguate from a plain Long in pr-str round-trip.
+    // A heap integer's Managed renders just the digits; the `N` suffix
+    // marks a genuine BigInt. A heap-boxed Long (D-165 / ADR-0080) prints
+    // WITHOUT `N` (it is a primitive Long that merely overflowed cljw's i48
+    // inline range), matching clj `(parse-long "999999999999999")`.
     const m = big_int_mod.asManaged(v);
-    try w.print("{f}N", .{m});
+    if (big_int_mod.originOf(v) == .long) {
+        try w.print("{f}", .{m});
+    } else {
+        try w.print("{f}N", .{m});
+    }
 }
 
 fn printRatio(w: *Writer, v: Value) Writer.Error!void {

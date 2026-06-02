@@ -711,7 +711,12 @@ pub fn bigintCoerce(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLoc
     _ = env;
     try error_catalog.checkArity("bigint", args, 1, loc);
     const v = args[0];
-    if (v.tag() == .big_int) return v;
+    // `(bigint x)` ALWAYS yields a genuine BigInt (D-165): a heap-Long
+    // (`(bigint (parse-long "999…"))`) re-flags to `.bigint` so it prints
+    // `…N` / class BigInt; an already-`.bigint` passes through.
+    if (v.tag() == .big_int) {
+        return if (big_int_mod.originOf(v) == .bigint) v else big_int_mod.allocFromManaged(rt, big_int_mod.asManaged(v), .bigint);
+    }
     if (v.tag() == .string) {
         // `(bigint "999…")` → arbitrary-precision N. parseBase10 accepts
         // `[-+]?ddd` and rejects `.` / `e` / non-digits, matching clj's
@@ -720,7 +725,7 @@ pub fn bigintCoerce(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLoc
         var m = big_int_mod.parseBase10(rt, s) catch
             return error_catalog.raise(.number_format_invalid, loc, .{ .fn_name = "bigint", .text = s });
         defer m.deinit();
-        return big_int_mod.allocFromManaged(rt, &m);
+        return big_int_mod.allocFromManaged(rt, &m, .bigint);
     }
     const i = promote.truncToI64(rt, v) catch |err| switch (err) {
         error.OutOfRange => {
@@ -733,7 +738,7 @@ pub fn bigintCoerce(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLoc
         error.NotANumber => return error_catalog.raise(.type_arg_not_number, loc, .{ .fn_name = "bigint", .actual = @tagName(v.tag()) }),
         else => return err,
     };
-    return big_int_mod.allocFromI64(rt, i);
+    return big_int_mod.allocFromI64(rt, i, .bigint);
 }
 
 /// A float beyond Long range coerced to a BigInt: render via `printFloat` (cw's
@@ -781,7 +786,8 @@ fn bigdecTruncToBigInt(rt: *Runtime, bd: Value) anyerror!Value {
             result.swap(&q);
         }
     }
-    return big_int_mod.allocFromManaged(rt, &result);
+    // `(bigint <large float>)` → a genuine BigInt (D-165).
+    return big_int_mod.allocFromManaged(rt, &result, .bigint);
 }
 
 /// `(bigdec n/d)` — exact decimal of a Ratio, or ArithmeticException when the

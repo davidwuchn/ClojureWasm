@@ -86,7 +86,28 @@ pub fn wrapI64(rt: *Runtime, x: i64) !Value {
     var m = try Managed.init(rt.gc.infra);
     defer m.deinit();
     try m.set(x);
-    return try big_int.allocFromManaged(rt, &m);
+    // The "exact i64 → Value" entry is the Long-overflow path — `x` is an
+    // i64 so it always fits a Long → heap-Long (D-165: no `N`, class Long).
+    return try big_int.allocFromManaged(rt, &m, .long);
+}
+
+/// True iff `v` is a GENUINE BigInt (heap integer with `.bigint` origin) —
+/// NOT a heap-boxed Long (D-165). The discriminator for arithmetic result
+/// origin: a heap-Long operand keeps the result Long-category.
+fn isTrueBigInt(v: Value) bool {
+    return v.tag() == .big_int and big_int.originOf(v) == .bigint;
+}
+
+/// Wrap an integer arithmetic result `r` with the correct origin given the
+/// operands (D-165): a genuine-BigInt operand forces a BigInt result
+/// (`(+ 1N 2)`→3N); otherwise the operands are Long-category (inline or
+/// heap-Long) → `wrapManaged` range-splits (inline / heap-Long / — past i64
+/// — BigInt per AD-008). This is the operand-propagation the both-`isInt`
+/// dispatch misses (a heap-Long is tag `.big_int`, so it falls to the
+/// Managed arm yet must stay a Long).
+fn wrapArith(rt: *Runtime, r: *const Managed, a: Value, b: Value) !Value {
+    if (isTrueBigInt(a) or isTrueBigInt(b)) return try big_int.allocFromManaged(rt, r, .bigint);
+    return try wrapManaged(rt, r);
 }
 
 /// Collapse a Managed integer to a Value: immediate-Long when it fits i48,
@@ -94,12 +115,15 @@ pub fn wrapI64(rt: *Runtime, x: i64) !Value {
 /// already hold a Managed (e.g. the ratio numerator/denominator accessors),
 /// so a small numerator prints as `3`, not `3N`.
 pub fn wrapManaged(rt: *Runtime, m: *const Managed) !Value {
-    // `toInt` errors when the value exceeds i64; `catch null` folds that into
-    // "doesn't fit a Long" so the BigInt path below handles it.
+    // Long-category collapse (ratio/div/quot results): fits i48 → inline
+    // Long; fits i64 → heap-Long (`.long`, D-165: no `N`); exceeds i64 → a
+    // genuine BigInt (`.bigint`) — a Long can't hold > i64, so the value is
+    // necessarily arbitrary-precision.
     if (m.toInt(i64) catch null) |x| {
         if (inI48(x)) return Value.initInteger(x);
+        return try big_int.allocFromManaged(rt, m, .long);
     }
-    return try big_int.allocFromManaged(rt, m);
+    return try big_int.allocFromManaged(rt, m, .bigint);
 }
 
 const big_decimal_mod = @import("big_decimal.zig");
@@ -240,13 +264,16 @@ pub fn addPromoting(rt: *Runtime, a: Value, b: Value) !Value {
         defer am.deinit();
         var bm = try coerceToManaged(rt, b);
         defer bm.deinit();
-        return try big_int.allocAddManaged(rt, &am, &bm);
+        return try big_int.allocAddManaged(rt, &am, &bm, .bigint);
     }
     var am = try coerceToManaged(rt, a);
     defer am.deinit();
     var bm = try coerceToManaged(rt, b);
     defer bm.deinit();
-    return try big_int.allocAddManaged(rt, &am, &bm);
+    var r = try Managed.init(rt.gc.infra);
+    defer r.deinit();
+    try r.add(&am, &bm);
+    return try wrapArith(rt, &r, a, b);
 }
 
 /// `a - b` with auto-promotion.
@@ -269,13 +296,16 @@ pub fn subPromoting(rt: *Runtime, a: Value, b: Value) !Value {
         defer am.deinit();
         var bm = try coerceToManaged(rt, b);
         defer bm.deinit();
-        return try big_int.allocSubManaged(rt, &am, &bm);
+        return try big_int.allocSubManaged(rt, &am, &bm, .bigint);
     }
     var am = try coerceToManaged(rt, a);
     defer am.deinit();
     var bm = try coerceToManaged(rt, b);
     defer bm.deinit();
-    return try big_int.allocSubManaged(rt, &am, &bm);
+    var r = try Managed.init(rt.gc.infra);
+    defer r.deinit();
+    try r.sub(&am, &bm);
+    return try wrapArith(rt, &r, a, b);
 }
 
 /// `a * b` with auto-promotion.
@@ -298,13 +328,16 @@ pub fn mulPromoting(rt: *Runtime, a: Value, b: Value) !Value {
         defer am.deinit();
         var bm = try coerceToManaged(rt, b);
         defer bm.deinit();
-        return try big_int.allocMulManaged(rt, &am, &bm);
+        return try big_int.allocMulManaged(rt, &am, &bm, .bigint);
     }
     var am = try coerceToManaged(rt, a);
     defer am.deinit();
     var bm = try coerceToManaged(rt, b);
     defer bm.deinit();
-    return try big_int.allocMulManaged(rt, &am, &bm);
+    var r = try Managed.init(rt.gc.infra);
+    defer r.deinit();
+    try r.mul(&am, &bm);
+    return try wrapArith(rt, &r, a, b);
 }
 
 /// Strict-integer `a + b`. Returns `error.IntegerOverflow` instead
@@ -324,12 +357,15 @@ pub fn addStrict(rt: *Runtime, a: Value, b: Value) !Value {
         if (overflowed != 0 or !inI48(sum)) return error.IntegerOverflow;
         return Value.initInteger(sum);
     }
-    // BigInt arms stay non-overflow (already arbitrary precision).
+    // BigInt arms stay non-overflow (already arbitrary precision) → .bigint.
     var am = try coerceToManaged(rt, a);
     defer am.deinit();
     var bm = try coerceToManaged(rt, b);
     defer bm.deinit();
-    return try big_int.allocAddManaged(rt, &am, &bm);
+    var r = try Managed.init(rt.gc.infra);
+    defer r.deinit();
+    try r.add(&am, &bm);
+    return try wrapArith(rt, &r, a, b);
 }
 
 pub fn subStrict(rt: *Runtime, a: Value, b: Value) !Value {
@@ -350,7 +386,10 @@ pub fn subStrict(rt: *Runtime, a: Value, b: Value) !Value {
     defer am.deinit();
     var bm = try coerceToManaged(rt, b);
     defer bm.deinit();
-    return try big_int.allocSubManaged(rt, &am, &bm);
+    var r = try Managed.init(rt.gc.infra);
+    defer r.deinit();
+    try r.sub(&am, &bm);
+    return try wrapArith(rt, &r, a, b);
 }
 
 pub fn mulStrict(rt: *Runtime, a: Value, b: Value) !Value {
@@ -371,7 +410,10 @@ pub fn mulStrict(rt: *Runtime, a: Value, b: Value) !Value {
     defer am.deinit();
     var bm = try coerceToManaged(rt, b);
     defer bm.deinit();
-    return try big_int.allocMulManaged(rt, &am, &bm);
+    var r = try Managed.init(rt.gc.infra);
+    defer r.deinit();
+    try r.mul(&am, &bm);
+    return try wrapArith(rt, &r, a, b);
 }
 
 /// `a / b` with auto-promotion. Integer/Integer evenly-divisible
@@ -416,20 +458,11 @@ pub fn divPromoting(rt: *Runtime, a: Value, b: Value) !Value {
     var r = try Managed.init(rt.gc.infra);
     defer r.deinit();
     try q.divTrunc(&r, &am, &bm);
-    if (q.toInt(i64)) |qi| {
-        if (inI48(qi)) return Value.initInteger(qi);
-    } else |_| {
-        // q exceeds i64 range — fall through to BigInt wrap below.
-    }
-    return try big_int.allocFromManaged(rt, &q);
-}
-
-/// True when `v` carries an exact arbitrary-precision tag (BigInt or
-/// Ratio). Used by `quotPromoting` for the JVM category-contagion rule:
-/// `quot` of a BigInt/Ratio operand returns a BigInt (prints `N`), even
-/// when the quotient is small enough to fit a Long.
-fn isExactBig(v: Value) bool {
-    return v.tag() == .big_int or v.tag() == .ratio;
+    // Category contagion (D-165, mirrors quotPromoting): a BigInt operand
+    // forces a BigInt result (`(/ 6N 3)`→2N); both-Long collapses via
+    // wrapManaged (fits i48 → inline, fits i64 → heap-Long, else BigInt).
+    if (isTrueBigInt(a) or isTrueBigInt(b) or a.tag() == .ratio or b.tag() == .ratio) return try big_int.allocFromManaged(rt, &q, .bigint);
+    return try wrapManaged(rt, &q);
 }
 
 /// Exact sign of a numeric Value: `.lt` (negative) / `.eq` (zero) /
@@ -496,7 +529,7 @@ pub fn quotPromoting(rt: *Runtime, a: Value, b: Value) !Value {
 
     // Category contagion: a BigInt/Ratio operand forces a BigInt result
     // (so `(quot 10N 3N)` prints `3N`); both-Long stays Long.
-    if (isExactBig(a) or isExactBig(b)) return try big_int.allocFromManaged(rt, &q);
+    if (isTrueBigInt(a) or isTrueBigInt(b) or a.tag() == .ratio or b.tag() == .ratio) return try big_int.allocFromManaged(rt, &q, .bigint);
     return try wrapManaged(rt, &q);
 }
 

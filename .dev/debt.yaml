@@ -10,7 +10,7 @@
 
 active:
   - id: "D-210"
-    status: "now — clj-parity root-cause campaign ANCHOR (ROADMAP §9.2.P, ADR-0076, user-directed 2026-06-02). The standing floor that drains C1..C7. **C1 (D-164) + C2 (D-205) + C3 (D-207) + C4 (D-209) + C6 (D-200) + C5 (D-198) DISCHARGED 2026-06-03**; LAST unit C7 = D-165 (heap-boxed Long B2)."
+    status: "STANDING FLOOR (quality-loop floor: clj-parity) — the clj-parity root-cause campaign C1..C7 is **COMPLETE 2026-06-03** (ROADMAP §9.2.P, ADR-0076, user-directed 2026-06-02): C1 (D-164) + C2 (D-205) + C3 (D-207) + C4 (D-209) + C6 (D-200) + C5 (D-198) + **C7 (D-165, ADR-0080) DISCHARGED**. The anchor now persists ONLY as the standing `quality-loop floor: clj-parity` that drains any NEW cljw↔clj DIFF a future sweep surfaces (drain highest-value-first, per CLAUDE.md Step 0.5 floor-drain). No remaining campaign units. C7 spun off **D-214** (bit-ops on heap-Long, pre-existing i48-only gap)."
     category: "runtime"
     barrier: |-
       **clj-parity root-cause campaign (the A-half of ADR-0076)** — the standing
@@ -64,7 +64,35 @@ active:
       **cljw collapses the empty list / empty realized seq to `nil`; real Clojure has a distinct `()`** (clj-verified): `(list? '())` / `(seq? '())` → cljw false, clj true; `(pr-str '())` → cljw `"nil"`, clj `"()"`; `(= () nil)` → cljw true, clj false; an empty `filter`/`map`/`rest`/`remove`/`flatten` realizes/prints as `"nil"` not `"()"`. Root: cljw has no persistent empty-seq Value distinct from nil — `print.zig::listFromItems([])` returns `nil_val`, and `'()` reads as nil. **あるべき論 (C1, loop-resolvable — DA-confirmed NO new NaN-box slot)**: introduce an interned distinct empty-list/empty-seq Value inside the existing `.list`/seq tags, threaded through cons/rest/seq/filter/map/print/=/list?/seq? — uniform across the WHOLE seq model in ONE big-bang (a per-op `(or … '())` is the ad-hoc-patch smell F-011 forbids). HIGHEST LEVERAGE: one fix clears every empty-seq predicate + equality + print. Leaves a corpus line pinning `(seq? '())`/`(list? '())`/`(pr-str '())`/`(= '() nil)`. Cross-ref ADR-0076 §9.2.P C1 / D-210 anchor / F-011. recall trigger: clj-parity campaign C1 (the lead unit).
     last_reviewed: "2026-06-03"
   - id: "D-165"
-    status: "now — clj-parity campaign C7, LOOP-RESOLVABLE (user-decided 2026-06-02: heap-boxed Long, B2 representation, no F-004 amendment). Re-opened from structural-defer; ADR-0076 am1."
+    status: |-
+      DISCHARGED 2026-06-03 (clj-parity campaign C7, the LAST unit, ADR-0080):
+      heap-boxed Long (B2) — a `Long`-origin in (2^47, i64] now stays a Long
+      (`(class …)`→Long, print no `N`), promoting to BigInt only PAST i64.
+      Representation: an `IntOrigin = enum(u8) { long, bigint }` field on the
+      heap-integer struct (`big_int.zig`, replacing one `_pad` byte — m offset
+      preserved, **NO new NaN-box slot, F-004 layout UNCHANGED**; DA Alt 2, the
+      non-defaulted enum that compile-enforces classification on every alloc).
+      Classification is by **dispatch arm** (DA's key insight): the alloc fns
+      (`allocFromI64`/`allocFromManaged`/`allocAdd|Sub|Mul|DivManaged`) take a
+      required `origin` arg; `promote.wrapManaged` range-splits (fits-i48→inline,
+      fits-i64→.long, >i64→.bigint); `promote.wrapArith` propagates BigInt
+      contagion (`isTrueBigInt(a) or isTrueBigInt(b)` → .bigint else wrapManaged)
+      so a heap-Long operand falling to a Managed arm does NOT spuriously gain N
+      (the DA's operand-propagation warning, confirmed by `(- 0 999999999999999)`);
+      quot/div add `or .ratio` operands to the contagion test. Literals
+      (analyzer past-i48 → .long, parseBigIntLiteral → .bigint), json (≤i64 .long,
+      >i64 .bigint), `(bigint …)` (math.zig re-flags heap-Long→.bigint), ratio /
+      big_decimal internals (.bigint). `print.zig::printBigInt` gates `N` on
+      `origin == .bigint`; `class_name.zig::matchNativeExact` + `protocol.zig`
+      classPrim report Long for origin .long, BigInt for .bigint; `=`/`hash`
+      untouched (value-equal across origins — clj parity verified). Corpus
+      `heap_long.txt` 29/29. Stale e2e that pinned the OLD `…N` divergence
+      updated to clj-correct (no N): phase14_long_statics (parseLong/highestOneBit/
+      reverse/reverseBytes), phase14_static_fields (Long/MAX_VALUE,MIN_VALUE),
+      phase9_json (read_long). RESIDUAL: bit-ops on a heap-Long operand still
+      raise (i48-only `expectInteger`) — a PRE-EXISTING gap (bit ops never
+      handled >i48, even as BigInt), spun off as **D-214**. Cross-ref ADR-0080 /
+      ADR-0076 §9.2.P C7 / D-210 anchor / D-014a / AD-008 / D-214 / F-004/005.
     category: "runtime"
     barrier: |-
       **Longs in (2^47, 2^63] print as BigInt (`N` suffix) where JVM keeps a primitive Long** (clj-verified — clj Long is genuinely full i64; promotes only PAST i64): `(parse-long "999999999999999")` → cljw `999999999999999N` (BigInt), clj `999999999999999` (Long); `(class …)` differs (BigInt vs Long). The VALUE is exact — only print form + `(class …)` diverge. Root: cljw Long is i48 in the NaN-box; values beyond ±2^47 promote to heap BigInt (D-014a, lossless but prints `N`) — promotion fires at 2^47 where clj keeps Long to i64. **あるべき論 (C7, LOOP-RESOLVABLE — user-decided 2026-06-02)**: heap-box a distinct **Long** representation for (2^47, i64] so it stays Long (`(class …)`→Long, print no-`N`), promoting to BigInt only PAST i64. **NaN-box i64-inline is fundamentally impossible** (8-byte Value must carry tag + payload; cw v0 also capped at i48 — empirically confirmed) → heap-box is the JVM-mirror finished form (JVM boxes Long on the heap too; `Numbers.num(long)`→`Long.valueOf`). **Representation = B2** (a `Long-origin / fits-i64` flag on the heap-integer struct; **NO new NaN-box slot, F-004 layout UNCHANGED**; print + `(class)` consult the flag). Internal representation is F-005's "Zig-native" domain = loop's call (NOT an F-NNN amendment — F-005's stated surface already wants Long-to-i64). i47-inline window (±1.4e14) covers ms-timestamps (safe ~4400yr) / counters / sizes; only sub-ms timestamps / Snowflake IDs / 64-bit hashes hit the heap path (still ≤ JVM, which boxes everything >127). The OVERFLOW behaviour past i64 (cljw promote vs clj throw) is the separate AD-008 accepted divergence, NOT this row. Cross-ref ADR-0076 §9.2.P C7 / D-210 anchor / D-014a / AD-008 / F-005 (surface) / F-004 (unchanged). recall trigger: clj-parity campaign C7.
@@ -86,6 +114,12 @@ active:
     category: "runtime"
     barrier: |-
       **`(class e)` of ANY exception value → "ex_info", not the specific class**: `(class (ex-info "m" {}))` → cljw `"ex_info"` / clj `"clojure.lang.ExceptionInfo"`; `(class (Exception. "x"))` → cljw `"ex_info"` / clj `"Exception"` (AD-003 simple-name aside); `(try (/ 1 0) (catch Throwable e (class e)))` → cljw `"ex_info"` / clj `"ArithmeticException"`. ROOT: an exception is an `.ex_info` Value; `(class)` (protocol.zig `classPrim`) routes a non-typed_instance through `rt.nativeDescriptor(.ex_info)` whose fqcn is the generic `"ex_info"` (`@tagName`), IGNORING the per-value `ExInfo.class_name` field (ADR-0060) that catch-matching DOES consult (`host_class.thrownClassName`). So `(class)` collapses every exception to one name. Pre-existing (predates C5; affects ex-info + caught catalog errors + the C5 `(Exception. …)` ctors uniformly — NOT a C5 regression). Discharge: classPrim's `.ex_info` arm builds a `.type_descriptor` ref from the per-value `class_name` (null → \"ExceptionInfo\"), needing a per-Runtime synthetic-exception-descriptor cache keyed by class-name string (so `makeTypeDescriptorRef`'s per-descriptor ref-cache still holds). clj-grounded (`(class (ex-info …))`→ExceptionInfo, `(class (Exception. …))`→Exception, caught-`(/ 1 0)`→ArithmeticException; cljw shows the simple name per AD-003). Cross-ref ADR-0060 (ExInfo.class_name) / D-198 (surfacer) / host_class.zig (catch uses class_name) / AD-003. recall trigger: when exception `(class)`/reflection OR host-class descriptor work is next."
+    last_reviewed: "2026-06-03"
+  - id: "D-214"
+    status: "now (bug, deferred to own cycle) — surfaced by C7/D-165 heap-Long sweep 2026-06-03."
+    category: "runtime"
+    barrier: |-
+      **bit-ops raise on a Long operand in (2^47, i64]**: `(bit-and 1000000000000000 1000000000000000)` → cljw `bit-and: expected integer, got big_int` / clj `1000000000000000`. ROOT: every bit op (`bit-and`/`or`/`xor`/`not`/`and-not`/`shift-left`/`shift-right`/`unsigned-shift-right`/`clear`/`set`/`flip`/`test`, plus `Long/`+`Integer/` bit statics) reads operands via `error_catalog.expectInteger`, which returns **i48** and rejects a heap-boxed integer (`.big_int` tag) outright — AND the result is wrapped with `Value.initInteger`, which falls back to **float** past i48. So bit ops are silently i48-only: a >2^47 operand errors, a >2^47 result would lose its integer type. PRE-EXISTING (predates C7 — before heap-Long these values were BigInt and bit ops errored identically; C7 did NOT regress it, only made the gap visible because the values are now Longs that clj operates on cleanly). Discharge (big-bang, all bit ops at once): add a shared `expectI64` helper (accepts inline `.integer` + heap-Long `.big_int` origin `.long`, extracts i64; rejects float/ratio/true-BigInt with the existing message) and wrap results via `promote.wrapManaged` (i64→inline-or-heap-Long, no float fallback). clj-grounded: `(bit-and 1e15 1e15)`→1e15 (Long), `(bit-shift-left 1 50)`→1125899906842624 (Long, no N), shifts/and/or/xor on full-Long operands. Leave a corpus line `test/diff/clj_corpus/bit_ops_i64.txt`. NOTE: true-BigInt (>i64) bit-ops — clj DOES support `(bit-and bigint bigint)` via BigInteger; whether cljw extends that far is a secondary decision (clj-parity would say yes, but needs multi-word bit logic on the managed magnitude — defer that sub-piece, raise a clean error for now). Cross-ref D-165 (surfacer) / AD-008 / F-011 / `error/catalog.zig::expectInteger` / `lang/primitive/math.zig` bit ops. recall trigger: when bit-ops / numeric-tower coverage is next, OR a corpus needs 64-bit bit-twiddling parity.
     last_reviewed: "2026-06-03"
   - id: "D-207"
     status: |-

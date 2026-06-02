@@ -35,9 +35,23 @@ const hash = @import("../hash.zig");
 /// Heap-allocated arbitrary-precision integer. The wrapper is GC-
 /// managed; the `*Managed` it points at lives on `gc.infra` (process-
 /// lifetime GPA per F-006). The finaliser releases both.
+/// Whether a heap integer represents a primitive Long (overflowed cljw's
+/// i48 inline range but stays ≤ i64) or a genuine arbitrary-precision
+/// BigInt (D-165 / ADR-0080 — B2). INTENT-based, set by the producing call,
+/// NEVER inferred from magnitude: `(parse-long "999999999999999")` →
+/// `.long`, `(bigint 5)` / `5N` → `.bigint`. Gates only print (`N` suffix)
+/// and `(class)` / `instance?` (Long vs BigInt); `=` / hash are value-based
+/// (D-205) and ignore it.
+pub const IntOrigin = enum(u8) { long, bigint };
+
 pub const BigInt = extern struct {
     header: HeapHeader,
-    _pad: [6]u8 = .{ 0, 0, 0, 0, 0, 0 },
+    /// D-165 / ADR-0080: heap-Long vs genuine-BigInt discriminator. One
+    /// byte carved from the trailing pad so `m`'s offset is unchanged (the
+    /// `@offsetOf(BigInt, "m")` asserts in ratio.zig / big_decimal.zig stay
+    /// green).
+    origin: IntOrigin = .bigint,
+    _pad: [5]u8 = .{ 0, 0, 0, 0, 0 },
     /// Pointer to a `Managed` allocated on `gc.infra`. The Managed
     /// owns its limb slice via its embedded allocator (also gc.infra).
     /// `finaliseGc` chains `m.deinit()` + `infra.destroy(m)`.
@@ -48,6 +62,11 @@ pub const BigInt = extern struct {
         std.debug.assert(@offsetOf(BigInt, "header") == 0);
     }
 };
+
+/// The heap integer's origin (D-165). Caller must know `v` is `.big_int`.
+pub fn originOf(v: Value) IntOrigin {
+    return v.decodePtr(*const BigInt).origin;
+}
 
 /// Allocate a BigInt holding the i64 `v`. The Managed is constructed
 /// Parse a base-10 digit string `[-+]?ddd` into a Managed on `rt.gc.infra`,
@@ -80,7 +99,7 @@ pub fn parseBase10(rt: *Runtime, s: []const u8) !std.math.big.int.Managed {
 
 /// on `rt.gc.infra` (GPA) per F-006 §2; the BigInt wrapper lives on
 /// `rt.gc.alloc` (GC heap). Finaliser releases both at sweep time.
-pub fn allocFromI64(rt: *Runtime, v: i64) !Value {
+pub fn allocFromI64(rt: *Runtime, v: i64, origin: IntOrigin) !Value {
     const m_ptr = try rt.gc.infra.create(std.math.big.int.Managed);
     errdefer rt.gc.infra.destroy(m_ptr);
     m_ptr.* = try std.math.big.int.Managed.init(rt.gc.infra);
@@ -88,7 +107,7 @@ pub fn allocFromI64(rt: *Runtime, v: i64) !Value {
     try m_ptr.set(v);
 
     const bi = try rt.gc.alloc(BigInt);
-    bi.* = .{ .header = HeapHeader.init(.big_int), .m = m_ptr };
+    bi.* = .{ .header = HeapHeader.init(.big_int), .origin = origin, .m = m_ptr };
     return Value.encodeHeapPtr(.big_int, bi);
 }
 
@@ -101,13 +120,13 @@ pub fn allocFromI64(rt: *Runtime, v: i64) !Value {
 /// Linux glibc-x86 off-by-one past 2^64 in Zig 0.16 (D-047). Parse base-10
 /// digit strings via `parseBase10` above (platform-independent mul/add); use
 /// `set` + bit-shift for powers of two.
-pub fn allocFromManaged(rt: *Runtime, src: *const std.math.big.int.Managed) !Value {
+pub fn allocFromManaged(rt: *Runtime, src: *const std.math.big.int.Managed, origin: IntOrigin) !Value {
     const m_ptr = try rt.gc.infra.create(std.math.big.int.Managed);
     errdefer rt.gc.infra.destroy(m_ptr);
     m_ptr.* = try src.cloneWithDifferentAllocator(rt.gc.infra);
 
     const bi = try rt.gc.alloc(BigInt);
-    bi.* = .{ .header = HeapHeader.init(.big_int), .m = m_ptr };
+    bi.* = .{ .header = HeapHeader.init(.big_int), .origin = origin, .m = m_ptr };
     return Value.encodeHeapPtr(.big_int, bi);
 }
 
@@ -170,11 +189,12 @@ pub fn allocAddManaged(
     rt: *Runtime,
     a: *const std.math.big.int.Managed,
     b: *const std.math.big.int.Managed,
+    origin: IntOrigin,
 ) !Value {
     var r = try std.math.big.int.Managed.init(rt.gc.infra);
     defer r.deinit();
     try r.add(a, b);
-    return allocFromManaged(rt, &r);
+    return allocFromManaged(rt, &r, origin);
 }
 
 /// Allocate `a - b`.
@@ -182,11 +202,12 @@ pub fn allocSubManaged(
     rt: *Runtime,
     a: *const std.math.big.int.Managed,
     b: *const std.math.big.int.Managed,
+    origin: IntOrigin,
 ) !Value {
     var r = try std.math.big.int.Managed.init(rt.gc.infra);
     defer r.deinit();
     try r.sub(a, b);
-    return allocFromManaged(rt, &r);
+    return allocFromManaged(rt, &r, origin);
 }
 
 /// Allocate `a * b`.
@@ -194,11 +215,12 @@ pub fn allocMulManaged(
     rt: *Runtime,
     a: *const std.math.big.int.Managed,
     b: *const std.math.big.int.Managed,
+    origin: IntOrigin,
 ) !Value {
     var r = try std.math.big.int.Managed.init(rt.gc.infra);
     defer r.deinit();
     try r.mul(a, b);
-    return allocFromManaged(rt, &r);
+    return allocFromManaged(rt, &r, origin);
 }
 
 /// Floor-divide `a / b` (integer quotient toward -∞). Raises
@@ -210,6 +232,7 @@ pub fn allocDivFloorManaged(
     rt: *Runtime,
     a: *const std.math.big.int.Managed,
     b: *const std.math.big.int.Managed,
+    origin: IntOrigin,
 ) !Value {
     if (b.eqlZero()) return error.DivideByZero;
     var q = try std.math.big.int.Managed.init(rt.gc.infra);
@@ -217,7 +240,7 @@ pub fn allocDivFloorManaged(
     var r = try std.math.big.int.Managed.init(rt.gc.infra);
     defer r.deinit();
     try q.divFloor(&r, a, b);
-    return allocFromManaged(rt, &q);
+    return allocFromManaged(rt, &q, origin);
 }
 
 // --- tests ---
@@ -251,7 +274,7 @@ test "allocFromI64 + asManaged round-trip on small value" {
     var fix = RuntimeFixture.init();
     defer fix.deinit();
 
-    const v = try allocFromI64(&fix.rt, 12345);
+    const v = try allocFromI64(&fix.rt, 12345, .long);
     try testing.expect(v.tag() == .big_int);
     const m = asManaged(v);
     try testing.expectEqual(@as(i64, 12345), try m.toInt(i64));
@@ -261,7 +284,7 @@ test "allocFromI64 + asManaged round-trip on negative value" {
     var fix = RuntimeFixture.init();
     defer fix.deinit();
 
-    const v = try allocFromI64(&fix.rt, -987654321);
+    const v = try allocFromI64(&fix.rt, -987654321, .long);
     const m = asManaged(v);
     try testing.expectEqual(@as(i64, -987654321), try m.toInt(i64));
 }
@@ -278,7 +301,7 @@ test "allocFromManaged holds values beyond i64 range (2^65 via shiftLeft)" {
     try src.set(1);
     try src.shiftLeft(&src, 65);
 
-    const v = try allocFromManaged(&fix.rt, &src);
+    const v = try allocFromManaged(&fix.rt, &src, .long);
     const m = asManaged(v);
     try testing.expect(m.bitCountAbs() > 64);
     try testing.expect(m.eql(src));
@@ -330,13 +353,13 @@ test "allocAddManaged / SubManaged / MulManaged round-trip" {
     defer b.deinit();
     try b.set(5);
 
-    const sum_v = try allocAddManaged(&fix.rt, &a, &b);
+    const sum_v = try allocAddManaged(&fix.rt, &a, &b, .long);
     try testing.expectEqual(@as(i64, 12), try asManaged(sum_v).toInt(i64));
 
-    const diff_v = try allocSubManaged(&fix.rt, &a, &b);
+    const diff_v = try allocSubManaged(&fix.rt, &a, &b, .long);
     try testing.expectEqual(@as(i64, 2), try asManaged(diff_v).toInt(i64));
 
-    const prod_v = try allocMulManaged(&fix.rt, &a, &b);
+    const prod_v = try allocMulManaged(&fix.rt, &a, &b, .long);
     try testing.expectEqual(@as(i64, 35), try asManaged(prod_v).toInt(i64));
 }
 
@@ -351,7 +374,7 @@ test "allocDivFloorManaged raises DivideByZero on b=0" {
     defer z.deinit();
     try z.set(0);
 
-    try testing.expectError(error.DivideByZero, allocDivFloorManaged(&fix.rt, &a, &z));
+    try testing.expectError(error.DivideByZero, allocDivFloorManaged(&fix.rt, &a, &z, .long));
 }
 
 test "allocDivFloorManaged returns floor quotient (7 / 2 = 3)" {
@@ -365,14 +388,14 @@ test "allocDivFloorManaged returns floor quotient (7 / 2 = 3)" {
     defer b.deinit();
     try b.set(2);
 
-    const q = try allocDivFloorManaged(&fix.rt, &a, &b);
+    const q = try allocDivFloorManaged(&fix.rt, &a, &b, .long);
     try testing.expectEqual(@as(i64, 3), try asManaged(q).toInt(i64));
 }
 
 test "Runtime.deinit releases BigInt + Managed limbs (no leak)" {
     var fix = RuntimeFixture.init();
-    _ = try allocFromI64(&fix.rt, 42);
-    _ = try allocFromI64(&fix.rt, std.math.maxInt(i64));
+    _ = try allocFromI64(&fix.rt, 42, .long);
+    _ = try allocFromI64(&fix.rt, std.math.maxInt(i64), .long);
     // Don't `defer fix.deinit()` — call manually so the testing
     // allocator's leak detector verifies the finaliser ran.
     fix.deinit();

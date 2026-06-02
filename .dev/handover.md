@@ -5,57 +5,48 @@
 
 ## Resume contract
 
-- **HEAD**: see `git log` (clj-parity campaign on `cw-from-scratch`).
-  Gate green (Mac 206). debt ledger = **`.dev/debt.yaml`**.
-- **First commit on resume MUST be: clj-parity campaign C7 = D-165**
-  (the LAST campaign unit): Longs in (2^47, 2^63] print as BigInt `…N` where
-  JVM keeps a primitive Long. あるべき論 = **heap-boxed Long, representation B2**
-  (a `Long-origin/fits-i64` flag on the heap-integer struct — NO new NaN-box
-  slot, F-004 layout UNCHANGED; F-005's surface already wants Long-to-i64;
-  NaN-box i64-inline is impossible, cw v0 also i48). `(class)`→Long + print
-  no-`N` for the (2^47, i64] window; promote to BigInt only PAST i64. The
-  overflow-past-i64 behaviour (cljw promote vs clj throw) is the separate
-  user-ratified **AD-008**, NOT this row. C1–C6 (D-164/205/207/209/200/198)
-  all DONE. After C7, the clj-parity campaign C1..C7 is COMPLETE — D-210
-  anchor becomes a standing `quality-loop floor` (drain new sweep DIFFs).
-  Full unit table: D-210 anchor + ROADMAP §9.2.P.
-- **Forbidden**: "fixing" an AD-001..008 accepted divergence (set print-order,
-  `(class)` simple name, error Kind, **AD-008 Long-overflow auto-promote** —
-  see `.dev/accepted_divergences.yaml`); for C7 D-165, widening the NaN-box
-  inline int or adding a `.date`/heap-Long slot (use **B2**: a flag on the
-  heap-int, F-004 layout UNCHANGED); re-opening landed work (git log = SSOT);
-  perf without a Release `scripts/perf.sh` number.
+- **HEAD**: see `git log` (clj-parity campaign COMPLETE on `cw-from-scratch`).
+  Gate green (Mac). debt ledger = **`.dev/debt.yaml`**.
+- **clj-parity campaign C1..C7 is COMPLETE** (ADR-0076 / §9.2.P; C7=D-165=
+  ADR-0080, heap-boxed Long, landed this session). D-210 is now a STANDING
+  `quality-loop floor: clj-parity` (drain any NEW sweep DIFF, no campaign units
+  left). Loop is back in self-selected quality-floor-drain mode.
+- **First commit on resume MUST be: D-212** (str/`.toString` of BigInt/BigDecimal
+  keeps the reader suffix where clj drops it — `(str 100N)`→cljw `"100N"`/clj
+  `"100"`; `(str 1.5M)`→`"1.5M"`/`"1.5"`). Highest-frequency of the open floor
+  bugs (str-of-number is everywhere). Fix: `.big_int`/`.big_decimal` arms in
+  `print.writeStrValue` that drop the `N`/`M` (pr/prn keep it). Then D-213
+  (`(class e)`→"ex_info" not the specific class) then D-214 (bit-ops on
+  heap-Long operand raise — pre-existing i48-only gap). Full rows: `.dev/debt.yaml`.
+- **Forbidden**: "fixing" an AD-001..009 accepted divergence (set print-order,
+  `(class)` simple name AD-003, error Kind, **AD-008 Long-overflow auto-promote**,
+  cljw hash AD-009 — see `.dev/accepted_divergences.yaml`); widening the NaN-box
+  inline int or adding a new slot for an int representation (heap-Long is the
+  `IntOrigin` flag on the heap-int, F-004 layout UNCHANGED); re-opening landed
+  work (git log = SSOT); perf without a Release `scripts/perf.sh` number.
 
 ## Just landed (this session; git log = SSOT, full rows in `.dev/debt.yaml`)
 
-- **C1 D-164 DISCHARGED**: distinct empty list `()` (interned count-0 `.list`
-  on `rt.empty_list`, no new NaN-box slot) threaded big-bang through rest/
-  empty/take/print/analyzer/**serialize**/lazy_seq.seq/core.clj; `()` truthy,
-  `(seq?/list? '())`→true, `(= '() nil)`→false. Corpus `empty_seq` (70).
-- **C2 D-205** (ADR-0077): BigDecimal scale-independent map-key via a cached
-  stripped projection; **C3 D-207**: universal Object methods (`.toString`/
-  `.equals`/`.hashCode`/`.getClass`) via dispatch fallback → str/=/hash/class
-  (AD-009, AD-003; surfaced D-212). See git log + debt rows.
-- **C4 D-209** (ADR-0078): distinct MapEntry (reserved `.map_entry` slot,
-  ~16 op arms, `map-entry?`/`class`, conj→plain-vector). Corpus `map_entry`.
-- **C6 D-200** (ADR-0079): `#inst`/Date as a no-slot `typed_instance`
-  (per-Runtime descriptor, `print_tag="inst"`, epoch-ms; civil↔ms in
-  `runtime/time/instant.zig`); inst?/inst-ms, `=` by epoch-ms. Corpus `inst_date`.
-- **C5 D-198 DISCHARGED**: Throwable-family CONSTRUCTORS `(Exception. msg)` etc
-  via the `<init>` method_table hook (both backends) → an `.ex_info` tagged with
-  the class name (no-JVM, ADR-0059/0060); throw/catch/getMessage/instance? ride
-  the existing bridge. Corpus `host_exception_ctor` (14). Surfaced **D-213**
-  (`(class e)`→"ex_info" not the specific class — pre-existing, all exceptions).
+- **C7 D-165 DISCHARGED** (ADR-0080, the LAST campaign unit): heap-boxed Long.
+  An `IntOrigin = enum(u8){long,bigint}` flag on the heap-int struct (replaces
+  one `_pad` byte — NO new NaN-box slot, F-004 UNCHANGED). A value in (2^47,i64]
+  is now a Long (`(class)`→Long, print no `N`), promoting to BigInt only PAST
+  i64. Classification by dispatch arm: alloc fns take a required `origin`;
+  `promote.wrapManaged` range-splits, `wrapArith` propagates BigInt contagion
+  (heap-Long operand on a Managed arm does NOT gain spurious N). `=`/`hash`
+  untouched (value-equal across origins). Corpus `heap_long` (29); stale `…N`
+  e2e updated to clj-correct. Spun off **D-214** (bit-ops on heap-Long, pre-
+  existing i48-only gap). C1–C6 also DONE earlier this session (see git log).
 
-## clj-parity campaign units (the A-half; full rows in `.dev/debt.yaml`, D-210 anchor)
+## clj-parity campaign (A-half) — COMPLETE; standing floor remains
 
-- **All loop-resolvable** (ADR-0076 am1): C1 D-164 / C2 D-205 / C3 D-207 /
-  C4 D-209 / C6 D-200 / C5 D-198 DONE · **C7 D-165** (LAST: heap-boxed Long,
-  B2 flag on heap-int — NO F-004 amendment; NaN-box i64-inline is impossible,
-  cw v0 also i48). After C7 the campaign is complete.
-- **Decided, NOT campaign units**: AD-008 (Long overflow past i64 auto-promotes
-  per F-005; clj throws — accepted divergence, user-ratified) · D-211 (`+'`/`*'`
-  promoting arithmetic deferred; F-005's `+'`-clause is clj-inverted).
+- **C1..C7 all DISCHARGED** (D-164/205/207/209/200/198/165; ADR-0076/77/78/79/80).
+  D-210 persists ONLY as the standing `quality-loop floor: clj-parity` — drain
+  any NEW cljw↔clj DIFF a future sweep surfaces (highest-value-first). No units left.
+- **Open floor bugs (next drains, highest-freq first)**: D-212 (str-of-numeric
+  suffix) → D-213 (class-of-exception) → D-214 (bit-ops on heap-Long).
+- **Decided, NOT bugs**: AD-008 (Long overflow past i64 auto-promotes per F-005;
+  clj throws) · AD-009 (cljw hash ≠ JVM) · D-211 (`+'`/`*'` deferred, F-005-inverted).
 
 ## Process discipline (SSOT = memory + rules; do NOT re-expand here)
 
@@ -71,7 +62,7 @@
 handover → `.dev/decisions/0076_clj_parity_campaign_and_accepted_divergences.md`
 + ROADMAP §9.2.P → `.dev/accepted_divergences.yaml` +
 `.claude/rules/accepted_divergences.md` → `test/diff/clj_corpus/COVERAGE.md` +
-`.claude/rules/clj_diff_sweep.md` → `.dev/debt.yaml` (open: D-210 anchor /
-D-165(C7) + D-212 + D-213) + `.dev/decisions/0077_*`/`0078_*`/`0079_*` (C2/C4/C6) → CLAUDE.md
+`.claude/rules/clj_diff_sweep.md` → `.dev/debt.yaml` (D-210 standing floor /
+open bugs D-212 + D-213 + D-214) + `.dev/decisions/0080_*` (C7 heap-Long) → CLAUDE.md
 (§ Project spirit + Autonomous Workflow + The only stop) →
 `.dev/project_facts.md` (F-002/004/005/009/010/011/012) → `.dev/principle.md`.

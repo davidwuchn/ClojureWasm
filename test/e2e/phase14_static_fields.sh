@@ -33,9 +33,9 @@ check() { # check <expr> <expected> <label>
 check 'Integer/MAX_VALUE'  '2147483647'   integer_max_value
 check 'Integer/MIN_VALUE'  '-2147483648'  integer_min_value
 
-# --- Long (exceed i48 → BigInt N, D-165 recorded divergence; value exact) ---
-check 'Long/MAX_VALUE'     '9223372036854775807N'  long_max_value_bigint
-check 'Long/MIN_VALUE'     '-9223372036854775808N' long_min_value_bigint
+# --- Long (exceed i48 → heap Long, no N; D-165 C7 clj-parity, value exact) ---
+check 'Long/MAX_VALUE'     '9223372036854775807'  long_max_value
+check 'Long/MIN_VALUE'     '-9223372036854775808' long_min_value
 
 # --- Double — tested by VALUE (round-trip), print form is D-166 ---
 check '(= Double/MAX_VALUE (Double/parseDouble "1.7976931348623157E308"))' 'true' double_max_value

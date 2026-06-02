@@ -30,6 +30,7 @@ const symbol_mod = @import("../../runtime/symbol.zig");
 const string_mod = @import("../../runtime/collection/string.zig");
 const vector_mod = @import("../../runtime/collection/vector.zig");
 const td_mod = @import("../../runtime/type_descriptor.zig");
+const big_int_mod = @import("../../runtime/numeric/big_int.zig");
 const keyword_mod = @import("../../runtime/keyword.zig");
 
 const MethodEntry = protocol_mod.MethodEntry;
@@ -538,6 +539,11 @@ pub fn classPrim(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocati
     try error_catalog.checkArity("__class", args, 1, loc);
     const v = args[0];
     if (v.tag() == .nil) return Value.nil_val;
+    // A heap-boxed Long (D-165 / ADR-0080) is class Long, not BigInt — it
+    // shares the inline-int (`.integer`) native descriptor.
+    if (v.tag() == .big_int and big_int_mod.originOf(v) == .long) {
+        return td_mod.makeTypeDescriptorRef(rt, try rt.nativeDescriptor(.integer));
+    }
     const td: *const td_mod.TypeDescriptor = switch (v.tag()) {
         .typed_instance => v.decodePtr(*const td_mod.TypedInstance).descriptor,
         .reified_instance => v.decodePtr(*const td_mod.ReifiedInstance).descriptor,
