@@ -76,7 +76,13 @@ confirmed exprs into a `*.txt` corpus here via `--corpus`.
   split-lines, no-match replace. Gap found+fixed: `index-of`/`last-index-of`
   3-arity `from-index` (`(index-of s sub from)`→4, `(last-index-of s sub from)`
   = last start ≤ from) — both the primitive + the string.clj wrapper went
-  variadic. Corpus `string_deep`.
+  variadic. Corpus `string_deep`. Gap found+fixed: **`re-quote-replacement`**
+  was unimplemented (name_error) — now a pure-Clojure escape of `\`→`\\` +
+  `$`→`\$` over `replace` (string-literal match), so it works as the
+  replacement in a regex `replace` (`(replace "abc" #"b" (re-quote-replacement
+  "$X"))`). Corpus `string_misc` (also covers split-lines/reverse/replace-first/
+  subs/name/namespace/keyword·symbol 2-arity + reduce-kv/group-by/take-nth/
+  partition-all/keep/mapcat/vary-meta — all at parity).
 - **exception / ex-info family** — `ex-info`/`ex-data`/`ex-message`, `ex-data`
   on non-ex→nil, `try`/`catch <Class>` (ExceptionInfo/Exception/Arithmetic/
   IndexOutOfBounds/AssertionError/Throwable)/`finally`, nested ex-data,

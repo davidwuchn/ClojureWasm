@@ -125,3 +125,13 @@
       (instance? Pattern match) (-str-replace-first-pattern s match repl)
       :else (throw (ex-info "replace-first: unsupported match type"
                             {:fn "replace-first" :match match})))))
+
+;; `re-quote-replacement` — escape the regex-replacement metacharacters
+;; `\` and `$` so a string is used LITERALLY as the replacement in a regex
+;; `replace`/`replace-first` (Java's Matcher/quoteReplacement). Pure-Clojure
+;; over `replace` with string-literal matches (literal replacement): escape
+;; `\` first (so the `\` introduced for `$` is not itself re-escaped), then
+;; `$`. `(re-quote-replacement "$1")` → "\\$1".
+(def re-quote-replacement
+  (fn* [replacement]
+    (replace (replace replacement "\\" "\\\\") "$" "\\$")))
