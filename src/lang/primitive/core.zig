@@ -755,6 +755,28 @@ pub fn formatFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocatio
                 try writeGeneral(tw, try error_catalog.expectNumber(args[ai], "format", loc), prec orelse 6, conv == 'G');
                 ai += 1;
             },
+            // `%b`/`%B` boolean conversion (Java/clj): nil or false → "false",
+            // any other value → "true" (it is the logical-truth test, not a
+            // type check). `%B` upper-cases.
+            'b', 'B' => {
+                if (ai >= args.len) return error_catalog.raise(.format_args_insufficient, loc, .{});
+                const truthy = args[ai].isTruthy();
+                const s = if (conv == 'B') (if (truthy) "TRUE" else "FALSE") else (if (truthy) "true" else "false");
+                try tw.writeAll(s);
+                ai += 1;
+            },
+            // `%c` character conversion: the arg must be a char (clj rejects a
+            // Long here with IllegalFormatConversionException — cljw raises
+            // type_arg_invalid, both error). Emits the codepoint as UTF-8.
+            'c' => {
+                if (ai >= args.len) return error_catalog.raise(.format_args_insufficient, loc, .{});
+                if (args[ai].tag() != .char)
+                    return error_catalog.raise(.type_arg_invalid, loc, .{ .fn_name = "format", .expected = "character for %c", .actual = @tagName(args[ai].tag()) });
+                var cbuf: [4]u8 = undefined;
+                const cn = std.unicode.utf8Encode(args[ai].asChar(), &cbuf) catch 0;
+                try tw.writeAll(cbuf[0..cn]);
+                ai += 1;
+            },
             else => {
                 const sb = [_]u8{ '%', conv };
                 return error_catalog.raise(.format_spec_invalid, loc, .{ .spec = sb[0..] });

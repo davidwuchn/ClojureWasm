@@ -35,6 +35,12 @@ confirmed exprs into a `*.txt` corpus here via `--corpus`.
 - **String / regex** — clojure.string surface, `format` conversion+flag family,
   re-find/re-matches/re-seq + capturing groups + `$N`/fn replace; regex prints
   `#"src"` (pr) / raw (str).
+- **`format` conversions (deep)** — `%s`/`%d`(+grouping/sign/paren flags)/`%x`/
+  `%X`/`%o`/`%f`(.prec)/`%e`/`%E`/`%g`/`%G` + width/`-`/`0`-pad/`%%`/`%n`, plus
+  newly landed **`%b`/`%B`** (logical-truth → true/false, nil→false) and **`%c`**
+  (char → UTF-8; a non-char arg like a Long errors, matching clj's
+  IllegalFormatConversionException). Corpus `format_conv` (15). Not yet:
+  positional arg index `%N$s` (`(format "%2$s %1$s" …)`) — see Next-sweep.
 - **Sequence / collection** — partition/interleave/reductions/mapcat/frequencies/
   group-by/dedupe/distinct/flatten/tree-seq/zipmap/merge-with/sort/sort-by/
   min-key/max-key/update(-in)/assoc-in/get-in (2+3-arity)/reduce-kv/juxt/comp/
@@ -168,6 +174,10 @@ confirmed exprs into a `*.txt` corpus here via `--corpus`.
   Residual: `intersection`/`difference` 0-arity (cljw variadic returns nil; JVM has
   no 0-arity → ArityException) — low-value edge; `macroexpand-all` is a stub.
 - **Transient read/query ops** — CLOSED 2026-06-02 (D-199); see Swept areas.
+- **`format` positional arg index** (`%N$s`, e.g. `(format "%2$s %1$s" "a" "b")`
+  → `"b a"`) — cljw errors; needs parsing `<digits>$` after `%` + selecting
+  `args[N]` instead of the auto-counter (a per-arm arg-source refactor of
+  `formatFn`). Lower-frequency than the conversion letters (now all landed).
 - **Unswept areas** worth a focused pass: EDN tagged literals
   (`#inst`/`#uuid`/custom `:readers`), `alter-meta!` (needs var-metadata
   D-183), `clojure.walk/macroexpand-all` (stub), `clojure.string` deeper edges,

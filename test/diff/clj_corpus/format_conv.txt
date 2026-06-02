@@ -1,0 +1,30 @@
+(format "%x" 255)
+;;=> "ff"
+(format "%o" 8)
+;;=> "10"
+(format "%5d" 42)
+;;=> "   42"
+(format "%-5d|" 42)
+;;=> "42   |"
+(format "%05d" 42)
+;;=> "00042"
+(format "%+d" 42)
+;;=> "+42"
+(format "%.3f" 3.14159)
+;;=> "3.142"
+(format "%e" 12345.678)
+;;=> "1.234568e+04"
+(format "%b" true)
+;;=> "true"
+(format "%b" nil)
+;;=> "false"
+(format "%b" 5)
+;;=> "true"
+(format "%B" false)
+;;=> "FALSE"
+(format "%b" false)
+;;=> "false"
+(format "%s and %s" "a" "b")
+;;=> "a and b"
+(format "%c" \A)
+;;=> "A"
