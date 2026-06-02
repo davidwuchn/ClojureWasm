@@ -24,6 +24,7 @@ const SourceLocation = @import("error/info.zig").SourceLocation;
 const error_catalog = @import("error/catalog.zig");
 const string_mod = @import("collection/string.zig");
 const vector = @import("collection/vector.zig");
+const map_entry_mod = @import("collection/map_entry.zig");
 const keyword = @import("keyword.zig");
 const symbol = @import("symbol.zig");
 const big_int = @import("numeric/big_int.zig");
@@ -107,13 +108,26 @@ fn nsNameOrder(ns_a: ?[]const u8, name_a: []const u8, ns_b: ?[]const u8, name_b:
     return std.mem.order(u8, name_a, name_b);
 }
 
+/// Vector-like length (a MapEntry is a 2-vector, D-209).
+fn vecLikeCount(v: Value) u32 {
+    return if (v.tag() == .map_entry) 2 else vector.count(v);
+}
+
+/// Vector-like positional access (a MapEntry: 0→key, 1→val).
+fn vecLikeNth(v: Value, i: u32) Value {
+    return if (v.tag() == .map_entry) map_entry_mod.nth(v, i) else vector.nth(v, @intCast(i));
+}
+
+/// Compare two vector-like values (vector / MapEntry, any pairing)
+/// length-first then element-wise — so `(compare (first {:a 1}) [:a 1])`→0
+/// (D-209: a MapEntry compares as the 2-vector `[k v]`).
 fn vecOrder(rt: *Runtime, a: Value, b: Value, loc: SourceLocation) anyerror!Order {
-    const na = vector.count(a);
-    const nb = vector.count(b);
+    const na = vecLikeCount(a);
+    const nb = vecLikeCount(b);
     if (na != nb) return std.math.order(na, nb); // length-first
     var i: u32 = 0;
     while (i < na) : (i += 1) {
-        const o = try valueCompare(rt, vector.nth(a, i), vector.nth(b, i), loc);
+        const o = try valueCompare(rt, vecLikeNth(a, i), vecLikeNth(b, i), loc);
         if (o != .eq) return o;
     }
     return .eq;
@@ -133,6 +147,13 @@ pub fn valueCompare(rt: *Runtime, a: Value, b: Value, loc: SourceLocation) anyer
     // Numeric (both): crosses the tower (no category gate).
     if (numCat(a) != .none and numCat(b) != .none) return numericOrder(rt, a, b, loc);
 
+    // Vector-like family (D-209): a MapEntry IS-A vector, so any
+    // vector/map_entry pairing compares element-wise (`(compare (first {:a
+    // 1}) [:a 1])`→0) — handled before the same-tag gate below.
+    if ((ta == .vector or ta == .map_entry) and (tb == .vector or tb == .map_entry)) {
+        return vecOrder(rt, a, b, loc);
+    }
+
     // Beyond here a same-tag pairing is required; cross-type raises.
     if (ta != tb) return raiseUncomparable(loc, b);
 
@@ -150,7 +171,7 @@ pub fn valueCompare(rt: *Runtime, a: Value, b: Value, loc: SourceLocation) anyer
             const sb = symbol.asSymbol(b);
             break :blk nsNameOrder(sa.ns, sa.name, sb.ns, sb.name);
         },
-        .vector => vecOrder(rt, a, b, loc),
+        // `.vector` (+ `.map_entry`) handled by the vector-like branch above.
         // lists / maps / sets / fns etc. are not Comparable (JVM throws).
         else => raiseUncomparable(loc, a),
     };

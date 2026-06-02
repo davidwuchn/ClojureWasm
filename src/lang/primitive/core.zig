@@ -144,7 +144,20 @@ pub fn vectorQ(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation
     _ = rt;
     _ = env;
     try error_catalog.checkArity("vector?", args, 1, loc);
-    return if (args[0].tag() == .vector) .true_val else .false_val;
+    // A MapEntry IS-A vector (clj `MapEntry extends APersistentVector`,
+    // D-209 / ADR-0078).
+    const t = args[0].tag();
+    return if (t == .vector or t == .map_entry) .true_val else .false_val;
+}
+
+/// Implements clojure.core/map-entry? — true only for a distinct MapEntry
+/// (D-209 / ADR-0078): `(map-entry? (first {:a 1}))`→true, `(map-entry?
+/// [1 2])`→false. The discriminator a 2-vector cannot provide.
+pub fn mapEntryQ(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = rt;
+    _ = env;
+    try error_catalog.checkArity("map-entry?", args, 1, loc);
+    return if (args[0].tag() == .map_entry) .true_val else .false_val;
 }
 
 /// `(list? x)` — true iff `x` is a persistent List
@@ -339,7 +352,7 @@ pub fn sequentialQ(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLoca
         return if (inst.descriptor.declaresProtocol("Sequential")) .true_val else .false_val;
     }
     return switch (t) {
-        .list, .vector, .cons, .lazy_seq, .chunked_cons, .range, .string_seq, .array_seq, .persistent_queue => .true_val,
+        .list, .vector, .cons, .lazy_seq, .chunked_cons, .range, .string_seq, .array_seq, .persistent_queue, .map_entry => .true_val,
         else => .false_val,
     };
 }
@@ -352,7 +365,7 @@ pub fn associativeQ(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLoc
     try error_catalog.checkArity("associative?", args, 1, loc);
     const t = args[0].tag();
     return switch (t) {
-        .vector, .array_map, .hash_map, .sorted_map => .true_val,
+        .vector, .array_map, .hash_map, .sorted_map, .map_entry => .true_val,
         else => .false_val,
     };
 }
@@ -1050,6 +1063,7 @@ const ENTRIES = [_]Entry{
     .{ .name = "symbol?", .f = &symbolQ },
     .{ .name = "keyword?", .f = &keywordQ },
     .{ .name = "vector?", .f = &vectorQ },
+    .{ .name = "map-entry?", .f = &mapEntryQ },
     .{ .name = "list?", .f = &listQ },
     .{ .name = "map?", .f = &mapQ },
     .{ .name = "set?", .f = &setQ },

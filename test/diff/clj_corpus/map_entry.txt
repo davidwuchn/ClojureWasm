@@ -1,0 +1,104 @@
+(map-entry? (first {:a 1}))
+;;=> true
+(map-entry? [1 2])
+;;=> false
+(map-entry? (first (seq {:a 1})))
+;;=> true
+(vector? (first {:a 1}))
+;;=> true
+(coll? (first {:a 1}))
+;;=> true
+(sequential? (first {:a 1}))
+;;=> true
+(associative? (first {:a 1}))
+;;=> true
+(nth (first {:a 1}) 0)
+;;=> :a
+(nth (first {:a 1}) 1)
+;;=> 1
+(count (first {:a 1}))
+;;=> 2
+(key (first {:a 1}))
+;;=> :a
+(val (first {:a 1}))
+;;=> 1
+(get (first {:a 1}) 0)
+;;=> :a
+(get (first {:a 1}) 1)
+;;=> 1
+(contains? (first {:a 1}) 0)
+;;=> true
+(contains? (first {:a 1}) 5)
+;;=> false
+(= (first {:a 1}) [:a 1])
+;;=> true
+(= [:a 1] (first {:a 1}))
+;;=> true
+(= (first {:a 1}) (first {:a 1}))
+;;=> true
+(pr-str (first {:a 1}))
+;;=> "[:a 1]"
+(str (first {:a 1}))
+;;=> "[:a 1]"
+(first (first {:a 1}))
+;;=> :a
+(second (first {:a 1}))
+;;=> 1
+(rest (first {:a 1}))
+;;=> (1)
+(seq (first {:a 1}))
+;;=> (:a 1)
+(conj (first {:a 1}) 99)
+;;=> [:a 1 99]
+(map-entry? (conj (first {:a 1}) 99))
+;;=> false
+(let [[k v] (first {:a 1})] [k v])
+;;=> [:a 1]
+(into {} [(first {:a 1})])
+;;=> {:a 1}
+(into {} (seq {:a 1 :b 2}))
+;;=> {:a 1, :b 2}
+(map key (seq {:a 1 :b 2}))
+;;=> (:a :b)
+(map val (seq {:a 1 :b 2}))
+;;=> (1 2)
+(reduce (fn [acc e] (assoc acc (key e) (val e))) {} (seq {:a 1 :b 2}))
+;;=> {:a 1, :b 2}
+(mapv identity (first {:a 1}))
+;;=> [:a 1]
+(apply + (vals {:a 1 :b 2}))
+;;=> 3
+(keys {:a 1 :b 2})
+;;=> (:a :b)
+(vals {:a 1 :b 2})
+;;=> (1 2)
+(count (seq {:a 1 :b 2}))
+;;=> 2
+(set (seq {:a 1}))
+;;=> #{[:a 1]}
+(= (set (seq {:a 1})) #{[:a 1]})
+;;=> true
+(pr-str (seq {:a 1 :b 2}))
+;;=> "([:a 1] [:b 2])"
+(sort-by key (seq {:b 2 :a 1}))
+;;=> ([:a 1] [:b 2])
+(frequencies [(first {:a 1}) [:a 1]])
+;;=> {[:a 1] 2}
+(sort [(first {:b 2}) (first {:a 1})])
+;;=> ([:a 1] [:b 2])
+(compare (first {:a 1}) [:a 1])
+;;=> 0
+(compare [:a 1] (first {:a 1}))
+;;=> 0
+(into (sorted-map) {:b 2 :a 1})
+;;=> {:a 1, :b 2}
+(reduce conj [] (seq {:a 1 :b 2}))
+;;=> [[:a 1] [:b 2]]
+(map-entry? (nth (vec (seq {:a 1})) 0))
+;;=> true
+(vec (first {:a 1}))
+;;=> [:a 1]
+(map-entry? (vec (first {:a 1})))
+;;=> false
+(apply hash-map (first {:a 1}))
+;;=> {:a 1}

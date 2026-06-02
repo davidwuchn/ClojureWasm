@@ -55,6 +55,7 @@ const gc_heap_mod = @import("../../gc/gc_heap.zig");
 const mark_sweep = @import("../../gc/mark_sweep.zig");
 const map_mod = @import("../map.zig");
 const vector_mod = @import("../vector.zig");
+const map_entry_mod = @import("../map_entry.zig");
 const equal = @import("../../equal.zig");
 
 const ARRAY_MAP_THRESHOLD = map_mod.ARRAY_MAP_THRESHOLD;
@@ -238,10 +239,12 @@ pub fn dissoc(rt: *Runtime, tm_val: Value, k: Value, loc: SourceLocation) !Value
 }
 
 /// Widened `conj!` arm for map-shape transients: accepts a 2-element
-/// vector `[k v]`. JVM also accepts `MapEntry`, but cw v1 has no
-/// `.map_entry`-tagged Values yet (F-004 slot reserved but unwired)
-/// so vector is the only supported entry shape.
+/// vector `[k v]` OR a distinct MapEntry (D-209 / ADR-0078; the `into {}`
+/// path conj!s the entries a map-seq yields, which are now `.map_entry`).
 pub fn conjEntry(rt: *Runtime, tm_val: Value, entry: Value, loc: SourceLocation) !Value {
+    if (entry.tag() == .map_entry) {
+        return try assoc(rt, tm_val, map_entry_mod.keyOf(entry), map_entry_mod.valOf(entry), loc);
+    }
     if (entry.tag() != .vector or vector_mod.count(entry) != 2) {
         return error_catalog.raise(.transient_kind_mismatch, loc, .{
             .fn_name = "conj!",

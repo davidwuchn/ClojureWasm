@@ -10,7 +10,7 @@
 
 active:
   - id: "D-210"
-    status: "now — clj-parity root-cause campaign ANCHOR (ROADMAP §9.2.P, ADR-0076, user-directed 2026-06-02). The standing floor that drains C1..C7. **C1 (D-164) + C2 (D-205) + C3 (D-207) DISCHARGED 2026-06-03**; next unit C4 = D-209."
+    status: "now — clj-parity root-cause campaign ANCHOR (ROADMAP §9.2.P, ADR-0076, user-directed 2026-06-02). The standing floor that drains C1..C7. **C1 (D-164) + C2 (D-205) + C3 (D-207) + C4 (D-209) DISCHARGED 2026-06-03**; next unit C6 = D-200 (no-slot Date β)."
     category: "runtime"
     barrier: |-
       **clj-parity root-cause campaign (the A-half of ADR-0076)** — the standing
@@ -110,7 +110,26 @@ active:
       **Non-ASCII chars print as `\uXXXX` instead of the literal codepoint**: `(prn \é)` / `(pr-str \é)` → cljw `é`, clj `\é`. Named (`\newline`/`\tab`) and ASCII (`\a`) chars ARE at parity; only codepoints > 127 escape to `\uXXXX`. The char VALUE is correct (`(int \é)`→233, `(count (.toCharArray "héllo"))`→5) — this is purely how `print.zig` renders a `.char` in machine-readable (`pr`/`prn`/`pr-str`) mode. clj prints a printable non-ASCII codepoint literally; cljw is over-conservatively escaping every non-ASCII char. Discharge (small, own cycle): `print.zig` char-print arm — for codepoints > 127 that are printable (not a control char / not a separate-line/surrogate case), emit the UTF-8 bytes instead of `\uXXXX`. Verify against clj: the escape set is control chars + the named set; everything else prints literally. Cross-ref D-091 (char-literal READER, discharged — this is the PRINT side) + F-011 (behavioural equivalence; print format is observable). recall trigger: opportunistic, OR when char/string print fidelity is next.
     last_reviewed: "2026-06-02"
   - id: "D-209"
-    status: "now — clj-parity campaign C4 (ADR-0076 §9.2.P; loop-resolvable — activates the RESERVED Group-A `.map_entry` slot, which is consuming a reservation NOT amending F-004). Surfaced 2026-06-02 by an edge clj-diff sweep."
+    status: |-
+      DISCHARGED 2026-06-03 (clj-parity campaign C4, ADR-0078): activated the
+      RESERVED Group-A `.map_entry` slot as a distinct heap type
+      (`runtime/collection/map_entry.zig` {key,val} + traceGc). map-seq
+      (`seqArrayMap`/`hamtSeqInto`) + `find` produce `.map_entry`; ~16 op arms
+      treat it as the 2-vector `[k v]` (vector?/sequential?/associative?/count/
+      first/rest/next/seq/nth/get/contains?/conj→plain-vector/=/hash/compare/
+      print across core/sequence/collection/equal/compare/print + transient
+      conjEntry + the 2 rt-free cursors in equal.zig) while `map-entry?` (new
+      core fn) → `tag==.map_entry` discriminates it from a literal `[1 2]`, and
+      `class`→"MapEntry" (class_name SSOT, AD-003). conj DROPS the nature → a
+      plain vector (JVM asVector). `(map-entry? (first {:a 1}))`→true,
+      `(map-entry? [1 2])`→false, `(vector? (first {:a 1}))`→true,
+      `(= (first {:a 1}) [:a 1])`→true both dirs, `(conj (first {:a 1}) 99)`→
+      `[:a 1 99]` (map-entry?→false). Corpus `map_entry` (52 clj-verified pins,
+      the DA-mandated pin-per-behaviour). DA chose Option A over the vector-
+      flag (Alt 1, two-headed `.vector` smell) and the asVectorView funnel
+      (Alt 3, deferred to its own ADR). RESIDUAL: `.getName`/`.getSimpleName`
+      on the class object (D-207 residual). Cross-ref ADR-0078 / D-210 anchor.
+      Next: C6 = D-200.
     category: "runtime"
     barrier: |-
       **`map-entry?` is unimplemented + cljw has no distinct MapEntry type**: `(map-entry? (first {:a 1}))` → cljw `name_error [analysis]` (no such core fn), clj `true`. ROOT CAUSE is STRUCTURAL, not a missing predicate: cljw represents a map entry as a plain 2-`vector` (`(first {:a 1})`→`[:a 1]`, `(class …)`→`PersistentVector`, `(vector? …)`→true), so it CANNOT distinguish `(first {:a 1})` (a MapEntry in clj) from a literal `[1 2]` (NOT a MapEntry). A faithful `map-entry?` (clj: `(map-entry? (first {:a 1}))`→true AND `(map-entry? [1 2])`→false) therefore requires activating the F-004 Group-A `.map_entry` slot (A11) as a distinct value type — the SAME structural family as D-178 (`.string_seq` A13 / `.array_seq` A14 vestigial slots). A hack returning true for any 2-vector would make `(map-entry? [1 2])`→true (clj false) — a divergence-introducing smallest-diff, rejected. Common map-entry uses ALREADY work via the 2-vector representation (`key`/`val`/`find`/`nth`/destructuring/`vector?` all clj-parity), so real-code impact is small. Also `(class (first {:a 1}))`→`PersistentVector` vs clj `MapEntry` (same no-distinct-type root). DEFER to the `.map_entry` slot-activation owner (reuse ADR-0063's `range.zig` compact-value substrate pattern per D-178). Cross-ref D-178 (Group-A seq-family slot co-activation) / F-004 (Group A slot map) / F-003 (structural-imagination defer). recall trigger: when the Group-A vestigial-slot activation row opens OR a corpus needs MapEntry identity.

@@ -51,6 +51,7 @@ const range_mod = @import("../../runtime/collection/range.zig");
 const vector = @import("../../runtime/collection/vector.zig");
 const list = @import("../../runtime/collection/list.zig");
 const map = @import("../../runtime/collection/map.zig");
+const map_entry = @import("../../runtime/collection/map_entry.zig");
 const set = @import("../../runtime/collection/set.zig");
 const sorted = @import("../../runtime/collection/sorted.zig");
 const transient_vector = @import("../../runtime/collection/transient/transient_vector.zig");
@@ -87,6 +88,13 @@ fn conjOne(rt: *Runtime, env: *Env, coll: Value, x: Value, loc: SourceLocation) 
     if (coll.isNil()) return try list.consHeap(rt, x, .nil_val);
     return switch (coll.tag()) {
         .vector => try vector.conj(rt, coll, x),
+        // conj on a MapEntry DROPS the map-entry nature → a plain vector
+        // `[k v x]` (clj `AMapEntry.cons` routes through `asVector()`, D-209).
+        .map_entry => blk: {
+            var vec = try vector.conj(rt, vector.empty(), map_entry.keyOf(coll));
+            vec = try vector.conj(rt, vec, map_entry.valOf(coll));
+            break :blk try vector.conj(rt, vec, x);
+        },
         // conj onto any ISeq is a prepend ≡ `(cons x coll)`. Delegate to
         // the cons primitive so per-seq-tag handling (unforced lazy_seq
         // tail / seq-view over range / string_seq / array_seq) stays
@@ -110,6 +118,10 @@ fn conjOne(rt: *Runtime, env: *Env, coll: Value, x: Value, loc: SourceLocation) 
 }
 
 fn mapConj(rt: *Runtime, m: Value, entry: Value, loc: SourceLocation) anyerror!Value {
+    // (conj m (first other-map)) — a MapEntry is a [k v] pair too (D-209).
+    if (entry.tag() == .map_entry) {
+        return try map.assoc(rt, m, map_entry.keyOf(entry), map_entry.valOf(entry));
+    }
     // (conj m [k v]) — vector pair gets destructured into assoc.
     if (entry.tag() != .vector) {
         return error_catalog.raise(.type_arg_invalid, loc, .{
@@ -129,6 +141,10 @@ fn mapConj(rt: *Runtime, m: Value, entry: Value, loc: SourceLocation) anyerror!V
 }
 
 fn sortedMapConj(rt: *Runtime, env: *Env, m: Value, entry: Value, loc: SourceLocation) anyerror!Value {
+    // (conj sorted-map (first other-map)) — a MapEntry is a [k v] pair (D-209).
+    if (entry.tag() == .map_entry) {
+        return try sorted.assoc(rt, env, m, map_entry.keyOf(entry), map_entry.valOf(entry), loc);
+    }
     // (conj sorted-map [k v]) — same [k v]-pair contract as hash/array map.
     if (entry.tag() != .vector or vector.count(entry) != 2) {
         return error_catalog.raise(.type_arg_invalid, loc, .{
@@ -192,6 +208,12 @@ pub fn containsQFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLoca
             const idx: i64 = k.asInteger();
             break :blk if (idx >= 0 and idx < @as(i64, vector.count(coll))) .true_val else .false_val;
         },
+        // A MapEntry is a 2-vector: indices 0 and 1 are valid (D-209).
+        .map_entry => blk: {
+            if (k.tag() != .integer) break :blk .false_val;
+            const idx: i64 = k.asInteger();
+            break :blk if (idx == 0 or idx == 1) .true_val else .false_val;
+        },
         // A live transient mirrors its persistent peer (clj parity, D-199):
         // map/set by key/element membership; vector by index validity.
         .transient_map => if (try transient_array_map.contains(coll, k)) .true_val else .false_val,
@@ -253,6 +275,12 @@ pub fn getFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) 
             const n = vector.count(coll);
             if (idx >= n) break :blk default;
             break :blk vector.nth(coll, @intCast(idx));
+        },
+        // A MapEntry is a 2-vector: `(get entry 0/1)` → key/val (D-209).
+        .map_entry => blk: {
+            if (k.tag() != .integer) break :blk default;
+            const idx = k.asInteger();
+            break :blk if (idx == 0 or idx == 1) map_entry.nth(coll, @intCast(idx)) else default;
         },
         // A live transient is a first-class read target (clj parity, D-199):
         // a transient map reads by key; a transient vector by index.
@@ -336,6 +364,12 @@ pub fn nthFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) 
                 break :blk error_catalog.raise(.index_out_of_range, loc, .{ .fn_name = "nth" });
             }
             break :blk vector.nth(coll, @intCast(idx));
+        },
+        // A MapEntry is a 2-vector: index 0→key, 1→val (D-209 / ADR-0078).
+        .map_entry => blk: {
+            if (idx == 0 or idx == 1) break :blk map_entry.nth(coll, @intCast(idx));
+            if (has_default) break :blk default;
+            break :blk error_catalog.raise(.index_out_of_range, loc, .{ .fn_name = "nth" });
         },
         // A live transient vector is Indexed (clj parity, D-199) — same
         // index discipline as a persistent vector.

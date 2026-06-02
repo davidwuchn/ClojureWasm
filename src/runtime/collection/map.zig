@@ -44,7 +44,7 @@ const tag_ops = @import("../gc/tag_ops.zig");
 const gc_heap_mod = @import("../gc/gc_heap.zig");
 const mark_sweep = @import("../gc/mark_sweep.zig");
 const list_mod = @import("list.zig");
-const vector_mod = @import("vector.zig");
+const map_entry_mod = @import("map_entry.zig");
 const equal = @import("../equal.zig");
 const hash = @import("../hash.zig");
 
@@ -360,9 +360,9 @@ fn seqArrayMap(rt: *Runtime, am: *const ArrayMap) !Value {
     var i: i32 = @intCast(am.count);
     while (i > 0) {
         i -= 1;
-        var pair = vector_mod.empty();
-        pair = try vector_mod.conj(rt, pair, am.entries[@intCast(2 * i)]);
-        pair = try vector_mod.conj(rt, pair, am.entries[@intCast(2 * i + 1)]);
+        // A distinct MapEntry (D-209 / ADR-0078), not a 2-vector, so
+        // `(map-entry? (first {…}))`→true while it still behaves as `[k v]`.
+        const pair = try map_entry_mod.make(rt, am.entries[@intCast(2 * i)], am.entries[@intCast(2 * i + 1)]);
         result = try list_mod.consHeap(rt, pair, result);
     }
     return result;
@@ -792,9 +792,8 @@ fn hamtSeqInto(rt: *Runtime, node: *const HamtMapNode, acc: Value) !Value {
     var i: u32 = @popCount(node.data_map);
     while (i > 0) {
         i -= 1;
-        var pair = vector_mod.empty();
-        pair = try vector_mod.conj(rt, pair, node.slots[2 * i]);
-        pair = try vector_mod.conj(rt, pair, node.slots[2 * i + 1]);
+        // Distinct MapEntry (D-209 / ADR-0078), not a 2-vector.
+        const pair = try map_entry_mod.make(rt, node.slots[2 * i], node.slots[2 * i + 1]);
         result = try list_mod.consHeap(rt, pair, result);
     }
     return result;
@@ -1153,7 +1152,7 @@ test "vals returns a list of values in insertion order" {
     try testing.expectEqual(@as(i48, 200), list_mod.first(list_mod.rest(vs)).asInteger());
 }
 
-test "seq returns a list of [k v] vector pairs (nil for empty)" {
+test "seq returns a list of MapEntry pairs (nil for empty)" {
     var fix = RuntimeFixture.init();
     defer fix.deinit();
 
@@ -1165,10 +1164,11 @@ test "seq returns a list of [k v] vector pairs (nil for empty)" {
 
     const s = try seq(&fix.rt, m);
     try testing.expectEqual(@as(u32, 2), list_mod.countOf(s));
+    // Each pair is a distinct MapEntry (D-209 / ADR-0078), not a 2-vector.
     const first_pair = list_mod.first(s);
-    try testing.expectEqual(@as(u32, 2), vector_mod.count(first_pair));
-    try testing.expectEqual(@as(i48, 1), vector_mod.nth(first_pair, 0).asInteger());
-    try testing.expectEqual(@as(i48, 100), vector_mod.nth(first_pair, 1).asInteger());
+    try testing.expect(first_pair.tag() == .map_entry);
+    try testing.expectEqual(@as(i48, 1), map_entry_mod.keyOf(first_pair).asInteger());
+    try testing.expectEqual(@as(i48, 100), map_entry_mod.valOf(first_pair).asInteger());
 }
 
 test "HAMT round-trip: build 100 int keys by assoc, read every key back (corruption canary)" {

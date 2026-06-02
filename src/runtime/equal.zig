@@ -33,6 +33,7 @@ const vector = @import("collection/vector.zig");
 const list = @import("collection/list.zig");
 const range = @import("collection/range.zig");
 const map = @import("collection/map.zig");
+const map_entry_mod = @import("collection/map_entry.zig");
 const set = @import("collection/set.zig");
 const big_int = @import("numeric/big_int.zig");
 const ratio = @import("numeric/ratio.zig");
@@ -53,7 +54,8 @@ fn numCat(v: Value) NumCat {
 
 fn isSequential(v: Value) bool {
     const t = v.tag();
-    return t == .vector or t == .list or t == .lazy_seq or t == .range;
+    // A MapEntry is a 2-vector (D-209), so `(= (first {:a 1}) [:a 1])`→true.
+    return t == .vector or t == .list or t == .lazy_seq or t == .range or t == .map_entry;
 }
 
 /// O(1)-countable sequentials (length short-circuit eligible). A
@@ -61,13 +63,14 @@ fn isSequential(v: Value) bool {
 /// lazy seq walks element-by-element instead of comparing lengths.
 fn isCountable(v: Value) bool {
     const t = v.tag();
-    return t == .vector or t == .list;
+    return t == .vector or t == .list or t == .map_entry;
 }
 
 fn seqLen(v: Value) u32 {
     return switch (v.tag()) {
         .vector => vector.count(v),
         .list => list.countOf(v),
+        .map_entry => 2,
         else => 0,
     };
 }
@@ -79,6 +82,8 @@ const Cursor = union(enum) {
     /// A compact `.range` walked by index via `start + i*step` — O(1) per
     /// element, no allocation (the seq-walk would materialise chunks).
     rng: struct { v: Value, i: i64, n: i64 },
+    /// A MapEntry walked as the 2-vector `[key val]` (D-209).
+    ment: struct { v: Value, i: u32 },
     lst: Value,
     /// A (possibly lazy) seq walked via the lazy_seq force protocol —
     /// handles `.lazy_seq` layers + the realized `.list` cons chain
@@ -89,6 +94,7 @@ const Cursor = union(enum) {
         return switch (v.tag()) {
             .vector => .{ .vec = .{ .v = v, .i = 0, .n = vector.count(v) } },
             .range => .{ .rng = .{ .v = v, .i = 0, .n = range.countOf(v) } },
+            .map_entry => .{ .ment = .{ .v = v, .i = 0 } },
             .list => .{ .lst = v },
             else => .{ .lzy = v },
         };
@@ -105,6 +111,12 @@ const Cursor = union(enum) {
             .rng => |*s| {
                 if (s.i >= s.n) return null;
                 const e = range.elementAt(s.v, s.i);
+                s.i += 1;
+                return e;
+            },
+            .ment => |*s| {
+                if (s.i >= 2) return null;
+                const e = map_entry_mod.nth(s.v, s.i);
                 s.i += 1;
                 return e;
             },
@@ -276,7 +288,7 @@ pub fn keyEqValue(a: Value, b: Value) bool {
 }
 
 inline fn isSeqKeyTag(t: Value.Tag) bool {
-    return t == .vector or t == .list;
+    return t == .vector or t == .list or t == .map_entry;
 }
 
 inline fn isMapTag(t: Value.Tag) bool {
@@ -319,7 +331,7 @@ pub fn valueHash(v: Value) u32 {
         // recursive, via the SAME formula so an equal vector and list
         // collide into one bucket (Clojure's sequential =). Partner of
         // seqKeyEq (D-092).
-        .vector, .list => seqHash(v),
+        .vector, .list, .map_entry => seqHash(v),
         // Map / set keys hash by content (order-independent), rt-free via
         // the collection module's structure walk (D-092). Partner of
         // map.contentEq / set.contentEq.
@@ -380,11 +392,14 @@ fn typedInstanceHash(inst: *const td_mod.TypedInstance) u32 {
 /// realized rt-free) — a documented residual shared with their hash.
 const SeqKeyCursor = union(enum) {
     vec: struct { v: Value, i: u32, n: u32 },
+    /// A MapEntry walked as the 2-vector `[key val]` (D-209) — rt-free.
+    ment: struct { v: Value, i: u32 },
     lst: Value,
 
     fn init(v: Value) SeqKeyCursor {
         return switch (v.tag()) {
             .vector => .{ .vec = .{ .v = v, .i = 0, .n = vector.count(v) } },
+            .map_entry => .{ .ment = .{ .v = v, .i = 0 } },
             else => .{ .lst = v },
         };
     }
@@ -394,6 +409,12 @@ const SeqKeyCursor = union(enum) {
             .vec => |*s| {
                 if (s.i >= s.n) return null;
                 const e = vector.nth(s.v, s.i);
+                s.i += 1;
+                return e;
+            },
+            .ment => |*s| {
+                if (s.i >= 2) return null;
+                const e = map_entry_mod.nth(s.v, s.i);
                 s.i += 1;
                 return e;
             },

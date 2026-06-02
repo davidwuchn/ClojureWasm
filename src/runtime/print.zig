@@ -43,6 +43,7 @@ const list_collection = @import("collection/list.zig");
 const vector_collection = @import("collection/vector.zig");
 const set_collection = @import("collection/set.zig");
 const map_collection = @import("collection/map.zig");
+const map_entry_collection = @import("collection/map_entry.zig");
 const sorted_collection = @import("collection/sorted.zig");
 const ex_info_collection = @import("collection/ex_info.zig");
 const big_int_mod = @import("numeric/big_int.zig");
@@ -153,6 +154,13 @@ fn deepRealize(rt: *Runtime, env: *env_mod.Env, v: Value) anyerror!Value {
             }
             return out;
         },
+        // A MapEntry realizes its key/val (which may hold lazy seqs) while
+        // staying a MapEntry (D-209), so it still prints `[k v]`.
+        .map_entry => return try map_entry_collection.make(
+            rt,
+            try deepRealize(rt, env, map_entry_collection.keyOf(v)),
+            try deepRealize(rt, env, map_entry_collection.valOf(v)),
+        ),
         else => return v,
     }
 }
@@ -334,6 +342,14 @@ pub fn printValue(w: *Writer, v: Value) Writer.Error!void {
         .list => try printList(w, v),
         .range => try printRange(w, v),
         .vector => try printVector(w, v),
+        // A MapEntry prints as the 2-vector `[k v]` (D-209 / ADR-0078).
+        .map_entry => {
+            try w.writeByte('[');
+            try printValue(w, map_entry_collection.keyOf(v));
+            try w.writeByte(' ');
+            try printValue(w, map_entry_collection.valOf(v));
+            try w.writeByte(']');
+        },
         .hash_set => try printSet(w, v),
         .sorted_set => try printSortedSet(w, v),
         .sorted_map => try printSortedMap(w, v),
