@@ -23,6 +23,7 @@ const SourceLocation = @import("../../error/info.zig").SourceLocation;
 const error_catalog = @import("../../error/catalog.zig");
 const parse = @import("../../numeric/parse.zig");
 const string_mod = @import("../../collection/string.zig");
+const print_mod = @import("../../print.zig");
 
 /// Implements `(Double/parseDouble s)`. Spec: parse an f64; malformed ⇒
 /// NumberFormatException. Surrounding whitespace is trimmed (Java).
@@ -61,12 +62,66 @@ fn isInfF(x: f64) bool {
     return std.math.isInf(x);
 }
 
+/// `(Double/toString d)` — the f64's print form (same as `(str d)`).
+/// JVM reference: java.lang.Double#toString.
+fn toString(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = env;
+    try error_catalog.checkArity("Double/toString", args, 1, loc);
+    const x = try error_catalog.expectNumber(args[0], "Double/toString", loc);
+    var buf: [64]u8 = undefined;
+    var w: std.Io.Writer = .fixed(&buf);
+    try print_mod.printFloat(&w, x);
+    return string_mod.alloc(rt, w.buffered());
+}
+
+/// `(Double/valueOf x)` — a String parses (like parseDouble), a number
+/// widens to f64. JVM reference: java.lang.Double#valueOf.
+fn valueOf(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = rt;
+    _ = env;
+    try error_catalog.checkArity("Double/valueOf", args, 1, loc);
+    if (args[0].tag() == .string) {
+        const s = string_mod.asString(args[0]);
+        const f = parse.parseFloat(s) catch
+            return error_catalog.raise(.number_format_invalid, loc, .{ .fn_name = "Double/valueOf", .text = s });
+        return Value.initFloat(f);
+    }
+    return Value.initFloat(try error_catalog.expectNumber(args[0], "Double/valueOf", loc));
+}
+
+/// `Double/compare` / `max` / `min` / `sum`: two-number f64 statics.
+/// JVM reference: java.lang.Double#compare/max/min/sum.
+const FBinop = enum { compare, max, min, sum };
+fn FBinOp2(comptime op: FBinop, comptime name: []const u8) type {
+    return struct {
+        fn call(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+            _ = rt;
+            _ = env;
+            try error_catalog.checkArity("Double/" ++ name, args, 2, loc);
+            const a = try error_catalog.expectNumber(args[0], "Double/" ++ name, loc);
+            const b = try error_catalog.expectNumber(args[1], "Double/" ++ name, loc);
+            return switch (op) {
+                .compare => Value.initInteger(if (a < b) -1 else if (a > b) 1 else 0),
+                .max => Value.initFloat(@max(a, b)),
+                .min => Value.initFloat(@min(a, b)),
+                .sum => Value.initFloat(a + b),
+            };
+        }
+    };
+}
+
 fn initDouble(td: *type_descriptor.TypeDescriptor, gpa: std.mem.Allocator) anyerror!void {
     if (td.method_table.len != 0) return; // idempotent re-run
     const specs = .{
         .{ "parseDouble", &parseDouble },
         .{ "isNaN", &Predicate("isNaN", isNanF).call },
         .{ "isInfinite", &Predicate("isInfinite", isInfF).call },
+        .{ "toString", &toString },
+        .{ "valueOf", &valueOf },
+        .{ "compare", &FBinOp2(.compare, "compare").call },
+        .{ "max", &FBinOp2(.max, "max").call },
+        .{ "min", &FBinOp2(.min, "min").call },
+        .{ "sum", &FBinOp2(.sum, "sum").call },
     };
     const entries = try gpa.alloc(type_descriptor.TypeDescriptor.MethodEntry, specs.len);
     inline for (specs, 0..) |spec, i| {

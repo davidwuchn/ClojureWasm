@@ -146,7 +146,7 @@ tiers:
         phase: 14
         files:
           surface: runtime/java/lang/Double.zig
-        methods: [parseDouble, isNaN, isInfinite]
+        methods: [parseDouble, isNaN, isInfinite, toString, valueOf, compare, max, min, sum]
         clojure_peer_vars: [parse-double]
       - fqn: java.lang.Boolean
         cljw_ns: cljw.java.lang.Boolean
@@ -155,7 +155,7 @@ tiers:
         phase: 14
         files:
           surface: runtime/java/lang/Boolean.zig
-        methods: [parseBoolean, valueOf, toString]
+        methods: [parseBoolean, valueOf, toString, logicalAnd, logicalOr, logicalXor]
         static_fields: [TRUE, FALSE]
         clojure_peer_vars: []
       - fqn: java.lang.Character

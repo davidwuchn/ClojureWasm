@@ -1,0 +1,40 @@
+(Double/parseDouble "3.14")
+;;=> 3.14
+(Double/parseDouble "-2.5e3")
+;;=> -2500.0
+(Double/isNaN (/ 0.0 0.0))
+;;=> true
+(Double/isNaN 1.0)
+;;=> false
+(Double/isInfinite (/ 1.0 0.0))
+;;=> true
+(Double/isInfinite 1.0)
+;;=> false
+(Double/toString 3.14)
+;;=> "3.14"
+(Double/valueOf "2.5")
+;;=> 2.5
+(Double/compare 1.0 2.0)
+;;=> -1
+(Double/compare 2.0 1.0)
+;;=> 1
+(Double/compare 1.0 1.0)
+;;=> 0
+(Double/max 1.5 2.5)
+;;=> 2.5
+(Double/min 1.5 2.5)
+;;=> 1.5
+(Double/sum 1.5 2.5)
+;;=> 4.0
+(Boolean/parseBoolean "true")
+;;=> true
+(Boolean/parseBoolean "false")
+;;=> false
+(Boolean/parseBoolean "TRUE")
+;;=> true
+(Boolean/valueOf "true")
+;;=> true
+(Boolean/logicalAnd true false)
+;;=> false
+(Boolean/logicalOr true false)
+;;=> true

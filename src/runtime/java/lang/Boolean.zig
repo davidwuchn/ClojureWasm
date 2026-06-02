@@ -66,12 +66,41 @@ fn toString(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) a
     return string_mod.alloc(rt, if (args[0] == Value.true_val) "true" else "false");
 }
 
+fn argBool(v: Value, fn_name: []const u8, loc: SourceLocation) anyerror!bool {
+    if (v.tag() != .boolean)
+        return error_catalog.raise(.type_arg_invalid, loc, .{ .fn_name = fn_name, .expected = "boolean", .actual = @tagName(v.tag()) });
+    return v == Value.true_val;
+}
+
+/// `Boolean/logicalAnd` / `logicalOr` / `logicalXor`: two-bool statics.
+/// JVM reference: java.lang.Boolean#logical{And,Or,Xor}.
+const LogicalKind = enum { land, lor, lxor };
+fn Logical(comptime op: LogicalKind, comptime name: []const u8) type {
+    return struct {
+        fn call(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+            _ = rt;
+            _ = env;
+            try error_catalog.checkArity("Boolean/" ++ name, args, 2, loc);
+            const a = try argBool(args[0], "Boolean/" ++ name, loc);
+            const b = try argBool(args[1], "Boolean/" ++ name, loc);
+            return Value.initBoolean(switch (op) {
+                .land => a and b,
+                .lor => a or b,
+                .lxor => a != b,
+            });
+        }
+    };
+}
+
 fn initBoolean(td: *type_descriptor.TypeDescriptor, gpa: std.mem.Allocator) anyerror!void {
     if (td.method_table.len != 0) return; // idempotent re-run
     const specs = .{
         .{ "parseBoolean", &parseBoolean },
         .{ "valueOf", &valueOf },
         .{ "toString", &toString },
+        .{ "logicalAnd", &Logical(.land, "logicalAnd").call },
+        .{ "logicalOr", &Logical(.lor, "logicalOr").call },
+        .{ "logicalXor", &Logical(.lxor, "logicalXor").call },
     };
     const entries = try gpa.alloc(type_descriptor.TypeDescriptor.MethodEntry, specs.len);
     inline for (specs, 0..) |spec, i| {

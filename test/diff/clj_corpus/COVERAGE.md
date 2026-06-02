@@ -271,6 +271,12 @@ confirmed exprs into a `*.txt` corpus here via `--corpus`.
   set-returning ops — the known non-bug (clj_diff_sweep.md), so those lines are
   verified-at-parity-modulo-order but intentionally NOT in the regression
   corpus (the deterministic-output ops are).
+- **Double / Boolean statics** — `Double/parseDouble`/`isNaN`/`isInfinite`/
+  `toString`/`valueOf`/`compare`/`max`/`min`/`sum`; `Boolean/parseBoolean`/
+  `valueOf`/`logicalAnd`/`logicalOr`/`logicalXor`. Corpus `double_boolean_static`
+  (20). Gap found+fixed: `Double/toString`/`valueOf`/`compare`/`max`/`min`/`sum`
+  + `Boolean/logicalAnd`/`logicalOr`/`logicalXor` were unimplemented
+  (`name_error` / "No namespace") — added.
 - **Integer / Long statics** — `parseInt`/`parseLong` (+radix), `toString`
   (+radix, negative), `toBinaryString`/`toHexString`/`toOctalString` (incl.
   NEGATIVE → unsigned 32/64-bit, e.g. `(Integer/toHexString -1)`→`"ffffffff"`),
