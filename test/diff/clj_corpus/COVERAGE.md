@@ -225,6 +225,12 @@ confirmed exprs into a `*.txt` corpus here via `--corpus`.
   Residual: `intersection`/`difference` 0-arity (cljw variadic returns nil; JVM has
   no 0-arity → ArityException) — low-value edge; `macroexpand-all` is a stub.
 - **Transient read/query ops** — CLOSED 2026-06-02 (D-199); see Swept areas.
+- **polymorphism gaps** (D-202) — defrecord/deftype bare-field refs in protocol
+  method bodies, `extend-type` on a java class (Long/String), `defmulti :default`
+  option. Basics (defmulti/defmethod, defprotocol/defrecord/deftype w/ explicit
+  field access, satisfies?, extend-type on cljw types) all work. NOTE: NOT
+  sweep-verifiable — clj requires these forms top-level; the `(prn …)` batch
+  wrap errors in clj. Verify via individual top-level `clj -M -e` or e2e files.
 - **`letfn`** (D-201) — mutual-recursion local fns; needs a `letfn*` analyzer
   special form (pre-bind all names) + dual-backend arms. Not a plain `let*`
   macro (cljw `let*` is sequential, no forward-ref).
