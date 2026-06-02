@@ -276,10 +276,12 @@ confirmed exprs into a `*.txt` corpus here via `--corpus`.
   `(get {1 :v} 1N)`→`:v` (Long≡BigInt hash normalization) + a `>2^63` BigInt
   key (limb-hash path). Corpus `numeric_keys` (13). Fix: `keyEqValue` numeric
   arm (reuses `intEqual`; Ratio by reduced numer/denom) + value-based
-  `valueHash` arms (`managedHash`). **BigDecimal keys are a tracked residual**
-  (D-205): cljw's `(= 1.5M 1.50M)`→true is numeric/rt-aware, unmatchable by a
-  rt-free key compare — needs a separate bigdecimal-`=` scale-sensitivity
-  decision. `(hash 1.5M)` is now deterministic regardless.
+  `valueHash` arms (`managedHash`). **BigDecimal keys are a tracked rt-free
+  residual** (D-205) — NOT a `=`-bug: `(= 1.5M 1.50M)`→true is numeric in BOTH
+  clj and cljw, and clj's hasheq scale-NORMALIZES (`1.5M`/`1.50M` interchange
+  as keys). Matching needs rt-aware scale alignment (BigInt mul by 10^Δscale
+  = allocation), which rt-free `keyEqValue`/`valueHash` can't do — same class
+  as lazy/range keys. `(hash 1.5M)` is now deterministic regardless.
 - **clojure.walk** — `postwalk`/`prewalk` (identity + transform fns over
   nested map/vector/list/set), `walk` (inner+outer), `keywordize-keys` /
   `stringify-keys` (nested + mixed), `prewalk-replace` / `postwalk-replace`

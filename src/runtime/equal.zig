@@ -224,10 +224,13 @@ pub fn keyEqValue(a: Value, b: Value) bool {
             .ratio => return ratioKeyEq(a, b),
             // `.floating`: equal floats are bit-identical (caught by the
             //   identity check above); `0.0`/`-0.0` is a rare residual.
-            // `.decimal`: cljw's BigDecimal `=` is NUMERIC (rt-aware
-            //   `compareValue`, so `(= 1.5M 1.50M)` is true), which a rt-free
-            //   key compare cannot replicate consistently — BigDecimal keys
-            //   join the lazy/range rt-free residual (D-205). Fall through.
+            // `.decimal`: BigDecimal `=` is NUMERIC in BOTH clj and cljw
+            //   (`(= 1.5M 1.50M)` → true), and clj's hasheq scale-NORMALIZES
+            //   so `1.5M`/`1.50M` hash equal + are interchangeable keys.
+            //   Matching that needs rt-aware scale alignment (multiply an
+            //   unscaled BigInt by 10^Δscale = allocation), which this rt-free
+            //   compare cannot do — BigDecimal keys join the lazy/range
+            //   rt-free residual (D-205). Fall through.
             .floating, .decimal => {},
             .none => unreachable,
         }
