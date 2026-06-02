@@ -1,0 +1,16 @@
+(let [log (atom []) a (atom 0)] (add-watch a :k (fn [k r o n] (swap! log conj [k o n]))) (swap! a inc) (reset! a 10) @log)
+;;=> [[:k 0 1] [:k 1 10]]
+(let [a (atom 0)] (identical? a (add-watch a :k (fn [k r o n] nil))))
+;;=> true
+(let [a (atom 0)] (identical? a (remove-watch a :k)))
+;;=> true
+(let [log (atom []) a (atom 1)] (add-watch a :k (fn [k r o n] (swap! log conj n))) (reset! a 1) @log)
+;;=> [1]
+(let [log (atom []) a (atom 0)] (add-watch a :k (fn [k r o n] (swap! log conj :a))) (remove-watch a :k) (swap! a inc) @log)
+;;=> []
+(let [log (atom []) a (atom 0)] (add-watch a :k (fn [k r o n] (swap! log conj :v1))) (add-watch a :k (fn [k r o n] (swap! log conj :v2))) (swap! a inc) @log)
+;;=> [:v2]
+(let [log (atom []) a (atom 5)] (add-watch a :k (fn [k r o n] (swap! log conj [o n]))) (compare-and-set! a 5 9) (compare-and-set! a 5 99) @log)
+;;=> [[5 9]]
+(let [seen (atom nil) a (atom 0)] (add-watch a :k (fn [k r o n] (reset! seen [k (identical? r a) o n]))) (swap! a + 7) @seen)
+;;=> [:k true 0 7]

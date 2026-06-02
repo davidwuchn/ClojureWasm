@@ -7,20 +7,23 @@
 
 - **HEAD**: see `git log` (clj-parity campaign COMPLETE on `cw-from-scratch`).
   Gate green (Mac). debt ledger = **`.dev/debt.yaml`**.
-- **clj-parity campaign C1..C7 is COMPLETE** (ADR-0076 / §9.2.P; C7=D-165=
-  ADR-0080, heap-boxed Long, landed this session). D-210 is now a STANDING
-  `quality-loop floor: clj-parity` (drain any NEW sweep DIFF, no campaign units
-  left). Loop is back in self-selected quality-floor-drain mode.
-- **No open floor bugs.** clj-parity campaign + floor drains (D-212/213/214/215)
-  + the `format` surface sweep (D-216) all DISCHARGED. **First action on resume:
-  run a broad exploratory `scripts/clj_diff_sweep.sh` over an unswept
-  high-frequency surface to find the next DIFF cluster, then big-bang it to zero**
-  (clj_diff_sweep.md Discipline 2). Already-clean (probed 2026-06-03): common
-  string/format/collection. Candidate next areas: string-as-Indexed (`(nth
-  "abc" 1)`→cljw errors/clj `\b` — String not Indexed), `clojure.string/escape`
-  (missing), regex edge cases, reader/printer round-trips, transducers. Pick
-  highest-value, enumerate, big-bang. Classify every DIFF bug→fix OR
-  accepted→AD-NNN (never floating).
+- **clj-parity quality loop has CONVERGED** (campaign C1..C7 + 9 floor/sweep
+  drains, all DISCHARGED this session: D-165/212/213/214/215/216/217/218/219/221).
+  8 broad `clj_diff_sweep` probes → only AD-001..009 divergences + Phase-15
+  structural gaps remain. D-210 is a STANDING `quality-loop floor: clj-parity`
+  (drain any NEW sweep DIFF). Audit clean (private/audit-2026-06-03.md).
+- **Phase 15 (concurrency) entered** — first piece landed this session: **atom
+  watches D-157 / ADR-0081** (add-watch/remove-watch via an appended `Atom.watches`
+  field; synchronous notify). delay/promise/future/atom/volatile already worked.
+- **First action on resume**: continue Phase 15 concurrency OR drain a remaining
+  low-value clj gap. **The big Phase-15 architectural pieces need a proper
+  DA-fork entry** (do NOT cold-seize): `agent` (action queue), STM `dosync`/`ref`
+  (§9 STM 15.1-15.4 ADR), `locking`, `pmap`/`pcalls`/`pvalues`, real threading
+  (std.Io.Mutex + io). Smaller contained next units: `future-done?` + 3-arg
+  `deref` timeout (depend on whether future is sync/async — an architectural
+  call), `*out*`/`with-out-str` + Java arrays (`int-array`/`aget`) = the Phase-15
+  system-var-registry + F-004 array-slot (tracked). Remaining low-value clj gaps:
+  D-220 (re-matcher), D-222 (bindable print vars).
 - **Forbidden**: "fixing" an AD-001..009 accepted divergence (set print-order,
   `(class)` simple name AD-003, error Kind, **AD-008 Long-overflow auto-promote**,
   cljw hash AD-009 — see `.dev/accepted_divergences.yaml`); widening the NaN-box
@@ -37,7 +40,11 @@
   arm + `wrapArith` BigInt contagion. Then the floor drains: D-212 (str/.toString
   drop N/M suffix), D-213 (`(class e)`→specific exception class via per-Runtime
   exceptionDescriptor cache), D-214 (bit-ops accept heap-Long via `expectI64`+
-  `wrapI64`). Each: own commit, corpus pin, e2e, full gate green.
+  `wrapI64`), D-216 (format surface), D-217 (string-Indexed), D-218 (peek/pop),
+  D-219 (namespaced maps), D-221 (read-string `::`). Then the sweep CONVERGED
+  (audit clean) and Phase 15 was entered: **D-157/ADR-0081 atom watches**
+  (add-watch/remove-watch, synchronous notify, appended `Atom.watches` field).
+  Each: own commit, corpus pin, e2e, full gate green.
 
 ## clj-parity campaign (A-half) — COMPLETE; standing floor remains
 
@@ -48,10 +55,11 @@
   (re-matcher/re-groups — needs a Matcher value type), D-222 (bindable print
   vars — needs var-read-from-primitive infra). This session DISCHARGED:
   D-212/213/214/215 + D-216 (format) + D-217 (string-Indexed) + D-218 (peek/pop)
-  + D-219 (namespaced maps) + D-221 (read-string `::`). The clj-parity
-  exploratory sweep has CONVERGED (7 broad probes → only AD-classified
-  divergences + D-220/D-222 remain). Next = D-220/D-222 when their infra is
-  warranted, OR a different quality dimension / the Phase plan.
+  + D-219 (namespaced maps) + D-221 (read-string `::`) + D-157 (atom watches,
+  Phase-15 piece). The clj-parity exploratory sweep has CONVERGED (8 broad probes
+  → only AD-classified divergences + Phase-15-structural gaps remain). Next =
+  Phase 15 concurrency (proper DA-fork entry for STM/agent/threading) OR the
+  remaining low-value gaps D-220/D-222.
 - **Decided, NOT bugs**: AD-008 (Long overflow past i64 auto-promotes per F-005;
   clj throws) · AD-009 (cljw hash ≠ JVM) · D-211 (`+'`/`*'` deferred, F-005-inverted).
 
