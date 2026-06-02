@@ -174,6 +174,10 @@ confirmed exprs into a `*.txt` corpus here via `--corpus`.
   (14). Only DIFF: `(doto (atom …) …)` returns the atom whose print form is
   `#<atom>` vs clj's `#object[clojure.lang.Atom 0xADDR {…}]` — an acceptable
   print divergence (clj embeds a non-reproducible identity hash).
+- **assoc-path + merge** — `assoc-in`/`update-in`/`get-in` (deep create +
+  missing-path default) over maps AND vectors, `update`(+fnil)/`merge`(+nil)/
+  `merge-with`/`select-keys`/`dissoc`(multi)/`reduce-kv`/`zipmap`/`frequencies`
+  all at parity. Corpus `coll_path` (20).
 - **bit-ops + Math + static fields** — `bit-test`/`bit-set`/`bit-clear`/
   `bit-flip`/`bit-and-not`; `Math/sqrt`/`pow`/`abs`/`floor`/`ceil`/`round`/
   `max`/`min`/`log`/`exp`/`signum`/`floorDiv`/`floorMod` (static methods); bare
