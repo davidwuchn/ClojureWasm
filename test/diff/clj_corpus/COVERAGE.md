@@ -271,6 +271,13 @@ confirmed exprs into a `*.txt` corpus here via `--corpus`.
   set-returning ops — the known non-bug (clj_diff_sweep.md), so those lines are
   verified-at-parity-modulo-order but intentionally NOT in the regression
   corpus (the deterministic-output ops are).
+- **Integer / Long statics** — `parseInt`/`parseLong` (+radix), `toString`
+  (+radix, negative), `toBinaryString`/`toHexString`/`toOctalString` (incl.
+  NEGATIVE → unsigned 32/64-bit, e.g. `(Integer/toHexString -1)`→`"ffffffff"`),
+  `valueOf`, `signum`, `numberOfLeading/TrailingZeros`, `highestOneBit`,
+  `reverse`, `bitCount`, and `compare`/`max`/`min`. Corpus `integer_long_static`
+  (33). Gap found+fixed: `Integer/Long compare`/`max`/`min` were unimplemented
+  (`name_error`) — added (2-int statics over `expectInteger`).
 - **char / Character** — `char?`/`char`/`int`, `Character/isDigit`/`isLetter`/
   `isLetterOrDigit`/`isWhitespace`/`isUpperCase`/`isLowerCase`/`toUpperCase`/
   `toLowerCase`/`digit`/`getNumericValue`/`forDigit`, char `compare`/`sort`/`=`/

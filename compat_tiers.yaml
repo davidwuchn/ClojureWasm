@@ -128,7 +128,7 @@ tiers:
         phase: 14
         files:
           surface: runtime/java/lang/Long.zig
-        methods: [parseLong, valueOf, toBinaryString, toHexString, toOctalString]
+        methods: [parseLong, valueOf, toBinaryString, toHexString, toOctalString, compare, max, min]
         clojure_peer_vars: [parse-long]
       - fqn: java.lang.Integer
         cljw_ns: cljw.java.lang.Integer
@@ -137,7 +137,7 @@ tiers:
         phase: 14
         files:
           surface: runtime/java/lang/Integer.zig
-        methods: [parseInt, valueOf, toBinaryString, toHexString, toOctalString]
+        methods: [parseInt, valueOf, toBinaryString, toHexString, toOctalString, compare, max, min]
         clojure_peer_vars: [parse-long]
       - fqn: java.lang.Double
         cljw_ns: cljw.java.lang.Double

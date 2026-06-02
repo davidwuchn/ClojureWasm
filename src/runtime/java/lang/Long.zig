@@ -179,10 +179,34 @@ fn RotateOp(comptime left: bool, comptime name: []const u8) type {
     };
 }
 
+/// `Long/compare` / `max` / `min`: two-long statics. compare → the sign of
+/// `a - b` (-1/0/1); max/min → the larger/smaller. JVM ref:
+/// java.lang.Long#compare/max/min.
+const Binop = enum { compare, max, min };
+fn BinOp2(comptime op: Binop, comptime name: []const u8) type {
+    return struct {
+        fn call(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+            _ = rt;
+            _ = env;
+            try error_catalog.checkArity("Long/" ++ name, args, 2, loc);
+            const a = try error_catalog.expectInteger(args[0], "Long/" ++ name, loc);
+            const b = try error_catalog.expectInteger(args[1], "Long/" ++ name, loc);
+            return Value.initInteger(switch (op) {
+                .compare => @as(i64, if (a < b) -1 else if (a > b) 1 else 0),
+                .max => @max(a, b),
+                .min => @min(a, b),
+            });
+        }
+    };
+}
+
 fn initLong(td: *type_descriptor.TypeDescriptor, gpa: std.mem.Allocator) anyerror!void {
     if (td.method_table.len != 0) return; // idempotent re-run
     const specs = .{
         .{ "parseLong", &parseLong },
+        .{ "compare", &BinOp2(.compare, "compare").call },
+        .{ "max", &BinOp2(.max, "max").call },
+        .{ "min", &BinOp2(.min, "min").call },
         .{ "valueOf", &valueOf },
         .{ "toString", &toString },
         .{ "toBinaryString", &RadixString("b", "toBinaryString").call },

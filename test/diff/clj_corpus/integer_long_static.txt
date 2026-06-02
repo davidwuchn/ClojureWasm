@@ -1,0 +1,66 @@
+(Integer/parseInt "42")
+;;=> 42
+(Integer/parseInt "-42")
+;;=> -42
+(Integer/parseInt "ff" 16)
+;;=> 255
+(Integer/parseInt "10" 2)
+;;=> 2
+(Integer/toHexString 255)
+;;=> "ff"
+(Integer/toHexString -1)
+;;=> "ffffffff"
+(Integer/toHexString -255)
+;;=> "ffffff01"
+(Integer/toBinaryString 5)
+;;=> "101"
+(Integer/toBinaryString -1)
+;;=> "11111111111111111111111111111111"
+(Integer/toOctalString 64)
+;;=> "100"
+(Integer/toString 255 16)
+;;=> "ff"
+(Integer/toString -255 16)
+;;=> "-ff"
+(Long/parseLong "123")
+;;=> 123
+(Long/parseLong "-9999999999")
+;;=> -9999999999
+(Long/toHexString 255)
+;;=> "ff"
+(Long/toHexString -1)
+;;=> "ffffffffffffffff"
+(Long/toBinaryString 8)
+;;=> "1000"
+(Long/toString 255 2)
+;;=> "11111111"
+(Integer/valueOf "7")
+;;=> 7
+(Integer/signum -5)
+;;=> -1
+(Integer/signum 0)
+;;=> 0
+(Long/signum -99)
+;;=> -1
+(Integer/compare 3 5)
+;;=> -1
+(Integer/compare 5 3)
+;;=> 1
+(Integer/max 3 5)
+;;=> 5
+(Integer/min 3 5)
+;;=> 3
+(Long/max 10 20)
+;;=> 20
+(Integer/numberOfLeadingZeros 1)
+;;=> 31
+(Integer/numberOfTrailingZeros 8)
+;;=> 3
+(Long/numberOfLeadingZeros 1)
+;;=> 63
+(Integer/highestOneBit 100)
+;;=> 64
+(Integer/reverse 1)
+;;=> -2147483648
+(Long/bitCount 255)
+;;=> 8
