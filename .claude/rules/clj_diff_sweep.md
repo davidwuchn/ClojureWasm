@@ -46,13 +46,20 @@ because the debt ledger reads "covered".
 
 ## When a DIFF is NOT a bug
 
+> **SSOT for accepted divergences = [`.dev/accepted_divergences.yaml`](../../.dev/accepted_divergences.yaml)**
+> (AD-001…AD-007), with the full classification discipline in
+> [`accepted_divergences.md`](accepted_divergences.md). A DIFF is classified
+> bug→fix OR accepted→AD-NNN (never left floating). The quick reminders:
+
 - **Set / non-sorted-map print order** differs from clj's hash order — not
-  a bug (don't "fix" `#{2 3}` vs `#{3 2}`).
-- **`()` vs `nil` for an empty realized seq** is the tracked D-164
-  structural deviation (cljw collapses empty→nil), uniform across every
-  seq fn — a single big-bang fix, not a per-function patch.
+  a bug (AD-001; don't "fix" `#{2 3}` vs `#{3 2}`).
+- **`()` vs `nil` for an empty realized seq** is the tracked **D-164** —
+  this is a **bug scheduled for fix** in the clj-parity campaign (ROADMAP
+  §9.2.P), NOT an accepted divergence. A single big-bang fix, uniform across
+  every seq fn.
 - **F-NNN-intentional divergences** (`+`/`*` overflow auto-promote per
-  F-005, etc.) — check `project_facts.md` before treating a DIFF as a gap.
+  F-005; `(class …)` simple name per ADR-0059 = AD-003; error Kind = AD-007)
+  — check `project_facts.md` + the AD ledger before treating a DIFF as a gap.
 
 ## Related
 

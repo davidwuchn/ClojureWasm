@@ -1,0 +1,88 @@
+# Accepted clj-divergences — SSOT (the authoritative "NOT a bug" ledger).
+#
+# Each AD-NNN is a behaviour where cljw INTENTIONALLY differs from JVM
+# Clojure's observable surface, justified by a project invariant (F-NNN) or
+# ADR. This file is the trust contract: a divergence here is a DECISION, not
+# an accident, and must NOT be silently "fixed" by a future clj-diff sweep.
+#
+# Discipline (`.claude/rules/accepted_divergences.md`): a clj_diff DIFF is
+# classified bug -> fix (F-011) OR accepted -> recorded HERE with a
+# `derives_from` invariant. A DIFF is never left unclassified, and an entry
+# is never added without a `derives_from` (no lazy "just accept it").
+#
+# Auto-defense: `scripts/check_accepted_divergences.sh --gate` enforces
+# (a) the file is well-formed, (b) every entry cites a non-empty
+# `derives_from`, (c) every entry's `pin` test path (when not "none") exists
+# so the divergent cljw behaviour is locked against accidental change, and
+# (d) COVERAGE.md's "Acceptable divergences" section points here (no drift).
+#
+# To PROMOTE an accepted divergence back to "should match clj" (i.e. decide
+# it is actually a bug): remove its entry here + open a debt row + add a
+# corpus/e2e case asserting the clj-matching behaviour. The reverse of
+# accept. Both directions are explicit.
+
+accepted:
+  - id: "AD-001"
+    summary: "Set / non-sorted-map print order follows cljw hash order, not clj's"
+    example: '(pr-str #{1 2 3}) => cljw "#{1 2 3}" / clj "#{1 3 2}"'
+    why: |-
+      Order is not part of set / non-sorted-map VALUE semantics; the two
+      values are `=`. clj's own order is hash-dependent and non-portable
+      across versions / platforms, so matching it is neither possible nor
+      meaningful. cljw's order is deterministic for a given insert sequence.
+    derives_from: "Clojure unordered-collection semantics (value equality is order-independent); ADR-0045 (HAMT representation)"
+    pin: "test/diff/clj_corpus/print_repr.txt (cljw-side order asserted)"
+  - id: "AD-002"
+    summary: "Opaque reference values (atom / volatile / fn / etc.) print as `#<tag>` not clj's `#object[Class 0xADDR {...}]`"
+    example: '(pr-str (atom 1)) => cljw "#<atom>" / clj "#object[clojure.lang.Atom 0x.. {:status :ready, :val 1}]"'
+    why: |-
+      clj embeds a non-reproducible identity hash (0xADDR) and a JVM class
+      FQCN; neither is reproducible nor meaningful in cljw (no JVM class,
+      no stable identity address in the printed form). Exact parity is
+      impossible and undesirable. The value is opaque either way.
+    derives_from: "F-011 (behavioural equivalence on VALUE, not identity); ADR-0059 (no-JVM-Class)"
+    pin: "none — identity-hash dependent on the clj side (not value-comparable)"
+  - id: "AD-003"
+    summary: "`(class x)` / `(type x)` return the simple name, not the Java FQCN"
+    example: '(class 5) => cljw Long / clj java.lang.Long'
+    why: |-
+      cljw has no JVM Class hierarchy (TypeDescriptor instead). The simple
+      name is the cljw surface; the FQCN would be a JVM-specific fiction.
+    derives_from: "ADR-0059 (no-JVM rule); no_jvm_specific_assumption.md"
+    pin: "test/diff/clj_corpus/print_repr.txt + test/diff/clj_corpus/str_char.txt (class-name cases)"
+  - id: "AD-004"
+    summary: "`(float x)` yields an f64; cljw has no f32 representation"
+    example: "(float 1/3) => cljw 0.3333333333333333 / clj 0.33333334 (f32)"
+    why: |-
+      F-005 fixes the numeric tower as a Zig-native single-double internal
+      model. A distinct f32 would be a representation the tower does not
+      carry; `float` widens to the f64 the value already is.
+    derives_from: "F-005 (numeric tower: single internal double)"
+    pin: "none — value-dependent (the f64 is correct; only the f32-narrowing is absent)"
+  - id: "AD-005"
+    summary: "Subnormal double shortest-rendering differs by the last digit"
+    example: "smallest positive double => cljw 5.0E-324 / clj 4.9E-324 (the SAME f64 bit pattern)"
+    why: |-
+      Both print the identical IEEE-754 f64; only the shortest-round-trip
+      decimal rendering of a subnormal differs. The value is bit-identical.
+    derives_from: "F-005 (IEEE-754 f64; rendering is a shortest-round-trip cosmetic)"
+    pin: "none — single subnormal edge, value bit-identical"
+  - id: "AD-006"
+    summary: "`Double/parseDouble` rejects some rare Java FloatingDecimal grammar (lower-case inf/nan, trailing d/f, hex-float)"
+    example: '(Double/parseDouble "0x1p4") => cljw rejects / clj 16.0'
+    why: |-
+      The full Java FloatingDecimal grammar (hex-float, case-insensitive
+      Infinity/NaN, trailing type suffixes) is a rare-edge surface not
+      reimplemented; the common decimal grammar is at parity.
+    derives_from: "F-011 (rare-edge; common-path parity holds) — revisit if a real corpus hits it"
+    pin: "none — rare-edge (would be promoted to a bug if real code hits it)"
+  - id: "AD-007"
+    summary: "Error rendering shows cljw's catalog Kind, not the JVM exception class"
+    example: '(quot 10 0) => cljw "[arithmetic_error] ..." / clj "ArithmeticException ..." (both reject)'
+    why: |-
+      cljw has no JVM exception-class hierarchy; its error catalog Kind
+      (`[type_error]` / `[arithmetic_error]` / ...) is the cljw surface.
+      Crucially BOTH runtimes REJECT the same inputs — only the message
+      format differs, never the accept/reject decision or the value.
+    derives_from: "ADR-0059 (no-JVM); error_catalog_only.md (catalog is the message SSOT)"
+    pin: "test/e2e/* error-rendering cases (cljw Kind asserted); behaviour = reject, verified"

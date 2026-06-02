@@ -243,6 +243,12 @@ run_step "e2e_reach"            "bash scripts/check_e2e_reach.sh --gate"
 # .dev/tech_debt_consolidation.md. Gate-promotion tracked in D-175.
 run_step "debt_id_refs"         "bash scripts/check_debt_id_refs.sh --gate"
 
+# Accepted clj-divergence ledger (.dev/accepted_divergences.yaml): every
+# AD-NNN cites a justifying invariant + a pinning test, and COVERAGE.md
+# points at the SSOT. Keeps the "NOT a bug" list a trust contract that
+# cannot drift or accept-without-reason. Rule: accepted_divergences.md.
+run_step "accepted_divergences" "bash scripts/check_accepted_divergences.sh --gate"
+
 # zlinter no_deprecated gate (ADR-0003) — Mac-host only. zlinter is
 # fetched via `zig fetch` against GitHub; OrbStack runs are network-
 # free per .dev/orbstack_setup.md.

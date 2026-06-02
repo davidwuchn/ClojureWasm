@@ -250,20 +250,15 @@ confirmed exprs into a `*.txt` corpus here via `--corpus`.
 
 ## Acceptable divergences (NOT bugs — do not "fix")
 
-- Set / non-sorted-map **print order** differs from clj hash order.
-- **Opaque-object print form**: an atom prints `#<atom>` vs clj's
-  `#object[clojure.lang.Atom 0xADDR {:status :ready, :val N}]` — clj embeds a
-  non-reproducible identity hash, so exact parity is neither possible nor
-  desirable (same class as `#object[…]` for any opaque ref type).
-- `(class 5)` → `Long` not `java.lang.Long` (ADR-0059 no-JVM rule); `(type …)` too.
-- `(float 1/3)` is f64 (cljw has no f32).
-- Subnormal `5.0E-324` vs JVM `4.9E-324` (same double).
-- `Double/parseDouble` lower-case `inf`/`nan` + trailing `d`/`f` + hex-float —
-  full Java FloatingDecimal grammar not reimplemented (rare edge).
-- **Error class name** on a rejected operation: cljw renders its own catalog
-  Kind (`[type_error]` / `[arithmetic_error]`) where clj prints the JVM
-  exception class (`ClassCastException` / `ArithmeticException`). Both correctly
-  reject — e.g. `(numerator 5)`, `(quot 10 0)`, `(mod 10 0)`. ADR-0059 no-JVM.
+> **SSOT = [`.dev/accepted_divergences.yaml`](../../.dev/accepted_divergences.yaml)**
+> (AD-001 … AD-007), enforced by `scripts/check_accepted_divergences.sh` and
+> governed by [`.claude/rules/accepted_divergences.md`](../../.claude/rules/accepted_divergences.md).
+> Each entry cites its deriving invariant (F-NNN / ADR) and a pinning test.
+> Do not duplicate the list here — edit the SSOT. Summary for orientation:
+> AD-001 set/map print order · AD-002 opaque-ref `#<tag>` print · AD-003
+> `(class x)` simple name · AD-004 `(float …)` is f64 · AD-005 subnormal
+> shortest-render · AD-006 rare `Double/parseDouble` grammar · AD-007 error
+> renders cljw catalog Kind (both runtimes still reject identically).
 - **clojure.set** — `union`/`intersection`/`difference` (0..3-arity + empty),
   `subset?`/`superset?`, `select`, `map-invert`, `rename-keys`, `project`,
   `rename`, `index`, `join` all at parity. Corpus `clojure_set` (23 golden).

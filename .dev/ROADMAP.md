@@ -990,6 +990,43 @@ renumber it (F-003: §9.2.R's ordering is intact; this is a pulled-forward
 overlay). Granularity (whether D-163/D-140 become numbered phases) defers
 to their entry per F-003.
 
+### 9.2.P clj-parity root-cause campaign (ACTIVE — resume here next session; ADR-0076, 2026-06-02)
+
+**User-directed.** A periodic audit surfaced the user's concern that small
+cljw↔clj mismatches "利用されるときの不信感につながりそう". The user directed
+(2026-06-02): root-cause-resolve the real gaps ("A系は解消", big surgery
+accepted per F-002), and record the intentional ones ("B…妥当な差異なので、
+しっかり許容した、と記録…ルール化や自動防御"). This campaign is the A half; the
+B half is the accepted-divergence framework (ADR-0076 §1 — SSOT
+`.dev/accepted_divergences.yaml` + rule + gate).
+
+Like §9.2.S this is a **repeatable, refactor-gated** cluster anchored on a
+standing **`quality-loop floor: clj-parity`** debt Barrier (F-010), so it
+cannot rot half-done and new sweep-found divergences drain through it. Each
+unit is its own commit (revert-friendly), F-002/F-011-held, gated, and leaves
+a **corpus line** behind (the pin — anti-D-177 mechanical re-check via
+`check_corpus_regression.sh`).
+
+**Units** (ADR-0076 table; the honest loop-vs-user split):
+
+| Unit      | Debt  | Gap (clj-visible)                              | あるべき論                                                                                                                | Owner              |
+|-----------|-------|------------------------------------------------|---------------------------------------------------------------------------------------------------------------------------|--------------------|
+| C1 (lead) | D-164 | empty `()`/seq → `nil`; `(seq? '())`→false   | interned distinct empty value in existing `.list`/seq tags (no new slot); uniform across every seq fn — highest leverage | loop               |
+| C2        | D-205 | BigDecimal map-key `(get {1.5M :v} 1.5M)`→nil | numeric arm in rt-free `keyEqValue` + scale-normalized hash                                                               | loop               |
+| C3        | D-207 | `.toString`/`.equals`/`.hashCode`/`.getClass`  | dispatch-level Object fallback → `str`/`=`/`hash`/`class` (F-009)                                                        | loop               |
+| C4        | D-209 | `map-entry?` + distinct MapEntry               | activate the **reserved** Group-A `.map_entry` slot (≠ F-004 amend)                                                      | loop               |
+| C5        | D-198 | `(Exception. "x")` host-class ctors            | D-048 host-class machinery (dependency-ordered)                                                                           | loop (after D-048) |
+| C6        | D-200 | `#inst`/Date                                   | ship the **no-slot** cljw-native `typed_instance` Date; dedicated `.date` slot = **user F-004** option                    | loop + user (slot) |
+| C7        | D-165 | long ∈ (2^47, 2^63] → BigInt `…N`           | wider NaN-box payload (F-004) or heap-boxed-Long-without-`N` (F-005) — **user-owned LAW**                                | **user F-NNN**     |
+
+**Resume contract**: start at **C1 (D-164)** — one representation fix
+clears every seq predicate (`seq?`/`list?`/`empty?`/`=` on `()`), the single
+highest-trust win. Then C2 → C3 → C4 → C6(no-slot Date) → C5(after D-048).
+**C7 + the C6 dedicated-slot variant are user F-004/F-005 decision points**
+(all 64 NaN-box slots are named; full-Long / dedicated-Date representation is
+user-owned LAW) — surfaced as flagged debt, NOT auto-decided. This overlay
+runs ahead of §9.2.R and does not renumber it (F-003).
+
 ### 9.3 Phase 1 — task list (expanded; this is the active phase)
 
 > Convention: each `[ ]` becomes one or more source commits, eventually

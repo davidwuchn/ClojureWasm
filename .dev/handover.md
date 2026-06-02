@@ -5,55 +5,51 @@
 
 ## Resume contract
 
-- **HEAD**: see `git log` (`.matches` D-206 part 1 on `cw-from-scratch`). Gate
-  green on `vm` (Mac 205; ADR-0070 / F-012). debt ledger is **`.dev/debt.yaml`**.
-- **First commit on resume MUST be: D-206 — the regex/collection
-  `java.lang.String` methods** (`.replaceAll` / `.replaceFirst` / `.split` /
-  `.toCharArray`; `.matches` already landed). DECIDE the structural choice FIRST
-  (recorded in the D-206 row): the regex-replace (`$1` backref `expandReplacement`)
-  + split-by-regex impls live in `lang/primitive/string.zig` (Layer 2) but
-  `runtime/java/lang/String.zig` is runtime/ (Layer 0, can't import lang/) — so
-  either (a) relocate that impl to a NEUTRAL `runtime/regex/` leaf (F-009-clean,
-  shared with clojure.string), or (b) register the String regex-methods from
-  lang/ into the `.string` descriptor `method_table` (needs a merge past the
-  idempotent guard). `.split`/`.toCharArray` also carry an array-vs-vector
-  return-type call. clj: `(.replaceAll "abc" "(.)" "$1$1")`→`"aabbcc"`,
-  `(vec (.split "a,b,c" ","))`→`["a" "b" "c"]`. **Verify via the
-  `clj_diff_sweep` harness** (these are value-exprs). Then the other
-  structural-deferred rows in any order.
-- **Forbidden**: re-sweeping the COVERAGE.md § Swept areas wholesale (java.lang
-  scalar+String-simple + set/walk/numeric-keys are DONE, corpus-backed); seizing
-  the F-003 structural-deferred rows (D-164 empty≡nil, D-165, D-086/088/178/179)
-  incrementally — big-bang, user-gated; re-opening landed work (git log = SSOT);
-  forcing a to-be-unwound representation for #inst/D-205 (both structurally
-  deferred — see below); perf without a Release `scripts/perf.sh` number.
+- **HEAD**: see `git log` (clj-parity campaign wiring on `cw-from-scratch`).
+  Gate green on `vm` (Mac 205; ADR-0070 / F-012). debt ledger =
+  **`.dev/debt.yaml`**.
+- **First commit on resume MUST be: clj-parity campaign C1 = D-164**
+  (empty `()`/seq ≡ nil → distinct empty-seq Value). This is the LEAD unit
+  of the **clj-parity root-cause campaign** (ROADMAP §9.2.P, ADR-0076,
+  user-directed 2026-06-02): one representation fix clears `seq?`/`list?`/
+  `=`/print on `()` across every seq fn — the highest-leverage trust win.
+  あるべき論 = interned distinct empty value inside the existing `.list`/seq
+  tags (DA-confirmed NO new NaN-box slot), threaded through cons/rest/seq/
+  filter/map/print/=/list?/seq? in ONE big-bang; leave a corpus line pinning
+  `(seq? '())`/`(pr-str '())`/`(= '() nil)`. Then C2 D-205 → C3 D-207 → C4
+  D-209 → C6 D-200(no-slot Date) → C5 D-198(after D-048). Full unit table:
+  D-210 anchor row + ROADMAP §9.2.P.
+- **Forbidden**: self-deciding **C7 D-165** (long >2^47 print) or the **C6
+  dedicated `.date` slot** — both are USER-OWNED F-004/F-005 amendments
+  (all 64 NaN-box slots named; surfaced as decision points, NOT auto-decided);
+  "fixing" an AD-001..007 accepted divergence (set print-order, `(class)`
+  simple name, error Kind — see `.dev/accepted_divergences.yaml`); re-opening
+  landed work (git log = SSOT); perf without a Release `scripts/perf.sh` number.
 
 ## Just landed (this session; git log = SSOT, full rows in `.dev/debt.yaml`)
 
-- **Reader-literal family**: ADR-0073 tagged-literal infra + edn 2-arity;
-  ADR-0074 `#uuid` real value type; ADR-0075 `TaggedLiteral` (slot 24). D-200
-  cycles 1-4. **D-203/ADR-0072** extend-type over native/java classes.
-  **D-204** name↔Tag SSOT (`class_name.fqcnForTag`).
-- **Key-equality bug fixes**: uuid/tagged-literal AND BigInt/Ratio as map keys /
-  set elements (the rt-free `keyEqValue` lacked numeric + value-type arms; also
-  fixed non-deterministic numeric `valueHash`). D-205 part 1.
-- **java.lang surface sweep** (~20 methods, corpus-backed clj-parity):
-  Character (isLetterOrDigit/isUpperCase/isLowerCase/getNumericValue/forDigit),
-  Integer/Long (compare/max/min), Double (toString/valueOf/compare/max/min/sum) +
-  Boolean (logicalAnd/Or/Xor), String simple (lastIndexOf/isBlank/strip/
-  equalsIgnoreCase/codePointAt/compareTo + indexOf-int) + `.matches`.
-- Scaffolding audit (0 block; W-009/W-010 tracked). doc-lie fixes.
+- **D-206 DISCHARGED**: regex/collection String methods (`.replaceAll`/
+  `.replaceFirst`/`.split`/`.toCharArray`) via a neutral `runtime/regex/
+  replace.zig` leaf shared with clojure.string (F-009 option a); vector
+  return-type. **D-208 DISCHARGED**: char readable-print clj-faithful (`\`+
+  literal char for all non-named; corrected D-154's `\uXXXX` doc-lie).
+  **D-209** recorded (map-entry?, → campaign C4).
+- **clj-parity campaign + accepted-divergence framework WIRED (ADR-0076)**:
+  B-half = SSOT `.dev/accepted_divergences.yaml` (AD-001..007) + rule
+  `.claude/rules/accepted_divergences.md` + gate
+  `scripts/check_accepted_divergences.sh` (in run_all). A-half = §9.2.P
+  campaign + D-210 anchor + D-164/165 re-opened from structural-defer.
 
-## Structurally-deferred (focused-cycle items; full analysis in `.dev/debt.yaml`)
+## clj-parity campaign units (the A-half; full rows in `.dev/debt.yaml`, D-210 anchor)
 
-- **D-206** regex/collection String methods (next — see Resume contract).
-- **#inst/Date** (D-200 last piece): NO free NaN-box slot (all 64 named) → a
-  dedicated `.date` tag needs a USER F-004 decision OR D-048 host_instance;
-  typed_instance fallback is contested. NOT a quick `#uuid` mirror.
-- **D-205 BigDecimal keys**: rt-bound (numeric `=` needs rt-aware scale
-  alignment; rt-free keyEqValue can't — like lazy/range keys).
-- **D-207 Object methods** (`.toString`/`.equals`/`.hashCode`/`.getClass`): need
-  a dispatch-level Object fallback; LOW priority (idiomatic clj uses str/=/etc.).
+- **Loop-resolvable**: C1 D-164 (empty≡nil, LEAD) · C2 D-205 (BigDecimal
+  map-key) · C3 D-207 (Object `.toString`/`.equals`/`.hashCode`/`.getClass`
+  fallback) · C4 D-209 (`map-entry?` via reserved `.map_entry` slot) · C6
+  D-200 (no-slot typed_instance Date) · C5 D-198 (host-class exc ctors, after
+  D-048).
+- **User-owned F-NNN decisions (do NOT auto-decide)**: C7 D-165 (full-i64
+  Long = F-004 wider payload or F-005 heap-boxed Long) · C6 dedicated `.date`
+  slot (F-004 reshuffle — all 64 slots named).
 
 ## Process discipline (SSOT = memory + rules; do NOT re-expand here)
 
@@ -61,22 +57,27 @@
   headroom — the -P8 pool over-runs under load, memory `gate-parallel-e2e-timeout`).
   Never poll a bg gate. `clj -M -e` → `timeout 20` + bound infinite seqs. Speed
   ONLY via `scripts/perf.sh`. Tool channel corrupts under host load — verify
-  greps via Read / `bash grep` (memory `tool_channel_corrupts_under_load`).
+  greps via Read / `bash grep`; and it TRANSCODES literal non-ASCII in
+  Edit/Write (build expected non-ASCII via `printf` in tests, keep files ASCII).
 
 ## Cold-start reading order (tracked-only)
 
-handover → `test/diff/clj_corpus/COVERAGE.md` + `.claude/rules/clj_diff_sweep.md`
-→ `.dev/debt.yaml` (open: D-206/D-205/D-207/D-200/D-198) → CLAUDE.md (§ Project
-spirit + Autonomous Workflow + The only stop) → `.dev/project_facts.md`
-(F-002/004/009/010/011/012) → `.dev/principle.md`.
+handover → `.dev/decisions/0076_clj_parity_campaign_and_accepted_divergences.md`
++ ROADMAP §9.2.P → `.dev/accepted_divergences.yaml` +
+`.claude/rules/accepted_divergences.md` → `test/diff/clj_corpus/COVERAGE.md` +
+`.claude/rules/clj_diff_sweep.md` → `.dev/debt.yaml` (open: D-210 anchor /
+D-164(C1)/D-205/D-207/D-209/D-200/D-198/D-165) → CLAUDE.md (§ Project spirit +
+Autonomous Workflow + The only stop) → `.dev/project_facts.md`
+(F-002/004/005/009/010/011/012) → `.dev/principle.md`.
 
 ## Stopped — user requested
 
-User instruction (2026-06-02): "OK、では、コンテキストウィンドウがおおきくなって
-きたので、かえってきて対処が済んだら、最後にクリーンセッションから、continue
-できるか配線や参照チェーンを監査して、止めてください". DONE: the in-flight `.matches`
-work landed (gate green, pushed); resume wiring audited — cold-start files all
-present, `check_debt_id_refs` resolves all cited IDs, scaffolding audit 0-block,
-and the stale `#inst` next-task pointer was repointed to D-206 above. This stop
-does NOT carry across sessions — the next `/continue` resumes the loop at the
-Resume contract's D-206 task (CLAUDE.md § The only stop).
+User instruction (2026-06-02): "まず、ねじこみで、それらを根本的に解決する調査と
+取り組みをつぶし…A系は解消。Bは…妥当な差異なので、しっかり許容した、と記録…
+ようにルール化や自動防御したい。次のクリアセッションからさっそく対処がねじ込まれる
+よう、配線や参照チェーンを準備したあとに確認してください". DONE this session: the
+B-half framework (accepted-divergence SSOT + rule + gate, AD-001..007) and the
+A-half wiring (ADR-0076 + ROADMAP §9.2.P + D-210 anchor + D-164/165 re-opened,
+C1..C7 ordered with the honest loop-vs-user split) landed + verified. This stop
+does NOT carry across sessions — the next `/continue` resumes at the Resume
+contract's C1 (D-164) task (CLAUDE.md § The only stop).
