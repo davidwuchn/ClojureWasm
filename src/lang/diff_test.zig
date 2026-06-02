@@ -218,6 +218,53 @@ test "diff: nested binding — innermost shadows" {
     try f.check("(binding [*tv* 2] (binding [*tv* 3] *tv*))", 3);
 }
 
+test "diff: thrown value escaping binding caught by outer try (ADR-0071)" {
+    var f = try Fixture.init(testing.allocator);
+    defer f.deinit();
+    const user = f.env.findNs("user").?;
+    const v = try f.env.intern(user, "*tv*", Value.initInteger(1), null);
+    v.flags.dynamic = true;
+    // The throw escapes the binding body. On the VM the binding's cleanup
+    // edge (op_push_cleanup / op_reraise) pops the frame and re-fires the
+    // SAME thrown value un-converted; the outer catch binds it. Both
+    // backends must agree on the caught value.
+    try f.check("(try (binding [*tv* 2] (throw (ex-info \"x\" {}))) (catch ExceptionInfo _ 7))", 7);
+}
+
+test "diff: catalog error escaping binding caught by outer try (ADR-0071)" {
+    var f = try Fixture.init(testing.allocator);
+    defer f.deinit();
+    const user = f.env.findNs("user").?;
+    const v = try f.env.intern(user, "*tv*", Value.initInteger(1), null);
+    v.flags.dynamic = true;
+    // A catalog error (/ 1 0) escapes the binding. The cleanup edge
+    // re-raises it un-converted (ADR-0071); the catalog→exception
+    // conversion (ADR-0060) then happens at the OUTER catch handler so the
+    // ArithmeticException arm matches. Parity: both backends catch → 9.
+    try f.check("(try (binding [*tv* 2] (/ 1 0)) (catch ArithmeticException _ 9))", 9);
+}
+
+test "diff: binding frame restored after a caught throw (cleanup pops frame, ADR-0071)" {
+    var f = try Fixture.init(testing.allocator);
+    defer f.deinit();
+    const user = f.env.findNs("user").?;
+    const v = try f.env.intern(user, "*tv*", Value.initInteger(1), null);
+    v.flags.dynamic = true;
+    // The exception edge runs op_pop_binding_frame before re-raising, so
+    // *tv* is the root (1) again after the caught throw — same on both
+    // backends (the VM cleanup edge mirrors TreeWalk's `defer popFrame`).
+    try f.check("(do (try (binding [*tv* 2] (throw (ex-info \"x\" {}))) (catch ExceptionInfo _ 0)) *tv*)", 1);
+}
+
+test "diff: bare-try (no catch) cleanup re-raise caught by outer try (ADR-0071)" {
+    var f = try Fixture.init(testing.allocator);
+    defer f.deinit();
+    // The inner (try ...) has no catch clause → cleanup edge → re-raises;
+    // the outer try catches. Exercises op_push_cleanup on a non-binding
+    // form (try-with-zero-catches).
+    try f.check("(try (try (throw (ex-info \"x\" {}))) (catch ExceptionInfo _ 5))", 5);
+}
+
 test "diff: loop*/recur countdown" {
     var f = try Fixture.init(testing.allocator);
     defer f.deinit();

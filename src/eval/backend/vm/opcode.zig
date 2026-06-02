@@ -177,6 +177,21 @@ pub const Opcode = enum(u8) {
     /// a parallel struct).
     op_static_method_call = 0x1E,
 
+    /// `(binding …)` / bare `(try …)` cleanup edge — operand = signed
+    /// forward offset to the cleanup ip (same encoding as
+    /// `op_push_handler`). Pushes a `.cleanup`-kind handler: unlike a
+    /// `catch` handler, an error reaching it is NOT converted to a
+    /// synthetic exception and the dynamic error-context is NOT cleared
+    /// — the cleanup bytecode runs and `op_reraise` re-fires the
+    /// ORIGINAL error unchanged (= TreeWalk's `defer popFrame`). ADR-0071.
+    op_push_cleanup = 0x1F,
+    /// Re-fire the in-flight error stashed by the cleanup-handler unwind
+    /// (`dispatch.vm_pending_reraise`) WITHOUT conversion / context
+    /// mutation. Operand unused. Emitted at the tail of a `.cleanup`
+    /// edge after the cleanup bytecode (e.g. `op_pop_binding_frame`).
+    /// ADR-0071.
+    op_reraise = 0x20,
+
     /// True when this opcode carries a **signed-i16 instruction-position
     /// offset** in `operand`, relative to the instruction after itself
     /// (vm.zig:188-201 + :317 `applyJump`). Peephole's IP-remap pass
@@ -187,7 +202,7 @@ pub const Opcode = enum(u8) {
     /// Safe default for any new op is `false`.
     pub fn isPositionRelative(self: Opcode) bool {
         return switch (self) {
-            .op_jump, .op_jump_if_false, .op_push_handler => true,
+            .op_jump, .op_jump_if_false, .op_push_handler, .op_push_cleanup => true,
             .op_const,
             .op_load_local,
             .op_store_local,
@@ -215,6 +230,7 @@ pub const Opcode = enum(u8) {
             .op_push_binding_frame,
             .op_pop_binding_frame,
             .op_static_method_call,
+            .op_reraise,
             => false,
         };
     }
@@ -258,6 +274,8 @@ pub const Opcode = enum(u8) {
             .op_push_binding_frame,
             .op_pop_binding_frame,
             .op_static_method_call,
+            .op_push_cleanup,
+            .op_reraise,
             => false,
         };
     }

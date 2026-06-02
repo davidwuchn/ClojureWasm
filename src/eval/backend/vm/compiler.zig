@@ -342,7 +342,13 @@ const Compiler = struct {
         // overhead is paid at run time and the BytecodeChunk shape
         // stays simple (matches JVM Clojure's lowering).
 
-        const push_handler_idx = try self.emitJump(.op_push_handler);
+        // ADR-0071: a try with NO catch clauses (bare try / finally-only)
+        // is a cleanup edge, not a catch — it must re-fire the original
+        // error unchanged. A try WITH catches keeps the catch handler so
+        // the catalog→exception conversion feeds op_match_class.
+        const is_cleanup_only = n.catch_clauses.len == 0;
+        const push_op: Opcode = if (is_cleanup_only) .op_push_cleanup else .op_push_handler;
+        const push_handler_idx = try self.emitJump(push_op);
         try self.compileNode(n.body);
         try self.emit(.op_pop_handler, 0);
         if (n.finally_body) |fb| try self.compileFinallyPreservingTop(fb);
@@ -372,11 +378,14 @@ const Compiler = struct {
             try self.patchJump(skip_clause_idx);
         }
 
-        // No clause matched (or no clauses at all). The thrown Value is
-        // still on top of the operand stack; run finally on the
-        // re-raise path, then op_throw re-fires the unwind.
+        // No clause matched (or no clauses at all). Run finally on the
+        // re-raise path, then re-fire the unwind. With catches the thrown
+        // Value is on top of the operand stack and op_throw re-fires the
+        // (converted) exception; the cleanup-only edge instead op_reraises
+        // the ORIGINAL error via the stashed pending error (ADR-0071), so
+        // an uncaught catalog error keeps its Kind + context.
         if (n.finally_body) |fb| try self.compileFinallyPreservingTop(fb);
-        try self.emit(.op_throw, 0);
+        try self.emit(if (is_cleanup_only) .op_reraise else .op_throw, 0);
 
         for (end_jump_indices.items) |idx| try self.patchJump(idx);
     }
@@ -416,7 +425,10 @@ const Compiler = struct {
         }
         try self.emit(.op_push_binding_frame, @intCast(n.pairs.len));
 
-        const handler_idx = try self.emitJump(.op_push_handler);
+        // ADR-0071: cleanup edge, not catch — an error escaping the body
+        // pops the frame then re-fires UNCHANGED (Kind + error-context
+        // preserved), matching TreeWalk's `defer popFrame`.
+        const handler_idx = try self.emitJump(.op_push_cleanup);
         try self.compileNode(n.body);
         try self.emit(.op_pop_handler, 0);
         try self.emit(.op_pop_binding_frame, 0);
@@ -424,7 +436,7 @@ const Compiler = struct {
 
         try self.patchJump(handler_idx);
         try self.emit(.op_pop_binding_frame, 0);
-        try self.emit(.op_throw, 0);
+        try self.emit(.op_reraise, 0);
 
         try self.patchJump(end_jump);
     }
@@ -993,26 +1005,27 @@ test "compile recur emits args, op_recur, reverse op_store_locals, back-edge op_
     try testing.expect(back_offset < 0);
 }
 
-test "compile try with no catches still emits push/pop_handler and re-raise path" {
+test "compile try with no catches emits cleanup handler + op_reraise (ADR-0071)" {
     var f = Fixture.init(testing.allocator);
     defer f.deinit();
 
-    // (try true) — no catches, no finally. The compiler still installs
-    // a handler frame (so an exception inside the body unwinds
-    // correctly) and the handler entry is just op_throw on the bare
-    // thrown value.
+    // (try true) — no catches, no finally. A try with zero catch clauses
+    // is a CLEANUP edge (ADR-0071), not a catch: it installs an
+    // op_push_cleanup handler so an error inside the body re-fires
+    // UNCHANGED via op_reraise (no catalog→exception conversion), matching
+    // TreeWalk's `defer`.
     const body: Node = .{ .constant = .{ .value = Value.true_val } };
     const node: Node = .{ .try_node = .{ .body = &body, .catch_clauses = &.{} } };
     const chunk = try f.compile(&node);
 
-    // Layout: push_handler ; const true ; pop_handler ; jump end ;
-    //         handler: op_throw ; end: op_ret
+    // Layout: push_cleanup ; const true ; pop_handler ; jump end ;
+    //         cleanup: op_reraise ; end: op_ret
     try testing.expectEqual(@as(usize, 6), chunk.instructions.len);
-    try testing.expectEqual(Opcode.op_push_handler, chunk.instructions[0].opcode);
+    try testing.expectEqual(Opcode.op_push_cleanup, chunk.instructions[0].opcode);
     try testing.expectEqual(Opcode.op_const, chunk.instructions[1].opcode);
     try testing.expectEqual(Opcode.op_pop_handler, chunk.instructions[2].opcode);
     try testing.expectEqual(Opcode.op_jump, chunk.instructions[3].opcode);
-    try testing.expectEqual(Opcode.op_throw, chunk.instructions[4].opcode);
+    try testing.expectEqual(Opcode.op_reraise, chunk.instructions[4].opcode);
     try testing.expectEqual(Opcode.op_ret, chunk.instructions[5].opcode);
 }
 

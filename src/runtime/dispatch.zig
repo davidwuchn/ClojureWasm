@@ -198,6 +198,17 @@ pub threadlocal var last_thrown_exception: ?Value = null;
 /// catch. Valid iff `last_thrown_exception != null`.
 pub threadlocal var last_thrown_context: ?Value = null;
 
+/// The in-flight Zig error stashed when the VM routes an unwind to a
+/// `.cleanup`-kind handler (ADR-0071). `op_reraise` consumes it to
+/// re-fire the ORIGINAL error after the cleanup bytecode runs, WITHOUT
+/// the catalog→exception conversion or context mutation a `catch`
+/// handler applies — so an uncaught error escaping a `binding`/bare-`try`
+/// keeps its catalog `Info` (Kind + context) or thrown context intact,
+/// matching TreeWalk's `defer popFrame`. The cleanup-unwind branch sets
+/// this immediately before jumping to the cleanup ip, so a stale value
+/// is always overwritten before the next `op_reraise` reads it.
+pub threadlocal var vm_pending_reraise: ?anyerror = null;
+
 // --- tests ---
 
 const testing = std.testing;

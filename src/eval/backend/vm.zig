@@ -56,9 +56,17 @@ pub const OPERAND_STACK_MAX: u16 = 256;
 /// per `eval()` call).
 pub const HANDLER_STACK_MAX: u16 = 32;
 
+/// `.catch_clause` handlers intercept + convert + match (try/catch).
+/// `.cleanup` handlers (binding / bare-try / finally-only) unwind like
+/// TreeWalk's `defer`: they run cleanup bytecode then re-fire the
+/// ORIGINAL error unchanged — no catalog→exception conversion, no
+/// context mutation (ADR-0071).
+const HandlerKind = enum { catch_clause, cleanup };
+
 const Handler = struct {
     catch_ip: usize,
     saved_sp: u16,
+    kind: HandlerKind,
 };
 
 /// Evaluate a compiled chunk. `locals` is the caller-owned slot array
@@ -82,6 +90,24 @@ pub fn eval(
             if (maybe_return) |v| return v;
         } else |err| {
             var thrown_err = err;
+            // ADR-0071: a `.cleanup` handler (binding / bare-try) is a
+            // `defer`, not a `catch`. Tested BEFORE the conversion below so
+            // the in-flight error is preserved unchanged: no catalog→
+            // exception conversion (Kind + `info.context` survive), no
+            // `last_thrown_context` clear. Stash the original error, run the
+            // cleanup bytecode (e.g. op_pop_binding_frame), and op_reraise
+            // re-fires it — matching TreeWalk's `defer popFrame`. Stashing
+            // immediately before each jump keeps a re-raised error correct
+            // through nested cleanups (the stash is always re-set before the
+            // next op_reraise reads it).
+            if (handler_count > 0 and handlers[handler_count - 1].kind == .cleanup) {
+                handler_count -= 1;
+                const h = handlers[handler_count];
+                dispatch.vm_pending_reraise = thrown_err;
+                ip = h.catch_ip;
+                sp = h.saved_sp;
+                continue;
+            }
             // ADR-0060: convert a catchable internal error (error_catalog)
             // into a thrown exception so the handler stack can catch it —
             // parity with tree_walk evalTry. Only when a handler exists;
@@ -341,8 +367,28 @@ fn stepOnce(
                     return raiseInternal("vm: op_push_handler target out of range");
                 if (handler_count >= HANDLER_STACK_MAX)
                     return raiseInternal("vm: handler stack overflow");
-                handlers[handler_count] = .{ .catch_ip = catch_ip, .saved_sp = sp };
+                handlers[handler_count] = .{ .catch_ip = catch_ip, .saved_sp = sp, .kind = .catch_clause };
                 handler_count += 1;
+            },
+            .op_push_cleanup => {
+                const offset: i16 = @bitCast(instr.operand);
+                const cleanup_ip = applyJump(ip, offset) orelse
+                    return raiseInternal("vm: op_push_cleanup target out of range");
+                if (handler_count >= HANDLER_STACK_MAX)
+                    return raiseInternal("vm: handler stack overflow");
+                handlers[handler_count] = .{ .catch_ip = cleanup_ip, .saved_sp = sp, .kind = .cleanup };
+                handler_count += 1;
+            },
+            .op_reraise => {
+                // Re-fire the error the cleanup-unwind branch stashed,
+                // unchanged (ADR-0071). The cleanup bytecode just ran (e.g.
+                // op_pop_binding_frame); the catalog Info / thrown context
+                // is still intact, so the original error propagates as it
+                // would have under TreeWalk's `defer`.
+                const e = dispatch.vm_pending_reraise orelse
+                    return raiseInternal("vm: op_reraise without a pending error");
+                dispatch.vm_pending_reraise = null;
+                return e;
             },
             .op_pop_handler => {
                 if (handler_count == 0)
