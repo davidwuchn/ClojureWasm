@@ -1,0 +1,50 @@
+(pr-str "a\nb\tc")
+;;=> "\"a\\nb\\tc\""
+(pr-str \newline)
+;;=> "\\newline"
+(pr-str \space)
+;;=> "\\space"
+(pr-str \a)
+;;=> "\\a"
+(pr-str [1 "x" :k \c])
+;;=> "[1 \"x\" :k \\c]"
+(pr-str {:a [1 2] :b {:c 3}})
+;;=> "{:a [1 2], :b {:c 3}}"
+(pr-str '(1 2 3))
+;;=> "(1 2 3)"
+(pr-str 1/3)
+;;=> "1/3"
+(pr-str 22/7)
+;;=> "22/7"
+(pr-str nil)
+;;=> "nil"
+(pr-str true)
+;;=> "true"
+(pr-str :foo/bar)
+;;=> ":foo/bar"
+(pr-str "quote\"inside")
+;;=> "\"quote\\\"inside\""
+(pr-str "back\\slash")
+;;=> "\"back\\\\slash\""
+(str [1 2 3])
+;;=> "[1 2 3]"
+(str {:a 1})
+;;=> "{:a 1}"
+(str \a)
+;;=> "a"
+(str nil)
+;;=> ""
+(print-str "a" "b")
+;;=> "a b"
+(pr-str (seq [1 2 3]))
+;;=> "(1 2 3)"
+(print-str "a" "b")
+;;=> "a b"
+(print-str "x")
+;;=> "x"
+(print-str [1 2] :k)
+;;=> "[1 2] :k"
+(print-str \a nil true)
+;;=> "a nil true"
+(print-str 1 2 3)
+;;=> "1 2 3"

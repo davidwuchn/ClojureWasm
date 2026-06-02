@@ -170,6 +170,12 @@ confirmed exprs into a `*.txt` corpus here via `--corpus`.
   (14). Only DIFF: `(doto (atom …) …)` returns the atom whose print form is
   `#<atom>` vs clj's `#object[clojure.lang.Atom 0xADDR {…}]` — an acceptable
   print divergence (clj embeds a non-reproducible identity hash).
+- **print / pr-str representation** — `pr-str` (readable: strings quoted +
+  `\n`/`\t`/`\"`/`\\` escaped, chars `\newline`/`\space`/`\a`, ratios `1/3`,
+  keywords `:foo/bar`, nested vec/map/list/seq) vs `str`/`print-str`
+  (human-readable: strings + chars bare). Gap found+fixed: **`print-str`** was
+  unimplemented (name_error) — added as the `readable=false` peer of `pr-str`
+  (space-separated, unquoted). Corpus `print_repr` (25).
 - **sorted collections + clojure.set** — `sorted-map`/`sorted-set` (ordered
   keys/seq/first/get/keys/conj/disj/contains?), `subseq`/`rsubseq` (range
   scans), `into (sorted-map) …`, + `clojure.set` union/intersection/difference/

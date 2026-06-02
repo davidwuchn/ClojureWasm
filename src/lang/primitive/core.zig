@@ -583,6 +583,17 @@ pub fn prStrFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation
     return try string_mod.alloc(rt, aw.writer.buffered());
 }
 
+/// `(print-str & args)` — like `pr-str` but human-readable (`print`) form
+/// (strings unquoted, chars bare), space-separated, returned as a string
+/// (no stdout). The `print`/`pr` distinction is the `readable` flag.
+pub fn printStrFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = loc;
+    var aw: std.Io.Writer.Allocating = .init(rt.gpa);
+    defer aw.deinit();
+    try writeArgsSpaced(rt, env, &aw.writer, args, false);
+    return try string_mod.alloc(rt, aw.writer.buffered());
+}
+
 /// `(str & args)` — variadic string concatenation. Each arg is
 /// rendered human-readable (strings pass through unquoted; nil
 /// renders as ""; everything else goes through `print.printValue`).
@@ -1079,6 +1090,7 @@ const ENTRIES = [_]Entry{
     .{ .name = "print", .f = &printFn },
     .{ .name = "prn", .f = &prnFn },
     .{ .name = "pr-str", .f = &prStrFn },
+    .{ .name = "print-str", .f = &printStrFn },
     .{ .name = "str", .f = &strFn },
     .{ .name = "format", .f = &formatFn },
     .{ .name = "subs", .f = &subsFn },
