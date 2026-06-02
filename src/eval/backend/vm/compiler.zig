@@ -361,14 +361,23 @@ const Compiler = struct {
         try end_jump_indices.append(self.arena, success_jump_idx);
 
         for (n.catch_clauses) |cc| {
-            const class_name = switch (cc.target) {
-                .class_name => |name| name,
-                // VM-DEFER: keyword catch dispatch pending op_match_type_keyword design [refs: D-014b, feature_deps.yaml#runtime/eval/catch_type_keyword]
-                .type_keyword => return error.NotImplemented,
-            };
-            const class_val = try string_mod.alloc(self.rt, class_name);
-            const class_idx = try self.addConstant(class_val);
-            try self.emit(.op_match_class, class_idx);
+            // ADR-0071-sibling (D-014b discharge): a class-name catch emits
+            // op_match_class over the class string; a keyword catch emits
+            // op_match_type_keyword over the catch keyword Value (the
+            // dispatcher decodes ex_info → data → :type), mirroring
+            // tree_walk.catchMatches. Both push a bool consumed by
+            // op_jump_if_false.
+            switch (cc.target) {
+                .class_name => |name| {
+                    const class_val = try string_mod.alloc(self.rt, name);
+                    const class_idx = try self.addConstant(class_val);
+                    try self.emit(.op_match_class, class_idx);
+                },
+                .type_keyword => |kw_val| {
+                    const kw_idx = try self.addConstant(kw_val);
+                    try self.emit(.op_match_type_keyword, kw_idx);
+                },
+            }
             const skip_clause_idx = try self.emitJump(.op_jump_if_false);
             try self.emit(.op_store_local, cc.binding_index);
             try self.compileNode(cc.body);

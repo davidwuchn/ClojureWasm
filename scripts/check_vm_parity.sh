@@ -22,9 +22,10 @@ cd "$(dirname "$0")/.."
 
 # D-196 blocker e2e (basename under test/e2e/, minus .sh). Prune as gaps close.
 BLOCKERS=(
-    phase14_catch_keyword          # catch :keyword type dispatch (VM-DEFER D-014b)
     phase14_ns_directive           # (ns …) :refer-clojure filter (VM-DEFER D-098)
     phase14_java_static_dispatch   # .static_method call (VM-DEFER node.zig:338)
+    # phase14_catch_keyword CLOSED 2026-06-02 (D-014b VM lowering):
+    # op_match_type_keyword parallels op_match_class. Pruned.
     # phase14_with_context + phase14_user_throw CLOSED 2026-06-02 (ADR-0071):
     # the cleanup-handler kind (op_push_cleanup / op_reraise) preserves the
     # dynamic error-context + catalog Kind through a binding / bare-try

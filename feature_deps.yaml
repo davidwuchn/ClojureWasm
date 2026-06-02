@@ -461,25 +461,22 @@ entries:
   - name: runtime/eval/catch_type_keyword
     kind: runtime_layer
     defined_in: src/eval/backend/vm/compiler.zig
-    status: provisional
+    status: landed
     requires_features: []
     requires_debts:
       - D-014b
-    provisional_markers:
-      - src/eval/backend/vm/compiler.zig (compileTry type_keyword arm — VM-DEFER pending op_match_type_keyword design)
+    provisional_markers: []
     notes: |
       Row 14.5 (D-014b) landed the keyword catch surface on TreeWalk:
       `(catch :type-kw e ...)` matches when the thrown ex-info's data
-      map carries `:type` equal to the catch keyword. The VM compiler
-      arm raises `error.NotImplemented` with a VM-DEFER marker per
-      ADR-0036 — the opcode shape (likely `op_match_type_keyword
-      <kw_idx>` paralleling `op_match_class <class_idx>`, with a
-      runtime helper that decodes ex_info → data → map.get(:type))
-      is owned by a follow-up cycle once the keyword-Value constant
-      pool round-trip story is settled (intersects D-100(a) bytecode
-      chunk constants pool). TreeWalk-only Layer-2 e2e coverage at
-      test/e2e/phase14_catch_keyword.sh is acceptable during the
-      deferral; differential test cases land with the VM lowering.
+      map carries `:type` equal to the catch keyword. The VM lowering
+      LANDED 2026-06-02 (D-196 blocker 1): `op_match_type_keyword
+      <kw_idx>` parallels `op_match_class <class_idx>`, with the
+      `matchExceptionTypeKeyword` helper decoding ex_info → data →
+      map.get(:type) (vm.zig). The keyword-Value constant-pool
+      round-trip is a non-issue (keyword literals already round-trip
+      via op_const). 2 differential cases + the phase14_catch_keyword
+      e2e now pass on `-Dbackend=vm`. VM-DEFER marker removed.
 
   - name: runtime/vm/interop_call_static_method
     kind: runtime_layer

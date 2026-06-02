@@ -191,6 +191,13 @@ pub const Opcode = enum(u8) {
     /// edge after the cleanup bytecode (e.g. `op_pop_binding_frame`).
     /// ADR-0071.
     op_reraise = 0x20,
+    /// `(catch :type-kw e …)` — operand = constants index of the catch
+    /// keyword Value. Peeks the thrown Value (top of stack) and pushes
+    /// `true` iff it is an ex-info whose data map's `:type` equals the
+    /// catch keyword (interned identity). Sibling to `op_match_class`;
+    /// mirrors `tree_walk::catchMatches` `.type_keyword` arm. Closes the
+    /// D-014b VM-DEFER (ADR-0036 dual-backend parity).
+    op_match_type_keyword = 0x21,
 
     /// True when this opcode carries a **signed-i16 instruction-position
     /// offset** in `operand`, relative to the instruction after itself
@@ -231,6 +238,7 @@ pub const Opcode = enum(u8) {
             .op_pop_binding_frame,
             .op_static_method_call,
             .op_reraise,
+            .op_match_type_keyword,
             => false,
         };
     }
@@ -276,6 +284,7 @@ pub const Opcode = enum(u8) {
             .op_static_method_call,
             .op_push_cleanup,
             .op_reraise,
+            .op_match_type_keyword,
             => false,
         };
     }

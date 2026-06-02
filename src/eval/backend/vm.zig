@@ -32,6 +32,7 @@ const error_catalog = @import("../../runtime/error/catalog.zig");
 const host_class = @import("../../runtime/error/host_class.zig");
 const tree_walk = @import("tree_walk.zig");
 const ex_info_mod = @import("../../runtime/collection/ex_info.zig");
+const keyword_mod = @import("../../runtime/keyword.zig");
 const td_mod = @import("../../runtime/type_descriptor.zig");
 
 const Opcode = opcode_mod.Opcode;
@@ -451,6 +452,19 @@ fn stepOnce(
                 stack[sp] = if (matches) Value.true_val else Value.false_val;
                 sp += 1;
             },
+            .op_match_type_keyword => {
+                if (sp == 0)
+                    return raiseInternal("vm: op_match_type_keyword on empty stack");
+                if (instr.operand >= chunk.constants.len)
+                    return raiseInternal("vm: op_match_type_keyword constant index out of range");
+                const kw_val = chunk.constants[instr.operand];
+                const thrown = stack[sp - 1];
+                const matches = matchExceptionTypeKeyword(rt, kw_val, thrown);
+                if (sp >= OPERAND_STACK_MAX)
+                    return raiseInternal("vm: operand stack overflow");
+                stack[sp] = if (matches) Value.true_val else Value.false_val;
+                sp += 1;
+            },
             .op_in_ns => {
                 // ADR-0032 in-ns — mirror of tree_walk::evalInNs.
                 // ADR-0035 D9 second amendment (Phase 7 entry T3,
@@ -725,6 +739,17 @@ fn matchExceptionClass(class_name: []const u8, thrown: Value) bool {
     // hierarchy table in `runtime/error/host_class.zig`. Mirror of
     // tree_walk.catchMatches:671 — both backends share the predicate.
     return host_class.matches(thrown, class_name);
+}
+
+fn matchExceptionTypeKeyword(rt: *Runtime, kw_val: Value, thrown: Value) bool {
+    // Row 14.5 (D-014b): keyword catch matches when `thrown` is an ex-info
+    // whose data map's `:type` equals the catch keyword (interned
+    // identity). Mirror of tree_walk.catchMatches `.type_keyword` arm.
+    if (thrown.tag() != .ex_info) return false;
+    const data_v = ex_info_mod.data(thrown);
+    const type_kw = keyword_mod.intern(rt, null, "type") catch return false;
+    const got = map_mod.get(data_v, type_kw) catch return false;
+    return @intFromEnum(got) == @intFromEnum(kw_val);
 }
 
 fn raiseInternal(comptime detail: []const u8) anyerror {

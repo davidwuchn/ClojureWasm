@@ -473,6 +473,19 @@ test "diff: throw_node caught by try" {
     try f.check("(try (throw (ex-info \"x\" {})) (catch ExceptionInfo _ 7))", 7);
 }
 
+test "diff: catch :keyword matches on ex-info :type (D-014b VM lowering)" {
+    var f = try Fixture.init(testing.allocator);
+    defer f.deinit();
+    // op_match_type_keyword on the VM mirrors tree_walk.catchMatches.
+    try f.check("(try (throw (ex-info \"x\" {:type :foo})) (catch :foo _ 42))", 42);
+}
+
+test "diff: catch :keyword falls through on :type mismatch (D-014b)" {
+    var f = try Fixture.init(testing.allocator);
+    defer f.deinit();
+    try f.check("(try (throw (ex-info \"x\" {:type :bar})) (catch :foo _ 1) (catch ExceptionInfo _ 2))", 2);
+}
+
 test "diff: in_ns_node switches ns" {
     var f = try Fixture.init(testing.allocator);
     defer f.deinit();
