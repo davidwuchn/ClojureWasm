@@ -141,6 +141,17 @@ fn intEqual(a: Value, b: Value) bool {
     return as_i == @as(i64, small.asInteger());
 }
 
+/// rt-free Ratio key equality (D-205). Ratios are gcd-reduced with a
+/// strictly-positive denominator, so two equal ratios have bit-identical
+/// numer + denom — a field compare matches the numeric `=` without needing
+/// `rt`. Partner of the `.ratio` valueHash arm.
+fn ratioKeyEq(a: Value, b: Value) bool {
+    const ra = a.decodePtr(*const ratio.Ratio);
+    const rb = b.decodePtr(*const ratio.Ratio);
+    return big_int.compareManaged(ra.numer.m, rb.numer.m) == .eq and
+        big_int.compareManaged(ra.denom.m, rb.denom.m) == .eq;
+}
+
 fn seqEqual(rt: *Runtime, env: *Env, a: Value, b: Value) anyerror!bool {
     // Length short-circuit only when BOTH are O(1)-countable (vector /
     // list); a lazy seq is walked element-by-element (no cheap length,
@@ -201,6 +212,26 @@ pub fn keyEqValue(a: Value, b: Value) bool {
     if (@intFromEnum(a) == @intFromEnum(b)) return true;
     const ta = a.tag();
     const tb = b.tag();
+    // Numeric keys by value, category-gated (D-205, partner of the by-value
+    // valueHash numeric arms + F-005's category-strict `=`). Without this a
+    // heap numeric (`1N`/`1/2`/`1.5M`) failed the in-bucket compare and could
+    // not be a map key / set element. `intEqual` covers int↔int, big_int↔
+    // big_int AND cross int↔big_int, so `(get {1 :v} 1N)` → `:v` like clj.
+    const ca = numCat(a);
+    if (ca != .none and ca == numCat(b)) {
+        switch (ca) {
+            .integer => return intEqual(a, b),
+            .ratio => return ratioKeyEq(a, b),
+            // `.floating`: equal floats are bit-identical (caught by the
+            //   identity check above); `0.0`/`-0.0` is a rare residual.
+            // `.decimal`: cljw's BigDecimal `=` is NUMERIC (rt-aware
+            //   `compareValue`, so `(= 1.5M 1.50M)` is true), which a rt-free
+            //   key compare cannot replicate consistently — BigDecimal keys
+            //   join the lazy/range rt-free residual (D-205). Fall through.
+            .floating, .decimal => {},
+            .none => unreachable,
+        }
+    }
     if (ta == .string and tb == .string)
         return std.mem.eql(u8, string_mod.asString(a), string_mod.asString(b));
     // Sequential keys (vector / list) by value, element-wise + recursive,
@@ -298,6 +329,20 @@ pub fn valueHash(v: Value) u32 {
             const inst = v.decodePtr(*const td_mod.TypedInstance);
             if (inst.descriptor.kind == .defrecord) break :blk typedInstanceHash(inst);
             break :blk hash.hashLong(@bitCast(@intFromEnum(v)));
+        },
+        // Numeric heap types hash BY VALUE (D-205) — without these they fell
+        // to the `else` pointer-bits hash, which is non-deterministic AND
+        // breaks them as map keys / set elements (two equal `1N`s hashed
+        // apart). `managedHash` returns `hashLong(i64)` for in-range integers
+        // so `(hash 1N)` == `(hash 1)` (cross-representation key parity).
+        .big_int => big_int.managedHash(big_int.asManaged(v)),
+        .ratio => blk: {
+            const r = v.decodePtr(*const ratio.Ratio);
+            break :blk 31 *% big_int.managedHash(r.numer.m) +% big_int.managedHash(r.denom.m);
+        },
+        .big_decimal => blk: {
+            const d = v.decodePtr(*const big_decimal.BigDecimal);
+            break :blk 31 *% big_int.managedHash(d.unscaled.m) +% hash.hashInt(d.scale);
         },
         else => hash.hashLong(@bitCast(@intFromEnum(v))),
     };

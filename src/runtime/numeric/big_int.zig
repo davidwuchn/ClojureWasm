@@ -30,6 +30,7 @@ const Value = value_mod.Value;
 const Runtime = @import("../runtime.zig").Runtime;
 const tag_ops = @import("../gc/tag_ops.zig");
 const gc_heap_mod = @import("../gc/gc_heap.zig");
+const hash = @import("../hash.zig");
 
 /// Heap-allocated arbitrary-precision integer. The wrapper is GC-
 /// managed; the `*Managed` it points at lives on `gc.infra` (process-
@@ -143,6 +144,24 @@ pub fn asManaged(v: Value) *const std.math.big.int.Managed {
 /// have `tag() == .big_int`.
 pub fn compareManaged(a: *const std.math.big.int.Managed, b: *const std.math.big.int.Managed) std.math.Order {
     return a.order(b.*);
+}
+
+/// Value-based hash of a BigInt Managed (D-205). When the value fits an
+/// i64 it hashes via `hashLong` so an integer-valued BigInt hashes EQUAL to
+/// a Long of the same value — clj's cross-representation key parity
+/// (`(hash 1N)` == `(hash 1)`, so `(get {1 :v} 1N)` → `:v`). Out of i64
+/// range it hashes the limb bytes + sign deterministically. Replaces the
+/// pre-D-205 pointer-bits hash (which was non-deterministic and broke
+/// BigInt map keys / set elements). rt-free — usable from `keyEqValue`.
+pub fn managedHash(m: *const std.math.big.int.Managed) u32 {
+    const c = m.toConst();
+    if (c.toInt(i64)) |i| {
+        return hash.hashLong(i);
+    } else |_| {
+        var h = hash.hashString(std.mem.sliceAsBytes(c.limbs));
+        if (!c.positive) h = h *% 31 +% 7;
+        return h;
+    }
 }
 
 /// Allocate `a + b` as a fresh BigInt on the GC heap. Limbs of the

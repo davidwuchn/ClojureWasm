@@ -1,0 +1,26 @@
+(get {1N :v} 1N)
+;;=> :v
+(get {1 :v} 1N)
+;;=> :v
+(get {1N :v} 1)
+;;=> :v
+(get {999999999999999999999N :x} 999999999999999999999N)
+;;=> :x
+(contains? #{1N 2N 3N} 2N)
+;;=> true
+(count (distinct [1N 1N 2N 2N 3N]))
+;;=> 3
+(get {1/2 :half} 1/2)
+;;=> :half
+(get {1/3 :third} 1/3)
+;;=> :third
+(contains? #{1/2 1/4} 1/4)
+;;=> true
+(count (distinct [1/2 1/2 2/4]))
+;;=> 1
+(= (hash 1N) (hash 1))
+;;=> true
+(get (zipmap [1N 2N 3N] [:a :b :c]) 2N)
+;;=> :b
+(get {1/2 :a 3/4 :b} 3/4)
+;;=> :b
