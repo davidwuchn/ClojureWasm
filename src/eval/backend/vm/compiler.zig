@@ -122,6 +122,7 @@ const Compiler = struct {
             .def_node => |n| try self.compileDef(n),
             .if_node => |n| try self.compileIf(n),
             .let_node => |n| try self.compileLet(n),
+            .letfn_node => |n| try self.compileLetfn(n),
             .call_node => |n| try self.compileCall(n),
             .fn_node => |n| try self.compileFn(n),
             .throw_node => |n| try self.compileThrow(n),
@@ -198,6 +199,32 @@ const Compiler = struct {
             try self.compileNode(b.value_expr);
             try self.emit(.op_store_local, b.index);
         }
+        try self.compileNode(n.body);
+    }
+
+    fn compileLetfn(self: *Compiler, n: node_mod.LetfnNode) Error!void {
+        if (n.bindings.len == 0) {
+            try self.compileNode(n.body);
+            return;
+        }
+        // Phase 1: nil-init each letfn slot so op_make_fn's snapshot sees a
+        // defined sibling.
+        for (n.bindings) |b| {
+            try self.emitConst(Value.nil_val);
+            try self.emit(.op_store_local, b.index);
+        }
+        // Phase 2: build each closure, store it in its slot.
+        for (n.bindings) |b| {
+            try self.compileNode(b.value_expr);
+            try self.emit(.op_store_local, b.index);
+        }
+        // Phase 3: patch the by-value snapshots into a mutually-recursive
+        // group. Slots are contiguous from bindings[0].index; the operand
+        // packs (count << 8) | base — both bounded by MAX_LOCALS (256).
+        const base = n.bindings[0].index;
+        const count: u16 = @intCast(n.bindings.len);
+        try self.emit(.op_letfn_patch, (count << 8) | base);
+        // Phase 4: body.
         try self.compileNode(n.body);
     }
 

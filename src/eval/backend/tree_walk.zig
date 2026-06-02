@@ -369,6 +369,7 @@ pub fn eval(
         .quote_node => |n| n.quoted,
         .fn_node => |n| try allocFunction(rt, n, locals),
         .let_node => |n| try evalLet(rt, env, locals, n),
+        .letfn_node => |n| try evalLetfn(rt, env, locals, n),
         .call_node => |n| try evalCall(rt, env, locals, n),
         .loop_node => |n| try evalLoop(rt, env, locals, n),
         .binding_node => |n| try evalBinding(rt, env, locals, n),
@@ -685,6 +686,47 @@ fn evalLet(rt: *Runtime, env: *Env, locals: []Value, n: node_mod.LetNode) !Value
         locals[b.index] = try eval(rt, env, locals, b.value_expr);
     }
     return eval(rt, env, locals, n.body);
+}
+
+fn evalLetfn(rt: *Runtime, env: *Env, locals: []Value, n: node_mod.LetfnNode) !Value {
+    // Step 1: nil-init every letfn slot so the closures (which snapshot
+    // their enclosing locals by value at allocation) see a defined — if
+    // not-yet-real — sibling.
+    for (n.bindings) |b| {
+        if (b.index >= locals.len)
+            return error_catalog.raise(.slot_out_of_range, n.loc, .{ .form = "letfn*", .index = b.index, .max = locals.len });
+        locals[b.index] = .nil_val;
+    }
+    // Step 2: allocate each closure and store it in its slot.
+    for (n.bindings) |b| {
+        locals[b.index] = try eval(rt, env, locals, b.value_expr);
+    }
+    // Step 3: patch every closure's captured letfn slots with the real
+    // siblings so mutual (and self) recursion resolves at call time. The
+    // analyser declares the names consecutively, so the slots are the
+    // contiguous range [base, base+count).
+    if (n.bindings.len > 0)
+        patchLetfnClosures(locals, n.bindings[0].index, @intCast(n.bindings.len));
+    return eval(rt, env, locals, n.body);
+}
+
+/// Wire a letfn group's by-value closures together: for each bound fn in
+/// the contiguous slot range `[base, base+count)`, overwrite the captured
+/// copies of those slots with the now-final sibling fns. Shared by the
+/// TreeWalk `evalLetfn` arm and the VM `op_letfn_patch` dispatch arm so
+/// both backends agree by construction.
+pub fn patchLetfnClosures(locals: []const Value, base: u16, count: u16) void {
+    var i: u16 = 0;
+    while (i < count) : (i += 1) {
+        const fv = locals[base + i];
+        if (fv.tag() != .fn_val) continue;
+        const f = fv.decodePtr(*Function);
+        const cb = f.closure_bindings orelse continue;
+        var j: u16 = 0;
+        while (j < count) : (j += 1) {
+            if (base + j < cb.len) cb[base + j] = locals[base + j];
+        }
+    }
 }
 
 /// `(binding [*v* e ...] body)` — push a per-thread dynamic frame.

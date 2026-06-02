@@ -199,6 +199,14 @@ fn stepOnce(
                 sp -= 1;
                 locals[instr.operand] = stack[sp];
             },
+            .op_letfn_patch => {
+                // operand = (count << 8) | base; both ≤ MAX_LOCALS (256).
+                // Wire the just-stored letfn closures into a mutually-
+                // recursive group (shared with TreeWalk's evalLetfn).
+                const base: u16 = instr.operand & 0xFF;
+                const count: u16 = instr.operand >> 8;
+                tree_walk.patchLetfnClosures(locals, base, count);
+            },
             .op_def => {
                 if (sp == 0) return raiseInternal("vm: op_def on empty stack");
                 sp -= 1;

@@ -255,6 +255,67 @@ pub fn analyzeLetStar(
     return n;
 }
 
+/// `(letfn* [n1 e1 n2 e2 ...] body)`. Unlike `let*`, ALL binding names are
+/// declared into the child scope BEFORE any init-expr is analysed, so each
+/// `e_i` (a `fn*`) can resolve every sibling name — mutual recursion. The
+/// slot layout is identical to `let*`; only the declare-before-analyse
+/// ordering differs. The backend (`evalLetfn` / `op_letfn_patch`) wires the
+/// captured-by-value closures together after allocation.
+pub fn analyzeLetfnStar(
+    arena: std.mem.Allocator,
+    rt: *Runtime,
+    env: *Env,
+    scope: ?*const Scope,
+    items: []const Form,
+    form: Form,
+    macro_table: *const macro_dispatch.Table,
+) AnalyzeError!*const Node {
+    if (items.len < 3)
+        return error_catalog.raise(.bindings_form_incomplete, form.location, .{ .form = "letfn*" });
+    if (items[1].data != .vector)
+        return error_catalog.raise(.bindings_not_vector, items[1].location, .{ .form = "letfn*" });
+    const binding_forms = items[1].data.vector;
+    if (binding_forms.len % 2 != 0)
+        return error_catalog.raise(.bindings_arity_odd, items[1].location, .{ .form = "letfn*" });
+
+    var child_scope = if (scope) |s| Scope.child(s) else Scope{};
+    defer child_scope.deinit(arena);
+
+    var bindings = try arena.alloc(node_mod.LetNode.Binding, binding_forms.len / 2);
+
+    // Phase 1: declare every name first so each init sees all siblings.
+    var bi: usize = 0;
+    var fi: usize = 0;
+    while (fi < binding_forms.len) : (fi += 2) {
+        if (binding_forms[fi].data != .symbol)
+            return error_catalog.raise(.binding_name_not_symbol, binding_forms[fi].location, .{ .form = "letfn*" });
+        const name_sym = binding_forms[fi].data.symbol;
+        if (name_sym.ns != null)
+            return error_catalog.raise(.binding_name_namespace_qualified, binding_forms[fi].location, .{ .form = "letfn*" });
+        const slot = try child_scope.declare(arena, name_sym.name);
+        bindings[bi] = .{ .name = name_sym.name, .index = slot, .value_expr = undefined };
+        bi += 1;
+    }
+
+    // Phase 2: analyse each init against the fully-populated scope.
+    bi = 0;
+    fi = 0;
+    while (fi < binding_forms.len) : (fi += 2) {
+        bindings[bi].value_expr = try analyzer_mod.analyze(arena, rt, env, &child_scope, binding_forms[fi + 1], macro_table);
+        bi += 1;
+    }
+
+    const body_node = try analyzeBody(arena, rt, env, &child_scope, items[2..], form, macro_table);
+
+    const n = try arena.create(Node);
+    n.* = .{ .letfn_node = .{
+        .bindings = bindings,
+        .body = body_node,
+        .loc = form.location,
+    } };
+    return n;
+}
+
 /// `(binding [*v1* e1 *v2* e2 ...] body)`. Unlike `let*`, the
 /// even-position names resolve to **existing dynamic Vars** (no lexical
 /// slots) and the init-exprs + body analyse in the OUTER `scope` (JVM

@@ -122,6 +122,7 @@ const BOOTSTRAP = [_]Entry{
     .{ .name = "delay", .expand = expandDelay },
     .{ .name = "future", .expand = expandFuture },
     .{ .name = "lazy-seq", .expand = expandLazySeq },
+    .{ .name = "letfn", .expand = expandLetfn },
 };
 
 // --- Form-construction conveniences ---
@@ -2351,6 +2352,48 @@ fn expandThunkWrapper(
     call_items[0] = sym(primitive_name, loc);
     call_items[1] = fn_form;
     return list(arena, call_items, loc);
+}
+
+// --- letfn — mutually-recursive local fns (D-201) ---
+//
+// `(letfn [(f [..] ..) (g [..] ..)] body...)` →
+//   `(letfn* [f (fn [..] ..) g (fn [..] ..)] body...)`
+//
+// Each fn-spec `(name params... body...)` becomes a `name (fn params...
+// body...)` pair. The self-name is dropped (cljw `fn` rejects a named
+// fn, D-147) — recursion resolves through the `letfn*` slot, not an fn
+// self-name. `fn` (not `fn*`) so the fn bodies get param destructuring.
+fn expandLetfn(
+    arena: std.mem.Allocator,
+    rt: *Runtime,
+    args: []const Form,
+    loc: SourceLocation,
+) macro_dispatch.ExpandError!Form {
+    _ = rt;
+    if (args.len < 2 or args[0].data != .vector)
+        return error_catalog.raise(.letfn_form_incomplete, loc, .{});
+    const fnspecs = args[0].data.vector;
+    const body = args[1..];
+
+    var binds = try arena.alloc(Form, fnspecs.len * 2);
+    for (fnspecs, 0..) |spec, i| {
+        if (spec.data != .list or spec.data.list.len < 1 or spec.data.list[0].data != .symbol)
+            return error_catalog.raise(.letfn_spec_invalid, spec.location, .{});
+        const spec_items = spec.data.list;
+        // (fn params... body...)
+        var fn_items = try arena.alloc(Form, spec_items.len);
+        fn_items[0] = sym("fn", spec.location);
+        @memcpy(fn_items[1..], spec_items[1..]);
+        binds[i * 2] = spec_items[0];
+        binds[i * 2 + 1] = try list(arena, fn_items, spec.location);
+    }
+    const binds_vec = try vec(arena, binds, args[0].location);
+
+    var items = try arena.alloc(Form, 2 + body.len);
+    items[0] = sym("letfn*", loc);
+    items[1] = binds_vec;
+    @memcpy(items[2..], body);
+    return list(arena, items, loc);
 }
 
 fn expandReify(

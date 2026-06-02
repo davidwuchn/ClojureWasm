@@ -195,6 +195,8 @@ pub const Code = enum {
     defrecord_assoc_undeclared_key,
     reify_form_incomplete,
     reify_section_invalid,
+    letfn_form_incomplete,
+    letfn_spec_invalid,
     reify_method_invalid,
     extend_type_form_incomplete,
     extend_type_method_invalid,
@@ -869,6 +871,14 @@ pub fn entry(comptime code: Code) Entry {
         .defrecord_assoc_undeclared_key => .{
             .kind = .not_implemented, .phase = .eval,
             .template = "assoc on defrecord with non-declared key '{[name]s}' is not yet supported",
+        },
+        .letfn_form_incomplete => .{
+            .kind = .syntax_error, .phase = .macroexpand,
+            .template = "letfn requires a vector of fn-specs and at least one body form",
+        },
+        .letfn_spec_invalid => .{
+            .kind = .syntax_error, .phase = .macroexpand,
+            .template = "letfn fn-spec must be a list `(name [params...] body)`",
         },
         .reify_form_incomplete => .{
             .kind = .syntax_error, .phase = .macroexpand,

@@ -206,6 +206,11 @@ pub const Opcode = enum(u8) {
     /// libspecs are emitted separately as `op_require[_with_libspec]`.
     /// Closes the D-098 VM-DEFER (ADR-0036 dual-backend parity).
     op_ns_with_filter = 0x22,
+    /// `letfn*` closure wiring. operand = `(count << 8) | base_slot`:
+    /// after every letfn closure is stored in `locals[base .. base+count)`,
+    /// patch each closure's captured letfn slots with the real siblings so
+    /// mutual recursion resolves. Stack-neutral (operates on `locals`).
+    op_letfn_patch = 0x23,
 
     /// True when this opcode carries a **signed-i16 instruction-position
     /// offset** in `operand`, relative to the instruction after itself
@@ -248,6 +253,7 @@ pub const Opcode = enum(u8) {
             .op_reraise,
             .op_match_type_keyword,
             .op_ns_with_filter,
+            .op_letfn_patch,
             => false,
         };
     }
@@ -295,6 +301,7 @@ pub const Opcode = enum(u8) {
             .op_reraise,
             .op_match_type_keyword,
             .op_ns_with_filter,
+            .op_letfn_patch,
             => false,
         };
     }

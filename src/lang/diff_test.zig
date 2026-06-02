@@ -76,6 +76,15 @@ test "diff: let* binding" {
     try f.check("(let* [x 5] (+ x 10))", 15);
 }
 
+test "diff: letfn* mutual + self recursion" {
+    var f = try Fixture.init(testing.allocator);
+    defer f.deinit();
+    // self-recursion resolves through the letfn slot (fact calls fact)
+    try f.check("(letfn* [fact (fn* [n] (if (= n 0) 1 (* n (fact (- n 1)))))] (fact 5))", 120);
+    // mutual recursion: ev/od cross-reference each other (4 is even → 1)
+    try f.check("(letfn* [ev (fn* [n] (if (= n 0) 1 (od (- n 1)))) od (fn* [n] (if (= n 0) 0 (ev (- n 1))))] (ev 4))", 1);
+}
+
 test "diff: fn* immediate invocation" {
     var f = try Fixture.init(testing.allocator);
     defer f.deinit();

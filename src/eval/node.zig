@@ -65,6 +65,7 @@ pub const Node = union(enum) {
     quote_node: QuoteNode,
     fn_node: FnNode,
     let_node: LetNode,
+    letfn_node: LetfnNode,
     call_node: CallNode,
     loop_node: LoopNode,
     binding_node: BindingNode,
@@ -202,6 +203,19 @@ pub const LetNode = struct {
         index: u16,
         value_expr: *const Node,
     };
+};
+
+/// `(letfn* [n1 e1 n2 e2 ...] body)`. Same binding layout as `LetNode`,
+/// but ALL names are declared into the scope BEFORE any init-expr is
+/// analysed, so the bound fns (each `e_i` is a `fn*`) can reference one
+/// another — mutual recursion. Because cljw closures snapshot captured
+/// slots by value at allocation, the backend evaluates every init, then
+/// patches each resulting closure's captured letfn-slot range with the
+/// real sibling fns (`evalLetfn` / `op_letfn_patch`).
+pub const LetfnNode = struct {
+    bindings: []const LetNode.Binding,
+    body: *const Node,
+    loc: SourceLocation = .{},
 };
 
 /// `(callee args...)` — generic invocation. `callee` is itself a
