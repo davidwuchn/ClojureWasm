@@ -89,6 +89,25 @@ pub fn asString(val: Value) []const u8 {
     return val.decodePtr(*String).bytes();
 }
 
+/// Number of Unicode codepoints in `s` (the cljw `(count "…")` unit — cljw
+/// chars are codepoints, not UTF-16 units; ASCII matches the JVM char count).
+/// Falls back to the byte length if `s` is not valid UTF-8.
+pub fn codepointCount(s: []const u8) usize {
+    return std.unicode.utf8CountCodepoints(s) catch s.len;
+}
+
+/// The `idx`-th codepoint of `s` (0-based), or `null` if `idx` is out of
+/// range. Used by `nth`/`get` on a String (clj indexes a String as Indexed).
+/// Indexed by codepoint to match cljw's char model; ASCII matches the JVM.
+pub fn codepointAt(s: []const u8, idx: usize) ?u21 {
+    var it = std.unicode.Utf8Iterator{ .bytes = s, .i = 0 };
+    var n: usize = 0;
+    while (it.nextCodepoint()) |cp| : (n += 1) {
+        if (n == idx) return cp;
+    }
+    return null;
+}
+
 // --- tests ---
 
 const testing = std.testing;

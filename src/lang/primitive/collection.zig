@@ -52,6 +52,7 @@ const vector = @import("../../runtime/collection/vector.zig");
 const list = @import("../../runtime/collection/list.zig");
 const map = @import("../../runtime/collection/map.zig");
 const map_entry = @import("../../runtime/collection/map_entry.zig");
+const string = @import("../../runtime/collection/string.zig");
 const set = @import("../../runtime/collection/set.zig");
 const sorted = @import("../../runtime/collection/sorted.zig");
 const transient_vector = @import("../../runtime/collection/transient/transient_vector.zig");
@@ -214,6 +215,13 @@ pub fn containsQFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLoca
             const idx: i64 = k.asInteger();
             break :blk if (idx == 0 or idx == 1) .true_val else .false_val;
         },
+        // A String is Indexed: `contains?` tests index validity (D-217;
+        // clj `(contains? "abc" 1)` → true, `(contains? "abc" 10)` → false).
+        .string => blk: {
+            if (k.tag() != .integer) break :blk .false_val;
+            const idx: i64 = k.asInteger();
+            break :blk if (idx >= 0 and idx < @as(i64, @intCast(string.codepointCount(string.asString(coll))))) .true_val else .false_val;
+        },
         // A live transient mirrors its persistent peer (clj parity, D-199):
         // map/set by key/element membership; vector by index validity.
         .transient_map => if (try transient_array_map.contains(coll, k)) .true_val else .false_val,
@@ -281,6 +289,17 @@ pub fn getFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) 
             if (k.tag() != .integer) break :blk default;
             const idx = k.asInteger();
             break :blk if (idx == 0 or idx == 1) map_entry.nth(coll, @intCast(idx)) else default;
+        },
+        // A String is index-gettable (clj `(get "abc" 1)` → \b): return the
+        // codepoint char, else default (OOR / non-integer key). D-217.
+        .string => blk: {
+            if (k.tag() != .integer) break :blk default;
+            const idx = k.asInteger();
+            if (idx >= 0) {
+                if (string.codepointAt(string.asString(coll), @intCast(idx))) |cp|
+                    break :blk Value.initChar(cp);
+            }
+            break :blk default;
         },
         // A live transient is a first-class read target (clj parity, D-199):
         // a transient map reads by key; a transient vector by index.
@@ -411,6 +430,17 @@ pub fn nthFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) 
                 break :blk error_catalog.raise(.index_out_of_range, loc, .{ .fn_name = "nth" });
             }
             break :blk range_mod.elementAt(coll, idx);
+        },
+        // A String is Indexed (clj `(nth "abc" 1)` → \b): return the
+        // codepoint char at `idx`. OOR → default, or throw (clj
+        // StringIndexOutOfBounds) when no default. D-217.
+        .string => blk: {
+            if (idx >= 0) {
+                if (string.codepointAt(string.asString(coll), @intCast(idx))) |cp|
+                    break :blk Value.initChar(cp);
+            }
+            if (has_default) break :blk default;
+            break :blk error_catalog.raise(.index_out_of_range, loc, .{ .fn_name = "nth" });
         },
         // Seq family (lazy producers): `(nth (map f xs) i)`. JVM `RT.nth`
         // walks any seq; route through the shared seq-walk (forces lazy

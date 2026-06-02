@@ -1,0 +1,40 @@
+(nth "abc" 0)
+;;=> \a
+(nth "abc" 2)
+;;=> \c
+(nth "abc" 5 :default)
+;;=> :default
+(nth "abc" -1 :neg)
+;;=> :neg
+(get "abc" 0)
+;;=> \a
+(get "abc" 2)
+;;=> \c
+(get "abc" 10)
+;;=> nil
+(get "abc" 10 :x)
+;;=> :x
+(get "abc" -1 :y)
+;;=> :y
+(contains? "abc" 0)
+;;=> true
+(contains? "abc" 2)
+;;=> true
+(contains? "abc" 3)
+;;=> false
+(contains? "abc" 10)
+;;=> false
+(contains? "abc" -1)
+;;=> false
+(contains? "" 0)
+;;=> false
+(nth "héllo" 1)
+;;=> \é
+(get "résumé" 1)
+;;=> \é
+(map #(nth "abcde" %) [0 2 4])
+;;=> (\a \c \e)
+(nth (vec "abc") 1)
+;;=> \b
+(count "héllo")
+;;=> 5
