@@ -314,16 +314,22 @@ fn associativeDestructure(
                 if (v.data != .vector)
                     return error_catalog.raise(.feature_not_supported, loc, .{ .name = "destructuring `:keys`/`:strs`/`:syms` needs a symbol vector" });
                 for (v.data.vector) |s| {
-                    if (s.data != .symbol or s.data.symbol.ns != null)
-                        return error_catalog.raise(.feature_not_supported, loc, .{ .name = "destructuring `:keys`/`:strs`/`:syms` entries must be plain symbols" });
+                    if (s.data != .symbol)
+                        return error_catalog.raise(.feature_not_supported, loc, .{ .name = "destructuring `:keys`/`:strs`/`:syms` entries must be symbols" });
+                    // A namespaced entry `a/b` binds the LOCAL `b` (the name
+                    // part) to the namespaced KEY (`:a/b` for :keys, `"a/b"`
+                    // for :strs, `'a/b` for :syms) — clj parity. Plain `b`
+                    // keeps the un-namespaced key.
+                    const sym_ns = s.data.symbol.ns;
                     const nm = s.data.symbol.name;
+                    const local: Form = .{ .data = .{ .symbol = .{ .ns = null, .name = nm } }, .location = loc };
                     const key_form: Form = if (std.mem.eql(u8, kn, "keys"))
-                        .{ .data = .{ .keyword = .{ .ns = null, .name = nm } }, .location = loc }
+                        .{ .data = .{ .keyword = .{ .ns = sym_ns, .name = nm } }, .location = loc }
                     else if (std.mem.eql(u8, kn, "strs"))
-                        .{ .data = .{ .string = nm }, .location = loc }
+                        .{ .data = .{ .string = if (sym_ns) |ns_| try std.fmt.allocPrint(arena, "{s}/{s}", .{ ns_, nm }) else nm }, .location = loc }
                     else
-                        try makeCall(arena, "quote", &.{sym(nm, loc)}, loc);
-                    try out.append(arena, s);
+                        try makeCall(arena, "quote", &.{.{ .data = .{ .symbol = .{ .ns = sym_ns, .name = nm } }, .location = loc }}, loc);
+                    try out.append(arena, local);
                     try out.append(arena, try makeGet(arena, g, key_form, findOrDefault(or_pairs, nm), loc));
                 }
                 continue;

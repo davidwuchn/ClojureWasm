@@ -131,7 +131,11 @@ confirmed exprs into a `*.txt` corpus here via `--corpus`.
   `data_diff`.
 - **destructuring** — vector `[a b & r :as all]` + missing→nil, map
   `:keys`/`:strs`/`:syms`/`{a :a}`/`:or`/`:as`, nested vector+map, fn-param +
-  loop destructure, destructure on nil. All at parity (D-076 surface). Corpus
+  loop destructure, destructure on nil, **kwargs `& {:keys […]}`**. All at
+  parity (D-076 surface). Gap found+fixed: **namespaced `:keys` entries**
+  (`{:keys [a/b]}` binds local `b` to key `:a/b`; same for `:syms [m/n]` →
+  `'m/n`) were rejected ("must be plain symbols") — now the entry's name part
+  is the local and the namespace rides the key (clj parity). Corpus
   `destructuring`.
 - **clojure.edn/read-string** — vector/map/set/list/string/keyword/ratio/
   bigint/bigdec/float/bool/nil/neg/nested/quote literals + pr-str round-trip
