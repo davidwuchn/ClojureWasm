@@ -533,6 +533,7 @@ fn evalSetLiteral(rt: *Runtime, env: *Env, locals: []Value, n: node_mod.SetLiter
 }
 
 const type_descriptor_mod = @import("../../runtime/type_descriptor.zig");
+const object_method = @import("object_method.zig");
 
 
 /// Unified Java/host interop dispatch arm (ADR-0050, am1). Routes on
@@ -588,7 +589,20 @@ fn evalInstanceMember(rt: *Runtime, env: *Env, locals: []Value, n: node_mod.Inte
         return error_catalog.raise(.symbol_unresolved, n.loc, .{ .sym = n.name });
     }
 
+    // Build the args buffer (receiver + analysed args) BEFORE the lookup:
+    // both the method call and the Object-method fallback (D-207) need the
+    // evaluated args, and clj evaluates args before dispatch.
+    const total = 1 + n.args.len;
+    const args_buf = try rt.gpa.alloc(Value, total);
+    defer rt.gpa.free(args_buf);
+    args_buf[0] = receiver;
+    for (n.args, 0..) |*a, i| {
+        args_buf[1 + i] = try eval(rt, env, locals, a);
+    }
+
     const me = td.lookupMethod(null, n.name) orelse {
+        // Universal java.lang.Object method fallback (D-207): str/=/hash/class.
+        if (try object_method.tryObjectMethod(rt, env, receiver, td, n.name, args_buf[1..])) |r| return r;
         return error_catalog.raise(.protocol_no_satisfies, n.loc, .{
             .protocol = "<.member>",
             .method = n.name,
@@ -598,14 +612,6 @@ fn evalInstanceMember(rt: *Runtime, env: *Env, locals: []Value, n: node_mod.Inte
     if (me.method_val.tag() == .nil) return error_catalog.raise(.feature_not_supported, n.loc, .{
         .name = "method declared but not implemented",
     });
-    // Build the args buffer: receiver + analysed args.
-    const total = 1 + n.args.len;
-    const args_buf = try rt.gpa.alloc(Value, total);
-    defer rt.gpa.free(args_buf);
-    args_buf[0] = receiver;
-    for (n.args, 0..) |*a, i| {
-        args_buf[1 + i] = try eval(rt, env, locals, a);
-    }
     const vt = rt.vtable orelse return error.NoVTable;
     return vt.callFn(rt, env, me.method_val, args_buf, n.loc);
 }

@@ -12,8 +12,6 @@ const std = @import("std");
 const Value = @import("../../runtime/value/value.zig").Value;
 const Runtime = @import("../../runtime/runtime.zig").Runtime;
 const env_mod = @import("../../runtime/env.zig");
-const regex_value = @import("../../runtime/regex/value.zig");
-const uuid_value = @import("../../runtime/uuid.zig");
 const tagged_literal_mod = @import("../../runtime/tagged_literal.zig");
 const Env = env_mod.Env;
 const error_mod = @import("../../runtime/error/info.zig");
@@ -604,29 +602,12 @@ pub fn strFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) 
     _ = loc;
     var aw: std.Io.Writer.Allocating = .init(rt.gpa);
     defer aw.deinit();
-    for (args) |arg| {
-        switch (arg.tag()) {
-            .nil => {},
-            .string => try aw.writer.writeAll(string_mod.asString(arg)),
-            .char => {
-                // `(str \A)` → "A": the bare char, not the readable `\A`
-                // literal (D-154).
-                var buf: [4]u8 = undefined;
-                const n = std.unicode.utf8Encode(arg.asChar(), &buf) catch 0;
-                try aw.writer.writeAll(buf[0..n]);
-            },
-            // `(str #"\d+")` → `\d+`: regex `toString` is the raw pattern, NOT
-            // the `#"…"` reader form that `print-method` (pr/println) emits.
-            .regex => try aw.writer.writeAll(regex_value.asRegex(arg).source()),
-            // `(str #uuid "x")` → `x`: UUID `toString` is the bare canonical,
-            // NOT the `#uuid "x"` reader form print-method emits (ADR-0074).
-            .uuid => {
-                const canon = uuid_value.canonicalOf(arg);
-                try aw.writer.writeAll(&canon);
-            },
-            else => try print_mod.printResult(rt, env, &aw.writer, arg),
-        }
-    }
+    // Per-value str rendering lives in `print.writeStrValue` — the single
+    // source shared with the `.toString` Object-method fallback (D-207 /
+    // ADR-0076 C3). `str` is the multi-arg concatenation over it. Top-level
+    // string / char (`\A`→"A", D-154) / regex (raw pattern) / uuid (bare
+    // canonical, ADR-0074) render bare there; nested values keep readable form.
+    for (args) |arg| try print_mod.writeStrValue(rt, env, &aw.writer, arg);
     return try string_mod.alloc(rt, aw.writer.buffered());
 }
 

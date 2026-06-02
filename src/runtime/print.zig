@@ -72,6 +72,30 @@ pub fn printResult(rt: *Runtime, env: *env_mod.Env, w: *Writer, v: Value) anyerr
     try printValue(w, try deepRealize(rt, env, v));
 }
 
+/// Write `v` in `str`-form (the unquoted `toString` rendering) to `w`. The
+/// single source for `clojure.core/str` (Layer 2) AND the `.toString`
+/// Object-method fallback (Layer 1, D-207) — F-009/F-011. Top-level string
+/// / char / regex / uuid render BARE; everything else uses the readable
+/// `printResult`, so a NESTED string keeps its quotes (`(str [1 "a"])` →
+/// `[1 "a"]`, matching clj's collection toString).
+pub fn writeStrValue(rt: *Runtime, env: *env_mod.Env, w: *Writer, v: Value) anyerror!void {
+    switch (v.tag()) {
+        .nil => {},
+        .string => try w.writeAll(string_collection.asString(v)),
+        .char => {
+            var buf: [4]u8 = undefined;
+            const n = std.unicode.utf8Encode(v.asChar(), &buf) catch 0;
+            try w.writeAll(buf[0..n]);
+        },
+        .regex => try w.writeAll(regex_mod.asRegex(v).source()),
+        .uuid => {
+            const canon = uuid_mod.canonicalOf(v);
+            try w.writeAll(&canon);
+        },
+        else => try printResult(rt, env, w, v),
+    }
+}
+
 fn listFromItems(rt: *Runtime, items: []const Value) !Value {
     // Empty → the interned empty list `()` (D-164) so a realized empty seq
     // (e.g. `(filter even? [1 3])`) prints `()` not nil.

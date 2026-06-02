@@ -34,6 +34,7 @@ const tree_walk = @import("tree_walk.zig");
 const ex_info_mod = @import("../../runtime/collection/ex_info.zig");
 const keyword_mod = @import("../../runtime/keyword.zig");
 const td_mod = @import("../../runtime/type_descriptor.zig");
+const object_method = @import("object_method.zig");
 const special_forms = @import("../analyzer/special_forms.zig");
 
 const Opcode = opcode_mod.Opcode;
@@ -714,21 +715,28 @@ fn stepOnce(
                 } else if (cs_entry.field_only) {
                     return error_catalog.raise(.symbol_unresolved, .{}, .{ .sym = cs_entry.method_name });
                 } else {
-                    const me = cs_entry.cache.lookupWithCache(td, null, cs_entry.method_name, rt.protocol_generation) orelse {
+                    if (cs_entry.cache.lookupWithCache(td, null, cs_entry.method_name, rt.protocol_generation)) |me| {
+                        if (me.method_val.tag() == .nil)
+                            return error_catalog.raise(.feature_not_supported, .{}, .{ .name = "method declared but not implemented" });
+                        const args_slice = stack[sp - arg_count .. sp];
+                        const vt = rt.vtable orelse return error.NoVTable;
+                        const result = try vt.callFn(rt, env, me.method_val, args_slice, .{});
+                        sp -= arg_count;
+                        stack[sp] = result;
+                        sp += 1;
+                    } else if (try object_method.tryObjectMethod(rt, env, receiver, td, cs_entry.method_name, stack[sp - arg_count + 1 .. sp])) |r| {
+                        // Universal java.lang.Object method fallback (D-207):
+                        // str/=/hash/class — mirrors TreeWalk's evalInstanceMember.
+                        sp -= arg_count;
+                        stack[sp] = r;
+                        sp += 1;
+                    } else {
                         return error_catalog.raise(.protocol_no_satisfies, .{}, .{
                             .protocol = "<.member>",
                             .method = cs_entry.method_name,
                             .type_name = td.fqcn orelse "<anonymous>",
                         });
-                    };
-                    if (me.method_val.tag() == .nil)
-                        return error_catalog.raise(.feature_not_supported, .{}, .{ .name = "method declared but not implemented" });
-                    const args_slice = stack[sp - arg_count .. sp];
-                    const vt = rt.vtable orelse return error.NoVTable;
-                    const result = try vt.callFn(rt, env, me.method_val, args_slice, .{});
-                    sp -= arg_count;
-                    stack[sp] = result;
-                    sp += 1;
+                    }
                 }
             },
             .op_static_method_call => {

@@ -1,0 +1,47 @@
+(.toString 42)
+;;=> "42"
+(.toString :kw)
+;;=> ":kw"
+(.toString [1 2 3])
+;;=> "[1 2 3]"
+(.toString "hi")
+;;=> "hi"
+(.toString 3.14)
+;;=> "3.14"
+(.toString {:a 1})
+;;=> "{:a 1}"
+(.toString true)
+;;=> "true"
+(.toString \x)
+;;=> "x"
+(.toString 1/2)
+;;=> "1/2"
+(.equals 1 1)
+;;=> true
+(.equals 1 1.0)
+;;=> false
+(.equals "a" "a")
+;;=> true
+(.equals "a" "b")
+;;=> false
+(.equals [1 2] [1 2])
+;;=> true
+(.equals [1 2] (list 1 2))
+;;=> true
+(.equals :a :a)
+;;=> true
+(.equals {:a 1} {:a 1})
+;;=> true
+(.equals #{1 2} #{2 1})
+;;=> true
+;; --- accepted-divergence pins (cljw value, NOT clj-matching) ---
+;; AD-009: .hashCode delegates to cljw hash (value differs from JVM hashCode)
+(= (.hashCode "abc") (hash "abc"))
+;;=> true
+(integer? (.hashCode 42))
+;;=> true
+;; AD-003: .getClass prints the simple class name (no java.lang. prefix)
+(str (.getClass 42))
+;;=> "Long"
+(str (.getClass "x"))
+;;=> "String"
