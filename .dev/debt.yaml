@@ -10,7 +10,7 @@
 
 active:
   - id: "D-210"
-    status: "now — clj-parity root-cause campaign ANCHOR (ROADMAP §9.2.P, ADR-0076, user-directed 2026-06-02). The standing floor that drains C1..C7."
+    status: "now — clj-parity root-cause campaign ANCHOR (ROADMAP §9.2.P, ADR-0076, user-directed 2026-06-02). The standing floor that drains C1..C7. **C1 (D-164) DISCHARGED 2026-06-03**; next unit C2 = D-205."
     category: "runtime"
     barrier: |-
       **clj-parity root-cause campaign (the A-half of ADR-0076)** — the standing
@@ -40,11 +40,29 @@ active:
       quality-loop floor: clj-parity (root-cause campaign C1..C7; ADR-0076 / §9.2.P)
     last_reviewed: "2026-06-02"
   - id: "D-164"
-    status: "now — clj-parity campaign C1 (LEAD). Re-opened 2026-06-02 from structural-defer per user direction (ADR-0076). Highest-leverage trust win."
+    status: |-
+      DISCHARGED 2026-06-03 (clj-parity campaign C1, the LEAD): interned distinct
+      empty list `()` as a count-0 `.list` `Cons` cached on `rt.empty_list`
+      (gc.infra, process-lifetime — never GC-swept, freed in `Runtime.deinit`; NO
+      new NaN-box slot, per ADR-0076 DA). Tag `.list` leaves `list?`/`seq?`/
+      `sequential?`/`printList`/`=` untouched; `(= '() nil)`→false falls out of the
+      tag mismatch for free, `()` is now TRUTHY (`(if () 1 2)`→1). ONE big-bang
+      thread: `restFn` (nil→() lift at one exit incl. `(rest nil)`→(); the JVM
+      `RT.more` vs `next` asymmetry — `next` STAYS nil), `emptyFn`,
+      `buildListFromSlice`, `takeEager` (n≤0), `print.listFromItems`,
+      `lazy_seq.seq` (count-0 `.list`→nil collapse — the shared force+coerce that
+      count/realize/walks terminate on), analyzer `analyzeList`+`listFormToValue`
+      (constant baked, dual-backend), **`serialize.zig` deserializer** (count-0
+      list constant→() not nil — the AOT-blob round-trip that had masked `list`),
+      and core.clj `list`/`butlast`/`concat` + shared `-seq-or-empty` helper
+      (sort/sort-by/distinct/dedupe/map-indexed/keep-indexed) + the `-range`
+      primitive. Corpus `test/diff/clj_corpus/empty_seq.txt` (70 clj-verified
+      pins). Discharges the duplicate **D-101**. Cross-ref ADR-0076 §9.2.P C1 /
+      D-210 anchor. Next campaign unit: C2 = D-205.
     category: "runtime"
     barrier: |-
       **cljw collapses the empty list / empty realized seq to `nil`; real Clojure has a distinct `()`** (clj-verified): `(list? '())` / `(seq? '())` → cljw false, clj true; `(pr-str '())` → cljw `"nil"`, clj `"()"`; `(= () nil)` → cljw true, clj false; an empty `filter`/`map`/`rest`/`remove`/`flatten` realizes/prints as `"nil"` not `"()"`. Root: cljw has no persistent empty-seq Value distinct from nil — `print.zig::listFromItems([])` returns `nil_val`, and `'()` reads as nil. **あるべき論 (C1, loop-resolvable — DA-confirmed NO new NaN-box slot)**: introduce an interned distinct empty-list/empty-seq Value inside the existing `.list`/seq tags, threaded through cons/rest/seq/filter/map/print/=/list?/seq? — uniform across the WHOLE seq model in ONE big-bang (a per-op `(or … '())` is the ad-hoc-patch smell F-011 forbids). HIGHEST LEVERAGE: one fix clears every empty-seq predicate + equality + print. Leaves a corpus line pinning `(seq? '())`/`(list? '())`/`(pr-str '())`/`(= '() nil)`. Cross-ref ADR-0076 §9.2.P C1 / D-210 anchor / F-011. recall trigger: clj-parity campaign C1 (the lead unit).
-    last_reviewed: "2026-06-02"
+    last_reviewed: "2026-06-03"
   - id: "D-165"
     status: "now — clj-parity campaign C7, LOOP-RESOLVABLE (user-decided 2026-06-02: heap-boxed Long, B2 representation, no F-004 amendment). Re-opened from structural-defer; ADR-0076 am1."
     category: "runtime"
@@ -698,7 +716,7 @@ discharged:
     resolution: |-
       scope | **Phase 12 substantive deliverables — multi-cycle work**: §9.14 row 12.2 cycle 1 landed a bytecode serializer **skeleton** (`src/eval/bytecode/serialize.zig` — magic + version header + Instruction stream round-trip). Outstanding for D-100: (a) full BytecodeChunk coverage (constants pool serializer with NaN-box Value round-trip discipline; `call_sites` side-table; `libspecs` side-table); (b) `cljw build app.clj -o app` CLI (`src/app/builder.zig` placeholder; Deno-style binary trailer + bootstrap cache build.zig integration per v5 §11.1); (c) `cljw render-error` post-mortem decoder (`src/app/render_error.zig` + `src/runtime/error/event.zig` structured-EDN error event + TTY-aware render.zig extension per v5 §13); (d) cold-start bench measuring < 12 ms with the embedded bytecode path (per ROADMAP §9 master table row 12 deliverable); (e) `cljw-formats/<version>.edn` archive v0.1.0 initial commit + decoder skeleton per ADR-0034 D11 + D-064 (D-064 nominally rides this cycle). Each of (a)-(e) is a substantial single-cycle deliverable that fits a dedicated session, not a within-session row. Phase 12 row 12.2 skeleton commit lays the byte-framing groundwork; rows 12.3-12.5 carry the remaining cycles when context budget permits. Source: ADR-0034 + Phase 12 row 12.2 implementation note (bytecode serializer skeleton landed 2026-05-27). | Phase 12+ dedicated cycle per (a)..(e) sub-deliverable | 2026-05-27
   - id: "D-101"
-    discharged_at: "Opportunistic — when ()-vs-nil distinction forces it"
+    discharged_at: "DISCHARGED 2026-06-03 as the duplicate of D-164 (clj-parity C1): the empty-PersistentList singleton this row predicted landed as `rt.empty_list` (count-0 `.list`), threaded through restFn / buildListFromSlice / print / analyzer / serialize / core.clj in one big-bang. See D-164's status + ADR-0076 §9.2.P C1."
     resolution: |-
       runtime | **Empty-PersistentList singleton deviation**: cw v1 renders an empty rest / empty list-build as `nil` rather than JVM's `()` (`(rest '(1))` → `nil`; `buildListFromSlice` of an empty slice → `nil_val`). Matches the cw v0 (v1_ref) inherited behaviour and the `(seq (rest '(1)))` round-trip. Sites: `src/lang/primitive/sequence.zig::restFn` + `src/lang/primitive/higher_order.zig::buildListFromSlice`. Earlier docstrings promised "Phase 7 entry will land an empty-PersistentList singleton"; Phase 7 closed without it (stale-phase-ref refreshed at the Phase 12→13 boundary). User code distinguishing `()` from `nil` is rare. Discharge route: introduce an empty-PersistentList singleton on the `list` NaN-box tag + thread it through restFn / next / list builders, OR ratify nil-for-empty as a permanent cw v1 deviation with a compat_tiers note. | Opportunistic — when an upstream test fixture distinguishes `()` from `nil` | 2026-05-28
   - id: "D-102"

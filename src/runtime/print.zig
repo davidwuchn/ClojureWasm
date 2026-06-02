@@ -73,6 +73,9 @@ pub fn printResult(rt: *Runtime, env: *env_mod.Env, w: *Writer, v: Value) anyerr
 }
 
 fn listFromItems(rt: *Runtime, items: []const Value) !Value {
+    // Empty → the interned empty list `()` (D-164) so a realized empty seq
+    // (e.g. `(filter even? [1 3])`) prints `()` not nil.
+    if (items.len == 0) return try list_collection.emptyList(rt);
     var realized = Value.nil_val;
     var i = items.len;
     while (i > 0) {

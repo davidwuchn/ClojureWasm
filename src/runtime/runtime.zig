@@ -138,6 +138,19 @@ pub const Runtime = struct {
     /// via `&rt.gc`.
     gc: GcHeap,
 
+    /// Interned distinct empty list `()` — the cljw analogue of JVM's
+    /// `PersistentList.EMPTY` (D-164 / clj-parity C1). A count-0 `.list`
+    /// Value distinct from `nil`, so `(seq? '())`/`(list? '())`→true,
+    /// `(= '() nil)`→false, `(pr-str '())`→"()", and `(rest …)` of any
+    /// empty seq yields `()` not nil (JVM `RT.more`). Lazily allocated on
+    /// `gc.infra` (process-lifetime, not GC-swept — same discipline as
+    /// `native_descriptors`); `nil` until first `emptyList()` call. The
+    /// single instance gives `(identical? '() '())` via the `valueEqual`
+    /// pointer fast-path, mirroring JVM's single static EMPTY. Built in
+    /// `collection/list.zig::emptyList` (keeps Cons construction in the
+    /// list module).
+    empty_list: @import("value/value.zig").Value = .nil_val,
+
     /// User type registry per ADR-0007 + ROADMAP §9.7 / 5.11. Maps
     /// the fully-qualified class name (e.g. `user.Point`) to a
     /// process-lifetime TypeDescriptor allocated on `gpa`. Populated
@@ -298,6 +311,10 @@ pub const Runtime = struct {
     }
 
     pub fn deinit(self: *Runtime) void {
+        // Free the interned empty-list singleton (gc.infra-allocated, not
+        // GC-swept — D-164). Idempotent / no-op if never materialised.
+        @import("collection/list.zig").deinitEmptyList(self);
+
         // Free per-Tag native descriptors first (their method_table
         // slice was re-allocated on rt.gc.infra by extendTypeWithImpls
         // calls, plus each method-name dup, plus the fqcn dup). All

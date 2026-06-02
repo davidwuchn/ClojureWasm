@@ -34,20 +34,20 @@ assert_eq() {
 
 # --- map ---
 assert_eq 'map_inc'         "$("$BIN" -e '(map inc [1 2 3])')"        '(2 3 4)'
-assert_eq 'map_empty'       "$("$BIN" -e '(map inc [])')"             'nil'
+assert_eq 'map_empty'       "$("$BIN" -e '(map inc [])')"             '()'
 
 # --- filter ---
 assert_eq 'filter_pos'      "$("$BIN" -e '(filter pos? [-1 2 -3 4])')" '(2 4)'
-assert_eq 'filter_none'     "$("$BIN" -e '(filter pos? [-1 -2])')"     'nil'
+assert_eq 'filter_none'     "$("$BIN" -e '(filter pos? [-1 -2])')"     '()'
 
 # --- take ---
 assert_eq 'take_n'          "$("$BIN" -e '(take 2 [1 2 3 4 5])')"     '(1 2)'
-assert_eq 'take_zero'       "$("$BIN" -e '(take 0 [1 2])')"            'nil'
+assert_eq 'take_zero'       "$("$BIN" -e '(take 0 [1 2])')"            '()'
 assert_eq 'take_more'       "$("$BIN" -e '(take 99 [1 2])')"           '(1 2)'
 
 # --- drop ---
 assert_eq 'drop_n'          "$("$BIN" -e '(drop 2 [1 2 3 4 5])')"     '(3 4 5)'
-assert_eq 'drop_all'        "$("$BIN" -e '(drop 99 [1 2])')"           'nil'
+assert_eq 'drop_all'        "$("$BIN" -e '(drop 99 [1 2])')"           '()'
 
 # --- keep ---
 assert_eq 'keep_pos'        "$("$BIN" -e '(keep (fn* [x] (if (pos? x) x nil)) [-1 2 -3 4])')" '(2 4)'

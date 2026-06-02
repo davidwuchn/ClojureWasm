@@ -127,6 +127,11 @@ pub fn seq(rt: *Runtime, env: *env_mod.Env, v: Value) !Value {
     while (current.tag() == .lazy_seq) {
         current = try force(rt, env, current);
     }
+    // The interned empty list `()` (D-164) coerces to nil like every other
+    // empty seq. `lazy_seq.seq` is the shared force+coerce that count /
+    // realize / seq-walks terminate on, so the count-0 `.list` must collapse
+    // here too — else a walk counts the singleton as a spurious nil element.
+    if (current.tag() == .list and list_mod.countOf(current) == 0) return .nil_val;
     return current;
 }
 

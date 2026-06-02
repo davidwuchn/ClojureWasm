@@ -18,7 +18,7 @@ assert_eq 'combo'   "$("$BIN" -e '(for [x [1 2 3] :when (odd? x) y [0 1]] (+ x y
 assert_eq 'destr'   "$("$BIN" -e '(for [[a b] [[1 2] [3 4]]] (+ a b))')"        '(3 7)'
 assert_eq 'lazy'    "$("$BIN" -e '(take 4 (for [x (range)] (* x x)))')"         '(0 1 4 9)'
 assert_eq 'range'   "$("$BIN" -e '(vec (for [x (range 5) :when (even? x)] x))')" '[0 2 4]'
-assert_eq 'empty'   "$("$BIN" -e '(for [x []] x)')"                             'nil'
+assert_eq 'empty'   "$("$BIN" -e '(for [x []] x)')"                             '()'
 # :while after a binding → take-while on the coll
 assert_eq 'while'   "$("$BIN" -e '(for [x [1 2 3 4 5] :while (< x 3)] x)')"     '(1 2)'
 assert_eq 'while_lz' "$("$BIN" -e '(take 4 (for [x (range) :while (< x 100)] (* x x)))')" '(0 1 4 9)'

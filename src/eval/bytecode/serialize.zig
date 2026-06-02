@@ -321,6 +321,10 @@ fn readValue(allocator: std.mem.Allocator, r: *ByteReader, rt: *Runtime, env: *@
         },
         .list => {
             const n = try r.readU32();
+            // A count-0 list constant is the interned empty list `()`, NOT
+            // nil (D-164) — fold-from-nil would otherwise lose the distinct
+            // `()` for a quoted empty list baked into the AOT blob.
+            if (n == 0) return list_mod.emptyList(rt) catch return DeserializeError.OutOfMemory;
             // Read forward into a stack-allocated buffer, then cons-fold
             // back to preserve the head-first source order. Caps at a
             // bounded stack alloc; very-large quoted lists are rare in

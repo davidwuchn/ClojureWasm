@@ -88,6 +88,41 @@ pub fn registerGcHooks() void {
     tag_ops.registerTrace(.list, &traceGc);
 }
 
+/// The interned distinct empty list `()` (D-164 / clj-parity C1). A
+/// count-0 `Cons` (first/rest/meta all nil) tagged `.list`, allocated once
+/// per Runtime on `gc.infra` (process-lifetime — never GC-swept, mirroring
+/// `native_descriptors`) and cached in `rt.empty_list`. Tag `.list` means
+/// `list?`/`seq?`/`sequential?`/`printList`/equality work unchanged (they
+/// key on `.list` + count); the single instance gives identity equality
+/// for `(= '() '())`. Mirrors JVM's single static `PersistentList.EMPTY`.
+pub fn emptyList(rt: *Runtime) !Value {
+    if (!rt.empty_list.isNil()) return rt.empty_list;
+    const cell = try rt.gc.infra.create(Cons);
+    cell.* = .{
+        .header = HeapHeader.init(.list),
+        .first = .nil_val,
+        .rest = .nil_val,
+        .meta = .nil_val,
+        .count = 0,
+    };
+    rt.empty_list = Value.encodeHeapPtr(.list, cell);
+    return rt.empty_list;
+}
+
+/// True when `val` is a `.list` Value with no elements (`()` — count 0).
+pub fn isEmpty(val: Value) bool {
+    return val.tag() == .list and countOf(val) == 0;
+}
+
+/// Free the interned empty-list singleton (allocated on `gc.infra`, so it
+/// is not GC-swept and must be released explicitly — same discipline as
+/// `native_descriptors`). Called from `Runtime.deinit`; idempotent.
+pub fn deinitEmptyList(rt: *Runtime) void {
+    if (rt.empty_list.isNil()) return;
+    rt.gc.infra.destroy(rt.empty_list.decodePtr(*Cons));
+    rt.empty_list = .nil_val;
+}
+
 /// First element. `nil` for non-list inputs (matches Clojure's `first`).
 pub fn first(val: Value) Value {
     return switch (val.tag()) {
@@ -230,6 +265,33 @@ test "meta defaults to nil" {
 
     const lst = try cons(alloc, Value.initInteger(1), .nil_val);
     try testing.expect(asCons(lst).meta.isNil());
+}
+
+test "emptyList is an interned count-0 .list, distinct from nil" {
+    var th = std.Io.Threaded.init(testing.allocator, .{});
+    defer th.deinit();
+    var rt = Runtime.init(th.io(), testing.allocator);
+    defer rt.deinit();
+
+    const e = try emptyList(&rt);
+    try testing.expect(e.tag() == .list);
+    try testing.expectEqual(@as(u32, 0), countOf(e));
+    try testing.expect(isEmpty(e));
+    try testing.expect(!e.isNil());
+    try testing.expect(first(e).isNil());
+    try testing.expect(rest(e).isNil()); // tail field stays nil; restFn lifts
+    try testing.expect(seq(e).isNil()); // empty seq → nil
+
+    // Interned: a second call returns the bit-identical Value (single
+    // instance, mirroring JVM PersistentList.EMPTY).
+    const e2 = try emptyList(&rt);
+    try testing.expectEqual(@intFromEnum(e), @intFromEnum(e2));
+
+    // A non-empty list is not isEmpty.
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const one = try cons(arena.allocator(), Value.initInteger(1), .nil_val);
+    try testing.expect(!isEmpty(one));
 }
 
 test "structural sharing across cons calls" {

@@ -46,7 +46,7 @@ assert_eq 'first_nil_nil'   "$("$BIN" -e '(first nil)')"      'nil'
 
 # --- rest ---
 assert_eq 'rest_vec_2_3'    "$("$BIN" -e '(rest [1 2 3])')"   '(2 3)'
-assert_eq 'rest_nil_nil'    "$("$BIN" -e '(rest nil)')"       'nil'
+assert_eq 'rest_nil_nil'    "$("$BIN" -e '(rest nil)')"       '()'
 
 # --- cons ---
 assert_eq 'cons_x_nil'      "$("$BIN" -e '(cons 0 nil)')"     '(0)'

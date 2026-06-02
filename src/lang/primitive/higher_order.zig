@@ -345,7 +345,9 @@ pub fn takeEagerFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLoca
         });
     }
     const n = n_val.asInteger();
-    if (n <= 0) return .nil_val;
+    // (take 0 …) / (take -1 …) → () not nil (D-164): JVM take yields an
+    // empty seq for a non-positive count.
+    if (n <= 0) return try list_mod.emptyList(rt);
     var cur = try sequence.seqFn(rt, env, &.{args[1]}, loc);
     var collected: std.ArrayList(Value) = .empty;
     defer collected.deinit(rt.gpa);
@@ -374,7 +376,11 @@ pub fn rangeLeafFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLoca
             });
         }
     }
-    return range_mod.fromBounds(rt, args[0].asInteger(), args[1].asInteger(), args[2].asInteger());
+    // An empty integer range (`(range 0)` / `(range 5 5)`) is `()` not nil
+    // (D-164); `fromBounds` returns nil for count 0, lifted here. Internal
+    // range ops keep `make`'s nil-for-empty (their callers test isNil).
+    const r = try range_mod.fromBounds(rt, args[0].asInteger(), args[1].asInteger(), args[2].asInteger());
+    return if (r.isNil()) try list_mod.emptyList(rt) else r;
 }
 
 // `-keep-eager` / `-remove-eager` deleted — keep/remove are lazy `.clj`
@@ -383,9 +389,10 @@ pub fn rangeLeafFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLoca
 const list_mod = @import("../../runtime/collection/list.zig");
 
 /// Build a Clojure list (Cons chain) from a Zig slice. Empty slice
-/// yields nil (cw v1 deviation from JVM empty-PersistentList; same
-/// as restFn behaviour — tracked as D-101).
+/// yields the interned empty list `()` (D-164 / clj-parity C1), so an
+/// eager seq op over an empty result (`(take 0 …)`) reads as `()` not nil.
 fn buildListFromSlice(rt: *Runtime, items: []const Value) !Value {
+    if (items.len == 0) return try list_mod.emptyList(rt);
     var acc: Value = .nil_val;
     var i: usize = items.len;
     while (i > 0) {

@@ -12,10 +12,19 @@
 
 (def not (fn* [x] (if x false true)))
 
-;; `(list & items)` — construct a list of the args. cw v1's variadic
-;; rest-binding already yields a `.list`, so the thin `[& xs] xs` body is
-;; the finished form (no Zig leaf needed).
-(def list (fn* [& xs] xs))
+;; `(list & items)` — construct a list of the args. The variadic
+;; rest-binding yields a `.list` for ≥1 arg, but nil for zero args
+;; (`& xs` binds nil when empty, matching JVM `((fn [& xs] xs))` → nil).
+;; `(list)` must be `()` (JVM `PersistentList/EMPTY`), so map the empty
+;; case to the quoted empty list `'()` (the interned empty value, D-164).
+(def list (fn* [& xs] (if xs xs '())))
+
+;; `(-seq-or-empty coll)` — a seq view that is `()` (not nil) when empty.
+;; The eager seq fns (sort / distinct / dedupe / map-indexed / …) build a
+;; vector then return a SEQ; JVM yields `()` for an empty result, so the
+;; bare `(seq v)` (nil for empty) is lifted here (D-164 / clj-parity C1,
+;; one shared mechanism per F-011).
+(def -seq-or-empty (fn* [coll] (or (seq coll) '())))
 
 ;; ----------------------------------------------------------------
 ;; Phase 6.16.a-3.2 — eager higher-order surface (ADR-0033 D6 + v5 §5.2).
@@ -621,7 +630,9 @@
 ;; stays lazy. `(concat)` → nil; `(concat a)` → `(seq a)`.
 (def concat
   (fn* [& colls]
-    (reduce -concat2 nil colls)))
+    ;; `(concat)` (no colls) → () not nil (D-164); the reduce init nil is
+    ;; lifted to the empty list when nothing is catenated.
+    (or (reduce -concat2 nil colls) '())))
 
 ;; `(-concat-seqs ss)` — lazily catenate a seq OF seqs, one level deep,
 ;; WITHOUT realizing the outer `ss` (the lazy counterpart of
@@ -761,7 +772,7 @@
        ([coll]
         ;; O(n) via the transducer (the old `(last acc)` per step was O(n²)
         ;; — `(dedupe (range 5000))` timed out). Returns a SEQ (JVM parity).
-        (seq (into [] (dedupe) coll)))))
+        (-seq-or-empty (into [] (dedupe) coll)))))
 
 ;; `(distinct coll)` — drop all duplicates, first occurrence wins.
 ;; Linear `=` scan (structural, so strings/collections dedupe); O(n^2).
@@ -780,7 +791,7 @@
         ;; O(n) via the transducer's volatile seen-set (the old linear
         ;; `some` scan per element was O(n²) — `(distinct (range 5000))`
         ;; timed out). Returns a SEQ (JVM parity).
-        (seq (into [] (distinct) coll)))))
+        (-seq-or-empty (into [] (distinct) coll)))))
 
 ;; `(frequencies coll)` — map of item -> occurrence count. Keys via map
 ;; assoc (bit-pattern keyEq → number/keyword keys; structural keys D-092).
@@ -982,17 +993,17 @@
 ;; SEQ (JVM parity, clj-verified), not a vector; `-msort` sorts a vector
 ;; internally and `seq` exposes it as a sequence (empty → nil per D-164).
 (def sort
-  (fn* ([coll] (seq (-msort compare (vec coll))))
-       ([comp coll] (seq (-msort (-comparator comp) (vec coll))))))
+  (fn* ([coll] (-seq-or-empty (-msort compare (vec coll))))
+       ([comp coll] (-seq-or-empty (-msort (-comparator comp) (vec coll))))))
 
 ;; `(sort-by f coll)` — order by `(compare (f a) (f b))`. `(sort-by f comp coll)`
 ;; — order by `(comp (f a) (f b))`. Stable. Returns a SEQ (see `sort`).
 (def sort-by
   (fn* ([f coll]
-        (seq (-msort (fn* [a b] (compare (f a) (f b))) (vec coll))))
+        (-seq-or-empty (-msort (fn* [a b] (compare (f a) (f b))) (vec coll))))
        ([f comp coll]
         (let [c (-comparator comp)]
-          (seq (-msort (fn* [a b] (c (f a) (f b))) (vec coll)))))))
+          (-seq-or-empty (-msort (fn* [a b] (c (f a) (f b))) (vec coll)))))))
 
 ;; ----------------------------------------------------------------
 ;; D-134 range + index fns. All finite arities are lazy seqs (D-168):
@@ -1053,7 +1064,7 @@
                  ([result input] (rf result (f (vswap! iv inc) input)))))))
        ([f coll]
         ;; Returns a SEQ (JVM parity).
-        (seq (mapv (fn* [i] (f i (nth coll i))) (range (count coll)))))))
+        (-seq-or-empty (mapv (fn* [i] (f i (nth coll i))) (range (count coll)))))))
 
 ;; `(keep-indexed f)` / `(keep-indexed f coll)` — like map-indexed but drops
 ;; nil results. The 1-arg form is a stateful transducer (running index); the
@@ -1068,14 +1079,17 @@
                   (let [i (vswap! iv inc) v (f i input)]
                     (if (nil? v) result (rf result v))))))))
        ([f coll]
-        (seq (reduce (fn* [acc i]
-                       (let [r (f i (nth coll i))] (if (nil? r) acc (conj acc r))))
-                     []
-                     (range (count coll)))))))
+        (-seq-or-empty (reduce (fn* [acc i]
+                                 (let [r (f i (nth coll i))] (if (nil? r) acc (conj acc r))))
+                               []
+                               (range (count coll)))))))
 
-;; `(butlast coll)` — all but the final element (eager list via reverse).
+;; `(butlast coll)` — all but the final element, or nil for a coll of
+;; ≤1 element (JVM returns `(seq ret)` → nil when empty). The `(seq …)`
+;; wrap is required now that `(rest …)` of a 1-elem coll is `()` not nil
+;; (D-164): without it `(butlast [1])` would be `()` instead of nil.
 (def butlast
-  (fn* [coll] (reverse (rest (reverse coll)))))
+  (fn* [coll] (seq (reverse (rest (reverse coll))))))
 
 ;; ----------------------------------------------------------------
 ;; ADR-0054 cycle 4 — the last lazy-cluster cycle. repeat / repeatedly /

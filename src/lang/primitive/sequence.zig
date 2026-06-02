@@ -283,21 +283,20 @@ pub fn firstFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation
 
 /// Implements clojure.core/rest.
 /// Spec: `(rest coll)` returns a possibly-empty seq of items after the
-/// first. Always returns a seq (never nil for non-nil input where
-/// JVM would also return `()`; R3 from survey).
+/// first. Always returns a seq — `()` (the interned empty list), never
+/// nil, for any non-list / empty / nil input where JVM `RT.more` also
+/// yields `()`. `(rest nil)` → `()`, `(rest '(1))` → `()`.
 /// JVM reference: clojure.lang.RT.more
 /// cw v1 tier: A (Phase 6.16.a-1)
 ///
-/// cw v1 deviation: an empty rest renders as `nil` because cw v1
-/// list.zig does not expose an empty-PersistentList singleton
-/// (tracked as D-101). `(rest '(1))` → `nil` matches v1_ref behaviour
-/// and the JVM `(seq (rest '(1)))` round-trip; user code that
-/// distinguishes `()` from `nil` is rare. Discharge route in D-101.
+/// D-164 / clj-parity C1: a raw nil result (chain tail, empty coll, nil
+/// arg) is lifted to `rt.empty_list` at one exit (F-011 commonisation).
+/// `next` keeps returning nil for the same cases — the JVM `more`/`next`
+/// asymmetry (see `nextFn`).
 pub fn restFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
     try error_catalog.checkArity("rest", args, 1, loc);
     const coll = args[0];
-    if (coll.isNil()) return .nil_val;
-    return switch (coll.tag()) {
+    const raw: Value = if (coll.isNil()) .nil_val else switch (coll.tag()) {
         .list, .cons => list.rest(coll),
         .vector => if (vector.count(coll) > 1) try vectorTailAsList(rt, coll, 1) else .nil_val,
         .chunked_cons => try chunked_cons.rest(rt, coll),
@@ -322,6 +321,7 @@ pub fn restFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation)
             break :blk try restOfSeq(rt, env, sv, loc);
         },
     };
+    return if (raw.isNil()) try list.emptyList(rt) else raw;
 }
 
 // --- next ---
@@ -439,7 +439,7 @@ pub fn emptyFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation
         .vector => vector.empty(),
         .array_map, .hash_map => map.empty(),
         .hash_set => set.empty(),
-        .list, .cons => .nil_val, // empty list ≡ nil in cw v1 today
+        .list, .cons => try list.emptyList(rt), // (empty '(1 2)) → () (D-164)
         // JVM Clojure: (empty "hi") → nil (String is not a Clojure
         // collection per IPersistentCollection contract). cw v1
         // follows the same semantic; a 0-length string is not what

@@ -534,14 +534,11 @@ fn analyzeList(
     macro_table: *const macro_dispatch.Table,
 ) AnalyzeError!*const Node {
     if (items.len == 0) {
-        // `()` self-evaluates to the empty list (Clojure: PersistentList/
-        // EMPTY). cljw represents the empty list as nil today (empty≡nil;
-        // the distinct empty-list Value is D-164's structural overhaul), so
-        // `()` lowers to the same nil_val that `(list)` / `'()` yield —
-        // consistent, no longer a spurious error (D-188). The prior
-        // feature_not_supported deferral cited Phase-5 collections, which
-        // have long since shipped.
-        return makeConstant(arena, .nil_val, form);
+        // `()` self-evaluates to the interned empty list `()` (JVM
+        // `PersistentList.EMPTY`), distinct from nil (D-164 / clj-parity
+        // C1). The constant is baked into the Node so both backends return
+        // the same process-lifetime value (dual-backend parity, ADR-0036).
+        return makeConstant(arena, try list_collection.emptyList(rt), form);
     }
     if (items[0].data == .symbol) {
         const head = items[0].data.symbol;
@@ -940,6 +937,8 @@ fn setFormToValue(rt: *Runtime, env: *Env, items: []const Form) AnalyzeError!Val
 /// Value. Empty list → nil (matches Clojure's `(quote ())` → `()` /
 /// `()` is `nil`-equivalent on `rest`/`first`). Used by `quote`.
 fn listFormToValue(rt: *Runtime, env: *Env, items: []const Form) AnalyzeError!Value {
+    // Quoted `'()` lifts to the interned empty list, not nil (D-164).
+    if (items.len == 0) return try list_collection.emptyList(rt);
     var i = items.len;
     var acc: Value = .nil_val;
     while (i > 0) {
