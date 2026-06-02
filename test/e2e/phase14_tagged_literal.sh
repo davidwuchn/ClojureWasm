@@ -141,4 +141,31 @@ case "$out" in
     *) fail "case13: wrong error: $out" ;;
 esac
 
-echo "OK — phase14_tagged_literal (13 cases) green"
+# --- Case 14 (ADR-0075): tagged-literal constructor + tagged-literal? ---
+assert_eq 'tagged_literal_pred' "$("$BIN" -e "(tagged-literal? (tagged-literal 'foo 5))")" 'true'
+assert_eq 'tagged_literal_pred_neg' "$("$BIN" -e '(tagged-literal? 5)')" 'false'
+
+# --- Case 15: ILookup :tag / :form (ILookup-only, other keys → nil) ---
+assert_eq 'tagged_literal_tag'  "$("$BIN" -e "(:tag (tagged-literal 'foo 5))")" 'foo'
+assert_eq 'tagged_literal_form' "$("$BIN" -e "(:form (tagged-literal 'foo 5))")" '5'
+assert_eq 'tagged_literal_other_nil' "$("$BIN" -e "(:nope (tagged-literal 'foo 5))")" 'nil'
+assert_eq 'tagged_literal_get' "$("$BIN" -e "(get (tagged-literal 'foo 5) :form)")" '5'
+
+# --- Case 16: pr-str is `#tag form` (EDN round-trip shape; prefix probe to
+#     avoid the stdin-mode trailing-nil from println) ---
+assert_eq 'tagged_literal_pr_str' "$("$BIN" -e "(pr-str (tagged-literal 'foo 5))")" '"#foo 5"'
+
+# --- Case 17: = by (tag, form) ---
+assert_eq 'tagged_literal_eq' "$("$BIN" -e "(= (tagged-literal 'foo 5) (tagged-literal 'foo 5))")" 'true'
+assert_eq 'tagged_literal_neq' "$("$BIN" -e "(= (tagged-literal 'foo 5) (tagged-literal 'bar 5))")" 'false'
+
+# --- Case 18: *default-data-reader-fn* = tagged-literal carries unknown tags
+#     (opt-in; the default still RAISES — ADR-0073 contract unchanged) ---
+got=$("$BIN" - <<'EOF' 2>/dev/null
+(binding [*default-data-reader-fn* tagged-literal]
+  (tagged-literal? (read-string "#unknown 42")))
+EOF
+) || fail "case18: non-zero exit ($got)"
+assert_eq 'default_fn_carries_unknown' "$(awk 'END{print}' <<< "$got")" 'true'
+
+echo "OK — phase14_tagged_literal (18 cases) green"

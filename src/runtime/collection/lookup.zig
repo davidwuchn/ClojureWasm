@@ -26,6 +26,7 @@ const vector = @import("vector.zig");
 const sorted = @import("sorted.zig");
 const Runtime = @import("../runtime.zig").Runtime;
 const Env = @import("../env.zig").Env;
+const tagged_literal_mod = @import("../tagged_literal.zig");
 const error_catalog = @import("../error/catalog.zig");
 const SourceLocation = @import("../error/info.zig").SourceLocation;
 const td_mod = @import("../type_descriptor.zig");
@@ -113,6 +114,9 @@ pub fn invoke(rt: *Runtime, env: *Env, callee: Value, args: []const Value, loc: 
             // `(:k rec)` ≡ `(get rec :k)`. map.get cannot see record fields.
             if (args[0].tag() == .typed_instance)
                 return recordGet(rt, env, args[0], callee, default, loc);
+            // `(:tag t)` / `(:form t)` on a TaggedLiteral ≡ `(get t :tag)`.
+            if (args[0].tag() == .tagged_literal)
+                return tagged_literal_mod.valAt(args[0], callee, default);
             return lookupWithDefault(args[0], callee, args.len == 2, default);
         },
         .array_map, .hash_map => {

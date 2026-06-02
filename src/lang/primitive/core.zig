@@ -14,6 +14,7 @@ const Runtime = @import("../../runtime/runtime.zig").Runtime;
 const env_mod = @import("../../runtime/env.zig");
 const regex_value = @import("../../runtime/regex/value.zig");
 const uuid_value = @import("../../runtime/uuid.zig");
+const tagged_literal_mod = @import("../../runtime/tagged_literal.zig");
 const Env = env_mod.Env;
 const error_mod = @import("../../runtime/error/info.zig");
 const error_catalog = @import("../../runtime/error/catalog.zig");
@@ -1101,7 +1102,32 @@ const ENTRIES = [_]Entry{
     .{ .name = "str", .f = &strFn },
     .{ .name = "format", .f = &formatFn },
     .{ .name = "subs", .f = &subsFn },
+    .{ .name = "tagged-literal", .f = &taggedLiteralFn },
+    .{ .name = "tagged-literal?", .f = &taggedLiteralQFn },
 };
+
+/// `(tagged-literal tag form)` — construct a TaggedLiteral value (ADR-0075).
+/// `tag` must be a symbol; `form` is any value.
+pub fn taggedLiteralFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = env;
+    try error_catalog.checkArity("tagged-literal", args, 2, loc);
+    if (args[0].tag() != .symbol) {
+        return error_catalog.raise(.type_arg_invalid, loc, .{
+            .fn_name = "tagged-literal",
+            .expected = "symbol",
+            .actual = @tagName(args[0].tag()),
+        });
+    }
+    return try tagged_literal_mod.alloc(rt, args[0], args[1]);
+}
+
+/// `(tagged-literal? x)` — true iff `x` is a TaggedLiteral.
+pub fn taggedLiteralQFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = rt;
+    _ = env;
+    try error_catalog.checkArity("tagged-literal?", args, 1, loc);
+    return if (args[0].tag() == .tagged_literal) Value.true_val else Value.false_val;
+}
 
 pub fn register(env: *Env, rt_ns: *env_mod.Namespace) !void {
     for (ENTRIES) |it| {

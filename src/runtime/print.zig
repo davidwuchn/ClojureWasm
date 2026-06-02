@@ -50,6 +50,7 @@ const ratio_mod = @import("numeric/ratio.zig");
 const big_decimal_mod = @import("numeric/big_decimal.zig");
 const regex_mod = @import("regex/value.zig");
 const uuid_mod = @import("uuid.zig");
+const tagged_literal_mod = @import("tagged_literal.zig");
 const td_mod = @import("type_descriptor.zig");
 const lazy_seq_mod = @import("lazy_seq.zig");
 const range_collection = @import("collection/range.zig");
@@ -333,6 +334,15 @@ pub fn printValue(w: *Writer, v: Value) Writer.Error!void {
             try w.writeAll("#uuid \"");
             try w.writeAll(&canon);
             try w.writeByte('"');
+        },
+        .tagged_literal => {
+            // `#<tag> <form>` (ADR-0075) — EDN round-trips. tag is a symbol,
+            // form any value; both via the same readable printer.
+            const tl = tagged_literal_mod.asTaggedLiteral(v);
+            try w.writeByte('#');
+            try printValue(w, tl.tag);
+            try w.writeByte(' ');
+            try printValue(w, tl.form);
         },
         else => |t| try w.print("#<{s}>", .{@tagName(t)}),
     }

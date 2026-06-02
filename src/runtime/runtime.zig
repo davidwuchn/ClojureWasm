@@ -285,6 +285,7 @@ pub const Runtime = struct {
         @import("numeric/big_decimal.zig").registerGcHooks();
         @import("regex/value.zig").registerGcHooks();
         @import("uuid.zig").registerGcHooks();
+        @import("tagged_literal.zig").registerGcHooks();
         @import("type_descriptor.zig").registerGcHooks();
         return .{
             .io = io,

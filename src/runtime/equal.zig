@@ -28,6 +28,7 @@ const lazy_seq = @import("lazy_seq.zig");
 const string_mod = @import("collection/string.zig");
 const hash = @import("hash.zig");
 const uuid_mod = @import("uuid.zig");
+const tagged_literal_mod = @import("tagged_literal.zig");
 const vector = @import("collection/vector.zig");
 const list = @import("collection/list.zig");
 const range = @import("collection/range.zig");
@@ -274,6 +275,11 @@ pub fn valueHash(v: Value) u32 {
         // UUID hashes by its 128 bits so equal UUIDs share a bucket
         // (partner of the `.uuid` valueEqual arm, ADR-0074).
         .uuid => hash.hashString(&uuid_mod.asUuid(v).bytes),
+        // TaggedLiteral: clj's `31*hash(tag)+hash(form)` (ADR-0075).
+        .tagged_literal => blk: {
+            const t = tagged_literal_mod.asTaggedLiteral(v);
+            break :blk 31 *% valueHash(t.tag) +% valueHash(t.form);
+        },
         // defrecord keys hash by descriptor + fields (partner of
         // typedInstanceKeyEq); deftype keeps the identity bit-hash.
         .typed_instance => blk: {
@@ -396,6 +402,12 @@ pub fn valueEqual(rt: *Runtime, env: *Env, a: Value, b: Value) anyerror!bool {
         // UUID equality is by the 128 bits (ADR-0074): two distinct
         // allocations with the same bytes are `=` (clj UUID value equality).
         .uuid => std.mem.eql(u8, &uuid_mod.asUuid(a).bytes, &uuid_mod.asUuid(b).bytes),
+        // TaggedLiteral `=` by (tag, form) both equal (ADR-0075, clj parity).
+        .tagged_literal => blk: {
+            const tla = tagged_literal_mod.asTaggedLiteral(a);
+            const tlb = tagged_literal_mod.asTaggedLiteral(b);
+            break :blk (try valueEqual(rt, env, tla.tag, tlb.tag)) and (try valueEqual(rt, env, tla.form, tlb.form));
+        },
         else => false,
     };
 }

@@ -36,6 +36,7 @@ const error_catalog = @import("../../runtime/error/catalog.zig");
 const SourceLocation = error_mod.SourceLocation;
 const dispatch = @import("../../runtime/dispatch.zig");
 const lookup = @import("../../runtime/collection/lookup.zig");
+const tagged_literal_mod = @import("../../runtime/tagged_literal.zig");
 
 /// Bare protocol-name constants for the D-089 hybrid slow-path family
 /// (mirrors `sequence.zig` row 7.7's IPC_FQCN / SEQABLE_FQCN style).
@@ -268,6 +269,8 @@ pub fn getFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) 
         // Declared field → ILookup -lookup slow-path → default. Shared
         // with the keyword-as-fn `(:k rec)` path so the two agree (D-089).
         .typed_instance => try lookup.recordGet(rt, env, coll, k, default, loc),
+        // TaggedLiteral is ILookup-only (`:tag`/`:form`); ADR-0075.
+        .tagged_literal => tagged_literal_mod.valAt(coll, k, default),
         else => blk: {
             // D-089 row 8.6 cycle 2: consult ILookup -lookup before
             // silent default fall-through. dispatchOrNull returns null
