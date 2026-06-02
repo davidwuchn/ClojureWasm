@@ -658,6 +658,25 @@ pub fn formatFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocatio
         i += 1; // past '%'
         if (i >= fmt.len) return error_catalog.raise(.format_spec_invalid, loc, .{ .spec = "%" });
 
+        // Optional argument index `N$` (Java spec position 1: before flags).
+        // Non-destructive lookahead so it doesn't swallow a `%05d` width-`0`
+        // flag: only commit when `<digits>$` actually matches. `explicit_idx`
+        // is the 1-based format-arg number → `args[explicit_idx]`.
+        var explicit_idx: ?usize = null;
+        {
+            var j = i;
+            var n: usize = 0;
+            var saw = false;
+            while (j < fmt.len and fmt[j] >= '0' and fmt[j] <= '9') : (j += 1) {
+                n = n * 10 + (fmt[j] - '0');
+                saw = true;
+            }
+            if (saw and j < fmt.len and fmt[j] == '$') {
+                explicit_idx = n;
+                i = j + 1; // past the '$'
+            }
+        }
+
         // Flags, then min field width. `-` overrides `0` (Java semantics).
         // `+`/` `/`(` are sign flags and `,` is grouping — applied to `%d`.
         var left = false;
@@ -710,78 +729,49 @@ pub fn formatFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocatio
         if (prec != null and conv != 'f' and conv != 'e' and conv != 'E' and conv != 'g' and conv != 'G')
             return error_catalog.raise(.format_spec_invalid, loc, .{ .spec = "%." });
 
+        // Resolve the argument source: an explicit `N$` index (1-based →
+        // args[N]) or the auto-incrementing counter `ai`. Bounds-checked
+        // once here; every consuming arm reads `args[src]`.
+        const src = explicit_idx orelse ai;
+        if (src >= args.len) return error_catalog.raise(.format_args_insufficient, loc, .{});
+
         // Render the conversion into a temp, then space-pad to `width` into w.
         var tmp: std.Io.Writer.Allocating = .init(rt.gpa);
         defer tmp.deinit();
         const tw = &tmp.writer;
         switch (conv) {
-            's' => {
-                if (ai >= args.len) return error_catalog.raise(.format_args_insufficient, loc, .{});
-                try writeArgsSpaced(rt, env, tw, args[ai .. ai + 1], false);
-                ai += 1;
-            },
-            'd' => {
-                if (ai >= args.len) return error_catalog.raise(.format_args_insufficient, loc, .{});
-                try writeDecimal(tw, try error_catalog.expectInteger(args[ai], "format", loc), group, plus, space, paren);
-                ai += 1;
-            },
-            'x' => {
-                if (ai >= args.len) return error_catalog.raise(.format_args_insufficient, loc, .{});
-                try tw.print("{x}", .{try error_catalog.expectInteger(args[ai], "format", loc)});
-                ai += 1;
-            },
-            'X' => {
-                if (ai >= args.len) return error_catalog.raise(.format_args_insufficient, loc, .{});
-                try tw.print("{X}", .{try error_catalog.expectInteger(args[ai], "format", loc)});
-                ai += 1;
-            },
-            'o' => {
-                if (ai >= args.len) return error_catalog.raise(.format_args_insufficient, loc, .{});
-                try tw.print("{o}", .{try error_catalog.expectInteger(args[ai], "format", loc)});
-                ai += 1;
-            },
-            'f' => {
-                if (ai >= args.len) return error_catalog.raise(.format_args_insufficient, loc, .{});
-                try writeFloatPrec(tw, try error_catalog.expectNumber(args[ai], "format", loc), prec orelse 6);
-                ai += 1;
-            },
-            'e', 'E' => {
-                if (ai >= args.len) return error_catalog.raise(.format_args_insufficient, loc, .{});
-                try writeScientific(tw, try error_catalog.expectNumber(args[ai], "format", loc), prec orelse 6, conv == 'E');
-                ai += 1;
-            },
-            'g', 'G' => {
-                if (ai >= args.len) return error_catalog.raise(.format_args_insufficient, loc, .{});
-                try writeGeneral(tw, try error_catalog.expectNumber(args[ai], "format", loc), prec orelse 6, conv == 'G');
-                ai += 1;
-            },
+            's' => try writeArgsSpaced(rt, env, tw, args[src .. src + 1], false),
+            'd' => try writeDecimal(tw, try error_catalog.expectInteger(args[src], "format", loc), group, plus, space, paren),
+            'x' => try tw.print("{x}", .{try error_catalog.expectInteger(args[src], "format", loc)}),
+            'X' => try tw.print("{X}", .{try error_catalog.expectInteger(args[src], "format", loc)}),
+            'o' => try tw.print("{o}", .{try error_catalog.expectInteger(args[src], "format", loc)}),
+            'f' => try writeFloatPrec(tw, try error_catalog.expectNumber(args[src], "format", loc), prec orelse 6),
+            'e', 'E' => try writeScientific(tw, try error_catalog.expectNumber(args[src], "format", loc), prec orelse 6, conv == 'E'),
+            'g', 'G' => try writeGeneral(tw, try error_catalog.expectNumber(args[src], "format", loc), prec orelse 6, conv == 'G'),
             // `%b`/`%B` boolean conversion (Java/clj): nil or false → "false",
-            // any other value → "true" (it is the logical-truth test, not a
-            // type check). `%B` upper-cases.
+            // any other value → "true" (logical-truth test, not a type check).
             'b', 'B' => {
-                if (ai >= args.len) return error_catalog.raise(.format_args_insufficient, loc, .{});
-                const truthy = args[ai].isTruthy();
-                const s = if (conv == 'B') (if (truthy) "TRUE" else "FALSE") else (if (truthy) "true" else "false");
-                try tw.writeAll(s);
-                ai += 1;
+                const truthy = args[src].isTruthy();
+                try tw.writeAll(if (conv == 'B') (if (truthy) "TRUE" else "FALSE") else (if (truthy) "true" else "false"));
             },
-            // `%c` character conversion: the arg must be a char (clj rejects a
-            // Long here with IllegalFormatConversionException — cljw raises
+            // `%c` character conversion: arg must be a char (clj rejects a Long
+            // with IllegalFormatConversionException — cljw raises
             // type_arg_invalid, both error). Emits the codepoint as UTF-8.
             'c' => {
-                if (ai >= args.len) return error_catalog.raise(.format_args_insufficient, loc, .{});
-                if (args[ai].tag() != .char)
-                    return error_catalog.raise(.type_arg_invalid, loc, .{ .fn_name = "format", .expected = "character for %c", .actual = @tagName(args[ai].tag()) });
+                if (args[src].tag() != .char)
+                    return error_catalog.raise(.type_arg_invalid, loc, .{ .fn_name = "format", .expected = "character for %c", .actual = @tagName(args[src].tag()) });
                 var cbuf: [4]u8 = undefined;
-                const cn = std.unicode.utf8Encode(args[ai].asChar(), &cbuf) catch 0;
+                const cn = std.unicode.utf8Encode(args[src].asChar(), &cbuf) catch 0;
                 try tw.writeAll(cbuf[0..cn]);
-                ai += 1;
             },
             else => {
                 const sb = [_]u8{ '%', conv };
                 return error_catalog.raise(.format_spec_invalid, loc, .{ .spec = sb[0..] });
             },
         }
+        // Auto mode consumes one positional arg; an explicit `N$` index does
+        // not advance the counter (Java semantics).
+        if (explicit_idx == null) ai += 1;
         const rendered = tw.buffered();
         if (rendered.len >= width) {
             try w.writeAll(rendered);
