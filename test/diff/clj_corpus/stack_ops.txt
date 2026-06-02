@@ -1,0 +1,32 @@
+(peek (list 1 2 3))
+;;=> 1
+(peek [1 2 3])
+;;=> 3
+(peek nil)
+;;=> nil
+(peek (list))
+;;=> nil
+(peek [])
+;;=> nil
+(pop (list 1 2 3))
+;;=> (2 3)
+(pop [1 2 3])
+;;=> [1 2]
+(pop nil)
+;;=> nil
+(try (peek "abc") (catch Throwable e :throws))
+;;=> :throws
+(try (peek (map inc [1 2])) (catch Throwable e :throws))
+;;=> :throws
+(try (peek (range 3)) (catch Throwable e :throws))
+;;=> :throws
+(try (pop "abc") (catch Throwable e :throws))
+;;=> :throws
+(try (pop (range 3)) (catch Throwable e :throws))
+;;=> :throws
+(try (peek (lazy-seq (cons 1 nil))) (catch Throwable e :throws))
+;;=> :throws
+(peek (conj (list) :a))
+;;=> :a
+(pop (conj [1 2] 3))
+;;=> [1 2]

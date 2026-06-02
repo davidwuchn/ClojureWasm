@@ -54,7 +54,16 @@ active:
       only the Indexed/Associative-by-index surface was missing.
     last_reviewed: "2026-06-03"
   - id: "D-218"
-    status: "now (minor divergence, exploratory-found 2026-06-03) — `peek`/`pop` accept non-stack seqs where clj throws."
+    status: |-
+      DISCHARGED 2026-06-03 (clj-parity drain): `peek`/`pop` are now stack-only
+      (nil / list / vector), matching clj's IPersistentStack contract. core.clj
+      `peek`/`pop` gained an explicit nil→nil arm + a `list?` gate; a non-stack
+      seqable (string, lazy seq, range) now throws an ex-info instead of silently
+      falling through to `first`/`rest` (the silent-success the sweep found).
+      clj-verified matrix: list→1/(2 3), vector→3/[1 2], nil→nil/nil, empty→nil/
+      throw, string/lazy/range→throw. Corpus `stack_ops` (16, incl. try-catch
+      throw cases); 3 new e2e in phase14_peek_pop. Cross-ref D-217 (surfacer) /
+      F-011 / no-silent-success (provisional_marker.md permanent-no-op rule).
     category: "runtime"
     barrier: |-
       **`peek` on a non-IPersistentStack value generalizes where clj throws**: `(peek "abc")` → cljw `\a` (core.clj `peek` = `(first coll)` for non-vectors, and a String is seqable) / clj `ClassCastException` (String is not IPersistentStack). Same for any non-stack seqable (a lazy seq, a range). clj's `peek`/`pop` are defined ONLY on IPersistentStack (list / vector / queue); cljw's core.clj `peek` falls through to `(first coll)` for everything non-vector, so it silently accepts strings/seqs. LOW value (peek on a string is nonsensical). Decide: (a) tighten `peek`/`pop` to reject non-stack types (raise — matches clj), or (b) accept the generalization as an AD (cljw `peek` = "top of any stack-like/seq"). Leaning (a) for clj parity + no-silent-success. NOTE a plain list IS a stack in both (`(peek '(1 2 3))`→1) — only non-stack seqs (string, lazy seq, range, vector-seq) diverge. Cross-ref D-217 (surfacer) / F-011. recall trigger: when stack-op (peek/pop) parity OR core.clj seq-protocol work is next.

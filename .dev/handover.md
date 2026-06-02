@@ -20,8 +20,7 @@
   "abc" 1)`→cljw errors/clj `\b` — String not Indexed), `clojure.string/escape`
   (missing), regex edge cases, reader/printer round-trips, transducers. Pick
   highest-value, enumerate, big-bang. Classify every DIFF bug→fix OR
-  accepted→AD-NNN (never floating). D-218 (peek/pop accept non-stack seqs
-  where clj throws — minor) is an open low-value drain; tighten or AD it.
+  accepted→AD-NNN (never floating).
 - **Forbidden**: "fixing" an AD-001..009 accepted divergence (set print-order,
   `(class)` simple name AD-003, error Kind, **AD-008 Long-overflow auto-promote**,
   cljw hash AD-009 — see `.dev/accepted_divergences.yaml`); widening the NaN-box
@@ -45,8 +44,9 @@
 - **C1..C7 all DISCHARGED** (D-164/205/207/209/200/198/165; ADR-0076/77/78/79/80).
   D-210 persists ONLY as the standing `quality-loop floor: clj-parity` — drain
   any NEW cljw↔clj DIFF a future sweep surfaces (highest-value-first). No units left.
-- **Open floor bugs**: D-218 (peek/pop on non-stack seqs — minor). D-212/213/214/
-  215 + D-216 (format) + D-217 (string-as-Indexed) DISCHARGED this session.
+- **Open floor bugs**: none. D-212/213/214/215 + D-216 (format) + D-217
+  (string-as-Indexed) + D-218 (peek/pop stack-only) DISCHARGED this session.
+  Next = continue self-selected exploratory sweep (Resume contract).
 - **Decided, NOT bugs**: AD-008 (Long overflow past i64 auto-promotes per F-005;
   clj throws) · AD-009 (cljw hash ≠ JVM) · D-211 (`+'`/`*'` deferred, F-005-inverted).
 

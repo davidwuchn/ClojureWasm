@@ -468,20 +468,32 @@
 ;; `(peek coll)` / `(pop coll)` — stack ops. Vector: peek = last element,
 ;; pop = drop the last (returns a vector). List/seq: peek = first, pop =
 ;; rest. peek of empty is nil; pop of empty throws (JVM parity). D-134.
+;; peek/pop are stack ops — defined ONLY on nil / list / vector (clj's
+;; IPersistentStack). A non-stack seqable (string, lazy seq, range) throws in
+;; clj (ClassCastException), so cljw must NOT silently fall through to first/
+;; rest there (D-218). nil → nil for both (clj parity).
 (def peek
   (fn* [coll]
-    (if (vector? coll)
-      (if (pos? (count coll)) (nth coll (dec (count coll))) nil)
-      (first coll))))
+    (if (nil? coll)
+      nil
+      (if (vector? coll)
+        (if (pos? (count coll)) (nth coll (dec (count coll))) nil)
+        (if (list? coll)
+          (first coll)
+          (throw (ex-info "Can't peek: not a stack (list, vector)" {:value coll})))))))
 (def pop
   (fn* [coll]
-    (if (vector? coll)
-      (if (pos? (count coll))
-        (into [] (take (dec (count coll)) coll))
-        (throw (ex-info "Can't pop empty vector" {})))
-      (if (seq coll)
-        (rest coll)
-        (throw (ex-info "Can't pop empty list" {}))))))
+    (if (nil? coll)
+      nil
+      (if (vector? coll)
+        (if (pos? (count coll))
+          (into [] (take (dec (count coll)) coll))
+          (throw (ex-info "Can't pop empty vector" {})))
+        (if (list? coll)
+          (if (seq coll)
+            (rest coll)
+            (throw (ex-info "Can't pop empty list" {})))
+          (throw (ex-info "Can't pop: not a stack (list, vector)" {:value coll})))))))
 
 ;; `(find m k)` — the map entry `[k v]` for key k if present, else nil
 ;; (distinguishes "absent" from "present with nil value" via contains?).
