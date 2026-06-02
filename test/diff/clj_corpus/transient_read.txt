@@ -1,0 +1,42 @@
+(count (transient [1 2 3]))
+;;=> 3
+(count (transient {:a 1 :b 2}))
+;;=> 2
+(count (transient #{1 2 3}))
+;;=> 3
+(get (transient {:a 1 :b 2}) :b)
+;;=> 2
+(get (transient {:a 1}) :z)
+;;=> nil
+(get (transient {:a 1}) :z :default)
+;;=> :default
+(get (transient [10 20 30]) 1)
+;;=> 20
+(get (transient [10 20 30]) 9 :nope)
+;;=> :nope
+(nth (transient [10 20 30]) 1)
+;;=> 20
+(nth (transient [10 20 30]) 9 :nope)
+;;=> :nope
+(contains? (transient {:a 1}) :a)
+;;=> true
+(contains? (transient {:a 1}) :z)
+;;=> false
+(contains? (transient #{1 2 3}) 2)
+;;=> true
+(contains? (transient #{1 2 3}) 9)
+;;=> false
+(contains? (transient [10 20 30]) 1)
+;;=> true
+(contains? (transient [10 20 30]) 9)
+;;=> false
+(persistent! (assoc! (transient [1 2 3]) 3 4))
+;;=> [1 2 3 4]
+(persistent! (assoc! (transient [1 2 3]) 0 :x 2 :z))
+;;=> [:x 2 :z]
+(get (transient (into {} (map (fn [i] [i i]) (range 12)))) 11)
+;;=> 11
+(count (transient (into {} (map (fn [i] [i i]) (range 12)))))
+;;=> 12
+(contains? (transient (into {} (map (fn [i] [i i]) (range 12)))) 11)
+;;=> true

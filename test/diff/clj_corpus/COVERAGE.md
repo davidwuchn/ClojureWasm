@@ -81,12 +81,18 @@ confirmed exprs into a `*.txt` corpus here via `--corpus`.
   get/nth (not-found), peek/pop, assoc-in/update-in/get-in (deep + not-found),
   replace, reduce-kv, into-sorted-map — all at parity (no gaps). Corpus
   `vec_assoc_ops`.
-- **transients** — `transient`/`persistent!` round-trip (vector/map/set),
-  `conj!`/`pop!`/`disj!`/`dissoc!`, `reduce conj!`, `reduce assoc!` at parity.
-  Gap found+fixed: `assoc!` was 3-arity only — now `(assoc! t k1 v1 k2 v2 …)`
-  multi-pair (clj's `[coll key val & kvs]`). `conj!` is single-element in BOTH
-  (multi-arg → ArityException, catchable as such — F-011 class match). Corpus
-  `transients`.
+- **transients (mutation round-trip only)** — `transient`/`persistent!`
+  round-trip (vector/map/set), `conj!`/`pop!`/`disj!`/`dissoc!`, `reduce conj!`,
+  `reduce assoc!` at parity. Gap found+fixed: `assoc!` was 3-arity only — now
+  `(assoc! t k1 v1 k2 v2 …)` multi-pair. `conj!` is single-element in BOTH
+  (multi-arg → ArityException, F-011 class match). Corpus `transients`.
+- **transients (read/query ops)** — `count`/`get`/`contains?`/`nth` on a live
+  transient + `assoc!` on a transient *vector* (index-assign / append) now at
+  parity across all 3 transient tags incl. hash-mode maps (>8 entries). clj
+  treats a transient as a first-class read target; cljw now matches (was
+  `type_error` / nil — D-199). Read accessors on
+  `transient_{vector,array_map,hash_set}.zig` + the `.transient_*` arms wired
+  into `count`/`get`/`contains?`/`nth`/`assoc!`. Corpus `transient_read` (21).
 - **seq-return type class** — sort/sort-by/keys/vals/reverse/rest/next/seq/map/
   filter/distinct/take/drop/concat/remove/map-indexed/interpose/partition/
   flatten all return SEQS matching clj (NOT vectors — the feared sort-returns-
@@ -151,6 +157,7 @@ confirmed exprs into a `*.txt` corpus here via `--corpus`.
   parity (only set print order + the now-fixed collection-key bug diverged).
   Residual: `intersection`/`difference` 0-arity (cljw variadic returns nil; JVM has
   no 0-arity → ArityException) — low-value edge; `macroexpand-all` is a stub.
+- **Transient read/query ops** — CLOSED 2026-06-02 (D-199); see Swept areas.
 - **Unswept areas** worth a focused pass: EDN tagged literals
   (`#inst`/`#uuid`/custom `:readers`), `alter-meta!` (needs var-metadata
   D-183), `clojure.walk/macroexpand-all` (stub), `clojure.string` deeper edges,

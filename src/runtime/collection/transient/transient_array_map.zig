@@ -171,6 +171,38 @@ pub fn assoc(rt: *Runtime, tm_val: Value, k: Value, v: Value, loc: SourceLocatio
     return tm_val;
 }
 
+/// Entry count — read accessor so `count` treats a live transient map as
+/// a first-class read target (clj parity). No editable check: reads are
+/// valid on a live transient.
+pub fn count(tm_val: Value) u32 {
+    return tm_val.decodePtr(*const TransientArrayMap).count;
+}
+
+/// True iff key `k` is present (both flat + hash modes). Powers
+/// `contains?` / the `get` lookup on a transient map.
+pub fn contains(tm_val: Value, k: Value) !bool {
+    const tm = tm_val.decodePtr(*const TransientArrayMap);
+    if (!tm.overflow.isNil()) return map_mod.contains(tm.overflow, k); // hash mode
+    var i: u32 = 0;
+    while (i < tm.count) : (i += 1) {
+        if (keyEq(tm.entries[2 * i], k)) return true;
+    }
+    return false;
+}
+
+/// Value for key `k`, or nil when absent (callers guard via `contains`
+/// for the not-found-vs-nil-value distinction, mirroring the persistent
+/// `getFn` path). Both flat + hash modes.
+pub fn get(tm_val: Value, k: Value) !Value {
+    const tm = tm_val.decodePtr(*const TransientArrayMap);
+    if (!tm.overflow.isNil()) return map_mod.get(tm.overflow, k); // hash mode
+    var i: u32 = 0;
+    while (i < tm.count) : (i += 1) {
+        if (keyEq(tm.entries[2 * i], k)) return tm.entries[2 * i + 1];
+    }
+    return Value.nil_val;
+}
+
 pub fn dissoc(rt: *Runtime, tm_val: Value, k: Value, loc: SourceLocation) !Value {
     const tm = try expectTransient(tm_val, "dissoc!", loc);
     try ensureEditable(tm, "dissoc!", loc);

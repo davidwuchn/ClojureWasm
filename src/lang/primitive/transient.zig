@@ -135,15 +135,29 @@ pub fn assocBangFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLoca
     if (args.len < 3)
         return error_catalog.raise(.arity_out_of_range, loc, .{ .fn_name = "assoc!", .got = args.len, .min = 3, .max = 3 });
     var tcoll = args[0];
-    if (tcoll.tag() != .transient_map)
-        return error_catalog.raise(.transient_kind_mismatch, loc, .{
+    switch (tcoll.tag()) {
+        .transient_map => {
+            var i: usize = 1;
+            while (i < args.len) : (i += 2) {
+                tcoll = try transient_array_map.assoc(rt, tcoll, args[i], args[i + 1], loc);
+            }
+        },
+        // D-199: a transient vector is Associative by integer index (clj's
+        // `(assoc! tv idx v)`); `idx == count` appends, else overwrites.
+        .transient_vector => {
+            var i: usize = 1;
+            while (i < args.len) : (i += 2) {
+                const k = args[i];
+                if (k.tag() != .integer)
+                    return error_catalog.raise(.type_arg_not_integer, loc, .{ .fn_name = "assoc!", .actual = @tagName(k.tag()) });
+                tcoll = try transient_vector.assoc(rt, tcoll, k.asInteger(), args[i + 1], loc);
+            }
+        },
+        else => return error_catalog.raise(.transient_kind_mismatch, loc, .{
             .fn_name = "assoc!",
-            .expected = "transient_map",
+            .expected = "transient_map or transient_vector",
             .actual = @tagName(tcoll.tag()),
-        });
-    var i: usize = 1;
-    while (i < args.len) : (i += 2) {
-        tcoll = try transient_array_map.assoc(rt, tcoll, args[i], args[i + 1], loc);
+        }),
     }
     return tcoll;
 }

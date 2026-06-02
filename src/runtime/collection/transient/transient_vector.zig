@@ -141,6 +141,35 @@ pub fn conj(rt: *Runtime, tv_val: Value, x: Value, loc: SourceLocation) !Value {
     return tv_val;
 }
 
+/// Element count — read accessor so `count` treats a live transient
+/// vector as a first-class read target (clj parity). No editable check:
+/// reads are valid on a live transient.
+pub fn count(tv_val: Value) u32 {
+    return tv_val.decodePtr(*const TransientVector).count;
+}
+
+/// Read element `i` (0-based); returns `not_found` when out of range.
+/// Powers `nth` / indexed `get` on a transient vector.
+pub fn nth(tv_val: Value, i: i64, not_found: Value) Value {
+    const tv = tv_val.decodePtr(*const TransientVector);
+    if (i < 0 or i >= tv.count) return not_found;
+    return tv.items()[@intCast(i)];
+}
+
+/// In-place index-assign (`assoc!` on a transient vector). `i == count`
+/// appends (delegates to `conj`); `0 ≤ i < count` overwrites in place;
+/// out of range raises `index_out_of_range` (matches clj's
+/// `(assoc! tv i v)`, which only permits indices 0..count).
+pub fn assoc(rt: *Runtime, tv_val: Value, i: i64, v: Value, loc: SourceLocation) !Value {
+    const tv = try expectTransient(tv_val, "assoc!", loc);
+    try ensureEditable(tv, "assoc!", loc);
+    if (i < 0 or i > tv.count)
+        return error_catalog.raise(.index_out_of_range, loc, .{ .fn_name = "assoc!" });
+    if (i == tv.count) return conj(rt, tv_val, v, loc);
+    tv.items_ptr.?[@intCast(i)] = v;
+    return tv_val;
+}
+
 /// Drop the last element. Errors when the transient is empty
 /// (matches JVM Clojure `(pop! (transient []))` IllegalStateException).
 pub fn pop(tv_val: Value, loc: SourceLocation) !Value {

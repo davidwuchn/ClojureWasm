@@ -50,6 +50,9 @@ const set = @import("../../runtime/collection/set.zig");
 const string_collection = @import("../../runtime/collection/string.zig");
 const chunked_cons = @import("../../runtime/collection/chunked_cons.zig");
 const range = @import("../../runtime/collection/range.zig");
+const transient_vector = @import("../../runtime/collection/transient/transient_vector.zig");
+const transient_array_map = @import("../../runtime/collection/transient/transient_array_map.zig");
+const transient_hash_set = @import("../../runtime/collection/transient/transient_hash_set.zig");
 const lazy_seq = @import("../../runtime/lazy_seq.zig");
 const charset = @import("../../runtime/charset.zig");
 const td_mod = @import("../../runtime/type_descriptor.zig");
@@ -94,6 +97,11 @@ pub fn countFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation
         .array_map, .hash_map => Value.initInteger(@intCast(map.count(coll))),
         .sorted_map, .sorted_set => Value.initInteger(@intCast(sorted.count(coll))),
         .hash_set => Value.initInteger(@intCast(set.count(coll))),
+        // A live transient is a first-class read target (clj parity): count
+        // reads its element/entry count without realising it (D-199).
+        .transient_vector => Value.initInteger(@intCast(transient_vector.count(coll))),
+        .transient_map => Value.initInteger(@intCast(transient_array_map.count(coll))),
+        .transient_set => Value.initInteger(@intCast(transient_hash_set.count(coll))),
         .chunked_cons => Value.initInteger(@intCast(chunked_cons.count(coll))),
         // PERF: O(1) precomputed range length, no element walk [refs: O-001]
         .range => Value.initInteger(range.countOf(coll)),

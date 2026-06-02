@@ -103,6 +103,19 @@ pub fn disj(rt: *Runtime, ts_val: Value, e: Value, loc: SourceLocation) !Value {
     return ts_val;
 }
 
+/// Member count — read accessor so `count` treats a live transient set as
+/// a first-class read target (clj parity).
+pub fn count(ts_val: Value) u32 {
+    return ts_val.decodePtr(*const TransientHashSet).count;
+}
+
+/// True iff `e` is a member (delegates to the inner transient map's key
+/// presence). Powers `contains?` on a transient set.
+pub fn contains(ts_val: Value, e: Value) !bool {
+    const ts = ts_val.decodePtr(*const TransientHashSet);
+    return transient_array_map.contains(ts.inner_map, e);
+}
+
 pub fn traceTransientHashSet(gc_ptr: *anyopaque, header: *HeapHeader) void {
     const gc: *gc_heap_mod.GcHeap = @ptrCast(@alignCast(gc_ptr));
     const ts: *TransientHashSet = @ptrCast(@alignCast(header));
