@@ -15,6 +15,12 @@ confirmed exprs into a `*.txt` corpus here via `--corpus`.
   discharged.)
 - **Integer/Long bit + Math `*Exact`** — bitCount/clz/ctz/highestOneBit/reverse;
   addExact/multiplyExact/… (D-172). Remaining low-value: see Next.
+- **Coercion tower (`quot`/`rem`/`mod` + `int`/`long`/`num`/`double`/`float`/
+  `numerator`/`denominator`/`rationalize`)** — all at parity over int/float/
+  ratio/BigInt operands incl. truncation (`(int 3.7)`→3), `(num 1/2)`→ratio,
+  `(rationalize 0.1)`→`1/10`, `(int \A)`→65. Corpus `coerce_tower` (27 exprs).
+  Acceptable error-class divergences (both reject, see below): `(numerator 5)`,
+  `(quot 10 0)`, `(mod 10 0)`.
 - **Numeric coercion / parity** — `even?`/`odd?` over BigInt (incl. negative,
   zero, ≥2^64), plus **oversized integer-literal auto-promote**: a bare decimal
   literal too large for i64 now reads as BigInt (clj `…N`) instead of erroring,
@@ -163,6 +169,10 @@ confirmed exprs into a `*.txt` corpus here via `--corpus`.
 - Subnormal `5.0E-324` vs JVM `4.9E-324` (same double).
 - `Double/parseDouble` lower-case `inf`/`nan` + trailing `d`/`f` + hex-float —
   full Java FloatingDecimal grammar not reimplemented (rare edge).
+- **Error class name** on a rejected operation: cljw renders its own catalog
+  Kind (`[type_error]` / `[arithmetic_error]`) where clj prints the JVM
+  exception class (`ClassCastException` / `ArithmeticException`). Both correctly
+  reject — e.g. `(numerator 5)`, `(quot 10 0)`, `(mod 10 0)`. ADR-0059 no-JVM.
 
 ## Structural-deferred (F-003 — big-bang, do NOT seize incrementally)
 
