@@ -100,11 +100,107 @@ fn indexOf(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) an
     _ = rt;
     _ = env;
     try error_catalog.checkArity(".indexOf", args, 2, loc);
+    const hay = string_collection.asString(args[0]);
+    // JVM overloads `indexOf(String)` and `indexOf(int codepoint)`.
+    if (args[1].tag() == .integer) {
+        const cp = args[1].asInteger();
+        if (cp < 0 or cp > 0x10FFFF) return Value.initInteger(-1);
+        var buf: [4]u8 = undefined;
+        const n = std.unicode.utf8Encode(@intCast(cp), &buf) catch return Value.initInteger(-1);
+        const idx = charset.codepointIndexOf(hay, buf[0..n]) orelse return Value.initInteger(-1);
+        return Value.initInteger(@intCast(idx));
+    }
     if (args[1].tag() != .string)
         return error_catalog.raise(.type_arg_not_string, loc, .{ .fn_name = ".indexOf", .actual = @tagName(args[1].tag()) });
-    const idx = charset.codepointIndexOf(string_collection.asString(args[0]), string_collection.asString(args[1])) orelse
+    const idx = charset.codepointIndexOf(hay, string_collection.asString(args[1])) orelse
         return Value.initInteger(-1);
     return Value.initInteger(@intCast(idx));
+}
+
+/// `(.lastIndexOf s needle)` → codepoint index of the LAST occurrence, or
+/// -1. JVM reference: java.lang.String#lastIndexOf(String).
+fn lastIndexOf(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = rt;
+    _ = env;
+    try error_catalog.checkArity(".lastIndexOf", args, 2, loc);
+    if (args[1].tag() != .string)
+        return error_catalog.raise(.type_arg_not_string, loc, .{ .fn_name = ".lastIndexOf", .actual = @tagName(args[1].tag()) });
+    const idx = charset.codepointLastIndexOf(string_collection.asString(args[0]), string_collection.asString(args[1])) orelse
+        return Value.initInteger(-1);
+    return Value.initInteger(@intCast(idx));
+}
+
+/// `(.isBlank s)` → true iff `s` is empty or all whitespace. JVM ref:
+/// java.lang.String#isBlank (ASCII whitespace; D-057 Unicode caveat).
+fn isBlank(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = rt;
+    _ = env;
+    try error_catalog.checkArity(".isBlank", args, 1, loc);
+    var iter = std.unicode.Utf8Iterator{ .bytes = string_collection.asString(args[0]), .i = 0 };
+    while (iter.nextCodepoint()) |cp| {
+        if (!charset.isWhitespaceCodepoint(cp)) return Value.false_val;
+    }
+    return Value.true_val;
+}
+
+/// `(.strip s)` → leading + trailing whitespace removed. JVM ref:
+/// java.lang.String#strip (≈ `.trim` for ASCII; D-057 Unicode caveat).
+fn strip(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = env;
+    try error_catalog.checkArity(".strip", args, 1, loc);
+    return string_collection.alloc(rt, charset.trim(string_collection.asString(args[0])));
+}
+
+/// `(.equalsIgnoreCase a b)` → ASCII case-insensitive equality. JVM ref:
+/// java.lang.String#equalsIgnoreCase (D-057 Unicode caveat).
+fn equalsIgnoreCase(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = rt;
+    _ = env;
+    try error_catalog.checkArity(".equalsIgnoreCase", args, 2, loc);
+    if (args[1].tag() != .string)
+        return error_catalog.raise(.type_arg_not_string, loc, .{ .fn_name = ".equalsIgnoreCase", .actual = @tagName(args[1].tag()) });
+    return Value.initBoolean(std.ascii.eqlIgnoreCase(string_collection.asString(args[0]), string_collection.asString(args[1])));
+}
+
+/// `(.codePointAt s i)` → the codepoint (int) at codepoint index `i`. JVM
+/// ref: java.lang.String#codePointAt (cw v1 indexes by codepoint, ADR-0014).
+fn codePointAt(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = rt;
+    _ = env;
+    try error_catalog.checkArity(".codePointAt", args, 2, loc);
+    if (args[1].tag() != .integer)
+        return error_catalog.raise(.type_arg_not_number, loc, .{ .fn_name = ".codePointAt", .actual = @tagName(args[1].tag()) });
+    const i = args[1].asInteger();
+    if (i < 0) return error_catalog.raise(.index_out_of_range, loc, .{ .fn_name = ".codePointAt" });
+    const cp = charset.codepointAt(string_collection.asString(args[0]), @intCast(i)) catch
+        return error_catalog.raise(.index_out_of_range, loc, .{ .fn_name = ".codePointAt" });
+    return Value.initInteger(@intCast(cp));
+}
+
+/// `(.compareTo a b)` → JVM lexicographic compare: at the first differing
+/// codepoint, `cp_a - cp_b`; else `len_a - len_b` (codepoint counts). NOT
+/// normalised to -1/0/1 (matches Java `String.compareTo` magnitude).
+fn compareTo(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = rt;
+    _ = env;
+    try error_catalog.checkArity(".compareTo", args, 2, loc);
+    if (args[1].tag() != .string)
+        return error_catalog.raise(.type_arg_not_string, loc, .{ .fn_name = ".compareTo", .actual = @tagName(args[1].tag()) });
+    const sa = string_collection.asString(args[0]);
+    const sb = string_collection.asString(args[1]);
+    var ia = std.unicode.Utf8Iterator{ .bytes = sa, .i = 0 };
+    var ib = std.unicode.Utf8Iterator{ .bytes = sb, .i = 0 };
+    while (true) {
+        const ca = ia.nextCodepoint();
+        const cb = ib.nextCodepoint();
+        if (ca == null and cb == null) return Value.initInteger(0);
+        if (ca == null or cb == null) {
+            const na: i64 = @intCast(charset.codepointCount(sa) catch sa.len);
+            const nb: i64 = @intCast(charset.codepointCount(sb) catch sb.len);
+            return Value.initInteger(na - nb);
+        }
+        if (ca.? != cb.?) return Value.initInteger(@as(i64, ca.?) - @as(i64, cb.?));
+    }
 }
 
 /// Implements `(.charAt s i)` → the char at codepoint index `i`
@@ -247,6 +343,9 @@ pub fn installNativeMethods(rt: *Runtime) !void {
         .{ "startsWith", &startsWith },   .{ "endsWith", &endsWith },
         .{ "isEmpty", &isEmpty },         .{ "concat", &concat },
         .{ "repeat", &repeat },           .{ "replace", &replace },
+        .{ "lastIndexOf", &lastIndexOf }, .{ "isBlank", &isBlank },
+        .{ "strip", &strip },             .{ "equalsIgnoreCase", &equalsIgnoreCase },
+        .{ "codePointAt", &codePointAt }, .{ "compareTo", &compareTo },
     };
     const entries = try gpa.alloc(type_descriptor.TypeDescriptor.MethodEntry, specs.len);
     inline for (specs, 0..) |spec, i| {

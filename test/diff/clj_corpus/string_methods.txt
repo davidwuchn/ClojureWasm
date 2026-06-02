@@ -1,0 +1,28 @@
+(.lastIndexOf "hello" "l")
+;;=> 3
+(.isBlank "  ")
+;;=> true
+(.isBlank "x")
+;;=> false
+(.isBlank "")
+;;=> true
+(.strip "  x ")
+;;=> "x"
+(.equalsIgnoreCase "AB" "ab")
+;;=> true
+(.equalsIgnoreCase "AB" "ac")
+;;=> false
+(.codePointAt "abc" 1)
+;;=> 98
+(.compareTo "a" "c")
+;;=> -2
+(.compareTo "abc" "abc")
+;;=> 0
+(.compareTo "ab" "abc")
+;;=> -1
+(.compareTo "abc" "ab")
+;;=> 1
+(.indexOf "hello" 108)
+;;=> 2
+(.indexOf "hello" "l")
+;;=> 2

@@ -271,6 +271,15 @@ confirmed exprs into a `*.txt` corpus here via `--corpus`.
   set-returning ops — the known non-bug (clj_diff_sweep.md), so those lines are
   verified-at-parity-modulo-order but intentionally NOT in the regression
   corpus (the deterministic-output ops are).
+- **java.lang.String instance methods** — `toUpperCase`/`toLowerCase`/`trim`/
+  `length`/`substring`/`indexOf` (string AND int-codepoint)/`lastIndexOf`/
+  `charAt`/`codePointAt`/`contains`/`startsWith`/`endsWith`/`isEmpty`/`isBlank`/
+  `strip`/`concat`/`repeat`/`replace`/`equalsIgnoreCase`/`compareTo`. Corpus
+  `string_methods` (14). Gaps found+fixed: `lastIndexOf`/`isBlank`/`strip`/
+  `equalsIgnoreCase`/`codePointAt`/`compareTo` + `indexOf` int-arg were
+  unimplemented — added (`compareTo` returns the JVM char-diff/length-diff
+  MAGNITUDE, not -1/0/1). REMAINING (D-206): `.replaceAll`/`.replaceFirst`/
+  `.matches` (regex-backed) + `.split`/`.toCharArray` (collection-returning).
 - **Double / Boolean statics** — `Double/parseDouble`/`isNaN`/`isInfinite`/
   `toString`/`valueOf`/`compare`/`max`/`min`/`sum`; `Boolean/parseBoolean`/
   `valueOf`/`logicalAnd`/`logicalOr`/`logicalXor`. Corpus `double_boolean_static`
