@@ -75,15 +75,45 @@ fn digit(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anye
     return Value.initInteger(@as(i64, v));
 }
 
+/// Implements `(Character/getNumericValue ch)`. Spec: the numeric value of
+/// `ch` (digits `0`-`9`, letters `a`-`z`/`A`-`Z` = 10-35), or -1 if none
+/// (ASCII subset; D-057 Unicode caveat). JVM ref: Character#getNumericValue.
+fn getNumericValue(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = rt;
+    _ = env;
+    try error_catalog.checkArity("Character/getNumericValue", args, 1, loc);
+    const cp = try argChar(args[0], "Character/getNumericValue", loc);
+    const v = charset.digitValue(cp, 36) orelse return Value.initInteger(-1);
+    return Value.initInteger(@as(i64, v));
+}
+
+/// Implements `(Character/forDigit d radix)`. Spec: the char for digit value
+/// `d` in `radix` (`0`-`9` then `a`-`z`), or `\0` when out of range. JVM
+/// ref: Character#forDigit.
+fn forDigit(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = rt;
+    _ = env;
+    try error_catalog.checkArity("Character/forDigit", args, 2, loc);
+    const d = try error_catalog.expectInteger(args[0], "Character/forDigit", loc);
+    const r = try error_catalog.expectInteger(args[1], "Character/forDigit", loc);
+    if (d < 0 or d > 255 or r < 0 or r > 255) return Value.initChar(0);
+    return Value.initChar(charset.forDigit(@intCast(d), @intCast(r)));
+}
+
 fn initCharacter(td: *type_descriptor.TypeDescriptor, gpa: std.mem.Allocator) anyerror!void {
     if (td.method_table.len != 0) return; // idempotent re-run
     const specs = .{
         .{ "isDigit", &Classify("isDigit", charset.isDigitCodepoint).call },
         .{ "isLetter", &Classify("isLetter", charset.isLetterCodepoint).call },
+        .{ "isLetterOrDigit", &Classify("isLetterOrDigit", charset.isLetterOrDigitCodepoint).call },
         .{ "isWhitespace", &Classify("isWhitespace", charset.isWhitespaceCodepoint).call },
+        .{ "isUpperCase", &Classify("isUpperCase", charset.isUpperCodepoint).call },
+        .{ "isLowerCase", &Classify("isLowerCase", charset.isLowerCodepoint).call },
         .{ "toUpperCase", &CaseFold("toUpperCase", charset.toUpperCodepoint).call },
         .{ "toLowerCase", &CaseFold("toLowerCase", charset.toLowerCodepoint).call },
         .{ "digit", &digit },
+        .{ "getNumericValue", &getNumericValue },
+        .{ "forDigit", &forDigit },
     };
     const entries = try gpa.alloc(type_descriptor.TypeDescriptor.MethodEntry, specs.len);
     inline for (specs, 0..) |spec, i| {

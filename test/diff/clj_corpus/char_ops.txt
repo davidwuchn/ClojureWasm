@@ -1,0 +1,64 @@
+(char? \a)
+;;=> true
+(char? 97)
+;;=> false
+(char 97)
+;;=> \a
+(char 65)
+;;=> \A
+(int \A)
+;;=> 65
+(int \z)
+;;=> 122
+(int \0)
+;;=> 48
+(Character/isLetter \a)
+;;=> true
+(Character/isLetter \5)
+;;=> false
+(Character/isLetter \space)
+;;=> false
+(Character/isDigit \5)
+;;=> true
+(Character/isDigit \a)
+;;=> false
+(Character/isLetterOrDigit \a)
+;;=> true
+(Character/isLetterOrDigit \!)
+;;=> false
+(Character/isWhitespace \space)
+;;=> true
+(Character/isWhitespace \newline)
+;;=> true
+(Character/isWhitespace \a)
+;;=> false
+(Character/isUpperCase \A)
+;;=> true
+(Character/isUpperCase \a)
+;;=> false
+(Character/isLowerCase \a)
+;;=> true
+(Character/toUpperCase \a)
+;;=> \A
+(Character/toLowerCase \Z)
+;;=> \z
+(Character/digit \f 16)
+;;=> 15
+(Character/digit \9 10)
+;;=> 9
+(Character/digit \z 16)
+;;=> -1
+(Character/getNumericValue \7)
+;;=> 7
+(Character/forDigit 10 16)
+;;=> \a
+(compare \a \b)
+;;=> -1
+(compare \a \a)
+;;=> 0
+(sort [\c \a \b])
+;;=> (\a \b \c)
+(= \a \a)
+;;=> true
+(str \a \b \c)
+;;=> "abc"

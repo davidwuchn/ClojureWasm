@@ -165,7 +165,7 @@ tiers:
         phase: 14
         files:
           surface: runtime/java/lang/Character.zig
-        methods: [isDigit, isLetter, isWhitespace, toUpperCase, toLowerCase, digit]
+        methods: [isDigit, isLetter, isLetterOrDigit, isWhitespace, isUpperCase, isLowerCase, toUpperCase, toLowerCase, digit, getNumericValue, forDigit]
         clojure_peer_vars: []
       - fqn: java.lang.Math
         cljw_ns: cljw.java.lang.Math

@@ -146,6 +146,29 @@ pub fn toLowerCodepoint(cp: u21) u21 {
     return if (cp >= 'A' and cp <= 'Z') cp + ('a' - 'A') else cp;
 }
 
+/// JVM `Character.isUpperCase` mirror (ASCII A-Z; D-057 Unicode caveat).
+pub fn isUpperCodepoint(cp: u21) bool {
+    return cp >= 'A' and cp <= 'Z';
+}
+
+/// JVM `Character.isLowerCase` mirror (ASCII a-z; D-057 Unicode caveat).
+pub fn isLowerCodepoint(cp: u21) bool {
+    return cp >= 'a' and cp <= 'z';
+}
+
+/// JVM `Character.isLetterOrDigit` mirror (ASCII; D-057 Unicode caveat).
+pub fn isLetterOrDigitCodepoint(cp: u21) bool {
+    return isLetterCodepoint(cp) or isDigitCodepoint(cp);
+}
+
+/// JVM `Character.forDigit` mirror — the char for digit value `d` in
+/// `radix` (`0`-`9` then `a`-`z`), or the null char (codepoint 0) when
+/// `d` is at least `radix` or radix is outside 2..36.
+pub fn forDigit(d: u8, radix: u8) u21 {
+    if (radix < 2 or radix > 36 or d >= radix) return 0;
+    return if (d < 10) '0' + @as(u21, d) else 'a' + @as(u21, d) - 10;
+}
+
 /// JVM `Character.digit` mirror — the value of `cp` as a digit in `radix`
 /// (0-9 then a-z/A-Z = 10-35), or `null` if `cp` is not such a digit or
 /// its value is ≥ radix. `(Character/digit \f 16)` → 15; `\z 16` → null.

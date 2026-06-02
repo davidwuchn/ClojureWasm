@@ -271,6 +271,15 @@ confirmed exprs into a `*.txt` corpus here via `--corpus`.
   set-returning ops — the known non-bug (clj_diff_sweep.md), so those lines are
   verified-at-parity-modulo-order but intentionally NOT in the regression
   corpus (the deterministic-output ops are).
+- **char / Character** — `char?`/`char`/`int`, `Character/isDigit`/`isLetter`/
+  `isLetterOrDigit`/`isWhitespace`/`isUpperCase`/`isLowerCase`/`toUpperCase`/
+  `toLowerCase`/`digit`/`getNumericValue`/`forDigit`, char `compare`/`sort`/`=`/
+  `str`. Corpus `char_ops` (32). Gaps found+fixed: `isLetterOrDigit`/
+  `isUpperCase`/`isLowerCase`/`getNumericValue`/`forDigit` were unimplemented
+  (`name_error`) — added (ASCII, over `charset.zig`). DIVERGENCES (not gaps):
+  `(< \a \b)` errors in BOTH (clj ClassCastException / cljw type_error — chars
+  aren't `<`-comparable); `(Character/isLetter (char 955))` (λ) → cljw false /
+  clj true (cljw classification is ASCII-only, D-057 Unicode caveat — recorded).
 - **numeric heap keys** (D-205 BigInt+Ratio) — `BigInt`/`Ratio` as map keys /
   set elements / `distinct` dedup / `zipmap`, incl. cross-representation
   `(get {1 :v} 1N)`→`:v` (Long≡BigInt hash normalization) + a `>2^63` BigInt
