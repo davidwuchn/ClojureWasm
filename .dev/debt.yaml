@@ -9,6 +9,38 @@
 # md-table-align no longer pads it to ~800 KB of whitespace.
 
 active:
+  - id: "D-226"
+    status: "now (HIGH value, found 2026-06-03) — syntax-quote (backtick `/~/~@) reader macro unsupported."
+    category: "runtime"
+    barrier: |-
+      **Syntax-quote is not implemented** — `` `(+ ~x 1) `` → cljw "Unable to resolve symbol: '`'" (verified from a file, not a shell artifact). The reader has no `` ` `` (syntax-quote) / `~` (unquote) / `~@` (unquote-splicing) / `foo#` (auto-gensym) support, so EVERY macro must be hand-written with `list`/`cons`/`quote` (as cljw's own core.clj macros are). This is the single highest-value remaining gap: syntax-quote is THE macro-authoring tool in Clojure, so essentially NO real-world library macro can be loaded without it (gates the D-158 real-lib-test goal). Scope (a substantial reader feature): tokenizer `` ` ``/`~`/`~@`; a syntax-quote EXPANDER producing the template form — symbol RESOLUTION (`a` → `current-ns/a` or the resolved var's ns; special-form/`.`-syms left bare), `~x` splice-in, `~@x` splice-elements (via `seq`/`concat`/`apply`), consistent `foo#` auto-gensym within one `` ` ``, and the `(seq (concat (list …) …))` build shape. Likely an ADR-level feature (DA fork for the resolution policy + gensym scoping). clj-grounded against `(macroexpand …)` (also currently missing). Cross-ref D-158 (real-lib goal) / D-219 (reader feature precedent) / F-011. recall trigger: next macro-ergonomics / real-lib-load push — this is the gating enabler.
+    last_reviewed: "2026-06-03"
+  - id: "D-225"
+    status: |-
+      PARTIAL 2026-06-03 — `alter-var-root` LANDED (foundation); `with-redefs`
+      is the residual. `alter-var-root` (core.zig `alterVarRootFn`, registered):
+      atomically `(apply f current-root args)` into a Var's mutable root (the
+      cell `def` writes; `var_ref`→`*Var`→`setRoot`), returns the new root.
+      Single-threaded so no CAS loop. Corpus `alter_var_root` (5); 6 e2e
+      phase14_alter_var_root. RESIDUAL: `with-redefs` (+ `with-redefs-fn`) — the
+      test util that temporarily rebinds var roots with try/finally restore. Its
+      macro is fiddly to hand-write without syntax-quote (D-226); land it cleanly
+      once D-226 is in, OR hand-build the try/finally form over `alter-var-root`.
+      Also still missing the wider var/binding family: `var-get`/`var-set`/
+      `with-bindings`/`find-var`/`alter-meta!`/`bound-fn`. Cross-ref D-226
+      (syntax-quote) / D-183 (var meta) / F-011. recall trigger: when test-util
+      (with-redefs) or var-binding coverage is next.
+    category: "runtime"
+    barrier: |-
+      `with-redefs` / the var-mutation+binding family build on `alter-var-root`
+      (now landed) + var binding-frame infra. `with-redefs` is the highest-value.
+    last_reviewed: "2026-06-03"
+  - id: "D-227"
+    status: "now (separate-ns, found 2026-06-03) — clojure.test (deftest/is/are/testing/run-tests) absent."
+    category: "scope"
+    barrier: |-
+      **The `clojure.test` namespace is not implemented** — `deftest`/`is`/`are`/`testing`/`run-tests`/`with-test` all unresolved. Separate ns (not clojure.core; real code does `(require [clojure.test …])`), and the densest real-bug-finder (D-158 tier 2: run real libs' own `clojure.test` suites on cljw). Needs the `clojure.test` ns + assertion macros (`is`/`are`/`testing`/`deftest`) + a test registry + `run-tests` reporter. The macros lean on syntax-quote (D-226) → that lands first. Pairs with `print-table` (clojure.pprint) for the report. Cross-ref D-158 / D-226 (prereq) / F-011. recall trigger: the corpus-driven / real-lib-test validation phase.
+    last_reviewed: "2026-06-03"
   - id: "D-219"
     status: |-
       DISCHARGED 2026-06-03 (clj-parity sweep area, big-bang): namespaced map

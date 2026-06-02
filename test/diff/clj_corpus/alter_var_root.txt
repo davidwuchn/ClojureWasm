@@ -1,0 +1,10 @@
+(do (def avr1 10) (alter-var-root (var avr1) inc))
+;;=> 11
+(do (def avr2 10) (alter-var-root (var avr2) + 5) avr2)
+;;=> 15
+(do (def avr3 1) (alter-var-root (var avr3) (constantly 99)) avr3)
+;;=> 99
+(do (def avr4 [1 2]) (alter-var-root (var avr4) conj 3))
+;;=> [1 2 3]
+(do (def avr5 0) (alter-var-root (var avr5) inc) (alter-var-root (var avr5) inc) avr5)
+;;=> 2

@@ -12,6 +12,7 @@ const std = @import("std");
 const Value = @import("../../runtime/value/value.zig").Value;
 const Runtime = @import("../../runtime/runtime.zig").Runtime;
 const env_mod = @import("../../runtime/env.zig");
+const higher_order = @import("higher_order.zig");
 const tagged_literal_mod = @import("../../runtime/tagged_literal.zig");
 const Env = env_mod.Env;
 const error_mod = @import("../../runtime/error/info.zig");
@@ -1142,11 +1143,31 @@ pub fn resolvePrim(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLoca
     return Value.encodeHeapPtr(.var_ref, var_ptr);
 }
 
+/// `(alter-var-root v f & args)` — atomically set Var `v`'s root to
+/// `(apply f current-root args)` and return the new root. `v` is a `.var_ref`
+/// (from `#'name` / `var`). The root is the same mutable cell `def` writes, so
+/// this is the foundation `with-redefs` builds on. Single-threaded: no CAS loop.
+pub fn alterVarRootFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    if (args.len < 2)
+        return error_catalog.raise(.arity_below_min, loc, .{ .fn_name = "alter-var-root", .got = args.len, .min = 2 });
+    if (args[0].tag() != .var_ref)
+        return error_catalog.raise(.type_arg_invalid, loc, .{ .fn_name = "alter-var-root", .expected = "var", .actual = @tagName(args[0].tag()) });
+    const v: *env_mod.Var = @constCast(args[0].decodePtr(*const env_mod.Var));
+    const call_args = try rt.gpa.alloc(Value, args.len - 1);
+    defer rt.gpa.free(call_args);
+    call_args[0] = v.deref();
+    @memcpy(call_args[1..], args[2..]);
+    const newroot = try higher_order.invokeCallable(rt, env, args[1], call_args, loc);
+    v.setRoot(newroot);
+    return newroot;
+}
+
 const ENTRIES = [_]Entry{
     .{ .name = "hash", .f = &hashFn },
     .{ .name = "eval", .f = &evalFn },
     .{ .name = "gensym", .f = &gensymFn },
     .{ .name = "__resolve", .f = &resolvePrim },
+    .{ .name = "alter-var-root", .f = &alterVarRootFn },
     .{ .name = "__instance?", .f = &instanceQPrim },
     .{ .name = "nil?", .f = &nilQ },
     .{ .name = "true?", .f = &trueQ },

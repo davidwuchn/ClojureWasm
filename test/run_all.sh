@@ -434,6 +434,7 @@ run_step "e2e_phase14_string_indexed"       "bash test/e2e/phase14_string_indexe
 run_step "e2e_phase14_namespaced_maps"      "bash test/e2e/phase14_namespaced_maps.sh"
 run_step "e2e_phase14_atom_watch"           "bash test/e2e/phase14_atom_watch.sh"
 run_step "e2e_phase14_parallel_seq"         "bash test/e2e/phase14_parallel_seq.sh"
+run_step "e2e_phase14_alter_var_root"       "bash test/e2e/phase14_alter_var_root.sh"
 run_step "e2e_phase14_cljw_build"            "bash test/e2e/phase14_cljw_build.sh"
 run_step "e2e_phase14_core_cluster"          "bash test/e2e/phase14_core_cluster.sh"
 run_step "e2e_phase14_print_family"          "bash test/e2e/phase14_print_family.sh"

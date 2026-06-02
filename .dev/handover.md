@@ -17,18 +17,21 @@
   synchronous notify) + set-validator!/get-validator (appended `Atom.validator`,
   validate-before-commit → IllegalStateException, ref unchanged).
   delay/promise/future/atom/volatile already worked. Also landed: `pmap`/`pcalls`/
-  `pvalues` (sequential, result-identical to clj; parallelism deferred to threading
-  D-224) + `doall`/`dorun` (lazy-seq realization). Residuals: atom constructor
-  `:validator`/`:meta` kwargs (D-223), parallelism (D-224) — both low value.
-- **First action on resume**: continue Phase 15 concurrency OR drain a remaining
-  low-value clj gap. **The big Phase-15 architectural pieces need a proper
-  DA-fork entry** (do NOT cold-seize): `agent` (action queue), STM `dosync`/`ref`
-  (§9 STM 15.1-15.4 ADR), `locking`, `pmap`/`pcalls`/`pvalues`, real threading
-  (std.Io.Mutex + io). Smaller contained next units: `future-done?` + 3-arg
-  `deref` timeout (depend on whether future is sync/async — an architectural
-  call), `*out*`/`with-out-str` + Java arrays (`int-array`/`aget`) = the Phase-15
-  system-var-registry + F-004 array-slot (tracked). Remaining low-value clj gaps:
-  D-220 (re-matcher), D-222 (bindable print vars).
+  `pvalues` (sequential, result-identical; parallelism deferred D-224) + `doall`/
+  `dorun` + `alter-var-root` (var-root mutator, D-225). delay/promise/future/atom/
+  volatile already worked.
+- **First action on resume — HIGHEST value = syntax-quote (D-226)**: backtick
+  `` ` ``/`~`/`~@`/`foo#` is NOT implemented (verified), so no real-world library
+  macro can load — it gates the real-lib-test goal (D-158). A substantial reader
+  feature (tokenizer + a symbol-resolving/auto-gensym EXPANDER) → ADR-level,
+  DA-fork the resolution+gensym policy. Builds on the namespaced-map reader work
+  (D-219). After it: `with-redefs` (D-225) + clojure.test (D-227) become natural.
+- **Phase-15 architectural pieces need a DA-fork entry** (do NOT cold-seize):
+  `agent`, STM `dosync`/`ref` (§9 STM 15.1-15.4 ADR), `locking`, real threading
+  (std.Io.Threaded work-pool — also activates real `pmap` parallelism D-224 +
+  async `future` + 3-arg `deref` timeout). `*out*`/`with-out-str` + Java arrays
+  = the system-var-registry + F-004 array-slot (tracked). Low-value: D-220
+  (re-matcher), D-222 (bindable print vars), D-223 (atom kwargs).
 - **Forbidden**: "fixing" an AD-001..009 accepted divergence (set print-order,
   `(class)` simple name AD-003, error Kind, **AD-008 Long-overflow auto-promote**,
   cljw hash AD-009 — see `.dev/accepted_divergences.yaml`); widening the NaN-box
