@@ -36,6 +36,7 @@ pub const Atom = extern struct {
     _pad: [6]u8 = .{ 0, 0, 0, 0, 0, 0 },
     current: Value,
     watches: Value,
+    validator: Value,
 
     comptime {
         std.debug.assert(@alignOf(Atom) >= 8);
@@ -43,11 +44,28 @@ pub const Atom = extern struct {
     }
 };
 
-/// Allocate a heap-tracked Atom seeded with `init` (no watches).
+/// Allocate a heap-tracked Atom seeded with `init` (no watches, no validator).
 pub fn alloc(rt: *Runtime, init: Value) !Value {
+    return allocWith(rt, init, Value.nil_val);
+}
+
+/// Allocate an Atom with an optional `validator` (`nil` or a fn). The caller
+/// validates `init` against `validator` before exposing the atom (ADR-0081).
+pub fn allocWith(rt: *Runtime, init: Value, validator: Value) !Value {
     const cell = try rt.gc.alloc(Atom);
-    cell.* = .{ .header = HeapHeader.init(.atom), .current = init, .watches = Value.nil_val };
+    cell.* = .{ .header = HeapHeader.init(.atom), .current = init, .watches = Value.nil_val, .validator = validator };
     return Value.encodeHeapPtr(.atom, cell);
+}
+
+/// The atom's validator fn (`nil` or a fn). ADR-0081.
+pub fn validatorOf(v: Value) Value {
+    return v.decodePtr(*const Atom).validator;
+}
+
+/// Replace the atom's validator (`set-validator!`). ADR-0081.
+pub fn setValidator(v: Value, f: Value) void {
+    const a: *Atom = @constCast(v.decodePtr(*const Atom));
+    a.validator = f;
 }
 
 /// The atom's watches map (`nil` or a persistent `{key → fn}`). ADR-0081.
@@ -85,8 +103,10 @@ pub fn traceGc(gc_ptr: *anyopaque, header: *HeapHeader) void {
     const gc: *gc_heap_mod.GcHeap = @ptrCast(@alignCast(gc_ptr));
     const a: *Atom = @ptrCast(@alignCast(header));
     if (a.current.heapHeader()) |hdr| mark_sweep.mark(gc, hdr);
-    // The watches map (and its keys + fns) is reachable only through the atom.
+    // The watches map (+ keys/fns) and the validator fn are reachable only
+    // through the atom.
     if (a.watches.heapHeader()) |hdr| mark_sweep.mark(gc, hdr);
+    if (a.validator.heapHeader()) |hdr| mark_sweep.mark(gc, hdr);
 }
 
 /// Register the atom trace fn at `.atom`. Idempotent.

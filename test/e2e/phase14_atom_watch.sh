@@ -29,4 +29,15 @@ assert_eq 'cas' "$("$BIN" -e '(let [log (atom []) a (atom 5)] (add-watch a :k (f
 # a watch on a zero-watch atom path: no watch → no error, swap! works
 assert_eq 'nowatch' "$("$BIN" -e '(let [a (atom 0)] (swap! a inc) @a)')" '1'
 
-echo "OK — phase14_atom_watch (9 cases) green"
+# set-validator! / get-validator (ADR-0081): validator runs before commit; a
+# rejected change throws IllegalStateException and leaves the ref unchanged.
+assert_eq 'val_reject' "$("$BIN" -e '(let [a (atom 1)] (set-validator! a pos?) (try (reset! a -5) (catch Throwable e :rej)))')" ':rej'
+assert_eq 'val_unchanged' "$("$BIN" -e '(let [a (atom 1)] (set-validator! a pos?) (try (reset! a -5) (catch Throwable _ nil)) @a)')" '1'
+assert_eq 'val_pass' "$("$BIN" -e '(let [a (atom 1)] (set-validator! a pos?) (reset! a 9))')" '9'
+assert_eq 'val_swap' "$("$BIN" -e '(let [a (atom 1)] (set-validator! a pos?) (try (swap! a - 10) (catch Throwable _ :rej)) @a)')" '1'
+assert_eq 'val_setbad' "$("$BIN" -e '(try (set-validator! (atom 5) neg?) (catch Throwable e :rej))')" ':rej'
+assert_eq 'val_get' "$("$BIN" -e '(let [a (atom 1)] (set-validator! a pos?) (fn? (get-validator a)))')" 'true'
+assert_eq 'val_clear' "$("$BIN" -e '(let [a (atom 1)] (set-validator! a pos?) (set-validator! a nil) (reset! a -3))')" '-3'
+assert_eq 'val_cas' "$("$BIN" -e '(let [a (atom 5)] (set-validator! a pos?) (try (compare-and-set! a 5 -1) (catch Throwable _ :rej)))')" ':rej'
+
+echo "OK — phase14_atom_watch (17 cases) green"

@@ -12,9 +12,12 @@
   8 broad `clj_diff_sweep` probes → only AD-001..009 divergences + Phase-15
   structural gaps remain. D-210 is a STANDING `quality-loop floor: clj-parity`
   (drain any NEW sweep DIFF). Audit clean (private/audit-2026-06-03.md).
-- **Phase 15 (concurrency) entered** — first piece landed this session: **atom
-  watches D-157 / ADR-0081** (add-watch/remove-watch via an appended `Atom.watches`
-  field; synchronous notify). delay/promise/future/atom/volatile already worked.
+- **Phase 15 (concurrency) entered** — atom reference surface completed this
+  session: **D-157 / ADR-0081** add-watch/remove-watch (appended `Atom.watches`,
+  synchronous notify) + set-validator!/get-validator (appended `Atom.validator`,
+  validate-before-commit → IllegalStateException, ref unchanged).
+  delay/promise/future/atom/volatile already worked. Residual: atom constructor
+  `:validator`/`:meta` kwargs (D-223, low value).
 - **First action on resume**: continue Phase 15 concurrency OR drain a remaining
   low-value clj gap. **The big Phase-15 architectural pieces need a proper
   DA-fork entry** (do NOT cold-seize): `agent` (action queue), STM `dosync`/`ref`

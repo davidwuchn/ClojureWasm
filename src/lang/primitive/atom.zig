@@ -22,6 +22,21 @@ const volatile_mod = @import("../../runtime/volatile.zig");
 const higher_order = @import("higher_order.zig");
 const map_mod = @import("../../runtime/collection/map.zig");
 const list_mod = @import("../../runtime/collection/list.zig");
+const ex_info = @import("../../runtime/collection/ex_info.zig");
+
+/// Run the atom's validator (if any) against the proposed `newval` BEFORE the
+/// change is committed (ADR-0081). A falsey return throws IllegalStateException
+/// "Invalid reference state" — the caller must NOT commit (clj parity: the ref
+/// is left unchanged). A validator that itself throws propagates as-is.
+fn validateOrThrow(rt: *Runtime, env: *Env, a: Value, newval: Value, loc: SourceLocation) !void {
+    const v = atom_mod.validatorOf(a);
+    if (v.isNil()) return;
+    const ok = try higher_order.invokeCallable(rt, env, v, &[_]Value{newval}, loc);
+    if (!ok.isTruthy()) {
+        dispatch.last_thrown_exception = try ex_info.allocException(rt, "Invalid reference state", "IllegalStateException");
+        return error.ThrownValue;
+    }
+}
 
 /// Fire the atom's watches synchronously after a state change (ADR-0081 /
 /// D-157): for each `{key → fn}` registered by `add-watch`, call
@@ -67,6 +82,7 @@ pub fn resetFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation
     try error_catalog.checkArity("reset!", args, 2, loc);
     try requireAtom("reset!", args[0], loc);
     const old = atom_mod.current(args[0]);
+    try validateOrThrow(rt, env, args[0], args[1], loc);
     atom_mod.setCurrent(args[0], args[1]);
     try notifyWatches(rt, env, args[0], old, args[1], loc);
     return args[1];
@@ -87,6 +103,7 @@ pub fn swapFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation)
     try call_args.append(rt.gpa, old);
     try call_args.appendSlice(rt.gpa, args[2..]);
     const newval = try higher_order.invokeCallable(rt, env, f, call_args.items, loc);
+    try validateOrThrow(rt, env, a, newval, loc);
     atom_mod.setCurrent(a, newval);
     try notifyWatches(rt, env, a, old, newval, loc);
     return newval;
@@ -100,6 +117,7 @@ pub fn compareAndSetFn(rt: *Runtime, env: *Env, args: []const Value, loc: Source
     try requireAtom("compare-and-set!", args[0], loc);
     const cur = atom_mod.current(args[0]);
     if (@intFromEnum(cur) == @intFromEnum(args[1])) {
+        try validateOrThrow(rt, env, args[0], args[2], loc);
         atom_mod.setCurrent(args[0], args[2]);
         try notifyWatches(rt, env, args[0], cur, args[2], loc);
         return Value.true_val;
@@ -186,6 +204,35 @@ pub fn removeWatchFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLo
     return args[0];
 }
 
+// --- validators (set-validator! / get-validator) — ADR-0081 ---
+
+/// `(set-validator! ref f)` — install validator `f` (or `nil` to clear). clj
+/// validates the CURRENT value against the new validator immediately and throws
+/// IllegalStateException if it fails. Returns nil.
+pub fn setValidatorFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    try error_catalog.checkArity("set-validator!", args, 2, loc);
+    try requireAtom("set-validator!", args[0], loc);
+    const f = args[1];
+    if (!f.isNil()) {
+        const ok = try higher_order.invokeCallable(rt, env, f, &[_]Value{atom_mod.current(args[0])}, loc);
+        if (!ok.isTruthy()) {
+            dispatch.last_thrown_exception = try ex_info.allocException(rt, "Invalid reference state", "IllegalStateException");
+            return error.ThrownValue;
+        }
+    }
+    atom_mod.setValidator(args[0], f);
+    return Value.nil_val;
+}
+
+/// `(get-validator ref)` — the installed validator fn, or nil.
+pub fn getValidatorFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = rt;
+    _ = env;
+    try error_catalog.checkArity("get-validator", args, 1, loc);
+    try requireAtom("get-validator", args[0], loc);
+    return atom_mod.validatorOf(args[0]);
+}
+
 // --- registration ---
 
 const Entry = struct {
@@ -200,6 +247,8 @@ const ENTRIES = [_]Entry{
     .{ .name = "compare-and-set!", .f = &compareAndSetFn },
     .{ .name = "add-watch", .f = &addWatchFn },
     .{ .name = "remove-watch", .f = &removeWatchFn },
+    .{ .name = "set-validator!", .f = &setValidatorFn },
+    .{ .name = "get-validator", .f = &getValidatorFn },
     .{ .name = "volatile!", .f = &volatileBangFn },
     .{ .name = "vreset!", .f = &vresetFn },
     .{ .name = "vswap!", .f = &vswapFn },

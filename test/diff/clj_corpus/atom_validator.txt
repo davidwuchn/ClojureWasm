@@ -1,0 +1,20 @@
+(let [a (atom 1)] (set-validator! a pos?) (try (reset! a -5) (catch Throwable e :rejected)))
+;;=> :rejected
+(let [a (atom 1)] (set-validator! a pos?) (try (reset! a -5) (catch Throwable e :rejected)) @a)
+;;=> 1
+(let [a (atom 1)] (set-validator! a pos?) (reset! a 9))
+;;=> 9
+(let [a (atom 1)] (set-validator! a pos?) (try (swap! a - 10) (catch Throwable e :rejected)) @a)
+;;=> 1
+(try (set-validator! (atom 5) neg?) (catch Throwable e :rej))
+;;=> :rej
+(let [a (atom 1)] (set-validator! a pos?) (fn? (get-validator a)))
+;;=> true
+(get-validator (atom 1))
+;;=> nil
+(let [a (atom 1)] (set-validator! a pos?) (set-validator! a nil) (get-validator a))
+;;=> nil
+(let [a (atom 5)] (set-validator! a pos?) (compare-and-set! a 5 10) @a)
+;;=> 10
+(let [a (atom 5)] (set-validator! a pos?) (try (compare-and-set! a 5 -1) (catch Throwable e :rej)))
+;;=> :rej
