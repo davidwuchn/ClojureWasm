@@ -168,4 +168,9 @@ EOF
 ) || fail "case18: non-zero exit ($got)"
 assert_eq 'default_fn_carries_unknown' "$(awk 'END{print}' <<< "$got")" 'true'
 
-echo "OK — phase14_tagged_literal (18 cases) green"
+# --- Case 19 (regression): a TaggedLiteral works as a map KEY / set element.
+#     hash + `=` alone miss — the HAMT's rt-free keyEqValue needs the arm. ---
+assert_eq 'tagged_literal_map_key' "$("$BIN" -e "(get {(tagged-literal 'foo 5) :v} (tagged-literal 'foo 5))")" ':v'
+assert_eq 'tagged_literal_set_elem' "$("$BIN" -e "(contains? #{(tagged-literal 'foo 5)} (tagged-literal 'foo 5))")" 'true'
+
+echo "OK — phase14_tagged_literal (20 cases) green"

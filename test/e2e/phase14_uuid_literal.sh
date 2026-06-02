@@ -69,4 +69,12 @@ esac
 # --- Case 10: both backends agree (dual-backend parity) ---
 assert_eq 'backend_parity' "$("$BIN" --compare -e "(uuid? #uuid \"$U\")")" 'OK true'
 
-echo "OK — phase14_uuid_literal (13 cases) green"
+# --- Case 11: a UUID works as a map KEY / set element / distinct dedup.
+#     (Regression: hash + `=` alone are NOT enough — the map/set HAMT's
+#     rt-free `keyEqValue` needs a `.uuid` arm too, else lookup silently
+#     misses despite a matching hash.) ---
+assert_eq 'uuid_map_key'  "$("$BIN" -e "(get {#uuid \"$U\" :v} #uuid \"$U\")")" ':v'
+assert_eq 'uuid_set_elem' "$("$BIN" -e "(contains? #{#uuid \"$U\"} #uuid \"$U\")")" 'true'
+assert_eq 'uuid_distinct' "$("$BIN" -e "(count (distinct [#uuid \"$U\" #uuid \"$U\" #uuid \"00000000-0000-0000-0000-000000000000\"]))")" '2'
+
+echo "OK — phase14_uuid_literal (16 cases) green"

@@ -219,6 +219,18 @@ pub fn keyEqValue(a: Value, b: Value) bool {
     // non-bit-identical pair already fell through the identity check).
     if (ta == .typed_instance and tb == .typed_instance)
         return typedInstanceKeyEq(a, b);
+    // UUID / TaggedLiteral keys by value (partner of the valueEqual +
+    // valueHash arms, ADR-0074/0075) — without these a uuid/tagged-literal
+    // hashes into the right bucket but the in-bucket key compare returns
+    // false, so it can never be a map key / set element (the bug the
+    // hash+equal arms alone did NOT close).
+    if (ta == .uuid and tb == .uuid)
+        return std.mem.eql(u8, &uuid_mod.asUuid(a).bytes, &uuid_mod.asUuid(b).bytes);
+    if (ta == .tagged_literal and tb == .tagged_literal) {
+        const tla = tagged_literal_mod.asTaggedLiteral(a);
+        const tlb = tagged_literal_mod.asTaggedLiteral(b);
+        return keyEqValue(tla.tag, tlb.tag) and keyEqValue(tla.form, tlb.form);
+    }
     return false;
 }
 
