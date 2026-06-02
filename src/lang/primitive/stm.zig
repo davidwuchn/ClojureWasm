@@ -20,6 +20,7 @@ const ref_mod = @import("../../runtime/stm/ref.zig");
 const delay_mod = @import("../../runtime/delay.zig");
 const promise_mod = @import("../../runtime/promise.zig");
 const future_mod = @import("../../runtime/future.zig");
+const lazy_seq_mod = @import("../../runtime/lazy_seq.zig");
 const atom_mod = @import("../../runtime/atom.zig");
 const volatile_mod = @import("../../runtime/volatile.zig");
 const reduced_mod = @import("../../runtime/collection/reduced.zig");
@@ -108,8 +109,29 @@ pub fn realizedQFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLoca
         .promise => if (promise_mod.isRealised(v)) Value.true_val else Value.false_val,
         .future => if (future_mod.isRealised(v)) Value.true_val else Value.false_val,
         .ref => Value.true_val,
+        // A lazy seq is IPending: true once its head thunk is forced.
+        .lazy_seq => if (lazy_seq_mod.isRealised(v)) Value.true_val else Value.false_val,
         else => error_catalog.raise(.feature_not_supported, loc, .{ .name = "realized? called on non-IPending value" }),
     };
+}
+
+/// `(force x)` — if `x` is a delay, force + return its value (memoised);
+/// otherwise return `x` unchanged (clj: `(if (delay? x) (deref x) x)`).
+/// The `.delay` type + macro + deref already existed; only this
+/// user-facing fn was unwired.
+pub fn forceFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    try error_catalog.checkArity("force", args, 1, loc);
+    const v = args[0];
+    if (v.tag() == .delay) return try delay_mod.force(rt, env, v, loc);
+    return v;
+}
+
+/// `(delay? x)` — true iff `x` is a Delay.
+pub fn delayQFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = rt;
+    _ = env;
+    try error_catalog.checkArity("delay?", args, 1, loc);
+    return if (args[0].tag() == .delay) Value.true_val else Value.false_val;
 }
 
 // --- registration ---
@@ -127,6 +149,8 @@ const ENTRIES = [_]Entry{
     .{ .name = "promise", .f = &promiseFn },
     .{ .name = "deliver", .f = &deliverFn },
     .{ .name = "realized?", .f = &realizedQFn },
+    .{ .name = "force", .f = &forceFn },
+    .{ .name = "delay?", .f = &delayQFn },
 };
 
 pub fn register(env: *Env, rt_ns: *env_mod.Namespace) !void {

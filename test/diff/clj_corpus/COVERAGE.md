@@ -174,6 +174,14 @@ confirmed exprs into a `*.txt` corpus here via `--corpus`.
   (14). Only DIFF: `(doto (atom …) …)` returns the atom whose print form is
   `#<atom>` vs clj's `#object[clojure.lang.Atom 0xADDR {…}]` — an acceptable
   print divergence (clj embeds a non-reproducible identity hash).
+- **delay / for-modifiers / lazy** — `for` with `:when`/`:let`/`:while` (+
+  multi-binding), nested `doseq`, `memoize`, `iterate`/`cycle`/`reductions`/
+  `take-while`. Gaps found+fixed: **`force`** + **`delay?`** were unwired (the
+  `.delay` type + `delay` macro + deref-forces + `realized?`-on-delay already
+  existed — only the user-facing `force`/`delay?` fns were missing); and
+  **`realized?` on a lazy-seq** raised "non-IPending" (added the `.lazy_seq`
+  arm via `lazy_seq.isRealised`, the `realized_flag` discriminator). Corpus
+  `lazy_eval` (15).
 - **assoc-path + merge** — `assoc-in`/`update-in`/`get-in` (deep create +
   missing-path default) over maps AND vectors, `update`(+fnil)/`merge`(+nil)/
   `merge-with`/`select-keys`/`dissoc`(multi)/`reduce-kv`/`zipmap`/`frequencies`

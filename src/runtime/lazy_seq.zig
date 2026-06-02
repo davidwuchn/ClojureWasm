@@ -86,6 +86,12 @@ pub fn alloc(rt: *Runtime, thunk_fn: Value) !Value {
     return Value.encodeHeapPtr(.lazy_seq, ls);
 }
 
+/// True iff the LazySeq's thunk has already been forced. Powers
+/// `(realized? ls)` introspection (the `realized_flag` discriminator).
+pub fn isRealised(v: Value) bool {
+    return v.decodePtr(*const LazySeq).realized_flag == 1;
+}
+
 /// `force(rt, env, v)` — realise the LazySeq's thunk on first
 /// access, return the cached realised seq on subsequent calls.
 /// `env` is threaded to the thunk's vtable.callFn invocation so
