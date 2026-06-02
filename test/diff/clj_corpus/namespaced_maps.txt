@@ -1,0 +1,42 @@
+(read-string "#:foo{:a 1 :b 2}")
+;;=> #:foo{:a 1, :b 2}
+(read-string "#:foo{:a 1 :x/c 3 :_/d 4}")
+;;=> {:foo/a 1, :x/c 3, :d 4}
+(= #:foo{:a 1} {:foo/a 1})
+;;=> true
+(pr-str #:foo{:a 1 :b 2})
+;;=> "#:foo{:a 1, :b 2}"
+(pr-str {:foo/a 1 :foo/b 2})
+;;=> "#:foo{:a 1, :b 2}"
+(pr-str {:a 1 :b 2})
+;;=> "{:a 1, :b 2}"
+(pr-str {:foo/a 1 :bar/b 2})
+;;=> "{:foo/a 1, :bar/b 2}"
+(pr-str #:foo{:a 1 :_/b 2})
+;;=> "{:foo/a 1, :b 2}"
+(str #:foo{:a 1})
+;;=> "#:foo{:a 1}"
+(pr-str (read-string "#:foo{:a 1}"))
+;;=> "#:foo{:a 1}"
+(keys #:foo{:a 1 :b 2})
+;;=> (:foo/a :foo/b)
+(:foo/a #:foo{:a 1})
+;;=> 1
+(get #:foo{:a 1} :foo/a)
+;;=> 1
+(count #:foo{:a 1 :b 2 :c 3})
+;;=> 3
+(pr-str #:foo{})
+;;=> "{}"
+(pr-str {})
+;;=> "{}"
+(pr-str #:a.b.c{:x 1})
+;;=> "#:a.b.c{:x 1}"
+(:a.b.c/x #:a.b.c{:x 1})
+;;=> 1
+(pr-str (assoc #:foo{:a 1} :foo/b 2))
+;;=> "#:foo{:a 1, :b 2}"
+(pr-str #:foo{:nested #:bar{:x 1}})
+;;=> "#:foo{:nested #:bar{:x 1}}"
+(vals #:foo{:a 10 :b 20})
+;;=> (10 20)

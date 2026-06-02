@@ -10,10 +10,42 @@
 
 active:
   - id: "D-219"
-    status: "now (clj-parity sweep area, exploratory-found 2026-06-03) — namespaced map literals `#:ns{…}` unsupported (reader + printer)."
+    status: |-
+      DISCHARGED 2026-06-03 (clj-parity sweep area, big-bang): namespaced map
+      literals `#:ns{…}` / `#::{…}` / `#::alias{…}` now read + print at clj parity.
+      READER: tokenizer `readDispatch` emits a `.ns_map` token for `#:`; the
+      reader (`readNsMap`) parses the ns spec and reads the following `{…}` map,
+      rewriting each unqualified keyword/symbol KEY's SymbolRef — explicit→set
+      ns, `#::`→auto_resolve+null ns (current), `#::alias`→auto_resolve+alias ns,
+      `:_/x`→strip ns, already-qualified→keep. The analyzer's existing auto_resolve
+      path resolves `#::`/`#::alias` (no analyzer change). PRINTER: new threadlocal
+      `print.print_namespace_maps` (default true, matching clojure.main's `-e`
+      binding); `printMap` emits compact `#:ns{:a 1, :b 2}` when all array_map keys
+      share one namespace (`mapCommonNs` + `printMapKey` strip). Scoped to
+      array_map (insertion-ordered = clj-matching; hash_map >8 keys is already
+      AD-001 order-divergent, so compact gives no parity benefit there). clj-verified:
+      read/qualify/`:_/`-strip/`#::`-current/`#::alias`, compact print, mixed-ns→
+      expanded, nested, str+pr-str round-trip. Corpus `namespaced_maps` (21); 13 e2e
+      phase14_namespaced_maps (registered). RESIDUALS: `#::`/`#::alias` via
+      `read-string` (not the eval-literal path) inherit the read-string auto-resolve
+      gap → **D-221**; `*print-namespace-maps*` is threadlocal-default-true, not a
+      bindable Clojure var (consistent with `*print-readably*`; bindable print vars
+      → **D-222**). Cross-ref D-221 / D-222 / AD-001 (hash_map order) / F-011.
     category: "runtime"
     barrier: |-
       **Namespaced map literals `#:ns{…}` / `#::{…}` / `#::alias{…}` are not supported** (reader + printer): `(read-string "#:foo{:a 1}")` → cljw EDN-reader-error / clj `#:foo{:a 1}` (= `{:foo/a 1}`); `(pr-str #:foo{:a 1 :b 2})` → cljw "Invalid token ':foo'" / clj "#:foo{:a 1, :b 2}". A Clojure 1.9 reader feature: `#:ns{:a 1, :b 2}` reads as `{:ns/a 1, :ns/b 2}` — unqualified keyword/symbol keys are qualified with `ns`; `:_/a` → `:a` (no namespace); already-qualified keys keep their ns; `#::{…}` uses the current ns; `#::alias{…}` resolves the alias. PRINTER: when `*print-namespace-maps*` is true (clojure.main binds it true) and ALL keys are keyword/symbol sharing one namespace, `pr` emits `#:ns{…}`. Scope: tokenizer `readDispatch` (`#:`), reader (read ns + map + qualify keys), printer (common-ns detection, gated on `*print-namespace-maps*`), the `^:dynamic *print-namespace-maps*` var. Discharge = big-bang reader+printer to parity, corpus `namespaced_maps`. Cross-ref ADR-0073 (data-reader infra) / F-011. recall trigger: clj-parity namespaced-map sweep.
+    last_reviewed: "2026-06-03"
+  - id: "D-222"
+    status: "now (infra gap, found 2026-06-03 during D-219) — print flags (`*print-readably*`, `*print-namespace-maps*`) are threadlocals, not bindable Clojure vars."
+    category: "runtime"
+    barrier: |-
+      **cljw's print flags are Zig threadlocals set imperatively by the print primitives, NOT bindable `^:dynamic` Clojure vars**: `*print-readably*` (D-185) is a threadlocal toggled by `print`/`println`; `*print-namespace-maps*` (D-219) is a threadlocal defaulting true. clj exposes both as dynamic vars: `(binding [*print-namespace-maps* false] (pr-str {:foo/a 1}))` → "{:foo/a 1}". cljw can't bind them (the symbols don't resolve), so a user can't override the default. A no-op var would be the silent-default-shift smell (forbidden), so they stay threadlocal-only for now. Discharge: wire each as a real `^:dynamic` var whose CURRENT bound value the print primitives (`pr`/`prn`/`pr-str`/`str`/`println`) read into the threadlocal before rendering (needs a var-current-value read from a Zig primitive — the missing infra). Also covers `*print-length*`/`*print-level*` if added. clj-grounded: binding overrides the default for the dynamic extent. LOW-MEDIUM value (defaults already match clj `-e`; only explicit overrides are unavailable). Cross-ref D-185 (*print-readably*) / D-219 (*print-namespace-maps*) / F-011. recall trigger: when print-control vars / `binding` of print flags is taken up.
+    last_reviewed: "2026-06-03"
+  - id: "D-221"
+    status: "now (minor divergence, exploratory-found 2026-06-03 during D-219) — `read-string` does not resolve `::` auto-keywords."
+    category: "runtime"
+    barrier: |-
+      **`read-string` leaves `::name` / `::alias/name` auto-keywords unresolved** (the analyzer-time auto-resolve does not run in the `read-string` path): `(namespace (read-string "::foo"))` → cljw `nil` / clj `"user"`; `(keys (read-string "#::{:a 1}"))` → cljw `(:a)` / clj `(:user/a)`. The `-e`/eval LITERAL path resolves correctly (`#::{:a 1}` → `{:user/a 1}`) because it goes through the analyzer with ns context; `read-string` builds the form but skips the auto-resolve step. EXPLICIT `#:foo{…}` works via read-string (no auto-resolve needed). Scope: thread the current-ns auto-resolve into the read-string code path (resolve `auto_resolve` keyword Forms against `*ns*` + its aliases). LOW value (read-string of `::` literals is rare; the eval path works). Cross-ref D-219 (surfacer — `#::`/`#::alias` via read-string inherit this) / reader.zig auto_resolve. recall trigger: when read-string / EDN auto-resolve parity is taken up.
     last_reviewed: "2026-06-03"
   - id: "D-220"
     status: "now (clj-parity sweep area, exploratory-found 2026-06-03) — stateful regex `re-matcher`/`re-groups` unimplemented."

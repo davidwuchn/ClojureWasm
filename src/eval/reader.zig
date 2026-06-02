@@ -99,6 +99,7 @@ pub const Reader = struct {
             .deref => self.readDeref(tok),
             .var_quote => self.readVarQuote(tok),
             .tagged => self.readTagged(tok),
+            .ns_map => self.readNsMap(tok),
             .meta_caret => self.readMeta(tok),
             .symbolic => self.readSymbolic(tok),
             .discard => self.readDiscard(tok),
@@ -475,6 +476,71 @@ pub const Reader = struct {
         const form_ptr = self.allocator.create(Form) catch return error.OutOfMemory;
         form_ptr.* = inner;
         return Form{ .data = .{ .tagged = .{ .tag = tag, .form = form_ptr } }, .location = loc };
+    }
+
+    /// `#:ns{…}` / `#::{…}` / `#::alias{…}` namespaced map (D-219). The token
+    /// text is the prefix (`#:foo` / `#::` / `#::alias`); read the following
+    /// `{…}` map and qualify each unqualified keyword/symbol KEY with the ns.
+    /// `:_/x` keys strip to `:x`; already-qualified keys keep their ns. `#::`/
+    /// `#::alias` set `auto_resolve` so the analyzer resolves at analyze time.
+    fn readNsMap(self: *Reader, tok: Token) ReadError!Form {
+        const loc = self.locOf(tok);
+        self.depth += 1;
+        if (self.depth > self.max_depth)
+            return error_catalog.raise(.form_nesting_too_deep, loc, .{ .max = self.max_depth });
+        defer self.depth -= 1;
+
+        // Token text is `#:<spec>`; strip the 2-byte `#:` prefix.
+        const txt = tok.text(self.source);
+        const spec = txt[2..];
+        var ns: ?[]const u8 = null;
+        var auto = false;
+        if (spec.len > 0 and spec[0] == ':') {
+            // `#::` (current ns) or `#::alias`.
+            auto = true;
+            const alias = spec[1..];
+            ns = if (alias.len == 0) null else alias;
+        } else {
+            if (spec.len == 0)
+                return error_catalog.raise(.token_invalid, loc, .{ .token = txt });
+            ns = spec;
+        }
+
+        const map_tok = self.nextToken();
+        if (map_tok.kind == .eof) return error_catalog.raise(.eof_unexpected, loc, .{});
+        if (map_tok.kind != .lbrace)
+            return error_catalog.raise(.token_invalid, self.locOf(map_tok), .{ .token = map_tok.text(self.source) });
+        const map_form = try self.readMap(map_tok);
+
+        const items = map_form.data.map;
+        const new_items = self.allocator.alloc(Form, items.len) catch return error.OutOfMemory;
+        for (items, 0..) |it, idx| {
+            new_items[idx] = qualifyKey(it, ns, auto, idx % 2 == 0);
+        }
+        return Form{ .data = .{ .map = new_items }, .location = loc };
+    }
+
+    /// Qualify a namespaced-map KEY Form with the map's namespace (D-219).
+    /// Only unqualified keyword/symbol keys (at even index `is_key`) are
+    /// rewritten; values + non-symbolic keys pass through. `:_/x` strips to
+    /// `:x`; already-qualified keys keep their own ns; `#::`/`#::alias` set
+    /// `auto_resolve` so the analyzer resolves at analyze time.
+    fn qualifyKey(key: Form, ns: ?[]const u8, auto: bool, is_key: bool) Form {
+        if (!is_key) return key;
+        return switch (key.data) {
+            .keyword => |sref| Form{ .data = .{ .keyword = qualifySref(sref, ns, auto) }, .location = key.location },
+            .symbol => |sref| Form{ .data = .{ .symbol = qualifySref(sref, ns, auto) }, .location = key.location },
+            else => key,
+        };
+    }
+
+    fn qualifySref(sref: SymbolRef, ns: ?[]const u8, auto: bool) SymbolRef {
+        if (sref.auto_resolve) return sref;
+        if (sref.ns) |existing| {
+            if (std.mem.eql(u8, existing, "_")) return .{ .ns = null, .name = sref.name, .auto_resolve = false };
+            return sref;
+        }
+        return .{ .ns = ns, .name = sref.name, .auto_resolve = auto };
     }
 
     /// `^meta target` reader macro → `target` with `meta` attached to

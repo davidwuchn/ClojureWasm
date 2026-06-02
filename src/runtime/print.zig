@@ -319,6 +319,56 @@ pub fn printCharReadable(w: *Writer, cp: u21) Writer.Error!void {
 /// `str`-collections keep the default.
 pub threadlocal var print_readably: bool = true;
 
+/// Clojure's `*print-namespace-maps*` (D-219). When true and every key of a
+/// map is a keyword/symbol sharing one namespace, the map prints in the compact
+/// `#:ns{:a 1, :b 2}` form. Defaults to `true` to match `clojure.main` (which
+/// binds it true for `-e`/REPL), so `cljw -e` mirrors `clj -M -e`. A thread-
+/// local since the pure `printValue` renderer carries no `rt`/`env`.
+pub threadlocal var print_namespace_maps: bool = true;
+
+/// The shared namespace of an array_map's keys (D-219), or null when the map
+/// is empty, any key is not a keyword/symbol, any key has no namespace, or the
+/// namespaces differ. Scoped to `.array_map` (small, insertion-ordered maps —
+/// the overwhelmingly common namespaced-map shape, and the one whose key order
+/// matches clj). A `.hash_map` (>8 keys) already prints in cljw HAMT order, not
+/// clj's (AD-001), so the compact form there gives no parity benefit and is
+/// skipped. Used to decide the compact `#:ns{…}` print form.
+fn mapCommonNs(v: Value) ?[]const u8 {
+    if (v.tag() != .array_map) return null;
+    const am = v.decodePtr(*const map_collection.ArrayMap);
+    if (am.count == 0) return null;
+    var common: ?[]const u8 = null;
+    var i: u32 = 0;
+    while (i < am.count) : (i += 1) {
+        const key = am.entries[2 * i];
+        const kns: ?[]const u8 = switch (key.tag()) {
+            .keyword => keyword.asKeyword(key).ns,
+            .symbol => symbol.asSymbol(key).ns,
+            else => return null,
+        };
+        const n = kns orelse return null;
+        if (common) |c| {
+            if (!std.mem.eql(u8, c, n)) return null;
+        } else common = n;
+    }
+    return common;
+}
+
+/// Print a map key, omitting its namespace when `strip` (the compact
+/// `#:ns{…}` form already carries the shared namespace). Non-symbolic keys
+/// are unaffected by `strip`.
+fn printMapKey(w: *Writer, key: Value, strip: bool) Writer.Error!void {
+    if (!strip) return printValue(w, key);
+    switch (key.tag()) {
+        .keyword => {
+            try w.writeByte(':');
+            try w.writeAll(keyword.asKeyword(key).name);
+        },
+        .symbol => try w.writeAll(symbol.asSymbol(key).name),
+        else => try printValue(w, key),
+    }
+}
+
 pub fn printValue(w: *Writer, v: Value) Writer.Error!void {
     switch (v.tag()) {
         .nil => try w.writeAll("nil"),
@@ -628,13 +678,21 @@ fn printHamtEntries(w: *Writer, node: *const map_collection.HamtMapNode, first: 
 }
 
 pub fn printMap(w: *Writer, v: Value) Writer.Error!void {
+    // Compact namespaced-map form `#:ns{:a 1, :b 2}` (D-219) when enabled and
+    // all keys share one namespace (array_map only — see `mapCommonNs`).
+    const compact_ns: ?[]const u8 = if (print_namespace_maps) mapCommonNs(v) else null;
+    if (compact_ns) |ns| {
+        try w.writeAll("#:");
+        try w.writeAll(ns);
+    }
+    const strip = compact_ns != null;
     try w.writeByte('{');
     if (v.tag() == .array_map) {
         const am = v.decodePtr(*const map_collection.ArrayMap);
         var i: u32 = 0;
         while (i < am.count) : (i += 1) {
             if (i > 0) try w.writeAll(", ");
-            try printValue(w, am.entries[2 * i]);
+            try printMapKey(w, am.entries[2 * i], strip);
             try w.writeByte(' ');
             try printValue(w, am.entries[2 * i + 1]);
         }
