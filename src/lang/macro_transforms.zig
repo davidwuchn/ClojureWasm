@@ -2052,6 +2052,77 @@ fn expandDeftype(
     return lowerDefType(arena, rt, args, loc, "__deftype!");
 }
 
+/// Bring a defrecord/deftype's declared fields into scope as implicit locals
+/// inside a protocol method body (D-202 gap 1), matching Clojure: a method
+/// `(m [this] (* v 2))` sees the bare field `v` without an explicit
+/// `(:v this)` / `(.v this)`. Wraps the body in
+/// `(let* [<field> (.<field> <instance>) ...] <body>)` over the dot-field
+/// accessor — `(.v inst)` works for BOTH defrecord and deftype, whereas
+/// `(:v inst)` returns nil on a deftype (it is not map-like).
+///
+/// A field whose name collides with a method param is OMITTED so the param
+/// shadows the field — verified against clj: `(m [this v] v)` returns the
+/// param, not the field. `<instance>` is the method's first param (the
+/// instance, possibly `_` — still a bound local). A malformed impl is
+/// returned untouched so `expandExtendType` raises the precise error.
+fn wrapMethodBodyWithFields(
+    arena: std.mem.Allocator,
+    impl: Form,
+    fields: []const Form,
+    loc: SourceLocation,
+) macro_dispatch.ExpandError!Form {
+    if (impl.data != .list or impl.data.list.len < 3 or
+        impl.data.list[0].data != .symbol or
+        impl.data.list[1].data != .vector)
+        return impl;
+    const items = impl.data.list;
+    const params = items[1].data.vector;
+    const body = items[2..];
+    if (params.len == 0) return impl;
+    const instance = params[0];
+    if (instance.data != .symbol) return impl;
+
+    var binds: std.ArrayList(Form) = .empty;
+    defer binds.deinit(arena);
+    for (fields) |f| {
+        if (f.data != .symbol) continue;
+        const fname = f.data.symbol.name;
+        var shadowed = false;
+        for (params) |p| {
+            if (p.data == .symbol and std.mem.eql(u8, p.data.symbol.name, fname)) {
+                shadowed = true;
+                break;
+            }
+        }
+        if (shadowed) continue;
+        // (.<fname> instance)
+        const dot_sym = blk: {
+            const buf = try arena.alloc(u8, 1 + fname.len);
+            buf[0] = '.';
+            @memcpy(buf[1..], fname);
+            break :blk sym(buf, loc);
+        };
+        var acc = try arena.alloc(Form, 2);
+        acc[0] = dot_sym;
+        acc[1] = instance;
+        try binds.append(arena, f);
+        try binds.append(arena, try list(arena, acc, loc));
+    }
+    if (binds.items.len == 0) return impl;
+
+    var let_items = try arena.alloc(Form, 2 + body.len);
+    let_items[0] = sym("let*", loc);
+    let_items[1] = try vec(arena, binds.items, loc);
+    @memcpy(let_items[2..], body);
+    const let_form = try list(arena, let_items, loc);
+
+    var new_items = try arena.alloc(Form, 3);
+    new_items[0] = items[0];
+    new_items[1] = items[1];
+    new_items[2] = let_form;
+    return list(arena, new_items, impl.location);
+}
+
 /// Shared `defrecord`/`deftype` lowering. `ctor_prim` is the `rt/`-namespaced
 /// registration primitive (`__defrecord!` | `__deftype!`). Emits
 /// `(do (def Name (rt/<ctor_prim> 'Name ['fields])) (def ->Name (fn* [..]
@@ -2165,7 +2236,10 @@ fn lowerDefType(
         ext_items[0] = sym("extend-type", proto_form.location);
         ext_items[1] = args[0];
         ext_items[2] = proto_form;
-        @memcpy(ext_items[3..], impls);
+        // Each method body gets the record fields as implicit locals (D-202
+        // gap 1); a marker section (zero impls) skips the loop entirely.
+        for (impls, 0..) |impl, k|
+            ext_items[3 + k] = try wrapMethodBodyWithFields(arena, impl, fields_in, loc);
         try sections.append(arena, try list(arena, ext_items, proto_form.location));
     }
 
