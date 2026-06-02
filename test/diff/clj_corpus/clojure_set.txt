@@ -1,0 +1,46 @@
+(clojure.set/union)
+;;=> #{}
+(clojure.set/union #{1 2})
+;;=> #{1 2}
+(clojure.set/union #{} #{1})
+;;=> #{1}
+(clojure.set/intersection #{1 2})
+;;=> #{1 2}
+(clojure.set/intersection #{1 2} #{3 4})
+;;=> #{}
+(clojure.set/intersection #{1 2 3} #{2 3} #{3})
+;;=> #{3}
+(clojure.set/difference #{1 2 3} #{2})
+;;=> #{1 3}
+(clojure.set/difference #{1 2 3} #{2} #{3})
+;;=> #{1}
+(clojure.set/difference #{1 2} #{1 2})
+;;=> #{}
+(clojure.set/subset? #{1} #{1 2})
+;;=> true
+(clojure.set/subset? #{1 2} #{1})
+;;=> false
+(clojure.set/subset? #{} #{1})
+;;=> true
+(clojure.set/superset? #{1 2} #{1})
+;;=> true
+(clojure.set/superset? #{1} #{1 2})
+;;=> false
+(clojure.set/select pos? #{-1 0 1 2})
+;;=> #{1 2}
+(clojure.set/map-invert {:a 1 :b 2})
+;;=> {1 :a, 2 :b}
+(clojure.set/map-invert {})
+;;=> {}
+(clojure.set/rename-keys {:a 1 :b 2} {:a :x})
+;;=> {:b 2, :x 1}
+(clojure.set/rename-keys {:a 1 :b 2} {:a :x :b :y})
+;;=> {:x 1, :y 2}
+(clojure.set/project #{{:a 1 :b 2} {:a 3 :b 4}} [:a])
+;;=> #{{:a 1} {:a 3}}
+(clojure.set/rename #{{:a 1 :b 2}} {:a :x})
+;;=> #{{:b 2, :x 1}}
+(clojure.set/index #{{:a 1 :b 2} {:a 1 :b 3}} [:a])
+;;=> {{:a 1} #{{:a 1, :b 2} {:a 1, :b 3}}}
+(clojure.set/join #{{:a 1}} #{{:a 1 :b 2}})
+;;=> #{{:a 1, :b 2}}

@@ -140,8 +140,10 @@ confirmed exprs into a `*.txt` corpus here via `--corpus`.
 - **clojure.edn/read-string** — vector/map/set/list/string/keyword/ratio/
   bigint/bigdec/float/bool/nil/neg/nested/quote literals + pr-str round-trip
   all at parity (only set print order + `(class)`→`Long` diverge, both
-  acceptable). Corpus `edn_readstring`. (Tagged literals `#inst`/`#uuid` +
-  custom `:readers` not yet probed.)
+  acceptable). Corpus `edn_readstring`. Tagged-literal reader infra + the
+  2-arity `[opts s]` (`:readers`/`:default`/`:eof`) landed (ADR-0073); `#uuid`
+  is a real value (ADR-0074); `tagged-literal`/`tagged-literal?` (ADR-0075).
+  Only `#inst`/Date remains (structurally-deferred, D-200 row).
 - **metadata (with-meta / vary-meta)** — meta read/attach on vector/map/list/
   set/seq, vary-meta assoc/update/multi-key/fn, nested re-wrap, `(with-meta x
   nil)`, meta-doesn't-affect-`=`, meta not printed. All at parity (no gaps).
@@ -262,6 +264,13 @@ confirmed exprs into a `*.txt` corpus here via `--corpus`.
   Kind (`[type_error]` / `[arithmetic_error]`) where clj prints the JVM
   exception class (`ClassCastException` / `ArithmeticException`). Both correctly
   reject — e.g. `(numerator 5)`, `(quot 10 0)`, `(mod 10 0)`. ADR-0059 no-JVM.
+- **clojure.set** — `union`/`intersection`/`difference` (0..3-arity + empty),
+  `subset?`/`superset?`, `select`, `map-invert`, `rename-keys`, `project`,
+  `rename`, `index`, `join` all at parity. Corpus `clojure_set` (23 golden).
+  The only DIFFs are **set print order** (`#{1 2 3}` vs `#{1 3 2}`) on the
+  set-returning ops — the known non-bug (clj_diff_sweep.md), so those lines are
+  verified-at-parity-modulo-order but intentionally NOT in the regression
+  corpus (the deterministic-output ops are).
 
 ## Structural-deferred (F-003 — big-bang, do NOT seize incrementally)
 
