@@ -170,6 +170,13 @@ confirmed exprs into a `*.txt` corpus here via `--corpus`.
   (14). Only DIFF: `(doto (atom …) …)` returns the atom whose print form is
   `#<atom>` vs clj's `#object[clojure.lang.Atom 0xADDR {…}]` — an acceptable
   print divergence (clj embeds a non-reproducible identity hash).
+- **sorted collections + clojure.set** — `sorted-map`/`sorted-set` (ordered
+  keys/seq/first/get/keys/conj/disj/contains?), `subseq`/`rsubseq` (range
+  scans), `into (sorted-map) …`, + `clojure.set` union/intersection/difference/
+  subset?/superset?/select/rename-keys/map-invert all at parity by VALUE.
+  Corpus `sorted_coll` (17). The only DIFFs are non-sorted hash-set print
+  order (`#{2 3}` vs `#{3 2}`) — the documented acceptable divergence, not a
+  bug (sorted colls print in order, so they match exactly).
 
 ## Next-sweep candidates (gap-confirmed or unswept)
 
