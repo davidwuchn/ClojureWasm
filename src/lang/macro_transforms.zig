@@ -1633,7 +1633,7 @@ fn expandDefmulti(
     loc: SourceLocation,
 ) macro_dispatch.ExpandError!Form {
     _ = rt;
-    if (args.len != 2)
+    if (args.len < 2)
         return error_catalog.raise(.defmulti_form_incomplete, loc, .{});
     if (args[0].data != .symbol or args[0].data.symbol.ns != null)
         return error_catalog.raise(.defmulti_name_invalid, args[0].location, .{});
@@ -1641,13 +1641,30 @@ fn expandDefmulti(
     const name_form = args[0];
     const dispatch_fn_form = args[1];
 
+    // Trailing options after the dispatch fn (clj: `:default <val>` overrides
+    // the no-match dispatch value, `:hierarchy <h>` swaps the hierarchy var).
+    // Inline key/value pairs; unknown keys are ignored (forward-compatible).
+    var default_form: Form = .{ .data = .{ .keyword = .{ .ns = null, .name = "default" } }, .location = loc };
+    var hierarchy_form: Form = sym("-global-hierarchy", loc);
+    var oi: usize = 2;
+    while (oi + 1 < args.len) : (oi += 2) {
+        const opt = args[oi];
+        if (opt.data == .keyword and opt.data.keyword.ns == null) {
+            if (std.mem.eql(u8, opt.data.keyword.name, "default")) {
+                default_form = args[oi + 1];
+            } else if (std.mem.eql(u8, opt.data.keyword.name, "hierarchy")) {
+                hierarchy_form = args[oi + 1];
+            }
+        }
+    }
+
     // (quote name)
     var quote_items = try arena.alloc(Form, 2);
     quote_items[0] = sym("quote", loc);
     quote_items[1] = name_form;
     const quoted_name = try list(arena, quote_items, loc);
 
-    // (rt/__make-multifn (quote name) dispatch-fn :default -global-hierarchy)
+    // (rt/__make-multifn (quote name) dispatch-fn <default> <hierarchy>)
     // The bare `-global-hierarchy` symbol resolves to the public atom in the
     // calling ns (referred from clojure.core at boot) so dispatch consults the
     // live, mutable hierarchy — `derive` after `defmulti` is seen (D-161).
@@ -1655,8 +1672,8 @@ fn expandDefmulti(
     call_items[0] = .{ .data = .{ .symbol = .{ .ns = "rt", .name = "__make-multifn" } }, .location = loc };
     call_items[1] = quoted_name;
     call_items[2] = dispatch_fn_form;
-    call_items[3] = .{ .data = .{ .keyword = .{ .ns = null, .name = "default" } }, .location = loc };
-    call_items[4] = sym("-global-hierarchy", loc);
+    call_items[3] = default_form;
+    call_items[4] = hierarchy_form;
     const call_form = try list(arena, call_items, loc);
 
     // (def name call_form)

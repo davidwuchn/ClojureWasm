@@ -109,4 +109,11 @@ EOF
 ) || fail "case6: non-zero exit ($got)"
 assert_eq 'defmulti_reeval_noop' "$(last_line "$got")" ':circ'
 
-echo "OK — phase7_multimethod ladder (6 cases) green"
+# --- Case 7 (D-202 gap 3): `(defmulti name dispatch :default <val>)` overrides
+# the no-match dispatch value (clj parity — was hardcoded `:default`). An
+# unmatched dispatch routes to the method registered under <val>. ---
+assert_eq 'defmulti_default_option' \
+  "$("$BIN" -e '(do (defmulti k :t :default :other) (defmethod k :other [_] :fb) (k {:t :unknown}))')" \
+  ':fb'
+
+echo "OK — phase7_multimethod ladder (7 cases) green"

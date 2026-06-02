@@ -1,0 +1,40 @@
+(clojure.string/join ", " [1 2 3])
+;;=> "1, 2, 3"
+(clojure.string/join [1 2 3])
+;;=> "123"
+(clojure.string/split "a,b,,c" #",")
+;;=> ["a" "b" "" "c"]
+(clojure.string/split "" #",")
+;;=> [""]
+(clojure.string/trim "  x  ")
+;;=> "x"
+(Character/isDigit \5)
+;;=> true
+(Character/isLetter \a)
+;;=> true
+(Character/toUpperCase \a)
+;;=> \A
+(Character/digit \7 10)
+;;=> 7
+(int \A)
+;;=> 65
+(char 66)
+;;=> \B
+(Character/isWhitespace \space)
+;;=> true
+(clojure.string/capitalize "hELLO")
+;;=> "Hello"
+(clojure.string/lower-case "ABC")
+;;=> "abc"
+(clojure.string/replace "a.b.c" "." "_")
+;;=> "a_b_c"
+(clojure.string/starts-with? "hello" "he")
+;;=> true
+(parse-long "42")
+;;=> 42
+(parse-double "3.14")
+;;=> 3.14
+(parse-boolean "true")
+;;=> true
+(clojure.string/blank? "   ")
+;;=> true
