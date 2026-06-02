@@ -174,6 +174,14 @@ confirmed exprs into a `*.txt` corpus here via `--corpus`.
   (14). Only DIFF: `(doto (atom …) …)` returns the atom whose print form is
   `#<atom>` vs clj's `#object[clojure.lang.Atom 0xADDR {…}]` — an acceptable
   print divergence (clj embeds a non-reproducible identity hash).
+- **bit-ops + Math + static fields** — `bit-test`/`bit-set`/`bit-clear`/
+  `bit-flip`/`bit-and-not`; `Math/sqrt`/`pow`/`abs`/`floor`/`ceil`/`round`/
+  `max`/`min`/`log`/`exp`/`signum`/`floorDiv`/`floorMod` (static methods); bare
+  static FIELDS `Math/PI`/`Math/E`/`Integer/MAX_VALUE`·`MIN_VALUE`/`Long/MAX_VALUE`
+  ·`MIN_VALUE` resolve + compose (`(* 2 Math/PI)`). Corpus `bit_math` (27).
+  Edges: `(Math/PI)` (a static field in CALL position) — clj's compiler returns
+  the field, cljw tries to call it ("Cannot call float"); rare (write `Math/PI`,
+  not `(Math/PI)`). `Long/MAX_VALUE` prints `…N` (D-165 i48→i64, value-exact).
 - **control-flow macros** — `case` (literal/keyword/char/string/list-of-keys
   test sets + default), `condp` (with `=`/`<`/`get` pred + `:else`), `loop`/
   `recur`, `for` (single + nested seq comprehension), `dotimes`, `cond` all at
