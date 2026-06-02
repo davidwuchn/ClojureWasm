@@ -234,8 +234,9 @@ const STAGED_UNSUPPORTED_FORMS = std.StaticStringMap(void).initComptime(.{
 /// Resolve a `::name` / `::alias/name` auto-resolved keyword (D-195). `::name`
 /// (sym.ns == null) takes the current namespace; `::alias/name` resolves the
 /// require-alias to its target ns. The current ns is present during analysis;
-/// an unknown alias raises (matches clj's read-time rejection). Quoted `::`
-/// (formToValue path) lacks an env and stays unresolved — a tracked residual.
+/// an unknown alias raises (matches clj's read-time rejection). The
+/// `formToValue` (read-string) path also resolves when its env carries a
+/// current ns (D-221); a ns-less EDN parse falls back to unresolved intern.
 fn resolveAutoKeyword(rt: *Runtime, env: *Env, sym: SymbolRef, loc: SourceLocation) AnalyzeError!Value {
     const cur = env.current_ns orelse
         return error_catalog.raise(.current_namespace_missing, loc, .{ .sym = sym.name });
@@ -815,7 +816,14 @@ pub fn formToValue(rt: *Runtime, env: *Env, form: Form) AnalyzeError!Value {
         .big_decimal_literal => |s| try parseBigDecimalLiteral(rt, s, form.location),
         .ratio_literal => |s| try parseRatioLiteral(rt, s, form.location),
         .regex_literal => |s| try parseRegexLiteral(rt, s, form.location),
-        .keyword => |sym| try keyword.intern(rt, sym.ns, sym.name),
+        // `::name` / `::alias/name` auto-keyword resolves against the current
+        // ns when read-string is invoked from running code (env has a current
+        // ns), matching the eval path (D-221). A ns-less formToValue context
+        // (bare EDN parse) has no current ns → fall back to unresolved intern.
+        .keyword => |sym| if (sym.auto_resolve and env.current_ns != null)
+            try resolveAutoKeyword(rt, env, sym, form.location)
+        else
+            try keyword.intern(rt, sym.ns, sym.name),
         .string => |s| try string_collection.alloc(rt, s),
         .list => |items| try listFormToValue(rt, env, items),
         .symbol => |sym| try symbol_mod.intern(rt, sym.ns, sym.name),

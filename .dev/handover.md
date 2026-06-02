@@ -44,11 +44,14 @@
 - **C1..C7 all DISCHARGED** (D-164/205/207/209/200/198/165; ADR-0076/77/78/79/80).
   D-210 persists ONLY as the standing `quality-loop floor: clj-parity` — drain
   any NEW cljw↔clj DIFF a future sweep surfaces (highest-value-first). No units left.
-- **Open floor bugs (all LOW value, exploratory-found)**: D-220 (re-matcher/
-  re-groups stateful regex), D-221 (read-string `::` auto-resolve), D-222
-  (bindable print vars). This session DISCHARGED: D-212/213/214/215 + D-216
-  (format) + D-217 (string-Indexed) + D-218 (peek/pop) + D-219 (namespaced maps).
-  Next = continue exploratory sweep OR drain D-220/221/222 (Resume contract).
+- **Open floor bugs (all LOW value, exploratory-found, both need infra)**: D-220
+  (re-matcher/re-groups — needs a Matcher value type), D-222 (bindable print
+  vars — needs var-read-from-primitive infra). This session DISCHARGED:
+  D-212/213/214/215 + D-216 (format) + D-217 (string-Indexed) + D-218 (peek/pop)
+  + D-219 (namespaced maps) + D-221 (read-string `::`). The clj-parity
+  exploratory sweep has CONVERGED (7 broad probes → only AD-classified
+  divergences + D-220/D-222 remain). Next = D-220/D-222 when their infra is
+  warranted, OR a different quality dimension / the Phase plan.
 - **Decided, NOT bugs**: AD-008 (Long overflow past i64 auto-promotes per F-005;
   clj throws) · AD-009 (cljw hash ≠ JVM) · D-211 (`+'`/`*'` deferred, F-005-inverted).
 

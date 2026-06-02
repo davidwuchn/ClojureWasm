@@ -42,7 +42,17 @@ active:
       **cljw's print flags are Zig threadlocals set imperatively by the print primitives, NOT bindable `^:dynamic` Clojure vars**: `*print-readably*` (D-185) is a threadlocal toggled by `print`/`println`; `*print-namespace-maps*` (D-219) is a threadlocal defaulting true. clj exposes both as dynamic vars: `(binding [*print-namespace-maps* false] (pr-str {:foo/a 1}))` → "{:foo/a 1}". cljw can't bind them (the symbols don't resolve), so a user can't override the default. A no-op var would be the silent-default-shift smell (forbidden), so they stay threadlocal-only for now. Discharge: wire each as a real `^:dynamic` var whose CURRENT bound value the print primitives (`pr`/`prn`/`pr-str`/`str`/`println`) read into the threadlocal before rendering (needs a var-current-value read from a Zig primitive — the missing infra). Also covers `*print-length*`/`*print-level*` if added. clj-grounded: binding overrides the default for the dynamic extent. LOW-MEDIUM value (defaults already match clj `-e`; only explicit overrides are unavailable). Cross-ref D-185 (*print-readably*) / D-219 (*print-namespace-maps*) / F-011. recall trigger: when print-control vars / `binding` of print flags is taken up.
     last_reviewed: "2026-06-03"
   - id: "D-221"
-    status: "now (minor divergence, exploratory-found 2026-06-03 during D-219) — `read-string` does not resolve `::` auto-keywords."
+    status: |-
+      DISCHARGED 2026-06-03 (clj-parity drain): `read-string` now resolves `::`
+      auto-keywords against the current ns. `analyzer.formToValue`'s `.keyword`
+      arm resolves `auto_resolve` via `resolveAutoKeyword` when its env carries a
+      current ns (the read-string-from-running-code case), mirroring the eval
+      `analyze` path; a ns-less EDN parse falls back to unresolved intern (no
+      regression). `(namespace (read-string "::foo"))`→"user", `(read-string
+      "#::{:a 1}")`→{:user/a 1}, `#::alias` via read-string too — clj-verified.
+      Corpus lines added to `namespaced_maps` (7); 2 e2e in phase14_namespaced_maps.
+      Stale "tracked residual" docstring at analyzer.zig updated. Cross-ref D-219
+      (surfacer) / resolveAutoKeyword / F-011.
     category: "runtime"
     barrier: |-
       **`read-string` leaves `::name` / `::alias/name` auto-keywords unresolved** (the analyzer-time auto-resolve does not run in the `read-string` path): `(namespace (read-string "::foo"))` → cljw `nil` / clj `"user"`; `(keys (read-string "#::{:a 1}"))` → cljw `(:a)` / clj `(:user/a)`. The `-e`/eval LITERAL path resolves correctly (`#::{:a 1}` → `{:user/a 1}`) because it goes through the analyzer with ns context; `read-string` builds the form but skips the auto-resolve step. EXPLICIT `#:foo{…}` works via read-string (no auto-resolve needed). Scope: thread the current-ns auto-resolve into the read-string code path (resolve `auto_resolve` keyword Forms against `*ns*` + its aliases). LOW value (read-string of `::` literals is rare; the eval path works). Cross-ref D-219 (surfacer — `#::`/`#::alias` via read-string inherit this) / reader.zig auto_resolve. recall trigger: when read-string / EDN auto-resolve parity is taken up.

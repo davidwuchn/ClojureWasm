@@ -32,4 +32,8 @@ assert_eq 'print_dotted'  "$("$BIN" -e '(pr-str #:a.b.c{:x 1})')"        '"#:a.b
 # nested namespaced map round-trips
 assert_eq 'print_nested'  "$("$BIN" -e '(pr-str #:foo{:a #:bar{:x 1}})')" '"#:foo{:a #:bar{:x 1}}"'
 
-echo "OK — phase14_namespaced_maps (13 cases) green"
+# D-221: read-string resolves ::auto-keywords against the current ns.
+assert_eq 'rs_autokw'  "$("$BIN" -e '(namespace (read-string "::foo"))')"       '"user"'
+assert_eq 'rs_ns_cur'  "$("$BIN" -e '(= (read-string "#::{:a 1}") {:user/a 1})')" 'true'
+
+echo "OK — phase14_namespaced_maps (15 cases) green"

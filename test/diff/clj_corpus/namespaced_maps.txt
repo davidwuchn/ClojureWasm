@@ -40,3 +40,17 @@
 ;;=> "#:foo{:nested #:bar{:x 1}}"
 (vals #:foo{:a 10 :b 20})
 ;;=> (10 20)
+(namespace (read-string "::foo"))
+;;=> "user"
+(name (read-string "::foo"))
+;;=> "foo"
+(keys (read-string "#::{:a 1}"))
+;;=> (:user/a)
+(read-string "#::{:a 1 :b 2}")
+;;=> #:user{:a 1, :b 2}
+(= (read-string "::foo") ::foo)
+;;=> true
+(namespace (read-string ":plain/kw"))
+;;=> "plain"
+(read-string ":simple")
+;;=> :simple
