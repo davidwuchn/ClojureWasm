@@ -30,6 +30,11 @@ confirmed exprs into a `*.txt` corpus here via `--corpus`.
   {ident,keyword,symbol}?.
 - **JSON (data.json)** — read/write number parity incl. BigInt both directions
   (D-182). `:bigdec` opt + ratio write are minor residuals.
+- **functions as values / HOF** — set/map/keyword/vector as fn (+ not-found),
+  fnil/complement/every-pred/constantly/comp/partial/juxt, keyword-in-map/filter,
+  keep-with-set, remove-with-set, group-by. Gap found+fixed: `some-fn` returned
+  `nil` when no pred matched; clj returns the LAST pred's value (`(or …)`
+  semantics: `((some-fn neg? even?) 3)`→false not nil). Corpus `fn_as_value`.
 - **sequence fns (lazy tail)** — iterate/cycle/repeat/repeatedly/lazy-cat/
   split-at/split-with/butlast/take-while/nthrest/partition-all/keep/mapcat/
   reductions/range-step, infinite-bounded-by-take. Gap found+fixed:

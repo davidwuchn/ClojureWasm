@@ -20,8 +20,9 @@ assert_eq() {
     echo "PASS $name -> $want"
 }
 
-# some-fn — first logical-true (pred result), else nil
-assert_eq 'somefn_none'  "$("$BIN" -e '((some-fn even? neg?) 3)')"   'nil'
+# some-fn — first logical-true (pred result), else the LAST pred's value
+# (JVM `(or (p1 x) (p2 x))`: both preds → false here, so false not nil).
+assert_eq 'somefn_none'  "$("$BIN" -e '((some-fn even? neg?) 3)')"   'false'
 assert_eq 'somefn_first' "$("$BIN" -e '((some-fn even? neg?) 4)')"   'true'
 assert_eq 'somefn_later' "$("$BIN" -e '((some-fn even? neg?) -3)')"  'true'
 # every-pred — true iff all preds pass

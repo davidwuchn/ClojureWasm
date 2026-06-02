@@ -400,15 +400,19 @@
                   (cons f (cons g fs)))))))
 
 ;; `(some-fn p1 p2 …)` → a fn returning the first logical-true
-;; `(pi & args)`, else nil. `(every-pred p1 p2 …)` → a fn returning
-;; true iff every `(pi & args)` is logical-true, else false (D-134).
+;; `(pi & args)`, else the LAST pred's value (JVM `(or (p1 x) (p2 x) …)`
+;; semantics: `((some-fn neg? even?) 3)`→false, not nil). `(every-pred …)`
+;; → true iff every `(pi & args)` is logical-true, else false (D-134).
 (def some-fn
   (fn* [& preds]
     (fn* [& args]
-      (loop [ps preds]
-        (when (seq ps)
+      (if (seq preds)
+        (loop [ps preds]
           (let* [r (apply (first ps) args)]
-            (if r r (recur (rest ps)))))))))
+            (if r
+              r
+              (if (seq (rest ps)) (recur (rest ps)) r))))
+        nil))))
 
 (def every-pred
   (fn* [& preds]
