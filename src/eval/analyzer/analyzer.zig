@@ -58,6 +58,7 @@ const ratio_mod = @import("../../runtime/numeric/ratio.zig");
 const print_mod = @import("../../runtime/print.zig");
 const regex_value = @import("../../runtime/regex/value.zig");
 const class_name = @import("../../runtime/class_name.zig");
+const host_class = @import("../../runtime/error/host_class.zig");
 const type_descriptor = @import("../../runtime/type_descriptor.zig");
 const dispatch = @import("../../runtime/dispatch.zig");
 const error_mod = @import("../../runtime/error/info.zig");
@@ -520,6 +521,15 @@ fn analyzeSymbol(
         if (sym.ns == null) {
             if (class_name.nativeTagFor(sym.name)) |tag| {
                 const td = try env.rt.nativeDescriptor(tag);
+                const ref = try type_descriptor.makeTypeDescriptorRef(env.rt, td);
+                return try makeConstant(arena, ref, form);
+            }
+            // A bare host/exception class symbol (`Exception`, `ExceptionInfo`,
+            // `clojure.lang.ExceptionInfo`) resolves to the same TypeDescriptor
+            // `(class e)` returns — so `(= (class e) ExceptionInfo)` works (clj
+            // parity). After native + Var resolution so a user def shadows.
+            if (host_class.isKnownException(sym.name)) {
+                const td = try env.rt.exceptionDescriptor(host_class.normalizeClassName(sym.name));
                 const ref = try type_descriptor.makeTypeDescriptorRef(env.rt, td);
                 return try makeConstant(arena, ref, form);
             }

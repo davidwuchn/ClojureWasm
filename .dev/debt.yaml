@@ -444,6 +444,17 @@ active:
       deferred-structural: JVM classes (java.util.Map / Compiler / StringBuffer /
       clojure.lang.* / PersistentTreeMap), the *out*/*err* dynamic-stream infra,
       into-array (F-004), definterface, external nses (test.check / inspector).
+      **2026-06-04 host/exception class-as-value LANDED**: a bare host/exception
+      class symbol (`Exception` / `ExceptionInfo` / `clojure.lang.ExceptionInfo`)
+      now resolves to the same TypeDescriptor `(class e)` returns, so `(= (class
+      e) SomeException)` works — the analyzer class-as-value path (native classes
+      already did this via nativeTagFor) now also checks `host_class.isKnownException`
+      → `rt.exceptionDescriptor`. fn.clj advances past `(fails-with-cause?
+      clojure.lang.ExceptionInfo …)` → next macroexpand gap. corpus class_as_value
+      (4, FQCN+java.lang) + e2e phase15_class_as_value (5). Accepted leniency: a
+      simple clojure.lang exception name (`ExceptionInfo`) resolves without an
+      import where clj needs the FQCN — consistent with cljw's import-free
+      simple-name exception handling in catch/instance? (AD-003 family).
       **2026-06-04 `defprotocol` docstrings LANDED**: an optional protocol-level
       docstring after the name (`(defprotocol P "doc" (m [a]) …)`) was rejected
       ("method signature must be a list"); now skipped. Method-level docstrings,

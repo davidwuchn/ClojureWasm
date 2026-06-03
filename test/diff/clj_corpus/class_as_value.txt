@@ -1,0 +1,8 @@
+(= (class (ex-info "x" {})) clojure.lang.ExceptionInfo)
+;;=> true
+(= (class (Exception. "y")) Exception)
+;;=> true
+(= (class (RuntimeException. "z")) RuntimeException)
+;;=> true
+(= (class (Exception. "y")) clojure.lang.ExceptionInfo)
+;;=> false
