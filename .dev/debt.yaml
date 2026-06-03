@@ -334,6 +334,17 @@ active:
       declare (3). Surfaced by test_fixtures.clj, which then parks on
       `use-fixtures` (clojure.test once/each fixture registration — a separate
       clojure.test infra unit, not core).
+      **2026-06-04 `with-open` LANDED** (was missing): recursive `.clj` defmacro
+      in core.clj (clj-faithful — `(let [n init] (try (with-open rest body)
+      (finally (. n close))))`), `~'close` to keep the member bare (else
+      syntax-quote ns-qualifies it). close runs in REVERSE order + on body
+      throw (finally). corpus with_open (3, macroexpand parity) + e2e
+      phase15_with_open (4: reverse-order/close-on-throw/empty/returns-body).
+      Still-missing common core surfaced by the same probe (each its own future
+      unit): `with-out-str`/`with-in-str` (need *out*/*in* rebinding to an
+      in-memory writer), `bound-fn`, `file-seq`/`line-seq` (IO), `definline`;
+      `into-array`/`make-array`/`aget`/`aset`/`to-array`/`amap`/`areduce` =
+      Java arrays (F-004, deferred); `proxy`/`bean` = Tier D.
     category: "scope"
     barrier: |-
       **The corpus-driven validation campaign (D-158 tier 2) is now runnable** —

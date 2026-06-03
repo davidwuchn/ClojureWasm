@@ -453,6 +453,7 @@ run_step "e2e_phase15_var_get_set"          "bash test/e2e/phase15_var_get_set.s
 run_step "e2e_phase15_campaign_keywords"    "bash test/e2e/phase15_campaign_keywords.sh"
 run_step "e2e_phase15_macro_literals"       "bash test/e2e/phase15_macro_literals.sh"
 run_step "e2e_phase15_alias"                "bash test/e2e/phase15_alias.sh"
+run_step "e2e_phase15_with_open"            "bash test/e2e/phase15_with_open.sh"
 run_step "e2e_phase14_cljw_build"            "bash test/e2e/phase14_cljw_build.sh"
 run_step "e2e_phase14_core_cluster"          "bash test/e2e/phase14_core_cluster.sh"
 run_step "e2e_phase14_print_family"          "bash test/e2e/phase14_print_family.sh"

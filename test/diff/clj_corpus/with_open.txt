@@ -1,0 +1,6 @@
+(macroexpand-1 (quote (with-open [r (foo)] (bar r))))
+;;=> (clojure.core/let [r (foo)] (try (clojure.core/with-open [] (bar r)) (finally (. r close))))
+(macroexpand-1 (quote (with-open [a (x) b (y)] (use a b))))
+;;=> (clojure.core/let [a (x)] (try (clojure.core/with-open [b (y)] (use a b)) (finally (. a close))))
+(macroexpand-1 (quote (with-open [] (body))))
+;;=> (do (body))

@@ -286,6 +286,12 @@ confirmed exprs into a `*.txt` corpus here via `--corpus`.
   run-a-disk-test-suite / lib_not_found / no-shadow / cycle) + a munge unit test.
   No corpus (it's I/O, not a value-diff); the capstone case runs a disk test-ns's
   `clojure.test` suite end-to-end.
+- **core macros `declare` / `with-open`** (D-232) — both were missing.
+  `declare` (macro_transforms.zig, def-family): `(declare a b)`→`(do (def a)
+  (def b))`; corpus declare (3, incl. mutually-recursive even?/odd?). `with-open`
+  (recursive `.clj` defmacro, clj-faithful, `~'close` keeps the member bare):
+  binds in a try, finally `.close`s each name in REVERSE order, on body-throw
+  too; corpus with_open (3, macroexpand parity) + e2e phase15_with_open (4).
 
 ## Next-sweep candidates (gap-confirmed or unswept)
 
