@@ -306,7 +306,7 @@ pub fn analyze(
         // `` `form `` (ADR-0082): expand the syntax-quote tree to its template
         // form, then analyze that (the analyzer has env.current_ns for the
         // future qualification pass; stage 1 is non-qualifying).
-        .syntax_quote => |inner| try analyze(arena, rt, env, scope, try syntax_quote.expand(arena, rt, inner.*, form.location), macro_table),
+        .syntax_quote => |inner| try analyze(arena, rt, env, scope, try syntax_quote.expand(arena, rt, env, inner.*, form.location), macro_table),
         // `~`/`~@` are only meaningful inside a syntax-quote (handled by the
         // expander); reaching them here means they were used standalone.
         .unquote => error_catalog.raise(.token_invalid, form.location, .{ .token = "~ (unquote outside a syntax-quote)" }),
@@ -847,7 +847,7 @@ pub fn formToValue(rt: *Runtime, env: *Env, form: Form) AnalyzeError!Value {
         .syntax_quote => |inner| blk: {
             var sq_arena = std.heap.ArenaAllocator.init(rt.gpa);
             defer sq_arena.deinit();
-            const template = try syntax_quote.expand(sq_arena.allocator(), rt, inner.*, form.location);
+            const template = try syntax_quote.expand(sq_arena.allocator(), rt, env, inner.*, form.location);
             break :blk try formToValue(rt, env, template);
         },
         .unquote, .unquote_splicing => return error_catalog.raise(.token_invalid, form.location, .{ .token = "~ / ~@ outside a syntax-quote" }),
