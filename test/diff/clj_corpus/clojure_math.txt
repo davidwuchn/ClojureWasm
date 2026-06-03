@@ -1,0 +1,24 @@
+(clojure.math/sqrt 2.0)
+;;=> 1.4142135623730951
+(clojure.math/cbrt 27.0)
+;;=> 3.0
+(clojure.math/pow 2.0 10.0)
+;;=> 1024.0
+(clojure.math/round 2.5)
+;;=> 3
+(clojure.math/floor 3.7)
+;;=> 3.0
+(clojure.math/ceil 3.2)
+;;=> 4.0
+(clojure.math/hypot 3.0 4.0)
+;;=> 5.0
+(clojure.math/log clojure.math/E)
+;;=> 1.0
+(clojure.math/to-degrees clojure.math/PI)
+;;=> 180.0
+(clojure.math/atan2 1.0 1.0)
+;;=> 0.7853981633974483
+(clojure.math/signum -3.0)
+;;=> -1.0
+(clojure.math/sin 0.0)
+;;=> 0.0

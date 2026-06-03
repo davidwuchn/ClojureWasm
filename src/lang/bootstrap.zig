@@ -71,6 +71,9 @@ pub const FILES: []const FileEntry = &.{
     // clojure.data calls clojure.set/* fully-qualified, so it loads last
     // (after FILES[2] clojure.set has interned those vars).
     .{ .label = "<clojure.data>", .source = @embedFile("clj/clojure/data.clj") },
+    // clojure.math — thin Math wrappers; appended last so earlier FILES[N]
+    // indices in `lookupEmbeddedFile` stay stable (D-232).
+    .{ .label = "<clojure.math>", .source = @embedFile("clj/clojure/math.clj") },
 };
 
 /// First file's source — exposed so `main.zig`'s renderer can fall
@@ -104,6 +107,7 @@ fn lookupEmbeddedFile(ns_name: []const u8) ?FileEntry {
     if (std.mem.eql(u8, ns_name, "clojure.test")) return FILES[10];
     if (std.mem.eql(u8, ns_name, "cljw.error")) return FILES[11];
     if (std.mem.eql(u8, ns_name, "clojure.data")) return FILES[12];
+    if (std.mem.eql(u8, ns_name, "clojure.math")) return FILES[13];
     return null;
 }
 

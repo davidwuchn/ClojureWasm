@@ -263,6 +263,12 @@ confirmed exprs into a `*.txt` corpus here via `--corpus`.
   extraction across pass/fail/error/thrown/are/multi-deftest/testing). Report
   PRINT format is cljw-specific (no `*test-out*`); only the returned counts +
   `is` return values are clj-asserted.
+- **clojure.math** (D-232) — a new bootstrapped ns of thin `Math/*` wrappers:
+  sin/cos/tan/asin/acos/atan/atan2/to-radians/to-degrees, exp/log/log10,
+  sqrt/cbrt/pow/hypot, ceil/floor/round/signum, + PI/E. Corpus clojure_math (12)
+  all clj-exact. Deferred: `rint` (cljw host Math lacks it) + the exotic IEEE-754
+  helpers (ulp/scalb/next-after/*-exact/floor-div/sinh/cosh/tanh/expm1/log1p/…).
+  Note `abs` is clojure.core, NOT clojure.math (correctly omitted).
 - **filesystem `require`** (D-158 / ADR-0084) — `-cp`/`CLJW_PATH` load a lib's
   `.clj` off disk (ns→path munge, embedded-first chain, cycle guard,
   loaded-libs idempotency). e2e phase15_require_fs (6: cp-load / env-path /
