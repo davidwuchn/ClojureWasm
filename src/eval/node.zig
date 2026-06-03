@@ -466,6 +466,9 @@ pub const RequireNode = struct {
     /// `:refer [a b c]` — explicit name list to refer. Empty slice
     /// when not requested. Each element is an arena-owned slice.
     refers: []const []const u8 = &.{},
+    /// `:refer :all` (or a `:use` directive) — refer ALL public vars of the
+    /// required ns (env.referAll). Mutually exclusive with `refers`.
+    refer_all: bool = false,
     loc: SourceLocation = .{},
 };
 

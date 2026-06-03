@@ -7,9 +7,9 @@
 # Coverage at c.7:
 #   - `(ns foo)` switches to ns foo (alone or with directives).
 #   - `(:refer-clojure)` directive is accepted (default behavior).
-#   - Unsupported directives (`:require` inside ns / `:exclude` /
-#     `:only` / `:use` / `:import` / `:gen-class`) raise
-#     `feature_not_supported`.
+#   - Unsupported directives (`:import` / `:rename` / `:gen-class`) raise
+#     `feature_not_supported`. (`:require` / `:refer-clojure` / `:use`
+#     are supported.)
 #   - `(:require ...)` inside ns specifically raises with the
 #     "use separate (require ...) calls" hint.
 
@@ -63,11 +63,12 @@ got="$("$BIN" -e "(ns foo (:refer-clojure :exclude [reduce])) (- 5 2)" 2>&1 | ta
 echo "PASS ns_refer_clojure_exclude_landed"
 
 # --- (6) Unknown directive raises feature_not_supported ---
-got="$("$BIN" -e "(ns foo (:use [bar]))" 2>&1 || true)"
+# (`:use` is now supported per D-232; `:import` remains deferred.)
+got="$("$BIN" -e "(ns foo (:import java.util.Date))" 2>&1 || true)"
 if ! grep -q 'not supported in ClojureWasm' <<<"$got"; then
-    fail "ns_use_directive: missing not yet supported (got '$got')"
+    fail "ns_import_directive: missing not yet supported (got '$got')"
 fi
-echo "PASS ns_use_directive_deferred"
+echo "PASS ns_import_directive_deferred"
 
 # --- (7) `(ns)` with no name raises ---
 got="$("$BIN" -e "(ns)" 2>&1 || true)"

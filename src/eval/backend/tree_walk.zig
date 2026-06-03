@@ -472,6 +472,10 @@ fn evalRequire(rt: *Runtime, env: *Env, n: node_mod.RequireNode) !Value {
     if (n.alias) |alias_name| {
         try env.setAlias(here, alias_name, target_ns);
     }
+    if (n.refer_all) {
+        // `:refer :all` / `:use` — refer every public var (skips privates).
+        try env.referAll(target_ns, here);
+    }
     for (n.refers) |refer_name| {
         const outcome = try env.referOne(target_ns, here, refer_name);
         switch (outcome) {

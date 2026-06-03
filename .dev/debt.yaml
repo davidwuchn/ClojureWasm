@@ -150,6 +150,29 @@ active:
       (NaN-box slot) / handover system-var-registry note (the `*out*` half stays
       deferred). recall trigger: NOW — it is the active unit gating clojure.test.
     last_reviewed: "2026-06-03"
+  - id: "D-232"
+    status: |-
+      now (validation campaign, opened 2026-06-03) — running real / upstream
+      `clojure.test` suites on cljw to find real bugs. `:use`/`:refer :all` (the
+      prerequisite) LANDED 2026-06-03 (refer_all flag on RequireNode/LibspecEntry,
+      both backends, `(:use …)` ns directive). First finding: upstream
+      `clojure.test-clojure.keywords` loads off `-cp ~/Documents/OSS/clojure/test`
+      then hits `find-keyword` unresolved (a real clojure.core gap).
+    category: "scope"
+    barrier: |-
+      **The corpus-driven validation campaign (D-158 tier 2) is now runnable** —
+      `cljw -cp ~/Documents/OSS/clojure/test -e '(require (quote
+      clojure.test-clojure.<x>)) (clojure.test/run-tests …)'` loads + runs an
+      upstream Clojure test suite; each unresolved-symbol / DIFF / failure is a
+      real clojure.core gap to fix (F-011). The densest bug-finder. Findings so
+      far (fix each, then re-run): **`find-keyword`** missing (keywords.clj). This
+      is the standing `quality-loop floor: validation-campaign` — drain
+      highest-value-first, one upstream suite at a time, big-bang per suite
+      (anti-drip per clj_diff_sweep.md Discipline 2). Cross-ref D-158 (infra) /
+      D-210 (clj-parity floor) / F-011. recall trigger: the active quality-loop
+      mode now.
+    quality_floor: "validation-campaign: run upstream/real clojure.test suites; fix each gap"
+    last_reviewed: "2026-06-03"
   - id: "D-231"
     status: "now (found 2026-06-03 during D-230 sweep) — a `.var_ref` Value is not callable (Var-as-IFn missing)."
     category: "scope"

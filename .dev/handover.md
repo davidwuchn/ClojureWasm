@@ -32,13 +32,15 @@
   (`require_in_progress`→circular_require), `loaded_libs`-idempotent,
   `RequireResolverFn`→`{source,label}`. Verified: a disk test-ns runs its
   `deftest` suite (`[4 0]`).
-- **First action on resume — the lib-suite VALIDATION campaign** (D-158 tier 2,
-  now runnable): clone a small pure-Clojure lib, `require` it off `-cp`, run its
-  `clojure.test` suite on cljw; each failure is a real bug → fix (F-011). Then
-  Phase-15 concurrency (DA-fork: STM/agent/threading) OR minor residuals: D-231
-  (Var-as-IFn), D-228 (nested backtick), D-229 (macroexpand), deps.edn,
-  multi-libspec standalone-require, `*out*`/with-out-str, clojure.test
-  use-fixtures/thrown-with-msg?.
+- **First action on resume — the VALIDATION campaign (D-232, standing
+  quality-loop floor)**: `:use`/`:refer :all` prerequisite DONE; run upstream
+  suites — `cljw -cp ~/Documents/OSS/clojure/test -e '(require (quote
+  clojure.test-clojure.<x>)) (clojure.test/run-tests …)'` — fix each
+  unresolved-symbol / DIFF / failure (F-011), big-bang per suite. **Immediate
+  target: `find-keyword`** (first gap, from keywords.clj), then re-run + next
+  suite. Alternatives: Phase-15 concurrency (DA-fork: STM/agent/threading) OR
+  minor residuals D-231 (Var-as-IFn) / D-228 / D-229 / deps.edn / multi-libspec
+  standalone-require / `*out*` / clojure.test use-fixtures.
 - **Phase-15 architectural pieces need a DA-fork entry** (do NOT cold-seize):
   `agent`, STM `dosync`/`ref` (§9 STM 15.1-15.4 ADR), `locking`, real threading
   (std.Io.Threaded work-pool — also activates real `pmap` parallelism D-224 +

@@ -480,6 +480,7 @@ pub fn serializeChunk(allocator: std.mem.Allocator, chunk: BytecodeChunk) ![]u8 
         }
         try writeU32(w, @intCast(ls.refers.len));
         for (ls.refers) |refer| try writeLenPrefixed(w, refer);
+        try writeU8(w, if (ls.refer_all) 1 else 0);
     }
     return try aw.toOwnedSlice();
 }
@@ -543,7 +544,8 @@ pub fn deserializeChunk(allocator: std.mem.Allocator, rt: *Runtime, env: *@impor
             const refer = try r.readLenPrefixed();
             refers[j] = try allocator.dupe(u8, refer);
         }
-        libspecs[i] = .{ .ns_name = ns_dup, .alias = alias_dup, .refers = refers };
+        const refer_all = (try r.readU8()) != 0;
+        libspecs[i] = .{ .ns_name = ns_dup, .alias = alias_dup, .refers = refers, .refer_all = refer_all };
     }
 
     return BytecodeChunk{

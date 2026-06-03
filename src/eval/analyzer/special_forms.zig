@@ -518,6 +518,7 @@ fn parseLibspecForm(
     var ns_sym: form_mod.SymbolRef = undefined;
     var alias_name: ?[]const u8 = null;
     var refer_names: []const []const u8 = &.{};
+    var refer_all = false;
 
     switch (inner_form.data) {
         .symbol => |s| ns_sym = s,
@@ -540,8 +541,14 @@ fn parseLibspecForm(
                         return error_catalog.raise(.feature_not_supported, val.location, .{ .name = "require :as value must be an unqualified symbol" });
                     alias_name = try arena.dupe(u8, val.data.symbol.name);
                 } else if (std.mem.eql(u8, kw.name, "refer")) {
+                    // `:refer :all` refers every public var (env.referAll).
+                    if (val.data == .keyword and val.data.keyword.ns == null and std.mem.eql(u8, val.data.keyword.name, "all")) {
+                        refer_all = true;
+                        i += 2;
+                        continue;
+                    }
                     if (val.data != .vector)
-                        return error_catalog.raise(.feature_not_supported, val.location, .{ .name = "require :refer value must be a vector of symbols (Phase 6.16.b-4 c.6+: :all)" });
+                        return error_catalog.raise(.feature_not_supported, val.location, .{ .name = "require :refer value must be a vector of symbols or :all" });
                     const refs = val.data.vector;
                     const buf = try arena.alloc([]const u8, refs.len);
                     var k: usize = 0;
@@ -569,6 +576,7 @@ fn parseLibspecForm(
         .ns_name = ns_name,
         .alias = alias_name,
         .refers = refer_names,
+        .refer_all = refer_all,
         .loc = loc,
     };
 }
@@ -623,8 +631,16 @@ pub fn analyzeNs(
                 const ls = try parseLibspecForm(arena, libspec_form, libspec_form.location);
                 try libspecs.append(arena, ls);
             }
+        } else if (std.mem.eql(u8, kw.name, "use")) {
+            // `(:use foo)` = require foo + refer ALL its publics. `:only`/
+            // `:exclude` filters are deferred (bare-symbol / `[ns]` form only).
+            for (inner[1..]) |libspec_form| {
+                var ls = try parseLibspecForm(arena, libspec_form, libspec_form.location);
+                ls.refer_all = true;
+                try libspecs.append(arena, ls);
+            }
         } else {
-            return error_catalog.raise(.feature_not_supported, directive.location, .{ .name = "ns directive (only :refer-clojure and :require supported; :rename / :import / :use pending)" });
+            return error_catalog.raise(.feature_not_supported, directive.location, .{ .name = "ns directive (only :refer-clojure / :require / :use supported; :rename / :import pending)" });
         }
     }
 

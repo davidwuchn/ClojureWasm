@@ -617,7 +617,7 @@ const Compiler = struct {
     /// shape parks the ns name + emits `op_require`. Row 7.10 cycle 3
     /// (ADR-0036); reused by both `compileRequire` and `compileNs`.
     fn emitLibspec(self: *Compiler, n: node_mod.RequireNode) Error!void {
-        if (n.alias != null or n.refers.len > 0) {
+        if (n.alias != null or n.refers.len > 0 or n.refer_all) {
             if (self.libspecs.items.len > std.math.maxInt(u16)) return Error.TooManyConstants;
             const idx: u16 = @intCast(self.libspecs.items.len);
             const ns_dup = try self.arena.dupe(u8, n.ns_name);
@@ -628,6 +628,7 @@ const Compiler = struct {
                 .ns_name = ns_dup,
                 .alias = alias_dup,
                 .refers = refers_dup,
+                .refer_all = n.refer_all,
             });
             try self.emit(.op_require_with_libspec, idx);
             return;

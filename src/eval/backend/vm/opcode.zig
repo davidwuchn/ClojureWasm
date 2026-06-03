@@ -355,6 +355,8 @@ pub const LibspecEntry = struct {
     ns_name: []const u8,
     alias: ?[]const u8 = null,
     refers: []const []const u8 = &.{},
+    /// `:refer :all` / `:use` — refer ALL public vars (env.referAll).
+    refer_all: bool = false,
 };
 
 /// Per-`(ns …)`-filter side-table entry (D-098). Each `op_ns_with_filter`

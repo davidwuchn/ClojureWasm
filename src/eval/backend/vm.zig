@@ -587,6 +587,10 @@ fn stepOnce(
                 if (spec.alias) |alias_name| {
                     try env.setAlias(here, alias_name, target_ns);
                 }
+                if (spec.refer_all) {
+                    // `:refer :all` / `:use` — refer every public var.
+                    try env.referAll(target_ns, here);
+                }
                 for (spec.refers) |refer_name| {
                     const outcome = try env.referOne(target_ns, here, refer_name);
                     switch (outcome) {
