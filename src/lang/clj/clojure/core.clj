@@ -1146,6 +1146,11 @@
   (fn* ([x] (lazy-seq (cons x (repeat x))))
        ([n x] (lazy-seq (if (> n 0) (cons x (repeat (dec n) x)) nil)))))
 
+;; `(replicate n x)` → a seq of x repeated n times (deprecated alias for
+;; `(repeat n x)`, kept for compatibility — clj defines it as `(take n (repeat x))`).
+(def replicate
+  (fn* [n x] (take n (repeat x))))
+
 ;; `(repeatedly f)` → infinite lazy (f),(f),…; `(repeatedly n f)` → n calls.
 (def repeatedly
   (fn* ([f] (lazy-seq (cons (f) (repeatedly f))))

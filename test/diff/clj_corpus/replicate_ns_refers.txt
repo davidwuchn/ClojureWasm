@@ -1,0 +1,14 @@
+(replicate 3 :a)
+;;=> (:a :a :a)
+(replicate 0 :x)
+;;=> ()
+(replicate 2 [1 2])
+;;=> ([1 2] [1 2])
+(replicate 4 "z")
+;;=> ("z" "z" "z" "z")
+(apply str (replicate 5 \-))
+;;=> "-----"
+(contains? (ns-refers (quote user)) (quote inc))
+;;=> true
+(contains? (ns-refers (quote user)) (quote map))
+;;=> true

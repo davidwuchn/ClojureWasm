@@ -143,6 +143,23 @@ pub fn nsMapFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation
     return m;
 }
 
+/// `(ns-refers ns)` — map of `symbol → Var` for the vars REFERRED into the ns
+/// (via use / refer / require :refer), excluding the ns's own interned vars.
+/// Spec: clojure.core/ns-refers (the refers-only counterpart of `ns-map`).
+pub fn nsRefersFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    try error_catalog.checkArity("ns-refers", args, 1, loc);
+    const ns = resolveNs(env, args[0]) orelse
+        return error_catalog.raise(.feature_not_supported, loc, .{ .name = "ns-refers on a non-namespace" });
+    var m = map_collection.empty();
+    var it = ns.refers.iterator();
+    while (it.next()) |entry| {
+        const v: *env_mod.Var = entry.value_ptr.*;
+        const sym = try symbol_mod.intern(rt, null, entry.key_ptr.*);
+        m = try map_collection.assoc(rt, m, sym, Value.encodeHeapPtr(.var_ref, v));
+    }
+    return m;
+}
+
 /// `(ns-resolve ns sym)` — the Var `sym` resolves to within `ns` (mappings then
 /// refers), or nil. Spec: clojure.core/ns-resolve (2-arity; the 3-arity env
 /// form is not modelled).
@@ -402,6 +419,7 @@ const ENTRIES = [_]Entry{
     .{ .name = "ns-interns", .f = &nsInternsFn },
     .{ .name = "ns-publics", .f = &nsPublicsFn },
     .{ .name = "ns-map", .f = &nsMapFn },
+    .{ .name = "ns-refers", .f = &nsRefersFn },
     .{ .name = "ns-resolve", .f = &nsResolveFn },
     .{ .name = "alias", .f = &aliasFn },
     .{ .name = "ns-aliases", .f = &nsAliasesFn },

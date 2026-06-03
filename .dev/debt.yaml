@@ -495,6 +495,24 @@ active:
       conformance-error-message assertions — cljw has no spec, an accepted
       AD-007/spec divergence). NOTE: `supers`/`bases` still absent (a separate
       class-reflection gap).
+      **2026-06-04 clojuredocs differential opened (F-010 step 2)** — pivoted off
+      the upstream-suite deferred-structural frontier to the ClojureDocs posted-
+      examples corpus (`~/Documents/OSS/clojuredocs-export-edn/exports/export.edn`,
+      per-var `:examples` `:body`; reader skips `;`-comments so reading forms
+      yields the exprs). A wide probe (469 short clojure.core exprs) confirmed
+      common-var coverage is solid (DIFFs were batch-poisoning noise + AD-001
+      set-order + AD-007 error-format), and surfaced REAL missing clojure.core
+      fns. **LANDED**: `replicate` (`(take n (repeat x))`, core.clj) + `ns-refers`
+      (refers-only ns-reflection map, namespace.zig — the ns-map counterpart).
+      corpus replicate_ns_refers (7). **Still-missing (each a future unit)**:
+      `unchecked-*` (add/subtract/multiply/negate/inc/dec/-int — F-005-divergent:
+      cljw auto-promotes, no wraparound; alias-to-checked is a divergence, defer),
+      `bytes?`/`booleans`/`vector-of` (Java arrays, F-004), `with-bindings` /
+      `tap>`/`add-tap` (moderate: thread-binding map / tap registry),
+      `hash-ordered-coll`/`hash-unordered-coll` (cljw hash ≠ JVM, AD-009),
+      `seq-to-map-for-destructuring` (internal). The clojuredocs corpus needs a
+      proper per-example harness (cross-form defs) for thorough mining; the
+      one-liner sweep is the quick path.
       **2026-06-04 `defprotocol` docstrings LANDED**: an optional protocol-level
       docstring after the name (`(defprotocol P "doc" (m [a]) …)`) was rejected
       ("method signature must be a list"); now skipped. Method-level docstrings,
@@ -624,7 +642,7 @@ active:
       (anti-drip per clj_diff_sweep.md Discipline 2). Cross-ref D-158 (infra) /
       D-210 (clj-parity floor) / F-011. recall trigger: the active quality-loop
       mode now.
-    quality_floor: "validation-campaign: run upstream/real clojure.test suites; fix each gap"
+    quality_floor: "validation-campaign: run upstream/real clojure.test suites + clojuredocs differential; fix each gap"
     last_reviewed: "2026-06-03"
   - id: "D-231"
     status: "now (found 2026-06-03 during D-230 sweep) — a `.var_ref` Value is not callable (Var-as-IFn missing)."
