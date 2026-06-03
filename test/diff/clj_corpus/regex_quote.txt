@@ -1,0 +1,12 @@
+(re-find #"\Qa.b\E" "a.b")
+;;=> "a.b"
+(re-find #"\Qa.b\E" "axb")
+;;=> nil
+(re-find #"x\Q.*\Ey" "x.*y")
+;;=> "x.*y"
+(re-matches #"\Q+++\E" "+++")
+;;=> "+++"
+(re-find #"\Q[abc]\E" "[abc]")
+;;=> "[abc]"
+(re-seq #"\Q..\E" "....")
+;;=> (".." "..")

@@ -303,6 +303,22 @@ const Parser = struct {
             return node;
         }
         if (c == '\\') {
+            // `\Q…\E` quote block: every byte until `\E` (or end-of-pattern,
+            // which Java tolerates) is a literal, metacharacters included.
+            // Emitted as a `.concat` of `.lit` nodes.
+            if (self.peek() == @as(?u8, 'Q')) {
+                _ = self.advance(); // consume 'Q'
+                var lits: std.ArrayList(Node) = .empty;
+                while (self.advance()) |lc| {
+                    if (lc == '\\' and self.peek() == @as(?u8, 'E')) {
+                        _ = self.advance(); // consume 'E'
+                        break;
+                    }
+                    try lits.append(self.arena, .{ .lit = lc });
+                }
+                node.* = .{ .concat = try lits.toOwnedSlice(self.arena) };
+                return node;
+            }
             node.* = try self.parseEscape();
             return node;
         }
@@ -780,6 +796,15 @@ test "compile \\. emits literal dot, not the all-set class" {
     var prog = try compile(testing.allocator, "\\.", .{});
     defer prog.deinit(testing.allocator);
     try testing.expectEqual(@as(u8, '.'), prog.insts[0].char);
+}
+
+test "compile \\Q.*\\E emits literal bytes, not metacharacters" {
+    // Inside \Q…\E every byte is a literal: `.` and `*` become char insts,
+    // not the all-set class / a quantifier loop.
+    var prog = try compile(testing.allocator, "\\Q.*\\E", .{});
+    defer prog.deinit(testing.allocator);
+    try testing.expectEqual(@as(u8, '.'), prog.insts[0].char);
+    try testing.expectEqual(@as(u8, '*'), prog.insts[1].char);
 }
 
 test "compile rejects bad escape" {

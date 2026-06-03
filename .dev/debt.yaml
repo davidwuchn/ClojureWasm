@@ -353,7 +353,15 @@ active:
       (op_ctor_call on an unresolved class → internal_error aborts the whole
       suite run; should be a clean catchable user error). External-dep finding:
       sequences/data_structures need test.check/data.generators (not loadable);
-      vectors needs `:import [java.util …]` (cljw has no such classes). This
+      vectors needs `:import [java.util …]` (cljw has no such classes).
+      **`(:import ...)` ns directive LANDED** (D-235) -> data/parse/errors/api/
+      clearing load past the directive. **regex `\Q...\E` quote-block LANDED**
+      (2026-06-03, compile.zig parseAtom -> concat of literal bytes; errors.clj
+      surfaced it; corpus regex_quote 6). errors.clj now reaches line 52
+      `thrown-with-cause-msg?` (a test-helper assert-expr extension, separate).
+      Remaining new blockers (separate units): `.` dot-form (clearing),
+      `into-array`/Java arrays (data, F-004), external test.check (parse/api),
+      test-helper assert-exprs (errors/fn). This
       is the standing `quality-loop floor: validation-campaign` — drain
       highest-value-first, one upstream suite at a time, big-bang per suite
       (anti-drip per clj_diff_sweep.md Discipline 2). Cross-ref D-158 (infra) /
