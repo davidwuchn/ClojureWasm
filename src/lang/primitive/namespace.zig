@@ -320,6 +320,56 @@ pub fn useFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) 
     return Value.nil_val;
 }
 
+/// `(require & libspecs)` — load each libspec (require-if-needed) and apply its
+/// `:as` alias / `:refer` list. The runtime-fn counterpart of the require
+/// special form (ADR-0085): reached when a libspec is computed (`(require ns)`
+/// with `ns` a local, `(apply require specs)`). Each libspec is a namespace
+/// symbol or a `[ns :as alias :refer [a b] | :refer :all]` vector. Flag
+/// keywords (`:reload` / `:verbose`) are accepted and ignored (cljw always
+/// loads once). Returns nil.
+pub fn requireFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    const here = env.current_ns orelse
+        return error_catalog.raise(.current_namespace_missing, loc, .{ .sym = "require" });
+    for (args) |libspec| {
+        switch (libspec.tag()) {
+            .keyword => {}, // :reload / :verbose / :reload-all — load-once, ignore
+            .symbol => {
+                _ = try loader.loadOrFindNs(rt, env, symbol_mod.asSymbol(libspec).name, loc);
+            },
+            .vector => {
+                const cnt = vector_collection.count(libspec);
+                if (cnt < 1 or vector_collection.nth(libspec, 0).tag() != .symbol)
+                    return error_catalog.raise(.feature_not_supported, loc, .{ .name = "require libspec vector must start with a namespace symbol" });
+                const target = try loader.loadOrFindNs(rt, env, symbol_mod.asSymbol(vector_collection.nth(libspec, 0)).name, loc);
+                var i: u32 = 1;
+                while (i + 1 <= cnt - 1) : (i += 2) {
+                    const opt = vector_collection.nth(libspec, i);
+                    const val = vector_collection.nth(libspec, i + 1);
+                    if (opt.tag() != .keyword) continue;
+                    const on = keyword_mod.asKeyword(opt).name;
+                    if (std.mem.eql(u8, on, "as")) {
+                        if (val.tag() != .symbol)
+                            return error_catalog.raise(.feature_not_supported, loc, .{ .name = "require :as needs a symbol alias" });
+                        try env.setAlias(here, symbol_mod.asSymbol(val).name, target);
+                    } else if (std.mem.eql(u8, on, "refer")) {
+                        if (val.tag() == .keyword and std.mem.eql(u8, keyword_mod.asKeyword(val).name, "all")) {
+                            try env.referAllWithFilter(target, here, &.{}, null);
+                        } else {
+                            const names = try collectNames(rt, val);
+                            defer rt.gpa.free(names);
+                            for (names) |nm| _ = try env.referOne(target, here, nm);
+                        }
+                    } else if (std.mem.eql(u8, on, "rename") or std.mem.eql(u8, on, "as-alias")) {
+                        return error_catalog.raise(.feature_not_supported, loc, .{ .name = "require :rename / :as-alias" });
+                    }
+                }
+            },
+            else => return error_catalog.raise(.feature_not_supported, loc, .{ .name = "require libspec must be a symbol or vector" }),
+        }
+    }
+    return Value.nil_val;
+}
+
 /// `(import* "pkg.Class")` — register the class's simple name → FQCN in the
 /// current ns's import map (so a bare `Class` / `(Class. …)` resolves to it).
 /// The runtime primitive the `import` macro expands to (clj parity: clj's
@@ -358,6 +408,7 @@ const ENTRIES = [_]Entry{
     .{ .name = "in-ns", .f = &inNsFn },
     .{ .name = "refer", .f = &referFn },
     .{ .name = "use", .f = &useFn },
+    .{ .name = "require", .f = &requireFn },
     .{ .name = "import*", .f = &importStarFn },
 };
 

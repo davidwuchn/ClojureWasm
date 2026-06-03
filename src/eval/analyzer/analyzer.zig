@@ -787,6 +787,19 @@ fn analyzeSetLiteral(
 /// True when an `in-ns` arg is a literal namespace symbol or `(quote sym)` —
 /// the compile-time fast path. Anything else (a computed expr) routes to the
 /// `in-ns` runtime Var instead (ADR-0085).
+/// True when a `require` arg is a compile-time literal libspec — a quoted form
+/// `(quote …)` or a bare vector `[ns …]`. A bare unquoted symbol or a computed
+/// expr routes to the `require` runtime Var instead (ADR-0085).
+fn isRequireLiteral(form: Form) bool {
+    return switch (form.data) {
+        .vector => true,
+        .list => |inner| inner.len == 2 and inner[0].data == .symbol and
+            inner[0].data.symbol.ns == null and
+            std.mem.eql(u8, inner[0].data.symbol.name, "quote"),
+        else => false,
+    };
+}
+
 fn isInNsLiteral(form: Form) bool {
     return switch (form.data) {
         .symbol => true,
@@ -832,7 +845,16 @@ fn analyzeSpecial(
                 break :blk special_forms.analyzeInNs(arena, items, form);
             break :blk analyzeCall(arena, rt, env, scope, items, form, macro_table);
         },
-        .require_form => special_forms.analyzeRequire(arena, items, form),
+        .require_form => blk: {
+            // A quoted-symbol / quoted-or-bare-vector libspec is a compile-time
+            // require (the special form, so `:as` aliases resolve during the
+            // next form's analysis). A bare unquoted symbol or a computed expr
+            // (`(require ns)` with `ns` a local) routes to the require runtime
+            // Var instead (ADR-0085) — clj treats require as a function.
+            if (items.len == 2 and isRequireLiteral(items[1]))
+                break :blk special_forms.analyzeRequire(arena, items, form);
+            break :blk analyzeCall(arena, rt, env, scope, items, form, macro_table);
+        },
         .ns_form => special_forms.analyzeNs(arena, items, form),
         .set_bang => special_forms.analyzeSetBang(arena, rt, env, scope, items, form, macro_table),
         .dot_form => special_forms.analyzeDot(arena, rt, env, scope, items, form, macro_table),

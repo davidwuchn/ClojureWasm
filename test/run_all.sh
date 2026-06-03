@@ -461,6 +461,7 @@ run_step "e2e_phase15_ns_runtime_fns"       "bash test/e2e/phase15_ns_runtime_fn
 run_step "e2e_phase15_defmethod_destructure" "bash test/e2e/phase15_defmethod_destructure.sh"
 run_step "e2e_phase15_new_ctor"             "bash test/e2e/phase15_new_ctor.sh"
 run_step "e2e_phase15_import_macro"         "bash test/e2e/phase15_import_macro.sh"
+run_step "e2e_phase15_require_runtime_fn"   "bash test/e2e/phase15_require_runtime_fn.sh"
 run_step "e2e_phase14_cljw_build"            "bash test/e2e/phase14_cljw_build.sh"
 run_step "e2e_phase14_core_cluster"          "bash test/e2e/phase14_core_cluster.sh"
 run_step "e2e_phase14_print_family"          "bash test/e2e/phase14_print_family.sh"

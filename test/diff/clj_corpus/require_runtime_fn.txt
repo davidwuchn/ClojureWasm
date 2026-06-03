@@ -1,0 +1,4 @@
+(do (let [n (quote clojure.string)] (require n)) (clojure.string/upper-case "hi"))
+;;=> "HI"
+(do (apply require [(quote clojure.set)]) (clojure.set/union #{1} #{2}))
+;;=> #{1 2}

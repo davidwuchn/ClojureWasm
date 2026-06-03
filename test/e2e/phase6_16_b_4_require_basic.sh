@@ -73,13 +73,14 @@ if ! grep -q "no.such.ns" <<<"$got"; then
 fi
 echo "PASS require_unknown_raises_lib_not_found"
 
-# --- (4) `require` is a special form, not a Var — quoting it as a
-# Var-ref must fail symbol resolution ---
+# --- (4) `require` is BOTH a compile-time special form (literal head form)
+# AND a runtime Var (ADR-0085: computed/non-head libspecs route to the Var,
+# clj parity where require is a function). `(var require)` resolves to the Var. ---
 got="$("$BIN" -e "(var require)" 2>&1 || true)"
-if ! grep -q 'name_error' <<<"$got"; then
-    fail "require_var_ref: missing [name_error] tag (got '$got')"
+if ! grep -q "require" <<<"$got" || grep -q 'name_error' <<<"$got"; then
+    fail "require_var_ref: expected the require Var, got '$got'"
 fi
-echo "PASS require_is_special_form_not_var"
+echo "PASS require_resolves_as_var (ADR-0085)"
 
 echo ""
 echo "=== phase6_16_b_4_require_basic: all assertions passed ==="

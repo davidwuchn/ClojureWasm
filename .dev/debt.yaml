@@ -432,6 +432,18 @@ active:
       `clojure.test-helper/getCause` (an exception-interop / test-helper-internal
       reference — deeper, no longer a destructure gap). The destructuring family
       (:as-empty / :keys-keyword / :ns/keys) is now complete for special.
+      **2026-06-04 `require` runtime fn LANDED** (completes the ns-runtime-fn
+      family): `(require ns)` on a computed/local symbol, `(apply require specs)`,
+      `[ns :as a :refer […]|:all]` libspecs work as a function — the special form
+      keeps the quoted-literal compile-time path and falls through to the require
+      Var for non-literal args. Surfaced by metadata:34 `(require ns)`; metadata
+      advances → parks on `clojure.inspector` (external ns). corpus
+      require_runtime_fn (2) + e2e phase15_require_runtime_fn (4). Within-one-`do`
+      `:as` alias is unavailable to a sibling form (clj errors there too —
+      accepted, ADR-0085). Remaining suite blockers are now predominantly
+      deferred-structural: JVM classes (java.util.Map / Compiler / StringBuffer /
+      clojure.lang.* / PersistentTreeMap), the *out*/*err* dynamic-stream infra,
+      into-array (F-004), definterface, external nses (test.check / inspector).
       **2026-06-04 `defprotocol` docstrings LANDED**: an optional protocol-level
       docstring after the name (`(defprotocol P "doc" (m [a]) …)`) was rejected
       ("method signature must be a list"); now skipped. Method-level docstrings,
