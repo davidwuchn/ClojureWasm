@@ -87,10 +87,37 @@ active:
       (now landed) + var binding-frame infra. `with-redefs` is the highest-value.
     last_reviewed: "2026-06-03"
   - id: "D-227"
-    status: "now (separate-ns, found 2026-06-03) — clojure.test (deftest/is/are/testing/run-tests) absent."
+    status: "blocked-by: D-230 (clojure.test clean form needs *ns*/Namespace-as-value); syntax-quote prereq now MET."
     category: "scope"
     barrier: |-
-      **The `clojure.test` namespace is not implemented** — `deftest`/`is`/`are`/`testing`/`run-tests`/`with-test` all unresolved. Separate ns (not clojure.core; real code does `(require [clojure.test …])`), and the densest real-bug-finder (D-158 tier 2: run real libs' own `clojure.test` suites on cljw). Needs the `clojure.test` ns + assertion macros (`is`/`are`/`testing`/`deftest`) + a test registry + `run-tests` reporter. The macros lean on syntax-quote (D-226) → that lands first. Pairs with `print-table` (clojure.pprint) for the report. Cross-ref D-158 / D-226 (prereq) / F-011. recall trigger: the corpus-driven / real-lib-test validation phase.
+      **The `clojure.test` namespace is not implemented** — `deftest`/`is`/`are`/`testing`/`run-tests`/`with-test` all unresolved. Separate ns (not clojure.core; real code does `(require [clojure.test …])`), and the densest real-bug-finder (D-158 tier 2: run real libs' own `clojure.test` suites on cljw). Needs the `clojure.test` ns + assertion macros (`is`/`are`/`testing`/`deftest`) + a test registry + `run-tests` reporter. The macros lean on syntax-quote (D-226 — now DISCHARGED, prereq met). **2026-06-03 design probe (DA fork a7b21f9): the clean finished form is a per-ns test registry keyed by ns symbol (Alt 2/3) so `(run-tests 'foo.test)` — the call every real runner makes — works; the smallest-diff global-registry Alt 1 ignores the ns arg and is the DA-flagged trap that fails D-158.** That per-ns form needs CURRENT-NS IDENTITY at the Clojure level (`*ns*` / `ns-name` / by-ns registry key), which cljw lacks — there is **no Namespace value type** (env.current_ns is an internal `*Namespace`, never a Value) and no `*ns*`/`ns-name`/`ns-interns`. So clojure.test is **blocked-by D-230** (Namespace-as-value + `*ns*` + ns-reflection), the genuine structural prerequisite. Other prereqs VERIFIED present: defmulti/defmethod (for `is`'s `assert-expr` + `report` multimethods), update-in/fnil, re-find (for `thrown-with-msg?`), var/`#'`. Deferred within clojure.test once D-230 lands: use-fixtures, `*test-out*` capture (needs `*out*`, AD-worthy), the report multimethod stays in the MVP (skipping it = Alt 1 in disguise). Pairs with `print-table` (clojure.pprint) for the report. Cross-ref D-230 (prereq) / D-158 / D-226 (met) / F-011. recall trigger: immediately after D-230 lands.
+    last_reviewed: "2026-06-03"
+  - id: "D-230"
+    status: "now (structural, surfaced 2026-06-03 by D-227 design probe) — no Namespace value type / *ns* / ns-reflection."
+    category: "scope"
+    barrier: |-
+      **No Namespace-as-value, no `*ns*`, no ns-reflection.** cljw holds the
+      current namespace as an internal `*Namespace` (env.current_ns) but never
+      exposes it to Clojure code: `*ns*`, `ns-name`, `the-ns`, `find-ns`,
+      `all-ns`, `ns-interns`, `ns-publics`, `ns-map`, `ns-resolve` are all
+      unresolved, and there is no `Value` that wraps a namespace (so `(str *ns*)`,
+      `(ns-name *ns*)` have nothing to return). This is the Phase-15 structural
+      prerequisite the D-227 clojure.test design probe surfaced: a per-ns test
+      registry keyed by ns symbol (the finished form) needs current-ns identity
+      at the Clojure level. Scope (the contained ns-reflection cluster, NOT the
+      broader `*out*`/print-control system-var-registry which stays deferred):
+      (1) a Namespace value representation (wrap `*Namespace`, or a `.namespace`
+      heap kind — F-004 slot question for the DA), (2) `*ns*` as a
+      runtime-maintained dynamic var reflecting env.current_ns (the special part:
+      it tracks the runtime, unlike the user-set `*data-readers*` precedent in
+      bootstrap.zig), (3) `ns-name`/`the-ns`/`find-ns`/`all-ns` + `ns-interns`/
+      `ns-publics` (enumerate a ns's interned vars — the data already lives in the
+      Env ns map; this is exposure, not invention). Broadly reusable beyond
+      clojure.test: clojure.repl/dir, REPL introspection, tooling. ADR-level
+      (DA fork mandatory: Namespace value representation + F-004 slot + `*ns*`
+      runtime-coupling). Cross-ref D-227 (the blocked consumer) / D-158 / F-004
+      (NaN-box slot) / handover system-var-registry note (the `*out*` half stays
+      deferred). recall trigger: NOW — it is the active unit gating clojure.test.
     last_reviewed: "2026-06-03"
   - id: "D-228"
     status: "now (minor, found 2026-06-03 during D-226) — nested syntax-quote flattens instead of preserving the inner template."

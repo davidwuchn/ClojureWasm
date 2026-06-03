@@ -28,12 +28,15 @@
   the next units**: `with-redefs` (D-225 — writable cleanly now), `clojure.test`
   (D-227 — its is/are/deftest macros lean on backtick), and real-lib loading
   (D-158). Minor syntax-quote residuals: nested backtick (D-228), `macroexpand`
-  (D-229). `with-redefs` (D-225) DONE (root-swap + finally-restore, on
-  alter-var-root). **First action on resume — `clojure.test` (D-227)**: deftest/
-  is/are/testing/run-tests (separate ns; macros now writable with backtick) — the
-  densest real-bug-finder + the D-158 real-lib-test enabler. Then real-lib load
-  (deps/classpath) or the minor residuals (D-228 nested-backtick, D-229
-  macroexpand, var/binding family).
+  (D-229). `with-redefs` (D-225) DONE. clojure.test (D-227) design-probed: its
+  clean form (per-ns registry keyed by ns symbol so `(run-tests 'foo.test)` works)
+  is **blocked-by D-230** — cljw has no Namespace value type / `*ns*` / ns-reflection.
+  **First action on resume — D-230**: Namespace-as-value + `*ns*` (runtime-maintained
+  dynamic var) + ns-reflection (`ns-name`/`the-ns`/`find-ns`/`all-ns`/`ns-interns`/
+  `ns-publics`) — ADR-level (DA fork: Namespace value representation + F-004 slot +
+  `*ns*` coupling). Then D-227 clojure.test on top, then real-lib load (D-158). The
+  `*out*`/print-control half of the system-var-registry stays deferred (clojure.test
+  prints to stdout, AD-worthy).
 - **Phase-15 architectural pieces need a DA-fork entry** (do NOT cold-seize):
   `agent`, STM `dosync`/`ref` (§9 STM 15.1-15.4 ADR), `locking`, real threading
   (std.Io.Threaded work-pool — also activates real `pmap` parallelism D-224 +
@@ -46,21 +49,6 @@
   inline int or adding a new slot for an int representation (heap-Long is the
   `IntOrigin` flag on the heap-int, F-004 layout UNCHANGED); re-opening landed
   work (git log = SSOT); perf without a Release `scripts/perf.sh` number.
-
-## Just landed (this session; git log = SSOT, full rows in `.dev/debt.yaml`)
-
-- **Campaign C1..C7 + post-campaign floor drains** all landed this session
-  (see git log). C7 D-165 (ADR-0080) = heap-boxed Long: an `IntOrigin` flag on
-  the heap-int struct (NO new NaN-box slot, F-004 UNCHANGED); (2^47,i64] is a
-  Long (class→Long, no `N`), BigInt only past i64; classification by dispatch
-  arm + `wrapArith` BigInt contagion. Then the floor drains: D-212 (str/.toString
-  drop N/M suffix), D-213 (`(class e)`→specific exception class via per-Runtime
-  exceptionDescriptor cache), D-214 (bit-ops accept heap-Long via `expectI64`+
-  `wrapI64`), D-216 (format surface), D-217 (string-Indexed), D-218 (peek/pop),
-  D-219 (namespaced maps), D-221 (read-string `::`). Then the sweep CONVERGED
-  (audit clean) and Phase 15 was entered: **D-157/ADR-0081 atom watches**
-  (add-watch/remove-watch, synchronous notify, appended `Atom.watches` field).
-  Each: own commit, corpus pin, e2e, full gate green.
 
 ## clj-parity campaign (A-half) — COMPLETE; standing floor remains
 
