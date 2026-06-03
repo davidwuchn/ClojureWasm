@@ -691,6 +691,35 @@ pub fn intCoerce(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocati
     return promote.wrapI64(rt, i);
 }
 
+/// Shared body for `byte` / `short`: truncate toward zero (like `int`), then
+/// range-check; clj throws IllegalArgumentException on overflow. cljw has no
+/// distinct Byte/Short types (F-005 / ADR-0059), so the result is an ordinary
+/// integer in range — `(class (byte 5))` is Long, an accepted divergence.
+fn coerceRanged(rt: *Runtime, args: []const Value, comptime name: []const u8, lo: i64, hi: i64, loc: SourceLocation) anyerror!Value {
+    try error_catalog.checkArity(name, args, 1, loc);
+    const v = args[0];
+    const i = promote.truncToI64(rt, v) catch |err| switch (err) {
+        error.OutOfRange => return error_catalog.raise(.type_arg_invalid, loc, .{ .fn_name = name, .expected = "a value within " ++ name ++ " range", .actual = "out-of-range number" }),
+        error.NotANumber => return error_catalog.raise(.type_arg_not_number, loc, .{ .fn_name = name, .actual = @tagName(v.tag()) }),
+        else => return err,
+    };
+    if (i < lo or i > hi)
+        return error_catalog.raise(.type_arg_invalid, loc, .{ .fn_name = name, .expected = "a value within " ++ name ++ " range", .actual = "out-of-range number" });
+    return promote.wrapI64(rt, i);
+}
+
+/// `(byte x)` — coerce to a byte-range integer (-128..127). cw v1 tier: A.
+pub fn byteCoerce(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = env;
+    return coerceRanged(rt, args, "byte", -128, 127, loc);
+}
+
+/// `(short x)` — coerce to a short-range integer (-32768..32767). cw v1 tier: A.
+pub fn shortCoerce(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = env;
+    return coerceRanged(rt, args, "short", -32768, 32767, loc);
+}
+
 /// `(bigint x)` — coerce to an arbitrary-precision integer (`…N`). A BigInt
 /// passes through; any other number truncates toward zero (int / float / ratio
 /// / BigDecimal — e.g. `(bigint 3.9)`→`3N`, `(bigint 1/2)`→`0N`). Beyond Long
@@ -1059,6 +1088,8 @@ const ENTRIES = [_]Entry{
     .{ .name = "min", .f = &min },
     .{ .name = "max", .f = &max },
     .{ .name = "int", .f = &intCoerce },
+    .{ .name = "byte", .f = &byteCoerce },
+    .{ .name = "short", .f = &shortCoerce },
     // long ≡ int in cw v1 (a single i64 integer type — no 32-bit int).
     .{ .name = "long", .f = &intCoerce },
     .{ .name = "bigint", .f = &bigintCoerce },

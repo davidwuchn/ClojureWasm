@@ -154,7 +154,15 @@ pub fn compile(alloc: std.mem.Allocator, pattern: []const u8, flags: Flags) Comp
 /// ```
 pub fn parsePattern(arena: std.mem.Allocator, pattern: []const u8, flags: Flags, group_count_out: *u16) CompileError!*const Node {
     _ = flags;
-    if (pattern.len == 0) return CompileError.NotImplemented;
+    if (pattern.len == 0) {
+        // `#""` / `(re-pattern "")` — an empty pattern matches the empty string
+        // at every position (clj parity). An empty `.concat` emits no insts, so
+        // `emit` produces just the trailing `.match`.
+        const node = try arena.create(Node);
+        node.* = .{ .concat = &.{} };
+        group_count_out.* = 0;
+        return node;
+    }
     var parser: Parser = .{ .src = pattern, .pos = 0, .arena = arena };
     const node = try parser.parseAlt();
     if (!parser.atEnd()) return CompileError.UnexpectedToken;
@@ -558,9 +566,15 @@ test "compile single-char literal emits [char, match]" {
     try testing.expectEqual({}, prog.insts[1].match);
 }
 
-test "compile rejects empty / unsupported metas / stray quantifier" {
-    // Empty pattern: cycle 1 holds the JVM-permitted empty match for later.
-    try testing.expectError(CompileError.NotImplemented, compile(testing.allocator, "", .{}));
+test "compile rejects unsupported metas / stray quantifier" {
+    // Empty pattern compiles to just `[match]` — matches the empty string at any
+    // position (clj `#""` parity, D-232).
+    {
+        var prog = try compile(testing.allocator, "", .{});
+        defer prog.deinit(testing.allocator);
+        try testing.expectEqual(@as(usize, 1), prog.insts.len);
+        try testing.expectEqual({}, prog.insts[0].match);
+    }
     // Stray quantifier (no operand): syntax error.
     try testing.expectError(CompileError.UnexpectedToken, compile(testing.allocator, "*", .{}));
     try testing.expectError(CompileError.UnexpectedToken, compile(testing.allocator, "+", .{}));

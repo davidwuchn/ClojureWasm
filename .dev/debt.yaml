@@ -175,8 +175,17 @@ active:
       clj `"…passed to: :foo/bar"`) — an **accepted error-surface divergence
       (AD-007 family)**, NOT chased (matching exact clj error strings is a
       bottomless tail; the mechanism is correct). e2e phase15_campaign_keywords (7).
-      NEXT suite: pick another `clojure.test-clojure.<x>` (e.g. data_structures /
-      strings / numbers) and drain its real gaps. This
+      **predicates.clj** drained of non-structural gaps: **`byte`/`short`**
+      (range-checked coercions, math.zig) + **empty regex `#""`** (compile.zig:
+      empty pattern → match-empty program) LANDED (corpus numeric_cast 7,
+      empty_regex 5). predicates.clj now blocks on **`into-array`** (Java arrays)
+      — a DEFERRED structural feature (F-004 array-slot, tracked), so predicates
+      is parked there (it's a JVM-type-identity suite — much of it is F-005
+      divergence anyway, a poor full-drain target). NEXT suite: a behavioral one
+      with minimal deps (volatiles / try_catch / data / edn) — avoid the
+      generative-dep suites (data_structures/numbers `:use [clojure.test.generative
+      :exclude (is)]` + need clojure.data.generators) and JVM-type suites. Also a
+      future gap for the big suites: `:use [lib :exclude (…)]` / `:only`. This
       is the standing `quality-loop floor: validation-campaign` — drain
       highest-value-first, one upstream suite at a time, big-bang per suite
       (anti-drip per clj_diff_sweep.md Discipline 2). Cross-ref D-158 (infra) /

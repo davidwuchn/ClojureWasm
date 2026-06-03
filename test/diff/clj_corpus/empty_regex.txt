@@ -1,0 +1,10 @@
+(re-find #"" "abc")
+;;=> ""
+(re-matches #"" "")
+;;=> ""
+(boolean (re-find #"" "x"))
+;;=> true
+(str (re-pattern ""))
+;;=> ""
+(re-seq #"" "ab")
+;;=> ("" "" "")
