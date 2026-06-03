@@ -104,6 +104,20 @@
             (do-report {:type :pass :message ~msg :expected (quote ~form) :actual e#})
             e#))))
 
+;; (is (thrown-with-msg? Class regex body…)) — like thrown?, but also requires
+;; the thrown exception's message to match `regex` (re-find).
+(defmethod assert-expr (quote thrown-with-msg?) [msg form]
+  (let [klass (nth form 1)
+        re (nth form 2)
+        body (nthnext form 3)]
+    `(try ~@body
+          (do-report {:type :fail :message ~msg :expected (quote ~form) :actual nil})
+          (catch ~klass e#
+            (if (re-find ~re (ex-message e#))
+              (do-report {:type :pass :message ~msg :expected (quote ~form) :actual e#})
+              (do-report {:type :fail :message ~msg :expected (quote ~form) :actual e#}))
+            e#))))
+
 ;; ---------------------------------------------------------------------------
 ;; is / are / testing.
 ;; ---------------------------------------------------------------------------

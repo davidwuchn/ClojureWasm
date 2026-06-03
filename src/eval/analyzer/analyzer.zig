@@ -1015,6 +1015,9 @@ pub fn valueToForm(
             break :blk .{ .data = .{ .keyword = .{ .ns = kw.ns, .name = kw.name } }, .location = call_loc };
         },
         .string => .{ .data = .{ .string = string_collection.asString(v) }, .location = call_loc },
+        // A regex in a macro expansion (e.g. `(is (thrown-with-msg? E #"…" …))`)
+        // round-trips through its reader-literal source.
+        .regex => .{ .data = .{ .regex_literal = regex_value.asRegex(v).source() }, .location = call_loc },
         // Any seq tag — FORCE lazy layers so a macro's `(seq (concat …))`
         // syntax-quote expansion (and its lazy tail) realizes into a concrete
         // list Form. A plain `list_collection.rest` would not force the lazy

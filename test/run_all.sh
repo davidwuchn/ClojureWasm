@@ -443,6 +443,7 @@ run_step "e2e_phase15_dynamic_var"          "bash test/e2e/phase15_dynamic_var.s
 run_step "e2e_phase15_clojure_test"         "bash test/e2e/phase15_clojure_test.sh"
 run_step "e2e_phase15_require_fs"           "bash test/e2e/phase15_require_fs.sh"
 run_step "e2e_phase15_use_refer_all"        "bash test/e2e/phase15_use_refer_all.sh"
+run_step "e2e_phase15_campaign_keywords"    "bash test/e2e/phase15_campaign_keywords.sh"
 run_step "e2e_phase14_cljw_build"            "bash test/e2e/phase14_cljw_build.sh"
 run_step "e2e_phase14_core_cluster"          "bash test/e2e/phase14_core_cluster.sh"
 run_step "e2e_phase14_print_family"          "bash test/e2e/phase14_print_family.sh"
