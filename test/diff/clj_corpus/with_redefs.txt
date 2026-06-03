@@ -1,0 +1,8 @@
+(do (def wa (fn [] 1)) (def wb (fn [] 2)) [(with-redefs [wa (fn [] 10) wb (fn [] 20)] [(wa) (wb)]) (wa) (wb)])
+;;=> [[10 20] 1 2]
+(do (def wc (fn [] :orig)) (try (with-redefs [wc (fn [] :new)] (throw (ex-info "x" {}))) (catch Throwable e nil)) (wc))
+;;=> :orig
+(do (def wd 5) (with-redefs [wd 99] wd))
+;;=> 99
+(do (def we 7) (with-redefs [we 99] we) we)
+;;=> 7

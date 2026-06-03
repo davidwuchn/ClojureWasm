@@ -28,8 +28,12 @@
   the next units**: `with-redefs` (D-225 — writable cleanly now), `clojure.test`
   (D-227 — its is/are/deftest macros lean on backtick), and real-lib loading
   (D-158). Minor syntax-quote residuals: nested backtick (D-228), `macroexpand`
-  (D-229). **First action on resume — `with-redefs` (D-225) or `clojure.test`
-  (D-227)**, the highest-value now-unblocked work toward real-lib compatibility.
+  (D-229). `with-redefs` (D-225) DONE (root-swap + finally-restore, on
+  alter-var-root). **First action on resume — `clojure.test` (D-227)**: deftest/
+  is/are/testing/run-tests (separate ns; macros now writable with backtick) — the
+  densest real-bug-finder + the D-158 real-lib-test enabler. Then real-lib load
+  (deps/classpath) or the minor residuals (D-228 nested-backtick, D-229
+  macroexpand, var/binding family).
 - **Phase-15 architectural pieces need a DA-fork entry** (do NOT cold-seize):
   `agent`, STM `dosync`/`ref` (§9 STM 15.1-15.4 ADR), `locking`, real threading
   (std.Io.Threaded work-pool — also activates real `pmap` parallelism D-224 +

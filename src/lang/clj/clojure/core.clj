@@ -1578,3 +1578,21 @@
   (apply list (quote pcalls)
          (map (fn* [e] (list (quote fn*) [] e)) exprs)))
 
+;; `(with-redefs [v override …] body…)` — temporarily set each Var v's ROOT to
+;; override for body's dynamic extent, restoring originals in a `finally` (clj's
+;; test util; cw is single-threaded so this is a root swap via `alter-var-root`,
+;; not a thread-local binding frame — D-225). Now writable with syntax-quote.
+(defn with-redefs-fn [binding-map func]
+  (let [vars (keys binding-map)
+        orig (zipmap vars (map deref vars))]
+    (doseq [v vars] (alter-var-root v (constantly (binding-map v))))
+    (try
+      (func)
+      (finally
+        (doseq [v vars] (alter-var-root v (constantly (orig v))))))))
+(defmacro with-redefs [bindings & body]
+  `(with-redefs-fn
+     (hash-map ~@(interleave (map (fn* [k] (list (quote var) k)) (take-nth 2 bindings))
+                             (take-nth 2 (rest bindings))))
+     (fn* [] ~@body)))
+

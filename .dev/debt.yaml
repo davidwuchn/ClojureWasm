@@ -57,7 +57,18 @@ active:
     last_reviewed: "2026-06-03"
   - id: "D-225"
     status: |-
-      PARTIAL 2026-06-03 — `alter-var-root` LANDED (foundation); `with-redefs`
+      DISCHARGED 2026-06-03 — `alter-var-root` + `with-redefs` both landed.
+      `with-redefs`/`with-redefs-fn` (core.clj, now writable with syntax-quote):
+      temporarily set each Var's ROOT to the override for the body's extent via
+      `alter-var-root`, restoring originals in a `finally` (even on throw); cw is
+      single-threaded so it's a root swap, not a thread-local binding frame.
+      clj-verified: rebind+restore, multi-var, throw-restore, value vars. Corpus
+      `with_redefs` (4); 6 e2e phase14_with_redefs. RESIDUAL (lower value, → own
+      recall): the rest of the var/binding family — `var-set`/`with-bindings`/
+      `find-var`/`alter-meta!`/`bound-fn` (thread-local binding frames + var meta,
+      D-183). The high-value test util (with-redefs) is done. Cross-ref D-226
+      (syntax-quote, now enables clean macros) / D-183 (var meta) / F-011.
+      ORIGINAL: PARTIAL 2026-06-03 — `alter-var-root` LANDED (foundation); `with-redefs`
       is the residual. `alter-var-root` (core.zig `alterVarRootFn`, registered):
       atomically `(apply f current-root args)` into a Var's mutable root (the
       cell `def` writes; `var_ref`→`*Var`→`setRoot`), returns the new root.
