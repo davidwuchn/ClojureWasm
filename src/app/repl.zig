@@ -35,8 +35,6 @@ const driver = @import("../eval/driver.zig");
 const Runtime = @import("../runtime/runtime.zig").Runtime;
 const Env = @import("../runtime/env.zig").Env;
 const Value = @import("../runtime/value/value.zig").Value;
-const primitive = @import("../lang/primitive.zig");
-const macro_transforms = @import("../lang/macro_transforms.zig");
 const bootstrap = @import("../lang/bootstrap.zig");
 const error_print = @import("../runtime/error/print.zig");
 const print = @import("../runtime/print.zig");
@@ -62,12 +60,13 @@ pub fn run(
     defer env.deinit();
 
     driver.installVTable(&rt);
-    bootstrap.installEmbeddedResolver(&rt);
-    try primitive.registerAll(&env);
 
     var macro_table = macro_dispatch.Table.init(gpa);
     defer macro_table.deinit();
-    try macro_transforms.registerInto(&env, &macro_table);
+    // Full bootstrap prefix (embedded resolver + primitives + macros +
+    // data-readers + *ns* var). A bare registerAll+registerInto drifts from
+    // setupCorePrefix and leaves *ns* unresolved when test.clj loads (ADR-0083).
+    try bootstrap.setupCorePrefix(&rt, &env, &macro_table);
 
     const bootstrap_ctx = error_print.SourceContext{ .file = bootstrap.SOURCE_LABEL, .text = bootstrap.CORE_SOURCE };
     // ADR-0056 Cycle 2c: restore clojure.core from the embedded AOT envelope

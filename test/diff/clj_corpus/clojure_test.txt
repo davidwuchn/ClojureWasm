@@ -1,0 +1,16 @@
+(clojure.test/is (= 1 1))
+;;=> true
+(clojure.test/is (pos? 3))
+;;=> true
+(clojure.test/is (= 4 (+ 2 2)) "with message")
+;;=> true
+(do (clojure.test/is (= 1 1)) (clojure.test/is (= 2 2)) :done)
+;;=> :done
+(ex-message (clojure.test/is (thrown? Throwable (throw (ex-info "boom" {})))))
+;;=> "boom"
+(clojure.test/is (contains? #{1 2 3} 2))
+;;=> true
+(let [x 5] (clojure.test/is (= x 5)))
+;;=> true
+(clojure.test/is (not (nil? [])))
+;;=> true

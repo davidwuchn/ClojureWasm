@@ -253,6 +253,16 @@ confirmed exprs into a `*.txt` corpus here via `--corpus`.
   …]` print, no JVM FQN/addr) + AD-011 (`ns-publics 'clojure.core` omits
   rt-referred primitives like `reduce`; `ns-map` includes them, matching clj's
   total visibility). Var-as-IFn (calling a returned var) is D-231.
+- **`^:dynamic` / `^:private` on a .clj def** (analyzer fix) — `(def ^:dynamic
+  *x* …)` now sets the Var flag so `binding` rebinds it (was silently dropped).
+  Corpus `dynamic_var` (5), e2e phase15_dynamic_var (5).
+- **clojure.test** (D-227) — `is` (=/thrown?/default + msg) / `deftest` / `are` /
+  `testing` / `run-tests` (per-ns registry keyed by ns symbol, returns the
+  `{:test :pass :fail :error}` summary). Corpus `clojure_test` (8 passing `is`
+  forms — return values match clj exactly), e2e phase15_clojure_test (7 — count
+  extraction across pass/fail/error/thrown/are/multi-deftest/testing). Report
+  PRINT format is cljw-specific (no `*test-out*`); only the returned counts +
+  `is` return values are clj-asserted.
 
 ## Next-sweep candidates (gap-confirmed or unswept)
 

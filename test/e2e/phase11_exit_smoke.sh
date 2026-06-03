@@ -25,9 +25,9 @@ last_line() { awk 'END { print }' <<< "$1"; }
 
 # --- (1) clojure.test compose smoke ---
 got=$("$BIN" - <<'EOF' 2>/dev/null
-(defn t1 [] (clojure.test/is (= 1 1)))
-(defn t2 [] (clojure.test/is true))
-(clojure.test/run-tests t1 t2)
+(clojure.test/deftest t1 (clojure.test/is (= 1 1)))
+(clojure.test/deftest t2 (clojure.test/is true))
+(let [s (clojure.test/run-tests)] [(:pass s) (:fail s)])
 EOF
 ) || fail "(1): non-zero exit"
 assert_eq 'clojure_test_compose' "$(last_line "$got")" '[2 0]'
@@ -38,12 +38,12 @@ echo "PASS tier_a_13_of_13_still_green"
 
 # --- (3) self-host cross-ns smoke (test + set + edn) ---
 got=$("$BIN" - <<'EOF' 2>/dev/null
-(defn ts1 []
+(clojure.test/deftest ts1
   (clojure.test/is
     (= 2 (count (clojure.set/intersection
                   (clojure.edn/read-string "#{1 2 3}")
                   #{2 3 4})))))
-(clojure.test/run-tests ts1)
+(let [s (clojure.test/run-tests)] [(:pass s) (:fail s)])
 EOF
 ) || fail "(3): non-zero exit"
 assert_eq 'self_host_test_set_edn' "$(last_line "$got")" '[1 0]'

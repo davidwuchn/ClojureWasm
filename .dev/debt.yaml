@@ -87,7 +87,24 @@ active:
       (now landed) + var binding-frame infra. `with-redefs` is the highest-value.
     last_reviewed: "2026-06-03"
   - id: "D-227"
-    status: "now (UNBLOCKED 2026-06-03 — D-230 landed *ns*/Namespace-as-value + ns-reflection; syntax-quote also MET). Next unit."
+    status: |-
+      DISCHARGED 2026-06-03 — real `clojure.test` landed (rewrote the D-099-era
+      25-line stub in `src/lang/clj/clojure/test.clj`, already bootstrap-embedded).
+      Per the DA fork (a7b21f9): a PER-NS registry keyed by `(ns-name *ns*)` so
+      `(run-tests 'foo.test)` works; `is` is a macro routing through an
+      `assert-expr` multimethod (`=` shows evaluated args, `thrown?` catches by
+      class, `:default` truthy-test); `report` multimethod keyed on `:type`;
+      `*report-counters*` a dynamic var holding an atom (needed the D-227-adjacent
+      `^:dynamic` analyzer fix, commit 09f2a90a). `deftest`/`are` (direct
+      postwalk-replace, no clojure.template dep)/`testing`/`run-tests`/
+      `run-all-tests`/`test-var`. clj-verified: corpus `clojure_test` (8 passing
+      `is` forms — return values match clj exactly), e2e phase15_clojure_test (7:
+      all-pass/fail/error/thrown/are/multi-deftest/testing counts). Removed the
+      dead `test_assert.zig` `is` primitive + obsolete phase11_clojure_test.sh.
+      Deferred (lower value): use-fixtures, thrown-with-msg?, with-test,
+      `*test-out*` capture (needs `*out*`). Unblocks D-158 (run real libs' suites).
+      Cross-ref D-230 (prereq, met) / D-226 (backtick, met) / D-158 / F-011.
+      ORIGINAL: now (UNBLOCKED 2026-06-03 — D-230 landed *ns*/Namespace-as-value + ns-reflection).
     category: "scope"
     barrier: |-
       **The `clojure.test` namespace is not implemented** — `deftest`/`is`/`are`/`testing`/`run-tests`/`with-test` all unresolved. Separate ns (not clojure.core; real code does `(require [clojure.test …])`), and the densest real-bug-finder (D-158 tier 2: run real libs' own `clojure.test` suites on cljw). Needs the `clojure.test` ns + assertion macros (`is`/`are`/`testing`/`deftest`) + a test registry + `run-tests` reporter. The macros lean on syntax-quote (D-226 — now DISCHARGED, prereq met). **2026-06-03 design probe (DA fork a7b21f9): the clean finished form is a per-ns test registry keyed by ns symbol (Alt 2/3) so `(run-tests 'foo.test)` — the call every real runner makes — works; the smallest-diff global-registry Alt 1 ignores the ns arg and is the DA-flagged trap that fails D-158.** That per-ns form needs CURRENT-NS IDENTITY at the Clojure level (`*ns*` / `ns-name` / by-ns registry key), which cljw lacks — there is **no Namespace value type** (env.current_ns is an internal `*Namespace`, never a Value) and no `*ns*`/`ns-name`/`ns-interns`. So clojure.test is **blocked-by D-230** (Namespace-as-value + `*ns*` + ns-reflection), the genuine structural prerequisite. Other prereqs VERIFIED present: defmulti/defmethod (for `is`'s `assert-expr` + `report` multimethods), update-in/fnil, re-find (for `thrown-with-msg?`), var/`#'`. Deferred within clojure.test once D-230 lands: use-fixtures, `*test-out*` capture (needs `*out*`, AD-worthy), the report multimethod stays in the MVP (skipping it = Alt 1 in disguise). Pairs with `print-table` (clojure.pprint) for the report. Cross-ref D-230 (prereq) / D-158 / D-226 (met) / F-011. recall trigger: immediately after D-230 lands.

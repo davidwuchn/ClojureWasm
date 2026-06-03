@@ -32,12 +32,17 @@
   (reserved `.ns` slot 21 activated, no new F-004 slot) + `*ns*` (runtime-maintained
   via `Env.setCurrentNs`) + ns-reflection (`ns-name`/`the-ns`/`find-ns`/`all-ns`/
   `create-ns`/`ns-interns`/`ns-publics`/`ns-map`/`ns-resolve`); AD-010/AD-011; GC
-  membrane now skips `.var_ref`+`.ns`. **First action on resume — D-227 clojure.test**
-  (fully unblocked: backtick + `*ns*`/`ns-name`/`ns-interns` present): DA-recommended
-  per-ns registry keyed by `(ns-name *ns*)` + `is`/`are`/`testing`/`deftest`/
-  `run-tests` (`assert-expr` + `report` multimethods, dynamic `*report-counters*`
-  atom; minimal `clojure.template` for `are`). Then real-lib load (D-158). Deferred:
-  D-231 (Var-as-IFn), `remove-ns`, `*out*`/`with-out-str`.
+  membrane now skips `.var_ref`+`.ns`. **D-227 clojure.test DONE**: real
+  `is`/`deftest`/`are`/`testing`/`run-tests` (per-ns registry keyed by
+  `(ns-name *ns*)`, `assert-expr`+`report` multimethods, dynamic
+  `*report-counters*` atom — needed the `^:dynamic` analyzer fix, 09f2a90a);
+  removed the dead test_assert.zig + phase11 e2e. **First action on resume —
+  D-158 real-lib load** (now genuinely reachable: backtick + clojure.test +
+  ns-reflection all present): pick a small pure-Clojure lib, load its source via
+  require, run its `clojure.test` suite on cljw. Lower-value alternatives if
+  D-158 needs infra: D-231 (Var-as-IFn), D-228 (nested backtick), D-229
+  (macroexpand). Deferred clojure.test extras: use-fixtures, thrown-with-msg?,
+  `*test-out*` (needs `*out*`).
 - **Phase-15 architectural pieces need a DA-fork entry** (do NOT cold-seize):
   `agent`, STM `dosync`/`ref` (§9 STM 15.1-15.4 ADR), `locking`, real threading
   (std.Io.Threaded work-pool — also activates real `pmap` parallelism D-224 +

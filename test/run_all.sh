@@ -345,7 +345,8 @@ run_step "e2e_phase9_cli"                    "bash test/e2e/phase9_cli.sh"
 run_step "e2e_phase9_exit_smoke"             "bash test/e2e/phase9_exit_smoke.sh"
 run_step "e2e_phase10_pprint"                "bash test/e2e/phase10_pprint.sh"
 run_step "e2e_phase10_exit_smoke"            "bash test/e2e/phase10_exit_smoke.sh"
-run_step "e2e_phase11_clojure_test"          "bash test/e2e/phase11_clojure_test.sh"
+# phase11_clojure_test retired: the D-099-era minimal `is`/`run-tests` surface it
+# tested was replaced by the real clojure.test (D-227) — see e2e_phase15_clojure_test.
 run_step "test_clj_tier_a"                   "bash test/clj/run_tier_a.sh"
 run_step "e2e_phase11_exit_smoke"            "bash test/e2e/phase11_exit_smoke.sh"
 run_step "e2e_phase13_exit_smoke"            "bash test/e2e/phase13_exit_smoke.sh"
@@ -439,6 +440,7 @@ run_step "e2e_phase14_syntax_quote"         "bash test/e2e/phase14_syntax_quote.
 run_step "e2e_phase14_with_redefs"          "bash test/e2e/phase14_with_redefs.sh"
 run_step "e2e_phase15_namespace"            "bash test/e2e/phase15_namespace.sh"
 run_step "e2e_phase15_dynamic_var"          "bash test/e2e/phase15_dynamic_var.sh"
+run_step "e2e_phase15_clojure_test"         "bash test/e2e/phase15_clojure_test.sh"
 run_step "e2e_phase14_cljw_build"            "bash test/e2e/phase14_cljw_build.sh"
 run_step "e2e_phase14_core_cluster"          "bash test/e2e/phase14_core_cluster.sh"
 run_step "e2e_phase14_print_family"          "bash test/e2e/phase14_print_family.sh"

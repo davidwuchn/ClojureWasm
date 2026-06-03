@@ -318,8 +318,11 @@ const Fixture = struct {
         self.table = macro_dispatch.Table.init(alloc);
 
         driver.installVTable(&self.rt);
-        try primitive.registerAll(&self.env);
-        try macro_transforms.registerInto(&self.env, &self.table);
+        // Full bootstrap prefix (registerAll + macros + data-readers + *ns* var
+        // + embedded resolver), matching the real binary. test.clj's run-tests
+        // / are reference *ns* / clojure.walk at def-time analysis, so the
+        // prefix's registerNsVar is required (a bare registerAll is not enough).
+        try setupCorePrefix(&self.rt, &self.env, &self.table);
     }
 
     fn deinit(self: *Fixture) void {
