@@ -1,0 +1,12 @@
+(do (defrecord Foo [a b]) (:a (map->Foo {:a 1 :b 2})))
+;;=> 1
+(do (defrecord Foo [a b]) (:b (map->Foo {:a 1 :b 2})))
+;;=> 2
+(do (defrecord Foo [a b]) (= (->Foo 1 2) (map->Foo {:a 1 :b 2})))
+;;=> true
+(do (defrecord P [x]) (:x (map->P {:x 9})))
+;;=> 9
+(do (defrecord Foo [a b]) (nil? (:b (map->Foo {:a 1}))))
+;;=> true
+(do (defrecord Pt [x y]) (+ (:x (map->Pt {:x 3 :y 4})) (:y (map->Pt {:x 3 :y 4}))))
+;;=> 7

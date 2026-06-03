@@ -2236,6 +2236,42 @@ fn lowerDefType(
     def_arrow_items[2] = factory_fn;
     const def_arrow = try list(arena, def_arrow_items, loc);
 
+    // (def map->Name (fn* [m] (Name. (get m :f1) (get m :f2) ...))) — the map
+    // factory clj generates for every DEFRECORD (not deftype). Missing keys →
+    // nil (via get); extra keys are dropped (cljw defrecord has no __extmap,
+    // D-086). Gated on the record ctor_prim (comptime).
+    const is_record = comptime std.mem.eql(u8, ctor_prim, "__defrecord!");
+    const def_map_arrow: ?Form = if (is_record) blk: {
+        const map_arrow_name = mblk: {
+            const nm = args[0].data.symbol.name;
+            const buf = try arena.alloc(u8, nm.len + 5);
+            @memcpy(buf[0..5], "map->");
+            @memcpy(buf[5..], nm);
+            break :mblk sym(buf, loc);
+        };
+        const m_param = sym("m", loc);
+        const m_params_vec = Form{ .data = .{ .vector = try arena.dupe(Form, &[_]Form{m_param}) }, .location = loc };
+        const map_ctor_args = try arena.alloc(Form, fields_in.len + 1);
+        map_ctor_args[0] = ctor_sym;
+        for (fields_in, 0..) |f, idx| {
+            const kw = Form{ .data = .{ .keyword = .{ .name = f.data.symbol.name } }, .location = loc };
+            const get_items = try arena.alloc(Form, 3);
+            get_items[0] = sym("get", loc);
+            get_items[1] = m_param;
+            get_items[2] = kw;
+            map_ctor_args[idx + 1] = try list(arena, get_items, loc);
+        }
+        var map_fn_items = try arena.alloc(Form, 3);
+        map_fn_items[0] = sym("fn*", loc);
+        map_fn_items[1] = m_params_vec;
+        map_fn_items[2] = try list(arena, map_ctor_args, loc);
+        var def_map_arrow_items = try arena.alloc(Form, 3);
+        def_map_arrow_items[0] = sym("def", loc);
+        def_map_arrow_items[1] = map_arrow_name;
+        def_map_arrow_items[2] = try list(arena, map_fn_items, loc);
+        break :blk try list(arena, def_map_arrow_items, loc);
+    } else null;
+
     // Protocol-section parsing — mirror expandExtendProtocol's
     // section walker. args[2..] alternates between a protocol-name
     // Symbol and one-or-more method-impl lists belonging to it; each
@@ -2268,11 +2304,17 @@ fn lowerDefType(
     }
 
     // (do (def Name (rt/__defrecord! ...)) (def ->Name ...) extend-type-sections...)
-    var do_items = try arena.alloc(Form, 3 + sections.items.len);
+    const extra: usize = if (def_map_arrow != null) 1 else 0;
+    var do_items = try arena.alloc(Form, 3 + extra + sections.items.len);
     do_items[0] = sym("do", loc);
     do_items[1] = def_name;
     do_items[2] = def_arrow;
-    @memcpy(do_items[3..], sections.items);
+    var di: usize = 3;
+    if (def_map_arrow) |dma| {
+        do_items[di] = dma;
+        di += 1;
+    }
+    @memcpy(do_items[di..], sections.items);
     return list(arena, do_items, loc);
 }
 
@@ -2906,8 +2948,13 @@ test "expandDefrecord lowers (defrecord Name [f1 f2]) to (do (def Name __defreco
     const out = try expandDefrecord(arena, &fix.rt, &args, .{});
     try testing.expect(out.data == .list);
     try expectSymbolEq(out.data.list[0], "do");
-    // (do (def Foo (rt/__defrecord! ...)) (def ->Foo (fn* [x y] (Foo. x y))))
-    try testing.expectEqual(@as(usize, 3), out.data.list.len);
+    // (do (def Foo (rt/__defrecord! ...)) (def ->Foo (fn* [x y] (Foo. x y)))
+    //     (def map->Foo (fn* [m] (Foo. (get m :x) (get m :y))))) — D-232 map factory.
+    try testing.expectEqual(@as(usize, 4), out.data.list.len);
+    const def_map_arrow = out.data.list[3];
+    try testing.expect(def_map_arrow.data == .list);
+    try expectSymbolEq(def_map_arrow.data.list[0], "def");
+    try expectSymbolEq(def_map_arrow.data.list[1], "map->Foo");
 
     const def_name = out.data.list[1];
     try testing.expect(def_name.data == .list);
@@ -2946,11 +2993,11 @@ test "expandDefrecord parses inline protocol-method sections into extend-type" {
 
     const args = [_]Form{ name_sym, fields_form, proto_sym, impl_form };
     const out = try expandDefrecord(arena, &fix.rt, &args, .{});
-    // (do __defrecord! def->Foo (extend-type Foo P impl))
+    // (do __defrecord! def->Foo def-map->Foo (extend-type Foo P impl))
     try testing.expect(out.data == .list);
-    try testing.expectEqual(@as(usize, 4), out.data.list.len);
+    try testing.expectEqual(@as(usize, 5), out.data.list.len);
 
-    const ext = out.data.list[3];
+    const ext = out.data.list[4];
     try testing.expect(ext.data == .list);
     try expectSymbolEq(ext.data.list[0], "extend-type");
     try expectSymbolEq(ext.data.list[1], "Foo");

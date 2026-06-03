@@ -207,8 +207,12 @@ active:
       ADR-0037 metadata-less symbols = accepted); `alias`/`ns-aliases` DONE
       (namespace.zig over env.setAlias; ns-libs.clj then parks on a require
       PREFIX-LIST libspec `(prefix [a b])`, a deferred require feature);
-      `clojure.math` ns (math); `map->Foo` defrecord factory in a
-      test (clojure_walk); `fails-with-cause?`/test-helper (fn); `:import` (delays/
+      `clojure.math` ns (math); **`map->Foo` defrecord map-factory DONE**
+      (lowerDefType now emits `(def map->Name (fn* [m] (Name. (get m :f)…)))`,
+      record-only via the comptime ctor_prim gate; deftype unaffected; missing
+      keys→nil, extra keys dropped per D-086; corpus defrecord_map_factory 6);
+      clojure_walk then parks on a `clojure.lang.PersistentTreeMap` class ref
+      (JVM-class interop, accepted); `fails-with-cause?`/test-helper (fn); `:import` (delays/
       parse/try_catch/data); `into-array`/Java arrays (predicates, F-004).
       **transients.clj**: `binding` with an EMPTY body (→ nil, clj parity — a
       `(testing "label")` with no body expands to it) + **`defn-`** (private defn
