@@ -27,6 +27,7 @@ const print_mod = @import("../../runtime/print.zig");
 const charset_mod = @import("../../runtime/charset.zig");
 const td_mod = @import("../../runtime/type_descriptor.zig");
 const class_name = @import("../../runtime/class_name.zig");
+const host_class = @import("../../runtime/error/host_class.zig");
 const driver = @import("../../eval/driver.zig");
 
 /// `(__instance? 'Class x)` — row 7.12 cycle 1 Layer-2 primitive
@@ -58,6 +59,26 @@ pub fn instanceQPrim(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLo
     if (!class_name.isKnown(class_sym) and !rt.types.contains(class_sym))
         return error_catalog.raise(.class_name_unknown, loc, .{ .name = class_sym });
     return if (class_name.isInstance(args[1], class_sym)) .true_val else .false_val;
+}
+
+/// `(-class-isa? child parent)` — true iff both args are class values
+/// (TypeDescriptor) and `child`'s class is `parent` or a subclass of it (the
+/// host exception hierarchy via `host_class.isSubclassOf`). The class-hierarchy
+/// arm of `isa?` (clj's `Class.isAssignableFrom` step); equality + the ad-hoc
+/// `derive` hierarchy stay in the `.clj` `isa?`. Non-class args → false.
+pub fn classIsaPrim(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = rt;
+    _ = env;
+    try error_catalog.checkArity("-class-isa?", args, 2, loc);
+    if (args[0].tag() != .type_descriptor or args[1].tag() != .type_descriptor)
+        return .false_val;
+    const child = td_mod.asTypeDescriptorRef(args[0]).fqcn orelse return .false_val;
+    const parent = td_mod.asTypeDescriptorRef(args[1]).fqcn orelse return .false_val;
+    if (std.mem.eql(u8, child, parent)) return .true_val;
+    return if (host_class.isSubclassOf(host_class.normalizeClassName(child), host_class.normalizeClassName(parent)))
+        .true_val
+    else
+        .false_val;
 }
 
 /// `(nil? x)` — true iff `x` is the singleton nil Value.
@@ -1224,6 +1245,7 @@ const ENTRIES = [_]Entry{
     .{ .name = "__resolve", .f = &resolvePrim },
     .{ .name = "alter-var-root", .f = &alterVarRootFn },
     .{ .name = "__instance?", .f = &instanceQPrim },
+    .{ .name = "-class-isa?", .f = &classIsaPrim },
     .{ .name = "nil?", .f = &nilQ },
     .{ .name = "true?", .f = &trueQ },
     .{ .name = "false?", .f = &falseQ },

@@ -1,0 +1,14 @@
+(isa? clojure.lang.ExceptionInfo RuntimeException)
+;;=> true
+(isa? clojure.lang.ExceptionInfo Exception)
+;;=> true
+(isa? Exception Throwable)
+;;=> true
+(isa? Exception RuntimeException)
+;;=> false
+(isa? RuntimeException RuntimeException)
+;;=> true
+(isa? :a :b)
+;;=> false
+(isa? Long Long)
+;;=> true

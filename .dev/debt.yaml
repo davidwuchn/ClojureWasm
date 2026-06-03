@@ -455,6 +455,18 @@ active:
       simple clojure.lang exception name (`ExceptionInfo`) resolves without an
       import where clj needs the FQCN — consistent with cljw's import-free
       simple-name exception handling in catch/instance? (AD-003 family).
+      **2026-06-04 `isa?` on the class hierarchy LANDED**: `(isa? (class e)
+      RuntimeException)` / `(isa? ExceptionInfo Exception)` now true (clj's
+      Class.isAssignableFrom step, which multimethod's isaCheck had explicitly
+      deferred). New `-class-isa?` primitive (core.zig) over `host_class.
+      isSubclassOf` on the two TypeDescriptors' fqcns; core.clj `isa?` gains a
+      `(and (class? child) (class? parent) (-class-isa? …))` arm before the
+      ad-hoc-derive lookup (equality + derive hierarchy + vector recursion
+      unchanged). corpus isa_class_hierarchy (7) + verified ad-hoc derive
+      regression. fn.clj now RUNS (its remaining FAILs are clojure.spec
+      conformance-error-message assertions — cljw has no spec, an accepted
+      AD-007/spec divergence). NOTE: `supers`/`bases` still absent (a separate
+      class-reflection gap).
       **2026-06-04 `defprotocol` docstrings LANDED**: an optional protocol-level
       docstring after the name (`(defprotocol P "doc" (m [a]) …)`) was rejected
       ("method signature must be a list"); now skipped. Method-level docstrings,

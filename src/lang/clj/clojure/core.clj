@@ -1524,6 +1524,9 @@
   (fn* ([child parent] (isa? (deref -global-hierarchy) child parent))
        ([h child parent]
         (or (= child parent)
+            ;; class-hierarchy arm (clj's Class.isAssignableFrom): when both
+            ;; are class values, `child` isa `parent` if it is a subclass.
+            (and (class? child) (class? parent) (-class-isa? child parent))
             (contains? (get (:ancestors h) child) parent)
             (and (vector? parent) (vector? child)
                  (= (count parent) (count child))
