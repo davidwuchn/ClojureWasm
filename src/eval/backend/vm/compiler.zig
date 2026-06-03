@@ -624,11 +624,14 @@ const Compiler = struct {
             const alias_dup: ?[]const u8 = if (n.alias) |a| try self.arena.dupe(u8, a) else null;
             const refers_dup = try self.arena.alloc([]const u8, n.refers.len);
             for (n.refers, 0..) |r, i| refers_dup[i] = try self.arena.dupe(u8, r);
+            const exclude_dup = try self.arena.alloc([]const u8, n.exclude.len);
+            for (n.exclude, 0..) |e, i| exclude_dup[i] = try self.arena.dupe(u8, e);
             try self.libspecs.append(self.arena, .{
                 .ns_name = ns_dup,
                 .alias = alias_dup,
                 .refers = refers_dup,
                 .refer_all = n.refer_all,
+                .exclude = exclude_dup,
             });
             try self.emit(.op_require_with_libspec, idx);
             return;

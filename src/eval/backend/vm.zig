@@ -588,8 +588,9 @@ fn stepOnce(
                     try env.setAlias(here, alias_name, target_ns);
                 }
                 if (spec.refer_all) {
-                    // `:refer :all` / `:use` — refer every public var.
-                    try env.referAll(target_ns, here);
+                    // `:refer :all` / `:use` — refer every public var,
+                    // honouring a `:exclude` blacklist when present.
+                    try env.referAllWithFilter(target_ns, here, spec.exclude, null);
                 }
                 for (spec.refers) |refer_name| {
                     const outcome = try env.referOne(target_ns, here, refer_name);

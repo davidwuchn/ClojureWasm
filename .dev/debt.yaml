@@ -217,7 +217,23 @@ active:
       **transients.clj**: `binding` with an EMPTY body (→ nil, clj parity — a
       `(testing "label")` with no body expands to it) + **`defn-`** (private defn
       macro_transform) both LANDED (corpus binding_defn_private 5); transients then
-      parks on `reify Object`/`hashCode` (JVM-class interop, deferred). This
+      parks on `reify Object`/`hashCode` (JVM-class interop, deferred).
+      **libspec `:only`/`:exclude` options LANDED** (2026-06-03): `(:use [ns
+      :only (a b)])` whitelist (≡ `:refer [a b]`, accepts list OR vector) +
+      `(:use [ns :exclude (a b)])` blacklist over env.referAllWithFilter, on
+      both backends (RequireNode.exclude + LibspecEntry.exclude + serialize);
+      `refer_all_override: ?bool` expresses the use(default-all)-vs-require
+      (default-none) split. control/logic/special suites surfaced it (they
+      open `(:use [clojure.test-helper :only (…)])`). NEW PARKED (this sweep):
+      (a) libspec `:rename {old new}` + `:as-alias` raise feature_not_supported
+      (rename needs a rename-map threaded through RequireNode; lower value);
+      (b) standalone `use`/`refer`/`refer-clojure` FUNCTIONS unresolved (cljw
+      makes `require` an analyzer special form for compile-time `:as`; `use`
+      as a runtime fn — test-helper's `(apply clojure.core/use …)` — is a
+      separate gap); (c) `System/getProperty "line.separator"` (+ os.name etc.)
+      blocks test-helper LOAD (line 21) → control/special/logic stay blocked
+      on it even with `:only` landed (JVM System interop; a few common props
+      worth a thin surface). This
       is the standing `quality-loop floor: validation-campaign` — drain
       highest-value-first, one upstream suite at a time, big-bang per suite
       (anti-drip per clj_diff_sweep.md Discipline 2). Cross-ref D-158 (infra) /

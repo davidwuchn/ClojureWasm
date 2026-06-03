@@ -496,7 +496,7 @@ pub fn analyzeRequire(
         else => return error_catalog.raise(.feature_not_supported, arg.location, .{ .name = "require with non-symbol/vector libspec (Phase 6.16.b-4 c.6+)" }),
     };
 
-    const libspec = try parseLibspecForm(arena, inner_form, form.location);
+    const libspec = try parseLibspecForm(arena, inner_form, form.location, false);
     const n = try arena.create(Node);
     n.* = .{ .require_node = libspec };
     return n;
@@ -514,11 +514,15 @@ fn parseLibspecForm(
     arena: std.mem.Allocator,
     inner_form: Form,
     loc: @import("../../runtime/error/info.zig").SourceLocation,
+    default_refer_all: bool,
 ) AnalyzeError!node_mod.RequireNode {
     var ns_sym: form_mod.SymbolRef = undefined;
     var alias_name: ?[]const u8 = null;
     var refer_names: []const []const u8 = &.{};
-    var refer_all = false;
+    var exclude_names: []const []const u8 = &.{};
+    // `null` = caller default (bare `:use` → all, bare `:require` → none);
+    // `:refer :all`/`:exclude` set it true, `:refer [..]`/`:only` set it false.
+    var refer_all_override: ?bool = null;
 
     switch (inner_form.data) {
         .symbol => |s| ns_sym = s,
@@ -543,23 +547,22 @@ fn parseLibspecForm(
                 } else if (std.mem.eql(u8, kw.name, "refer")) {
                     // `:refer :all` refers every public var (env.referAll).
                     if (val.data == .keyword and val.data.keyword.ns == null and std.mem.eql(u8, val.data.keyword.name, "all")) {
-                        refer_all = true;
+                        refer_all_override = true;
                         i += 2;
                         continue;
                     }
-                    if (val.data != .vector)
-                        return error_catalog.raise(.feature_not_supported, val.location, .{ .name = "require :refer value must be a vector of symbols or :all" });
-                    const refs = val.data.vector;
-                    const buf = try arena.alloc([]const u8, refs.len);
-                    var k: usize = 0;
-                    while (k < refs.len) : (k += 1) {
-                        if (refs[k].data != .symbol or refs[k].data.symbol.ns != null)
-                            return error_catalog.raise(.feature_not_supported, refs[k].location, .{ .name = "require :refer entries must be unqualified symbols" });
-                        buf[k] = try arena.dupe(u8, refs[k].data.symbol.name);
-                    }
-                    refer_names = buf;
+                    refer_names = try parseSymbolNameSeq(arena, val, "require :refer value must be a vector of symbols or :all");
+                    refer_all_override = false;
+                } else if (std.mem.eql(u8, kw.name, "only")) {
+                    // `:only (a b)` (a `:use` whitelist) ≡ `:refer [a b]`.
+                    refer_names = try parseSymbolNameSeq(arena, val, "require/use :only value must be a list or vector of symbols");
+                    refer_all_override = false;
+                } else if (std.mem.eql(u8, kw.name, "exclude")) {
+                    // `:exclude (a b)` (a `:use` blacklist) → refer-all minus these.
+                    exclude_names = try parseSymbolNameSeq(arena, val, "require/use :exclude value must be a list or vector of symbols");
+                    refer_all_override = true;
                 } else {
-                    return error_catalog.raise(.feature_not_supported, vec[i].location, .{ .name = "require libspec keyword (only :as and :refer supported)" });
+                    return error_catalog.raise(.feature_not_supported, vec[i].location, .{ .name = "require libspec keyword (only :as / :refer / :only / :exclude supported)" });
                 }
                 i += 2;
             }
@@ -576,9 +579,32 @@ fn parseLibspecForm(
         .ns_name = ns_name,
         .alias = alias_name,
         .refers = refer_names,
-        .refer_all = refer_all,
+        .refer_all = refer_all_override orelse default_refer_all,
+        .exclude = exclude_names,
         .loc = loc,
     };
+}
+
+/// Parse a `:refer`/`:only`/`:exclude` value into a slice of unqualified
+/// symbol names. Accepts both vector (`[a b]`) and list (`(a b)`) shapes —
+/// `:use` filter values are conventionally lists, `:refer` a vector.
+fn parseSymbolNameSeq(
+    arena: std.mem.Allocator,
+    val: Form,
+    comptime err_name: []const u8,
+) AnalyzeError![]const []const u8 {
+    const items: []const Form = switch (val.data) {
+        .vector => |v| v,
+        .list => |l| l,
+        else => return error_catalog.raise(.feature_not_supported, val.location, .{ .name = err_name }),
+    };
+    const buf = try arena.alloc([]const u8, items.len);
+    for (items, 0..) |entry, k| {
+        if (entry.data != .symbol or entry.data.symbol.ns != null)
+            return error_catalog.raise(.feature_not_supported, entry.location, .{ .name = err_name });
+        buf[k] = try arena.dupe(u8, entry.data.symbol.name);
+    }
+    return buf;
 }
 
 /// `(ns foo)` / `(ns foo (:refer-clojure))` /
@@ -628,15 +654,15 @@ pub fn analyzeNs(
             try parseReferClojureFilters(arena, inner[1..], &refer_clojure_exclude, &refer_clojure_only, directive.location);
         } else if (std.mem.eql(u8, kw.name, "require")) {
             for (inner[1..]) |libspec_form| {
-                const ls = try parseLibspecForm(arena, libspec_form, libspec_form.location);
+                const ls = try parseLibspecForm(arena, libspec_form, libspec_form.location, false);
                 try libspecs.append(arena, ls);
             }
         } else if (std.mem.eql(u8, kw.name, "use")) {
-            // `(:use foo)` = require foo + refer ALL its publics. `:only`/
-            // `:exclude` filters are deferred (bare-symbol / `[ns]` form only).
+            // `(:use foo)` = require foo + refer ALL its publics; `[foo :only
+            // (a)]` narrows to a whitelist, `[foo :exclude (a)]` to a blacklist
+            // (default_refer_all=true is the bare-`:use` shape).
             for (inner[1..]) |libspec_form| {
-                var ls = try parseLibspecForm(arena, libspec_form, libspec_form.location);
-                ls.refer_all = true;
+                const ls = try parseLibspecForm(arena, libspec_form, libspec_form.location, true);
                 try libspecs.append(arena, ls);
             }
         } else {

@@ -481,6 +481,8 @@ pub fn serializeChunk(allocator: std.mem.Allocator, chunk: BytecodeChunk) ![]u8 
         try writeU32(w, @intCast(ls.refers.len));
         for (ls.refers) |refer| try writeLenPrefixed(w, refer);
         try writeU8(w, if (ls.refer_all) 1 else 0);
+        try writeU32(w, @intCast(ls.exclude.len));
+        for (ls.exclude) |ex| try writeLenPrefixed(w, ex);
     }
     return try aw.toOwnedSlice();
 }
@@ -545,7 +547,14 @@ pub fn deserializeChunk(allocator: std.mem.Allocator, rt: *Runtime, env: *@impor
             refers[j] = try allocator.dupe(u8, refer);
         }
         const refer_all = (try r.readU8()) != 0;
-        libspecs[i] = .{ .ns_name = ns_dup, .alias = alias_dup, .refers = refers, .refer_all = refer_all };
+        const exclude_count = try r.readU32();
+        const exclude = try allocator.alloc([]const u8, exclude_count);
+        var e: u32 = 0;
+        while (e < exclude_count) : (e += 1) {
+            const ex = try r.readLenPrefixed();
+            exclude[e] = try allocator.dupe(u8, ex);
+        }
+        libspecs[i] = .{ .ns_name = ns_dup, .alias = alias_dup, .refers = refers, .refer_all = refer_all, .exclude = exclude };
     }
 
     return BytecodeChunk{
@@ -601,6 +610,8 @@ pub fn freeChunk(allocator: std.mem.Allocator, chunk: BytecodeChunk) void {
         if (ls.alias) |a| allocator.free(a);
         for (ls.refers) |refer| allocator.free(refer);
         allocator.free(ls.refers);
+        for (ls.exclude) |ex| allocator.free(ex);
+        allocator.free(ls.exclude);
     }
     allocator.free(chunk.libspecs);
 }

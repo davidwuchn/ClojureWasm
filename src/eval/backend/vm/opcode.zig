@@ -357,6 +357,9 @@ pub const LibspecEntry = struct {
     refers: []const []const u8 = &.{},
     /// `:refer :all` / `:use` — refer ALL public vars (env.referAll).
     refer_all: bool = false,
+    /// `:exclude [a b]` blacklist applied when `refer_all` is set
+    /// (env.referAllWithFilter). Empty = no blacklist.
+    exclude: []const []const u8 = &.{},
 };
 
 /// Per-`(ns …)`-filter side-table entry (D-098). Each `op_ns_with_filter`

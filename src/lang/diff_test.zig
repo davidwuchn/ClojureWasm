@@ -745,6 +745,7 @@ test "diff: row 7.10 op_method_call on reify (anonymous descriptor)" {
 fn setupDiffTargetNs(f: *Fixture) !void {
     const ns = try f.env.findOrCreateNs("diff-target");
     _ = try f.env.intern(ns, "marker", Value.initInteger(42), null);
+    _ = try f.env.intern(ns, "marker2", Value.initInteger(7), null);
 }
 
 test "diff: row 7.10 op_require_with_libspec — :refer single arm" {
@@ -781,6 +782,29 @@ test "diff: row 7.10 op_require_with_libspec — :as + :refer combined" {
         \\(require '[diff-target :as dt :refer [marker]])
         \\(+ marker dt/marker)
     , 84);
+}
+
+test "diff: libspec :only whitelist arm" {
+    var f = try Fixture.init(testing.allocator);
+    defer f.deinit();
+    try setupDiffTargetNs(&f);
+    // `:only [marker]` ≡ `:refer [marker]` — marker resolves, marker2 stays
+    // unreferred (the negative is asserted in the e2e via resolve→nil).
+    try f.check(
+        \\(require '[diff-target :only [marker]])
+        \\marker
+    , 42);
+}
+
+test "diff: libspec :exclude blacklist arm (:use refer-all minus)" {
+    var f = try Fixture.init(testing.allocator);
+    defer f.deinit();
+    try setupDiffTargetNs(&f);
+    // `:exclude [marker2]` refers all publics except marker2; marker resolves.
+    try f.check(
+        \\(require '[diff-target :refer :all :exclude [marker2]])
+        \\marker
+    , 42);
 }
 
 // Row 7.11 cycle 3 (D-077 close): catch-class hierarchy walk via

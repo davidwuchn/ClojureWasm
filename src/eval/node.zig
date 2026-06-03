@@ -469,6 +469,9 @@ pub const RequireNode = struct {
     /// `:refer :all` (or a `:use` directive) — refer ALL public vars of the
     /// required ns (env.referAll). Mutually exclusive with `refers`.
     refer_all: bool = false,
+    /// `:exclude [a b]` (a `:use` blacklist) — when `refer_all` is set, these
+    /// names are withheld via `env.referAllWithFilter`. Empty = no blacklist.
+    exclude: []const []const u8 = &.{},
     loc: SourceLocation = .{},
 };
 

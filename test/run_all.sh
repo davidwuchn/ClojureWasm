@@ -443,6 +443,7 @@ run_step "e2e_phase15_dynamic_var"          "bash test/e2e/phase15_dynamic_var.s
 run_step "e2e_phase15_clojure_test"         "bash test/e2e/phase15_clojure_test.sh"
 run_step "e2e_phase15_require_fs"           "bash test/e2e/phase15_require_fs.sh"
 run_step "e2e_phase15_use_refer_all"        "bash test/e2e/phase15_use_refer_all.sh"
+run_step "e2e_phase15_use_libspec_filter"   "bash test/e2e/phase15_use_libspec_filter.sh"
 run_step "e2e_phase15_campaign_keywords"    "bash test/e2e/phase15_campaign_keywords.sh"
 run_step "e2e_phase15_macro_literals"       "bash test/e2e/phase15_macro_literals.sh"
 run_step "e2e_phase15_alias"                "bash test/e2e/phase15_alias.sh"
