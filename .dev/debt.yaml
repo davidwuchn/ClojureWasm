@@ -196,7 +196,10 @@ active:
       unit, mostly deferred-structural): `for` `:while` modifier (doseq has it,
       for doesn't); `re-matcher`+`{n}` bounded-repeat regex (D-220, other_functions);
       clojure_set hash-COLLIDING set elements (HAMT collision-node gap, a real
-      limitation); `*warn-on-reflection*` dynamic var (atoms); `macroexpand-1`
+      limitation); `*warn-on-reflection*` DONE (core.clj no-op `^:dynamic` flag —
+      cljw has no reflection; atoms.clj then RUNS 5 tests / 23 assertions → 12
+      pass, 11 errors, the 11 being `.getAsDouble`-class JVM-atomic interop cljw
+      lacks = accepted JVM-interop divergence); `macroexpand-1`
       (D-229, macros); `clojure.math` ns (math); `map->Foo` defrecord factory in a
       test (clojure_walk); `fails-with-cause?`/test-helper (fn); `:import` (delays/
       parse/try_catch/data); `into-array`/Java arrays (predicates, F-004). This

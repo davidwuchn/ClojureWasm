@@ -12,6 +12,12 @@
 
 (def not (fn* [x] (if x false true)))
 
+;; `*warn-on-reflection*` — a JVM compiler flag for reflective interop calls.
+;; cljw resolves interop without reflection, so this is a no-op flag: defined so
+;; code that references / `binding`s / `set!`s it loads (real libs + the upstream
+;; suites toggle it). D-232.
+(def ^:dynamic *warn-on-reflection* false)
+
 ;; `(list & items)` — construct a list of the args. The variadic
 ;; rest-binding yields a `.list` for ≥1 arg, but nil for zero args
 ;; (`& xs` binds nil when empty, matching JVM `((fn [& xs] xs))` → nil).
