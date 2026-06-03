@@ -517,10 +517,12 @@ fn stepOnce(
             const name_val = chunk.constants[instr.operand];
             if (!name_val.isString())
                 return raiseInternal("vm: op_in_ns constant is not a String");
-            env.setCurrentNs(try env.findOrCreateNs(string_mod.asString(name_val)));
+            const target_ns = try env.findOrCreateNs(string_mod.asString(name_val));
+            env.setCurrentNs(target_ns);
             if (sp >= OPERAND_STACK_MAX)
                 return raiseInternal("vm: operand stack overflow");
-            stack[sp] = Value.nil_val;
+            // Return the namespace value (clj parity, ADR-0083 / ADR-0085).
+            stack[sp] = Env.nsValue(target_ns);
             sp += 1;
         },
         .op_ns_with_refer_clojure => {

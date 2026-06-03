@@ -418,8 +418,11 @@ fn evalSet(rt: *Runtime, env: *Env, locals: []Value, n: node_mod.SetNode) anyerr
 /// user code must use `(ns foo (:refer-clojure))` (which fires the
 /// widened semantic) or explicit `(refer ...)` calls.
 fn evalInNs(env: *Env, n: node_mod.InNsNode) !Value {
-    env.setCurrentNs(try env.findOrCreateNs(n.ns_name));
-    return .nil_val;
+    const ns = try env.findOrCreateNs(n.ns_name);
+    env.setCurrentNs(ns);
+    // Return the namespace value (clj parity + consistency with the in-ns
+    // runtime fn, ADR-0083 / ADR-0085) — not nil.
+    return env_mod.Env.nsValue(ns);
 }
 
 /// `(ns foo)` / `(ns foo (:refer-clojure))`. ADR-0035 D1 + D9

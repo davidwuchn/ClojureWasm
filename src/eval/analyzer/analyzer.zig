@@ -604,7 +604,15 @@ fn analyzeList(
             if (special_forms.resolveJavaSurface(rt, env, ns_head)) |td| {
                 if (td.lookupMethod(null, head.name) != null) {
                     return try special_forms.analyzeStaticMethodCall(
-                        arena, rt, env, scope, td, head.name, items[1..], form, macro_table,
+                        arena,
+                        rt,
+                        env,
+                        scope,
+                        td,
+                        head.name,
+                        items[1..],
+                        form,
+                        macro_table,
                     );
                 }
             }
@@ -774,6 +782,20 @@ fn analyzeSetLiteral(
 
 // --- Special forms ---
 
+/// True when an `in-ns` arg is a literal namespace symbol or `(quote sym)` —
+/// the compile-time fast path. Anything else (a computed expr) routes to the
+/// `in-ns` runtime Var instead (ADR-0085).
+fn isInNsLiteral(form: Form) bool {
+    return switch (form.data) {
+        .symbol => true,
+        .list => |inner| inner.len == 2 and inner[0].data == .symbol and
+            inner[0].data.symbol.ns == null and
+            std.mem.eql(u8, inner[0].data.symbol.name, "quote") and
+            inner[1].data == .symbol,
+        else => false,
+    };
+}
+
 fn analyzeSpecial(
     arena: std.mem.Allocator,
     rt: *Runtime,
@@ -799,7 +821,15 @@ fn analyzeSpecial(
         .binding_form => bindings.analyzeBinding(arena, rt, env, scope, items, form, macro_table),
         .try_form => try_form.analyzeTry(arena, rt, env, scope, items, form, macro_table),
         .throw_form => special_forms.analyzeThrow(arena, rt, env, scope, items, form, macro_table),
-        .in_ns_form => special_forms.analyzeInNs(arena, items, form),
+        .in_ns_form => blk: {
+            // Literal / quoted-symbol arg → fast-path `in_ns_node` (the
+            // compile-time ns switch). A computed arg (`(in-ns (gensym))`)
+            // or wrong arity falls through to a normal call on the `in-ns`
+            // runtime Var (ADR-0085) — clj treats in-ns as a function.
+            if (items.len == 2 and isInNsLiteral(items[1]))
+                break :blk special_forms.analyzeInNs(arena, items, form);
+            break :blk analyzeCall(arena, rt, env, scope, items, form, macro_table);
+        },
         .require_form => special_forms.analyzeRequire(arena, items, form),
         .ns_form => special_forms.analyzeNs(arena, items, form),
         .set_bang => special_forms.analyzeSetBang(arena, rt, env, scope, items, form, macro_table),

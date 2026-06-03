@@ -345,6 +345,20 @@ active:
       in-memory writer), `bound-fn`, `file-seq`/`line-seq` (IO), `definline`;
       `into-array`/`make-array`/`aget`/`aset`/`to-array`/`amap`/`areduce` =
       Java arrays (F-004, deferred); `proxy`/`bean` = Tier D.
+      **2026-06-04 namespace-as-runtime-value LANDED (ADR-0085, 2 commits):**
+      C1 = `*ns*`/current_ns binding round-trip (current_ns is a materialised
+      view of *ns*). C2 = `in-ns`/`use`/`refer` as clojure.core runtime fns
+      (computed args / non-head / `clojure.core/use` via apply) + in-ns returns
+      the ns value (both backends) + `loader.loadOrFindNs` shared by require/use
+      (F-011). corpus ns_runtime_fns (5) + e2e phase15_ns_binding_roundtrip (3) /
+      phase15_ns_runtime_fns (3). **test-helper now loads PAST line 28 (the
+      in-ns/use blocker)** → advances to **line 48: fn-param DESTRUCTURING**
+      (`(fn [msg [_ exc msg-re & body :as form]] …)` — a nested-vector fn param;
+      cljw's `fn` lowers only symbol params, D-076 deferred fn-param/assoc
+      destructuring). That is now the gating blocker for the ~20 test-helper
+      suites — the NEXT unit (a D-076 follow-up: extend the destructure lowering
+      from `let` to `fn*` params). Until it lands the cluster stays blocked at
+      test-helper load, but one feature past it.
       **2026-06-04 `defprotocol` docstrings LANDED**: an optional protocol-level
       docstring after the name (`(defprotocol P "doc" (m [a]) …)`) was rejected
       ("method signature must be a list"); now skipped. Method-level docstrings,

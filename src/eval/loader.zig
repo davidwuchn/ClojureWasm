@@ -69,3 +69,20 @@ pub fn loadNamespace(
     errdefer gpa.free(loaded_key);
     try rt.loaded_libs.put(gpa, loaded_key, {});
 }
+
+/// Return the named namespace, loading it from disk via the require resolver
+/// if it is not already present (with mappings). Shared by the `require`
+/// special form and the runtime `use` fn (ADR-0085 / F-011) so both reach a
+/// lib the same way. Raises `lib_not_found` when no resolver / source.
+pub fn loadOrFindNs(rt: *Runtime, env: *Env, name: []const u8, loc: SourceLocation) !*env_mod.Namespace {
+    if (env.findNs(name)) |existing| {
+        if (existing.mappings.count() > 0) return existing;
+    }
+    const resolver = rt.require_resolver orelse
+        return error_catalog.raise(.lib_not_found, loc, .{ .ns = name });
+    const resolved = (try resolver(rt, name)) orelse
+        return error_catalog.raise(.lib_not_found, loc, .{ .ns = name });
+    try loadNamespace(rt, env, name, resolved, loc);
+    return env.findNs(name) orelse
+        return error_catalog.raise(.lib_not_found, loc, .{ .ns = name });
+}

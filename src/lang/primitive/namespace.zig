@@ -14,6 +14,7 @@
 //! is deferred (a dangling `.ns` → freed Env `*Namespace` is a use-after-free
 //! needing a tombstone design — separate debt).
 
+const std = @import("std");
 const Value = @import("../../runtime/value/value.zig").Value;
 const Runtime = @import("../../runtime/runtime.zig").Runtime;
 const env_mod = @import("../../runtime/env.zig");
@@ -24,8 +25,11 @@ const error_catalog = @import("../../runtime/error/catalog.zig");
 const SourceLocation = error_mod.SourceLocation;
 const dispatch = @import("../../runtime/dispatch.zig");
 const symbol_mod = @import("../../runtime/symbol.zig");
+const keyword_mod = @import("../../runtime/keyword.zig");
 const map_collection = @import("../../runtime/collection/map.zig");
 const list_collection = @import("../../runtime/collection/list.zig");
+const vector_collection = @import("../../runtime/collection/vector.zig");
+const loader = @import("../../eval/loader.zig");
 
 /// Resolve a `ns-or-symbol` argument to a `*Namespace`: an `.ns` Value decodes
 /// directly; a symbol is looked up by name; anything else (or an unknown
@@ -181,6 +185,140 @@ pub fn nsAliasesFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLoca
     return m;
 }
 
+/// `(in-ns sym)` — switch `*ns*` to the named namespace (creating it),
+/// returning it as an `.ns` Value (ADR-0083 / ADR-0085). The runtime-fn
+/// counterpart of the `in-ns` special form: reached when the arg is computed
+/// (`(in-ns (gensym))`) or in non-head position (`(apply in-ns …)`).
+pub fn inNsFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = rt;
+    try error_catalog.checkArity("in-ns", args, 1, loc);
+    if (args[0].tag() != .symbol)
+        return error_catalog.raise(.feature_not_supported, loc, .{ .name = "in-ns requires a symbol" });
+    const ns = try env.findOrCreateNs(symbol_mod.asSymbol(args[0]).name);
+    env.setCurrentNs(ns);
+    return Env.nsValue(ns);
+}
+
+/// Collect the symbol names from a vector/list of symbols (a `:only` /
+/// `:exclude` filter value) into a gpa-owned slice. The inner name slices
+/// point at the stable symbol interner; the caller frees the outer slice.
+fn collectNames(rt: *Runtime, coll: Value) ![]const []const u8 {
+    var names: std.ArrayList([]const u8) = .empty;
+    errdefer names.deinit(rt.gpa);
+    switch (coll.tag()) {
+        .vector => {
+            const n = vector_collection.count(coll);
+            var i: u32 = 0;
+            while (i < n) : (i += 1) {
+                const e = vector_collection.nth(coll, i);
+                if (e.tag() == .symbol) try names.append(rt.gpa, symbol_mod.asSymbol(e).name);
+            }
+        },
+        .list => {
+            // Guard on `.list` + count, not `!isEmpty`: `rest` of a
+            // single-element list returns nil (tag != .list), and
+            // `isEmpty(nil)` is false — an `!isEmpty` loop would spin.
+            var cur = coll;
+            while (cur.tag() == .list and list_collection.countOf(cur) > 0) {
+                const e = list_collection.first(cur);
+                if (e.tag() == .symbol) try names.append(rt.gpa, symbol_mod.asSymbol(e).name);
+                cur = list_collection.rest(cur);
+            }
+        },
+        else => {},
+    }
+    return names.toOwnedSlice(rt.gpa);
+}
+
+const ReferOpts = struct {
+    only: ?[]const []const u8 = null,
+    exclude: []const []const u8 = &.{},
+    /// gpa-owned slices to free after the refer call (the `only` whitelist +
+    /// the `exclude` blacklist when they were built from a filter collection).
+    free_only: ?[]const []const u8 = null,
+    free_exclude: ?[]const []const u8 = null,
+
+    fn deinit(self: ReferOpts, rt: *Runtime) void {
+        if (self.free_only) |s| rt.gpa.free(s);
+        if (self.free_exclude) |s| rt.gpa.free(s);
+    }
+};
+
+/// Parse `:only (a b)` / `:exclude (a b)` keyword-value pairs from `kvs`
+/// (refer's trailing args, or a vector libspec's elements after the ns).
+/// `:rename` / `:as` raise (deferred). Returns owned filter slices in `out`.
+fn parseReferOpts(rt: *Runtime, kvs: []const Value, loc: SourceLocation) anyerror!ReferOpts {
+    var out: ReferOpts = .{};
+    errdefer out.deinit(rt);
+    var i: usize = 0;
+    while (i + 1 < kvs.len) : (i += 2) {
+        if (kvs[i].tag() != .keyword) continue;
+        const kname = keyword_mod.asKeyword(kvs[i]).name;
+        if (std.mem.eql(u8, kname, "only")) {
+            const names = try collectNames(rt, kvs[i + 1]);
+            out.only = names;
+            out.free_only = names;
+        } else if (std.mem.eql(u8, kname, "exclude")) {
+            const names = try collectNames(rt, kvs[i + 1]);
+            out.exclude = names;
+            out.free_exclude = names;
+        } else if (std.mem.eql(u8, kname, "rename") or std.mem.eql(u8, kname, "as")) {
+            return error_catalog.raise(.feature_not_supported, loc, .{ .name = "use/refer :rename / :as" });
+        }
+    }
+    return out;
+}
+
+/// `(refer ns-sym & filters)` — refer the named (already-loaded) namespace's
+/// publics into the current ns, honouring `:only` / `:exclude`. Spec:
+/// clojure.core/refer (the runtime fn the `:use`/`:require :refer` directives
+/// share the env primitive with).
+pub fn referFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    if (args.len < 1 or args[0].tag() != .symbol)
+        return error_catalog.raise(.feature_not_supported, loc, .{ .name = "refer requires a namespace symbol" });
+    const target = env.findNs(symbol_mod.asSymbol(args[0]).name) orelse
+        return error_catalog.raise(.lib_not_found, loc, .{ .ns = symbol_mod.asSymbol(args[0]).name });
+    const here = env.current_ns orelse
+        return error_catalog.raise(.current_namespace_missing, loc, .{ .sym = symbol_mod.asSymbol(args[0]).name });
+    var opts = try parseReferOpts(rt, args[1..], loc);
+    defer opts.deinit(rt);
+    try env.referAllWithFilter(target, here, opts.exclude, opts.only);
+    return Value.nil_val;
+}
+
+/// `(use & libspecs)` — load (require if needed) + refer each libspec. Each
+/// libspec is a namespace symbol (`'clojure.set`) or a vector
+/// (`['clojure.set :only (union)]`). The runtime-fn counterpart that
+/// `clojure.test-helper`'s `temp-ns` calls via `apply`. Spec: clojure.core/use.
+pub fn useFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    const here = env.current_ns orelse
+        return error_catalog.raise(.current_namespace_missing, loc, .{ .sym = "use" });
+    for (args) |libspec| {
+        switch (libspec.tag()) {
+            .symbol => {
+                const target = try loader.loadOrFindNs(rt, env, symbol_mod.asSymbol(libspec).name, loc);
+                try env.referAllWithFilter(target, here, &.{}, null);
+            },
+            .vector => {
+                const cnt = vector_collection.count(libspec);
+                if (cnt < 1 or vector_collection.nth(libspec, 0).tag() != .symbol)
+                    return error_catalog.raise(.feature_not_supported, loc, .{ .name = "use libspec vector must start with a namespace symbol" });
+                const target = try loader.loadOrFindNs(rt, env, symbol_mod.asSymbol(vector_collection.nth(libspec, 0)).name, loc);
+                // Gather the opts (elements after the ns symbol) into a slice.
+                var kv_buf: [16]Value = undefined;
+                const opt_n = @min(@as(usize, cnt - 1), kv_buf.len);
+                var k: usize = 0;
+                while (k < opt_n) : (k += 1) kv_buf[k] = vector_collection.nth(libspec, @intCast(k + 1));
+                var opts = try parseReferOpts(rt, kv_buf[0..opt_n], loc);
+                defer opts.deinit(rt);
+                try env.referAllWithFilter(target, here, opts.exclude, opts.only);
+            },
+            else => return error_catalog.raise(.feature_not_supported, loc, .{ .name = "use libspec must be a symbol or vector" }),
+        }
+    }
+    return Value.nil_val;
+}
+
 const Entry = struct {
     name: []const u8,
     f: dispatch.BuiltinFn,
@@ -198,6 +336,9 @@ const ENTRIES = [_]Entry{
     .{ .name = "ns-resolve", .f = &nsResolveFn },
     .{ .name = "alias", .f = &aliasFn },
     .{ .name = "ns-aliases", .f = &nsAliasesFn },
+    .{ .name = "in-ns", .f = &inNsFn },
+    .{ .name = "refer", .f = &referFn },
+    .{ .name = "use", .f = &useFn },
 };
 
 /// Intern the cluster into `rt` (→ referred into user/ + clojure.core).

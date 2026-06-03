@@ -1,0 +1,10 @@
+(binding [*ns* *ns*] (in-ns (quote g1)) (clojure.core/refer (quote clojure.core) :only (quote (inc))) [(inc 5) (clojure.core/resolve (quote dec))])
+;;=> [6 nil]
+(binding [*ns* *ns*] (in-ns (quote g2)) (clojure.core/use (quote [clojure.core :only (inc dec)])) [(inc 1) (dec 1)])
+;;=> [2 0]
+(binding [*ns* *ns*] (in-ns (quote g3)) (clojure.core/use (quote clojure.core)) (str (+ 1 2)))
+;;=> "3"
+(do (binding [*ns* *ns*] (in-ns (quote g4)) (clojure.core/use (quote clojure.core))) (inc 9))
+;;=> 10
+(binding [*ns* *ns*] (in-ns (quote g5)) (clojure.core/use (quote clojure.core) (quote [clojure.string :only (upper-case)])) (clojure.string/upper-case "hi"))
+;;=> "HI"
