@@ -380,6 +380,15 @@ active:
       not_implemented @36, metadata→a require gap. Drain individually next;
       definterface/JVM-class/into-array are deferred-structural, but `import`
       (standalone) / control@92 / special@36 may be clean.
+      **2026-06-04 standalone `(import …)` macro LANDED**: `(import '(pkg Class
+      …))` / `(import 'pkg.Class)` → `(do (import* "pkg.Class") …)`; the new
+      `import*` runtime fn registers simple-name→FQCN into the current ns's
+      D-235 import map. clj-faithful (clj's import → clojure.core/import*; cljw
+      emits bare import*, same fn — a macroexpand print-form divergence, not a
+      behaviour one). corpus import_macro (3) + e2e phase15_import_macro (4).
+      evaluation now loads past line 20 → parks on `clojure.lang.Compiler`
+      (JVM class, deferred). NEXT clean candidates remain: control@92 (a `when`
+      empty-body / `are` macroexpand), special@36 (`{:as x}`-only destructure).
       **2026-06-04 `defprotocol` docstrings LANDED**: an optional protocol-level
       docstring after the name (`(defprotocol P "doc" (m [a]) …)`) was rejected
       ("method signature must be a list"); now skipped. Method-level docstrings,

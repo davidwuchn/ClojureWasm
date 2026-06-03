@@ -1,0 +1,6 @@
+(do (import (quote (java.lang Integer))) (Integer/parseInt "42"))
+;;=> 42
+(do (import (quote java.lang.Long)) (Long/parseLong "7"))
+;;=> 7
+(do (import (quote (java.lang Integer Long))) [(Integer/parseInt "3") (Long/parseLong "4")])
+;;=> [3 4]

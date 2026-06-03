@@ -111,6 +111,7 @@ const BOOTSTRAP = [_]Entry{
     .{ .name = "defn", .expand = expandDefn },
     .{ .name = "defn-", .expand = expandDefnPrivate },
     .{ .name = "declare", .expand = expandDeclare },
+    .{ .name = "import", .expand = expandImport },
     .{ .name = "defmulti", .expand = expandDefmulti },
     .{ .name = "defmethod", .expand = expandDefmethod },
     .{ .name = "prefer-method", .expand = expandPreferMethod },
@@ -133,6 +134,65 @@ const list = macro_dispatch.makeList;
 const vec = macro_dispatch.makeVector;
 const sym = macro_dispatch.makeSymbol;
 const nilForm = macro_dispatch.makeNil;
+
+/// Strip a `(quote X)` wrapper, returning `X`; otherwise the form unchanged.
+/// `import` accepts quoted specs (`(import '(java.lang Boolean))`) and bare
+/// ones (`(import java.util.Date)`) — both reduce to the same spec form.
+fn unwrapQuote(form: Form) Form {
+    if (form.data == .list) {
+        const inner = form.data.list;
+        if (inner.len == 2 and inner[0].data == .symbol and
+            inner[0].data.symbol.ns == null and
+            std.mem.eql(u8, inner[0].data.symbol.name, "quote"))
+            return inner[1];
+    }
+    return form;
+}
+
+/// Build `(import* "fqcn")` — the runtime registration call.
+fn importStarCall(arena: std.mem.Allocator, fqcn: []const u8, loc: SourceLocation) !Form {
+    var call = try arena.alloc(Form, 2);
+    call[0] = sym("import*", loc);
+    call[1] = .{ .data = .{ .string = fqcn }, .location = loc };
+    return list(arena, call, loc);
+}
+
+/// `(import & specs)` → `(do (import* "pkg.Class") …)`. Each spec is a
+/// (optionally quoted) class symbol `pkg.Class` or a prefix list
+/// `(pkg Class1 Class2 …)`. Mirrors clj's import → `clojure.core/import*`
+/// expansion; the import* fn registers the simple-name → FQCN map (D-235).
+fn expandImport(
+    arena: std.mem.Allocator,
+    rt: *Runtime,
+    args: []const Form,
+    loc: SourceLocation,
+) macro_dispatch.ExpandError!Form {
+    _ = rt;
+    var items: std.ArrayList(Form) = .empty;
+    try items.append(arena, sym("do", loc));
+    for (args) |raw_spec| {
+        const spec = unwrapQuote(raw_spec);
+        switch (spec.data) {
+            .symbol => |sy| {
+                const fqcn = if (sy.ns) |p| try std.fmt.allocPrint(arena, "{s}.{s}", .{ p, sy.name }) else sy.name;
+                try items.append(arena, try importStarCall(arena, fqcn, loc));
+            },
+            .list => |inner| {
+                if (inner.len < 2 or inner[0].data != .symbol)
+                    return error_catalog.raise(.feature_not_supported, spec.location, .{ .name = "import prefix form must be (package Class …)" });
+                const pkg = inner[0].data.symbol.name;
+                for (inner[1..]) |ce| {
+                    if (ce.data != .symbol)
+                        return error_catalog.raise(.feature_not_supported, ce.location, .{ .name = "import class entry must be a symbol" });
+                    const fqcn = try std.fmt.allocPrint(arena, "{s}.{s}", .{ pkg, ce.data.symbol.name });
+                    try items.append(arena, try importStarCall(arena, fqcn, loc));
+                }
+            },
+            else => return error_catalog.raise(.feature_not_supported, spec.location, .{ .name = "import spec must be a symbol or (package Class …) list" }),
+        }
+    }
+    return list(arena, items.items, loc);
+}
 
 /// `(declare a b ...)` → `(do (def a) (def b) ...)`. Forward-declares
 /// unbound vars. clj also tags each var `:declared true` via symbol meta;

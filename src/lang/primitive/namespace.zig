@@ -29,6 +29,7 @@ const keyword_mod = @import("../../runtime/keyword.zig");
 const map_collection = @import("../../runtime/collection/map.zig");
 const list_collection = @import("../../runtime/collection/list.zig");
 const vector_collection = @import("../../runtime/collection/vector.zig");
+const string_collection = @import("../../runtime/collection/string.zig");
 const loader = @import("../../eval/loader.zig");
 
 /// Resolve a `ns-or-symbol` argument to a `*Namespace`: an `.ns` Value decodes
@@ -319,6 +320,24 @@ pub fn useFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) 
     return Value.nil_val;
 }
 
+/// `(import* "pkg.Class")` — register the class's simple name → FQCN in the
+/// current ns's import map (so a bare `Class` / `(Class. …)` resolves to it).
+/// The runtime primitive the `import` macro expands to (clj parity: clj's
+/// import expands to `clojure.core/import*` calls). Returns nil.
+pub fn importStarFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = rt;
+    try error_catalog.checkArity("import*", args, 1, loc);
+    if (args[0].tag() != .string)
+        return error_catalog.raise(.feature_not_supported, loc, .{ .name = "import* requires a class-name string" });
+    const fqcn = string_collection.asString(args[0]);
+    const here = env.current_ns orelse
+        return error_catalog.raise(.current_namespace_missing, loc, .{ .sym = "import*" });
+    // Simple name = the segment after the final '.' (the whole string if none).
+    const simple = if (std.mem.findScalarLast(u8, fqcn, '.')) |dot| fqcn[dot + 1 ..] else fqcn;
+    try here.addImport(env.alloc, simple, fqcn);
+    return Value.nil_val;
+}
+
 const Entry = struct {
     name: []const u8,
     f: dispatch.BuiltinFn,
@@ -339,6 +358,7 @@ const ENTRIES = [_]Entry{
     .{ .name = "in-ns", .f = &inNsFn },
     .{ .name = "refer", .f = &referFn },
     .{ .name = "use", .f = &useFn },
+    .{ .name = "import*", .f = &importStarFn },
 };
 
 /// Intern the cluster into `rt` (→ referred into user/ + clojure.core).
