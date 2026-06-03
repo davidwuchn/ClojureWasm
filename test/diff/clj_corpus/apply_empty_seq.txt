@@ -1,0 +1,18 @@
+(apply + (list))
+;;=> 0
+(apply hash-map (list))
+;;=> {}
+(apply str (list))
+;;=> ""
+(apply vector (list))
+;;=> []
+(apply list (list))
+;;=> ()
+(apply max (list 3 1 2))
+;;=> 3
+(let [{:as x} (quote ())] x)
+;;=> {}
+(apply + 1 2 (list 3 4))
+;;=> 10
+(apply concat (list))
+;;=> ()

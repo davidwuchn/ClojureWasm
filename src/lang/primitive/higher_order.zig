@@ -87,14 +87,14 @@ pub fn applyFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation
     defer collected.deinit(rt.gpa);
     try collected.appendSlice(rt.gpa, leading);
 
+    // `seq` the trailing operand so an EMPTY seqable (incl. an empty `.list`
+    // / `.cons`, which are non-nil) collapses to nil — otherwise the walk
+    // below runs once and spreads a spurious `(first empty)` = nil
+    // (`(apply + '())` → "+ got nil"). seq on a realised seq returns it
+    // unchanged; apply already eagerly walks, so no laziness is lost.
     var cur: Value = trailing;
     if (!cur.isNil()) {
-        switch (cur.tag()) {
-            .list, .cons, .chunked_cons, .lazy_seq => {},
-            else => {
-                cur = try sequence.seqFn(rt, env, &.{cur}, loc);
-            },
-        }
+        cur = try sequence.seqFn(rt, env, &.{cur}, loc);
     }
     while (!cur.isNil()) {
         try collected.append(rt.gpa, try sequence.firstFn(rt, env, &.{cur}, loc));

@@ -405,6 +405,18 @@ active:
       conditional_let_destructure (10). control.clj advances 118 → 145 → past,
       now parks on `clojure.test-helper/*err*` (the *out*/*err* rebinding infra
       cljw lacks — deferred, same class as with-out-str). special@36 remains.
+      **2026-06-04 `apply` empty-seq spread FIXED** (fundamental bug): `(apply f
+      '())` / any empty `.list`/`.cons` trailing arg spread a spurious `(first
+      empty)` = nil instead of zero args (`(apply + '())` → "+ got nil";
+      `(apply hash-map '())` → odd-args error). ROOT: applyFn's eager-spread walk
+      skipped `seq`-coercion for already-seq tags, but an empty `.list` is
+      non-nil, so `while (!isNil)` ran once. Now `seq`s the trailing operand
+      unconditionally (empty → nil). Also FIXES special@34 `(let [{:as x} '()] …)`
+      → `{}` (assoc destructure coerces a seq via `(apply hash-map g)`). corpus
+      apply_empty_seq (9). special advances 34 → **line 36: `(let [{:keys
+      [:a :b]} m] …)`** — `:keys` with KEYWORD entries (clj allows keyword /
+      namespaced-keyword entries in :keys/:strs/:syms; cljw requires symbols) —
+      next clean unit.
       **2026-06-04 `defprotocol` docstrings LANDED**: an optional protocol-level
       docstring after the name (`(defprotocol P "doc" (m [a]) …)`) was rejected
       ("method signature must be a list"); now skipped. Method-level docstrings,
