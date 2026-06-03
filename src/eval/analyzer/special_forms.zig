@@ -729,6 +729,48 @@ fn parseSymbolVector(arena: std.mem.Allocator, val: Form) AnalyzeError![]const [
     return buf;
 }
 
+/// `(set! var-symbol value)` — assign to a dynamic Var's binding. The
+/// target must be a symbol naming an existing `^:dynamic` Var (resolved
+/// here, mirroring `binding`). The field-set form `(set! (.f o) v)` is a
+/// separate, unsupported sub-case (clean `feature_not_supported`).
+pub fn analyzeSetBang(
+    arena: std.mem.Allocator,
+    rt: *Runtime,
+    env: *Env,
+    scope: ?*const Scope,
+    items: []const Form,
+    form: Form,
+    macro_table: *const macro_dispatch.Table,
+) AnalyzeError!*const Node {
+    if (items.len != 3)
+        return error_catalog.raise(.set_arity_invalid, form.location, .{ .got = items.len - 1 });
+    if (items[1].data != .symbol)
+        return error_catalog.raise(.feature_not_supported, items[1].location, .{ .name = "set! on a non-symbol target (field assignment)" });
+    const name_sym = items[1].data.symbol;
+    // Resolve the target Var exactly as `binding` does (qualified → alias
+    // then findNs, else current ns). `set!` mutates an existing Var.
+    const target_ns = if (name_sym.ns) |ns_name|
+        (if (env.current_ns) |here| here.aliases.get(ns_name) else null) orelse
+            env.findNs(ns_name) orelse
+            return error_catalog.raise(.namespace_unknown, items[1].location, .{ .ns = ns_name })
+    else
+        env.current_ns orelse
+            return error_catalog.raise(.current_namespace_missing, items[1].location, .{ .sym = name_sym.name });
+    const var_ptr = target_ns.resolve(name_sym.name) orelse
+        return error_catalog.raise(.symbol_unresolved, items[1].location, .{ .sym = analyzer_mod.symFullName(name_sym) });
+    if (!var_ptr.flags.dynamic)
+        return error_catalog.raise(.set_target_not_dynamic, items[1].location, .{ .@"var" = analyzer_mod.symFullName(name_sym) });
+
+    const value_node = try analyzer_mod.analyze(arena, rt, env, scope, items[2], macro_table);
+    const n = try arena.create(Node);
+    n.* = .{ .set_node = .{
+        .var_ptr = var_ptr,
+        .value_expr = value_node,
+        .loc = form.location,
+    } };
+    return n;
+}
+
 pub fn analyzeInNs(
     arena: std.mem.Allocator,
     items: []const Form,

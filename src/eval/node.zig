@@ -79,6 +79,7 @@ pub const Node = union(enum) {
     vector_literal_node: VectorLiteralNode,
     map_literal_node: MapLiteralNode,
     set_literal_node: SetLiteralNode,
+    set_node: SetNode,
 
     /// Source location of this Node. Returns the inner variant's `loc`
     /// — every variant carries one because Phase-2 errors must cite a
@@ -114,6 +115,18 @@ pub const LocalRef = struct {
 /// take effect.
 pub const VarRef = struct {
     var_ptr: *const Var,
+    loc: SourceLocation = .{},
+};
+
+/// `(set! var-symbol value)` — assign a dynamic Var's binding. The
+/// analyser resolves the target to its `*Var` (it must already exist).
+/// At eval, the innermost thread binding for the Var is updated if one is
+/// active; otherwise the Var root is set (covers top-level compiler-flag
+/// vars like `*warn-on-reflection*`). The field-set form `(set! (.f o) v)`
+/// is a separate, unsupported sub-case. Returns the assigned value.
+pub const SetNode = struct {
+    var_ptr: *Var,
+    value_expr: *const Node,
     loc: SourceLocation = .{},
 };
 

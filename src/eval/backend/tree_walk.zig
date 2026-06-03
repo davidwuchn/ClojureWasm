@@ -384,7 +384,18 @@ pub fn eval(
         .vector_literal_node => |n| try evalVectorLiteral(rt, env, locals, n),
         .map_literal_node => |n| try evalMapLiteral(rt, env, locals, n),
         .set_literal_node => |n| try evalSetLiteral(rt, env, locals, n),
+        .set_node => |n| try evalSet(rt, env, locals, n),
     };
+}
+
+/// `(set! *v* value)` — evaluate value, then update the innermost active
+/// thread binding for the Var; if none is active, set the Var root (covers
+/// top-level compiler-flag vars like `*warn-on-reflection*`). Returns the
+/// assigned value.
+fn evalSet(rt: *Runtime, env: *Env, locals: []Value, n: node_mod.SetNode) anyerror!Value {
+    const val = try eval(rt, env, locals, n.value_expr);
+    if (!env_mod.setBinding(n.var_ptr, val)) n.var_ptr.setRoot(val);
+    return val;
 }
 
 /// `(in-ns 'foo.bar)` — switch `env.current_ns` to the named namespace,

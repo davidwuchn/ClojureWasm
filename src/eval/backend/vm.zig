@@ -240,6 +240,14 @@ fn stepOnce(
                 stack[sp] = var_ptr.deref();
                 sp += 1;
             },
+            .op_set_var => {
+                if (instr.operand >= chunk.constants.len)
+                    return raiseInternal("vm: op_set_var constant index out of range");
+                if (sp == 0) return raiseInternal("vm: op_set_var on empty stack");
+                const var_ptr = chunk.constants[instr.operand].decodePtr(*Var);
+                const val = stack[sp - 1]; // peek: the assigned value stays as the result
+                if (!env_mod.setBinding(var_ptr, val)) var_ptr.setRoot(val);
+            },
             .op_jump => {
                 const offset: i16 = @bitCast(instr.operand);
                 ip = applyJump(ip, offset) orelse

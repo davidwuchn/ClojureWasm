@@ -211,6 +211,11 @@ pub const Opcode = enum(u8) {
     /// patch each closure's captured letfn slots with the real siblings so
     /// mutual recursion resolves. Stack-neutral (operates on `locals`).
     op_letfn_patch = 0x23,
+    /// `(set! *v* value)`. operand = constant index of a `.var_ref` Value
+    /// (the target Var). Peeks the top-of-stack value (the assigned value,
+    /// which stays as the form's result), updates the Var's innermost thread
+    /// binding or, if none active, its root.
+    op_set_var = 0x24,
 
     /// True when this opcode carries a **signed-i16 instruction-position
     /// offset** in `operand`, relative to the instruction after itself
@@ -254,6 +259,7 @@ pub const Opcode = enum(u8) {
             .op_match_type_keyword,
             .op_ns_with_filter,
             .op_letfn_patch,
+            .op_set_var,
             => false,
         };
     }
@@ -302,6 +308,7 @@ pub const Opcode = enum(u8) {
             .op_match_type_keyword,
             .op_ns_with_filter,
             .op_letfn_patch,
+            .op_set_var,
             => false,
         };
     }

@@ -208,6 +208,21 @@ pub fn findBinding(v: *const Var) ?Value {
     return null;
 }
 
+/// Update the innermost active thread binding for `v` in place. Returns
+/// true if a frame held `v` (it was thread-bound), false otherwise — the
+/// `set!` caller falls back to `Var.setRoot` in the false case.
+pub fn setBinding(v: *const Var, val: Value) bool {
+    var f = current_frame;
+    while (f) |frame| {
+        if (frame.bindings.getPtr(v)) |slot| {
+            slot.* = val;
+            return true;
+        }
+        f = frame.parent;
+    }
+    return false;
+}
+
 // --- Env ---
 
 pub const NamespaceMap = std.StringHashMapUnmanaged(*Namespace);

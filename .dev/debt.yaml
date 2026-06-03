@@ -9,6 +9,26 @@
 # md-table-align no longer pads it to ~800 KB of whitespace.
 
 active:
+  - id: "D-233"
+    status: "now (found 2026-06-03 running string.clj) — `op_ctor_call` raises an INTERNAL error (not a clean user error) when the class name is unresolved."
+    category: "runtime"
+    barrier: |-
+      **`(UnresolvedClass. args)` on the VM surfaces `internal_error [eval]
+      Internal error: vm: op_ctor_call name is not a String`** instead of a
+      clean `name_error`/`feature_not_supported`. Found running
+      `clojure.test-clojure.string` (uses `(StringBuffer. …)`): the ctor-call
+      arm resolves the class to a non-String / nil constant and `raiseInternal`s,
+      which aborts the whole eval (a `run-tests` batch dies mid-suite) rather
+      than letting the single `is` form report an error and continue. Discharge:
+      the `op_ctor_call` dispatch (src/eval/backend/vm.zig) should detect an
+      unresolved/non-class target and raise a catalog user error
+      (`class_unresolved`/`feature_not_supported` with the class name) so it is
+      catchable and non-fatal — matching how an unresolved fn call already
+      raises cleanly. The tree_walk arm should be checked for the same shape.
+      LOW-frequency in clean code but HIGH-value for the validation campaign
+      (one unresolved interop call should not nuke a whole suite run). Cross-ref
+      D-232 / F-011. recall trigger: any suite using an unsupported Java ctor.
+    last_reviewed: "2026-06-03"
   - id: "D-226"
     status: |-
       DISCHARGED 2026-06-03 (STAGE 1 + STAGE 2 landed, ADR-0082) — syntax-quote
@@ -243,7 +263,19 @@ active:
       unit (do NOT cold-seize; touches the special-form set). Until then the
       20 test-helper-dependent suites stay blocked at LOAD; drain the
       test-helper-FREE suites (sequences/data_structures/vectors/string/etc.)
-      first. This
+      first. **`set!` special form LANDED** (2026-06-03, SetNode + op_set_var,
+      both backends): `(set! *dynvar* v)` updates the innermost thread binding
+      or (no frame) the var root (covers top-level `*warn-on-reflection*`);
+      non-dynamic → clean `set_target_not_dynamic`; field form `(set! (.f o) v)`
+      → feature_not_supported. Minor divergence: cljw allows top-level root-set
+      on ANY dynamic var, clj only on compiler-flag vars (rare, lenient). This
+      unblocked **string.clj** which now RUNS (was blocked at
+      `(set! *warn-on-reflection* true)`); it parks on `StringBuffer`/
+      `StringBuilder` interop (JVM class, accepted) and exposed **D-233**
+      (op_ctor_call on an unresolved class → internal_error aborts the whole
+      suite run; should be a clean catchable user error). External-dep finding:
+      sequences/data_structures need test.check/data.generators (not loadable);
+      vectors needs `:import [java.util …]` (cljw has no such classes). This
       is the standing `quality-loop floor: validation-campaign` — drain
       highest-value-first, one upstream suite at a time, big-bang per suite
       (anti-drip per clj_diff_sweep.md Discipline 2). Cross-ref D-158 (infra) /

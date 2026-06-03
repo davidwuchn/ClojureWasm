@@ -142,7 +142,18 @@ const Compiler = struct {
             // each element, then the matching collection-build opcode.
             .map_literal_node => |n| try self.compileMapLiteral(n),
             .set_literal_node => |n| try self.compileSetLiteral(n),
+            .set_node => |n| try self.compileSet(n),
         }
+    }
+
+    /// `(set! *v* value)` — emit the value expr (leaves it on the stack as
+    /// the form's result), then `op_set_var <var-ref const idx>` mutates the
+    /// binding/root. The Var travels as a `.var_ref` constant, mirroring
+    /// `op_get_var` (no side-table needed).
+    fn compileSet(self: *Compiler, n: node_mod.SetNode) Error!void {
+        try self.compileNode(n.value_expr);
+        const idx = try self.addConstant(Value.encodeHeapPtr(.var_ref, n.var_ptr));
+        try self.emit(.op_set_var, idx);
     }
 
     fn compileVectorLiteral(self: *Compiler, n: node_mod.VectorLiteralNode) Error!void {

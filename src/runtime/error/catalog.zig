@@ -69,6 +69,7 @@ pub const Code = enum {
     var_arity_invalid,
     var_arg_not_symbol,
     var_unresolved,
+    set_arity_invalid,
     metadata_value_invalid,
     symbol_unresolved,
     /// args: `.{ .sym = "ns/name", .ns = "ns" }` — raised when a
@@ -88,6 +89,9 @@ pub const Code = enum {
     /// `(binding [v ...])` targeted a Var that is not `^:dynamic`.
     /// args: `.{ .var = "ns/name" }`
     binding_target_not_dynamic,
+    /// `(set! v ...)` targeted a Var that is not `^:dynamic`.
+    /// args: `.{ .var = "ns/name" }`
+    set_target_not_dynamic,
     /// loop* / recur arity exceeds the internal slot-index width.
     /// args: `.{ .form = "loop*"|"recur", .got = N, .max = 65535 }`
     arity_too_large,
@@ -427,6 +431,10 @@ pub fn entry(comptime code: Code) Entry {
             .kind = .syntax_error, .phase = .analysis,
             .template = "var expects 1 arg, got {[got]d}",
         },
+        .set_arity_invalid => .{
+            .kind = .syntax_error, .phase = .analysis,
+            .template = "set! expects 2 args, got {[got]d}",
+        },
         .var_arg_not_symbol => .{
             .kind = .syntax_error, .phase = .analysis,
             .template = "var expects a symbol, got {[actual]s}",
@@ -498,6 +506,10 @@ pub fn entry(comptime code: Code) Entry {
         .binding_target_not_dynamic => .{
             .kind = .value_error, .phase = .eval,
             .template = "Can't dynamically bind non-dynamic var: {[var]s}",
+        },
+        .set_target_not_dynamic => .{
+            .kind = .value_error, .phase = .eval,
+            .template = "Can't set! non-dynamic var: {[var]s}",
         },
         .arity_too_large => .{
             .kind = .not_implemented, .phase = .analysis,

@@ -208,6 +208,26 @@ test "diff: binding rebinds a dynamic var (both backends)" {
     try f.check("(binding [*tv* 2] *tv*)", 2);
 }
 
+test "diff: set! updates the active thread binding (both backends)" {
+    var f = try Fixture.init(testing.allocator);
+    defer f.deinit();
+    const user = f.env.findNs("user").?;
+    const v = try f.env.intern(user, "*tv*", Value.initInteger(1), null);
+    v.flags.dynamic = true;
+    // set! mutates the innermost frame; the form returns the assigned value.
+    try f.check("(binding [*tv* 2] (set! *tv* 42) *tv*)", 42);
+}
+
+test "diff: set! at top level sets the var root (both backends)" {
+    var f = try Fixture.init(testing.allocator);
+    defer f.deinit();
+    const user = f.env.findNs("user").?;
+    const v = try f.env.intern(user, "*tv*", Value.initInteger(1), null);
+    v.flags.dynamic = true;
+    // No active binding frame → set! writes the root; deref then sees it.
+    try f.check("(do (set! *tv* 7) *tv*)", 7);
+}
+
 test "diff: binding restores the root after the dynamic extent" {
     var f = try Fixture.init(testing.allocator);
     defer f.deinit();

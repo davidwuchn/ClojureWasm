@@ -180,6 +180,7 @@ const SpecialFormKind = enum {
     in_ns_form,
     require_form,
     ns_form,
+    set_bang,
 };
 
 const SPECIAL_FORMS = std.StaticStringMap(SpecialFormKind).initComptime(.{
@@ -207,6 +208,7 @@ const SPECIAL_FORMS = std.StaticStringMap(SpecialFormKind).initComptime(.{
     .{ "in-ns", .in_ns_form },
     .{ "require", .require_form },
     .{ "ns", .ns_form },
+    .{ "set!", .set_bang },
 });
 
 /// Forms the analyser recognises but the runtime does not yet
@@ -798,6 +800,7 @@ fn analyzeSpecial(
         .in_ns_form => special_forms.analyzeInNs(arena, items, form),
         .require_form => special_forms.analyzeRequire(arena, items, form),
         .ns_form => special_forms.analyzeNs(arena, items, form),
+        .set_bang => special_forms.analyzeSetBang(arena, rt, env, scope, items, form, macro_table),
     };
 }
 
