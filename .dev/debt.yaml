@@ -26,8 +26,20 @@ active:
       the `with-local-vars` macro `(let [a (__make-local-var) …]
       (__push-local-frame a 1 …) (try body (finally (__pop-local-frame))))`. var-set/
       var-get/`@` already operate on the resulting var values. Moderate cluster;
-      vars.clj is its consumer (with-local-vars ×2). Cross-ref D-230 (Var-as-value)
-      / set! (env.setBinding) / F-011. recall trigger: vars.clj drain or a
+      vars.clj is its consumer (with-local-vars ×2).
+      **STRUCTURAL lifetime question (F-003 — owner decides, do NOT cold-seize):**
+      an anonymous local Var cannot be GC-managed because the GC membrane skips
+      `.var_ref` (D-230 — var_ref values are assumed ns-owned/permanent, not
+      traced). So `__make-local-var` must infra-alloc, and the lifetime choice
+      is genuinely open: (a) free at frame-pop (no leak, but a var value that
+      ESCAPES the with-local-vars extent — captured in a returned closure —
+      dangles → UAF; clj allows escape via its GC); (b) leak (memory-safe but
+      an unbounded leak under a with-local-vars loop). Neither is clearly right
+      without either tracing var_ref in the membrane (reverses a D-230 decision)
+      or an arena tied to the extent. Resolve this lifetime/GC-membrane question
+      FIRST (it is the real work; the primitives + macro are mechanical after).
+      Cross-ref D-230 (Var-as-value + GC membrane skips var_ref) / set!
+      (env.setBinding) / F-006 (GC) / F-011. recall trigger: vars.clj drain or a
       real lib using with-local-vars.
     last_reviewed: "2026-06-03"
   - id: "D-236"
