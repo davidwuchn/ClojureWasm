@@ -1,0 +1,18 @@
+(cond-> 1 true inc false (* 100))
+;;=> 2
+(some-> {:a {:b 2}} :a :b inc)
+;;=> 3
+(into [] (comp (map inc) (filter even?)) (range 6))
+;;=> [2 4 6]
+(transduce (map inc) + 0 (range 5))
+;;=> 15
+(reduce + (filter even? (map inc (range 10))))
+;;=> 30
+(into (sorted-map) {:c 3 :a 1 :b 2})
+;;=> {:a 1, :b 2, :c 3}
+(update-in {:a {:b [1 2]}} [:a :b] conj 3)
+;;=> {:a {:b [1 2 3]}}
+(merge-with + {:a 1 :b 2} {:b 3 :c 4})
+;;=> {:a 1, :b 5, :c 4}
+(->> (range 10) (filter odd?) (map #(* % %)) (reduce +))
+;;=> 165
