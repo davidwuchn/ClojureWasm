@@ -387,8 +387,15 @@ active:
       emits bare import*, same fn — a macroexpand print-form divergence, not a
       behaviour one). corpus import_macro (3) + e2e phase15_import_macro (4).
       evaluation now loads past line 20 → parks on `clojure.lang.Compiler`
-      (JVM class, deferred). NEXT clean candidates remain: control@92 (a `when`
-      empty-body / `are` macroexpand), special@36 (`{:as x}`-only destructure).
+      (JVM class, deferred).
+      **2026-06-04 `when`/`when-not` empty body LANDED**: `(when test)` /
+      `(when-not test)` with NO body now → nil (clj parity: `(when test)` →
+      `(if test (do))` → nil); cljw required ≥1 body form. corpus when_empty_body
+      (8). control.clj advances 92 → **line 118: `(when-let [[a b] '(1 2)] …)`**
+      — when-let with a DESTRUCTURING binding (when-let/if-let lower the binding
+      via let*, symbol-only; same macro-uses-let*-not-let class as the defmethod
+      fix). That + special@36 (`{:as x}`-only assoc destructure, a parse path)
+      are the next clean candidates.
       **2026-06-04 `defprotocol` docstrings LANDED**: an optional protocol-level
       docstring after the name (`(defprotocol P "doc" (m [a]) …)`) was rejected
       ("method signature must be a list"); now skipped. Method-level docstrings,

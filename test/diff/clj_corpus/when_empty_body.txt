@@ -1,0 +1,16 @@
+(when true)
+;;=> nil
+(when false)
+;;=> nil
+(when nil)
+;;=> nil
+(when true 1 2)
+;;=> 2
+(when-not false)
+;;=> nil
+(when-not true)
+;;=> nil
+(when-not nil 7)
+;;=> 7
+[(when true) (when-not false) (when (pos? 1))]
+;;=> [nil nil nil]

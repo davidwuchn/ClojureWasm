@@ -546,7 +546,7 @@ fn expandWhen(
     loc: SourceLocation,
 ) macro_dispatch.ExpandError!Form {
     _ = rt;
-    if (args.len < 2)
+    if (args.len < 1)
         return error_catalog.raise(.when_form_incomplete, loc, .{});
 
     const cond_form = args[0];
@@ -554,8 +554,13 @@ fn expandWhen(
 
     // (do body...) -- but if there's a single body form, fold to it
     // directly so the expanded shape is simpler to read in error
-    // messages.
-    const then_form = if (body.len == 1) body[0] else blk: {
+    // messages. An EMPTY body (`(when test)`) is nil (clj parity:
+    // `(when test)` → `(if test (do))` → nil).
+    const then_form = if (body.len == 0)
+        nilForm(loc)
+    else if (body.len == 1)
+        body[0]
+    else blk: {
         var do_items = try arena.alloc(Form, body.len + 1);
         do_items[0] = sym("do", loc);
         @memcpy(do_items[1..], body);
@@ -1320,9 +1325,10 @@ fn expandIfNot(arena: std.mem.Allocator, rt: *Runtime, args: []const Form, loc: 
 /// `(when-not test body…)` → `(if test nil (do body…))`.
 fn expandWhenNot(arena: std.mem.Allocator, rt: *Runtime, args: []const Form, loc: SourceLocation) macro_dispatch.ExpandError!Form {
     _ = rt;
-    if (args.len < 2)
+    if (args.len < 1)
         return error_catalog.raise(.when_not_form_incomplete, loc, .{});
-    const body = try foldBody(arena, args[1..], loc);
+    // Empty body (`(when-not test)`) is nil (clj parity), like `when`.
+    const body = if (args.len == 1) nilForm(loc) else try foldBody(arena, args[1..], loc);
     return makeIf(arena, args[0], nilForm(loc), body, loc);
 }
 
