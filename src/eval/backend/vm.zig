@@ -177,619 +177,624 @@ fn stepOnce(
     ip += 1;
 
     switch (instr.opcode) {
-            .op_const => {
-                @branchHint(.likely);
-                if (instr.operand >= chunk.constants.len)
-                    return raiseInternal("vm: op_const constant index out of range");
-                if (sp >= OPERAND_STACK_MAX)
-                    return raiseInternal("vm: operand stack overflow");
-                stack[sp] = chunk.constants[instr.operand];
-                sp += 1;
-            },
-            .op_load_local => {
-                if (instr.operand >= locals.len)
-                    return error_catalog.raise(.slot_out_of_range, .{}, .{ .form = "Local", .index = instr.operand, .max = locals.len });
-                if (sp >= OPERAND_STACK_MAX)
-                    return raiseInternal("vm: operand stack overflow");
-                stack[sp] = locals[instr.operand];
-                sp += 1;
-            },
-            .op_store_local => {
-                if (instr.operand >= locals.len)
-                    return error_catalog.raise(.slot_out_of_range, .{}, .{ .form = "let*", .index = instr.operand, .max = locals.len });
-                if (sp == 0) return raiseInternal("vm: op_store_local on empty stack");
-                sp -= 1;
-                locals[instr.operand] = stack[sp];
-            },
-            .op_letfn_patch => {
-                // operand = (count << 8) | base; both ≤ MAX_LOCALS (256).
-                // Wire the just-stored letfn closures into a mutually-
-                // recursive group (shared with TreeWalk's evalLetfn).
-                const base: u16 = instr.operand & 0xFF;
-                const count: u16 = instr.operand >> 8;
-                tree_walk.patchLetfnClosures(locals, base, count);
-            },
-            .op_def => {
-                if (sp == 0) return raiseInternal("vm: op_def on empty stack");
-                sp -= 1;
-                const value = stack[sp];
-                const name_idx = instr.operand & opcode_mod.DEF_NAME_IDX_MASK;
-                if (name_idx >= chunk.constants.len)
-                    return raiseInternal("vm: op_def name index out of range");
-                const name_val = chunk.constants[name_idx];
-                if (!name_val.isString())
-                    return raiseInternal("vm: op_def constant is not a String");
-                const ns = env.current_ns orelse
-                    return error_catalog.raiseInternal(.{}, "def: no current namespace");
-                const var_ptr = try env.intern(ns, string_mod.asString(name_val), value, null);
-                var_ptr.flags.dynamic = (instr.operand & opcode_mod.DEF_FLAG_DYNAMIC) != 0;
-                var_ptr.flags.macro_ = (instr.operand & opcode_mod.DEF_FLAG_MACRO) != 0;
-                var_ptr.flags.private = (instr.operand & opcode_mod.DEF_FLAG_PRIVATE) != 0;
-                if (sp >= OPERAND_STACK_MAX)
-                    return raiseInternal("vm: operand stack overflow");
-                stack[sp] = Value.encodeHeapPtr(.var_ref, var_ptr);
-                sp += 1;
-            },
-            .op_get_var => {
-                if (instr.operand >= chunk.constants.len)
-                    return raiseInternal("vm: op_get_var constant index out of range");
-                const var_value = chunk.constants[instr.operand];
-                const var_ptr = var_value.decodePtr(*Var);
-                if (sp >= OPERAND_STACK_MAX)
-                    return raiseInternal("vm: operand stack overflow");
-                stack[sp] = var_ptr.deref();
-                sp += 1;
-            },
-            .op_ns_import => {
-                // D-235: register one `(:import …)` simple->fqcn into the
-                // current ns. Pushes nil (the ns form's running value).
-                if (instr.operand >= chunk.import_sites.len)
-                    return raiseInternal("vm: op_ns_import site index out of range");
-                const imp = chunk.import_sites[instr.operand];
-                const here = env.current_ns orelse
-                    return error_catalog.raise(.current_namespace_missing, .{}, .{ .sym = imp.simple });
-                try here.addImport(env.alloc, imp.simple, imp.fqcn);
-                if (sp >= OPERAND_STACK_MAX)
-                    return raiseInternal("vm: operand stack overflow");
-                stack[sp] = Value.nil_val;
-                sp += 1;
-            },
-            .op_set_var => {
-                if (instr.operand >= chunk.constants.len)
-                    return raiseInternal("vm: op_set_var constant index out of range");
-                if (sp == 0) return raiseInternal("vm: op_set_var on empty stack");
-                const var_ptr = chunk.constants[instr.operand].decodePtr(*Var);
-                const val = stack[sp - 1]; // peek: the assigned value stays as the result
-                if (!env_mod.setBinding(var_ptr, val)) var_ptr.setRoot(val);
-            },
-            .op_jump => {
+        .op_const => {
+            @branchHint(.likely);
+            if (instr.operand >= chunk.constants.len)
+                return raiseInternal("vm: op_const constant index out of range");
+            if (sp >= OPERAND_STACK_MAX)
+                return raiseInternal("vm: operand stack overflow");
+            stack[sp] = chunk.constants[instr.operand];
+            sp += 1;
+        },
+        .op_load_local => {
+            if (instr.operand >= locals.len)
+                return error_catalog.raise(.slot_out_of_range, .{}, .{ .form = "Local", .index = instr.operand, .max = locals.len });
+            if (sp >= OPERAND_STACK_MAX)
+                return raiseInternal("vm: operand stack overflow");
+            stack[sp] = locals[instr.operand];
+            sp += 1;
+        },
+        .op_store_local => {
+            if (instr.operand >= locals.len)
+                return error_catalog.raise(.slot_out_of_range, .{}, .{ .form = "let*", .index = instr.operand, .max = locals.len });
+            if (sp == 0) return raiseInternal("vm: op_store_local on empty stack");
+            sp -= 1;
+            locals[instr.operand] = stack[sp];
+        },
+        .op_letfn_patch => {
+            // operand = (count << 8) | base; both ≤ MAX_LOCALS (256).
+            // Wire the just-stored letfn closures into a mutually-
+            // recursive group (shared with TreeWalk's evalLetfn).
+            const base: u16 = instr.operand & 0xFF;
+            const count: u16 = instr.operand >> 8;
+            tree_walk.patchLetfnClosures(locals, base, count);
+        },
+        .op_def => {
+            if (sp == 0) return raiseInternal("vm: op_def on empty stack");
+            sp -= 1;
+            const value = stack[sp];
+            const name_idx = instr.operand & opcode_mod.DEF_NAME_IDX_MASK;
+            if (name_idx >= chunk.constants.len)
+                return raiseInternal("vm: op_def name index out of range");
+            const name_val = chunk.constants[name_idx];
+            if (!name_val.isString())
+                return raiseInternal("vm: op_def constant is not a String");
+            const ns = env.current_ns orelse
+                return error_catalog.raiseInternal(.{}, "def: no current namespace");
+            const var_ptr = try env.intern(ns, string_mod.asString(name_val), value, null);
+            var_ptr.flags.dynamic = (instr.operand & opcode_mod.DEF_FLAG_DYNAMIC) != 0;
+            var_ptr.flags.macro_ = (instr.operand & opcode_mod.DEF_FLAG_MACRO) != 0;
+            var_ptr.flags.private = (instr.operand & opcode_mod.DEF_FLAG_PRIVATE) != 0;
+            if (sp >= OPERAND_STACK_MAX)
+                return raiseInternal("vm: operand stack overflow");
+            stack[sp] = Value.encodeHeapPtr(.var_ref, var_ptr);
+            sp += 1;
+        },
+        .op_get_var => {
+            if (instr.operand >= chunk.constants.len)
+                return raiseInternal("vm: op_get_var constant index out of range");
+            const var_value = chunk.constants[instr.operand];
+            const var_ptr = var_value.decodePtr(*Var);
+            if (sp >= OPERAND_STACK_MAX)
+                return raiseInternal("vm: operand stack overflow");
+            stack[sp] = var_ptr.deref();
+            sp += 1;
+        },
+        .op_ns_import => {
+            // D-235: register one `(:import …)` simple->fqcn into the
+            // current ns. Pushes nil (the ns form's running value).
+            if (instr.operand >= chunk.import_sites.len)
+                return raiseInternal("vm: op_ns_import site index out of range");
+            const imp = chunk.import_sites[instr.operand];
+            const here = env.current_ns orelse
+                return error_catalog.raise(.current_namespace_missing, .{}, .{ .sym = imp.simple });
+            try here.addImport(env.alloc, imp.simple, imp.fqcn);
+            if (sp >= OPERAND_STACK_MAX)
+                return raiseInternal("vm: operand stack overflow");
+            stack[sp] = Value.nil_val;
+            sp += 1;
+        },
+        .op_set_var => {
+            if (instr.operand >= chunk.constants.len)
+                return raiseInternal("vm: op_set_var constant index out of range");
+            if (sp == 0) return raiseInternal("vm: op_set_var on empty stack");
+            const var_ptr = chunk.constants[instr.operand].decodePtr(*Var);
+            const val = stack[sp - 1]; // peek: the assigned value stays as the result
+            if (!env_mod.setBinding(var_ptr, val)) var_ptr.setRoot(val);
+        },
+        .op_jump => {
+            const offset: i16 = @bitCast(instr.operand);
+            ip = applyJump(ip, offset) orelse
+                return raiseInternal("vm: op_jump target out of range");
+        },
+        .op_jump_if_false => {
+            if (sp == 0) return raiseInternal("vm: op_jump_if_false on empty stack");
+            sp -= 1;
+            if (!stack[sp].isTruthy()) {
                 const offset: i16 = @bitCast(instr.operand);
                 ip = applyJump(ip, offset) orelse
-                    return raiseInternal("vm: op_jump target out of range");
-            },
-            .op_jump_if_false => {
-                if (sp == 0) return raiseInternal("vm: op_jump_if_false on empty stack");
-                sp -= 1;
-                if (!stack[sp].isTruthy()) {
-                    const offset: i16 = @bitCast(instr.operand);
-                    ip = applyJump(ip, offset) orelse
-                        return raiseInternal("vm: op_jump_if_false target out of range");
-                }
-            },
-            .op_call => {
-                const arg_count: usize = instr.operand;
-                if (sp < arg_count + 1)
-                    return raiseInternal("vm: op_call underflow");
-                sp -= @intCast(arg_count + 1);
-                const callee = stack[sp];
-                const args = stack[sp + 1 .. sp + 1 + arg_count];
-                const vt = rt.vtable orelse
-                    return error_catalog.raiseInternal(.{}, "Runtime vtable not installed; cannot dispatch call");
-                const result = try vt.callFn(rt, env, callee, args, .{});
-                if (sp >= OPERAND_STACK_MAX)
-                    return raiseInternal("vm: operand stack overflow");
-                stack[sp] = result;
-                sp += 1;
-            },
-            .op_ret => {
-                @branchHint(.likely);
-                if (sp == 0) return raiseInternal("vm: op_ret on empty stack");
-                sp -= 1;
-                return stack[sp];
-            },
-            .op_pop => {
-                if (sp == 0) return raiseInternal("vm: op_pop on empty stack");
-                sp -= 1;
-            },
-            .op_dup => {
-                if (sp == 0) return raiseInternal("vm: op_dup on empty stack");
-                if (sp >= OPERAND_STACK_MAX)
-                    return raiseInternal("vm: operand stack overflow");
-                stack[sp] = stack[sp - 1];
-                sp += 1;
-            },
-            .op_throw => {
-                if (sp == 0) return raiseInternal("vm: op_throw on empty stack");
-                sp -= 1;
-                dispatch.last_thrown_exception = stack[sp];
-                // Snapshot *error-context* while the binding frame is
-                // live (ADR-0055 am2 / D-144) — symmetric with TreeWalk's
-                // evalThrow so the two backends agree at the throw edge.
-                dispatch.last_thrown_context = error_mod.snapshotContext();
-                return error.ThrownValue;
-            },
-            .op_make_fn => {
-                // The compiler stashes either a final closure-less
-                // Function (slot_base == 0) or a template Function
-                // (slot_base > 0, closure_bindings still null) in the
-                // constant pool. For the template case the dispatcher
-                // allocates a fresh Function with a snapshot of the
-                // caller's locals[0..slot_base] so each fn* evaluation
-                // captures its enclosing scope.
-                if (instr.operand >= chunk.constants.len)
-                    return raiseInternal("vm: op_make_fn constant index out of range");
-                if (sp >= OPERAND_STACK_MAX)
-                    return raiseInternal("vm: operand stack overflow");
-                const template_val = chunk.constants[instr.operand];
-                const template = template_val.decodePtr(*const Function);
-                if (template.slot_base == 0) {
-                    stack[sp] = template_val;
-                } else {
-                    // Row 7.8 cycle 1 (ADR-0041): rebuild a transient
-                    // FnNode from the template's per-method records so
-                    // `allocFunctionWithBytecode` can snapshot the
-                    // caller's locals + stamp per-method chunks.
-                    if (templateMethodsHaveAnyMissingChunk(template))
-                        return raiseInternal("vm: op_make_fn template missing bytecode");
-                    var node_methods = std.heap.stackFallback(8 * @sizeOf(node_mod.FnMethod), rt.gpa);
-                    const allocator = node_methods.get();
-                    const ms = allocator.alloc(node_mod.FnMethod, template.methods.len) catch
-                        return raiseInternal("vm: op_make_fn alloc failed");
-                    defer allocator.free(ms);
-                    const chunks = allocator.alloc(?*const opcode_mod.BytecodeChunk, template.methods.len) catch
-                        return raiseInternal("vm: op_make_fn alloc failed");
-                    defer allocator.free(chunks);
-                    for (template.methods, 0..) |m, i| {
-                        ms[i] = .{
-                            .arity = m.arity,
-                            .has_rest = m.has_rest,
-                            .params = m.params,
-                            .body = m.body,
-                        };
-                        chunks[i] = m.bytecode;
-                    }
-                    var variadic_node: ?node_mod.FnMethod = null;
-                    var variadic_chunk: ?*const opcode_mod.BytecodeChunk = null;
-                    if (template.variadic) |v| {
-                        variadic_node = .{
-                            .arity = v.arity,
-                            .has_rest = v.has_rest,
-                            .params = v.params,
-                            .body = v.body,
-                        };
-                        variadic_chunk = v.bytecode;
-                    }
-                    const fn_node = node_mod.FnNode{
-                        .methods = ms,
-                        .variadic = variadic_node,
-                        .slot_base = template.slot_base,
+                    return raiseInternal("vm: op_jump_if_false target out of range");
+            }
+        },
+        .op_call => {
+            const arg_count: usize = instr.operand;
+            if (sp < arg_count + 1)
+                return raiseInternal("vm: op_call underflow");
+            sp -= @intCast(arg_count + 1);
+            const callee = stack[sp];
+            const args = stack[sp + 1 .. sp + 1 + arg_count];
+            const vt = rt.vtable orelse
+                return error_catalog.raiseInternal(.{}, "Runtime vtable not installed; cannot dispatch call");
+            const result = try vt.callFn(rt, env, callee, args, .{});
+            if (sp >= OPERAND_STACK_MAX)
+                return raiseInternal("vm: operand stack overflow");
+            stack[sp] = result;
+            sp += 1;
+        },
+        .op_ret => {
+            @branchHint(.likely);
+            if (sp == 0) return raiseInternal("vm: op_ret on empty stack");
+            sp -= 1;
+            return stack[sp];
+        },
+        .op_pop => {
+            if (sp == 0) return raiseInternal("vm: op_pop on empty stack");
+            sp -= 1;
+        },
+        .op_dup => {
+            if (sp == 0) return raiseInternal("vm: op_dup on empty stack");
+            if (sp >= OPERAND_STACK_MAX)
+                return raiseInternal("vm: operand stack overflow");
+            stack[sp] = stack[sp - 1];
+            sp += 1;
+        },
+        .op_throw => {
+            if (sp == 0) return raiseInternal("vm: op_throw on empty stack");
+            sp -= 1;
+            dispatch.last_thrown_exception = stack[sp];
+            // Snapshot *error-context* while the binding frame is
+            // live (ADR-0055 am2 / D-144) — symmetric with TreeWalk's
+            // evalThrow so the two backends agree at the throw edge.
+            dispatch.last_thrown_context = error_mod.snapshotContext();
+            return error.ThrownValue;
+        },
+        .op_make_fn => {
+            // The compiler stashes either a final closure-less
+            // Function (slot_base == 0) or a template Function
+            // (slot_base > 0, closure_bindings still null) in the
+            // constant pool. For the template case the dispatcher
+            // allocates a fresh Function with a snapshot of the
+            // caller's locals[0..slot_base] so each fn* evaluation
+            // captures its enclosing scope.
+            if (instr.operand >= chunk.constants.len)
+                return raiseInternal("vm: op_make_fn constant index out of range");
+            if (sp >= OPERAND_STACK_MAX)
+                return raiseInternal("vm: operand stack overflow");
+            const template_val = chunk.constants[instr.operand];
+            const template = template_val.decodePtr(*const Function);
+            if (template.slot_base == 0) {
+                stack[sp] = template_val;
+            } else {
+                // Row 7.8 cycle 1 (ADR-0041): rebuild a transient
+                // FnNode from the template's per-method records so
+                // `allocFunctionWithBytecode` can snapshot the
+                // caller's locals + stamp per-method chunks.
+                if (templateMethodsHaveAnyMissingChunk(template))
+                    return raiseInternal("vm: op_make_fn template missing bytecode");
+                var node_methods = std.heap.stackFallback(8 * @sizeOf(node_mod.FnMethod), rt.gpa);
+                const allocator = node_methods.get();
+                const ms = allocator.alloc(node_mod.FnMethod, template.methods.len) catch
+                    return raiseInternal("vm: op_make_fn alloc failed");
+                defer allocator.free(ms);
+                const chunks = allocator.alloc(?*const opcode_mod.BytecodeChunk, template.methods.len) catch
+                    return raiseInternal("vm: op_make_fn alloc failed");
+                defer allocator.free(chunks);
+                for (template.methods, 0..) |m, i| {
+                    ms[i] = .{
+                        .arity = m.arity,
+                        .has_rest = m.has_rest,
+                        .params = m.params,
+                        .body = m.body,
                     };
-                    stack[sp] = try tree_walk.allocFunctionWithBytecode(rt, fn_node, locals, chunks, variadic_chunk);
+                    chunks[i] = m.bytecode;
                 }
-                sp += 1;
-            },
-            .op_recur => {
-                // The compiler emits `op_recur <arity>` followed by N
-                // op_store_local + op_jump <-back_offset>. The arity
-                // check here is defensive — the analyser already
-                // validated arity at parse time. The actual rebind
-                // and back-jump happen in the following instructions.
-                if (sp < instr.operand)
-                    return raiseInternal("vm: op_recur underflow");
-            },
-            .op_invoke_builtin => {
-                // Reserved for analyzer-resolved direct builtin calls;
-                // the compiler does not emit this at 4.6 (every call
-                // routes through `op_call` + vtable). Per
-                // `no_op_stub_forbidden.md`, raise rather than fall
-                // through silently.
-                return error_catalog.raise(.feature_not_supported, .{}, .{ .name = "op_invoke_builtin" });
-            },
-            .op_push_handler => {
-                const offset: i16 = @bitCast(instr.operand);
-                const catch_ip = applyJump(ip, offset) orelse
-                    return raiseInternal("vm: op_push_handler target out of range");
-                if (handler_count >= HANDLER_STACK_MAX)
-                    return raiseInternal("vm: handler stack overflow");
-                handlers[handler_count] = .{ .catch_ip = catch_ip, .saved_sp = sp, .kind = .catch_clause };
-                handler_count += 1;
-            },
-            .op_push_cleanup => {
-                const offset: i16 = @bitCast(instr.operand);
-                const cleanup_ip = applyJump(ip, offset) orelse
-                    return raiseInternal("vm: op_push_cleanup target out of range");
-                if (handler_count >= HANDLER_STACK_MAX)
-                    return raiseInternal("vm: handler stack overflow");
-                handlers[handler_count] = .{ .catch_ip = cleanup_ip, .saved_sp = sp, .kind = .cleanup };
-                handler_count += 1;
-            },
-            .op_reraise => {
-                // Re-fire the error the cleanup-unwind branch stashed,
-                // unchanged (ADR-0071). The cleanup bytecode just ran (e.g.
-                // op_pop_binding_frame); the catalog Info / thrown context
-                // is still intact, so the original error propagates as it
-                // would have under TreeWalk's `defer`.
-                const e = dispatch.vm_pending_reraise orelse
-                    return raiseInternal("vm: op_reraise without a pending error");
-                dispatch.vm_pending_reraise = null;
-                return e;
-            },
-            .op_pop_handler => {
-                if (handler_count == 0)
-                    return raiseInternal("vm: op_pop_handler on empty handler stack");
-                handler_count -= 1;
-            },
-            .op_push_binding_frame => {
-                // Pops 2N entries [encVar0, val0, …] and installs a
-                // per-thread BindingFrame on the env threadlocal (shared
-                // with TreeWalk — single-threaded per session, so
-                // `Var.deref` stays backend-agnostic). The compiler wraps
-                // the body in a cleanup handler so `op_pop_binding_frame`
-                // runs on both the success and the exception edge.
-                const n_pairs: usize = instr.operand;
-                if (sp < n_pairs * 2)
-                    return raiseInternal("vm: op_push_binding_frame stack underflow");
-                const base = sp - n_pairs * 2;
-                const frame = rt.gpa.create(env_mod.BindingFrame) catch
-                    return raiseInternal("vm: op_push_binding_frame frame alloc");
-                frame.* = .{};
-                var pi: usize = 0;
-                while (pi < n_pairs) : (pi += 1) {
-                    const var_ptr = stack[base + pi * 2].decodePtr(*const Var);
-                    const val = stack[base + pi * 2 + 1];
-                    if (!var_ptr.flags.dynamic) {
-                        frame.bindings.deinit(rt.gpa);
-                        rt.gpa.destroy(frame);
-                        var name_buf: [512]u8 = undefined;
-                        const qualified = std.fmt.bufPrint(&name_buf, "{s}/{s}", .{ var_ptr.ns.name, var_ptr.name }) catch var_ptr.name;
-                        return error_catalog.raise(.binding_target_not_dynamic, .{}, .{ .@"var" = qualified });
-                    }
-                    frame.bindings.put(rt.gpa, var_ptr, val) catch {
-                        frame.bindings.deinit(rt.gpa);
-                        rt.gpa.destroy(frame);
-                        return raiseInternal("vm: op_push_binding_frame put");
+                var variadic_node: ?node_mod.FnMethod = null;
+                var variadic_chunk: ?*const opcode_mod.BytecodeChunk = null;
+                if (template.variadic) |v| {
+                    variadic_node = .{
+                        .arity = v.arity,
+                        .has_rest = v.has_rest,
+                        .params = v.params,
+                        .body = v.body,
                     };
+                    variadic_chunk = v.bytecode;
                 }
-                sp = @intCast(base);
-                env_mod.pushFrame(frame);
-            },
-            .op_pop_binding_frame => {
-                const f = env_mod.current_frame orelse
-                    return raiseInternal("vm: op_pop_binding_frame on empty frame stack");
-                env_mod.popFrame();
-                f.bindings.deinit(rt.gpa);
-                rt.gpa.destroy(f);
-            },
-            .op_match_class => {
-                if (sp == 0)
-                    return raiseInternal("vm: op_match_class on empty stack");
-                if (instr.operand >= chunk.constants.len)
-                    return raiseInternal("vm: op_match_class constant index out of range");
-                const class_val = chunk.constants[instr.operand];
-                if (!class_val.isString())
-                    return raiseInternal("vm: op_match_class constant is not a String");
-                const thrown = stack[sp - 1];
-                const matches = matchExceptionClass(string_mod.asString(class_val), thrown);
-                if (sp >= OPERAND_STACK_MAX)
-                    return raiseInternal("vm: operand stack overflow");
-                stack[sp] = if (matches) Value.true_val else Value.false_val;
-                sp += 1;
-            },
-            .op_match_type_keyword => {
-                if (sp == 0)
-                    return raiseInternal("vm: op_match_type_keyword on empty stack");
-                if (instr.operand >= chunk.constants.len)
-                    return raiseInternal("vm: op_match_type_keyword constant index out of range");
-                const kw_val = chunk.constants[instr.operand];
-                const thrown = stack[sp - 1];
-                const matches = matchExceptionTypeKeyword(rt, kw_val, thrown);
-                if (sp >= OPERAND_STACK_MAX)
-                    return raiseInternal("vm: operand stack overflow");
-                stack[sp] = if (matches) Value.true_val else Value.false_val;
-                sp += 1;
-            },
-            .op_in_ns => {
-                // ADR-0032 in-ns — mirror of tree_walk::evalInNs.
-                // ADR-0035 D9 second amendment (Phase 7 entry T3,
-                // 2026-05-26): the prior auto-refer of rt +
-                // clojure.core has been removed. `(in-ns 'foo)` is
-                // now a naked ns switch. `.clj` heads use
-                // `(ns foo (:refer-clojure))` which compiles to
-                // `op_ns_with_refer_clojure` (= this opcode + both
-                // refers).
-                if (instr.operand >= chunk.constants.len)
-                    return raiseInternal("vm: op_in_ns constant index out of range");
-                const name_val = chunk.constants[instr.operand];
-                if (!name_val.isString())
-                    return raiseInternal("vm: op_in_ns constant is not a String");
-                env.setCurrentNs(try env.findOrCreateNs(string_mod.asString(name_val)));
-                if (sp >= OPERAND_STACK_MAX)
-                    return raiseInternal("vm: operand stack overflow");
-                stack[sp] = Value.nil_val;
-                sp += 1;
-            },
-            .op_ns_with_refer_clojure => {
-                // ADR-0035 D9 second amendment + ADR-0036 dual-
-                // backend parity contract. Mirror of post-T3
-                // tree_walk::evalNs when `refer_clojure = true`.
-                // op_in_ns logic + referAll(rt) + referAll(clojure.core).
-                if (instr.operand >= chunk.constants.len)
-                    return raiseInternal("vm: op_ns_with_refer_clojure constant index out of range");
-                const name_val = chunk.constants[instr.operand];
-                if (!name_val.isString())
-                    return raiseInternal("vm: op_ns_with_refer_clojure constant is not a String");
-                env.setCurrentNs(try env.findOrCreateNs(string_mod.asString(name_val)));
-                if (env.findNs("rt")) |rt_ns| {
-                    try env.referAll(rt_ns, env.current_ns.?);
-                }
-                if (env.findNs("clojure.core")) |clojure_core_ns| {
-                    try env.referAll(clojure_core_ns, env.current_ns.?);
-                }
-                if (sp >= OPERAND_STACK_MAX)
-                    return raiseInternal("vm: operand stack overflow");
-                stack[sp] = Value.nil_val;
-                sp += 1;
-            },
-            .op_ns_with_filter => {
-                // D-098: mirror of tree_walk::evalNs's refer-clojure branch
-                // with the `:exclude`/`:only` filter. Enter the ns, then
-                // refer rt + clojure.core through referAllWithFilter.
-                if (instr.operand >= chunk.ns_filters.len)
-                    return raiseInternal("vm: op_ns_with_filter index out of range");
-                const f = chunk.ns_filters[instr.operand];
-                env.setCurrentNs(try env.findOrCreateNs(f.name));
-                if (env.findNs("rt")) |rt_ns| {
-                    try env.referAllWithFilter(rt_ns, env.current_ns.?, f.exclude, f.only);
-                }
-                if (env.findNs("clojure.core")) |clojure_core_ns| {
-                    try env.referAllWithFilter(clojure_core_ns, env.current_ns.?, f.exclude, f.only);
-                }
-                if (sp >= OPERAND_STACK_MAX)
-                    return raiseInternal("vm: operand stack overflow");
-                stack[sp] = Value.nil_val;
-                sp += 1;
-            },
-            .op_require => {
-                // ADR-0035 D2 — mirror of tree_walk::evalRequire.
-                if (instr.operand >= chunk.constants.len)
-                    return raiseInternal("vm: op_require constant index out of range");
-                const name_val = chunk.constants[instr.operand];
-                if (!name_val.isString())
-                    return raiseInternal("vm: op_require constant is not a String");
-                const ns_name = string_mod.asString(name_val);
-                const already_loaded = blk: {
-                    const existing = env.findNs(ns_name) orelse break :blk false;
-                    break :blk existing.mappings.count() > 0;
+                const fn_node = node_mod.FnNode{
+                    .methods = ms,
+                    .variadic = variadic_node,
+                    .slot_base = template.slot_base,
                 };
-                if (!already_loaded) {
-                    const resolver = rt.require_resolver orelse
-                        return error_catalog.raise(.lib_not_found, .{}, .{ .ns = ns_name });
-                    const resolved = (try resolver(rt, ns_name)) orelse
-                        return error_catalog.raise(.lib_not_found, .{}, .{ .ns = ns_name });
-                    try loader.loadNamespace(rt, env, ns_name, resolved, .{});
+                stack[sp] = try tree_walk.allocFunctionWithBytecode(rt, fn_node, locals, chunks, variadic_chunk);
+            }
+            sp += 1;
+        },
+        .op_recur => {
+            // The compiler emits `op_recur <arity>` followed by N
+            // op_store_local + op_jump <-back_offset>. The arity
+            // check here is defensive — the analyser already
+            // validated arity at parse time. The actual rebind
+            // and back-jump happen in the following instructions.
+            if (sp < instr.operand)
+                return raiseInternal("vm: op_recur underflow");
+        },
+        .op_invoke_builtin => {
+            // Reserved for analyzer-resolved direct builtin calls;
+            // the compiler does not emit this at 4.6 (every call
+            // routes through `op_call` + vtable). Per
+            // `no_op_stub_forbidden.md`, raise rather than fall
+            // through silently.
+            return error_catalog.raise(.feature_not_supported, .{}, .{ .name = "op_invoke_builtin" });
+        },
+        .op_push_handler => {
+            const offset: i16 = @bitCast(instr.operand);
+            const catch_ip = applyJump(ip, offset) orelse
+                return raiseInternal("vm: op_push_handler target out of range");
+            if (handler_count >= HANDLER_STACK_MAX)
+                return raiseInternal("vm: handler stack overflow");
+            handlers[handler_count] = .{ .catch_ip = catch_ip, .saved_sp = sp, .kind = .catch_clause };
+            handler_count += 1;
+        },
+        .op_push_cleanup => {
+            const offset: i16 = @bitCast(instr.operand);
+            const cleanup_ip = applyJump(ip, offset) orelse
+                return raiseInternal("vm: op_push_cleanup target out of range");
+            if (handler_count >= HANDLER_STACK_MAX)
+                return raiseInternal("vm: handler stack overflow");
+            handlers[handler_count] = .{ .catch_ip = cleanup_ip, .saved_sp = sp, .kind = .cleanup };
+            handler_count += 1;
+        },
+        .op_reraise => {
+            // Re-fire the error the cleanup-unwind branch stashed,
+            // unchanged (ADR-0071). The cleanup bytecode just ran (e.g.
+            // op_pop_binding_frame); the catalog Info / thrown context
+            // is still intact, so the original error propagates as it
+            // would have under TreeWalk's `defer`.
+            const e = dispatch.vm_pending_reraise orelse
+                return raiseInternal("vm: op_reraise without a pending error");
+            dispatch.vm_pending_reraise = null;
+            return e;
+        },
+        .op_pop_handler => {
+            if (handler_count == 0)
+                return raiseInternal("vm: op_pop_handler on empty handler stack");
+            handler_count -= 1;
+        },
+        .op_push_binding_frame => {
+            // Pops 2N entries [encVar0, val0, …] and installs a
+            // per-thread BindingFrame on the env threadlocal (shared
+            // with TreeWalk — single-threaded per session, so
+            // `Var.deref` stays backend-agnostic). The compiler wraps
+            // the body in a cleanup handler so `op_pop_binding_frame`
+            // runs on both the success and the exception edge.
+            const n_pairs: usize = instr.operand;
+            if (sp < n_pairs * 2)
+                return raiseInternal("vm: op_push_binding_frame stack underflow");
+            const base = sp - n_pairs * 2;
+            const frame = rt.gpa.create(env_mod.BindingFrame) catch
+                return raiseInternal("vm: op_push_binding_frame frame alloc");
+            frame.* = .{};
+            var pi: usize = 0;
+            while (pi < n_pairs) : (pi += 1) {
+                const var_ptr = stack[base + pi * 2].decodePtr(*const Var);
+                const val = stack[base + pi * 2 + 1];
+                if (!var_ptr.flags.dynamic) {
+                    frame.bindings.deinit(rt.gpa);
+                    rt.gpa.destroy(frame);
+                    var name_buf: [512]u8 = undefined;
+                    const qualified = std.fmt.bufPrint(&name_buf, "{s}/{s}", .{ var_ptr.ns.name, var_ptr.name }) catch var_ptr.name;
+                    return error_catalog.raise(.binding_target_not_dynamic, .{}, .{ .@"var" = qualified });
                 }
-                if (sp >= OPERAND_STACK_MAX)
-                    return raiseInternal("vm: operand stack overflow");
-                stack[sp] = Value.nil_val;
-                sp += 1;
-            },
-            .op_require_with_libspec => {
-                // Row 7.10 cycle 3 (D-073 sub-site d discharge,
-                // ADR-0036 first real-feature exercise) — mirror of
-                // tree_walk::evalRequire's full body. Pops the
-                // LibspecEntry from the chunk side-table, runs the
-                // op_require prelude, then applies alias + refers.
-                if (instr.operand >= chunk.libspecs.len)
-                    return raiseInternal("vm: op_require_with_libspec libspec index out of range");
-                const spec = chunk.libspecs[instr.operand];
-                const target_ns = blk: {
-                    if (env.findNs(spec.ns_name)) |existing| {
-                        if (existing.mappings.count() > 0) break :blk existing;
-                    }
-                    const resolver = rt.require_resolver orelse
-                        return error_catalog.raise(.lib_not_found, .{}, .{ .ns = spec.ns_name });
-                    const resolved = (try resolver(rt, spec.ns_name)) orelse
-                        return error_catalog.raise(.lib_not_found, .{}, .{ .ns = spec.ns_name });
-                    try loader.loadNamespace(rt, env, spec.ns_name, resolved, .{});
-                    break :blk env.findNs(spec.ns_name) orelse
-                        return error_catalog.raise(.lib_not_found, .{}, .{ .ns = spec.ns_name });
+                frame.bindings.put(rt.gpa, var_ptr, val) catch {
+                    frame.bindings.deinit(rt.gpa);
+                    rt.gpa.destroy(frame);
+                    return raiseInternal("vm: op_push_binding_frame put");
                 };
-                const here = env.current_ns orelse
-                    return error_catalog.raise(.current_namespace_missing, .{}, .{ .sym = spec.ns_name });
-                if (spec.alias) |alias_name| {
-                    try env.setAlias(here, alias_name, target_ns);
+            }
+            sp = @intCast(base);
+            env_mod.pushFrame(frame);
+            // current_ns is a materialised view of *ns* (ADR-0085):
+            // refresh in case this frame rebinds *ns*.
+            env.refreshCurrentNs();
+        },
+        .op_pop_binding_frame => {
+            const f = env_mod.current_frame orelse
+                return raiseInternal("vm: op_pop_binding_frame on empty frame stack");
+            env_mod.popFrame();
+            f.bindings.deinit(rt.gpa);
+            rt.gpa.destroy(f);
+            // Restore current_ns to the outer *ns* after the frame pops.
+            env.refreshCurrentNs();
+        },
+        .op_match_class => {
+            if (sp == 0)
+                return raiseInternal("vm: op_match_class on empty stack");
+            if (instr.operand >= chunk.constants.len)
+                return raiseInternal("vm: op_match_class constant index out of range");
+            const class_val = chunk.constants[instr.operand];
+            if (!class_val.isString())
+                return raiseInternal("vm: op_match_class constant is not a String");
+            const thrown = stack[sp - 1];
+            const matches = matchExceptionClass(string_mod.asString(class_val), thrown);
+            if (sp >= OPERAND_STACK_MAX)
+                return raiseInternal("vm: operand stack overflow");
+            stack[sp] = if (matches) Value.true_val else Value.false_val;
+            sp += 1;
+        },
+        .op_match_type_keyword => {
+            if (sp == 0)
+                return raiseInternal("vm: op_match_type_keyword on empty stack");
+            if (instr.operand >= chunk.constants.len)
+                return raiseInternal("vm: op_match_type_keyword constant index out of range");
+            const kw_val = chunk.constants[instr.operand];
+            const thrown = stack[sp - 1];
+            const matches = matchExceptionTypeKeyword(rt, kw_val, thrown);
+            if (sp >= OPERAND_STACK_MAX)
+                return raiseInternal("vm: operand stack overflow");
+            stack[sp] = if (matches) Value.true_val else Value.false_val;
+            sp += 1;
+        },
+        .op_in_ns => {
+            // ADR-0032 in-ns — mirror of tree_walk::evalInNs.
+            // ADR-0035 D9 second amendment (Phase 7 entry T3,
+            // 2026-05-26): the prior auto-refer of rt +
+            // clojure.core has been removed. `(in-ns 'foo)` is
+            // now a naked ns switch. `.clj` heads use
+            // `(ns foo (:refer-clojure))` which compiles to
+            // `op_ns_with_refer_clojure` (= this opcode + both
+            // refers).
+            if (instr.operand >= chunk.constants.len)
+                return raiseInternal("vm: op_in_ns constant index out of range");
+            const name_val = chunk.constants[instr.operand];
+            if (!name_val.isString())
+                return raiseInternal("vm: op_in_ns constant is not a String");
+            env.setCurrentNs(try env.findOrCreateNs(string_mod.asString(name_val)));
+            if (sp >= OPERAND_STACK_MAX)
+                return raiseInternal("vm: operand stack overflow");
+            stack[sp] = Value.nil_val;
+            sp += 1;
+        },
+        .op_ns_with_refer_clojure => {
+            // ADR-0035 D9 second amendment + ADR-0036 dual-
+            // backend parity contract. Mirror of post-T3
+            // tree_walk::evalNs when `refer_clojure = true`.
+            // op_in_ns logic + referAll(rt) + referAll(clojure.core).
+            if (instr.operand >= chunk.constants.len)
+                return raiseInternal("vm: op_ns_with_refer_clojure constant index out of range");
+            const name_val = chunk.constants[instr.operand];
+            if (!name_val.isString())
+                return raiseInternal("vm: op_ns_with_refer_clojure constant is not a String");
+            env.setCurrentNs(try env.findOrCreateNs(string_mod.asString(name_val)));
+            if (env.findNs("rt")) |rt_ns| {
+                try env.referAll(rt_ns, env.current_ns.?);
+            }
+            if (env.findNs("clojure.core")) |clojure_core_ns| {
+                try env.referAll(clojure_core_ns, env.current_ns.?);
+            }
+            if (sp >= OPERAND_STACK_MAX)
+                return raiseInternal("vm: operand stack overflow");
+            stack[sp] = Value.nil_val;
+            sp += 1;
+        },
+        .op_ns_with_filter => {
+            // D-098: mirror of tree_walk::evalNs's refer-clojure branch
+            // with the `:exclude`/`:only` filter. Enter the ns, then
+            // refer rt + clojure.core through referAllWithFilter.
+            if (instr.operand >= chunk.ns_filters.len)
+                return raiseInternal("vm: op_ns_with_filter index out of range");
+            const f = chunk.ns_filters[instr.operand];
+            env.setCurrentNs(try env.findOrCreateNs(f.name));
+            if (env.findNs("rt")) |rt_ns| {
+                try env.referAllWithFilter(rt_ns, env.current_ns.?, f.exclude, f.only);
+            }
+            if (env.findNs("clojure.core")) |clojure_core_ns| {
+                try env.referAllWithFilter(clojure_core_ns, env.current_ns.?, f.exclude, f.only);
+            }
+            if (sp >= OPERAND_STACK_MAX)
+                return raiseInternal("vm: operand stack overflow");
+            stack[sp] = Value.nil_val;
+            sp += 1;
+        },
+        .op_require => {
+            // ADR-0035 D2 — mirror of tree_walk::evalRequire.
+            if (instr.operand >= chunk.constants.len)
+                return raiseInternal("vm: op_require constant index out of range");
+            const name_val = chunk.constants[instr.operand];
+            if (!name_val.isString())
+                return raiseInternal("vm: op_require constant is not a String");
+            const ns_name = string_mod.asString(name_val);
+            const already_loaded = blk: {
+                const existing = env.findNs(ns_name) orelse break :blk false;
+                break :blk existing.mappings.count() > 0;
+            };
+            if (!already_loaded) {
+                const resolver = rt.require_resolver orelse
+                    return error_catalog.raise(.lib_not_found, .{}, .{ .ns = ns_name });
+                const resolved = (try resolver(rt, ns_name)) orelse
+                    return error_catalog.raise(.lib_not_found, .{}, .{ .ns = ns_name });
+                try loader.loadNamespace(rt, env, ns_name, resolved, .{});
+            }
+            if (sp >= OPERAND_STACK_MAX)
+                return raiseInternal("vm: operand stack overflow");
+            stack[sp] = Value.nil_val;
+            sp += 1;
+        },
+        .op_require_with_libspec => {
+            // Row 7.10 cycle 3 (D-073 sub-site d discharge,
+            // ADR-0036 first real-feature exercise) — mirror of
+            // tree_walk::evalRequire's full body. Pops the
+            // LibspecEntry from the chunk side-table, runs the
+            // op_require prelude, then applies alias + refers.
+            if (instr.operand >= chunk.libspecs.len)
+                return raiseInternal("vm: op_require_with_libspec libspec index out of range");
+            const spec = chunk.libspecs[instr.operand];
+            const target_ns = blk: {
+                if (env.findNs(spec.ns_name)) |existing| {
+                    if (existing.mappings.count() > 0) break :blk existing;
                 }
-                if (spec.refer_all) {
-                    // `:refer :all` / `:use` — refer every public var,
-                    // honouring a `:exclude` blacklist when present.
-                    try env.referAllWithFilter(target_ns, here, spec.exclude, null);
-                }
-                for (spec.refers) |refer_name| {
-                    const outcome = try env.referOne(target_ns, here, refer_name);
-                    switch (outcome) {
-                        .installed => {},
-                        .private_blocked => {
-                            const full = try std.fmt.allocPrint(rt.gpa, "{s}/{s}", .{ spec.ns_name, refer_name });
-                            defer rt.gpa.free(full);
-                            return error_catalog.raise(.private_access_error, .{}, .{
-                                .sym = full,
-                                .ns = spec.ns_name,
-                            });
-                        },
-                        .not_found => {
-                            const full = try std.fmt.allocPrint(rt.gpa, "{s}/{s}", .{ spec.ns_name, refer_name });
-                            defer rt.gpa.free(full);
-                            return error_catalog.raise(.symbol_unresolved, .{}, .{ .sym = full });
-                        },
-                    }
-                }
-                if (sp >= OPERAND_STACK_MAX)
-                    return raiseInternal("vm: operand stack overflow");
-                stack[sp] = Value.nil_val;
-                sp += 1;
-            },
-            .op_vector_literal => {
-                // Closes D-060: pop N values from top of stack, build a
-                // PersistentVector via empty + conj, push result.
-                const n: u16 = instr.operand;
-                if (sp < n) return raiseInternal("vm: op_vector_literal underflows operand stack");
-                var v = vector_mod.empty();
-                var i: u16 = sp - n;
-                while (i < sp) : (i += 1) {
-                    v = try vector_mod.conj(rt, v, stack[i]);
-                }
-                sp -= n;
-                stack[sp] = v;
-                sp += 1;
-            },
-            .op_map_literal => {
-                // Closes D-059: pop N stack values (= 2 * pair_count),
-                // assoc k/v pairs in source order into an empty
-                // ArrayMap, push result.
-                const n: u16 = instr.operand;
-                if (sp < n) return raiseInternal("vm: op_map_literal underflows operand stack");
-                var m = map_mod.empty();
-                var i: u16 = sp - n;
-                while (i < sp) : (i += 2) {
-                    m = try map_mod.assoc(rt, m, stack[i], stack[i + 1]);
-                }
-                sp -= n;
-                stack[sp] = m;
-                sp += 1;
-            },
-            .op_set_literal => {
-                // Closes D-061: pop N values, conj-fold into an empty
-                // HashSet (duplicates collapse), push result.
-                const n: u16 = instr.operand;
-                if (sp < n) return raiseInternal("vm: op_set_literal underflows operand stack");
-                var s = set_mod.empty();
-                var i: u16 = sp - n;
-                while (i < sp) : (i += 1) {
-                    s = try set_mod.conj(rt, s, stack[i]);
-                }
-                sp -= n;
-                stack[sp] = s;
-                sp += 1;
-            },
-            .op_ctor_call => {
-                // operand = index into the ctor_sites side-table (D-233; the
-                // class name carries full width, no 8-bit name_idx packing).
-                if (instr.operand >= chunk.ctor_sites.len)
-                    return raiseInternal("vm: op_ctor_call site index out of range");
-                const ctor = chunk.ctor_sites[instr.operand];
-                const type_name = ctor.type_name;
-                const arg_count: u16 = ctor.arg_count;
-                if (sp < arg_count) return raiseInternal("vm: op_ctor_call underflow");
-                const args_slice = stack[sp - arg_count .. sp];
-                // Shared resolver/dispatcher (deftype/record + java-surface
-                // `<init>`) — identical to TreeWalk's evalConstructorCall so a
-                // `(java.io.File. …)` ctor works on both backends (D-196
-                // blocker 3; was a deftype-only rt.types.get path here).
-                const new_val = try special_forms.constructInstance(rt, env, type_name, args_slice, .{});
-                sp -= arg_count;
-                stack[sp] = new_val;
-                sp += 1;
-            },
-            .op_method_call => {
-                // operand = call_site_idx. ADR-0050 am1: the unified
-                // instance-member resolver runs field-first (deftype/record
-                // field_layout), then method_table; `field_only` (the
-                // `.-name` form) stops after the field attempt. This folds
-                // the retired op_field_access in, and lets native receivers
-                // (field_layout == null) reach method_table for `(.m str)`.
-                if (instr.operand >= chunk.call_sites.len)
-                    return raiseInternal("vm: op_method_call call_site index out of range");
-                const cs_entry = &chunk.call_sites[instr.operand];
-                const arg_count: u16 = cs_entry.arg_count;
-                if (sp < arg_count) return raiseInternal("vm: op_method_call underflow");
-                const receiver = stack[sp - arg_count];
-                const td: *const td_mod.TypeDescriptor = if (receiver.tag() == .typed_instance) blk: {
-                    break :blk receiver.decodePtr(*const td_mod.TypedInstance).descriptor;
-                } else if (receiver.tag() == .reified_instance) blk: {
-                    break :blk receiver.decodePtr(*const td_mod.ReifiedInstance).descriptor;
-                } else try rt.nativeDescriptor(receiver.tag());
-
-                // FIELD-FIRST: a non-null field_layout implies the receiver
-                // is a .typed_instance (reify + native carry null), so the
-                // decode below is safe.
-                const field_val: ?Value = if (td.field_layout) |layout| fblk: {
-                    for (layout) |fe| {
-                        if (std.mem.eql(u8, fe.name, cs_entry.method_name))
-                            break :fblk receiver.decodePtr(*const td_mod.TypedInstance).fields()[fe.index];
-                    }
-                    break :fblk null;
-                } else null;
-
-                if (field_val) |fv| {
-                    sp -= arg_count;
-                    stack[sp] = fv;
-                    sp += 1;
-                } else if (cs_entry.field_only) {
-                    return error_catalog.raise(.symbol_unresolved, .{}, .{ .sym = cs_entry.method_name });
-                } else {
-                    if (cs_entry.cache.lookupWithCache(td, null, cs_entry.method_name, rt.protocol_generation)) |me| {
-                        if (me.method_val.tag() == .nil)
-                            return error_catalog.raise(.feature_not_supported, .{}, .{ .name = "method declared but not implemented" });
-                        const args_slice = stack[sp - arg_count .. sp];
-                        const vt = rt.vtable orelse return error.NoVTable;
-                        const result = try vt.callFn(rt, env, me.method_val, args_slice, .{});
-                        sp -= arg_count;
-                        stack[sp] = result;
-                        sp += 1;
-                    } else if (try object_method.tryObjectMethod(rt, env, receiver, td, cs_entry.method_name, stack[sp - arg_count + 1 .. sp])) |r| {
-                        // Universal java.lang.Object method fallback (D-207):
-                        // str/=/hash/class — mirrors TreeWalk's evalInstanceMember.
-                        sp -= arg_count;
-                        stack[sp] = r;
-                        sp += 1;
-                    } else {
-                        return error_catalog.raise(.protocol_no_satisfies, .{}, .{
-                            .protocol = "<.member>",
-                            .method = cs_entry.method_name,
-                            .type_name = td.fqcn orelse "<anonymous>",
+                const resolver = rt.require_resolver orelse
+                    return error_catalog.raise(.lib_not_found, .{}, .{ .ns = spec.ns_name });
+                const resolved = (try resolver(rt, spec.ns_name)) orelse
+                    return error_catalog.raise(.lib_not_found, .{}, .{ .ns = spec.ns_name });
+                try loader.loadNamespace(rt, env, spec.ns_name, resolved, .{});
+                break :blk env.findNs(spec.ns_name) orelse
+                    return error_catalog.raise(.lib_not_found, .{}, .{ .ns = spec.ns_name });
+            };
+            const here = env.current_ns orelse
+                return error_catalog.raise(.current_namespace_missing, .{}, .{ .sym = spec.ns_name });
+            if (spec.alias) |alias_name| {
+                try env.setAlias(here, alias_name, target_ns);
+            }
+            if (spec.refer_all) {
+                // `:refer :all` / `:use` — refer every public var,
+                // honouring a `:exclude` blacklist when present.
+                try env.referAllWithFilter(target_ns, here, spec.exclude, null);
+            }
+            for (spec.refers) |refer_name| {
+                const outcome = try env.referOne(target_ns, here, refer_name);
+                switch (outcome) {
+                    .installed => {},
+                    .private_blocked => {
+                        const full = try std.fmt.allocPrint(rt.gpa, "{s}/{s}", .{ spec.ns_name, refer_name });
+                        defer rt.gpa.free(full);
+                        return error_catalog.raise(.private_access_error, .{}, .{
+                            .sym = full,
+                            .ns = spec.ns_name,
                         });
-                    }
+                    },
+                    .not_found => {
+                        const full = try std.fmt.allocPrint(rt.gpa, "{s}/{s}", .{ spec.ns_name, refer_name });
+                        defer rt.gpa.free(full);
+                        return error_catalog.raise(.symbol_unresolved, .{}, .{ .sym = full });
+                    },
                 }
-            },
-            .op_static_method_call => {
-                // operand = call_site_idx. ADR-0050 am2 (D-130): static
-                // dispatch — the descriptor is the analyze-time pointer in
-                // the call-site (no receiver to derive it from). Raw
-                // `lookupMethod` matches TreeWalk's evalStaticMethodCall
-                // (no CallSite cache); arg_count is user args only.
-                if (instr.operand >= chunk.call_sites.len)
-                    return raiseInternal("vm: op_static_method_call call_site index out of range");
-                const cs_entry = &chunk.call_sites[instr.operand];
-                const arg_count: u16 = cs_entry.arg_count;
-                if (sp < arg_count) return raiseInternal("vm: op_static_method_call underflow");
-                const td = cs_entry.descriptor orelse
-                    return raiseInternal("vm: op_static_method_call missing descriptor (compiler bug)");
-                const me = td.lookupMethod(null, cs_entry.method_name) orelse {
+            }
+            if (sp >= OPERAND_STACK_MAX)
+                return raiseInternal("vm: operand stack overflow");
+            stack[sp] = Value.nil_val;
+            sp += 1;
+        },
+        .op_vector_literal => {
+            // Closes D-060: pop N values from top of stack, build a
+            // PersistentVector via empty + conj, push result.
+            const n: u16 = instr.operand;
+            if (sp < n) return raiseInternal("vm: op_vector_literal underflows operand stack");
+            var v = vector_mod.empty();
+            var i: u16 = sp - n;
+            while (i < sp) : (i += 1) {
+                v = try vector_mod.conj(rt, v, stack[i]);
+            }
+            sp -= n;
+            stack[sp] = v;
+            sp += 1;
+        },
+        .op_map_literal => {
+            // Closes D-059: pop N stack values (= 2 * pair_count),
+            // assoc k/v pairs in source order into an empty
+            // ArrayMap, push result.
+            const n: u16 = instr.operand;
+            if (sp < n) return raiseInternal("vm: op_map_literal underflows operand stack");
+            var m = map_mod.empty();
+            var i: u16 = sp - n;
+            while (i < sp) : (i += 2) {
+                m = try map_mod.assoc(rt, m, stack[i], stack[i + 1]);
+            }
+            sp -= n;
+            stack[sp] = m;
+            sp += 1;
+        },
+        .op_set_literal => {
+            // Closes D-061: pop N values, conj-fold into an empty
+            // HashSet (duplicates collapse), push result.
+            const n: u16 = instr.operand;
+            if (sp < n) return raiseInternal("vm: op_set_literal underflows operand stack");
+            var s = set_mod.empty();
+            var i: u16 = sp - n;
+            while (i < sp) : (i += 1) {
+                s = try set_mod.conj(rt, s, stack[i]);
+            }
+            sp -= n;
+            stack[sp] = s;
+            sp += 1;
+        },
+        .op_ctor_call => {
+            // operand = index into the ctor_sites side-table (D-233; the
+            // class name carries full width, no 8-bit name_idx packing).
+            if (instr.operand >= chunk.ctor_sites.len)
+                return raiseInternal("vm: op_ctor_call site index out of range");
+            const ctor = chunk.ctor_sites[instr.operand];
+            const type_name = ctor.type_name;
+            const arg_count: u16 = ctor.arg_count;
+            if (sp < arg_count) return raiseInternal("vm: op_ctor_call underflow");
+            const args_slice = stack[sp - arg_count .. sp];
+            // Shared resolver/dispatcher (deftype/record + java-surface
+            // `<init>`) — identical to TreeWalk's evalConstructorCall so a
+            // `(java.io.File. …)` ctor works on both backends (D-196
+            // blocker 3; was a deftype-only rt.types.get path here).
+            const new_val = try special_forms.constructInstance(rt, env, type_name, args_slice, .{});
+            sp -= arg_count;
+            stack[sp] = new_val;
+            sp += 1;
+        },
+        .op_method_call => {
+            // operand = call_site_idx. ADR-0050 am1: the unified
+            // instance-member resolver runs field-first (deftype/record
+            // field_layout), then method_table; `field_only` (the
+            // `.-name` form) stops after the field attempt. This folds
+            // the retired op_field_access in, and lets native receivers
+            // (field_layout == null) reach method_table for `(.m str)`.
+            if (instr.operand >= chunk.call_sites.len)
+                return raiseInternal("vm: op_method_call call_site index out of range");
+            const cs_entry = &chunk.call_sites[instr.operand];
+            const arg_count: u16 = cs_entry.arg_count;
+            if (sp < arg_count) return raiseInternal("vm: op_method_call underflow");
+            const receiver = stack[sp - arg_count];
+            const td: *const td_mod.TypeDescriptor = if (receiver.tag() == .typed_instance) blk: {
+                break :blk receiver.decodePtr(*const td_mod.TypedInstance).descriptor;
+            } else if (receiver.tag() == .reified_instance) blk: {
+                break :blk receiver.decodePtr(*const td_mod.ReifiedInstance).descriptor;
+            } else try rt.nativeDescriptor(receiver.tag());
+
+            // FIELD-FIRST: a non-null field_layout implies the receiver
+            // is a .typed_instance (reify + native carry null), so the
+            // decode below is safe.
+            const field_val: ?Value = if (td.field_layout) |layout| fblk: {
+                for (layout) |fe| {
+                    if (std.mem.eql(u8, fe.name, cs_entry.method_name))
+                        break :fblk receiver.decodePtr(*const td_mod.TypedInstance).fields()[fe.index];
+                }
+                break :fblk null;
+            } else null;
+
+            if (field_val) |fv| {
+                sp -= arg_count;
+                stack[sp] = fv;
+                sp += 1;
+            } else if (cs_entry.field_only) {
+                return error_catalog.raise(.symbol_unresolved, .{}, .{ .sym = cs_entry.method_name });
+            } else {
+                if (cs_entry.cache.lookupWithCache(td, null, cs_entry.method_name, rt.protocol_generation)) |me| {
+                    if (me.method_val.tag() == .nil)
+                        return error_catalog.raise(.feature_not_supported, .{}, .{ .name = "method declared but not implemented" });
+                    const args_slice = stack[sp - arg_count .. sp];
+                    const vt = rt.vtable orelse return error.NoVTable;
+                    const result = try vt.callFn(rt, env, me.method_val, args_slice, .{});
+                    sp -= arg_count;
+                    stack[sp] = result;
+                    sp += 1;
+                } else if (try object_method.tryObjectMethod(rt, env, receiver, td, cs_entry.method_name, stack[sp - arg_count + 1 .. sp])) |r| {
+                    // Universal java.lang.Object method fallback (D-207):
+                    // str/=/hash/class — mirrors TreeWalk's evalInstanceMember.
+                    sp -= arg_count;
+                    stack[sp] = r;
+                    sp += 1;
+                } else {
                     return error_catalog.raise(.protocol_no_satisfies, .{}, .{
-                        .protocol = "<static>",
+                        .protocol = "<.member>",
                         .method = cs_entry.method_name,
                         .type_name = td.fqcn orelse "<anonymous>",
                     });
-                };
-                if (me.method_val.tag() == .nil)
-                    return error_catalog.raise(.feature_not_supported, .{}, .{ .name = "static method declared but not implemented" });
-                const args_slice = stack[sp - arg_count .. sp];
-                const vt = rt.vtable orelse return error.NoVTable;
-                const result = try vt.callFn(rt, env, me.method_val, args_slice, .{});
-                sp -= arg_count;
-                stack[sp] = result;
-                sp += 1;
-            },
+                }
+            }
+        },
+        .op_static_method_call => {
+            // operand = call_site_idx. ADR-0050 am2 (D-130): static
+            // dispatch — the descriptor is the analyze-time pointer in
+            // the call-site (no receiver to derive it from). Raw
+            // `lookupMethod` matches TreeWalk's evalStaticMethodCall
+            // (no CallSite cache); arg_count is user args only.
+            if (instr.operand >= chunk.call_sites.len)
+                return raiseInternal("vm: op_static_method_call call_site index out of range");
+            const cs_entry = &chunk.call_sites[instr.operand];
+            const arg_count: u16 = cs_entry.arg_count;
+            if (sp < arg_count) return raiseInternal("vm: op_static_method_call underflow");
+            const td = cs_entry.descriptor orelse
+                return raiseInternal("vm: op_static_method_call missing descriptor (compiler bug)");
+            const me = td.lookupMethod(null, cs_entry.method_name) orelse {
+                return error_catalog.raise(.protocol_no_satisfies, .{}, .{
+                    .protocol = "<static>",
+                    .method = cs_entry.method_name,
+                    .type_name = td.fqcn orelse "<anonymous>",
+                });
+            };
+            if (me.method_val.tag() == .nil)
+                return error_catalog.raise(.feature_not_supported, .{}, .{ .name = "static method declared but not implemented" });
+            const args_slice = stack[sp - arg_count .. sp];
+            const vt = rt.vtable orelse return error.NoVTable;
+            const result = try vt.callFn(rt, env, me.method_val, args_slice, .{});
+            sp -= arg_count;
+            stack[sp] = result;
+            sp += 1;
+        },
     }
     return null;
 }

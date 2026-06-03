@@ -297,8 +297,27 @@ pub const Env = struct {
     /// `.ns` Value, so `*ns*` / `(ns-name *ns*)` track the live ns. Route every
     /// ns switch (`in-ns` / `ns` / `require` / eval-target) through this.
     pub fn setCurrentNs(self: *Env, ns: *Namespace) void {
+        if (self.ns_var) |nv| {
+            const nsv = nsValue(ns);
+            // set!-semantics (ADR-0085): update the innermost live `*ns*`
+            // thread binding if one exists — so `(binding [*ns* *ns*]
+            // (in-ns x) …)` rebinds the frame, not the root, and pops back
+            // cleanly — else update the root. `current_ns` is then the
+            // materialised view of `*ns*`.
+            if (!setBinding(nv, nsv)) nv.setRoot(nsv);
+        }
         self.current_ns = ns;
-        if (self.ns_var) |nv| nv.setRoot(nsValue(ns));
+    }
+
+    /// Re-derive `current_ns` from `*ns*`'s effective value (which respects
+    /// thread bindings via `Var.deref`). `current_ns` is a materialised VIEW
+    /// of `*ns*` (ADR-0085), refreshed at the `binding`-frame boundaries
+    /// (push / pop) so a `(binding [*ns* …] …)` round-trips. No-op before
+    /// bootstrap interns `ns_var` (the field is authoritative in that window).
+    pub fn refreshCurrentNs(self: *Env) void {
+        const nv = self.ns_var orelse return;
+        const v = nv.deref();
+        if (v.tag() == .ns) self.current_ns = v.decodePtr(*Namespace);
     }
 
     /// Wrap a `*Namespace` as a first-class `.ns` Value (ADR-0083). The pointer

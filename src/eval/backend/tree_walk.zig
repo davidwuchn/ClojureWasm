@@ -555,7 +555,6 @@ fn evalSetLiteral(rt: *Runtime, env: *Env, locals: []Value, n: node_mod.SetLiter
 const type_descriptor_mod = @import("../../runtime/type_descriptor.zig");
 const object_method = @import("object_method.zig");
 
-
 /// Unified Java/host interop dispatch arm (ADR-0050, am1). Routes on
 /// `n.kind` to the three kind-specific helpers below.
 fn evalInteropCall(rt: *Runtime, env: *Env, locals: []Value, n: node_mod.InteropCallNode) !Value {
@@ -779,7 +778,13 @@ fn evalBinding(rt: *Runtime, env: *Env, locals: []Value, n: node_mod.BindingNode
         }
     }
     env_mod.pushFrame(&frame);
+    // current_ns is a materialised view of *ns* (ADR-0085): if this frame
+    // rebinds *ns*, refresh now so the body sees the bound ns; the deferred
+    // refresh (declared before popFrame, so it runs AFTER it) restores the
+    // outer ns on pop.
+    defer env.refreshCurrentNs();
     defer env_mod.popFrame();
+    env.refreshCurrentNs();
     return eval(rt, env, locals, n.body);
 }
 
