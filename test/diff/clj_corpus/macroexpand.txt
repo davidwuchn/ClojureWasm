@@ -1,0 +1,12 @@
+(macroexpand-1 '(-> a b c))
+;;=> (c (b a))
+(macroexpand-1 '(+ 1 2))
+;;=> (+ 1 2)
+(macroexpand-1 5)
+;;=> 5
+(macroexpand-1 '(->> a b c))
+;;=> (c (b a))
+(macroexpand '(-> a (b) (c)))
+;;=> (c (b a))
+(macroexpand-1 'foo)
+;;=> foo

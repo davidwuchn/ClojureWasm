@@ -199,8 +199,10 @@ active:
       limitation); `*warn-on-reflection*` DONE (core.clj no-op `^:dynamic` flag —
       cljw has no reflection; atoms.clj then RUNS 5 tests / 23 assertions → 12
       pass, 11 errors, the 11 being `.getAsDouble`-class JVM-atomic interop cljw
-      lacks = accepted JVM-interop divergence); `macroexpand-1`
-      (D-229, macros); `clojure.math` ns (math); `map->Foo` defrecord factory in a
+      lacks = accepted JVM-interop divergence); `macroexpand-1`/`macroexpand`
+      DONE (D-229, macroexpand.zig; macros.clj then parks on with-meta-on-SYMBOL,
+      ADR-0037 metadata-less symbols = accepted); `clojure.math` ns (math);
+      `map->Foo` defrecord factory in a
       test (clojure_walk); `fails-with-cause?`/test-helper (fn); `:import` (delays/
       parse/try_catch/data); `into-array`/Java arrays (predicates, F-004).
       **transients.clj**: `binding` with an EMPTY body (→ nil, clj parity — a
@@ -240,10 +242,18 @@ active:
       **Nested `` ` `` is approximated** (`syntax_quote.zig::walk`'s `.syntax_quote` arm recurses, flattening): `` `(a `(b ~(+ 1 2))) `` → cljw evaluates the inner `~` (yields `(... (b 3))`) where clj PRESERVES the inner template as data (`(… (clojure.core/seq (clojure.core/concat …)))`), because clj counts quote DEPTH — an inner `` ` `` increments depth, `~` only unquotes at depth 0. Discharge: thread a `depth` counter through `walk`; a `.syntax_quote` increments it, `.unquote`/`.unquote_splicing` decrement, and only at depth 0 does `~` actually splice (else it expands to a `(list (quote ~) …)` data form). LOW value (nested backtick is rare — mostly macro-writing macros). Cross-ref D-226 / ADR-0082 / F-011. recall trigger: when a macro-defining macro / nested-backtick parity is needed.
     last_reviewed: "2026-06-03"
   - id: "D-229"
-    status: "now (introspection gap, found 2026-06-03 during D-226) — `macroexpand`/`macroexpand-1` missing."
-    category: "runtime"
-    barrier: |-
-      **`macroexpand` / `macroexpand-1` are unimplemented** — `(macroexpand-1 '(when t a))` → "Unable to resolve symbol". clj expands a macro form one step (`-1`) or fully (repeatedly until the head is not a macro). Needs: resolve the head symbol to a macro Var, call its macro fn with the form's args (the `expandIfMacro` path, now exposed as a callable), return the expansion as DATA. `macroexpand` loops `macroexpand-1` to a fixed point. Useful for debugging macros + clj-parity introspection (and lets the clj-diff sweep compare expansions directly, which it can't today). MEDIUM value. Cross-ref D-226 (syntax-quote, the main macro tool) / macro_dispatch.expandIfMacro / F-011. recall trigger: macro-debugging / introspection work, or when a sweep needs to compare macroexpansions.
+    status: |-
+      DISCHARGED 2026-06-03 (D-232 campaign, macros.clj) — `macroexpand-1` /
+      `macroexpand` landed (`src/lang/primitive/macroexpand.zig`): valueToForm →
+      resolve the head Var → `macro_dispatch.expandIfMacro` (one level) →
+      formToValue; `macroexpand` loops to a fixed point (no sub-form recursion,
+      clj-faithful). Works for macro_transforms (when/->/…) AND user defmacros
+      (`(macroexpand-1 '(m 5))` → `(clojure.core/inc 5)`, clj-exact). corpus
+      macroexpand (6). Note: cljw's `when` expands to `(if t body nil)` vs clj's
+      `(if t (do body))` — cljw `when`-macro shape, semantically identical
+      (accepted; macroexpand faithfully shows the real expansion). macros.clj then
+      parks on `with-meta` on a SYMBOL (ADR-0037: cljw symbols metadata-less,
+      accepted divergence). Cross-ref D-226 / macro_dispatch.expandIfMacro / F-011.
     last_reviewed: "2026-06-03"
   - id: "D-219"
     status: |-
