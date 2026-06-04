@@ -8,11 +8,13 @@
 - **HEAD**: see `git log` (`cw-from-scratch`). Gate green 246/0 (Mac, serial-e2e).
   debt ledger = `.dev/debt.yaml`. Active plan = **ADR-0089 re-cut (A→B→C)**.
 - **First commit on resume MUST be**: continue **Phase A (consolidation)** per
-  ADR-0089 — finish the doc/guard drift sweep, then run the **exhaustive
-  comment-drift sweep** (audit §E2.7, widened) via fan-out read-only subagents
-  (one per `src/` module subtree, each fresh-context) to catalog finished-form
-  drift → promote (b)/(c) findings to `debt.yaml` / Phase B inputs. Phase A is
-  doc/scaffold-only → **no per-item test gate** (batch-resolve; user-directed).
+  ADR-0089 — the comment-drift sweep is DONE (db3932e7 + fecdd248). Remaining
+  Phase A housekeeping: the conservative **guard pass** (dead/redundant rules /
+  scripts / ADRs only — 中庸) + **ROADMAP closed-phase archive-extract** (2607
+  lines → smaller). Then close Phase A → **Phase B (D-242)** entry with its
+  §7-redesign ADR + Structural-imagination + DA-fork. Phase A doc/scaffold = no
+  per-item gate; a full `--serial-e2e` gate is still required on any src/ commit
+  (the gate-cadence hook enforces it even for comment-only shared-line edits).
 - **Forbidden this session**: cold-seizing **Phase B** (D-242, concurrency-led
   core) without its §7-redesign ADR + Structural-imagination + DA-fork at entry
   (spike the Zig-0.16 primitive first, principle.md). Also forbidden: minting a
@@ -37,23 +39,23 @@ Phase C  Library-driven gap-hunt (was the quality loop) on the concurrency base;
 Restores §9.2.R's Phase-15-first intent (the session had drifted by running the
 quality loop pre-Phase-15). The clean-bounded clj-parity frontier is drained.
 
-## Phase A work items (in progress)
+## Phase A work items
 
-- DONE (this planning session): ROADMAP §7.2 STM-lie / §7.1 stale-Zig-0.16-API /
-  §9.2.R / §9.2.S / 14.13.5 over-claim corrected (ADR-0089); audit §E2.7 widened +
-  run (70 candidates); principle.md spike note; D-242 Phase-B anchor; 3
-  superseded-file refs fixed (known_issues→debt.yaml etc.); this handover.
-- **NEXT (user-deferred to this fresh session, 2026-06-04)**: run the **exhaustive
-  comment-drift fan-out** FIRST — read-only subagents, one per `src/` module
-  subtree, each reads EVERY comment (not just §E2.7 grep hits) and classifies
-  finished-form drift (a accurate / b provisional-stub / c stale-plan) →
-  `private/comment-drift-<date>/` catalog → promote (b)/(c) to `debt.yaml` /
-  Phase B inputs. THEN the medium housekeeping (also deferred here): guard pass
-  (31 rules / 40 scripts / 89 ADRs — dead/redundant only, conservative/中庸),
-  ROADMAP closed-phase archive-extract (2607→smaller). LOW-priority: debt
-  discharged-in-active compaction (40/103 rows are DISCHARGED-in-place but are
-  NOT re-swept by Step-0.5, so it is clutter-only; watch for false-positives like
-  D-210 standing-floor). After Phase A closes → Phase B (D-242).
+- DONE: exhaustive comment-drift fan-out (12 fresh-context subagents, one per
+  `src/` subtree; catalogs in `private/comment-drift-2026-06-04/`). 121 files
+  comment-only re-cut to finished form (db3932e7, gate green 246/0): module
+  docstrings frozen at skeleton/early-phase scope, factual drifts (gc field
+  shape, allocator names, dead `gc_mutex`/Code refs, class_name list), and
+  concurrency `Phase 15`→`Phase B` renames. (b) inventory promoted to D-242;
+  (c) fixed. Discharged-section audit (fecdd248): 141 rows = 86 resolved / 47
+  parked-correctly / **8 fired-trigger-but-unbuilt** re-opened under **D-243**
+  (D-048/104/105/106 HARD = Phase C host-surface+bench; D-054/056/057 soft;
+  D-049 user-owned F-NNN). No false-discharge lies — Defer-to-amnesia only.
+- **NEXT**: remaining Phase A housekeeping — conservative **guard pass**
+  (dead/redundant rules/scripts/ADRs, 中庸) + **ROADMAP closed-phase
+  archive-extract** (2607 → smaller). LOW: debt discharged-in-active compaction
+  (clutter-only now D-243 captured the actionable rows; watch false-positives
+  like D-210 standing-floor). After Phase A closes → **Phase B (D-242)**.
 
 ## Landed before the re-cut (git log = SSOT; one summary)
 
