@@ -1,0 +1,12 @@
+(binding [*print-readably* false] (pr-str "abc"))
+;;=> "abc"
+(binding [*print-readably* nil] (pr-str "abc"))
+;;=> "abc"
+(pr-str "abc")
+;;=> "\"abc\""
+(binding [*print-readably* false] (pr-str [1 "x" \a]))
+;;=> "[1 x a]"
+(binding [*print-readably* true] (pr-str "abc"))
+;;=> "\"abc\""
+(binding [*print-readably* false] (pr-str {:a "v"}))
+;;=> "{:a v}"

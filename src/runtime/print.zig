@@ -363,12 +363,18 @@ var print_level_var: ?*const env_mod.Var = null;
 /// has a non-nil root (true); a user `(binding [*print-namespace-maps* false] …)`
 /// disables the compact `#:ns{…}` form.
 var print_namespace_maps_var: ?*const env_mod.Var = null;
+/// `*print-readably*` cached Var (D-222 residual a). Unlike the others it is
+/// ALSO set imperatively by the pr/print surface (`writeArgsSpaced`), so the
+/// snapshot only overrides `print_readably` when the var is EXPLICITLY thread-
+/// bound — leaving the surface's pr-vs-print choice intact by default.
+var print_readably_var: ?*const env_mod.Var = null;
 
 /// Install the cached print-control Var pointers (called once at bootstrap).
-pub fn initPrintLimitVars(len_v: ?*const env_mod.Var, lvl_v: ?*const env_mod.Var, nsmaps_v: ?*const env_mod.Var) void {
+pub fn initPrintLimitVars(len_v: ?*const env_mod.Var, lvl_v: ?*const env_mod.Var, nsmaps_v: ?*const env_mod.Var, readably_v: ?*const env_mod.Var) void {
     print_length_var = len_v;
     print_level_var = lvl_v;
     print_namespace_maps_var = nsmaps_v;
+    print_readably_var = readably_v;
 }
 
 /// Snapshot of the two limits for the duration of one top-level print
@@ -399,6 +405,14 @@ fn snapshotPrintLimits() void {
     if (print_namespace_maps_var) |v| {
         const d = v.deref();
         print_namespace_maps = !(d.isNil() or (d.tag() == .boolean and !d.asBoolean()));
+    }
+    // *print-readably* (D-222 a): override the surface-set flag ONLY when the
+    // user explicitly thread-bound the var (findBinding non-null) — otherwise the
+    // pr/print surface owns it. nil/false → raw (un-readable) rendering.
+    if (print_readably_var) |v| {
+        if (env_mod.findBinding(v)) |bv| {
+            print_readably = !(bv.isNil() or (bv.tag() == .boolean and !bv.asBoolean()));
+        }
     }
 }
 

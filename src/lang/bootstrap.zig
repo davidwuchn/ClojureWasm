@@ -292,7 +292,11 @@ fn registerPrintLimitVars(rt: *Runtime, env: *Env) !void {
     // disables the compact `#:ns{…}` form (D-222 residual a).
     const nsmaps_v = try env.intern(core, "*print-namespace-maps*", Value.true_val, null);
     nsmaps_v.flags.dynamic = true;
-    print_mod.initPrintLimitVars(len_v, lvl_v, nsmaps_v);
+    // *print-readably* root true (pr/prn default); a false binding makes pr emit
+    // the raw (print-style) form (D-222 residual a).
+    const readably_v = try env.intern(core, "*print-readably*", Value.true_val, null);
+    readably_v.flags.dynamic = true;
+    print_mod.initPrintLimitVars(len_v, lvl_v, nsmaps_v, readably_v);
 }
 
 /// AOT bootstrap (ADR-0056 Cycle 2b): restore `clojure.core` from the
