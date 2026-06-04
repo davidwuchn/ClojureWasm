@@ -668,7 +668,20 @@ fn writeArgsSpaced(rt: *Runtime, env: *Env, w: *std.Io.Writer, args: []const Val
 /// with the runner's result-print on ONE offset-tracking writer (D-096);
 /// a test-init Runtime with no shared writer falls back to a private one
 /// (correct in isolation — nothing else competes for the fd).
+/// Active `with-out-str` capture sink, or null for the process stdout. Threadlocal
+/// so a `with-out-str` on a future/agent worker captures only its own thread's
+/// output (a general bindable `*out*` writer var is a later D-238 slice).
+threadlocal var out_capture: ?*std.Io.Writer.Allocating = null;
+
 fn emitToStdout(rt: *Runtime, env: *Env, args: []const Value, readable: bool, newline: bool) anyerror!Value {
+    if (out_capture) |aw| {
+        // Capturing (`with-out-str`): render into the in-memory sink, no stdout,
+        // no flush (the Allocating writer accumulates until the capture ends).
+        const w = &aw.writer;
+        try writeArgsSpaced(rt, env, w, args, readable);
+        if (newline) try w.writeByte('\n');
+        return .nil_val;
+    }
     if (rt.stdout) |w| {
         try writeArgsSpaced(rt, env, w, args, readable);
         if (newline) try w.writeByte('\n');
@@ -708,6 +721,23 @@ pub fn prnFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) 
 pub fn prFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
     _ = loc;
     return emitToStdout(rt, env, args, true, false);
+}
+
+/// `(__with-out-str thunk)` — run `(thunk)` with `print`/`pr`/`println`/`prn`/
+/// `newline` output captured into an in-memory sink, and return the captured
+/// string (the thunk's own value is discarded — clj `with-out-str`). Nesting is
+/// supported (each level saves/restores the outer sink); a thrown thunk
+/// propagates (the partial output is dropped), matching clj.
+pub fn withOutStrFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    try error_catalog.checkArity("with-out-str", args, 1, loc);
+    var aw: std.Io.Writer.Allocating = .init(rt.gpa);
+    defer aw.deinit();
+    const saved = out_capture;
+    out_capture = &aw;
+    defer out_capture = saved;
+    const vt = rt.vtable orelse return error.InternalError;
+    _ = try vt.callFn(rt, env, args[0], &.{}, loc);
+    return string_mod.alloc(rt, aw.written());
 }
 
 /// `(newline)` — write a single newline to stdout. Spec: clojure.core/newline.
@@ -1499,6 +1529,7 @@ const ENTRIES = [_]Entry{
     .{ .name = "println", .f = &printlnFn },
     .{ .name = "print", .f = &printFn },
     .{ .name = "prn", .f = &prnFn },
+    .{ .name = "__with-out-str", .f = &withOutStrFn },
     .{ .name = "pr", .f = &prFn },
     .{ .name = "newline", .f = &newlineFn },
     .{ .name = "pr-str", .f = &prStrFn },

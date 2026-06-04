@@ -36,5 +36,10 @@ assert_out 'interleave_order'    '(do (println "a") (println "b") (println "c") 
 # the natural way to test an imperative loop (no def-accumulator needed)
 assert_out 'dotimes_natural'     '(dotimes [i 3] (println i))'        $'0\n1\n2\nnil'
 assert_out 'doseq_via_while'     '(do (def w 0) (while (< w 3) (println "w" w) (def w (inc w))) :end)' $'w 0\nw 1\nw 2\n:end'
+# with-out-str (D-238) captures print output instead of writing to stdout: the
+# captured text never reaches the real stream, only the un-captured print does.
+assert_out 'with_out_str_capture' '(do (with-out-str (println "hidden")) (print "shown"))' 'shownnil'
+# the captured string is the return value (here re-printed raw to stdout).
+assert_out 'with_out_str_returns' '(print (with-out-str (print "abc")))'                   'abcnil'
 
-echo "OK — phase14_println_stdout smoke (7 cases) green"
+echo "OK — phase14_println_stdout smoke (9 cases) green"

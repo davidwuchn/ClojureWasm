@@ -239,7 +239,7 @@ active:
       namespace is the first real consumer. corpus alter_meta (8) covers the
       var/atom surface.
   - id: "D-238"
-    status: "imagine+record+defer (2026-06-04, D-232 frontier) — *out*/*err* dynamic streams + with-out-str; BLOCKED on an F-004 NaN-box writer-slot decision (owner-owned, do NOT cold-seize)."
+    status: "PARTIAL (2026-06-05) — `with-out-str` LANDED via a threadlocal capture sink (core.zig `out_capture: ?*std.Io.Writer.Allocating`; emitToStdout redirects to it; `__with-out-str` primitive + macro), clj-verified. This sidesteps the owner-owned decision: it introduces NO writer Value / NO NaN-box slot, so the **F-004 NaN-box writer-slot decision stays UNTOUCHED + owner-owned (do NOT cold-seize)**. STILL OWNER-GATED + pending: the general bindable `*out*`/`*err*`/`*in*` writer VARS (`(binding [*out* w] …)` with an arbitrary writer), which DO need the writer-slot decision. (Was: imagine+record+defer 2026-06-04, D-232 frontier.)"
     category: "runtime"
     barrier: |-
       **`*out*` / `*err*` are not rebindable; `with-out-str` is impossible.**
