@@ -165,6 +165,10 @@ pub const Code = enum {
     symbolic_value_incomplete,
     symbolic_value_unknown,
     discard_reader_macro_incomplete,
+    /// `#?@` splice whose selected branch form is not a list/vector.
+    reader_cond_splice_not_sequential,
+    /// `#?@` splice outside a collection (top level / reader-macro position).
+    reader_cond_splice_top_level,
     /// `#(... #(...) ...)` — nested anonymous-fn literals. JVM forbids
     /// this because `%` would be ambiguous across levels (D-146).
     fn_lit_nested,
@@ -779,6 +783,16 @@ pub fn entry(comptime code: Code) Entry {
             .kind = .syntax_error,
             .phase = .parse,
             .template = "Discard '#_' has no following form",
+        },
+        .reader_cond_splice_not_sequential => .{
+            .kind = .syntax_error,
+            .phase = .parse,
+            .template = "Spliced form in #?@ must be a list or vector",
+        },
+        .reader_cond_splice_top_level => .{
+            .kind = .syntax_error,
+            .phase = .parse,
+            .template = "#?@ splice is only allowed inside a list, vector, set, or map",
         },
         .fn_lit_nested => .{
             .kind = .syntax_error,

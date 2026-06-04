@@ -44,4 +44,22 @@ assert_eq 'no-match-ns-tail' \
   "$("$BIN" -e '(quote (ns x #?(:cljs :m)))' 2>&1 | tail -1)" \
   '(ns x)'
 
-echo "OK — phase15_reader_conditional (6 cases) green"
+# --- #?@ splicing: the selected branch's elements are spliced into the
+# enclosing collection (real .cljc libs: aero, defun use it) ---
+assert_eq 'splice-clj' \
+  "$("$BIN" -e '[1 #?@(:clj [2 3]) 4]' 2>&1 | tail -1)" \
+  '[1 2 3 4]'
+# a non-matching #?@ splices nothing
+assert_eq 'splice-no-match' \
+  "$("$BIN" -e '[0 #?@(:cljs [9]) 5]' 2>&1 | tail -1)" \
+  '[0 5]'
+# splice into a list / set works too
+assert_eq 'splice-list' \
+  "$("$BIN" -e '(list 1 #?@(:clj [2 3]))' 2>&1 | tail -1)" \
+  '(1 2 3)'
+# top-level #?@ is an error (splice only valid inside a collection)
+assert_eq 'splice-top-level' \
+  "$("$BIN" -e '#?@(:clj [1 2])' 2>&1 | grep -c 'only allowed inside')" \
+  '1'
+
+echo "OK — phase15_reader_conditional (10 cases) green"

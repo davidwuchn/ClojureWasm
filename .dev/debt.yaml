@@ -661,6 +661,16 @@ active:
       heavy → low ROI. The clean generic clojure.core gaps are thinning; remaining
       drain hits are mostly deferred-structural (regex cycle 3, with-local-vars
       D-237, deftype-heavy libs, JVM classes, *out* D-238, PersistentQueue).
+      **2026-06-04 `#?@` splicing reader conditional LANDED** (was deferred when
+      `#?` landed as "needs collection-reader splice plumbing" — the readValue/skip
+      infra made it tractable, NOT deferred-structural). `#?@(:clj […])` inside a
+      collection splices the selected branch's sequence ELEMENTS into the enclosing
+      collection (`[1 #?@(:clj [2 3]) 4]` → `[1 2 3 4]`); no-match splices nothing;
+      works in list/vector/set/map; a top-level splice or non-sequential branch
+      raises a clear error. readDelimited intercepts `.reader_cond_splice` before
+      readValue; readReaderConditionalSplice returns the elements. 4 e2e + 1 reader
+      unit (no clj corpus — `clj -e` rejects `#?@` without :read-cond). Unblocks
+      aero.core + defun.core past `#?@` (→ next walls PersistentQueue / core.match).
       **2026-06-04 `find-var` + `var?` LANDED**: `(find-var 'ns/name)` → the Var
       (or nil; ns must exist) via env.findNs+resolve; `(var? x)` → `.var_ref` tag.
       corpus find_var_predicate (8). NOTE `bound?`/`defonce` are DEFERRED: cljw's

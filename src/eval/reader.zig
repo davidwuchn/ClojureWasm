@@ -140,7 +140,10 @@ pub const Reader = struct {
             .symbolic => self.readSymbolic(tok),
             .discard => self.readDiscard(tok),
             .reader_cond => self.readReaderConditional(tok),
-            .reader_cond_splice => error_catalog.raise(.feature_not_supported, self.locOf(tok), .{ .name = "#?@ splicing reader conditional" }),
+            // A splice reached here means it is NOT inside a collection
+            // (readDelimited intercepts the in-collection case) — top level or
+            // a reader-macro position, which clj rejects.
+            .reader_cond_splice => error_catalog.raise(.reader_cond_splice_top_level, self.locOf(tok), .{}),
             .rparen, .rbracket, .rbrace => error_catalog.raise(.delimiter_unexpected, self.locOf(tok), .{ .delim = tok.text(self.source) }),
             .eof => error_catalog.raise(.eof_unexpected, self.locOf(tok), .{}),
             .invalid => error_catalog.raise(.token_invalid, self.locOf(tok), .{ .token = tok.text(self.source) }),
@@ -419,6 +422,14 @@ pub const Reader = struct {
         errdefer items.deinit(self.allocator);
 
         while (true) {
+            // `#?@(:clj […])` splice: only valid inside a collection — the
+            // selected branch's sequence elements are spliced in, not nested.
+            if (self.peekToken().kind == .reader_cond_splice) {
+                const stok = self.nextToken();
+                const spliced = try self.readReaderConditionalSplice(stok);
+                items.appendSlice(self.allocator, spliced) catch return error.OutOfMemory;
+                continue;
+            }
             if (try self.readValue()) |f| {
                 items.append(self.allocator, f) catch return error.OutOfMemory;
                 continue;
@@ -712,6 +723,35 @@ pub const Reader = struct {
         // tail of a form list (`(ns x #?(:cljs ...))`).
         self.skip = true;
         return Form{ .data = .nil, .location = loc };
+    }
+
+    /// `#?@(:clj […] :cljs […])` splicing reader conditional. Like `#?`, but the
+    /// selected branch's form must be a sequence (list/vector) whose ELEMENTS
+    /// are spliced into the enclosing collection (`[1 #?@(:clj [2 3]) 4]` →
+    /// `[1 2 3 4]`). Only meaningful inside a collection — `readDelimited` calls
+    /// this directly; a top-level `#?@` reaches `readForm`'s arm and errors.
+    /// Returns the elements to splice (empty when no branch matches).
+    fn readReaderConditionalSplice(self: *Reader, tok: Token) ReadError![]const Form {
+        const loc = self.locOf(tok);
+        const list_tok = self.nextToken();
+        if (list_tok.kind != .lparen)
+            return error_catalog.raise(.feature_not_supported, loc, .{ .name = "#?@ must be followed by a (…) list of feature/form pairs" });
+        const list_form = try self.readForm(list_tok);
+        const items = list_form.data.list;
+        var i: usize = 0;
+        while (i + 1 < items.len) : (i += 2) {
+            if (items[i].data == .keyword and items[i].data.keyword.ns == null) {
+                const k = items[i].data.keyword.name;
+                if (std.mem.eql(u8, k, "clj") or std.mem.eql(u8, k, "default")) {
+                    return switch (items[i + 1].data) {
+                        .list => |l| l,
+                        .vector => |v| v,
+                        else => error_catalog.raise(.reader_cond_splice_not_sequential, items[i + 1].location, .{}),
+                    };
+                }
+            }
+        }
+        return &.{}; // no matching branch → splice nothing
     }
 
     // --- string unescaping ---
@@ -1091,4 +1131,17 @@ test "non-matching `#?` reads as nothing, including before a trailing closer" {
     try testing.expectEqualStrings("1", try ctx.pr(try ctx.read("#?(:clj 1 :cljs 2)")));
     // tail of a form list (the `(ns x #?(:cljs ...))` shape from .cljc libs)
     try testing.expectEqualStrings("(ns x)", try ctx.pr(try ctx.read("(ns x #?(:cljs :m))")));
+}
+
+test "`#?@` splices the selected branch's elements into the collection" {
+    var ctx = TestCtx.init();
+    defer ctx.deinit();
+
+    try testing.expectEqualStrings("[1 2 3 4]", try ctx.pr(try ctx.read("[1 #?@(:clj [2 3]) 4]")));
+    // non-matching splice contributes nothing
+    try testing.expectEqualStrings("[0 5]", try ctx.pr(try ctx.read("[0 #?@(:cljs [9]) 5]")));
+    // splice a list form's elements (reader produces the unevaluated form)
+    try testing.expectEqualStrings("(a 1 2 3)", try ctx.pr(try ctx.read("(a 1 #?@(:clj (2 3)))")));
+    // a top-level splice is rejected
+    try testing.expectError(error.SyntaxError, ctx.read("#?@(:clj [1 2])"));
 }
