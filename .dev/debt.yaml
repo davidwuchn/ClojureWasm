@@ -737,6 +737,13 @@ active:
       lazy-aware cursor + drop `.list` from `isCountable` (its count is unreliable
       with a lazy tail; the walk early-outs anyway). corpus lazy_seq_nonseq_body
       (13) + diff case. coresweep4 32/32.
+      **2026-06-04 `reduce-kv` on a vector FIXED** (sweep coresweep5). clj treats
+      a vector as IKVReduce with INDEX keys (`(reduce-kv f 0 [10 20 30])` →
+      `(f (f (f 0 0 10) 1 20) 2 30)`); cljw's reduce-kv used `(keys m)` (map-only)
+      → "-keys on PersistentVector". Added a `vector?` arm (loop*/recur + reduced
+      honoured; NOT `range`/`map-indexed` which are defined later in core.clj —
+      symbols resolve at analyze time). corpus reduce_kv_vector (8 clj-verified).
+      (map-entry reduce-kv stays permissive vs clj's throw — rare harmless edge.)
       **2026-06-04 instance? interface-membership SWEEP** (big-bang, the Iterable/
       IEditableCollection pattern completed). FIXED too-narrow arms:
       IPersistentMap (+sorted_map), IPersistentSet (+sorted_set),

@@ -798,11 +798,21 @@
 ;; D-134 cluster 2 — eager map/seq helpers (Pattern A).
 ;; ----------------------------------------------------------------
 
-;; `(reduce-kv f init m)` — reduce over a map's entries, calling
-;; `(f acc k v)` for each key. Walks `(keys m)`.
+;; `(reduce-kv f init m)` — reduce over an associative, calling `(f acc k v)`
+;; for each entry. A map uses its keys; a VECTOR (and map-entry, which is a
+;; 2-vector) uses integer indices as keys (clj treats both as IKVReduce). Both
+;; arms route through `reduce`, so a `(reduced …)` short-circuits.
+;; The vector arm uses loop*/recur (not `range`/`map-indexed`, which are defined
+;; later in this file — symbols resolve at analyze time) and honours `reduced`.
 (def reduce-kv
   (fn* [f init m]
-    (reduce (fn* [acc k] (f acc k (get m k))) init (keys m))))
+    (if (vector? m)
+      (loop* [i 0 acc init]
+        (if (< i (count m))
+          (let* [r (f acc i (nth m i))]
+            (if (reduced? r) (deref r) (recur (inc i) r)))
+          acc))
+      (reduce (fn* [acc k] (f acc k (get m k))) init (keys m)))))
 
 ;; `(update-keys m f)` — new map with `(f k)` for each key, same vals.
 (def update-keys

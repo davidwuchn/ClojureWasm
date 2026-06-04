@@ -1,0 +1,16 @@
+(reduce-kv (fn [a k v] (+ a v)) 0 [10 20 30])
+;;=> 60
+(reduce-kv (fn [a k v] (conj a [k v])) [] [10 20 30])
+;;=> [[0 10] [1 20] [2 30]]
+(reduce-kv (fn [a k v] (+ a v)) 0 {:a 1 :b 2 :c 3})
+;;=> 6
+(reduce-kv (fn [a k v] (assoc a k (inc v))) {} {:x 1 :y 2})
+;;=> {:x 2, :y 3}
+(reduce-kv (fn [a k v] (reduced k)) :none [10 20 30])
+;;=> 0
+(reduce-kv (fn [a k v] (+ a k v)) 0 [5 5 5])
+;;=> 18
+(reduce-kv (fn [a k v] (+ a v)) 100 [])
+;;=> 100
+(reduce-kv (fn [a k v] (str a k v)) "" [:x :y])
+;;=> "0:x1:y"
