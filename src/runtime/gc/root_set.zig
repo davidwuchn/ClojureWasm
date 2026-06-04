@@ -153,6 +153,34 @@ pub fn registeredThreadCount() usize {
     return n;
 }
 
+// Root-source addressing for the threadlocal sources (`current_frame`,
+// `macro_root_slot`): source index 0 is THIS (collecting) thread's TLS, read
+// directly; index `k>=1` is `thread_registry[k-1]` (a registered worker), read
+// through its published TLS pointer. `.end` terminates the walk. An empty
+// source (null `current_frame` / null registry slot) yields nothing and the
+// cursor advances. Reading the registry array during the walk is safe because
+// (a) it is empty until Phase-B real threads (#3a is runtime-inert), and (b)
+// the #3b safepoint guarantees no concurrent register/unregister during collect.
+const FrameSource = union(enum) { head: ?*env_mod.BindingFrame, end: void };
+fn frameSourceAt(idx: usize) FrameSource {
+    if (idx == 0) return .{ .head = env_mod.current_frame };
+    const ri = idx - 1;
+    if (ri < MAX_GC_THREADS) {
+        return .{ .head = if (thread_registry[ri]) |ctx| ctx.frame_slot.* else null };
+    }
+    return .end;
+}
+
+const MacroSource = union(enum) { value: ?Value, end: void };
+fn macroSourceAt(idx: usize) MacroSource {
+    if (idx == 0) return .{ .value = macro_root_slot };
+    const ri = idx - 1;
+    if (ri < MAX_GC_THREADS) {
+        return .{ .value = if (thread_registry[ri]) |ctx| ctx.macro_slot.* else null };
+    }
+    return .end;
+}
+
 /// Explicit context passed to `enumerate()`. The walker discovers
 /// Envs through a caller-supplied slice rather than a `Runtime.envs`
 /// auto-registry (there is no such registry in cw v1). `gc` carries
@@ -193,11 +221,15 @@ pub const RootIterator = struct {
     pub const CurrentFrameCursor = struct {
         frame: ?*env_mod.BindingFrame = null,
         bindings_it: ?env_mod.BindingMap.ValueIterator = null,
-        initialised: bool = false,
+        /// Source index: 0 = this thread's `current_frame` TLS, k>=1 =
+        /// registered worker k-1 (union walk, ADR-0090 D-244 Alt B).
+        src_idx: usize = 0,
+        primed: bool = false,
     };
 
     pub const MacroRootCursor = struct {
-        consumed: bool = false,
+        src_idx: usize = 0,
+        primed: bool = false,
     };
 
     pub const PermanentRootsCursor = struct {
@@ -276,29 +308,42 @@ pub const RootIterator = struct {
 
     fn nextCurrentFrame(self: *RootIterator) ?*HeapHeader {
         const c = &self.cursor.current_frame;
-        if (!c.initialised) {
-            c.frame = env_mod.current_frame;
-            c.initialised = true;
-        }
         while (true) {
+            // Drain the current frame's bindings.
             if (c.bindings_it) |*it| {
                 while (it.next()) |val_ptr| {
                     if (val_ptr.heapHeader()) |hdr| return hdr;
                 }
                 c.bindings_it = null;
             }
-            const f = c.frame orelse return null;
-            c.bindings_it = f.bindings.valueIterator();
-            c.frame = f.parent;
+            // Walk down the current source's parent chain.
+            if (c.frame) |f| {
+                c.bindings_it = f.bindings.valueIterator();
+                c.frame = f.parent;
+                continue;
+            }
+            // Current source exhausted → advance to the next source (self,
+            // then each registered worker). An empty source loops straight on.
+            if (c.primed) c.src_idx += 1 else c.primed = true;
+            switch (frameSourceAt(c.src_idx)) {
+                .end => return null,
+                .head => |h| c.frame = h,
+            }
         }
     }
 
     fn nextMacroRoot(self: *RootIterator) ?*HeapHeader {
         const c = &self.cursor.macro_root_slot;
-        if (c.consumed) return null;
-        c.consumed = true;
-        if (macro_root_slot) |v| return v.heapHeader();
-        return null;
+        while (true) {
+            if (c.primed) c.src_idx += 1 else c.primed = true;
+            switch (macroSourceAt(c.src_idx)) {
+                .end => return null,
+                .value => |mv| {
+                    if (mv) |v| if (v.heapHeader()) |hdr| return hdr;
+                    // null / immediate → loop to the next source
+                },
+            }
+        }
     }
 
     fn nextPermanentRoot(self: *RootIterator) ?*HeapHeader {
@@ -505,4 +550,45 @@ test "thread GC registry: register / count / unregister / no-op-absent (D-244 #3
 
     unregisterThread(&ctx_b);
     try testing.expectEqual(@as(usize, 0), registeredThreadCount());
+}
+
+test "union walk: a registered context's frame + macro are walked alongside self (D-244 #3a)" {
+    var fix = RuntimeFixture.init();
+    defer fix.deinit();
+    var gc = GcHeap.init(testing.allocator);
+    defer gc.deinit();
+    var env = try Env.init(&fix.rt);
+    defer env.deinit();
+    const ns = env.findNs("user").?;
+    const var_w = try env.intern(ns, "w", Value.nil_val, null);
+
+    const cell_frame = try gc.alloc(Cell);
+    cell_frame.* = .{ .header = HeapHeader.init(.string) };
+    const cell_macro = try gc.alloc(Cell);
+    cell_macro.* = .{ .header = HeapHeader.init(.vector) };
+
+    // A "worker" thread's published roots: a frame chain + macro slot held in
+    // locals (simulating another thread's TLS). NOT on this thread's
+    // current_frame/macro_root_slot, so they appear ONLY if the registry union
+    // walk reaches source index >= 1.
+    var worker_bindings: env_mod.BindingMap = .empty;
+    defer worker_bindings.deinit(env.alloc);
+    try worker_bindings.put(env.alloc, var_w, Value.encodeHeapPtr(.string, cell_frame));
+    var worker_frame: env_mod.BindingFrame = .{ .bindings = worker_bindings };
+    var worker_current: ?*env_mod.BindingFrame = &worker_frame;
+    var worker_macro: ?Value = Value.encodeHeapPtr(.vector, cell_macro);
+
+    var ctx: ThreadGcContext = .{ .frame_slot = &worker_current, .macro_slot = &worker_macro };
+    try registerThread(&ctx);
+    defer unregisterThread(&ctx);
+
+    var found_frame: bool = false;
+    var found_macro: bool = false;
+    var it = enumerate(.{ .envs = &.{}, .gc = &gc });
+    while (it.next()) |hdr| {
+        if (hdr == @as(*HeapHeader, @ptrCast(cell_frame))) found_frame = true;
+        if (hdr == @as(*HeapHeader, @ptrCast(cell_macro))) found_macro = true;
+    }
+    try testing.expect(found_frame); // worker's binding-frame value (union source 1)
+    try testing.expect(found_macro); // worker's macro slot (union source 1)
 }
