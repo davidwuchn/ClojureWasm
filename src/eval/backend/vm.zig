@@ -28,6 +28,7 @@ const vector_mod = @import("../../runtime/collection/vector.zig");
 const map_mod = @import("../../runtime/collection/map.zig");
 const set_mod = @import("../../runtime/collection/set.zig");
 const dispatch = @import("../../runtime/dispatch.zig");
+const root_set = @import("../../runtime/gc/root_set.zig");
 const error_mod = @import("../../runtime/error/info.zig");
 const error_catalog = @import("../../runtime/error/catalog.zig");
 const host_class = @import("../../runtime/error/host_class.zig");
@@ -87,6 +88,21 @@ pub fn eval(
     var ip: usize = 0;
     var handlers: [HANDLER_STACK_MAX]Handler = undefined;
     var handler_count: u16 = 0;
+
+    // Publish this invocation's operand-stack roots on the thread's eval-frame
+    // chain so a GC collect() walks live operand Values `stack[0..sp]` + `locals`
+    // (ADR-0091 / D-244 #3b — the per-thread CHAIN built by the op_call recursion).
+    // Runtime-inert today: collect() runs only at quiescent points where this is
+    // off the C stack; the #3b-step2 alloc-boundary safepoint makes it fire
+    // mid-eval for Phase-B workers. Two pointer writes on the hottest path.
+    var gc_frame: root_set.EvalFrame = .{
+        .stack = &stack,
+        .sp = &sp,
+        .locals = locals,
+        .parent = root_set.eval_frame_head,
+    };
+    root_set.eval_frame_head = &gc_frame;
+    defer root_set.eval_frame_head = gc_frame.parent;
 
     while (true) {
         const step_result = stepOnce(rt, env, locals, chunk, &stack, &sp, &ip, &handlers, &handler_count);

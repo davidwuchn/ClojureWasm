@@ -1,18 +1,23 @@
 // SPDX-License-Identifier: EPL-2.0
 //! Root-set enumeration for cw v1 mark-sweep GC per ADR-0028 §5.
 //!
-//! Wires the 4 entry-point root walkers that exist in cw v1:
+//! Wires the 3 entry-point root walkers that exist in cw v1 (ADR-0028
+//! §5 amendment 2 / ADR-0091):
 //!
-//!   1. **ns_vars**     — Namespace `Var.root` + `Var.meta` across
+//!   1. **ns_vars**       — Namespace `Var.root` + `Var.meta` across
 //!                        every registered Env (`WalkContext.envs`).
-//!   2. **current_frame** — dynamic-binding stack threadlocal in
-//!                        `env.zig`. Walks the parent chain + each
-//!                        frame's BindingMap.
-//!   7. **macro_root_slot** — analyser-scoped root slot (threadlocal,
-//!                        declared in this file so Layer 0 owns it
-//!                        and Layer 1 reads/writes via downward
-//!                        import). Refuses cw v0's `suppressCollection`
-//!                        escape hatch per F-002 + F-006.
+//!   2. **thread_roots**  — per-thread execution roots, walked for the
+//!                        collecting thread + every registered worker
+//!                        `ThreadGcContext`: its dynamic-binding frame
+//!                        chain (`env.zig current_frame`), its macro
+//!                        slot (`macro_root_slot`, refusing cw v0's
+//!                        `suppressCollection` escape hatch per F-002 +
+//!                        F-006), and its VM operand-stack frame chain
+//!                        (`vm.eval` `stack[0..sp]` + `locals`). Layer 0
+//!                        owns the threadlocal slots; Layer 1 (vm /
+//!                        analyzer) writes them via downward import.
+//!                        Subsumes the former `current_frame` (#2) +
+//!                        `macro_root_slot` (#7) sources.
 //!  10. **permanent_roots** — embedder-pinned Values on the GcHeap.
 //!
 //! Sources 3 / 4 / 8 are per-tag trace entries (registered into
@@ -49,18 +54,23 @@ const Env = env_mod.Env;
 const Runtime = runtime_mod.Runtime;
 const GcHeap = gc_heap_mod.GcHeap;
 
-/// Identifier for one of the 10 root sources enumerated by the mark
-/// phase. Per ADR-0028 §5, only sources 1 / 2 / 7 / 10 yield roots;
-/// the others are either tag-trace entries (3 / 4 / 8) or
-/// no-op-by-construction (5 / 6 / 9).
+/// Identifier for one of the 9 root sources enumerated by the mark
+/// phase (ADR-0028 §5 amendment 2 / ADR-0091). Only `ns_vars` /
+/// `thread_roots` / `permanent_roots` yield roots; the others are
+/// either tag-trace entries (`fn_closures` / `lazy_seqs` /
+/// `typed_instances`) or no-op-by-construction (`protocol_caches` /
+/// `refer_borrows` / `callsite_methods`).
 pub const RootSource = enum {
     ns_vars,
-    current_frame,
+    /// Per-thread execution roots: binding-frame chain + macro slot +
+    /// VM operand-stack frame chain, for the collecting thread (self
+    /// TLS) + every registered worker `ThreadGcContext`. Subsumes the
+    /// former `current_frame` (#2) + `macro_root_slot` (#7).
+    thread_roots,
     fn_closures, // tag-trace entry — see tag_ops.tag_trace_table[.fn_val]
     lazy_seqs, // tag-trace entry — see 5.7 registration
     protocol_caches, // no live structs in cw v1; Phase 7 entry territory
     refer_borrows, // closed at construction in env.zig:229 referAll
-    macro_root_slot, // threadlocal owned by this module
     typed_instances, // tag-trace entry — see 5.11 registration
     callsite_methods, // cache holds namespace-owned pointers; no GC edge
     permanent_roots,
@@ -79,6 +89,31 @@ pub const RootSource = enum {
 /// reads + writes the slot; the threadlocal qualifier costs nothing
 /// now and avoids a Phase B surface change.
 pub threadlocal var macro_root_slot: ?Value = null;
+
+/// One VM `eval` invocation's operand-stack roots, published on the
+/// thread's eval-frame chain so a GC `collect()` walks live operand
+/// Values (`stack[0..sp]`) + slot Values (`locals`) — ADR-0091. The
+/// per-thread CHAIN is built by `vm.eval`'s recursion (`op_call ->
+/// callMethodImpl -> evalChunkErased -> eval`), each invocation a fresh
+/// Zig-local `stack`/`locals`. Layer 0 owns the struct + the
+/// threadlocal head; `vm.eval` (Layer 1) push/`defer`-pops a frame per
+/// call via downward import. Fields are raw `Value` pointers (no
+/// VM-type leak into Layer 0): `stack`/`sp` are read together at walk
+/// time as `stack[0..sp.*]` — the array is `undefined` above `sp`, so
+/// the walker must NOT read past it; `locals` is fully nil-initialised
+/// (256 slots) so the whole slice is walk-safe (immediates skipped).
+pub const EvalFrame = struct {
+    stack: [*]const Value,
+    sp: *const u16,
+    locals: []const Value,
+    parent: ?*EvalFrame,
+};
+
+/// Head of the current thread's eval-frame chain (see `EvalFrame`).
+/// Null between top-level evaluations; non-null while a `vm.eval` is on
+/// the C stack. Threadlocal: each worker publishes its own head through
+/// a `ThreadGcContext.eval_frame_slot` pointer (union walk).
+pub threadlocal var eval_frame_head: ?*EvalFrame = null;
 
 // =====================================================================
 // Worker-thread GC-root registry (ADR-0090 "D-244 decision", Alt B).
@@ -105,12 +140,15 @@ const io_default = @import("../concurrency/io_default.zig");
 /// pools are CPU-bounded; 64 is generous headroom.
 pub const MAX_GC_THREADS = 64;
 
-/// One worker thread's published GC roots. `frame_slot` / `macro_slot`
-/// point at that thread's `env.current_frame` / `macro_root_slot` TLS so
-/// the collector reads each worker's CURRENT roots through the pointers.
+/// One worker thread's published GC roots. The three slots point at
+/// that thread's `env.current_frame` / `macro_root_slot` /
+/// `eval_frame_head` TLS so the collector reads each worker's CURRENT
+/// roots through the pointers (ADR-0091 — `eval_frame_slot` is the VM
+/// operand-stack chain head added at #3b).
 pub const ThreadGcContext = struct {
     frame_slot: *const ?*env_mod.BindingFrame,
     macro_slot: *const ?Value,
+    eval_frame_slot: *const ?*EvalFrame,
 };
 
 var thread_registry: [MAX_GC_THREADS]?*ThreadGcContext = @splat(null);
@@ -153,32 +191,35 @@ pub fn registeredThreadCount() usize {
     return n;
 }
 
-// Root-source addressing for the threadlocal sources (`current_frame`,
-// `macro_root_slot`): source index 0 is THIS (collecting) thread's TLS, read
-// directly; index `k>=1` is `thread_registry[k-1]` (a registered worker), read
-// through its published TLS pointer. `.end` terminates the walk. An empty
-// source (null `current_frame` / null registry slot) yields nothing and the
-// cursor advances. Reading the registry array during the walk is safe because
-// (a) it is empty until Phase-B real threads (#3a is runtime-inert), and (b)
-// the #3b safepoint guarantees no concurrent register/unregister during collect.
-const FrameSource = union(enum) { head: ?*env_mod.BindingFrame, end: void };
-fn frameSourceAt(idx: usize) FrameSource {
-    if (idx == 0) return .{ .head = env_mod.current_frame };
+// Per-thread root addressing (ADR-0091, commonized from #3a's separate
+// `frameSourceAt`/`macroSourceAt`): thread index 0 is THIS (collecting) thread's
+// TLS, read directly; index `k>=1` is `thread_registry[k-1]` (a registered
+// worker), read through its published TLS pointers. `.end` terminates the walk
+// past the registry cap. A sparse (null) registry slot yields an all-empty
+// contribution and the cursor advances. Reading the registry array during the
+// walk is safe because (a) it is empty until Phase-B real threads (#3a/#3b are
+// runtime-inert), and (b) the #3b-step2 safepoint guarantees no concurrent
+// register/unregister during collect.
+const ThreadRoots = struct {
+    frame_head: ?*env_mod.BindingFrame,
+    macro: ?Value,
+    eval_head: ?*EvalFrame,
+};
+const ThreadSource = union(enum) { roots: ThreadRoots, end: void };
+fn threadContextAt(idx: usize) ThreadSource {
+    if (idx == 0) return .{ .roots = .{
+        .frame_head = env_mod.current_frame,
+        .macro = macro_root_slot,
+        .eval_head = eval_frame_head,
+    } };
     const ri = idx - 1;
-    if (ri < MAX_GC_THREADS) {
-        return .{ .head = if (thread_registry[ri]) |ctx| ctx.frame_slot.* else null };
-    }
-    return .end;
-}
-
-const MacroSource = union(enum) { value: ?Value, end: void };
-fn macroSourceAt(idx: usize) MacroSource {
-    if (idx == 0) return .{ .value = macro_root_slot };
-    const ri = idx - 1;
-    if (ri < MAX_GC_THREADS) {
-        return .{ .value = if (thread_registry[ri]) |ctx| ctx.macro_slot.* else null };
-    }
-    return .end;
+    if (ri >= MAX_GC_THREADS) return .end;
+    if (thread_registry[ri]) |ctx| return .{ .roots = .{
+        .frame_head = ctx.frame_slot.*,
+        .macro = ctx.macro_slot.*,
+        .eval_head = ctx.eval_frame_slot.*,
+    } };
+    return .{ .roots = .{ .frame_head = null, .macro = null, .eval_head = null } };
 }
 
 /// Explicit context passed to `enumerate()`. The walker discovers
@@ -190,10 +231,11 @@ pub const WalkContext = struct {
     gc: *GcHeap,
 };
 
-/// Root-set iterator. Walks the 4 live sources in source order; the
-/// other 6 enum slots advance immediately to the next source per
-/// their early-return contract (see RootSource enum docstring for
-/// the per-source disposition).
+/// Root-set iterator. Walks the 3 live sources in source order
+/// (`ns_vars` → `thread_roots` → `permanent_roots`); the other 6 enum
+/// slots advance immediately to the next source per their early-return
+/// contract (see RootSource enum docstring for the per-source
+/// disposition).
 pub const RootIterator = struct {
     ctx: WalkContext,
     source: RootSource = .ns_vars,
@@ -203,9 +245,8 @@ pub const RootIterator = struct {
 
     pub const Cursor = union(enum) {
         ns_vars: NsVarsCursor,
-        current_frame: CurrentFrameCursor,
+        thread_roots: ThreadRootsCursor,
         empty: void, // every deferred source uses this
-        macro_root_slot: MacroRootCursor,
         permanent_roots: PermanentRootsCursor,
     };
 
@@ -218,18 +259,29 @@ pub const RootIterator = struct {
         pending_meta: ?*const env_mod.Var = null,
     };
 
-    pub const CurrentFrameCursor = struct {
+    /// Walks the per-thread execution roots thread-major (ADR-0091): for
+    /// each thread index (0 = self TLS, k>=1 = registered worker k-1),
+    /// drains that thread's binding-frame chain, then its macro slot,
+    /// then its eval-frame (operand-stack) chain, then advances to the
+    /// next thread. One cursor subsumes #3a's separate `current_frame` +
+    /// `macro_root_slot` cursors and adds the operand-stack sub-walk.
+    pub const ThreadRootsCursor = struct {
+        thread_idx: usize = 0,
+        /// False until the current `thread_idx`'s roots are loaded into
+        /// `roots` (and the binding sub-walk primed). Reset on each
+        /// thread advance.
+        loaded: bool = false,
+        phase: Phase = .binding,
+        roots: ThreadRoots = undefined,
+        // binding-phase state:
         frame: ?*env_mod.BindingFrame = null,
         bindings_it: ?env_mod.BindingMap.ValueIterator = null,
-        /// Source index: 0 = this thread's `current_frame` TLS, k>=1 =
-        /// registered worker k-1 (union walk, ADR-0090 D-244 Alt B).
-        src_idx: usize = 0,
-        primed: bool = false,
-    };
+        // eval-phase state:
+        eval_frame: ?*EvalFrame = null,
+        slot_idx: usize = 0,
+        in_locals: bool = false,
 
-    pub const MacroRootCursor = struct {
-        src_idx: usize = 0,
-        primed: bool = false,
+        pub const Phase = enum { binding, macro, eval };
     };
 
     pub const PermanentRootsCursor = struct {
@@ -240,9 +292,8 @@ pub const RootIterator = struct {
         while (true) {
             switch (self.source) {
                 .ns_vars => if (self.nextNsVar()) |hdr| return hdr else self.advance(),
-                .current_frame => if (self.nextCurrentFrame()) |hdr| return hdr else self.advance(),
+                .thread_roots => if (self.nextThreadRoots()) |hdr| return hdr else self.advance(),
                 .fn_closures, .lazy_seqs, .protocol_caches, .refer_borrows, .typed_instances, .callsite_methods => self.advance(),
-                .macro_root_slot => if (self.nextMacroRoot()) |hdr| return hdr else self.advance(),
                 .permanent_roots => if (self.nextPermanentRoot()) |hdr| return hdr else return null,
             }
         }
@@ -250,13 +301,12 @@ pub const RootIterator = struct {
 
     fn advance(self: *RootIterator) void {
         const next_source: RootSource = switch (self.source) {
-            .ns_vars => .current_frame,
-            .current_frame => .fn_closures,
+            .ns_vars => .thread_roots,
+            .thread_roots => .fn_closures,
             .fn_closures => .lazy_seqs,
             .lazy_seqs => .protocol_caches,
             .protocol_caches => .refer_borrows,
-            .refer_borrows => .macro_root_slot,
-            .macro_root_slot => .typed_instances,
+            .refer_borrows => .typed_instances,
             .typed_instances => .callsite_methods,
             .callsite_methods => .permanent_roots,
             .permanent_roots => unreachable, // next() returns null instead
@@ -264,8 +314,7 @@ pub const RootIterator = struct {
         self.source = next_source;
         self.cursor = switch (next_source) {
             .ns_vars => .{ .ns_vars = .{} },
-            .current_frame => .{ .current_frame = .{} },
-            .macro_root_slot => .{ .macro_root_slot = .{} },
+            .thread_roots => .{ .thread_roots = .{} },
             .permanent_roots => .{ .permanent_roots = .{} },
             else => .{ .empty = {} },
         };
@@ -306,41 +355,85 @@ pub const RootIterator = struct {
         }
     }
 
-    fn nextCurrentFrame(self: *RootIterator) ?*HeapHeader {
-        const c = &self.cursor.current_frame;
+    /// Thread-major per-thread root walk (ADR-0091). Yields, per thread
+    /// index in turn (0 = self TLS, k>=1 = registered worker k-1): the
+    /// binding-frame chain Values → the macro slot → the eval-frame chain
+    /// (`stack[0..sp]` then `locals`). Returns `null` when no live thread
+    /// remains. A thread with empty sub-walks loops straight to the next.
+    fn nextThreadRoots(self: *RootIterator) ?*HeapHeader {
+        const c = &self.cursor.thread_roots;
         while (true) {
-            // Drain the current frame's bindings.
-            if (c.bindings_it) |*it| {
-                while (it.next()) |val_ptr| {
-                    if (val_ptr.heapHeader()) |hdr| return hdr;
+            // Load this thread's roots on first touch + prime the binding walk.
+            if (!c.loaded) {
+                switch (threadContextAt(c.thread_idx)) {
+                    .end => return null,
+                    .roots => |r| {
+                        c.roots = r;
+                        c.loaded = true;
+                        c.phase = .binding;
+                        c.frame = r.frame_head;
+                        c.bindings_it = null;
+                    },
                 }
-                c.bindings_it = null;
             }
-            // Walk down the current source's parent chain.
-            if (c.frame) |f| {
-                c.bindings_it = f.bindings.valueIterator();
-                c.frame = f.parent;
-                continue;
-            }
-            // Current source exhausted → advance to the next source (self,
-            // then each registered worker). An empty source loops straight on.
-            if (c.primed) c.src_idx += 1 else c.primed = true;
-            switch (frameSourceAt(c.src_idx)) {
-                .end => return null,
-                .head => |h| c.frame = h,
-            }
-        }
-    }
-
-    fn nextMacroRoot(self: *RootIterator) ?*HeapHeader {
-        const c = &self.cursor.macro_root_slot;
-        while (true) {
-            if (c.primed) c.src_idx += 1 else c.primed = true;
-            switch (macroSourceAt(c.src_idx)) {
-                .end => return null,
-                .value => |mv| {
-                    if (mv) |v| if (v.heapHeader()) |hdr| return hdr;
-                    // null / immediate → loop to the next source
+            switch (c.phase) {
+                .binding => {
+                    // Drain the current frame's bindings.
+                    if (c.bindings_it) |*it| {
+                        while (it.next()) |val_ptr| {
+                            if (val_ptr.heapHeader()) |hdr| return hdr;
+                        }
+                        c.bindings_it = null;
+                    }
+                    // Walk down the binding-frame parent chain.
+                    if (c.frame) |f| {
+                        c.bindings_it = f.bindings.valueIterator();
+                        c.frame = f.parent;
+                        continue;
+                    }
+                    // Binding chain exhausted → macro phase.
+                    c.phase = .macro;
+                },
+                .macro => {
+                    // Macro yields at most once; transition + prime the eval
+                    // sub-walk BEFORE yielding so a resume lands in `.eval`.
+                    c.phase = .eval;
+                    c.eval_frame = c.roots.eval_head;
+                    c.slot_idx = 0;
+                    c.in_locals = false;
+                    if (c.roots.macro) |mv| {
+                        if (mv.heapHeader()) |hdr| return hdr;
+                    }
+                },
+                .eval => {
+                    if (c.eval_frame) |ef| {
+                        // Live operand slots `stack[0..sp]` (the array is
+                        // `undefined` above `sp` — never read past it), then the
+                        // fully-nil-initialised `locals` (immediates skipped).
+                        if (!c.in_locals) {
+                            const sp = ef.sp.*;
+                            while (c.slot_idx < sp) {
+                                const v = ef.stack[c.slot_idx];
+                                c.slot_idx += 1;
+                                if (v.heapHeader()) |hdr| return hdr;
+                            }
+                            c.in_locals = true;
+                            c.slot_idx = 0;
+                        }
+                        while (c.slot_idx < ef.locals.len) {
+                            const v = ef.locals[c.slot_idx];
+                            c.slot_idx += 1;
+                            if (v.heapHeader()) |hdr| return hdr;
+                        }
+                        // This eval frame done → its parent.
+                        c.eval_frame = ef.parent;
+                        c.slot_idx = 0;
+                        c.in_locals = false;
+                        continue;
+                    }
+                    // Eval chain exhausted → next thread.
+                    c.thread_idx += 1;
+                    c.loaded = false;
                 },
             }
         }
@@ -385,8 +478,8 @@ const RuntimeFixture = struct {
     }
 };
 
-test "RootSource enum lists 10 sources per ADR-0028 §5" {
-    try testing.expectEqual(@as(comptime_int, 10), @typeInfo(RootSource).@"enum".fields.len);
+test "RootSource enum lists 9 sources per ADR-0028 §5 amendment 2" {
+    try testing.expectEqual(@as(comptime_int, 9), @typeInfo(RootSource).@"enum".fields.len);
 }
 
 test "enumerate on empty context yields no roots" {
@@ -535,8 +628,8 @@ test "thread GC registry: register / count / unregister / no-op-absent (D-244 #3
     // Two contexts pointing at this thread's TLS slots (the values are
     // irrelevant here — #3a's cursor fold consumes them; this asserts the
     // registry lifecycle). Ends at count 0 so it does not pollute other tests.
-    var ctx_a: ThreadGcContext = .{ .frame_slot = &env_mod.current_frame, .macro_slot = &macro_root_slot };
-    var ctx_b: ThreadGcContext = .{ .frame_slot = &env_mod.current_frame, .macro_slot = &macro_root_slot };
+    var ctx_a: ThreadGcContext = .{ .frame_slot = &env_mod.current_frame, .macro_slot = &macro_root_slot, .eval_frame_slot = &eval_frame_head };
+    var ctx_b: ThreadGcContext = .{ .frame_slot = &env_mod.current_frame, .macro_slot = &macro_root_slot, .eval_frame_slot = &eval_frame_head };
 
     try testing.expectEqual(@as(usize, 0), registeredThreadCount());
     try registerThread(&ctx_a);
@@ -552,7 +645,7 @@ test "thread GC registry: register / count / unregister / no-op-absent (D-244 #3
     try testing.expectEqual(@as(usize, 0), registeredThreadCount());
 }
 
-test "union walk: a registered context's frame + macro are walked alongside self (D-244 #3a)" {
+test "union walk: a registered worker's frame + macro + operand stack are walked alongside self (D-244 #3a/#3b)" {
     var fix = RuntimeFixture.init();
     defer fix.deinit();
     var gc = GcHeap.init(testing.allocator);
@@ -566,11 +659,16 @@ test "union walk: a registered context's frame + macro are walked alongside self
     cell_frame.* = .{ .header = HeapHeader.init(.string) };
     const cell_macro = try gc.alloc(Cell);
     cell_macro.* = .{ .header = HeapHeader.init(.vector) };
+    const cell_stack = try gc.alloc(Cell);
+    cell_stack.* = .{ .header = HeapHeader.init(.string) };
+    const cell_local = try gc.alloc(Cell);
+    cell_local.* = .{ .header = HeapHeader.init(.vector) };
 
-    // A "worker" thread's published roots: a frame chain + macro slot held in
-    // locals (simulating another thread's TLS). NOT on this thread's
-    // current_frame/macro_root_slot, so they appear ONLY if the registry union
-    // walk reaches source index >= 1.
+    // A "worker" thread's published roots — a binding-frame chain + macro slot +
+    // an operand-stack EvalFrame — all held in locals (simulating another
+    // thread's TLS), NOT on this thread's current_frame/macro_root_slot/
+    // eval_frame_head. They appear ONLY if the registry union walk reaches
+    // thread index >= 1.
     var worker_bindings: env_mod.BindingMap = .empty;
     defer worker_bindings.deinit(env.alloc);
     try worker_bindings.put(env.alloc, var_w, Value.encodeHeapPtr(.string, cell_frame));
@@ -578,19 +676,134 @@ test "union walk: a registered context's frame + macro are walked alongside self
     var worker_current: ?*env_mod.BindingFrame = &worker_frame;
     var worker_macro: ?Value = Value.encodeHeapPtr(.vector, cell_macro);
 
-    var ctx: ThreadGcContext = .{ .frame_slot = &worker_current, .macro_slot = &worker_macro };
+    var worker_stack = [_]Value{ Value.encodeHeapPtr(.string, cell_stack), Value.nil_val };
+    var worker_sp: u16 = 1; // only stack[0] is live
+    var worker_locals = [_]Value{ Value.encodeHeapPtr(.vector, cell_local), Value.nil_val };
+    var worker_eval: EvalFrame = .{ .stack = &worker_stack, .sp = &worker_sp, .locals = &worker_locals, .parent = null };
+    var worker_eval_head: ?*EvalFrame = &worker_eval;
+
+    var ctx: ThreadGcContext = .{ .frame_slot = &worker_current, .macro_slot = &worker_macro, .eval_frame_slot = &worker_eval_head };
     try registerThread(&ctx);
     defer unregisterThread(&ctx);
 
     var found_frame: bool = false;
     var found_macro: bool = false;
+    var found_stack: bool = false;
+    var found_local: bool = false;
     var it = enumerate(.{ .envs = &.{}, .gc = &gc });
     while (it.next()) |hdr| {
         if (hdr == @as(*HeapHeader, @ptrCast(cell_frame))) found_frame = true;
         if (hdr == @as(*HeapHeader, @ptrCast(cell_macro))) found_macro = true;
+        if (hdr == @as(*HeapHeader, @ptrCast(cell_stack))) found_stack = true;
+        if (hdr == @as(*HeapHeader, @ptrCast(cell_local))) found_local = true;
     }
-    try testing.expect(found_frame); // worker's binding-frame value (union source 1)
-    try testing.expect(found_macro); // worker's macro slot (union source 1)
+    try testing.expect(found_frame); // worker's binding-frame value (union thread 1)
+    try testing.expect(found_macro); // worker's macro slot (union thread 1)
+    try testing.expect(found_stack); // worker's operand stack[0] (union thread 1)
+    try testing.expect(found_local); // worker's locals[0] (union thread 1)
+}
+
+test "thread_roots walks this thread's operand stack via eval_frame_head (D-244 #3b)" {
+    var fix = RuntimeFixture.init();
+    defer fix.deinit();
+    var gc = GcHeap.init(testing.allocator);
+    defer gc.deinit();
+
+    const cell_stack = try gc.alloc(Cell);
+    cell_stack.* = .{ .header = HeapHeader.init(.string) };
+    const cell_local = try gc.alloc(Cell);
+    cell_local.* = .{ .header = HeapHeader.init(.vector) };
+
+    // Null eval_frame_head → the eval sub-walk yields nothing (runtime-inert).
+    {
+        var it = enumerate(.{ .envs = &.{}, .gc = &gc });
+        try testing.expect(it.next() == null);
+    }
+
+    var stack = [_]Value{ Value.encodeHeapPtr(.string, cell_stack), Value.nil_val };
+    var sp: u16 = 1;
+    var locals = [_]Value{ Value.encodeHeapPtr(.vector, cell_local), Value.nil_val };
+    var frame: EvalFrame = .{ .stack = &stack, .sp = &sp, .locals = &locals, .parent = null };
+    eval_frame_head = &frame;
+    defer eval_frame_head = null;
+
+    var found_stack: bool = false;
+    var found_local: bool = false;
+    var it = enumerate(.{ .envs = &.{}, .gc = &gc });
+    while (it.next()) |hdr| {
+        if (hdr == @as(*HeapHeader, @ptrCast(cell_stack))) found_stack = true;
+        if (hdr == @as(*HeapHeader, @ptrCast(cell_local))) found_local = true;
+    }
+    try testing.expect(found_stack); // self thread's operand stack[0] (union source 0)
+    try testing.expect(found_local); // self thread's locals[0]
+}
+
+test "thread_roots eval sub-walk reads stack[0..sp] only, never the undefined region above sp (D-244 #3b)" {
+    var fix = RuntimeFixture.init();
+    defer fix.deinit();
+    var gc = GcHeap.init(testing.allocator);
+    defer gc.deinit();
+
+    const cell_live = try gc.alloc(Cell);
+    cell_live.* = .{ .header = HeapHeader.init(.string) };
+    const cell_above_sp = try gc.alloc(Cell);
+    cell_above_sp.* = .{ .header = HeapHeader.init(.vector) };
+
+    // stack[0] is live (sp=1); stack[1] holds a heap Value but sits ABOVE sp,
+    // standing in for `vm.eval`'s `undefined` region — it must NOT be walked
+    // (reading it would treat garbage as a root → false retention / a crash on
+    // real undefined memory).
+    var stack = [_]Value{ Value.encodeHeapPtr(.string, cell_live), Value.encodeHeapPtr(.vector, cell_above_sp) };
+    var sp: u16 = 1;
+    var locals = [_]Value{Value.nil_val};
+    var frame: EvalFrame = .{ .stack = &stack, .sp = &sp, .locals = &locals, .parent = null };
+    eval_frame_head = &frame;
+    defer eval_frame_head = null;
+
+    var found_live: bool = false;
+    var found_above: bool = false;
+    var it = enumerate(.{ .envs = &.{}, .gc = &gc });
+    while (it.next()) |hdr| {
+        if (hdr == @as(*HeapHeader, @ptrCast(cell_live))) found_live = true;
+        if (hdr == @as(*HeapHeader, @ptrCast(cell_above_sp))) found_above = true;
+    }
+    try testing.expect(found_live);
+    try testing.expect(!found_above);
+}
+
+test "thread_roots eval sub-walk follows the eval-frame parent chain (D-244 #3b)" {
+    var fix = RuntimeFixture.init();
+    defer fix.deinit();
+    var gc = GcHeap.init(testing.allocator);
+    defer gc.deinit();
+
+    const cell_outer = try gc.alloc(Cell);
+    cell_outer.* = .{ .header = HeapHeader.init(.string) };
+    const cell_inner = try gc.alloc(Cell);
+    cell_inner.* = .{ .header = HeapHeader.init(.vector) };
+
+    var outer_stack = [_]Value{Value.encodeHeapPtr(.string, cell_outer)};
+    var outer_sp: u16 = 1;
+    var outer_locals = [_]Value{Value.nil_val};
+    var outer: EvalFrame = .{ .stack = &outer_stack, .sp = &outer_sp, .locals = &outer_locals, .parent = null };
+
+    var inner_stack = [_]Value{Value.encodeHeapPtr(.vector, cell_inner)};
+    var inner_sp: u16 = 1;
+    var inner_locals = [_]Value{Value.nil_val};
+    var inner: EvalFrame = .{ .stack = &inner_stack, .sp = &inner_sp, .locals = &inner_locals, .parent = &outer };
+
+    eval_frame_head = &inner;
+    defer eval_frame_head = null;
+
+    var found_outer: bool = false;
+    var found_inner: bool = false;
+    var it = enumerate(.{ .envs = &.{}, .gc = &gc });
+    while (it.next()) |hdr| {
+        if (hdr == @as(*HeapHeader, @ptrCast(cell_outer))) found_outer = true;
+        if (hdr == @as(*HeapHeader, @ptrCast(cell_inner))) found_inner = true;
+    }
+    try testing.expect(found_outer); // parent eval frame walked
+    try testing.expect(found_inner); // head eval frame walked
 }
 
 test "registry: concurrent register/unregister churn is race-free (D-244 #3a robustness)" {
@@ -610,7 +823,7 @@ test "registry: concurrent register/unregister churn is race-free (D-244 #3a rob
         fn run() void {
             // Each thread owns one context pointing at its own TLS; register +
             // immediately unregister in a tight loop (≤4 concurrent < cap 64).
-            var ctx: ThreadGcContext = .{ .frame_slot = &env_mod.current_frame, .macro_slot = &macro_root_slot };
+            var ctx: ThreadGcContext = .{ .frame_slot = &env_mod.current_frame, .macro_slot = &macro_root_slot, .eval_frame_slot = &eval_frame_head };
             var i: usize = 0;
             while (i < 200) : (i += 1) {
                 registerThread(&ctx) catch return;
