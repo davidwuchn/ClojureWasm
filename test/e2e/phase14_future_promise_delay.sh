@@ -41,6 +41,12 @@ EOF
 )
 assert_eq 'delay_memoised_cached' "$got" '[3 3 true]'
 
+# Thread-safe once-semantics (Phase B #4b): a concurrent deref from a future
+# thread + the main thread runs the side-effecting thunk EXACTLY once (the
+# realise lock serialises; the loser reads the cache).
+got=$("$BIN" -e '(let [n (atom 0) d (delay (swap! n inc))] (future (deref d)) (deref d) @n)' 2>/dev/null | last_line)
+assert_eq 'delay_once_under_concurrency' "$got" '1'
+
 # --- Future (real OS thread, Phase B #4b) ---
 got=$("$BIN" -e '(deref (future (* 7 6)))' 2>/dev/null | last_line)
 assert_eq 'future_deref_blocks_for_result' "$got" '42'

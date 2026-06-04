@@ -6,12 +6,15 @@
 //! thunk on first call and caches the result; subsequent derefs
 //! return the cached Value without re-running the thunk. JVM
 //! `clojure.lang.Delay` is the model (single-shot lock-on-realise +
-//! cached value / cached exception). cw v1 implements the
-//! single-thread single-shot variant — no Mutex needed while the
-//! runtime is single-threaded; the lock-on-realise contention path
-//! lands at Phase B with real threading/locking (the Zig-0.16
-//! locking primitive is chosen at Phase B entry — the pre-0.16 plan
-//! referenced removed APIs).
+//! cached value).
+//!
+//! **Phase B #4b**: `force` holds an `Io.Mutex` for the realise window so
+//! concurrent derefs run the thunk exactly ONCE — a second thread that
+//! derefs while the first is mid-thunk blocks on the lock, then sees the
+//! realised cache. The lock is an off-heap cell (a bare `Io.Mutex`, no
+//! condition — waiters block on the lock itself), the same off-heap shape
+//! as `future.zig`/`promise.zig` (their `Io.Condition` cannot live in an
+//! `extern` struct), freed by the Delay's finaliser.
 //!
 //! Per F-009: implementation here is namespace-neutral. The Clojure-
 //! ns surface `(delay ...)` macro lives in `lang/macro_transforms`,
@@ -24,36 +27,41 @@ const value_mod = @import("value/value.zig");
 const Value = value_mod.Value;
 const HeapHeader = value_mod.HeapHeader;
 const Runtime = @import("runtime.zig").Runtime;
+const io_default = @import("concurrency/io_default.zig");
 const tag_ops = @import("gc/tag_ops.zig");
 const gc_heap_mod = @import("gc/gc_heap.zig");
 const mark_sweep = @import("gc/mark_sweep.zig");
 
-/// Delay state machine — single-thread single-shot.
+/// Delay state machine.
 ///
 /// - `pending`: thunk hasn't run yet; `cached` is undefined.
 /// - `realised`: thunk ran successfully; `cached` holds the value.
 ///
-/// JVM's Delay also tracks `exception` for re-raise on subsequent
-/// derefs. cw v1 single-thread defers exception caching to Phase B
-/// alongside the lock activation; today a thunk error bubbles
-/// uncaught at first deref and the Delay's state stays `.pending`
-/// (a retry of `deref` re-runs the thunk).
+/// JVM's Delay also caches a thrown exception for re-raise on subsequent
+/// derefs. cw v1 leaves the Delay `.pending` on a thunk error (a retry of
+/// `deref` re-runs the thunk) — a known divergence preserved here.
 pub const DelayState = enum(u8) {
     pending = 0,
     realised = 1,
 };
 
+/// Off-heap realise lock (a bare mutex — no condition; concurrent derefs
+/// block on the lock and read the cache after the holder realises).
+/// Infra-allocated, freed by the Delay's finaliser.
+const DelayCell = struct {
+    mutex: std.Io.Mutex = .init,
+};
+
 pub const Delay = extern struct {
     header: HeapHeader,
+    /// Read/written under `cell.mutex`.
     state: DelayState = .pending,
-    _pad: [5]u8 = .{ 0, 0, 0, 0, 0 },
-    /// Zero-arity thunk wrapping the delayed expression. Held until
-    /// the Delay realises; once realised the thunk slot is left in
-    /// place (the Phase B lock activation may revisit whether to
-    /// clear it).
+    _pad: [7]u8 = @splat(0),
+    /// Zero-arity thunk wrapping the delayed expression; traced while pending.
     thunk: Value,
     /// Realised value. Undefined while `state == .pending`.
     cached: Value = .nil_val,
+    cell: *DelayCell,
 
     comptime {
         std.debug.assert(@alignOf(Delay) >= 8);
@@ -62,10 +70,16 @@ pub const Delay = extern struct {
 };
 
 pub fn alloc(rt: *Runtime, thunk: Value) !Value {
-    const d = try rt.gc.alloc(Delay);
+    const cell = try rt.gpa.create(DelayCell);
+    cell.* = .{};
+    const d = rt.gc.alloc(Delay) catch |e| {
+        rt.gpa.destroy(cell);
+        return e;
+    };
     d.* = .{
         .header = HeapHeader.init(.delay),
         .thunk = thunk,
+        .cell = cell,
     };
     return Value.encodeHeapPtr(.delay, d);
 }
@@ -80,9 +94,14 @@ pub fn isDelay(v: Value) bool {
 /// through `rt.vtable.callFn`.
 pub fn force(rt: *Runtime, env: anytype, v: Value, loc: anytype) !Value {
     std.debug.assert(v.tag() == .delay);
-    const d_const = v.decodePtr(*const Delay);
-    if (d_const.state == .realised) return d_const.cached;
-    const d: *Delay = @constCast(d_const);
+    const d = v.decodePtr(*Delay);
+    // Hold the realise lock so concurrent derefs run the thunk exactly once:
+    // a second thread blocks here, then takes the realised cache below. On a
+    // thunk error the `defer` unlocks and the state stays `.pending` (retry
+    // re-runs — the preserved single-thread divergence).
+    io_default.lockMutex(&d.cell.mutex);
+    defer io_default.unlockMutex(&d.cell.mutex);
+    if (d.state == .realised) return d.cached;
     const vtable = rt.vtable orelse return error.InternalError;
     const result = try vtable.callFn(rt, env, d.thunk, &.{}, loc);
     d.cached = result;
@@ -92,7 +111,10 @@ pub fn force(rt: *Runtime, env: anytype, v: Value, loc: anytype) !Value {
 
 pub fn isRealised(v: Value) bool {
     if (v.tag() != .delay) return false;
-    return v.decodePtr(*const Delay).state == .realised;
+    const d = v.decodePtr(*Delay);
+    io_default.lockMutex(&d.cell.mutex);
+    defer io_default.unlockMutex(&d.cell.mutex);
+    return d.state == .realised;
 }
 
 pub fn traceGc(gc_ptr: *anyopaque, header: *HeapHeader) void {
@@ -104,8 +126,16 @@ pub fn traceGc(gc_ptr: *anyopaque, header: *HeapHeader) void {
     }
 }
 
+/// Free the off-heap realise lock on sweep (no-alloc invariant: a `destroy`).
+pub fn finaliseGc(gc_ptr: *anyopaque, header: *HeapHeader) void {
+    const gc: *gc_heap_mod.GcHeap = @ptrCast(@alignCast(gc_ptr));
+    const d: *Delay = @ptrCast(@alignCast(header));
+    gc.infra.destroy(d.cell);
+}
+
 pub fn registerGcHooks() void {
     tag_ops.registerTrace(.delay, &traceGc);
+    tag_ops.registerFinaliser(.delay, &finaliseGc);
 }
 
 const testing = std.testing;
