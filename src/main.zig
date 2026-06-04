@@ -18,8 +18,18 @@ const std = @import("std");
 
 const cli = @import("app/cli.zig");
 const error_render = @import("app/error_render.zig");
+const io_default = @import("runtime/concurrency/io_default.zig");
 
 pub fn main(init: std.process.Init) !void {
+    // Upgrade the process-wide `io_default` singleton from its lazy
+    // single-threaded default to the real process io BEFORE any runtime work,
+    // so Phase-B concurrency sync (`std.Io.Mutex`/`Io.Condition` reached by
+    // no-`io` call sites — the GC alloc lock, the safepoint, future/promise
+    // result cells) blocks for real across spawned worker threads (D-244 #4).
+    // Production-only: tests go through `Runtime.init` directly and keep the
+    // single-threaded default (a per-test threaded io is set where needed), so
+    // `io_default` never dangles at a freed test-local `Threaded`.
+    io_default.set(init.io);
     try cli.dispatch(init);
 }
 

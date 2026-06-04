@@ -1,17 +1,16 @@
 #!/usr/bin/env bash
 # test/e2e/phase14_future_promise_delay.sh
 #
-# Phase 14 §9.16 row 14.8 — Tier A concurrent primitives. cw v1's
-# single-thread Phase 14 implementation:
+# Phase 14 §9.16 row 14.8 — Tier A concurrent primitives.
 # - (delay expr...) — lazy memoised computation; thunk runs on first deref.
-# - (future expr...) — eager-at-construction; deref returns the cache.
+# - (future expr...) — **Phase B #4b: spawns a REAL OS thread**; (deref f)
+#   BLOCKS on an Io.Mutex/Condition cell until the worker realises the Future.
+#   `realized?` right after construction is async-racy (the worker may not have
+#   finished), so this suite only asserts it AFTER a deref (deterministically true).
 # - (promise) + (deliver p v) + (deref p) — write-once cell.
 #
-# The single-thread runtime cannot block on itself, so deref of an
-# undelivered promise raises `promise_undelivered_error` instead of
-# blocking forever (PROVISIONAL; Phase 15.1 swap to blocking via
-# std.Io.Mutex). JVM-style thread spawning for future is also Phase
-# 15.1 (D-114).
+# Promise deref of an undelivered promise still raises `promise_undelivered_error`
+# (PROVISIONAL; the blocking-promise swap is a Phase-B follow-up).
 
 set -euo pipefail
 cd "$(dirname "$0")/../.."
@@ -42,17 +41,27 @@ EOF
 )
 assert_eq 'delay_memoised_cached' "$got" '[3 3 true]'
 
-# --- Future ---
+# --- Future (real OS thread, Phase B #4b) ---
 got=$("$BIN" -e '(deref (future (* 7 6)))' 2>/dev/null | last_line)
-assert_eq 'future_deref_eager' "$got" '42'
+assert_eq 'future_deref_blocks_for_result' "$got" '42'
 
-# Eager: future body runs at construction, so realized? is true immediately.
+# realized? is deterministically true AFTER a deref (the worker has finished).
 got=$("$BIN" - <<'EOF' 2>/dev/null | last_line
 (def f (future (+ 100 200)))
+(deref f)
 [(realized? f) (deref f)]
 EOF
 )
-assert_eq 'future_realized_immediately' "$got" '[true 300]'
+assert_eq 'future_realized_after_deref' "$got" '[true 300]'
+
+# Shared mutable identity across the worker thread: the future mutates the SAME
+# atom the main thread reads (not a copy) — the load-bearing concurrency contract.
+got=$("$BIN" -e '(let [a (atom 0)] @(future (swap! a inc)) @a)' 2>/dev/null | last_line)
+assert_eq 'future_shared_atom_identity' "$got" '1'
+
+# The worker allocates on the shared GC heap (a vector + range) and returns it.
+got=$("$BIN" -e '(deref (future (vec (range 5))))' 2>/dev/null | last_line)
+assert_eq 'future_worker_allocates' "$got" '[0 1 2 3 4]'
 
 # --- Promise ---
 got=$("$BIN" - <<'EOF' 2>/dev/null | last_line

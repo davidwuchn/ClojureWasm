@@ -1,23 +1,27 @@
 // SPDX-License-Identifier: EPL-2.0
-//! Future — Tier A single-shot eager-eval-cached computation.
+//! Future — Tier A single-shot off-thread computation (Phase B #4b).
 //!
-//! `(future expr)` evaluates `expr` **eagerly at construction time**
-//! (= synchronously on the single-thread runtime today) and caches
-//! the result. `(deref f)` returns the cached Value. This matches
-//! JVM Clojure's "fire-and-cache" timing: the work happens at
-//! construction (JVM kicks the thread immediately; cw v1 runs it
-//! inline), and `(deref f)` is a cheap cache read. Real threading
-//! lands at Phase B (the eager-inline call becomes a spawned thread +
-//! wait); the Zig-0.16 threading/sync primitive is chosen at Phase B
-//! entry (the pre-0.16 plan referenced removed APIs). The surface and
-//! the cached Value layout stay stable (D-114).
+//! `(future expr)` → `(__future-call (fn* [] expr))` → `alloc`, which spawns a
+//! REAL OS thread (`std.Thread`) that runs the thunk and caches the result.
+//! `(deref f)` BLOCKS on an `Io.Mutex`+`Io.Condition` result cell until the
+//! worker realises the Future, then returns the cached value. This matches JVM
+//! Clojure's fire-and-wait timing (the thread is kicked at construction; deref
+//! waits for it).
 //!
-//! Exceptions: a thunk that throws is caught at construction time
-//! and stashed; subsequent `(deref f)` re-raises so the user sees
-//! the error at consistent timing across the inline form today and
-//! the thread+wait form at Phase B. JVM's `Future.get` re-raises
-//! wrapped in ExecutionException; cw v1 raises the original error
-//! directly.
+//! GC safety (ADR-0090 Alt B / D-244): the worker runs on the VM (the bytecode
+//! `callFn` path on the VM-default build, F-012 / Q2) and registers a
+//! `ThreadGcContext` so its operand-stack + binding roots are published — a
+//! concurrent collect parks it at a safe point and walks its roots. The Future
+//! is `gc.pin`ned for the worker's lifetime so a fire-and-forget
+//! `(future (side-effect))` is not swept while the worker still writes to it;
+//! the worker unpins on completion. The thread is detached — the result cell's
+//! condition (not a join) synchronises `deref` (shutdown-orphan of a still-
+//! running worker is a known limitation, tracked as a Phase-B follow-up).
+//!
+//! Exceptions: a thunk that throws is caught on the worker; `deref` returns
+//! `null` and the caller (stm.zig `derefFn`) raises `future_thunk_failed`
+//! (precise error attribution across the thread boundary is the D-115
+//! Value-carried exception channel, still PROVISIONAL).
 //!
 //! Per F-009 the implementation is namespace-neutral.
 
@@ -26,24 +30,43 @@ const value_mod = @import("value/value.zig");
 const Value = value_mod.Value;
 const HeapHeader = value_mod.HeapHeader;
 const Runtime = @import("runtime.zig").Runtime;
+const Env = @import("env.zig").Env;
+const env_mod = @import("env.zig");
+const root_set = @import("gc/root_set.zig");
+const io_default = @import("concurrency/io_default.zig");
 const tag_ops = @import("gc/tag_ops.zig");
 const gc_heap_mod = @import("gc/gc_heap.zig");
 const mark_sweep = @import("gc/mark_sweep.zig");
+const SourceLocation = @import("error/info.zig").SourceLocation;
 
 pub const FutureState = enum(u8) {
-    realised_value = 0,
-    realised_error = 1,
+    pending = 0,
+    realised_value = 1,
+    realised_error = 2,
+};
+
+/// The blocking result cell, held off the GC heap (`std.Io.Condition` has
+/// automatic layout, so it cannot live in the `extern` Future). Infra-allocated
+/// (`rt.gpa`) at construction, freed by the Future's finaliser. `deref` waits on
+/// `cond`; the worker broadcasts it. Stable address (infra alloc never moves),
+/// so a parked deref'er's wait target is valid for the cell's lifetime.
+const FutureCell = struct {
+    mutex: std.Io.Mutex = .init,
+    cond: std.Io.Condition = .init,
 };
 
 pub const Future = extern struct {
     header: HeapHeader,
-    state: FutureState = .realised_value,
-    _pad: [5]u8 = .{ 0, 0, 0, 0, 0 },
-    /// Cached value (when state == .realised_value) or the error
-    /// signal Value (when state == .realised_error). Re-raise is the
-    /// caller's job — deref(future) returns either the value or a
-    /// null-and-state-error-signal for the catalog raise.
+    /// Realisation state; read/written ONLY under `cell.mutex`.
+    state: FutureState = .pending,
+    _pad: [7]u8 = @splat(0),
+    /// Result value (when `state == .realised_value`); `.nil_val` otherwise.
     cached: Value = .nil_val,
+    /// The 0-arg thunk the worker runs; traced while `pending`.
+    thunk: Value = .nil_val,
+    rt: *Runtime,
+    env: *Env,
+    cell: *FutureCell,
 
     comptime {
         std.debug.assert(@alignOf(Future) >= 8);
@@ -51,57 +74,122 @@ pub const Future = extern struct {
     }
 };
 
-/// Eager construction: call the thunk now via `rt.vtable.callFn`,
-/// stash the result. If the thunk raises a `ClojureWasmError`-shape
-/// error the original error tag is preserved (the side-channel
-/// `error_mod` carries the message for the eventual re-raise at
-/// deref time); we stash a marker value (`.nil_val`) and set
-/// state = `.realised_error`. Today re-raise lands as a fresh
-/// `future_thunk_failed` raise (PROVISIONAL — message attribution
-/// loses precision until Phase B lands the Value-carried
-/// exception channel D-115).
-pub fn alloc(rt: *Runtime, env: anytype, thunk: Value, loc: anytype) !Value {
-    const f = try rt.gc.alloc(Future);
-    f.* = .{ .header = HeapHeader.init(.future) };
+/// Spawn a worker thread to run `thunk`; return a pending Future. `loc` is
+/// accepted for surface symmetry but unused — a thrown thunk is caught on the
+/// worker and re-raised at deref time with a default location (D-115).
+pub fn alloc(rt: *Runtime, env: *Env, thunk: Value, loc: SourceLocation) !Value {
+    _ = loc;
+    const cell = try rt.gpa.create(FutureCell);
+    cell.* = .{};
+    const f = rt.gc.alloc(Future) catch |e| {
+        // No Future to own the cell yet → free it here. Past this point the
+        // Future owns `cell`; the finaliser frees it on sweep, so no other path
+        // frees it (a failed pin / spawn just leaves the Future as garbage,
+        // swept later, finaliser-freeing the cell — no double free).
+        rt.gpa.destroy(cell);
+        return e;
+    };
+    f.* = .{
+        .header = HeapHeader.init(.future),
+        .thunk = thunk,
+        .rt = rt,
+        .env = env,
+        .cell = cell,
+    };
     const fut_val = Value.encodeHeapPtr(.future, f);
-    const vtable = rt.vtable orelse return error.InternalError;
-    // PROVISIONAL: thunk-error attribution loses precision until the Value-carried exception channel lands [refs: D-115, feature_deps.yaml#runtime/future/error_value_channel]
-    if (vtable.callFn(rt, env, thunk, &.{}, loc)) |result| {
-        f.cached = result;
-        f.state = .realised_value;
-    } else |_| {
-        f.cached = .nil_val;
-        f.state = .realised_error;
-    }
+    // Pin so the worker's write target survives even when no deref'er holds it.
+    try rt.gc.pin(fut_val);
+    var t = std.Thread.spawn(.{}, worker, .{f}) catch |e| {
+        _ = rt.gc.unpin(fut_val);
+        return e;
+    };
+    t.detach();
     return fut_val;
+}
+
+/// Worker-thread body: publish roots, run the thunk on the VM, store the result
+/// + wake deref'ers, unpin. Runs on a fresh thread with its own threadlocal GC
+/// slots (no conveyed dynamic bindings yet — binding conveyance is a follow-up).
+fn worker(f: *Future) void {
+    const fut_val = Value.encodeHeapPtr(.future, f);
+    var ctx: root_set.ThreadGcContext = .{
+        .frame_slot = &env_mod.current_frame,
+        .macro_slot = &root_set.macro_root_slot,
+        .eval_frame_slot = &root_set.eval_frame_head,
+        .self_guard_slot = &root_set.gc_self_guard,
+    };
+    const registered = if (root_set.registerThread(&ctx)) |_| true else |_| false;
+    defer if (registered) root_set.unregisterThread(&ctx);
+
+    var result_state: FutureState = .realised_error;
+    var result_value: Value = .nil_val;
+    if (f.rt.vtable) |vt| {
+        if (vt.callFn(f.rt, f.env, f.thunk, &.{}, .{})) |result| {
+            result_state = .realised_value;
+            result_value = result;
+        } else |_| {
+            result_state = .realised_error;
+        }
+    }
+
+    io_default.lockMutex(&f.cell.mutex);
+    f.cached = result_value;
+    f.state = result_state;
+    io_default.condBroadcast(&f.cell.cond);
+    io_default.unlockMutex(&f.cell.mutex);
+    _ = f.rt.gc.unpin(fut_val);
 }
 
 pub fn isFuture(v: Value) bool {
     return v.tag() == .future;
 }
 
-/// `(deref f)` dispatch: return cached value if realised; the
-/// caller (deref primitive) raises `future_thunk_failed` when state
-/// is `.realised_error`.
+/// `(deref f)` — BLOCK until the worker realises the Future, then return the
+/// cached value (`.realised_value`) or `null` (`.realised_error`; the caller
+/// raises `future_thunk_failed`). The block uses the result cell's condition
+/// via the `io_default` singleton (set to the real threaded io in `main`).
 pub fn deref(v: Value) ?Value {
     std.debug.assert(v.tag() == .future);
-    const f = v.decodePtr(*const Future);
-    if (f.state == .realised_value) return f.cached;
-    return null;
+    const f = v.decodePtr(*Future);
+    io_default.lockMutex(&f.cell.mutex);
+    defer io_default.unlockMutex(&f.cell.mutex);
+    while (f.state == .pending) {
+        io_default.condWait(&f.cell.cond, &f.cell.mutex);
+    }
+    return if (f.state == .realised_value) f.cached else null;
 }
 
+/// `(realized? f)` — non-blocking: true iff the worker has finished (value or
+/// error). Reads the state under the mutex.
 pub fn isRealised(v: Value) bool {
-    return v.tag() == .future;
+    std.debug.assert(v.tag() == .future);
+    const f = v.decodePtr(*Future);
+    io_default.lockMutex(&f.cell.mutex);
+    defer io_default.unlockMutex(&f.cell.mutex);
+    return f.state != .pending;
 }
 
 pub fn traceGc(gc_ptr: *anyopaque, header: *HeapHeader) void {
     const gc: *gc_heap_mod.GcHeap = @ptrCast(@alignCast(gc_ptr));
     const f: *Future = @ptrCast(@alignCast(header));
+    // The worker is parked (or exited) during a collect per the safepoint, so
+    // `cached`/`thunk` are not being concurrently written here.
     if (f.cached.heapHeader()) |hdr| mark_sweep.mark(gc, hdr);
+    if (f.thunk.heapHeader()) |hdr| mark_sweep.mark(gc, hdr);
+}
+
+/// Free the off-heap result cell when the Future is swept (no-alloc invariant:
+/// a `destroy`, never an alloc). Reachable only when the Future is unreachable,
+/// so the worker has finished (it unpins before exit) and no deref holds it.
+pub fn finaliseGc(gc_ptr: *anyopaque, header: *HeapHeader) void {
+    const gc: *gc_heap_mod.GcHeap = @ptrCast(@alignCast(gc_ptr));
+    const f: *Future = @ptrCast(@alignCast(header));
+    gc.infra.destroy(f.cell);
 }
 
 pub fn registerGcHooks() void {
     tag_ops.registerTrace(.future, &traceGc);
+    tag_ops.registerFinaliser(.future, &finaliseGc);
 }
 
 const testing = std.testing;
