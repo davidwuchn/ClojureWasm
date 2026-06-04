@@ -5,25 +5,23 @@
 
 ## Resume contract
 
-- **HEAD**: see `git log` (`cw-from-scratch`). Gate green 248/0 (Mac, serial-e2e).
+- **HEAD**: see `git log` (`cw-from-scratch`). Gate green 250/0 (Mac, serial-e2e).
   debt ledger = `.dev/debt.yaml`. Active plan = **ADR-0089 re-cut (A→B→C)**.
-- **First commit on resume MUST be**: **Phase B #6 — `locking`** (then `agent`),
-  continuing the concurrency build. The Phase B CORE is LANDED + gated (see
-  Recently landed): the GC stop-the-world handshake, real-OS-thread
-  `future`/`promise`/`delay`, and the full STM (`dosync`/`ref`/`ref-set`/`alter`/
-  `commute`, single + multi-ref, concurrent-serializable + deadlock-free) all
-  work and are clj-verified. `locking`: `(locking obj body...)` acquires a
-  heap-value monitor (ADR-0009 `lock_state` header bits — NOT a JVM monitor),
-  runs the body, releases (a macro → an acquire/release primitive). `agent`:
-  action queue + the thread pool (send fixed-pool / send-off unbounded) + error
-  mode + `await`. Then the remaining STM refinements (`ensure` #5-v; the
-  snapshot read-point ring walk for read-only multi-ref consistency) and the
-  **#4a' hardening** (the in-txn/future GC-root publication + turning auto-collect
-  ON — both dormant today since nothing fires a collect). rework-OK + test guards
-  (F-002); each src commit gates `--serial-e2e`. Cold-start plan: the STM/
-  real-threading per-task notes (`private/notes/phaseB-5-stm-*.md`,
-  `phaseB-4b-*.md`) + the surveys (`phaseB-4-worker-wireup-survey.md`,
-  `phaseB-5-stm-engine-survey.md`).
+- **First commit on resume MUST be**: **Phase B #6 — agent slice 2: error modes**
+  (`:continue`/`:fail` + `agent-error` + `restart-agent`). The agent FIRST slice
+  (ADR-0093) is landed; an action that throws currently continues silently
+  (`:continue`), but clj's no-handler default is `:fail` — an **F-011 gap** to
+  close (a thrown action must fail the agent + `agent-error` returns the error +
+  `restart-agent` clears it). Then agent watches/validator (with the ADR-0093
+  Alt 2 shared-IRef extraction decision), `await-for`, `send-via`, STM
+  send-deferral, `*agent*`, `shutdown-agents`. The Phase B concurrency PRIMITIVES
+  are otherwise complete + gated (see Recently landed): GC handshake, real-thread
+  `future`/`promise`/`delay`, full STM, `locking` (ADR-0092), atomic
+  atom/volatile/ref, and the agent core — all clj-verified, a ReleaseSafe
+  concurrency-stress step guards the lost-update class. rework-OK + test guards
+  (F-002); each src commit gates `--serial-e2e`. Cold-start: `private/notes/`
+  `phaseB-6-agent.md` + `phaseB-concurrency-atomicity-sweep.md` +
+  `phaseB-6-agent-survey.md`.
 - **Forbidden this session**: turning auto-collect ON before the **#4a'**
   runtime-wide fabrication-window + in-txn-map GC-root audit (collect stays
   explicit/test-triggered; the safepoint + per-thread root publication are wired
@@ -50,18 +48,20 @@ Phase C  Library-driven gap-hunt (was the quality loop) on the concurrency base;
 
 ## Recently landed (git log = SSOT)
 
-**Phase B concurrency CORE COMPLETE** (ADR-0090 Alt B + ADR-0091), all
-clj-verified: (1) **GC stop-the-world handshake** — io_default singleton, global
-alloc-lock, `ThreadGcContext` registry + thread-major `thread_roots` union walk
-(operand-stack `EvalFrame` chain + `gc_self_guard`), `concurrency/safepoint.zig`
-(stopWorld/park/resumeWorld), alloc-prologue park + `collectStopTheWorld`,
-`vm.eval` back-edge poll. (2) **Real OS-thread `future`/`promise`/`delay`** —
-`std.Thread` workers, off-heap `Io.Mutex`/`Io.Condition` result cells
-(`main` wires `io_default.set(init.io)`), blocking deref, thread-safe delay
-memo. (3) **STM** (`concurrency/lock_tx.zig`) — `dosync`/`ref-set`/`alter`/
-`commute`, single + multi-ref, retry + read-point conflict detection +
-id-ordered deadlock-free atomic commit; AD-013 (no-barge). Concurrency exposed +
-fixed a `Runtime.trackHeap` ArrayList race (now Io.Mutex-guarded).
+**Phase B concurrency PRIMITIVES complete** (ADR-0090/91/92/93), all clj-verified
++ a ReleaseSafe `phase16_concurrency_stress.sh` step (loops each invariant ×20,
+catching the rare lost-update class). (1) **GC STW handshake** + thread-major
+`thread_roots` walk + `safepoint.zig`. (2) **Real-thread `future`/`promise`/
+`delay`**. (3) **STM** (`lock_tx.zig`) — `dosync`/`ref-set`/`alter`/`commute`/
+`ensure`, multi-ref, deadlock-free; AD-013. (4) **`locking`** (ADR-0092,
+`object_monitor.zig`) — header `lock_state` spinlock + threadlocal reentrancy +
+safepoint-poll; Option C blocking inflation = D-245. (5) **`agent` first slice**
+(ADR-0093, `agent.zig`) — serial single-drainer handoff, leaf-lock gpa queue,
+latch `await`. **Two real memory-ordering races found + fixed (ReleaseSafe-only,
+Debug masks them)**: the STM `doGet` stale read (now reads under the Ref lock) and
+the atom being non-atomic (`swap!`→CAS-retry, `current`/`compare-and-set!` atomic,
+`swap-vals!`/`reset-vals!` CAS-retry; volatile/ref reads synchronized). D-246 =
+remaining low-freq metadata visibility (atom watches/validator, var root).
 
 ## Open carry-overs (actionable)
 
@@ -71,10 +71,12 @@ fixed a `Runtime.trackHeap` ArrayList race (now Io.Mutex-guarded).
   globs). Memory `claude-rules-edit-permission-block`.
 - **D-243** = 8 re-opened deferrals: host-surface impls D-048/105/106 (Phase C) ·
   bench D-104 · regex/string D-054/056/057 · D-049 (user-owned F-NNN).
-- **D-244** = the GC-handshake checklist; #4b-future/promise/delay landed.
-  Remaining = the **#4a' hardening** (Q1 `gc_self_guard` setters at the
-  fabrication sites + the in-txn-map/future GC-root publication + auto-collect
-  ON) — all dormant while nothing fires a collect.
+- **D-244** = the **#4a' hardening** (the capstone, high-risk): `gc_self_guard`
+  setters at the fabrication sites + GC-root publication for the in-txn maps /
+  future result / agent action-fabrication window + per-thread registration audit
+  (the `locking` safepoint-poll + agent drainer share it) + turning auto-collect
+  ON — all dormant while nothing fires a collect. **D-245** = `locking` Option C
+  blocking-monitor inflation. **D-246** = low-freq concurrency-metadata visibility.
 
 ## Process discipline (SSOT = memory + rules; do NOT re-expand here)
 
@@ -88,10 +90,10 @@ fixed a `Runtime.trackHeap` ArrayList race (now Io.Mutex-guarded).
 
 ## Cold-start reading order (tracked-only)
 
-handover → `private/notes/phaseB-5-stm-iv.md` (latest; STM done + next-task
-cluster) + `phaseB-5-stm-engine-survey.md` (STM algorithm) →
-**`.dev/decisions/0090_phase_b_concurrency_redesign.md`** (§3 STM + Alt B spine) +
-**`0091_operand_stack_root_thread_union.md`** (thread_roots cursor) →
-**`.dev/debt.yaml` D-244** (#4a' remains) + D-242 → ROADMAP §9.2.R/§7 → CLAUDE.md
+handover → `private/notes/phaseB-6-agent.md` (latest; agent + next-task cluster) +
+`phaseB-6-agent-survey.md` → **`.dev/decisions/0093_agent_serial_executor.md`**
+(agent + DA) + **`0092_heap_value_monitor_locking.md`** (locking) +
+**`0090_phase_b_concurrency_redesign.md`** (§3 STM + Alt B spine) →
+**`.dev/debt.yaml` D-244** (#4a' capstone) + D-242 → ROADMAP §9.2.R/§7 → CLAUDE.md
 (§ Project spirit + Autonomous Workflow + The only stop) → `.dev/project_facts.md`
 (F-002/004/005/006/009/011/012) → `.dev/principle.md`.
