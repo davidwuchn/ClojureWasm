@@ -359,11 +359,16 @@ pub threadlocal var print_namespace_maps: bool = true;
 /// Installed by `bootstrap` after `core.clj` defines the vars.
 var print_length_var: ?*const env_mod.Var = null;
 var print_level_var: ?*const env_mod.Var = null;
+/// `*print-namespace-maps*` cached Var (D-222 residual a). Unlike the limits it
+/// has a non-nil root (true); a user `(binding [*print-namespace-maps* false] …)`
+/// disables the compact `#:ns{…}` form.
+var print_namespace_maps_var: ?*const env_mod.Var = null;
 
-/// Install the cached print-limit Var pointers (called once at bootstrap).
-pub fn initPrintLimitVars(len_v: ?*const env_mod.Var, lvl_v: ?*const env_mod.Var) void {
+/// Install the cached print-control Var pointers (called once at bootstrap).
+pub fn initPrintLimitVars(len_v: ?*const env_mod.Var, lvl_v: ?*const env_mod.Var, nsmaps_v: ?*const env_mod.Var) void {
     print_length_var = len_v;
     print_level_var = lvl_v;
+    print_namespace_maps_var = nsmaps_v;
 }
 
 /// Snapshot of the two limits for the duration of one top-level print
@@ -388,6 +393,13 @@ fn snapshotPrintLimits() void {
     print_length_limit = limitFromVar(print_length_var);
     print_level_limit = limitFromVar(print_level_var);
     print_depth = 0;
+    // *print-namespace-maps* (D-222 a): truthy → compact `#:ns{…}`. Root is
+    // true, so the default snapshot keeps today's behaviour; only an explicit
+    // false binding disables it.
+    if (print_namespace_maps_var) |v| {
+        const d = v.deref();
+        print_namespace_maps = !(d.isNil() or (d.tag() == .boolean and !d.asBoolean()));
+    }
 }
 
 /// True iff a `Value.Tag` nests for `*print-level*` purposes (every printed

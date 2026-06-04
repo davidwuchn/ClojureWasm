@@ -30,3 +30,9 @@
 ;;=> "[1 2 3 4 5]"
 (binding [*print-length* 3] (pr-str (vec (range 10))))
 ;;=> "[0 1 2 ...]"
+(binding [*print-namespace-maps* false] (pr-str {:foo/a 1 :foo/b 2}))
+;;=> "{:foo/a 1, :foo/b 2}"
+(binding [*print-namespace-maps* false] (pr-str {:a 1 :b 2}))
+;;=> "{:a 1, :b 2}"
+(binding [*print-namespace-maps* true] (pr-str {:x/a 1 :x/b 2}))
+;;=> "#:x{:a 1, :b 2}"

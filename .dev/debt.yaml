@@ -1063,7 +1063,7 @@ active:
       **The `atom` constructor ignores `:validator` / `:meta` kwargs** — `(atom 0 :validator pos?)` → cljw arity error / clj builds an atom with that validator (and validates the initial value, throwing IllegalStateException if it fails). `atomFn` is arity-1; the explicit `set-validator!` API (D-157, landed) is the primary validator surface, so this is the lower-frequency constructor sugar. Discharge: make `atomFn` variadic, parse `:validator` (→ `atom_mod.allocWith`, validate `init`, throw IllegalStateException on failure) + `:meta` (needs an atom `meta` field — another extern-struct append per ADR-0081's pattern, OR raise unsupported if atom-meta is out of scope). clj-grounded: `(atom -1 :validator pos?)` throws; `(meta (atom 0 :meta {:x 1}))` → {:x 1}. LOW value. Cross-ref D-157 / ADR-0081 / F-011. recall trigger: when atom-meta or the constructor-kwarg form is needed.
     last_reviewed: "2026-06-03"
   - id: "D-222"
-    status: "now (PARTIAL: *print-length*/*print-level* landed bindable via ADR-0088 2026-06-04; residual = readably/nsmaps bindability + infinite-lazy-seq+length termination + sibling vars)"
+    status: "now (PARTIAL: *print-length*/*print-level*/*print-namespace-maps* landed bindable via ADR-0088 2026-06-04; residual = *print-readably* bindability + infinite-lazy-seq+length termination + sibling vars)"
     category: "runtime"
     barrier: |-
       **cljw's print flags were Zig threadlocals, not bindable `^:dynamic`
@@ -1072,10 +1072,13 @@ active:
       entry and snapshots it into the render threadlocal — and used it to land
       `*print-length*` + `*print-level*` as real bindable `^:dynamic` vars (def
       nil = unlimited; truncation + `#`/`...` markers per clj). Residual:
-      (a) **`*print-readably*` (D-185) / `*print-namespace-maps*` (D-219)** are
-      still surface-snapshot-to-fixed-value threadlocals, not yet user-bindable —
-      wire them through the same ADR-0088 cached-Var read so `(binding
-      [*print-namespace-maps* false] (pr-str {:foo/a 1}))` → "{:foo/a 1}".
+      (a) **`*print-namespace-maps*` (D-219) landed bindable 2026-06-04** via the
+      ADR-0088 cached-Var snapshot (`(binding [*print-namespace-maps* false]
+      (pr-str {:foo/a 1}))` → "{:foo/a 1}"; corpus print_control). **`*print-readably*`
+      (D-185)** is still surface-set imperatively by `writeArgsSpaced` (the pr vs
+      print mechanism), so making it bindable needs reconciling "surface sets it"
+      with "user binds it" (clj models print as `(binding [*print-readably* nil]
+      (pr …))`) — a binding-frame push from Zig, not a plain snapshot; deferred.
       (b) **infinite-lazy-seq + `*print-length*` termination**: `printResult`
       deep-realizes lazy seqs BEFORE printing, so `(binding [*print-length* 3]
       (prn (iterate inc 0)))` still hangs in realization (clj prints `(0 1 2 ...)`
