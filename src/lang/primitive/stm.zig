@@ -8,6 +8,7 @@
 //! `dosync` / `alter` / `commute` / `ensure` / `ref-set` — is
 //! Phase B (concurrency); those mutators still raise pending it.
 
+const std = @import("std");
 const Value = @import("../../runtime/value/value.zig").Value;
 const Runtime = @import("../../runtime/runtime.zig").Runtime;
 const env_mod = @import("../../runtime/env.zig");
@@ -17,6 +18,7 @@ const error_catalog = @import("../../runtime/error/catalog.zig");
 const SourceLocation = error_mod.SourceLocation;
 const dispatch = @import("../../runtime/dispatch.zig");
 const ref_mod = @import("../../runtime/stm/ref.zig");
+const lock_tx = @import("../../runtime/concurrency/lock_tx.zig");
 const delay_mod = @import("../../runtime/delay.zig");
 const promise_mod = @import("../../runtime/promise.zig");
 const future_mod = @import("../../runtime/future.zig");
@@ -44,7 +46,9 @@ pub fn derefFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation
     return switch (v.tag()) {
         .atom => atom_mod.current(v),
         .@"volatile" => volatile_mod.current(v),
-        .ref => ref_mod.current(v),
+        // In a transaction, a Ref reads through the in-txn cache (the txn sees
+        // its own writes); outside, it reads the current committed value.
+        .ref => if (lock_tx.current_tx) |tx| lock_tx.doGet(tx, v.decodePtr(*ref_mod.Ref)) else ref_mod.current(v),
         .reduced => reduced_mod.unreduce(v),
         .delay => try delay_mod.force(rt, env, v, loc),
         // Blocks until delivered (Phase B #4b / D-113) — matches JVM Clojure.
@@ -134,6 +138,51 @@ pub fn delayQFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocatio
     return if (args[0].tag() == .delay) Value.true_val else Value.false_val;
 }
 
+fn requireRef(name: []const u8, v: Value, loc: SourceLocation) !void {
+    if (!ref_mod.isRef(v)) {
+        return error_catalog.raise(.type_arg_invalid, loc, .{
+            .fn_name = name,
+            .expected = "ref",
+            .actual = @tagName(v.tag()),
+        });
+    }
+}
+
+/// `(__run-in-transaction thunk)` — the `dosync` macro's expansion target;
+/// runs the 0-arg thunk inside an STM transaction (Phase B #5).
+pub fn runInTransactionFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    try error_catalog.checkArity("dosync", args, 1, loc);
+    return lock_tx.runInTransaction(rt, env, args[0], loc);
+}
+
+/// `(ref-set r v)` — set a Ref's in-transaction value. Must run inside a
+/// `dosync`; returns the new value.
+pub fn refSetFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = rt;
+    _ = env;
+    try error_catalog.checkArity("ref-set", args, 2, loc);
+    try requireRef("ref-set", args[0], loc);
+    const tx = lock_tx.current_tx orelse
+        return error_catalog.raise(.stm_no_transaction, loc, .{ .name = "ref-set" });
+    return lock_tx.doSet(tx, args[0].decodePtr(*ref_mod.Ref), args[1]);
+}
+
+/// `(alter r f & args)` — in-transaction `(ref-set r (apply f (deref r) args))`.
+pub fn alterFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    try error_catalog.checkArityMin("alter", args, 2, loc);
+    try requireRef("alter", args[0], loc);
+    const tx = lock_tx.current_tx orelse
+        return error_catalog.raise(.stm_no_transaction, loc, .{ .name = "alter" });
+    const ref = args[0].decodePtr(*ref_mod.Ref);
+    var call_args: std.ArrayList(Value) = .empty;
+    defer call_args.deinit(rt.gpa);
+    try call_args.append(rt.gpa, lock_tx.doGet(tx, ref));
+    try call_args.appendSlice(rt.gpa, args[2..]);
+    const vtable = rt.vtable orelse return error.InternalError;
+    const newval = try vtable.callFn(rt, env, args[1], call_args.items, loc);
+    return lock_tx.doSet(tx, ref, newval);
+}
+
 // --- registration ---
 
 const Entry = struct {
@@ -144,6 +193,9 @@ const Entry = struct {
 const ENTRIES = [_]Entry{
     .{ .name = "ref", .f = &refFn },
     .{ .name = "deref", .f = &derefFn },
+    .{ .name = "__run-in-transaction", .f = &runInTransactionFn },
+    .{ .name = "ref-set", .f = &refSetFn },
+    .{ .name = "alter", .f = &alterFn },
     .{ .name = "__delay-create", .f = &delayCreateFn },
     .{ .name = "__future-call", .f = &futureCallFn },
     .{ .name = "promise", .f = &promiseFn },

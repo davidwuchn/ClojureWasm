@@ -142,6 +142,7 @@ pub const Code = enum {
     defmacro_arity_invalid,
     macro_var_not_callable,
     future_thunk_failed,
+    stm_no_transaction,
     catch_class_unknown,
     class_name_unknown,
     catch_binding_not_symbol,
@@ -703,6 +704,11 @@ pub fn entry(comptime code: Code) Entry {
             .kind = .not_implemented,
             .phase = .eval,
             .template = "deref of a future whose body raised — the original error is not yet re-raised at deref time (Phase 15.1 / D-115)",
+        },
+        .stm_no_transaction => .{
+            .kind = .value_error,
+            .phase = .eval,
+            .template = "{[name]s} must be called inside a (dosync ...) transaction",
         },
         .catch_class_unknown => .{
             .kind = .name_error,

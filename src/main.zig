@@ -99,6 +99,7 @@ test {
     _ = @import("runtime/gc/root_set.zig");
     _ = @import("runtime/concurrency/io_default.zig");
     _ = @import("runtime/concurrency/safepoint.zig");
+    _ = @import("runtime/concurrency/lock_tx.zig");
     _ = @import("runtime/value/heap_tag.zig");
     _ = @import("runtime/value/heap_header.zig");
     _ = @import("runtime/value/nan_box.zig");

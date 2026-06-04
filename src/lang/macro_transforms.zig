@@ -127,6 +127,7 @@ const BOOTSTRAP = [_]Entry{
     .{ .name = "instance?", .expand = expandInstanceQ },
     .{ .name = "delay", .expand = expandDelay },
     .{ .name = "future", .expand = expandFuture },
+    .{ .name = "dosync", .expand = expandDosync },
     .{ .name = "lazy-seq", .expand = expandLazySeq },
     .{ .name = "letfn", .expand = expandLetfn },
 };
@@ -2618,6 +2619,19 @@ fn expandFuture(
 ) macro_dispatch.ExpandError!Form {
     _ = rt;
     return expandThunkWrapper(arena, "__future-call", args, loc);
+}
+
+/// `(dosync body...)` → `(__run-in-transaction (fn* [] body...))` (Phase B #5).
+/// Same thunk-wrap as future/delay; the body runs in an STM transaction on the
+/// calling thread (NOT a spawned worker).
+fn expandDosync(
+    arena: std.mem.Allocator,
+    rt: *Runtime,
+    args: []const Form,
+    loc: SourceLocation,
+) macro_dispatch.ExpandError!Form {
+    _ = rt;
+    return expandThunkWrapper(arena, "__run-in-transaction", args, loc);
 }
 
 // --- lazy-seq — `(lazy-seq body...)` → `(__lazy-seq-create (fn* [] body...))` ---
