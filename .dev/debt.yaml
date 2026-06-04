@@ -766,6 +766,19 @@ active:
       named fn → #_/#? boundary → multi-arity defmacro → IEditableCollection →
       PersistentQueue → empty-body arity → fromString. corpus uuid_from_string
       (3) + 3 e2e (phase14_uuid_literal → 19).
+      **2026-06-04 special-float `str` + NaN equality FIXED** (sweep coresweep9).
+      (1) `(str ##Inf)` → cljw `"##Inf"` / clj `"Infinity"`: `str`/`.toString` of
+      a special float must use Java `Double.toString` (Infinity/-Infinity/NaN),
+      not the readable `##Inf` reader form `pr` uses. Added a `.float` arm to
+      `writeStrValue`. (2) `(= ##NaN ##NaN)` → cljw true / clj false: the
+      identity fast-path (`@intFromEnum` bit-compare) treated bit-identical NaN
+      as equal before the IEEE compare. Excluded NaN from the fast-path in BOTH
+      `valueEqual` (equiv: `(= ##NaN ##NaN)`/`(= [##NaN] [##NaN])`→false) and
+      `keyEqValue` (clj sets/maps use equiv → a NaN key is unfindable:
+      `(contains? #{##NaN} ##NaN)`/`(= {##NaN 1} {##NaN 1})`→false). Normal float
+      keys unaffected (identity). corpus float_special_str_nan (13) + diff case.
+      Remaining coresweep9 DIFFs are intentional (float→f32 = F-005; char 0x1F600
+      = cljw full-codepoint vs clj 16-bit; `%c` errors in both).
       **2026-06-04 instance? interface-membership SWEEP** (big-bang, the Iterable/
       IEditableCollection pattern completed). FIXED too-narrow arms:
       IPersistentMap (+sorted_map), IPersistentSet (+sorted_set),

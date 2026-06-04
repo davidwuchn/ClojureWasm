@@ -261,7 +261,14 @@ fn setEqual(rt: *Runtime, a: Value, b: Value) anyerror!bool {
 /// identity-compared (residual: the recursive / category-aware
 /// `valueEqual` needs `rt`; cross-type vec≡list keys also pending).
 pub fn keyEqValue(a: Value, b: Value) bool {
-    if (@intFromEnum(a) == @intFromEnum(b)) return true;
+    // NaN is never `=` to itself (clj `equiv`), so a NaN key can never be found
+    // even when bit-identical: `(contains? #{##NaN} ##NaN)` → false. Mirrors the
+    // valueEqual identity-fastpath exception. (The `.floating => {}` arm below
+    // then also yields false for the rare `0.0`/`-0.0` non-identical case.)
+    if (@intFromEnum(a) == @intFromEnum(b)) {
+        if (a.tag() == .float and std.math.isNan(a.asFloat())) return false;
+        return true;
+    }
     const ta = a.tag();
     const tb = b.tag();
     // Numeric keys by value, category-gated (D-205, partner of the by-value
@@ -507,8 +514,15 @@ fn seqKeyEq(a: Value, b: Value) bool {
 /// `(= a b)` semantics. See module docstring + ADR-0052.
 pub fn valueEqual(rt: *Runtime, env: *Env, a: Value, b: Value) anyerror!bool {
     // 1. Identity fast path: nil / bool / int / char / builtin_fn /
-    //    interned keyword·symbol / pointer-identical heap.
-    if (@intFromEnum(a) == @intFromEnum(b)) return true;
+    //    interned keyword·symbol / pointer-identical heap. EXCEPTION: a NaN is
+    //    never `=` to itself (IEEE / clj `equiv`: `(= ##NaN ##NaN)` → false),
+    //    even bit-identical — fall through to the IEEE float compare below.
+    //    (Map/set KEY equality keeps NaN-equal via `keyEqValue`, matching clj's
+    //    equals/hash split — `(contains? #{##NaN} ##NaN)` → true.)
+    if (@intFromEnum(a) == @intFromEnum(b)) {
+        if (a.tag() == .float and std.math.isNan(a.asFloat())) return false;
+        return true;
+    }
 
     // 2. Numeric arm, category-gated (F-005).
     const ca = numCat(a);

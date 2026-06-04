@@ -85,6 +85,22 @@ pub fn writeStrValue(rt: *Runtime, env: *env_mod.Env, w: *Writer, v: Value) anye
     switch (v.tag()) {
         .nil => {},
         .string => try w.writeAll(string_collection.asString(v)),
+        // `str`/`.toString` of a special float uses Java `Double.toString`
+        // (`Infinity` / `-Infinity` / `NaN`), NOT the readable `##Inf` reader
+        // form `pr`/`prn` use (D-212-class str↔pr split). Normal floats render
+        // identically under both, so delegate to `printFloat`.
+        .float => {
+            const f = v.asFloat();
+            if (std.math.isNan(f)) {
+                try w.writeAll("NaN");
+            } else if (std.math.isPositiveInf(f)) {
+                try w.writeAll("Infinity");
+            } else if (std.math.isNegativeInf(f)) {
+                try w.writeAll("-Infinity");
+            } else {
+                try printFloat(w, f);
+            }
+        },
         .char => {
             var buf: [4]u8 = undefined;
             const n = std.unicode.utf8Encode(v.asChar(), &buf) catch 0;

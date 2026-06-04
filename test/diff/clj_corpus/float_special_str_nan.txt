@@ -1,0 +1,26 @@
+(str (/ 1.0 0))
+;;=> "Infinity"
+(str (/ -1.0 0))
+;;=> "-Infinity"
+(str (Math/sqrt -1))
+;;=> "NaN"
+(str 1.5)
+;;=> "1.5"
+(str 0.0)
+;;=> "0.0"
+(pr-str (/ 1.0 0))
+;;=> "##Inf"
+(= ##NaN ##NaN)
+;;=> false
+(= [##NaN] [##NaN])
+;;=> false
+(= ##NaN 1.0)
+;;=> false
+(= 1.5 1.5)
+;;=> true
+(contains? #{##NaN} ##NaN)
+;;=> false
+(= {##NaN 1} {##NaN 1})
+;;=> false
+(let [x ##NaN] (= x x))
+;;=> false

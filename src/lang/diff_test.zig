@@ -388,6 +388,16 @@ test "diff: nested if branches" {
 // the e2e + corpus (test/e2e/phase15_persistent_queue.sh +
 // test/diff/clj_corpus/persistent_queue.txt).
 
+test "diff: NaN is not = to itself; special-float str (both backends)" {
+    var f = try Fixture.init(testing.allocator);
+    defer f.deinit();
+    // `(= ##NaN ##NaN)` → false (IEEE / clj equiv) on both backends.
+    try f.check("(if (= (/ 0.0 0.0) (/ 0.0 0.0)) 1 0)", 0);
+    try f.check("(if (= 1.5 1.5) 1 0)", 1);
+    // str of +Inf is "Infinity" (Java toString), len 8.
+    try f.check("(count (str (/ 1.0 0.0)))", 8);
+}
+
 test "diff: def_node" {
     var f = try Fixture.init(testing.allocator);
     defer f.deinit();
