@@ -138,6 +138,33 @@ active:
       thread's chain + the collecting-thread self-guard. #3a is the bounded first
       step; #3b couples to #4 (force-VM worker thunks via `evalChunkErased`).
     last_reviewed: "2026-06-04"
+  - id: "D-245"
+    status: "now (ADR-0092, 2026-06-05) — `locking` LANDED as Option A (header spinlock + threadlocal reentrancy held-set, runtime/concurrency/object_monitor.zig). Correct, reentrant, GC-safe (safepoint-polling spin), clj-result-equivalent (mutual-exclusion e2e = 400). The Option C blocking-monitor inflation is this row."
+    category: "concurrency"
+    quality_floor: "Phase B: locking is the header-spinlock skeleton; a contended waiter spins (wastes a core) rather than parking — clj parks. Result-equivalent (no clj DIFF), but a long/blocking critical section under contention burns a core."
+    barrier: |-
+      **`locking` ships Option A (spinning), not the finished-form Option C
+      (blocking).** ADR-0092 decided Option C (thin→fat inflation) as the
+      finished form and landed Option A as its uncontended fast-path skeleton.
+      Option A's gc_mark-preserving header CAS + safepoint-poll discipline +
+      reentrancy held-set are Option C's fast path VERBATIM, so they carry
+      forward unchanged; Option C only ADDS: (a) `lock_state` 1→2 inflation on
+      contention; (b) an off-heap `Monitor{ Io.Mutex, Io.Condition, owner_tid,
+      recursion_count }` cell allocated/finalised like `FutureCell` (Io.Condition
+      is not extern, so off-heap); (c) a thread-safe side-table `obj-ptr →
+      *Monitor` (stable key under non-moving GC, F-006) with GC-sweep cleanup of
+      dead monitor entries. A contended waiter then BLOCKS (OS-park) instead of
+      spinning — the F-011-clean behaviour when a lock holder itself blocks. ALSO
+      part of this work: the safepoint-poll in the acquire spin is only sound once
+      every cljw-running thread (incl. the main thread) is registered with the
+      safepoint so `park()` accounting is correct — today dormant (auto-collect
+      OFF, `gc_requested` never armed during locking), but it shares the
+      thread-registration audit with the #4a' hardening (D-244). recall trigger:
+      when a real `locking`-under-contention workload shows core-spin, OR when
+      #4a' auto-collect lands (the registration audit is shared). The
+      gc-sweep-integrated side-table is a higher-risk surface — land it in
+      focused, tested steps, not bundled with unrelated work.
+    last_reviewed: "2026-06-05"
   - id: "D-241"
     status: "now (found 2026-06-04 while landing bound-fn/with-bindings) — no clojure.main baseline binding frame, so get-thread-bindings captures only explicitly-bound vars."
     category: "runtime"

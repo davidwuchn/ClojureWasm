@@ -185,3 +185,22 @@ accepted:
       the observable serializability contract the retry-only engine upholds.
     derives_from: "ADR-0090 §3 (MVCC retry-only LockingTransaction) + §4 (no-barge)"
     pin: "test/e2e/phase15_stm_dosync.sh — `dosync_concurrent_serializable` locks 4 threads × 100 `(dosync (alter c inc))` => exactly 400 (the serializable, no-lost-update result the retry-only engine produces under contention)"
+
+  - id: "AD-014"
+    summary: "`(locking x ...)` on an immutable immediate (small int, nil, bool, keyword without a heap header) ERRORS in cljw, where JVM clj locks the boxed value's monitor and runs the body. Only heap objects (those with a HeapHeader) are lockable."
+    why: |-
+      cljw's heap-value monitor (ADR-0092) locks the object's own header word
+      (ADR-0009 lock_state bits). An immutable immediate is NaN-boxed with NO
+      HeapHeader (F-004) — it has no identity word to lock and no shared mutable
+      state to protect, so there is nothing a monitor could guard. JVM clj locks
+      the boxed Long/Boolean/etc.'s intrinsic monitor, which "works" but is a
+      foot-gun: `(locking 5 ...)` and `(locking 5 ...)` on two threads serialise
+      only because `Long.valueOf` happens to cache small longs to the same box —
+      a large long gives distinct boxes and does NOT serialise. cljw rejects the
+      whole class with a clear `locking requires an object with identity` error
+      instead of silently providing fragile, value-dependent serialisation. Real
+      code always locks a mutable object (atom / deftype instance / etc.), which
+      is a heap object and locks fine; only the pathological literal-as-lock
+      pattern hits this. derives_from F-004 (immediates have no header).
+    derives_from: "F-004 (NaN-box: immediates carry no HeapHeader) + ADR-0092 (heap-value monitor)"
+    pin: "test/e2e/phase16_locking.sh — `locking_immediate_errors` locks `(locking 5 42)` => an object-identity error (not the body value JVM clj would return)"
