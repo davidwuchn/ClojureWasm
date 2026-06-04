@@ -73,4 +73,17 @@ case "$out" in
         fail "unknown_method: expected diagnostic, got '$out'" ;;
 esac
 
+# --- Case 7: Thread/sleep (Phase B) — blocks ~millis, returns nil ---
+out=$("$BIN" -e '(Thread/sleep 2)' 2>/dev/null | tail -n 1)
+[[ "$out" == "nil" ]] || fail "thread_sleep: expected nil, got '$out'"
+echo "PASS thread_sleep_nil -> nil"
+
+out=$("$BIN" -e '(let [s (System/currentTimeMillis)] (Thread/sleep 20) (>= (- (System/currentTimeMillis) s) 15))' 2>/dev/null | tail -n 1)
+[[ "$out" == "true" ]] || fail "thread_sleep_timing: expected true (slept >= 15ms), got '$out'"
+echo "PASS thread_sleep_timing -> true"
+
+out=$("$BIN" -e '(Thread/sleep -5)' 2>/dev/null | tail -n 1)
+[[ "$out" == "nil" ]] || fail "thread_sleep_negative: expected nil (no-op), got '$out'"
+echo "PASS thread_sleep_negative -> nil"
+
 echo "ALL PASS phase14_java_static_dispatch"

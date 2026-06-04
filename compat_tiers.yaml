@@ -189,7 +189,15 @@ tiers:
         clojure_peer_vars: []
       - { fqn: "java.lang.Throwable",                    native_ns: "cljw.host.java.lang.Throwable",                    phase: 5 }
       - { fqn: "java.lang.Exception",                    native_ns: "cljw.host.java.lang.Exception",                    phase: 5 }
-      - { fqn: "java.lang.Thread",                       native_ns: "cljw.host.java.lang.Thread",                       phase: 14 }
+      - fqn: java.lang.Thread
+        cljw_ns: cljw.java.lang.Thread
+        keyword: thread
+        tier: A
+        phase: 15
+        files:
+          surface: runtime/java/lang/Thread.zig
+        methods: [sleep]
+        clojure_peer_vars: []
       # java.io
       - fqn: java.io.File
         cljw_ns: cljw.java.io.File
