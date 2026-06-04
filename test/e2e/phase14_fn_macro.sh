@@ -42,13 +42,11 @@ assert_eq 'fn_variadic' "$("$BIN" -e '((fn [x & xs] (count xs)) 1 2 3)')"  '2'
 # --- closure capture ---
 assert_eq 'fn_closure'  "$("$BIN" -e '(((fn [x] (fn [y] (+ x y))) 3) 4)')"  '7'
 
-# --- self-name raises a CLEAR transient error (D-147), not the confusing
-#     fn* "parameter list must be a vector" nor "Unable to resolve 'fn'" ---
-diag=$("$BIN" -e '((fn foo [x] x) 1)' 2>&1 || true)
-assert_contains 'fn_named_clear_error' "$diag" 'not yet supported'
-case "$diag" in
-    *"Unable to resolve symbol: 'fn'"*) fail "fn_named: fn still unresolved ($diag)" ;;
-esac
+# --- named fn binds its name in scope for self-recursion (D-147 landed):
+#     `(fn name [params] body)` lowers to `(letfn* [name (fn <rest>)] name)` ---
+assert_eq 'fn_named_basic'    "$("$BIN" -e '((fn foo [x] x) 1)')"  '1'
+assert_eq 'fn_named_selfrec'  "$("$BIN" -e '((fn f [n] (if (= n 0) 1 (* n (f (dec n))))) 5)')"  '120'
+assert_eq 'fn_named_multi'    "$("$BIN" -e '((fn g ([x] (g x 0)) ([x y] (+ x y))) 7)')"  '7'
 
 echo
 echo "Phase 14 D-145 fn macro e2e: all green."

@@ -1826,6 +1826,23 @@ fn expandFn(
     args: []const Form,
     loc: SourceLocation,
 ) macro_dispatch.ExpandError!Form {
+    // Named fn `(fn name [params] body…)` — bind `name` in scope so the body
+    // can self-recurse, via letfn*: `(letfn* [name (fn <rest>)] name)`. The
+    // inner `(fn …)` re-expands to the anonymous lowering below.
+    if (args.len >= 2 and args[0].data == .symbol) {
+        const name = args[0];
+        var inner_items = try arena.alloc(Form, args.len);
+        inner_items[0] = sym("fn", loc);
+        @memcpy(inner_items[1..], args[1..]);
+        var binding = try arena.alloc(Form, 2);
+        binding[0] = name;
+        binding[1] = try list(arena, inner_items, loc);
+        var letfn_items = try arena.alloc(Form, 3);
+        letfn_items[0] = sym("letfn*", loc);
+        letfn_items[1] = .{ .data = .{ .vector = binding }, .location = loc };
+        letfn_items[2] = name;
+        return list(arena, letfn_items, loc);
+    }
     if (args.len >= 1 and args[0].data == .symbol)
         return error_catalog.raise(.fn_named_not_supported, args[0].location, .{});
 

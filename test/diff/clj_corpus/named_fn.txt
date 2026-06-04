@@ -1,0 +1,8 @@
+((fn f [n] (if (= n 0) 1 (* n (f (dec n))))) 5)
+;;=> 120
+((fn g ([x] (g x 0)) ([x y] (+ x y))) 7)
+;;=> 7
+((fn cnt [xs acc] (if (seq xs) (cnt (rest xs) (inc acc)) acc)) [1 2 3 4] 0)
+;;=> 4
+(map (fn dbl [x] (* 2 x)) [1 2 3])
+;;=> (2 4 6)

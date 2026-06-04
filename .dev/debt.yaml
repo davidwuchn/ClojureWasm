@@ -570,6 +570,14 @@ active:
       name [params] …)` self-reference, medley:87) — cljw's fn rejects the
       optional name ("use defn"); supporting it needs the fn macro to bind the
       name in scope for self-recursion (a letfn-style self-binding).
+      **2026-06-04 named `fn` LANDED**: `(fn name [params] body…)` /
+      `(fn name ([a] …) ([a b] …))` → `(letfn* [name (fn <rest>)] name)` so the
+      body self-recurses via `name`. expandFn now wraps a leading-symbol fn
+      instead of raising. corpus named_fn (4: self-rec factorial / named
+      multi-arity / accumulator / as a map arg). medley advances 87 → **line
+      188: `clojure.lang.PersistentQueue`** — a JVM class ref (cljw has a
+      persistent_queue VALUE but no `clojure.lang.PersistentQueue` class-as-value
+      / `EMPTY` static); a class-as-value extension like the exception classes.
       **2026-06-04 `find-var` + `var?` LANDED**: `(find-var 'ns/name)` → the Var
       (or nil; ns must exist) via env.findNs+resolve; `(var? x)` → `.var_ref` tag.
       corpus find_var_predicate (8). NOTE `bound?`/`defonce` are DEFERRED: cljw's
