@@ -36,6 +36,7 @@ const heap_header = @import("../value/heap_header.zig");
 const HeapHeader = heap_header.HeapHeader;
 const error_catalog = @import("../error/catalog.zig");
 const SourceLocation = @import("../error/info.zig").SourceLocation;
+const safepoint = @import("safepoint.zig");
 
 /// Bounded retry count for a conflicting transaction (clj `RETRY_LIMIT`).
 const RETRY_LIMIT: u32 = 10000;
@@ -150,7 +151,13 @@ pub fn doGet(tx: *LockingTransaction, ref: *Ref) Value {
     // synchronizes-with the last committer's release, so we read the value the
     // conflict check validates against. (A write-set ref is already in `vals`
     // above, so commit-time replay never re-locks a held ref here.)
-    while (!ref.lock.tryLock()) std.atomic.spinLoopHint();
+    while (!ref.lock.tryLock()) {
+        // Yield to a pending stop-the-world collect (the object_monitor spin
+        // discipline): a thread spinning on a contended Ref lock must still reach
+        // a safepoint, or `stopWorld` waits for a park that never comes.
+        if (safepoint.gc_requested.load(.acquire)) safepoint.park();
+        std.atomic.spinLoopHint();
+    }
     defer ref.lock.unlock();
     return ref.tvals.val;
 }
@@ -230,7 +237,12 @@ fn commit(rt: *Runtime, env: *Env, tx: *LockingTransaction, loc: SourceLocation)
         }
     }
     for (locked.items) |ref| {
-        while (!ref.lock.tryLock()) std.atomic.spinLoopHint();
+        while (!ref.lock.tryLock()) {
+            // Same safepoint-yield as doGet: the commit-time lock acquisition must
+            // not starve a pending collect.
+            if (safepoint.gc_requested.load(.acquire)) safepoint.park();
+            std.atomic.spinLoopHint();
+        }
         held += 1;
         if ((tx.sets.contains(ref) or tx.ensures.contains(ref)) and ref.tvals.point > tx.read_point)
             return error.StmRetry;

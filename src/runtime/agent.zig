@@ -155,8 +155,19 @@ fn drainer(a: *Agent) void {
         .eval_frame_slot = &root_set.eval_frame_head,
         .self_guard_slot = &root_set.gc_self_guard,
     };
-    const registered = if (root_set.registerThread(&ctx)) |_| true else |_| false;
-    defer if (registered) root_set.unregisterThread(&ctx);
+    // Must NOT drain while unregistered: an unregistered worker's operand stack
+    // is invisible to the mark phase, so a concurrent collect (when auto-collect
+    // turns ON) would sweep objects live only on this thread → use-after-free. On
+    // registration failure (worker table full), release the drainer slot + unpin;
+    // the queued actions stay for the next send-triggered drainer.
+    root_set.registerThread(&ctx) catch {
+        io_default.lockMutex(&a.cell.mutex);
+        a.cell.draining = false;
+        io_default.unlockMutex(&a.cell.mutex);
+        _ = a.rt.gc.unpin(agent_val);
+        return;
+    };
+    defer root_set.unregisterThread(&ctx);
 
     while (true) {
         // Pop the next action (or finish) under the leaf lock — no alloc, no park.
