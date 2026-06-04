@@ -143,6 +143,7 @@ pub const Code = enum {
     macro_var_not_callable,
     future_thunk_failed,
     stm_no_transaction,
+    stm_retry_limit,
     catch_class_unknown,
     class_name_unknown,
     catch_binding_not_symbol,
@@ -709,6 +710,11 @@ pub fn entry(comptime code: Code) Entry {
             .kind = .value_error,
             .phase = .eval,
             .template = "{[name]s} must be called inside a (dosync ...) transaction",
+        },
+        .stm_retry_limit => .{
+            .kind = .value_error,
+            .phase = .eval,
+            .template = "transaction failed after reaching the retry limit (too much contention)",
         },
         .catch_class_unknown => .{
             .kind = .name_error,

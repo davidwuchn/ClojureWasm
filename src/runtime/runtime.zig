@@ -22,6 +22,7 @@
 //! leave the userdata pointer dangling after a copy.
 
 const std = @import("std");
+const io_default = @import("concurrency/io_default.zig");
 const KeywordInterner = @import("keyword.zig").KeywordInterner;
 const SymbolInterner = @import("symbol.zig").SymbolInterner;
 const dispatch = @import("dispatch.zig");
@@ -136,6 +137,10 @@ pub const Runtime = struct {
     /// closure_bindings + bytecode side-tables that stay gpa-owned
     /// (the Function struct itself is GC-managed).
     heap_objects: std.ArrayList(HeapEntry) = .empty,
+    /// Guards `heap_objects` appends — Phase-B worker threads allocate Functions
+    /// (e.g. `dosync`/`future` thunk closures) concurrently, and the backing
+    /// ArrayList grow is not thread-safe without this (D-244 real-threading).
+    heap_objects_mutex: std.Io.Mutex = .init,
 
     /// Mark-sweep GC heap (ADR-0028 + F-006). Inline field — every
     /// Runtime carries one; the empty `GcHeap` is ~40 bytes of null
@@ -310,7 +315,10 @@ pub const Runtime = struct {
     };
 
     /// Track a heap-allocated object so `Runtime.deinit` will free it.
+    /// Thread-safe: concurrent worker threads append here (closure allocation).
     pub fn trackHeap(self: *Runtime, entry: HeapEntry) !void {
+        io_default.lockMutex(&self.heap_objects_mutex);
+        defer io_default.unlockMutex(&self.heap_objects_mutex);
         try self.heap_objects.append(self.gpa, entry);
     }
 

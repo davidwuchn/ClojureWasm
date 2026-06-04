@@ -34,7 +34,11 @@ const tval_mod = @import("../stm/tval.zig");
 const TVal = tval_mod.TVal;
 const heap_header = @import("../value/heap_header.zig");
 const HeapHeader = heap_header.HeapHeader;
+const error_catalog = @import("../error/catalog.zig");
 const SourceLocation = @import("../error/info.zig").SourceLocation;
+
+/// Bounded retry count for a conflicting transaction (clj `RETRY_LIMIT`).
+const RETRY_LIMIT: u32 = 10000;
 
 /// Monotonic point counter — `getReadPoint`/`getCommitPoint` both
 /// increment-and-get (clj `lastPoint.incrementAndGet()`), so a read-point and
@@ -74,15 +78,32 @@ pub fn runInTransaction(rt: *Runtime, env: *Env, thunk: Value, loc: SourceLocati
         // Nested — accumulate into the outer transaction, no new commit here.
         return callThunk(rt, env, thunk, loc);
     }
-    var tx: LockingTransaction = .{ .read_point = nextPoint(), .gpa = rt.gpa };
+    var tx: LockingTransaction = .{ .read_point = 0, .gpa = rt.gpa };
     defer tx.vals.deinit(rt.gpa);
     defer tx.sets.deinit(rt.gpa);
     current_tx = &tx;
     defer current_tx = null;
 
-    const ret = try callThunk(rt, env, thunk, loc);
-    try commit(rt, &tx);
-    return ret;
+    // Bounded retry loop (clj `run`): each try takes a fresh read-point + clean
+    // maps; a commit-time conflict (a peer committed a newer version after our
+    // snapshot) re-runs the body. Retry-only — no barge (AD-013). A single
+    // thread never conflicts, so this is a one-pass loop there.
+    var attempt: u32 = 0;
+    while (attempt < RETRY_LIMIT) : (attempt += 1) {
+        tx.read_point = nextPoint();
+        tx.vals.clearRetainingCapacity();
+        tx.sets.clearRetainingCapacity();
+        const ret = callThunk(rt, env, thunk, loc) catch |e| {
+            if (e == error.StmRetry) continue;
+            return e; // a real user error propagates out of the transaction
+        };
+        commit(rt, &tx) catch |e| {
+            if (e == error.StmRetry) continue;
+            return e;
+        };
+        return ret;
+    }
+    return error_catalog.raise(.stm_retry_limit, loc, .{});
 }
 
 fn callThunk(rt: *Runtime, env: *Env, thunk: Value, loc: SourceLocation) !Value {
@@ -107,12 +128,12 @@ pub fn doSet(tx: *LockingTransaction, ref: *Ref, val: Value) !Value {
     return val;
 }
 
-/// Commit: for each written Ref, take its lock, stamp a commit-point, and
-/// splice/recycle a new TVal into its history ring. (#5-i: no multi-ref lock
-/// ordering — single-thread cannot deadlock; #5-ii adds id-ordered acquisition
-/// + #5-iii validation/retry.)
+/// Commit: for each written Ref, take its lock, check the read-point conflict,
+/// stamp a commit-point, and splice/recycle a new TVal into its history ring.
+/// `error.StmRetry` (a peer committed after our snapshot) re-runs the whole
+/// transaction. (#5-iii: single-ref conflict + retry. Multi-ref needs
+/// id-ordered all-locks-before-any-write atomicity — #5-ii.)
 fn commit(rt: *Runtime, tx: *LockingTransaction) !void {
-    const commit_point = nextPoint();
     var it = tx.vals.iterator();
     while (it.next()) |entry| {
         const ref = entry.key_ptr.*;
@@ -120,6 +141,10 @@ fn commit(rt: *Runtime, tx: *LockingTransaction) !void {
         const newval = entry.value_ptr.*;
         while (!ref.lock.tryLock()) std.atomic.spinLoopHint();
         defer ref.lock.unlock();
+        // Read-point conflict: the ref's latest committed version is newer than
+        // our snapshot ⇒ a peer committed after we read ⇒ our write is stale.
+        if (ref.tvals.point > tx.read_point) return error.StmRetry;
+        const commit_point = nextPoint();
         try spliceCommit(rt, ref, newval, commit_point);
     }
 }

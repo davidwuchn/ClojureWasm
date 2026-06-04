@@ -167,3 +167,21 @@ accepted:
       `str` and `pr-str` of a queue are intentionally identical. ADR-0087.
     derives_from: "ADR-0059 (no-JVM identity hash); ADR-0087 (PersistentQueue)"
     pin: "test/e2e/phase15_persistent_queue.sh — locks `(pr-str (conj EMPTY 1 2 3))` => `#queue (1 2 3)`, empty => `#queue ()`, and the `#queue` reader round-trip"
+
+  - id: "AD-013"
+    summary: "cljw STM is retry-only — it drops JVM's `barge` (a running transaction preempting a younger conflicting one). Result-equivalent: serializability holds; only contention fairness/throughput differ (unobservable in the committed state)."
+    why: |-
+      JVM's LockingTransaction resolves a write-write conflict by `barge`: an
+      older transaction can kill (`barge`) a younger one to avoid livelock under
+      heavy contention. cljw (ADR-0090 §3/§4) is retry-only — a conflicting
+      transaction re-runs with a fresh read-point, bounded by a retry limit, and
+      never barges a peer. The COMMITTED RESULT is identical (both produce a
+      serializable history — e.g. 4 threads each doing 100 `(dosync (alter c
+      inc))` both end at exactly 400, no lost updates); the divergence is purely
+      in contention scheduling (which transaction wins a race, and worst-case
+      latency under pathological contention), which is NOT observable in the
+      final committed state. So there is no result DIFF to chase — this records
+      the internal algorithm divergence ADR-0090 reserved, with a pin asserting
+      the observable serializability contract the retry-only engine upholds.
+    derives_from: "ADR-0090 §3 (MVCC retry-only LockingTransaction) + §4 (no-barge)"
+    pin: "test/e2e/phase15_stm_dosync.sh — `dosync_concurrent_serializable` locks 4 threads × 100 `(dosync (alter c inc))` => exactly 400 (the serializable, no-lost-update result the retry-only engine produces under contention)"

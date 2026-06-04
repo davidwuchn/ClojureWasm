@@ -42,6 +42,14 @@ assert_eq 'dosync_in_txn_read' "$got" '6'
 got=$("$BIN" -e '(let [r (ref 0)] (dosync (alter r inc) (dosync (alter r inc))) @r)' 2>/dev/null | last_line)
 assert_eq 'dosync_nested' "$got" '2'
 
+# --- Concurrency: serializability under contention (#5-iii, AD-013 pin) ---
+# 4 future threads each run 100 (dosync (alter c inc)) on the SAME ref. With
+# retry-on-conflict (no barge — AD-013), every increment lands: no lost updates,
+# so the counter is exactly 400. Without the read-point conflict check + retry,
+# concurrent commits would clobber each other and this would be < 400.
+got=$("$BIN" -e '(let [c (ref 0)] (run! deref (mapv (fn [_] (future (dotimes [_ 100] (dosync (alter c inc))))) (range 4))) @c)' 2>/dev/null | last_line)
+assert_eq 'dosync_concurrent_serializable' "$got" '400'
+
 # alter / ref-set outside a transaction is a clean error, not a crash.
 diag=$("$BIN" -e '(alter (ref 0) inc)' 2>&1 || true)
 case "$diag" in
