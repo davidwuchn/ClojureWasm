@@ -7,20 +7,25 @@
 
 - **HEAD**: see `git log` (`cw-from-scratch`). Gate green 247/0 (Mac, serial-e2e).
   debt ledger = `.dev/debt.yaml`. Active plan = **ADR-0089 re-cut (A→B→C)**.
-- **First commit on resume MUST be**: continue **Phase B IMPLEMENTATION (D-242)**
-  — Phase A + the Phase B entry ceremony are COMPLETE; the §7-redesign is
-  **ADR-0090** (6595b6c7): io_default-singleton `std.Io` sync + `ThreadGcContext`
-  root-publication GC handshake + MVCC retry-only STM, spike-validated on pinned
-  0.16. Build order per ADR-0090 §1-7 (**GC handshake lands FIRST — prereq for any
-  real-threading primitive**): (1) re-derive `runtime/concurrency/io_default.zig`
-  (the `std.Io.Mutex`/`Condition` singleton + `lockMutex`/`unlockMutex` wrappers,
-  cljw-clean per `no_copy_from_v1` — v0's `io_default.zig` is the reference) →
-  (2) global heap `Io.Mutex` on the GC allocator via the singleton → (3)
-  `ThreadGcContext` registry + union root walk → (4) real `future`/`promise`/
-  `delay` bodies + binding-conveyor → (5) STM transaction engine (`lock_tx.zig`)
-  → (6) `agent`/`locking`. rework-OK + test guards (F-002); each src commit takes
-  the full `--serial-e2e` gate (gate-cadence hook); concurrency stress test +
-  dual-backend (F-012). Spike: `private/spike_concurrency_0.16.zig` (gitignored).
+- **First commit on resume MUST be**: continue **Phase B IMPLEMENTATION (D-242)**.
+  Phase A + the Phase B entry ceremony + the GC-safety re-analysis are COMPLETE
+  (the entire Phase B *design* is decided + DA-fork-validated). Build order per
+  ADR-0090: ✅(1) `runtime/concurrency/io_default.zig` (a68398b7) · ✅(2) global heap
+  `Io.Mutex` on the GC allocator (3200181b) · **➡(3) GC root-publication
+  handshake — NEXT, design DECIDED**. ADR-0090's "no-safepoint" was found
+  insufficient for mid-`eval` workers (operand stack un-rooted); **D-244 decided
+  Alternative B** (ADR-0090 "D-244 decision" section + DA-fork): alloc-boundary
+  safepoint + per-eval-frame chain publication + force-VM worker thunks
+  (`evalChunkErased`) + collecting-thread self-guard. **Implement #3a first** per
+  the D-244 barrier checklist (registry IN `root_set.zig` — NOT a separate module,
+  cycle; `ThreadGcContext{frame_slot,macro_slot}`; only WORKER threads register,
+  main reads own TLS; FOLD the registry pass into the current_frame/macro_root_slot
+  cursors, do NOT add an 11th `RootSource` — ADR-0028 §5). #3a is runtime-inert
+  today (empty registry = current behaviour). Then ➡(3b) safepoint + operand-frame
+  publication → (4) real `future`/`promise`/`delay` + binding-conveyor → (5) STM
+  engine (`lock_tx.zig`) → (6) `agent`/`locking`. rework-OK + test guards (F-002);
+  each src commit takes the full `--serial-e2e` gate (additive may batch ≤5 per
+  gate-cadence). Spike: `private/spike_concurrency_0.16.zig` (gitignored).
 - **Forbidden this session**: minting a new F-NNN to restate F-011 (the F-013 idea
   was DROPPED — ADR-0089); minting **AD-013 in the ledger before its pin test
   exists** (`check_accepted_divergences.sh` enforces pin-existence — AD-013 lands
