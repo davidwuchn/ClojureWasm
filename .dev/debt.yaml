@@ -363,12 +363,28 @@ active:
     last_reviewed: "2026-06-03"
   - id: "D-232"
     status: |-
-      now (validation campaign, opened 2026-06-03) — running real / upstream
-      `clojure.test` suites on cljw to find real bugs. `:use`/`:refer :all` (the
-      prerequisite) LANDED 2026-06-03 (refer_all flag on RequireNode/LibspecEntry,
-      both backends, `(:use …)` ns directive). First finding: upstream
-      `clojure.test-clojure.keywords` loads off `-cp ~/Documents/OSS/clojure/test`
-      then hits `find-keyword` unresolved (a real clojure.core gap).
+      now (validation campaign, opened 2026-06-03) — find real cljw↔clj bugs via
+      three modes: upstream `clojure.test` suites, real-world lib loading
+      (clojure-corpus), and a clojure.core differential sweep. STATE 2026-06-04:
+      broadly validated. The differential-sweep campaign is COMPREHENSIVE
+      (10 batches / ~280 idioms) and the lib drain reached the deep-wall frontier;
+      **medley + potpuri + data.json + data.csv + combinatorics fully load+run**.
+      ~8 real bugs found+fixed this run (loop sequential binding, #_/#? skip
+      boundary, string/split empty-pattern, lazy-seq non-seq body, cons-over-lazy
+      equality, reduce-kv-on-vector, str-of-special-float, NaN equiv) + many
+      features (reader #?/#?@/#^/(?i), named fn, multi-arity defmacro, def
+      docstring, empty-body arity, alter-meta!, *clojure-version*/*unchecked-math*,
+      Iterable + full instance? interface surface, IEditableCollection, &form/&env
+      ADR-0086, PersistentQueue ADR-0087, UUID/fromString). FRONTIER (all
+      deep/structural or owner-gated — see the dated drain-log barrier below for
+      detail; the git history is the authoritative record): clojure.java.io /
+      clojure.core.protocols / clojure.core.reducers / clojure.repl / clojure.datafy
+      (whole missing namespaces), deftype-heavy libs (clj-tuple), arrays/F-004 +
+      *out*/D-238 (OWNER-GATED — do NOT cold-seize), with-meta-on-symbols
+      (ADR-0037), &env-on-namespace (D-239), regex (?i:…)/lookaround/backrefs,
+      JVM classes (Thread). NOTE: the barrier below is a verbose per-landing log
+      (each entry cites its corpus/ADR/AD); it intentionally trades concision for
+      an auditable campaign record.
       **2026-06-04 math.clj DRAINED CLEAN** (41 tests / 262 assertions, 0
       fail/0 error): completed clojure.math to JVM parity (11 new host
       `Math/*` methods — ulp/scalb/nextAfter/nextUp/nextDown/getExponent/
