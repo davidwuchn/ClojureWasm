@@ -404,6 +404,14 @@ test "diff: defmacro docstring/attr-map reaches Var.meta (D-187)" {
     try f.check("(do (defmacro dmm \"d\" {:k 8} [x] x) (:k (meta (var dmm))))", 8);
 }
 
+test "diff: defmacro &env (ADR-0086) sees lexical locals on both backends" {
+    var f = try Fixture.init(testing.allocator);
+    defer f.deinit();
+    // Macro expansion is analyze-time (shared), but the expanded form is
+    // compiled by each backend — confirm the &env-driven expansion agrees.
+    try f.check("(defmacro dec2 [] (count &env))\n(let* [a 1 b 2] (dec2))", 2);
+}
+
 test "diff: ^meta on collection literal lowers to with-meta (D-186)" {
     var f = try Fixture.init(testing.allocator);
     defer f.deinit();

@@ -308,6 +308,17 @@ pub fn analyzeStaticMethodCall(
 /// implicit `&form` / `&env` — none of the Tier-A test corpora
 /// (clojure.test/deftest / are / testing / clojure.core/declare)
 /// introspect them; threading both is filed as D-099-followup.
+/// Prepend the implicit `&form &env` symbols to a `defmacro` arity's param
+/// vector (ADR-0086). `params_vec.data` is `.vector`.
+fn prependImplicitMacroParams(arena: std.mem.Allocator, params_vec: Form, loc: error_catalog.SourceLocation) AnalyzeError!Form {
+    const orig = params_vec.data.vector;
+    const out = try arena.alloc(Form, orig.len + 2);
+    out[0] = macro_dispatch.makeSymbol("&form", loc);
+    out[1] = macro_dispatch.makeSymbol("&env", loc);
+    @memcpy(out[2..], orig);
+    return Form{ .data = .{ .vector = out }, .location = params_vec.location };
+}
+
 pub fn analyzeDefmacro(
     arena: std.mem.Allocator,
     rt: *Runtime,
@@ -391,17 +402,27 @@ pub fn analyzeDefmacro(
 
     // Build the synthetic fn* Form, then analyse it through the regular path
     // so multi-arity / closure / arg checks all ride existing FnNode
-    // infrastructure. Single arity → `(fn* [PARAMS] BODY…)`; multi-arity →
-    // `(fn* ([a] …) ([a b] …))` (the clause lists passed straight through).
+    // infrastructure. Every arity's param vector is prefixed with the implicit
+    // `&form &env` (ADR-0086) so the macro body can introspect its call form +
+    // lexical environment; `expandIfMacro` prepends the matching two Values.
+    // Single arity → `(fn* [&form &env PARAMS…] BODY…)`; multi-arity →
+    // `(fn* ([&form &env a] …) …)`.
     const fn_form: Form = if (multi_arity) blk: {
-        const fn_items = try arena.alloc(Form, 1 + (items.len - head));
+        const clauses = items[head..];
+        const fn_items = try arena.alloc(Form, 1 + clauses.len);
         fn_items[0] = macro_dispatch.makeSymbol("fn*", form.location);
-        @memcpy(fn_items[1..], items[head..]);
+        for (clauses, 0..) |c, j| {
+            const sub = c.data.list; // ([params] body…) — validated above
+            const new_clause = try arena.alloc(Form, sub.len);
+            new_clause[0] = try prependImplicitMacroParams(arena, sub[0], form.location);
+            @memcpy(new_clause[1..], sub[1..]);
+            fn_items[1 + j] = .{ .data = .{ .list = new_clause }, .location = c.location };
+        }
         break :blk .{ .data = .{ .list = fn_items }, .location = form.location };
     } else blk: {
         const fn_items = try arena.alloc(Form, 2 + (items.len - head - 1));
         fn_items[0] = macro_dispatch.makeSymbol("fn*", form.location);
-        fn_items[1] = items[head]; // params vector
+        fn_items[1] = try prependImplicitMacroParams(arena, items[head], form.location);
         @memcpy(fn_items[2..], items[head + 1 ..]);
         break :blk .{ .data = .{ .list = fn_items }, .location = form.location };
     };

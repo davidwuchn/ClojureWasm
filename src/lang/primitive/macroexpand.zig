@@ -46,7 +46,9 @@ fn expandOneLevel(arena: std.mem.Allocator, rt: *Runtime, env: *Env, form: Form,
     const var_ptr = resolveHead(env, head) orelse return null;
     if (!var_ptr.flags.macro_) return null;
     const table: *const macro_dispatch.Table = @ptrCast(@alignCast(rt.macro_table orelse return null));
-    return try macro_dispatch.expandIfMacro(arena, rt, env, table, var_ptr, head.name, items[1..], loc);
+    // `(macroexpand form)` is a runtime call with no lexical scope, so `&env`
+    // is `{}`; `&form` is the form being expanded (ADR-0086).
+    return try macro_dispatch.expandIfMacro(arena, rt, env, table, var_ptr, head.name, items[1..], form, null, loc);
 }
 
 /// `(macroexpand-1 form)` — expand the macro head once; return `form` unchanged

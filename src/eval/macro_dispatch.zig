@@ -32,6 +32,7 @@ const Var = env_mod.Var;
 const error_mod = @import("../runtime/error/info.zig");
 const error_catalog = @import("../runtime/error/catalog.zig");
 const SourceLocation = error_mod.SourceLocation;
+const list_collection = @import("../runtime/collection/list.zig");
 
 /// Signature of a Zig-level macro transform. Receives the call-site
 /// argument forms (the head symbol has already been stripped) and
@@ -98,6 +99,8 @@ pub fn expandIfMacro(
     head_var: *const Var,
     head_name: []const u8,
     args: []const Form,
+    call_form: Form,
+    scope: ?*const @import("analyzer/analyzer.zig").Scope,
     loc: SourceLocation,
 ) ExpandError!?Form {
     if (!head_var.flags.macro_) return null;
@@ -107,19 +110,27 @@ pub fn expandIfMacro(
     // Row 14.6 (D-099): user-defined `defmacro` fallback. The macro
     // Var's root must be a callable (`fn_val` / `builtin_fn`); we run
     // the args through `formToValue` → callFn → `valueToForm` to round-
-    // trip the call through the runtime's evaluator. Implicit `&form`
-    // / `&env` are NOT prepended (cf. JVM Clojure) — Tier-A test
-    // corpora do not introspect them; threading both is D-099-followup.
+    // trip the call through the runtime's evaluator. The implicit
+    // `&form` / `&env` Values are prepended (ADR-0086): the lowered
+    // macro fn's params are `[&form &env & user-params]`.
     const analyzer_mod = @import("analyzer/analyzer.zig");
     const macro_fn = head_var.deref();
     if (!isCallable(macro_fn))
         return error_catalog.raise(.macro_var_not_callable, loc, .{ .name = head_name });
-    // Convert Form args → Value args. The analyzer's per-call arena
-    // owns the resulting Value graph; macro args are simple (no
-    // closure capture) so passing rt's GC heap is correct.
-    var value_args = try arena.alloc(Value, args.len);
+    // `&form` = the call form as a Value, with `{:line :column}` meta
+    // synthesized from the call site (cljw Forms are metadata-less per
+    // ADR-0037, so the meta is attached to the list Value here).
+    const amp_form = try buildAmpForm(arena, rt, env, call_form, loc);
+    // `&env` = a map of the in-scope local symbols (key = value = symbol;
+    // no LocalBinding class per ADR-0059); `{}` at top level.
+    const amp_env = try buildAmpEnv(arena, rt, env, scope, loc);
+    // [&form &env & user-args]. The analyzer's per-call arena owns the
+    // slice; the Values themselves live on rt's GC heap.
+    var value_args = try arena.alloc(Value, args.len + 2);
+    value_args[0] = amp_form;
+    value_args[1] = amp_env;
     for (args, 0..) |arg, i| {
-        value_args[i] = try analyzer_mod.formToValue(rt, env, arg);
+        value_args[i + 2] = try analyzer_mod.formToValue(rt, env, arg);
     }
     const vtable = rt.vtable orelse
         return error_catalog.raiseInternal(loc, "expandIfMacro: rt.vtable not installed");
@@ -130,6 +141,51 @@ pub fn expandIfMacro(
     const result_val = vtable.callFn(rt, env, macro_fn, value_args, loc) catch |e|
         return narrowCallFnError(e, loc);
     return analyzer_mod.valueToForm(arena, rt, env, result_val, loc) catch |e| return narrowCallFnError(e, loc);
+}
+
+/// Build the implicit `&form` Value (ADR-0086): the macro call form as a list
+/// Value carrying `{:line :column}` metadata synthesized from the call site
+/// (cljw list Values carry meta even though symbols do not — ADR-0037).
+fn buildAmpForm(arena: std.mem.Allocator, rt: *Runtime, env: *Env, call_form: Form, loc: SourceLocation) ExpandError!Value {
+    const analyzer_mod = @import("analyzer/analyzer.zig");
+    const form_val = try analyzer_mod.formToValue(rt, env, call_form);
+    const meta_pairs = try arena.alloc(Form, 4);
+    meta_pairs[0] = .{ .data = .{ .keyword = .{ .name = "line" } }, .location = loc };
+    meta_pairs[1] = .{ .data = .{ .integer = @intCast(call_form.location.line) }, .location = loc };
+    meta_pairs[2] = .{ .data = .{ .keyword = .{ .name = "column" } }, .location = loc };
+    meta_pairs[3] = .{ .data = .{ .integer = @intCast(call_form.location.column) }, .location = loc };
+    const meta_val = try analyzer_mod.formToValue(rt, env, .{ .data = .{ .map = meta_pairs }, .location = loc });
+    if (form_val.tag() == .list)
+        return list_collection.withMeta(rt, form_val, meta_val) catch |e| return narrowCallFnError(e, loc);
+    return form_val;
+}
+
+/// Build the implicit `&env` Value (ADR-0086): a map of the in-scope local
+/// symbols (key = value = the symbol; no LocalBinding class per ADR-0059, and
+/// the JVM value is an opaque non-reproducible `LocalBinding` anyway). `nil`
+/// when there are no in-scope locals (clj-verified: top-level + `(let [] …)`
+/// both yield nil, not `{}`). Keys include destructuring temps, matching JVM
+/// `&env` (oracle-verified) — only the temp NAMES differ (opaque divergence).
+fn buildAmpEnv(arena: std.mem.Allocator, rt: *Runtime, env: *Env, scope: ?*const @import("analyzer/analyzer.zig").Scope, loc: SourceLocation) ExpandError!Value {
+    const analyzer_mod = @import("analyzer/analyzer.zig");
+    const Scope = analyzer_mod.Scope;
+    var seen: std.StringHashMapUnmanaged(void) = .empty;
+    var names: std.ArrayList([]const u8) = .empty;
+    var cur: ?*const Scope = scope;
+    while (cur) |s| : (cur = s.parent) {
+        var it = s.bindings.keyIterator();
+        while (it.next()) |k| {
+            const gop = try seen.getOrPut(arena, k.*);
+            if (!gop.found_existing) try names.append(arena, k.*);
+        }
+    }
+    if (names.items.len == 0) return Value.nil_val;
+    const pairs = try arena.alloc(Form, names.items.len * 2);
+    for (names.items, 0..) |nm, i| {
+        pairs[i * 2] = makeSymbol(nm, loc);
+        pairs[i * 2 + 1] = makeSymbol(nm, loc);
+    }
+    return analyzer_mod.formToValue(rt, env, .{ .data = .{ .map = pairs }, .location = loc });
 }
 
 /// Narrow `anyerror` (from `vtable.callFn`) to the analyzer-facing
@@ -249,6 +305,8 @@ test "expandIfMacro returns null for non-macro Var" {
         &v,
         "ordinary",
         &.{},
+        makeSymbol("ordinary", .{}),
+        null,
         .{},
     );
     try testing.expect(result == null);
@@ -279,6 +337,8 @@ test "expandIfMacro dispatches a registered Zig transform" {
         &v,
         "dummy",
         &.{},
+        makeSymbol("dummy", .{}),
+        null,
         .{},
     );
     try testing.expect(expanded != null);
@@ -314,6 +374,8 @@ test "expandIfMacro raises macro_var_not_callable when root is not a fn" {
         &v,
         "user-defined",
         &.{},
+        makeSymbol("user-defined", .{}),
+        null,
         .{ .file = "<t>", .line = 1, .column = 0 },
     );
     try testing.expectError(error.TypeError, got);

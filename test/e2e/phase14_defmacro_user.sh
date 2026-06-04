@@ -106,5 +106,19 @@ EOF
 )
 assert_eq 'defmacro_multi_arity_doc' "$got" '[:y :n ([t then] [t then else]) "doc"]'
 
+# --- Case 9: implicit &form / &env (ADR-0086) ---
+got=$("$BIN" - <<'EOF' 2>/dev/null | last_line
+(defmacro ec [] (count &env))
+(defmacro hl [s] (contains? &env s))
+(defmacro fc [& xs] (count &form))
+(defmacro mlk [] (contains? (meta &form) :line))
+(defmacro em? [] (map? &env))
+[(let [a 1 b 2 c 3] (ec)) (ec) (let [q 9] (hl q)) (let [q 9] (hl zz)) (fc 10 20 30) (mlk) (em?)]
+EOF
+)
+# clj parity (clj -M /tmp/fe.clj): top-level &env is nil (count 0, map? false),
+# in-let &env is a map; &form carries :line meta; &form count includes the head.
+assert_eq 'defmacro_form_env' "$got" '[3 0 true false 4 true false]'
+
 echo
 echo "Phase 14 row 14.6 defmacro user-dispatch e2e: all green."

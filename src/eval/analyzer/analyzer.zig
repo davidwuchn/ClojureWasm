@@ -645,6 +645,8 @@ fn analyzeList(
                     v_ptr,
                     head.name,
                     items[1..],
+                    form,
+                    scope,
                     form.location,
                 )) |expanded| {
                     return analyze(arena, rt, env, scope, expanded, macro_table);
