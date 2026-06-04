@@ -1,0 +1,16 @@
+(nfirst [[1 2 3] 4])
+;;=> (2 3)
+(nfirst [[1] 2])
+;;=> nil
+(nfirst [])
+;;=> nil
+(prn-str 1 2)
+;;=> "1 2\n"
+(prn-str "a")
+;;=> "\"a\"\n"
+(prn-str)
+;;=> "\n"
+(println-str :a :b)
+;;=> ":a :b\n"
+(println-str "x")
+;;=> "x\n"

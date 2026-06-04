@@ -1149,6 +1149,17 @@
 ;; `(any? x)` → always true (clojure 1.9; the "matches anything" spec pred).
 (def any? (fn* [x] true))
 
+;; `(nfirst x)` → `(next (first x))`.
+(def nfirst (fn* [x] (next (first x))))
+
+;; `(prn-str & xs)` / `(println-str & xs)` → the `prn`/`println` output as a
+;; string (readable / human form + trailing newline), no stdout.
+(def prn-str (fn* [& xs] (str (apply pr-str xs) "\n")))
+(def println-str (fn* [& xs] (str (apply print-str xs) "\n")))
+
+;; `(printf fmt & args)` → print the `format`-ed string (no trailing newline).
+(def printf (fn* [fmt & args] (print (apply format fmt args))))
+
 ;; `(replicate n x)` → a seq of x repeated n times (deprecated alias for
 ;; `(repeat n x)`, kept for compatibility — clj defines it as `(take n (repeat x))`).
 (def replicate

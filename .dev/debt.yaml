@@ -525,6 +525,11 @@ active:
       `ns-imports`, `bound-fn`/`bound-fn*`/`with-bindings` (thread-binding map),
       `tap>`/`add-tap` (tap registry), `memfn`, `enumeration-seq`/`iterator-seq`/
       `line-seq`/`file-seq` (IO seqs).
+      **2026-06-04 nfirst / prn-str / println-str / printf LANDED** (more
+      missing-core, all .clj wrappers over existing fns): nfirst=`(next (first
+      x))`; prn-str/println-str = pr-str/print-str + "\n"; printf = `(print
+      (apply format …))`. corpus print_str_family (8; printf's output can't be
+      corpus-checked until with-out-str/D-238, verified directly).
       **2026-06-04 `find-var` + `var?` LANDED**: `(find-var 'ns/name)` → the Var
       (or nil; ns must exist) via env.findNs+resolve; `(var? x)` → `.var_ref` tag.
       corpus find_var_predicate (8). NOTE `bound?`/`defonce` are DEFERRED: cljw's
@@ -532,7 +537,18 @@ active:
       is indistinguishable from `(def foo nil)`. Faithful `bound?` (and `defonce` =
       def-if-unbound) need an unbound marker — a moderate-structural change
       (DefNode.has_init flag + evalDef on both backends + a Var.bound flag).
-      Recorded as the next bound?/defonce unit. deferred-structural: arrays (aget/aset/
+      Recorded as the next bound?/defonce unit. **2026-06-04 scoped: the
+      resolve-check defonce does NOT work** — cljw's `def` interns its Var at
+      ANALYZE time (forward-decl), so `(when-not (resolve 'name) (def name v))`
+      finds the (interned-but-unbound) var and skips the init. defonce/bound?
+      genuinely need the unbound sentinel: `DefNode.has_init` (analyzeDef sets it
+      from items.len) + a `Var.bound` flag (env.intern sets true; the no-init
+      `(def foo)` path sets false; careful with no-init-on-already-bound = clj
+      no-clobber) + a new VM opcode `op_def_unbound` (op_def's u16 is full: 13-bit
+      name-idx + 3 flag bits, no spare) + both backends + bound? prim + the
+      `(when-not (bound? (var name)) (def name expr))` macro + an ADR-0036 diff
+      case. Moderate-structural on the def hot path — a deliberate unit.
+      deferred-structural: arrays (aget/aset/
       *-array/bytes?/booleans/chars/floats…, F-004), agents/await/commute/ensure/
       dosync/locking (Phase-15 concurrency), gen-class/definterface/proxy/bean/
       memfn (Tier D / JVM), hash-* (AD-009), *dynamic-vars* (D-238 et al).
