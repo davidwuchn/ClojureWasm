@@ -165,6 +165,26 @@ active:
       gc-sweep-integrated side-table is a higher-risk surface — land it in
       focused, tested steps, not bundled with unrelated work.
     last_reviewed: "2026-06-05"
+  - id: "D-246"
+    status: "now (2026-06-05, found while sweeping siblings of the doGet/atom lost-update races) — the HIGH-frequency concurrency value-reads are now atomic (atom current/swap!/compare-and-set!, volatile current, ref doGet + out-of-txn current). The LOW-frequency metadata fields are NOT yet synchronized — lower priority, no observed DIFF."
+    category: "concurrency"
+    barrier: |-
+      Remaining unsynchronized concurrency state, all setup-time-mostly with
+      coherent (old-or-new, never torn) Value-pointer reads, so no result DIFF
+      observed — tracked so the atomicity sweep is not silently capped:
+      (a) **atom `watches` / `validator` / `meta`** (atom.zig setWatches/
+      setValidator/setMeta + the reads in notifyWatches/validateOrThrow) — plain
+      read/write. A concurrent add-watch/set-validator! DURING a swap! can be
+      missed for one notification; the persistent map pointer read is coherent.
+      Make them atomic acquire/release like `current` if a real workload hits it.
+      (b) **Var root** (alter-var-root mutating a Var's root binding while another
+      thread reads it) — load-time-mostly. (c) **Namespace intern** (concurrent
+      intern into the same ns) — load-time-mostly; def is not a hot concurrent
+      path. recall trigger: a workload that concurrently mutates atom watches/
+      validator under swaps, or alter-var-root under concurrent var reads. The
+      fix shape is identical to the landed sweep (@atomicLoad/@atomicStore on the
+      Value field, enum(u64)).
+    last_reviewed: "2026-06-05"
   - id: "D-241"
     status: "now (found 2026-06-04 while landing bound-fn/with-bindings) — no clojure.main baseline binding frame, so get-thread-bindings captures only explicitly-bound vars."
     category: "runtime"
