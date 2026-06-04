@@ -565,14 +565,15 @@
   (fn* ([v start] (into [] (drop start v)))
        ([v start end] (into [] (take (- end start) (drop start v))))))
 
-;; `(bounded-count n coll)` — counts up to n elements (so it terminates on
-;; infinite / expensive seqs). cw v1 always walks (≤ n steps); JVM short-
-;; circuits to `(count coll)` for already-counted colls — a perf nicety,
-;; same result for finite colls of size ≤ n (D-134).
+;; `(bounded-count n coll)` — for a `counted?` coll return its FULL count (clj:
+;; `(bounded-count 3 (range 100))` → 100, range is O(1) counted); otherwise walk
+;; at most n elements so it terminates on infinite / expensive seqs (D-134).
 (def bounded-count
   (fn* [n coll]
-    (loop [c 0 s (seq coll)]
-      (if (if s (< c n) false) (recur (inc c) (next s)) c))))
+    (if (counted? coll)
+      (count coll)
+      (loop [c 0 s (seq coll)]
+        (if (if s (< c n) false) (recur (inc c) (next s)) c)))))
 
 ;; `(rand-nth coll)` — a uniformly random element of coll (which must be
 ;; indexed / counted). Empty coll → an out-of-bounds error (JVM parity).
@@ -1267,10 +1268,11 @@
 (def split-at
   (fn* [n coll] [(take n coll) (drop n coll)]))
 
-;; `(counted? x)` — true iff x supports O(1) count (vector / map / set /
-;; list in cw v1). Lazy seqs and strings are NOT counted. `(reversible? x)`
-;; — true iff x supports rseq: vector + sorted map/set (LLRB, ADR-0057).
-(def counted? (fn* [x] (or (vector? x) (map? x) (set? x) (list? x))))
+;; `counted?` is the `counted?` primitive (the `coll?` set minus lazy_seq —
+;; range / cons / chunked / string-seq / map-entry / queue ARE O(1) counted,
+;; clj-verified; the prior `(or vector? map? set? list?)` def wrongly excluded
+;; range et al). `(reversible? x)` — true iff x supports rseq: vector + sorted
+;; map/set (LLRB, ADR-0057).
 (def reversible? (fn* [x] (or (vector? x) (sorted? x))))
 ;; Numeric / collection / ident predicates (clj-source-faithful). `rational?`
 ;; = exact non-float; `seqable?` = nil / coll / string / seq; `indexed?` =

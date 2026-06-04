@@ -401,6 +401,20 @@ pub fn collQ(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) 
     };
 }
 
+/// `(counted? x)` — true iff `x` reports its size in O(1) (`Counted`). The
+/// `coll?` set MINUS `.lazy_seq` (a lazy seq has no cheap length) — clj-verified
+/// (range/cons/chunked/string-seq/array-seq/map-entry/queue ARE counted; lazy
+/// seqs and strings are NOT). Drives `bounded-count`'s fast path.
+pub fn countedQ(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = rt;
+    _ = env;
+    try error_catalog.checkArity("counted?", args, 1, loc);
+    return switch (args[0].tag()) {
+        .list, .cons, .chunked_cons, .vector, .array_map, .hash_map, .sorted_map, .hash_set, .sorted_set, .persistent_queue, .range, .string_seq, .array_seq, .map_entry => .true_val,
+        else => .false_val,
+    };
+}
+
 /// `(seq? x)` — true iff `x` implements ISeq: list, cons,
 /// lazy-seq, chunked-cons, range, string-seq, array-seq.
 /// vectors / maps / sets are NOT seqs in JVM Clojure
@@ -1393,6 +1407,7 @@ const ENTRIES = [_]Entry{
     .{ .name = "some?", .f = &someQ },
     .{ .name = "not", .f = &notFn },
     .{ .name = "coll?", .f = &collQ },
+    .{ .name = "counted?", .f = &countedQ },
     .{ .name = "seq?", .f = &seqQ },
     .{ .name = "sequential?", .f = &sequentialQ },
     .{ .name = "associative?", .f = &associativeQ },

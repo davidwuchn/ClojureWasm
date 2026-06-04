@@ -1,0 +1,32 @@
+(counted? [1 2])
+;;=> true
+(counted? (range 5))
+;;=> true
+(counted? (list 1 2))
+;;=> true
+(counted? (cons 1 nil))
+;;=> true
+(counted? (map inc [1]))
+;;=> false
+(counted? "abc")
+;;=> false
+(counted? #{1 2})
+;;=> true
+(counted? {:a 1})
+;;=> true
+(counted? (sorted-set 1))
+;;=> true
+(counted? (first {:a 1}))
+;;=> true
+(counted? nil)
+;;=> false
+(bounded-count 3 (range 100))
+;;=> 100
+(bounded-count 3 (map inc (range 100)))
+;;=> 3
+(bounded-count 10 [1 2 3])
+;;=> 3
+(bounded-count 2 (iterate inc 0))
+;;=> 2
+(bounded-count 5 nil)
+;;=> 0

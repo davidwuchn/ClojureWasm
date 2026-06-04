@@ -805,6 +805,15 @@ active:
       hash_coll_combinators (17). Keyword/string ABSOLUTE values differ per AD-009
       (cljw-native hash) — not a new bug. The namespace/var/symbol sweep was
       otherwise clean.
+      **2026-06-04 `counted?` membership + `bounded-count` fast-path FIXED** (sweep
+      coresweep12). `(counted? (range 5))` → cljw false / clj true: cljw's
+      `counted?` was `(or vector? map? set? list?)`, missing range/cons/chunked/
+      string-seq/array-seq/map-entry/queue. Replaced with a primitive = the `coll?`
+      tag set MINUS lazy_seq (clj-verified). `(bounded-count 3 (range 100))` →
+      cljw 3 / clj 100: bounded-count must return the FULL count for a counted
+      coll (loop-to-n only for uncounted); added the `counted?` fast-path. corpus
+      counted_bounded_count (16). (coresweep12 also: `ensure-reduced` works —
+      #<reduced> vs #object print-only; `seque` deferred — thread-backed, Phase 15.)
       **2026-06-04 instance? interface-membership SWEEP** (big-bang, the Iterable/
       IEditableCollection pattern completed). FIXED too-narrow arms:
       IPersistentMap (+sorted_map), IPersistentSet (+sorted_set),
