@@ -1,0 +1,20 @@
+(instance? clojure.lang.IEditableCollection [])
+;;=> true
+(instance? clojure.lang.IEditableCollection {})
+;;=> true
+(instance? clojure.lang.IEditableCollection (hash-map :a 1))
+;;=> true
+(instance? clojure.lang.IEditableCollection #{})
+;;=> true
+(instance? clojure.lang.IEditableCollection (sorted-map :a 1))
+;;=> false
+(instance? clojure.lang.IEditableCollection (sorted-set 1))
+;;=> false
+(instance? clojure.lang.IEditableCollection (list 1 2))
+;;=> false
+(instance? clojure.lang.IEditableCollection (map inc [1 2]))
+;;=> false
+(instance? clojure.lang.IEditableCollection "str")
+;;=> false
+(instance? clojure.lang.IEditableCollection nil)
+;;=> false

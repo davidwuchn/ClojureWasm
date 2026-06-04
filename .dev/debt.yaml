@@ -592,6 +592,18 @@ active:
       multi-arity** (`(defmacro if-all-let "doc" {:added ..} ([a b] …) ([a b c] …))`
       → "parameter list must be a vector"; defmacro lacks the defn-style
       docstring/attr-map skip + multi-arity that `fn`/`defn` already have).
+      **2026-06-04 multi-arity defmacro + `IEditableCollection` LANDED →
+      potpuri fully loads + runs**. (1) analyzeDefmacro now mirrors defn's two
+      body shapes: vector head = single arity, list heads = multi-arity
+      `(fn* ([a] …) ([a b] …))`; :arglists collects every clause's param vector.
+      (2) `clojure.lang.IEditableCollection` added to class_name's FQCN_MAP +
+      interface table: `instance?` true for vector / array_map / hash_map /
+      hash_set (the transient-supporting four; sorted maps/sets, lists, seqs
+      false — clj-verified). potpuri's `editable?`→`reduce-map`→map-keys/map-vals/
+      filter-vals/deep-merge all work. corpus instance_editable_collection (10) +
+      defmacro_multi_arity_doc e2e + class_name unit. **NEXT corpus lib**: move to
+      the next pure lib (ertugrulcetin__kezban / ztellman__clj-tuple) to find the
+      next high-frequency clojure.core gap.
       **2026-06-04 `find-var` + `var?` LANDED**: `(find-var 'ns/name)` → the Var
       (or nil; ns must exist) via env.findNs+resolve; `(var? x)` → `.var_ref` tag.
       corpus find_var_predicate (8). NOTE `bound?`/`defonce` are DEFERRED: cljw's

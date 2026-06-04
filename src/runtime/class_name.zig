@@ -114,6 +114,7 @@ const FQCN_MAP = std.StaticStringMap([]const u8).initComptime(.{
     .{ "clojure.lang.IPersistentMap", "IPersistentMap" },
     .{ "clojure.lang.IPersistentSet", "IPersistentSet" },
     .{ "clojure.lang.IPersistentCollection", "IPersistentCollection" },
+    .{ "clojure.lang.IEditableCollection", "IEditableCollection" },
 });
 
 /// Normalise FQCN inputs to simple names. Falls back to `host_class`
@@ -174,7 +175,8 @@ fn isInterfaceName(simple: []const u8) bool {
         std.mem.eql(u8, simple, "Number") or
         std.mem.eql(u8, simple, "IPersistentMap") or
         std.mem.eql(u8, simple, "IPersistentSet") or
-        std.mem.eql(u8, simple, "IPersistentCollection");
+        std.mem.eql(u8, simple, "IPersistentCollection") or
+        std.mem.eql(u8, simple, "IEditableCollection");
 }
 
 /// `(instance? Class v)` predicate. Returns true iff `v` is a
@@ -258,6 +260,14 @@ fn matchInterface(v: Value, simple: []const u8) bool {
             else => false,
         };
     }
+    // Collections supporting `transient`: vector + the unsorted maps/sets.
+    // Sorted maps/sets, lists, and seqs are NOT editable (clj-verified).
+    if (std.mem.eql(u8, simple, "IEditableCollection")) {
+        return switch (t) {
+            .vector, .array_map, .hash_map, .hash_set => true,
+            else => false,
+        };
+    }
     return false;
 }
 
@@ -295,6 +305,8 @@ test "isKnown accepts interface names" {
     try testing.expect(isKnown("IPersistentMap"));
     try testing.expect(isKnown("IPersistentSet"));
     try testing.expect(isKnown("IPersistentCollection"));
+    try testing.expect(isKnown("IEditableCollection"));
+    try testing.expect(isKnown("clojure.lang.IEditableCollection"));
 }
 
 test "isKnown delegates Throwable hierarchy to host_class" {
