@@ -549,6 +549,16 @@ active:
       …)` shape); bound? checks the flag so the analyze-time def-intern doesn't
       poison it. Both backends + clj-grounded (corpus defonce_bound 5 + a
       diff_test op_def_unbound case). `(def x 1) (def x)` keeps x=1 (no-clobber).
+      **2026-06-04 real-world library loading opened (F-010 step 3)** — pivoted to
+      `~/Documents/OSS/clojure-corpus/`; first target weavejester/medley. **LANDED**:
+      `(ns name docstring? attr-map? refs*)` — analyzeNs now skips an optional
+      docstring (string) + attr-map (map) after the name before the directives
+      (it raised "ns directive must be a list"); every real lib opens with a
+      docstring. e2e phase15_ns_docstring (3). **NEXT real-world-lib gap**: medley
+      then hits **reader conditionals `#?(:clj … :cljs … :default …)` / `#?@`**
+      (line 41, a .cljc feature) — cljw's reader has no `#?` tag. A reader-level
+      unit (read the `:clj`/`:default` branch, splice for `#?@`); moderate, gates
+      most `.cljc` libs. Pure-`.clj` libs are the cleaner near-term load targets.
       **2026-06-04 `find-var` + `var?` LANDED**: `(find-var 'ns/name)` → the Var
       (or nil; ns must exist) via env.findNs+resolve; `(var? x)` → `.var_ref` tag.
       corpus find_var_predicate (8). NOTE `bound?`/`defonce` are DEFERRED: cljw's

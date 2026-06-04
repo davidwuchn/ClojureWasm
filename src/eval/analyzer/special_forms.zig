@@ -725,6 +725,10 @@ pub fn analyzeNs(
     defer imports.deinit(arena);
 
     var i: usize = 2;
+    // Optional docstring + attr-map after the name (clj: `(ns name doc? attrs?
+    // refs*)`) — real libs open with a docstring; skip before the directives.
+    if (i < items.len and items[i].data == .string) i += 1;
+    if (i < items.len and items[i].data == .map) i += 1;
     while (i < items.len) : (i += 1) {
         const directive = items[i];
         if (directive.data != .list)
