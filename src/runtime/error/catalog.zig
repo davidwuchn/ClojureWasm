@@ -141,7 +141,6 @@ pub const Code = enum {
     defmacro_params_not_vector,
     defmacro_arity_invalid,
     macro_var_not_callable,
-    promise_undelivered_error,
     future_thunk_failed,
     catch_class_unknown,
     class_name_unknown,
@@ -699,11 +698,6 @@ pub fn entry(comptime code: Code) Entry {
             .kind = .type_error,
             .phase = .macroexpand,
             .template = "macro Var '{[name]s}' root binding is not callable",
-        },
-        .promise_undelivered_error => .{
-            .kind = .not_implemented,
-            .phase = .eval,
-            .template = "deref of an undelivered promise would block forever on the single-thread runtime (Phase 15.1 lands the blocking variant)",
         },
         .future_thunk_failed => .{
             .kind = .not_implemented,

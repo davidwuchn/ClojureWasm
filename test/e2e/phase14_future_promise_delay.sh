@@ -7,10 +7,10 @@
 #   BLOCKS on an Io.Mutex/Condition cell until the worker realises the Future.
 #   `realized?` right after construction is async-racy (the worker may not have
 #   finished), so this suite only asserts it AFTER a deref (deterministically true).
-# - (promise) + (deliver p v) + (deref p) — write-once cell.
-#
-# Promise deref of an undelivered promise still raises `promise_undelivered_error`
-# (PROVISIONAL; the blocking-promise swap is a Phase-B follow-up).
+# - (promise) + (deliver p v) + (deref p) — write-once cell; (deref p) BLOCKS
+#   until delivered (Phase B #4b / D-113), so a cross-thread deliver pattern
+#   `(let [p (promise)] (future (deliver p v)) (deref p))` works. A
+#   never-delivered deref blocks forever, exactly as JVM Clojure does.
 
 set -euo pipefail
 cd "$(dirname "$0")/../.."
@@ -89,14 +89,9 @@ EOF
 )
 assert_eq 'promise_retry_deliver_nil_preserves' "$got" '[nil :first]'
 
-# --- Promise: undelivered deref raises a PROVISIONAL diagnostic ---
-diag=$("$BIN" -e '(deref (promise))' 2>&1 || true)
-case "$diag" in
-    *"block forever"*|*"undelivered"*|*"not_implemented"*)
-        echo "PASS promise_undelivered_raises -> diagnostic" ;;
-    *)
-        fail "promise_undelivered_raises: expected PROVISIONAL diagnostic, got '$diag'" ;;
-esac
+# --- Promise: deref BLOCKS until delivered from another thread (Phase B #4b) ---
+got=$("$BIN" -e '(let [p (promise)] (future (deliver p 42)) (deref p))' 2>/dev/null | last_line)
+assert_eq 'promise_blocks_until_delivered' "$got" '42'
 
 echo
 echo "Phase 14 row 14.8 future/promise/delay e2e: all green."

@@ -47,8 +47,8 @@ pub fn derefFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation
         .ref => ref_mod.current(v),
         .reduced => reduced_mod.unreduce(v),
         .delay => try delay_mod.force(rt, env, v, loc),
-        .promise => promise_mod.deref(v) orelse
-            error_catalog.raise(.promise_undelivered_error, loc, .{}),
+        // Blocks until delivered (Phase B #4b / D-113) — matches JVM Clojure.
+        .promise => promise_mod.deref(v),
         .future => future_mod.deref(v) orelse
             error_catalog.raise(.future_thunk_failed, loc, .{}),
         // `@#'x` / `(deref a-var)` reads the Var's active value, mirroring
