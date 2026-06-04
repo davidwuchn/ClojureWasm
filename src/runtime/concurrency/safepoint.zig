@@ -146,6 +146,7 @@ test "safepoint: stopWorld rendezvous parks all workers, resumeWorld releases th
                 .frame_slot = &env_mod.current_frame,
                 .macro_slot = &root_set.macro_root_slot,
                 .eval_frame_slot = &root_set.eval_frame_head,
+                .self_guard_slot = &root_set.gc_self_guard,
             };
             root_set.registerThread(&ctx) catch return;
             defer root_set.unregisterThread(&ctx);
@@ -220,6 +221,7 @@ test "safepoint: a parked worker's published EvalFrame survives a real collect d
                 .frame_slot = &env_mod.current_frame,
                 .macro_slot = &root_set.macro_root_slot,
                 .eval_frame_slot = &eval_head,
+                .self_guard_slot = &root_set.gc_self_guard,
             };
             root_set.registerThread(&ctx) catch return;
             defer root_set.unregisterThread(&ctx);
