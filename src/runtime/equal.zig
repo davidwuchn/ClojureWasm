@@ -66,7 +66,13 @@ fn isSequential(v: Value) bool {
 /// lazy seq walks element-by-element instead of comparing lengths.
 fn isCountable(v: Value) bool {
     const t = v.tag();
-    return t == .vector or t == .list or t == .map_entry or t == .persistent_queue;
+    // `.list` is intentionally EXCLUDED: a Cons stores the count of its `.list`
+    // PREFIX only — a Cons over a lazy/seq tail (`(cons 1 (lazy-seq …))`) has a
+    // stored count smaller than its realized length, so trusting it for the
+    // length short-circuit drops the lazy tail (`(= (cons 1 (lazy-seq [2 3]))
+    // (list 1 2 3))` → wrongly false). The element walk early-outs at the first
+    // length mismatch anyway. Vector / map_entry / queue counts ARE reliable.
+    return t == .vector or t == .map_entry or t == .persistent_queue;
 }
 
 fn seqLen(v: Value) u32 {
@@ -102,7 +108,12 @@ const Cursor = union(enum) {
             .range => .{ .rng = .{ .v = v, .i = 0, .n = range.countOf(v) } },
             .map_entry => .{ .ment = .{ .v = v, .i = 0 } },
             .persistent_queue => .{ .q = .{ .front = persistent_queue.frontOf(v), .rear = persistent_queue.rearOf(v), .ri = 0 } },
-            .list => .{ .lst = v },
+            // A `.list` cons may carry a NON-list seq as its rest (a "Cons over
+            // a seq", e.g. `(cons 1 (lazy-seq …))` / `(cons 1 (map …))`), so the
+            // lazy-aware cursor (which forces lazy layers AND routes `.list`
+            // cells to the list ops) is needed — the plain `.lst` walk stops at
+            // the first non-`.list` rest and drops the tail.
+            .list => .{ .lzy = v },
             else => .{ .lzy = v },
         };
     }

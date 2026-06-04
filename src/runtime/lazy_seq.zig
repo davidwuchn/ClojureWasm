@@ -44,6 +44,12 @@ const mark_sweep = @import("gc/mark_sweep.zig");
 const list_mod = @import("collection/list.zig");
 const chunked_cons_mod = @import("collection/chunked_cons.zig");
 const range_mod = @import("collection/range.zig");
+const vector_mod = @import("collection/vector.zig");
+const set_mod = @import("collection/set.zig");
+const map_mod = @import("collection/map.zig");
+const sorted_mod = @import("collection/sorted.zig");
+const map_entry_mod = @import("collection/map_entry.zig");
+const persistent_queue_mod = @import("collection/persistent_queue.zig");
 
 /// LazySeq — extern struct with HeapHeader at offset 0; thunk +
 /// realized + meta Values; realized_flag discriminator since both
@@ -105,11 +111,41 @@ pub fn force(rt: *Runtime, env: *env_mod.Env, v: Value) !Value {
     // 1 backend wires this at startup); else surface an internal
     // error rather than silently no-op.
     const vt = rt.vtable orelse return error.LazySeqVTableNotInstalled;
-    const result = try vt.callFn(rt, env, ls.thunk, &[_]Value{}, .{});
+    const raw = try vt.callFn(rt, env, ls.thunk, &[_]Value{}, .{});
+    // clj `LazySeq.seq` runs the realized body through `RT.seq`: a lazy-seq
+    // body may legitimately return a non-seq seqable (e.g. `(lazy-seq [2 3])`
+    // → a vector), which must be seq-coerced or the seq-walk would drop the
+    // tail (`(1 nil)`). Coerce the terminal seqable collections to a list/seq
+    // here so seq/first/rest/count all see a walkable value. A `.lazy_seq`
+    // result is left for the caller's force-loop; `.list`/`.cons`/`.range`/
+    // `.chunked_cons`/the seq-views are already walkable.
+    const result = try coerceRealized(rt, raw);
 
     ls.realized = result;
     ls.realized_flag = 1;
     return result;
+}
+
+/// Seq-coerce a realized lazy-seq body (clj `RT.seq` parity). Non-seq seqable
+/// collections become a list/seq; already-walkable values pass through.
+fn coerceRealized(rt: *Runtime, v: Value) !Value {
+    return switch (v.tag()) {
+        .vector => blk: {
+            var acc = try list_mod.emptyList(rt);
+            var i = vector_mod.count(v);
+            while (i > 0) {
+                i -= 1;
+                acc = try list_mod.consHeap(rt, vector_mod.nth(v, i), acc);
+            }
+            break :blk acc;
+        },
+        .map_entry => try list_mod.consHeap(rt, map_entry_mod.keyOf(v), try list_mod.consHeap(rt, map_entry_mod.valOf(v), try list_mod.emptyList(rt))),
+        .hash_set => if (set_mod.count(v) > 0) try set_mod.seq(rt, v) else .nil_val,
+        .array_map, .hash_map => if (map_mod.count(v) > 0) try map_mod.seq(rt, v) else .nil_val,
+        .sorted_map, .sorted_set => if (sorted_mod.count(v) > 0) try sorted_mod.seq(rt, v) else .nil_val,
+        .persistent_queue => try persistent_queue_mod.seqOf(rt, v),
+        else => v,
+    };
 }
 
 /// `(seq v)` — force the LazySeq if needed; returns the realised

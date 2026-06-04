@@ -91,6 +91,19 @@ test "diff: fn* immediate invocation" {
     try f.check("((fn* [x y] (+ x y)) 3 4)", 7);
 }
 
+test "diff: lazy-seq non-seq body + cons-over-lazy equality (both backends)" {
+    var f = try Fixture.init(testing.allocator);
+    defer f.deinit();
+    // A lazy-seq body returning a vector must seq-coerce (clj RT.seq parity);
+    // a Cons over a lazy tail must compare equal to the realized list. Both go
+    // through the shared force/equality paths → identical on TreeWalk + VM.
+    // Fixture has no core.clj — use `cons`/`quote` (primitives/special forms),
+    // not `list` (a .clj fn).
+    try f.check("(first (lazy-seq [7 8 9]))", 7);
+    try f.check("(count (cons 1 (lazy-seq [2 3])))", 3);
+    try f.check("(if (= (cons 1 (lazy-seq [2 3])) (quote (1 2 3))) 1 0)", 1);
+}
+
 test "diff: fn* empty-body arity → nil (clj parity, both backends)" {
     var f = try Fixture.init(testing.allocator);
     defer f.deinit();

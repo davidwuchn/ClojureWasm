@@ -725,6 +725,18 @@ active:
       limit/normal, clj-verified). The clean lib-loading gaps are exhausted;
       remaining are deep (clojure.core.protocols/IKVReduce, clojure.java.io,
       java.util.UUID statics, arrays/F-004, deftype, with-meta-on-symbols).
+      **2026-06-04 lazy-seq non-seq body + cons-over-lazy equality FIXED**
+      (differential sweep, transducer/lazy batch). (1) `(lazy-seq [2 3])` → cljw
+      `(nil)` / clj `(2 3)`: a lazy-seq body returning a non-seq seqable (vector/
+      set/map/sorted/queue/map_entry) wasn't seq-coerced. `force` now coerces the
+      realized body (clj `RT.seq` parity) so seq/first/rest/count all see a
+      walkable value. (2) `(= (cons 1 (lazy-seq [2 3])) (list 1 2 3))` → cljw
+      false: the equality Cursor's `.list` arm dropped a lazy/seq tail, AND the
+      length short-circuit trusted the Cons's stored count (which only counts the
+      `.list` prefix — a lazy tail is uncounted). Fixed: route `.list` →
+      lazy-aware cursor + drop `.list` from `isCountable` (its count is unreliable
+      with a lazy tail; the walk early-outs anyway). corpus lazy_seq_nonseq_body
+      (13) + diff case. coresweep4 32/32.
       **2026-06-04 instance? interface-membership SWEEP** (big-bang, the Iterable/
       IEditableCollection pattern completed). FIXED too-narrow arms:
       IPersistentMap (+sorted_map), IPersistentSet (+sorted_set),
