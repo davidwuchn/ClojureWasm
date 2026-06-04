@@ -39,15 +39,21 @@ quality loop pre-Phase-15). The clean-bounded clj-parity frontier is drained.
 
 ## Phase A work items (in progress)
 
-- DONE this turn: ROADMAP §7.2 STM-lie / §7.1 stale-Zig-0.16-API / §9.2.R / §9.2.S
-  / 14.13.5 over-claim corrected (all ref ADR-0089); audit §E2.7 widened + run
-  (70 candidates, surfaces the single-threaded-assumption surface); principle.md
-  spike note; D-242 Phase-B anchor minted; this handover.
-- NEXT: exhaustive comment-drift fan-out (the judgment-heavy half of §E2.7) →
-  catalog → debt promotion. Then: dead-ref removal (`known_issues.md` /
-  `status/vars.yaml` / `compat_tiers.md` references), ROADMAP closed-phase table
-  archive-extract (2607→smaller), debt discharged-in-active sweep (102→smaller),
-  guard pass (31 rules / 40 scripts / 89 ADRs — dead/redundant only, conservative).
+- DONE (this planning session): ROADMAP §7.2 STM-lie / §7.1 stale-Zig-0.16-API /
+  §9.2.R / §9.2.S / 14.13.5 over-claim corrected (ADR-0089); audit §E2.7 widened +
+  run (70 candidates); principle.md spike note; D-242 Phase-B anchor; 3
+  superseded-file refs fixed (known_issues→debt.yaml etc.); this handover.
+- **NEXT (user-deferred to this fresh session, 2026-06-04)**: run the **exhaustive
+  comment-drift fan-out** FIRST — read-only subagents, one per `src/` module
+  subtree, each reads EVERY comment (not just §E2.7 grep hits) and classifies
+  finished-form drift (a accurate / b provisional-stub / c stale-plan) →
+  `private/comment-drift-<date>/` catalog → promote (b)/(c) to `debt.yaml` /
+  Phase B inputs. THEN the medium housekeeping (also deferred here): guard pass
+  (31 rules / 40 scripts / 89 ADRs — dead/redundant only, conservative/中庸),
+  ROADMAP closed-phase archive-extract (2607→smaller). LOW-priority: debt
+  discharged-in-active compaction (40/103 rows are DISCHARGED-in-place but are
+  NOT re-swept by Step-0.5, so it is clutter-only; watch for false-positives like
+  D-210 standing-floor). After Phase A closes → Phase B (D-242).
 
 ## Landed before the re-cut (git log = SSOT; one summary)
 
