@@ -749,32 +749,37 @@ against ad-hoc rot.
 
 ## 7. Concurrency design
 
-### 7.1 Clojure reference-types ↔ Zig 0.16 primitive mapping
+### 7.1 Clojure reference-types ↔ pinned-Zig-0.16 primitive mapping (ADR-0090)
 
-| Clojure prim   | Zig 0.16 mechanism                                                                                   | File                                     | Phase                    |
-|----------------|------------------------------------------------------------------------------------------------------|------------------------------------------|--------------------------|
-| **atom**       | `std.atomic.Value` + CAS retry                                                                       | `runtime/atom.zig`                       | 15                       |
-| **ref / STM**  | self-built MVCC (TVal ring + Transaction context) per ADR-0010                                       | `runtime/ref.zig`, `runtime/lock_tx.zig` | 13-15                    |
-| **agent**      | `std.Thread.Pool` + action queue                                                                     | `runtime/agent.zig`                      | 15                       |
-| **future**     | `std.Thread.spawn` + `Condition`                                                                     | `runtime/future.zig`                     | 15                       |
-| **promise**    | `std.Thread.Mutex` + `Condition`                                                                     | `runtime/promise.zig`                    | 15                       |
-| **delay**      | `std.Thread.Mutex` (single lock + state machine)                                                     | `runtime/delay.zig`                      | 6                        |
-| **volatile!**  | `@atomicLoad` / `@atomicStore`                                                                       | `runtime/volatile.zig`                   | 15                       |
-| **binding**    | `threadlocal var dval_top: ?*DvalFrame`                                                              | `runtime/binding_stack.zig`              | 2 (task 4.22)            |
-| **locking**    | Object header `lock_state` bits + `std.Thread.Mutex` (heavy lock table), heap values only (ADR-0009) | `runtime/lock.zig`                       | 5 (slot) / 15 (activate) |
-| **core.async** | userspace coroutine on `std.Thread` pool (no built-in async in 0.16)                                 | `runtime/async.zig`                      | 15 stretch               |
+| Clojure prim         | pinned-Zig-0.16 mechanism (via `io_default` singleton where an `io` arg is unavailable)     | File                                                       | Phase               |
+|----------------------|---------------------------------------------------------------------------------------------|------------------------------------------------------------|---------------------|
+| **atom**             | `std.atomic.Value` CAS + validators + watches                                               | `runtime/atom.zig`                                         | B                   |
+| **ref / STM**        | MVCC `LockingTransaction` (per-ref `std.Io.Mutex` + `Ref`/`TVal` ring), retry-only (AD-013) | `runtime/stm/*`, `runtime/concurrency/lock_tx.zig`         | B                   |
+| **agent**            | thread pool (`std.Io.Threaded`) + action queue (send / send-off / error-mode)               | `runtime/agent.zig`, `runtime/concurrency/thread_pool.zig` | B                   |
+| **future / pmap**    | `std.Thread.spawn` (KEPT in 0.16) + `std.Io.Condition` result cell                          | `runtime/future.zig`                                       | B                   |
+| **promise**          | `std.Io.Mutex` + `std.Io.Condition`                                                         | `runtime/promise.zig`                                      | B                   |
+| **delay**            | single `std.Io.Mutex` + state machine                                                       | `runtime/delay.zig`                                        | B                   |
+| **volatile!**        | `@atomicLoad` / `@atomicStore`                                                              | `runtime/volatile.zig`                                     | B                   |
+| **binding**          | `threadlocal current_frame` + conveyor-fn frame clone on spawn (D-241)                      | `runtime/env.zig`                                          | done + B conveyance |
+| **locking**          | heap-value `std.Io.Mutex` (ADR-0009 `lock_state`), heap values only — NOT a JVM monitor    | `runtime/locking.zig`                                      | B                   |
+| **GC thread-safety** | global alloc `std.Io.Mutex` + `ThreadGcContext` root-publication handshake (no safepoint)   | `runtime/gc/*`, `runtime/concurrency/gc_thread.zig`        | B                   |
 
-> **§7.1 is a pre-Zig-0.16, pre-current-architecture design — redesigned at
-> Phase B entry (ADR-0089).** The Zig-mechanism column references APIs **removed
-> in Zig 0.16** (`std.Thread.Pool` / `std.Thread.Mutex` / `Condition` — see
-> `zig_tips.md`; use `std.Io.*` / `std.atomic`), and `runtime/binding_stack.zig`
-> no longer exists (the binding stack moved to `env.zig`). Today `future` /
-> `promise` / `delay` / `pmap` run **synchronously** (`future.zig` "eager-inline")
-> and the GC is **single-threaded** (`arena.zig`). Real concurrency forces a
-> redesign of these mappings + the single-threaded assumptions (GC thread-safety,
-> atom/ref CAS, threadlocal-binding conveyance) — deferred to Phase B's
-> §7-redesign ADR + Structural-imagination + DA-fork (§17 / F-003), not patched
-> in this table.
+> **Redesigned by ADR-0090 (the Phase-B-entry §7 redesign, landed 2026-06-04).**
+> Corrected premise: the **pinned Zig 0.16.0** (what cljw compiles against) KEEPS
+> `std.Thread.spawn` + `std.atomic.Value`; it moved the sync primitives to
+> `std.Io.Mutex` / `Io.Condition` / `Io.Threaded`, reached via a process-wide
+> `io_default` singleton (so `Allocator.VTable` callbacks with no `io` in hand can
+> still lock). cw v0 ships this on the same pinned compiler; cljw re-derives it
+> clean (`no_copy_from_v1`), spike-validated this session. The GC gains a
+> **root-publication handshake** (collection walks the union of all live threads'
+> `ThreadGcContext` root sets; the alloc/collect shared lock makes the
+> install-window collection-free) for multi-thread mark-safety with no hot-loop
+> safepoint — still single-gen mark-sweep (F-006; concurrent mark stays §89.2).
+> Today `future`/`promise`/`delay`/`pmap` still run synchronously and the GC is
+> single-threaded; ADR-0090 §1-7 is the build plan (rework-OK + per-commit gate,
+> F-002). (`std.Thread.{Mutex,Condition,Pool}` and `runtime/binding_stack.zig`
+> are gone — see `zig_tips.md` + ADR-0090 Context; the OSS `~/Documents/OSS/zig`
+> clone is post-0.16 master and the WRONG tree for 0.16 API questions.)
 
 ### 7.2 STM is PLANNED, not yet implemented (corrected 2026-06-04, ADR-0089)
 
@@ -791,23 +796,25 @@ as Tier A per ADR-0010 (not yet built). The cw v1 charter explicitly aims
 beyond Babashka's subset; STM is the signature Clojure concurrency
 primitive and is included — landing in Phase B.
 
-The implementation matches JVM `LockingTransaction.java` semantics:
-MVCC with TVal ring history per ref, thread-local transaction context,
-retry loop with snapshot validation, ordered locking by ref pointer
-(deadlock-free), and a barge mechanism (Phase 15.3) for starvation
-control.
+The implementation reproduces JVM `LockingTransaction.java` **observable**
+semantics (internals free, F-011 §2): MVCC with TVal ring history per ref,
+thread-local transaction context, retry loop with snapshot validation, ordered
+locking by ref identity (deadlock-free). cljw is **retry-only** — JVM's barge
+(younger-transaction preemption for starvation control) is **dropped per
+ADR-0090** (result-equivalent; only contention fairness/throughput differs;
+**AD-013 reserved** — its `accepted_divergences.yaml` entry + pin land with the
+Phase B concurrent STM test). MVCC is chosen for observable snapshot-semantics fidelity under the
+F-010 real-library loop, not because the ring is already built (that would be
+Reservation-as-bias; see ADR-0090 Alternatives).
 
-Phase staging:
+Phase staging (the data-structure shells landed through Phase 13-14; the
+transaction engine + commit/retry is **Phase B** per ADR-0090):
 
-- Phase 4 entry: data structures declared; any `dosync` returns a
-  structured error referencing ADR-0010 (no-op stub forbidden per
-  `no_op_stub_forbidden.md`).
-- Phase 13: `Ref` and `TVal` data structures.
-- Phase 14: `doGet` / `doSet` / `doCommute` / `doEnsure`.
-- Phase 15.1: commit + retry loop.
-- Phase 15.2: commute fast path.
-- Phase 15.3: barge mechanism.
-- Phase 15.4: concurrent integration test.
+- Done (≤ Phase 14): `Ref` / `TVal` data structures + `doGet` shell.
+- Phase B: `doSet` / `doCommute` / `doEnsure` + commit + retry loop + commute
+  fast path + the concurrent integration test (ADR-0090 §3, over the
+  `runtime/concurrency/lock_tx.zig` engine; the GC root-publication handshake is
+  a prerequisite and lands first).
 
 ### 7.3 Dynamic vars stay on threadlocal
 

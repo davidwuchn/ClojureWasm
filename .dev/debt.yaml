@@ -10,7 +10,7 @@
 
 active:
   - id: "D-242"
-    status: "Phase B anchor (re-cut ADR-0089, 2026-06-04) — KNOWN-unimplemented CORE, concurrency-led; redesign §7 against Zig 0.16 FIRST, then implement. finished-form, rework-OK with test guards."
+    status: "Phase B anchor (re-cut ADR-0089, 2026-06-04) — KNOWN-unimplemented CORE, concurrency-led; redesign §7 against Zig 0.16 FIRST, then implement. finished-form, rework-OK with test guards. §7-redesign DONE = ADR-0090 (2026-06-04): io_default-singleton std.Io sync + ThreadGcContext root-publication GC handshake (the DA-fork caught v0's stop-the-world lie) + MVCC retry-only STM; spike-validated. Implementation (concurrency/{io_default,thread_pool,lock_tx,gc_thread}.zig + real future/promise/delay/atom/agent/locking bodies) is the remaining Phase B work; GC handshake lands first (prereq for any real-threading primitive)."
     category: "concurrency"
     quality_floor: "Phase B: core-unimplemented (concurrency-led) — libraries fail en masse without it"
     barrier: |-
