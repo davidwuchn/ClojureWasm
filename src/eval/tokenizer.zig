@@ -327,6 +327,13 @@ pub const Tokenizer = struct {
                 self.advance();
                 return self.makeToken(.symbolic, start, start_line, start_col);
             },
+            '^' => {
+                // `#^meta target` — deprecated (pre-1.0) alias for `^meta
+                // target`. Consume the `^`; emit the same `.meta_caret` token a
+                // bare `^` produces so the reader's readMeta path is shared.
+                self.advance();
+                return self.makeToken(.meta_caret, start, start_line, start_col);
+            },
             '!' => {
                 while (self.pos < self.source.len and self.source[self.pos] != '\n') self.advance();
                 return self.next(); // skip shebang line, return next real token

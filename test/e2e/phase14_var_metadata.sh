@@ -51,6 +51,11 @@ assert_last 'coll_set'     '(:foo (meta ^:foo #{1 2}))'        'true'
 assert_last 'coll_eval'    '(:a (meta ^{:a (+ 1 2)} [1]))'     '3'
 assert_last 'coll_value'   '(conj ^:foo [1 2] 3)'              '[1 2 3]'
 
+# --- #^meta — deprecated (pre-1.0) alias for ^meta (real old code: e.g.
+# clojure.math.combinatorics's ns form uses #^{...}) ---
+assert_last 'old_meta_coll'  '(:a (meta #^{:a 1} [1 2 3]))'           '1'
+assert_last 'old_meta_def'   '(def #^{:doc "old"} om 5) (:doc (meta #'"'"'om))' '"old"'
+
 # --- D-239: alter-meta! / reset-meta! on a Var (key extraction; cljw does
 # not synthesize JVM :name/:ns/:line so full-map equality would diverge) ---
 assert_last 'alter_var'    '(def av 1) (alter-meta! (var av) assoc :p 7) (:p (meta (var av)))' '7'
