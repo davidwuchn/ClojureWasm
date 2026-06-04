@@ -5,23 +5,26 @@
 
 ## Resume contract
 
-- **HEAD**: see `git log` (`cw-from-scratch`). Gate green 250/0 (Mac, serial-e2e).
-  debt ledger = `.dev/debt.yaml`. Active plan = **ADR-0089 re-cut (A→B→C)**.
-- **First commit on resume MUST be**: **Phase B #6 — agent slice 2: error modes**
-  (`:continue`/`:fail` + `agent-error` + `restart-agent`). The agent FIRST slice
-  (ADR-0093) is landed; an action that throws currently continues silently
-  (`:continue`), but clj's no-handler default is `:fail` — an **F-011 gap** to
-  close (a thrown action must fail the agent + `agent-error` returns the error +
-  `restart-agent` clears it). Then agent watches/validator (with the ADR-0093
-  Alt 2 shared-IRef extraction decision), `await-for`, `send-via`, STM
-  send-deferral, `*agent*`, `shutdown-agents`. The Phase B concurrency PRIMITIVES
-  are otherwise complete + gated (see Recently landed): GC handshake, real-thread
-  `future`/`promise`/`delay`, full STM, `locking` (ADR-0092), atomic
-  atom/volatile/ref, and the agent core — all clj-verified, a ReleaseSafe
-  concurrency-stress step guards the lost-update class. rework-OK + test guards
-  (F-002); each src commit gates `--serial-e2e`. Cold-start: `private/notes/`
-  `phaseB-6-agent.md` + `phaseB-concurrency-atomicity-sweep.md` +
-  `phaseB-6-agent-survey.md`.
+- **HEAD**: see `git log` (`cw-from-scratch`). Gate green 251/0 Mac + 250/0 Linux
+  x86_64 (serial-e2e). debt = `.dev/debt.yaml`. Active plan = **ADR-0089 (A→B→C)**.
+- **First commit on resume MUST be**: **Phase B #4a' — in-txn-map GC-rooting**, the
+  ONE genuine remaining root gap. The #4a' fabrication-window AUDIT is done
+  (`private/notes/phaseB-4a-rooting-audit.md`): future-result / agent-action /
+  swap!-`old` windows are PROVEN SAFE (no-park → `stopWorld` waits, or the value is
+  on an EvalFrame operand stack), and Q1-op partials are already `gc_self_guard`ed
+  — so the scope is narrower than the code-review's flag. The gap: a `dosync` body
+  parks (alloc) while `LockingTransaction.vals`/`commutes` hold un-rooted Values in
+  gpa maps. Finished-form (per the audit): `ThreadGcContext` gains an OPAQUE
+  `tx_slot` (root_set must NOT import lock_tx — cycle); `mark_sweep` (which MAY
+  import lock_tx) adds a pass after the RootIterator loop marking each thread's tx
+  vals/commutes. Drive it TDD with an explicit-`collectStopTheWorld`-during-a-tx
+  unit test (red→green). This touches the most-correctness-critical module — do it
+  as a focused dedicated step. Then agent watches/validator (ADR-0093 Alt 2 IRef
+  extraction), error-handler, `await-for`, `shutdown-agents`. The Phase B
+  concurrency PRIMITIVES are complete + dual-arch-verified + code-reviewed (see
+  Recently landed). rework-OK + test guards (F-002); src commits gate
+  `--serial-e2e`. Cold-start: `private/notes/phaseB-4a-rooting-audit.md` +
+  `phaseB-concurrency-review-fixes.md`.
 - **Forbidden this session**: turning auto-collect ON before the **#4a'**
   runtime-wide fabrication-window + in-txn-map GC-root audit (collect stays
   explicit/test-triggered; the safepoint + per-thread root publication are wired
@@ -65,12 +68,9 @@ remaining low-freq metadata visibility (atom watches/validator, var root).
 
 ## Open carry-overs (actionable)
 
-- **3 rules** carry a stale `src/runtime/host/**` glob (→ `runtime/java/**`, ADR-0029);
-  the cleanup Edit was declined by the permission classifier as agent-config
-  self-mod — awaits user authorization (harmless; rules still load via other
-  globs). Memory `claude-rules-edit-permission-block`.
-- **D-243** = 8 re-opened deferrals: host-surface impls D-048/105/106 (Phase C) ·
-  bench D-104 · regex/string D-054/056/057 · D-049 (user-owned F-NNN).
+- **3 rules** carry a stale `src/runtime/host/**` glob (ADR-0029); the cleanup Edit
+  is permission-blocked as self-mod (memory `claude-rules-edit-permission-block`).
+- **D-243** = 8 re-opened deferrals: D-048/105/106 (Phase C) · D-104 · D-054/056/057 · D-049 (user-owned F-NNN).
 - **D-244** = the **#4a' hardening** (the capstone, high-risk): `gc_self_guard`
   setters at the fabrication sites + GC-root publication for the in-txn maps /
   future result / agent action-fabrication window + per-thread registration audit
