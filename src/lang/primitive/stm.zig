@@ -194,6 +194,18 @@ pub fn commuteFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocati
     return lock_tx.doCommute(rt, env, tx, args[0].decodePtr(*ref_mod.Ref), args[1], args[2..], loc);
 }
 
+/// `(ensure r)` — read-lock a Ref in the transaction so no peer writes it under
+/// us (write-skew prevention); returns r's in-transaction value.
+pub fn ensureFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = rt;
+    _ = env;
+    try error_catalog.checkArity("ensure", args, 1, loc);
+    try requireRef("ensure", args[0], loc);
+    const tx = lock_tx.current_tx orelse
+        return error_catalog.raise(.stm_no_transaction, loc, .{ .name = "ensure" });
+    return lock_tx.doEnsure(tx, args[0].decodePtr(*ref_mod.Ref));
+}
+
 // --- registration ---
 
 const Entry = struct {
@@ -208,6 +220,7 @@ const ENTRIES = [_]Entry{
     .{ .name = "ref-set", .f = &refSetFn },
     .{ .name = "alter", .f = &alterFn },
     .{ .name = "commute", .f = &commuteFn },
+    .{ .name = "ensure", .f = &ensureFn },
     .{ .name = "__delay-create", .f = &delayCreateFn },
     .{ .name = "__future-call", .f = &futureCallFn },
     .{ .name = "promise", .f = &promiseFn },

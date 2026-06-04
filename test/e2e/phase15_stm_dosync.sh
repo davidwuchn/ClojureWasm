@@ -53,6 +53,13 @@ assert_eq 'dosync_commute' "$got" '5'
 got=$("$BIN" -e '(let [a (ref 1) b (ref 10)] (dosync (alter a inc) (commute b + 5)) [@a @b])' 2>/dev/null | last_line)
 assert_eq 'dosync_alter_plus_commute' "$got" '[2 15]'
 
+# ensure: read-lock a ref (write-skew prevention). It reads but is not written;
+# a concurrent (ensure a)+(alter b inc) leaves a untouched (0) while b counts up.
+got=$("$BIN" -e '(let [a (ref 1) b (ref 2)] (dosync (ensure a) (alter b + (deref a))) [@a @b])' 2>/dev/null | last_line)
+assert_eq 'dosync_ensure' "$got" '[1 3]'
+got=$("$BIN" -e '(let [a (ref 0) b (ref 0)] (run! deref (mapv (fn [_] (future (dotimes [_ 50] (dosync (ensure a) (alter b inc))))) (range 4))) [@a @b])' 2>/dev/null | last_line)
+assert_eq 'dosync_concurrent_ensure' "$got" '[0 200]'
+
 # --- Concurrency: serializability under contention (#5-iii, AD-013 pin) ---
 # 4 future threads each run 100 (dosync (alter c inc)) on the SAME ref. With
 # retry-on-conflict (no barge — AD-013), every increment lands: no lost updates,

@@ -72,6 +72,10 @@ pub const LockingTransaction = struct {
     /// Recorded `commute`s, replayed against the committed value at commit
     /// (order-independent) so a commuted ref never conflicts/retries.
     commutes: std.ArrayList(CommuteEntry) = .empty,
+    /// `ensure`d refs — read-locked at commit + read-point-conflict-checked
+    /// (like `sets`) but NOT written, so a peer cannot write them under us
+    /// (write-skew prevention). clj `doEnsure`.
+    ensures: std.AutoHashMapUnmanaged(*Ref, void) = .empty,
     gpa: std.mem.Allocator,
 };
 
@@ -98,6 +102,7 @@ pub fn runInTransaction(rt: *Runtime, env: *Env, thunk: Value, loc: SourceLocati
     defer tx.vals.deinit(rt.gpa);
     defer tx.sets.deinit(rt.gpa);
     defer tx.commutes.deinit(rt.gpa);
+    defer tx.ensures.deinit(rt.gpa);
     current_tx = &tx;
     defer current_tx = null;
 
@@ -111,6 +116,7 @@ pub fn runInTransaction(rt: *Runtime, env: *Env, thunk: Value, loc: SourceLocati
         tx.vals.clearRetainingCapacity();
         tx.sets.clearRetainingCapacity();
         tx.commutes.clearRetainingCapacity();
+        tx.ensures.clearRetainingCapacity();
         const ret = callThunk(rt, env, thunk, loc) catch |e| {
             if (e == error.StmRetry) continue;
             return e; // a real user error propagates out of the transaction
@@ -162,6 +168,14 @@ pub fn doCommute(rt: *Runtime, env: *Env, tx: *LockingTransaction, ref: *Ref, fu
     return newval;
 }
 
+/// `(ensure r)` — read-lock r for this transaction: at commit it is locked +
+/// read-point-conflict-checked (so no peer writes it under us — write-skew
+/// prevention) but NOT written. Returns r's in-transaction value (clj `doEnsure`).
+pub fn doEnsure(tx: *LockingTransaction, ref: *Ref) !Value {
+    try tx.ensures.put(tx.gpa, ref, {});
+    return doGet(tx, ref);
+}
+
 /// Call `(func cur & args)`.
 fn invokeCommute(rt: *Runtime, env: *Env, func: Value, cur: Value, args: []const Value, loc: SourceLocation) !Value {
     const vtable = rt.vtable orelse return error.InternalError;
@@ -179,20 +193,24 @@ fn invokeCommute(rt: *Runtime, env: *Env, func: Value, cur: Value, args: []const
 /// a newer version after our snapshot) returns `error.StmRetry` to re-run the
 /// whole transaction (retry-only, no barge — AD-013).
 fn commit(rt: *Runtime, env: *Env, tx: *LockingTransaction, loc: SourceLocation) !void {
-    // Lock set = written refs (`sets`) ∪ commuted refs, DISTINCT.
+    // Lock set = written (`sets`) ∪ commuted ∪ ensured refs, DISTINCT.
     var locked: std.ArrayList(*Ref) = .empty;
     defer locked.deinit(tx.gpa);
     var sit = tx.sets.keyIterator();
     while (sit.next()) |rp| try locked.append(tx.gpa, rp.*);
     for (tx.commutes.items) |c| {
-        if (!tx.sets.contains(c.ref) and !containsRef(locked.items, c.ref))
-            try locked.append(tx.gpa, c.ref);
+        if (!containsRef(locked.items, c.ref)) try locked.append(tx.gpa, c.ref);
+    }
+    var eit = tx.ensures.keyIterator();
+    while (eit.next()) |rp| {
+        if (!containsRef(locked.items, rp.*)) try locked.append(tx.gpa, rp.*);
     }
     std.mem.sort(*Ref, locked.items, {}, refIdLess);
 
     // Acquire all locks in id order (deadlock-free). Conflict-check the WRITTEN
-    // refs only — a commuted ref re-applies against the committed value below,
-    // so it never conflicts (and never forces a retry under contention).
+    // and ENSURED refs (a peer commit after our snapshot is a conflict); a
+    // commuted ref re-applies against the committed value below, so it never
+    // conflicts (and never forces a retry under contention).
     var held: usize = 0;
     defer {
         while (held > 0) {
@@ -203,7 +221,8 @@ fn commit(rt: *Runtime, env: *Env, tx: *LockingTransaction, loc: SourceLocation)
     for (locked.items) |ref| {
         while (!ref.lock.tryLock()) std.atomic.spinLoopHint();
         held += 1;
-        if (tx.sets.contains(ref) and ref.tvals.point > tx.read_point) return error.StmRetry;
+        if ((tx.sets.contains(ref) or tx.ensures.contains(ref)) and ref.tvals.point > tx.read_point)
+            return error.StmRetry;
     }
 
     // Replay commutes against the now-locked COMMITTED values (order-independent):
@@ -214,10 +233,12 @@ fn commit(rt: *Runtime, env: *Env, tx: *LockingTransaction, loc: SourceLocation)
         try tx.vals.put(tx.gpa, c.ref, newval);
     }
 
-    // All locked + validated + replayed → write every ref under one commit-point.
+    // All locked + validated + replayed → write every WRITTEN ref under one
+    // commit-point. An ensure-only ref is locked + checked but not in `vals`, so
+    // it is skipped here (read-locked, not written).
     const commit_point = nextPoint();
     for (locked.items) |ref| {
-        try spliceCommit(rt, ref, tx.vals.get(ref).?, commit_point);
+        if (tx.vals.get(ref)) |v| try spliceCommit(rt, ref, v, commit_point);
     }
 }
 
