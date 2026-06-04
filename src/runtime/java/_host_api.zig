@@ -3,16 +3,13 @@
 //!
 //! Each Java-stdlib equivalent under `src/runtime/java/<pkg>/<Class>.zig`
 //! exports a top-level `___HOST_EXTENSION` declaration whose type is
-//! `Extension`. A future aggregator (Phase 6+) uses Zig comptime
-//! introspection to collect every such declaration into the Java
-//! surface registry without a central edit per addition.
+//! `Extension`. The `installAll` aggregator in this file walks every
+//! such declaration (over the hand-maintained `java_surfaces` list)
+//! into the Java surface registry.
 //!
-//! Phase 5 entry lands the contract only (this file). The first
-//! `<Class>.zig` lands at Phase 6 entry; until then `runtime/java/`
-//! holds only this aggregator file. `runtime/cljw/<area>/<Item>.zig`
-//! mirrors the same marker pattern for cljw-original surfaces; the
-//! two trees share the same `Extension` shape and registry contract
-//! per ADR-0029 D1.
+//! `runtime/cljw/<area>/<Item>.zig` mirrors the same marker pattern
+//! for cljw-original surfaces; the two trees share the same
+//! `Extension` shape and registry contract per ADR-0029 D1.
 
 const std = @import("std");
 const type_descriptor = @import("../type_descriptor.zig");
@@ -81,24 +78,21 @@ const java_surfaces = [_]type{
     @import("lang/Throwable.zig"),
     @import("lang/Exception.zig"),
     @import("lang/RuntimeException.zig"),
-    // Phase 14 row 14.2 (D-097) second wave begins ↓
     @import("math/BigDecimal.zig"),
-    // Phase 14 row 14.3 (D-097) third wave — backing impls under
-    // runtime/net/ + runtime/crypto/ deferred to D-106.
+    // Socket / MessageDigest backing impls under runtime/net/ +
+    // runtime/crypto/ are unbuilt (method_table empty) — D-106.
     @import("net/Socket.zig"),
     @import("security/MessageDigest.zig"),
     @import("time/Instant.zig"),
-    // Phase 14 row 14.2 (D-097) second wave (time) — backing impls
-    // for LocalDateTime / Duration / ZonedDateTime are deferred to
-    // D-105 (a focused runtime/time/ landing cycle).
+    // LocalDateTime / Duration / ZonedDateTime backing impls under
+    // runtime/time/ are unbuilt (method_table empty) — D-105.
     @import("time/LocalDateTime.zig"),
     @import("time/Duration.zig"),
     @import("time/ZonedDateTime.zig"),
     @import("util/Date.zig"),
     @import("util/Random.zig"),
     @import("util/UUID.zig"),
-    // Phase 14 row 14.2 (D-097) second wave (regex) — backing impl
-    // shipped by Pattern's regex/match.zig.
+    // Matcher's backing impl is shipped by Pattern's regex/match.zig.
     @import("util/regex/Matcher.zig"),
     @import("util/regex/Pattern.zig"),
 };
@@ -110,10 +104,8 @@ const java_surfaces = [_]type{
 /// are reused; `init` runs once per call but surfaces that need
 /// single-shot setup carry their own latch).
 ///
-/// Phase 14 row 14.1 (D-079) wires this from `lang/primitive.zig::
-/// registerAll`; the second-wave surfaces (D-097 row 14.2 — Matcher /
-/// LocalDateTime / Duration / ZonedDateTime / BigDecimal Java wrapper)
-/// land by appending entries to `java_surfaces` above.
+/// `lang/primitive.zig::registerAll` calls this. New surfaces are
+/// added by appending an entry to `java_surfaces` above.
 pub fn installAll(env: *Env) !void {
     const rt = env.rt;
     inline for (java_surfaces) |S| {

@@ -5,9 +5,9 @@
 //! Impl deps: time
 //! Clojure peer: none
 //!
-//! TypeDescriptor reservation per ADR-0029 D5 (Phase 14 row 14.2 /
-//! D-097). Zone-aware date+time semantics over a future
-//! `runtime/time/zoned_date_time.zig` + ZoneId table — tracked by
+//! TypeDescriptor reservation per ADR-0029 D5. Zone-aware date+time
+//! semantics over a `runtime/time/zoned_date_time.zig` + ZoneId
+//! table are unbuilt (the method_table is empty) — tracked by
 //! **D-105**.
 
 const host_api = @import("../_host_api.zig");

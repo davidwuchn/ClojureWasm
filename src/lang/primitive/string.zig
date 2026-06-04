@@ -1,18 +1,15 @@
 // SPDX-License-Identifier: EPL-2.0
-//! `clojure.string/` namespace surface — Phase 6.9 cycle 1.
+//! `clojure.string/` namespace surface.
 //!
 //! Per ADR-0032 + ADR-0029, the `clojure.string` namespace is owned
 //! by this file (registered at boot via `register(env)`); the
 //! companion `src/lang/clj/clojure/string.clj` opens with
-//! `(in-ns 'clojure.string)` and is loaded by the bootstrap loader
-//! to pin the namespace reachability + reserve future Clojure-side
-//! defns (capitalize / split-lines etc. arrive in later cycles).
-//!
-//! Cycle 1 ships `upper-case` / `lower-case` / `blank?` — the
-//! simplest trio that proves the multi-file loader + (in-ns)
-//! primitive + ns surface wiring end-to-end. The remaining ~18
-//! vars land in cycles 2-4 per the per-task survey at
-//! `private/notes/phase6-6.9-survey.md` §6.
+//! `(in-ns 'clojure.string)` and is loaded by the bootstrap loader.
+//! The full namespace surface (upper/lower-case, trim family,
+//! blank?, split / split-lines, join, replace / replace-first,
+//! capitalize, escape, includes? / starts-with? / ends-with?,
+//! index-of / last-index-of, reverse, ...) lands here; the
+//! composable vars migrate to Pattern A `.clj` defns in string.clj.
 
 const std = @import("std");
 const Value = @import("../../runtime/value/value.zig").Value;
@@ -32,12 +29,11 @@ const regex_match = @import("../../runtime/regex/match.zig");
 const regex_replace = @import("../../runtime/regex/replace.zig");
 const regex_prim = @import("regex.zig");
 
-/// `(clojure.string/upper-case s)` — ASCII upper-case fold per cycle
-/// 1. Non-ASCII codepoints pass through unchanged; full Unicode case
-/// folding is tracked at debt D-057 (lands at Phase 11+ conformance).
-/// JVM Clojure delegates to `String.toUpperCase()` which is locale +
-/// Unicode aware; cw v1 will catch up as part of the broader
-/// charset.zig migration.
+/// `(clojure.string/upper-case s)` — ASCII upper-case fold.
+/// Non-ASCII codepoints pass through unchanged; full Unicode case
+/// folding is tracked at debt D-057. JVM Clojure delegates to
+/// `String.toUpperCase()` which is locale + Unicode aware; cw v1
+/// will catch up as part of the broader charset.zig migration.
 pub fn upperCase(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
     _ = env;
     try error_catalog.checkArity("upper-case", args, 1, loc);
@@ -50,7 +46,7 @@ pub fn upperCase(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocati
 }
 
 /// `(clojure.string/lower-case s)` — mirror of `upperCase`. Same
-/// Phase-11 Unicode caveat (D-057).
+/// Unicode case-folding caveat (D-057).
 pub fn lowerCase(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
     _ = env;
     try error_catalog.checkArity("lower-case", args, 1, loc);
@@ -234,10 +230,12 @@ fn replaceImpl(rt: *Runtime, fn_name: []const u8, kind: ReplaceKind, args: []con
     try error_catalog.checkArity(fn_name, args, 3, loc);
     if (args[0].tag() != .string)
         return error_catalog.raise(.type_arg_not_string, loc, .{ .fn_name = fn_name, .actual = @tagName(args[0].tag()) });
-    // Cycle 3 supports only string-string match-replacement. char-char
-    // and regex-string / regex-fn forms raise feature_not_supported
-    // pending D-051 cycle 3 (captures) + a dedicated char-char arm
-    // (cycle 4 or later — see survey §3 DIVERGENCE D3).
+    // String-string match-replacement only. char-char and
+    // regex-string / regex-fn forms raise feature_not_supported here.
+    // SUPERSEDED: the public `replace` is the Pattern A `.clj` defn
+    // dispatching over the `-str-replace-*` leaves (which DO cover
+    // char-char + regex); this `replaceImpl`/`replace`/`replaceFirst`
+    // path is legacy and no longer registered.
     if (args[1].tag() != .string)
         return error_catalog.raise(.feature_not_supported, loc, .{ .name = "clojure.string/replace with non-string match" });
     if (args[2].tag() != .string)
@@ -253,9 +251,9 @@ fn replaceImpl(rt: *Runtime, fn_name: []const u8, kind: ReplaceKind, args: []con
     return try string_collection.alloc(rt, out);
 }
 
-/// `(clojure.string/replace s match replacement)` — cycle 3
-/// supports string-string only. Regex `Pattern` + `$N` captures land
-/// at D-051 cycle 3.
+/// Legacy string-string-only `replace` (SUPERSEDED — the live surface
+/// is the `.clj` defn over the `-str-replace-*` leaves, which handle
+/// regex `Pattern` + `$N` captures; this leaf is no longer registered).
 pub fn replace(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
     _ = env;
     return replaceImpl(rt, "replace", .all, args, loc);
@@ -267,13 +265,13 @@ pub fn replaceFirst(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLoc
     return replaceImpl(rt, "replace-first", .first, args, loc);
 }
 
-// --- Row 7.12 cycle 2 (D-078): sub-leaf split of `replace` /
-//     `replace-first` into 6 private leaves per placement.yaml
-//     reservations (`-str-replace-string` / `-str-replace-char` /
+// --- Row 7.12 (D-078): `replace` / `replace-first` are split into 6
+//     private leaves per placement.yaml reservations
+//     (`-str-replace-string` / `-str-replace-char` /
 //     `-str-replace-pattern` × replace/replace-first). The Pattern A
-//     defn that lands in cycle 3 dispatches on (`instance?`) over
-//     these leaves; today they are private (`zig_leaf = true`) so
-//     user code does not depend on them directly. ---
+//     `.clj` defn dispatches on `instance?` over these leaves; they
+//     are private (`zig_leaf = true`) so user code does not depend on
+//     them directly. ---
 
 fn strReplaceStringImpl(rt: *Runtime, fn_name: []const u8, kind: ReplaceKind, args: []const Value, loc: SourceLocation) anyerror!Value {
     try error_catalog.checkArity(fn_name, args, 3, loc);
@@ -401,9 +399,9 @@ pub fn reverse(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation
 /// with the result of `(cmap c)`. cmap may be a map (`array_map` or
 /// `hash_map`) or a fn (`fn_val` / `builtin_fn`). When `(cmap c)`
 /// returns nil, the original character is kept; otherwise the
-/// returned value must be a string (cycle 3 limitation — Clojure
-/// JVM also accepts char and `(str ...)`-coercible values; cw v1's
-/// `str` coercion graduates in a later cycle).
+/// returned value must be a string. Clojure JVM also accepts char
+/// and `(str ...)`-coercible values; the broader coercion is a
+/// tracked follow-up (D-094).
 pub fn escape(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
     try error_catalog.checkArity("escape", args, 2, loc);
     if (args[0].tag() != .string)
@@ -547,13 +545,11 @@ pub fn splitLines(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocat
     return result;
 }
 
-/// `(clojure.string/join coll)` / `(clojure.string/join sep coll)`.
-/// `coll` must be a `vector` (cycle 4 limitation — list / seq /
-/// nil arms land alongside the broader collection-iteration surface
-/// in a later cycle; raising `feature_not_supported` keeps the
-/// error explicit). Elements must be strings; non-string elements
-/// raise `feature_not_supported` pending the `str` coercion
-/// primitive landing.
+/// `-join` leaf — the vector+string fast path under the public
+/// `(clojure.string/join …)` Pattern A `.clj` defn. `coll` must be a
+/// `vector` and elements must be strings; other coll/element shapes
+/// raise `feature_not_supported` (the `.clj` defn handles the general
+/// seq + `str`-coercion arms). Kept as an opt-in fast leaf.
 pub fn join(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
     _ = env;
     try error_catalog.checkArityRange("join", args, 1, 2, loc);
@@ -589,18 +585,13 @@ const Entry = struct {
     f: dispatch.BuiltinFn,
 };
 
-/// Phase 6.16.d migration (v5 §8.1 + §9.2): 12 Pattern B2 leaves with
-/// the `-name` dash-prefix convention + `.private = true` ADR-0033 D4
-/// metadata. The user-visible names (`upper-case`, `lower-case`, ...)
-/// land via 1-line shim `(def ...)` defns in `lang/clj/clojure/string.clj`.
-/// User-ns callers reaching for `clojure.string/-upper-case` qualified
-/// trip the analyzer's cross-ns private check; intra-clojure.string
-/// shim resolution stays same-ns and passes.
-///
-/// 6.16.e (next) migrates the remaining 8 (`blank?`, `replace`,
-/// `replace-first`, `escape`, `capitalize`, `split`, `split-lines`,
-/// `join`) to Pattern A `.clj` defns when their compositions become
-/// tractable.
+/// Pattern B2 leaves with the `-name` dash-prefix convention +
+/// `.private = true` (ADR-0033 D4) metadata. The user-visible names
+/// (`upper-case`, `lower-case`, ...) resolve via shim `(def ...)` /
+/// Pattern A defns in `lang/clj/clojure/string.clj`. User-ns callers
+/// reaching for `clojure.string/-upper-case` qualified trip the
+/// analyzer's cross-ns private check; intra-clojure.string shim
+/// resolution stays same-ns and passes.
 const LEAF_ENTRIES = [_]Entry{
     .{ .name = "-upper-case", .f = &upperCase },
     .{ .name = "-lower-case", .f = &lowerCase },
@@ -614,22 +605,18 @@ const LEAF_ENTRIES = [_]Entry{
     .{ .name = "-index-of", .f = &indexOf },
     .{ .name = "-last-index-of", .f = &lastIndexOf },
     .{ .name = "-reverse", .f = &reverse },
-    // Phase 6.16.e.1 (GREEN trio per survey): pure renames into
-    // the leaf table. Public surface stays unchanged via shim
-    // defns in `lang/clj/clojure/string.clj`.
+    // Public surface stays unchanged via shim defns in
+    // `lang/clj/clojure/string.clj`.
     .{ .name = "-blank?", .f = &blank },
     .{ .name = "-split", .f = &split },
     .{ .name = "-split-lines", .f = &splitLines },
-    // Phase 6.16.e.2 (YELLOW pair): capitalize + join migrate to
-    // Pattern A defns over `str` + `subs` (now in rt). The Zig
-    // leaves stay as fallback / opt-in alternative until perf-
-    // sensitive callers prove they need it; the public name is
-    // the Pattern A defn.
+    // capitalize + join: the public name is the Pattern A defn over
+    // `str` + `subs`; these Zig leaves are the opt-in fast path.
     .{ .name = "-capitalize", .f = &capitalize },
     .{ .name = "-join", .f = &join },
-    // Row 7.12 cycle 2 (D-078): 6 replace sub-leaves per
-    // placement.yaml reservations. The Pattern A `(defn replace …)`
-    // lands in cycle 3 + dispatches on `instance?` across these.
+    // Row 7.12 (D-078): 6 replace sub-leaves per placement.yaml
+    // reservations. The Pattern A `(defn replace …)` dispatches on
+    // `instance?` across these.
     .{ .name = "-str-replace-string", .f = &strReplaceString },
     .{ .name = "-str-replace-first-string", .f = &strReplaceFirstString },
     .{ .name = "-str-replace-char", .f = &strReplaceChar },
@@ -638,14 +625,12 @@ const LEAF_ENTRIES = [_]Entry{
     .{ .name = "-str-replace-first-pattern", .f = &strReplaceFirstPattern },
 };
 
-/// Vars that stay as Zig leaves at their public name for this cycle.
-/// Row 7.12 cycle 3 (D-078) flipped `replace` / `replace-first` from
-/// Zig public surface to Pattern A `.clj` defns (see
-/// `lang/clj/clojure/string.clj`) — the .clj defn dispatches on
-/// `instance?` across the 6 `-str-replace-*` private leaves landed at
-/// cycle 2. `escape` remains Zig for now (Pattern A migration is an
-/// opportunistic follow-up — D-094 row when the codepoint-walk
-/// primitives + cmap dispatch ergonomics mature).
+/// Vars that stay as Zig leaves at their public name. `replace` /
+/// `replace-first` are Pattern A `.clj` defns (see
+/// `lang/clj/clojure/string.clj`) dispatching on `instance?` across
+/// the 6 `-str-replace-*` private leaves. `escape` stays Zig (its
+/// Pattern A migration is an opportunistic follow-up — D-094 — when
+/// the codepoint-walk primitives + cmap dispatch ergonomics mature).
 const ENTRIES = [_]Entry{
     .{ .name = "escape", .f = &escape },
 };

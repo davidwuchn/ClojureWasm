@@ -6,16 +6,19 @@
 //! integer/integer → Ratio path lives in `divPromoting`. Ratio
 //! arithmetic (`+ - * /` over ratio / mixed ratio⊗integer operands,
 //! plus ratio⊗float contagion) routes through `ratioArith`. BigDecimal
-//! cross-mixed cases (e.g. `(* 1/2 0.5M)`) still raise — they land when
-//! such expressions become Clojure-reachable.
+//! cross-mixed cases (e.g. `(* 1/2 0.5M)`) route through
+//! `bigdecContagion` — both operands are coerced to BigDecimal (the
+//! `.ratio` arm of `coerceToBigDecimal` handles ratio⊗BigDecimal) and
+//! exact BigDecimal arithmetic runs.
 //!
 //! Float-contagion follows JVM Clojure: any float operand makes the
 //! result float (precision loss accepted). i48 overflow (cw v1's
 //! immediate-Long boundary) silently promotes to BigInt — never to
 //! float — matching the JVM behaviour for `+'` / `-'` / `*'` rather
-//! than the unchecked `+` / `-` / `*` (Phase 5.10 ROADMAP text:
-//! "Long overflow (i48 boundary) silently promotes to BigInt for
-//! + / - / *"). The "raise on overflow" `+'` family lands at 5.10.c.
+//! than the unchecked `+` / `-` / `*` (ROADMAP §9.7 / 5.10: "Long
+//! overflow (i48 boundary) silently promotes to BigInt for + / - / *").
+//! The raise-on-overflow strict family (`addStrict` / `subStrict` /
+//! `mulStrict`) is landed below.
 
 const std = @import("std");
 const value_mod = @import("../value/value.zig");
@@ -51,9 +54,9 @@ fn toF64(rt: *Runtime, v: Value) f64 {
 }
 
 fn managedToF64(rt: *Runtime, m: *const Managed) f64 {
-    // Best-effort conversion. For Phase 5.10.a, fall back to
-    // toString + parseFloat. The lossy nature is a Clojure feature
-    // (float-contagion semantics); Phase 17 may specialise.
+    // Correct (round-trips through base-10) but slow: toString +
+    // parseFloat. The lossiness is a Clojure feature (float-contagion
+    // semantics). A direct limb→f64 conversion is a future perf option.
     const s = m.toString(rt.gc.infra, 10, .lower) catch return 0.0;
     defer rt.gc.infra.free(s);
     return std.fmt.parseFloat(f64, s) catch 0.0;

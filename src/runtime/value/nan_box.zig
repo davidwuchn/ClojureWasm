@@ -30,11 +30,9 @@
 //!   bits 44..1    pointer payload (44) — shifted by 3, 47-bit byte address = 128 TB
 //!   bit  0        reserved per F-004   — implicit reservation, stays 0
 //!
-//! 5.2.a shipped the file split with g1 32-slot constants; 5.2.b widens
-//! to g2 64-slot per F-004. The g1 constants are gone — every tagged
-//! Value built before 5.2.b's deploy is incompatible with the g2 decode
-//! path. There is no g1-on-disk compatibility concern (all Values live
-//! in-process, regenerated each REPL/eval cycle).
+//! The layout is the g2 64-slot encoding (4 groups × 16 sub-types) per
+//! F-004. All Values live in-process and are regenerated each
+//! REPL/eval cycle, so there is no on-disk compatibility concern.
 
 // Heap group tags (contiguous: 0xFFF8-0xFFFB)
 pub const NB_HEAP_TAG_A: u64 = 0xFFF8_0000_0000_0000;
@@ -58,11 +56,9 @@ pub const NB_ADDR_SHIFTED_MASK: u64 = 0x0000_0FFF_FFFF_FFFF;
 /// Sub-type field lives at bits 47..44 (4 bits) per F-004 + ADR-0027
 /// §1. Encoding shifts the sub-type index left by NB_HEAP_SUBTYPE_SHIFT
 /// to place it; decoding right-shifts + masks with NB_HEAP_SUBTYPE_MASK.
-/// Note: was 45 in g1 (3-bit sub-type at bits 47..45); g2 widens by 1
-/// bit so SHIFT moves down to 44.
 pub const NB_HEAP_SUBTYPE_SHIFT: u6 = 44;
 pub const NB_ADDR_ALIGN_SHIFT: u3 = 3; // 8-byte alignment (>>3)
-/// 16 sub-types per group (g2 per F-004). Was 8 in g1.
+/// 16 sub-types per group (g2 per F-004).
 pub const NB_HEAP_GROUP_SIZE: u8 = 16;
 
 // Derived (kept in sync via expressions, not hand-written hex literals)

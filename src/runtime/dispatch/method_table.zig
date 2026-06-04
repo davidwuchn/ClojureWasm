@@ -2,19 +2,17 @@
 //! Per-call-site dispatch cache for `.method` invocations
 //! (ROADMAP §9.6 / 4.25, ADR-0008).
 //!
-//! Phase 4 entry ships the `CallSite` struct declaration only. The
-//! `dispatch(callsite, receiver, method, args)` function lands at
-//! Phase 7 (ADR-0008 amendment 1) with cache-fill on miss.
+//! `CallSite` caches the resolved method for a `.method` call site;
+//! `lookupWithCache` fills the cache on miss (ADR-0008 amendment 1).
 //!
 //! Naming note: the actual per-implementation method record lives
-//! at `type_descriptor.zig::TypeDescriptor.MethodEntry` (landed at
-//! 4.17). `CallSite.last_method` caches a pointer into that table.
-//! A separate `MethodEntry` struct is NOT declared here — see
-//! debt D-040 for the cross-file naming reconciliation queued at
-//! Phase 7 entry (where the protocol-declaration entry in
-//! `protocol.zig` and the type-implementation entry in
-//! `type_descriptor.zig` are renamed together with the dispatch
-//! function landing).
+//! at `type_descriptor.zig::TypeDescriptor.MethodEntry`.
+//! `CallSite.last_method` caches a pointer into that table. A
+//! separate `MethodEntry` struct is NOT declared here; the
+//! cross-file naming collision (protocol-declaration entry in
+//! `protocol.zig` vs type-implementation entry in
+//! `type_descriptor.zig`) was resolved by namespace-qualification
+//! (D-040, discharged).
 
 const std = @import("std");
 const TypeDescriptor = @import("../type_descriptor.zig").TypeDescriptor;
@@ -23,7 +21,7 @@ const Value = @import("../value/value.zig").Value;
 /// Per-call-site monomorphic cache slot.
 ///
 /// At analyzer time, every `.method` call site is given a `CallSite`
-/// instance whose two cache slots start `null`. The Phase 7 dispatch
+/// instance whose two cache slots start `null`. The dispatch
 /// function consults the cache:
 ///
 ///   1. If `last_type == receiver.typeDescriptor()`, jump directly to
@@ -33,7 +31,7 @@ const Value = @import("../value/value.zig").Value;
 ///
 /// The two-slot shape mirrors C2 / V8's inline-cache pattern; cw v1
 /// does not (yet) escalate to polymorphic or megamorphic states. If
-/// benchmarks at Phase 7+ surface megamorphic hot sites, the cache
+/// benchmarks later surface megamorphic hot sites, the cache
 /// is widened in place — the `CallSite` consumer surface is just
 /// "ask + refill", so widening is local to this file.
 pub const CallSite = struct {

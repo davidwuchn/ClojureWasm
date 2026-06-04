@@ -5,15 +5,15 @@
 //! `vm.matchExceptionClass` with a comptime hierarchy walk over the
 //! Java exception class names cw v1 recognises.
 //!
-//! ## Scope (cycle 1)
+//! ## Scope
 //!
-//! This file lands the data: a flat `Entry` array describing the
+//! This file holds the data — a flat `Entry` array describing the
 //! parent chain for each recognised class name, FQCN→simple
-//! normalization, and `isSubclassOf` walk. Cycle 2 layers the
-//! `matches(thrown, class_name)` integration on top and rewires
-//! `tree_walk` + `vm` catch sites. Cycle 3 adds the analyzer-time
-//! `catch_class_unknown` error so unknown class symbols no longer
-//! pass through silently.
+//! normalization, and the `isSubclassOf` walk — plus the
+//! `matches(thrown, class_name)` integration the `tree_walk` + `vm`
+//! catch sites call. The analyzer-time `catch_class_unknown` error
+//! (in `catalog.zig`) rejects unknown class symbols rather than
+//! letting them pass through silently.
 //!
 //! ## Hierarchy (mirrors JVM `java.lang.Throwable` chain)
 //!
@@ -149,9 +149,9 @@ pub fn getParent(class_name: []const u8) ?[]const u8 {
 /// Return `true` iff `child` is `parent` or any ancestor on its
 /// `parent` chain. Both arguments accept simple names or FQCNs.
 /// Unknown class names compare structurally (return true only when
-/// `child == parent`) — cycle 3's analyzer-time check rejects
-/// unknown class names before they reach this function, so the
-/// fallthrough is defensive, not load-bearing.
+/// `child == parent`) — the analyzer-time `catch_class_unknown`
+/// check rejects unknown class names before they reach this
+/// function, so the fallthrough is defensive, not load-bearing.
 pub fn isSubclassOf(child: []const u8, parent: []const u8) bool {
     const simple_child = normalizeClassName(child);
     const simple_parent = normalizeClassName(parent);
@@ -165,10 +165,10 @@ pub fn isSubclassOf(child: []const u8, parent: []const u8) bool {
 
 /// Class name a thrown Value matches against. Maps each currently-
 /// throwable Value tag to the simple class name a `(catch …)` clause
-/// would receive. Row 7.11 cycle 2 only `.ex_info` flows through here
-/// (the only throwable Value tag in cw v1 today). Future host-class
-/// wire-up (D-048) lands the `.host_instance` arm via TypeDescriptor
-/// parent walk inside `matches()` below.
+/// would receive. Only `.ex_info` flows through here today (the only
+/// throwable Value tag in cw v1). The `.host_instance` arm — via a
+/// TypeDescriptor parent walk inside `matches()` below — is still
+/// unwired (see the PROVISIONAL marker, D-048).
 fn thrownClassName(thrown: Value) ?[]const u8 {
     return switch (thrown.tag()) {
         // ADR-0060: a runtime-synthesized internal error carries its
@@ -210,7 +210,7 @@ pub fn kindToHostClass(kind: Kind) ?[]const u8 {
 /// 1. `Throwable` catches every recognised throwable.
 /// 2. Otherwise the thrown Value's mapped class name must be a
 ///    subclass (per `isSubclassOf`) of `class_name`.
-/// 3. Unknown class names return false defensively — cycle 3's
+/// 3. Unknown class names return false defensively — the
 ///    analyzer-time `catch_class_unknown` raise eliminates this
 ///    fallthrough at the source.
 pub fn matches(thrown: Value, class_name: []const u8) bool {

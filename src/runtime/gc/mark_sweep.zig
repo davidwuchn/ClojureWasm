@@ -1,24 +1,24 @@
 // SPDX-License-Identifier: EPL-2.0
 //! Mark + sweep phases for cw v1 mark-sweep GC per ADR-0028 §1 + §4 + §5.
 //!
-//! **Phase 5 row 5.3.a skeleton.** Two stop-the-world phases declared:
-//!   - `mark(gc, roots)` — visits every root, recursively traces
-//!     through GC-managed pointers via `tag_ops.tag_trace_table`,
-//!     sets `HeapHeader.gc_and_lock.mark` (bit 0) on every reached
-//!     object. Mark recursion checks `header.gc_and_lock.mark == 1`
-//!     before descending — cycle-mark invariant per ADR-0028 §5.
+//! Two stop-the-world phases plus the `collect()` orchestrator:
+//!   - `mark(gc, header)` — visits a root, recursively traces through
+//!     GC-managed pointers via `tag_ops.tag_trace_table`, sets
+//!     `HeapHeader.gc_and_lock.gc_mark` (bit 0) on every reached
+//!     object. Mark recursion checks the bit before descending —
+//!     cycle-mark invariant per ADR-0028 §5.
 //!   - `sweep(gc)` — walks the live list. For every object with
 //!     `mark == 0`: call per-tag finaliser via
 //!     `tag_ops.tag_finaliser_table` (no-alloc invariant per ADR-0028
-//!     §4), unlink from the live list, push onto the matching free
-//!     pool. For every object with `mark == 1`: clear the bit and
-//!     keep.
+//!     §4), push onto the matching free pool (rawFree fallback),
+//!     swap-remove from the live list. For every object with
+//!     `mark == 1`: clear the bit and keep.
+//!   - `collect(gc, ctx)` — enumerates roots via `root_set.enumerate`,
+//!     marks each transitively, sweeps, then recomputes the adaptive
+//!     `threshold_bytes` per ADR-0028 §1.
 //!
-//! Bodies are stubs at 5.3.a; 5.3.b lands the mark phase + root walk;
-//! 5.3.c lands the sweep phase + finaliser dispatch + free-pool push.
-//! `Code.gc_mark_not_supported` / `Code.gc_sweep_not_supported` are
-//! the staged catalog Codes that 5.15 removes at the
-//! `build_options.phase_at_least_5` flip per ADR-0017 amendment 1.
+//! `clearMarks(gc)` resets every live object's mark bit (used by tests
+//! and reserved for an explicit clear pass). All four are landed.
 
 const std = @import("std");
 const testing = std.testing;
@@ -34,7 +34,7 @@ const HeapHeader = heap_header.HeapHeader;
 
 /// Visit a heap object + recursively trace through its GC-managed
 /// pointers. Sets `header.gc_and_lock.gc_mark` bit 0 on every reached
-/// object. **Phase 5.3.b.2 body.**
+/// object.
 ///
 /// Cycle invariant (per ADR-0028 §5 Mark cycle invariant): if the
 /// header's mark bit is already set, return immediately — the bit
@@ -43,10 +43,10 @@ const HeapHeader = heap_header.HeapHeader;
 /// `seq_cache` points back) terminate at the second visit.
 ///
 /// Per-tag trace dispatch: `tag_ops.tag_trace_table[hdr.tag]` returns
-/// the type-specific outgoing-pointer walker. Trace entries are
-/// `null` at 5.3.b.2 (all entries get filled at 5.3.b.3 + during
-/// the per-Tag activation rows 5.4–5.12), so mark behaves as a
-/// leaf-node visit for every tag today — bit set + return.
+/// the type-specific outgoing-pointer walker, registered per-tag via
+/// `tag_ops.registerTrace`. A `null` entry means a genuine leaf node
+/// (e.g. `string`, `big_int` limb data) — mark sets the bit and
+/// returns without descending.
 pub fn mark(gc: *GcHeap, header: *HeapHeader) void {
     if (header.gc_and_lock.gc_mark & 1 == 1) return; // cycle invariant
     header.gc_and_lock.gc_mark |= 1;
@@ -55,10 +55,9 @@ pub fn mark(gc: *GcHeap, header: *HeapHeader) void {
     }
 }
 
-/// Reset the mark bit on every live allocation. Called by `collect()`
-/// after sweep, so the next mark phase starts from a known-clean
-/// state. (5.3.b.4 wires this into `GcHeap.collect()`; for now it
-/// stands alone for test + the eventual call site.)
+/// Reset the mark bit on every live allocation. `collect()` already
+/// clears marks on surviving objects inline during `sweep`, so this
+/// stands alone for tests and an explicit clear-pass caller.
 pub fn clearMarks(gc: *GcHeap) void {
     for (gc.allocations.items) |rec| {
         rec.header.gc_and_lock.gc_mark &= ~@as(u30, 1);
@@ -66,19 +65,15 @@ pub fn clearMarks(gc: *GcHeap) void {
 }
 
 /// Walk the live list, finalise + recycle unreached objects, clear
-/// marks on reached ones. **Phase 5.3.c.1 body.** Iterates
-/// `gc.allocations` backward (so swap-remove indices stay valid).
-/// For each record:
+/// marks on reached ones. Iterates `gc.allocations` backward (so
+/// swap-remove indices stay valid). For each record:
 ///   - mark bit 0 == 0 (dead): call per-tag finaliser via
 ///     `tag_ops.tag_finaliser_table` (no-alloc invariant per
-///     ADR-0028 §4), `rawFree` the backing memory, swap-remove
-///     from allocations, bump `bytes_freed` + `sweep_count`.
+///     ADR-0028 §4), push the backing memory onto the matching free
+///     pool (`FreePoolMap.push`; rawFree fallback on push failure),
+///     swap-remove from allocations, bump `bytes_freed` + `sweep_count`.
 ///   - mark bit 0 == 1 (live): clear the bit, sum into
 ///     `last_live_bytes` for the next adaptive-threshold cycle.
-///
-/// Direct rawFree at 5.3.c.1; 5.3.c.2 inserts the free-pool push
-/// fast-path (`FreePoolMap.push`) before rawFree fallback, plus the
-/// pop fast-path in `GcHeap.alloc`.
 pub fn sweep(gc: *GcHeap) void {
     var live_bytes: usize = 0;
     var i: usize = gc.allocations.items.len;
@@ -115,7 +110,7 @@ pub fn sweep(gc: *GcHeap) void {
 /// (per-tag finaliser → push onto free pool / direct rawFree
 /// fallback), then update the adaptive threshold per ADR-0028 §1
 /// (`threshold_bytes = max(default, last_live_bytes * 2)`) and
-/// reset `bytes_since_last_gc`. **Phase 5.3.b.5 body.**
+/// reset `bytes_since_last_gc`.
 ///
 /// Callers invoke this directly rather than through a method on
 /// `GcHeap` because the cycle traverses `root_set.zig` which itself

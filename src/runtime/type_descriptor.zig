@@ -2,20 +2,19 @@
 //! cw v1 class system — TypeDescriptor / TypedInstance / ReifiedInstance
 //! per ADR-0007 Option β.
 //!
-//! Phase 5.11 activation per ROADMAP §9.7 / 5.11:
-//!   - `lookupMethod` (linear search) is now operational.
+//!   - `lookupMethod` (linear search) resolves a method on a
+//!     descriptor or up its `.parent` chain.
 //!   - `allocInstance` allocates a TypedInstance on `rt.gc.alloc`
 //!     (extern struct shape) and wraps it as a typed_instance Value.
 //!   - TypedInstance is an extern struct holding a back-pointer to
-//!     the TypeDescriptor (process-lifetime; lives on `rt.gc.infra`)
-//!     and a flat tail of field Values that the GC traces.
+//!     the TypeDescriptor and a flat tail of field Values that the
+//!     GC traces.
 //!   - The trace fn marks each field Value's heap header.
 //!
 //! TypeDescriptor itself is NOT GC-managed — it is allocated on
-//! `rt.gc.infra` (process-lifetime) by the deftype / defrecord
-//! analyzer (Phase 5.12). This keeps the descriptor pointer stable
-//! for the CallSite cache (`runtime/dispatch/method_table.zig`)
-//! without needing GC pinning.
+//! `rt.gpa` (process-lifetime) by the deftype / defrecord analyzer.
+//! This keeps the descriptor pointer stable for the CallSite cache
+//! (`runtime/dispatch/method_table.zig`) without needing GC pinning.
 
 const std = @import("std");
 const value_mod = @import("value/value.zig");
@@ -39,15 +38,15 @@ pub const TypeKind = enum {
 };
 
 /// Descriptor for one type. Process-lifetime — allocated on
-/// `rt.gc.infra` by the deftype / defrecord analyzer.
+/// `rt.gpa` by the deftype / defrecord analyzer.
 pub const TypeDescriptor = struct {
     fqcn: ?[]const u8,
     kind: TypeKind,
     /// Field name → slot index, in declaration order. `null` for
     /// `reify_anon` (which has no positional field layout).
     field_layout: ?[]const FieldEntry,
-    /// Protocols this descriptor implements (Phase 7 wires the
-    /// dispatch cache; Phase 5 declares the names).
+    /// Protocols this descriptor implements (by fully-qualified
+    /// name); the CallSite cache memoises dispatch over them.
     protocol_impls: []const []const u8,
     /// Method table populated at deftype / defrecord / reify analyse
     /// time. `lookupMethod` searches this slice linearly.
@@ -155,13 +154,12 @@ pub const TypeDescriptor = struct {
 
     /// Find the method record for `(protocol, method)` on this
     /// descriptor. Linear search — method tables are small (Clojure
-    /// typically ≤ 8 methods per protocol). Phase 7's CallSite cache
+    /// typically ≤ 8 methods per protocol). The CallSite cache
     /// memoises hot paths so the linear scan is amortised.
     ///
-    /// `protocol_name = null` is the row 7.6 cycle 1 (`.method`
-    /// syntactic form) shape — match by `method_name` only, returning
-    /// the first matching entry across the descriptor's method_table
-    /// + parent chain. Survey §3 Path A2.
+    /// `protocol_name = null` is the `.method` syntactic-form shape
+    /// — match by `method_name` only, returning the first matching
+    /// entry across the descriptor's method_table + parent chain.
     pub fn lookupMethod(
         self: *const TypeDescriptor,
         protocol_name: ?[]const u8,
@@ -229,7 +227,7 @@ pub const TypedInstance = extern struct {
 ///
 /// Allocated on `rt.gc.infra` per descriptor (one ref per `TypeDescriptor`).
 /// The held pointer is stable for the runtime's lifetime; no GC trace
-/// recursion needed since `TypeDescriptor` itself lives on `rt.gc.infra`
+/// recursion needed since `TypeDescriptor` itself lives on `rt.gpa`
 /// (the pre-existing `td.meta` Value field is currently always `nil`
 /// in practice — landing real meta tracing arrives with D-075 metadata
 /// layer, same row as Symbol/Keyword meta).

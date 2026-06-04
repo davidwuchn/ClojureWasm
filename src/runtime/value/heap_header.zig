@@ -2,11 +2,12 @@
 //! 8-byte header prefixed to every heap-allocated cw v1 Value object.
 //!
 //! Per ADR-0009: low 2 bits of `gc_and_lock` are the heap-only lock
-//! state (Phase 15 wires `monitor-enter` / `monitor-exit` / `locking`
-//! to them; Phase 4-14 stays zero). High 30 bits are the GC mark / age
-//! (Phase 5 mark-sweep — ADR-0028 — wires bit 0 = mark, bit 1 =
-//! tri-colour reserve; bits 2..29 partition is row 5.3 owner's call
-//! per F-003 decision-deferral).
+//! state (reserved; `monitor-enter` / `monitor-exit` / `locking` wire
+//! to them when concurrency lands in Phase B — single-threaded today,
+//! so they stay zero). High 30 bits are the GC mark / age: the
+//! mark-sweep collector (ADR-0028) uses bit 0 as the live mark; bits
+//! 1..29 are spare width for a future generational counter and stay
+//! zero today.
 
 const std = @import("std");
 const testing = std.testing;
@@ -17,19 +18,18 @@ const HeapTag = heap_tag.HeapTag;
 /// 8-byte header prefixed to every heap-allocated object. Used by GC
 /// for mark/sweep and by the runtime for fine-grained type dispatch.
 pub const HeapHeader = extern struct {
-    /// HeapTag discriminant (0–31 today; widens to 0–63 at row 5.2.b
-    /// per ADR-0027 §2 + F-004).
+    /// HeapTag discriminant (0–63 per ADR-0027 §2 + F-004 g2 layout).
     tag: u8,
     /// Per-object GC and lifecycle flags.
     flags: Flags,
     /// Padding so `gc_and_lock` lands on its natural 4-byte boundary.
     _pad: [2]u8 = .{ 0, 0 },
     /// ROADMAP §9.6 / 4.19 + ADR-0009: low 2 bits are the heap-only
-    /// lock state, high 30 bits are the GC mark / age. Phase 4 only
-    /// reserves the slot; Phase 5 wires read/write paths
-    /// (`cmpxchgLockBits`, mark-sweep mark/clear). Phase 15 wires
-    /// `monitor-enter` / `monitor-exit` / `locking` to the lock_state
-    /// bits and `dosync` to the STM scaffold on top.
+    /// lock state, high 30 bits are the GC mark / age. The mark-sweep
+    /// collector reads/writes the mark bit (mark/clear in
+    /// `mark_sweep.zig`). The lock_state bits stay reserved until
+    /// Phase B wires `monitor-enter` / `monitor-exit` / `locking` and
+    /// `dosync` to them.
     gc_and_lock: GcAndLock = .{},
 
     pub const Flags = packed struct(u8) {

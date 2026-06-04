@@ -7,14 +7,13 @@
 //! the HAMT / vector trie honour); the chosen LLRB shape was taken over
 //! a flat sorted array per ADR-0057's Devil's-advocate fork (F-002).
 //!
-//! Cycle A: build (assoc/conj) + get / contains? / count / seq / keys /
-//! vals + sorted-map/sorted-set + sorted?. Cycle B1: functional LLRB
-//! delete (dissoc / disj — Sedgewick moveRedLeft / moveRedRight /
-//! deleteMin). Cycle B2 (this landing): custom `-by` comparators — a
-//! Clojure fn invoked per comparison via `rt.vtable.callFn` (env threaded
-//! through every comparing op); Boolean result = less-than predicate,
-//! numeric result = sign (mirrors Clojure `AFunction.compare`).
-//! subseq / rsubseq / rseq are cycle C.
+//! Supports build (assoc/conj) + get / contains? / count / seq / keys /
+//! vals + sorted-map/sorted-set + sorted?; functional LLRB delete
+//! (dissoc / disj — Sedgewick moveRedLeft / moveRedRight / deleteMin);
+//! custom `-by` comparators — a Clojure fn invoked per comparison via
+//! `rt.vtable.callFn` (env threaded through every comparing op), Boolean
+//! result = less-than predicate, numeric result = sign (mirrors Clojure
+//! `AFunction.compare`); and subseq / rsubseq / rseq.
 
 const std = @import("std");
 const value = @import("../value/value.zig");

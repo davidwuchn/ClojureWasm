@@ -2,17 +2,14 @@
 //! Per-Tag dispatch infrastructure for cw v1 mark-sweep GC + class
 //! system (ADR-0028 §4 + ADR-0027 §3 cross-reference).
 //!
-//! **Phase 5 row 5.2.b skeleton + 5.3.d.2 register helpers.** The
-//! three Tag-indexed dispatch tables (`tag_descriptor_table` /
+//! The three Tag-indexed dispatch tables (`tag_descriptor_table` /
 //! `tag_trace_table` / `tag_finaliser_table`) are declared as
-//! `pub var` with all-null defaults; per-Tag entries get filled at
-//! startup via the `register*` helpers below. §9.7 row 5.3 GC
-//! implementation owner chose "three parallel arrays" over the
-//! alternative `TagOps` struct-of-arrays shape per ADR-0028 §4 main
-//! loop disposition + F-003 deferral — parallel arrays match the
-//! existing call-site pattern `if (tag_finaliser_table[tag]) |f|
-//! f(header);` and survive future entry width changes
-//! independently per table.
+//! `pub var` with all-null defaults; per-Tag entries are filled at
+//! startup via the `register*` helpers below. The "three parallel
+//! arrays" shape was chosen over a single `TagOps` struct-of-arrays
+//! per ADR-0028 §4 — parallel arrays match the call-site pattern
+//! `if (tag_finaliser_table[tag]) |f| f(header);` and let each table's
+//! entry width change independently.
 //!
 //! Registration is **idempotent** at the same (tag, fn) pair — Runtime
 //! tests construct multiple `Runtime` instances and each `Runtime.init`
@@ -60,8 +57,9 @@ pub var tag_descriptor_table: [64]?*const anyopaque = @splat(null);
 /// Each entry walks the type-specific GC-managed pointer fields and
 /// calls `gc.mark(child)` on each.
 ///
-/// Entries are `null` until §9.7 row 5.3 GC implementation lands the
-/// trace bodies. Mark-phase access pattern:
+/// A `null` entry means a leaf node (no GC-managed outgoing pointers);
+/// a non-null entry is a per-tag tracer registered via `registerTrace`.
+/// Mark-phase access pattern:
 ///
 /// ```zig
 /// if (tag_trace_table[tag]) |trace_fn| trace_fn(gc, header);
@@ -76,29 +74,25 @@ pub var tag_trace_table: [64]?*const fn (gc: *anyopaque, header: *HeapHeader) vo
 
 pub const TraceFn = *const fn (gc: *anyopaque, header: *HeapHeader) void;
 
-/// Per-HeapTag finaliser function. Called by sweep before unlink + free-
-/// pool push (ADR-0028 §4). May only `infra_alloc.free` or no-op;
-/// allocation through `gc_alloc` from inside a finaliser is a Phase-5-
-/// enforced panic.
+/// Per-HeapTag finaliser function. Called by sweep before the freed
+/// block is pushed onto its free pool (ADR-0028 §4). May only free
+/// back to `gc.infra` or no-op; allocating through `gc_alloc` from
+/// inside a finaliser is forbidden (no-alloc invariant).
 ///
-/// Sweep access pattern:
+/// Sweep access pattern (sweep then recycles the block inline):
 ///
 /// ```zig
-/// if (tag_finaliser_table[tag]) |f| f(header);
-/// gc.unlinkLive(header);
-/// gc.freePoolPush(header);
+/// if (tag_finaliser_table[tag]) |f| f(gc, header);
 /// ```
 ///
-/// Day-1 Tags that need a finaliser (per ADR-0028 §4):
-///   - `big_int` / `ratio` / `big_decimal`: release `Managed` limbs
-///     back to `infra_alloc` (limbs live on GPA per F-005)
-///   - `wasm_module` / `wasm_fn`: drop zwasm v2 `Module` / `FuncEntity`
-///     references (Phase 16 entry contract)
-///   - `host_instance`: dispatches through `TypeDescriptor.finaliser`
-///     per ADR-0011
-///
-/// Phase 5 row 5.3 wires the entries that have known finalisers; the
-/// rest stay `null` until their owning Phase entry lands behaviour.
+/// Tags needing a finaliser register one at `Runtime.init` via
+/// `registerFinaliser` — e.g. `big_int` releases its `Managed` limbs
+/// back to `gc.infra` (limbs live on GPA per F-005); `string`,
+/// `ex_info`, `regex`, transient/typed/reified instances likewise free
+/// owned non-GC resources. Tags whose owning feature is not yet wired
+/// (`wasm_module` / `wasm_fn` / `host_instance`) stay `null` until
+/// their owning Phase lands behaviour. A `null` entry is a no-op
+/// (nothing to finalise).
 pub var tag_finaliser_table: [64]?*const fn (gc: *anyopaque, header: *HeapHeader) void = @splat(null);
 
 /// Finaliser signature — receives the *GcHeap (type-erased to break

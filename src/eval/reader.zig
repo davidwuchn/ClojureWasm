@@ -1,14 +1,14 @@
 //! Reader — token stream → Form AST.
 //!
-//! Phase-1 scope: nil / boolean / integer / float / string / symbol /
-//! keyword / list / vector / map, plus the reader macros `'`, `##`,
-//! `#_`, and `#!` shebang. Syntax-quote / unquote / unquote-splicing /
-//! metadata / regex / `#()` / `#'` / `#inst` / `#uuid` ship in later
-//! phases.
+//! Scope: nil / boolean / integer / float / string / symbol / keyword /
+//! list / vector / map, plus the reader macros `'`, `##`, `#_`, the
+//! `#!` shebang, syntax-quote / unquote / unquote-splicing, metadata
+//! `^`, regex `#"re"`, `#()` fn literals, `#'` var-quote, and tagged
+//! literals `#inst` / `#uuid` (via `readTagged`).
 //!
 //! Allocations land in the caller-supplied allocator. Tests pin one
 //! arena per test so leaks are impossible by construction; production
-//! callers will hand in `Runtime.node_arena` once Phase 2 lands.
+//! callers hand in `Runtime.node_arena`.
 
 const std = @import("std");
 const form_mod = @import("form.zig");

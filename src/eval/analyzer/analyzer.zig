@@ -14,17 +14,23 @@
 //!   3. **Slot allocation** — every local gets a `u16` index
 //!      assigned during analysis, so the backend never hits a
 //!      HashMap at eval time.
-//!   4. **Macro expansion** — Phase 2 *does not* expand macros yet;
-//!      Phase 3+ wires the analyser↔macro_transforms loop.
+//!   4. **Macro expansion** — `analyzeList` runs `expandIfMacro`
+//!      before dispatching, so macro Vars (incl. `defmacro`-defined
+//!      and syntax-quoted bodies) expand during analysis.
 //!
-//! ### Phase-2 scope
+//! ### Coverage
 //!
-//! - Atoms: nil / bool / int / float / keyword (interned at analyse time).
-//! - Special forms: `def` / `if` / `do` / `quote` / `fn*` / `let*`.
+//! - Atoms: nil / bool / int / float / char / string / keyword
+//!   (interned at analyse time).
+//! - Collection literals (vector / map / set) as expression values,
+//!   with constant-fold lift for fully-literal collections.
+//! - Special forms: the ~20 entries in `SPECIAL_FORMS`
+//!   (`def` / `defmacro` / `if` / `do` / `quote` / `var` / `fn*` /
+//!   `let*` / `letfn*` / `loop*` / `recur` / `binding` / `try` /
+//!   `throw` / `in-ns` / `require` / `ns` / `set!` / `.` / `new`),
+//!   including multi-arity `fn*` and syntax-quote expansion.
 //! - References: symbol → LocalRef / VarRef.
-//! - **Not yet**: string literals as expression values, vector / map as
-//!   expression values, syntax-quote, `loop*` / `recur`, `try` / `throw`,
-//!   named `fn` (Phase 3+).
+//! - Interop and `ns` / `require` namespace wiring.
 //!
 //! ### Memory ownership
 //!
@@ -67,12 +73,13 @@ const SourceLocation = error_mod.SourceLocation;
 const macro_dispatch = @import("../macro_dispatch.zig");
 const syntax_quote = @import("syntax_quote.zig");
 
-/// Analyser errors. Phase 2 covers syntax + name resolution only.
-/// Aliases the wide `error_mod.ClojureWasmError` set so calls to
-/// `error_catalog.raise(.code, loc, args)` type-check; the analyser
-/// still only **emits** SyntaxError / NameError / NotImplemented /
-/// ArityError / OutOfMemory in practice. See the equivalent comment
-/// in `eval/reader.zig` for the design rationale.
+/// Analyser errors. Aliases the wide `error_mod.ClojureWasmError`
+/// set so calls to `error_catalog.raise(.code, loc, args)`
+/// type-check. The analyser emits a broad slice of that set —
+/// syntax / name / arity errors plus private-access, unknown
+/// namespace / catch-class, unsupported-feature, and reader-tag
+/// codes. See the equivalent comment in `eval/reader.zig` for the
+/// design rationale.
 pub const AnalyzeError = error_mod.ClojureWasmError;
 
 // --- Scope (local-binding chain consulted during analysis) ---
@@ -80,8 +87,8 @@ pub const AnalyzeError = error_mod.ClojureWasmError;
 /// Recur target metadata. Stamped on each Scope created by `fn*` /
 /// `loop*`. `arity` is the number of bindings / parameters that a
 /// matching `recur` must supply. `slot_base` is the first local-slot
-/// index of the binding/parameter group — the future `evalRecur`
-/// (Phase 3.11) will rebind `[slot_base, slot_base + arity)` and
+/// index of the binding/parameter group — `evalRecur` (TreeWalk) and
+/// the VM `op_recur` rebind `[slot_base, slot_base + arity)` and
 /// re-enter the body.
 pub const RecurTarget = struct {
     arity: u16,
@@ -96,12 +103,12 @@ pub const RecurTarget = struct {
 /// parent so the whole enclosing function shares one slot space —
 /// the backend can then index a single flat locals array.
 ///
-/// Phase 3.9 adds `recur_target` (the nearest enclosing `loop*` /
-/// `fn*` target) and `recur_target_depth` (the distance in scope
-/// links). 3.9 only inspects "depth ≠ 0" / "target present", but the
-/// depth is preserved so future named-loop / labelled-break work can
-/// reach across multiple levels without re-engineering the contract
-/// (ROADMAP A2). See `private/notes/phase3-3.9-survey.md` §7.
+/// `recur_target` holds the nearest enclosing `loop*` / `fn*` target
+/// and `recur_target_depth` the distance in scope links. Resolution
+/// only inspects "depth != 0" / "target present", but the depth is
+/// preserved so future named-loop / labelled-break work can reach
+/// across multiple levels without re-engineering the contract
+/// (ROADMAP A2).
 pub const Scope = struct {
     parent: ?*const Scope = null,
     bindings: std.StringHashMapUnmanaged(u16) = .empty,
@@ -231,16 +238,6 @@ const STAGED_UNSUPPORTED_FORMS = std.StaticStringMap(void).initComptime(.{
 
 // --- Top-level entry ---
 
-/// Analyse `form` and return the resulting Node tree. Top-level
-/// callers pass `scope = null`; recursion threads a `Scope` chain
-/// while inside a `let*` / `fn*`.
-///
-/// `macro_table` carries the bootstrap-macro Zig transforms; it is
-/// populated once at startup by `lang.macro_transforms.registerInto`
-/// and threaded through every recursive call so a macro produced by
-/// expansion is itself expanded on the next pass. Callers that don't
-/// need macros (early bootstrap, micro-tests) can pass an empty
-/// Table — non-macro Vars short-circuit through `expandIfMacro`.
 /// Resolve a `::name` / `::alias/name` auto-resolved keyword (D-195). `::name`
 /// (sym.ns == null) takes the current namespace; `::alias/name` resolves the
 /// require-alias to its target ns. The current ns is present during analysis;
@@ -258,6 +255,16 @@ fn resolveAutoKeyword(rt: *Runtime, env: *Env, sym: SymbolRef, loc: SourceLocati
     return keyword.intern(rt, cur.name, sym.name);
 }
 
+/// Analyse `form` and return the resulting Node tree. Top-level
+/// callers pass `scope = null`; recursion threads a `Scope` chain
+/// while inside a `let*` / `fn*`.
+///
+/// `macro_table` carries the bootstrap-macro Zig transforms; it is
+/// populated once at startup by `lang.macro_transforms.registerInto`
+/// and threaded through every recursive call so a macro produced by
+/// expansion is itself expanded on the next pass. Callers that don't
+/// need macros (early bootstrap, micro-tests) can pass an empty
+/// Table — non-macro Vars short-circuit through `expandIfMacro`.
 pub fn analyze(
     arena: std.mem.Allocator,
     rt: *Runtime,
@@ -885,16 +892,11 @@ const bindings = @import("bindings.zig");
 const recur = @import("recur.zig");
 const try_form = @import("try_form.zig");
 
-/// `(deftype Name [field1 field2 ...])` per ADR-0007 Option β +
-/// ROADMAP §9.7 / 5.12.a. Phase 5.12.a accepts declaration only —
-/// protocol method bodies are silently dropped (the analyzer was
-/// already raising on them via STAGED_UNSUPPORTED_FORMS prior to
-/// this commit; the analyzer now treats trailing forms as no-op
-/// until 5.12.d wires protocol method dispatch).
-/// Form atom → Value lift (used by `quote` only in Phase 2). Symbols,
-/// strings, and collection literals need heap support that lands in
-/// later phases. **pub** so `analyzer/special_forms.zig::analyzeQuote`
-/// can call back into it (cyclic-import contract).
+/// Form atom → Value lift. Handles nil / bool / int / float / char /
+/// string / keyword / symbol and the collection literals, interning
+/// or heap-allocating as needed. **pub** so
+/// `analyzer/special_forms.zig::analyzeQuote` can call back into it
+/// (cyclic-import contract).
 pub fn formToValue(rt: *Runtime, env: *Env, form: Form) AnalyzeError!Value {
     const base: Value = switch (form.data) {
         .nil => .nil_val,

@@ -1,25 +1,22 @@
 // SPDX-License-Identifier: EPL-2.0
-//! Higher-order primitives — `apply` / `reduce` (素朴版) / `into` /
-//! `every?` / `some` / `some?` per ADR-0033 D6 + ROADMAP §9.8 row
-//! 6.16.a-3 + v5 §5.2 + §7 transducer 先取り spec.
+//! Higher-order primitives — `apply` / `reduce` / `every?` / `some` /
+//! `some?` per ADR-0033 D6 + v5 §7 transducer spec. (`into` moved to
+//! core.clj as a multi-arity def — see the retirement note below.)
 //!
-//! ## Phase 6.16.a-3.1 scope
-//!
-//! This cycle (.1) lands the eager core of higher-order: apply,
-//! 素朴 reduce (seq walk, no IReduce protocol layer yet — that
-//! lands at Phase 7 per D-069), into (2-arg eager only), every?,
-//! some, some?. The .2 cycle adds Layer 2 eager leaves
-//! (`-map-eager`/`-filter-eager`/etc.) + Layer 3 `.clj` defn
-//! (`map`/`filter`/`take`/`drop`/`keep`/`remove` + `partial`/`comp`/
-//! `complement`/`constantly`/`juxt`) + transducer rf protocol formal
-//! registration.
+//! `reduce` carries an IReduce protocol fast-path (receiver-first
+//! `-reduce` dispatch, D-069) plus PERF arms for range / vector /
+//! chunk sources, falling through to the generic seq walk. The
+//! map/filter/take/drop/keep/remove + partial/comp/complement/
+//! constantly/juxt surface lives in Layer 3 `.clj` over these
+//! primitives; the eager `-take-eager` leaf below is what those
+//! defns call.
 //!
 //! ## Pattern
 //!
-//! Same shape as sequence.zig (d35dc3b) + collection.zig (a4bfca5):
-//! Layer 2 Tag switch dispatching to Layer 0 helpers + `rt.vtable.callFn`
-//! for invoking user fns. Phase 7 D-069 adds `.protocol_extended`
-//! slow-path arms to every relevant switch.
+//! Same shape as sequence.zig + collection.zig: a Layer 2 Tag switch
+//! dispatching to Layer 0 helpers + `rt.vtable.callFn` for invoking
+//! user fns, with a `.protocol_extended` slow-path arm (D-069) for
+//! user-extended types alongside the fast-path Tag arms.
 //!
 //! ## Backend: impl-only (no surface delegation)
 //! Impl deps: list, vector, map, set, reduced, sequence (Layer 2)
@@ -139,8 +136,8 @@ pub fn invokeCallable(rt: *Runtime, env: *Env, f: Value, args: []const Value, lo
 ///   `(reduce f init coll)` — reduces with explicit init
 /// `(reduced x)` returned by f terminates the reduction early with x.
 /// JVM reference: clojure.lang.RT.reduce / clojure.core.protocols/IReduce
-/// cw v1 tier: A (Phase 6.16.a-3.1, 素朴 seq-walk; IReduce protocol
-/// layer lands at Phase 7 per D-069)
+/// cw v1 tier: A. IReduce protocol fast-path (D-069) is tried first,
+/// then PERF source arms, then the generic seq walk.
 pub fn reduceFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
     if (args.len < 2 or args.len > 3) {
         return error_catalog.raise(.arity_not_expected, loc, .{

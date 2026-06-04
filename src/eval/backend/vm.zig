@@ -1,20 +1,20 @@
 // SPDX-License-Identifier: EPL-2.0
-//! Bytecode VM dispatch loop — the second backend (ROADMAP §9.6 / 4.6,
-//! ADR-0005). `eval` consumes a `BytecodeChunk` produced by
-//! `vm/compiler.zig` and executes its instructions against a per-frame
-//! operand stack of `OPERAND_STACK_MAX` Values, mirroring TreeWalk's
-//! `MAX_LOCALS` discipline so the recursion bound matches across
-//! backends.
+//! Bytecode VM dispatch loop — the default backend (F-012, ADR-0005);
+//! TreeWalk is the differential oracle the VM is checked against.
+//! `eval` consumes a `BytecodeChunk` produced by `vm/compiler.zig` and
+//! executes its instructions against a per-frame operand stack of
+//! `OPERAND_STACK_MAX` Values, mirroring TreeWalk's `MAX_LOCALS`
+//! discipline so the recursion bound matches across backends.
 //!
 //! Per ADR-0022 the VM must produce bit-for-bit identical Values to
 //! TreeWalk for the same source. Errors raised here therefore reuse
 //! TreeWalk's `error_catalog` Codes; control-flow signals
 //! (`error.RecurSignaled`, `error.ThrownValue`) use the same Zig errors
-//! so a shared try/loop driver works across backends at task 4.7.
+//! so a shared try/loop driver works across backends.
 //!
-//! Dispatch shape is a single `switch (Opcode)` per ROADMAP §9.6.
-//! Computed-goto is deferred; only the hot `op_const` / `op_ret` arms
-//! carry `@branchHint(.likely)`.
+//! Dispatch shape is a single `switch (Opcode)`. Computed-goto is not
+//! used; only the hot `op_const` / `op_ret` arms carry
+//! `@branchHint(.likely)`.
 
 const std = @import("std");
 const node_mod = @import("../node.zig");
@@ -50,8 +50,8 @@ const Function = tree_walk.Function;
 
 /// Per-frame operand stack ceiling. Matches `tree_walk.MAX_LOCALS` so
 /// the VM's per-call working set equals TreeWalk's. The analyser does
-/// not yet compute max stack depth (Phase 4 entry); the runtime check
-/// raises `internal_error` if a malformed chunk overflows.
+/// not compute max stack depth; the runtime check raises
+/// `internal_error` if a malformed chunk overflows.
 pub const OPERAND_STACK_MAX: u16 = 256;
 
 /// Per-frame exception-handler stack ceiling. Deep `try` nesting is
@@ -409,8 +409,8 @@ fn stepOnce(
         },
         .op_invoke_builtin => {
             // Reserved for analyzer-resolved direct builtin calls;
-            // the compiler does not emit this at 4.6 (every call
-            // routes through `op_call` + vtable). Per
+            // the compiler does not emit this (every call routes
+            // through `op_call` + vtable). Per
             // `no_op_stub_forbidden.md`, raise rather than fall
             // through silently.
             return error_catalog.raise(.feature_not_supported, .{}, .{ .name = "op_invoke_builtin" });
@@ -452,7 +452,8 @@ fn stepOnce(
         .op_push_binding_frame => {
             // Pops 2N entries [encVar0, val0, …] and installs a
             // per-thread BindingFrame on the env threadlocal (shared
-            // with TreeWalk — single-threaded per session, so
+            // with TreeWalk — assumes the single-threaded model;
+            // Phase B concurrency revisits this, so for now
             // `Var.deref` stays backend-agnostic). The compiler wraps
             // the body in a cleanup handler so `op_pop_binding_frame`
             // runs on both the success and the exception edge.
@@ -851,7 +852,7 @@ fn templateMethodsHaveAnyMissingChunk(template: *const tree_walk.Function) bool 
     return false;
 }
 
-/// Populate `rt.vtable` for the VM backend (ROADMAP §9.6 / 4.8). The
+/// Populate `rt.vtable` for the VM backend. The
 /// `callFn` reuses `tree_walk.treeWalkCall` because the dispatch shape
 /// per `Value.Tag` is identical across backends; the per-fn divergence
 /// happens inside `tree_walk.callFunction`, which routes through the

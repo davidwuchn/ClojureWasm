@@ -28,9 +28,10 @@
 //! universe: immediates (nil / true / false / integer / float /
 //! char) + interned literals (string / symbol / keyword / var_ref
 //! / regex) + quoted collections (list / vector / array_map /
-//! hash_set). Out of scope (raise explicit `UnsupportedValueTag`):
-//! fn_val / atom / multi_fn / big_int / wasm_* / transient_* / any
-//! runtime-only Value (per `no_op_stub_forbidden.md` — no silent
+//! hash_set) + compiled `fn_val` (ADR-0034 am2). Out of scope (raise
+//! explicit `UnsupportedValueTag`): atom / multi_fn / big_int /
+//! wasm_* / transient_* / any runtime-only Value (per
+//! `no_op_stub_forbidden.md` — no silent
 //! nil-substitution like v0's `else => write nil`).
 
 const std = @import("std");
@@ -231,9 +232,10 @@ fn writeValue(allocator: std.mem.Allocator, w: *std.Io.Writer, v: Value) Seriali
             }
         },
         .hash_map => {
-            // HAMT body iteration (D-045) not landed at v0.1.0;
-            // raise explicit error so the user sees a concrete diagnostic
-            // rather than partial archive.
+            // The bytecode serializer does not yet walk a HAMT body
+            // (only the array_map path is wired); raise an explicit
+            // error so the user sees a concrete diagnostic rather than
+            // a partial archive.
             return SerializeError.HashMapNotSerializable;
         },
         .hash_set => {
@@ -275,8 +277,9 @@ fn writeValue(allocator: std.mem.Allocator, w: *std.Io.Writer, v: Value) Seriali
 
 /// Serialize one function method: `arity` + `has_rest` + a length-prefixed
 /// recursive `serializeChunk` of the method body (the body IS a
-/// BytecodeChunk). `has_bytecode == 0` is allowed for forward-compat with a
-/// future lazy-JIT method, though the v0.1.0 compiler always emits bytecode.
+/// BytecodeChunk). `has_bytecode == 0` is a reserved forward-compat slot
+/// (a method with no eager bytecode); the current compiler always emits
+/// bytecode.
 fn writeFnMethod(allocator: std.mem.Allocator, w: *std.Io.Writer, m: tree_walk.FunctionMethod) SerializeError!void {
     try writeU16(w, m.arity);
     try writeU8(w, @intFromBool(m.has_rest));

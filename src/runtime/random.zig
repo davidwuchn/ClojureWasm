@@ -5,16 +5,14 @@
 //! Two surfaces consume this file:
 //!   1. `runtime/java/util/Random.zig` — `java.util.Random`
 //!      (seedable, deterministic given the seed).
-//!   2. (future) `lang/primitive/random.zig` for `clojure.core/rand`
-//!      / `rand-int` — clojure.core uses java.util.Random under the
-//!      hood; cw v1 will route the same way once Phase 7 host
-//!      dispatch fires `(.nextInt r bound)`. Until then `rand` /
-//!      `rand-int` live in `lang/clj/clojure/core.clj`.
+//!   2. `clojure.core/rand` / `rand-int`, implemented as the
+//!      `rand` / `randInt` primitives in `lang/primitive/math.zig`,
+//!      which draw from this file's lazily-seeded process PRNG.
 //!
 //! Cryptographic randomness (CSPRNG) is NOT here — it goes through
-//! `std.Io.randomSecure` directly today; a `runtime/crypto/secure_random.zig`
-//! file lands at Phase 14+ if `java.security.SecureRandom` surfaces
-//! grow.
+//! `std.Io.randomSecure` directly. A dedicated
+//! `runtime/crypto/secure_random.zig` would be a future surface if
+//! `java.security.SecureRandom` support grows.
 
 const std = @import("std");
 

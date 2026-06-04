@@ -9,12 +9,13 @@
 //! routes `(java.util.regex.Pattern/compile s)` through this
 //! file's `re-pattern` body once method-table dispatch lands).
 //!
-//! Cycle 1c.2 ships the three core primitives without capture-
-//! group results — `re-find` / `re-matches` return the whole-
-//! match `String` on success and `nil` on no-match, matching
-//! the no-groups JVM contract. `re-groups` / `re-seq` and the
-//! capture-vector return shape land in cycle 3 once the Pike VM
-//! threads carry slot arrays (see D-051).
+//! `re-find` / `re-matches` return the whole-match `String` for a
+//! group-less pattern and the `[whole g1 g2 …]` capture vector when
+//! the pattern has capturing groups (Pike-VM slot arrays via
+//! `buildMatchResult`). `re-find-from` backs `re-seq`. Compile-error
+//! message fidelity (a `PatternSyntaxException`-aligned rendering) is
+//! still a gap — unsupported syntax raises `feature_not_supported`
+//! (D-051).
 
 const Value = @import("../../runtime/value/value.zig").Value;
 const Runtime = @import("../../runtime/runtime.zig").Runtime;
@@ -37,10 +38,9 @@ pub const _regex_compile = @import("../../runtime/regex/compile.zig");
 pub const _regex_match = @import("../../runtime/regex/match.zig");
 
 /// `(re-pattern s)` — compile a pattern source string into a
-/// regex Value. Mirrors `clojure.core/re-pattern`. Cycle-1
-/// compile errors surface as the platform's compile-error
-/// rendering until cycle 5 wires the `PatternSyntaxException`-
-/// aligned messages (D-051).
+/// regex Value. Mirrors `clojure.core/re-pattern`. Unsupported
+/// syntax raises `feature_not_supported`; a `PatternSyntaxException`-
+/// aligned compile-error rendering is still a gap (D-051).
 pub fn rePattern(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
     _ = env;
     try error_catalog.checkArity("re-pattern", args, 1, loc);
@@ -62,8 +62,9 @@ pub fn rePattern(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocati
 }
 
 /// `(re-find re s)` — search for the first match of `re` anywhere
-/// in `s`. Returns the matched substring on success, `nil` on no
-/// match. Capture-vector form lands in cycle 3.
+/// in `s`. Returns the matched substring (or the `[whole g1 …]`
+/// capture vector when the pattern has groups) on success, `nil`
+/// on no match.
 pub fn reFind(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
     _ = env;
     try error_catalog.checkArity("re-find", args, 2, loc);
@@ -103,8 +104,9 @@ pub fn buildMatchResult(rt: *Runtime, program: *const compile_mod.Program, input
 }
 
 /// `(re-matches re s)` — succeeds iff `re` matches the entire
-/// input string. Returns the input string on full-match, `nil`
-/// otherwise. Capture-vector form lands in cycle 3.
+/// input string. Returns the input string (or the `[whole g1 …]`
+/// capture vector when the pattern has groups) on full-match,
+/// `nil` otherwise.
 pub fn reMatches(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
     _ = env;
     try error_catalog.checkArity("re-matches", args, 2, loc);

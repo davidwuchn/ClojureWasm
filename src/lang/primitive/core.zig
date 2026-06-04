@@ -1,12 +1,10 @@
 //! Core predicate primitives for the `rt/` namespace.
 //!
-//! Phase-2 surface (per ROADMAP §9.4 / 2.9): `nil?`, `true?`,
-//! `false?`, `identical?`. These are bit-level checks against the
-//! NaN-boxed Value representation — no allocation, no vtable detour.
-//!
-//! `apply` and `type` need a heap-backed list and keyword-interning
-//! through the runtime; they land in Phase 3+ once the analyser
-//! handles those forms.
+//! The bit-level predicates `nil?` / `true?` / `false?` / `identical?`
+//! are direct checks against the NaN-boxed Value representation — no
+//! allocation, no vtable detour. This module also hosts the keyword /
+//! symbol interning constructors and the broader predicate surface.
+//! (`apply` lives in higher_order.zig.)
 
 const std = @import("std");
 const Value = @import("../../runtime/value/value.zig").Value;

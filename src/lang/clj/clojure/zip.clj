@@ -10,14 +10,13 @@
 ;; finished form** of cw v1's zipper. D-075 landing does NOT
 ;; trigger a JVM-faithful migration (per ADR-0043 amendment A).
 ;;
-;; ## Cycle 1 — representation + ctors + 16 leaves (this commit)
+;; Surface:
 ;;
 ;; - `(defrecord ZipLoc ...)` + `->ZipLoc` factory.
 ;; - `zipper` / `vector-zip` / `seq-zip` / `xml-zip` constructors.
 ;; - `node` / `branch?` / `children` / `make-node` leaf accessors.
 ;; - `zip-loc?` / `seq-zip?` / `vector-zip?` / `xml-zip?` predicates.
-;;
-;; Cycles 2-4 land navigation / traversal / mutation.
+;; - navigation / traversal / mutation (down/up/right/next/edit/...).
 
 (ns clojure.zip (:refer-clojure))
 
@@ -79,11 +78,9 @@
 ;; the `:content` key; rebuild keeps the rest of the map and
 ;; replaces `:content` with the new children vector.
 ;;
-;; cw v1 uses `(get node :content)` rather than `(:content node)`
-;; because D-085 keyword-as-fn callable is not yet landed
-;; (ADR-0043 §Substrate verification). Once D-085 lands, the
-;; `(get …)` calls can opportunistically flip to `(:content …)`
-;; for ergonomic uniformity.
+;; cw v1 uses the explicit `(get node :content)` accessor here;
+;; keyword-as-fn (`(:content node)`) is also available and the two
+;; forms are equivalent.
 (defn xml-zip [root]
   (->ZipLoc root nil [] [] false
             (fn* [n] (map? n))
@@ -128,14 +125,11 @@
 ;; ----------------------------------------------------------------
 
 ;; Internal helper: rebuild a ZipLoc with overridden fields, copying
-;; the others from `src`. cw v1 lacks `assoc` on defrecord today
-;; (the typed_instance field-set surface is row 7.4+ deferred work
-;; per D-086 `__extmap`); use the `->ZipLoc` factory explicitly.
-;;
-;; NOTE: would be `^:private` per JVM convention but cw v1's defn
-;; macro does not yet parse the metadata-map reader form (D-091).
-;; The name prefix `with-` + `-loc` suffix marks intent; future
-;; D-091 discharge can flip to `^:private` non-breakingly.
+;; the others from `src`. defrecord `assoc` is single-pair only
+;; (multi-pair raises pending the `__extmap` overflow work, D-086),
+;; and this helper overrides several fields at once, so it uses the
+;; `->ZipLoc` factory explicitly. The `with-`/`-internal` naming
+;; marks the var as internal-by-convention.
 (defn with-loc-internal
   [src nd path lefts rights end?]
   (->ZipLoc nd path lefts rights end?

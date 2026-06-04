@@ -11,8 +11,8 @@
 //! they are a name → impl mapping. Modeling that as a `StringHashMap`
 //! is direct; modeling it as a vtable would require a discriminator
 //! enum and a switch. The Table is also runtime-mutable, which is what
-//! we need at Phase 3.12 when `(defmacro foo ...)` registers a
-//! user-defined macro at eval time (the user-fn fallback below).
+//! `(defmacro foo ...)` needs to register a user-defined macro at eval
+//! time (the user-fn fallback below).
 //!
 //! ### Form-level expansion, not Value-level
 //!
@@ -20,7 +20,7 @@
 //! not `Value` (the runtime data model). That keeps locations
 //! attached, avoids Form↔Value round-trips for static cases, and
 //! matches v1's organization. The Form↔Value boundary lives only at
-//! the user-fn invocation site (deferred to Phase 3.12).
+//! the user-fn invocation site.
 
 const std = @import("std");
 const Form = @import("form.zig").Form;
@@ -88,9 +88,9 @@ pub const Table = struct {
 
 /// Try to expand a macro call. Returns `null` if `head_var` is not a
 /// macro. Returns a freshly allocated Form (owned by `arena`) when
-/// expansion succeeds. Phase 3.12 will extend this to fall through to
-/// `vtable.callFn` for user-defined `defmacro`; for now, a macro Var
-/// without a Zig-table entry produces a clean `not_implemented` error.
+/// expansion succeeds. A macro Var with a Zig-table entry expands via
+/// that entry; otherwise it falls through to `vtable.callFn` for a
+/// user-defined `defmacro` (the fallback below).
 pub fn expandIfMacro(
     arena: std.mem.Allocator,
     rt: *Runtime,
@@ -107,7 +107,7 @@ pub fn expandIfMacro(
     if (table.lookup(head_name)) |f| {
         return try f(arena, rt, args, loc);
     }
-    // Row 14.6 (D-099): user-defined `defmacro` fallback. The macro
+    // D-099: user-defined `defmacro` fallback. The macro
     // Var's root must be a callable (`fn_val` / `builtin_fn`); we run
     // the args through `formToValue` → callFn → `valueToForm` to round-
     // trip the call through the runtime's evaluator. The implicit
@@ -360,7 +360,7 @@ test "expandIfMacro raises macro_var_not_callable when root is not a fn" {
     var table = Table.init(testing.allocator);
     defer table.deinit();
 
-    // Row 14.6 (D-099): a macro Var with no callable root falls through
+    // D-099: a macro Var with no callable root falls through
     // the user-fn fallback's isCallable check and surfaces a clean
     // type_error. Earlier (pre-D-099) this raised
     // `user_macro_not_supported` regardless of root shape.

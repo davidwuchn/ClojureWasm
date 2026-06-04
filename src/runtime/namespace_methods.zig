@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: EPL-2.0
-//! Host-interop instance methods on the Namespace `.ns` value (D-232,
-//! validation campaign). clj's `clojure.lang.Namespace` exposes `.name`
+//! Host-interop instance methods on the Namespace `.ns` value (D-232).
+//! clj's `clojure.lang.Namespace` exposes `.name`
 //! (→ Symbol) / `.getName` (→ Symbol) / `.toString` (→ the name string); real
 //! code (e.g. the upstream `clojure.test-clojure.keywords` suite, line 12:
 //! `(str (.name *ns*))`) calls them. Installs them on the per-Runtime `.ns`

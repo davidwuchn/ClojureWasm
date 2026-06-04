@@ -69,7 +69,7 @@ pub fn buildEnvelope(
     return serialize.serializeEnvelope(allocator, chunks.items);
 }
 
-// === cljw build CLI core + embedded-run startup (D-100(b) step 3b) ===
+// === cljw build CLI core + embedded-run startup ===
 
 /// Read an entire file into a freshly `gpa`-allocated slice (caller frees).
 fn readFileAll(io: std.Io, gpa: std.mem.Allocator, path: []const u8) ![]u8 {

@@ -1,22 +1,20 @@
 // SPDX-License-Identifier: EPL-2.0
 //! Free-pool recycling for cw v1 mark-sweep GC per ADR-0028 §3.
 //!
-//! **Phase 5 row 5.3.a skeleton.** The struct shapes land here:
+//! Struct shapes:
 //!   - `FreeNode { next: ?*FreeNode }` — intrusive linked-list node
 //!     overlaid in the freed object's payload **at offset 8** (per
 //!     ADR-0028 §3 DIVERGENCE from cw v0 which overlaid at offset 0
 //!     and clobbered the header).
 //!   - `FreePoolKey { size, alignment }` — hash key for the per-
 //!     (size, alignment) pool head map.
-//!   - `FreePoolMap` — `std.AutoHashMapUnmanaged(FreePoolKey, ?*FreeNode)`
-//!     wrapper with `empty` / `deinit` / `push` / `pop` methods.
+//!   - `FreePoolMap` — `AutoHashMapUnmanaged(FreePoolKey, ?*FreeNode)`
+//!     wrapper with `initMap` / `deinit` / `push` / `pop`, all landed.
 //!
-//! Behaviour-bearing methods are stubs at 5.3.a; 5.3.c wires the
-//! intrusive overlay + push/pop fast-path + the per-size-class
-//! optimisation (Devil's-advocate Wildcard Alt 3 candidate — quantise
-//! sizes to N power-of-2 classes and replace the HashMap with a flat
-//! `[N]?*FreeNode` array; 5.3 owner picks per measured size-class
-//! distribution per ADR-0028 §6 F-003 deferral).
+//! A future size-class optimisation (quantise sizes to N power-of-2
+//! classes + replace the HashMap with a flat `[N]?*FreeNode` array) is
+//! left open per ADR-0028 §6 — picked, if ever, against a measured
+//! size-class distribution.
 //!
 //! Minimum allocation size: **16 bytes** (per ADR-0028 §3) so the
 //! freed payload can host `@sizeOf(FreeNode) = 8` bytes after the
@@ -48,7 +46,7 @@ pub const FreePoolKey = struct {
     }
 };
 
-/// Per-(size, alignment) free pool head map. **Phase 5.3.c.2 body.**
+/// Per-(size, alignment) free pool head map.
 /// Push lands freed memory at the head of the matching pool (intrusive
 /// overlay at offset 8 per ADR-0028 §3); pop returns the memory base
 /// to caller for reuse. Deinit walks every pool and `rawFree`s each

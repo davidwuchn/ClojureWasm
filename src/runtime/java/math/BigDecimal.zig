@@ -10,13 +10,11 @@
 //! the existing impl carries the `(unscaled BigInt, i32 scale)`
 //! representation declared by F-005. The Clojure peer in
 //! `lang/primitive/math.zig` already exercises BigDecimal arithmetic
-//! through that impl; this file lets `(java.math.BigDecimal/valueOf
-//! 42)` and the Java-style method dispatch resolve once Phase 7
-//! TypeDescriptor.method_table is populated for this surface.
-//!
-//! Phase 14 row 14.2 (D-097): TypeDescriptor reservation ships
-//! per ADR-0029 D5. Phase 14 row 14.4 (D-014a) completes the
-//! observable numeric-tower auto-promotion that uses this surface.
+//! through that impl. This file is a TypeDescriptor reservation
+//! (per ADR-0029 D5): its method_table is empty, so
+//! `(java.math.BigDecimal/valueOf 42)` and Java-style method
+//! dispatch do not yet resolve (D-097). The observable numeric-tower
+//! auto-promotion that uses this surface landed via D-014a.
 
 const host_api = @import("../_host_api.zig");
 const type_descriptor = @import("../../type_descriptor.zig");

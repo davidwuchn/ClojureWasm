@@ -43,12 +43,11 @@ pub const Kind = enum {
     name_error,
     arity_error,
     value_error,
-    /// A form is well-formed but uses a feature this phase does not
-    /// implement yet (e.g. string literals as expression values
-    /// before Phase 3.5 lands the heap-string analyser path). Kept
-    /// distinct from `internal_error` so user-facing tooling can flag
-    /// "ClojureWasm vN.M doesn't support this yet" rather than "this
-    /// is a bug in the runtime".
+    /// A form is well-formed but uses a feature not yet implemented
+    /// (e.g. a regex with a named group or a Unicode category
+    /// `\p{L}`). Kept distinct from `internal_error` so user-facing
+    /// tooling can flag "ClojureWasm vN.M doesn't support this yet"
+    /// rather than "this is a bug in the runtime".
     not_implemented,
     // Eval phase
     type_error,
@@ -258,8 +257,8 @@ pub fn clearCallStack() void {
 
 // --- BuiltinFn signature ---
 
-/// Signature of a Phase-1 primitive function. Phase 2+ extends this to
-/// `(rt, env, args, loc)`; the typedef will then move to `dispatch.zig`.
+/// Signature of a primitive function: takes the evaluated argument
+/// slice plus the call-site location, returns a Value or raises.
 pub const BuiltinFn = *const fn (args: []const Value, loc: SourceLocation) ClojureWasmError!Value;
 
 // --- ClojureWasmError formatting ---

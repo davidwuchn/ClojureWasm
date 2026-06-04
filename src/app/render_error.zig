@@ -8,9 +8,9 @@
 //! silently passed through (so a log file mixing cljw events with
 //! other tool output still renders cleanly).
 //!
-//! Row 14.11 D-100(c) — initial minimal landing. TTY-aware colour
-//! highlighting + multi-event aggregation (groups by file/line) ride
-//! the v0.1.0 polish bundle (D-100c follow-up).
+//! Initial minimal landing (D-100(c)). TTY-aware colour highlighting
+//! + multi-event aggregation (groups by file/line) remain a future
+//! polish item (D-100c follow-up).
 //!
 //! Decoder strategy: hand-rolled scan for the keyword fields rather
 //! than a full EDN parser. The format is single-line per event and

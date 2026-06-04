@@ -2,11 +2,10 @@
 //! Regex compile pipeline (parser + AST + IR) — namespace-neutral
 //! implementation per F-009.
 //!
-//! Implements ADR-0031 Alternative 2 (two-tier IR + lazy DFA over
-//! Pike-NFA). This module owns the parser → AST → `Program` IR
-//! pipeline. The matcher lives in `match.zig` (Pike VM, cycle 1
-//! correctness baseline) and `dfa.zig` (lazy DFA fast path,
-//! cycle 2).
+//! Implements ADR-0031 Alternative 2 (Pike-NFA `Program` IR). This
+//! module owns the parser → AST → `Program` IR pipeline. The matcher
+//! lives in `match.zig` (Pike VM). The lazy-DFA fast path reserved by
+//! ADR-0031 was never built (no `dfa.zig`).
 //!
 //! Two surfaces consume this file:
 //!   1. `lang/primitive/regex.zig` — Clojure-ns peer (`re-pattern`
@@ -15,16 +14,19 @@
 //!   2. `runtime/java/util/regex/Pattern.zig` — Java surface
 //!      (`(java.util.regex.Pattern/compile ...)` etc.).
 //!
-//! Cycle 1 (Phase 6.6) supports: literal bytes, `.` wildcard,
-//! concatenation, alternation `|`, and the greedy quantifiers
-//! `*` / `+` / `?`. Character classes, escapes, anchors, capture
-//! groups, and named groups land in cycle 2+.
+//! Supported: literal bytes, `.` wildcard, concatenation,
+//! alternation `|`, greedy quantifiers `*` / `+` / `?`, bounded
+//! `{n,m}`, character classes `[...]`, escapes (`\d \w \s` etc.),
+//! anchors (`^ $ \b \B`), capture + non-capturing groups, and the
+//! inline flags `(?i) (?m) (?s)` plus `\Q...\E` and POSIX
+//! `\p{Alpha}`-style classes. Not supported: named groups,
+//! lookaround, and Unicode category `\p{L}` / script names.
 
 const std = @import("std");
 
 /// Compile flags. `(?i)` inline modifier rewrites at compile
-/// time into case-folded character classes (ADR-0031 Alt 2 cycle
-/// 4); the runtime sees only the folded form.
+/// time into case-folded character classes; the runtime sees only
+/// the folded form.
 pub const Flags = packed struct(u8) {
     case_insensitive: bool = false,
     /// `(?s)` DOTALL — `.` matches every byte incl. `\n`/`\r`. Default off:
@@ -69,8 +71,8 @@ pub const Node = union(enum) {
 };
 
 /// Character-class bitmap: 256 bits over the byte alphabet.
-/// Phase 6.6 cycle 1 stays ASCII; Unicode `\p{...}` lands as a
-/// debt row at cycle 3+.
+/// ASCII-only: POSIX `\p{Alpha}`-style names are supported, but
+/// Unicode category `\p{L}` / script names are not.
 pub const CharClass = struct {
     bits: [32]u8 = [_]u8{0} ** 32,
 
@@ -124,16 +126,17 @@ pub const Program = struct {
 };
 
 pub const CompileError = error{
-    /// Pattern source contains a feature not yet implemented at
-    /// cycle 1 (empty pattern, character classes `[...]`,
-    /// groups `(...)`, escapes `\\d` / `\\w`, anchors `^` / `$`,
-    /// bounded `{n,m}`). Per `no_op_stub_forbidden`, the error
-    /// is explicit rather than silent.
+    /// Pattern source uses a feature that is recognised but not
+    /// implemented: named groups, lookaround, Unicode category
+    /// `\\p{L}` / script names, the `(?x)` extended / `(?m)`-only
+    /// mid-pattern flag forms, more than 8 capture groups, and an
+    /// escaped range endpoint inside `[...]`. Per
+    /// `no_op_stub_forbidden`, the error is explicit, not silent.
     NotImplemented,
 
     /// Parser-level syntax error: stray metacharacter, dangling
     /// quantifier, etc. Replaces JVM's `PatternSyntaxException`
-    /// in cycle 1; refinement lands in cycle 5.
+    /// (cljw reports its own message, not the JVM exception).
     UnexpectedToken,
     UnclosedGroup,
     UnclosedClass,
@@ -230,12 +233,13 @@ fn foldCI(node: *Node) void {
 /// Recursive-descent parser entry: produces an AST `Node` tree
 /// into the supplied arena allocator.
 ///
-/// Grammar (cycle 1):
+/// Grammar (core subset; groups / anchors / `{n,m}` / inline flags
+/// also parse — see the module-level supported-features list):
 ///
 /// ```text
 /// pattern := alt
 /// alt     := concat ('|' concat)*
-/// concat  := quant+                       -- empty branches reject in cycle 1
+/// concat  := quant+                       -- empty branches reject
 /// quant   := atom ('*' | '+' | '?')?
 /// atom    := '.' | char_class | escape | literal_byte
 /// char_class := '[' '^'? class_item+ ']'
@@ -485,9 +489,9 @@ const Parser = struct {
         }
         if (self.atEnd()) return CompileError.UnclosedClass;
         if (self.peek() == @as(?u8, ']')) {
-            // Empty class `[]` / `[^]` — cycle 1 holds back; JVM
-            // treats `[]` as a syntax error and `[^]` as
-            // "anything", neither of which we need yet.
+            // Empty class `[]` / `[^]` — unsupported. JVM treats
+            // `[]` as a syntax error and `[^]` as "anything",
+            // neither of which is needed.
             return CompileError.NotImplemented;
         }
         var cls: CharClass = .{};
@@ -512,7 +516,7 @@ const Parser = struct {
             {
                 _ = self.advance(); // consume '-'
                 const hi = self.advance() orelse return CompileError.UnclosedClass;
-                // Escaped range endpoint deferred to cycle 1b.
+                // Escaped range endpoint (e.g. `[a-\d]`) unsupported.
                 if (hi == '\\') return CompileError.NotImplemented;
                 if (c > hi) return CompileError.InvalidQuantifier;
                 var b: u16 = c;

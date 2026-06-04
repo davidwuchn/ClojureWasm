@@ -1,33 +1,33 @@
 // SPDX-License-Identifier: EPL-2.0
-//! Class-name registry for `instance?` dispatch — ROADMAP §9.9 row
-//! 7.12 / D-078 cycle 1. Maps the recognised cw v1 class symbols
-//! (`String`, `Long`, `Pattern`, `IFn`, ...) to the Value predicate
-//! they accept, and routes Throwable hierarchy queries through
-//! `runtime/error/host_class.zig` (row 7.11 substrate).
+//! Class-name registry for `instance?` dispatch. Maps the recognised
+//! cw v1 class symbols (`String`, `Long`, `Pattern`, `IFn`, ...) to the
+//! Value predicate they accept, and routes Throwable hierarchy queries
+//! through `runtime/error/host_class.zig`.
 //!
-//! ## Scope (cycle 1)
+//! ## Scope
 //!
-//! Lands the data + lookup helpers. `isInstance(v, class_name)` is
+//! Holds the data + lookup helpers. `isInstance(v, class_name)` is
 //! the public entry point. The `__instance?` primitive
 //! (`lang/primitive/core.zig`) calls it after unwrapping its
 //! quoted-Symbol first arg. The `instance?` macro
 //! (`lang/macro_transforms.zig`) auto-quotes the user-form Class
 //! symbol so callers write `(instance? String x)` without explicit
 //! quote — matching JVM Clojure surface syntax via Path A
-//! (Symbol-based primitive-side lookup) per the row 7.12 survey
-//! Q1 decision.
+//! (Symbol-based primitive-side lookup).
 //!
 //! ## Hierarchy
 //!
-//! - **Native classes** (table-driven, exact tag match): `String`,
-//!   `Long`, `Double`, `Boolean`, `Character`, `Keyword`, `Symbol`,
-//!   `PersistentList`, `PersistentVector`, `PersistentArrayMap`,
-//!   `PersistentHashMap`, `PersistentHashSet`, `Pattern`.
+//! - **Native classes** (table-driven, exact tag match): the full set
+//!   is `NATIVE_ENTRIES` below (`String`, `Long`, `Double`, `Boolean`,
+//!   `Character`, `Keyword`, `Symbol`, `PersistentList`,
+//!   `PersistentVector`, `MapEntry`, `PersistentArrayMap`,
+//!   `PersistentHashMap`, `PersistentHashSet`, `PersistentQueue`,
+//!   `Pattern`, `UUID`, `BigInt`, `Ratio`, `BigDecimal`).
 //! - **Interface-shaped classes** (multi-tag match): `IFn`, `Number`,
 //!   `IPersistentMap`, `IPersistentSet`, `IPersistentCollection`.
 //! - **Throwable hierarchy**: delegates to `host_class.matches`
-//!   (cycle 7.11 substrate; covers `Throwable` / `Exception` /
-//!   `RuntimeException` / `ExceptionInfo` etc.).
+//!   (covers `Throwable` / `Exception` / `RuntimeException` /
+//!   `ExceptionInfo` etc.).
 //! - **User types** (`defrecord` / `deftype` / `reify`): walks the
 //!   `TypeDescriptor.parent` chain, comparing `fqcn` against the
 //!   class name.
@@ -39,9 +39,9 @@
 //! PersistentQueue etc.). cw v1 rejects both: only Symbols at the
 //! Class slot (the macro auto-quotes); unknown class symbols raise
 //! a loud `name_error` from the primitive (see `core.zig::instanceQPrim`).
-//! Per row 7.11 row 7.12 survey DIVERGENCE catalogue + F-002
-//! finished-form + `provisional_marker.md` "permanent-no-op
-//! forbidden" — silent-default-shift is eliminated at the source.
+//! Per the survey DIVERGENCE catalogue + F-002 finished-form +
+//! `provisional_marker.md` "permanent-no-op forbidden" —
+//! silent-default-shift is eliminated at the source.
 //!
 //! `Pattern` aliasing to the `.regex` Tag (DIVERGENCE D2 in the
 //! survey) lives here too: `java.util.regex.Pattern` is a class in

@@ -3,13 +3,14 @@
 //!
 //! Backend: impl-only
 //! Impl deps: random
-//! Clojure peer: none (clojure.core/rand & rand-int land in
-//! lang/clj/clojure/core.clj at Phase 6.9 with implementations
-//! that route through this Java surface via Phase 7 dispatch)
+//! Clojure peer: none. clojure.core/rand & rand-int are primitives
+//! in `lang/primitive/math.zig` that call `runtime/random.zig`
+//! directly — they do NOT route through this Java surface.
 //!
-//! Phase 6.4 lands the `___HOST_EXTENSION` declaration; instance
-//! methods (nextInt / nextLong / nextDouble / setSeed) wire through
-//! Phase 7 dispatch (ADR-0008 a1) on top of `runtime/random.zig`.
+//! The `___HOST_EXTENSION` declaration is registered, but the
+//! method_table is empty: instance methods (nextInt / nextLong /
+//! nextDouble / setSeed) over `runtime/random.zig` are not yet
+//! wired. This surface is a reservation only.
 
 const host_api = @import("../_host_api.zig");
 const type_descriptor = @import("../../type_descriptor.zig");

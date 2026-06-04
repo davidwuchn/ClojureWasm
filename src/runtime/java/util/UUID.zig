@@ -12,9 +12,8 @@
 //!
 //! D-121 + ADR-0050: populates `method_table` for the static method
 //! `randomUUID`. Dispatched via `InteropCallNode { .kind =
-//! .static_method }`. Return Value is the canonical 36-char string
-//! form (matches the Clojure-peer `random-uuid` shape; a
-//! `host_instance` UUID Value is a Phase 7+ ergonomic ride-along).
+//! .static_method }`. Return Value is a `.uuid` value (ADR-0074;
+//! matches the Clojure-peer `random-uuid` shape).
 //!
 //! method_table is populated in `initUUID` (runtime) rather than at
 //! module scope because `Value.initBuiltinFn(&fn)` calls

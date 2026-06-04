@@ -8,13 +8,11 @@
 //! 7.3 cycles 1-5 (`extendTypeWithImpls`, `makeProtocol`,
 //! `makeProtocolFn`, `satisfies`).
 //!
-//! Cycle 6 scope: `__make-protocol!`, `__make-protocol-fn!`,
-//! `__satisfies?`. `__extend-type!` defers to cycle 6.5 alongside
-//! the `.type_descriptor` Value wrap migration (Step 0.6 finding —
-//! cycles 1-5 surfaced the runtime helpers but did not migrate
-//! TypeDescriptor to a Value-wrappable shape; the wrap lands as a
-//! thin `TypeDescriptorRef` extern struct rather than churning the
-//! 11 TypeDescriptor instantiation sites).
+//! Primitives: `__make-protocol!`, `__make-protocol-fn!`,
+//! `__satisfies?`, `__extend-type!`. TypeDescriptor is made
+//! Value-wrappable via a thin `TypeDescriptorRef` extern struct
+//! (rather than churning the TypeDescriptor instantiation sites);
+//! `__extend-type!` mutates the descriptor through that ref.
 
 const std = @import("std");
 const value = @import("../../runtime/value/value.zig");
@@ -365,8 +363,9 @@ fn registerTypePrim(
 /// `rt.types` (per survey §5 — name lookup is never consulted; the
 /// dispatch ABI reads through `inst.descriptor` directly).
 ///
-/// Row 7.5 cycle 3 — happy path lands; per-call descriptor allocation
-/// (cache by source location deferred to Phase 8+ per F-003).
+/// Allocates a fresh anonymous descriptor per call; caching by source
+/// location is a deferred optimisation (F-003 — not yet a measured
+/// hot path).
 pub fn reifyPrim(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
     _ = env;
     try error_catalog.checkArity("__reify!", args, 2, loc);
@@ -721,8 +720,7 @@ test "__satisfies? returns true when typed_instance's descriptor implements the 
     const proto_val = try makeProtocol(&fix.rt, &fix.env, &[_]Value{ proto_name, methods_vec }, .{});
 
     // Synthetic TypeDescriptor with an entry for protocol "P" — mirrors the
-    // shape `extendTypeWithImpls` would install once cycle 6.5 lands the
-    // `__extend-type!` surface.
+    // shape `extendTypeWithImpls` installs via the `__extend-type!` surface.
     const td = try fix.rt.gc.infra.create(td_mod.TypeDescriptor);
     defer fix.rt.gc.infra.destroy(td);
     const impl_entries = try fix.rt.gc.infra.alloc(td_mod.TypeDescriptor.MethodEntry, 1);

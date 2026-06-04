@@ -7,12 +7,8 @@
 //! Tag: `.hash_set` (= A7) wraps a `PersistentHashSet` extern struct
 //! holding a Value-encoded reference to the backing ArrayMap or
 //! HashMap. Set ops conj / disj / contains? / count / seq translate
-//! 1:1 to map assoc / dissoc / contains / count / keys.
-//!
-//! **5.6 ArrayMap-only**: inherits 5.5's HAMT body deferral (D-045).
-//! Sets with > 8 elements raise `error.HashMapPromotionNotImplemented`
-//! via the underlying map's assoc path. D-045 follow-up unblocks
-//! larger sets.
+//! 1:1 to map assoc / dissoc / contains / count / keys. The backing
+//! map promotes to a HAMT past 8 elements, so sets of any size work.
 
 const std = @import("std");
 const value_mod = @import("../value/value.zig");

@@ -3,10 +3,10 @@
 //!
 //! The mutable cell + GC trace live in `runtime/atom.zig` (Layer 0).
 //! `deref` / `@` for atoms is handled by the shared IDeref dispatcher in
-//! `stm.zig` + the `@` reader macro. Watches / validators / real
-//! CAS-under-contention are Phase 15 (D-157) — single-threaded now, so
-//! `swap!` needs no CAS-retry loop (no contention exists; a no-op loop
-//! would be a smell).
+//! `stm.zig` + the `@` reader macro. Watches + validators are wired
+//! (ADR-0081 / D-157). Real CAS-under-contention is Phase B
+//! (concurrency) — single-threaded now, so `swap!` needs no CAS-retry
+//! loop (no contention exists; a no-op loop would be a smell).
 
 const std = @import("std");
 const Value = @import("../../runtime/value/value.zig").Value;
@@ -70,7 +70,8 @@ fn requireAtom(name: []const u8, v: Value, loc: SourceLocation) !void {
 }
 
 /// `(atom x)` — construct an atom holding x. (JVM also accepts
-/// `:meta` / `:validator` kwargs — Phase 15, D-157.)
+/// `:meta` / `:validator` ctor kwargs; those are not accepted yet
+/// — D-157. `set-validator!` / `add-watch` are already wired.)
 pub fn atomFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
     _ = env;
     try error_catalog.checkArity("atom", args, 1, loc);

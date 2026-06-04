@@ -1,20 +1,21 @@
 // SPDX-License-Identifier: EPL-2.0
 //! CLI argv-dispatcher for `cljw`. Parses flags + positional args
 //! into a `source_text` + `source_label` pair, then hands off to
-//! `app/runner.zig::runSource`. Surface (Phase 3.1+, row 8.4):
+//! `app/runner.zig::runSource`. Surface:
 //!   - With no arguments, prints `ClojureWasm` (smoke output).
 //!   - `-e <expr>` / `--eval <expr>`: in-line source string.
 //!   - `<file.clj>` (positional): file's contents.
 //!   - `-` (positional): stdin (heredoc-friendly).
-//!   - `--compare` (row 8.4): runs source through BOTH backends
+//!   - `--compare`: runs source through BOTH backends
 //!     via `eval/evaluator.compare`; prints `OK` + the value when
 //!     they agree, `MISMATCH` + both values when they diverge
 //!     (exit 1 on mismatch). ADR-0005 full-bench remit.
 //!   - `-h` / `--help`: usage message.
 //!
-//! Row 8.1 (D-031) extracted argv parsing from `src/main.zig` so
-//! Phase 10 (nREPL) / Phase 12 (build-runner) can add their own
-//! subcommands without piling more mode-dispatch onto `main.zig`.
+//! Argv parsing lives here (extracted from `src/main.zig`, D-031) so
+//! the `repl` / `nrepl` / `build` subcommands dispatched below can
+//! own their own argument handling without piling more mode-dispatch
+//! onto `main.zig`.
 
 const std = @import("std");
 
@@ -42,7 +43,7 @@ pub fn dispatch(init: std.process.Init) !void {
     var stderr_writer = std.Io.File.stderr().writer(io, &stderr_buf);
     const stderr = &stderr_writer.interface;
 
-    // Row 14.13 (D-066): pick up CLJW_ERROR_FORMAT + CLJW_ERROR_LOG
+    // D-066: pick up CLJW_ERROR_FORMAT + CLJW_ERROR_LOG
     // once at startup. Process-wide (per error_render.currentFormat
     // / .logFilePath / .logIo) so every catch site renders + appends
     // consistently without a parameter ripple.
@@ -62,21 +63,21 @@ pub fn dispatch(init: std.process.Init) !void {
     var args = init.minimal.args.iterate();
     _ = args.skip(); // argv[0]
 
-    // Row 14.9 (ADR-0048): `cljw repl` subcommand — peek the first
-    // positional and route to the REPL when it matches. The REPL
-    // takes no further argv; trailing args are not allowed today
-    // (Phase 14.14 polish bundle may add `--init` / `--port`).
+    // `cljw repl` subcommand (ADR-0048) — peek the first positional
+    // and route to the REPL when it matches. The REPL takes no further
+    // argv; trailing args are not allowed today (a future `--init` /
+    // `--port` would relax this).
     if (args.next()) |first| {
         if (std.mem.eql(u8, first, "repl")) {
             return repl.run(io, gpa, arena, stdout, stderr);
         }
         if (std.mem.eql(u8, first, "render-error")) {
-            // Row 14.11 D-100(c): decode CLJW_ERROR_LOG EDN events.
+            // D-100(c): decode CLJW_ERROR_LOG EDN events.
             try render_error_mod.run(io, arena, stdout, stderr, &args);
             return;
         }
         if (std.mem.eql(u8, first, "nrepl")) {
-            // Row 14.10 (ADR-0048 nREPL chart). Optional `--port N`
+            // nREPL server (ADR-0048). Optional `--port N`
             // (default 7888 per JVM nREPL convention).
             var port: u16 = 7888;
             while (args.next()) |a| {
@@ -100,7 +101,7 @@ pub fn dispatch(init: std.process.Init) !void {
             return nrepl.run(io, gpa, arena, stdout, stderr, port);
         }
         if (std.mem.eql(u8, first, "build")) {
-            // Row 14.11 D-100(b): `cljw build <in.clj> -o <out>` — compile
+            // D-100(b): `cljw build <in.clj> -o <out>` — compile
             // the source into a self-contained binary (ADR-0034 am1/am2).
             const in_path = args.next() orelse {
                 try stderr.writeAll("build: missing <in.clj>\n");

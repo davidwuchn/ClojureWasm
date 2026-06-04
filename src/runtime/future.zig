@@ -2,20 +2,22 @@
 //! Future — Tier A single-shot eager-eval-cached computation.
 //!
 //! `(future expr)` evaluates `expr` **eagerly at construction time**
-//! (= synchronously on the single-thread runtime, on Phase 14) and
-//! caches the result. `(deref f)` returns the cached Value. This
-//! matches JVM Clojure's "fire-and-cache" timing: the work happens
-//! at construction (JVM kicks the thread immediately; cw v1 runs
-//! it inline), and `(deref f)` is a cheap cache read. Phase 15.1
-//! swaps the eager-inline call for `std.Thread.spawn` + a
-//! synchronisation primitive (D-114); the surface and the cached
-//! Value layout stay stable.
+//! (= synchronously on the single-thread runtime today) and caches
+//! the result. `(deref f)` returns the cached Value. This matches
+//! JVM Clojure's "fire-and-cache" timing: the work happens at
+//! construction (JVM kicks the thread immediately; cw v1 runs it
+//! inline), and `(deref f)` is a cheap cache read. Real threading
+//! lands at Phase B (the eager-inline call becomes a spawned thread +
+//! wait); the Zig-0.16 threading/sync primitive is chosen at Phase B
+//! entry (the pre-0.16 plan referenced removed APIs). The surface and
+//! the cached Value layout stay stable (D-114).
 //!
 //! Exceptions: a thunk that throws is caught at construction time
 //! and stashed; subsequent `(deref f)` re-raises so the user sees
-//! the error at consistent timing across Phase 14 (inline) and
-//! Phase 15.1 (thread + wait). JVM's `Future.get` re-raises wrapped
-//! in ExecutionException; cw v1 raises the original error directly.
+//! the error at consistent timing across the inline form today and
+//! the thread+wait form at Phase B. JVM's `Future.get` re-raises
+//! wrapped in ExecutionException; cw v1 raises the original error
+//! directly.
 //!
 //! Per F-009 the implementation is namespace-neutral.
 
@@ -56,7 +58,7 @@ pub const Future = extern struct {
 /// deref time); we stash a marker value (`.nil_val`) and set
 /// state = `.realised_error`. Today re-raise lands as a fresh
 /// `future_thunk_failed` raise (PROVISIONAL — message attribution
-/// loses precision until Phase 15.1 lands the Value-carried
+/// loses precision until Phase B lands the Value-carried
 /// exception channel D-115).
 pub fn alloc(rt: *Runtime, env: anytype, thunk: Value, loc: anytype) !Value {
     const f = try rt.gc.alloc(Future);

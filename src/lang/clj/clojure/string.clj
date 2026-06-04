@@ -5,14 +5,11 @@
 ;; namespace knowledge, so each multi-file source declares its own
 ;; namespace via the analyzer special form `in-ns` (ADR-0032).
 ;;
-;; Cycle 1 ships nothing in this file beyond the (in-ns) header —
 ;; upper-case / lower-case / blank? are registered into clojure.string
-;; from `src/lang/primitive/string.zig` because pure-Clojure
-;; implementations would need primitives that haven't landed yet
-;; (codepoint iteration callouts to runtime/charset.zig). Cycles 2-4
-;; add Clojure-side defns for composite vars (capitalize uses upper +
-;; lower + subs; split-lines uses a small regex; etc.) per the
-;; per-task survey at private/notes/phase6-6.9-survey.md §6.
+;; from `src/lang/primitive/string.zig` because they need codepoint
+;; iteration callouts to runtime/charset.zig. The composite vars are
+;; Clojure-side defns over those primitives + core (capitalize uses
+;; upper + lower + subs; split-lines uses a small regex; etc.).
 
 (ns clojure.string (:refer-clojure))
 
@@ -103,11 +100,9 @@
 ;; (PROVISIONAL — D-093, D-051 cycle 3 closure).
 ;; ----------------------------------------------------------------
 
-;; Character literal reader / `(char N)` constructor are not yet
-;; user-accessible (see future debt — char Values land via primitive
-;; surfaces only today), so the Character arm below is correct but
-;; unreachable from .clj source until that lands. Tests cover it
-;; via the Zig leaf directly.
+;; The Character arm is reachable from .clj source: char Values come
+;; both from the character-literal reader (`\a`, `\newline`, `\uXXXX`)
+;; and the `(char N)` constructor.
 (def replace
   (fn* [s match repl]
     (cond

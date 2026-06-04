@@ -1,35 +1,34 @@
-//! TreeWalk — Phase-2 backend: evaluate the Node tree by recursive
-//! descent.
+//! TreeWalk — evaluate the Node tree by recursive descent.
 //!
-//! This is the simplest possible interpreter. Phase 4 adds a bytecode
-//! VM, but TreeWalk stays in the tree afterwards: it's the reference
-//! implementation Phase 8's `Evaluator.compare` cross-checks the VM
-//! against (dual-backend verification, ROADMAP §4.4).
+//! This is the simplest possible interpreter. It is also the
+//! differential oracle the bytecode VM (`vm.zig`) is checked against:
+//! `Evaluator.compare` runs both backends over the same source and
+//! requires bit-for-bit identical Values (dual-backend verification,
+//! ADR-0005 / ADR-0022).
 //!
-//! ### Phase-2 scope (this commit)
+//! ### Scope
 //!
-//! - Constants / locals / vars: trivial.
-//! - Special forms: def, if, do, quote, fn*, let*.
+//! - Constants / locals / vars.
+//! - Special forms: def, if, do, quote, fn*, let*, letfn*, loop*,
+//!   recur, binding, try/throw, in-ns/ns/require.
 //! - Function call: dispatched through `Runtime.vtable.callFn`, which
 //!   `installVTable(rt)` populates with `treeWalkCall` from this file.
+//!   Multi-arity dispatch, closures over locals, deftype/protocol/
+//!   multimethod dispatch, and interop are all handled here.
 //! - Built-ins: `Value.builtin_fn` invoked directly via the
 //!   `dispatch.BuiltinFn` signature.
-//!
-//! `loop*` / `recur` / macros / multi-arity / closures-over-locals are
-//! deferred to Phase 3+.
 //!
 //! ### Function representation
 //!
 //! `Function` is a heap-allocated struct wrapped in a NaN-boxed
-//! `.fn_val` Value. Phase-2 minimum: no closure capture — top-level
-//! fns and any fn that only references global Vars work. Genuine
-//! lexical closures (`(let* [x 1] (fn* [y] (+ x y)))`) need an
-//! environment slot vector and land in Phase 3+.
+//! `.fn_val` Value. A fn nested inside `let*` / `fn*` snapshots its
+//! enclosing locals into `closure_bindings` at allocation time and
+//! replays them on every call; top-level fns capture nothing.
 //!
 //! ### Locals
 //!
-//! Every call frame uses a fixed-size 256-slot stack array. The VM
-//! (Phase 4) will tighten this to the analyser-known frame size.
+//! Every call frame uses a fixed-size 256-slot stack array. A future
+//! pass may tighten this to the analyser-known frame size.
 
 const std = @import("std");
 const Value = @import("../../runtime/value/value.zig").Value;
@@ -61,7 +60,7 @@ const opcode_mod = @import("vm/opcode.zig");
 const BytecodeChunk = opcode_mod.BytecodeChunk;
 
 /// Per-frame slot-array size. Generous so the analyser can lay out
-/// `let*` chains without checking; the VM (Phase 4) will switch to a
+/// `let*` chains without checking; a future pass may switch to a
 /// frame-size known at analyse time.
 pub const MAX_LOCALS: u16 = 256;
 
@@ -70,7 +69,8 @@ pub const MAX_LOCALS: u16 = 256;
 /// backend still only **emits** `error.TypeError` (non-callable
 /// callee), `error.ArityError` (wrong number of args),
 /// `error.IndexError` (slot out of range), `error.NotImplemented`
-/// (Phase-3+ feature stub), `error.InternalError` (defensive runtime
+/// (defensive guard, e.g. invoking a deserialized VM-only fn with no
+/// evalChunk), `error.InternalError` (defensive runtime
 /// invariants), and `error.OutOfMemory`. Mirrors the `ReadError` /
 /// `AnalyzeError` treatment in §9.5/3.2 / 3.3.
 pub const EvalError = error_mod.ClojureWasmError;
@@ -95,10 +95,9 @@ threadlocal var pending_recur_len: u16 = 0;
 
 // --- Function (heap object representing a Clojure fn) ---
 
-/// Closure object emitted by `fn*`. Phase 3.11 adds `slot_base` and
-/// `closure_bindings` so a fn nested inside `let*` / `fn*` snapshots
-/// its enclosing locals at allocation time and replays them on every
-/// call. Top-level fns have `slot_base == 0` and `closure_bindings ==
+/// Closure object emitted by `fn*`. `slot_base` and `closure_bindings`
+/// let a fn nested inside `let*` / `fn*` snapshot its enclosing locals
+/// at allocation time and replay them on every call. Top-level fns have `slot_base == 0` and `closure_bindings ==
 /// null`. The `body` and `params` slices borrow from the analyser's
 /// per-eval arena, so the Function lives only as long as that arena
 /// does. `closure_bindings` is owned by the Function (separate
@@ -399,24 +398,13 @@ fn evalSet(rt: *Runtime, env: *Env, locals: []Value, n: node_mod.SetNode) anyerr
 }
 
 /// `(in-ns 'foo.bar)` — switch `env.current_ns` to the named namespace,
-/// creating it if absent. Returns `nil` (JVM Clojure returns the
-/// namespace value — documented divergence pending the `ns` heap
-/// Value landing per F-004 Group B slot 21).
+/// creating it if absent. Returns the namespace value (clj parity +
+/// consistency with the in-ns runtime fn, ADR-0083 / ADR-0085).
 ///
-/// Additionally refers `rt/` into the entered namespace so primitive
-/// vars (`reduce` / `conj` / `disj` / `count` / `every?` / ...) are
-/// reachable unqualified from within the ns body. This extends the
-/// `referAll(rt_ns, user_ns)` pattern that `primitive.zig::registerAll`
-/// establishes for the REPL's initial `user/` ns to every other ns the
-/// user opens via `in-ns`. Without this, `(in-ns 'clojure.set) (def
-/// union (fn* [s1 s2] (reduce conj s1 s2)))` would fail symbol
-/// resolution on `reduce` / `conj`. The full `(ns ...)` macro +
-/// explicit `(refer 'clojure.core)` semantics arrive at ADR-0035
-/// `(in-ns 'foo)`. ADR-0035 D9 second amendment (Phase 7 entry T3,
-/// 2026-05-26): naked ns switch — no auto-refer. The prior
-/// convenience auto-refer of rt + clojure.core has been removed;
-/// user code must use `(ns foo (:refer-clojure))` (which fires the
-/// widened semantic) or explicit `(refer ...)` calls.
+/// Naked ns switch — no auto-refer (ADR-0035 D9 second amendment). User
+/// code reaches `clojure.core` / `rt/` vars via `(ns foo
+/// (:refer-clojure))` (which fires the widened refer semantic) or
+/// explicit `(refer ...)` calls.
 fn evalInNs(env: *Env, n: node_mod.InNsNode) !Value {
     const ns = try env.findOrCreateNs(n.ns_name);
     env.setCurrentNs(ns);
@@ -462,14 +450,13 @@ fn evalNs(rt: *Runtime, env: *Env, n: node_mod.NsNode) !Value {
 }
 
 /// `(require 'foo.bar)` / `(require '[foo.bar :as a :refer [x y]])`.
-/// ADR-0035 D2/D3/D4/D5/D8. Phase 6.16.b-4 sub-cycle c.5 adds
-/// vector-libspec support: `:as` installs an alias in the calling
-/// ns; `:refer` installs explicit per-name refers (raising
-/// `private_access_error` on private targets, `symbol_unresolved`
-/// when the source ns lacks the name). Already-loaded namespaces
-/// skip the load step but still apply :as/:refer. Source-loading
-/// of a not-yet-loaded namespace remains deferred to sub-cycle c.6
-/// (needs macro_table threading).
+/// ADR-0035 D2/D3/D4/D5/D8. Vector-libspec support: `:as` installs an
+/// alias in the calling ns; `:refer` installs explicit per-name refers
+/// (raising `private_access_error` on private targets,
+/// `symbol_unresolved` when the source ns lacks the name).
+/// Already-loaded namespaces skip the load step but still apply
+/// :as/:refer; a not-yet-loaded namespace is source-loaded via
+/// `loader.loadNamespace`.
 fn evalRequire(rt: *Runtime, env: *Env, n: node_mod.RequireNode) !Value {
     const target_ns = blk: {
         if (env.findNs(n.ns_name)) |existing| {
@@ -978,10 +965,11 @@ pub fn treeWalkCall(
 /// fn (typically `(fn* [this ...] body)`) receives the receiver as
 /// its first parameter, so the FULL `args` slice (receiver +
 /// remaining) flows through to `dispatch.dispatch` → `vt.callFn`.
-/// CallSite is stack-allocated per call — row 7.6 will introduce a
-/// MethodCallNode whose CallSite is analyzer-arena-owned for inline
-/// caching. Until then, every invocation pays one method_table
-/// linear scan (small N — Clojure protocols typically ≤ 8 methods).
+/// CallSite is stack-allocated per call. (Compiled method dispatch
+/// uses an analyzer-arena-owned, inline-cached CallSite via
+/// `op_method_call`; this protocol-fn path keeps a per-call CallSite,
+/// so every invocation pays one method_table linear scan — small N,
+/// Clojure protocols typically ≤ 8 methods.)
 pub fn callProtocolFn(rt: *Runtime, env: *Env, callee: Value, args: []const Value, loc: SourceLocation) anyerror!Value {
     if (args.len < 1)
         return error_catalog.raise(.arity_below_min, loc, .{ .fn_name = "protocol-fn", .got = args.len, .min = 1 });

@@ -1,20 +1,24 @@
+// SPDX-License-Identifier: EPL-2.0
 //! Error / exception primitives for the `rt/` namespace.
 //!
-//! Phase 3.10 surface:
+//! Surface:
 //!
 //! - `(ex-info msg data)` → ExInfo Value (cause = nil)
 //! - `(ex-info msg data cause)` → ExInfo Value
 //! - `(ex-message x)` → string Value if `x` is an ex-info, else nil
 //! - `(ex-data x)` → data Value if `x` is an ex-info, else nil
+//! - `(ex-cause x)` → the cause exception, else nil
+//! - `(__assertion-error msg)` → internal AssertionError carrier for
+//!   `(assert …)` (D-192)
 //!
 //! Mirroring Clojure's `clojure.core` definitions: `ex-message` and
 //! `ex-data` accept any Value and return nil for non-exceptions
 //! (rather than throwing). This keeps them safe to use on already-
 //! caught Values whose precise type is uncertain.
 //!
-//! The actual `(throw x)` integration lands in Phase 3.11 when the
-//! TreeWalk evaluator gets `evalThrow` / `evalTry` and the
-//! `last_thrown_exception` threadlocal becomes load-bearing.
+//! `(throw x)` / `(try …)` are wired in the TreeWalk evaluator
+//! (`evalThrow` / `evalTry`); the `last_thrown_exception` dispatch
+//! slot these primitives read is load-bearing.
 
 const std = @import("std");
 const Value = @import("../../runtime/value/value.zig").Value;
@@ -30,9 +34,9 @@ const string_collection = @import("../../runtime/collection/string.zig");
 
 /// `(ex-info msg data)` / `(ex-info msg data cause)`.
 ///
-/// Phase 3.10 accepts **any Value** for `data` (not just maps) — once
-/// the heap map type ships and `(map? x)` lands, the Tier-A test
-/// suite will check `data` is a map and we can tighten the contract.
+/// Accepts **any Value** for `data` (not just maps). JVM Clojure
+/// requires `data` to be a map or nil; cw v1 currently leaves it
+/// loose (the data Value is stored as-is and surfaced by `ex-data`).
 pub fn exInfo(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
     _ = env;
     try error_catalog.checkArityRange("ex-info", args, 2, 3, loc);

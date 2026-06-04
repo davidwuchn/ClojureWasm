@@ -8,10 +8,12 @@
 //!
 //! **PROVISIONAL** semantic on single-thread: `(deref p)` when
 //! `state == .pending` would block forever in a multi-threaded JVM
-//! Clojure. cw v1 Phase 14 single-thread runtime cannot block on
-//! itself — it would deadlock by definition. The Phase-14 landing
-//! raises `promise_undelivered_error` instead; the contention path
-//! lands at Phase 15.1 alongside `std.Io.Mutex` (D-113).
+//! Clojure. cw v1's single-thread runtime cannot block on itself —
+//! it would deadlock by definition. Today's landing raises
+//! `promise_undelivered_error` instead; the blocking contention path
+//! lands at Phase B with real threading/locking (the Zig-0.16
+//! primitive is chosen at Phase B entry — the pre-0.16 plan
+//! referenced removed APIs) (D-113).
 //!
 //! Per F-009 the implementation is namespace-neutral; surface
 //! `promise` / `deliver` primitives live in `lang/primitive/deref.zig`.

@@ -18,21 +18,19 @@
 //!     two bitmaps) per the 5.5 survey recommendation
 //!     (`private/notes/phase5-5.5-survey.md`).
 //!
-//! ## What lands when
+//! ## Operations
 //!
-//! - **5.5.a** (this commit): ArrayMap + HamtMapNode struct shapes;
-//!   `count(v)` + `get(v, k)` for ArrayMap; `get` on `.hash_map`
-//!   raises `error.HashMapNotImplemented` until 5.5.b.
-//! - **5.5.b**: assoc — ArrayMap path + threshold promotion +
-//!   HamtMapNode path with bitmap-indexed slots.
-//! - **5.5.c**: dissoc — ArrayMap shrink + HamtMapNode demote to
-//!   ArrayMap when count drops back ≤ 8.
-//! - **5.5.d**: contains? / keys / vals / seq + reader-literal hook.
+//! - `count` / `get` / `contains?` read both representations.
+//! - `assoc` copies the ArrayMap path and promotes to a HAMT past the
+//!   8-entry threshold; the HAMT path inserts bitmap-indexed slots.
+//! - `dissoc` shrinks the ArrayMap (collapsing to the empty singleton
+//!   at count 1) and deletes from the HAMT.
+//! - `keys` / `vals` / `seq` walk either representation.
 //!
 //! Per-tag trace fns for `.array_map` / `.hash_map` /
-//! `.hamt_map_node` / `.hash_collision_map_node` land at 5.5.b
-//! alongside the first rt.gc.alloc — at 5.5.a EMPTY is a comptime
-//! const singleton, no GC trace needed.
+//! `.hamt_map_node` / `.hash_collision_map_node` are registered via
+//! `registerGcHooks`. EMPTY is a comptime const singleton that never
+//! lives on the GC heap, so it needs no trace.
 
 const std = @import("std");
 const value_mod = @import("../value/value.zig");
@@ -138,13 +136,12 @@ fn keyEq(a: Value, b: Value) bool {
 }
 
 /// `(assoc m k v)` — returns a new map with `k → v` per Clojure
-/// semantics. 5.5.b body handles the ArrayMap path:
+/// semantics. ArrayMap path:
 ///   - key found → copy with that slot's value replaced
 ///   - key absent, count < 8 → copy with append
-///   - key absent, count == 8 → promote to HamtMap (5.5.b.2)
+///   - key absent, count == 8 → promote to HamtMap
 ///
-/// HamtMap path raises `error.HashMapNotImplemented` at 5.5.b
-/// until 5.5.b.2 lands the bitmap-indexed body.
+/// HamtMap path inserts into the bitmap-indexed HAMT (`assocHashMap`).
 pub fn assoc(rt: *Runtime, v: Value, k: Value, val: Value) !Value {
     return switch (v.tag()) {
         .array_map => try assocArrayMap(rt, v.decodePtr(*const ArrayMap), k, val),
@@ -187,8 +184,8 @@ fn assocArrayMap(rt: *Runtime, am: *const ArrayMap, k: Value, val: Value) !Value
 
 /// `(dissoc m k)` — returns a new map without `k`. Returns the
 /// original map (no copy) when the key is absent. ArrayMap path
-/// linear-scans + copy-with-hole-removed; HamtMap path raises
-/// `error.HashMapNotImplemented` until 5.5.b.2 lands the body.
+/// linear-scans + copy-with-hole-removed; HamtMap path deletes from
+/// the HAMT (`dissocHashMap`).
 pub fn dissoc(rt: *Runtime, v: Value, k: Value) !Value {
     return switch (v.tag()) {
         .array_map => try dissocArrayMap(rt, v.decodePtr(*const ArrayMap), v, k),
@@ -252,9 +249,9 @@ pub fn tracePersistentHashMap(gc_ptr: *anyopaque, header: *HeapHeader) void {
 pub fn traceHamtMapNode(gc_ptr: *anyopaque, header: *HeapHeader) void {
     const gc: *gc_heap_mod.GcHeap = @ptrCast(@alignCast(gc_ptr));
     const node: *HamtMapNode = @ptrCast(@alignCast(header));
-    // CHAMP layout: 5.5.b.2 wires the data_map / node_map walk. For
-    // 5.5.a/b every slot is conservatively walked — nil + immediate
-    // Values filter out via Value.heapHeader.
+    // CHAMP layout: every slot is walked — nil + immediate Values
+    // filter out via Value.heapHeader, so no bitmap-guided walk is
+    // needed.
     for (node.slots) |slot| {
         if (slot.heapHeader()) |h| mark_sweep.mark(gc, h);
     }
@@ -266,7 +263,7 @@ pub fn registerGcHooks() void {
     tag_ops.registerTrace(.array_map, &traceArrayMap);
     tag_ops.registerTrace(.hash_map, &tracePersistentHashMap);
     tag_ops.registerTrace(.hamt_map_node, &traceHamtMapNode);
-    tag_ops.registerTrace(.hash_collision_map_node, &traceHamtMapNode); // same slot-walk; 5.5.c may specialise
+    tag_ops.registerTrace(.hash_collision_map_node, &traceHamtMapNode); // same slot-walk
 }
 
 /// `(contains? m k)` — returns true when the key exists, false
@@ -339,12 +336,10 @@ fn valsArrayMap(rt: *Runtime, am: *const ArrayMap) !Value {
     return result;
 }
 
-/// `(seq m)` — returns a list of 2-element vector pairs `[k v]`
-/// (or nil for empty per Clojure). 5.5.d uses 2-element
-/// PersistentVector as the entry representation; future ADR may
-/// promote to a dedicated `map_entry` Tag (A15 is reserved per
-/// F-004) once the `MapEntry.key` / `MapEntry.val` accessor needs
-/// the distinction.
+/// `(seq m)` — returns a list of MapEntry pairs (or nil for empty per
+/// Clojure). Entries are minted as the dedicated `.map_entry` Tag
+/// (D-209 / ADR-0078), so `(map-entry? (first {…}))` is true while the
+/// entry still behaves as `[k v]`.
 pub fn seq(rt: *Runtime, v: Value) !Value {
     return switch (v.tag()) {
         .array_map => try seqArrayMap(rt, v.decodePtr(*const ArrayMap)),

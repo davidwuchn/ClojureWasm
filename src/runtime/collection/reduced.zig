@@ -7,9 +7,8 @@
 //! `(reduced 42)` halts immediately and yields `42`.
 //!
 //! Tag `.reduced` is day-1 reserved (ADR-0004 + ADR-0012, value.zig
-//! line 85). This file lands the heap layout + alloc/unwrap helpers
-//! required by Phase 6.16.a-3.1's `reduce` (and downstream
-//! `transduce`/`reduced?`/`unreduced` at Phase 7+).
+//! line 85). This file holds the heap layout + alloc/unwrap helpers
+//! used by `reduce` (and `transduce` / `reduced?` / `unreduced`).
 
 const std = @import("std");
 const value = @import("../value/value.zig");

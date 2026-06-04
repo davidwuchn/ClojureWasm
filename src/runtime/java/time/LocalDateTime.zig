@@ -5,15 +5,14 @@
 //! Impl deps: time
 //! Clojure peer: none
 //!
-//! TypeDescriptor reservation per ADR-0029 D5 (Phase 14 row 14.2 /
-//! D-097). The backing impl `runtime/time/local_date_time.zig`
-//! (timezone-agnostic date+time over `runtime/time/instant.zig`)
-//! lands in a focused follow-up cycle alongside Duration /
-//! ZonedDateTime — tracked by **D-105**. Until then this surface is
-//! reachable through `(rt.types.get "cljw.java.time.LocalDateTime")`
-//! and the `cljw.java.time.LocalDateTime` namespace exists, but
-//! `(java.time.LocalDateTime/now)` raises until method dispatch
-//! wires up.
+//! TypeDescriptor reservation per ADR-0029 D5. The backing impl
+//! `runtime/time/local_date_time.zig` (timezone-agnostic date+time
+//! over `runtime/time/instant.zig`) is unbuilt, alongside Duration /
+//! ZonedDateTime — tracked by **D-105**. The surface is reachable
+//! through `(rt.types.get "cljw.java.time.LocalDateTime")` and the
+//! `cljw.java.time.LocalDateTime` namespace exists, but the
+//! method_table is empty, so `(java.time.LocalDateTime/now)` does
+//! not yet resolve.
 
 const host_api = @import("../_host_api.zig");
 const type_descriptor = @import("../../type_descriptor.zig");

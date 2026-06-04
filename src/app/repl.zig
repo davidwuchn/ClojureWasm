@@ -2,11 +2,11 @@
 //! Minimal interactive REPL for `cljw repl` — F144 re-introduction
 //! per ADR-0015 amendment 2 + ADR-0048 (state machine domain ADR).
 //!
-//! The Phase-14 landing is a **line-buffered prompt loop**: read a
+//! The REPL is a **line-buffered prompt loop**: read a
 //! line from stdin, parse / analyse / eval, print the result,
 //! re-prompt. Per-form errors are caught + rendered and the loop
 //! continues — only EOF on stdin terminates. Arrow-key history +
-//! cursor editing (true line-editor) ride D-116 as polish.
+//! cursor editing (true line-editor) remain future polish (D-116).
 //!
 //! State chart (ADR-0048):
 //!
@@ -20,10 +20,10 @@
 //!     │ printing │ ◀────────────────────────────────  │  result  │
 //!     └──────────┘                                    └──────────┘
 //!
-//! The Phase 14 line-buffered loop collapses `reading` into a single
-//! `stdin.takeDelimiterExclusive('\n')` call. Phase 14.10 (nREPL)
-//! and Phase 14.11 (build pipeline) introduce richer states per
-//! ADR-0048; only the REPL chart is exercised here.
+//! The line-buffered loop collapses `reading` into a single
+//! `stdin.takeDelimiterExclusive('\n')` call. The nREPL and build
+//! pipeline charts (also ADR-0048) carry richer states; only the
+//! REPL chart is exercised here.
 
 const std = @import("std");
 const Writer = std.Io.Writer;
@@ -44,7 +44,7 @@ const error_render = @import("error_render.zig");
 /// Run the REPL until stdin EOF. `arena` is per-process here — each
 /// form's analysis/eval allocates against it, and we never reset; a
 /// long-running REPL session is a known memory bottleneck the
-/// Phase-15 mark-sweep activation addresses.
+/// Phase B mark-sweep activation addresses.
 pub fn run(
     io: std.Io,
     gpa: std.mem.Allocator,

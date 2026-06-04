@@ -7,14 +7,14 @@
 //! codepoint-aware indexing because users expect "あいう" to be
 //! 3 chars, not 9. This file provides the bytes ↔ codepoint mapping.
 //!
-//! Surfaces (Phase 6+):
+//! Surfaces:
 //!   - `lang/primitive/string.zig` — clojure.core `count` / `subs` /
-//!     `nth` over string. Lands at 6.9 alongside clojure.string.
-//!   - `runtime/java/nio/charset/Charset.zig` — Phase 14+ surface
-//!     for `Charset.forName("UTF-8")` etc. The Java legacy
-//!     `String#charAt` semantics (UTF-16 code unit) is **not**
+//!     `nth` over string (shipped, alongside clojure.string).
+//!   - `runtime/java/nio/charset/Charset.zig` — future surface for
+//!     `Charset.forName("UTF-8")` etc. (not yet present). The Java
+//!     legacy `String#charAt` semantics (UTF-16 code unit) is **not**
 //!     supported in cw v1; Java surface returns codepoint-based
-//!     positions instead (ADR-0014 D-014a).
+//!     positions instead (ADR-0014).
 
 const std = @import("std");
 
@@ -69,10 +69,10 @@ pub fn substring(s: []const u8, start: usize, end: usize) Utf8Error![]const u8 {
 
 /// Allocate a new UTF-8 byte slice with every ASCII lowercase
 /// codepoint replaced by its uppercase pair. Non-ASCII codepoints
-/// pass through verbatim. Per Phase 6.9 cycle 1, full Unicode case
-/// folding (Latin Extended, Greek, Cyrillic, …) is tracked at debt
-/// D-057 and lands when `clojure.string` graduates to JVM-conformance
-/// (Phase 11+). Caller owns the returned slice.
+/// pass through verbatim. Full Unicode case folding (Latin Extended,
+/// Greek, Cyrillic, …) is tracked at debt D-057 and lands when
+/// `clojure.string` graduates to JVM-conformance. Caller owns the
+/// returned slice.
 pub fn upperCaseAlloc(alloc: std.mem.Allocator, s: []const u8) ![]u8 {
     const out = try alloc.alloc(u8, s.len);
     @memcpy(out, s);
@@ -80,8 +80,8 @@ pub fn upperCaseAlloc(alloc: std.mem.Allocator, s: []const u8) ![]u8 {
     return out;
 }
 
-/// ASCII case-fold mirror of `upperCaseAlloc`. Same Phase-11 Unicode
-/// caveat applies (D-057).
+/// ASCII case-fold mirror of `upperCaseAlloc`. Same Unicode
+/// case-fold caveat applies (D-057).
 pub fn lowerCaseAlloc(alloc: std.mem.Allocator, s: []const u8) ![]u8 {
     const out = try alloc.alloc(u8, s.len);
     @memcpy(out, s);

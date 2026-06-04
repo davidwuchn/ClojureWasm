@@ -5,10 +5,10 @@
 //! Impl deps: instant
 //! Clojure peer: none (clojure.instant has its own parser)
 //!
-//! Java 8+ canonical time class. Phase 6.5 lands the
-//! `___HOST_EXTENSION` declaration; instance methods (now /
-//! toEpochMilli / getEpochSecond / getNano / parse) wire through
-//! Phase 7 dispatch on top of `runtime/time/instant.zig`.
+//! Java 8+ canonical time class. The `___HOST_EXTENSION` declaration
+//! is registered, but the method_table is empty: instance methods
+//! (now / toEpochMilli / getEpochSecond / getNano / parse) over the
+//! existing `runtime/time/instant.zig` impl are not yet wired.
 
 const host_api = @import("../_host_api.zig");
 const type_descriptor = @import("../../type_descriptor.zig");

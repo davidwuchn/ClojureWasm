@@ -4,22 +4,26 @@
 //! frees. The whole arena is released at once via `deinit()`. Phase 5
 //! adds mark-sweep GC alongside this (`runtime/gc/mark_sweep.zig`).
 //!
-//! Day-1 provisions for later phases:
-//!   - `suppress_count`: nestable GC suppression, used during macro
-//!     expansion so intermediate values aren't collected mid-flight.
-//!   - `gc_stress`: comptime flag for collect-on-every-alloc stress
-//!     mode (Phase 5+; flipped via build option later).
+//! Auxiliary provisions:
+//!   - `suppress_count`: nestable GC suppression counter. Note the
+//!     mark-sweep path does NOT use it for macro expansion — cw v1
+//!     pins the in-flight Value in `root_set.macro_root_slot` instead
+//!     (see root_set.zig). The counter is unused by the GC path today.
+//!   - `gc_stress`: comptime flag for a collect-on-every-alloc stress
+//!     mode. Currently a compile-time `false`; wiring it to a build
+//!     option is a future task (never done).
 //!
-//! Thread-safety: the allocator vtable is **not** thread-safe. Phase 1
+//! Thread-safety: the allocator vtable is **not** thread-safe. cw v1
 //! is single-threaded so this is fine. `std.Thread.Mutex` is gone in
 //! Zig 0.16, and `std.Io.Mutex.lock` requires an `Io` argument that
 //! `std.mem.Allocator.VTable` callbacks cannot accept (their signatures
-//! are fixed). A different lock strategy must land before Phase 15.
+//! are fixed). A different lock strategy must land for Phase B
+//! (concurrency).
 
 const std = @import("std");
 
-/// Comptime flag for collect-on-every-alloc stress mode (Phase 5+).
-/// Wired to a build option once mark-sweep lands.
+/// Comptime flag for a collect-on-every-alloc stress mode. Currently a
+/// compile-time `false`; wiring it to a build option is a future task.
 pub const gc_stress = false;
 
 /// Allocation statistics for profiling and tests.
@@ -33,7 +37,8 @@ pub const ArenaGc = struct {
     arena: std.heap.ArenaAllocator,
 
     /// Nestable GC suppression counter. While > 0, collection is skipped.
-    /// Macro expansion relies on this to keep intermediate values alive.
+    /// Unused by the mark-sweep path: macro expansion keeps intermediate
+    /// values alive via `root_set.macro_root_slot`, not this counter.
     suppress_count: u32 = 0,
 
     /// Allocation statistics for profiling.

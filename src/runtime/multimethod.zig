@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: EPL-2.0
-//! Multimethod dispatch — ADR-0008 Phase 7.2 amendment (Alt 1).
+//! Multimethod dispatch — ADR-0008 amendment (Alt 1).
 //!
-//! Per the Phase 7.2 amendment, `defmulti` / `defmethod` are
-//! Clojure-side macros expanding to primitive constructor + `def`
-//! calls; multimethod dispatch lives here, invoked through the
+//! `defmulti` / `defmethod` are Clojure-side macros expanding to
+//! primitive constructor + `def` calls; multimethod dispatch lives
+//! here, invoked through the
 //! `.multi_fn` arm of `vtable.callFn` (Group B slot 1, F-004).
 //! No new analyzer Node variants; no new VM opcodes; both
 //! backends share this single runtime body.
@@ -19,12 +19,11 @@
 //! because `extern struct` forbids fat pointers. Render the name
 //! by dereferencing the Symbol Value through `symbol.asSymbol`.
 //!
-//! ### `getMethod` resolution (incremental landing)
+//! ### `getMethod` resolution
 //!
-//! Cycle 1 (this commit) implements the exact-match + default
-//! fallback + raise paths. isa? walk + prefer-method conflict
-//! resolution + cache invalidation arrive in cycles 2-5 within
-//! row 7.2 (each red-green-refactor before the next).
+//! Implements exact-match + default fallback + raise paths, the
+//! isa? hierarchy walk, prefer-method conflict resolution, and
+//! method-cache invalidation on hierarchy drift.
 
 const std = @import("std");
 const value = @import("value/value.zig");
@@ -98,17 +97,15 @@ pub const MultiFn = extern struct {
     cached_hierarchy_snapshot: Value,
 };
 
-/// Cycle 3 — does `x` dominate `y` for multimethod resolution?
+/// Does `x` dominate `y` for multimethod resolution?
 /// JVM `MultiFn.dominates(x, y) = prefers(x, y) || isA(x, y)`.
 /// cw v1 calls these `isPreferred` and `isaCheck` respectively.
 ///
 /// `prefer_table` shape: `{x #{y1 y2 ...}, ...}` where x is
 /// preferred over each y in the set (matches JVM
-/// `preferTable: IPersistentMap`). cycle 3 implements **direct**
-/// preference only; transitive `(prefers x y) ⇒ (prefers x z)`
-/// via hierarchy parents waits for cycle 4 (full-hierarchy deref
-/// will surface the `:parents` sub-map that transitive walks
-/// require).
+/// `preferTable: IPersistentMap`). `isPreferred` resolves **direct**
+/// preference; the isa? hierarchy walk in `isaCheck` covers
+/// transitive ancestor relations.
 pub fn dominates(
     prefer_table: Value,
     hierarchy_ancestors: Value,
@@ -119,10 +116,9 @@ pub fn dominates(
     return try isaCheck(hierarchy_ancestors, x, y);
 }
 
-/// Cycle 3 direct-only preference check. Returns true iff
-/// `prefer_table[x]` contains `y` (i.e. `(prefer-method f x y)`
-/// was called). Transitive resolution lands in cycle 4 alongside
-/// the full-hierarchy `:parents` access.
+/// Direct preference check. Returns true iff `prefer_table[x]`
+/// contains `y` (i.e. `(prefer-method f x y)` was called).
+/// Transitive ancestor relations are covered by the isa? walk.
 pub fn isPreferred(prefer_table: Value, x: Value, y: Value) !bool {
     if (prefer_table.tag() == .nil) return false;
     const preferred_over = try map_mod.get(prefer_table, x);
@@ -130,20 +126,19 @@ pub fn isPreferred(prefer_table: Value, x: Value, y: Value) !bool {
     return try set_mod.contains(preferred_over, y);
 }
 
-/// cw v1 `isa?` check, cycle-2 scope: equality + hierarchy
-/// ancestors-map lookup. Mirrors `clojure.core/isa?` steps 1 + 3.
-/// Step 2 (`Class.isAssignableFrom`) and step 4 (`supers` walk)
-/// have no JVM-direct equivalent in cw v1 per ADR-0007 Option β +
-/// `.claude/rules/no_jvm_specific_assumption.md` — they will be
-/// replaced by the TypeDescriptor walk DIVERGENCE in a later
-/// cycle (cw-side replacement for JVM class hierarchy).
+/// cw v1 `isa?` check: equality + hierarchy ancestors-map lookup +
+/// TypeDescriptor parent walk. Mirrors `clojure.core/isa?` steps
+/// 1 + 3. Step 2 (`Class.isAssignableFrom`) and step 4 (`supers`
+/// walk) have no JVM-direct equivalent in cw v1 per ADR-0007
+/// Option β + `.claude/rules/no_jvm_specific_assumption.md` — the
+/// `typeDescriptorIsa` walk is the cw-side replacement (DIVERGENCE
+/// from JVM class hierarchy).
 ///
 /// `hierarchy_ancestors` is the `:ancestors` sub-map of a
 /// hierarchy struct: `{child #{ancestor1 ancestor2 ...}, ...}`.
 /// `nil` means "no hierarchy" — falls back to equality only.
-/// cycle 4 introduces the full-hierarchy IRef deref + `:ancestors`
-/// extraction inside `getMethod`; until then the test fixture
-/// passes the ancestors-map directly via `hierarchy_ref`.
+/// `getMethod` derefs the full hierarchy IRef and extracts the
+/// `:ancestors` sub-map before calling here.
 pub fn isaCheck(hierarchy_ancestors: Value, child: Value, parent: Value) !bool {
     if (@intFromEnum(child) == @intFromEnum(parent)) return true;
 

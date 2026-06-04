@@ -15,8 +15,7 @@
 //! ChunkedCons. So 1M elements need ~31K ChunkedCons cells + ~31K
 //! ChunkBuffer cells = 60K allocations, not 1M.
 //!
-//! ## 5.8.a scope (this commit): struct shapes + trace fns + minimal
-//! count/first/rest read-side ops.
+//! ## Shapes
 //!
 //! - `ChunkBuffer` (A11) — extern struct with `count: u32 + slots:
 //!   [32]Value`. Mutable during construction (range / map fill the
@@ -28,9 +27,8 @@
 //!   `rest(cc)` = either a new ChunkedCons with offset+1 (within
 //!   chunk) or `next` (chunk exhausted).
 //!
-//! ## 5.8.b scope (next sub-commit): integration with range / lazy-seq
-//! realisation paths. The data shapes here let 5.8.b wire `(range)` +
-//! `(reduce + (range 1e6))` exit smoke without further struct surgery.
+//! These shapes back the range + lazy-seq realisation paths (the
+//! chunk-builder surface; ADR-0065 / D-163).
 
 const std = @import("std");
 const value_mod = @import("../value/value.zig");

@@ -5,7 +5,7 @@
 //! `@errorName(err)` so an unwired catch site still produces some
 //! output instead of swallowing the failure.
 //!
-//! Row 8.1 (D-031) extracted these four fns from `src/main.zig` so
+//! These four fns were extracted from `src/main.zig` (D-031) so
 //! `main.zig` shrinks to a thin entry-point dispatcher. The exit-code
 //! mapping (per ADR-0019) lives in `kindToExitCode`; per-Kind
 //! dispatch is intentional so future Kinds (`overflow_error`,
@@ -29,14 +29,14 @@ const Value = @import("../runtime/value/value.zig").Value;
 /// `@errorName(err)` so an unwired call site still produces *some*
 /// output instead of swallowing the failure.
 ///
-/// Row 14.13 (D-066): respects the `CLJW_ERROR_FORMAT` env var via
-/// `currentFormat` which the CLI dispatcher sets from
-/// `init.environ_map` at startup. Two formats:
+/// Respects the `CLJW_ERROR_FORMAT` env var (D-066) via `currentFormat`,
+/// which the CLI dispatcher sets from `init.environ_map` at startup.
+/// Two formats:
 /// - `text` (default): human-readable carat-pointer format.
 /// - `edn`: structured EDN map for `cljw render-error` post-mortem
 ///   decoding + machine-driven tooling (CIDER / editors / log
-///   aggregators). `CLJW_ERROR_LOG` file-append rides the same
-///   D-066 follow-up; not in this cycle.
+///   aggregators). When `CLJW_ERROR_LOG` is set, the rendered error
+///   is also appended to that file via `appendToLogFile`.
 pub fn renderError(stderr: *Writer, ctx: error_print.SourceContext, err: anyerror) Writer.Error!void {
     if (error_mod.getLastError()) |info| {
         switch (currentFormat) {

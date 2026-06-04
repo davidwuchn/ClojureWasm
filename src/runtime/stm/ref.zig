@@ -1,30 +1,31 @@
 // SPDX-License-Identifier: EPL-2.0
-//! STM Ref — Tier A reference cell with MVCC history ring (Phase 14).
+//! STM Ref — Tier A reference cell with MVCC history ring.
 //!
-//! Phase 13 shipped Ref as a single `current: Value` cell (ADR-0010
-//! amendment 3). Phase 14 row 14.11.5 (D-102 + ADR-0010 amendment 4)
-//! lands the JVM-faithful doubly-linked self-loop history ring:
+//! Ref started as a single `current: Value` cell (ADR-0010
+//! amendment 3); D-102 + ADR-0010 amendment 4 landed the
+//! JVM-faithful doubly-linked self-loop history ring:
 //!
-//!   Ref { header, lock: std.atomic.Mutex, _pad, tvals: *TVal,
+//!   Ref { header, lock, _pad, tvals: *TVal,
 //!         min_history: u32 = 0, max_history: u32 = 10 }
 //!
 //! `tvals` is the ring head (newest committed value). `current(v)`
 //! reads `tvals.val`. `(ref init)` seeds a 1-node self-loop ring at
-//! `point = 0, msecs = 0`; commits at Phase 15.1 splice a new TVal
+//! `point = 0, msecs = 0`; commits at Phase B splice a new TVal
 //! between `tvals` and `tvals.next` per JVM `Ref.java:64-69` and
 //! advance the head.
 //!
-//! `lock` is `std.atomic.Mutex` (enum(u8), extern-compatible,
-//! lock-free `tryLock` + `unlock`). It lands at D-102 so Phase 15.1
-//! transaction control flow extends Ref's surface without re-laying
-//! the struct. Phase 15.1's commit path spins on `tryLock` (real
-//! F-009 divergence from JVM's blocking lock; ADR-0010 amendment 4
-//! records the rationale).
+//! `lock` is a per-Ref commit lock reserved for the Phase B
+//! transaction engine; it extends Ref's surface without re-laying
+//! the struct. The commit path's lock discipline (spin vs blocking)
+//! is a real F-009 divergence point from JVM's blocking lock
+//! (ADR-0010 amendment 4 records the rationale); the concrete
+//! Zig-0.16 locking primitive is chosen at Phase B entry (the
+//! pre-0.16 plan referenced removed APIs).
 //!
 //! `deref` outside a transaction returns `tvals.val` (= JVM's
 //! "currentVal reads the newest TVal when no transaction is
 //! active"). `alter` / `commute` / `ensure` / `ref-set` /
-//! `dosync` still raise their staged Codes until Phase 15.1 wires
+//! `dosync` still raise their staged Codes until Phase B wires
 //! `LockingTransaction`.
 
 const std = @import("std");
@@ -64,7 +65,7 @@ pub const Ref = extern struct {
 
 /// Allocate a heap-tracked Ref seeded with `init`. Materialises the
 /// initial 1-node self-loop ring (`tvals.prior == tvals == tvals.next`).
-/// Phase 15.1 takes the lock + splices a new TVal on each commit.
+/// Phase B takes the lock + splices a new TVal on each commit.
 pub fn alloc(rt: *Runtime, init: Value) !Value {
     const seed = try tval_mod.allocSelfLoop(rt, init, 0, 0);
     const cell = try rt.gc.alloc(Ref);

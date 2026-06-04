@@ -1,23 +1,20 @@
 //! Primitive registration entry point.
 //!
-//! Phase-2 calls `registerAll(env)` exactly once at startup
-//! (typically from `main.zig` after `Env.init` and
-//! `tree_walk.installVTable`). It:
+//! `registerAll(env)` runs once at boot (from the runner's setup,
+//! after `Env.init` and `tree_walk.installVTable`). It:
 //!
 //!   1. Looks up the `rt` namespace (created by `Env.init`).
 //!   2. Calls each primitive module's `register(env, rt_ns)` so they
 //!      `intern` themselves under rt/.
 //!   3. Refers all rt mappings into `user` via `Env.referAll`. This
-//!      stands in for Clojure's `(refer 'rt)`; Phase 4 replaces it
-//!      with the proper `(require ...)` semantics.
+//!      boot-time rt → user refer is the deliberate REPL convenience
+//!      (see L132 + ADR-0035 D9): `require`/`(ns …)` semantics are
+//!      implemented and do NOT auto-refer rt.
 //!
-//! ### Module list
-//!
-//! - `primitive/math.zig` — arithmetic + comparison
-//! - `primitive/core.zig` — nil? / true? / false? / identical?
-//!
-//! Phase-3+ will add seq.zig, pred.zig, io.zig, etc. The orchestration
-//! shape stays the same — add a `try X.register(...)` line.
+//! The `const … = @import("primitive/…")` block below is the
+//! authoritative module inventory; `registerAll` invokes each in
+//! order. Add a module by importing it and adding a `try
+//! X.register(…)` line.
 
 const std = @import("std");
 const env_mod = @import("../runtime/env.zig");

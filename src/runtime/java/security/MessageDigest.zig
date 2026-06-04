@@ -5,14 +5,13 @@
 //! Impl deps: digest
 //! Clojure peer: none
 //!
-//! TypeDescriptor reservation per ADR-0029 D5 (Phase 14 row 14.3 /
-//! D-097 third wave). Backing impl `runtime/crypto/message_digest.zig`
-//! (SHA-256 / SHA-1 / MD5 via Zig std.crypto) lands in a focused
-//! follow-up cycle — tracked by **D-106**. Until then this surface
+//! TypeDescriptor reservation per ADR-0029 D5. The backing impl
+//! `runtime/crypto/message_digest.zig` (SHA-256 / SHA-1 / MD5 via
+//! Zig std.crypto) is unbuilt — tracked by **D-106**. The surface
 //! is reachable through `(rt.types.get "cljw.java.security.MessageDigest")`
-//! and the namespace exists, but
-//! `(java.security.MessageDigest/getInstance "SHA-256")` raises
-//! until method dispatch wires up.
+//! and the namespace exists, but the method_table is empty, so
+//! `(java.security.MessageDigest/getInstance "SHA-256")` does not
+//! yet resolve.
 
 const host_api = @import("../_host_api.zig");
 const type_descriptor = @import("../../type_descriptor.zig");

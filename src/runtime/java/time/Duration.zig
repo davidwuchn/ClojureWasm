@@ -5,10 +5,9 @@
 //! Impl deps: time
 //! Clojure peer: none
 //!
-//! TypeDescriptor reservation per ADR-0029 D5 (Phase 14 row 14.2 /
-//! D-097). Interval semantics (between / plus / minus / toMillis /
-//! toNanos) over `runtime/time/instant.zig` land in a focused
-//! follow-up cycle — tracked by **D-105**.
+//! TypeDescriptor reservation per ADR-0029 D5. Interval semantics
+//! (between / plus / minus / toMillis / toNanos) are unbuilt — the
+//! method_table is empty — tracked by **D-105**.
 
 const host_api = @import("../_host_api.zig");
 const type_descriptor = @import("../../type_descriptor.zig");

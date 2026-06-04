@@ -7,15 +7,15 @@
 //! type). `deref` / `@` reads it. `compare-and-set!` uses reference
 //! identity (JVM `AtomicReference.compareAndSet` — NOT `=`).
 //!
-//! Phase-15 deferrals (D-157): watches (add-watch / remove-watch),
-//! validators, and real CAS-under-contention atomicity. The runtime is
-//! single-threaded until Phase 15, so this basic cell drops no semantics
-//! — it is complete for the current runtime, not a stub. Being an
-//! `extern struct` lets Phase 15 APPEND `watches` / `validator` fields
-//! without re-laying (header stays offset 0, `current` unmoved); per
-//! F-003 / the Reservation-as-bias smell, no such field is reserved now.
-//! Tag `.atom = 32` is day-1 reserved (ADR-0009 / heap_tag.zig:91);
-//! ADR-0010 §79 sketches "implement only atom" as the STM Tier-A start.
+//! Phase B deferral (D-157): real CAS-under-contention atomicity. The
+//! runtime is single-threaded today, so this basic cell drops no
+//! semantics — it is complete for the current runtime, not a stub.
+//! `watches` (add-watch / remove-watch) and `validator` are present
+//! fields (landed via ADR-0081), appended after `current` via the
+//! extern-struct additive plan (header stays offset 0, `current`
+//! unmoved). Tag `.atom = 32` is day-1 reserved (ADR-0009 /
+//! heap_tag.zig:91); ADR-0010 §79 sketches "implement only atom" as the
+//! STM Tier-A start.
 
 const std = @import("std");
 const value = @import("value/value.zig");

@@ -4,6 +4,6 @@
 ;; `src/lang/primitive/csv.zig::register`. cw v1 deviates from JVM
 ;; on signatures: `read-csv` takes a string (not a Reader); `write-csv`
 ;; takes data + returns a string (not data + Writer + returns nil).
-;; Reader/Writer stream APIs land alongside Phase 14+ IO abstractions.
+;; Reader/Writer stream APIs land alongside the streaming-IO abstractions.
 (ns clojure.data.csv
   (:refer-clojure))

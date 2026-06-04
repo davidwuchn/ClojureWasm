@@ -1,8 +1,8 @@
 //! Value renderer (`pr-str` style).
 //!
-//! Phase-3.8 extracts the printer from `src/main.zig` so that the REPL,
-//! nREPL, the future `pr-str` / `prn` primitives, and (Phase 8+)
-//! `--compare`'s diff renderer all converge on a single implementation.
+//! A single printer so that the REPL, nREPL, the `pr-str` / `prn`
+//! primitives, and `--compare`'s diff renderer all converge on one
+//! implementation.
 //!
 //! Layer-0 module: imports only `runtime/value.zig`, `runtime/keyword.zig`,
 //! and the heap collection wrappers under `runtime/collection/`. No
@@ -14,8 +14,7 @@
 //! - `printValue(w, v)` — top-level dispatch. Renders nil / bool / int /
 //!   float / char / keyword / builtin_fn directly, delegates to
 //!   `printString` / `printList` for heap collections, and falls back to
-//!   `#<tag>` for any heap kind whose dedicated branch hasn't shipped
-//!   yet (vector, map, fn_val, transient_*, ...).
+//!   `#<tag>` for any heap kind without a dedicated branch.
 //! - `printString(w, s)` — `pr-str` form: surrounding `"`, with
 //!   `\n` / `\t` / `\r` / `\\` / `\"` escapes mirroring the Reader's
 //!   `unescapeString` table (§9.4 / 1.9). Round-trip stable for ASCII.
@@ -27,9 +26,8 @@
 //!
 //! Pretty-printing is a runtime concern (the same renderer is used at
 //! REPL prompt, in error messages once strings + collections show up,
-//! and from the planned `pr-str` builtin). Putting it in Layer 0 lets
-//! `lang/primitive/io.zig` (future) call it without crossing the zone
-//! contract.
+//! and from the `pr-str` builtin). Putting it in Layer 0 lets
+//! `lang/primitive/io.zig` call it without crossing the zone contract.
 
 const std = @import("std");
 const Writer = std.Io.Writer;
@@ -315,7 +313,6 @@ pub fn printFloat(w: *Writer, f: f64) Writer.Error!void {
     }
 }
 
-/// Render `v` to `w` in `pr-str` style. Phase-3 surface covers nil /
 /// Render a char in readable (`pr`) form, clj-faithful (D-154/D-208): named
 /// forms for the 6 standard whitespace chars, else `\` + the literal char
 /// (printable ASCII, control chars, and non-ASCII alike — clj emits NO
@@ -351,10 +348,9 @@ pub fn printCharReadable(w: *Writer, cp: u21) Writer.Error!void {
     }
 }
 
-/// boolean / integer / float / char / keyword / builtin_fn / string /
-/// list. Other heap kinds render as `#<tag>` placeholders so the user
-/// always sees *something* instead of an undecipherable address —
-/// Phase 3.10+ adds dedicated branches as the heap types ship.
+/// A heap kind with no dedicated branch renders as a `#<tag>`
+/// placeholder so the user always sees *something* instead of an
+/// undecipherable address.
 /// Clojure's `*print-readably*` (D-185), as a thread-local since the pure
 /// `printValue` renderer carries no `rt`/`env`. `true` (default) = `pr`
 /// form: strings quoted, chars as `\X` literals. `false` = `print` form:
@@ -784,8 +780,7 @@ fn printNamespace(w: *Writer, v: Value) Writer.Error!void {
 
 /// Render an `ex-info` Value in `#error{ :message "..." :data ... }`
 /// form — the same shape Clojure JVM's pr-str emits, modulo ordering.
-/// Phase 3.10's data is any Value (most often nil at this stage); a
-/// real map renderer ships with the heap-map type later.
+/// The data field is any Value, rendered via `printValue`.
 pub fn printExInfo(w: *Writer, v: Value) Writer.Error!void {
     try w.writeAll("#error{:message ");
     try printString(w, ex_info_collection.message(v));
@@ -871,10 +866,9 @@ pub fn printRange(w: *Writer, v: Value) Writer.Error!void {
     try w.writeByte(')');
 }
 
-/// Render a heap Vector in `[a b c]` form (Phase 6.9 cycle 4 —
-/// previously fell through to the `#<vector>` placeholder branch).
-/// Indexes via `vector_collection.nth` so this stays decoupled from
-/// the HAMT internals.
+/// Render a heap Vector in `[a b c]` form. Indexes via
+/// `vector_collection.nth` so this stays decoupled from the HAMT
+/// internals.
 pub fn printVector(w: *Writer, v: Value) Writer.Error!void {
     try w.writeByte('[');
     const n = vector_collection.count(v);
@@ -887,7 +881,7 @@ pub fn printVector(w: *Writer, v: Value) Writer.Error!void {
     try w.writeByte(']');
 }
 
-/// Render an ArrayMap (Phase 6.10 cycle 2) in `{k v k v ...}` form.
+/// Render a map in `{k v k v ...}` form.
 /// Walk a HAMT node pre-order, writing each entry. `kv` true → "k v"
 /// pairs (map), false → bare elements (set). `first` threads the
 /// separator across the recursion. Alloc-free — the printer has no
@@ -955,10 +949,10 @@ pub fn printMap(w: *Writer, v: Value) Writer.Error!void {
     try w.writeByte('}');
 }
 
-/// Render a PersistentHashSet in `#{a b c}` form (Phase 6.10 cycle 1).
-/// Iterates the backing map's `entries` array directly (set's map is
-/// an `array_map` until D-045 promotes to HAMT). Element order is
-/// insertion order at this scale.
+/// Render a PersistentHashSet in `#{a b c}` form. Walks the backing
+/// map's keys directly: an `array_map`'s `entries` array (≤ 8
+/// elements, insertion order) or the HAMT keys for a larger
+/// `hash_map`-backed set.
 pub fn printSet(w: *Writer, v: Value) Writer.Error!void {
     try w.writeAll("#{");
     const s = v.decodePtr(*const set_collection.PersistentHashSet);

@@ -158,8 +158,8 @@ fn writeOne(w: *Writer, v: Decoded, alloc: std.mem.Allocator) !void {
         },
         .dict => |entries| {
             // Sort by key per spec; dupe to avoid mutating caller's
-            // slice. (Skip for already-sorted typical case via test
-            // first — small N so unconditional sort is cheap.)
+            // slice. Sorted unconditionally — N is small, so a
+            // sorted-check first would not pay off.
             const sorted = try alloc.dupe(Decoded.Entry, entries);
             defer alloc.free(sorted);
             std.mem.sort(Decoded.Entry, sorted, {}, struct {

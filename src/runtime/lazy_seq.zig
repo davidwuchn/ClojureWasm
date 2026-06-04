@@ -9,17 +9,16 @@
 //! sets `realized_flag = 1` so subsequent calls short-circuit
 //! without re-invoking.
 //!
-//! ## Mutex shape (5.7 owns this decision per 5.1 input bullet #2)
+//! ## Mutex shape
 //!
-//! **Phase 5: no lock — single-thread.** cw v1 Phase 5 is single-
-//! threaded (per the Runtime.io io_default accessor). The cw v0
-//! LazySeq similarly had no lock (`value.zig:665-668`); thread-
-//! safety was a single-thread invariant. Phase 15 STM activation
-//! re-evaluates per debt D-046 (recorded at 5.7 close): the
-//! io_default pattern from `phase5-5.1-survey.md` Block A is the
-//! likely path (std.Io.Mutex via process-wide io accessor),
-//! NOT std.atomic.Mutex (Zig-0.16 gap, lock-free tryLock/unlock
-//! only).
+//! **No lock — single-thread today.** cw v1 is single-threaded (per
+//! the Runtime.io io_default accessor). The cw v0 LazySeq similarly
+//! had no lock (`value.zig:665-668`); thread-safety was a
+//! single-thread invariant. JVM's LazySeq locks on realise; that
+//! lock-on-realise contention path (two threads forcing the same
+//! LazySeq) lands at Phase B with real threading/locking (debt
+//! D-046). The Zig-0.16 locking primitive is chosen at Phase B entry
+//! (the pre-0.16 plan referenced removed APIs).
 //!
 //! ## Field layout (extern struct)
 //!

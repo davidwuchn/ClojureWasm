@@ -25,8 +25,8 @@
 //! is reachable via `getData()`. We have no class hierarchy (ROADMAP
 //! §13 rejects them) — every ex-info Value has the same shape, the
 //! "class" name `"ExceptionInfo"` is a string compared at catch time.
-//! Phase 5+ may revisit when interop / Tier-A test coverage forces
-//! multi-class catch.
+//! ADR-0059 / ADR-0060 settle the multi-class catch question via
+//! string-compared synthesized class names (see `className`).
 
 const std = @import("std");
 const value_mod = @import("../value/value.zig");

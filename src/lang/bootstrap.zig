@@ -12,7 +12,7 @@
 //! form (analyzer special form per ADR-0032). After the last file,
 //! `current_ns` resets to `user/` so the REPL prompt lands there.
 //!
-//! ### Phase 3.12 → Phase 6.9 scope
+//! ### Loader contract
 //!
 //! - `loadCore` accepts an arena (caller-owned), runs the loop, and
 //!   propagates errors via the standard `runtime/error.zig` pipeline.

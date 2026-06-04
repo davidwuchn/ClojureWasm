@@ -3,16 +3,15 @@
 ;; Loaded by `src/lang/bootstrap.zig::loadCore` after `core.clj`. The
 ;; dynamic var `cljw.error/*error-context*` is NOT defined here — it is
 ;; interned from Zig (`runtime/error/context.zig::register`, called by
-;; setupCore after loadCore) with `flags.dynamic = true`, because cw v1
-;; has no `^:dynamic` reader-metadata surface yet (D-075). The error
-;; subsystem holds that Var's pointer so it can snapshot the live
-;; context at raise time and merge it into the EDN error event.
+;; setupCore after loadCore) with `flags.dynamic = true` so the error
+;; subsystem holds that Var's pointer directly and can snapshot the live
+;; context at raise time, merging it into the EDN error event.
 ;;
 ;; `with-context` is a thin macro over the `binding` special form
-;; (ADR-0055 D1). Built with explicit cons/list/vector because
-;; syntax-quote (`) is not yet available — the qualified symbol
-;; `cljw.error/*error-context*` is emitted via `quote` so the expansion
-;; resolves the var regardless of the use-site namespace.
+;; (ADR-0055 D1). It hand-builds the expansion with explicit
+;; cons/list/vector and emits the qualified symbol
+;; `cljw.error/*error-context*` via `quote`, so the expansion resolves
+;; the var regardless of the use-site namespace.
 
 (ns cljw.error (:refer-clojure))
 

@@ -9,9 +9,9 @@
 //! `(java.io.File. path)` flows through the existing deftype
 //! `allocInstance` path and produces a `typed_instance` Value the
 //! user can pass around. Instance methods (.exists / .length /
-//! .getName / .getPath) ride Phase 7+ dispatch on top of
-//! `runtime/file_io.zig` — they are not part of D-121's minimum cut
-//! (a separate row carries each).
+//! .getName / .getPath) over `runtime/file_io.zig` are not wired —
+//! the method_table is empty (they were not part of D-121's minimum
+//! cut; a separate row carries each).
 //!
 //! field_layout is GPA-allocated via `initFile` per the
 //! `_host_api.Extension.init` ownership contract (`Runtime.deinit`

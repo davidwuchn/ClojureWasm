@@ -397,7 +397,7 @@
 ;; `(pmap f & colls)` / `(pcalls & fns)` — clj's parallel map / parallel calls.
 ;; cw v1 is single-threaded, so these run SEQUENTIALLY: the RESULT is identical
 ;; to clj (pmap is "semantically like map"), only the parallelism is absent.
-;; Real parallelism arrives with Phase-15 threading (D-224); the result contract
+;; Real parallelism arrives with Phase B threading (D-224); the result contract
 ;; is final-form-correct now, so this is not a dropped-semantic stub.
 (def pmap
   (fn* [f & colls] (apply map f colls)))
@@ -906,8 +906,6 @@
 (def empty?
   (fn* [coll] (= 0 (count coll))))
 
-;; `(fnil f x)` — f with its first arg defaulted to x when nil.
-;; 1-arg patched form (multi-arg fnil awaits multi-arity follow-up).
 ;; `(fnil f x)` / `(fnil f x y)` / `(fnil f x y z)` — wrap f so its first
 ;; 1/2/3 args are replaced by the defaults when nil; trailing args pass
 ;; through (the returned fn is variadic, matching Clojure).
@@ -963,7 +961,6 @@
 
 ;; ----------------------------------------------------------------
 ;; D-134 cluster 5 — reduce-shaped helpers (Pattern A).
-;; sort / sort-by deferred (need a compare op + sort algorithm).
 ;; ----------------------------------------------------------------
 
 ;; `(max-key f & xs)` — the x with the greatest (f x); ties keep the
@@ -987,9 +984,9 @@
     (filter (fn* [x] (not (sequential? x)))
             (rest (tree-seq sequential? seq coll)))))
 
-;; `(reductions f init coll)` — like reduce but collects every
-;; intermediate, starting with init (eager vector). 3-arg form;
-;; the 2-arg `(reductions f coll)` awaits multi-arity.
+;; `(reductions f coll)` / `(reductions f init coll)` — like reduce
+;; but collects every intermediate; the 2-arg form seeds from the
+;; first element, the 3-arg form from `init`.
 ;; Returns a SEQ (JVM parity). (last acc) per step is O(n²) — a perf
 ;; residual tracked alongside D-163, not the seq-vs-vector concern here.
 (def reductions
@@ -1004,7 +1001,6 @@
 
 ;; ----------------------------------------------------------------
 ;; D-134 cluster 6 — trivial accessors (no compare dependency).
-;; sort / sort-by await D-137 (compare is numeric-only).
 ;; ----------------------------------------------------------------
 
 ;; `(second coll)` — the second item (nil if absent).
@@ -1453,10 +1449,6 @@
 ;; bare symbol name (no ns prefix, per `allocFqcn` at
 ;; `lang/primitive/protocol.zig:41-51`), so `"IPersistentCollection"`
 ;; is the string the dispatch path uses.
-;;
-;; Methods land one per cycle: cycle 1 adds `-count`; cycles 2-4 add
-;; `-seq` / `-cons` / `-reduce` as `seq` / `conj` / `reduce` are
-;; wired into their hybrid shape.
 ;; ----------------------------------------------------------------
 
 (defprotocol IPersistentCollection (-count [c]) (-cons [c x]) (-empty [c]))
@@ -1678,7 +1670,7 @@
 
 ;; `(pvalues & exprs)` — clj's parallel-eval of each expr. cw v1 is single-
 ;; threaded so it expands to `pcalls` over thunks = SEQUENTIAL eval (result
-;; identical to clj; parallelism deferred to Phase-15 threading, D-224).
+;; identical to clj; parallelism deferred to Phase B threading, D-224).
 (defmacro pvalues [& exprs]
   ;; `apply list` realizes the map seq so the expansion is a concrete list,
   ;; not a cons over a lazy tail (which the macroexpander cannot re-analyze).

@@ -4,12 +4,12 @@
 //! Tokens hold byte offsets into the source, so the source slice must
 //! outlive the tokens — no copies are made.
 //!
-//! Phase 1 scope: delimiters, integer / float / string / symbol /
-//! keyword literals, plus the reader macros `'`, `#_`, `##` (used
-//! for `##Inf` / `##-Inf` / `##NaN`) and a `#!` shebang skip. Comma
-//! counts as whitespace per Clojure. The richer reader macros
-//! (`` ` ``, `~`, `~@`, `^`, `#()`, `#'`, `#"re"`, `#inst`, `#uuid`)
-//! land in later phases.
+//! Scope: delimiters, integer / float / string / symbol / keyword
+//! literals, plus the reader macros `'`, `#_`, `##` (used for
+//! `##Inf` / `##-Inf` / `##NaN`), the `#!` shebang skip, and the
+//! richer macros `` ` `` / `~` / `~@` / `^` / `#()` / `#'` /
+//! `#"re"` / tagged (`#inst` / `#uuid`). Comma counts as whitespace
+//! per Clojure.
 
 const std = @import("std");
 

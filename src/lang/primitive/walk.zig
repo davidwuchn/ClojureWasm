@@ -1,20 +1,18 @@
 // SPDX-License-Identifier: EPL-2.0
-//! `clojure.walk/` namespace surface — Phase 6.11 cycle 1.
+//! `clojure.walk/` namespace surface.
 //!
 //! Per the survey at `private/notes/phase6-6.11-survey.md`,
-//! cw v1 adopts DIVERGENCE D1: each var lives in this Zig file
-//! and dispatches over `Value.Tag` directly, calling user fns
+//! cw v1 adopts DIVERGENCE D1: the `walk` spine lives in this Zig
+//! file and dispatches over `Value.Tag` directly, calling user fns
 //! via `rt.vtable.callFn` (the pattern proven in
-//! `lang/primitive/string.zig::escape`).
+//! `lang/primitive/string.zig::escape`). The JVM
+//! `(walk (partial prewalk f) identity (f form))` shape is realised
+//! as explicit Zig recursion rather than via `partial`.
 //!
-//! Cycle 1 ships the spine: `walk` (one-level rebuild) +
-//! `prewalk` + `postwalk` (recursive Zig-direct traversal).
-//! `partial` is NOT a registered primitive in cw v1 yet, so
-//! the JVM `(walk (partial prewalk f) identity (f form))`
-//! pattern is replaced with explicit Zig recursion.
-//!
-//! Cycle 2 layers `keywordize-keys` / `stringify-keys` /
-//! `prewalk-replace` / `postwalk-replace` on top of this spine.
+//! `walk` is the one-level rebuild primitive; `keywordize-keys` /
+//! `stringify-keys` / `prewalk` / `postwalk` / `prewalk-replace` /
+//! `postwalk-replace` are Pattern A `.clj` defns over it in
+//! `src/lang/clj/clojure/walk.clj`.
 
 const Value = @import("../../runtime/value/value.zig").Value;
 const Runtime = @import("../../runtime/runtime.zig").Runtime;
@@ -230,15 +228,11 @@ const Entry = struct {
     f: dispatch.BuiltinFn,
 };
 
-/// Phase 6.16.c Group A: `prewalk` + `postwalk` migrated to Pattern A
-/// `.clj` defns in `src/lang/clj/clojure/walk.clj`. Only the `walk`
-/// leaf remains here (B2 placement preserved per v5 §9.1). The
-/// `prewalkFn` / `postwalkFn` impls below stay live as the call
-/// targets the `.clj` defns use through `walk` — actually no, the
-/// `.clj` defns are Zig-recursive via `walk` only; the standalone
-/// `prewalkFn` / `postwalkFn` are now unreferenced. Future cleanup
-/// can drop them once Phase 6.16.c closes and the per-task note
-/// confirms no Zig-internal caller remains.
+/// `prewalk` + `postwalk` are Pattern A `.clj` defns over `walk` in
+/// `src/lang/clj/clojure/walk.clj`; only the `walk` leaf is registered
+/// here (B2 placement per v5 §9.1). The standalone `prewalkFn` /
+/// `postwalkFn` impls above are now unreferenced (the `.clj` defns
+/// recurse via `walk`) and are dead-code-removal candidates.
 const ENTRIES = [_]Entry{
     .{ .name = "walk", .f = &walkFn },
 };

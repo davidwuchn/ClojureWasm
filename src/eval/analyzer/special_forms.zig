@@ -58,10 +58,9 @@ const TypeDescriptor = type_descriptor_mod.TypeDescriptor;
 ///      `System` resolves the way JVM Clojure default-imports
 ///      `java.lang.*` into every ns. Gated to dot-free heads so a
 ///      qualified head (already handled by 1/2) is not re-probed.
-/// Returns `null` if none hit. The `env` parameter is reserved for a
-/// future per-ns user-import map (distinct from the always-on java.lang
-/// auto-import this helper handles); pass it through to keep callsites
-/// stable for that landing.
+/// Returns `null` if none hit. `env` is read for the current ns's
+/// per-ns `(:import …)` simple-name map (D-235), checked before the
+/// always-on java.lang auto-import.
 pub fn resolveJavaSurface(rt: *Runtime, env: *Env, head: []const u8) ?*const TypeDescriptor {
     if (rt.types.get(head)) |td| return td;
     var buf: [256]u8 = undefined;
@@ -304,10 +303,9 @@ pub fn analyzeStaticMethodCall(
 /// `evalDef` / VM `op_def` (DEF_FLAG_MACRO) sees `DefNode.is_macro`.
 /// Cf. JVM Clojure's `clojure.core/defmacro` (clojure/core.clj L446)
 /// which expands to `(do (defn NAME [&form &env PARAMS] BODY...) (.
-/// (var NAME) (setMacro)) (var NAME))`. cw v1 diverges by omitting
-/// implicit `&form` / `&env` — none of the Tier-A test corpora
-/// (clojure.test/deftest / are / testing / clojure.core/declare)
-/// introspect them; threading both is filed as D-099-followup.
+/// (var NAME) (setMacro)) (var NAME))`. cw v1 prepends the implicit
+/// `&form` / `&env` params too (ADR-0086, via
+/// `prependImplicitMacroParams`).
 /// Prepend the implicit `&form &env` symbols to a `defmacro` arity's param
 /// vector (ADR-0086). `params_vec.data` is `.vector`.
 fn prependImplicitMacroParams(arena: std.mem.Allocator, params_vec: Form, loc: error_catalog.SourceLocation) AnalyzeError!Form {

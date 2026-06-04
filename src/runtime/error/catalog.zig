@@ -22,9 +22,9 @@
 //! for the catalog itself. Other modules must call `raise(...)`.
 //! Enforced by `.claude/rules/error_catalog_only.md`.
 //!
-//! Migration of the existing ~100 `setErrorFmt` call sites is
-//! tracked as ROADMAP §9.6 task 4.26. The catalog ships first;
-//! call sites migrate incrementally.
+//! Every runtime error message now routes through `raise(...)`;
+//! the original `setErrorFmt` call sites have all been migrated
+//! onto this catalog.
 
 const std = @import("std");
 const error_mod = @import("info.zig");
@@ -328,8 +328,8 @@ pub const Code = enum {
     /// not resolve the conflict. Mirrors JVM Clojure's
     /// `IllegalArgumentException("Multiple methods in
     /// multimethod ... match dispatch value ... and neither is
-    /// preferred")`. cycle 3 of row 7.2 widens the template to
-    /// name the conflicting keys; cycle 2 only carries the name.
+    /// preferred")`. The template carries the multimethod name;
+    /// it does not enumerate the conflicting dispatch keys.
     multimethod_ambiguous_dispatch,
 
     // --- Transient surface (Phase 8 row 8.5, D-074) ---

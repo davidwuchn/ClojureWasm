@@ -1,16 +1,14 @@
-//! Arithmetic + comparison primitives for the `rt/` namespace.
+//! Arithmetic + comparison primitives for the `rt/` namespace:
+//! `+`, `-`, `*`, `/`, `quot`, `rem`, `mod`, the strict `+'`/`-'`/`*'`
+//! family, `=`, `<`, `>`, `<=`, `>=`, `compare`, and the numeric
+//! coercions (`bigint` / `bigdec` / …).
 //!
-//! Phase-2 surface (per ROADMAP §9.4 / 2.8): `+`, `-`, `*`, `=`,
-//! `<`, `>`, `<=`, `>=`, plus `compare` for completeness.
-//!
-//! Numeric tower: Phase-2 deals with i48 (the NaN-boxing range) and
-//! f64. Mixed-type calls widen to f64 — Clojure's contagion rule.
-//! Integer overflow promotes to float automatically because
-//! `Value.initInteger` falls back to `initFloat` outside the i48
-//! window (see `runtime/value.zig`).
-//!
-//! Division (Ratio) and mod / rem ship in Phase 5+ alongside heap
-//! support for Ratios.
+//! Numeric tower: the full tower is implemented here — i64/f64 plus
+//! heap Ratio, BigInt, and BigDecimal. Mixed-type calls follow
+//! Clojure's contagion rule. Integer overflow on `+`/`-`/`*` promotes
+//! to BigInt/float automatically (F-005); the `…'` family throws on
+//! overflow instead. See `runtime/value/value.zig` for the NaN-box
+//! `Value` representation.
 
 const std = @import("std");
 const Value = @import("../../runtime/value/value.zig").Value;
@@ -724,9 +722,10 @@ pub fn shortCoerce(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLoca
 
 /// `(bigint x)` — coerce to an arbitrary-precision integer (`…N`). A BigInt
 /// passes through; any other number truncates toward zero (int / float / ratio
-/// / BigDecimal — e.g. `(bigint 3.9)`→`3N`, `(bigint 1/2)`→`0N`). Beyond Long
-/// range (a large float) or a string is not yet coerced (D-191): those need a
-/// double→arbitrary-int path and a BigInt string parser respectively.
+/// / BigDecimal — e.g. `(bigint 3.9)`→`3N`, `(bigint 1/2)`→`0N`). Beyond-Long
+/// floats (`(bigint 1e30)`) take the `bigintFromFloat` path; a numeric string
+/// (`(bigint "999…")`) is parsed via `parseBase10`. (A string mantissa ≥ 2^64
+/// inherits the D-047 setString edge — tests stay under that bound.)
 /// JVM reference: clojure.core/bigint. cw v1 tier: A (§A26 sweep).
 pub fn bigintCoerce(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
     _ = env;

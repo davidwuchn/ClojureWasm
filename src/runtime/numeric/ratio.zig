@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: EPL-2.0
 //! Arbitrary-precision Ratio per F-005 + ADR-0027 §2 Group D slot 1.
 //!
-//! ## 5.9.b shape
-//!
 //! Ratio holds two `*BigInt` pointers (numerator + denominator).
 //! Both BigInts are themselves `gc.alloc`'d extern structs (see
 //! `runtime/numeric/big_int.zig`). The Ratio's trace fn marks both
@@ -15,8 +13,7 @@
 //!   - integer-collapse signalled by a `null` return (caller wraps
 //!     the numerator as a plain BigInt)
 //!   - divide-by-zero raised as `error.DivideByZero` (caller maps
-//!     to the Clojure-side `divide_by_zero` catalog Code; that
-//!     mapping lands in 5.9.d / 5.10).
+//!     to the Clojure-side `divide_by_zero` catalog Code).
 //!
 //! HeapTag slot 49 (Group D position 1, `ratio`) per F-004 + ADR-0027.
 
@@ -52,8 +49,8 @@ pub const Ratio = extern struct {
 };
 
 /// Errors raised by Ratio constructors. `DivideByZero` is mapped to
-/// the catalog Code at the Clojure-side dispatch (5.9.d / 5.10);
-/// the Zig API surface stays narrow.
+/// the catalog Code at the Clojure-side dispatch; the Zig API surface
+/// stays narrow.
 pub const RatioError = error{DivideByZero} || std.mem.Allocator.Error;
 
 /// Allocate a reduced Ratio from a pair of i64 numerator/denominator.

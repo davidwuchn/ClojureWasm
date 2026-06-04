@@ -2,8 +2,6 @@
 //! Arbitrary-precision BigDecimal per F-005 + ADR-0027 §2 Group D
 //! slot 2.
 //!
-//! ## 5.9.c shape
-//!
 //! BigDecimal = (unscaled: *BigInt, scale: i32). Numeric value is
 //! `unscaled * 10^(-scale)`. Mirrors JVM `java.math.BigDecimal`:
 //!
@@ -15,10 +13,11 @@
 //!     (`scale=2, unscaled=150` → 1.50). Negative scale = trailing
 //!     zeros (`scale=-2, unscaled=15` → 1500).
 //!
-//! Phase 5.9.c lands the data shape + constructors + accessors only.
-//! Arithmetic with rounding modes (add / sub / mul / div with
-//! MathContext) lands at 5.9.d / 5.10. Reader-literal entry
-//! (`1.5M` → BigDecimal) lands at 5.10.
+//! Exact arithmetic (add / sub / mul / div / quotient / compare) is
+//! landed (see the `alloc*` / `compareValue` functions below), as is
+//! reader-literal entry (`1.5M` → BigDecimal). MathContext-driven
+//! rounded division (explicit rounding modes) is not yet wired —
+//! `allocDiv` currently produces the exact rational result.
 //!
 //! HeapTag slot 50 (Group D position 2, `big_decimal`) per F-004 +
 //! ADR-0027.
@@ -315,13 +314,14 @@ pub fn registerGcHooks() void {
     tag_ops.registerTrace(.big_decimal, &traceGc);
 }
 
-// --- same-type arithmetic (5.9.d) ---
+// --- same-type arithmetic ---
 //
 // BigDecimal add/sub/compare align both operands to the larger
 // scale by multiplying the smaller-scale unscaled value by
 // 10^(scale_diff). `mul` multiplies unscaled values and sums
-// scales (JVM convention; no precision loss). `div` requires a
-// MathContext (rounding mode + precision) and lands at 5.10.
+// scales (JVM convention; no precision loss). `allocDiv` produces the
+// exact rational result; MathContext-driven rounded division
+// (explicit rounding mode + precision) is not yet wired.
 
 /// Three-way compare two BigDecimal Values. Aligns scales then
 /// compares unscaled values. Both inputs MUST have

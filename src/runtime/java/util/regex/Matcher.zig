@@ -7,16 +7,15 @@
 //!   clojure.core/re-seq, clojure.core/re-groups
 //!
 //! Thin wrapper over `runtime/regex/match.zig` per F-009. The
-//! Clojure-ns peers in `lang/primitive/regex.zig` already call the
-//! same impl; this file is the entry point for
+//! Clojure-ns peers in `lang/primitive/regex.zig` carry the
+//! behaviour; this file is the reserved entry point for
 //! `(java.util.regex.Matcher/find m)` and similar Java-style
-//! method invocations once method dispatch wiring lands.
+//! method invocations.
 //!
-//! Phase 14 row 14.2 (D-097): TypeDescriptor reservation ships
-//! here per ADR-0029 D5. Method-level wiring (`find` / `group` /
-//! `start` / `end`) attaches via the Phase 7 protocol dispatch /
-//! TypeDescriptor.method_table once Matcher instances are produced
-//! by `Pattern.matcher`.
+//! TypeDescriptor reservation per ADR-0029 D5. The method_table is
+//! empty: method-level wiring (`find` / `group` / `start` / `end`)
+//! is unbuilt, and Matcher instances are not yet produced by
+//! `Pattern.matcher`.
 
 const host_api = @import("../../_host_api.zig");
 const type_descriptor = @import("../../../type_descriptor.zig");

@@ -1,9 +1,10 @@
+// SPDX-License-Identifier: EPL-2.0
 //! File I/O primitives for the `rt/` namespace — Clojure-ns
 //! surface.
 //!
 //! `slurp` and `spit` from clojure.core, restricted to the
-//! file-path overload for Phase 6 (URL / Reader / Writer
-//! overloads arrive when java.net.URL / java.io.Reader land).
+//! file-path overload (the URL / Reader / Writer overloads arrive
+//! when java.net.URL / java.io.Reader land).
 
 const Value = @import("../../runtime/value/value.zig").Value;
 const Runtime = @import("../../runtime/runtime.zig").Runtime;

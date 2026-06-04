@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: EPL-2.0
 //! Root-set enumeration for cw v1 mark-sweep GC per ADR-0028 §5.
 //!
-//! **Phase 5 row 5.3.b.3** wires the 4 entry-point walkers that the
-//! `phase5-5.3.b.3-survey.md` audit found to actually exist in cw v1:
+//! Wires the 4 entry-point root walkers that exist in cw v1:
 //!
 //!   1. **ns_vars**     — Namespace `Var.root` + `Var.meta` across
 //!                        every registered Env (`WalkContext.envs`).
@@ -30,12 +29,10 @@
 //!
 //! The walker takes its inputs **explicitly** via `WalkContext`
 //! rather than discovering Envs through a `Runtime.envs` registry.
-//! Per the survey, that registry would require changing `Env.init`'s
-//! return shape (currently by-value; the registry needs a stable
-//! `*Env` address). Deferring the registry to 5.3.d keeps 5.3.b.3
-//! scoped to the GC-side wiring; 5.3.d folds the Env.init signature
-//! change into the alloc-site migration commit when that surface is
-//! already being touched.
+//! Such a registry would require changing `Env.init`'s return shape
+//! (currently by-value; the registry needs a stable `*Env` address),
+//! so the explicit slice is the finished form here — there is no
+//! auto-registry in cw v1.
 
 const std = @import("std");
 const testing = std.testing;
@@ -53,11 +50,9 @@ const Runtime = runtime_mod.Runtime;
 const GcHeap = gc_heap_mod.GcHeap;
 
 /// Identifier for one of the 10 root sources enumerated by the mark
-/// phase. Per ADR-0028 §5 + the 5.3.b.3 survey's amendment candidates,
-/// only sources 1 / 2 / 7 / 10 yield roots at Phase 5; the others
-/// are either tag-trace entries (3 / 4 / 8) or no-op-by-construction
-/// (5 / 6 / 9). Survey note ID: phase5-5.3.b.3-survey.md §"Summary
-/// punch list".
+/// phase. Per ADR-0028 §5, only sources 1 / 2 / 7 / 10 yield roots;
+/// the others are either tag-trace entries (3 / 4 / 8) or
+/// no-op-by-construction (5 / 6 / 9).
 pub const RootSource = enum {
     ns_vars,
     current_frame,
@@ -78,19 +73,17 @@ pub const RootSource = enum {
 /// here. Set on entry to `expandIfMacro`, cleared on exit. Read by
 /// the root walker.
 ///
-/// Threadlocal because Phase 15 STM activation may run macro
-/// expansion concurrently per the `current_frame` precedent in
-/// env.zig:142. Phase 5 is single-threaded so a single thread reads
-/// + writes the slot; the threadlocal qualifier costs nothing today
-/// and avoids a Phase-15 surface change.
+/// Threadlocal because Phase B (concurrency) STM activation may run
+/// macro expansion concurrently per the `current_frame` precedent in
+/// env.zig:142. cw v1 is single-threaded today so a single thread
+/// reads + writes the slot; the threadlocal qualifier costs nothing
+/// now and avoids a Phase B surface change.
 pub threadlocal var macro_root_slot: ?Value = null;
 
-/// Explicit context passed to `enumerate()`. Per the survey, the
-/// walker discovers Envs through a caller-supplied slice rather than
-/// a `Runtime.envs` auto-registry — defers the registry to 5.3.d
-/// alongside the `Env.init` signature change. `gc` carries the
-/// `permanent_roots` source + the eventual mark queue (5.3.b.5
-/// wiring).
+/// Explicit context passed to `enumerate()`. The walker discovers
+/// Envs through a caller-supplied slice rather than a `Runtime.envs`
+/// auto-registry (there is no such registry in cw v1). `gc` carries
+/// the `permanent_roots` source.
 pub const WalkContext = struct {
     envs: []const *Env,
     gc: *GcHeap,
@@ -247,8 +240,7 @@ pub const RootIterator = struct {
 };
 
 /// Build a root-set iterator. Caller provides the explicit envs slice
-/// + gc pointer per the survey's "no auto-registry at 5.3.b.3"
-/// design decision.
+/// + gc pointer (no auto-registry — see the WalkContext doc).
 pub fn enumerate(ctx: WalkContext) RootIterator {
     return .{ .ctx = ctx };
 }

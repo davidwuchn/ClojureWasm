@@ -6,11 +6,12 @@
 //! thunk on first call and caches the result; subsequent derefs
 //! return the cached Value without re-running the thunk. JVM
 //! `clojure.lang.Delay` is the model (single-shot lock-on-realise +
-//! cached value / cached exception). cw v1 row 14.8 implements the
-//! single-thread single-shot variant per F-NNN — no Mutex needed at
-//! Phase 14; the contention path lands at Phase 15.1 alongside `std.
-//! Io.Mutex` / `std.atomic.Mutex` (NOT the Zig-0.16-removed
-//! `std.Thread.Mutex`).
+//! cached value / cached exception). cw v1 implements the
+//! single-thread single-shot variant — no Mutex needed while the
+//! runtime is single-threaded; the lock-on-realise contention path
+//! lands at Phase B with real threading/locking (the Zig-0.16
+//! locking primitive is chosen at Phase B entry — the pre-0.16 plan
+//! referenced removed APIs).
 //!
 //! Per F-009: implementation here is namespace-neutral. The Clojure-
 //! ns surface `(delay ...)` macro lives in `lang/macro_transforms`,
@@ -33,8 +34,8 @@ const mark_sweep = @import("gc/mark_sweep.zig");
 /// - `realised`: thunk ran successfully; `cached` holds the value.
 ///
 /// JVM's Delay also tracks `exception` for re-raise on subsequent
-/// derefs. cw v1 single-thread defers exception caching to Phase
-/// 15.1 alongside the lock activation; today a thunk error bubbles
+/// derefs. cw v1 single-thread defers exception caching to Phase B
+/// alongside the lock activation; today a thunk error bubbles
 /// uncaught at first deref and the Delay's state stays `.pending`
 /// (a retry of `deref` re-runs the thunk).
 pub const DelayState = enum(u8) {
@@ -48,8 +49,8 @@ pub const Delay = extern struct {
     _pad: [5]u8 = .{ 0, 0, 0, 0, 0 },
     /// Zero-arity thunk wrapping the delayed expression. Held until
     /// the Delay realises; once realised the thunk slot is left in
-    /// place (the next-gen Phase-15 lock activation may revisit
-    /// whether to clear it).
+    /// place (the Phase B lock activation may revisit whether to
+    /// clear it).
     thunk: Value,
     /// Realised value. Undefined while `state == .pending`.
     cached: Value = .nil_val,

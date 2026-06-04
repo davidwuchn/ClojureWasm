@@ -14,10 +14,11 @@
 //! the entry point for `(java.util.regex.Pattern/compile ...)`
 //! and similar Java-style invocations.
 //!
-//! Status: Phase 6.6 cycle 1 SKELETON — `___HOST_EXTENSION`
-//! marker declared, descriptor populated lazily after the
-//! `runtime/regex/` impl reaches first-green. ADR-0031's
-//! "skeleton-then-rewrite" boundary applies.
+//! Status: standing reservation — the `___HOST_EXTENSION` marker is
+//! declared but the descriptor's method_table is empty, so
+//! `(java.util.regex.Pattern/compile ...)` does not yet resolve.
+//! The `runtime/regex/` impl is complete; only this Java-surface
+//! method wiring is unbuilt.
 
 const host_api = @import("../../_host_api.zig");
 const type_descriptor = @import("../../../type_descriptor.zig");

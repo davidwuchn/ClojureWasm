@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: EPL-2.0
 //! `#inst` / java.util.Date primitives for the `rt/` namespace (D-200 /
 //! clj-parity C6, ADR-0079). `inst?` / `inst-ms` + the `#inst "…"` data
 //! reader. All wrap the namespace-neutral `runtime/time/date.zig` (Date

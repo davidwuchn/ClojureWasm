@@ -12,7 +12,7 @@
 ;;
 ;; cljw adaptations (no JVM): `report` prints directly to stdout (no `*test-out*`
 ;; redirect — that needs `*out*`, deferred); no stacktrace-file-and-line in
-;; do-report. Deferred: use-fixtures, thrown-with-msg?, with-test.
+;; do-report. Deferred: use-fixtures, with-test.
 
 (ns clojure.test (:refer-clojure))
 

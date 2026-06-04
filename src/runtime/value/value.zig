@@ -8,11 +8,12 @@
 //! re-exported here so existing call sites only need to add the `/value`
 //! segment to their `@import` path.
 //!
-//! Phase 5 row 5.2 split lands this module decomposition per
-//! `.dev/structure_plan.md` (F-004 + D-029 decree) + ADR-0027 §5.
-//! The 32 → 64 HeapTag widening + `heapTagToTag` collapse +
-//! `big_int` slot rotation + `tag_ops.zig` skeleton land in the
-//! follow-up 5.2.b commit.
+//! The module exports the g2 64-slot `Tag` (heap entries 0..63 +
+//! immediates 64..69) and the `heapTagToTag` collapse to a single
+//! `@enumFromInt(@intFromEnum(.))` per `.dev/structure_plan.md`
+//! (F-004 + D-029 decree) + ADR-0027 §5. `big_int` sits at Group D
+//! slot 0 (Tag value 48) per F-004; per-Tag dispatch lives in
+//! `tag_ops.zig`.
 
 const std = @import("std");
 const testing = std.testing;
@@ -134,8 +135,7 @@ pub const Value = enum(u64) {
             2 => nb.NB_HEAP_TAG_C,
             3 => nb.NB_HEAP_TAG_D,
             // @panic: cw runtime invariant — HeapTag is bounded to
-            // 4 × NB_HEAP_GROUP_SIZE entries (g1 = 32; g2 = 64 per
-            // F-004 NaN-box second generation layout, row 5.2.b).
+            // 4 × NB_HEAP_GROUP_SIZE = 64 entries per F-004 g2 layout.
             // Adding entries past that bound would require a layout
             // extension ADR; this arm guards against silent drift.
             else => unreachable,
@@ -536,8 +536,8 @@ test "Value.heapHeader skips .var_ref / .ns (Env-lifetime, not GC-managed)" {
 
 test "F-004 inline wasm slots: funcref + externref encode through Group D" {
     // wasm_funcref + wasm_externref live at D6 / D7 inline per F-004 +
-    // ADR-0027 §2; 5.2.b lands the slot encoding only (Phase 16 entry
-    // adds the marshalling wrapper per D-036).
+    // ADR-0027 §2. The slot encoding is landed; the Wasm marshalling
+    // wrapper is a future task (D-036).
     var obj_func: u64 align(8) = 0;
     var obj_extern: u64 align(8) = 0;
 

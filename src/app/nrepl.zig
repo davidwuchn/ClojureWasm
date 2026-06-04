@@ -3,10 +3,10 @@
 //! ADR-0015 amendment 2 + ADR-0048 (state machine domain ADR;
 //! nREPL chart filled at row 14.10).
 //!
-//! Phase-14 single-thread runtime → **single concurrent session**.
+//! Single-thread runtime today → **single concurrent session**.
 //! The accept loop is sequential: handle one session to completion
 //! (`close` op or client disconnect), then loop back to accept the
-//! next connection. Multi-session / `interrupt` op ride Phase 15+
+//! next connection. Multi-session / `interrupt` op ride Phase B
 //! (D-117). nREPL clients (CIDER / `lein nrepl-client`) connect
 //! one at a time today; reconnect-after-disconnect works.
 //!
@@ -81,7 +81,7 @@ pub fn run(
     try stdout.flush();
 
     // Set up the Runtime once; sessions share it for now (single-
-    // thread means no race). Multi-session = Phase 15+ (D-117).
+    // thread means no race). Multi-session = Phase B (D-117).
     var rt = Runtime.init(io, gpa);
     defer rt.deinit();
     // println/print/prn route to the server's process stdout (matches the

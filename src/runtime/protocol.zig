@@ -2,11 +2,12 @@
 //! Protocol dispatch table — `ProtocolDescriptor` + `MethodEntry`
 //! struct declarations (ROADMAP §9.6 / 4.18, ADR-0008).
 //!
-//! Phase 4 entry ships declarations only. The `dispatch` function
-//! lands at Phase 7 alongside the `CallSite` cache (per ADR-0008's
-//! Phase 7 entry activation). Phase 4 freezes the struct layout so
-//! `TypeDescriptor.method_table` (4.17) and the future call-site
-//! cache (4.25) can reference these types now.
+//! The descriptor struct layout is frozen so
+//! `TypeDescriptor.method_table` and the call-site cache can
+//! reference these types. Protocol dispatch (`satisfies`,
+//! `extendTypeWithImpls`, the `ProtocolFn` call path) is wired and
+//! live in this file; the analyzer-time `CallSite` cache memoises
+//! hot dispatch sites.
 
 const std = @import("std");
 const value = @import("value/value.zig");
@@ -169,11 +170,11 @@ pub fn asProtocolFn(val: Value) *const ProtocolFn {
     return val.decodePtr(*const ProtocolFn);
 }
 
-/// Row 7.3 cycle 5: does `td` (or any descriptor up its `.parent`
-/// chain) carry at least one MethodEntry for `proto.fqcn`? Mirrors
+/// Does `td` (or any descriptor up its `.parent` chain) carry at
+/// least one MethodEntry for `proto.fqcn`? Mirrors
 /// `clojure.core/satisfies?` semantics — the user-facing predicate
-/// only cares about presence, not which methods. The future
-/// `__satisfies?` primitive (cycle 6+) calls this on a
+/// only cares about presence, not which methods. The `__satisfies?`
+/// primitive (lang/primitive/protocol.zig) calls this on a
 /// typed_instance's descriptor.
 pub fn satisfies(proto: *const ProtocolDescriptor, td: *const TypeDescriptor) bool {
     const target_name = proto.fqcn();

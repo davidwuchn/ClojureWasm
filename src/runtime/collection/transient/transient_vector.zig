@@ -29,20 +29,22 @@
 //! - Each `(conj! tv x)` / `(pop! tv)` checks `consumed == 0`
 //!   (`ensureEditable`); on mutation the items buffer grows
 //!   geometrically. The same transient Value is returned (callers
-//!   must still rebind because future variants — TransientHashMap
-//!   when D-045 closes — may reallocate the wrapper).
+//!   must still rebind because other transient variants — e.g. the
+//!   TransientArrayMap's promote-to-HAMT path — may reallocate the
+//!   wrapper).
 //! - `(persistent! tv)` flips `consumed = 1`, builds a fresh
 //!   PersistentVector via `vector.conj` over `items_ptr[0..count]`,
 //!   and returns the persistent Value. The transient is dead from
 //!   that moment; any subsequent `conj! / persistent! / pop!` raises
 //!   `transient_used_after_persistent`.
 //!
-//! Single-threaded today; the JVM `AtomicReference<Thread>` field is
-//! omitted because cw v1 has no real threading model through Phase
-//! 14. The same observable semantics result on a single-threaded
-//! runtime — see survey
+//! Single-threaded today; the JVM `AtomicReference<Thread>`
+//! ownership-thread check is omitted because cw v1 has no threading
+//! model yet. The same observable semantics result on a single-
+//! threaded runtime — see survey
 //! `private/notes/phase8-8.5-survey.md` § "Provisional behaviour
-//! candidates" PC2 for the rationale.
+//! candidates" PC2 for the rationale. Phase B (concurrency) revisits
+//! the ownership-thread check when a threading model lands.
 
 const std = @import("std");
 const value_mod = @import("../../value/value.zig");

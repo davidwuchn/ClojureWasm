@@ -13,8 +13,7 @@
 ;; **Variadic via [& sets] + internal arity discrimination**: union /
 ;; intersection / difference accept 0/1/2/3+ args using a single
 ;; rest-arg `fn*` form (no multi-arity dispatch needed). This sidesteps
-;; D-070 (multi-arity `fn*`) for these three vars — the survey's D-070
-;; back-fill plan is therefore void for this group.
+;; D-070 (multi-arity `fn*`) for these three vars.
 ;;
 ;; Group C (`select` / `project` / `index` / `rename` / `join`) lands
 ;; at 6.16.b-3 after D-061 (`#{}` reader literal) + D-059 (map-literal
@@ -97,10 +96,10 @@
 ;; (#{} reader) + D-059 (map literal as Value) infra landed at
 ;; 6.16.b-2. select-keys / merge / set helpers come from core.clj.
 ;;
-;; DIVERGENCE D-β: project / rename drop the JVM `with-meta` /
-;; `meta` wrap because cw v1 has no value-metadata system yet
-;; (Phase 7+ scope). join 3-arity `[xrel yrel km]` deferred to
-;; D-070 closure; ships 2-arity natural join only.
+;; project / rename preserve source metadata via `with-meta` + `meta`
+;; (value-metadata system landed). join ships the full 1/2/3-arity
+;; surface, including the 3-arity `[xrel yrel km]` key-mapping form
+;; (multi-arity `fn*` per ADR-0041 / D-070 discharge).
 ;; ----------------------------------------------------------------
 
 ;; `(select pred xset)` — return the subset of `xset` whose

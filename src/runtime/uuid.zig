@@ -40,7 +40,7 @@ pub const Canonical = [36]u8;
 /// (`bytes[6] = (bytes[6] & 0x0F) | 0x40`) and variant
 /// (`bytes[8] = (bytes[8] & 0x3F) | 0x80`) per RFC 4122.
 ///
-/// Phase 6 takes an `std.Io` so the caller chooses between
+/// Takes an `std.Io` so the caller chooses between
 /// `std.Io.randomSecure` (kernel CSPRNG via getrandom) and
 /// `std.Io.random` (fast PRNG fallback). Per F-006 + ADR-0015
 /// Tier 1/2 split, the io handle is the single point of

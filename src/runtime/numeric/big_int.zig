@@ -2,9 +2,7 @@
 //! Arbitrary-precision integer heap struct per F-005 + ADR-0012
 //! amendment 1 + ADR-0027 §2 Group D slot 0.
 //!
-//! ## 5.9.a migration (resolves 5.3.d.9 deferral)
-//!
-//! BigInt is now an `extern struct` with HeapHeader at offset 0 +
+//! BigInt is an `extern struct` with HeapHeader at offset 0 +
 //! a `*Managed` wrapper field. `std.math.big.int.Managed` cannot be
 //! embedded directly in an extern struct (its `limbs: []Limb` slice
 //! and `allocator: std.mem.Allocator` fields are not C-ABI-extern),
@@ -19,9 +17,7 @@
 //! BigInt wrapper.
 //!
 //! HeapTag slot 48 (Group D position 0, `big_int`) per F-004 +
-//! ADR-0027 §2. Phase 5 row 5.2.b rotated the slot from the g1
-//! placement at 29 (released `wasm_module` slot per ADR-0006 a1 +
-//! ADR-0012 a1) to the canonical Group D numeric block.
+//! ADR-0027 §2.
 
 const std = @import("std");
 const value_mod = @import("../value/value.zig");
@@ -68,7 +64,6 @@ pub fn originOf(v: Value) IntOrigin {
     return v.decodePtr(*const BigInt).origin;
 }
 
-/// Allocate a BigInt holding the i64 `v`. The Managed is constructed
 /// Parse a base-10 digit string `[-+]?ddd` into a Managed on `rt.gc.infra`,
 /// WITHOUT `std`'s `setString` — which has a Linux-glibc-x86 off-by-one past
 /// 2^64 (D-047). Builds the value as `acc = acc·10 + digit`, exact on every
@@ -97,6 +92,7 @@ pub fn parseBase10(rt: *Runtime, s: []const u8) !std.math.big.int.Managed {
     return acc;
 }
 
+/// Allocate a BigInt holding the i64 `v`. The Managed is constructed
 /// on `rt.gc.infra` (GPA) per F-006 §2; the BigInt wrapper lives on
 /// `rt.gc.alloc` (GC heap). Finaliser releases both at sweep time.
 pub fn allocFromI64(rt: *Runtime, v: i64, origin: IntOrigin) !Value {
@@ -153,11 +149,11 @@ pub fn asManaged(v: Value) *const std.math.big.int.Managed {
     return v.decodePtr(*const BigInt).m;
 }
 
-// --- same-type arithmetic (5.9.d) ---
+// --- same-type arithmetic ---
 //
-// Cross-type dispatch (Long ↔ BigInt ↔ Ratio ↔ BigDecimal) lands at
-// 5.10 in `runtime/numeric/promote.zig`. The functions below are the
-// per-type building blocks the dispatcher composes.
+// Cross-type dispatch (Long ↔ BigInt ↔ Ratio ↔ BigDecimal) lives in
+// `runtime/numeric/promote.zig`. The functions below are the per-type
+// building blocks the dispatcher composes.
 
 /// Three-way compare two BigInt Values (a vs b). Both Values MUST
 /// have `tag() == .big_int`.
@@ -225,9 +221,9 @@ pub fn allocMulManaged(
 
 /// Floor-divide `a / b` (integer quotient toward -∞). Raises
 /// `error.DivideByZero` on `b == 0`. Cross-type promotion of
-/// non-exact integer division to Ratio is the 5.10 dispatcher's
-/// responsibility; this entry returns the floor quotient and
-/// discards the remainder.
+/// non-exact integer division to Ratio is the `promote.zig`
+/// dispatcher's responsibility; this entry returns the floor quotient
+/// and discards the remainder.
 pub fn allocDivFloorManaged(
     rt: *Runtime,
     a: *const std.math.big.int.Managed,

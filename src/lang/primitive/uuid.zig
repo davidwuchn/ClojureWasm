@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: EPL-2.0
 //! UUID primitives for the `rt/` namespace — Clojure-ns surface.
 //!
 //! `random-uuid` and `parse-uuid` from clojure.core. Both wrap

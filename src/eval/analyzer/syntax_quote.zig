@@ -4,11 +4,13 @@
 //! tree into a template Form (the `(seq (concat …))` build shape clj uses) that
 //! the analyzer then analyzes normally.
 //!
-//! D-226 STAGE 1 — NON-QUALIFYING: a symbol stays bare (`` `foo `` →
-//! `(quote foo)`), so single-ns + core-symbol macros work but a backtick
-//! reference to another ns's private helper does not (D-226 stays open; the
-//! qualification pass is stage 2). `foo#` auto-gensym is consistent within one
-//! syntax-quote (a per-`expand` name map).
+//! A bare symbol is ns-qualified to its home ns (`qualifySym`, clj
+//! hygiene): a referred/aliased var qualifies to its home (`+` →
+//! `clojure.core/+`), an unresolved name to the current ns (`foo` →
+//! `user/foo`), so a macro can reference another ns's private helper.
+//! Special forms / interop / `&` / capitalized class names stay bare.
+//! `foo#` auto-gensym is consistent within one syntax-quote (a
+//! per-`expand` name map).
 
 const std = @import("std");
 const form_mod = @import("../form.zig");

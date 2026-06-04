@@ -2,9 +2,10 @@
 //! Pike NFA matcher (Thompson thread-list VM) — namespace-neutral
 //! implementation per F-009.
 //!
-//! Implements ADR-0031 Alt 2 cycle 1 (correctness baseline). The
-//! lazy DFA fast path lands in cycle 2 (`dfa.zig`); both backends
-//! share the `Program` IR defined in `compile.zig`.
+//! Implements ADR-0031 Alt 2 (correctness baseline) over the
+//! `Program` IR defined in `compile.zig`. A lazy-DFA fast path was
+//! reserved by ADR-0031 but never built (no `dfa.zig`); the Pike VM
+//! here is the sole matcher.
 //!
 //! Design (per Russ Cox's "Regular Expression Matching: the
 //! Virtual Machine Approach"):
@@ -22,22 +23,23 @@
 //!     the final best is the longest greedy match.
 //!   - O(n·m) worst case, no catastrophic backtracking.
 //!
-//! Cycle 2+ extends this with anchor-position handling, capture
-//! groups, lazy DFA dispatch, and the surface primitives.
+//! Anchor-position handling, capture groups, and the surface
+//! primitives are all implemented here; only the reserved lazy-DFA
+//! fast path remains unbuilt.
 
 const std = @import("std");
 const compile = @import("compile.zig");
 
 /// Maximum capture-group slot count (start + end for each group).
-/// JVM Clojure supports more, but the Phase 6.6 cycle-1 baseline
-/// caps at 8 groups (16 slots). Wider patterns fall back to a
-/// heap-allocated slot array in cycle 3.
+/// Caps at 8 groups (16 inline slots); JVM Clojure supports more.
+/// A heap-allocated slot array for wider patterns is not built —
+/// patterns beyond 8 groups exceed the inline cap.
 pub const MAX_SLOTS_INLINE: usize = 16;
 
 /// Capture-slot snapshot carried by each thread. -1 means
 /// "unset". On match, the slot array is the user-visible result
-/// of `re-groups`. Cycle 1 produces no captures; the field is
-/// preserved for cycle-3 wiring without re-shaping `MatchResult`.
+/// of `re-groups`. `save` records each slot boundary as threads
+/// advance (see `addThread`).
 pub const Captures = struct {
     slots: [MAX_SLOTS_INLINE]i32 = [_]i32{-1} ** MAX_SLOTS_INLINE,
     used: usize = 0,
@@ -73,8 +75,8 @@ pub fn find(
 }
 
 /// Same as `find` but scan begins at byte offset `start`. Used by
-/// `clojure.string/split` (Phase 6.9 cycle 4) to iterate matches
-/// without re-walking already-consumed prefix bytes. Exposed via
+/// `clojure.string/split` to iterate matches without re-walking
+/// already-consumed prefix bytes. Exposed via
 /// the `rt/re-find-from` primitive returning `[match start end]`.
 pub fn findFrom(
     alloc: std.mem.Allocator,
@@ -131,8 +133,8 @@ const ThreadList = struct {
 /// only byte-consuming opcodes plus `.match`. Anchors consult
 /// the current `pos` against `input` (line_start at pos 0,
 /// line_end at input.len, \b on word/non-word transition);
-/// failed anchors silently drop the thread. Cycle-1 `save`
-/// stays a pass-through stub.
+/// failed anchors silently drop the thread. `save` records the
+/// capture-slot boundary at the current position.
 fn addThread(
     list: *ThreadList,
     alloc: std.mem.Allocator,

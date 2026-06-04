@@ -14,9 +14,12 @@
 //! arm force-walks via the lazy_seq protocol (`env` threaded so a thunk
 //! can read dynamic vars), ADR-0054 cycle 3. range / array_seq /
 //! string_seq join when a producer mints those tags.
-//! Map / set key matching rides the existing bit-pattern `keyEq`, so
-//! collection-keyed lookup is correct only for by-identity keys
-//! (keyword / int / symbol) — structural collection keys await D-092.
+//! Map / set key matching compares keys BY VALUE via `keyEqValue`:
+//! interned keys (keyword / int / symbol) stay pointer-eq, and
+//! structural collection keys (vector / list / map / set, cross-type
+//! vector≡list) compare + hash by content (D-092, rt-free walks in the
+//! collection modules). Lazy / range keys stay identity — cannot
+//! realize rt-free, a documented residual.
 //! Cross-category `==` (e.g. `(== 1N 1.0)`) awaits the numeric combine
 //! ladder (D-014a family); `=` never needs it (category gate → false).
 

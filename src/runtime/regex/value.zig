@@ -5,8 +5,8 @@
 //! `HeapTag.regex` Value (slot B7 per ADR-0027). Two surfaces
 //! consume it: `lang/primitive/regex.zig` (clojure.core
 //! `re-pattern` / `re-find` / `re-matches`) and
-//! `runtime/java/util/regex/Pattern.zig` (Java-surface dispatch
-//! at Phase 7+).
+//! `runtime/java/util/regex/Pattern.zig` (Java-surface dispatch,
+//! method_table not yet populated).
 //!
 //! ## Lifetime
 //!
@@ -22,10 +22,10 @@
 //! ADR-0031 Alt-3 (reader-time intern + content-addressed
 //! `Program` cache) is the natural follow-up — every
 //! `(re-pattern "abc")` with the same source body would dedupe
-//! to one `Program`. Cycle 1c keeps each compile distinct; the
+//! to one `Program`. Each compile is currently distinct; the
 //! Alt-3 promotion is non-breaking (extend the wrapper to point
-//! into a cache arena) and is tracked at Phase 10+ planning per
-//! D-052.
+//! into a cache arena) and is recall-tracked by D-052 (when regex
+//! reaches a hot path).
 
 const std = @import("std");
 const value_mod = @import("../value/value.zig");

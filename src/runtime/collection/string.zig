@@ -1,17 +1,16 @@
 //! Heap-backed string Value.
 //!
-//! Phase-3 minimum: an immutable byte slice tagged `HeapTag.string`.
-//! The wrapper struct owns its own `[]u8` (duplicated from caller bytes
-//! at `alloc` time), so the resulting Value outlives any per-eval
-//! arena. `Runtime.trackHeap` registers a `freeString` callback that
-//! `Runtime.deinit` invokes — Phase-5's mark-sweep GC will replace
-//! that bookkeeping.
+//! An immutable byte slice tagged `HeapTag.string`. The wrapper struct
+//! owns its own `[]u8` (duplicated from caller bytes at `alloc` time),
+//! so the resulting Value outlives any per-eval arena. The bytes are
+//! freed by a per-tag GC finaliser (registered via `registerGcHooks`;
+//! see L24-34) before mark-sweep rawFrees the wrapper.
 //!
 //! Why not a Phase-1 small-string optimisation (inline tail of bytes
 //! after the header)? Because Clojure strings are arbitrary-length and
 //! the analyser's `.string` literal already arrives as a slice; one
 //! `gpa.dupe` is cheaper than the branch-on-length the inline form
-//! would need. Phase 8's GC + interning pass can revisit.
+//! would need. A future string-interning pass could revisit this.
 
 const std = @import("std");
 const value_mod = @import("../value/value.zig");

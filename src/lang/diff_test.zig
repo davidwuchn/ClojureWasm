@@ -1,16 +1,16 @@
 // SPDX-License-Identifier: EPL-2.0
 //! Differential test cases — calls `eval.evaluator.compare` against a
-//! Runtime + Env wired with the standard primitive + macro tables
-//! (Phase 4 entry suite, ROADMAP §9.6 / 4.10).
+//! Runtime + Env wired with the standard primitive + macro tables.
+//! The standing TreeWalk↔VM differential oracle (F-012: VM is the
+//! production default, tree_walk the oracle).
 //!
 //! Lives in `lang/` because the fixture imports `primitive.registerAll`
 //! and `macro_transforms.registerInto`, which are zone-1 modules
 //! `eval/evaluator.zig` cannot reach (`zone_deps.md`).
 //!
 //! Each `test "diff: …"` block describes one source form whose
-//! tree-walk and VM evaluations must agree. New cases land here as
-//! the Phase-4 task list progresses; the harness scales with each
-//! addition.
+//! tree-walk and VM evaluations must agree. Per ADR-0036, every
+//! backend-touching cycle lands ≥1 case here in the same commit.
 
 const std = @import("std");
 const evaluator = @import("../eval/evaluator.zig");
@@ -371,10 +371,10 @@ test "diff: nested if branches" {
 
 // ADR-0036 T1 retrofit: 11 cases covering the previously-untested
 // non-deferred Node variants enumerated in
-// private/notes/phase7-T1-survey.md §2.3. The 5 VM-DEFER sites
-// (deftype_node / interop_call_node — formerly ctor_call_node / field_access_node /
-// require libspec / ns refer-clojure filter) do not yet land diff
-// cases — those join when the markers discharge.
+// private/notes/phase7-T1-survey.md §2.3. The deftype, interop_call
+// (.constructor / field access), require-libspec, and ns
+// refer-clojure-filter arms landed their own diff cases below
+// (see L613-L926) once those VM arms shipped.
 
 // NOTE (ADR-0087): no PersistentQueue diff case here. A queue adds no new
 // analyzer Node / VM opcode (it is reached via `conj` + the `EMPTY` static
@@ -1074,10 +1074,11 @@ test "diff: row 7.9 apply variadic with vector tail (spread still works)" {
     try f.check("(apply (fn* [& xs] (count xs)) [1 2 3 4 5])", 5);
 }
 
-// Phase 13 row 13.1: STM `ref` / `deref` (read-only path, ADR-0010
-// amendment 3). Both backends must agree on the heap Ref construct +
-// the deref read. The second case exercises a Ref holding a heap
-// Value (vector) so the GC trace path is crossed on both backends.
+// STM `ref` / `deref` — synchronous read-only stand-in (ADR-0010
+// amendment 3); full transactional STM is Phase B (concurrency).
+// Both backends must agree on the heap Ref construct + the deref
+// read. The second case exercises a Ref holding a heap Value
+// (vector) so the GC trace path is crossed on both backends.
 
 test "diff: ref deref round-trip" {
     var f = try Fixture.init(testing.allocator);
@@ -1091,7 +1092,7 @@ test "diff: ref holds heap value, deref then count" {
     try f.check("(count (deref (ref [1 2 3])))", 3);
 }
 
-// Phase 13 row 13.3 (ADR-0047): VM peephole optimizer. Both backends
+// VM peephole optimizer (ADR-0047). Both backends
 // must agree on (do ...) forms whose non-final pure-push forms get
 // elided by peephole (`op_const|op_load_local + op_pop` pair), and on
 // branch-bearing forms where the elision happens between a jump and

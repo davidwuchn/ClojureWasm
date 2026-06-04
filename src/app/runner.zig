@@ -4,13 +4,13 @@
 //! by `app/cli.zig::dispatch` once it has resolved `source_text` from
 //! one of `-e <expr>` / `<file.clj>` / `-` (stdin).
 //!
-//! Row 8.1 (D-031) extracted this body from `src/main.zig` so the
+//! This body was extracted from `src/main.zig` (D-031) so the
 //! entry point shrinks to a thin argv-dispatcher. The function is
 //! intentionally allocator-explicit (`io` / `gpa` / `arena` passed
-//! in rather than re-deriving from `std.process.Init`) so future
-//! callers (= nREPL session loop at Phase 10, build-runner at
-//! Phase 12) can call `runSource` with their own allocators without
-//! re-implementing the bootstrap chain.
+//! in rather than re-deriving from `std.process.Init`) so other
+//! callers (the nREPL session loop, the build-runner) can call
+//! `runSource` with their own allocators without re-implementing
+//! the bootstrap chain.
 
 const std = @import("std");
 const Writer = std.Io.Writer;
@@ -60,16 +60,16 @@ pub fn runSource(
 
     driver.installVTable(&rt);
 
-    // Bootstrap macros (Phase 3.7): intern `let` / `when` / `cond` /
+    // Bootstrap macros: intern `let` / `when` / `cond` /
     // `->` / `->>` / `and` / `or` / `if-let` / `when-let` as macro
     // Vars and populate the analyzer's MacroTable. Lives long enough
     // for the entire eval loop; no per-form re-construction.
     var macro_table = macro_dispatch.Table.init(gpa);
     defer macro_table.deinit();
 
-    // Stage-1 prologue (Phase 3.13): install resolver + primitives +
-    // macros, then read+analyse+eval the embedded `clj/clojure/core.clj`
-    // — the one shared bootstrap chain (F-009, `bootstrap.setupCore`).
+    // Stage-1 prologue: install resolver + primitives + macros, then
+    // restore the embedded `clojure.core` (the AOT path below; the
+    // shared chain is F-009 `bootstrap.setupCore*`).
     // Errors here use the synthetic `<bootstrap>` source label and are
     // routed through the same catch path as user input — a broken
     // prologue surfaces as a diagnostic, not a panic.
@@ -115,14 +115,15 @@ pub fn runSource(
     try stdout.flush();
 }
 
-/// Row 8.4 / ADR-0005 — `--compare` mode. Runs `source_text` through
+/// ADR-0005 — `--compare` mode. Runs `source_text` through
 /// both backends via `evaluator.compare`, prints `OK <value>` on
 /// parity (NaN-boxed bit-equal), or `MISMATCH` + both renderings
 /// on divergence (exit 1). Heap-allocated Values compare by
 /// pointer-equality which differs across separately-allocated heap
 /// objects even when the Clojure-level value matches — the
-/// `evaluator.compare` docstring documents this caveat
-/// (Phase 5+ `Value.eql` will widen the parity definition).
+/// `evaluator.compare` docstring documents this caveat. Adopting a
+/// `Value.eql`-based parity check would widen the comparison; the
+/// gate uses bit-equality today.
 pub fn runSourceCompare(
     io: std.Io,
     gpa: std.mem.Allocator,

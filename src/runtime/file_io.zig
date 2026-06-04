@@ -7,11 +7,11 @@
 //!     `clojure.core/spit`.
 //!   - `runtime/java/io/File.zig` — `java.io.File` instance
 //!     methods (.exists / .length / read / write).
-//!   - `runtime/java/nio/file/Files.zig` (Phase 14+) — modern
-//!     NIO methods.
+//!   - `runtime/java/nio/file/Files.zig` — a future surface for
+//!     modern NIO methods (not yet present).
 //!
-//! Phase 6 only needs read + write. Streaming / append-mode /
-//! transactional rename arrive at Phase 14+.
+//! This file covers whole-file read + write. Streaming / append-mode /
+//! transactional rename are future additions.
 
 const std = @import("std");
 

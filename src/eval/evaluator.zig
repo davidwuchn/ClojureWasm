@@ -10,14 +10,13 @@
 //! vtable between runs so each backend sees its own dispatch table on
 //! the same `Runtime`.
 //!
-//! Phase 4 entry restricts compare cases to **pure expressions** —
-//! anything that mutates `env` (a top-level `def`) will leak from the
-//! first backend run into the second. Heap-allocated Values
-//! (keywords / lists / vectors / Functions) compare by NaN-boxed bit
-//! pattern, which differs across separately allocated heap objects
-//! even when the Clojure-level value matches. A `Value.eql` helper
-//! lands once the runtime `=` primitive is wired (Phase 5+) and the
-//! compare semantics widen accordingly.
+//! `compare` cases must be **pure expressions** — anything that
+//! mutates `env` (a top-level `def`) will leak from the first backend
+//! run into the second. Heap-allocated Values (keywords / lists /
+//! vectors / Functions) compare by NaN-boxed bit pattern, which
+//! differs across separately allocated heap objects even when the
+//! Clojure-level value matches. Adopting a `Value.eql`-based parity
+//! check would widen the comparison; the gate uses bit-equality today.
 
 const std = @import("std");
 const Reader = @import("reader.zig").Reader;
@@ -36,7 +35,7 @@ pub const CompareResult = struct {
     vm: anyerror!Value,
     /// `true` when both backends succeeded AND produced the same
     /// NaN-boxed bit pattern. See module docstring for the
-    /// immediate-Value caveat at Phase 4.
+    /// immediate-Value caveat.
     equal: bool,
 };
 

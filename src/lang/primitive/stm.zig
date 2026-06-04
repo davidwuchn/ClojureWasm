@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: EPL-2.0
 //! STM + IDeref primitives for the `rt/` namespace — Clojure-ns surface.
 //!
-//! `ref` (STM, Phase 13 read-only) + the broader `deref` / `delay` /
+//! `ref` (read-only shell) + the broader `deref` / `delay` /
 //! `future` / `promise` / `deliver` / `realized?` Tier A IDeref
-//! surface (row 14.8, D-098 follow-up). `deref` dispatches by tag
-//! to atom / ref / delay / promise / future (atom lands Phase 15).
-//! `dosync` / `alter` / `commute` / `ensure` / `ref-set` ride Phase
-//! 14 D-102 / Phase 15.
+//! surface. `deref` dispatches by tag to atom / ref / delay /
+//! promise / future (all wired). The STM transaction engine —
+//! `dosync` / `alter` / `commute` / `ensure` / `ref-set` — is
+//! Phase B (concurrency); those mutators still raise pending it.
 
 const Value = @import("../../runtime/value/value.zig").Value;
 const Runtime = @import("../../runtime/runtime.zig").Runtime;
@@ -28,17 +28,16 @@ const reduced_mod = @import("../../runtime/collection/reduced.zig");
 /// `(ref init)` — construct a Tier A STM Ref seeded with `init`.
 /// JVM `clojure.core/ref` also accepts `:meta` / `:validator` /
 /// `:min-history` / `:max-history` option kwargs; those ride the
-/// Phase-14 transaction machinery (D-102) and are not accepted yet.
+/// Phase B transaction engine (D-102) and are not accepted yet.
 pub fn refFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
     _ = env;
     try error_catalog.checkArity("ref", args, 1, loc);
     return try ref_mod.alloc(rt, args[0]);
 }
 
-/// `(deref r)` / `@r` — return a Ref / Delay / Promise / Future's
-/// current value. Row 14.8 (D-098 follow-up) extends the Phase-13
-/// Ref-only path with delay / promise / future arms. Atom remains
-/// Phase 15 (alongside `std.Io.Mutex`).
+/// `(deref r)` / `@r` — return an Atom / Ref / Delay / Promise /
+/// Future / Var / Volatile / Reduced current value. Every IDeref
+/// arm is wired; real CAS-under-contention for atoms is Phase B.
 pub fn derefFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
     try error_catalog.checkArity("deref", args, 1, loc);
     const v = args[0];
@@ -71,8 +70,9 @@ pub fn delayCreateFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLo
 
 /// `__future-call` — internal primitive called by the `future` Zig
 /// macro transform. Receives a zero-arity fn and constructs a
-/// Future that has already eagerly evaluated the body (single-
-/// thread Phase 14 semantic).
+/// Future that has already eagerly evaluated the body (the
+/// pre-Phase-B single-thread stand-in; real off-thread execution
+/// arrives with Phase B concurrency).
 pub fn futureCallFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
     try error_catalog.checkArity("__future-call", args, 1, loc);
     return try future_mod.alloc(rt, env, args[0], loc);

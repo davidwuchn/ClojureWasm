@@ -8,9 +8,11 @@
 //!
 //! `java.util.Date` is essentially an epoch-ms wrapper; cw v1
 //! routes through `runtime/time/instant.zig` rather than a separate
-//! impl. Phase 6.5 lands the `___HOST_EXTENSION` declaration;
-//! instance methods (getTime / setTime / toString / toInstant) wire
-//! through Phase 7 dispatch.
+//! impl. The `___HOST_EXTENSION` declaration is registered, but the
+//! method_table is empty: instance methods (getTime / setTime /
+//! toString / toInstant) are not yet wired. (The `#inst` Date value
+//! itself lives in `runtime/time/date.zig` and works; this is only
+//! the Java-surface wrapper.)
 
 const host_api = @import("../_host_api.zig");
 const type_descriptor = @import("../../type_descriptor.zig");

@@ -11,10 +11,10 @@
 //! When `info.location.line == 0` (location unknown), the source line
 //! and caret are skipped — the renderer falls back to header + message.
 //!
-//! Phase 3.1 wires this into `src/main.zig`'s three catch sites
-//! (Read / Analyse / Eval). Subsequent tasks 3.2–3.4 thread real
-//! `SourceLocation` values through the Reader, Analyzer, and TreeWalk
-//! so the line/caret actually pinpoints the offending sub-expression.
+//! This is wired into `src/main.zig`'s three catch sites
+//! (Read / Analyse / Eval). Real `SourceLocation` values flow
+//! through the Reader, Analyzer, and TreeWalk so the line/caret
+//! pinpoints the offending sub-expression.
 
 const std = @import("std");
 const Writer = std.Io.Writer;
@@ -32,7 +32,8 @@ pub const SourceContext = struct {
 
 /// Render options.
 pub const Options = struct {
-    /// Reserved for future ANSI color output. Phase 3.1 always renders plain.
+    /// Reserved for future ANSI color output; the renderer always
+    /// renders plain today (the flag is not yet consulted).
     enable_ansi: bool = false,
 };
 

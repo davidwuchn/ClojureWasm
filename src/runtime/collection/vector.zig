@@ -22,14 +22,10 @@
 //! `root` via `(i >>> level) & 0x1F` at each level until shift==5,
 //! then `leaf.slots[i & 0x1F]`.
 //!
-//! 5.4.a (this file's first landing): struct shapes + EMPTY singleton
-//! + nth + count read-side ops. 5.4.b lands conj + pop (pushTail /
-//! popTail patterns); 5.4.c lands assoc; 5.4.d lands subvec.
-//!
-//! Per-tag trace fns + Runtime.init registration are deferred to
-//! 5.4.b alongside the first allocation site — at 5.4.a EMPTY is a
-//! comptime const singleton (no GC trace needed because it never
-//! lives on the GC heap).
+//! Supports nth / count read-side ops, conj + pop (pushTail / popTail
+//! patterns), assoc, and subvec. Per-tag trace fns are registered at
+//! Runtime.init; EMPTY is a comptime const singleton (no GC trace
+//! needed because it never lives on the GC heap).
 
 const std = @import("std");
 const value_mod = @import("../value/value.zig");
@@ -255,9 +251,8 @@ pub fn conj(rt: *Runtime, v: Value, x: Value) !Value {
 }
 
 /// Remove the last element. Per clojure JVM `PersistentVector.pop()`.
-/// Errors when called on the empty vector (matches Clojure semantics —
-/// `(pop [])` throws `IllegalStateException`; cw v1 maps to
-/// `Code.feature_not_supported` until the catalog Code lands).
+/// Returns `error.PopEmpty` when called on the empty vector (matches
+/// Clojure semantics — `(pop [])` throws `IllegalStateException`).
 pub fn pop(rt: *Runtime, v: Value) !Value {
     std.debug.assert(v.tag() == .vector);
     const old = v.decodePtr(*const Vector);
@@ -351,14 +346,13 @@ fn assocInRoot(rt: *Runtime, level: u32, node: *const HamtNode, i: u32, x: Value
 ///   - subvec v 0 (count v) is equivalent to v (we copy structurally
 ///     anyway for simplicity; the result is a fresh Vector)
 ///
-/// **5.4.d implementation choice**: eager copy via repeated `conj`.
-/// Lazy SubVector wrapper (clojure JVM's actual approach with
-/// structural sharing of the parent) is deferred to a Phase 7+
-/// follow-up — it requires a new SubVector type + Tag slot +
-/// polymorphic op dispatch, which is genuinely substantial. Eager
-/// copy is O(n) where n = end - start; typical subvec call sites
-/// (small ranges over large vectors) keep the cost bounded.
-/// Recorded as D-044 candidate at row 5.4 close handover.
+/// Implementation choice: eager copy via repeated `conj`. The lazy
+/// SubVector wrapper (clojure JVM's actual approach with structural
+/// sharing of the parent) requires a new SubVector type + Tag slot +
+/// polymorphic op dispatch; it is tracked as D-044, gated on a
+/// measured structural-sharing benefit. Eager copy is O(n) where
+/// n = end - start; typical subvec call sites (small ranges over
+/// large vectors) keep the cost bounded.
 pub fn subvec(rt: *Runtime, v: Value, start: u32, end: u32) !Value {
     std.debug.assert(v.tag() == .vector);
     const old = v.decodePtr(*const Vector);

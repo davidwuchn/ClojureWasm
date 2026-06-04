@@ -7,11 +7,13 @@
 //! Node tree, then `finalize`s by duping the slices into the caller's
 //! arena so the resulting chunk is immutable.
 //!
-//! Phase-1/2 special forms (`def` / `if` / `do` / `quote` / `let*` /
-//! `fn*` / call) land across the early §9.6 / 4.5 cycles. The first
-//! cycle handles `constant` Nodes (the leaf case all other forms
-//! decompose into); subsequent cycles widen the `compileNode`
-//! switch arm-by-arm.
+//! `compileNode` lowers the full analyzer Node set: literals and
+//! collection literals, the core special forms (`def` / `if` / `do` /
+//! `quote` / `let*` / `letfn*` / `fn*` / `loop*` / `recur` /
+//! `binding` / `try` / `throw`), namespace forms (`in-ns` / `ns` /
+//! `require`), interop calls, and method dispatch. The switch is
+//! exhaustive over the `Node` union, so a new variant forces a
+//! matching compile arm at build time.
 
 const std = @import("std");
 const node_mod = @import("../../node.zig");

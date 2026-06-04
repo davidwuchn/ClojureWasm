@@ -2,16 +2,14 @@
 //! Tier-A transient primitives (ROADMAP §9.10 row 8.5, D-074).
 //! Layer-2 thin wrappers over `runtime/collection/transient/*.zig`.
 //!
-//! Cycle 1 lands the 4-of-7 vector-side surface: `transient` (the
+//! All 7 transient ops are implemented: `transient` (the
 //! `(transient coll)` constructor — no `!` because it does not
-//! mutate), `persistent!`, `conj!`, `pop!`. The remaining 3
-//! (`assoc!`, `disj!`, `dissoc!`) land in cycle 2 (TransientArrayMap)
-//! and cycle 3 (TransientHashSet) per the per-collection
-//! decomposition recorded in
-//! `private/notes/phase8-8.5-survey.md`.
+//! mutate), `persistent!`, `conj!`, `pop!`, `assoc!`, `disj!`,
+//! `dissoc!`, backed by TransientVector / TransientArrayMap /
+//! TransientHashSet.
 //!
 //! ## Backend: impl-only (no surface delegation)
-//! Impl deps: vector, transient_vector
+//! Impl deps: vector, transient_vector, transient_array_map, transient_hash_set
 //! Clojure peer: none (Pattern B1 direct intern, public surface)
 
 const std = @import("std");
@@ -30,8 +28,8 @@ const transient_hash_set = @import("../../runtime/collection/transient/transient
 
 /// Implements clojure.core/transient.
 /// Spec: `(transient coll)` returns an editable transient version of
-///   coll. cycle 1 supports vector source only; cycle 2 adds
-///   array_map; cycle 3 adds hash_set.
+///   coll. Supports vector, array_map / hash_map, and hash_set
+///   sources (nil → empty transient vector).
 /// JVM reference: clojure.core/transient → IEditableCollection.asTransient
 /// cw v1 tier: A (Phase 8.5 cycle 1)
 pub fn transientFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
@@ -121,9 +119,8 @@ pub fn disjBangFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocat
 }
 
 /// Implements clojure.core/assoc!.
-/// Spec: `(assoc! tcoll k v)` — vector: integer key in [0, count];
-///   map: arbitrary key. cycle 2 supports map-arm; vector-arm lands
-///   in a follow-up sub-cycle.
+/// Spec: `(assoc! tcoll k v)` — vector: integer key in [0, count]
+///   (`idx == count` appends, D-199); map: arbitrary key.
 /// JVM reference: clojure.core/assoc! → ITransientAssociative.assoc
 /// cw v1 tier: A (Phase 8.5 cycle 2)
 pub fn assocBangFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {

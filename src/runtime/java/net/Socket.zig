@@ -5,14 +5,12 @@
 //! Impl deps: net
 //! Clojure peer: none
 //!
-//! TypeDescriptor reservation per ADR-0029 D5 (Phase 14 row 14.3 /
-//! D-097 third wave). Backing impl `runtime/net/socket.zig`
-//! (TCP client / server primitives) lands in a focused follow-up
-//! cycle — tracked by **D-106**. Until then this surface is
-//! reachable through `(rt.types.get "cljw.java.net.Socket")` and the
-//! `cljw.java.net.Socket` namespace exists, but
-//! `(java.net.Socket. host port)` raises until method dispatch
-//! wires up.
+//! TypeDescriptor reservation per ADR-0029 D5. The backing impl
+//! `runtime/net/socket.zig` (TCP client / server primitives) is
+//! unbuilt — tracked by **D-106**. The surface is reachable through
+//! `(rt.types.get "cljw.java.net.Socket")` and the
+//! `cljw.java.net.Socket` namespace exists, but the method_table is
+//! empty, so `(java.net.Socket. host port)` does not yet resolve.
 
 const host_api = @import("../_host_api.zig");
 const type_descriptor = @import("../../type_descriptor.zig");

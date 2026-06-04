@@ -6,17 +6,14 @@
 //! the 2-bit group band per ADR-0027 §1). Per ADR-0012 + ADR-0027 the
 //! enum is the single source of truth for the heap-tag namespace.
 //!
-//! Phase 5 row 5.2.b widens the layout to **64 entries (4 group × 16
-//! sub-type)** per F-004 + ADR-0027 §2 (post-amendment 1) decree. Day-1
-//! entries land for every type F-004 enumerated; new entries that the
-//! owning §9.7 row activates later are type-declared-only — the GC trace
-//! / finaliser / descriptor dispatch tables in `runtime/gc/tag_ops.zig`
-//! carry `null` for entries with no behaviour wired yet (per
-//! `no_op_stub_forbidden.md`'s "explicit-error stub" pattern, the
-//! behaviour-bearing call sites raise `Code.feature_not_supported`
-//! through the dispatch layer).
+//! The layout is the g2 64-entry namespace (4 group × 16 sub-type) per
+//! F-004 + ADR-0027 §2 (post-amendment 1). The enum below is the slot
+//! map's single source of truth; the per-Tag GC trace / finaliser /
+//! descriptor dispatch tables in `runtime/gc/tag_ops.zig` carry `null`
+//! for tags whose owning Phase has not yet wired behaviour (the `null`
+//! entry is the safe leaf-node default — see `tag_ops.zig`).
 //!
-//! Group layout (per F-004 indicative slot map, verbatim):
+//! Group layout (mirrors the enum below):
 //!
 //!   Group A — Hot data + persistent collections (slots 0..15):
 //!     A0 string         A4 vector         A8 lazy_seq        A12 range
@@ -37,14 +34,10 @@
 //!     C3 volatile       C7 ex_info        C11 rb_node        C15 sorted_set
 //!
 //!   Group D — Numeric + wasm + extension (slots 48..63):
-//!     D0 big_int        D4 wasm_module    D8 matcher         D12 reserved
-//!     D1 ratio          D5 wasm_fn        D9 tuple           D13 reserved
-//!     D2 big_decimal    D6 wasm_funcref   D10 box            D14 reserved
-//!     D3 array          D7 wasm_externref D11 reserved       D15 reserved
-//!
-//! Anonymous reserves (B15 / C11 / D11–D15) carry debt D-043 for Phase 7
-//! entry review — name them or shrink the group boundary per measured
-//! dispatch frequency.
+//!     D0 big_int        D4 wasm_module    D8 matcher         D12 tail_node
+//!     D1 ratio          D5 wasm_fn        D9 tuple           D13 hamt_map_node
+//!     D2 big_decimal    D6 wasm_funcref   D10 box            D14 hash_collision_map_node
+//!     D3 array          D7 wasm_externref D11 hamt_node      D15 tval
 
 /// Heap object discriminant — 64 entries (4 group × 16 sub-type) per
 /// F-004 + ADR-0027 §2. Each entry's integer value is the contiguous

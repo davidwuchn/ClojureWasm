@@ -1,15 +1,13 @@
 // SPDX-License-Identifier: EPL-2.0
 //! Core glue fundamentals — `count` / `seq` / `first` / `rest` /
-//! `cons` / `empty` per ADR-0033 D6 + ROADMAP §9.8 row 6.16.a-1
-//! + v5 §5.2.
+//! `cons` / `empty` per ADR-0033 D6 + v5 §5.2.
 //!
 //! ## Pattern (v5 §6.1 hybrid polymorphism)
 //!
-//! Phase 6.16.a-1 ships **Zig Tag switch hardcode** (NaN-box Tag 0..15
-//! comptime/runtime switch + inline). Phase 7 (D-069) opens a
-//! Protocol extension point as an **additional** path; the fast-path
-//! Tag arms stay, the slow-path `.protocol_extended` arm gets added
-//! at that point. This is not a compromise — each Phase's best shape.
+//! A **Zig Tag switch hardcode** (NaN-box Tag comptime/runtime switch
+//! + inline) is the fast path. The Protocol extension point (D-069)
+//! is an **additional** path: the fast-path Tag arms stay, and a
+//! slow-path `.protocol_extended` arm handles user-extended types.
 //!
 //! ## Layer 2 wrapper, not Layer 0 re-implementation
 //!
@@ -20,13 +18,12 @@
 //! (ADR-0004 + ADR-0012); Cons cell heap layout already lives in
 //! `runtime/collection/list.zig`.
 //!
-//! ## Placement deviation note
+//! ## Placement note
 //!
-//! ROADMAP §9.8 row 6.16.a-1 wording uses `core/sequence.zig` subdir
-//! shape, but cw v1's existing Layer 2 (uuid/file_io/regex/string/set/
-//! walk/math/error/core, 9 files) is flat. This file lands flat at
-//! `src/lang/primitive/sequence.zig`; subdir promotion deferred to
-//! Phase 6.16.a-2/a-3 once primitive count grows past ~12.
+//! cw v1's Layer 2 lives flat under `src/lang/primitive/`; this file
+//! is `sequence.zig`, the sibling of `collection.zig` /
+//! `higher_order.zig`. The flat layout is the finished form — no
+//! `core/` subdir grouping.
 //!
 //! ## Backend: impl-only (no surface delegation)
 //! Impl deps: list, vector, map, set, chunked_cons, lazy_seq, charset

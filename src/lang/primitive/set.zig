@@ -1,20 +1,20 @@
 // SPDX-License-Identifier: EPL-2.0
-//! `clojure.set/` namespace surface — Phase 6.16.b-1 (.clj migration).
+//! `clojure.set/` namespace surface + the set/map constructors.
 //!
 //! The Group A + B vars (`union` / `intersection` / `difference` /
-//! `subset?` / `superset?` / `rename-keys` / `map-invert`) moved to
+//! `subset?` / `superset?` / `rename-keys` / `map-invert`) live as
 //! pure-Clojure Pattern A defns in `src/lang/clj/clojure/set.clj`
-//! per ADR-0033 D3 + v5 §8.2. This file now ships only:
+//! per ADR-0033 D3 + v5 §8.2. This file ships only the variadic
+//! constructors:
 //!
-//! - `hash-set` (variadic constructor; the `#{...}` reader literal
-//!   lowers to a `hash-set` call until D-061 lands a `.set` Form
-//!   variant + analyzer node at 6.16.b-2).
-//! - `hash-map` (variadic constructor; same role for `{...}` until
-//!   D-059 lands map-literal-as-Value at 6.16.b-2).
+//! - `hash-set` — `(hash-set & xs)`. (The `#{...}` reader literal has
+//!   its own `.set` Form variant, so it does not route through here.)
+//! - `hash-map` / `array-map` — `(hash-map & kvs)`. (The `{...}`
+//!   literal likewise has its own Form variant.)
 //!
-//! Group C (`select` / `project` / `index` / `rename` / `join`) is
-//! also a `.clj` defn — lands at 6.16.b-3 after the D-061 + D-059
-//! infra ships.
+//! Group C (`select` / `project` / `index` / `rename` / `join`,
+//! relational ops over sets-of-maps) is not yet implemented; it is
+//! tracked by D-061.
 
 const Value = @import("../../runtime/value/value.zig").Value;
 const Runtime = @import("../../runtime/runtime.zig").Runtime;

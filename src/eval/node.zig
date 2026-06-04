@@ -24,20 +24,18 @@
 //!   `catchExprs` as a `PersistentVector`. See ADR / survey
 //!   `private/notes/phase3-3.9-survey.md` for the rationale.
 //! - **`recur_target_depth: u32` on Scope** (in `analyzer.zig`) tracks
-//!   the nesting depth of the nearest `loop*` / `fn*`. Phase 3.9 only
+//!   the nesting depth of the nearest `loop*` / `fn*`. Dispatch only
 //!   uses "≠ 0" (target present), but the depth is preserved so future
 //!   work (named loops, labelled break) can reach across multiple
 //!   levels without re-engineering the Scope contract (ROADMAP A2).
 //!
-//! ### What 3.9 does *not* land
+//! ### Known limits
 //!
-//! - Tail-position enforcement of `recur` (it is checked at codegen /
-//!   eval time in 3.11; for now `recur` outside a target is a syntax
-//!   error, but `recur` in a non-tail position inside a target compiles
-//!   and will raise at eval time once 3.11 lands).
+//! - Tail-position enforcement of `recur` is checked at eval time:
+//!   `recur` outside a target is a syntax error, but `recur` in a
+//!   non-tail position inside a target compiles and raises at eval time.
 //! - Multi-class catch (only `ExceptionInfo` is recognised; class name
 //!   is stored as a string and compared at eval time).
-//! - `set!` / `var-set` — separate task in Phase 5+.
 //!
 //! ### Memory ownership
 //!
@@ -338,8 +336,6 @@ pub const ThrowNode = struct {
     loc: SourceLocation = .{},
 };
 
-/// `(deftype Name [f1 f2 ...] ...)` — per ADR-0007 Option β. Phase
-/// 5.12.a lands declaration only; protocol-method bodies arrive in
 /// `(Class/method args...)` / `(.member recv args...)` / `(.-field recv)` /
 /// `(Name. args...)` — unified Java/host interop dispatch (ADR-0050, am1).
 /// One Node carries every kind of interop call; the kind tag picks the
@@ -397,10 +393,7 @@ pub const InteropCallNode = struct {
 
 /// `[expr1 expr2 ...]` — vector literal in expression position. The
 /// analyzer recursively lifts each child Form to a Node; eval evaluates
-/// each, conj-ing the results into an empty `vector` Value. Phase 6.9
-/// cycle 4 — previously the analyzer raised `feature_not_supported`
-/// because `clojure.string/join` and friends could not be exercised
-/// from Clojure without literal vectors.
+/// each, conj-ing the results into an empty `vector` Value.
 pub const VectorLiteralNode = struct {
     elements: []const Node,
     loc: SourceLocation = .{},
@@ -409,15 +402,14 @@ pub const VectorLiteralNode = struct {
 /// `{k1 v1 k2 v2 ...}` — map literal in expression position. The
 /// elements slice is flat `[k0, v0, k1, v1, ...]`; the reader
 /// guarantees even length. Eval evaluates each child, assoc-ing the
-/// k/v pairs into an empty ArrayMap. Phase 6.16.b-2 closes D-059.
+/// k/v pairs into an empty ArrayMap (D-059).
 pub const MapLiteralNode = struct {
     elements: []const Node,
     loc: SourceLocation = .{},
 };
 
 /// `#{e1 e2 ...}` — set literal in expression position. Eval evaluates
-/// each child, conj-ing into an empty HashSet (duplicates collapse).
-/// Phase 6.16.b-2 closes D-061.
+/// each child, conj-ing into an empty HashSet (duplicates collapse, D-061).
 pub const SetLiteralNode = struct {
     elements: []const Node,
     loc: SourceLocation = .{},
@@ -439,29 +431,27 @@ pub const InNsNode = struct {
 
 /// `(ns foo)` / `(ns foo (:refer-clojure))` analyser node. ADR-0035
 /// D1: cw v1 ships `(ns ...)` as an analyzer special form (not a
-/// macro) per the Devil's-advocate finished-form Alt 2. Phase
-/// 6.16.b-4 sub-cycle c.7 supports the bare ns name + an optional
-/// `(:refer-clojure)` directive (no `:exclude` / `:only` filter
-/// yet; deferred). `(:require ...)` / `(:use ...)` / `(:import ...)`
-/// / `(:gen-class ...)` raise transient `feature_not_supported`
-/// at this cycle — they will land when their downstream needs
-/// emerge. The arena-owned `name` slice is what `evalNs` passes to
-/// `findOrCreateNs`.
+/// macro) per the Devil's-advocate finished-form Alt 2. Supports the
+/// bare ns name, `(:refer-clojure)` with `:exclude` / `:only` filters
+/// (D-098), `(:require ...)` (D-098, see `libspecs`), and
+/// `(:import ...)` (D-235, see `imports`). `(:use ...)` /
+/// `(:gen-class ...)` are not supported. The arena-owned `name` slice
+/// is what `evalNs` passes to `findOrCreateNs`.
 pub const NsNode = struct {
     name: []const u8,
     /// User wrote `(:refer-clojure)`. When false the auto-refer step is
     /// skipped entirely (cljw-shell-only mode).
     refer_clojure: bool = true,
-    /// Row 14.7 (D-098): `(:refer-clojure :exclude [name ...])` filter
+    /// `(:refer-clojure :exclude [name ...])` filter (D-098)
     /// — names listed here are dropped from the auto-refer pass. Empty
     /// slice = no exclusion. Arena-owned slices.
     refer_clojure_exclude: []const []const u8 = &.{},
-    /// Row 14.7 (D-098): `(:refer-clojure :only [name ...])` whitelist
+    /// `(:refer-clojure :only [name ...])` whitelist (D-098)
     /// — when `null`, all (non-private, non-excluded) names refer; when
     /// non-null, ONLY the listed names refer. Arena-owned.
     refer_clojure_only: ?[]const []const u8 = null,
-    /// Row 14.7 (D-098): `(:require [ns ...])` arms collected from the
-    /// ns directive. Each libspec mirrors a top-level `(require ...)`
+    /// `(:require [ns ...])` arms collected from the ns directive (D-098).
+    /// Each libspec mirrors a top-level `(require ...)`
     /// shape and is materialised by `evalNs` after the refer-clojure
     /// step. Arena-owned.
     libspecs: []const RequireNode = &.{},

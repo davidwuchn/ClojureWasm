@@ -1,15 +1,14 @@
 // SPDX-License-Identifier: EPL-2.0
 //! Collection ops — `conj` / `disj` / `contains?` / `get` / `nth` /
-//! `assoc` / `dissoc` / `keys` / `vals` per ADR-0033 D6 + ROADMAP §9.8
-//! row 6.16.a-2 + v5 §5.2.
+//! `assoc` / `dissoc` / `keys` / `vals` per ADR-0033 D6 + v5 §5.2.
 //!
-//! ## Pattern (continues sequence.zig from Phase 6.16.a-1)
+//! ## Pattern (sibling of sequence.zig)
 //!
-//! Same shape as `lang/primitive/sequence.zig` (d35dc3b): Layer 2
-//! Tag switch dispatching to existing Layer 0 collection helpers
-//! (`runtime/collection/{vector,list,map,set}.zig`). Phase 7 (D-069)
-//! adds the `.protocol_extended` slow-path arm; the fast-path Tag
-//! arms stay.
+//! Same shape as `lang/primitive/sequence.zig`: a Layer 2 Tag switch
+//! dispatching to existing Layer 0 collection helpers
+//! (`runtime/collection/{vector,list,map,set}.zig`), with a
+//! `.protocol_extended` slow-path arm (D-069) for user-extended types
+//! alongside the fast-path Tag arms.
 //!
 //! ## Backend: impl-only (no surface delegation)
 //! Impl deps: vector, list, map, set
@@ -17,14 +16,11 @@
 //!
 //! ## File split rationale
 //!
-//! sequence.zig is already ~487 LOC; adding 9 collection-ops
-//! primitives would push it past the 1000-line ROADMAP §2 A6 cap.
-//! The file split also matches the cycle semantic split (a-1
-//! fundamentals / a-2 collection-ops / a-3 higher-order). Per
-//! sequence.zig L23-29 docstring "subdir promotion deferred until
-//! primitive count grows past ~12" — Phase 6.16.a-3 will revisit
-//! a `core/` subdir grouping for sequence + collection + higher-order
-//! once the full set is in place.
+//! Collection ops live in their own file (rather than in sequence.zig)
+//! to keep each Layer 2 file well under the 1000-line ROADMAP §2 A6
+//! cap. The split also tracks the semantic grouping: sequence
+//! fundamentals / collection ops / higher-order. The layout is flat
+//! (no `core/` subdir).
 
 const std = @import("std");
 const Value = @import("../../runtime/value/value.zig").Value;
@@ -549,10 +545,10 @@ pub fn assocFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation
                     .actual = @tagName(coll.tag()),
                 });
             }
-            // Cycle 4 ships single-pair assoc only. Multi-pair on a
-            // record would allocate multiple TypedInstance values; the
-            // opportunistic 4.5+ cycle that lands `__extmap` overflow
-            // would cover this in the same surgery (D-086).
+            // Single-pair assoc only on a record. Multi-pair would
+            // allocate multiple TypedInstance values; the `__extmap`
+            // overflow work (D-086) would cover this in the same
+            // surgery.
             if (args.len > 3) {
                 break :blk error_catalog.raise(.feature_not_supported, loc, .{
                     .name = "multi-pair assoc on defrecord",

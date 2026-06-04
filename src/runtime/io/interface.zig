@@ -2,10 +2,12 @@
 //! Zone 0 I/O abstraction (ADR-0015, ROADMAP §9.6 / 4.13).
 //!
 //! Carries the **Tier 1** vtable declarations only — no `std.Io`
-//! import. Consumer code (analyser, REPL, primitives) imports this
-//! file; the concrete `std.Io` attachment lives in `runtime/io/default.zig`
-//! (Tier 2, Zone 1) and is injected by `main()` so a future `std.Io`
-//! reshape only touches one file.
+//! import. The intended design: consumer code imports this file and
+//! the concrete `std.Io` attachment lives in a separate Tier-2 file
+//! (Zone 1) injected by `main()`, so a `std.Io` reshape touches one
+//! file. That attachment is not built — no consumer uses these
+//! vtables yet, so the file is a reserved abstraction (referenced
+//! only by the `main.zig` test aggregator).
 //!
 //! Each struct opaquely carries a `*const VTable` plus a context
 //! pointer (`*anyopaque`) representing the underlying resource. The
@@ -13,13 +15,13 @@
 //! documented on each struct so the Tier 2 implementor can honour it
 //! across Zig versions.
 //!
-//! Phase 4 entry ships only the type shapes. Concrete `defaultReader()`
-//! / `defaultWriter()` constructors land in `runtime/io/default.zig` as the
-//! consumer paths (REPL, file load, primitive I/O) migrate off the
-//! direct `std.Io.File` references they currently use. The migration
-//! is opportunistic — touched files adopt the abstraction; old call
-//! sites are not retroactively rewritten until a Zig stdlib reshape
-//! forces the issue (the F140-F144 v0 precedent).
+//! Only the type shapes exist. The `defaultReader()` /
+//! `defaultWriter()` constructors and the consumer migration (REPL,
+//! file load, primitive I/O moving off direct `std.Io.File` use) are
+//! unbuilt: those call sites still use `std.Io.File` directly. The
+//! migration is intended to be opportunistic — adopting the
+//! abstraction when a Zig stdlib reshape forces the issue (the
+//! F140-F144 v0 precedent).
 
 const std = @import("std");
 
@@ -68,9 +70,9 @@ pub const Reader = struct {
 };
 
 /// Network endpoint abstraction — TCP-style connect / accept.
-/// Phase 4 entry only declares the shape; concrete attachment to
-/// `std.net` / `std.Io.Net` lands when the Phase-16 HTTP work
-/// (per ADR-0006) re-enables the F140 / F141 surface.
+/// Only the shape is declared; the concrete attachment to
+/// `std.net` / `std.Io.Net` lands with the HTTP work (per
+/// ADR-0006) that re-enables the F140 / F141 surface.
 pub const Net = struct {
     vtable: *const VTable,
     ctx: *anyopaque,
@@ -83,9 +85,9 @@ pub const Net = struct {
     };
 };
 
-/// Subprocess abstraction — spawn / wait / kill. Phase 4 entry only
-/// declares the shape; the F144 `cljw build` self-bundle path
-/// re-enables this in a later phase per ADR-0006.
+/// Subprocess abstraction — spawn / wait / kill. Only the shape is
+/// declared; the F144 `cljw build` self-bundle path re-enables this
+/// per ADR-0006.
 pub const Process = struct {
     vtable: *const VTable,
     ctx: *anyopaque,

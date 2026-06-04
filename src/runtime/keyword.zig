@@ -1,25 +1,22 @@
-//! Keyword interning — Phase-2 rt-aware.
+//! Keyword interning (rt-aware).
 //!
 //! Keywords are interned: identical (ns, name) pairs share one heap
 //! pointer, so equality reduces to a pointer comparison.
 //!
-//! ### Phase-1 vs Phase-2.2 shape
+//! ### Two-entry (unlocked + locked) shape
 //!
-//! Phase 1 exposed `KeywordInterner.intern(self, ns, name)` directly.
-//! Phase 2.2 keeps that low-level method (so single-threaded tests
-//! and tooling can still drive the table without going through a
-//! Runtime), and adds top-level `intern(rt, ns, name)` / `find(rt,
-//! ns, name)` that acquire `std.Io.Mutex.lockUncancelable(rt.io)`
-//! around the call. The cell layout (header + ns + name +
-//! hash_cache) is unchanged from Phase 1.
+//! `KeywordInterner.intern(self, ns, name)` is the low-level method
+//! (so single-threaded tests and tooling can drive the table without
+//! going through a Runtime); the top-level `intern(rt, ns, name)` /
+//! `find(rt, ns, name)` acquire `std.Io.Mutex.lockUncancelable(rt.io)`
+//! around the call. The cell layout is header + ns + name + hash_cache.
 //!
-//! ### Why a mutex when Phase 2 is still single-threaded?
+//! ### Why a mutex when the runtime is still single-threaded?
 //!
-//! Wiring `std.Io.Mutex` through the call site now means the
-//! Phase-15 concurrency rollout doesn't need to touch this file —
-//! the lock just starts blocking. Cost in Phase 2 is one
-//! uncontended `lockUncancelable` per intern, which is on the order
-//! of a load + store.
+//! Wiring `std.Io.Mutex` through the call site now means the Phase B
+//! concurrency rollout doesn't need to touch this file — the lock just
+//! starts blocking. The cost today is one uncontended
+//! `lockUncancelable` per intern, on the order of a load + store.
 
 const std = @import("std");
 const value = @import("value/value.zig");
@@ -29,8 +26,8 @@ const HeapTag = value.HeapTag;
 const hash = @import("hash.zig");
 const Runtime = @import("runtime.zig").Runtime;
 
-/// Heap-allocated keyword. Layout-stable from Phase 1; Phase 2.2
-/// only changed how the interner is reached, not the cell.
+/// Heap-allocated keyword. The cell layout is independent of how the
+/// interner is reached (locked top-level vs unlocked method entry).
 pub const Keyword = struct {
     header: HeapHeader,
     _pad: [6]u8 = undefined,
@@ -56,9 +53,10 @@ pub const KeywordInterner = struct {
     alloc: std.mem.Allocator,
     /// Composite key (`"ns/name"` or `"name"`) → `*Keyword`.
     table: std.array_hash_map.String(*Keyword) = .empty,
-    /// Guards `table` against concurrent intern / find calls. Phase
-    /// 2 is single-threaded so this is effectively free; wiring it
-    /// now means Phase 15 doesn't need to touch this file.
+    /// Guards `table` against concurrent intern / find calls. The
+    /// runtime is single-threaded today so this is effectively free;
+    /// wiring it now means the Phase B concurrency rollout doesn't need
+    /// to touch this file.
     mutex: std.Io.Mutex = .init,
 
     pub fn init(alloc: std.mem.Allocator) KeywordInterner {

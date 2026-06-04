@@ -1,12 +1,14 @@
 //! Zig-level Form→Form transforms for the bootstrap macros.
 //!
-//! Phase 3.7 ships nine syntactic-sugar macros: `let`, `when`,
-//! `cond`, `->`, `->>`, `and`, `or`, `if-let`, `when-let`. Each is
-//! implemented as a Zig function whose signature matches
+//! The `BOOTSTRAP` table maps each bootstrap macro name (binding /
+//! flow-control / threading sugar through `defn` / `defprotocol` /
+//! `defrecord` / `deftype` / `reify` / sequence comprehensions) to a
+//! Zig function whose signature matches
 //! `eval/macro_dispatch.zig::ZigExpandFn`. At startup `registerInto`
 //! interns each name as a Var in the `rt` namespace with
 //! `flags.macro_ = true`, refers them into `user`, and inserts the
-//! transform into the analyzer's `MacroTable`.
+//! transform into the analyzer's `MacroTable`. The table itself is
+//! the authoritative inventory; consult it rather than this doc.
 //!
 //! ### Why Form→Form
 //!
@@ -259,9 +261,10 @@ fn expandDeclare(
 // `let*` bindings + `nth`/`nthnext` calls — but as a Layer-1 Form
 // transform here (NOT a `.clj` macro: `let`/`fn` are already Zig macros,
 // so a `.clj` destructure would hit bootstrap-order fragility).
-// D-076 cycle 1: SEQUENTIAL vector patterns (`[a b]`, `[a b & rest]`,
-// `[a b :as all]`, nested). Associative `{:keys ...}`, fn-param, and
-// `loop*` destructuring are deferred follow-up cycles.
+// D-076: SEQUENTIAL vector patterns (`[a b]`, `[a b & rest]`,
+// `[a b :as all]`, nested), associative `{:keys ...}` (see
+// `associativeDestructure`), fn-param (`transformFnArity`), and
+// `loop*` (`expandLoop`) destructuring are all supported.
 
 fn expandLet(
     arena: std.mem.Allocator,
@@ -311,9 +314,9 @@ fn expandLet(
 }
 
 /// Append flat `let*` bindings (`[name, value, ...]`) that bind `pat` to
-/// `value_form`. Recursive for nested vector patterns. D-076 cycle 1:
-/// symbol + sequential-vector; associative `{...}` raises
-/// `feature_not_supported` (deferred).
+/// `value_form`. Recursive for nested vector patterns. Dispatches
+/// symbol, sequential-vector, and associative `{...}` (the latter via
+/// `associativeDestructure`).
 fn destructureInto(
     out: *std.ArrayList(Form),
     arena: std.mem.Allocator,
@@ -1892,9 +1895,8 @@ fn wrapBodyInDo(arena: std.mem.Allocator, body: []const Form, loc: SourceLocatio
 //
 // JVM Clojure's `defmulti` macro has additional re-eval-no-op
 // semantics (preserves method_table across REPL reloads). cw v1
-// cycle 5c omits this; re-eval clobbers. Restoring the no-op
-// requires `resolved?` + `multi-fn?` predicates that arrive at a
-// later cycle (D-184).
+// omits this; re-eval clobbers. Restoring the no-op requires
+// `resolved?` + `multi-fn?` predicates (D-184).
 fn expandDefmulti(
     arena: std.mem.Allocator,
     rt: *Runtime,
@@ -2031,12 +2033,10 @@ fn expandPreferMethod(
 //     (def m2 (rt/__make-protocol-fn! P "m2")))
 //
 // Each method-sig is `(method-name [params...])` — arity defaults
-// to 1 inside cycle 6 `__make-protocol!` (row 7.4 `definterface`
-// will extend the surface for arity overload). The param vector
-// is consumed for shape-validation only. ADR-0038 (analyzer
-// pre-registers Var at analyze time) lets the second-and-subsequent
-// `def` forms reference `P` cleanly — the cycle-7.1 truncation
-// (single-def emission) is rolled back here.
+// to 1 inside `__make-protocol!`; the param vector is consumed for
+// shape-validation only. ADR-0038 (analyzer pre-registers Var at
+// analyze time) lets the second-and-subsequent `def` forms
+// reference `P` cleanly.
 fn expandDefprotocol(
     arena: std.mem.Allocator,
     rt: *Runtime,
@@ -2288,21 +2288,18 @@ fn expandWhenLet(
     return list(arena, if_let_items, loc);
 }
 
-// --- defrecord — §9.9 row 7.4 cycles 1-2 macro lowering ---
+// --- defrecord — record type definition ---
 //
-// `(defrecord Name [f1 f2 ...])` lowers to
-//   `(do (rt/__defrecord! 'Name ['f1 'f2 ...]))`.
-//
-// Row 7.4 cycle 2 swapped the cycle-1 `(deftype ...)` placeholder for
-// the `rt/__defrecord!` Layer-2 primitive so the resulting
-// TypeDescriptor carries `.kind = .defrecord`. Since ADR-0066 `deftype`
-// is a sibling macro (`expandDeftype`) sharing `lowerDefType`; its
-// `rt/__deftype!` primitive shares `registerType` (kind = .deftype).
-//
-// Cycles 3-5 grow the factory `->Name`, the protocol-method body
-// surface, and the implicit IPersistentMap arms in
-// `lang/primitive/collection.zig`; the `(do ...)` wrapper reserves
-// room for those additional forms.
+// `(defrecord Name [f1 f2 ...] Proto (m [this] body) ...)` lowers via
+// `lowerDefType` to a `(do ...)` of:
+//   (def Name (rt/__defrecord! 'Name ['f1 'f2 ...]))   ; .kind = .defrecord
+//   (def ->Name (fn* [f1 f2 ...] (Name. f1 f2 ...)))   ; positional factory
+//   (def map->Name (fn* [m] (Name. (get m :f1) ...)))  ; map factory
+//   <extend-type sections for each protocol's method bodies>
+// Per ADR-0066 `deftype` is a sibling macro (`expandDeftype`) sharing
+// `lowerDefType`; its `rt/__deftype!` primitive shares `registerType`
+// (kind = .deftype). Record IPersistentMap arms live in
+// `lang/primitive/collection.zig`.
 fn expandDefrecord(
     arena: std.mem.Allocator,
     rt: *Runtime,
@@ -2568,7 +2565,7 @@ fn lowerDefType(
     return list(arena, do_items, loc);
 }
 
-// --- reify — §9.9 row 7.5 cycle 1 macro skeleton ---
+// --- reify — protocol/interface anonymous instance ---
 //
 // `(reify Proto1 (m1 [this] body) (m2 [this] body) Proto2 (m3 [this]
 // body))` lowers to:
@@ -2587,10 +2584,6 @@ fn lowerDefType(
 // (survey §4 Option A — closure capture is free; no
 // `closure_bindings_ptr` on ReifiedInstance).
 //
-// Cycle 1 ships a thin `__reify!` primitive that raises
-// `feature_not_supported` (transient stub per
-// `provisional_marker.md` row 2). Cycle 3 implements the happy
-// path; cycle 4 wires the dispatch arm for `.reified_instance`.
 // --- delay — `(delay expr...)` → `(__delay-create (fn* [] expr...))` ---
 //
 // Row 14.8 (D-098 follow-up). Wraps the body in a zero-arity thunk
@@ -2599,7 +2592,7 @@ fn lowerDefType(
 // first call and caches the result. Mirrors JVM `clojure.core/delay`
 // (which lowers to `(new clojure.lang.Delay (^{:once true} fn* []
 // body))` — the `:once` metadata is a JVM bytecode hint cw v1
-// doesn't need at Phase 14).
+// doesn't need).
 fn expandDelay(
     arena: std.mem.Allocator,
     rt: *Runtime,
@@ -2612,11 +2605,11 @@ fn expandDelay(
 
 // --- future — `(future expr...)` → `(__future-call (fn* [] expr...))` ---
 //
-// Row 14.8 (D-098 follow-up). On the Phase 14 single-thread runtime,
+// Row 14.8 (D-098 follow-up). On the single-thread runtime,
 // `__future-call` evaluates the thunk eagerly at construction time
 // and caches the result; the cached value is returned by `(deref
-// f)`. Phase 15.1 swaps the primitive's body for `std.Thread.spawn`
-// + a synchronisation primitive — the macro surface is unchanged.
+// f)`. Phase B swaps the primitive's body for real async execution
+// — the macro surface is unchanged.
 fn expandFuture(
     arena: std.mem.Allocator,
     rt: *Runtime,

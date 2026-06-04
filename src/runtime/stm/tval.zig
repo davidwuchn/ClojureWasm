@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: EPL-2.0
-//! STM TVal — Phase 14 history-ring node (ADR-0010 amendment 4).
+//! STM TVal — history-ring node (ADR-0010 amendment 4).
 //!
 //! A `Ref` carries an MVCC history ring of past committed values.
 //! Each node — a TVal — holds:
@@ -16,10 +16,10 @@
 //! `head.next` exactly per `clojure.lang.Ref.TVal` ctor at
 //! `~/Documents/OSS/clojure/src/jvm/clojure/lang/Ref.java:64-69`.
 //!
-//! D-102 (Phase 14 row 14.11.5) lands the data structure + GC
-//! integration; transaction control flow (`doSet` / `doCommute` /
-//! `doEnsure` / commit / retry / `histCount` / `trimHistory`) lands
-//! at Phase 15.1 (D-114) on the unchanged shape.
+//! D-102 landed the data structure + GC integration; transaction
+//! control flow (`doSet` / `doCommute` / `doEnsure` / commit /
+//! retry / `histCount` / `trimHistory`) lands at Phase B (D-114) on
+//! the unchanged shape.
 //!
 //! Tag: `HeapTag.tval` = Group D slot 63 (D15 — the last anonymous
 //! reserve, named here per D-043 "name the reserve or shrink".)

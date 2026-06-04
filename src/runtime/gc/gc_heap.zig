@@ -2,28 +2,29 @@
 //! Mark-sweep GC heap for cw v1 — `gc_alloc` layer of the 3-layer
 //! allocator boundary per ADR-0028 §2 + F-006.
 //!
-//! **Phase 5 row 5.3.a skeleton.** The struct shape lands here:
-//!   - `live_head` — singly-linked list of live heap objects, threaded
-//!     through `HeapHeader._pad` (5.3.b wires the link field).
+//! Struct shape:
+//!   - `allocations` — side-table of live heap-object records (header
+//!     + size + alignment); see the `GcHeap` docstring for why a
+//!     side-table beats an intrusive next-pointer.
+//!   - `permanent_roots` — embedder-pinned root Values (`pin` / `unpin`).
 //!   - `free_pools` — per-(size, alignment) free pool head map, owned
 //!     by `runtime/gc/free_pool.zig`.
-//!   - `stats` — bytes_allocated / collect_count / sweep_count.
+//!   - `stats` — bytes_allocated / bytes_freed / alloc/collect/sweep
+//!     counts + last_live_bytes.
 //!   - `infra` — backing GPA allocator (per F-006 §2 layer 1) for the
 //!     raw heap pages this `GcHeap` operates over.
-//!   - `bytes_since_last_gc` + `last_live_bytes` — drives the adaptive
+//!   - `bytes_since_last_gc` + `threshold_bytes` — drive the adaptive
 //!     `collect()` trigger per ADR-0028 §1.
 //!
-//! Behaviour-bearing methods are stubs that raise
-//! `Code.gc_alloc_not_supported` per `no_op_stub_forbidden.md`'s
-//! explicit-error pattern. 5.3.b lands the mark phase + alloc body;
-//! 5.3.c lands sweep + free-pool recycling; 5.3.d migrates Phase 1-4
-//! alloc sites from `gpa.create(T)` to `gc.alloc(T)` and removes the
-//! `gc_*_not_supported` Codes per ADR-0017 amendment 1.
+//! `alloc` (free-pool fast path → infra slow path), `pin` / `unpin`,
+//! and `deinit` (per-tag finaliser → rawFree drain) are all landed.
+//! The `collect()` orchestrator lives in `mark_sweep.zig` to keep the
+//! import graph acyclic (it reaches `root_set.zig`, which imports this
+//! file).
 //!
-//! Thread-safety: Phase 5 single-threaded; the mutex hook lives behind
-//! `gc_mutex: std.Io.Mutex = .init` (declared but not consulted) so
-//! Phase 15 STM activation can flip the lock-bracket on without a
-//! struct migration. See ADR-0028 §1 concurrency paragraph.
+//! Thread-safety: the GC is single-threaded today. Wiring a lock
+//! bracket around alloc / collect is deferred to Phase B (concurrency),
+//! per ADR-0028 §1 concurrency paragraph.
 
 const std = @import("std");
 const testing = std.testing;
@@ -129,8 +130,9 @@ pub const GcHeap = struct {
     /// first match. The root walker yields each entry's
     /// `Value.heapHeader()` (skipping immediates).
     permanent_roots: std.ArrayList(Value) = .empty,
-    /// Per-(size, alignment) free pool heads. Phase 5.3.c lands the
-    /// intrusive FreeNode at offset 8 + recycling fast-path.
+    /// Per-(size, alignment) free pool heads. Sweep pushes freed blocks
+    /// here (intrusive FreeNode at offset 8); `alloc` pops them as its
+    /// fast path before falling back to `infra`.
     free_pools: FreePoolMap = .empty,
     /// Allocation + collection counters.
     stats: Stats = .{},
@@ -188,13 +190,13 @@ pub const GcHeap = struct {
         return false;
     }
 
-    /// Allocate a typed heap object on the GC heap. **Phase 5.3.c.2**:
-    /// free-pool fast-path → infra slow-path. **Phase 5.3.b.4 adds
-    /// the comptime HeapHeader-at-offset-0 check.** Caller initialises
-    /// the value (HeapHeader and payload fields). Auto-trigger of
-    /// `collect()` mid-alloc lands once root walkers are wired at
-    /// 5.3.b.3 — without roots, an auto-collect would sweep every
-    /// allocation including the one we're about to return.
+    /// Allocate a typed heap object on the GC heap: free-pool fast path
+    /// → infra slow path, with a comptime HeapHeader-at-offset-0 check.
+    /// Caller initialises the value (HeapHeader and payload fields).
+    /// Note: `alloc` does NOT auto-trigger `collect()` mid-alloc today.
+    /// Callers invoke `mark_sweep.collect` explicitly; threshold-driven
+    /// auto-collection is a future wiring task (the root walkers it
+    /// needs are already in place — `root_set.zig`).
     ///
     /// Allocation size is rounded up to `min_alloc_bytes = 16` per
     /// ADR-0028 §3 so freed memory can host the FreeNode overlay at
@@ -233,13 +235,11 @@ pub const GcHeap = struct {
         return obj;
     }
 
-    // The `collect()` orchestrator lives in `mark_sweep.zig` per
-    // 5.3.b.5 — it imports `root_set.zig` which itself imports
-    // `gc_heap.zig`, so the natural cycle-free place for the entry
-    // point is `mark_sweep.collect(gc, ctx)`. Callers (5.3.d alloc-
-    // site migration, future `(System/gc)`) reach the entry point
-    // through `mark_sweep.collect`, not through a method on this
-    // struct.
+    // The `collect()` orchestrator lives in `mark_sweep.zig` — it
+    // imports `root_set.zig` which itself imports `gc_heap.zig`, so the
+    // natural cycle-free place for the entry point is
+    // `mark_sweep.collect(gc, ctx)`. Callers reach the entry point
+    // through `mark_sweep.collect`, not through a method on this struct.
 };
 
 // --- tests ---

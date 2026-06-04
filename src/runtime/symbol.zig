@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: EPL-2.0
-//! Symbol interning — Phase 7 entry T2 (F-004 Group A slot 1 impl).
+//! Symbol interning (F-004 Group A slot 1 impl).
 //!
 //! Symbols are interned: identical (ns, name) pairs share one heap
 //! pointer, so equality reduces to a pointer comparison. Mirrors the
 //! Keyword interner (`src/runtime/keyword.zig`) shape exactly — same
 //! cell layout (header + ns + name + hash_cache), same rt-aware
-//! top-level entry, same `std.Io.Mutex` pre-wired for the Phase 15
+//! top-level entry, same `std.Io.Mutex` pre-wired for the Phase B
 //! concurrency rollout.
 //!
 //! ### Why a mirror of Keyword
@@ -66,10 +66,10 @@ pub const SymbolInterner = struct {
     alloc: std.mem.Allocator,
     /// Composite key (`"ns/name"` or `"name"`) → `*Symbol`.
     table: std.array_hash_map.String(*Symbol) = .empty,
-    /// Guards `table` against concurrent intern / find calls. Phase
-    /// 7 is single-threaded so this is effectively free; wiring it
-    /// now means Phase 15 doesn't need to touch this file (matching
-    /// keyword.zig's discipline).
+    /// Guards `table` against concurrent intern / find calls. The
+    /// runtime is single-threaded today so this is effectively free;
+    /// wiring it now means the Phase B concurrency rollout doesn't need
+    /// to touch this file (matching keyword.zig's discipline).
     mutex: std.Io.Mutex = .init,
 
     pub fn init(alloc: std.mem.Allocator) SymbolInterner {

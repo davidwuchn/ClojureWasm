@@ -7,9 +7,9 @@
 //! `analyzer.formToValue` (recursively lifted at row 9.2 to cover
 //! vector / map / set literals).
 //!
-//! Only the 1-arity `(read-string s)` form lands at row 9.2. The
-//! `(read-string opts s)` 2-arity form (data-readers / readers /
-//! eof / default) is a follow-up debt row.
+//! Both the 1-arity `(read-string s)` and the 2-arity
+//! `(read-string opts s)` form (`:readers` / `:default` / `:eof`)
+//! are implemented (D-200).
 //!
 //! **Location note (D-095)**: this Zig primitive lives under
 //! `src/lang/primitive/` (mirroring `string.zig` / `walk.zig`)

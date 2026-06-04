@@ -1,23 +1,20 @@
 //! Layer-0 → Layer-1+ dispatch types.
 //!
-//! Phase 1's `runtime/error.zig` carried `BuiltinFn` as `(args, loc)
-//! Error!Value`. Phase 2 widens the signature to `(rt, env, args, loc)`
+//! `BuiltinFn` has the signature `(rt, env, args, loc) Error!Value`
 //! so that built-ins can:
 //!   - reach interners / GC / vtable via `*Runtime`,
 //!   - perform namespace operations via `*Env`,
 //!   - report errors with a `SourceLocation`.
 //!
-//! `BuiltinFn` therefore moves here in Phase 2; the Phase-1 alias in
-//! `error.zig` will be retired once 2.7 (TreeWalk) starts wiring real
-//! built-ins. Until then both signatures coexist — `error.zig`'s
-//! version is still legal Zig, just not what the analyzer or backend
-//! talk to.
+//! `BuiltinFn` lives here in Layer 0 (the dispatch layer), not in the
+//! error module.
 //!
 //! Layer 0 declares only **types**; the concrete function pointers
-//! land at startup, when Layer 1 (TreeWalk in §9.4 task 2.6) calls
+//! land at startup, when Layer 1 (TreeWalk) calls
 //! `installVTable(rt, ...)`. While `Runtime.vtable == null`, `callFn`
 //! must not be invoked — this is structurally enforced because the
-//! only callers (built-ins) get registered in Phase 2.6+ and not before.
+//! only callers (built-ins) are registered when the backend installs
+//! its vtable, never before.
 //!
 //! Why not `pub var` for the vtable? Because then tests cannot inject
 //! a mock backend, and two Runtimes cannot carry different backends.

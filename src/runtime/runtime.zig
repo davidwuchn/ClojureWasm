@@ -53,11 +53,11 @@ pub const RequireResolverFn = *const fn (rt: *Runtime, ns_name: []const u8) anye
 
 /// Process-wide execution context.
 ///
-/// **Phase 2.1** carries `io` / `gpa` / `keywords` / `vtable` /
-/// `heap_objects`. Phase 5+ adds `gc: ?*MarkSweepGc`; Phase 7 entry
-/// T2 (ADR-0037) added `symbols: SymbolInterner` parallel to
-/// `keywords`. Adding a field is OK; renaming or removing one is an
-/// ADR-level change.
+/// Carries `io` / `gpa` / `keywords` / `vtable` / `heap_objects`,
+/// the inline mark-sweep `gc: GcHeap` (ADR-0028 + F-006), and
+/// `symbols: SymbolInterner` (ADR-0037) parallel to `keywords`.
+/// Adding a field is OK; renaming or removing one is an ADR-level
+/// change.
 pub const Runtime = struct {
     /// IO hub. Every lock / unlock / file / net / sleep flows through
     /// this — Zig 0.16's mandatory IO DI.
@@ -76,7 +76,7 @@ pub const Runtime = struct {
     /// stdout through one writer fixes it. `null` only for test-init
     /// Runtimes with no real terminal — those fall back to a private
     /// writer (correct in isolation, where nothing competes). Superseded
-    /// by the `*out*` dynamic var when that lands (Phase 15).
+    /// by the `*out*` dynamic var when that lands (D-232).
     stdout: ?*std.Io.Writer = null,
 
     /// Keyword interner. Tied to this Runtime, not a global, so
@@ -89,9 +89,9 @@ pub const Runtime = struct {
     /// interner-owned + gpa-allocated + pinned for Runtime lifetime.
     symbols: SymbolInterner,
 
-    /// Layer-0 → Layer-1+ dispatch table. Populated by the TreeWalk
-    /// backend in Phase 2.6. While `null`, callers that would invoke
-    /// `callFn` simply don't exist yet — those sites are gated behind
+    /// Layer-0 → Layer-1+ dispatch table. Populated by the backend
+    /// at startup. While `null`, callers that would invoke `callFn`
+    /// simply don't exist yet — those sites are gated behind
     /// primitives that get registered alongside the vtable. Macro
     /// expansion is **not** on this table; see ADR 0001.
     vtable: ?VTable = null,
@@ -128,20 +128,19 @@ pub const Runtime = struct {
     /// Phase 3.7 wires the first user (bootstrap macro `and` / `or`).
     gensym_counter: u64 = 0,
 
-    /// Phase-2 heap-object pool. Until the Phase-5 mark-sweep GC, each
-    /// Layer-1+ heap allocation registers a `(ptr, free_fn)` pair here
-    /// so `Runtime.deinit` can release them. The list keeps Layer 0
-    /// from needing to know concrete Layer-1 types like `tree_walk
-    /// .Function`. 5.3.d migrates Phase 1-4 alloc sites to `gc.alloc`
-    /// and shrinks this list to "Layer-1 closure_bindings + bytecode"
-    /// scope (Function struct stays GC-managed but its side-tables
-    /// remain gpa-owned until ADR-0028 §5 row 3 wires the trace).
+    /// Non-GC heap-object pool. Each registered Layer-1+ allocation
+    /// adds a `(ptr, free_fn)` pair here so `Runtime.deinit` can
+    /// release it. The list keeps Layer 0 from needing to know
+    /// concrete Layer-1 types like `tree_walk.Function`. Most alloc
+    /// sites migrated to `gc.alloc`; the residual scope is Layer-1
+    /// closure_bindings + bytecode side-tables that stay gpa-owned
+    /// (the Function struct itself is GC-managed).
     heap_objects: std.ArrayList(HeapEntry) = .empty,
 
-    /// Phase 5 mark-sweep GC heap (ADR-0028 + F-006). Inline field —
-    /// every Runtime carries one; the empty `GcHeap` is ~40 bytes of
-    /// null pointers until first allocation. 5.3.d migrates Phase 1-4
-    /// alloc sites from `gpa.create` to `gc.alloc`. The
+    /// Mark-sweep GC heap (ADR-0028 + F-006). Inline field — every
+    /// Runtime carries one; the empty `GcHeap` is ~40 bytes of null
+    /// pointers until first allocation. Heap alloc sites use
+    /// `gc.alloc` rather than `gpa.create`. The
     /// `mark_sweep.collect(gc, ctx)` entry point reaches this field
     /// via `&rt.gc`.
     gc: GcHeap,
@@ -167,9 +166,8 @@ pub const Runtime = struct {
     /// User type registry per ADR-0007 + ROADMAP §9.7 / 5.11. Maps
     /// the fully-qualified class name (e.g. `user.Point`) to a
     /// process-lifetime TypeDescriptor allocated on `gpa`. Populated
-    /// by the deftype / defrecord analyzer (Phase 5.12). Read by the
-    /// constructor (`Foo. args`) and method-dispatch (`(.m inst)`)
-    /// eval paths.
+    /// by the deftype / defrecord analyzer. Read by the constructor
+    /// (`Foo. args`) and method-dispatch (`(.m inst)`) eval paths.
     types: std.StringHashMap(*const TypeDescriptor) = undefined,
 
     /// Set of namespace names currently being loaded by `require`.
@@ -211,18 +209,15 @@ pub const Runtime = struct {
     load_arena: std.heap.ArenaAllocator,
 
     /// Monotonic counter bumped by `extend-type` / `extend-protocol`
-    /// (cycle 5+ primitives) so live `CallSite` caches can detect
-    /// stale `(TypeDescriptor, MethodEntry)` pointers. Per ADR-0008
-    /// amendment 1 Alt 1, the field was deferred from row 7.1 to
-    /// row 7.3 — extend-type is the consumer that gives the counter
-    /// a meaningful invalidation contract. CallSite's
-    /// `cached_generation` is checked against this on hit; the
-    /// guard is wired by row 7.3 cycle 2+.
+    /// so live `CallSite` caches can detect stale
+    /// `(TypeDescriptor, MethodEntry)` pointers (ADR-0008 amendment
+    /// 1 Alt 1). CallSite's `cached_generation` is checked against
+    /// this on a cache hit; a mismatch forces re-resolution.
     protocol_generation: u32 = 0,
 
     /// Per-Tag default `TypeDescriptor` registry — survey §5.5 +
-    /// ADR-0008 amendment 1 ("per-Tag default descriptor table is a
-    /// Phase 7+ extension"). Indexed by `Value.Tag` integer. Lazy-
+    /// ADR-0008 amendment 1 (per-Tag default descriptor table).
+    /// Indexed by `Value.Tag` integer. Lazy-
     /// initialised via `nativeDescriptor(tag)`; entries are allocated
     /// on `rt.gc.infra` (process-lifetime). `dispatch.zig::dispatch`
     /// consults this when the receiver is NOT a `.typed_instance` so
@@ -253,9 +248,8 @@ pub const Runtime = struct {
     /// call for a given tag, allocates a TypeDescriptor on
     /// `rt.gc.infra` with `fqcn = nativeFqcnFor(tag)` and empty
     /// method_table / protocol_impls. Subsequent calls return the
-    /// cached pointer. cycle 8.5 (row 7.3) introduces this; the
-    /// extend-type primitive mutates `method_table` once registered
-    /// here.
+    /// cached pointer. The extend-type primitive mutates
+    /// `method_table` once a descriptor is registered here.
     pub fn nativeDescriptor(self: *Runtime, tag: @import("value/value.zig").Value.Tag) !*TypeDescriptor {
         const idx: usize = @intFromEnum(tag);
         if (self.native_descriptors[idx]) |existing| return existing;
@@ -333,14 +327,12 @@ pub const Runtime = struct {
     /// Production initializer. `io` typically comes from
     /// `std.process.Init.io`; in tests use `std.Io.Threaded`.
     ///
-    /// Registers per-tag GC hooks for migrated heap types
-    /// (`runtime/collection/*.zig`) before any allocation can land.
-    /// `tag_ops.registerFinaliser` is idempotent at the same fn
-    /// pointer so multi-Runtime test processes re-register the same
-    /// Layer 0 finalisers without conflict. Migration to `gc.alloc`
-    /// is per-type (5.3.d.4 = String; 5.3.d.5 = Cons; ...): each
-    /// migration commit adds its `registerGcHooks` call here +
-    /// switches its `alloc` body from `gpa.create` to `gc.alloc`.
+    /// Registers per-tag GC hooks for every GC-managed heap type
+    /// before any allocation can land. `tag_ops.registerFinaliser`
+    /// is idempotent at the same fn pointer so multi-Runtime test
+    /// processes re-register the same Layer 0 finalisers without
+    /// conflict. Each GC-managed type's `alloc` body uses `gc.alloc`
+    /// and contributes one `registerGcHooks` call below.
     pub fn init(io: std.Io, gpa: std.mem.Allocator) Runtime {
         @import("collection/string.zig").registerGcHooks();
         @import("collection/list.zig").registerGcHooks();

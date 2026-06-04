@@ -1,21 +1,18 @@
 // SPDX-License-Identifier: EPL-2.0
 //! Bytecode opcode set and per-chunk container for the VM backend.
 //!
-//! The VM backend (ROADMAP §4.4, ADR-0005) runs alongside the
-//! TreeWalk backend. Both must produce bit-for-bit identical Values
-//! under `Evaluator.compare` (ADR-0022); the opcode semantics
-//! therefore mirror TreeWalk's observable behaviour rather than
-//! introducing a new evaluation model.
+//! The VM backend (ADR-0005) runs alongside the TreeWalk backend.
+//! Both must produce bit-for-bit identical Values under
+//! `Evaluator.compare` (ADR-0022); the opcode semantics therefore
+//! mirror TreeWalk's observable behaviour rather than introducing a
+//! new evaluation model.
 //!
-//! Phase 4 task 4.4 lands only the data shape: the `Opcode` enum,
-//! the `Instruction` triple, and the immutable `BytecodeChunk`
-//! container. The compiler (task 4.5) and dispatch loop (task 4.6)
-//! consume these declarations.
-//!
-//! Per ROADMAP §9.6's note, the 15 opcodes here are the **starting**
-//! set. `loop*` / `recur` / closure-capture work in task 4.7 may
-//! add ops via `[ ]` insertions inside §9.6 without an ADR (only
-//! ROADMAP §4.4 / §13 changes need one, per §17.2).
+//! This module holds the data shape: the `Opcode` enum (special
+//! forms, collection literals, namespace ops, exception handling,
+//! and method dispatch), per-instruction side-tables on
+//! `BytecodeChunk`, and the immutable chunk container. The compiler
+//! (`vm/compiler.zig`) emits these; the dispatch loop (`vm.zig`)
+//! consumes them.
 
 const std = @import("std");
 const Value = @import("../../../runtime/value/value.zig").Value;
@@ -58,9 +55,9 @@ const TypeDescriptor = @import("../../../runtime/type_descriptor.zig").TypeDescr
 ///                          class-name `String`. Peeks the top Value
 ///                          and pushes `true_val` / `false_val`
 ///                          based on whether the class matches
-///                          (`ExceptionInfo` ⇒ `.ex_info` tag,
-///                          other names ⇒ false until later phases
-///                          extend the table)
+///                          (delegates to the shared `host_class`
+///                          hierarchy table — full class hierarchy,
+///                          not just `ExceptionInfo`)
 ///   - `op_ret` / `op_pop` /
 ///     `op_dup` / `op_throw` operand unused
 pub const Opcode = enum(u8) {
@@ -108,8 +105,8 @@ pub const Opcode = enum(u8) {
     /// dispatch mirrors `tree_walk::evalRequire`: if the namespace
     /// is already loaded (= `env.findNs(name).mappings.count() > 0`)
     /// push nil; otherwise call `rt.require_resolver`, raise
-    /// `lib_not_found` on null, raise `feature_not_supported` on
-    /// non-null (source-load path lands in sub-cycle c.5).
+    /// `lib_not_found` on null, and on a non-null resolve load the
+    /// namespace source via `loader.loadNamespace`. Pushes nil.
     /// ADR-0035 D2/D5/D8.
     op_require = 0x16,
     /// `(ns foo (:refer-clojure))` — operand = constants index of
@@ -419,8 +416,8 @@ pub const NsFilterEntry = struct {
 ///
 /// The chunk is immutable after compile (except for `call_sites[i].cache`
 /// which mutates monomorphically at first dispatch). The compiler
-/// (task 4.5) owns the slices through the analyzer arena; the VM
-/// borrows them for the duration of a call.
+/// owns the slices through the analyzer arena; the VM borrows them
+/// for the duration of a call.
 pub const BytecodeChunk = struct {
     instructions: []const Instruction,
     constants: []const Value,
