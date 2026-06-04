@@ -72,6 +72,11 @@ const SourceLocation = @import("error/info.zig").SourceLocation;
 /// which produced `(#<lazy_seq> …)`. Lazy seqs nested as map values /
 /// set elements are a rare residual (still `#<lazy_seq>`).
 pub fn printResult(rt: *Runtime, env: *env_mod.Env, w: *Writer, v: Value) anyerror!void {
+    // ADR-0088: snapshot *print-length*/*print-level* once per top-level value
+    // (resets depth to 0) so the recursive `printValue` honours a user binding
+    // without a per-element Var deref. Re-snapshotting each call keeps a prior
+    // binding from leaking into the next print.
+    snapshotPrintLimits();
     try printValue(w, try deepRealize(rt, env, v));
 }
 
@@ -346,6 +351,66 @@ pub threadlocal var print_readably: bool = true;
 /// local since the pure `printValue` renderer carries no `rt`/`env`.
 pub threadlocal var print_namespace_maps: bool = true;
 
+/// Cached `*const Var` pointers to `*print-length*` / `*print-level*`
+/// (ADR-0088). The Var IDENTITY is fixed after intern, so these are
+/// process-global; the user's current BINDING is read live via `Var.deref()`
+/// (which reads the thread-local binding stack and needs no `rt`/`env`, so the
+/// pure `printValue` renderer can honour `(binding [*print-length* …] …)`).
+/// Installed by `bootstrap` after `core.clj` defines the vars.
+var print_length_var: ?*const env_mod.Var = null;
+var print_level_var: ?*const env_mod.Var = null;
+
+/// Install the cached print-limit Var pointers (called once at bootstrap).
+pub fn initPrintLimitVars(len_v: ?*const env_mod.Var, lvl_v: ?*const env_mod.Var) void {
+    print_length_var = len_v;
+    print_level_var = lvl_v;
+}
+
+/// Snapshot of the two limits for the duration of one top-level print
+/// (ADR-0088 decision 3 — deref once at the surface, not per element). null =
+/// unlimited (the var is unbound / nil / non-integer). `print_depth` is the
+/// current collection-nesting depth (root collection = 0) used by
+/// `*print-level*`.
+threadlocal var print_length_limit: ?i64 = null;
+threadlocal var print_level_limit: ?i64 = null;
+threadlocal var print_depth: i64 = 0;
+
+fn limitFromVar(maybe_v: ?*const env_mod.Var) ?i64 {
+    const v = maybe_v orelse return null;
+    const cur = v.deref();
+    return if (cur.tag() == .integer) cur.asInteger() else null;
+}
+
+/// Read both limits from their Vars and reset depth — called once at each
+/// top-level print entry (`printResult`). Runs inside the user's `binding`
+/// extent, so the single deref reflects the current dynamic value.
+fn snapshotPrintLimits() void {
+    print_length_limit = limitFromVar(print_length_var);
+    print_level_limit = limitFromVar(print_level_var);
+    print_depth = 0;
+}
+
+/// True iff a `Value.Tag` nests for `*print-level*` purposes (every printed
+/// collection, including a `.map_entry` which renders as the 2-vector `[k v]`).
+fn isCollectionTag(t: Value.Tag) bool {
+    return switch (t) {
+        .list, .range, .vector, .map_entry, .persistent_queue, .hash_set, .sorted_set, .sorted_map, .array_map, .hash_map => true,
+        else => false,
+    };
+}
+
+/// `*print-length*` guard for index-driven collection loops: when the limit is
+/// reached at element `i`, emit `sep` (only if not the first element) + `...`
+/// and return true so the loop breaks. Returns false (no truncation) when the
+/// limit is unset or not yet reached.
+fn lengthTruncated(w: *Writer, i: i64, sep: []const u8) Writer.Error!bool {
+    const lim = print_length_limit orelse return false;
+    if (i < lim) return false;
+    if (i > 0) try w.writeAll(sep);
+    try w.writeAll("...");
+    return true;
+}
+
 /// The shared namespace of an array_map's keys (D-219), or null when the map
 /// is empty, any key is not a keyword/symbol, any key has no namespace, or the
 /// namespaces differ. Scoped to `.array_map` (small, insertion-ordered maps —
@@ -390,7 +455,21 @@ fn printMapKey(w: *Writer, key: Value, strip: bool) Writer.Error!void {
 }
 
 pub fn printValue(w: *Writer, v: Value) Writer.Error!void {
-    switch (v.tag()) {
+    const vtag = v.tag();
+    // *print-level* (ADR-0088): a collection at nesting depth `d` (root = 0)
+    // renders as a bare `#` when `d >= level`. The check + depth bookkeeping is
+    // centralised here (one site) for every collection tag; scalars never count.
+    const is_coll = isCollectionTag(vtag);
+    if (is_coll) {
+        if (print_level_limit) |lvl| {
+            if (print_depth >= lvl) return w.writeByte('#');
+        }
+        print_depth += 1;
+    }
+    defer if (is_coll) {
+        print_depth -= 1;
+    };
+    switch (vtag) {
         .nil => try w.writeAll("nil"),
         .boolean => try w.writeAll(if (v.asBoolean()) "true" else "false"),
         .integer => try w.print("{d}", .{v.asInteger()}),
@@ -647,21 +726,32 @@ pub fn printExInfo(w: *Writer, v: Value) Writer.Error!void {
 pub fn printQueue(w: *Writer, v: Value) Writer.Error!void {
     try w.writeAll("#queue (");
     var first_iter = true;
+    var emitted: i64 = 0;
+    var truncated = false;
     var cur = persistent_queue.frontOf(v);
     while (cur.tag() == .list and list_collection.countOf(cur) > 0) {
+        if (try lengthTruncated(w, emitted, " ")) {
+            truncated = true;
+            break;
+        }
         if (!first_iter) try w.writeByte(' ');
         first_iter = false;
         try printValue(w, list_collection.first(cur));
         cur = list_collection.rest(cur);
+        emitted += 1;
     }
-    const rear = persistent_queue.rearOf(v);
-    if (!rear.isNil()) {
-        var i: u32 = 0;
-        const n = vector_collection.count(rear);
-        while (i < n) : (i += 1) {
-            if (!first_iter) try w.writeByte(' ');
-            first_iter = false;
-            try printValue(w, vector_collection.nth(rear, i));
+    if (!truncated) {
+        const rear = persistent_queue.rearOf(v);
+        if (!rear.isNil()) {
+            var i: u32 = 0;
+            const n = vector_collection.count(rear);
+            while (i < n) : (i += 1) {
+                if (try lengthTruncated(w, emitted, " ")) break;
+                if (!first_iter) try w.writeByte(' ');
+                first_iter = false;
+                try printValue(w, vector_collection.nth(rear, i));
+                emitted += 1;
+            }
         }
     }
     try w.writeByte(')');
@@ -671,11 +761,14 @@ pub fn printList(w: *Writer, v: Value) Writer.Error!void {
     try w.writeByte('(');
     var cur = v;
     var first_iter = true;
+    var emitted: i64 = 0;
     while (cur.tag() == .list and list_collection.countOf(cur) > 0) {
+        if (try lengthTruncated(w, emitted, " ")) break;
         if (!first_iter) try w.writeByte(' ');
         first_iter = false;
         try printValue(w, list_collection.first(cur));
         cur = list_collection.rest(cur);
+        emitted += 1;
     }
     try w.writeByte(')');
 }
@@ -689,6 +782,7 @@ pub fn printRange(w: *Writer, v: Value) Writer.Error!void {
     const n = range_collection.countOf(v);
     var i: i64 = 0;
     while (i < n) : (i += 1) {
+        if (try lengthTruncated(w, i, " ")) break;
         if (i > 0) try w.writeByte(' ');
         try printValue(w, range_collection.elementAt(v, i));
     }
@@ -704,6 +798,7 @@ pub fn printVector(w: *Writer, v: Value) Writer.Error!void {
     const n = vector_collection.count(v);
     var i: u32 = 0;
     while (i < n) : (i += 1) {
+        if (try lengthTruncated(w, @intCast(i), " ")) break;
         if (i > 0) try w.writeByte(' ');
         try printValue(w, vector_collection.nth(v, i));
     }
@@ -716,10 +811,19 @@ pub fn printVector(w: *Writer, v: Value) Writer.Error!void {
 /// separator across the recursion. Alloc-free — the printer has no
 /// allocator, so it reads `slots` directly rather than materialising a
 /// seq (front-loaded KV pairs, back-loaded children per map.zig).
-fn printHamtEntries(w: *Writer, node: *const map_collection.HamtMapNode, first: *bool, comptime kv: bool) Writer.Error!void {
+fn printHamtEntries(w: *Writer, node: *const map_collection.HamtMapNode, first: *bool, count: *i64, stop: *bool, comptime kv: bool) Writer.Error!void {
     const data_count = @popCount(node.data_map);
     var i: u32 = 0;
     while (i < data_count) : (i += 1) {
+        if (stop.*) return;
+        // *print-length* (ADR-0088): emit `...` (with separator unless first)
+        // once the entry count reaches the limit, then stop the recursion.
+        if (print_length_limit) |lim| if (count.* >= lim) {
+            if (!first.*) try w.writeAll(if (kv) ", " else " ");
+            try w.writeAll("...");
+            stop.* = true;
+            return;
+        };
         if (!first.*) try w.writeAll(if (kv) ", " else " ");
         first.* = false;
         try printValue(w, node.slots[2 * i]);
@@ -727,11 +831,13 @@ fn printHamtEntries(w: *Writer, node: *const map_collection.HamtMapNode, first: 
             try w.writeByte(' ');
             try printValue(w, node.slots[2 * i + 1]);
         }
+        count.* += 1;
     }
     const child_count = @popCount(node.node_map);
     var j: u32 = 0;
     while (j < child_count) : (j += 1) {
-        try printHamtEntries(w, node.slots[63 - j].decodePtr(*const map_collection.HamtMapNode), first, kv);
+        if (stop.*) return;
+        try printHamtEntries(w, node.slots[63 - j].decodePtr(*const map_collection.HamtMapNode), first, count, stop, kv);
     }
 }
 
@@ -749,6 +855,7 @@ pub fn printMap(w: *Writer, v: Value) Writer.Error!void {
         const am = v.decodePtr(*const map_collection.ArrayMap);
         var i: u32 = 0;
         while (i < am.count) : (i += 1) {
+            if (try lengthTruncated(w, @intCast(i), ", ")) break;
             if (i > 0) try w.writeAll(", ");
             try printMapKey(w, am.entries[2 * i], strip);
             try w.writeByte(' ');
@@ -758,7 +865,9 @@ pub fn printMap(w: *Writer, v: Value) Writer.Error!void {
         const phm = v.decodePtr(*const map_collection.PersistentHashMap);
         if (phm.root) |root| {
             var first = true;
-            try printHamtEntries(w, root, &first, true);
+            var count: i64 = 0;
+            var stop = false;
+            try printHamtEntries(w, root, &first, &count, &stop, true);
         }
     }
     try w.writeByte('}');
@@ -775,6 +884,7 @@ pub fn printSet(w: *Writer, v: Value) Writer.Error!void {
         const am = s.map.decodePtr(*const map_collection.ArrayMap);
         var i: u32 = 0;
         while (i < am.count) : (i += 1) {
+            if (try lengthTruncated(w, @intCast(i), " ")) break;
             if (i > 0) try w.writeByte(' ');
             try printValue(w, am.entries[2 * i]);
         }
@@ -784,7 +894,9 @@ pub fn printSet(w: *Writer, v: Value) Writer.Error!void {
         const phm = s.map.decodePtr(*const map_collection.PersistentHashMap);
         if (phm.root) |root| {
             var first = true;
-            try printHamtEntries(w, root, &first, false);
+            var count: i64 = 0;
+            var stop = false;
+            try printHamtEntries(w, root, &first, &count, &stop, false);
         }
     }
     try w.writeByte('}');
@@ -792,10 +904,20 @@ pub fn printSet(w: *Writer, v: Value) Writer.Error!void {
 
 /// In-order (ascending) walk of an LLRB tree, alloc-free (the printer has
 /// no allocator). `kv` true → "k v" pairs (map), false → bare keys (set).
-fn printSortedEntries(w: *Writer, root: Value, first: *bool, comptime kv: bool) Writer.Error!void {
+fn printSortedEntries(w: *Writer, root: Value, first: *bool, count: *i64, stop: *bool, comptime kv: bool) Writer.Error!void {
     if (root.tag() != .rb_node) return;
+    if (stop.*) return;
     const n = root.decodePtr(*const sorted_collection.RbNode);
-    try printSortedEntries(w, n.left, first, kv);
+    try printSortedEntries(w, n.left, first, count, stop, kv);
+    if (stop.*) return;
+    // *print-length* (ADR-0088): in ascending order, stop emitting once the
+    // count reaches the limit (mark the cut with `...`).
+    if (print_length_limit) |lim| if (count.* >= lim) {
+        if (!first.*) try w.writeAll(if (kv) ", " else " ");
+        try w.writeAll("...");
+        stop.* = true;
+        return;
+    };
     if (!first.*) try w.writeAll(if (kv) ", " else " ");
     first.* = false;
     try printValue(w, n.key);
@@ -803,14 +925,17 @@ fn printSortedEntries(w: *Writer, root: Value, first: *bool, comptime kv: bool) 
         try w.writeByte(' ');
         try printValue(w, n.val);
     }
-    try printSortedEntries(w, n.right, first, kv);
+    count.* += 1;
+    try printSortedEntries(w, n.right, first, count, stop, kv);
 }
 
 pub fn printSortedMap(w: *Writer, v: Value) Writer.Error!void {
     try w.writeByte('{');
     const m = v.decodePtr(*const sorted_collection.SortedMap);
     var first = true;
-    try printSortedEntries(w, m.root, &first, true);
+    var count: i64 = 0;
+    var stop = false;
+    try printSortedEntries(w, m.root, &first, &count, &stop, true);
     try w.writeByte('}');
 }
 
@@ -819,7 +944,9 @@ pub fn printSortedSet(w: *Writer, v: Value) Writer.Error!void {
     const s = v.decodePtr(*const sorted_collection.SortedSet);
     const m = s.map.decodePtr(*const sorted_collection.SortedMap);
     var first = true;
-    try printSortedEntries(w, m.root, &first, false);
+    var count: i64 = 0;
+    var stop = false;
+    try printSortedEntries(w, m.root, &first, &count, &stop, false);
     try w.writeByte('}');
 }
 

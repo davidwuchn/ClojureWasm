@@ -23,6 +23,10 @@
 ;; flag like *warn-on-reflection*; defined so code that toggles it loads
 ;; (clojure.data.avl and other libs set! it at the top of a file).
 (def ^:dynamic *unchecked-math* false)
+;; `*print-length*` / `*print-level*` (ADR-0088) are interned in Zig
+;; (`bootstrap.registerPrintLimitVars`) alongside the other cached-pointer
+;; dynamic vars (*ns*, *data-readers*) so the renderer reads them via a cached
+;; `*const Var`; not defined here.
 
 ;; `*clojure-version*` / `(clojure-version)` — the Clojure language version cljw
 ;; targets (the 1.12 surface; the clj oracle is 1.12.x per F-011). Real libs gate

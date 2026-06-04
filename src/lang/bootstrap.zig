@@ -39,6 +39,7 @@ const Value = @import("../runtime/value/value.zig").Value;
 const error_context = @import("../runtime/error/context.zig");
 const map_collection = @import("../runtime/collection/map.zig");
 const symbol_mod = @import("../runtime/symbol.zig");
+const print_mod = @import("../runtime/print.zig");
 const uuid_prim = @import("primitive/uuid.zig");
 const inst_prim = @import("primitive/inst.zig");
 
@@ -270,6 +271,24 @@ pub fn setupCorePrefix(rt: *Runtime, env: *Env, macro_table: *macro_dispatch.Tab
     try registerDataReaders(rt, env);
     // ADR-0083: intern *ns* + cache on env.ns_var before the user-ns refer.
     try registerNsVar(env);
+    // ADR-0088: intern *print-length* / *print-level* (root nil = unlimited)
+    // + cache pointers so the renderer honours a user `binding`.
+    try registerPrintLimitVars(rt, env);
+}
+
+/// Intern `clojure.core/*print-length*` and `*print-level*` as `^:dynamic`
+/// Vars (root nil = unlimited) and cache their pointers in `print.zig` so the
+/// pure renderer reads the user's current binding via `Var.deref()` (ADR-0088).
+/// Interned in the prefix (before `loadCore`'s user-ns refer) so they resolve
+/// unqualified in user code, uniformly across the source + AOT paths.
+fn registerPrintLimitVars(rt: *Runtime, env: *Env) !void {
+    _ = rt;
+    const core = try env.findOrCreateNs("clojure.core");
+    const len_v = try env.intern(core, "*print-length*", Value.nil_val, null);
+    len_v.flags.dynamic = true;
+    const lvl_v = try env.intern(core, "*print-level*", Value.nil_val, null);
+    lvl_v.flags.dynamic = true;
+    print_mod.initPrintLimitVars(len_v, lvl_v);
 }
 
 /// AOT bootstrap (ADR-0056 Cycle 2b): restore `clojure.core` from the
