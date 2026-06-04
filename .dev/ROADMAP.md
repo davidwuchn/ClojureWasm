@@ -598,15 +598,18 @@ ClojureWasm/                         (working dir on disk: ClojureWasmFromScratc
 │   (created on demand; see §15.2)
 │   ├── compat_tiers.yaml           per-namespace tier (created at Phase 10)
 │   ├── handover.md                 session-state memo (created when needed mid-task)
-│   ├── known_issues.md             debt log (created at first issue)
-│   └── status/vars.yaml            var implementation tracker (created at Phase 2.19)
+│   ├── debt.yaml                   row-level debt ledger (ADR-0072; replaced the planned known_issues.md)
+│   ├── placement.yaml              Clojure-ns var placement SSOT (ADR-0033; covers the planned status/vars.yaml)
+│   ├── principle.md                Bad Smell catalogue + revision depths
+│   └── project_facts.md            user-declared invariants (F-001…)
 │
 ├── .claude/
 │   ├── settings.json               permissions, env, hooks
 │   ├── rules/                      auto-loaded path-matched rules
 │   │   ├── zone_deps.md            (loads on src/**/*.zig, build.zig)
-│   │   └── zig_tips.md             (loads on src/**/*.zig, build.zig)
-│   │   (compat_tiers.md is added at Phase 10 when src/lang/ starts)
+│   │   ├── zig_tips.md             (loads on src/**/*.zig, build.zig)
+│   │   └── tier_classification.md  (tier discipline; replaced the planned compat_tiers.md)
+│   │   (… ~31 rules total; see `ls .claude/rules/`)
 │   └── skills/code_learning_doc/   skill defining the docs/ja/ workflow
 │
 ├── build.zig
@@ -2455,7 +2458,10 @@ it (sections: cold-start reading order / current state / active
 task / next phase queue / open questions) and shrink to fit the
 session's actual state.
 
-#### `.dev/known_issues.md` — when the first long-lived issue surfaces
+#### `.dev/known_issues.md` — SUPERSEDED (not created; `.dev/debt.yaml` is the ledger per ADR-0072)
+
+> The template below is retained for historical context only. The row-level
+> `debt.yaml` replaced this plan.
 
 ```markdown
 # Known issues & technical debt
@@ -2474,14 +2480,16 @@ clojure.string:         { tier: A, phase: 10 }
 # ... one line per namespace; java.* default to D
 ```
 
-When this file appears, also create `.claude/rules/compat_tiers.md`
-(auto-loaded for `src/lang/**` and the yaml itself) — content lives in
-ROADMAP §6 / §13.
+(This file exists at the repo root.) The planned companion rule
+`.claude/rules/compat_tiers.md` was SUPERSEDED by
+`.claude/rules/tier_classification.md` (the tier discipline rule that actually
+landed); do not create `compat_tiers.md`.
 
-#### `.dev/status/vars.yaml` — when Phase 2's var-tracking script lands (Phase 2.19)
+#### `.dev/status/vars.yaml` — SUPERSEDED (not created)
 
-Per-var status: `{type: function|macro|special|var, status: todo|wip|done|skip, note: ...}`.
-Generator: `.dev/scripts/generate_vars_yaml.clj`.
+Per-var tracking is covered by `placement.yaml` (Clojure-ns var placement SSOT,
+ADR-0033) + `compat_tiers.yaml` (var/class tier). The originally-planned
+`status/vars.yaml` + `generate_vars_yaml.clj` generator were not built.
 
 ### 15.2 Local reference clones (already present)
 

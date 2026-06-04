@@ -31,8 +31,8 @@ Project-level design and operational metadata. Tracked in git. English.
 Empty files rot. Create them when they have real content, using the
 templates in **ROADMAP §15.2**:
 
-- `known_issues.md` — long-lived debt log, when the first P0–P3 item appears.
-- `compat_tiers.yaml` — per-namespace Clojure tier table, when the first
-  `src/lang/clj/<ns>.clj` lands (≈ Phase 10).
-- `status/vars.yaml` — per-var implementation tracker, when Phase 2's
-  generator script lands (Phase 2.19).
+- `debt.yaml` — row-level debt ledger (ADR-0072; replaced the planned
+  `known_issues.md`). The live SSOT for technical debt.
+- `compat_tiers.yaml` — per-namespace/class Clojure tier table (repo root; exists).
+- `placement.yaml` — Clojure-ns var placement SSOT (ADR-0033; covers the planned
+  `status/vars.yaml` var tracking, which was not built).
