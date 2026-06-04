@@ -1,0 +1,20 @@
+(re-seq #"(?m)^\w+" "ab\ncd\nef")
+;;=> ("ab" "cd" "ef")
+(re-seq #"(?m)\w+$" "ab\ncd")
+;;=> ("ab" "cd")
+(vec (re-seq #"^\w+" "ab\ncd"))
+;;=> ["ab"]
+(boolean (re-find #"(?m)^cd" "ab\ncd"))
+;;=> true
+(boolean (re-find #"(?m)b$" "ab\ncd"))
+;;=> true
+(re-seq #"(?m)\w+$" "ab\r\ncd")
+;;=> ("ab" "cd")
+(boolean (re-find #"a(?m:^x)" "a\nx"))
+;;=> false
+(boolean (re-find #"(?m)^$" "ab\n\ncd"))
+;;=> true
+(re-seq #"(?im)^[a-z]+" "AB\nCD")
+;;=> ("AB" "CD")
+(boolean (re-find #"^cd" "ab\ncd"))
+;;=> false

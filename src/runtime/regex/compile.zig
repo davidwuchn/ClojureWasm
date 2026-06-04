@@ -30,7 +30,11 @@ pub const Flags = packed struct(u8) {
     /// `(?s)` DOTALL — `.` matches every byte incl. `\n`/`\r`. Default off:
     /// `.` excludes `\n`/`\r` (Java line terminators), built at parse time.
     dotall: bool = false,
-    _pad: u6 = 0,
+    /// `(?m)` MULTILINE — `^`/`$` also match at embedded line boundaries.
+    /// Encoded into `line_start_multi`/`line_end_multi` anchors at parse time,
+    /// so this flag is informational once compiled (the variant carries it).
+    multiline: bool = false,
+    _pad: u5 = 0,
 };
 
 /// Parsed AST node. The parser produces this tree; the IR
@@ -82,6 +86,10 @@ pub const CharClass = struct {
 pub const Anchor = enum {
     line_start,
     line_end,
+    /// `(?m)` MULTILINE variants: `^`/`$` also match at embedded line
+    /// boundaries (after / before a line terminator), not just input ends.
+    line_start_multi,
+    line_end_multi,
     word_boundary,
     non_word_boundary,
 };
@@ -150,11 +158,13 @@ pub fn compile(alloc: std.mem.Allocator, pattern: []const u8, flags: Flags) Comp
         var j: usize = 2;
         var ci = false;
         var da = false;
+        var ml = false;
         var only_flags = true;
         while (j < pat.len and pat[j] != ')' and pat[j] != ':') : (j += 1) {
             switch (pat[j]) {
                 'i' => ci = true,
                 's' => da = true,
+                'm' => ml = true,
                 else => {
                     only_flags = false;
                     break;
@@ -164,6 +174,7 @@ pub fn compile(alloc: std.mem.Allocator, pattern: []const u8, flags: Flags) Comp
         if (only_flags and j > 2 and j < pat.len and pat[j] == ')') {
             f.case_insensitive = f.case_insensitive or ci;
             f.dotall = f.dotall or da;
+            f.multiline = f.multiline or ml;
             pat = pat[j + 1 ..];
         }
     }
@@ -241,7 +252,7 @@ pub fn parsePattern(arena: std.mem.Allocator, pattern: []const u8, flags: Flags,
         group_count_out.* = 0;
         return node;
     }
-    var parser: Parser = .{ .src = pattern, .pos = 0, .arena = arena, .dotall = flags.dotall };
+    var parser: Parser = .{ .src = pattern, .pos = 0, .arena = arena, .dotall = flags.dotall, .multiline = flags.multiline };
     const node = try parser.parseAlt();
     if (!parser.atEnd()) return CompileError.UnexpectedToken;
     group_count_out.* = parser.group_count;
@@ -257,6 +268,9 @@ const Parser = struct {
     group_count: u16 = 0,
     /// DOTALL scope (`(?s)` / `(?s:…)`): when true, `.` matches `\n`/`\r` too.
     dotall: bool = false,
+    /// MULTILINE scope (`(?m)` / `(?m:…)`): when true, `^`/`$` build their
+    /// embedded-line-boundary anchor variants.
+    multiline: bool = false,
 
     fn atEnd(self: Parser) bool {
         return self.pos >= self.src.len;
@@ -399,11 +413,11 @@ const Parser = struct {
             return node;
         }
         if (c == '^') {
-            node.* = .{ .anchor = .line_start };
+            node.* = .{ .anchor = if (self.multiline) .line_start_multi else .line_start };
             return node;
         }
         if (c == '$') {
-            node.* = .{ .anchor = .line_end };
+            node.* = .{ .anchor = if (self.multiline) .line_end_multi else .line_end };
             return node;
         }
         if (c == '(') {
@@ -414,22 +428,24 @@ const Parser = struct {
             var idx: u16 = 0;
             var fold_i = false;
             var scoped_dotall = false;
+            var scoped_multi = false;
             if (self.peek() == @as(?u8, '?')) {
                 _ = self.advance(); // consume '?'
                 capturing = false;
                 if (self.peek() == @as(?u8, ':')) {
                     _ = self.advance();
                 } else {
-                    // Inline-flag group `(?is:…)`: flags run until ':'. `i` folds
-                    // the subtree case-insensitive (foldCI); `s` sets DOTALL for
-                    // the subtree (`.` matches `\n`/`\r`). Both reuse the leading-
-                    // flag machinery, scoped to this child. m/x stay unsupported.
+                    // Inline-flag group `(?ism:…)`: flags run until ':'. `i` folds
+                    // the subtree case-insensitive (foldCI); `s` sets DOTALL; `m`
+                    // sets MULTILINE — all reuse the leading-flag machinery,
+                    // scoped to this child. x stays unsupported.
                     while (true) {
                         const f = self.advance() orelse return CompileError.NotImplemented;
                         if (f == ':') break;
                         switch (f) {
                             'i' => fold_i = true,
                             's' => scoped_dotall = true,
+                            'm' => scoped_multi = true,
                             else => return CompileError.NotImplemented,
                         }
                     }
@@ -439,12 +455,16 @@ const Parser = struct {
                 idx = self.group_count;
                 if (idx >= 8) return CompileError.NotImplemented; // MAX_SLOTS_INLINE/2
             }
-            // DOTALL is parse-time (the `.` bitmap is built during the child
-            // parse), so set it for the child and restore — scoped to this group.
+            // DOTALL / MULTILINE are parse-time (the `.` bitmap and `^`/`$`
+            // anchor variants are built during the child parse), so set them for
+            // the child and restore — scoped to this group.
             const saved_dotall = self.dotall;
+            const saved_multi = self.multiline;
             if (scoped_dotall) self.dotall = true;
+            if (scoped_multi) self.multiline = true;
             const child = try self.parseAlt();
             self.dotall = saved_dotall;
+            self.multiline = saved_multi;
             if (self.advance() != @as(?u8, ')')) return CompileError.UnclosedGroup;
             if (fold_i) foldCI(child);
             node.* = if (capturing) .{ .group = .{ .child = child, .index = idx } } else .{ .non_capture = child };
@@ -1063,6 +1083,26 @@ test "dot excludes newline/CR by default; (?s) DOTALL includes them" {
     inline for (.{ "(?s)a.b", "a(?s:.)b", "(?is:A.B)" }) |p| {
         var prog = try compile(alloc, p, .{});
         defer prog.deinit(alloc);
+    }
+}
+
+test "(?m) MULTILINE builds line_*_multi anchors; default builds line_*" {
+    const alloc = testing.allocator;
+    // Default `^`/`$` → whole-input anchors.
+    {
+        var prog = try compile(alloc, "^a$", .{});
+        defer prog.deinit(alloc);
+        try testing.expect(prog.insts[0].anchor == .line_start);
+    }
+    // `(?m)` and scoped `(?m:…)` → multi anchors; `(?im)` combines with fold.
+    inline for (.{ "(?m)^a$", "a(?m:^b)", "(?im)^a" }) |p| {
+        var prog = try compile(alloc, p, .{});
+        defer prog.deinit(alloc);
+    }
+    {
+        var prog = try compile(alloc, "(?m)^a", .{});
+        defer prog.deinit(alloc);
+        try testing.expect(prog.insts[0].anchor == .line_start_multi);
     }
 }
 

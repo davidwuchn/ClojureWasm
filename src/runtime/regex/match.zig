@@ -169,11 +169,19 @@ fn addThread(
 
 fn anchorMatches(a: compile.Anchor, pos: u32, input: []const u8) bool {
     return switch (a) {
-        // Cycle 1 binds `^` and `$` to the string boundary;
-        // multiline (`(?m)`) embedded-newline handling lands in
-        // cycle 4.
+        // Default `^`/`$` bind to the whole-input boundary.
         .line_start => pos == 0,
         .line_end => pos == input.len,
+        // `(?m)` MULTILINE: `^` matches at input start or right after a line
+        // terminator; `$` at input end or right before one. A line terminator is
+        // `\n`, a lone `\r`, or the `\r\n` pair — the position *between* `\r` and
+        // `\n` is inside one terminator and matches neither (Java parity).
+        .line_start_multi => pos == 0 or
+            input[pos - 1] == '\n' or
+            (input[pos - 1] == '\r' and (pos >= input.len or input[pos] != '\n')),
+        .line_end_multi => pos == input.len or
+            input[pos] == '\r' or
+            (input[pos] == '\n' and (pos == 0 or input[pos - 1] != '\r')),
         .word_boundary => isWordBoundary(pos, input),
         .non_word_boundary => !isWordBoundary(pos, input),
     };
