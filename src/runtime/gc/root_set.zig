@@ -592,3 +592,38 @@ test "union walk: a registered context's frame + macro are walked alongside self
     try testing.expect(found_frame); // worker's binding-frame value (union source 1)
     try testing.expect(found_macro); // worker's macro slot (union source 1)
 }
+
+test "registry: concurrent register/unregister churn is race-free (D-244 #3a robustness)" {
+    // The registry's io_default-locked array must serialize register/unregister
+    // across real OS threads (Phase-B workers register at spawn / join). Set a
+    // threaded io so the Io.Mutex blocks for real, then restore it (the singleton
+    // is process-wide; tests run serially).
+    const saved_io = io_default.get();
+    var threaded = std.Io.Threaded.init(testing.allocator, .{});
+    defer threaded.deinit();
+    defer io_default.set(saved_io); // runs before threaded.deinit (LIFO)
+    io_default.set(threaded.io());
+
+    try testing.expectEqual(@as(usize, 0), registeredThreadCount());
+
+    const Worker = struct {
+        fn run() void {
+            // Each thread owns one context pointing at its own TLS; register +
+            // immediately unregister in a tight loop (≤4 concurrent < cap 64).
+            var ctx: ThreadGcContext = .{ .frame_slot = &env_mod.current_frame, .macro_slot = &macro_root_slot };
+            var i: usize = 0;
+            while (i < 200) : (i += 1) {
+                registerThread(&ctx) catch return;
+                unregisterThread(&ctx);
+            }
+        }
+    };
+
+    var threads: [4]std.Thread = undefined;
+    for (&threads) |*t| t.* = try std.Thread.spawn(.{}, Worker.run, .{});
+    for (&threads) |t| t.join();
+
+    // Every register paired with an unregister → back to empty, no leaked slot,
+    // no corruption (a torn array under contention would strand a registration).
+    try testing.expectEqual(@as(usize, 0), registeredThreadCount());
+}
