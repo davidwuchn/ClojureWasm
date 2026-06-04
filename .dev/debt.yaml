@@ -707,6 +707,12 @@ active:
       e2e (6) + D-240 (fixture can't diff static fields → CLI-verified instead).
       Both DA forks corrected real errors via the oracle (queue `=` vs vector;
       `&env` nil-for-no-locals). medley/aero advance past their queue walls.
+      **2026-06-04 empty-body fn/defn arity LANDED** (medley deep-merge's `([])`):
+      `(fn ([]) ([a] a))` / `(defn f [])` — an arity with NO body form is valid →
+      nil (clj parity). Relaxed the body-required guards in fn* (bindings.zig) +
+      expandDefn (single+multi); `analyzeBody`/`wrapBodyInDo` of an empty slice
+      already yield `(do)` → nil. corpus empty_body_arity (7) + diff + 3 e2e.
+      medley advances 273 → 695 (`java.util.UUID` static, deep).
       **2026-06-04 instance? interface-membership SWEEP** (big-bang, the Iterable/
       IEditableCollection pattern completed). FIXED too-narrow arms:
       IPersistentMap (+sorted_map), IPersistentSet (+sorted_set),

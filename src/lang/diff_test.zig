@@ -91,6 +91,16 @@ test "diff: fn* immediate invocation" {
     try f.check("((fn* [x y] (+ x y)) 3 4)", 7);
 }
 
+test "diff: fn* empty-body arity → nil (clj parity, both backends)" {
+    var f = try Fixture.init(testing.allocator);
+    defer f.deinit();
+    // An arity with no body form is valid → nil; analyzeBody of an empty slice
+    // yields `(do)` → nil under both backends.
+    try f.check("(if (nil? ((fn* []))) 1 2)", 1);
+    try f.check("(if (nil? ((fn* ([x]) ([x y] (+ x y))) 9)) 1 2)", 1);
+    try f.check("((fn* ([x]) ([x y] (+ x y))) 4 5)", 9);
+}
+
 test "diff: no-init def is unbound, valued def is bound (op_def_unbound)" {
     var f = try Fixture.init(testing.allocator);
     defer f.deinit();

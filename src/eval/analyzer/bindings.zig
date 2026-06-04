@@ -43,18 +43,21 @@ pub fn analyzeFnStar(
     defer method_forms.deinit(arena);
 
     if (items[1].data == .vector) {
-        // Single-arity: the whole `items[1..]` is one method.
-        if (items.len < 3)
+        // Single-arity: the whole `items[1..]` is one method. An empty body
+        // (`(fn* [])`) is valid (→ nil, clj parity); `analyzeBody` of an empty
+        // slice yields `(do)` → nil.
+        if (items.len < 2)
             return error_catalog.raise(.fn_star_form_incomplete, form.location, .{});
         try method_forms.append(arena, .{ .params_form = items[1], .body_forms = items[2..] });
     } else {
-        // Multi-arity: each `items[i]` must be a list `(params body...)`.
+        // Multi-arity: each `items[i]` must be a list `(params body...)`. An
+        // arity with an empty body (`([])`) is valid (→ nil, clj parity).
         var i: usize = 1;
         while (i < items.len) : (i += 1) {
             if (items[i].data != .list)
                 return error_catalog.raise(.fn_star_params_not_vector, items[i].location, .{});
             const sub = items[i].data.list;
-            if (sub.len < 2)
+            if (sub.len < 1)
                 return error_catalog.raise(.fn_star_form_incomplete, items[i].location, .{});
             if (sub[0].data != .vector)
                 return error_catalog.raise(.fn_star_params_not_vector, sub[0].location, .{});

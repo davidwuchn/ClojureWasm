@@ -1,0 +1,14 @@
+((fn []))
+;;=> nil
+(let [f (fn ([]) ([a] a))] [(f) (f 5)])
+;;=> [nil 5]
+(do (defn ebf0 []) (ebf0))
+;;=> nil
+(do (defn ebfm ([]) ([a b] (+ a b))) [(ebfm) (ebfm 2 3)])
+;;=> [nil 5]
+((fn ([x]) ([x y] (+ x y))) 9)
+;;=> nil
+((fn ([x]) ([x y] (+ x y))) 4 5)
+;;=> 9
+(do (defn ebd "doc" ([]) ([a] a)) [(ebd) (ebd 7)])
+;;=> [nil 7]

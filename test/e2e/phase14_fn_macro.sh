@@ -47,6 +47,10 @@ assert_eq 'fn_closure'  "$("$BIN" -e '(((fn [x] (fn [y] (+ x y))) 3) 4)')"  '7'
 assert_eq 'fn_named_basic'    "$("$BIN" -e '((fn foo [x] x) 1)')"  '1'
 assert_eq 'fn_named_selfrec'  "$("$BIN" -e '((fn f [n] (if (= n 0) 1 (* n (f (dec n))))) 5)')"  '120'
 assert_eq 'fn_named_multi'    "$("$BIN" -e '((fn g ([x] (g x 0)) ([x y] (+ x y))) 7)')"  '7'
+# --- empty-body arity → nil (clj parity; medley deep-merge's `([])`) ---
+assert_eq 'fn_empty_body'     "$("$BIN" -e '((fn []))')"                                  'nil'
+assert_eq 'fn_empty_arity'    "$("$BIN" -e '[((fn ([]) ([a] a))) ((fn ([]) ([a] a)) 5)]')" '[nil 5]'
+assert_eq 'defn_empty_body'   "$("$BIN" -e '(do (defn ebq []) (ebq))')"                   'nil'
 
 echo
 echo "Phase 14 D-145 fn macro e2e: all green."

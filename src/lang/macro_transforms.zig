@@ -1665,7 +1665,9 @@ fn expandDefn(
     // Two body shapes: vector ⇒ single-arity (existing); list ⇒ multi-arity.
     const fn_form = blk: {
         if (body_forms[0].data == .vector) {
-            if (body_forms.len < 2)
+            // Empty body (`(defn f [])`) is valid → nil (clj parity);
+            // wrapBodyInDo of an empty slice yields `(do)` → nil.
+            if (body_forms.len < 1)
                 return error_catalog.raise(.defn_form_incomplete, loc, .{});
             const body_form = try wrapBodyInDo(arena, body_forms[1..], loc);
             // D-076 cycle 3: lower destructured params (gensym + body let).
@@ -1683,7 +1685,8 @@ fn expandDefn(
             if (arity_form.data != .list)
                 return error_catalog.raise(.defn_params_not_vector, arity_form.location, .{});
             const sub = arity_form.data.list;
-            if (sub.len < 2)
+            // An arity with an empty body (`([])`) is valid → nil (clj parity).
+            if (sub.len < 1)
                 return error_catalog.raise(.defn_form_incomplete, arity_form.location, .{});
             if (sub[0].data != .vector)
                 return error_catalog.raise(.defn_params_not_vector, sub[0].location, .{});
