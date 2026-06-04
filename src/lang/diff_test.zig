@@ -309,6 +309,16 @@ test "diff: loop*/recur countdown" {
     try f.check("(loop* [i 0] (if (< i 3) (recur (+ i 1)) i))", 3);
 }
 
+test "diff: loop* sequential binding (later init sees earlier binding)" {
+    var f = try Fixture.init(testing.allocator);
+    defer f.deinit();
+    // clj loop bindings are sequential like let*; both backends must resolve
+    // `a` inside `b`'s init expr (the analyzer fix: init analysed against the
+    // child scope, not the outer one).
+    try f.check("(loop* [a 1 b (+ a 1)] (+ a b))", 3);
+    try f.check("(loop* [a 5 b a c b] (+ a b c))", 15);
+}
+
 test "diff: fn*-body recur (D-090, both backends re-enter the param frame)" {
     var f = try Fixture.init(testing.allocator);
     defer f.deinit();

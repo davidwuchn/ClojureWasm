@@ -620,6 +620,16 @@ active:
       defmacro_multi_arity_doc e2e + class_name unit. **NEXT corpus lib**: move to
       the next pure lib (ertugrulcetin__kezban / ztellman__clj-tuple) to find the
       next high-frequency clojure.core gap.
+      **2026-06-04 `#^` reader + `loop*` sequential-binding bug FIXED**. (1) `#^meta`
+      = deprecated alias for `^meta` (tokenizer readDispatch `^` arm → `.meta_caret`).
+      (2) **`loop*` was analysing each binding init against the OUTER scope, not the
+      child scope** — so a later loop binding could not see an earlier one
+      (`(loop [a 1 b (inc a)] b)` → "Unable to resolve 'a'"), while `let*` worked.
+      One-identifier fix in analyzeLoopStar (`scope` → `&child_scope`, slot declared
+      after each init = clj sequential semantics). A real correctness bug.
+      **clojure.math.combinatorics now FULLY loads + runs** (permutations etc.).
+      corpus loop_sequential_binding (6) + 2 diff cases (both backends) + e2e.
+      **NEXT**: batch-probe more corpus libs for the next generic gap.
       **2026-06-04 `find-var` + `var?` LANDED**: `(find-var 'ns/name)` → the Var
       (or nil; ns must exist) via env.findNs+resolve; `(var? x)` → `.var_ref` tag.
       corpus find_var_predicate (8). NOTE `bound?`/`defonce` are DEFERRED: cljw's

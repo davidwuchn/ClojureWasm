@@ -426,7 +426,11 @@ pub fn analyzeLoopStar(
         const name_sym = binding_forms[fi].data.symbol;
         if (name_sym.ns != null)
             return error_catalog.raise(.binding_name_namespace_qualified, binding_forms[fi].location, .{ .form = "loop*" });
-        const value_node = try analyzer_mod.analyze(arena, rt, env, scope, binding_forms[fi + 1], macro_table);
+        // Sequential binding scope (clj parity, mirrors let*): each init sees
+        // the earlier loop bindings, so analyse against `child_scope` (where
+        // prior slots are declared), not the outer `scope`. The slot for THIS
+        // binding is declared after, so an init cannot see its own name.
+        const value_node = try analyzer_mod.analyze(arena, rt, env, &child_scope, binding_forms[fi + 1], macro_table);
         const slot = try child_scope.declare(arena, name_sym.name);
         bindings[bi] = .{
             .name = name_sym.name,

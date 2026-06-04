@@ -1,0 +1,12 @@
+(loop [a 1 b (inc a)] b)
+;;=> 2
+(loop [a 1 b (inc a) c (+ a b)] [a b c])
+;;=> [1 2 3]
+(loop [a 3 b (* a 2)] (if (zero? a) b (recur (dec a) b)))
+;;=> 6
+(loop [xs [1 2 3] acc 0] (if (empty? xs) acc (recur (rest xs) (+ acc (first xs)))))
+;;=> 6
+(loop [m (into (sorted-map) {:b 2 :a 1}) ks (keys m)] [m ks])
+;;=> [{:a 1, :b 2} (:a :b)]
+(loop [a 5 b a c b] [a b c])
+;;=> [5 5 5]
