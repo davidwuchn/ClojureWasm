@@ -128,25 +128,41 @@ pub fn doSet(tx: *LockingTransaction, ref: *Ref, val: Value) !Value {
     return val;
 }
 
-/// Commit: for each written Ref, take its lock, check the read-point conflict,
-/// stamp a commit-point, and splice/recycle a new TVal into its history ring.
-/// `error.StmRetry` (a peer committed after our snapshot) re-runs the whole
-/// transaction. (#5-iii: single-ref conflict + retry. Multi-ref needs
-/// id-ordered all-locks-before-any-write atomicity — #5-ii.)
+/// Commit (#5-ii — multi-ref atomic): acquire EVERY written Ref's lock in
+/// ascending-id order (a total order → concurrent multi-ref transactions can
+/// never deadlock), check each ref's read-point conflict under its lock, then —
+/// only once all are locked + validated — stamp one commit-point and write
+/// every TVal, releasing all locks (LIFO) on exit. A conflict (a peer committed
+/// a newer version after our snapshot) returns `error.StmRetry` to re-run the
+/// whole transaction (retry-only, no barge — AD-013).
 fn commit(rt: *Runtime, tx: *LockingTransaction) !void {
-    var it = tx.vals.iterator();
-    while (it.next()) |entry| {
-        const ref = entry.key_ptr.*;
-        if (!tx.sets.contains(ref)) continue; // only written refs commit
-        const newval = entry.value_ptr.*;
-        while (!ref.lock.tryLock()) std.atomic.spinLoopHint();
-        defer ref.lock.unlock();
-        // Read-point conflict: the ref's latest committed version is newer than
-        // our snapshot ⇒ a peer committed after we read ⇒ our write is stale.
-        if (ref.tvals.point > tx.read_point) return error.StmRetry;
-        const commit_point = nextPoint();
-        try spliceCommit(rt, ref, newval, commit_point);
+    var locked: std.ArrayList(*Ref) = .empty;
+    defer locked.deinit(tx.gpa);
+    var it = tx.sets.keyIterator();
+    while (it.next()) |ref_ptr| try locked.append(tx.gpa, ref_ptr.*);
+    std.mem.sort(*Ref, locked.items, {}, refIdLess);
+
+    var held: usize = 0;
+    defer {
+        while (held > 0) {
+            held -= 1;
+            locked.items[held].lock.unlock();
+        }
     }
+    for (locked.items) |ref| {
+        while (!ref.lock.tryLock()) std.atomic.spinLoopHint();
+        held += 1;
+        if (ref.tvals.point > tx.read_point) return error.StmRetry;
+    }
+
+    const commit_point = nextPoint();
+    for (locked.items) |ref| {
+        try spliceCommit(rt, ref, tx.vals.get(ref).?, commit_point);
+    }
+}
+
+fn refIdLess(_: void, a: *Ref, b: *Ref) bool {
+    return a.id < b.id;
 }
 
 /// Write `newval@commit_point` into the ring per the JVM ring-growth rule

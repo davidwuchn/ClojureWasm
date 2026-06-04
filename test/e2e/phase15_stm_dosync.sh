@@ -42,6 +42,10 @@ assert_eq 'dosync_in_txn_read' "$got" '6'
 got=$("$BIN" -e '(let [r (ref 0)] (dosync (alter r inc) (dosync (alter r inc))) @r)' 2>/dev/null | last_line)
 assert_eq 'dosync_nested' "$got" '2'
 
+# Multi-ref transaction: writes to two refs commit atomically (#5-ii).
+got=$("$BIN" -e '(let [a (ref 1) b (ref 2)] (dosync (ref-set a 10) (ref-set b 20)) [@a @b])' 2>/dev/null | last_line)
+assert_eq 'dosync_multi_ref' "$got" '[10 20]'
+
 # --- Concurrency: serializability under contention (#5-iii, AD-013 pin) ---
 # 4 future threads each run 100 (dosync (alter c inc)) on the SAME ref. With
 # retry-on-conflict (no barge — AD-013), every increment lands: no lost updates,
@@ -49,6 +53,13 @@ assert_eq 'dosync_nested' "$got" '2'
 # concurrent commits would clobber each other and this would be < 400.
 got=$("$BIN" -e '(let [c (ref 0)] (run! deref (mapv (fn [_] (future (dotimes [_ 100] (dosync (alter c inc))))) (range 4))) @c)' 2>/dev/null | last_line)
 assert_eq 'dosync_concurrent_serializable' "$got" '400'
+
+# Concurrent MULTI-ref: a bank transfer between two refs from 4 threads. The
+# id-ordered lock acquisition (#5-ii) is deadlock-free, and each transaction is
+# atomic, so the sum invariant holds: 4×50 transfers of -1/+1 give [-100 200]
+# (sum still 100). A lost update or a torn commit would break the invariant.
+got=$("$BIN" -e '(let [a (ref 100) b (ref 0)] (run! deref (mapv (fn [_] (future (dotimes [_ 50] (dosync (alter a dec) (alter b inc))))) (range 4))) [@a @b])' 2>/dev/null | last_line)
+assert_eq 'dosync_concurrent_multi_ref_transfer' "$got" '[-100 200]'
 
 # alter / ref-set outside a transaction is a clean error, not a crash.
 diag=$("$BIN" -e '(alter (ref 0) inc)' 2>&1 || true)

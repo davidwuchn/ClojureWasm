@@ -51,6 +51,11 @@ pub const Ref = extern struct {
     tvals: *TVal,
     min_history: u32 = 0,
     max_history: u32 = 10,
+    /// Process-unique id, assigned at construction. The STM commit acquires
+    /// each written Ref's lock in ascending-id order so concurrent multi-ref
+    /// transactions cannot deadlock (a total order on lock acquisition —
+    /// clj keys its lock TreeMap by this id; ADR-0090 §3 / #5-ii).
+    id: u64 = 0,
 
     comptime {
         std.debug.assert(@alignOf(Ref) >= 8);
@@ -66,12 +71,16 @@ pub const Ref = extern struct {
 /// Allocate a heap-tracked Ref seeded with `init`. Materialises the
 /// initial 1-node self-loop ring (`tvals.prior == tvals == tvals.next`).
 /// Phase B takes the lock + splices a new TVal on each commit.
+/// Monotonic Ref-id source for the STM lock-ordering (see `Ref.id`).
+var next_ref_id: std.atomic.Value(u64) = .init(0);
+
 pub fn alloc(rt: *Runtime, init: Value) !Value {
     const seed = try tval_mod.allocSelfLoop(rt, init, 0, 0);
     const cell = try rt.gc.alloc(Ref);
     cell.* = .{
         .header = HeapHeader.init(.ref),
         .tvals = seed,
+        .id = next_ref_id.fetchAdd(1, .monotonic),
     };
     return Value.encodeHeapPtr(.ref, cell);
 }
