@@ -106,6 +106,8 @@ pub const Reader = struct {
             .meta_caret => self.readMeta(tok),
             .symbolic => self.readSymbolic(tok),
             .discard => self.readDiscard(tok),
+            .reader_cond => self.readReaderConditional(tok),
+            .reader_cond_splice => error_catalog.raise(.feature_not_supported, self.locOf(tok), .{ .name = "#?@ splicing reader conditional" }),
             .rparen, .rbracket, .rbrace => error_catalog.raise(.delimiter_unexpected, self.locOf(tok), .{ .delim = tok.text(self.source) }),
             .eof => error_catalog.raise(.eof_unexpected, self.locOf(tok), .{}),
             .invalid => error_catalog.raise(.token_invalid, self.locOf(tok), .{ .token = tok.text(self.source) }),
@@ -655,6 +657,31 @@ pub const Reader = struct {
         _ = try self.readForm(next_tok);
         return try self.read() orelse
             error_catalog.raise(.discard_reader_macro_incomplete, discard_loc, .{});
+    }
+
+    /// `#?(:clj a :cljs b :default c)` reader conditional. cljw's platform
+    /// feature set is `{:clj, :default}` (it implements Clojure semantics, not
+    /// ClojureScript), so the FIRST branch whose key is `:clj` or `:default`
+    /// (scanned left-to-right, clj-faithful) is read; a non-matching `#?` reads
+    /// as nothing (like `#_` — the next form is returned).
+    fn readReaderConditional(self: *Reader, tok: Token) ReadError!Form {
+        const loc = self.locOf(tok);
+        const list_tok = self.nextToken();
+        if (list_tok.kind != .lparen)
+            return error_catalog.raise(.feature_not_supported, loc, .{ .name = "#? must be followed by a (…) list of feature/form pairs" });
+        const list_form = try self.readForm(list_tok);
+        const items = list_form.data.list;
+        var i: usize = 0;
+        while (i + 1 < items.len) : (i += 2) {
+            if (items[i].data == .keyword and items[i].data.keyword.ns == null) {
+                const k = items[i].data.keyword.name;
+                if (std.mem.eql(u8, k, "clj") or std.mem.eql(u8, k, "default"))
+                    return items[i + 1];
+            }
+        }
+        // No matching branch: read as nothing — return the following form
+        // (the trailing-#? / EOF case yields the interned empty list via read()).
+        return try self.read() orelse Form{ .data = .{ .list = &.{} }, .location = loc };
     }
 
     // --- string unescaping ---

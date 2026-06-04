@@ -559,6 +559,17 @@ active:
       (line 41, a .cljc feature) — cljw's reader has no `#?` tag. A reader-level
       unit (read the `:clj`/`:default` branch, splice for `#?@`); moderate, gates
       most `.cljc` libs. Pure-`.clj` libs are the cleaner near-term load targets.
+      **2026-06-04 reader conditionals `#?` LANDED**: tokenizer emits `.reader_cond`
+      (`#?`) / `.reader_cond_splice` (`#?@`); the reader selects the first
+      `:clj`/`:default` branch (left-to-right, cljw's feature set = {:clj,
+      :default} — it implements Clojure, not ClojureScript), a non-match reads as
+      nothing (discard-style). `#?@` splicing raises feature_not_supported for now
+      (rare; needs collection-reader splice plumbing). e2e
+      phase15_reader_conditional (4; no corpus — `clj -M -e` rejects `#?` without
+      :read-cond). medley parses past its `#?` → **NEXT gap: named `fn`** (`(fn
+      name [params] …)` self-reference, medley:87) — cljw's fn rejects the
+      optional name ("use defn"); supporting it needs the fn macro to bind the
+      name in scope for self-recursion (a letfn-style self-binding).
       **2026-06-04 `find-var` + `var?` LANDED**: `(find-var 'ns/name)` → the Var
       (or nil; ns must exist) via env.findNs+resolve; `(var? x)` → `.var_ref` tag.
       corpus find_var_predicate (8). NOTE `bound?`/`defonce` are DEFERRED: cljw's

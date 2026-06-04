@@ -67,6 +67,13 @@ pub const TokenKind = enum(u8) {
     /// is the whole prefix (`#:foo` / `#::` / `#::alias`); the reader parses
     /// the ns spec and reads the following `{…}` map, qualifying its keys.
     ns_map,
+    /// `#?` reader conditional (`#?(:clj … :cljs … :default …)`). Consumes the
+    /// `#?`; the reader reads the following list and selects the branch for
+    /// cljw's platform features (`:clj` then `:default`).
+    reader_cond,
+    /// `#?@` splicing reader conditional. Like `reader_cond` but the selected
+    /// branch is a sequence spliced into the surrounding collection.
+    reader_cond_splice,
     /// `^` metadata reader macro. `^meta target` attaches `meta` (a map,
     /// or `:kw`→`{:kw true}` / `Sym`→`{:tag Sym}` shorthand) to `target`.
     meta_caret,
@@ -343,6 +350,15 @@ pub const Tokenizer = struct {
                 // `{`); the reader reads the following map + qualifies keys.
                 while (self.pos < self.source.len and isSymbolChar(self.source[self.pos])) self.advance();
                 return self.makeToken(.ns_map, start, start_line, start_col);
+            },
+            '?' => {
+                // `#?` reader conditional, `#?@` splicing variant.
+                self.advance(); // '?'
+                if (self.pos < self.source.len and self.source[self.pos] == '@') {
+                    self.advance(); // '@'
+                    return self.makeToken(.reader_cond_splice, start, start_line, start_col);
+                }
+                return self.makeToken(.reader_cond, start, start_line, start_col);
             },
             else => |c| {
                 // `#tag form` tagged literal (ADR-0073): a `#` followed by a
