@@ -136,9 +136,63 @@ pub const CompileError = error{
 pub fn compile(alloc: std.mem.Allocator, pattern: []const u8, flags: Flags) CompileError!Program {
     var arena = std.heap.ArenaAllocator.init(alloc);
     defer arena.deinit();
+    var f = flags;
+    var pat = pattern;
+    // Leading `(?i)` inline flag — clj applies it to the whole pattern (cycle 4:
+    // compile-time case-folding). Strip it + set the flag; `foldCI` then rewrites
+    // literal letters / char classes to case-insensitive form. Scoped `(?i:…)`
+    // and mid-pattern flags stay unsupported (rare; clean parse error).
+    if (pat.len >= 4 and pat[0] == '(' and pat[1] == '?' and pat[2] == 'i' and pat[3] == ')') {
+        f.case_insensitive = true;
+        pat = pat[4..];
+    }
     var group_count: u16 = 0;
-    const node = try parsePattern(arena.allocator(), pattern, flags, &group_count);
-    return try emit(alloc, node, flags, group_count);
+    const node = try parsePattern(arena.allocator(), pat, f, &group_count);
+    if (f.case_insensitive) foldCI(@constCast(node));
+    return try emit(alloc, node, f, group_count);
+}
+
+/// ASCII case-swap (`a`↔`A`); non-letters unchanged.
+fn asciiSwapCase(c: u8) u8 {
+    if (c >= 'a' and c <= 'z') return c - 32;
+    if (c >= 'A' and c <= 'Z') return c + 32;
+    return c;
+}
+
+/// For every ASCII letter set in the class, also set its other case.
+fn foldClassBits(cls: *CharClass) void {
+    var c: u8 = 'a';
+    while (c <= 'z') : (c += 1) {
+        if (cls.contains(c)) cls.set(c - 32);
+        if (cls.contains(c - 32)) cls.set(c);
+    }
+}
+
+/// Case-insensitive AST fold (cycle-4 `(?i)`): a `lit` letter becomes a
+/// 2-element class `{c, swapcase(c)}`; a `class` gains each letter's other
+/// case. Mutates the arena-owned AST in place; recurses into all children.
+fn foldCI(node: *Node) void {
+    switch (node.*) {
+        .lit => |c| {
+            const s = asciiSwapCase(c);
+            if (s != c) {
+                var cc = CharClass{};
+                cc.set(c);
+                cc.set(s);
+                node.* = .{ .class = cc };
+            }
+        },
+        .class => |*cls| foldClassBits(cls),
+        .anchor => {},
+        .concat => |children| for (children) |*ch| foldCI(ch),
+        .alt => |children| for (children) |*ch| foldCI(ch),
+        .star => |child| foldCI(child),
+        .plus => |child| foldCI(child),
+        .quest => |child| foldCI(child),
+        .non_capture => |child| foldCI(child),
+        .group => |g| foldCI(g.child),
+        .repeat => |r| foldCI(r.child),
+    }
 }
 
 /// Recursive-descent parser entry: produces an AST `Node` tree
@@ -828,4 +882,28 @@ test "CharClass set / contains is bit-exact" {
     try testing.expect(!cls.contains('b'));
     try testing.expect(!cls.contains(0));
     try testing.expect(!cls.contains(255));
+}
+
+test "(?i) leading flag folds literal + class to case-insensitive" {
+    const alloc = testing.allocator;
+    // `(?i)Ab` → both `a/A` and `b/B` match (lit folded to a class).
+    {
+        var prog = try compile(alloc, "(?i)Ab", .{});
+        defer prog.deinit(alloc);
+        try testing.expect(prog.flags.case_insensitive);
+    }
+    // foldClassBits mirrors each ASCII letter's other case.
+    {
+        var cc: CharClass = .{};
+        cc.set('a');
+        cc.set('Z');
+        foldClassBits(&cc);
+        try testing.expect(cc.contains('A'));
+        try testing.expect(cc.contains('z'));
+        // a non-letter set bit is untouched, and unrelated letters stay unset.
+        try testing.expect(!cc.contains('b'));
+    }
+    try testing.expectEqual(@as(u8, 'A'), asciiSwapCase('a'));
+    try testing.expectEqual(@as(u8, 'a'), asciiSwapCase('A'));
+    try testing.expectEqual(@as(u8, '5'), asciiSwapCase('5'));
 }

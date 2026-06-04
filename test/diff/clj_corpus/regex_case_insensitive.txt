@@ -1,0 +1,26 @@
+(re-find #"(?i)HELLO" "hello world")
+;;=> "hello"
+(re-find #"(?i)hello" "HELLO")
+;;=> "HELLO"
+(re-matches #"(?i)[a-z]+" "AbCdE")
+;;=> "AbCdE"
+(re-seq #"(?i)a" "aAaA")
+;;=> ("a" "A" "a" "A")
+(re-find #"(?i)w.rld" "WORLD")
+;;=> "WORLD"
+(re-find #"hello" "HELLO")
+;;=> nil
+(clojure.string/replace "Hello" #"(?i)l" "L")
+;;=> "HeLLo"
+(re-matches #"(?i)foo|bar" "BAR")
+;;=> "BAR"
+(re-find #"(?i)\bword\b" "A WORD here")
+;;=> "WORD"
+(re-find #"(?i)[xyz]+" "ZYX")
+;;=> "ZYX"
+(re-matches #"(?i)a+b*" "AABBB")
+;;=> "AABBB"
+(boolean (re-find #"(?i)needle" "a NEEDLE b"))
+;;=> true
+(count (re-seq #"(?i)[aeiou]" "AeIoU bcd"))
+;;=> 5

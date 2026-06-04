@@ -744,6 +744,20 @@ active:
       honoured; NOT `range`/`map-indexed` which are defined later in core.clj —
       symbols resolve at analyze time). corpus reduce_kv_vector (8 clj-verified).
       (map-entry reduce-kv stays permissive vs clj's throw — rare harmless edge.)
+      **2026-06-04 differential sweep CAMPAIGN complete (~200 idioms, 8 batches)**:
+      seq/string/math/bits/destructuring/sorted/stack/exceptions/atoms/numeric/
+      transients/records/protocols/multimethods/set/walk/format/transducers/lazy.
+      4 real bugs found+fixed (split / lazy-body / cons-over-lazy / reduce-kv);
+      remainder clean or F-005/AD-001/deferred. Core is validated.
+      **2026-06-04 `(?i)` case-insensitive regex LANDED** (D-051 cycle-4 item,
+      surfaced by the sweep). A leading `(?i)` sets `Flags.case_insensitive`
+      (stripped in `compile`); a post-parse `foldCI` AST pass rewrites each
+      literal letter → a 2-element class `{c, swapcase}` and folds char-class
+      letters (ASCII case-folding, compile-time per ADR-0031). No matcher change
+      (folded to existing class insts). corpus regex_case_insensitive (13
+      clj-verified) + 3 compile unit tests. REMAINING regex gaps: `(?i:…)` scoped
+      / mid-pattern flags, `\b` (word boundary — Anchor exists, parser TODO),
+      lookaround (D-058), backreferences.
       **2026-06-04 instance? interface-membership SWEEP** (big-bang, the Iterable/
       IEditableCollection pattern completed). FIXED too-narrow arms:
       IPersistentMap (+sorted_map), IPersistentSet (+sorted_set),
