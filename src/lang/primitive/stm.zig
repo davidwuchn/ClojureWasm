@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: EPL-2.0
 //! STM + IDeref primitives for the `rt/` namespace — Clojure-ns surface.
 //!
-//! `ref` (read-only shell) + the broader `deref` / `delay` /
-//! `future` / `promise` / `deliver` / `realized?` Tier A IDeref
-//! surface. `deref` dispatches by tag to atom / ref / delay /
-//! promise / future (all wired). The STM transaction engine —
-//! `dosync` / `alter` / `commute` / `ensure` / `ref-set` — is
-//! Phase B (concurrency); those mutators still raise pending it.
+//! `ref` + the broader `deref` / `delay` / `future` / `promise` /
+//! `deliver` / `realized?` Tier A IDeref surface. `deref` dispatches
+//! by tag to atom / ref / delay / promise / future (all wired). The
+//! STM transaction engine — `dosync` / `alter` / `commute` / `ensure`
+//! / `ref-set` — is implemented here over `concurrency/lock_tx.zig`
+//! (Phase B #5).
 
 const std = @import("std");
 const Value = @import("../../runtime/value/value.zig").Value;

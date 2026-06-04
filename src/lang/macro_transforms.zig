@@ -128,6 +128,7 @@ const BOOTSTRAP = [_]Entry{
     .{ .name = "delay", .expand = expandDelay },
     .{ .name = "future", .expand = expandFuture },
     .{ .name = "dosync", .expand = expandDosync },
+    .{ .name = "locking", .expand = expandLocking },
     .{ .name = "lazy-seq", .expand = expandLazySeq },
     .{ .name = "letfn", .expand = expandLetfn },
 };
@@ -2632,6 +2633,33 @@ fn expandDosync(
 ) macro_dispatch.ExpandError!Form {
     _ = rt;
     return expandThunkWrapper(arena, "__run-in-transaction", args, loc);
+}
+
+/// `(locking obj body...)` → `(__locking obj (fn* [] body...))` (Phase B #6).
+/// obj is evaluated once; its heap-value monitor (ADR-0009 lock_state bits, NOT
+/// a JVM monitor) is held while the body thunk runs on the calling thread.
+/// Reentrant; released on normal or error exit (defer in the primitive).
+fn expandLocking(
+    arena: std.mem.Allocator,
+    rt: *Runtime,
+    args: []const Form,
+    loc: SourceLocation,
+) macro_dispatch.ExpandError!Form {
+    _ = rt;
+    if (args.len < 2)
+        return error_catalog.raise(.locking_form_incomplete, loc, .{});
+    const empty_params = try arena.dupe(Form, &.{});
+    const params_form: Form = .{ .data = .{ .vector = empty_params }, .location = loc };
+    var fn_items = try arena.alloc(Form, 2 + (args.len - 1));
+    fn_items[0] = sym("fn*", loc);
+    fn_items[1] = params_form;
+    @memcpy(fn_items[2..], args[1..]);
+    const fn_form: Form = .{ .data = .{ .list = fn_items }, .location = loc };
+    var call_items = try arena.alloc(Form, 3);
+    call_items[0] = sym("__locking", loc);
+    call_items[1] = args[0];
+    call_items[2] = fn_form;
+    return list(arena, call_items, loc);
 }
 
 // --- lazy-seq — `(lazy-seq body...)` → `(__lazy-seq-create (fn* [] body...))` ---

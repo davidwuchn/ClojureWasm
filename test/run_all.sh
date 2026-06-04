@@ -448,6 +448,7 @@ run_step "e2e_phase15_use_libspec_filter"   "bash test/e2e/phase15_use_libspec_f
 run_step "e2e_phase15_system_property"      "bash test/e2e/phase15_system_property.sh"
 run_step "e2e_phase15_set_bang"             "bash test/e2e/phase15_set_bang.sh"
 run_step "e2e_phase15_stm_dosync"           "bash test/e2e/phase15_stm_dosync.sh"
+run_step "e2e_phase16_locking"              "bash test/e2e/phase16_locking.sh"
 run_step "e2e_phase15_for_while"            "bash test/e2e/phase15_for_while.sh"
 run_step "e2e_phase15_ns_import"            "bash test/e2e/phase15_ns_import.sh"
 run_step "e2e_phase15_dot_form"             "bash test/e2e/phase15_dot_form.sh"

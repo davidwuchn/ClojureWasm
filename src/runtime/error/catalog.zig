@@ -144,6 +144,8 @@ pub const Code = enum {
     future_thunk_failed,
     stm_no_transaction,
     stm_retry_limit,
+    locking_needs_object,
+    locking_nest_overflow,
     catch_class_unknown,
     class_name_unknown,
     catch_binding_not_symbol,
@@ -213,6 +215,7 @@ pub const Code = enum {
     reify_form_incomplete,
     reify_section_invalid,
     letfn_form_incomplete,
+    locking_form_incomplete,
     letfn_spec_invalid,
     reify_method_invalid,
     extend_type_form_incomplete,
@@ -716,6 +719,16 @@ pub fn entry(comptime code: Code) Entry {
             .phase = .eval,
             .template = "transaction failed after reaching the retry limit (too much contention)",
         },
+        .locking_needs_object => .{
+            .kind = .type_error,
+            .phase = .eval,
+            .template = "locking requires an object with identity, got an immutable value with none",
+        },
+        .locking_nest_overflow => .{
+            .kind = .value_error,
+            .phase = .eval,
+            .template = "locking nested too deeply on one thread (over {[cap]d} levels)",
+        },
         .catch_class_unknown => .{
             .kind = .name_error,
             .phase = .analysis,
@@ -1074,6 +1087,11 @@ pub fn entry(comptime code: Code) Entry {
             .kind = .syntax_error,
             .phase = .macroexpand,
             .template = "letfn requires a vector of fn-specs and at least one body form",
+        },
+        .locking_form_incomplete => .{
+            .kind = .syntax_error,
+            .phase = .macroexpand,
+            .template = "locking requires a lock object and at least one body form",
         },
         .letfn_spec_invalid => .{
             .kind = .syntax_error,

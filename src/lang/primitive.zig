@@ -43,6 +43,7 @@ const walk_prim = @import("primitive/walk.zig");
 const multimethod_prim = @import("primitive/multimethod.zig");
 const protocol_prim = @import("primitive/protocol.zig");
 const stm_prim = @import("primitive/stm.zig");
+const locking_prim = @import("primitive/locking.zig");
 const atom_prim = @import("primitive/atom.zig");
 const metadata_prim = @import("primitive/metadata.zig");
 const sorted_prim = @import("primitive/sorted.zig");
@@ -95,6 +96,7 @@ pub fn registerAll(env: *Env) !void {
     try multimethod_prim.register(env, rt_ns);
     try protocol_prim.register(env, rt_ns);
     try stm_prim.register(env, rt_ns);
+    try locking_prim.register(env, rt_ns);
     try atom_prim.register(env, rt_ns);
     try metadata_prim.register(env, rt_ns);
     try sorted_prim.register(env, rt_ns);
