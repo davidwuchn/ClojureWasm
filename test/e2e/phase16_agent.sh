@@ -94,5 +94,11 @@ assert_eq 'agent_continue_mode' "$got" '[1 nil :continue]'
 got=$("$BIN" -e '(error-mode (agent 0))' 2>/dev/null | last_line)
 assert_eq 'agent_error_mode_default' "$got" ':fail'
 
+# An action may send to its OWN agent (clj allows nested send); the running
+# drainer picks the nested action up (it sees draining=true, just enqueues). Here
+# the action sets state to (inc 0)=1 + enqueues inc, which then runs => 2.
+got=$("$BIN" -e '(let [a (agent 0)] (send a (fn [s] (send a inc) (inc s))) (await a) @a)' 2>/dev/null | last_line)
+assert_eq 'agent_nested_send' "$got" '2'
+
 echo
 echo "Phase B #6 agent (first slice + error modes) e2e: all green."

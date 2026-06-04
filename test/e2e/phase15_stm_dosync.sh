@@ -89,5 +89,10 @@ case "$diag" in
         fail "alter_out_of_txn_errors: expected a no-transaction diagnostic, got '$diag'" ;;
 esac
 
+# A dosync whose body throws aborts the transaction — no in-txn write commits, so
+# the ref keeps its prior value.
+got=$("$BIN" -e '(let [r (ref 1)] (try (dosync (ref-set r 2) (throw (ex-info "x" {}))) (catch Throwable e :c)) @r)' 2>/dev/null | last_line)
+assert_eq 'dosync_abort_on_throw' "$got" '1'
+
 echo
 echo "Phase B #5 STM dosync/ref-set/alter (single-ref) e2e: all green."

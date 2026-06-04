@@ -36,4 +36,8 @@ assert_eq 'reset_vals' "$("$BIN" -e '(let [a (atom 5)] (reset-vals! a 9))')"    
 # CAS fix; verified deterministic across many ReleaseSafe runs.
 assert_eq 'swap_concurrent' "$("$BIN" -e '(let [a (atom 0)] (run! deref (mapv (fn [_] (future (dotimes [_ 100] (swap! a inc)))) (range 4))) @a)')" '400'
 assert_eq 'cas_concurrent'  "$("$BIN" -e '(let [a (atom 0)] (run! deref (mapv (fn [_] (future (dotimes [_ 100] (loop [] (let [o @a] (when-not (compare-and-set! a o (inc o)) (recur))))))) (range 4))) @a)')" '400'
-echo "OK — phase14_atom smoke (18 cases) green"
+# A swap! whose fn throws leaves the atom unchanged (the CAS never runs) and the
+# error propagates.
+assert_eq 'swap_throw_unchanged' "$("$BIN" -e '(let [a (atom 5)] (try (swap! a (fn [_] (throw (ex-info "x" {})))) (catch Throwable e :caught)) @a)' 2>/dev/null)" '5'
+
+echo "OK — phase14_atom smoke (19 cases) green"

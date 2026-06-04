@@ -64,5 +64,10 @@ case "$diag" in
         fail "locking_no_body_errors: expected a 'requires a body' diagnostic, got '$diag'" ;;
 esac
 
+# The monitor is released even when the body throws (the primitive's defer): a
+# subsequent (locking o ...) on the same object must not deadlock.
+got=$("$BIN" -e '(let [o (atom 0)] (try (locking o (throw (ex-info "x" {}))) (catch Throwable e :c)) (locking o 99))' 2>/dev/null | last_line)
+assert_eq 'locking_releases_on_throw' "$got" '99'
+
 echo
 echo "Phase B #6 locking e2e: all green."
