@@ -1416,6 +1416,29 @@
 (def splitv-at
   (fn* [n coll] [(vec (take n coll)) (vec (drop n coll))]))
 
+;; `(partitionv n [step [pad]] coll)` — like `partition` but each chunk is a
+;; vector. Lazy. JVM parity: clojure.core/partitionv (1.12).
+(def partitionv
+  (fn* ([n coll] (partitionv n n coll))
+       ([n step coll]
+        (lazy-seq
+          (let [s (seq coll)]
+            (if s
+              (let [p (vec (take n s))]
+                (if (= (count p) n)
+                  (cons p (partitionv n step (drop step s)))
+                  nil))
+              nil))))
+       ([n step pad coll]
+        (lazy-seq
+          (let [s (seq coll)]
+            (if s
+              (let [p (vec (take n s))]
+                (if (= (count p) n)
+                  (cons p (partitionv n step pad (drop step s)))
+                  (list (vec (take n (concat p pad))))))
+              nil))))))
+
 ;; ----------------------------------------------------------------
 ;; Phase 7 §9.9 row 7.7 — hybrid polymorphic primitives' protocol surface.
 ;;

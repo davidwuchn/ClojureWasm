@@ -1,0 +1,12 @@
+(partitionv 2 [1 2 3 4 5])
+;;=> ([1 2] [3 4])
+(partitionv 2 3 [1 2 3 4 5 6 7])
+;;=> ([1 2] [4 5])
+(partitionv 3 3 [:p] [1 2 3 4])
+;;=> ([1 2 3] [4 :p])
+(partitionv 3 [1 2])
+;;=> ()
+(vector? (first (partitionv 2 [1 2 3 4])))
+;;=> true
+(partitionv 2 (range 5))
+;;=> ([0 1] [2 3])
