@@ -578,6 +578,20 @@ active:
       188: `clojure.lang.PersistentQueue`** — a JVM class ref (cljw has a
       persistent_queue VALUE but no `clojure.lang.PersistentQueue` class-as-value
       / `EMPTY` static); a class-as-value extension like the exception classes.
+      **2026-06-04 `#_`/`#?` skip-boundary bug FIXED** (surfaced loading potpuri,
+      whose ns has `#?(:cljs (:require-macros …))` at the tail): a no-value reader
+      macro (`#_` discard, non-matching `#?`) as the LAST element before a closing
+      delimiter used to recurse into the next form and read the CLOSER as its value
+      → "Unexpected delimiter". A latent `#_` bug too (`[1 #_2]` failed). Fix:
+      unified `readValue()` primitive (peek-based; a `skip` flag lets no-value
+      macros signal "skip this slot"; returns null at a boundary token left in the
+      peek buffer) threaded through read / readDelimited / readDiscard /
+      readReaderConditional / the wrapper macros (`'` `@` `#'` `#=`-meta tagged).
+      corpus discard_skip (7, clj-verified) + 2 reader unit tests + e2e extended to
+      6. potpuri advances 2 → **line 25: `defmacro` with docstring+attr-map+
+      multi-arity** (`(defmacro if-all-let "doc" {:added ..} ([a b] …) ([a b c] …))`
+      → "parameter list must be a vector"; defmacro lacks the defn-style
+      docstring/attr-map skip + multi-arity that `fn`/`defn` already have).
       **2026-06-04 `find-var` + `var?` LANDED**: `(find-var 'ns/name)` → the Var
       (or nil; ns must exist) via env.findNs+resolve; `(var? x)` → `.var_ref` tag.
       corpus find_var_predicate (8). NOTE `bound?`/`defonce` are DEFERRED: cljw's

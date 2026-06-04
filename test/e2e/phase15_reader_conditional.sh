@@ -33,4 +33,15 @@ assert_eq 'no-match-skips' \
   "$("$BIN" -e '[1 #?(:cljs 2) 3]' 2>&1 | tail -1)" \
   '[1 3]'
 
-echo "OK — phase15_reader_conditional (4 cases) green"
+# a non-matching #? as the LAST element (before a trailing closer) — the
+# boundary case that used to read the `]` as the branch and error
+assert_eq 'no-match-trailing' \
+  "$("$BIN" -e '[1 #?(:cljs 2)]' 2>&1 | tail -1)" \
+  '[1]'
+
+# the .cljc ns shape: `#?` at the tail of the (ns …) form list
+assert_eq 'no-match-ns-tail' \
+  "$("$BIN" -e '(quote (ns x #?(:cljs :m)))' 2>&1 | tail -1)" \
+  '(ns x)'
+
+echo "OK — phase15_reader_conditional (6 cases) green"

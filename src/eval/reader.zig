@@ -45,6 +45,11 @@ pub const Reader = struct {
     /// True while reading a `#(...)` body, so a nested `#(` is rejected
     /// (JVM-compatible — `%` would be ambiguous across levels). D-146.
     in_fn_lit: bool = false,
+    /// Set by reader macros that contribute NO value (`#_` discard, a
+    /// non-matching `#?`). `readValue` observes it to skip the slot and
+    /// keep reading, rather than the macro recursing into the next form
+    /// (which broke at a trailing closing delimiter — `[1 #_2]`).
+    skip: bool = false,
 
     pub fn init(allocator: std.mem.Allocator, source: []const u8) Reader {
         return .{
@@ -56,9 +61,37 @@ pub const Reader = struct {
 
     /// Read one Form. Returns `null` on clean EOF.
     pub fn read(self: *Reader) ReadError!?Form {
+        if (try self.readValue()) |f| return f;
+        // readValue stopped at a boundary token (left in the peek buffer):
+        // clean EOF → null; a stray closing delimiter at top level → error.
         const tok = self.nextToken();
         if (tok.kind == .eof) return null;
-        return try self.readForm(tok);
+        return error_catalog.raise(.delimiter_unexpected, self.locOf(tok), .{ .delim = tok.text(self.source) });
+    }
+
+    /// Read the next value, transparently skipping reader macros that
+    /// contribute no value (`#_` discard, a non-matching `#?`). Returns
+    /// `null` when the next significant token is a closing delimiter or
+    /// EOF; that boundary token is left in the peek buffer for the caller
+    /// to classify (break a collection, end the stream, or error). This is
+    /// the single "read a form" primitive — every site that needs one form
+    /// routes through here so `#_`/`#?` skip uniformly, including before a
+    /// trailing closer (`[1 #_2]` → `[1]`).
+    fn readValue(self: *Reader) ReadError!?Form {
+        while (true) {
+            const tok = self.peekToken();
+            switch (tok.kind) {
+                .eof, .rparen, .rbracket, .rbrace => return null,
+                else => {},
+            }
+            _ = self.nextToken(); // consume the peeked token
+            const f = try self.readForm(tok);
+            if (self.skip) {
+                self.skip = false;
+                continue;
+            }
+            return f;
+        }
     }
 
     /// Read until EOF, returning a slice owned by `self.allocator`.
@@ -386,12 +419,17 @@ pub const Reader = struct {
         errdefer items.deinit(self.allocator);
 
         while (true) {
+            if (try self.readValue()) |f| {
+                items.append(self.allocator, f) catch return error.OutOfMemory;
+                continue;
+            }
+            // Boundary token (closer / EOF) is in the peek buffer.
             const tok = self.nextToken();
             if (tok.kind == .eof)
                 return error_catalog.raise(.delimiter_unmatched_at_eof, opener_loc, .{ .delim = closingText(closing) });
             if (tok.kind == closing) break;
-            const f = try self.readForm(tok);
-            items.append(self.allocator, f) catch return error.OutOfMemory;
+            // A different closing delimiter than ours (`(... ]`) — mismatched.
+            return error_catalog.raise(.delimiter_unexpected, self.locOf(tok), .{ .delim = tok.text(self.source) });
         }
         return items.toOwnedSlice(self.allocator) catch return error.OutOfMemory;
     }
@@ -405,10 +443,8 @@ pub const Reader = struct {
             return error_catalog.raise(.form_nesting_too_deep, loc, .{ .max = self.max_depth });
         defer self.depth -= 1;
 
-        const next_tok = self.nextToken();
-        if (next_tok.kind == .eof)
+        const inner = (try self.readValue()) orelse
             return error_catalog.raise(.quote_reader_macro_incomplete, loc, .{});
-        const inner = try self.readForm(next_tok);
 
         const items = self.allocator.alloc(Form, 2) catch return error.OutOfMemory;
         items[0] = Form{ .data = .{ .symbol = .{ .name = "quote" } }, .location = loc };
@@ -424,10 +460,8 @@ pub const Reader = struct {
             return error_catalog.raise(.form_nesting_too_deep, loc, .{ .max = self.max_depth });
         defer self.depth -= 1;
 
-        const next_tok = self.nextToken();
-        if (next_tok.kind == .eof)
+        const inner = (try self.readValue()) orelse
             return error_catalog.raise(.eof_unexpected, loc, .{});
-        const inner = try self.readForm(next_tok);
 
         const items = self.allocator.alloc(Form, 2) catch return error.OutOfMemory;
         items[0] = Form{ .data = .{ .symbol = .{ .name = "deref" } }, .location = loc };
@@ -443,10 +477,8 @@ pub const Reader = struct {
             return error_catalog.raise(.form_nesting_too_deep, loc, .{ .max = self.max_depth });
         defer self.depth -= 1;
 
-        const next_tok = self.nextToken();
-        if (next_tok.kind == .eof)
+        const inner = (try self.readValue()) orelse
             return error_catalog.raise(.eof_unexpected, loc, .{});
-        const inner = try self.readForm(next_tok);
 
         const items = self.allocator.alloc(Form, 2) catch return error.OutOfMemory;
         items[0] = Form{ .data = .{ .symbol = .{ .name = "var" } }, .location = loc };
@@ -473,10 +505,8 @@ pub const Reader = struct {
             return error_catalog.raise(.token_invalid, self.locOf(tag_tok), .{ .token = tag_tok.text(self.source) });
         const tag = parseSymbolRef(tag_tok.text(self.source));
 
-        const val_tok = self.nextToken();
-        if (val_tok.kind == .eof)
+        const inner = (try self.readValue()) orelse
             return error_catalog.raise(.eof_unexpected, loc, .{});
-        const inner = try self.readForm(val_tok);
 
         const form_ptr = self.allocator.create(Form) catch return error.OutOfMemory;
         form_ptr.* = inner;
@@ -558,9 +588,8 @@ pub const Reader = struct {
         if (self.depth > self.max_depth)
             return error_catalog.raise(.form_nesting_too_deep, loc, .{ .max = self.max_depth });
         defer self.depth -= 1;
-        const inner_tok = self.nextToken();
-        if (inner_tok.kind == .eof) return error_catalog.raise(.eof_unexpected, loc, .{});
-        const inner = try self.readForm(inner_tok);
+        const inner = (try self.readValue()) orelse
+            return error_catalog.raise(.eof_unexpected, loc, .{});
         const p = self.allocator.create(Form) catch return error.OutOfMemory;
         p.* = inner;
         return Form{ .data = switch (kind) {
@@ -582,15 +611,11 @@ pub const Reader = struct {
             return error_catalog.raise(.form_nesting_too_deep, loc, .{ .max = self.max_depth });
         defer self.depth -= 1;
 
-        const meta_tok = self.nextToken();
-        if (meta_tok.kind == .eof)
+        const meta_raw = (try self.readValue()) orelse
             return error_catalog.raise(.eof_unexpected, loc, .{});
-        const meta_raw = try self.readForm(meta_tok);
 
-        const tgt_tok = self.nextToken();
-        if (tgt_tok.kind == .eof)
+        var target = (try self.readValue()) orelse
             return error_catalog.raise(.eof_unexpected, loc, .{});
-        var target = try self.readForm(tgt_tok);
 
         const norm = try self.normalizeMeta(meta_raw, loc);
         const final_meta = if (target.meta) |inner|
@@ -651,12 +676,14 @@ pub const Reader = struct {
 
     fn readDiscard(self: *Reader, tok: Token) ReadError!Form {
         const discard_loc = self.locOf(tok);
-        const next_tok = self.nextToken();
-        if (next_tok.kind == .eof)
+        // Consume the discard target (a real form; readValue skips any nested
+        // no-value macros). A boundary before a target is incomplete (`[#_]`).
+        _ = (try self.readValue()) orelse
             return error_catalog.raise(.discard_reader_macro_incomplete, discard_loc, .{});
-        _ = try self.readForm(next_tok);
-        return try self.read() orelse
-            error_catalog.raise(.discard_reader_macro_incomplete, discard_loc, .{});
+        // `#_` itself contributes nothing: signal skip + return a placeholder
+        // the caller (readValue) discards.
+        self.skip = true;
+        return Form{ .data = .nil, .location = discard_loc };
     }
 
     /// `#?(:clj a :cljs b :default c)` reader conditional. cljw's platform
@@ -679,9 +706,12 @@ pub const Reader = struct {
                     return items[i + 1];
             }
         }
-        // No matching branch: read as nothing — return the following form
-        // (the trailing-#? / EOF case yields the interned empty list via read()).
-        return try self.read() orelse Form{ .data = .{ .list = &.{} }, .location = loc };
+        // No matching branch: contributes no value (like `#_`). Signal skip
+        // + return a placeholder readValue discards. This works uniformly
+        // before a trailing closer (`[1 #?(:cljs 2)]` → `[1]`) and at the
+        // tail of a form list (`(ns x #?(:cljs ...))`).
+        self.skip = true;
+        return Form{ .data = .nil, .location = loc };
     }
 
     // --- string unescaping ---
@@ -737,6 +767,11 @@ pub const Reader = struct {
             return t;
         }
         return self.tokenizer.next();
+    }
+
+    fn peekToken(self: *Reader) Token {
+        if (self.peeked == null) self.peeked = self.tokenizer.next();
+        return self.peeked.?;
     }
 };
 
@@ -1031,4 +1066,29 @@ test "string error: unknown escape sequence" {
     const info = error_mod.getLastError() orelse return error.TestUnexpectedResult;
     try testing.expectEqual(error_mod.Kind.string_error, info.kind);
     try testing.expect(std.mem.find(u8, info.message, "Unknown escape") != null);
+}
+
+test "`#_` discard skips a slot, including before a trailing closer" {
+    var ctx = TestCtx.init();
+    defer ctx.deinit();
+
+    // The regression: a discard as the LAST element used to read the
+    // closing delimiter as its value and error. It must skip the slot.
+    try testing.expectEqualStrings("[1]", try ctx.pr(try ctx.read("[1 #_2]")));
+    try testing.expectEqualStrings("(1)", try ctx.pr(try ctx.read("(1 #_2)")));
+    try testing.expectEqualStrings("[1 3]", try ctx.pr(try ctx.read("[1 #_2 3]")));
+    // stacked discard drops two forms; discard in a wrapper position
+    // (`'` reads the form AFTER the discard → `(quote 2)`)
+    try testing.expectEqualStrings("[3]", try ctx.pr(try ctx.read("[#_#_1 2 3]")));
+    try testing.expectEqualStrings("(quote 2)", try ctx.pr(try ctx.read("'#_1 2")));
+}
+
+test "non-matching `#?` reads as nothing, including before a trailing closer" {
+    var ctx = TestCtx.init();
+    defer ctx.deinit();
+
+    try testing.expectEqualStrings("[1]", try ctx.pr(try ctx.read("[1 #?(:cljs 2)]")));
+    try testing.expectEqualStrings("1", try ctx.pr(try ctx.read("#?(:clj 1 :cljs 2)")));
+    // tail of a form list (the `(ns x #?(:cljs ...))` shape from .cljc libs)
+    try testing.expectEqualStrings("(ns x)", try ctx.pr(try ctx.read("(ns x #?(:cljs :m))")));
 }
