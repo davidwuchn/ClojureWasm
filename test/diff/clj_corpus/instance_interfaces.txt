@@ -1,0 +1,74 @@
+(instance? clojure.lang.Seqable [])
+;;=> true
+(instance? clojure.lang.Seqable (map inc [1]))
+;;=> true
+(instance? clojure.lang.Seqable "s")
+;;=> false
+(instance? clojure.lang.Sequential [])
+;;=> true
+(instance? clojure.lang.Sequential {})
+;;=> false
+(instance? clojure.lang.Sequential (list 1))
+;;=> true
+(instance? clojure.lang.Sequential (range 3))
+;;=> true
+(instance? clojure.lang.ISeq (list 1))
+;;=> true
+(instance? clojure.lang.ISeq [])
+;;=> false
+(instance? clojure.lang.ISeq (cons 1 nil))
+;;=> true
+(instance? clojure.lang.Associative {})
+;;=> true
+(instance? clojure.lang.Associative [])
+;;=> true
+(instance? clojure.lang.Associative #{})
+;;=> false
+(instance? clojure.lang.Associative (sorted-map :a 1))
+;;=> true
+(instance? clojure.lang.ILookup {})
+;;=> true
+(instance? clojure.lang.ILookup #{})
+;;=> false
+(instance? clojure.lang.Indexed [])
+;;=> true
+(instance? clojure.lang.Indexed (list 1))
+;;=> false
+(instance? clojure.lang.IPersistentVector [])
+;;=> true
+(instance? clojure.lang.IPersistentVector (first {:a 1}))
+;;=> true
+(instance? clojure.lang.IPersistentList (list 1))
+;;=> true
+(instance? clojure.lang.IPersistentList [])
+;;=> false
+(instance? clojure.lang.IPersistentStack [])
+;;=> true
+(instance? clojure.lang.IPersistentStack (list 1))
+;;=> true
+(instance? clojure.lang.IPersistentStack {})
+;;=> false
+(instance? clojure.lang.Named :k)
+;;=> true
+(instance? clojure.lang.Named (quote s))
+;;=> true
+(instance? clojure.lang.Named "s")
+;;=> false
+(instance? clojure.lang.Reversible [])
+;;=> true
+(instance? clojure.lang.Reversible (sorted-set 1))
+;;=> true
+(instance? clojure.lang.Reversible (list 1))
+;;=> false
+(instance? clojure.lang.Sorted (sorted-map :a 1))
+;;=> true
+(instance? clojure.lang.Sorted {})
+;;=> false
+(instance? clojure.lang.IPersistentMap (sorted-map :a 1))
+;;=> true
+(instance? clojure.lang.IPersistentSet (sorted-set 1))
+;;=> true
+(instance? clojure.lang.IPersistentCollection (map inc [1]))
+;;=> true
+(instance? clojure.lang.IPersistentCollection (sorted-map :a 1))
+;;=> true

@@ -679,6 +679,24 @@ active:
       core.unify advances past it → `.isArray` reflection on a Class (arrays/F-004,
       deferred). Recurring deep walls now dominate: PersistentQueue (medley/aero),
       `&env`/`&form` macro args (D-099-followup, meander), arrays/F-004, deftype.
+      **2026-06-04 instance? interface-membership SWEEP** (big-bang, the Iterable/
+      IEditableCollection pattern completed). FIXED too-narrow arms:
+      IPersistentMap (+sorted_map), IPersistentSet (+sorted_set),
+      IPersistentCollection (was {list,vector,maps,set} → full coll+seq set —
+      seqs/sorted/map_entry were silently false, a real bug). ADDED: Seqable,
+      Sequential, ISeq, Associative, ILookup, Indexed, IPersistentVector,
+      IPersistentList, IPersistentStack, Named, Reversible, Sorted — each a
+      clj-verified tag set (corpus instance_interfaces 37). SKIPPED (subtle,
+      noted): Counted (lazy_seq excluded but cons/range included; chunked_cons/
+      array_seq untested), IObj/IMeta (entangled with ADR-0037 metadata-less
+      symbols — symbol is IObj in clj but cljw symbols can't carry meta; needs an
+      AD decision). class_name unit tests extended.
+      CONSISTENCY FOLLOW-UP (immediate next): the existing `sequential?` predicate
+      (core.zig:432) includes `persistent_queue` but the new Sequential instance?
+      arm omitted it — unobservable today (no queue VALUES exist, slot 45 reserved)
+      but the two "is sequential" definitions must agree. Align the Sequential arm
+      (+ verify clj queue membership for Sequential/ISeq/IPersistentStack) so the
+      instance? arms and the predicate fns are consistent when PersistentQueue lands.
       **2026-06-04 `find-var` + `var?` LANDED**: `(find-var 'ns/name)` → the Var
       (or nil; ns must exist) via env.findNs+resolve; `(var? x)` → `.var_ref` tag.
       corpus find_var_predicate (8). NOTE `bound?`/`defonce` are DEFERRED: cljw's

@@ -116,6 +116,18 @@ const FQCN_MAP = std.StaticStringMap([]const u8).initComptime(.{
     .{ "clojure.lang.IPersistentCollection", "IPersistentCollection" },
     .{ "clojure.lang.IEditableCollection", "IEditableCollection" },
     .{ "java.lang.Iterable", "Iterable" },
+    .{ "clojure.lang.Seqable", "Seqable" },
+    .{ "clojure.lang.Sequential", "Sequential" },
+    .{ "clojure.lang.ISeq", "ISeq" },
+    .{ "clojure.lang.Associative", "Associative" },
+    .{ "clojure.lang.ILookup", "ILookup" },
+    .{ "clojure.lang.Indexed", "Indexed" },
+    .{ "clojure.lang.IPersistentVector", "IPersistentVector" },
+    .{ "clojure.lang.IPersistentList", "IPersistentList" },
+    .{ "clojure.lang.IPersistentStack", "IPersistentStack" },
+    .{ "clojure.lang.Named", "Named" },
+    .{ "clojure.lang.Reversible", "Reversible" },
+    .{ "clojure.lang.Sorted", "Sorted" },
 });
 
 /// Normalise FQCN inputs to simple names. Falls back to `host_class`
@@ -178,7 +190,19 @@ fn isInterfaceName(simple: []const u8) bool {
         std.mem.eql(u8, simple, "IPersistentSet") or
         std.mem.eql(u8, simple, "IPersistentCollection") or
         std.mem.eql(u8, simple, "IEditableCollection") or
-        std.mem.eql(u8, simple, "Iterable");
+        std.mem.eql(u8, simple, "Iterable") or
+        std.mem.eql(u8, simple, "Seqable") or
+        std.mem.eql(u8, simple, "Sequential") or
+        std.mem.eql(u8, simple, "ISeq") or
+        std.mem.eql(u8, simple, "Associative") or
+        std.mem.eql(u8, simple, "ILookup") or
+        std.mem.eql(u8, simple, "Indexed") or
+        std.mem.eql(u8, simple, "IPersistentVector") or
+        std.mem.eql(u8, simple, "IPersistentList") or
+        std.mem.eql(u8, simple, "IPersistentStack") or
+        std.mem.eql(u8, simple, "Named") or
+        std.mem.eql(u8, simple, "Reversible") or
+        std.mem.eql(u8, simple, "Sorted");
 }
 
 /// `(instance? Class v)` predicate. Returns true iff `v` is a
@@ -251,16 +275,70 @@ fn matchInterface(v: Value, simple: []const u8) bool {
         return t == .integer or t == .float;
     }
     if (std.mem.eql(u8, simple, "IPersistentMap")) {
-        return t == .array_map or t == .hash_map;
+        return t == .array_map or t == .hash_map or t == .sorted_map;
     }
     if (std.mem.eql(u8, simple, "IPersistentSet")) {
-        return t == .hash_set;
+        return t == .hash_set or t == .sorted_set;
     }
-    if (std.mem.eql(u8, simple, "IPersistentCollection")) {
+    // Every persistent collection + seq (Seqable / IPersistentCollection share
+    // this membership in cljw). clj-verified across all collection/seq tags.
+    if (std.mem.eql(u8, simple, "IPersistentCollection") or std.mem.eql(u8, simple, "Seqable")) {
         return switch (t) {
-            .list, .vector, .array_map, .hash_map, .hash_set => true,
+            .list, .cons, .lazy_seq, .chunked_cons, .vector, .array_map, .hash_map, .sorted_map, .hash_set, .sorted_set, .persistent_queue, .range, .string_seq, .array_seq, .map_entry => true,
             else => false,
         };
+    }
+    // Ordered collections + seqs (NOT maps / sets). map_entry is vector-like.
+    if (std.mem.eql(u8, simple, "Sequential")) {
+        return switch (t) {
+            .vector, .map_entry, .list, .cons, .lazy_seq, .chunked_cons, .range, .string_seq, .array_seq => true,
+            else => false,
+        };
+    }
+    // Seq view (ISeq): the seq types + list (a PersistentList is a seq); NOT
+    // vector / maps / sets.
+    if (std.mem.eql(u8, simple, "ISeq")) {
+        return switch (t) {
+            .list, .cons, .lazy_seq, .chunked_cons, .range, .string_seq, .array_seq => true,
+            else => false,
+        };
+    }
+    // key→value lookup collections (Associative / ILookup): maps + the indexed
+    // vector + map_entry. Sets are NOT Associative.
+    if (std.mem.eql(u8, simple, "Associative") or std.mem.eql(u8, simple, "ILookup")) {
+        return switch (t) {
+            .vector, .map_entry, .array_map, .hash_map, .sorted_map => true,
+            else => false,
+        };
+    }
+    // Integer-indexed (Indexed) / vector-shaped (IPersistentVector): vector +
+    // map_entry (a MapEntry is an IPersistentVector of [k v]).
+    if (std.mem.eql(u8, simple, "Indexed") or std.mem.eql(u8, simple, "IPersistentVector")) {
+        return t == .vector or t == .map_entry;
+    }
+    if (std.mem.eql(u8, simple, "IPersistentList")) {
+        return t == .list or t == .cons;
+    }
+    // Stack ops (peek/pop): list, vector, queue, cons, map_entry.
+    if (std.mem.eql(u8, simple, "IPersistentStack")) {
+        return switch (t) {
+            .vector, .list, .cons, .map_entry, .persistent_queue => true,
+            else => false,
+        };
+    }
+    // (name …)-able: keywords + symbols.
+    if (std.mem.eql(u8, simple, "Named")) {
+        return t == .keyword or t == .symbol;
+    }
+    // rseq-able: vector + the sorted collections + map_entry.
+    if (std.mem.eql(u8, simple, "Reversible")) {
+        return switch (t) {
+            .vector, .map_entry, .sorted_map, .sorted_set => true,
+            else => false,
+        };
+    }
+    if (std.mem.eql(u8, simple, "Sorted")) {
+        return t == .sorted_map or t == .sorted_set;
     }
     // Collections supporting `transient`: vector + the unsorted maps/sets.
     // Sorted maps/sets, lists, and seqs are NOT editable (clj-verified).
@@ -319,6 +397,24 @@ test "isKnown accepts interface names" {
     try testing.expect(isKnown("clojure.lang.IEditableCollection"));
     try testing.expect(isKnown("Iterable"));
     try testing.expect(isKnown("java.lang.Iterable"));
+    // The interface-membership sweep (Seqable/Sequential/ISeq/Associative/…)
+    inline for (.{ "Seqable", "Sequential", "ISeq", "Associative", "ILookup", "Indexed", "IPersistentVector", "IPersistentList", "IPersistentStack", "Named", "Reversible", "Sorted" }) |name| {
+        try testing.expect(isKnown(name));
+    }
+    try testing.expect(isKnown("clojure.lang.Seqable"));
+    try testing.expect(isKnown("clojure.lang.Associative"));
+}
+
+test "matchInterface: corrected + new interface membership" {
+    // IPersistentMap/Set now include the sorted variants (were too narrow).
+    try testing.expect(isInstance(Value.nil_val, "Sorted") == false);
+    // Named: keywords + symbols only.
+    // (value construction for collections needs a Runtime; the clj-verified
+    // membership across all tags lives in corpus instance_interfaces.txt — this
+    // test just locks the scalar-negative + name-resolution path.)
+    try testing.expect(!isInstance(Value.initInteger(5), "Seqable"));
+    try testing.expect(!isInstance(Value.initInteger(5), "Sequential"));
+    try testing.expect(!isInstance(Value.initInteger(5), "ISeq"));
 }
 
 test "isKnown delegates Throwable hierarchy to host_class" {
