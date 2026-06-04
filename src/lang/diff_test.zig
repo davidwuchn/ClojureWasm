@@ -362,6 +362,14 @@ test "diff: def_node" {
     try f.check("(do (def diff-x 42) diff-x)", 42);
 }
 
+test "diff: def docstring form (def name doc init) reaches Var.meta" {
+    var f = try Fixture.init(testing.allocator);
+    defer f.deinit();
+    // `(def name "doc" init)` — the init lands as the value, the docstring as
+    // `:doc` in Var.meta; both backends share the analyzeDef path.
+    try f.check("(do (def diff-dd \"the docs\" 11) diff-dd)", 11);
+}
+
 test "diff: var special form const-folds to a stable var_ref" {
     var f = try Fixture.init(testing.allocator);
     defer f.deinit();

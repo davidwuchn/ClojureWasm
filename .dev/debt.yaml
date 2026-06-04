@@ -630,6 +630,17 @@ active:
       **clojure.math.combinatorics now FULLY loads + runs** (permutations etc.).
       corpus loop_sequential_binding (6) + 2 diff cases (both backends) + e2e.
       **NEXT**: batch-probe more corpus libs for the next generic gap.
+      **2026-06-04 batch-probe results + `def` docstring form FIXED**. data.json /
+      data.csv / tools.cli / combinatorics LOAD; data.json fully round-trips.
+      Found+fixed: **`(def name doc-string init)` rejected** (analyzeDef capped at
+      3 items) — clj's def takes an optional string docstring between name and init
+      (→ `:doc` in Var.meta). Fixed: 4-elem form whose 3rd item is a string →
+      doc+init; merges with reader `^meta`; a 4-elem non-string 3rd item stays an
+      arity error. corpus def_docstring (5) + diff case + 3 e2e. data.generators
+      advances past it → next gap `(java.util.Random. seed)` (JVM-class ctor, deep).
+      cljw's built-in `parse-opts` (cli.zig) is a 3-elem-only MVP that rejects
+      tools.cli's 2-elem `["-v" "--verbose"]` specs (ADR-level: MVP vs load real
+      tools.cli — deferred, low ROI vs deep features).
       **2026-06-04 `find-var` + `var?` LANDED**: `(find-var 'ns/name)` → the Var
       (or nil; ns must exist) via env.findNs+resolve; `(var? x)` → `.var_ref` tag.
       corpus find_var_predicate (8). NOTE `bound?`/`defonce` are DEFERRED: cljw's

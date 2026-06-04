@@ -1,0 +1,10 @@
+(do (def x "docs" 5) [x (:doc (meta (var x)))])
+;;=> [5 "docs"]
+(do (def ^:private y "d2" 9) [y (:doc (meta (var y))) (:private (meta (var y)))])
+;;=> [9 "d2" true]
+(do (def a "just a value" {:k 1}) a)
+;;=> {:k 1}
+(do (def f "adds" (fn [n] (inc n))) (f 10))
+;;=> 11
+(do (def g 7) [g (:doc (meta (var g)))])
+;;=> [7 nil]

@@ -27,4 +27,11 @@ assert_eq 'str_is_body'  "$("$BIN" -e '(do (defn f [x] "ret") (f 9))')"         
 # still errors when no params vector at all
 out="$("$BIN" -e '(defn f "doc")' 2>&1 || true)"; [[ "$out" == *"defn"* ]] || fail "incomplete: $out"; echo "PASS incomplete -> err"
 
-echo "OK — phase14_defn_docstring (7 cases) green"
+# --- raw `def` docstring form: (def name doc-string init) → :doc in Var.meta ---
+assert_eq 'def_doc'      "$("$BIN" -e '(do (def dv "the docs" 5) [dv (:doc (meta (var dv)))])')" '[5 "the docs"]'
+# def docstring merges with reader ^meta
+assert_eq 'def_doc_meta' "$("$BIN" -e '(do (def ^:private dp "d2" 9) [dp (:doc (meta (var dp))) (:private (meta (var dp)))])')" '[9 "d2" true]'
+# REGRESSION GUARD: a 4-element def whose 3rd item is NOT a string is an arity error
+out="$("$BIN" -e '(def bad 1 2)' 2>&1 || true)"; [[ "$out" == *"def"* ]] || fail "def 4-arg non-string: $out"; echo "PASS def_4arg_nonstring -> err"
+
+echo "OK — phase14_defn_docstring (10 cases) green"

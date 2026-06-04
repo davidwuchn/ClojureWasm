@@ -426,13 +426,29 @@ pub fn analyzeDef(
     form: Form,
     macro_table: *const macro_dispatch.Table,
 ) AnalyzeError!*const Node {
-    if (items.len < 2 or items.len > 3)
+    if (items.len < 2 or items.len > 4)
         return error_catalog.raise(.def_arity_invalid, form.location, .{ .got = items.len - 1 });
     if (items[1].data != .symbol)
         return error_catalog.raise(.def_name_not_symbol, items[1].location, .{});
     const name_sym = items[1].data.symbol;
     if (name_sym.ns != null)
         return error_catalog.raise(.def_name_namespace_qualified, items[1].location, .{ .ns = name_sym.ns.?, .name = name_sym.name });
+
+    // `(def name doc-string init)` (clj): the 4-element form carries a string
+    // docstring between name and init (→ `:doc` in Var.meta). 2-elem = no init,
+    // 3-elem = `(def name init)`. A 4-elem form whose 3rd item is not a string
+    // is a genuine arity error.
+    var doc_form: ?Form = null;
+    const init_idx: ?usize = switch (items.len) {
+        2 => null,
+        3 => 2,
+        else => blk: {
+            if (items[2].data != .string)
+                return error_catalog.raise(.def_arity_invalid, form.location, .{ .got = items.len - 1 });
+            doc_form = items[2];
+            break :blk 3;
+        },
+    };
     // ADR-0038: pre-register the Var at analyze time so recursive
     // defns + forward references inside `(do ...)` resolve. Var lands
     // with placeholder nil; `evalDef` (tree_walk.zig:466) and the VM
@@ -451,16 +467,28 @@ pub fn analyzeDef(
     // (otherwise dormant) `Var.meta` Clojure-map slot here, at analyze
     // time. `env.intern`'s runtime re-intern (ADR-0038) updates root only
     // and never touches `.meta`, so this survives evaluation.
-    if (items[1].meta) |meta_form|
-        var_ptr.meta = try analyzer_mod.formToValue(rt, env, meta_form.*);
+    // Combine the reader `^meta` map (if any) with an optional `:doc` from the
+    // `(def name doc init)` form, then lift into Var.meta.
+    if (items[1].meta != null or doc_form != null) {
+        var meta_items: std.ArrayList(Form) = .empty;
+        if (items[1].meta) |mf| {
+            if (mf.data == .map) try meta_items.appendSlice(arena, mf.data.map);
+        }
+        if (doc_form) |d| {
+            try meta_items.append(arena, .{ .data = .{ .keyword = .{ .name = "doc" } }, .location = form.location });
+            try meta_items.append(arena, d);
+        }
+        const meta_map: Form = .{ .data = .{ .map = try arena.dupe(Form, meta_items.items) }, .location = form.location };
+        var_ptr.meta = try analyzer_mod.formToValue(rt, env, meta_map);
+    }
     // `^:dynamic` / `^:private` on the def target set the Var flags (evalDef /
     // op_def copy DefNode flags onto the Var). Without this the metadata was
     // lifted into Var.meta but the flags stayed false, so `(def ^:dynamic *x*)`
     // could not be `binding`-rebound. `^:macro` has its own defmacro path.
     const is_dynamic = metaFlag(rt, var_ptr.meta, "dynamic");
     const is_private = metaFlag(rt, var_ptr.meta, "private");
-    const value_node = if (items.len == 3)
-        try analyzer_mod.analyze(arena, rt, env, scope, items[2], macro_table)
+    const value_node = if (init_idx) |idx|
+        try analyzer_mod.analyze(arena, rt, env, scope, items[idx], macro_table)
     else
         try analyzer_mod.makeConstant(arena, .nil_val, items[1]);
     const n = try arena.create(Node);
@@ -469,7 +497,7 @@ pub fn analyzeDef(
         .value_expr = value_node,
         .is_dynamic = is_dynamic,
         .is_private = is_private,
-        .has_init = items.len == 3,
+        .has_init = init_idx != null,
         .loc = form.location,
     } };
     return n;
