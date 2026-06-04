@@ -1,0 +1,18 @@
+(boolean (re-find #"(?i:ab)c" "ABc"))
+;;=> true
+(boolean (re-find #"(?i:ab)c" "ABC"))
+;;=> false
+(re-find #"a(?i:b)c" "aBc")
+;;=> "aBc"
+(re-matches #"(?i:hello)" "HELLO")
+;;=> "HELLO"
+(re-matches #"(?i:hello)" "hello")
+;;=> "hello"
+(boolean (re-find #"x(?i:Y)z" "xYZ"))
+;;=> false
+(re-seq #"(?i:a)+" "aAaA")
+;;=> ("aAaA")
+(boolean (re-find #"(?i:[a-c])" "B"))
+;;=> true
+(re-matches #"foo(?i:BAR)baz" "fooBARbaz")
+;;=> "fooBARbaz"

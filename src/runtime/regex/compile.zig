@@ -385,14 +385,30 @@ const Parser = struct {
             return node;
         }
         if (c == '(') {
-            // `(?:e)` non-capturing vs `(e)` capturing. Other `(?…)` forms
-            // (lookaround, named groups, inline flags) are not yet supported.
+            // `(?:e)` non-capturing, `(?i:e)` scoped case-insensitive, `(e)`
+            // capturing. Lookaround / named groups / other inline flags (s/m/x)
+            // and the flag-only `(?i)` form stay NotImplemented.
             var capturing = true;
             var idx: u16 = 0;
+            var fold_i = false;
             if (self.peek() == @as(?u8, '?')) {
-                _ = self.advance();
-                if (self.advance() != @as(?u8, ':')) return CompileError.NotImplemented;
+                _ = self.advance(); // consume '?'
                 capturing = false;
+                if (self.peek() == @as(?u8, ':')) {
+                    _ = self.advance();
+                } else {
+                    // Inline-flag group `(?i:…)`: flags run until ':' — only `i`
+                    // (folded into the subtree via foldCI). Reuses the same
+                    // compile-time fold as the leading `(?i)` global flag, but
+                    // scoped to this child instead of the whole program.
+                    while (true) {
+                        const f = self.advance() orelse return CompileError.NotImplemented;
+                        if (f == ':') break;
+                        if (f == 'i') {
+                            fold_i = true;
+                        } else return CompileError.NotImplemented;
+                    }
+                }
             } else {
                 self.group_count += 1;
                 idx = self.group_count;
@@ -400,6 +416,7 @@ const Parser = struct {
             }
             const child = try self.parseAlt();
             if (self.advance() != @as(?u8, ')')) return CompileError.UnclosedGroup;
+            if (fold_i) foldCI(child);
             node.* = if (capturing) .{ .group = .{ .child = child, .index = idx } } else .{ .non_capture = child };
             return node;
         }
@@ -975,6 +992,24 @@ test "compile \\p{Alpha} ok; \\P negates; Unicode name → NotImplemented" {
 test "\\s whitespace class includes vertical tab (0x0B)" {
     const ws = whitespaceClass();
     try testing.expect(ws.contains(' ') and ws.contains('\t') and ws.contains('\n') and ws.contains(11) and ws.contains('\r') and ws.contains(12));
+}
+
+test "(?i:...) scoped flag folds only the subtree; surrounding stays sensitive" {
+    const alloc = testing.allocator;
+    // Scoped fold does NOT set the program-wide flag (only the leading form does).
+    {
+        var prog = try compile(alloc, "(?i:ab)c", .{});
+        defer prog.deinit(alloc);
+        try testing.expect(!prog.flags.case_insensitive);
+    }
+    // `(?:…)` (no flags) and the flag-only `(?i)` form behave as before.
+    {
+        var prog = try compile(alloc, "(?:ab)c", .{});
+        defer prog.deinit(alloc);
+    }
+    // Unsupported inline flags / mid-pattern flag-only stay NotImplemented.
+    try testing.expectError(CompileError.NotImplemented, compile(alloc, "(?s:ab)", .{}));
+    try testing.expectError(CompileError.NotImplemented, compile(alloc, "a(?i)b", .{}));
 }
 
 test "(?i) leading flag folds literal + class to case-insensitive" {
