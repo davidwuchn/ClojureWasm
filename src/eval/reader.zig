@@ -370,9 +370,15 @@ pub const Reader = struct {
                     return error_catalog.raise(.token_invalid, loc, .{ .token = txt });
                 break :blk u;
             }
-            if (body[0] == 'o' and body.len >= 2 and body.len <= 4)
-                break :blk std.fmt.parseInt(u21, body[1..], 8) catch
+            if (body[0] == 'o' and body.len >= 2 and body.len <= 4) {
+                const o = std.fmt.parseInt(u21, body[1..], 8) catch
                     return error_catalog.raise(.token_invalid, loc, .{ .token = txt });
+                // clj caps an octal char at \o377 (255); a larger value is a
+                // reader error, not a wider codepoint.
+                if (o > 0o377)
+                    return error_catalog.raise(.token_invalid, loc, .{ .token = txt });
+                break :blk o;
+            }
             return error_catalog.raise(.token_invalid, loc, .{ .token = txt });
         };
         return Form{ .data = .{ .char = cp }, .location = loc };
@@ -1041,6 +1047,17 @@ test "char literal `\\uXXXX` rejects UTF-16 surrogates" {
     try testing.expectError(error.SyntaxError, ctx.read("\\uD83D"));
     try testing.expectError(error.SyntaxError, ctx.read("\\uDFFF"));
     try testing.expectError(error.SyntaxError, ctx.read("\\uD800"));
+}
+
+test "octal char literal `\\oNNN` caps at \\o377 (255)" {
+    var ctx = TestCtx.init();
+    defer ctx.deinit();
+
+    try testing.expectEqual(@as(u21, 65), (try ctx.read("\\o101")).data.char);
+    try testing.expectEqual(@as(u21, 255), (try ctx.read("\\o377")).data.char);
+    // clj rejects an octal char value past 0377 (= 255).
+    try testing.expectError(error.SyntaxError, ctx.read("\\o400"));
+    try testing.expectError(error.SyntaxError, ctx.read("\\o777"));
 }
 
 test "octal integer literals `0<digits>`" {
