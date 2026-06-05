@@ -9,6 +9,30 @@
 # md-table-align no longer pads it to ~800 KB of whitespace.
 
 active:
+  - id: "D-256"
+    status: "TRIGGER — TOP PRIORITY (user 2026-06-06): the Clojure/conj 2026 CFP campaign. The next clean session's loop MUST start here. **Read `private/clojure_conj_2026_cfp/PRIORITY.md` AND `private/clojure_conj_2026_cfp/CFP_v2.md` TOGETHER**, then begin investigation / planning / work per PRIORITY.md (fully sequential P0->P9, no branching — work top-down one at a time). Deadline-driven."
+    category: "scope"
+    barrier: |-
+      **Clojure/conj 2026 CFP (conference talk submission) campaign.** User wired
+      this 2026-06-06 as the next major direction (after the with-local-vars / set!
+      / zwasm-spike cluster). The plan + content already exist in `private/
+      clojure_conj_2026_cfp/` (gitignored): **PRIORITY.md** = the sequential work
+      plan (P0..P9, "選択・分岐なし", top-down), **CFP_v2.md** = the CFP content
+      (respect-axis, polyglot-led; English submission text inside `>>> SUBMIT >>>`).
+      Supporting: 01_project_state_and_story / 02_conj_research / 03_zwasm_and_ffi /
+      CFP.md (v1, superseded by v2).
+      **HARD DEADLINE: 2026-06-14 23:59 ET; submission (P6) by 2026-06-13.** Today is
+      2026-06-06 (~7 days). P0 is literally "提出まで掃除をしない" (do NOT tidy /
+      clean the repo before submission — the cleanup urge burns the budget), so the
+      earlier "色々と片付いた後" qualifier does NOT mean a cleanup-first prerequisite;
+      it means "after the in-flight session work settles" = now.
+      Loop instruction: read BOTH files together first (they are co-dependent — the
+      priority plan references CFP_v2 sections), then execute PRIORITY.md
+      sequentially. Do NOT pre-interpret here — the files are the SSOT; this row is
+      the trigger + the deadline pin. The build artifacts the demos need
+      (cljw->wasm Playground, Cloudflare web app, polyglot via zwasm = D-037 spike
+      already landed) are P-steps inside PRIORITY.md.
+    last_reviewed: "2026-06-06"
   - id: "D-255"
     status: "now-ish (opened 2026-06-06, ADR-0097) — `with-local-vars` anon Vars are retained for the whole session (Env owns them, freed only at Env.deinit) instead of at their dynamic extent. Marker `// D-255` at `createLocalVarFn` (core.zig)."
     category: "runtime"
