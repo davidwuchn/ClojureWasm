@@ -5,28 +5,26 @@
 
 ## Resume contract
 
-- **HEAD**: see `git log` (`cw-from-scratch`). Gate green 252/0 Mac (serial-e2e).
-  debt = `.dev/debt.yaml`. Active plan = **ADR-0089 (A->B->C)**.
-- **First commit on resume MUST be**: **`add-watch`/`remove-watch` generalization
-  to all IRefs** (agent first, then ref, then var). cljw's add-watch/remove-watch
-  reject everything but atoms; JVM accepts any IRef. Per-type firing: AGENT fires
-  after each action `[old new]` (drainer state-store, agent.zig:250); REF fires
-  ONCE post-commit with the net `[pre-tx post-tx]`; VAR fires on alter-var-root.
-  Add a `watches` field to Agent/Ref (extern structs) + Var (gpa struct).
-  Var watches need a NEW root-walk site: Var is `var_ref`-filtered from GC, so the
-  `ns_vars` enumeration must also walk `Var.watches`. Generalize
-  `watchesOf`/`setWatches` + `requireAtom`->`requireIRef`. Repro (currently errors
-  "add-watch: expected atom, got agent"): `(let [log (atom []) a (agent 0)]
-  (add-watch a :k (fn [k r o n] (swap! log conj n))) (send a inc) (await a) @log)`.
-- **Forbidden this session**: turning auto-collect ON (collect stays explicit/
-  test-triggered) -- the WORKER-INITIATED multi-thread collect + wrapping every
-  worker blocking-site in a safepoint (only `delay.force` is wrapped today, the
-  sole eval-under-lock site) is the user-owned #4a' audit, needs a full
-  runtime-wide root re-audit + user awareness; editing `.claude/rules/*`
-  (permission classifier blocks it -- surface to user); "fixing" an AD-001..013
-  accepted divergence; re-opening landed work (git log = SSOT); perf without a
-  Release `scripts/perf.sh` number; trusting `~/Documents/OSS/zig` for 0.16 API
-  (post-0.16 master -- use pinned nix-store std / cw v0).
+- **HEAD**: pushed `7932d65e` (set! runtime thread-bound gate + clojure.main-
+  style baseline binding frame, ADR-0096 / D-254). Active plan = ADR-0089
+  (A->B->C), Phase B. The add-watch-IRef (atom/agent/ref/var) + set!-parity
+  cluster is DONE.
+- **First commit on resume MUST be**: the **zwasm v2 relative-path import spike
+  — D-037 TRIGGER (user directive 2026-06-05, F-001 Revision).** The current
+  cluster is done, so this user-wired trigger fires now (it was Phase-16-locked).
+  Execute D-037's steps: (0) **guardrail FIRST** — zwasm v2
+  (`~/Documents/MyProducts/zwasm_from_scratch`) is under active AI dev; `/add-dir`
+  it, confirm `git log -1` + `zig build` there are at a usable/stable point, and
+  **back off + re-defer with a dated note (no thrash) + do NOT pin** if mid-
+  rewrite; (1) add it to `build.zig.zon` as a relative-path dep **behind
+  `-Dzwasm-spike`** so the default gate never depends on zwasm; (2) minimal Zig-
+  API smoke (Engine.init(cw allocator, F-006 separate spaces) -> load/instantiate/
+  invoke a tiny wasm); (3) verify the 5 D-038 spec items directly in-repo; (4)
+  report -> informs D-036 inline-vs-Pod (still Phase 16). Full FFI stays Phase 16.
+- **Forbidden this session**: **pinning an in-progress zwasm v2 state** (D-037
+  guardrail); turning auto-collect ON (user-owned #4a'); editing .claude/rules/*
+  (permission-blocked -- surface to user); re-opening landed work (git log =
+  SSOT); trusting ~/Documents/OSS/zig for 0.16 API.
 
 ## Active plan — ADR-0089 post-M re-cut (2026-06-04)
 
@@ -43,19 +41,17 @@ Phase C  Library-driven gap-hunt (was the quality loop) on the concurrency base;
 
 ## Recently landed (git log = SSOT)
 
-**GC-torture MULTI-THREAD hardening** (git log = SSOT; D-244 #4 / D-253). Three
-hang root causes fixed, no workarounds: (1) torture scoped to the MAIN thread
-(`root_set.is_registered_worker`); (2) STW rendezvous TOCTOU -- `stopWorld`
-recomputes its park target each wake from a lock-free `registered_count` + a
-leaving worker calls `noteWorkerLeft` (closes the tiny-action-drainer hang);
-(3) delay-once BLOCKING-safepoint -- `safepoint.enterBlocked`/`exitBlocked` via
-`lockMutexAtSafepoint` at `delay.force`'s once-lock (the only eval-under-lock
-site), closing the concurrent-deref deadlock. Main-driven multi-thread torture
-(future/agent/pmap/delay/promise) is torture-CLEAN: phase16_gc_torture.sh +
-phase16_agent.sh + phase14_future_promise_delay all green under torture. The
-full-suite N=1 sweep is SLOWNESS-bound on large-N realises (interleave_large =
-100000 elems -> O(n^2) per-poll collect), NOT a hang. SSOT `.dev/gc_rooting.md`
-E4/E6 updated. D-250 tier-2 = multi-thread-clean.
+**add-watch IRef generalization + set! parity** (git log = SSOT). add-watch/
+remove-watch now span atom/agent/ref/var via the shared `iref.notifyWatches`
+SSOT; `Var.watches` is GC-walked only via the ns_vars root walk (a var_ref is
+GC-membrane-filtered). **ADR-0096 / D-254**: `set!` became a JVM-`Var.set`
+parity runtime thread-bound gate in both backends (raise on unbound, never
+setRoot; removed the analyze-time dynamic check that raced the eval-time flag +
+the silent root-write) + a process-lifetime clojure.main-style **baseline
+binding frame** (bootstrap, 8 existing standard config/print vars) so top-level
+`(set! *warn-on-reflection* true)` works for the right reason. Env.deinit nulls
+the threadlocal current_frame so the arena-owned frame can't dangle across
+setupCore tests. Partial D-241 discharge (8 of ~21 baseline vars).
 
 ## Open carry-overs (actionable)
 

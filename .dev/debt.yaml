@@ -2072,17 +2072,54 @@ active:
       wasm FFI confirmed **unavoidable**. **Direction confirmed (F-001 + F-004 + F-006 + F-008)**: F-004 day-1 reserves NaN-box `funcref` / `externref` inline slots in Group D for zwasm-v2 reference types. F-006 keeps cw heap and Wasm linear memory in **separate spaces**; zwasm internal bookkeeping accepts cw GC allocator via `Engine.init(allocator)` (cw v0 D110 dual-GC leak does not recur). F-008 pins zwasm v2 spec (ADR-0109) review + cw v1 stances. JIT-coordination with cw v1 Phase 17 JIT (D-035) lands at Phase 16 entry. | Phase 16 entry + zwasm v2 rewrite (ADR-0109) completion
     last_reviewed: "2026-05-24"
   - id: "D-037"
-    status: "Phase 16 entry (prototype window: Phase 8-15)"
+    status: "READY — TRIGGER (2026-06-05 user chat): zwasm v2 Zig API is in place; run the build.zig.zon relative-path import spike as the NEXT unit once the current add-watch-IRef / set! cluster completes. Activates this row's early-prototype window now (F-001 Revision 2026-06-05). This is the loop's wired trigger; do NOT wait for Phase 16."
     category: "scope"
     barrier: |-
-      zwasm v2 rewrite (post-ADR-0109 target shape, 6-8 cycle 見積) timing sync with cw v1 Phase 16 entry. Two risks: (a) cw v1 Phase 16 が来た時点で rewrite 未完なら wasm-c-api veneer しか無い、 (b) cw v1 が Phase 8-15 で early prototype 試行したい時に rewrite と veneer の co-existence が成立しない。 Action: cw v1 が Phase 16 entry に到達する前に user 経由で zwasm v2 rewrite 状況確認、 必要なら veneer 経由の早期 prototype path を spec で約束させる (zwasm v2 feedback note §6 で問い合わせ済み). | zwasm v2 rewrite (ADR-0109) Accepted + Implemented
-    last_reviewed: "2026-05-24"
+      **TRIGGER SPIKE (2026-06-05, user-directed via F-001 Revision).** zwasm v2
+      (`$MY/zwasm_from_scratch` = `~/Documents/MyProducts/zwasm_from_scratch/`)
+      now has a usable Zig API; try it via a `build.zig.zon` relative-path import.
+      Executable first steps when the loop reaches this unit:
+        0. **Guardrail FIRST (user: "途中状態を使ってないか注意")** — zwasm v2 is
+           under active AI development. `git -C ~/Documents/MyProducts/zwasm_from_scratch
+           log -1 --oneline` + `zig build` THERE: if it does not build cleanly or is
+           mid-rewrite (check its handover/README for an "API stable" marker / tag),
+           **back off + re-defer this row with a dated note (no thrash)**. Add the
+           repo to additionalDirectories (`/add-dir`) to read/build it. Do NOT pin an
+           in-progress commit.
+        1. Add zwasm v2 as a relative-path dependency in `build.zig.zon`
+           (`.zwasm = .{ .path = "../zwasm_from_scratch" }`) **behind a build flag**
+           (e.g. `-Dzwasm-spike`) so cw v1's DEFAULT `bash test/run_all.sh` gate never
+           depends on zwasm (keeps the gate green if zwasm churns).
+        2. Minimal spike (throwaway test or a `-Dzwasm-spike`-guarded module): import
+           the zwasm Zig API, smoke-test one real call (Engine.init(cw allocator) per
+           D-036 F-006 separate-spaces → load/instantiate a tiny wasm module → invoke).
+        3. While there, VERIFY the 5 D-038 spec items directly against the now-available
+           source (align(8) of *const FuncEntity/externref; Trap-12 ABI stability;
+           Engine.init alloc reach + deinit; untyped Instance.invoke; opt-in shared
+           memory) — the API existing replaces "awaiting a reply" with "read the code".
+        4. Report findings; they inform the D-036 inline-vs-Pod decision (still Phase 16
+           territory — the spike does NOT close D-036).
+      PRIOR (timing analysis, retained): zwasm v2 rewrite (post-ADR-0109 target shape,
+      6-8 cycle 見積) timing sync with cw v1 Phase 16 entry. Two risks: (a) Phase 16
+      arriving before rewrite completes → wasm-c-api veneer only; (b) early-prototype
+      + veneer co-existence. The build-flag spike above is the materialised early-
+      prototype path. | TRIGGER fires after the current cluster; full FFI = Phase 16 (D-036)
+    last_reviewed: "2026-06-05"
   - id: "D-038"
-    status: "awaiting zwasm v2 reply"
+    status: "VERIFY-AGAINST-REPO (2026-06-05 user chat): the zwasm v2 Zig API is now in place, so the 5 spec items are checked DIRECTLY in `~/Documents/MyProducts/zwasm_from_scratch/` (read the code/spec) during the D-037 spike — no longer blocked on an external reply. Folded into D-037 step 3."
     category: "scope"
     barrier: |-
-      zwasm v2 spec 確認依頼 5 件 (cw v1 → zwasm v2 へ user 経由送付; 詳細は `private/notes/zwasm_v2_feedback.md` §4): (1) `*const FuncEntity` + externref 指す host opaque の **align(8)** 保証 + spec §4.1 への明文化、 (2) Trap 12 variant の ABI **stable** 保証、 (3) `Engine.init(alloc, opts)` alloc の全 zwasm 内部 alloc 到達 + `Engine.deinit` 全解放、 (4) §3.5 untyped `Instance.invoke` long-term サポート保証、 (5) §3.7 shared memory が opt-in (= defineMemory 未呼出 = 別 memory) 確定 + linker 未定義時 instantiate エラー挙動。 | zwasm v2 メンテナー / AI からの回答
-    last_reviewed: "2026-05-24"
+      zwasm v2 spec 確認 5 件 — now verified against the available source during the
+      D-037 spike (was: awaiting a user-relayed reply). Detail in
+      `private/notes/zwasm_v2_feedback.md` §4: (1) `*const FuncEntity` + externref が
+      指す host opaque の **align(8)** 保証 + spec §4.1 明文化、 (2) Trap 12 variant の
+      ABI **stable** 保証、 (3) `Engine.init(alloc, opts)` alloc の全 zwasm 内部 alloc
+      到達 + `Engine.deinit` 全解放、 (4) §3.5 untyped `Instance.invoke` long-term サ
+      ポート、 (5) §3.7 shared memory が opt-in (= defineMemory 未呼出 = 別 memory)
+      確定 + linker 未定義時 instantiate エラー挙動。 If a guarantee is NOT yet met in
+      the in-progress repo, the D-037 guardrail applies (back off, do not pin). | verified
+      in-repo during the D-037 spike; residual gaps re-defer per the D-037 guardrail
+    last_reviewed: "2026-06-05"
   - id: "D-039"
     status: "Phase 16 entry"
     category: "structure"
