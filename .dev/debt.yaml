@@ -48,7 +48,7 @@ active:
       (lazy-seq Layer-2), the eager-cluster discharge note. GOTCHA: clojure.core's `distinct` uses a self-named `(fn step …)` which cljw's fn* does NOT support (D-2811) — restructure to a top-level `-distinct-step` helper whose lazy-seq body wraps an inner `fn*` that `recur`s on the skip case (stack-safe over a long dup run; a naive non-recur skip overflows), the emit case calling `-distinct-step` (the laziness boundary). Add a long-dup-run stack case to the corpus.
     last_reviewed: "2026-06-06"
   - id: "D-263"
-    status: "open (found 2026-06-06 via an EDN read-string clj-diff sweep) — radix integer literals `NrDDDD` (e.g. 2r1010=10, 16rFF=255, 36rZ=35) unsupported; cljw raises name_error. Hex `0x` works."
+    status: "DISCHARGED 2026-06-06 — radix literals `<base>r<mantissa>` (base 2..36, case-insensitive, signed) land: tokenizer readNumber recognizes the `[rR]<alnum>` arm as one integer token; reader readInteger parses base-N to i64 (i48/heap-Long boundary free via integerLiteralToValue), promoting to BigInt past i64 via platform-safe mul/add (not setString, D-047). Corpus radix_literals (12/12 clj-matched); invalid base/digit reject == clj NumberFormatException."
     category: "clj-parity"
     barrier: |-
       **Radix integer literals `<base>r<digits>` are unsupported.** clj reads

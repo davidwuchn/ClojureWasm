@@ -163,6 +163,11 @@ pub const Reader = struct {
 
     fn readInteger(self: *Reader, tok: Token) ReadError!Form {
         const txt = tok.text(self.source);
+        // Radix literal `[+-]?<base>[rR]<mantissa>` (base 2..36, digits
+        // 0-9a-zA-Z), e.g. 2r1010=10, 16rFF=255, 36rZ=35, -16rFF=-255. The
+        // `0x`/`0o`/`0b` prefixed forms never contain `r`, so a present `r`/`R`
+        // unambiguously marks the radix form.
+        if (radixSepIndex(txt)) |_| return self.readRadixInteger(tok);
         const val = std.fmt.parseInt(i64, txt, 0) catch |e| {
             // A decimal literal that overflows i64 auto-promotes to BigInt
             // (Clojure: an integer literal too large for Long reads as
@@ -173,6 +178,69 @@ pub const Reader = struct {
             return error_catalog.raise(.integer_literal_invalid, self.locOf(tok), .{ .text = txt });
         };
         return Form{ .data = .{ .integer = val }, .location = self.locOf(tok) };
+    }
+
+    /// Byte index of the `r`/`R` separator in a radix literal
+    /// `[+-]?<decimal-base>[rR]…`, or null if `txt` is not that shape.
+    fn radixSepIndex(txt: []const u8) ?usize {
+        var i: usize = 0;
+        if (i < txt.len and (txt[i] == '-' or txt[i] == '+')) i += 1;
+        const base_start = i;
+        while (i < txt.len and txt[i] >= '0' and txt[i] <= '9') i += 1;
+        if (i == base_start) return null; // no base digits
+        if (i < txt.len and (txt[i] == 'r' or txt[i] == 'R')) return i;
+        return null;
+    }
+
+    /// Parse a validated radix literal into an `.integer` (i48/i64) Form, or a
+    /// `.big_int_literal` Form when the value exceeds i64.
+    fn readRadixInteger(self: *Reader, tok: Token) ReadError!Form {
+        const txt = tok.text(self.source);
+        const loc = self.locOf(tok);
+        var body = txt;
+        var neg = false;
+        if (body.len > 0 and (body[0] == '-' or body[0] == '+')) {
+            neg = body[0] == '-';
+            body = body[1..];
+        }
+        var ri: usize = 0;
+        while (ri < body.len and body[ri] >= '0' and body[ri] <= '9') ri += 1;
+        const base = std.fmt.parseInt(u8, body[0..ri], 10) catch
+            return error_catalog.raise(.integer_literal_invalid, loc, .{ .text = txt });
+        const mantissa = body[ri + 1 ..];
+        if (base < 2 or base > 36 or mantissa.len == 0)
+            return error_catalog.raise(.integer_literal_invalid, loc, .{ .text = txt });
+
+        const val = std.fmt.parseInt(i64, mantissa, base) catch |e| {
+            if (e == error.Overflow)
+                return self.radixBigIntForm(loc, mantissa, base, neg);
+            return error_catalog.raise(.integer_literal_invalid, loc, .{ .text = txt });
+        };
+        return Form{ .data = .{ .integer = if (neg) -val else val }, .location = loc };
+    }
+
+    /// A radix literal whose value exceeds i64 promotes to BigInt. Convert the
+    /// base-N mantissa to a decimal digit string (platform-safe mul/add, not
+    /// `setString` — D-047) so the analyzer's base-10 BigInt path parses it.
+    fn radixBigIntForm(self: *Reader, loc: error_mod.SourceLocation, mantissa: []const u8, base: u8, neg: bool) ReadError!Form {
+        var acc = std.math.big.int.Managed.initSet(self.allocator, 0) catch return error.OutOfMemory;
+        defer acc.deinit();
+        var b = std.math.big.int.Managed.initSet(self.allocator, base) catch return error.OutOfMemory;
+        defer b.deinit();
+        var scratch = std.math.big.int.Managed.init(self.allocator) catch return error.OutOfMemory;
+        defer scratch.deinit();
+        for (mantissa) |c| {
+            const d = std.fmt.charToDigit(c, base) catch
+                return error_catalog.raise(.integer_literal_invalid, loc, .{ .text = mantissa });
+            scratch.mul(&acc, &b) catch return error.OutOfMemory;
+            acc.addScalar(&scratch, d) catch return error.OutOfMemory;
+        }
+        const dec = acc.toString(self.allocator, 10, .lower) catch return error.OutOfMemory;
+        const digits = if (neg)
+            std.fmt.allocPrint(self.allocator, "-{s}", .{dec}) catch return error.OutOfMemory
+        else
+            dec;
+        return Form{ .data = .{ .big_int_literal = digits }, .location = loc };
     }
 
     /// True when `txt` is an optionally-signed run of base-10 digits
@@ -898,6 +966,24 @@ test "atoms: nil / true / false / int / float / string / symbol / keyword" {
     const qkw = try ctx.read(":my.ns/bar");
     try testing.expectEqualStrings("my.ns", qkw.data.keyword.ns.?);
     try testing.expectEqualStrings("bar", qkw.data.keyword.name);
+}
+
+test "radix integer literals `<base>r<digits>`" {
+    var ctx = TestCtx.init();
+    defer ctx.deinit();
+
+    try testing.expectEqual(@as(i64, 10), (try ctx.read("2r1010")).data.integer);
+    try testing.expectEqual(@as(i64, 13), (try ctx.read("8r15")).data.integer);
+    try testing.expectEqual(@as(i64, 255), (try ctx.read("16rFF")).data.integer);
+    try testing.expectEqual(@as(i64, 255), (try ctx.read("16rff")).data.integer); // case-insensitive
+    try testing.expectEqual(@as(i64, 35), (try ctx.read("36rZ")).data.integer);
+    try testing.expectEqual(@as(i64, -255), (try ctx.read("-16rFF")).data.integer);
+    try testing.expectEqual(@as(i64, 255), (try ctx.read("+16rFF")).data.integer);
+
+    // Out-of-range base and digit-not-less-than-base are rejected.
+    try testing.expectError(error.NumberError, ctx.read("1r0"));
+    try testing.expectError(error.NumberError, ctx.read("37rA"));
+    try testing.expectError(error.NumberError, ctx.read("2r12")); // 2 is not a base-2 digit
 }
 
 test "big_int_literal `42N` keeps digits without the suffix" {

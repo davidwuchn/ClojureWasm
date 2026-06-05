@@ -261,6 +261,19 @@ pub const Tokenizer = struct {
 
         while (self.pos < self.source.len and isDigit(self.source[self.pos])) self.advance();
 
+        // Radix literal: `<base>r<digits>` (e.g. 2r1010, 16rFF, 36rZ). The
+        // leading decimal digits are the base; `r`/`R` introduces the mantissa
+        // in that base (digits 0-9a-zA-Z). Only when an alphanumeric mantissa
+        // digit follows — `2r` alone falls through to symbol-split.
+        if (self.pos + 1 < self.source.len and
+            (self.source[self.pos] == 'r' or self.source[self.pos] == 'R') and
+            isAlphanumeric(self.source[self.pos + 1]))
+        {
+            self.advance(); // 'r' / 'R'
+            while (self.pos < self.source.len and isAlphanumeric(self.source[self.pos])) self.advance();
+            return self.makeToken(.integer, start, start_line, start_col);
+        }
+
         if (self.pos < self.source.len and self.source[self.pos] == '.') {
             is_float = true;
             self.advance();
@@ -424,6 +437,10 @@ fn isDigit(c: u8) bool {
 
 fn isHexDigit(c: u8) bool {
     return isDigit(c) or (c >= 'a' and c <= 'f') or (c >= 'A' and c <= 'F');
+}
+
+fn isAlphanumeric(c: u8) bool {
+    return isDigit(c) or (c >= 'a' and c <= 'z') or (c >= 'A' and c <= 'Z');
 }
 
 fn isWhitespace(c: u8) bool {
