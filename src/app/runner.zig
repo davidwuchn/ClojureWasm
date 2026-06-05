@@ -25,6 +25,7 @@ const Env = @import("../runtime/env.zig").Env;
 const Value = @import("../runtime/value/value.zig").Value;
 const bootstrap = @import("../lang/bootstrap.zig");
 const require_resolver = @import("../lang/require_resolver.zig");
+const gc_torture = @import("../runtime/gc/gc_torture.zig");
 const error_print = @import("../runtime/error/print.zig");
 const print = @import("../runtime/print.zig");
 
@@ -91,6 +92,11 @@ pub fn runSource(
     // classpath so `(require '[my.lib])` loads `my/lib.clj` off `load_paths`.
     rt.load_paths = load_paths;
     require_resolver.installChained(&rt);
+
+    // D-250: activate GC torture (if CLJW_GC_TORTURE armed it) only now that
+    // core bootstrap is complete, so torture validates steady-state user-eval
+    // rooting. The bootstrap namespace-creation window is out of scope (D-251).
+    gc_torture.arm();
 
     // --- Read - Analyse - Eval - Print loop ---
     var reader = Reader.init(arena, source_text);

@@ -25,6 +25,7 @@ const nrepl = @import("nrepl.zig");
 const builder = @import("builder.zig");
 const render_error_mod = @import("render_error.zig");
 const error_render = @import("error_render.zig");
+const gc_torture = @import("../runtime/gc/gc_torture.zig");
 
 /// Top-level CLI dispatcher. Called from `src/main.zig::main` with
 /// the Juicy-Main `std.process.Init` bundle. Parses argv, decides
@@ -53,6 +54,11 @@ pub fn dispatch(init: std.process.Init) !void {
         error_render.logFilePath = path;
         error_render.logIo = io;
     }
+    // D-250: GC torture validation mode. `CLJW_GC_TORTURE=N` forces a collect
+    // every N VM back-edge polls (N>=1); a bare/invalid value defaults to 1.
+    // Inert when unset. Test/validation only — not production auto-collect.
+    if (init.environ_map.get("CLJW_GC_TORTURE")) |raw|
+        gc_torture.configure(std.fmt.parseInt(u32, raw, 10) catch 1);
 
     // Self-contained artifact check (ADR-0034 / D-100(b)): if this binary
     // carries an embedded bytecode payload trailer, run it and exit —

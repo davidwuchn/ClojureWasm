@@ -29,6 +29,8 @@ const map_mod = @import("../../runtime/collection/map.zig");
 const set_mod = @import("../../runtime/collection/set.zig");
 const dispatch = @import("../../runtime/dispatch.zig");
 const root_set = @import("../../runtime/gc/root_set.zig");
+const mark_sweep = @import("../../runtime/gc/mark_sweep.zig");
+const gc_torture = @import("../../runtime/gc/gc_torture.zig");
 const safepoint = @import("../../runtime/concurrency/safepoint.zig");
 const error_mod = @import("../../runtime/error/info.zig");
 const error_catalog = @import("../../runtime/error/catalog.zig");
@@ -114,6 +116,16 @@ pub fn eval(
         // this poll only needs to eventually observe the flag. One predicted-not-
         // taken branch; inert until a Phase-B worker arms `gc_requested` (#4).
         if (safepoint.gc_requested.load(.monotonic)) safepoint.park();
+        // GC torture (D-250): when armed via CLJW_GC_TORTURE, force a real
+        // stop-the-world collect at this clean safe point every Nth poll, so a
+        // missing root surfaces as a deterministic UAF on the next collect. The
+        // operand stack + locals are published on `gc_frame` above and `env`
+        // holds the program's ns vars, so this is a correct full collect.
+        // `period != 0` is the inert-path guard (one global load, predicted not
+        // taken); test/validation only — production auto-collect stays gated.
+        if (gc_torture.period != 0 and gc_torture.tick()) {
+            mark_sweep.collectStopTheWorld(&rt.gc, .{ .envs = &.{env}, .gc = &rt.gc }, false);
+        }
         const step_result = stepOnce(rt, env, locals, chunk, &stack, &sp, &ip, &handlers, &handler_count);
         if (step_result) |maybe_return| {
             if (maybe_return) |v| return v;
