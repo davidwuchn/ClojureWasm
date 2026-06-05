@@ -88,14 +88,47 @@ active:
           (byte/limb leaves); var_ref, ns (Env-lifetime, already skipped by the
           heapHeader membrane); wasm_module/wasm_fn/wasm_funcref/wasm_externref
           (Phase 16, not yet produced).
-        LIKELY NEED A TRACE (hold child Values — the swept-value bugs live here):
-          cons (tag 9, distinct from Cons-as-.list), range, string_seq, array_seq,
-          array_chunk  ← the interpose '(map str (range…))' vector-sweep is in this
-          seq cluster (234 .vector + 234 .tail_node swept; a live one is held by an
-          untraced seq container); multi_fn (method tables), protocol / protocol_fn
-          (the defrecord 'expected protocol, got nil' is here), class, type_descriptor
-          (walked via extern Ref — verify), host_instance, reader_conditional, matcher,
-          tuple, box, array (object-array elements).
+        RULED OUT 2026-06-05 (do NOT chase as untraced-type gaps): range OWNS NO Value
+          children (start/step/count are i64; seqChunk materialises into traced
+          chunked_cons — range.zig:23 confirms, correctly trace-free); cons (tag 9,
+          distinct from Cons-as-.list), string_seq, array_seq, array_chunk are RESERVED
+          tags with NO production creation site (grep: only tests). So the interpose
+          '(map str (range…))' vector-sweep (234 .vector + 234 .tail_node swept; one live
+          vector with garbage shift rest'd via vectorTailAsList) is NOT a simple untraced
+          type — it is a subtler intermediate-rooting gap (an operand-stack / .clj-local
+          / fabrication-window vector not reachable from roots at the torture-collect
+          poll). Needs live-object tracing (which of the swept vectors is still
+          referenced + by what), NOT a new trace fn. START the next cycle here.
+          CULPRIT NARROWED + VALIDATED (2026-06-05): `(vec (map str (range 1 80)))` and
+          `(interpose "," (map str …))` CRASH under torture; `(apply str …)` / `(reduce
+          str …)` / `(count (map …))` / `(doall (map …))` are torture-CLEAN. So it is NOT
+          apply/reduce reentrancy. The gap is the `vec`-class transient-vector build:
+          the primitive builds a transient_vector (or appends to a vector) WHILE forcing
+          the lazy/chunked source seq — the seq-realisation re-enters eval (lazy thunks),
+          which hits back-edge polls → torture collect → the IN-PROGRESS transient/vector
+          held in the primitive's Zig local is on no operand stack / locals slot / trace
+          → swept (its memory reused → garbage `shift` → the vectorTailAsList nth crash).
+          transient_vector IS traced, but the in-flight one is not a ROOT during the
+          nested eval. FIX: root the in-progress accumulator across the seq-forcing
+          nested eval (publish it via gc_self_guard or a dedicated primitive-accumulator
+          root slot — generalises the unwired gc_self_guard fabrication window to
+          primitives that re-enter eval). CONFIRMED IMPL: `vec` = `(persistent! (reduce
+          conj! (transient []) coll))` (core.clj:777); `interpose` 2-arity = `(rest
+          (reduce (fn [acc x] (conj (conj acc sep) x)) [] coll))` (core.clj:955). So the
+          unrooted accumulator is REDUCE's acc (transient vector / growing vector) held
+          across the lazy-seq forcing. PUZZLE to resolve FIRST next cycle: `(reduce str
+          (map …))` is torture-CLEAN but `(reduce conj! (transient []) (map …))` crashes
+          — both hold an acc in reduce while forcing the seq, so either reduce roots its
+          acc and only the transient/vector-grow path loses it, or the fresh-string acc
+          survives by luck (operand stack). Read reduce's impl (clj vs zig?) + how it
+          holds the acc across first/rest seq-forcing → tells whether the fix is in
+          reduce (root the acc) or in transient conj! / vector-grow (root the in-progress
+          node). That single fix likely clears the whole seq-realiser class.
+        LIKELY NEED A TRACE (PRODUCED + hold child Values — verify each is reached):
+          multi_fn (method tables), protocol / protocol_fn (the defrecord 'expected
+          protocol, got nil' is likely here), class, type_descriptor (walked via extern
+          Ref — verify), host_instance, reader_conditional, matcher, tuple, box, array
+          (object-array elements). Confirm each is actually produced before adding a trace.
       Method per type: confirm it's reached under torture, add the trace marking its
       child Values, extend test/e2e/phase16_gc_torture.sh with a case, re-run torture.
       When ALL torture-green: full `--serial-e2e` under torture, leak check, then the
