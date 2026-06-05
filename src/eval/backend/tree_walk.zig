@@ -174,11 +174,17 @@ pub fn traceFunction(gc_ptr: *anyopaque, header: *HeapHeader) void {
     if (f.closure_bindings) |caps| {
         for (caps) |cap| if (cap.heapHeader()) |hdr| mark_sweep.mark(gc, hdr);
     }
-    // Method bytecode `constants` are NOT traced: a chunk lives in the
-    // analyser arena (run-lifetime, never GC-swept) and so do its literal
-    // constants, so they need no marking — and walking them reaches
-    // arena/non-GC objects whose header is not GC-shaped (D-251). Only the
-    // runtime-captured `closure_bindings` snapshot holds GC Values.
+    // A method/variadic chunk's literal CONSTANTS are deliberately NOT traced
+    // here: while the literal *values* are `gc.alloc`'d (so a DORMANT
+    // reachable-but-not-executing fn's literals can be swept — a real D-251 gap),
+    // the constant pool also holds heap-tagged Values that point at non-GC
+    // memory whose first byte is not a valid HeapTag (observed: `index 112,
+    // len 64` reading `tag_trace_table[112]`). `Value.heapHeader()` only filters
+    // `var_ref`/`ns`, not this class, so a raw constant-pool walk crashes. Safely
+    // rooting dormant-chunk constants needs a GC-managed-tag classifier (the
+    // GC-rooting SSOT work) — tracked in D-251. EXECUTING chunks are already
+    // rooted via `EvalFrame.constants` (ADR-0095 Class 2a), which covers the
+    // common case.
 }
 
 /// Register the `.fn_val` trace. Called from `driver.installVTable` (a

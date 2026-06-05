@@ -67,111 +67,30 @@ active:
       cadence between them was not.
     last_reviewed: "2026-06-05"
   - id: "D-251"
-    status: "PARTIAL (2026-06-05, found by D-250 torture) — LAYOUT class FIXED: `Function.header` was not at offset 0 (non-extern struct, Zig sorted its align-8 slice fields ahead of the align-4 header → offset 0 held methods.ptr, low byte 0x40=64 → mark() OOB on every .clj fn). Fixed with `header: HeapHeader align(8)` + a comptime `@offsetOf==0` assert (tree_walk.zig). Confirmed Function was the ONLY offender of this class: ProtocolDescriptor + TypeDescriptorRef (the actually-walked .type_descriptor target) are `extern struct` (guaranteed header@0); all other heap types go through gc.alloc's assertHeaderAtOffsetZero. ROOTING-GAP class is a CAMPAIGN (ADR-0094): reentrant Zig primitives hold GC accumulators in Zig locals across calls back into eval → swept. fn_val closure trace DONE; reduce B1-rooted DONE (ADR-0094 — reuses the EvalFrame chain; fixed reduce-+/frequencies/mapv, stopped interpose crashing). REMAINING campaign sites (torture still crashes): map/filter REALISERS + the chunk-builder (`(vec (map inc (range 1 200)))` → swept range in range.seqChunk), interpose's swept SEPARATOR string (exits 0 but corrupt output), apply-over-lazy, sort, + the protocol/defrecord path. NEXT-CYCLE START (instrumented 2026-06-05): the swept tail range is `on_gc_heap=true marked=false` — i.e. NOT a missing trace (lazy_seq trace marks thunk+realized+meta; fn_val traceFunction marks closure_bindings; chunked_cons trace marks chunk+next — all verified complete). It is a genuine REACHABILITY-link break: a tail range (range.seqChunk's `next`, captured into the recursive `(map f (chunk-rest s))` lazy-seq closure) is not reached from reduce.cur at the collect. Likely the map `.clj` chunk-builder (core.clj:82, `(let [s (seq coll) b (chunk-buffer …)] (loop …) (chunk-cons b (map f (chunk-rest s))))`) drops `s` (→ s.next = tail range) before the recursive map captures it, OR the lazy-seq thunk closure doesn't actually capture the tail range. METHOD: mark-side instrument — when the swept range is detected, print whether traceFunction sees it in any closure_bindings + walk the reduce.cur→chunked_cons→next→lazy_seq→thunk→closure chain to find the missing link. This is NOT another EvalFrame-open (the reduce one is done); it is a reachability bug in the map chunk-builder's lazy-seq capture. SHARP LOCALIZATION (2026-06-05): the map realiser is NOT the culprit — `(doall|count|last|dorun (map inc (range 1 500)))` + `(reduce + (map …))` + `mapv`/`frequencies`/`into {}` are ALL torture-CLEAN. ONLY `reduce conj!`-over-a-TRANSIENT (`vec` = `(persistent! (reduce conj! (transient []) coll))`, `into []`) crashes (swept tail range, marked=false). So the gap is TRANSIENT-accumulator-specific: something about conj!-growing a transient_vector while reduce forces a chunked lazy seq leaves a tail range unmarked. into-map (transient map, range 1 50) passes only by size luck (too few collects). HYPOTHESES for next cycle (mark-side instrument): (a) transient_vector conj!-growth frees old nodes into the free_pool, and a subsequent gc.alloc during seq-forcing reuses the freed slot — but that alone shouldn't UNmark a rooted range; (b) reduce's gc_roots[1] is somehow not covering cur at the chunked-path seqFn (verify gc_roots[1]==cur at `cur = seqFn(chunkRest(cur))`); (c) transient_vector's TRACE is incomplete and a chain runs through the transient. Instrument: print gc_roots[1].tag + chunkRest(cur).tag at the chunked-path seqFn, and check the transient's trace. PARTIAL FIX LANDED (2026-06-05): reduce's root frame expanded to 3 slots [f, acc, cur] — f rooted for the whole call (a .clj reducing-fn closure must survive BETWEEN iterations; reduce's args live above the caller's popped sp, so the caller frame does NOT root them) + the original `coll` rooted (gc_roots[2]) across the first seqFn (its lazy-seq thunk closure transitively roots the source). This FIXED `(reduce (fn […]) [] (range …))` (.clj-closure-over-range) + `(vec (range …))` + locked them in phase16 e2e. STILL CRASHING: `(vec (map inc (range 1 200)))` / `(into [] (map …))` — vec/into over a LAZY-MAP source. Instrument showed the source range IS in some closure_bindings once (traceFunction reaches it) yet it is still swept (start=1 count=199); 322 fn traces have closure_bindings=null (AOT-deserialized core fns). The map lazy-seq thunk's closure capture vs the original range's lifetime across the first force + transient growth is a subtle interaction that resisted ~3 instrument rounds — NEEDS FRESH deep investigation (hypothesis: the map thunk is re-run / the original range is re-seq'd after the first force when reduce.cur has moved to CC_out and gc_roots[2] no longer holds LS; or the lazy-seq force path doesn't push reduce's gc_frame as parent). FINAL FINDING this session (vec-over-lazy-map, still open): the source range is corrupted BEFORE the first range.seqChunk (logged: the one-and-only seqChunk before the crash reads start=8 count=garbage — reused memory). So R is swept DURING the map thunk's early eval (before its `(seq coll)`), EVEN THOUGH reduce's gc_roots[2]=LS is set throughout the first seqFn(LS) force, and the thunk's eval frame chains to reduce's gc_frame (verified: seqFn/force/callFn are Zig, no frame reset, so eval_frame_head stays reduce_gc_frame). The chain reduce.gc_roots[2]=LS -> traceLazySeq(thunk) -> traceFunction(closure) -> R should mark R at every back-edge poll during the force, yet R is swept — and the map thunk's closure (with R) was traced only ONCE across the whole run (most fn traces have closure_bindings=null). CONTRADICTS THE MODEL — needs debugger-level next cycle: dump the FULL root walk (every EvalFrame in the chain + gc_roots contents) at the collect that sweeps R, and print eval_frame_head's chain during the map thunk's eval, to find why LS/thunk/closure isn't reached. Candidate: the map lazy-seq thunk's closure_bindings may NOT actually contain R (the `(lazy-seq (let [s (seq coll)] …))` capture path), so gc_roots[2]=LS roots LS+thunk but the thunk doesn't transitively hold R — verify what the map thunk's closure_bindings actually are. Block torture-green + auto-collect-ON until closed."
+    status: "PARTIAL (2026-06-05) - torture root-causing reframed + fundamental classes FIXED (ADR-0095). Resolved: (1) LAYOUT (Function.header forced to offset 0). (2) REENTRANT-PRIMITIVE (ADR-0094, reduce 3-slot EvalFrame). (3) PERSISTENT-WAYPOINT mark-membrane (ADR-0095): trackHeap'd Function/ProtocolDescriptor live outside gc.allocations so sweep never clears their mark bit -> stale bit short-circuits mark() from the 2nd collect on -> closure children (a map thunk's captured source range) swept. Fix: GcHeap.persistent_marks cleared each collect. (4) EXECUTING-CHUNK CONSTANT POOL (ADR-0095): gc.alloc'd string/collection LITERALS sit in the arena-resident chunk constant pool, unrooted until op_const loads them -> a pre-load torture collect swept every literal ('hello' alone corrupts). Fix: EvalFrame.constants roots the executing chunk's pool. (3)+(4) cleared the dominant torture surface (string literals, apply-str, interpose, vec/into/mapv/frequencies/sort over map-of-range) + locked in phase16_gc_torture.sh. NEXT (finished form, DA Alt D = the GC-rooting SSOT): the heap/non-GC membrane is today an allow-list (Value.heapHeader skips only var_ref/ns); a raw dormant-chunk-constant trace crashed on tag_trace_table[112] (a heap-tagged constant pointing at non-GC memory). Build tag_ops.isGcManaged(tag) SSOT (comptime [64]bool from the gc.alloc registration set + a consistency assert vs trace/finaliser tables); heapHeader consults it -> membrane total -> un-revert traceFunction's dormant-chunk-constant trace + a shared handle for the remaining gaps. REMAINING torture gaps (same membrane defect class): (a) filter/keep/remove chunk-builder over a chunked source consumed by a lazy op / CLI auto-print (even? gets a swept garbage float; eager VM drivers doall/count/reduce/vec/println are clean); (b) defprotocol/defrecord ('__make-protocol-fn!: expected protocol, got nil'). USER DIRECTION (2026-06-05): consolidate ALL GC-rooting scatter into an SSOT + a GC-ROOT: marker discipline (sibling to PERF:/optimizations.md) + a future-GC-migration doc, so a moving/compacting GC swap can mechanically enumerate every rooting site. isGcManaged is the seed of that SSOT work. Block torture-green + auto-collect-ON until closed."
     category: "gc"
     barrier: |-
-      DONE (layout class): `Function` header forced to offset 0 (`align(8)` + comptime
-      assert). Validated: `CLJW_GC_TORTURE=1 cljw -e` on arith/reduce/sqrt/filter all
-      green. The header@0 invariant is now build-enforced for Function the same way
-      `gc.alloc`'s `assertHeaderAtOffsetZero` enforces it for GC-allocated types.
-      DONE (rooting-gap class, partial): a real `.fn_val` GC trace now marks a
-      Function's `closure_bindings` (tree_walk.traceFunction, registered from
-      driver.installVTable — a Layer-1 hook, since Function is Layer 1 and runtime.zig's
-      registerGcHooks aggregator is Layer 0). Validated: closure-capturing programs are
-      torture-green (`(let [x [1 2 3]] ((fn [] (reduce + x))))` → 6). Method bytecode
-      `constants` are deliberately NOT traced — a chunk + its literal constants live in
-      the run-lifetime analyser arena (never GC-swept), and walking them reached
-      arena/non-GC objects with non-GC-shaped headers (the `index 112` crash). A torture
-      e2e (test/e2e/phase16_gc_torture.sh) locks the now-green cases.
-      REMAINING (rooting-gap class — each needs its own torture-driven root-cause):
-      - **interpose/transducer seq intermediates**: `(apply str (interpose "," (map str
-        (range 1 80))))` under torture → 'integer does not fit in destination type' (a
-        swept seq/chunk whose count/index field is reused as garbage). NOT a fn closure —
-        a different live-intermediate rooting gap (chunked-seq buffer / op intermediate).
-      - **protocol machinery**: defprotocol/defrecord under torture → type_error
-        '__make-protocol-fn!: expected protocol, got nil' (a protocol-related Value swept
-        to nil). ProtocolDescriptor itself is extern + gc.infra (not swept); the swept
-        thing is some other Value in the protocol path — instrument to find it.
-      - **operand-stack / fabrication window**: the gc_self_guard set/clear sites are
-        still unwired (#4a' hardening, D-244).
-      FULL UNTRACED-TAG CHECKLIST (2026-06-05 enumeration — 26 of 64 HeapTags have NO
-      registered trace; the torture mode turned the open-ended gap into this concrete
-      list). Audit each: does it hold child Value(s) reachable ONLY through it? If yes →
-      register a trace (mirror atom.traceGc / chunked_cons.traceChunkBuffer). If it is a
-      genuine leaf or non-GC, leave it + note why.
-        LEAF / non-GC (no trace needed, confirm): string, symbol, keyword, big_int
-          (byte/limb leaves); var_ref, ns (Env-lifetime, already skipped by the
-          heapHeader membrane); wasm_module/wasm_fn/wasm_funcref/wasm_externref
-          (Phase 16, not yet produced).
-        RULED OUT 2026-06-05 (do NOT chase as untraced-type gaps): range OWNS NO Value
-          children (start/step/count are i64; seqChunk materialises into traced
-          chunked_cons — range.zig:23 confirms, correctly trace-free); cons (tag 9,
-          distinct from Cons-as-.list), string_seq, array_seq, array_chunk are RESERVED
-          tags with NO production creation site (grep: only tests). So the interpose
-          '(map str (range…))' vector-sweep (234 .vector + 234 .tail_node swept; one live
-          vector with garbage shift rest'd via vectorTailAsList) is NOT a simple untraced
-          type — it is a subtler intermediate-rooting gap (an operand-stack / .clj-local
-          / fabrication-window vector not reachable from roots at the torture-collect
-          poll). Needs live-object tracing (which of the swept vectors is still
-          referenced + by what), NOT a new trace fn. START the next cycle here.
-          CULPRIT NARROWED + VALIDATED (2026-06-05): `(vec (map str (range 1 80)))` and
-          `(interpose "," (map str …))` CRASH under torture; `(apply str …)` / `(reduce
-          str …)` / `(count (map …))` / `(doall (map …))` are torture-CLEAN. So it is NOT
-          apply/reduce reentrancy. The gap is the `vec`-class transient-vector build:
-          the primitive builds a transient_vector (or appends to a vector) WHILE forcing
-          the lazy/chunked source seq — the seq-realisation re-enters eval (lazy thunks),
-          which hits back-edge polls → torture collect → the IN-PROGRESS transient/vector
-          held in the primitive's Zig local is on no operand stack / locals slot / trace
-          → swept (its memory reused → garbage `shift` → the vectorTailAsList nth crash).
-          transient_vector IS traced, but the in-flight one is not a ROOT during the
-          nested eval. FIX: root the in-progress accumulator across the seq-forcing
-          nested eval (publish it via gc_self_guard or a dedicated primitive-accumulator
-          root slot — generalises the unwired gc_self_guard fabrication window to
-          primitives that re-enter eval). CONFIRMED IMPL: `vec` = `(persistent! (reduce
-          conj! (transient []) coll))` (core.clj:777); `interpose` 2-arity = `(rest
-          (reduce (fn [acc x] (conj (conj acc sep) x)) [] coll))` (core.clj:955). So the
-          unrooted accumulator is REDUCE's acc (transient vector / growing vector) held
-          across the lazy-seq forcing. PUZZLE to resolve FIRST next cycle: `(reduce str
-          (map …))` is torture-CLEAN but `(reduce conj! (transient []) (map …))` crashes
-          — both hold an acc in reduce while forcing the seq, so either reduce roots its
-          acc and only the transient/vector-grow path loses it, or the fresh-string acc
-          survives by luck (operand stack). Read reduce's impl (clj vs zig?) + how it
-          holds the acc across first/rest seq-forcing → tells whether the fix is in
-          reduce (root the acc) or in transient conj! / vector-grow (root the in-progress
-          node). That single fix likely clears the whole seq-realiser class.
-          *** ROOT CAUSE FULLY PINNED (2026-06-05) ***: `reduceFn` (higher_order.zig:141,
-          a Zig primitive) holds `acc` + `cur` in ZIG LOCALS (lines 217-230+) across
-          `invokeCallable` (the reducing fn) and `sequence.firstFn`/`nextFn` (which force
-          lazy/chunked seq elements by RE-ENTERING eval). Those nested evals hit VM
-          back-edge polls → torture collect → `acc`/`cur` are on no operand stack / locals
-          slot / trace → swept. `reduce str` survives only by luck (the freed acc string
-          is read before its free-pool slot is overwritten); `reduce conj!`/vector-grow
-          crashes because conj! ALLOCATES new nodes that reuse the swept acc's memory →
-          immediate corruption (garbage vector `shift`). THE FIX (ADR-level — generalises
-          the single-slot gc_self_guard): a primitive-local GC-root mechanism so a Zig
-          primitive can publish the Values it holds across a reentrant eval. reduce needs
-          to root BOTH acc + cur (so a single slot is insufficient — needs a small
-          per-thread primitive-root STACK, or push acc+cur as a 2-frame). This is THE
-          core of "GC-safe under collect against a real runtime" and clears the entire
-          seq-realiser class at once (reduce backs vec/into/interpose/mapv/frequencies/…).
-          Same mechanism then covers other reentrant primitives (map/filter realisers,
-          apply-with-lazy, sort, etc.). NEXT CYCLE: ADR + DA-fork for the primitive-root
-          mechanism, wire reduceFn first, validate '(vec (map str (range 1 80)))' torture-
-          green, extend phase16_gc_torture.sh, then sweep the other reentrant primitives.
-        LIKELY NEED A TRACE (PRODUCED + hold child Values — verify each is reached):
-          multi_fn (method tables), protocol / protocol_fn (the defrecord 'expected
-          protocol, got nil' is likely here), class, type_descriptor (walked via extern
-          Ref — verify), host_instance, reader_conditional, matcher, tuple, box, array
-          (object-array elements). Confirm each is actually produced before adding a trace.
-      Method per type: confirm it's reached under torture, add the trace marking its
-      child Values, extend test/e2e/phase16_gc_torture.sh with a case, re-run torture.
-      When ALL torture-green: full `--serial-e2e` under torture, leak check, then the
-      (still-forbidden) auto-collect-ON. Narrower: the transient bootstrap 0xAA-ns window
-      (torture is post-bootstrap armed → currently unexercised). Repro:
-      `CLJW_GC_TORTURE=1 zig-out/bin/cljw -e '(apply str (interpose "," (map str (range
-      1 80))))'` → 'integer does not fit' (swept vector). Full diagnosis +
-      instrumentation method: private/notes/phaseC-d250-gc-torture.md +
-      phaseC-d251-root-cause.md.
+      ADR-0095 landed the persistent-waypoint stale-bit clear + the executing-chunk
+      constant root (EvalFrame.constants) + the closure_bindings trace -- safe,
+      torture-green, locked in test/e2e/phase16_gc_torture.sh. The finished form is
+      DA Alt D: a tag_ops.isGcManaged(tag) SSOT that makes Value.heapHeader's
+      heap/non-GC membrane TOTAL (today it allow-lists only var_ref/ns), which
+      un-blocks safe dormant-chunk-constant tracing and is the shared root-cause
+      handle for the two remaining gaps:
+        - filter/keep/remove chunk-builder over a chunked source, consumed by a
+          lazy op `(map inc (filter even? (range ...)))` or the CLI auto-printer:
+          even? receives a swept garbage float. Eager VM drivers
+          (doall/count/reduce/vec/println) are clean. Repro:
+          `CLJW_GC_TORTURE=1 zig-out/bin/cljw -e '(filter even? (range 1 60))'`.
+        - defprotocol/defrecord under torture: a protocol-path Value swept to nil.
+      USER-DIRECTED (2026-06-05): roll isGcManaged into a broader GC-rooting SSOT --
+      enumerate every site that holds a GC Value across reentrant eval / in an
+      off-heap container (vm.eval EvalFrame, reduceFn manual frames, macro_root_slot,
+      gc_self_guard, lock_tx in-txn, constant pool, persistent-waypoint) + every
+      registerTrace site, behind a `GC-ROOT:` marker discipline (sibling to PERF:)
+      with a migration-impact note per site so a future moving/compacting GC swap can
+      mechanically find all rooting points. Full diagnosis: ADR-0095 +
+      private/notes/phaseC-d251-root-cause.md.
     last_reviewed: "2026-06-05"
   - id: "D-242"
     status: "Phase B anchor (re-cut ADR-0089, 2026-06-04) — KNOWN-unimplemented CORE, concurrency-led; redesign §7 against Zig 0.16 FIRST, then implement. finished-form, rework-OK with test guards. §7-redesign DONE = ADR-0090 (2026-06-04): io_default-singleton std.Io sync + ThreadGcContext root-publication GC handshake (the DA-fork caught v0's stop-the-world lie) + MVCC retry-only STM; spike-validated. Implementation (concurrency/{io_default,thread_pool,lock_tx,gc_thread}.zig + real future/promise/delay/atom/agent/locking bodies) is the remaining Phase B work; GC handshake lands first (prereq for any real-threading primitive)."

@@ -138,6 +138,15 @@ pub const GcHeap = struct {
     /// first match. The root walker yields each entry's
     /// `Value.heapHeader()` (skipping immediates).
     permanent_roots: std.ArrayList(Value) = .empty,
+    /// Process-lifetime mark-waypoints (D-251): headers of `trackHeap`'d
+    /// objects (`Function` / `ProtocolDescriptor` / `TypeDescriptorRef`) that
+    /// are NOT in `allocations` and so are never swept. The mark bit doubles as
+    /// the per-collect cycle/visited flag; for objects that sweep never clears,
+    /// a stale bit makes `mark()` short-circuit on the SECOND collect, so their
+    /// per-tag trace never re-runs and any GC child reachable ONLY through them
+    /// (a `Function`'s `closure_bindings`) is swept. `collect()` clears these
+    /// bits at mark-phase start so the waypoint is re-traced every cycle.
+    persistent_marks: std.ArrayList(*anyopaque) = .empty,
     /// Per-(size, alignment) free pool heads. Sweep pushes freed blocks
     /// here (intrusive FreeNode at offset 8); `alloc` pops them as its
     /// fast path before falling back to `infra`.
@@ -179,7 +188,43 @@ pub const GcHeap = struct {
         }
         self.allocations.deinit(self.infra);
         self.permanent_roots.deinit(self.infra);
+        self.persistent_marks.deinit(self.infra);
         self.free_pools.deinit(self.infra);
+    }
+
+    /// Register a process-lifetime mark-waypoint header (D-251). Called by
+    /// `Runtime.trackHeap` for every gpa-created, never-swept object whose
+    /// per-tag trace may reach GC-managed children (e.g. a `Function`'s
+    /// `closure_bindings`). `collect()` clears the mark bit on each before the
+    /// root walk so the waypoint is re-traced every cycle (a never-cleared bit
+    /// would short-circuit `mark()` from the 2nd collect on, stranding the
+    /// children). Best-effort: a registration OOM is swallowed — the worst case
+    /// is the pre-fix behaviour for that one object, not a crash.
+    pub fn registerPersistentMark(self: *GcHeap, obj: *anyopaque) !void {
+        io_default.lockMutex(&self.gc_mutex);
+        defer io_default.unlockMutex(&self.gc_mutex);
+        try self.persistent_marks.append(self.infra, obj);
+    }
+
+    /// Roll back the most recent `registerPersistentMark` (for `trackHeap`'s
+    /// two-list atomicity: if the `heap_objects` append fails after the mark was
+    /// registered, the dangling header must not stay in `persistent_marks`).
+    pub fn unregisterLastPersistentMark(self: *GcHeap) void {
+        io_default.lockMutex(&self.gc_mutex);
+        defer io_default.unlockMutex(&self.gc_mutex);
+        _ = self.persistent_marks.pop();
+    }
+
+    /// Clear the mark bit on every registered process-lifetime waypoint.
+    /// `collect()` calls this at mark-phase start (D-251). The cast to
+    /// `*HeapHeader` (header-at-offset-0 per `registerPersistentMark`'s
+    /// precondition) happens here, not at registration, so a registration
+    /// never alignment-checks a non-Value pointer (e.g. a unit-test box).
+    pub fn clearPersistentMarks(self: *GcHeap) void {
+        for (self.persistent_marks.items) |obj| {
+            const hdr: *HeapHeader = @ptrCast(@alignCast(obj));
+            hdr.gc_and_lock.gc_mark &= ~@as(u30, 1);
+        }
     }
 
     /// Pin a Value so it stays alive across `collect()` cycles. Returns

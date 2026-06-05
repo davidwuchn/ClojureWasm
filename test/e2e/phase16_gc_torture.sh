@@ -45,4 +45,21 @@ assert_eq 'reduce_vec'   "$("$BIN" -e '(reduce + [1 2 3 4 5 6 7 8 9 10])')"     
 assert_eq 'reduce_clos'  "$("$BIN" -e '(count (reduce (fn [a x] (conj a (inc x))) [] (range 1 150)))')" '149'
 assert_eq 'vec_range'    "$("$BIN" -e '(count (vec (range 1 1000)))')"                              '999'
 
+# ADR-0095 Class 2a — executing-chunk LITERAL constants rooted via
+# EvalFrame.constants. A bare string literal is reachable only through the
+# chunk's constant pool until op_const loads it; without the pool as a root a
+# pre-load torture collect swept it (`"hello"` -> garbage bytes).
+assert_eq 'str_literal'  "$("$BIN" -e '(count "hello")')"                                           '5'
+assert_eq 'str_concat'   "$("$BIN" -e '(apply str ["a" "b" "c"])')"                                 '"abc"'
+# interpose's literal separator (a constant) survives the reduce realiser.
+assert_eq 'interpose'    "$("$BIN" -e '(apply str (interpose "," (map str (range 1 30))))')"        '"1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29"'
+# ADR-0095 Class 1 — persistent-waypoint re-clear: the source range captured in
+# a map lazy-seq thunk's closure stays marked across repeated collects (the
+# thunk fn's stale bit no longer blocks the closure re-trace).
+assert_eq 'vec_lazymap'  "$("$BIN" -e '(count (vec (map inc (range 1 200))))')"                     '199'
+assert_eq 'into_lazymap' "$("$BIN" -e '(count (into [] (map inc (range 1 200))))')"                 '199'
+# map producing pair vectors into a hash-map under torture (HAMT + the pair
+# vectors survive the reduce realiser).
+assert_eq 'into_pairs'   "$("$BIN" -e '(count (into {} (map (fn [x] [x (* x x)]) (range 1 50))))')" '49'
+
 echo "ALL phase16_gc_torture PASS"

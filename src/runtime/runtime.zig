@@ -316,9 +316,24 @@ pub const Runtime = struct {
 
     /// Track a heap-allocated object so `Runtime.deinit` will free it.
     /// Thread-safe: concurrent worker threads append here (closure allocation).
+    ///
+    /// Precondition: `entry.ptr` points at an object whose `HeapHeader` is at
+    /// offset 0 (every production caller — `Function` / `ProtocolDescriptor` /
+    /// `ProtocolFn` / `TypeDescriptorRef` — is an extern struct that satisfies
+    /// this). The header is registered as a GC mark-waypoint (D-251) so
+    /// `collect()` re-clears its mark bit each cycle: these objects live outside
+    /// `gc.allocations` (never swept), so a never-cleared bit would short-
+    /// circuit `mark()` from the 2nd collect on and strand any GC child
+    /// reachable only through the object (a `Function`'s `closure_bindings`).
     pub fn trackHeap(self: *Runtime, entry: HeapEntry) !void {
         io_default.lockMutex(&self.heap_objects_mutex);
         defer io_default.unlockMutex(&self.heap_objects_mutex);
+        // Register the GC mark-waypoint first, then the free-list entry. If the
+        // second append OOMs, roll the waypoint back so the two lists stay 1:1
+        // and `persistent_marks` never holds a header the caller's errdefer is
+        // about to free (the dual-list atomicity contract — no swallowed OOM).
+        try self.gc.registerPersistentMark(entry.ptr);
+        errdefer self.gc.unregisterLastPersistentMark();
         try self.heap_objects.append(self.gpa, entry);
     }
 

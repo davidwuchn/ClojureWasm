@@ -148,6 +148,12 @@ pub fn collect(gc: *GcHeap, ctx: root_set_mod.WalkContext) void {
     // never allocate, so they do not re-take `gc_mutex`.
     io_default.lockMutex(&gc.gc_mutex);
     defer io_default.unlockMutex(&gc.gc_mutex);
+    // D-251: clear the mark bit on process-lifetime trackHeap'd waypoints
+    // (Functions etc.) so each is re-traced this cycle. They are never swept
+    // (not in `allocations`), so sweep never clears their bit; an un-cleared
+    // bit short-circuits `mark()` and strands their GC children (a closure's
+    // `closure_bindings`) from the 2nd collect onward.
+    gc.clearPersistentMarks();
     var it = root_set_mod.enumerate(ctx);
     while (it.next()) |root_header| {
         mark(gc, root_header);

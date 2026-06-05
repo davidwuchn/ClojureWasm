@@ -102,6 +102,10 @@ pub fn eval(
         .stack = &stack,
         .sp = &sp,
         .locals = locals,
+        // D-251: root this chunk's literal constant pool for its whole
+        // execution — a literal is reachable only here until an `op_const`
+        // loads it onto `stack`, so a pre-load collect would otherwise sweep it.
+        .constants = chunk.constants,
         .parent = root_set.eval_frame_head,
     };
     root_set.eval_frame_head = &gc_frame;

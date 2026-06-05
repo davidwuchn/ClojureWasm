@@ -110,6 +110,17 @@ pub const EvalFrame = struct {
     stack: [*]const Value,
     sp: *const u16,
     locals: []const Value,
+    /// The executing chunk's constant pool (D-251). Bytecode literal
+    /// constants (string / collection literals) are GC-allocated but stored in
+    /// the chunk's pool, which lives in the analyser arena and is itself NOT a
+    /// GC object — so a literal is reachable ONLY through the pool until an
+    /// `op_const` loads it onto `stack`. A collect firing BEFORE that load (the
+    /// torture case) would sweep the still-unloaded literal, so `op_const` then
+    /// pushes a dangling pointer. Publishing the whole pool here roots every
+    /// literal for the chunk's entire execution. Empty (`&.{}`) for a
+    /// primitive-pushed frame (e.g. `reduceFn`) that owns no chunk. `var_ref` /
+    /// `ns` constants are skipped by `Value.heapHeader()` like everywhere else.
+    constants: []const Value = &.{},
     parent: ?*EvalFrame,
 };
 
@@ -333,9 +344,12 @@ pub const RootIterator = struct {
         // eval-phase state:
         eval_frame: ?*EvalFrame = null,
         slot_idx: usize = 0,
-        in_locals: bool = false,
+        /// Which sub-array of the current eval frame is being drained:
+        /// `stack[0..sp]` → `locals` → `constants` (D-251), then the parent.
+        eval_part: EvalPart = .stack,
 
         pub const Phase = enum { binding, macro, eval, self_guard };
+        pub const EvalPart = enum { stack, locals, constants };
     };
 
     pub const PermanentRootsCursor = struct {
@@ -454,35 +468,47 @@ pub const RootIterator = struct {
                     c.phase = .eval;
                     c.eval_frame = c.roots.eval_head;
                     c.slot_idx = 0;
-                    c.in_locals = false;
+                    c.eval_part = .stack;
                     if (c.roots.macro) |mv| {
                         if (mv.heapHeader()) |hdr| return hdr;
                     }
                 },
                 .eval => {
                     if (c.eval_frame) |ef| {
-                        // Live operand slots `stack[0..sp]` (the array is
-                        // `undefined` above `sp` — never read past it), then the
-                        // fully-nil-initialised `locals` (immediates skipped).
-                        if (!c.in_locals) {
+                        // Drain this frame's three Value arrays in turn:
+                        // `stack[0..sp]` (the array is `undefined` above `sp` —
+                        // never read past it), the fully-nil-initialised
+                        // `locals`, then the chunk `constants` pool (D-251 —
+                        // roots unloaded bytecode literals). Immediates +
+                        // var_ref/ns are skipped by `heapHeader()`.
+                        if (c.eval_part == .stack) {
                             const sp = ef.sp.*;
                             while (c.slot_idx < sp) {
                                 const v = ef.stack[c.slot_idx];
                                 c.slot_idx += 1;
                                 if (v.heapHeader()) |hdr| return hdr;
                             }
-                            c.in_locals = true;
+                            c.eval_part = .locals;
                             c.slot_idx = 0;
                         }
-                        while (c.slot_idx < ef.locals.len) {
-                            const v = ef.locals[c.slot_idx];
+                        if (c.eval_part == .locals) {
+                            while (c.slot_idx < ef.locals.len) {
+                                const v = ef.locals[c.slot_idx];
+                                c.slot_idx += 1;
+                                if (v.heapHeader()) |hdr| return hdr;
+                            }
+                            c.eval_part = .constants;
+                            c.slot_idx = 0;
+                        }
+                        while (c.slot_idx < ef.constants.len) {
+                            const v = ef.constants[c.slot_idx];
                             c.slot_idx += 1;
                             if (v.heapHeader()) |hdr| return hdr;
                         }
                         // This eval frame done → its parent.
                         c.eval_frame = ef.parent;
                         c.slot_idx = 0;
-                        c.in_locals = false;
+                        c.eval_part = .stack;
                         continue;
                     }
                     // Eval chain exhausted → self-guard phase.
