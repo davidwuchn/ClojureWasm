@@ -10,7 +10,7 @@
 
 active:
   - id: "D-260"
-    status: "open (found 2026-06-06; deeper finding 2026-06-06) — the ENTIRE `'` op family (`+'` `-'` `*'` `inc'` `dec'`) is INVERTED: implemented strict (raise integer_overflow) when JVM's `'` ops auto-promote. ADR-0100 in flight."
+    status: "DISCHARGED (2026-06-06, ADR-0100) — the `'` op family (`+'` `-'` `*'` `inc'` `dec'`) now auto-promotes (matching JVM). Strict family deleted (math.zig + promote.zig + tests); ' ops routed through the promoting path; corpus test/diff/clj_corpus/numeric_prime_ops.txt (10/10 clj-parity)."
     category: "numeric"
     barrier: |-
       **cljw's `+'` `-'` `*'` `inc'` `dec'` are inverted from JVM.** In JVM

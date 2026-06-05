@@ -14,11 +14,12 @@
 //! Float-contagion follows JVM Clojure: any float operand makes the
 //! result float (precision loss accepted). i48 overflow (cw v1's
 //! immediate-Long boundary) silently promotes to BigInt — never to
-//! float — matching the JVM behaviour for `+'` / `-'` / `*'` rather
-//! than the unchecked `+` / `-` / `*` (ROADMAP §9.7 / 5.10: "Long
-//! overflow (i48 boundary) silently promotes to BigInt for + / - / *").
-//! The raise-on-overflow strict family (`addStrict` / `subStrict` /
-//! `mulStrict`) is landed below.
+//! float (ROADMAP §9.7 / 5.10: "Long overflow (i48 boundary) silently
+//! promotes to BigInt for + / - / *"). Per F-005 cljw's `+` / `-` / `*`
+//! auto-promote (JVM throws on overflow there); per ADR-0100 the `'`
+//! ops (`+'` / `-'` / `*'`) also promote (matching JVM, where the `'`
+//! ops are the auto-promoting family) — so in cljw both spellings share
+//! this one promoting path. There is no raise-on-overflow strict family.
 
 const std = @import("std");
 const value_mod = @import("../value/value.zig");
@@ -332,82 +333,6 @@ pub fn mulPromoting(rt: *Runtime, a: Value, b: Value) !Value {
         var bm = try coerceToManaged(rt, b);
         defer bm.deinit();
         return try big_int.allocMulManaged(rt, &am, &bm, .bigint);
-    }
-    var am = try coerceToManaged(rt, a);
-    defer am.deinit();
-    var bm = try coerceToManaged(rt, b);
-    defer bm.deinit();
-    var r = try Managed.init(rt.gc.infra);
-    defer r.deinit();
-    try r.mul(&am, &bm);
-    return try wrapArith(rt, &r, a, b);
-}
-
-/// Strict-integer `a + b`. Returns `error.IntegerOverflow` instead
-/// of promoting to BigInt. Mirrors JVM Clojure `+'`. Float operands
-/// are still float-contagious (matches JVM).
-pub fn addStrict(rt: *Runtime, a: Value, b: Value) !Value {
-    if (a.isFloat() or b.isFloat()) {
-        return Value.initFloat(toF64(rt, a) + toF64(rt, b));
-    }
-    if (a.tag() == .big_decimal or b.tag() == .big_decimal) {
-        return try bigdecContagion(rt, a, b, .add);
-    }
-    if (a.isInt() and b.isInt()) {
-        const ai: i64 = @as(i64, a.asInteger());
-        const bi: i64 = @as(i64, b.asInteger());
-        const sum, const overflowed = @addWithOverflow(ai, bi);
-        if (overflowed != 0 or !inI48(sum)) return error.IntegerOverflow;
-        return Value.initInteger(sum);
-    }
-    // BigInt arms stay non-overflow (already arbitrary precision) → .bigint.
-    var am = try coerceToManaged(rt, a);
-    defer am.deinit();
-    var bm = try coerceToManaged(rt, b);
-    defer bm.deinit();
-    var r = try Managed.init(rt.gc.infra);
-    defer r.deinit();
-    try r.add(&am, &bm);
-    return try wrapArith(rt, &r, a, b);
-}
-
-pub fn subStrict(rt: *Runtime, a: Value, b: Value) !Value {
-    if (a.isFloat() or b.isFloat()) {
-        return Value.initFloat(toF64(rt, a) - toF64(rt, b));
-    }
-    if (a.tag() == .big_decimal or b.tag() == .big_decimal) {
-        return try bigdecContagion(rt, a, b, .sub);
-    }
-    if (a.isInt() and b.isInt()) {
-        const ai: i64 = @as(i64, a.asInteger());
-        const bi: i64 = @as(i64, b.asInteger());
-        const diff, const overflowed = @subWithOverflow(ai, bi);
-        if (overflowed != 0 or !inI48(diff)) return error.IntegerOverflow;
-        return Value.initInteger(diff);
-    }
-    var am = try coerceToManaged(rt, a);
-    defer am.deinit();
-    var bm = try coerceToManaged(rt, b);
-    defer bm.deinit();
-    var r = try Managed.init(rt.gc.infra);
-    defer r.deinit();
-    try r.sub(&am, &bm);
-    return try wrapArith(rt, &r, a, b);
-}
-
-pub fn mulStrict(rt: *Runtime, a: Value, b: Value) !Value {
-    if (a.isFloat() or b.isFloat()) {
-        return Value.initFloat(toF64(rt, a) * toF64(rt, b));
-    }
-    if (a.tag() == .big_decimal or b.tag() == .big_decimal) {
-        return try bigdecContagion(rt, a, b, .mul);
-    }
-    if (a.isInt() and b.isInt()) {
-        const ai: i64 = @as(i64, a.asInteger());
-        const bi: i64 = @as(i64, b.asInteger());
-        const prod, const overflowed = @mulWithOverflow(ai, bi);
-        if (overflowed != 0 or !inI48(prod)) return error.IntegerOverflow;
-        return Value.initInteger(prod);
     }
     var am = try coerceToManaged(rt, a);
     defer am.deinit();
@@ -819,22 +744,6 @@ test "divPromoting (1.0 / 2) returns float 0.5" {
     const v = try divPromoting(&fix.rt, Value.initFloat(1.0), Value.initInteger(2));
     try testing.expect(v.isFloat());
     try testing.expectEqual(@as(f64, 0.5), v.asFloat());
-}
-
-test "mulStrict overflowing i48 raises IntegerOverflow" {
-    var fix = Fixture.init();
-    defer fix.deinit();
-
-    const a = Value.initInteger((1 << 47) - 1);
-    try testing.expectError(error.IntegerOverflow, mulStrict(&fix.rt, a, Value.initInteger(2)));
-}
-
-test "addStrict in-range stays Long" {
-    var fix = Fixture.init();
-    defer fix.deinit();
-
-    const v = try addStrict(&fix.rt, Value.initInteger(3), Value.initInteger(4));
-    try testing.expectEqual(@as(i48, 7), v.asInteger());
 }
 
 test "quotPromoting Long stays Long; truncates toward zero" {

@@ -1,7 +1,10 @@
 //! Arithmetic + comparison primitives for the `rt/` namespace:
-//! `+`, `-`, `*`, `/`, `quot`, `rem`, `mod`, the strict `+'`/`-'`/`*'`
-//! family, `=`, `<`, `>`, `<=`, `>=`, `compare`, and the numeric
-//! coercions (`bigint` / `bigdec` / …).
+//! `+`, `-`, `*`, `/`, `quot`, `rem`, `mod`, the auto-promoting
+//! `+'`/`-'`/`*'`/`inc'`/`dec'` family (ADR-0100: in cljw these are
+//! identical to the non-prime ops, since cljw's non-prime ops also
+//! auto-promote per F-005 — JVM splits throwing-`*` vs promoting-`*'`,
+//! cljw promotes both), `=`, `<`, `>`, `<=`, `>=`, `compare`, and the
+//! numeric coercions (`bigint` / `bigdec` / …).
 //!
 //! Numeric tower: the full tower is implemented here — i64/f64 plus
 //! heap Ratio, BigInt, and BigDecimal. Mixed-type calls follow
@@ -118,66 +121,6 @@ pub fn star(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) a
     var i: usize = 1;
     while (i < args.len) : (i += 1) {
         acc = promote.mulPromoting(rt, acc, args[i]) catch |err| switch (err) {
-            error.NonTerminatingDecimal => return error_catalog.raise(.non_terminating_decimal, loc, .{}),
-            else => return err,
-        };
-    }
-    return acc;
-}
-
-/// `(+' ...)` — strict-integer addition. Raises on overflow rather
-/// than promoting to BigInt. Mirrors JVM Clojure's `+'`.
-pub fn plusStrict(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
-    _ = env;
-    try ensureNumeric(args, "+'", loc);
-    if (args.len == 0) return Value.initInteger(0);
-    var acc = args[0];
-    var i: usize = 1;
-    while (i < args.len) : (i += 1) {
-        acc = promote.addStrict(rt, acc, args[i]) catch |err| switch (err) {
-            error.IntegerOverflow => return error_catalog.raise(.integer_overflow, loc, .{}),
-            error.NonTerminatingDecimal => return error_catalog.raise(.non_terminating_decimal, loc, .{}),
-            else => return err,
-        };
-    }
-    return acc;
-}
-
-/// `(-' x ...)` — strict-integer subtraction.
-pub fn minusStrict(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
-    _ = env;
-    try ensureNumeric(args, "-'", loc);
-    if (args.len == 0)
-        return error_catalog.raise(.arity_below_min, loc, .{ .got = @as(usize, 0), .fn_name = "-'", .min = @as(usize, 1) });
-    if (args.len == 1) {
-        return promote.subStrict(rt, Value.initInteger(0), args[0]) catch |err| switch (err) {
-            error.IntegerOverflow => return error_catalog.raise(.integer_overflow, loc, .{}),
-            error.NonTerminatingDecimal => return error_catalog.raise(.non_terminating_decimal, loc, .{}),
-            else => return err,
-        };
-    }
-    var acc = args[0];
-    var i: usize = 1;
-    while (i < args.len) : (i += 1) {
-        acc = promote.subStrict(rt, acc, args[i]) catch |err| switch (err) {
-            error.IntegerOverflow => return error_catalog.raise(.integer_overflow, loc, .{}),
-            error.NonTerminatingDecimal => return error_catalog.raise(.non_terminating_decimal, loc, .{}),
-            else => return err,
-        };
-    }
-    return acc;
-}
-
-/// `(*' ...)` — strict-integer multiplication.
-pub fn starStrict(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
-    _ = env;
-    try ensureNumeric(args, "*'", loc);
-    if (args.len == 0) return Value.initInteger(1);
-    var acc = args[0];
-    var i: usize = 1;
-    while (i < args.len) : (i += 1) {
-        acc = promote.mulStrict(rt, acc, args[i]) catch |err| switch (err) {
-            error.IntegerOverflow => return error_catalog.raise(.integer_overflow, loc, .{}),
             error.NonTerminatingDecimal => return error_catalog.raise(.non_terminating_decimal, loc, .{}),
             else => return err,
         };
@@ -445,21 +388,6 @@ pub fn dec(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) an
     try error_catalog.checkArity("dec", args, 1, loc);
     const pair = [_]Value{ args[0], Value.initInteger(1) };
     return minus(rt, env, &pair, loc);
-}
-
-/// `(inc' x) ≡ (+' x 1)`. Strict variant: raises integer_overflow
-/// instead of promoting Long to BigInt.
-pub fn incStrict(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
-    try error_catalog.checkArity("inc'", args, 1, loc);
-    const pair = [_]Value{ args[0], Value.initInteger(1) };
-    return plusStrict(rt, env, &pair, loc);
-}
-
-/// `(dec' x) ≡ (-' x 1)`. Strict variant — see `inc'`.
-pub fn decStrict(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
-    try error_catalog.checkArity("dec'", args, 1, loc);
-    const pair = [_]Value{ args[0], Value.initInteger(1) };
-    return minusStrict(rt, env, &pair, loc);
 }
 
 /// `(zero? x) ≡ (== x 0)`. Delegates to numeric `==` (not `=`) so that
@@ -1056,9 +984,9 @@ const ENTRIES = [_]Entry{
     .{ .name = "numerator", .f = &numerator },
     .{ .name = "denominator", .f = &denominator },
     .{ .name = "rationalize", .f = &rationalize },
-    .{ .name = "+'", .f = &plusStrict },
-    .{ .name = "-'", .f = &minusStrict },
-    .{ .name = "*'", .f = &starStrict },
+    .{ .name = "+'", .f = &plus },
+    .{ .name = "-'", .f = &minus },
+    .{ .name = "*'", .f = &star },
     .{ .name = "=", .f = &equals },
     .{ .name = "==", .f = &equiv },
     .{ .name = "<", .f = &lt },
@@ -1068,8 +996,8 @@ const ENTRIES = [_]Entry{
     .{ .name = "compare", .f = &compare },
     .{ .name = "inc", .f = &inc },
     .{ .name = "dec", .f = &dec },
-    .{ .name = "inc'", .f = &incStrict },
-    .{ .name = "dec'", .f = &decStrict },
+    .{ .name = "inc'", .f = &inc },
+    .{ .name = "dec'", .f = &dec },
     .{ .name = "zero?", .f = &zeroQ },
     .{ .name = "pos?", .f = &posQ },
     .{ .name = "neg?", .f = &negQ },
