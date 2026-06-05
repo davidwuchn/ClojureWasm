@@ -49,11 +49,13 @@ container, and must publish it. Category C is the live front of that class.
 `EvalFrame { stack, sp, locals, constants, parent }`, threadlocal head
 `eval_frame_head`. Walk drains `stack[0..sp]` → `locals` → `constants` → parent.
 
-| #  | Site                                           | Kind                                                     | Roots                                                                                                                    |
-|----|------------------------------------------------|----------------------------------------------------------|--------------------------------------------------------------------------------------------------------------------------|
-| A1 | `eval/backend/vm.zig` (`eval` body)            | VM activation (one per `vm.eval`, chained via `op_call`) | operand `stack[0..sp]`, call-frame `locals`, `constants = chunk.constants` (executing chunk's literal pool, ADR-0095 2a) |
-| A2 | `lang/primitive/higher_order.zig` (`reduceFn`) | reentrant-primitive MANUAL frame (ADR-0094)              | 3 slots `[f, acc/coll, cur]`, refreshed in place before each reentrant call                                              |
-| A3 | `runtime/concurrency/safepoint.zig` (test)     | test-only fixture                                        | —                                                                                                                       |
+| #  | Site                                              | Kind                                                     | Roots                                                                                                                                                               |
+|----|---------------------------------------------------|----------------------------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| A1 | `eval/backend/vm.zig` (`eval` body)               | VM activation (one per `vm.eval`, chained via `op_call`) | operand `stack[0..sp]`, call-frame `locals`, `constants = chunk.constants` (executing chunk's literal pool, ADR-0095 2a)                                            |
+| A2 | `lang/primitive/higher_order.zig` (`reduceFn`)    | reentrant-primitive MANUAL frame (ADR-0094)              | 3 slots `[f, acc/coll, cur]`, refreshed in place before each reentrant call                                                                                         |
+| A3 | `runtime/concurrency/safepoint.zig` (test)        | test-only fixture                                        | —                                                                                                                                                                  |
+| A4 | `runtime/iref.zig` (`notifyWatches`)              | shared IRef watch firing (agent drainer + STM commit)    | 3 slots `[ref, watch map, key cursor]`, cursor refreshed before each `vt.callFn` (a watch fn re-enters the VM)                                                      |
+| A5 | `runtime/concurrency/lock_tx.zig` (`fireWatches`) | post-commit ref-watch firing                             | flat `[ref, old, new, ...]` notifies list published whole: an already-fired `old` recycled from the ring would otherwise be swept before a later notification fires |
 
 **Migration-impact:** `stack`/`locals`/`constants` are **const** views; a moving
 GC must rewrite relocated operand/local/constant Values, so they become mutable
@@ -196,7 +198,7 @@ doesn't move — interned symbols/keywords, Env-lifetime var_ref/ns).
 
 ## Site census (grep target)
 
-- EvalFrame producers: 2 production + 1 test.
+- EvalFrame producers: 4 production (vm, reduceFn, iref.notifyWatches, lock_tx.fireWatches) + 1 test.
 - Threadlocal root slots: 4 (2 inert).
 - Reentrant accumulators: 1 rooted (`reduceFn`) + 9 UNROOTED-CANDIDATE (C1-C9, D-252).
 - Permanent/pinned: 3 `pin` callers + 6 `trackHeap`/`persistent_marks` callers.

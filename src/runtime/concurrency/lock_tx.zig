@@ -37,6 +37,8 @@ const HeapHeader = heap_header.HeapHeader;
 const error_catalog = @import("../error/catalog.zig");
 const SourceLocation = @import("../error/info.zig").SourceLocation;
 const safepoint = @import("safepoint.zig");
+const iref = @import("../iref.zig");
+const root_set = @import("../gc/root_set.zig");
 
 /// Bounded retry count for a conflicting transaction (clj `RETRY_LIMIT`).
 const RETRY_LIMIT: u32 = 10000;
@@ -77,6 +79,11 @@ pub const LockingTransaction = struct {
     /// (like `sets`) but NOT written, so a peer cannot write them under us
     /// (write-skew prevention). clj `doEnsure`.
     ensures: std.AutoHashMapUnmanaged(*Ref, void) = .empty,
+    /// Flat `[ref, old, new, ...]` triples for watched refs, filled at the commit
+    /// write loop and fired AFTER the locks release (JVM notifies post-commit).
+    /// `old` may be recycled out of the ring by the splice, so the firing loop
+    /// roots this whole list on an EvalFrame.
+    notifies: std.ArrayList(Value) = .empty,
     gpa: std.mem.Allocator,
 };
 
@@ -104,6 +111,7 @@ pub fn runInTransaction(rt: *Runtime, env: *Env, thunk: Value, loc: SourceLocati
     defer tx.sets.deinit(rt.gpa);
     defer tx.commutes.deinit(rt.gpa);
     defer tx.ensures.deinit(rt.gpa);
+    defer tx.notifies.deinit(rt.gpa);
     current_tx = &tx;
     defer current_tx = null;
 
@@ -118,6 +126,7 @@ pub fn runInTransaction(rt: *Runtime, env: *Env, thunk: Value, loc: SourceLocati
         tx.sets.clearRetainingCapacity();
         tx.commutes.clearRetainingCapacity();
         tx.ensures.clearRetainingCapacity();
+        tx.notifies.clearRetainingCapacity();
         const ret = callThunk(rt, env, thunk, loc) catch |e| {
             if (e == error.StmRetry) continue;
             return e; // a real user error propagates out of the transaction
@@ -126,6 +135,10 @@ pub fn runInTransaction(rt: *Runtime, env: *Env, thunk: Value, loc: SourceLocati
             if (e == error.StmRetry) continue;
             return e;
         };
+        // Watches fire AFTER the commit released its locks (JVM order): a watch
+        // fn may start its own transaction on the same refs, so notifying under
+        // the commit lock would deadlock.
+        try fireWatches(rt, env, &tx);
         return ret;
     }
     return error_catalog.raise(.stm_retry_limit, loc, .{});
@@ -279,7 +292,35 @@ fn commit(rt: *Runtime, env: *Env, tx: *LockingTransaction, loc: SourceLocation)
     // it is skipped here (read-locked, not written).
     const commit_point = nextPoint();
     for (locked.items) |ref| {
-        if (tx.vals.get(ref)) |v| try spliceCommit(rt, ref, v, commit_point);
+        if (tx.vals.get(ref)) |v| {
+            // Capture (ref, old, new) for a watched ref BEFORE the splice (which
+            // can recycle the prior `tvals.val` out of the ring). Fired post-commit.
+            if (!ref.watches.isNil()) {
+                try tx.notifies.append(tx.gpa, Value.encodeHeapPtr(.ref, ref));
+                try tx.notifies.append(tx.gpa, ref.tvals.val);
+                try tx.notifies.append(tx.gpa, v);
+            }
+            try spliceCommit(rt, ref, v, commit_point);
+        }
+    }
+}
+
+/// Fire watched-ref notifications collected during the commit write loop, once
+/// per ref with the net `[pre-tx, post-tx]` change (JVM `LockingTransaction`).
+/// The flat `[ref, old, new, ...]` list is published on an EvalFrame for the
+/// whole loop: a watch fn re-enters the VM, and an already-fired `old` (recycled
+/// out of the ring) would otherwise be swept before a later notification fires.
+fn fireWatches(rt: *Runtime, env: *Env, tx: *LockingTransaction) !void {
+    const items = tx.notifies.items;
+    if (items.len == 0) return;
+    var gc_sp: u16 = @intCast(items.len);
+    var gc_frame: root_set.EvalFrame = .{ .stack = items.ptr, .sp = &gc_sp, .locals = &.{}, .parent = root_set.eval_frame_head };
+    root_set.eval_frame_head = &gc_frame;
+    defer root_set.eval_frame_head = gc_frame.parent;
+    var i: usize = 0;
+    while (i < items.len) : (i += 3) {
+        const ref_val = items[i];
+        try iref.notifyWatches(rt, env, ref_val, ref_mod.watchesOf(ref_val), items[i + 1], items[i + 2]);
     }
 }
 

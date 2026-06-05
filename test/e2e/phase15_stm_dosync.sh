@@ -94,5 +94,20 @@ esac
 got=$("$BIN" -e '(let [r (ref 1)] (try (dosync (ref-set r 2) (throw (ex-info "x" {}))) (catch Throwable e :c)) @r)' 2>/dev/null | last_line)
 assert_eq 'dosync_abort_on_throw' "$got" '1'
 
+# add-watch on a ref (IRef generalization): fires ONCE per committing tx with the
+# NET [pre-tx post-tx] change — two alters in one dosync is a single [0 2] fire
+# (JVM LockingTransaction notifies after commit, outside the lock).
+got=$("$BIN" -e '(let [log (atom []) r (ref 0)] (add-watch r :k (fn [k rf o n] (swap! log conj [o n]))) (dosync (alter r inc) (alter r inc)) @log)' 2>/dev/null | last_line)
+assert_eq 'ref_add_watch_net' "$got" '[[0 2]]'
+# a read-only tx does not fire (the ref is not in the write set).
+got=$("$BIN" -e '(let [log (atom []) r (ref 0)] (add-watch r :k (fn [k rf o n] (swap! log conj n))) (dosync @r) @log)' 2>/dev/null | last_line)
+assert_eq 'ref_watch_readonly_silent' "$got" '[]'
+# remove-watch stops further fires.
+got=$("$BIN" -e '(let [log (atom []) r (ref 0)] (add-watch r :k (fn [k rf o n] (swap! log conj n))) (dosync (alter r inc)) (remove-watch r :k) (dosync (alter r inc)) @log)' 2>/dev/null | last_line)
+assert_eq 'ref_remove_watch' "$got" '[1]'
+# each written ref in a multi-ref tx fires its own watch.
+got=$("$BIN" -e '(let [log (atom []) a (ref 0) b (ref 10)] (add-watch a :a (fn [k r o n] (swap! log conj [:a n]))) (add-watch b :b (fn [k r o n] (swap! log conj [:b n]))) (dosync (alter a inc) (alter b inc)) (vec (sort-by second @log)))' 2>/dev/null | last_line)
+assert_eq 'ref_watch_multi' "$got" '[[:a 1] [:b 11]]'
+
 echo
 echo "Phase B #5 STM dosync/ref-set/alter (single-ref) e2e: all green."

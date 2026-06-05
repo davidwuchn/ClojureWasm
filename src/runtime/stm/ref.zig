@@ -56,6 +56,10 @@ pub const Ref = extern struct {
     /// transactions cannot deadlock (a total order on lock acquisition —
     /// clj keys its lock TreeMap by this id; ADR-0090 §3 / #5-ii).
     id: u64 = 0,
+    /// Watch map `{key -> fn}` (`add-watch` / `remove-watch`), or nil. Fires
+    /// once per committing transaction with the net `[pre-tx, post-tx]` change
+    /// (JVM `LockingTransaction` notifies after commit, outside the lock).
+    watches: Value = .nil_val,
 
     comptime {
         std.debug.assert(@alignOf(Ref) >= 8);
@@ -109,6 +113,18 @@ pub fn traceGc(gc_ptr: *anyopaque, header: *HeapHeader) void {
     const gc: *gc_heap_mod.GcHeap = @ptrCast(@alignCast(gc_ptr));
     const r: *Ref = @ptrCast(@alignCast(header));
     mark_sweep.mark(gc, &r.tvals.header);
+    if (r.watches.heapHeader()) |hdr| mark_sweep.mark(gc, hdr);
+}
+
+/// The Ref's watch map (`nil` or a persistent `{key -> fn}`). IRef surface.
+pub fn watchesOf(v: Value) Value {
+    return v.decodePtr(*const Ref).watches;
+}
+
+/// Replace the Ref's watch map (`add-watch` / `remove-watch`). Set outside the
+/// commit lock; a racing commit just notifies the slightly-stale set (JVM-like).
+pub fn setWatches(v: Value, m: Value) void {
+    v.decodePtr(*Ref).watches = m;
 }
 
 /// Register Ref's trace fn at `.ref`. Idempotent.

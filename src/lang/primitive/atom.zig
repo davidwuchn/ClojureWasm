@@ -19,6 +19,7 @@ const SourceLocation = error_mod.SourceLocation;
 const dispatch = @import("../../runtime/dispatch.zig");
 const atom_mod = @import("../../runtime/atom.zig");
 const agent_mod = @import("../../runtime/agent.zig");
+const ref_mod = @import("../../runtime/stm/ref.zig");
 const volatile_mod = @import("../../runtime/volatile.zig");
 const higher_order = @import("higher_order.zig");
 const root_set = @import("../../runtime/gc/root_set.zig");
@@ -207,10 +208,10 @@ pub fn volatileQFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLoca
 /// `{key -> fn}` map in its own struct; this funnels the common assoc/dissoc.
 fn requireIRef(name: []const u8, v: Value, loc: SourceLocation) !void {
     switch (v.tag()) {
-        .atom, .agent => {},
+        .atom, .agent, .ref => {},
         else => return error_catalog.raise(.type_arg_invalid, loc, .{
             .fn_name = name,
-            .expected = "atom or agent",
+            .expected = "atom, agent, or ref",
             .actual = @tagName(v.tag()),
         }),
     }
@@ -220,6 +221,7 @@ fn irefWatchesOf(v: Value) Value {
     return switch (v.tag()) {
         .atom => atom_mod.watchesOf(v),
         .agent => agent_mod.watchesOf(v),
+        .ref => ref_mod.watchesOf(v),
         else => unreachable, // gated by requireIRef
     };
 }
@@ -228,6 +230,7 @@ fn irefSetWatches(v: Value, m: Value) void {
     switch (v.tag()) {
         .atom => atom_mod.setWatches(v, m),
         .agent => agent_mod.setWatches(v, m),
+        .ref => ref_mod.setWatches(v, m),
         else => unreachable, // gated by requireIRef
     }
 }

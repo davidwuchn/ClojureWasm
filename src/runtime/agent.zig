@@ -51,8 +51,7 @@ const tag_ops = @import("gc/tag_ops.zig");
 const gc_heap_mod = @import("gc/gc_heap.zig");
 const mark_sweep = @import("gc/mark_sweep.zig");
 const vector = @import("collection/vector.zig");
-const map_mod = @import("collection/map.zig");
-const list_mod = @import("collection/list.zig");
+const iref = @import("iref.zig");
 const dispatch = @import("dispatch.zig");
 const error_mod = @import("error/info.zig");
 const ex_info = @import("collection/ex_info.zig");
@@ -270,32 +269,10 @@ fn runAction(a: *Agent, action: Value) !void {
 }
 
 /// Fire each registered watch `(fn key agent old new)` after an action stores a
-/// new state (JVM `ARef.notifyWatches`). Runs on the drainer thread via the
-/// vtable — the Layer-2 `invokeCallable` the atom path uses is not reachable
-/// from Layer 0, so this mirrors it with `vt.callFn`.
+/// new state (JVM `ARef.notifyWatches`), via the shared Layer-0 `iref` helper.
 fn notifyWatches(a: *Agent, old: Value, new: Value) !void {
-    const watches = a.watches;
-    if (watches.tag() != .array_map and watches.tag() != .hash_map) return;
-    if (map_mod.count(watches) == 0) return;
-    const vt = a.rt.vtable orelse return error.InternalError;
     const agent_val = Value.encodeHeapPtr(.agent, a);
-    var cur = try map_mod.keys(a.rt, watches);
-    // GC-ROOT: the agent + watch map + key cursor live only in Zig locals across
-    // vt.callFn (a watch fn re-enters the VM, e.g. a nested swap!) — publish them
-    // so a collect mid-notify cannot sweep `cur` [ref: .dev/gc_rooting.md §C].
-    var gc_roots: [3]Value = .{ agent_val, watches, cur };
-    var gc_sp: u16 = 3;
-    var gc_frame: root_set.EvalFrame = .{ .stack = &gc_roots, .sp = &gc_sp, .locals = &.{}, .parent = root_set.eval_frame_head };
-    root_set.eval_frame_head = &gc_frame;
-    defer root_set.eval_frame_head = gc_frame.parent;
-    while (!cur.isNil()) {
-        gc_roots[2] = cur;
-        const key = list_mod.first(cur);
-        const f = try map_mod.get(watches, key);
-        const cb = [_]Value{ key, agent_val, old, new };
-        _ = try vt.callFn(a.rt, a.env, f, &cb, .{});
-        cur = list_mod.rest(cur);
-    }
+    try iref.notifyWatches(a.rt, a.env, agent_val, a.watches, old, new);
 }
 
 /// `(agent-error a)` — the error that failed the agent (`:fail` mode), or nil.
