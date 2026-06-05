@@ -34,6 +34,7 @@ const Env = @import("env.zig").Env;
 const env_mod = @import("env.zig");
 const root_set = @import("gc/root_set.zig");
 const io_default = @import("concurrency/io_default.zig");
+const lock_tx = @import("concurrency/lock_tx.zig");
 const tag_ops = @import("gc/tag_ops.zig");
 const gc_heap_mod = @import("gc/gc_heap.zig");
 const mark_sweep = @import("gc/mark_sweep.zig");
@@ -117,6 +118,9 @@ fn worker(f: *Future) void {
         .macro_slot = &root_set.macro_root_slot,
         .eval_frame_slot = &root_set.eval_frame_head,
         .self_guard_slot = &root_set.gc_self_guard,
+        // Publish this worker's STM transaction so a `dosync` in the thunk is
+        // GC-rooted during a collect (#4a' in-txn-map rooting).
+        .tx_slot = @ptrCast(&lock_tx.current_tx),
     };
     const registered = if (root_set.registerThread(&ctx)) |_| true else |_| false;
     defer if (registered) root_set.unregisterThread(&ctx);

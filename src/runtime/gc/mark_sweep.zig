@@ -39,6 +39,16 @@ fn markTxHeader(ctx: *anyopaque, header: *HeapHeader) void {
     mark(gc, header);
 }
 
+/// Adapter for `root_set.markRegisteredTxs`: cast the opaque `current_tx` value
+/// back to a transaction and mark its in-txn roots. Called once per registered
+/// worker thread during a collect (#4a' in-txn-map rooting).
+fn markWorkerTx(ctx: *anyopaque, tx_opaque: ?*anyopaque) void {
+    const gc: *gc_heap_mod.GcHeap = @ptrCast(@alignCast(ctx));
+    const tx_any = tx_opaque orelse return;
+    const tx: *lock_tx.LockingTransaction = @ptrCast(@alignCast(tx_any));
+    lock_tx.markRoots(tx, @ptrCast(gc), &markTxHeader);
+}
+
 const GcHeap = gc_heap_mod.GcHeap;
 const HeapHeader = heap_header.HeapHeader;
 
@@ -148,6 +158,9 @@ pub fn collect(gc: *GcHeap, ctx: root_set_mod.WalkContext) void {
     // them. (Parked WORKER threads' transactions are a follow-up — the registry
     // tx-slot exposure; today's collects are quiescent/single-tx.)
     if (lock_tx.current_tx) |tx| lock_tx.markRoots(tx, @ptrCast(gc), &markTxHeader);
+    // ...and every registered WORKER thread's transaction (parked at a safepoint
+    // during STW, so its tx is quiescent). Empty registry in single-thread → no-op.
+    root_set_mod.markRegisteredTxs(@ptrCast(gc), &markWorkerTx);
     sweep(gc);
     gc.threshold_bytes = @max(
         gc_heap_mod.default_gc_threshold_bytes,
@@ -333,6 +346,46 @@ test "collect: in-transaction vals values survive (#4a' self-tx rooting)" {
         if (a.header == @as(*HeapHeader, @ptrCast(in_tx_cell))) found = true;
     }
     try testing.expect(found); // survived ONLY via the in-transaction rooting
+}
+
+test "collect: a registered worker's transaction roots survive (#4a' worker-tx)" {
+    var gc = GcHeap.init(testing.allocator);
+    defer gc.deinit();
+    const value_mod_test = @import("../value/value.zig");
+    const lock_tx_mod = @import("../concurrency/lock_tx.zig");
+    const root_set_test = @import("root_set.zig");
+    const env_mod_test = @import("../env.zig");
+    const Ref = @import("../stm/ref.zig").Ref;
+
+    const in_tx_cell = try gc.alloc(Cell);
+    in_tx_cell.* = .{ .header = HeapHeader.init(.vector) };
+    const in_tx_val = value_mod_test.Value.encodeHeapPtr(.vector, in_tx_cell);
+
+    var worker_tx: lock_tx_mod.LockingTransaction = .{ .read_point = 0, .gpa = testing.allocator };
+    defer worker_tx.vals.deinit(testing.allocator);
+    const fake_ref: *Ref = @ptrFromInt(@alignOf(Ref) * 4096);
+    try worker_tx.vals.put(testing.allocator, fake_ref, in_tx_val);
+
+    // A registered worker whose current_tx is worker_tx (the MAIN thread's
+    // current_tx stays null, so only the worker-tx pass can root in_tx_cell).
+    var worker_current_tx: ?*lock_tx_mod.LockingTransaction = &worker_tx;
+    var ctx: root_set_test.ThreadGcContext = .{
+        .frame_slot = &env_mod_test.current_frame,
+        .macro_slot = &root_set_test.macro_root_slot,
+        .eval_frame_slot = &root_set_test.eval_frame_head,
+        .self_guard_slot = &root_set_test.gc_self_guard,
+        .tx_slot = @ptrCast(&worker_current_tx),
+    };
+    try root_set_test.registerThread(&ctx);
+    defer root_set_test.unregisterThread(&ctx);
+
+    collect(&gc, .{ .envs = &.{}, .gc = &gc });
+
+    var found = false;
+    for (gc.allocations.items) |a| {
+        if (a.header == @as(*HeapHeader, @ptrCast(in_tx_cell))) found = true;
+    }
+    try testing.expect(found); // survived via the registered worker's tx rooting
 }
 
 test "collect: adaptive threshold = max(default, last_live_bytes * 2)" {

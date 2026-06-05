@@ -170,11 +170,20 @@ pub const MAX_GC_THREADS = 64;
 /// through the pointers (ADR-0091 — `eval_frame_slot` is the VM operand-
 /// stack chain head added at #3b-step1; `self_guard_slot` is the in-flight
 /// fabrication partial added at #3b-step2b).
+/// Default `tx_slot` target for a worker not running STM — a static null so the
+/// existing 4-slot construction sites need no change (only the `future`/`agent`
+/// workers, which CAN run a `dosync`, point `tx_slot` at their `lock_tx.current_tx`).
+var no_tx: ?*anyopaque = null;
+
 pub const ThreadGcContext = struct {
     frame_slot: *const ?*env_mod.BindingFrame,
     macro_slot: *const ?Value,
     eval_frame_slot: *const ?*EvalFrame,
     self_guard_slot: *const ?Value,
+    /// OPAQUE pointer to the worker's `lock_tx.current_tx` (#4a' in-txn-map
+    /// rooting). Opaque so root_set does NOT import lock_tx (cycle: lock_tx →
+    /// safepoint → root_set); `mark_sweep` (which MAY import lock_tx) casts it.
+    tx_slot: *const ?*anyopaque = &no_tx,
 };
 
 var thread_registry: [MAX_GC_THREADS]?*ThreadGcContext = @splat(null);
@@ -215,6 +224,18 @@ pub fn registeredThreadCount() usize {
         if (slot != null) n += 1;
     }
     return n;
+}
+
+/// Mark every registered worker thread's in-transaction roots via `markTxFn`
+/// (#4a' in-txn-map rooting). The collector calls this AFTER the root walk.
+/// During a stop-the-world collect the workers are parked at safepoints, so the
+/// registry + each `tx_slot.*` are quiescent (no `registry_mutex` needed); a
+/// single-thread collect sees an empty registry → no-op. `markTxFn` receives the
+/// opaque `current_tx` value (the worker's `?*LockingTransaction`, reinterpreted).
+pub fn markRegisteredTxs(context: *anyopaque, markTxFn: *const fn (*anyopaque, ?*anyopaque) void) void {
+    for (thread_registry) |slot| {
+        if (slot) |ctx| markTxFn(context, ctx.tx_slot.*);
+    }
 }
 
 // Per-thread root addressing (ADR-0091, commonized from #3a's separate

@@ -54,6 +54,7 @@ const vector = @import("collection/vector.zig");
 const dispatch = @import("dispatch.zig");
 const error_mod = @import("error/info.zig");
 const ex_info = @import("collection/ex_info.zig");
+const lock_tx = @import("concurrency/lock_tx.zig");
 
 /// Off-heap control block: the queue mutex, the single-drainer flag, and the
 /// pending actions. Held on `rt.gpa` (stable address), freed by the finaliser.
@@ -154,6 +155,9 @@ fn drainer(a: *Agent) void {
         .macro_slot = &root_set.macro_root_slot,
         .eval_frame_slot = &root_set.eval_frame_head,
         .self_guard_slot = &root_set.gc_self_guard,
+        // Publish this drainer's STM transaction (an action may run a `dosync`)
+        // so it is GC-rooted during a collect (#4a' in-txn-map rooting).
+        .tx_slot = @ptrCast(&lock_tx.current_tx),
     };
     // Must NOT drain while unregistered: an unregistered worker's operand stack
     // is invisible to the mark phase, so a concurrent collect (when auto-collect
