@@ -29,7 +29,7 @@ active:
       `step` fn with a `seen` set in a `lazy-seq`; dedupe's prev-tracking
       `lazy-seq`). Corpus `lazy_distinct_dedupe` (bound every take). A HANG on
       valid (if uncommon) input is a robustness bug. Cross-ref F-011, ADR-0054
-      (lazy-seq Layer-2), the eager-cluster discharge note.
+      (lazy-seq Layer-2), the eager-cluster discharge note. GOTCHA: clojure.core's `distinct` uses a self-named `(fn step …)` which cljw's fn* does NOT support (D-2811) — restructure to a top-level `-distinct-step` helper whose lazy-seq body wraps an inner `fn*` that `recur`s on the skip case (stack-safe over a long dup run; a naive non-recur skip overflows), the emit case calling `-distinct-step` (the laziness boundary). Add a long-dup-run stack case to the corpus.
     last_reviewed: "2026-06-06"
   - id: "D-263"
     status: "open (found 2026-06-06 via an EDN read-string clj-diff sweep) — radix integer literals `NrDDDD` (e.g. 2r1010=10, 16rFF=255, 36rZ=35) unsupported; cljw raises name_error. Hex `0x` works."
