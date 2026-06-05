@@ -10,7 +10,8 @@
 ClojureWasm (binary: `cljw`) is a Clojure language runtime written
 in Zig 0.16. It does **not** target the JVM; it implements Clojure
 semantics directly, with TreeWalk + bytecode VM dual backends and
-an opt-in WebAssembly module boundary for Phase 16+.
+an embeddable WebAssembly engine boundary — a polyglot FFI today
+(`zig build -Dwasm`), with full component output planned for Phase 16+.
 
 Charter: full Clojure compatibility for the Tier A subset
 (~700 vars of `clojure.core` + key namespaces), single-binary
@@ -68,21 +69,21 @@ per-form `tier_d_<form>` catalog Codes (ADR-0018 amendment 2).
 
 ## Phase progression
 
-20 phases from bootstrap (Phase 1) to mature runtime + Wasm
-distribution (Phase 20). Current state and per-phase task tables
-live in ROADMAP §9. The big landmarks:
+20 phases from bootstrap (Phase 1) to a mature runtime + Wasm
+distribution (Phase 20). The authoritative per-phase state and task
+tables live in ROADMAP §9 (the single source of truth). In summary:
 
-- **Phase 1-3 (DONE)**: reader, analyzer, TreeWalk, error rendering,
-  bootstrap macros, exception handling.
-- **Phase 4 (IN-PROGRESS)**: bytecode VM, dual-backend, scaffolding.
-- **Phase 5**: persistent collections, mark-sweep GC, lazy-seq,
-  numeric tower.
-- **Phase 7**: protocols, multimethods, transducers.
-- **Phase 11**: upstream Clojure test port (Tier A 100% PASS gate).
-- **Phase 14**: future / promise / delay, nREPL, v0.1.0 release.
-- **Phase 15**: STM, atom, agent, locking activation.
-- **Phase 16**: Wasm component output via Pod boundary.
-- **Phase 17**: JIT go / no-go.
+- **Phases 1-13 (DONE)**: reader, analyzer, dual backend
+  (TreeWalk + bytecode VM), error system, persistent collections +
+  mark-sweep GC, the numeric tower, lazy / chunked seqs, protocols /
+  multimethods / transducers, records / `deftype` / `reify`,
+  namespaces, the upstream Clojure test port (Tier A gate), STM /
+  atoms / agents / futures, and a CIDER-compatible nREPL.
+- **Phase 14 (IN-PROGRESS)**: the v0.1.0 release (exit smoke + tag).
+- **Phase 16+**: a WebAssembly component build of the runtime,
+  building on the embeddable WebAssembly-FFI engine boundary that
+  works today (`zig build -Dwasm`).
+- **Phase 17**: an optimizing JIT — go / no-go.
 
 ## Where to look
 
