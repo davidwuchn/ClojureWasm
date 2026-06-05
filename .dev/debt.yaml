@@ -9,6 +9,23 @@
 # md-table-align no longer pads it to ~800 KB of whitespace.
 
 active:
+  - id: "D-263"
+    status: "open (found 2026-06-06 via an EDN read-string clj-diff sweep) — radix integer literals `NrDDDD` (e.g. 2r1010=10, 16rFF=255, 36rZ=35) unsupported; cljw raises name_error. Hex `0x` works."
+    category: "clj-parity"
+    barrier: |-
+      **Radix integer literals `<base>r<digits>` are unsupported.** clj reads
+      `2r1010`→10, `8r17`→15, `16rFF`→255 (case-insensitive `16rff`→255), `36rZ`→35,
+      `-16rFF`→-255 (base 2..36, digits 0-9a-zA-Z). cljw raises `name_error`
+      (the tokenizer's `readNumber` (src/eval/tokenizer.zig:245) handles decimal +
+      `0x` hex but not the `Nr…` form, so `2r1010` tokenizes as the number `2`
+      then a symbol `r1010` → unresolved). Discharge: (1) tokenizer `readNumber`
+      recognizes `<digits>[rR]<base-N digits>` as a single number token; (2) the
+      analyzer's integer-literal parse path parses the mantissa in the given base
+      (2..36, reject out-of-range base or digit ≥ base), honoring a leading `-`,
+      and promotes to BigInt past i48 like other int literals. Corpus
+      `radix_literals`. Uncommon in real code (hex/decimal cover ~all usage) but a
+      real reader feature. Cross-ref F-011, the `0x` hex path as the model.
+    last_reviewed: "2026-06-06"
   - id: "D-262"
     status: "open (found 2026-06-06 via a record-ops clj-diff sweep) — record map-protocol completeness: `(contains? rec k)` / `(find rec k)` / `(dissoc rec declared-key)` / `(map? rec)` diverge. SEQ already fixed (03fb1b4f); this is the sibling cluster."
     category: "clj-parity"
