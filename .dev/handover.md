@@ -7,20 +7,22 @@
 
 - **HEAD**: see `git log` (`cw-from-scratch`). Gate green 251/0 Mac + 250/0 Linux
   x86_64 (serial-e2e). debt = `.dev/debt.yaml`. Active plan = **ADR-0089 (A→B→C)**.
-- **First commit on resume MUST be**: **D-253 torture-green campaign, cluster (a)**
-  — the dynamic-var / binding-frame torture gaps (atom_watch 5 / with_redefs 4 /
-  thread_bindings 3 / clojure_test 8 / with_open 2; ~20 of 38). Start at
-  `root_set` `current_frame` + `atom.zig` watches/validator rooting (add-watch
-  closure swept across `swap!` → `type_error`); a single shared-cause fix likely
-  clears the cluster. THEN cluster (b) seq-realisers (partitionv/seq_tail/…, the
-  EvalFrame exemplar) · (c) multimethod(C7)/syntax_quote/string_misc. Re-run
-  `CLJW_GC_TORTURE=1 bash test/run_all.sh --serial-e2e` after each cluster; add
-  closed programs to `test/e2e/phase16_gc_torture.sh`. Full inventory:
-  `private/notes/torture-full-sweep-gaps.txt`. Heap-tag stays **64 slots** (F-004
-  Rev 2026-06-05). src commits gate `--serial-e2e`. SSOT for the whole rooting
-  surface: **`.dev/gc_rooting.md`** + `GC-ROOT:` markers; the D-252 latent
-  candidates (C1/C4/C5) don't reproduce. Cold-start: `.dev/gc_rooting.md` +
-  D-251/252/253 + `private/notes/phaseC-d251-root-cause.md`.
+- **First commit on resume MUST be**: **D-244 #4 — the multi-thread future-worker
+  torture hang/crash**. The single-thread GC-torture campaign is RESOLVED (D-253:
+  all 38 full-suite-sweep gaps fixed; the confirmation run is 0 DRIFTs/0 panics
+  through the diff corpus + single-thread e2e). The confirmation run then
+  HUNG/crashed in `e2e_phase14_future_promise_delay`: `(future (reduce + (range
+  1 100)))` torture-hangs (124), `(mapv #(future (* % %)) (range 1 5))` crashes
+  (134). A WORKER thread's torture back-edge poll triggers a MULTI-THREAD STW
+  collect = the D-244 #4 dormant / highest-risk path (real threads + safepoint
+  STW + worker root publication); ADJACENT to the user-owned auto-collect-ON
+  decision. Investigate the worker-side rooting + the STW handshake under a
+  WORKER-initiated collect. Repro: `CLJW_GC_TORTURE=1 zig-out/bin/cljw -e '(let
+  [f (future (reduce + (range 1 100)))] @f)'`. Single-thread fixes = ADR-0094/0095
+  + D-252/253; heap-tag stays **64 slots** (F-004). src commits gate
+  `--serial-e2e`. SSOT for the rooting surface: **`.dev/gc_rooting.md`** (§A/E) +
+  `GC-ROOT:` markers. Cold-start: `.dev/gc_rooting.md` + D-253/244/250 +
+  `private/notes/torture-full-sweep-gaps.txt`.
 - **Forbidden this session**: turning auto-collect ON (collect stays explicit/
   test-triggered). The safepoint + per-thread root publication + the in-txn-map
   rooting (self+worker) + the fabrication-window audit are now ALL done — so any
