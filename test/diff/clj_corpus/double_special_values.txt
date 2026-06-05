@@ -1,0 +1,20 @@
+Double/NaN
+;;=> ##NaN
+Double/POSITIVE_INFINITY
+;;=> ##Inf
+Double/NEGATIVE_INFINITY
+;;=> ##-Inf
+(Double/isNaN Double/NaN)
+;;=> true
+(Double/isInfinite Double/POSITIVE_INFINITY)
+;;=> true
+(= Double/NaN Double/NaN)
+;;=> false
+(< 1 Double/POSITIVE_INFINITY)
+;;=> true
+(> Double/NEGATIVE_INFINITY -1.0e308)
+;;=> false
+(pos? Double/POSITIVE_INFINITY)
+;;=> true
+(neg? Double/NEGATIVE_INFINITY)
+;;=> true

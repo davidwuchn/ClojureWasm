@@ -165,6 +165,10 @@ pub const ___HOST_EXTENSION: host_api.Extension = .{
 const double_static_fields = [_]type_descriptor.TypeDescriptor.StaticField{
     .{ .name = "MAX_VALUE", .value = .{ .float = std.math.floatMax(f64) } },
     .{ .name = "MIN_VALUE", .value = .{ .float = std.math.floatTrueMin(f64) } },
+    // The special IEEE-754 double values (Double.NaN / ±Infinity).
+    .{ .name = "NaN", .value = .{ .float = std.math.nan(f64) } },
+    .{ .name = "POSITIVE_INFINITY", .value = .{ .float = std.math.inf(f64) } },
+    .{ .name = "NEGATIVE_INFINITY", .value = .{ .float = -std.math.inf(f64) } },
     // Unbiased binary exponent bounds of a normal double (int constants).
     .{ .name = "MAX_EXPONENT", .value = .{ .int = 1023 } },
     .{ .name = "MIN_EXPONENT", .value = .{ .int = -1022 } },
