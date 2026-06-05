@@ -9,6 +9,28 @@
 # md-table-align no longer pads it to ~800 KB of whitespace.
 
 active:
+  - id: "D-261"
+    status: "open (found 2026-06-06 via the clojure.string clj-diff sweep) — a fully-qualified symbol `ns/name` resolves to a referred/core var even when `name` is NOT interned in `ns`. clj errors 'No such var'."
+    category: "clj-parity"
+    barrier: |-
+      **Over-permissive fully-qualified symbol resolution.** A qualified symbol
+      `some.ns/name` should resolve ONLY to a var interned in `some.ns` itself
+      (JVM: a fully-qualified symbol bypasses refers/aliases — it is a direct
+      ns-var lookup). cljw instead falls through to referred / clojure.core vars:
+        cljw `(clojure.string/subs "hello" 1 3)` -> "el"   (subs is core, not in clojure.string)
+        cljw `(clojure.string/count "hi")`       -> 2
+        cljw `(clojure.string/inc 1)`            -> 2
+        cljw `(clojure.set/first [1 2])`         -> 1
+        clj  `(clojure.string/subs …)`           -> Syntax error: No such var: clojure.string/subs
+      So cljw accepts `ns/name` for any `name` visible (via refer/core) in `ns`,
+      not just `ns`'s own interns. Discharge: the analyzer's qualified-symbol
+      resolution path must look up `name` in `ns`'s OWN var table only (the
+      mappings interned in `ns`), NOT the referred/core fall-through, and raise
+      a name_error ("No such var: ns/name") on miss. Needs a Step-0 survey of the
+      resolution path (analyzer qualified-head + env.resolveQualified). Land a
+      corpus asserting the error. Cross-ref F-011. recall trigger: next analyzer /
+      symbol-resolution cycle, or a corpus needing qualified-var-miss parity.
+    last_reviewed: "2026-06-06"
   - id: "D-260"
     status: "DISCHARGED (2026-06-06, ADR-0100) — the `'` op family (`+'` `-'` `*'` `inc'` `dec'`) now auto-promotes (matching JVM). Strict family deleted (math.zig + promote.zig + tests); ' ops routed through the promoting path; corpus test/diff/clj_corpus/numeric_prime_ops.txt (10/10 clj-parity)."
     category: "numeric"

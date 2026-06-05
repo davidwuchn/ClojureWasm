@@ -1,0 +1,20 @@
+(clojure.string/index-of "hello" \l)
+;;=> 2
+(clojure.string/index-of "hello" \l 3)
+;;=> 3
+(clojure.string/index-of "hello" \z)
+;;=> nil
+(clojure.string/index-of "hello" \h 0)
+;;=> 0
+(clojure.string/last-index-of "hello" \l)
+;;=> 3
+(clojure.string/last-index-of "hello" \l 1)
+;;=> nil
+(clojure.string/last-index-of "hello" \o)
+;;=> 4
+(clojure.string/index-of "a,b,c" \,)
+;;=> 1
+(clojure.string/index-of "hello" "ll")
+;;=> 2
+(clojure.string/last-index-of "hello" "l")
+;;=> 3
