@@ -54,7 +54,7 @@ active:
       placeholder stub (feature_not_supported). Cross-ref ADR-0098.
     last_reviewed: "2026-06-06"
   - id: "D-256"
-    status: "TRIGGER — TOP PRIORITY (user 2026-06-06): the Clojure/conj 2026 CFP campaign. The next clean session's loop MUST start here. **Read `private/clojure_conj_2026_cfp/PRIORITY.md` AND `private/clojure_conj_2026_cfp/CFP_v2.md` TOGETHER**, then begin investigation / planning / work per PRIORITY.md (fully sequential P0->P9, no branching — work top-down one at a time). Deadline-driven."
+    status: "TOP PRIORITY — autonomous overnight (user 2026-06-06, asleep). The clean-session loop MUST start here. **Read `private/clojure_conj_2026_cfp/PRIORITY.md` AND `…/CFP_v2.md` TOGETHER** (both carry a 2026-06-06 PIVOT note: **Fly + native cljw, NOT Cloudflare + wasm**), then **execute PRIORITY.md IN FULL P0->P9 — do NOT abandon any step citing the deadline (AI speed is dramatically faster than it feels); on a user-only-action blocker, defer + proceed to the next step (never stop, never ask). After PRIORITY.md is exhausted, transition autonomously to the cljw Phase B/C remaining work.** edge-demo is LANDED (https://clojurewasm-edge-demo.fly.dev/, native cljw + Fly)."
     category: "scope"
     barrier: |-
       **Clojure/conj 2026 CFP (conference talk submission) campaign.** User wired

@@ -5,25 +5,31 @@
 
 ## Resume contract
 
-- **HEAD**: pushed `51750c54` (with-local-vars, ADR-0097 / D-237). Active plan =
-  ADR-0089 (A->B->C), Phase B. DONE this session: add-watch-IRef (atom/agent/ref/
-  var) + set!-parity (ADR-0096) + the zwasm v2 relative-path import spike (D-037,
-  consumable, no issues) + with-local-vars (ADR-0097, Env-owned anon Vars).
-- **First commit on resume MUST be**: **D-256 — the Clojure/conj 2026 CFP campaign
-  (TOP PRIORITY, deadline-driven, user 2026-06-06).** Start by **reading BOTH
-  `private/clojure_conj_2026_cfp/PRIORITY.md` AND `…/CFP_v2.md` TOGETHER** (they
-  are co-dependent), then execute PRIORITY.md's fully-sequential plan P0->P9 (no
-  branching; top-down one at a time). **HARD DEADLINE 2026-06-14 23:59 ET;
-  submission (P6) by 2026-06-13** (today 2026-06-06, ~7 days). The files are the
-  SSOT — do not re-derive the plan; follow it. (Phase B leftovers — reflection,
-  D-255 slotmap, owner-gated concurrency — yield to this until the CFP ships.)
-- **Forbidden this session**: **tidying / cleaning the repo before the CFP submits**
-  (PRIORITY.md P0 — the cleanup urge burns the deadline budget); **pinning an
-  in-progress zwasm v2 state / using a zwasm tag or v1** (F-001 — v2 ONLY from the
-  `zwasm-from-scratch` branch; wasm findings: zwasm-side = feedback note no-code,
-  cljw-side = real fix); turning auto-collect ON (user-owned #4a'); editing
-  .claude/rules/* (permission-blocked -- surface to user); re-opening landed work
-  (git log = SSOT); trusting ~/Documents/OSS/zig for 0.16.
+- **HEAD**: pushed `46203644` (cljw.http.server, ADR-0098). **edge-demo is LIVE**
+  (https://clojurewasm-edge-demo.fly.dev/). Active plan = ADR-0089 (A->B->C),
+  Phase B — but the CFP campaign (below) runs first.
+- **First commit on resume MUST be**: **continue the Clojure/conj 2026 CFP campaign
+  (D-256).** Read BOTH `private/clojure_conj_2026_cfp/PRIORITY.md` AND `…/CFP_v2.md`
+  TOGETHER — both carry a **2026-06-06 PIVOT note: Fly + native cljw, NOT Cloudflare
+  + wasm** (cljw serves HTTP itself via `cljw.http.server`; edge-demo LANDED). Then
+  **execute PRIORITY.md IN FULL, P0->P9 — the deadline (2026-06-14; P6 submission by
+  06-13) gates submission but is NEVER a reason to drop a later step; do ALL of it
+  (AI speed is dramatically faster than it feels — user 2026-06-06).** CFP work spans
+  repos: cljw (e.g. `cljw.http.server` request `:body` = D-257, for edge-demo CRUD —
+  cljw gate applies), `clojurewasm/edge-demo` + `clojurewasm/playground` (their own
+  commit/deploy, no cljw gate; `FLY_API_TOKEN` is in cljw `.envrc` via direnv, org
+  `clojurewasm`; deploy = `fly deploy --remote-only`).
+- **Never stop, never ask (user asleep 2026-06-06).** A step needing a user-only
+  action (recording a demo, an account-level setting) → record a deferred note +
+  **proceed to the next AI-doable step**; do NOT stop, do NOT ask (Direction-ask
+  smell). **After PRIORITY.md is exhausted, transition autonomously to the cljw
+  Phase B/C remaining work** (debt.yaml self-select per the loop) — never idle. The
+  only stop is a NEW user-explicit stop.
+- **Forbidden**: pinning an in-progress zwasm v2 state / a zwasm tag or v1 (F-001:
+  v2 ONLY from `zwasm-from-scratch`; wasm findings = zwasm-side feedback-note
+  no-code, cljw-side real fix); turning auto-collect ON (user-owned #4a'); editing
+  .claude/rules/* (permission-blocked → surface); re-opening landed work (git log =
+  SSOT); trusting ~/Documents/OSS/zig for 0.16.
 
 ## Active plan — ADR-0089 post-M re-cut (2026-06-04)
 
@@ -40,16 +46,15 @@ Phase C  Library-driven gap-hunt (was the quality loop) on the concurrency base;
 
 ## Recently landed (git log = SSOT)
 
-**with-local-vars** (ADR-0097 / D-237, 51750c54). `-create-local-var` mints
-anonymous dynamic Vars on a sentinel `__local` ns; core.clj macro = let +
-push-thread-bindings + try/finally pop. Anon Vars are Env-owned (`env.local_vars`)
-+ freed at Env.deinit — NOT at the extent — so an escaped var_ref stays deref-safe
-(Alt C; free-at-extent UAFs, never-free trips the DebugAllocator). Escaped deref
--> nil = **AD-015**; per-extent reclamation slotmap = **D-255**. clj-matched
-12/20/3. Prior this session: **zwasm v2 embedding spike** (D-037/F-001, lazy
-`build.zig.zon` dep behind `-Dzwasm-spike`, consumable, gate zwasm-free); **set!
-JVM-Var.set parity** (ADR-0096/D-254: runtime thread-bound gate both backends +
-baseline binding frame); **add-watch IRef** (atom/agent/ref/var).
+**cljw.http.server** (ADR-0098, 46203644). cljw serves HTTP itself on Zig 0.16
+std.Io.net + std.http.Server: `(cljw.http.server/run-server (fn [req] {:status N
+:body "…"}) {:port P})`, Ring req `:request-method`/`:uri` (headers/body = D-257).
+Surface = runtime/cljw/http/server.zig + runtime/cljw/_host_api.zig (the java
+_host_api pattern; lang/primitive/* may not import a surface). Powered the **LIVE
+edge-demo** on Fly (scratch ~3.7MB, native musl cljw — `clojurewasm/edge-demo`).
+Prior this session: **with-local-vars** (ADR-0097/D-237, Env-owned anon Vars,
+AD-015); **zwasm v2 spike** (D-037/F-001, lazy build.zig.zon dep behind
+`-Dzwasm-spike`); **set! JVM-Var.set parity** (ADR-0096/D-254); **add-watch IRef**.
 
 ## Open carry-overs (actionable)
 
@@ -70,8 +75,6 @@ baseline binding frame); **add-watch IRef** (atom/agent/ref/var).
 - Never poll a bg gate. `clj -M -e` → `timeout 20` + bound infinite seqs. Speed
   ONLY via `scripts/perf.sh`. Edit/Write TRANSCODES literal non-ASCII (keep source
   ASCII; splice non-ASCII doc edits via python). Default backend = VM (F-012).
-- Swept fake GC test Cells use a finaliser-free tag (`.vector`), NOT `.string`
-  (its finaliser reads a data ptr a 16-byte fake Cell lacks → crash).
 
 ## Cold-start reading order (tracked-only)
 
@@ -85,10 +88,12 @@ F-004/F-006/F-011** → CLAUDE.md (§ Project spirit + The only stop) →
 
 ## Stopped — user requested
 
-User instruction (2026-06-06): finish with-local-vars (done — 51750c54 / ADR-0097),
-then **wire the Clojure/conj 2026 CFP as the next autonomous trigger** — "read
-`PRIORITY.md` AND `CFP_v2.md` together, then begin investigation / planning / work"
-(D-256; deadline 2026-06-14) — and **audit the wiring / reference chain so the next
-clean session resumes normally via `/continue`.** Resume at **D-256** (read both
-CFP files together, execute PRIORITY.md P0->P9 sequentially). This stop applies to
-THIS session only; the next `/continue` deletes this section and resumes the loop.
+User instruction (2026-06-06, going to sleep): the edge-demo is LIVE + verified, so
+hand off to **fully autonomous overnight execution**. Wired here: resume = **execute
+the CFP campaign (D-256) PRIORITY.md IN FULL — do not abandon any step citing the
+deadline (AI speed is dramatically faster than it feels); on a user-only-action
+blocker, defer + proceed to the next step (never stop, never ask); after PRIORITY.md
+is exhausted, transition autonomously to the cljw Phase B/C remaining work**. User
+asked to audit the wiring / reference chain, commit+push, then stop THIS session.
+The next `/continue` deletes this section and runs the wired plan to completion. The
+only stop is a NEW user-explicit stop.
