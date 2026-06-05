@@ -2080,12 +2080,17 @@ active:
       now has a usable Zig API; try it via a `build.zig.zon` relative-path import.
       Executable first steps when the loop reaches this unit:
         0. **Guardrail FIRST (user: "途中状態を使ってないか注意")** — zwasm v2 is
-           under active AI development. `git -C ~/Documents/MyProducts/zwasm_from_scratch
-           log -1 --oneline` + `zig build` THERE: if it does not build cleanly or is
-           mid-rewrite (check its handover/README for an "API stable" marker / tag),
-           **back off + re-defer this row with a dated note (no thrash)**. Add the
-           repo to additionalDirectories (`/add-dir`) to read/build it. Do NOT pin an
-           in-progress commit.
+           under active AI development. **Use zwasm v2 ONLY from the
+           `zwasm-from-scratch` long-lived branch** (user 2026-06-05); the git
+           **tags are zwasm v1 — NEVER pin a tag**, and **zwasm v1 is never used /
+           supported.** Verify the branch is consumable NOW: `git -C
+           ~/Documents/MyProducts/zwasm_from_scratch rev-parse --abbrev-ref HEAD`
+           (= zwasm-from-scratch) + `bash scripts/check_zig_consumer.sh` THERE (its
+           canonical "is the Zig embedding API consumable" gate; passed 2026-06-05 =
+           add/host/memory/global/table all green). If that gate fails or the branch
+           is mid-rewrite, **back off + re-defer this row with a dated note (no
+           thrash); do NOT pin an in-progress commit.** Add the repo to
+           additionalDirectories (`/add-dir`) to read/build it.
         1. Add zwasm v2 as a relative-path dependency in `build.zig.zon`
            (`.zwasm = .{ .path = "../zwasm_from_scratch" }`) **behind a build flag**
            (e.g. `-Dzwasm-spike`) so cw v1's DEFAULT `bash test/run_all.sh` gate never

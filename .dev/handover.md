@@ -12,11 +12,13 @@
 - **First commit on resume MUST be**: the **zwasm v2 relative-path import spike
   — D-037 TRIGGER (user directive 2026-06-05, F-001 Revision).** The current
   cluster is done, so this user-wired trigger fires now (it was Phase-16-locked).
-  Execute D-037's steps: (0) **guardrail FIRST** — zwasm v2
-  (`~/Documents/MyProducts/zwasm_from_scratch`) is under active AI dev; `/add-dir`
-  it, confirm `git log -1` + `zig build` there are at a usable/stable point, and
-  **back off + re-defer with a dated note (no thrash) + do NOT pin** if mid-
-  rewrite; (1) add it to `build.zig.zon` as a relative-path dep **behind
+  Execute D-037's steps: (0) **guardrail FIRST** — use zwasm v2 ONLY from the
+  **`zwasm-from-scratch` long-lived branch** of `~/Documents/MyProducts/
+  zwasm_from_scratch` (tags are zwasm v1 — NEVER pin a tag; v1 is never used/
+  supported). `/add-dir` it; verify consumable NOW via `bash
+  scripts/check_zig_consumer.sh` there (passed 2026-06-05); **back off + re-defer
+  (dated note, no thrash) + do NOT pin** if that gate fails / mid-rewrite; (1) add
+  it to `build.zig.zon` as a relative-path dep (`../zwasm_from_scratch`) **behind
   `-Dzwasm-spike`** so the default gate never depends on zwasm; (2) minimal Zig-
   API smoke (Engine.init(cw allocator, F-006 separate spaces) -> load/instantiate/
   invoke a tiny wasm); (3) verify the 5 D-038 spec items directly in-repo; (4)

@@ -128,11 +128,16 @@ the ADR); debt D-036 (Phase 16 inline-vs-Pod decision); ROADMAP
   design (D-036 inline-vs-Pod stays Phase 16 territory); it adds an
   early **import-and-smoke spike** ahead of it. **Guardrail (user):
   zwasm v2 is itself under active AI development — the loop MUST NOT
-  pin an in-progress state.** Before depending on it the loop
-  verifies zwasm v2 is at a usable point (the repo builds; a stable
-  commit/tag/version), keeps the spike behind a build flag so cw v1's
+  pin an in-progress state.** zwasm **v2 is used ONLY from the
+  `zwasm-from-scratch` long-lived branch of
+  `~/Documents/MyProducts/zwasm_from_scratch/`** (user, 2026-06-05).
+  The git **tags are zwasm v1 — NEVER pin a tag**, and **zwasm v1 is
+  never used or supported.** "Usable point" therefore means *the
+  long-lived branch builds + its `scripts/check_zig_consumer.sh`
+  passes* (a working-tree / branch-HEAD check, not a tag/version
+  pin). The loop keeps the spike behind a build flag so cw v1's
   default gate never depends on zwasm, and backs off + re-defers with
-  a dated note (no thrash) if zwasm v2 is mid-rewrite. Wired in
+  a dated note (no thrash) if that branch is mid-rewrite. Wired in
   D-037 (trigger) + D-038 (verify-against-repo) + handover Next.
 
 ---
