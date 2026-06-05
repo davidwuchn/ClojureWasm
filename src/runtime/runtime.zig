@@ -387,6 +387,7 @@ pub const Runtime = struct {
         @import("uuid.zig").registerGcHooks();
         @import("tagged_literal.zig").registerGcHooks();
         @import("type_descriptor.zig").registerGcHooks();
+        @import("multimethod.zig").registerGcHooks();
         // D-251 / ADR-0095 Alt D consistency guard: the isGcManaged membrane
         // (heap_tag.zig SSOT) must agree with GC-hook registration — any tag
         // carrying a trace or finaliser is a mark-phase-visited object, so it

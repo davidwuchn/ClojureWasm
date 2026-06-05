@@ -87,5 +87,11 @@ assert_eq 'walk_set'     "$("$BIN" -e '(count (clojure.walk/postwalk (fn [x] (if
 # across the watch fn's reentrant eval (a nested swap! re-enters the VM); the
 # cursor was swept -> rest(garbage) -> next get nil -> "Cannot call nil".
 assert_eq 'atom_watch'   "$("$BIN" -e '(let [log (atom []) a (atom 0)] (add-watch a :k (fn [k r o n] (swap! log conj [k o n]))) (swap! a inc) (reset! a 10) @log)')" '[[:k 0 1] [:k 1 10]]'
+# D-253 C7 — .multi_fn now has a GC trace marking its 8 Value fields (above all the
+# method_table); it is gc.alloc'd, so without the trace its method table was swept
+# (a missing-trace gap, not a reentrant-rooting one) -> "No method for dispatch value".
+assert_eq 'multimethod'  "$("$BIN" -e '(do (defmulti ar :shape) (defmethod ar :circle [s] (* 3 (:r s))) (defmethod ar :square [s] (* (:side s) (:side s))) (mapv ar [{:shape :circle :r 2} {:shape :square :side 3} {:shape :circle :r 5}]))')" '[6 9 15]'
+# print-method is itself a defmulti — pr-str under torture exercises the trace.
+assert_eq 'print_method' "$("$BIN" -e '(mapv pr-str [1 :a "s" [1 2] {:k 3}])')" '["1" ":a" "\"s\"" "[1 2]" "{:k 3}"]'
 
 echo "ALL phase16_gc_torture PASS"

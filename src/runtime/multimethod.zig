@@ -39,6 +39,9 @@ const symbol = @import("symbol.zig");
 const keyword = @import("keyword.zig");
 const dispatch_mod = @import("dispatch.zig");
 const td_mod = @import("type_descriptor.zig");
+const gc_heap_mod = @import("gc/gc_heap.zig");
+const mark_sweep = @import("gc/mark_sweep.zig");
+const tag_ops = @import("gc/tag_ops.zig");
 const atom = @import("atom.zig");
 
 const SourceLocation = error_catalog.SourceLocation;
@@ -326,6 +329,24 @@ pub fn callMultiFn(
     const dispatch_val = try vt.callFn(rt, env, mf.dispatch_fn, args, loc);
     const method = try getMethod(rt, mf, dispatch_val, loc);
     return vt.callFn(rt, env, method, args, loc);
+}
+
+/// Per-tag GC trace for `.multi_fn` (D-253). A `MultiFn` is `gc.alloc`'d and
+/// owns 8 GC-managed Value fields reachable ONLY through it — above all the
+/// `method_table` (dispatch-val → method). Without this trace the multi_fn is
+/// marked as a leaf and its method table is swept under a collect, so dispatch
+/// finds "No method for dispatch value" (a torture-surfaced missing-trace gap).
+pub fn traceGc(gc_ptr: *anyopaque, header: *HeapHeader) void {
+    const gc: *gc_heap_mod.GcHeap = @ptrCast(@alignCast(gc_ptr));
+    const mf: *MultiFn = @ptrCast(@alignCast(header));
+    inline for (.{ mf.name, mf.dispatch_fn, mf.default_dispatch_val, mf.hierarchy_ref, mf.method_table, mf.prefer_table, mf.method_cache, mf.cached_hierarchy_snapshot }) |field| {
+        if (field.heapHeader()) |hdr| mark_sweep.mark(gc, hdr);
+    }
+}
+
+/// Register the `.multi_fn` trace. Called from `Runtime.init`.
+pub fn registerGcHooks() void {
+    tag_ops.registerTrace(.multi_fn, &traceGc);
 }
 
 // --- tests ---
