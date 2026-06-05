@@ -7,21 +7,20 @@
 
 - **HEAD**: see `git log` (`cw-from-scratch`). Gate green 251/0 Mac + 250/0 Linux
   x86_64 (serial-e2e). debt = `.dev/debt.yaml`. Active plan = **ADR-0089 (A→B→C)**.
-- **First commit on resume MUST be**: the **Clojure-vs-ClojureWasm differences doc**
-  (D-249) — the user set **docs/release-prep ABOVE the low-value concurrency tail**
-  (2026-06-05). A single-sheet `docs/` markdown synthesizing AD-001..014 + the
-  F-NNN-intentional divergences + the deferred surface (ClojureScript-style). THEN
-  (priority order): **GC torture mode** (D-250 — validate the #4a' rooting before
-  the GATED auto-collect-ON flip) · **Group D wasm→tail reorg** (D-248 — a ready,
-  NON-breaking ADR-0027 cleanup, no F-004 amendment) · then the low-value
-  concurrency tail (agent watches/validator / `await-for` / `shutdown-agents` /
-  with-local-vars D-237 — NOT skipped, after completeness). The **#4a' GC-ROOTING is
-  COMPLETE** (in-txn maps self+worker, TDD-verified; only the GATED auto-collect-ON
-  flip remains). Heap-tag layout stays **64 slots** (F-004 Rev 2026-06-05; 128 +
-  region allocator = D-247, only IF slots run out). Phase C = library-gap-hunt →
-  Wasm (zwasm before release). Phase B concurrency PRIMITIVES complete + dual-arch-
-  verified + code-reviewed. src commits gate `--serial-e2e`. Cold-start:
-  `private/notes/layout-gc-decisions-2026-06-05.md` + `phaseB-4a-self-tx-rooting.md`.
+- **First commit on resume MUST be**: **D-253 torture-green campaign, cluster (a)**
+  — the dynamic-var / binding-frame torture gaps (atom_watch 5 / with_redefs 4 /
+  thread_bindings 3 / clojure_test 8 / with_open 2; ~20 of 38). Start at
+  `root_set` `current_frame` + `atom.zig` watches/validator rooting (add-watch
+  closure swept across `swap!` → `type_error`); a single shared-cause fix likely
+  clears the cluster. THEN cluster (b) seq-realisers (partitionv/seq_tail/…, the
+  EvalFrame exemplar) · (c) multimethod(C7)/syntax_quote/string_misc. Re-run
+  `CLJW_GC_TORTURE=1 bash test/run_all.sh --serial-e2e` after each cluster; add
+  closed programs to `test/e2e/phase16_gc_torture.sh`. Full inventory:
+  `private/notes/torture-full-sweep-gaps.txt`. Heap-tag stays **64 slots** (F-004
+  Rev 2026-06-05). src commits gate `--serial-e2e`. SSOT for the whole rooting
+  surface: **`.dev/gc_rooting.md`** + `GC-ROOT:` markers; the D-252 latent
+  candidates (C1/C4/C5) don't reproduce. Cold-start: `.dev/gc_rooting.md` +
+  D-251/252/253 + `private/notes/phaseC-d251-root-cause.md`.
 - **Forbidden this session**: turning auto-collect ON (collect stays explicit/
   test-triggered). The safepoint + per-thread root publication + the in-txn-map
   rooting (self+worker) + the fabrication-window audit are now ALL done — so any
@@ -49,13 +48,15 @@ Phase C  Library-driven gap-hunt (was the quality loop) on the concurrency base;
 
 ## Recently landed (git log = SSOT)
 
-**Phase B concurrency PRIMITIVES + #4a' GC-rooting COMPLETE** (git log = SSOT;
-ADR-0090/91/92/93). GC STW handshake + `future`/`promise`/`delay` (real threads) +
-STM (full, deadlock-free) + `locking` + atomic atom/volatile/ref + agent (+ error
-modes) + Thread/sleep + with-out-str + a ReleaseSafe stress step + the #4a' in-txn-
-map rooting (self+worker, TDD). **Two real ReleaseSafe-only races found+fixed**: STM
-`doGet` stale read + the atom being non-atomic (`swap!`→CAS-retry). Code-reviewed
-(+2 GC-safety fixes); dual-arch (Mac + Linux x86_64) green.
+**GC-torture root-cause campaign + the GC-rooting SSOT** (git log = SSOT;
+ADR-0094/0095). 10 swept-intermediate classes fixed: Function.header@0, reduce
+(EvalFrame), persistent-waypoint mark-membrane (`clearPersistentMarks`), bytecode
+constant pool (`EvalFrame.constants`), the `isGcManaged` membrane SSOT (Alt D),
+dormant fn chunk constants, defprotocol, C9 CLI-print pin, C2/C3 every?/some?
+cursors, C6 clojure.walk rebuild accumulators. Delivered `.dev/gc_rooting.md`
+(SSOT for every rooting site + moving-GC migration checklist) + `GC-ROOT:` markers
++ D-252. The FIRST full-suite torture sweep (D-250 tier-2) then found **38 more
+DRIFTs in 12 areas** → D-253 (the next campaign; clustered, cluster (a) first).
 
 ## Open carry-overs (actionable)
 
@@ -81,18 +82,9 @@ map rooting (self+worker, TDD). **Two real ReleaseSafe-only races found+fixed**:
 
 ## Cold-start reading order (tracked-only)
 
-handover → `private/notes/layout-gc-decisions-2026-06-05.md` (latest decisions) +
-`phaseB-4a-self-tx-rooting.md` → **`.dev/debt.yaml` D-249/250/248/247** (next tasks) +
-ROADMAP **§9.2.R** (priority refinement 2026-06-05) → **`.dev/project_facts.md` F-004**
-(Rev 2026-06-05, 64-keep) + F-002/006/011 → CLAUDE.md (§ Project spirit + The only
-stop) → `.dev/decisions/0090..0093` (concurrency/locking/agent) → `.dev/principle.md`.
-
-## Stopped — user requested
-
-User instruction (2026-06-05): "コンテキストウィンドウが広がってきたので、64維持とか
-これまでの議論で確定したものを、クリアセッションから continue したときにちゃんと
-取り組めるように、配線・参照チェーン確認して用意して止めてください。" Wiring done:
-F-004 Rev (64-keep / 128-defer) + ROADMAP §9.2.R priority refinement + debt
-D-247 (region-alloc→128) / D-248 (Group-D wasm→tail reorg) / D-249 (differences doc,
-HIGH) / D-250 (GC torture) + note `layout-gc-decisions-2026-06-05.md`. Resume at the
-differences doc (D-249) per the Resume-contract priority order.
+handover → **`.dev/gc_rooting.md`** (the GC-rooting SSOT) + **`.dev/debt.yaml`
+D-253/252/251** (the torture-green campaign + closed classes) +
+`private/notes/torture-full-sweep-gaps.txt` (the 38-gap inventory) →
+**`.dev/decisions/0094_*`/`0095_*`** (the rooting ADRs) → **`.dev/project_facts.md`
+F-004/F-006/F-011** → CLAUDE.md (§ Project spirit + The only stop) →
+`.dev/principle.md`.

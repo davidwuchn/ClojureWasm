@@ -103,6 +103,19 @@ active:
       Re-run the GC-rooting SSOT sweep at the next Phase boundary to catch new
       reentrant primitives. SSOT: .dev/gc_rooting.md.
     last_reviewed: "2026-06-05"
+  - id: "D-253"
+    status: "OPEN (2026-06-05, from the first FULL-SUITE torture sweep — D-250 tier-2 cadence executed: CLJW_GC_TORTURE=1 bash test/run_all.sh --serial-e2e). After the ADR-0094/0095 + D-252 C2/C3/C6/C9 fixes closed the major classes, the full corpus/diff suite under torture surfaced 38 remaining DRIFTs across 12 areas — torture-green (D-250 tier-2 = zero crashes) is NOT yet reached. CLUSTERS (likely shared root causes): (a) DYNAMIC-VAR / BINDING-FRAME (~20): clojure_test(8), atom_watch(5, add-watch closure / swap! reentrant -> type_error), with_redefs(4), thread_bindings(3), with_open(2) — suspected the binding-frame walk or watch/validator closures swept across a reentrant swap!/bound-fn eval; investigate root_set current_frame + atom.watches rooting first (may fix the whole cluster). (b) SEQ-REALISER (reentrant class, same shape as the fixed C2/C3/C6): partitionv(4), seq_tail(3), seq_return(1), print_length_lazy(1). (c) multimethod(3, = D-252 C7), syntax_quote(3), string_misc(1). Panics seen: chunk_buffer index-16-OOB + range.seqChunk 'integer does not fit' (garbage count). Full per-program inventory: private/notes/torture-full-sweep-gaps.txt (38 DRIFTs with want/got). This is the systematic torture-green campaign; fix cluster (a) first (highest count + likely shared cause), then (b) via the EvalFrame exemplar, then (c). Re-run the full-suite torture sweep after each cluster. Block auto-collect-ON until zero."
+    category: "gc"
+    barrier: |-
+      Drive the full-suite torture sweep to zero DRIFTs/panics. Per-cluster:
+      (a) dynamic-var/binding-frame — start at root_set current_frame +
+      atom.zig watches/validator rooting (add-watch closures swept across swap!);
+      (b) seq realisers (partitionv/seq_tail/...) — EvalFrame per reduceFn/C6;
+      (c) multimethod (C7) / syntax_quote / string_misc. Re-run
+      `CLJW_GC_TORTURE=1 bash test/run_all.sh --serial-e2e` after each cluster;
+      add the closed programs to phase16_gc_torture.sh. Inventory:
+      private/notes/torture-full-sweep-gaps.txt. SSOT: .dev/gc_rooting.md §C.
+    last_reviewed: "2026-06-05"
   - id: "D-242"
     status: "Phase B anchor (re-cut ADR-0089, 2026-06-04) — KNOWN-unimplemented CORE, concurrency-led; redesign §7 against Zig 0.16 FIRST, then implement. finished-form, rework-OK with test guards. §7-redesign DONE = ADR-0090 (2026-06-04): io_default-singleton std.Io sync + ThreadGcContext root-publication GC handshake (the DA-fork caught v0's stop-the-world lie) + MVCC retry-only STM; spike-validated. Implementation (concurrency/{io_default,thread_pool,lock_tx,gc_thread}.zig + real future/promise/delay/atom/agent/locking bodies) is the remaining Phase B work; GC handshake lands first (prereq for any real-threading primitive)."
     category: "concurrency"
