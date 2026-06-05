@@ -1022,6 +1022,11 @@ const ENTRIES = [_]Entry{
     // long ≡ int in cw v1 (a single i64 integer type — no 32-bit int).
     .{ .name = "long", .f = &intCoerce },
     .{ .name = "bigint", .f = &bigintCoerce },
+    // biginteger ≡ bigint in cw v1: cljw collapses clj's BigInt/BigInteger
+    // into one `.big_int` type (F-005), so `(biginteger x)` yields the same
+    // BigInt `(bigint x)` does. The `5N` print + class BigInt divergence from
+    // JVM (`5` / java.math.BigInteger) is AD-016.
+    .{ .name = "biginteger", .f = &bigintCoerce },
     .{ .name = "bigdec", .f = &bigdecCoerce },
     .{ .name = "num", .f = &numCoerce },
     .{ .name = "double", .f = &floatCoerce },

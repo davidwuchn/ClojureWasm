@@ -511,6 +511,7 @@ run_step "e2e_phase14_transducers"           "bash test/e2e/phase14_transducers.
 run_step "e2e_phase14_hierarchy"             "bash test/e2e/phase14_hierarchy.sh"
 run_step "e2e_phase14_class_type"            "bash test/e2e/phase14_class_type.sh"
 run_step "e2e_phase14_var_resolve"           "bash test/e2e/phase14_var_resolve.sh"
+run_step "e2e_phase14_biginteger"            "bash test/e2e/phase14_biginteger.sh"
 run_step "e2e_phase14_read_string"           "bash test/e2e/phase14_read_string.sh"
 run_step "e2e_phase14_range_indexed"         "bash test/e2e/phase14_range_indexed.sh"
 run_step "e2e_phase14_lazy_seq"              "bash test/e2e/phase14_lazy_seq.sh"

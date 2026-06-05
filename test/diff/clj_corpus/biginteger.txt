@@ -1,0 +1,12 @@
+(= (biginteger 5) (bigint 5) 5)
+;;=> true
+(= (biginteger 5) 5)
+;;=> true
+(+ (biginteger 5) 1)
+;;=> 6N
+(* (biginteger 1000000000000) (biginteger 1000000000000))
+;;=> 1000000000000000000000000N
+(even? (biginteger 4))
+;;=> true
+(str (biginteger 5))
+;;=> "5"
