@@ -74,8 +74,11 @@ pub fn wasmCallFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocat
     const out = try rt.gpa.alloc(engine.Value, sig.results.len);
     defer rt.gpa.free(out);
 
+    // Export + arity were validated above, so an invoke failure here is a trap
+    // (div-by-zero, OOB, unreachable, …) — surfaced as a clean cljw exception,
+    // not a crash. The per-trap-kind 1:1 map is Phase-16 (ADR-0099 trap_map).
     loaded.invoke(name, in, out) catch
-        return error_catalog.raiseInternal(loc, "wasm/call: the wasm call trapped or failed");
+        return error_catalog.raise(.wasm_trap, loc, .{});
 
     if (out.len == 0) return Value.nil_val;
     if (out.len == 1) return marshal.fromWasm(out[0], loc);

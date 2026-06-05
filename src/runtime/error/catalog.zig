@@ -361,6 +361,13 @@ pub const Code = enum {
     tier_d_proxy_deep,
     tier_d_bean_deep,
 
+    // --- Wasm FFI (ADR-0099) ---
+    /// A WebAssembly module loaded via `wasm/load` trapped during a
+    /// `wasm/call`. The single-Code mapping is the P1/P9 shape; the
+    /// per-trap-kind 1:1 map (div0→arithmetic, OOB→index, …) is Phase-16
+    /// (the zwasm Trap trap_map, ADR-0099).
+    wasm_trap,
+
     // --- System ---
     out_of_memory,
     internal_error,
@@ -1302,6 +1309,11 @@ pub fn entry(comptime code: Code) Entry {
             .kind = .out_of_memory,
             .phase = .eval,
             .template = "Out of memory",
+        },
+        .wasm_trap => .{
+            .kind = .value_error,
+            .phase = .eval,
+            .template = "WebAssembly module trapped (e.g. divide-by-zero, out-of-bounds, or an unreachable instruction)",
         },
         .internal_error => .{
             .kind = .internal_error,

@@ -46,3 +46,16 @@ the filesystem or network, and its linear memory is isolated from the
 ClojureWasm heap. This demo module is pure compute (`add`); host capabilities
 (for modules that need I/O) are an explicit, opt-in import — the subject of the
 fuller Phase-16 FFI surface.
+
+A faulty or adversarial module's **trap** is contained and surfaces as an
+ordinary Clojure exception — the host never crashes. [`trap.wat`](./trap.wat)
+divides by zero:
+
+```clojure
+(try
+  (wasm/call (wasm/load "examples/wasm/trap.wasm") "boom")
+  (catch Throwable e (println "caught trap:" (.getMessage e))))
+;; caught trap: WebAssembly module trapped (e.g. divide-by-zero, out-of-bounds, …)
+```
+
+Run it: `zig build -Dwasm && ./zig-out/bin/cljw examples/wasm/trap.clj`.
