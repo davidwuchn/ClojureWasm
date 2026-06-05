@@ -10,26 +10,26 @@
 
 active:
   - id: "D-260"
-    status: "open (found 2026-06-06 during CFP P2 README verification) — `*'` throws integer_overflow on Long overflow instead of auto-promoting. clj-parity bug; fold into the post-CFP Phase C library-driven gap-hunt."
+    status: "open (found 2026-06-06; deeper finding 2026-06-06) — the ENTIRE `'` op family (`+'` `-'` `*'` `inc'` `dec'`) is INVERTED: implemented strict (raise integer_overflow) when JVM's `'` ops auto-promote. ADR-0100 in flight."
     category: "numeric"
     barrier: |-
-      **The auto-promoting multiply `*'` does NOT auto-promote — it raises
-      `arithmetic_error: integer overflow`.** This is inconsistent both with JVM
-      Clojure (where `*'`/`+'`/`-'` are the explicitly-promoting arithmetic
-      family) AND with cljw's own `+'`, which DOES auto-promote correctly:
-        cljw `(*' 1000000000000 1000000000000)` -> arithmetic_error (WRONG)
-        cljw `(+' 9223372036854775807 1)`       -> 9223372036854775808N (correct)
-        clj  `(*' 1000000000000 1000000000000)` -> 1000000000000000000000000N
-      So `*'` is routed to a checked/non-promoting multiply path while `+'`
-      reaches the promoting path. NB: cljw's plain `*` DOES auto-promote (F-005
-      JVM-surface divergence — that is intentional and fine); this row is about
-      the `'`-suffixed promoting variant being broken. Audit the whole `'`
-      family for the same gap (`*'` confirmed broken; `+'`/`-'` confirmed OK;
-      check `inc'`/`dec'` 1-arg promote). Fix = route `*'` (and any other broken
-      `'` op) through the same auto-promote path `+'` uses, land a clj-diff
-      corpus line (`test/diff/clj_corpus/`) asserting parity. Not a CFP blocker
-      (the README + CFP showcase use `*`/`bigint`, both correct). Cross-ref
-      F-005, F-011, accepted_divergences.md (this is a bug→fix, NOT an AD).
+      **cljw's `+'` `-'` `*'` `inc'` `dec'` are inverted from JVM.** In JVM
+      Clojure the `'` operators are the AUTO-PROMOTING family (Long->BigInt on
+      overflow, NEVER throw); the non-prime `+`/`*`/`-` are the THROWING ones.
+      cljw implements the `'` ops as STRICT (`plusStrict`/`starStrict`/… in
+      `src/lang/primitive/math.zig`, via `promote.addStrict`/`mulStrict` raising
+      `integer_overflow`), with a docstring falsely claiming "Mirrors JVM
+      Clojure's `+'`". Oracle (clj 1.12): `(*' 1e12 1e12)` -> 1e24N, `(+' MAXLONG
+      1)` -> ...808N, all `'` ops promote; non-prime `(* 1e12 1e12)` throws "long
+      overflow". cljw is exactly reversed: non-prime promote (F-005, intentional),
+      `'` ops throw (BUG). My earlier "`+'` works" was a false read — its input
+      was already a BigInt, so no fixnum overflow occurred.
+      Fix (ADR-0100): route the `'` ops through the promoting path (they become
+      behaviourally identical to the non-prime ops in cljw, which is correct since
+      JVM's `'` ops promote and cljw's non-prime ops also promote). Delete/repoint
+      the Strict wrappers. Land a clj-diff corpus (`test/diff/clj_corpus/`) +
+      e2e asserting promotion. Cross-ref F-005, F-011 (this is a bug->fix, no AD),
+      ADR-0100.
     last_reviewed: "2026-06-06"
   - id: "D-259"
     status: "provisional (opened 2026-06-06, ADR-0099) — wasm FFI instance handle. The `(wasm/load …)` result is a minimal opaque `.wasm_module` box; Phase-16/F-004 owns the finished representation."
