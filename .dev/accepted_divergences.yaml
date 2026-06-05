@@ -204,3 +204,23 @@ accepted:
       pattern hits this. derives_from F-004 (immediates have no header).
     derives_from: "F-004 (NaN-box: immediates carry no HeapHeader) + ADR-0092 (heap-value monitor)"
     pin: "test/e2e/phase16_locking.sh — `locking_immediate_errors` locks `(locking 5 42)` => an object-identity error (not the body value JVM clj would return)"
+
+  - id: "AD-015"
+    summary: "An ESCAPED `with-local-vars` local var, deref'd AFTER its dynamic extent, returns `nil` in cljw, where JVM returns an unreproducible `#object[clojure.lang.Var$Unbound 0x…]` opaque."
+    example: '(var-get (with-local-vars [x 5] x)) => cljw nil / clj #object[Var$Unbound 0x…]'
+    why: |-
+      `with-local-vars` mints anonymous dynamic Vars (ADR-0097); INSIDE the body
+      they are thread-bound and `var-get`/`var-set`/`@` behave exactly as clj. The
+      divergence is ONLY on the anti-pattern of letting the var itself escape the
+      `with-local-vars` form and deref'ing it after the extent. cljw cannot mirror
+      JVM's result for two independent reasons: (1) JVM's `Var$Unbound` sentinel
+      prints with an embedded identity hash (`0x…`) — an opaque cljw structurally
+      cannot/should not reproduce (the same class as every `#object[… 0xADDR …]`
+      divergence); cljw has no Unbound sentinel, so an unbound dynamic var derefs to
+      its root (nil here). (2) The anon Var is gpa-owned + GC-membrane-filtered
+      (F-006), Env-owned and freed at session end (ADR-0097 Alt C, escape-safe — NOT
+      freed at the extent, so the deref is memory-safe rather than a UAF). Escaping a
+      local var is meaningless after its extent in both runtimes; cljw returns a safe
+      `nil` instead of an unreproducible opaque.
+    derives_from: "F-006 (Vars gpa-owned + GC-membrane-filtered; no Unbound sentinel) + ADR-0097 (anon local Var lifetime) + the opaque-ref non-reproducibility class"
+    pin: "test/e2e/phase15_with_local_vars.sh — `escape-nil` asserts `(var-get (with-local-vars [x 5] x))` => nil (cljw's safe divergent value, not JVM's Var$Unbound opaque)"

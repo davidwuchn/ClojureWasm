@@ -9,6 +9,26 @@
 # md-table-align no longer pads it to ~800 KB of whitespace.
 
 active:
+  - id: "D-255"
+    status: "now-ish (opened 2026-06-06, ADR-0097) — `with-local-vars` anon Vars are retained for the whole session (Env owns them, freed only at Env.deinit) instead of at their dynamic extent. Marker `// D-255` at `createLocalVarFn` (core.zig)."
+    category: "runtime"
+    barrier: |-
+      **Anon local Vars accumulate per `with-local-vars` invocation until session
+      end.** ADR-0097 Alt C frees the anon Var only at `Env.deinit`, NOT at its
+      `with-local-vars` extent, because an escaped `var_ref` must stay deref-safe
+      (freeing at the extent would UAF on escape — Alt B's flaw). The cost is a
+      bounded within-session retention: a hot loop of `with-local-vars` grows
+      `env.local_vars` until the session ends. The finished-form reclamation is a
+      **generation-handle slotmap** (Alt C''): mint anon Vars from a pooled slot
+      table, free/recycle the slot at the extent, bump a generation; an escaped
+      var_ref carries (slot, gen) and derefs to Unbound when the gen is stale —
+      zero leak AND zero UAF AND JVM-faithful Unbound-on-escape. Deferred as
+      disproportionate for a rarely-used feature until a workload makes the
+      retention material. Barrier dissolves when a real `with-local-vars`-heavy
+      workload (or a long-running edge process) shows the retention matters; then
+      build the slotmap + flip AD-015 (escape → real Unbound, not nil). Cross-ref
+      ADR-0097 (the Alt A/B/C analysis) + AD-015 (escape divergence).
+    last_reviewed: "2026-06-06"
   - id: "D-254"
     status: "now (found 2026-06-05 resuming the add-watch IRef campaign) — `set!` on a dynamic var diverges from JVM in 3 ways; the analyze-time check is the genuinely-broken one."
     category: "runtime"
@@ -408,7 +428,7 @@ active:
       F-004 slot-owner session, or a real lib/with-out-str need.
     last_reviewed: "2026-06-04"
   - id: "D-237"
-    status: "now (vars.clj cluster, 2026-06-03) — `with-local-vars` needs anonymous-Var creation + a heap binding-frame primitive; var-get/var-set landed."
+    status: "DISCHARGED 2026-06-06 (ADR-0097) — `with-local-vars` landed: `-create-local-var` primitive mints anonymous dynamic Vars on a sentinel `__local` ns; the core.clj macro lowers to let + push-thread-bindings + try/finally pop. var-get/var-set/@ work in-body (clj-matched 12/20/3). Anon Vars are Env-owned, freed at session end (escape-safe, no DebugAllocator leak). Escaped-var deref → nil = AD-015. Residual: per-extent struct reclamation = D-255."
     category: "runtime"
     barrier: |-
       **`(with-local-vars [a 1] …)` is unsupported.** `var-get`/`var-set`
