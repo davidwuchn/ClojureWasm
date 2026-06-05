@@ -208,6 +208,7 @@ pub fn setupCore(arena: std.mem.Allocator, rt: *Runtime, env: *Env, macro_table:
     // `cljw.error` ns (via the embedded file's `(in-ns ...)`), then the
     // raise-time snapshot provider is wired (ADR-0055 D2/D3).
     try error_context.register(env);
+    try installBaselineBindings(arena, env);
 }
 
 /// Intern `clojure.core/*data-readers*` (root `{}`) and
@@ -302,6 +303,33 @@ fn registerPrintLimitVars(rt: *Runtime, env: *Env) !void {
     print_mod.initPrintLimitVars(len_v, lvl_v, nsmaps_v, readably_v, meta_v);
 }
 
+/// ADR-0096: push a process-lifetime baseline binding frame (clojure.main
+/// parity) thread-binding the standard config / print dynamic vars to their
+/// roots, so `(set! *warn-on-reflection* true)` & co. work at top level (the
+/// var is genuinely thread-bound) — while `set!` on an unbound user var raises.
+/// `user_pushed = false` protects it from `pop-thread-bindings` (a stray pop
+/// correctly raises unmatched). Arena-owned (the frame + its map ride the
+/// bootstrap arena, freed wholesale at teardown — no per-entry free). Excludes
+/// `*ns*` (materialized-view machinery, ADR-0085) and `*out*/*in*/*err*`
+/// (D-238). Standard vars cljw lacks (`*assert*`, `*math-context*`, …) are NOT
+/// fabricated — they land with their features (D-241 stays open for them).
+fn installBaselineBindings(arena: std.mem.Allocator, env: *Env) !void {
+    const core = try env.findOrCreateNs("clojure.core");
+    const names = [_][]const u8{
+        "*warn-on-reflection*", "*unchecked-math*",
+        "*print-meta*",         "*print-length*",
+        "*print-level*",        "*print-namespace-maps*",
+        "*data-readers*",       "*default-data-reader-fn*",
+    };
+    const frame = try arena.create(env_mod.BindingFrame);
+    frame.* = .{};
+    for (names) |nm| {
+        const v = core.resolve(nm) orelse continue;
+        try frame.bindings.put(arena, v, v.root);
+    }
+    env_mod.pushFrame(frame);
+}
+
 /// AOT bootstrap (ADR-0056 Cycle 2b): restore `clojure.core` from the
 /// embedded bytecode envelope `core_blob` (no parse/analyze/eval of
 /// core.clj — the edge cold-start win), then load the remaining `.clj`
@@ -320,6 +348,7 @@ pub fn setupCoreAot(
     try setupCorePrefix(rt, env, macro_table);
     try loadCoreAot(arena, rt, env, macro_table, core_blob);
     try error_context.register(env);
+    try installBaselineBindings(arena, env);
 }
 
 /// The AOT analog of `loadCore` (no prefix, no error_context — same scope

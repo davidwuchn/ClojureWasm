@@ -116,12 +116,15 @@ pub const VarRef = struct {
     loc: SourceLocation = .{},
 };
 
-/// `(set! var-symbol value)` — assign a dynamic Var's binding. The
-/// analyser resolves the target to its `*Var` (it must already exist).
-/// At eval, the innermost thread binding for the Var is updated if one is
-/// active; otherwise the Var root is set (covers top-level compiler-flag
-/// vars like `*warn-on-reflection*`). The field-set form `(set! (.f o) v)`
-/// is a separate, unsupported sub-case. Returns the assigned value.
+/// `(set! var-symbol value)` — assign a dynamic Var's thread binding. The
+/// analyser resolves the target to its `*Var` (it must already exist); it
+/// does NOT check `^:dynamic` (that raced the eval-time flag — ADR-0096).
+/// At eval, the innermost thread binding for the Var is updated; if the Var
+/// is NOT thread-bound (dynamic-and-unbound OR non-dynamic) it RAISES (JVM
+/// Var.set parity — set! never touches a root). Standard config vars
+/// (`*warn-on-reflection*` …) are thread-bound by the bootstrap baseline
+/// frame, so set! on them works at top level. The field-set form
+/// `(set! (.f o) v)` is a separate, unsupported sub-case. Returns the value.
 pub const SetNode = struct {
     var_ptr: *Var,
     value_expr: *const Node,

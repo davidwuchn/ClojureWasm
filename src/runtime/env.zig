@@ -363,6 +363,12 @@ pub const Env = struct {
         // tests). Production runs one Env for the process lifetime, so
         // this fires only at exit.
         if (on_deinit_hook) |h| h();
+        // ADR-0096: the baseline binding frame is arena-owned (freed by the
+        // caller's arena), but `current_frame` is a threadlocal that would
+        // otherwise outlive this session and dangle into the next setupCore-
+        // using test. Null it here (no deref) so the frame chain never points
+        // at freed arena memory across sessions.
+        current_frame = null;
         var it = self.namespaces.iterator();
         while (it.next()) |entry| {
             self.alloc.free(entry.key_ptr.*);

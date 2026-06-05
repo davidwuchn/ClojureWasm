@@ -968,8 +968,10 @@ pub fn analyzeSetBang(
             return error_catalog.raise(.current_namespace_missing, items[1].location, .{ .sym = name_sym.name });
     const var_ptr = target_ns.resolve(name_sym.name) orelse
         return error_catalog.raise(.symbol_unresolved, items[1].location, .{ .sym = analyzer_mod.symFullName(name_sym) });
-    if (!var_ptr.flags.dynamic)
-        return error_catalog.raise(.set_target_not_dynamic, items[1].location, .{ .@"var" = analyzer_mod.symFullName(name_sym) });
+    // ADR-0096: no analyze-time dynamic check — JVM's `set!` only checks
+    // thread-binding at runtime (a non-dynamic var is simply never bound). The
+    // analyze-time check also raced the eval-time `flags.dynamic` set, falsely
+    // rejecting a same-unit `(do (def ^:dynamic z 0) (binding [z 1] (set! z 9)))`.
 
     const value_node = try analyzer_mod.analyze(arena, rt, env, scope, items[2], macro_table);
     const n = try arena.create(Node);

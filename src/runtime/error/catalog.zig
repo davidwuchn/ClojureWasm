@@ -93,9 +93,6 @@ pub const Code = enum {
     /// `(pop-thread-bindings)` with no matching `push-thread-bindings` on top
     /// (the binding stack is empty or its top is a `binding`-form frame).
     pop_thread_bindings_unmatched,
-    /// `(set! v ...)` targeted a Var that is not `^:dynamic`.
-    /// args: `.{ .var = "ns/name" }`
-    set_target_not_dynamic,
     /// loop* / recur arity exceeds the internal slot-index width.
     /// args: `.{ .form = "loop*"|"recur", .got = N, .max = 65535 }`
     arity_too_large,
@@ -561,11 +558,6 @@ pub fn entry(comptime code: Code) Entry {
             .kind = .value_error,
             .phase = .eval,
             .template = "Can't dynamically bind non-dynamic var: {[var]s}",
-        },
-        .set_target_not_dynamic => .{
-            .kind = .value_error,
-            .phase = .eval,
-            .template = "Can't set! non-dynamic var: {[var]s}",
         },
         .pop_thread_bindings_unmatched => .{
             .kind = .value_error,

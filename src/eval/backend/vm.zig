@@ -326,7 +326,12 @@ fn stepOnce(
             if (sp == 0) return raiseInternal("vm: op_set_var on empty stack");
             const var_ptr = chunk.constants[instr.operand].decodePtr(*Var);
             const val = stack[sp - 1]; // peek: the assigned value stays as the result
-            if (!env_mod.setBinding(var_ptr, val)) var_ptr.setRoot(val);
+            // ADR-0096: thread-bound-or-raise (JVM Var.set parity); never setRoot.
+            if (!env_mod.setBinding(var_ptr, val)) {
+                const full = try std.fmt.allocPrint(rt.gpa, "{s}/{s}", .{ var_ptr.ns.name, var_ptr.name });
+                defer rt.gpa.free(full);
+                return error_catalog.raise(.var_set_not_bound, .{}, .{ .@"var" = full });
+            }
         },
         .op_jump => {
             const offset: i16 = @bitCast(instr.operand);

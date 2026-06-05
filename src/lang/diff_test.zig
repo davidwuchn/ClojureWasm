@@ -250,14 +250,16 @@ test "diff: set! updates the active thread binding (both backends)" {
     try f.check("(binding [*tv* 2] (set! *tv* 42) *tv*)", 42);
 }
 
-test "diff: set! at top level sets the var root (both backends)" {
+test "diff: set! on an unbound var raises, never touches root (ADR-0096, both backends)" {
     var f = try Fixture.init(testing.allocator);
     defer f.deinit();
     const user = f.env.findNs("user").?;
     const v = try f.env.intern(user, "*tv*", Value.initInteger(1), null);
     v.flags.dynamic = true;
-    // No active binding frame → set! writes the root; deref then sees it.
-    try f.check("(do (set! *tv* 7) *tv*)", 7);
+    // No active binding frame → set! raises (JVM Var.set parity); the root is
+    // left intact (set! never writes a root). The throw is caught so check can
+    // assert the surviving root value identically on both backends.
+    try f.check("(do (try (set! *tv* 7) (catch Throwable _ nil)) *tv*)", 1);
 }
 
 test "diff: binding restores the root after the dynamic extent" {

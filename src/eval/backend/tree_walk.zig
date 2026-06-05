@@ -455,7 +455,15 @@ pub fn eval(
 /// assigned value.
 fn evalSet(rt: *Runtime, env: *Env, locals: []Value, n: node_mod.SetNode) anyerror!Value {
     const val = try eval(rt, env, locals, n.value_expr);
-    if (!env_mod.setBinding(n.var_ptr, val)) n.var_ptr.setRoot(val);
+    // ADR-0096: `set!` only mutates a thread binding (JVM Var.set parity); an
+    // unbound var (dynamic-and-unbound OR non-dynamic) raises — set! never
+    // touches a root. Standard config vars are thread-bound by the baseline
+    // frame (bootstrap.installBaselineBindings), so set! on them works at top.
+    if (!env_mod.setBinding(n.var_ptr, val)) {
+        const full = try std.fmt.allocPrint(rt.gpa, "{s}/{s}", .{ n.var_ptr.ns.name, n.var_ptr.name });
+        defer rt.gpa.free(full);
+        return error_catalog.raise(.var_set_not_bound, n.loc, .{ .@"var" = full });
+    }
     return val;
 }
 
