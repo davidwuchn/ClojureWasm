@@ -4,8 +4,10 @@
 //! Wires the 3 entry-point root walkers that exist in cw v1 (ADR-0028
 //! §5 amendment 2 / ADR-0091):
 //!
-//!   1. **ns_vars**       — Namespace `Var.root` + `Var.meta` across
-//!                        every registered Env (`WalkContext.envs`).
+//!   1. **ns_vars**       — Namespace `Var.root` + `Var.meta` +
+//!                        `Var.watches` across every registered Env
+//!                        (`WalkContext.envs`). `Var.watches` is reachable
+//!                        ONLY here (a `var_ref` is GC-membrane-filtered).
 //!   2. **thread_roots**  — per-thread execution roots, walked for the
 //!                        collecting thread + every registered worker
 //!                        `ThreadGcContext`: its dynamic-binding frame
@@ -365,6 +367,10 @@ pub const RootIterator = struct {
         /// Most-recently yielded Var so the iterator can yield its
         /// `meta` slot on the next `next()` call before advancing.
         pending_meta: ?*const env_mod.Var = null,
+        /// Same, for the Var's `watches` map (yielded after `meta`): a
+        /// `var_ref` is GC-filtered, so its watch fns are reachable for the
+        /// collector ONLY here.
+        pending_watches: ?*const env_mod.Var = null,
     };
 
     /// Walks the per-thread execution roots thread-major (ADR-0091): for
@@ -436,10 +442,17 @@ pub const RootIterator = struct {
     fn nextNsVar(self: *RootIterator) ?*HeapHeader {
         const c = &self.cursor.ns_vars;
         while (true) {
-            // Flush pending Var.meta yield from the previous iteration.
+            // Flush pending Var.meta then Var.watches from the previous Var
+            // before advancing (meta immediate/absent falls through to watches;
+            // watches immediate/absent falls through to the next Var).
             if (c.pending_meta) |v_ptr| {
                 c.pending_meta = null;
+                c.pending_watches = v_ptr;
                 if (v_ptr.meta) |m| if (m.heapHeader()) |hdr| return hdr;
+            }
+            if (c.pending_watches) |v_ptr| {
+                c.pending_watches = null;
+                if (v_ptr.watches.heapHeader()) |hdr| return hdr;
             }
             // Advance Var iterator within current Namespace.
             if (c.var_it) |*var_it| {

@@ -10,6 +10,7 @@ const std = @import("std");
 const Value = @import("../../runtime/value/value.zig").Value;
 const Runtime = @import("../../runtime/runtime.zig").Runtime;
 const env_mod = @import("../../runtime/env.zig");
+const iref = @import("../../runtime/iref.zig");
 const higher_order = @import("higher_order.zig");
 const tagged_literal_mod = @import("../../runtime/tagged_literal.zig");
 const Env = env_mod.Env;
@@ -1351,12 +1352,14 @@ pub fn alterVarRootFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceL
     if (args[0].tag() != .var_ref)
         return error_catalog.raise(.type_arg_invalid, loc, .{ .fn_name = "alter-var-root", .expected = "var", .actual = @tagName(args[0].tag()) });
     const v: *env_mod.Var = @constCast(args[0].decodePtr(*const env_mod.Var));
+    const old_root = v.root; // watch old = prior ROOT (JVM alterRoot ignores dynamic bindings)
     const call_args = try rt.gpa.alloc(Value, args.len - 1);
     defer rt.gpa.free(call_args);
     call_args[0] = v.deref();
     @memcpy(call_args[1..], args[2..]);
     const newroot = try higher_order.invokeCallable(rt, env, args[1], call_args, loc);
     v.setRoot(newroot);
+    try iref.notifyWatches(rt, env, args[0], env_mod.varWatchesOf(args[0]), old_root, newroot);
     return newroot;
 }
 

@@ -100,6 +100,10 @@ assert_eq 'print_method' "$("$BIN" -e '(mapv pr-str [1 :a "s" [1 2] {:k 3}])')" 
 # result-pin roots only the outer Value, not the walk's own intermediates.
 assert_eq 'print_nested' "$("$BIN" -e '(partition 2 (range 1 10))')"                                '((1 2) (3 4) (5 6) (7 8))'
 assert_eq 'print_lazlaz' "$("$BIN" -e '(map (fn [x] (range 1 x)) (range 2 5))')"                    '((1) (1 2) (1 2 3))'
+# IRef var watches — `Var.watches` is reachable for the collector ONLY via the
+# ns_vars root walk (a var_ref is GC-membrane-filtered), so a torture collect mid
+# alter-var-root would sweep the watch fn without the new `pending_watches` yield.
+assert_eq 'var_watch'    "$("$BIN" -e '(do (def x 0) (def log (atom [])) (add-watch (var x) :k (fn [k r o n] (swap! log conj n))) (dotimes [_ 8] (alter-var-root (var x) inc)) @log)')" '[1 2 3 4 5 6 7 8]'
 # D-253 macroexpand — the analyzer's valueToForm (Value->Form round-trip of a
 # macro expansion) roots its seq cursor / source across the recursive conversion
 # + lazy realization (a macro's `(seq (concat …))` syntax-quote). Without it a

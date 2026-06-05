@@ -18,4 +18,11 @@ assert_eq 'twice'  "$("$BIN" -e '(do (def a 0) (alter-var-root (var a) inc) (alt
 if "$BIN" -e '(alter-var-root 5 inc)' >/dev/null 2>&1; then fail 'nonvar: should error'; fi
 echo 'PASS nonvar -> errors'
 
-echo "OK — phase14_alter_var_root (6 cases) green"
+# add-watch on a var (IRef generalization): fires (fn key var old new) on each
+# alter-var-root only — a dynamic-binding set! does NOT notify (JVM Var).
+assert_eq 'add_watch'    "$("$BIN" -e '(do (def x 0) (def log (atom [])) (add-watch (var x) :k (fn [k r o n] (swap! log conj [o n]))) (alter-var-root (var x) inc) (alter-var-root (var x) inc) @log)')" '[[0 1] [1 2]]'
+assert_eq 'remove_watch' "$("$BIN" -e '(do (def x 0) (def log (atom [])) (add-watch (var x) :k (fn [k r o n] (swap! log conj n))) (alter-var-root (var x) inc) (remove-watch (var x) :k) (alter-var-root (var x) inc) @log)')" '[1]'
+# add-watch alone does not fire — only an alter-var-root does.
+assert_eq 'no_alter_silent' "$("$BIN" -e '(do (def x 0) (def log (atom [])) (add-watch (var x) :k (fn [k r o n] (swap! log conj n))) @log)')" '[]'
+
+echo "OK — phase14_alter_var_root (9 cases) green"

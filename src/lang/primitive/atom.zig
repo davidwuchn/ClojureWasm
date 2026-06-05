@@ -208,10 +208,10 @@ pub fn volatileQFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLoca
 /// `{key -> fn}` map in its own struct; this funnels the common assoc/dissoc.
 fn requireIRef(name: []const u8, v: Value, loc: SourceLocation) !void {
     switch (v.tag()) {
-        .atom, .agent, .ref => {},
+        .atom, .agent, .ref, .var_ref => {},
         else => return error_catalog.raise(.type_arg_invalid, loc, .{
             .fn_name = name,
-            .expected = "atom, agent, or ref",
+            .expected = "atom, agent, ref, or var",
             .actual = @tagName(v.tag()),
         }),
     }
@@ -222,6 +222,7 @@ fn irefWatchesOf(v: Value) Value {
         .atom => atom_mod.watchesOf(v),
         .agent => agent_mod.watchesOf(v),
         .ref => ref_mod.watchesOf(v),
+        .var_ref => env_mod.varWatchesOf(v),
         else => unreachable, // gated by requireIRef
     };
 }
@@ -231,6 +232,7 @@ fn irefSetWatches(v: Value, m: Value) void {
         .atom => atom_mod.setWatches(v, m),
         .agent => agent_mod.setWatches(v, m),
         .ref => ref_mod.setWatches(v, m),
+        .var_ref => env_mod.varSetWatches(v, m),
         else => unreachable, // gated by requireIRef
     }
 }

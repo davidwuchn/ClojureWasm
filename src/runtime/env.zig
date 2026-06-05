@@ -97,6 +97,13 @@ pub const Var = struct {
     doc: ?[]const u8 = null,
     /// `^:arglists` — human-readable signature for `(doc fn-name)`.
     arglists: ?[]const u8 = null,
+    /// Watch map `{key -> fn}` (`add-watch` / `remove-watch`), or nil. Fires
+    /// `(fn key var old new)` from `alter-var-root` only (a dynamic-binding
+    /// `set!` does NOT notify, matching JVM `Var`). The Var is gpa-owned and
+    /// `var_ref`-filtered from the GC membrane, so this map is reachable for the
+    /// collector only via the `ns_vars` root walk (`root_set.zig` yields it
+    /// alongside `Var.root` + `Var.meta`).
+    watches: Value = .nil_val,
 
     /// Return the active value: dynamic binding (if any) for dynamic
     /// Vars, otherwise the root.
@@ -114,6 +121,17 @@ pub const Var = struct {
         self.root = v;
     }
 };
+
+/// The Var's watch map (`nil` or a persistent `{key -> fn}`). IRef surface; `v`
+/// is a `.var_ref`.
+pub fn varWatchesOf(v: Value) Value {
+    return v.decodePtr(*const Var).watches;
+}
+
+/// Replace the Var's watch map (`add-watch` / `remove-watch`). `v` is a `.var_ref`.
+pub fn varSetWatches(v: Value, m: Value) void {
+    @constCast(v.decodePtr(*const Var)).watches = m;
+}
 
 // --- Namespace ---
 
