@@ -122,5 +122,11 @@ assert_eq 'agent_send'   "$("$BIN" -e '(let [a (agent 0)] (send a inc) (await a)
 assert_eq 'agent_drain'  "$("$BIN" -e '(let [a (agent 0)] (dotimes [_ 20] (send a inc)) (await a) @a)')" '20'
 assert_eq 'agent_conj'   "$("$BIN" -e '(let [a (agent [])] (send a conj 1) (send a conj 2) (await a) @a)')" '[1 2]'
 assert_eq 'agent_sendoff' "$("$BIN" -e '(let [a (agent 0)] (send-off a + 5) (await a) @a)')"          '5'
+# D-244 #4 blocking-safepoint — `delay.force` runs the thunk (arbitrary eval)
+# under the once-lock, so the COLLECTING main thread holds the lock across a
+# torture collect while a future worker blocks on it. A plain block leaves the
+# worker off any safepoint -> stopWorld waits for it forever (hang 124).
+# safepoint.lockMutexAtSafepoint counts the blocked worker parked.
+assert_eq 'delay_concurrent' "$("$BIN" -e '(let [n (atom 0) d (delay (swap! n inc))] (future (deref d)) (deref d) @n)')" '1'
 
 echo "ALL phase16_gc_torture PASS"

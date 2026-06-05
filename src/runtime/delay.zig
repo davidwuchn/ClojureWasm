@@ -28,6 +28,7 @@ const Value = value_mod.Value;
 const HeapHeader = value_mod.HeapHeader;
 const Runtime = @import("runtime.zig").Runtime;
 const io_default = @import("concurrency/io_default.zig");
+const safepoint = @import("concurrency/safepoint.zig");
 const tag_ops = @import("gc/tag_ops.zig");
 const gc_heap_mod = @import("gc/gc_heap.zig");
 const mark_sweep = @import("gc/mark_sweep.zig");
@@ -99,7 +100,10 @@ pub fn force(rt: *Runtime, env: anytype, v: Value, loc: anytype) !Value {
     // a second thread blocks here, then takes the realised cache below. On a
     // thunk error the `defer` unlocks and the state stays `.pending` (retry
     // re-runs — the preserved single-thread divergence).
-    io_default.lockMutex(&d.cell.mutex);
+    // GC-ROOT: a WORKER blocking here is at a safepoint — the COLLECTING main
+    // thread holds this same lock across the thunk's eval (the only eval-under-
+    // lock site), so a plain block would stall the STW rendezvous (D-244 #4).
+    safepoint.lockMutexAtSafepoint(&d.cell.mutex);
     defer io_default.unlockMutex(&d.cell.mutex);
     if (d.state == .realised) return d.cached;
     const vtable = rt.vtable orelse return error.InternalError;

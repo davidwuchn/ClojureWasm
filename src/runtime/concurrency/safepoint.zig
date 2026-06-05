@@ -100,6 +100,49 @@ pub fn noteWorkerLeft() void {
     io_default.condBroadcast(&all_parked);
 }
 
+/// Count a registered worker as parked for the span of a BLOCKING lock/condition
+/// acquisition, so a concurrent `stopWorld` collector treats it as quiescent and
+/// proceeds. The worker's roots stay published (its EvalFrame chain), so the
+/// collector walks them safely while it blocks. Pairs with `exitBlocked`. A
+/// worker blocked on a lock is NOT at a back-edge poll, so without this the
+/// rendezvous waits for a thread that will never park (D-244 #4 — the delay-once
+/// torture deadlock: `force` runs the thunk under the once-lock, so the COLLECTING
+/// main thread holds it across a collect while a worker blocks on it).
+pub fn enterBlocked() void {
+    io_default.lockMutex(&sp_mutex);
+    defer io_default.unlockMutex(&sp_mutex);
+    parked_count += 1;
+    io_default.condSignal(&all_parked);
+}
+
+/// End an `enterBlocked` region. Decrement the parked count; if a collection
+/// armed while we were blocked, park now (re-checking the flag) so the
+/// post-acquire heap-touching code does not run before the collector resumes.
+pub fn exitBlocked() void {
+    {
+        io_default.lockMutex(&sp_mutex);
+        defer io_default.unlockMutex(&sp_mutex);
+        parked_count -= 1;
+    }
+    if (gc_requested.load(.acquire)) park();
+}
+
+/// Acquire `m` at a GC safepoint when running on a registered worker: a worker
+/// that may block here while the COLLECTING thread holds `m` across a collect
+/// must not stall the rendezvous. The main / unregistered thread (the collector
+/// in the torture model, never the blocked party) takes the plain lock. Use ONLY
+/// at a lock that can be held across a collect — today the `delay` once-lock,
+/// the sole site that runs arbitrary eval (the thunk) under a lock.
+pub fn lockMutexAtSafepoint(m: *std.Io.Mutex) void {
+    if (!root_set.is_registered_worker) {
+        io_default.lockMutex(m);
+        return;
+    }
+    enterBlocked();
+    io_default.lockMutex(m);
+    exitBlocked();
+}
+
 /// Resume the world: clear the safe-point flag and wake every parked worker.
 /// Call after the caller finishes collecting. Each woken worker re-checks the
 /// (now-clear) flag and exits its park loop.
