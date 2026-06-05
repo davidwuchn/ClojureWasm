@@ -124,6 +124,25 @@ active:
           holds the acc across first/rest seq-forcing → tells whether the fix is in
           reduce (root the acc) or in transient conj! / vector-grow (root the in-progress
           node). That single fix likely clears the whole seq-realiser class.
+          *** ROOT CAUSE FULLY PINNED (2026-06-05) ***: `reduceFn` (higher_order.zig:141,
+          a Zig primitive) holds `acc` + `cur` in ZIG LOCALS (lines 217-230+) across
+          `invokeCallable` (the reducing fn) and `sequence.firstFn`/`nextFn` (which force
+          lazy/chunked seq elements by RE-ENTERING eval). Those nested evals hit VM
+          back-edge polls → torture collect → `acc`/`cur` are on no operand stack / locals
+          slot / trace → swept. `reduce str` survives only by luck (the freed acc string
+          is read before its free-pool slot is overwritten); `reduce conj!`/vector-grow
+          crashes because conj! ALLOCATES new nodes that reuse the swept acc's memory →
+          immediate corruption (garbage vector `shift`). THE FIX (ADR-level — generalises
+          the single-slot gc_self_guard): a primitive-local GC-root mechanism so a Zig
+          primitive can publish the Values it holds across a reentrant eval. reduce needs
+          to root BOTH acc + cur (so a single slot is insufficient — needs a small
+          per-thread primitive-root STACK, or push acc+cur as a 2-frame). This is THE
+          core of "GC-safe under collect against a real runtime" and clears the entire
+          seq-realiser class at once (reduce backs vec/into/interpose/mapv/frequencies/…).
+          Same mechanism then covers other reentrant primitives (map/filter realisers,
+          apply-with-lazy, sort, etc.). NEXT CYCLE: ADR + DA-fork for the primitive-root
+          mechanism, wire reduceFn first, validate '(vec (map str (range 1 80)))' torture-
+          green, extend phase16_gc_torture.sh, then sweep the other reentrant primitives.
         LIKELY NEED A TRACE (PRODUCED + hold child Values — verify each is reached):
           multi_fn (method tables), protocol / protocol_fn (the defrecord 'expected
           protocol, got nil' is likely here), class, type_descriptor (walked via extern
