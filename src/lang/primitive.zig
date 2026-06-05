@@ -111,6 +111,8 @@ pub fn registerAll(env: *Env) !void {
     // declaration, create its cljw_ns, register its TypeDescriptor.
     // ADR-0029 D5 aggregator; F-009 thin-wrapper invariant.
     try @import("../runtime/java/_host_api.zig").installAll(env);
+    // ADR-0098: the cljw-original surface aggregator (cljw.http.server / .client).
+    try @import("../runtime/cljw/_host_api.zig").installAll(env);
 
     // ADR-0087: register the clojure.lang.PersistentQueue surface descriptor
     // (carries the EMPTY static field) directly — it is not a java/ surface

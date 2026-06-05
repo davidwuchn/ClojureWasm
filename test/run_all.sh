@@ -82,7 +82,7 @@ done
 #      before the flush — leaves the pool a correct, stable binary.
 # These run serially BEFORE the parallel flush, on a quiet machine.
 # bench_quick / bench_regression are not e2e_-prefixed, so already serial.
-SERIAL_STEPS="e2e_phase14_cold_start_threshold,e2e_phase8_exit_smoke,e2e_phase4_cli,e2e_phase4_exit,e2e_phase4_exit_codes"
+SERIAL_STEPS="e2e_phase14_cold_start_threshold,e2e_phase8_exit_smoke,e2e_phase4_cli,e2e_phase4_exit,e2e_phase4_exit_codes,e2e_phase16_http_server"
 declare -a E2E_QUEUE=()
 
 # --- run_step framework (per ADR-0024) ---
@@ -451,6 +451,7 @@ run_step "e2e_phase15_stm_dosync"           "bash test/e2e/phase15_stm_dosync.sh
 run_step "e2e_phase16_locking"              "bash test/e2e/phase16_locking.sh"
 run_step "e2e_phase16_agent"                "bash test/e2e/phase16_agent.sh"
 run_step "e2e_phase16_concurrency_stress"   "bash test/e2e/phase16_concurrency_stress.sh"
+run_step "e2e_phase16_http_server"          "bash test/e2e/phase16_http_server.sh"
 run_step "e2e_phase15_for_while"            "bash test/e2e/phase15_for_while.sh"
 run_step "e2e_phase15_ns_import"            "bash test/e2e/phase15_ns_import.sh"
 run_step "e2e_phase15_dot_form"             "bash test/e2e/phase15_dot_form.sh"
