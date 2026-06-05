@@ -1238,6 +1238,27 @@
 ;; `(printf fmt & args)` → print the `format`-ed string (no trailing newline).
 (def printf (fn* [fmt & args] (print (apply format fmt args))))
 
+;; `char-name-string` / `char-escape-string` — clojure.core's char→name and
+;; char→escape-sequence tables (maps, callable as fns; a char not in the table
+;; yields nil). Match clj exactly. (cljw's own printer escapes chars in Zig;
+;; these are the user-facing data.)
+(def char-name-string
+  {\newline "newline"
+   \tab "tab"
+   \space "space"
+   \backspace "backspace"
+   \formfeed "formfeed"
+   \return "return"})
+
+(def char-escape-string
+  {\newline "\\n"
+   \tab "\\t"
+   \return "\\r"
+   \" "\\\""
+   \\ "\\\\"
+   \formfeed "\\f"
+   \backspace "\\b"})
+
 ;; `(replicate n x)` → a seq of x repeated n times (deprecated alias for
 ;; `(repeat n x)`, kept for compatibility — clj defines it as `(take n (repeat x))`).
 (def replicate
