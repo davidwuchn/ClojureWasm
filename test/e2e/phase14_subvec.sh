@@ -12,4 +12,14 @@ assert_eq 'sv_tail'  "$("$BIN" -e '(subvec [1 2 3 4 5] 2)')"   '[3 4 5]'
 assert_eq 'sv_full'  "$("$BIN" -e '(subvec [1 2 3] 0 3)')"     '[1 2 3]'
 assert_eq 'sv_empty' "$("$BIN" -e '(subvec [1 2 3] 3)')"       '[]'
 assert_eq 'sv_count' "$("$BIN" -e '(count (subvec [10 20 30 40] 1))')" '3'
-echo "OK — phase14_subvec smoke (5 cases) green"
+# clj bounds-checks (does NOT clamp like take/drop): start/end past count, end <
+# start, or negative all throw IndexOutOfBounds.
+"$BIN" -e '(subvec [1 2 3] 1 10)' >/dev/null 2>&1 && fail 'sv_end_oob: expected error' || true
+echo 'PASS sv_end_oob -> errors'
+"$BIN" -e '(subvec [1 2 3] 5)' >/dev/null 2>&1 && fail 'sv_start_oob: expected error' || true
+echo 'PASS sv_start_oob -> errors'
+"$BIN" -e '(subvec [1 2 3] 2 1)' >/dev/null 2>&1 && fail 'sv_end_lt_start: expected error' || true
+echo 'PASS sv_end_lt_start -> errors'
+"$BIN" -e '(subvec [1 2 3] -1)' >/dev/null 2>&1 && fail 'sv_neg: expected error' || true
+echo 'PASS sv_neg -> errors'
+echo "OK — phase14_subvec smoke (9 cases) green"

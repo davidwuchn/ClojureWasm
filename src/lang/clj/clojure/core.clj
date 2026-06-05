@@ -574,8 +574,16 @@
 ;; defaults to (count v)) as a vector. cw v1 builds a fresh vector (O(n))
 ;; via take/drop rather than JVM's O(1) shared-structure view (D-134).
 (def subvec
-  (fn* ([v start] (into [] (drop start v)))
-       ([v start end] (into [] (take (- end start) (drop start v))))))
+  (fn* ([v start] (subvec v start (count v)))
+       ([v start end]
+        ;; clj bounds-checks (0 <= start <= end <= count) and throws
+        ;; IndexOutOfBounds — it does NOT clamp like take/drop would
+        ;; (`(subvec [1 2 3] 1 10)` throws, not `[2 3]`).
+        (let [c (count v)]
+          (when (or (< start 0) (< end start) (< c end))
+            (throw (ex-info "subvec index out of bounds"
+                            {:start start :end end :count c})))
+          (into [] (take (- end start) (drop start v)))))))
 
 ;; `(bounded-count n coll)` — for a `counted?` coll return its FULL count (clj:
 ;; `(bounded-count 3 (range 100))` → 100, range is O(1) counted); otherwise walk

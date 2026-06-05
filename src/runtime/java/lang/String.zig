@@ -85,12 +85,23 @@ fn substring(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) 
     if (args[1].tag() != .integer)
         return error_catalog.raise(.type_arg_not_number, loc, .{ .fn_name = ".substring", .actual = @tagName(args[1].tag()) });
     const s = string_collection.asString(args[0]);
-    const start: usize = @intCast(args[1].asInteger());
-    var end: usize = std.math.maxInt(usize);
+    // Codepoint-based indices, bounds-checked against the count (JVM throws
+    // StringIndexOutOfBounds rather than clamping — `(.substring "hello" 1 10)`
+    // is an error, not "ello"). Mirrors clojure.core/subs (D-164-adjacent).
+    const len = charset.codepointCount(s) catch
+        return error_catalog.raise(.feature_not_supported, loc, .{ .name = ".substring on invalid UTF-8" });
+    const start_i = args[1].asInteger();
+    if (start_i < 0 or @as(u64, @intCast(@max(start_i, 0))) > len)
+        return error_catalog.raise(.index_out_of_range, loc, .{ .fn_name = ".substring" });
+    const start: usize = @intCast(start_i);
+    var end: usize = len;
     if (args.len == 3) {
         if (args[2].tag() != .integer)
             return error_catalog.raise(.type_arg_not_number, loc, .{ .fn_name = ".substring", .actual = @tagName(args[2].tag()) });
-        end = @intCast(args[2].asInteger());
+        const end_i = args[2].asInteger();
+        if (end_i < start_i or @as(u64, @intCast(@max(end_i, 0))) > len)
+            return error_catalog.raise(.index_out_of_range, loc, .{ .fn_name = ".substring" });
+        end = @intCast(end_i);
     }
     const slice = charset.substring(s, start, end) catch
         return error_catalog.raise(.feature_not_supported, loc, .{ .name = ".substring index out of range" });
