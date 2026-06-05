@@ -79,13 +79,31 @@ active:
         thing is some other Value in the protocol path — instrument to find it.
       - **operand-stack / fabrication window**: the gc_self_guard set/clear sites are
         still unwired (#4a' hardening, D-244).
-      Method: re-run `CLJW_GC_TORTURE=1` per failing program, re-add the mark() tag>=64
-      guard + source tracking (see phaseC-d250 note), identify the swept Value, fix its
-      rooting/trace. When all torture-green: full `--serial-e2e` under torture, leak
-      check, then the (still-forbidden) auto-collect-ON. Narrower: the transient
-      bootstrap 0xAA-ns window (torture is post-bootstrap armed → currently unexercised).
-      Repro: `CLJW_GC_TORTURE=1 zig-out/bin/cljw -e '(apply str (interpose "," (map str
-      (range 1 80))))'`. Full diagnosis: private/notes/phaseC-d250-gc-torture.md +
+      FULL UNTRACED-TAG CHECKLIST (2026-06-05 enumeration — 26 of 64 HeapTags have NO
+      registered trace; the torture mode turned the open-ended gap into this concrete
+      list). Audit each: does it hold child Value(s) reachable ONLY through it? If yes →
+      register a trace (mirror atom.traceGc / chunked_cons.traceChunkBuffer). If it is a
+      genuine leaf or non-GC, leave it + note why.
+        LEAF / non-GC (no trace needed, confirm): string, symbol, keyword, big_int
+          (byte/limb leaves); var_ref, ns (Env-lifetime, already skipped by the
+          heapHeader membrane); wasm_module/wasm_fn/wasm_funcref/wasm_externref
+          (Phase 16, not yet produced).
+        LIKELY NEED A TRACE (hold child Values — the swept-value bugs live here):
+          cons (tag 9, distinct from Cons-as-.list), range, string_seq, array_seq,
+          array_chunk  ← the interpose '(map str (range…))' vector-sweep is in this
+          seq cluster (234 .vector + 234 .tail_node swept; a live one is held by an
+          untraced seq container); multi_fn (method tables), protocol / protocol_fn
+          (the defrecord 'expected protocol, got nil' is here), class, type_descriptor
+          (walked via extern Ref — verify), host_instance, reader_conditional, matcher,
+          tuple, box, array (object-array elements).
+      Method per type: confirm it's reached under torture, add the trace marking its
+      child Values, extend test/e2e/phase16_gc_torture.sh with a case, re-run torture.
+      When ALL torture-green: full `--serial-e2e` under torture, leak check, then the
+      (still-forbidden) auto-collect-ON. Narrower: the transient bootstrap 0xAA-ns window
+      (torture is post-bootstrap armed → currently unexercised). Repro:
+      `CLJW_GC_TORTURE=1 zig-out/bin/cljw -e '(apply str (interpose "," (map str (range
+      1 80))))'` → 'integer does not fit' (swept vector). Full diagnosis +
+      instrumentation method: private/notes/phaseC-d250-gc-torture.md +
       phaseC-d251-root-cause.md.
     last_reviewed: "2026-06-05"
   - id: "D-242"
