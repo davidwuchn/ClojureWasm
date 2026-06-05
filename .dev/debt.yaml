@@ -9,6 +9,25 @@
 # md-table-align no longer pads it to ~800 KB of whitespace.
 
 active:
+  - id: "D-267"
+    status: "open (found 2026-06-06, format clj-diff sweep) — `(format \"%c\" <int>)` diverges: clj accepts an Integer (`(int 66)`→\"B\") but rejects a Long (`65`→IllegalFormatConversionException); cljw collapses int/Long (F-005) so it rejects ALL integers (type_error). char args work in both."
+    category: "clj-parity"
+    barrier: |-
+      **`%c` with an integer arg can't replicate clj's Integer-vs-Long split.**
+      clj's `%c` accepts Character/Byte/Short/Integer and rejects Long, so
+      `(format "%c" (int 66))`→"B" but `(format "%c" 65)`→IllegalFormatConversion.
+      cljw has ONE integer type (F-005: int≡Long≡`.integer`), so `(int 66)` and
+      `65` are indistinguishable — cljw currently rejects `%c` on every integer
+      (type_error). The COMMON case is already clj-parity: `(format "%c" \A)` /
+      `(format "%c" (char 65))` → "A" in both. Only the rare `%c`-with-int path
+      diverges, and cljw CANNOT match both clj cases at once. Two finished-form
+      options, both F-005-consequence divergences needing an AD: (a) accept `%c`
+      on cljw's integer as a codepoint → matches `(int 66)`→"B" but makes
+      `(format "%c" 65)`→"A" (clj errors there); (b) keep rejecting integers →
+      matches `(format "%c" 65)`→error but `(int 66)` stays an error (clj "B").
+      LOW value (`%c` with an int is rare; char args are the norm). Decision +
+      AD deferred. Cross-ref F-005, F-011, AD-003 family.
+    last_reviewed: "2026-06-06"
   - id: "D-266"
     status: "open (found 2026-06-06 while discharging D-264) — non-chunked lazy-seq realization has a high per-element cost (~0.4ms/elem); `repeat` is not chunked while `range` is."
     category: "perf"
