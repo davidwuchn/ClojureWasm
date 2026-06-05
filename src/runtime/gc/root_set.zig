@@ -172,6 +172,7 @@ pub threadlocal var gc_self_guard: ?Value = null;
 // =====================================================================
 
 const io_default = @import("../concurrency/io_default.zig");
+const safepoint = @import("../concurrency/safepoint.zig");
 
 /// Max concurrently-registered worker threads. Phase-B `pmap`/`agent`
 /// pools are CPU-bounded; 64 is generous headroom.
@@ -202,6 +203,16 @@ pub const ThreadGcContext = struct {
 var thread_registry: [MAX_GC_THREADS]?*ThreadGcContext = @splat(null);
 var registry_mutex: std.Io.Mutex = .init;
 
+/// Live registered-worker count, mirroring the non-null slots in
+/// `thread_registry`. Maintained under `registry_mutex` (register/unregister)
+/// but exposed lock-free via `registeredCountRelaxed` so `safepoint.stopWorld`
+/// can re-read the rendezvous target while holding `sp_mutex` — taking
+/// `registry_mutex` under `sp_mutex` would invert the lock order against the
+/// unregister path (registry_mutex → sp_mutex wake). The array scan in
+/// `registeredThreadCount` stays the SSOT for callers that already hold (or do
+/// not need) the precise locked snapshot.
+var registered_count: std.atomic.Value(u32) = .init(0);
+
 /// True on a thread that has registered itself as a GC worker (set by
 /// `registerThread`, cleared by `unregisterThread`, both running ON the worker
 /// thread). The main / unregistered thread leaves it false. Read by the GC
@@ -223,6 +234,7 @@ pub fn registerThread(ctx: *ThreadGcContext) error{TooManyThreads}!void {
         if (slot.* == null) {
             slot.* = ctx;
             is_registered_worker = true;
+            _ = registered_count.fetchAdd(1, .release);
             return;
         }
     }
@@ -231,15 +243,34 @@ pub fn registerThread(ctx: *ThreadGcContext) error{TooManyThreads}!void {
 
 /// Deregister a worker thread's context (at `Thread.join`). No-op if absent.
 pub fn unregisterThread(ctx: *ThreadGcContext) void {
-    io_default.lockMutex(&registry_mutex);
-    defer io_default.unlockMutex(&registry_mutex);
     is_registered_worker = false;
-    for (&thread_registry) |*slot| {
-        if (slot.* == ctx) {
-            slot.* = null;
-            return;
+    var removed = false;
+    {
+        io_default.lockMutex(&registry_mutex);
+        defer io_default.unlockMutex(&registry_mutex);
+        for (&thread_registry) |*slot| {
+            if (slot.* == ctx) {
+                slot.* = null;
+                _ = registered_count.fetchSub(1, .release);
+                removed = true;
+                break;
+            }
         }
     }
+    // Wake a stop-the-world collector that may be waiting on THIS worker to
+    // park: a worker running a tiny action can finish + leave before it ever
+    // reaches a safepoint poll, so the collector's rendezvous target must drop
+    // by one. Signalled AFTER the count decrement + outside `registry_mutex` so
+    // the collector (holding `sp_mutex`, reading the lock-free count) sees the
+    // lower target with no lock-order inversion. Without this the collector's
+    // `parked_count < target` wait never completes (D-244 #4 hang).
+    if (removed) safepoint.noteWorkerLeft();
+}
+
+/// Lock-free snapshot of the registered-worker count for `safepoint.stopWorld`'s
+/// rendezvous-target recompute (see `registered_count`).
+pub fn registeredCountRelaxed() u32 {
+    return registered_count.load(.acquire);
 }
 
 /// Count of currently-registered worker contexts (test/introspection).

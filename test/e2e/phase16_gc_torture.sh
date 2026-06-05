@@ -114,5 +114,13 @@ assert_eq 'macroexpand'  "$("$BIN" -e '(do (def ^:dynamic *wv* 1) (with-redefs [
 assert_eq 'future_work'  "$("$BIN" -e '(let [f (future (reduce + (range 1 100)))] @f)')"             '4950'
 assert_eq 'futures_map'  "$("$BIN" -e '(let [fs (mapv (fn [i] (future (* i i))) (range 1 5))] (mapv deref fs))')" '[1 4 9 16]'
 assert_eq 'pmap_torture' "$("$BIN" -e '(pmap inc (range 1 8))')"                                     '(2 3 4 5 6 7 8)'
+# D-244 #4 rendezvous — a drainer running a tiny action finishes + UNREGISTERS
+# before it ever parks, so stopWorld's once-snapshotted target was never reached
+# and the MAIN-thread torture collect hung (124). stopWorld now recomputes the
+# target each wake + the leaving worker wakes it (root_set.noteWorkerLeft).
+assert_eq 'agent_send'   "$("$BIN" -e '(let [a (agent 0)] (send a inc) (await a) @a)')"               '1'
+assert_eq 'agent_drain'  "$("$BIN" -e '(let [a (agent 0)] (dotimes [_ 20] (send a inc)) (await a) @a)')" '20'
+assert_eq 'agent_conj'   "$("$BIN" -e '(let [a (agent [])] (send a conj 1) (send a conj 2) (await a) @a)')" '[1 2]'
+assert_eq 'agent_sendoff' "$("$BIN" -e '(let [a (agent 0)] (send-off a + 5) (await a) @a)')"          '5'
 
 echo "ALL phase16_gc_torture PASS"

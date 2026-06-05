@@ -73,13 +73,31 @@ pub fn park() void {
 /// flag is armed first); a parked-count overshoot only relaxes the `<` wait.
 pub fn stopWorld(self_registered: bool) void {
     gc_requested.store(true, .release);
-    const registered = root_set.registeredThreadCount();
-    const target: u32 = @intCast(if (self_registered and registered > 0) registered - 1 else registered);
     io_default.lockMutex(&sp_mutex);
     defer io_default.unlockMutex(&sp_mutex);
-    while (parked_count < target) {
+    // Recompute the target on every wake: a worker that finishes a tiny action
+    // can UNREGISTER before it ever parks, so a target snapshotted once would
+    // never be reached and the wait would hang (D-244 #4). The lock-free count
+    // is read under `sp_mutex` so the `noteWorkerLeft` signal (also under
+    // `sp_mutex`) can never slip between the read and the wait — no lost wakeup,
+    // no `registry_mutex`-under-`sp_mutex` inversion. A late-arriving worker
+    // raises the count and parks at its first poll; an overshoot relaxes `<`.
+    while (true) {
+        const registered = root_set.registeredCountRelaxed();
+        const target: u32 = if (self_registered and registered > 0) registered - 1 else registered;
+        if (parked_count >= target) return;
         io_default.condWait(&all_parked, &sp_mutex);
     }
+}
+
+/// Wake a `stopWorld` collector so it recomputes its rendezvous target after a
+/// worker left the registry (called by `root_set.unregisterThread`). Shares the
+/// `all_parked` condition with `park`: both signal "a worker reached an
+/// accounted state" (parked, or departed → target lowered).
+pub fn noteWorkerLeft() void {
+    io_default.lockMutex(&sp_mutex);
+    defer io_default.unlockMutex(&sp_mutex);
+    io_default.condBroadcast(&all_parked);
 }
 
 /// Resume the world: clear the safe-point flag and wake every parked worker.
