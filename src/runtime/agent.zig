@@ -51,6 +51,8 @@ const tag_ops = @import("gc/tag_ops.zig");
 const gc_heap_mod = @import("gc/gc_heap.zig");
 const mark_sweep = @import("gc/mark_sweep.zig");
 const vector = @import("collection/vector.zig");
+const map_mod = @import("collection/map.zig");
+const list_mod = @import("collection/list.zig");
 const dispatch = @import("dispatch.zig");
 const error_mod = @import("error/info.zig");
 const ex_info = @import("collection/ex_info.zig");
@@ -80,6 +82,9 @@ pub const Agent = extern struct {
     /// further `send`s throw until `restart-agent` clears it. Written by the
     /// drainer / `restart` under `cell.mutex`; read by `agent-error` under it.
     error_val: Value = .nil_val,
+    /// Watch map `{key -> fn}` (`add-watch` / `remove-watch`), or nil. An IRef
+    /// watch fires `(fn key agent old new)` after each action stores a new state.
+    watches: Value = .nil_val,
     rt: *Runtime,
     env: *Env,
     cell: *AgentCell,
@@ -104,6 +109,18 @@ pub fn alloc(rt: *Runtime, env: *Env, init: Value) !Value {
 
 pub fn isAgent(v: Value) bool {
     return v.tag() == .agent;
+}
+
+/// The agent's watch map (`nil` or a persistent `{key -> fn}`). IRef surface.
+pub fn watchesOf(v: Value) Value {
+    return v.decodePtr(*const Agent).watches;
+}
+
+/// Replace the agent's watch map (`add-watch` / `remove-watch`). The drainer is
+/// the only state writer; the map pointer is swapped under no lock (a racing
+/// add-watch and a drain just see slightly stale watch sets, as on the JVM).
+pub fn setWatches(v: Value, m: Value) void {
+    v.decodePtr(*Agent).watches = m;
 }
 
 /// `@agent` / `(deref a)` — non-blocking atomic read of the current state.
@@ -246,8 +263,39 @@ fn runAction(a: *Agent, action: Value) !void {
     var i: u32 = 1;
     while (i < n) : (i += 1) try call_args.append(a.rt.gpa, vector.nth(action, i));
 
+    const oldstate = call_args.items[0];
     const newstate = try vt.callFn(a.rt, a.env, f, call_args.items, .{});
     @atomicStore(Value, &a.state, newstate, .release);
+    try notifyWatches(a, oldstate, newstate);
+}
+
+/// Fire each registered watch `(fn key agent old new)` after an action stores a
+/// new state (JVM `ARef.notifyWatches`). Runs on the drainer thread via the
+/// vtable — the Layer-2 `invokeCallable` the atom path uses is not reachable
+/// from Layer 0, so this mirrors it with `vt.callFn`.
+fn notifyWatches(a: *Agent, old: Value, new: Value) !void {
+    const watches = a.watches;
+    if (watches.tag() != .array_map and watches.tag() != .hash_map) return;
+    if (map_mod.count(watches) == 0) return;
+    const vt = a.rt.vtable orelse return error.InternalError;
+    const agent_val = Value.encodeHeapPtr(.agent, a);
+    var cur = try map_mod.keys(a.rt, watches);
+    // GC-ROOT: the agent + watch map + key cursor live only in Zig locals across
+    // vt.callFn (a watch fn re-enters the VM, e.g. a nested swap!) — publish them
+    // so a collect mid-notify cannot sweep `cur` [ref: .dev/gc_rooting.md §C].
+    var gc_roots: [3]Value = .{ agent_val, watches, cur };
+    var gc_sp: u16 = 3;
+    var gc_frame: root_set.EvalFrame = .{ .stack = &gc_roots, .sp = &gc_sp, .locals = &.{}, .parent = root_set.eval_frame_head };
+    root_set.eval_frame_head = &gc_frame;
+    defer root_set.eval_frame_head = gc_frame.parent;
+    while (!cur.isNil()) {
+        gc_roots[2] = cur;
+        const key = list_mod.first(cur);
+        const f = try map_mod.get(watches, key);
+        const cb = [_]Value{ key, agent_val, old, new };
+        _ = try vt.callFn(a.rt, a.env, f, &cb, .{});
+        cur = list_mod.rest(cur);
+    }
 }
 
 /// `(agent-error a)` — the error that failed the agent (`:fail` mode), or nil.
@@ -310,6 +358,7 @@ pub fn traceGc(gc_ptr: *anyopaque, header: *HeapHeader) void {
     // action list are quiescent here (no concurrent send/drain).
     if (a.state.heapHeader()) |hdr| mark_sweep.mark(gc, hdr);
     if (a.error_val.heapHeader()) |hdr| mark_sweep.mark(gc, hdr);
+    if (a.watches.heapHeader()) |hdr| mark_sweep.mark(gc, hdr);
     for (a.cell.actions.items[a.cell.head..]) |action| {
         if (action.heapHeader()) |hdr| mark_sweep.mark(gc, hdr);
     }

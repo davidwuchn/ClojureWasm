@@ -104,5 +104,17 @@ assert_eq 'agent_nested_send' "$got" '2'
 got=$("$BIN" -e '[(agent? (agent 0)) (agent? 5) (agent? (atom 0))]' 2>/dev/null | last_line)
 assert_eq 'agent_predicate' "$got" '[true false false]'
 
+# add-watch on an agent (IRef generalization): the watch fires (fn key agent old
+# new) after each action stores a new state. `await` guarantees every fire ran
+# (incl. its own count-down action's no-op fire `[2 2]`, matching JVM ARef).
+got=$("$BIN" -e '(let [log (atom []) a (agent 0)] (add-watch a :k (fn [k r o n] (swap! log conj [o n]))) (send a inc) (send a inc) (await a) @log)' 2>/dev/null | last_line)
+assert_eq 'agent_add_watch' "$got" '[[0 1] [1 2] [2 2]]'
+# remove-watch stops further fires (the post-add send + its await fire, then none).
+got=$("$BIN" -e '(let [log (atom []) a (agent 0)] (add-watch a :k (fn [k r o n] (swap! log conj n))) (send a inc) (await a) (remove-watch a :k) (send a inc) (await a) @log)' 2>/dev/null | last_line)
+assert_eq 'agent_remove_watch' "$got" '[1 1]'
+# the watch callback receives the agent itself as arg 2 (deref'able mid-watch).
+got=$("$BIN" -e '(let [seen (atom nil) a (agent 10)] (add-watch a :k (fn [k r o n] (reset! seen (= r a)))) (send a inc) (await a) @seen)' 2>/dev/null | last_line)
+assert_eq 'agent_watch_ref_arg' "$got" 'true'
+
 echo
 echo "Phase B #6 agent (first slice + error modes) e2e: all green."

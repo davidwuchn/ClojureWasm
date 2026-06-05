@@ -18,6 +18,7 @@ const error_catalog = @import("../../runtime/error/catalog.zig");
 const SourceLocation = error_mod.SourceLocation;
 const dispatch = @import("../../runtime/dispatch.zig");
 const atom_mod = @import("../../runtime/atom.zig");
+const agent_mod = @import("../../runtime/agent.zig");
 const volatile_mod = @import("../../runtime/volatile.zig");
 const higher_order = @import("higher_order.zig");
 const root_set = @import("../../runtime/gc/root_set.zig");
@@ -199,16 +200,48 @@ pub fn volatileQFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLoca
 
 // --- watches (add-watch / remove-watch) — ADR-0081 / D-157 ---
 
+/// IRef watch surface dispatch. `add-watch` / `remove-watch` work on any IRef
+/// whose mutation site fires its watches; today that is the atom (`swap!` /
+/// `reset!` / CAS) and the agent (drainer post-action). Refs / vars join when
+/// their firing site is wired (handover Resume contract). Each type stores the
+/// `{key -> fn}` map in its own struct; this funnels the common assoc/dissoc.
+fn requireIRef(name: []const u8, v: Value, loc: SourceLocation) !void {
+    switch (v.tag()) {
+        .atom, .agent => {},
+        else => return error_catalog.raise(.type_arg_invalid, loc, .{
+            .fn_name = name,
+            .expected = "atom or agent",
+            .actual = @tagName(v.tag()),
+        }),
+    }
+}
+
+fn irefWatchesOf(v: Value) Value {
+    return switch (v.tag()) {
+        .atom => atom_mod.watchesOf(v),
+        .agent => agent_mod.watchesOf(v),
+        else => unreachable, // gated by requireIRef
+    };
+}
+
+fn irefSetWatches(v: Value, m: Value) void {
+    switch (v.tag()) {
+        .atom => atom_mod.setWatches(v, m),
+        .agent => agent_mod.setWatches(v, m),
+        else => unreachable, // gated by requireIRef
+    }
+}
+
 /// `(add-watch ref key fn)` — register `fn` (called `(fn key ref old new)` on
 /// every state change) under `key`; an existing key is replaced. Returns ref.
 pub fn addWatchFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
     _ = env;
     try error_catalog.checkArity("add-watch", args, 3, loc);
-    try requireAtom("add-watch", args[0], loc);
-    const cur = atom_mod.watchesOf(args[0]);
+    try requireIRef("add-watch", args[0], loc);
+    const cur = irefWatchesOf(args[0]);
     const base = if (cur.tag() == .array_map or cur.tag() == .hash_map) cur else map_mod.empty();
     const next = try map_mod.assoc(rt, base, args[1], args[2]);
-    atom_mod.setWatches(args[0], next);
+    irefSetWatches(args[0], next);
     return args[0];
 }
 
@@ -217,11 +250,11 @@ pub fn addWatchFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocat
 pub fn removeWatchFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
     _ = env;
     try error_catalog.checkArity("remove-watch", args, 2, loc);
-    try requireAtom("remove-watch", args[0], loc);
-    const cur = atom_mod.watchesOf(args[0]);
+    try requireIRef("remove-watch", args[0], loc);
+    const cur = irefWatchesOf(args[0]);
     if (cur.tag() != .array_map and cur.tag() != .hash_map) return args[0];
     const next = try map_mod.dissoc(rt, cur, args[1]);
-    atom_mod.setWatches(args[0], next);
+    irefSetWatches(args[0], next);
     return args[0];
 }
 
