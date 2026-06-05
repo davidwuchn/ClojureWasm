@@ -8,6 +8,7 @@ result
 result-*
 
 # direnv local cache
+.envrc
 .direnv/
 
 # macOS
