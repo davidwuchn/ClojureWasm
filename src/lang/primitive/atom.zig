@@ -20,6 +20,7 @@ const dispatch = @import("../../runtime/dispatch.zig");
 const atom_mod = @import("../../runtime/atom.zig");
 const volatile_mod = @import("../../runtime/volatile.zig");
 const higher_order = @import("higher_order.zig");
+const root_set = @import("../../runtime/gc/root_set.zig");
 const map_mod = @import("../../runtime/collection/map.zig");
 const list_mod = @import("../../runtime/collection/list.zig");
 const ex_info = @import("../../runtime/collection/ex_info.zig");
@@ -50,7 +51,18 @@ fn notifyWatches(rt: *Runtime, env: *Env, a: Value, old: Value, new: Value, loc:
     if (watches.tag() != .array_map and watches.tag() != .hash_map) return;
     if (map_mod.count(watches) == 0) return;
     var cur = try map_mod.keys(rt, watches);
+    // GC-ROOT: D-253(a) — the atom + watches map + key cursor live only in Zig
+    // locals across invokeCallable (the watch fn re-enters the VM, e.g. a nested
+    // swap!) [ref: .dev/gc_rooting.md §C]. Without this a torture collect sweeps
+    // `cur`; `rest(cur)` then reads a garbage cursor and the next `get` returns
+    // nil -> "Cannot call value of type 'nil'".
+    var gc_roots: [3]Value = .{ a, watches, cur };
+    var gc_sp: u16 = 3;
+    var gc_frame: root_set.EvalFrame = .{ .stack = &gc_roots, .sp = &gc_sp, .locals = &.{}, .parent = root_set.eval_frame_head };
+    root_set.eval_frame_head = &gc_frame;
+    defer root_set.eval_frame_head = gc_frame.parent;
     while (!cur.isNil()) {
+        gc_roots[2] = cur;
         const key = list_mod.first(cur);
         const f = try map_mod.get(watches, key);
         const cb = [_]Value{ key, a, old, new };

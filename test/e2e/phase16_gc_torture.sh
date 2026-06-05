@@ -83,5 +83,9 @@ assert_eq 'every_lazy'   "$("$BIN" -e '(every? (fn [x] (< x 500)) (map inc (rang
 assert_eq 'walk_vec'     "$("$BIN" -e '(clojure.walk/postwalk (fn [x] (if (number? x) (inc x) x)) [1 2 3 [4 5 [6 7]]])')" '[2 3 4 [5 6 [7 8]]]'
 assert_eq 'walk_map'     "$("$BIN" -e '(clojure.walk/postwalk (fn [x] (if (number? x) (inc x) x)) {:a 1 :b 2 :c 3})')" '{:a 2, :b 3, :c 4}'
 assert_eq 'walk_set'     "$("$BIN" -e '(count (clojure.walk/postwalk (fn [x] (if (number? x) (inc x) x)) (set (range 1 60))))')" '59'
+# D-253 cluster (a) — atom notifyWatches roots the atom + watches map + key cursor
+# across the watch fn's reentrant eval (a nested swap! re-enters the VM); the
+# cursor was swept -> rest(garbage) -> next get nil -> "Cannot call nil".
+assert_eq 'atom_watch'   "$("$BIN" -e '(let [log (atom []) a (atom 0)] (add-watch a :k (fn [k r o n] (swap! log conj [k o n]))) (swap! a inc) (reset! a 10) @log)')" '[[:k 0 1] [:k 1 10]]'
 
 echo "ALL phase16_gc_torture PASS"
