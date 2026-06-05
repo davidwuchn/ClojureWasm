@@ -128,7 +128,11 @@ pub fn eval(
         // holds the program's ns vars, so this is a correct full collect.
         // `period != 0` is the inert-path guard (one global load, predicted not
         // taken); test/validation only — production auto-collect stays gated.
-        if (gc_torture.period != 0 and gc_torture.tick()) {
+        // Scope the forced collect to the MAIN (unregistered) thread: a worker's
+        // own STW collect self-deadlocks + misses the main's roots (D-244 #4, the
+        // dormant multi-thread path). On the main thread the collect parks the
+        // registered workers and walks the complete root set.
+        if (gc_torture.period != 0 and !root_set.is_registered_worker and gc_torture.tick()) {
             mark_sweep.collectStopTheWorld(&rt.gc, .{ .envs = &.{env}, .gc = &rt.gc }, false);
         }
         const step_result = stepOnce(rt, env, locals, chunk, &stack, &sp, &ip, &handlers, &handler_count);

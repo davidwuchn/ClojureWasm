@@ -202,6 +202,18 @@ pub const ThreadGcContext = struct {
 var thread_registry: [MAX_GC_THREADS]?*ThreadGcContext = @splat(null);
 var registry_mutex: std.Io.Mutex = .init;
 
+/// True on a thread that has registered itself as a GC worker (set by
+/// `registerThread`, cleared by `unregisterThread`, both running ON the worker
+/// thread). The main / unregistered thread leaves it false. Read by the GC
+/// torture poll (D-250 / D-244 #4): a WORKER-initiated stop-the-world collect
+/// would (a) self-deadlock (`stopWorld` waits for the calling worker to park)
+/// and (b) miss the MAIN thread's roots (the collect walks the collecting
+/// thread's TLS + registered workers, never the unregistered main) — so torture
+/// fires only on the main thread, where the collect parks the workers and walks
+/// the complete root set. The worker-initiated multi-thread collect is the
+/// dormant D-244 #4 path, validated separately under user awareness.
+pub threadlocal var is_registered_worker: bool = false;
+
 /// Register a worker thread's published roots. Locked (workers register
 /// at `Thread.spawn`). Returns `error.TooManyThreads` past the cap.
 pub fn registerThread(ctx: *ThreadGcContext) error{TooManyThreads}!void {
@@ -210,6 +222,7 @@ pub fn registerThread(ctx: *ThreadGcContext) error{TooManyThreads}!void {
     for (&thread_registry) |*slot| {
         if (slot.* == null) {
             slot.* = ctx;
+            is_registered_worker = true;
             return;
         }
     }
@@ -220,6 +233,7 @@ pub fn registerThread(ctx: *ThreadGcContext) error{TooManyThreads}!void {
 pub fn unregisterThread(ctx: *ThreadGcContext) void {
     io_default.lockMutex(&registry_mutex);
     defer io_default.unlockMutex(&registry_mutex);
+    is_registered_worker = false;
     for (&thread_registry) |*slot| {
         if (slot.* == ctx) {
             slot.* = null;

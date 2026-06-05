@@ -106,5 +106,13 @@ assert_eq 'print_lazlaz' "$("$BIN" -e '(map (fn [x] (range 1 x)) (range 2 5))')"
 # torture collect mid-expansion swept the cursor -> garbage form (with-redefs
 # emitted `(var <list>)` -> an analysis-time error).
 assert_eq 'macroexpand'  "$("$BIN" -e '(do (def ^:dynamic *wv* 1) (with-redefs [*wv* 5] (+ *wv* *wv*)))')" '10'
+# D-244 #4 scoping — the forced torture collect fires only on the MAIN
+# (unregistered) thread, so a future/agent WORKER's own STW collect can no longer
+# self-deadlock or miss the main's roots. A MAIN-thread collect parks the workers
+# and walks the complete root set, so real-threading is torture-clean from the
+# main driver. (Was: future-with-work hung exit 124, mapv-of-futures crashed 134.)
+assert_eq 'future_work'  "$("$BIN" -e '(let [f (future (reduce + (range 1 100)))] @f)')"             '4950'
+assert_eq 'futures_map'  "$("$BIN" -e '(let [fs (mapv (fn [i] (future (* i i))) (range 1 5))] (mapv deref fs))')" '[1 4 9 16]'
+assert_eq 'pmap_torture' "$("$BIN" -e '(pmap inc (range 1 8))')"                                     '(2 3 4 5 6 7 8)'
 
 echo "ALL phase16_gc_torture PASS"
