@@ -58,6 +58,9 @@ const Node = node_mod.Node;
 const special_forms = @import("../analyzer/special_forms.zig");
 const opcode_mod = @import("vm/opcode.zig");
 const BytecodeChunk = opcode_mod.BytecodeChunk;
+const tag_ops = @import("../../runtime/gc/tag_ops.zig");
+const mark_sweep = @import("../../runtime/gc/mark_sweep.zig");
+const gc_heap_mod = @import("../../runtime/gc/gc_heap.zig");
 
 /// Per-frame slot-array size. Generous so the analyser can lay out
 /// `let*` chains without checking; a future pass may switch to a
@@ -154,6 +157,37 @@ pub const Function = struct {
         std.debug.assert(@offsetOf(Function, "header") == 0);
     }
 };
+
+/// Per-tag GC trace for `.fn_val` (D-251 rooting-gap class). A `Function`
+/// owns GC Values reachable ONLY through it: the `closure_bindings`
+/// snapshot, and the constant pools of its compiled method / variadic
+/// bytecode (literal collections / strings the body refers to). Without
+/// this the fn is treated as a leaf and those captures are swept under a
+/// collect (the cause of swept-intermediate failures D-250 torture
+/// surfaced). The Function struct itself is `gpa.create`'d + `trackHeap`'d
+/// (not GC-swept), so this is mark-only; no finaliser is registered.
+/// `header` aliases `*Function` because header is at offset 0 (asserted
+/// above). Nested `fn_val` constants recurse safely via mark's cycle bit.
+pub fn traceFunction(gc_ptr: *anyopaque, header: *HeapHeader) void {
+    const gc: *gc_heap_mod.GcHeap = @ptrCast(@alignCast(gc_ptr));
+    const f: *Function = @ptrCast(@alignCast(header));
+    if (f.closure_bindings) |caps| {
+        for (caps) |cap| if (cap.heapHeader()) |hdr| mark_sweep.mark(gc, hdr);
+    }
+    // Method bytecode `constants` are NOT traced: a chunk lives in the
+    // analyser arena (run-lifetime, never GC-swept) and so do its literal
+    // constants, so they need no marking — and walking them reaches
+    // arena/non-GC objects whose header is not GC-shaped (D-251). Only the
+    // runtime-captured `closure_bindings` snapshot holds GC Values.
+}
+
+/// Register the `.fn_val` trace. Called from `driver.installVTable` (a
+/// Layer-1 startup hook) rather than `runtime.zig`'s `registerGcHooks`
+/// aggregator, because `Function` lives in this Layer-1 module and Layer 0
+/// must not import it (zone rule).
+pub fn registerGcHooks() void {
+    tag_ops.registerTrace(.fn_val, &traceFunction);
+}
 
 /// Heap-allocate a Function and wrap it in a NaN-boxed Value. The
 /// caller's `locals` array supplies the snapshot for closure capture:

@@ -105,6 +105,10 @@ pub fn evalValue(
 /// Install the active backend's vtable. Called once at startup, after
 /// `Runtime.init` + `Env.init`.
 pub fn installVTable(rt: *Runtime) void {
+    // D-251: register the `.fn_val` GC trace (marks closure captures + method
+    // bytecode constants). Lives here, not runtime.zig's Layer-0 registerGcHooks
+    // aggregator, because `Function` is a Layer-1 type Layer 0 must not import.
+    tree_walk.registerGcHooks();
     if (comptime build_options.backend == .vm) {
         vm.installVTable(rt);
     } else {

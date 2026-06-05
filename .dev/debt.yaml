@@ -59,23 +59,34 @@ active:
       assert). Validated: `CLJW_GC_TORTURE=1 cljw -e` on arith/reduce/sqrt/filter all
       green. The header@0 invariant is now build-enforced for Function the same way
       `gc.alloc`'s `assertHeaderAtOffsetZero` enforces it for GC-allocated types.
-      REMAINING (rooting-gap class — the real #4a'-against-a-real-env work):
-      - **fn_val noop trace**: `tag_ops` registers `.fn_val` trace as **noop**, so a
-        fn's `closure_bindings` + GC Values in method bytecode constants are NOT
-        traced → swept under collect. Needs a real fn_val trace. LIKELY the cause of
-        the protocol/defrecord `type_error` + the interpose `integer does not fit`
-        (a swept intermediate reused as garbage). START HERE next.
-      - **operand-stack / intermediate rooting** beyond the back-edge poll boundary
-        (the gc_self_guard fabrication window is still unwired at the set/clear sites).
-      - Re-run `CLJW_GC_TORTURE=1` over deftype/defprotocol/defrecord/transducer/
-        string-build programs, fix each swept-value gap, then the full
-        `bash test/run_all.sh --serial-e2e` under torture → green = the validation
-        gate D-250 wants. THEN a leak check + the (still-forbidden) auto-collect-ON.
-      - Narrower: the transient bootstrap 0xAA-ns window (torture is post-bootstrap
-        armed, so currently unexercised) — re-check after the rooting class is closed.
-      Repro for the remaining class: `CLJW_GC_TORTURE=1 zig-out/bin/cljw -e '(apply
-      str (interpose "," (map str (range 1 80))))'` → 'integer does not fit'.
-      Full diagnosis: private/notes/phaseC-d250-gc-torture.md + phaseC-d251-root-cause.md.
+      DONE (rooting-gap class, partial): a real `.fn_val` GC trace now marks a
+      Function's `closure_bindings` (tree_walk.traceFunction, registered from
+      driver.installVTable — a Layer-1 hook, since Function is Layer 1 and runtime.zig's
+      registerGcHooks aggregator is Layer 0). Validated: closure-capturing programs are
+      torture-green (`(let [x [1 2 3]] ((fn [] (reduce + x))))` → 6). Method bytecode
+      `constants` are deliberately NOT traced — a chunk + its literal constants live in
+      the run-lifetime analyser arena (never GC-swept), and walking them reached
+      arena/non-GC objects with non-GC-shaped headers (the `index 112` crash). A torture
+      e2e (test/e2e/phase16_gc_torture.sh) locks the now-green cases.
+      REMAINING (rooting-gap class — each needs its own torture-driven root-cause):
+      - **interpose/transducer seq intermediates**: `(apply str (interpose "," (map str
+        (range 1 80))))` under torture → 'integer does not fit in destination type' (a
+        swept seq/chunk whose count/index field is reused as garbage). NOT a fn closure —
+        a different live-intermediate rooting gap (chunked-seq buffer / op intermediate).
+      - **protocol machinery**: defprotocol/defrecord under torture → type_error
+        '__make-protocol-fn!: expected protocol, got nil' (a protocol-related Value swept
+        to nil). ProtocolDescriptor itself is extern + gc.infra (not swept); the swept
+        thing is some other Value in the protocol path — instrument to find it.
+      - **operand-stack / fabrication window**: the gc_self_guard set/clear sites are
+        still unwired (#4a' hardening, D-244).
+      Method: re-run `CLJW_GC_TORTURE=1` per failing program, re-add the mark() tag>=64
+      guard + source tracking (see phaseC-d250 note), identify the swept Value, fix its
+      rooting/trace. When all torture-green: full `--serial-e2e` under torture, leak
+      check, then the (still-forbidden) auto-collect-ON. Narrower: the transient
+      bootstrap 0xAA-ns window (torture is post-bootstrap armed → currently unexercised).
+      Repro: `CLJW_GC_TORTURE=1 zig-out/bin/cljw -e '(apply str (interpose "," (map str
+      (range 1 80))))'`. Full diagnosis: private/notes/phaseC-d250-gc-torture.md +
+      phaseC-d251-root-cause.md.
     last_reviewed: "2026-06-05"
   - id: "D-242"
     status: "Phase B anchor (re-cut ADR-0089, 2026-06-04) — KNOWN-unimplemented CORE, concurrency-led; redesign §7 against Zig 0.16 FIRST, then implement. finished-form, rework-OK with test guards. §7-redesign DONE = ADR-0090 (2026-06-04): io_default-singleton std.Io sync + ThreadGcContext root-publication GC handshake (the DA-fork caught v0's stop-the-world lie) + MVCC retry-only STM; spike-validated. Implementation (concurrency/{io_default,thread_pool,lock_tx,gc_thread}.zig + real future/promise/delay/atom/agent/locking bodies) is the remaining Phase B work; GC handshake lands first (prereq for any real-threading primitive)."
