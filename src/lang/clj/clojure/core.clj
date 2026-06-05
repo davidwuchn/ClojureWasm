@@ -880,7 +880,26 @@
 
 ;; D-134 cluster 3 — unblocked by D-136 (universal `=`).
 
-;; `(dedupe coll)` — drop consecutive duplicates (eager vector).
+;; Lazy `dedupe` engine. The inner fn* `recur`s on the consecutive-duplicate
+;; skip so a long run of duplicates is consumed within ONE lazy-seq thunk
+;; (stack-safe); the emit case re-enters -dedupe-step (the laziness boundary).
+;; `have-prev` separates "no previous element yet" from a genuine nil element
+;; (so a leading nil is not dropped). A self-named `(fn step …)` is avoided —
+;; cljw fn* has no self-name (D-2811).
+(def -dedupe-step
+  (fn* [coll prev have-prev]
+    (lazy-seq
+      ((fn* [xs prev have-prev]
+         (let [s (seq xs)]
+           (when s
+             (let [f (first s)]
+               (if (if have-prev (= prev f) false)
+                 (recur (rest s) prev have-prev)
+                 (cons f (-dedupe-step (rest s) f true)))))))
+       coll prev have-prev))))
+
+;; `(dedupe coll)` — drop consecutive duplicates, lazily (composes with an
+;; infinite source: `(take 3 (dedupe (map f (range))))` terminates).
 ;; `(dedupe)` — the transducer (stateful: remembers the previous input via
 ;; two volatiles, avoiding a sentinel value that data could collide with).
 (def dedupe
@@ -895,12 +914,28 @@
                     (vreset! pv input)
                     (if (if had (= prior input) false) result (rf result input))))))))
        ([coll]
-        ;; O(n) via the transducer (the old `(last acc)` per step was O(n²)
-        ;; — `(dedupe (range 5000))` timed out). Returns a SEQ (JVM parity).
-        (-seq-or-empty (into [] (dedupe) coll)))))
+        ;; Lazy: prev-tracking -dedupe-step. O(n), one `=` per element.
+        (-dedupe-step coll nil false))))
 
-;; `(distinct coll)` — drop all duplicates, first occurrence wins.
-;; Linear `=` scan (structural, so strings/collections dedupe); O(n^2).
+;; Lazy `distinct` engine. The inner fn* `recur`s on the already-seen skip so
+;; a long run of duplicates is consumed within ONE lazy-seq thunk (stack-safe);
+;; the emit case re-enters -distinct-step (the laziness boundary). A self-named
+;; `(fn step …)` is avoided — cljw fn* has no self-name (D-2811).
+(def -distinct-step
+  (fn* [coll seen]
+    (lazy-seq
+      ((fn* [xs seen]
+         (let [s (seq xs)]
+           (when s
+             (let [f (first s)]
+               (if (contains? seen f)
+                 (recur (rest s) seen)
+                 (cons f (-distinct-step (rest s) (conj seen f))))))))
+       coll seen))))
+
+;; `(distinct coll)` — drop all duplicates, first occurrence wins, lazily
+;; (composes with an infinite source). Structural `=` via a persistent
+;; seen-set (so strings/collections dedupe); O(1) amortized membership.
 (def distinct
   (fn* ([]
         ;; transducer: a volatile set of already-seen inputs
@@ -913,10 +948,8 @@
                     result
                     (do (vswap! seen conj input) (rf result input))))))))
        ([coll]
-        ;; O(n) via the transducer's volatile seen-set (the old linear
-        ;; `some` scan per element was O(n²) — `(distinct (range 5000))`
-        ;; timed out). Returns a SEQ (JVM parity).
-        (-seq-or-empty (into [] (distinct) coll)))))
+        ;; Lazy: seen-set -distinct-step. O(n) total via the persistent set.
+        (-distinct-step coll #{}))))
 
 ;; `(frequencies coll)` — map of item -> occurrence count. Keys via map
 ;; assoc (bit-pattern keyEq → number/keyword keys; structural keys D-092).

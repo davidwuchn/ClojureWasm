@@ -9,6 +9,24 @@
 # md-table-align no longer pads it to ~800 KB of whitespace.
 
 active:
+  - id: "D-266"
+    status: "open (found 2026-06-06 while discharging D-264) — non-chunked lazy-seq realization has a high per-element cost (~0.4ms/elem); `repeat` is not chunked while `range` is."
+    category: "perf"
+    barrier: |-
+      **Non-chunked lazy-seq realization is slow (~0.4ms/element).** Measured
+      while discharging D-264: `(count (repeat N 1))` is linear but ~0.4ms/elem
+      (2500→2.1s, 5000→3.0s, 10000→5.0s, minus a ~1s core.clj bootstrap floor),
+      so `(count (repeat 5000 1))`≈3s where clj is instant. `(count (range 5000))`
+      is faster (~1.1s) because `range` emits 32-chunks while the 2-arg
+      `(repeat n x)` builds a one-cons-per-thunk lazy-seq. NOT a correctness bug
+      and NOT a D-264 regression (lazy distinct/dedupe add ~0 overhead vs plain
+      count over the same source). Discharge candidates: (1) chunk `(repeat n x)`
+      (and `repeatedly`, `iterate`?) to 32-element chunks like `range`/`map`;
+      (2) lower the per-thunk lazy-seq realization constant in the VM
+      (thunk alloc / closure call on each `rest`). ROI-order under the perf
+      campaign. Cross-ref §9.2.S perf campaign, D-180 (bulk persistent!/
+      vector.fromSlice), O-004 (chunk-preserving filter), F-011.
+    last_reviewed: "2026-06-06"
   - id: "D-265"
     status: "open (found 2026-06-06, conversions sweep) — `biginteger` clojure.core fn missing (name_error); low-value (cljw collapses BigInt/BigInteger)."
     category: "clj-parity"
@@ -26,7 +44,7 @@ active:
       value (biginteger is rare; bigint covers ~all usage). Cross-ref F-005, F-011.
     last_reviewed: "2026-06-06"
   - id: "D-264"
-    status: "open (found 2026-06-06 via a lazy-seq clj-diff sweep) — `distinct` and `dedupe` are EAGER, so `(take N (distinct/dedupe <infinite>))` HANGS where clj returns lazily."
+    status: "DISCHARGED 2026-06-06 — `distinct`/`dedupe` rewritten lazy in core.clj via top-level `-distinct-step`/`-dedupe-step` (avoids the self-named `(fn step …)` cljw fn* lacks, D-2811): each wraps an inner fn* whose skip case `recur`s (stack-safe — 50k consecutive-dup run completes, no overflow) and whose emit case re-enters the step helper (laziness boundary). `(take N (distinct/dedupe <infinite>))` now terminates. Corpus lazy_distinct_dedupe (13/13 clj-matched, incl. lazy-infinite + 3k-dup stack case). NOTE: surfaced a pre-existing non-chunked lazy-seq per-element cost (~0.4ms/elem; `repeat` not chunked while `range` is) — tracked as D-266 (perf, not a D-264 regression: lazy distinct/dedupe add ~0 overhead vs plain count)."
     category: "clj-parity"
     barrier: |-
       **`distinct` / `dedupe` are not lazy → they hang over an infinite source.**
