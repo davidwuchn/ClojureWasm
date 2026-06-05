@@ -9,6 +9,36 @@
 # md-table-align no longer pads it to ~800 KB of whitespace.
 
 active:
+  - id: "D-262"
+    status: "open (found 2026-06-06 via a record-ops clj-diff sweep) — record map-protocol completeness: `(contains? rec k)` / `(find rec k)` / `(dissoc rec declared-key)` / `(map? rec)` diverge. SEQ already fixed (03fb1b4f); this is the sibling cluster."
+    category: "clj-parity"
+    barrier: |-
+      **Records are map-like but several map-protocol ops are unwired** (the same
+      gap class the seq fix 03fb1b4f closed for `seq`/`into {}`). A defrecord
+      supports keys/vals/count/get/assoc/`=`/seq, but these DIVERGE from clj:
+        `(contains? (->R 1 2) :x)`  → cljw type_error  / clj true
+        `(contains? (->R 1 2) :z)`  → cljw type_error  / clj false
+        `(find (->R 1 2) :x)`       → cljw type_error  / clj [:x 1]
+        `(dissoc (->R 1 2) :x)`     → cljw type_error  / clj {:y 2}  (degrades to a MAP — a record can't drop a declared field)
+        `(map? (->R 1 2))`          → cljw false       / clj true   (records ARE IPersistentMap)
+      Root: `containsQFn`/`dissocFn` (lang/primitive/collection.zig) route a
+      `.typed_instance` to the `else` Associative/IPM protocol-dispatch slow-path,
+      which raises `protocol_no_satisfies` for a default defrecord (no user
+      override); `mapQ` (lang/primitive/core.zig) checks only the 3 map tags;
+      `find` has no `findFn` primitive located (verify it exists for maps first).
+      Discharge (BIG-BANG, all at once per clj_diff_sweep.md Discipline 2 — the
+      seq fix opened this area): add a `.typed_instance` defrecord arm to each,
+      mirroring the seq fix (user override wins via dispatchOrNull, else the
+      defrecord default; deftype raises). `contains?`/`find` check the declared
+      `field_layout`; `dissoc` of a declared key builds an array_map from the
+      OTHER fields (degrade to map — reuse a shared `recordToMap` from
+      sequence.zig), `dissoc` of an undeclared key returns the record unchanged;
+      `map?` returns true for `descriptor.kind == .defrecord`. **CAUTION**: `map?`
+      → true on records has ripple risk (cljw code that branches on `map?`) — run
+      the full gate carefully. Corpus `record_map_protocol`. (cljw has no
+      `__extmap` — D-086 — so declared fields only.) Cross-ref F-011, D-086,
+      03fb1b4f (seq), the keys/vals typed_instance arms as the enumeration model.
+    last_reviewed: "2026-06-06"
   - id: "D-261"
     status: "open (found 2026-06-06 via the clojure.string clj-diff sweep) — a fully-qualified symbol `ns/name` resolves to a referred/core var even when `name` is NOT interned in `ns`. clj errors 'No such var'."
     category: "clj-parity"
