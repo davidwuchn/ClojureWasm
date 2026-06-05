@@ -9,6 +9,28 @@
 # md-table-align no longer pads it to ~800 KB of whitespace.
 
 active:
+  - id: "D-260"
+    status: "open (found 2026-06-06 during CFP P2 README verification) — `*'` throws integer_overflow on Long overflow instead of auto-promoting. clj-parity bug; fold into the post-CFP Phase C library-driven gap-hunt."
+    category: "numeric"
+    barrier: |-
+      **The auto-promoting multiply `*'` does NOT auto-promote — it raises
+      `arithmetic_error: integer overflow`.** This is inconsistent both with JVM
+      Clojure (where `*'`/`+'`/`-'` are the explicitly-promoting arithmetic
+      family) AND with cljw's own `+'`, which DOES auto-promote correctly:
+        cljw `(*' 1000000000000 1000000000000)` -> arithmetic_error (WRONG)
+        cljw `(+' 9223372036854775807 1)`       -> 9223372036854775808N (correct)
+        clj  `(*' 1000000000000 1000000000000)` -> 1000000000000000000000000N
+      So `*'` is routed to a checked/non-promoting multiply path while `+'`
+      reaches the promoting path. NB: cljw's plain `*` DOES auto-promote (F-005
+      JVM-surface divergence — that is intentional and fine); this row is about
+      the `'`-suffixed promoting variant being broken. Audit the whole `'`
+      family for the same gap (`*'` confirmed broken; `+'`/`-'` confirmed OK;
+      check `inc'`/`dec'` 1-arg promote). Fix = route `*'` (and any other broken
+      `'` op) through the same auto-promote path `+'` uses, land a clj-diff
+      corpus line (`test/diff/clj_corpus/`) asserting parity. Not a CFP blocker
+      (the README + CFP showcase use `*`/`bigint`, both correct). Cross-ref
+      F-005, F-011, accepted_divergences.md (this is a bug→fix, NOT an AD).
+    last_reviewed: "2026-06-06"
   - id: "D-259"
     status: "provisional (opened 2026-06-06, ADR-0099) — wasm FFI instance handle. The `(wasm/load …)` result is a minimal opaque `.wasm_module` box; Phase-16/F-004 owns the finished representation."
     category: "runtime"
