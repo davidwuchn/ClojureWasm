@@ -75,7 +75,29 @@
 
 entries:
 
-  - name: runtime/eval/in_ns_auto_refer
+  - name: runtime/cljw/wasm/instance_handle
+    kind: runtime_layer
+    defined_in: src/runtime/cljw/wasm/wasm_handle.zig
+    status: provisional
+    requires_features: []
+    requires_debts: ["D-259"]
+    provisional_markers:
+      - "src/runtime/cljw/wasm/wasm_handle.zig (WasmHandle struct — opaque .wasm_module box)"
+    notes: |
+      ADR-0099 / CFP P1. A `(wasm/load …)` result is a GC-allocated
+      `WasmHandle` tagged with the already-reserved `HeapTag.wasm_module`
+      (F-004 slot D4), carrying an external `*engine.Loaded` pointer. The
+      slot is reserved but its FINISHED-FORM semantics are owned by the
+      Phase-16 / F-004 entry, not this demo cycle: the module-vs-instance-vs-fn
+      split, `funcref`/`externref` first-classing, and GC finalisation /
+      auto-collect rooting of the external pointer all land there (D-036
+      inline-vs-Pod is still open). P1 populates the slot minimally
+      (HeapHeader + external pointer + `null` tag_ops trace = the correct
+      leaf default per F-006, since the GC must not trace into zwasm's
+      separate space) and isolates wrap/unwrap to this one file so the
+      Phase-16 swap to the finished representation is a single-file change.
+      Discharge = the Phase-16/F-004 entry decides the slot semantics +
+      wires finalisation/rooting (D-259).
     kind: runtime_layer
     defined_in: src/eval/backend/tree_walk.zig
     status: landed

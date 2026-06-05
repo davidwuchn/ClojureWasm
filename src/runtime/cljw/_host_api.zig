@@ -8,8 +8,13 @@
 //! As more cljw-original surfaces land (cljw.build / cljw.wasm / cljw.edge /
 //! cljw.repl per structure_plan.md), add their `register(env)` here.
 const Env = @import("../env.zig").Env;
+const build_options = @import("build_options");
 const http_server = @import("http/server.zig");
 
 pub fn installAll(env: *Env) !void {
     try http_server.register(env);
+    // wasm FFI surface (ADR-0099): only under `-Dwasm`, so the default build
+    // never resolves zwasm (F-001). The comptime-false branch is not analysed,
+    // so `wasm/surface.zig` (and its `@import("zwasm")`) is absent by default.
+    if (build_options.wasm) try @import("wasm/surface.zig").register(env);
 }

@@ -37,10 +37,29 @@ pub fn build(b: *std.Build) void {
     const backend = b.option(Backend, "backend", "Evaluation backend (vm default — production; tree-walk = differential oracle)") orelse .vm;
     build_options.addOption(Backend, "backend", backend);
 
-    // ROADMAP §9.6 / 4.16 reverted 2026-05-23 (D-028 audit): the
-    // cw-from-scratch branch never carried wasm FFI surface, so a
-    // `-Dwasm=false` option had no consumer. Phase 16 re-introduction
-    // (per ADR-0006) mints its own option at that time.
+    // `-Dwasm` — the minimal polyglot Wasm FFI surface (ADR-0099 / CFP P1).
+    // F-001 isolation: link zwasm v2 INTO the cljw binary + activate the `wasm`
+    // namespace, but ONLY when the flag is set AND the lazy `zwasm` dep actually
+    // resolves. `build_options.wasm` is set true *only inside* the resolved-dep
+    // block, so the null-first-pass of `b.lazyDependency` (fetch pending) leaves
+    // it false — `runtime/cljw/wasm/*.zig` (and its `@import("zwasm")`) is then
+    // not analysed, so no compile error. The default build / `run_all.sh` gate
+    // never reach `b.lazyDependency` with the flag → no fetch, no zwasm symbols.
+    const wasm = b.option(bool, "wasm", "Build with the polyglot Wasm FFI surface (embeds zwasm v2, ADR-0099).") orelse false;
+    var wasm_enabled = false;
+    var zwasm_mod: ?*std.Build.Module = null;
+    if (wasm) {
+        if (b.lazyDependency("zwasm", .{ .target = target, .optimize = optimize })) |zw| {
+            zwasm_mod = zw.module("zwasm");
+            wasm_enabled = true;
+        }
+    }
+    build_options.addOption(bool, "wasm", wasm_enabled);
+    // Both the cljw exe AND the build-time bootstrap tool (cache_gen, below)
+    // root the runtime tree, so both analyse the `if (build_options.wasm)` wasm
+    // branch in `runtime/cljw/_host_api.zig` and both need the `zwasm` import
+    // when the flag is on (Phase-16-consistent: wasm becomes always-on there).
+    if (zwasm_mod) |zm| exe_mod.addImport("zwasm", zm);
 
     exe_mod.addOptions("build_options", build_options);
 
@@ -57,6 +76,7 @@ pub fn build(b: *std.Build) void {
         .optimize = .ReleaseSafe,
     });
     cache_gen_mod.addOptions("build_options", build_options);
+    if (zwasm_mod) |zm| cache_gen_mod.addImport("zwasm", zm);
     const cache_gen = b.addExecutable(.{ .name = "cache_gen", .root_module = cache_gen_mod });
     const run_cache_gen = b.addRunArtifact(cache_gen);
     const bootstrap_cache_blob = run_cache_gen.addOutputFileArg("bootstrap_core.cljc");
