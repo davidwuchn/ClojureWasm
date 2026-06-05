@@ -162,6 +162,7 @@ pub fn reduceFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocatio
     // `seqFn`, the original `coll` (whose lazy-seq thunk closure transitively
     // roots the source — e.g. the `(range …)` a `map` captured). acc/cur are
     // refreshed before each reentrant call below.
+    // GC-ROOT: A2 — reentrant-primitive manual frame [f, acc/coll, cur] (ADR-0094) [ref: .dev/gc_rooting.md §A,C]
     var gc_roots: [3]Value = .{ f, .nil_val, .nil_val };
     var gc_sp: u16 = 3;
     var gc_frame: root_set.EvalFrame = .{

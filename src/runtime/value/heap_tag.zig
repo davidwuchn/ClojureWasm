@@ -134,8 +134,10 @@ pub const HeapTag = enum(u8) {
 /// `Value.heapHeader()` consults this so EVERY root walk (operand stack, locals,
 /// chunk constants, closure bindings) filters the same set in ONE place — an
 /// allow-list-of-known-offenders `switch` is exactly the scatter this replaces.
-/// A `comptime` assert in `gc/tag_ops.zig` guards the invariant "every tag with
-/// a registered trace or finaliser is GcManaged" so the two cannot drift.
+/// A `Runtime.init` assert guards the invariant "every tag with a registered
+/// trace or finaliser is GcManaged" so the membrane and trace table cannot drift.
+///
+// GC-ROOT: G2 — the membrane SSOT classifier (non-GC heap tags) [ref: .dev/gc_rooting.md §G]
 pub fn isGcManaged(tag: HeapTag) bool {
     return switch (tag) {
         .symbol, .keyword, .var_ref, .ns => false,

@@ -200,6 +200,7 @@ pub const GcHeap = struct {
     /// would short-circuit `mark()` from the 2nd collect on, stranding the
     /// children). Best-effort: a registration OOM is swallowed — the worst case
     /// is the pre-fix behaviour for that one object, not a crash.
+    // GC-ROOT: D4 — process-lifetime trackHeap'd mark-waypoints (off gc.allocations); highest-risk moving-GC site [ref: .dev/gc_rooting.md §D]
     pub fn registerPersistentMark(self: *GcHeap, obj: *anyopaque) !void {
         io_default.lockMutex(&self.gc_mutex);
         defer io_default.unlockMutex(&self.gc_mutex);

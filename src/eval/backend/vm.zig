@@ -98,6 +98,7 @@ pub fn eval(
     // Runtime-inert today: collect() runs only at quiescent points where this is
     // off the C stack; the #3b-step2 alloc-boundary safepoint makes it fire
     // mid-eval for Phase-B workers. Two pointer writes on the hottest path.
+    // GC-ROOT: A1 — the VM activation's operand stack + locals + chunk constants [ref: .dev/gc_rooting.md §A]
     var gc_frame: root_set.EvalFrame = .{
         .stack = &stack,
         .sp = &sp,
