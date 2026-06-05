@@ -9,6 +9,40 @@
 # md-table-align no longer pads it to ~800 KB of whitespace.
 
 active:
+  - id: "D-254"
+    status: "now (found 2026-06-05 resuming the add-watch IRef campaign) — `set!` on a dynamic var diverges from JVM in 3 ways; the analyze-time check is the genuinely-broken one."
+    category: "runtime"
+    barrier: |-
+      **`set!` semantics diverge from JVM Var.set() (= thread-bound-or-throw).**
+      Oracle-confirmed JVM rule: `(set! v val)` succeeds IFF v is thread-bound on
+      the current thread; else throws "Can't change/establish root binding of: v
+      with set". NO compile-time dynamic check (a non-dynamic var simply can never
+      be thread-bound → same throw). clojure.main establishes ~21 baseline thread
+      bindings (incl `*warn-on-reflection*`), so `(set! *warn-on-reflection* true)`
+      works at top level while `(set! user-dyn-var v)` at top level throws.
+      cljw's 3 divergences:
+      (1) **analyze-time fragility (BROKEN, high)**: analyzeSetBang
+      (special_forms.zig:971) checks `flags.dynamic` at ANALYZE time, but the flag
+      is set at EVAL time (tree_walk.zig:739 / vm.zig:271). So a same-compilation-
+      unit def+set! falsely errors: `(do (def ^:dynamic z 0) (binding [z 1] (set! z
+      9)))` → cljw "Can't set! non-dynamic var: z" / JVM 9. Real bug, breaks legal
+      code.
+      (2) **S1 silent root-write (trust, medium)**: evalSet (tree_walk.zig:458) +
+      op_set_var (vm.zig:329) do `if (!setBinding) setRoot(val)` — a top-level set!
+      on an UNBOUND dynamic var silently mutates the ROOT; JVM throws. Masks a user
+      bug. (This same root-write is also why `(set! *warn-on-reflection* true)`
+      "works" at top level without a baseline frame.)
+      (3) **message text**: cljw "Can't set! non-dynamic var" vs JVM "Can't
+      change/establish root binding" (cljw-native phrasing; lower concern).
+      Finished form = move the check to runtime (thread-bound-or-error), which fixes
+      (1) cleanly. Whether to ALSO error on dynamic-unbound (fix (2)) is ENTANGLED
+      with **D-241** (no clojure.main baseline binding frame): erroring on unbound
+      breaks top-level `(set! *warn-on-reflection* true)` unless D-241's baseline
+      frame lands first. DA-fork owns the A-alone-with-AD vs A+D-241 decision.
+      e2e: phase15_set_bang.sh `root-set`/`warn-refl` cases currently PIN the
+      root-write behavior — they move with the chosen shape. Cross-ref D-241
+      (baseline frame), D-237 (with-local-vars), D-238 (*out*).
+    last_reviewed: "2026-06-05"
   - id: "D-247"
     status: "recall trigger (2026-06-05 user chat) — GC reserved-region allocator → 128 heap-tag slots + future compaction. DEFERRED: the system-GPA-backed heap (gc_heap.zig infra) gives full-47-bit-VA pointers, so the cheap 128-expansion (trim pointer 47→46-bit for a 5th sub-type bit) is UNSAFE (ASLR/mmap reach the upper 64TB). Safe path = mmap-reserve a region + bump within (then 46-bit pointers are safe), which is also the compaction unlock. Stay at 64 until slots run out (F-004 Revision 2026-06-05)."
     category: "gc"
