@@ -149,16 +149,21 @@ pub fn reduceFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocatio
     }
     const f = args[0];
 
-    // D-251 GC-root the accumulator + cursor across reentrant eval. `reduce`
-    // drives the reducing fn (`invokeCallable` -> VM eval) and forces lazy /
-    // chunked seq elements (`firstFn`/`nextFn`/`seqFn` -> VM eval); a collect
-    // at any nested back-edge poll would sweep `acc`/`cur` (Zig locals on no
-    // operand stack) -> UAF. Reusing the VM's `EvalFrame` chain (ADR-0091, the
-    // DA-fork pick over a parallel root stack): publish a 2-slot operand frame
-    // [acc, cur] that the root walk covers for free (self TLS + worker slot).
-    // `acc`/`cur` are written into `gc_roots` before each reentrant call below.
-    var gc_roots: [2]Value = .{ .nil_val, .nil_val };
-    var gc_sp: u16 = 2;
+    // D-251 GC-root reduce's live Values across reentrant eval. `reduce` drives
+    // the reducing fn (`invokeCallable` -> VM eval) and forces lazy / chunked
+    // seq elements (`firstFn`/`nextFn`/`seqFn` -> VM eval); a collect at any
+    // nested back-edge poll would sweep Zig locals on no operand stack -> UAF.
+    // Reusing the VM's `EvalFrame` chain (ADR-0091/0094, the DA-fork pick over a
+    // parallel root stack): publish a 3-slot operand frame [f, acc, cur] the
+    // root walk covers for free (self TLS + worker slot). `f` is rooted for the
+    // whole call (a `.clj` reducing-fn closure must survive BETWEEN iterations —
+    // reduce's `args` live above the caller's popped sp, so they are NOT rooted
+    // by the caller frame); slot 2 holds the cursor AND, before the first
+    // `seqFn`, the original `coll` (whose lazy-seq thunk closure transitively
+    // roots the source — e.g. the `(range …)` a `map` captured). acc/cur are
+    // refreshed before each reentrant call below.
+    var gc_roots: [3]Value = .{ f, .nil_val, .nil_val };
+    var gc_sp: u16 = 3;
     var gc_frame: root_set.EvalFrame = .{
         .stack = &gc_roots,
         .sp = &gc_sp,
@@ -204,7 +209,7 @@ pub fn reduceFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocatio
         var racc: Value = if (args.len == 3) args[1] else range_mod.elementAt(coll, 0);
         var ri: i64 = if (args.len == 3) 0 else 1;
         while (ri < n) : (ri += 1) {
-            gc_roots[0] = racc; // root across the reducing-fn eval
+            gc_roots[1] = racc; // root across the reducing-fn eval
             const rstep = try invokeCallable(rt, env, f, &.{ racc, range_mod.elementAt(coll, ri) }, loc);
             if (reduced.isReduced(rstep)) return reduced.unreduce(rstep);
             racc = rstep;
@@ -228,7 +233,7 @@ pub fn reduceFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocatio
             ri = 1;
         }
         while (ri < n) : (ri += 1) {
-            gc_roots[0] = racc; // root across the reducing-fn eval
+            gc_roots[1] = racc; // root across the reducing-fn eval
             const rstep = try invokeCallable(rt, env, f, &.{ racc, vector_mod.nth(coll, ri) }, loc);
             if (reduced.isReduced(rstep)) return reduced.unreduce(rstep);
             racc = rstep;
@@ -240,22 +245,25 @@ pub fn reduceFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocatio
     var cur: Value = undefined;
     if (args.len == 3) {
         acc = args[1];
+        gc_roots[1] = acc; // init/transient rooted across the first force
+        gc_roots[2] = args[2]; // the coll (its lazy-seq thunk closure roots the source)
         cur = try sequence.seqFn(rt, env, &.{args[2]}, loc);
     } else {
         // (reduce f coll): use (first coll) as init.
+        gc_roots[2] = args[1]; // the coll rooted across the first force
         cur = try sequence.seqFn(rt, env, &.{args[1]}, loc);
         if (cur.isNil()) {
             // Empty coll, no init → call (f) with zero args (= rf init).
             return try invokeCallable(rt, env, f, &.{}, loc);
         }
-        gc_roots[1] = cur; // root the seq across (first coll)'s thunk-forcing
+        gc_roots[2] = cur; // root the seq across (first coll)'s thunk-forcing
         acc = try sequence.firstFn(rt, env, &.{cur}, loc);
-        gc_roots[0] = acc;
+        gc_roots[1] = acc;
         cur = try sequence.nextFn(rt, env, &.{cur}, loc);
     }
     while (!cur.isNil()) {
-        gc_roots[0] = acc; // root acc + cur across every reentrant call below
-        gc_roots[1] = cur;
+        gc_roots[1] = acc; // root acc + cur across every reentrant call below
+        gc_roots[2] = cur;
         // PERF: drain a whole chunk per step (slots[offset..count]) instead
         // of one firstFn/nextFn per element, so a chunked source (range seq,
         // chunk-aware map/filter) pays the seq-node overhead once per 32
@@ -265,14 +273,14 @@ pub fn reduceFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocatio
             var ci: u32 = 0;
             while (ci < cnt) : (ci += 1) {
                 const elt = chunked_cons.currentChunkNth(cur, ci);
-                gc_roots[0] = acc; // acc grows each step; re-root before the eval
+                gc_roots[1] = acc; // acc grows each step; re-root before the eval
                 const step = try invokeCallable(rt, env, f, &.{ acc, elt }, loc);
                 if (reduced.isReduced(step)) return reduced.unreduce(step);
                 acc = step;
             }
             // Skip the whole drained chunk; re-seq the tail (may be a
             // lazy_seq / chunked_cons / cons / nil).
-            gc_roots[0] = acc; // re-root acc (cur already rooted from loop top)
+            gc_roots[1] = acc; // re-root acc (cur already rooted from loop top)
             cur = try sequence.seqFn(rt, env, &.{chunked_cons.chunkRest(cur)}, loc);
             continue;
         }
@@ -282,7 +290,7 @@ pub fn reduceFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocatio
             return reduced.unreduce(step);
         }
         acc = step;
-        gc_roots[0] = acc; // re-root the new acc across (next coll)'s thunk-forcing
+        gc_roots[1] = acc; // re-root the new acc across (next coll)'s thunk-forcing
         cur = try sequence.nextFn(rt, env, &.{cur}, loc);
     }
     return acc;

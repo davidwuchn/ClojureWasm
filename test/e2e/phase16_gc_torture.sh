@@ -40,5 +40,9 @@ assert_eq 'mapv_lit'     "$("$BIN" -e '(mapv inc [10 20 30])')"                 
 assert_eq 'frequencies'  "$("$BIN" -e '(frequencies [1 1 2 3 3 3])')"                               '{1 2, 2 1, 3 3}'
 # reduce over a vector source (the .vector fast path's racc rooting).
 assert_eq 'reduce_vec'   "$("$BIN" -e '(reduce + [1 2 3 4 5 6 7 8 9 10])')"                         '55'
+# .clj reducing-fn closure rooted across iterations (f-slot) over a chunked
+# range source (coll rooted across the first force) — D-251 / ADR-0094.
+assert_eq 'reduce_clos'  "$("$BIN" -e '(count (reduce (fn [a x] (conj a (inc x))) [] (range 1 150)))')" '149'
+assert_eq 'vec_range'    "$("$BIN" -e '(count (vec (range 1 1000)))')"                              '999'
 
 echo "ALL phase16_gc_torture PASS"
