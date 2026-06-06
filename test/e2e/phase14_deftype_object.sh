@@ -377,4 +377,20 @@ if [[ "$last" != "[{:tag :orig} {:tag :new}]" ]]; then
 fi
 echo "PASS iobj_meta_with_meta -> orig/new"
 
-echo "OK — phase14_deftype_object (25 cases) green"
+# --- Case 26 (D-282): clojure.core.protocols ns + a deftype implementing
+# clojure.core.protocols/IKVReduce loads and dispatches kv-reduce ---
+got=$("$BIN" - <<'EOF' 2>/dev/null
+(require 'clojure.core.protocols)
+(deftype KV [m]
+  clojure.core.protocols/IKVReduce
+  (kv-reduce [this f init] (reduce-kv f init m)))
+(clojure.core.protocols/kv-reduce (KV. {:a 1 :b 2}) (fn [acc k v] (+ acc v)) 0)
+EOF
+) || fail "case26: non-zero exit ($got)"
+last=$(awk 'END { print }' <<< "$got")
+if [[ "$last" != "3" ]]; then
+    fail "case26: got '$last', want '3'"
+fi
+echo "PASS core_protocols_ikvreduce -> 3"
+
+echo "OK — phase14_deftype_object (26 cases) green"

@@ -133,6 +133,7 @@ active:
   - id: "D-282"
     status: "now (found 2026-06-07 via D-280e) — `clojure.core.protocols` ns does NOT exist in cljw (`require` → 'Could not locate'). priority-map implements `clojure.core.protocols/IKVReduce` (line 391, kv-reduce), so its full load needs this ns. Listed MISSING in the convergence campaign Stage 0.2 (v0→v1 parity) + the D-273 v0→v1 backfill umbrella. clojure.core.protocols defines CollReduce/IKVReduce/Datafiable/Navigable — the reduce/datafy protocol surface."
     category: "missing-ns"
+    resolution: "DISCHARGED 2026-06-07 — shipped `src/lang/clj/clojure/core/protocols.clj` (CollReduce/IKVReduce/Datafiable/Navigable defprotocols) + bootstrap.zig FILES[14] + lookupEmbeddedFile mapping. `(require 'clojure.core.protocols)` loads; a deftype implementing `clojure.core.protocols/IKVReduce` loads + dispatches kv-reduce (e2e 26). Load-level: the protocols are declared/dispatchable; wiring cljw's reduce-kv to consult IKVReduce + reduce/transduce to consult CollReduce + datafy/nav fns is a tracked functional follow-up. priority-map's IKVReduce (line 391) is unblocked; java.util.Map (line 374, D-281) is now its only remaining load blocker."
     barrier: |-
       **`clojure.core.protocols` ns is absent.** A library that implements or
       requires it (priority-map's IKVReduce; any reducers/datafy user) fails to

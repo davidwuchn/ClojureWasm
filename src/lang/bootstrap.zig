@@ -75,6 +75,9 @@ pub const FILES: []const FileEntry = &.{
     // clojure.math — thin Math wrappers; appended last so earlier FILES[N]
     // indices in `lookupEmbeddedFile` stay stable (D-232).
     .{ .label = "<clojure.math>", .source = @embedFile("clj/clojure/math.clj") },
+    // clojure.core.protocols (D-282) — reduce/datafy protocol surface; require-on-
+    // demand (lookupEmbeddedFile), needed by deftypes implementing IKVReduce etc.
+    .{ .label = "<clojure.core.protocols>", .source = @embedFile("clj/clojure/core/protocols.clj") },
 };
 
 /// First file's source — exposed so `main.zig`'s renderer can fall
@@ -109,6 +112,7 @@ fn lookupEmbeddedFile(ns_name: []const u8) ?FileEntry {
     if (std.mem.eql(u8, ns_name, "cljw.error")) return FILES[11];
     if (std.mem.eql(u8, ns_name, "clojure.data")) return FILES[12];
     if (std.mem.eql(u8, ns_name, "clojure.math")) return FILES[13];
+    if (std.mem.eql(u8, ns_name, "clojure.core.protocols")) return FILES[14];
     return null;
 }
 
