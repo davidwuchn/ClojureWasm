@@ -311,4 +311,21 @@ if [[ "$last" != "[true false 1]" ]]; then
 fi
 echo "PASS equiv_same_type_and_entryAt -> [true false 1]"
 
-echo "OK — phase14_deftype_object (21 cases) green"
+# --- Case 22 (D-280d4): clojure.lang.Sorted registers + dispatches all 4 methods ---
+got=$("$BIN" - <<'EOF' 2>/dev/null
+(deftype Srt [m]
+  clojure.lang.Sorted
+  (comparator [this] :cmp)
+  (entryKey [this e] (first e))
+  (seq [this ascending] (if ascending :asc :desc))
+  (seqFrom [this k ascending] [k ascending]))
+(let [s (Srt. {})] [(-sorted-comparator s) (-entry-key s [:a 1]) (-sorted-seq s true) (-sorted-seq-from s :k false)])
+EOF
+) || fail "case22: non-zero exit ($got)"
+last=$(awk 'END { print }' <<< "$got")
+if [[ "$last" != "[:cmp :a :asc [:k false]]" ]]; then
+    fail "case22: got '$last', want '[:cmp :a :asc [:k false]]'"
+fi
+echo "PASS protocol_remap_sorted -> ok"
+
+echo "OK — phase14_deftype_object (22 cases) green"

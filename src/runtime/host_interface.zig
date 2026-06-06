@@ -86,6 +86,15 @@ const REVERSIBLE: HostInterface = .{ .kind = .protocol_remap, .canonical = "Reve
     .{ .clj = "rseq", .protocol = "Reversible", .method = "-rseq" },
 } };
 
+// clojure.lang.Sorted — comparator/entryKey/seq(asc)/seqFrom (D-280d4). Modeled as
+// a protocol; load-level for now (the nav consult by subseq/rsubseq is a follow-up).
+const SORTED: HostInterface = .{ .kind = .protocol_remap, .canonical = "Sorted", .remap = &.{
+    .{ .clj = "comparator", .protocol = "Sorted", .method = "-sorted-comparator" },
+    .{ .clj = "entryKey", .protocol = "Sorted", .method = "-entry-key" },
+    .{ .clj = "seq", .protocol = "Sorted", .method = "-sorted-seq" },
+    .{ .clj = "seqFrom", .protocol = "Sorted", .method = "-sorted-seq-from" },
+} };
+
 // clojure.lang.IPersistentStack — peek/pop (D-280d2). core.clj peek/pop consult it.
 const IPERSISTENT_STACK: HostInterface = .{ .kind = .protocol_remap, .canonical = "IPersistentStack", .remap = &.{
     .{ .clj = "peek", .protocol = "IPersistentStack", .method = "-peek" },
@@ -132,6 +141,7 @@ const MARKERS = std.StaticStringMap(HostInterface).initComptime(.{
     .{ "clojure.lang.Reversible", REVERSIBLE },
     .{ "clojure.lang.IPersistentStack", IPERSISTENT_STACK },
     .{ "clojure.lang.IHashEq", IHASHEQ },
+    .{ "clojure.lang.Sorted", SORTED },
 });
 
 /// True when `name` is a quote-wrap marker (method_family or zero-method marker)

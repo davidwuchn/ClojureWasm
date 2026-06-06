@@ -148,13 +148,15 @@ interfaces:
   - name: clojure.lang.Sorted
     derives_from: "clojure.lang.Sorted — sorted-map nav (Clojure, stable)."
     tier: A
-    recognised: false
-    modeled_as: "(none yet)"
+    recognised: true
+    kind: protocol_remap
+    modeled_as: "Sorted (defprotocol Sorted (-sorted-comparator [c]) (-entry-key [c e]) (-sorted-seq [c asc]) (-sorted-seq-from [c k asc]), D-280d4)"
+    note: "Load-level: registers + dispatches; subseq/rsubseq don't yet consult Sorted (functional follow-up). `-sorted-comparator` (not -comparator — that name is the sort predicate-coercion helper). Sorted's seq is 2-arity (this asc) — distinct from Seqable's; the SORTED remap is per-interface so no collision."
     methods:
-      comparator: { status: feature_not_supported }
-      entryKey: { status: feature_not_supported }
-      seq: { status: feature_not_supported }
-      seqFrom: { status: feature_not_supported }
+      comparator: { status: wired, wires_to_protocol: Sorted, wires_to_method: "-sorted-comparator" }
+      entryKey: { status: wired, wires_to_protocol: Sorted, wires_to_method: "-entry-key" }
+      seq: { status: wired, wires_to_protocol: Sorted, wires_to_method: "-sorted-seq" }
+      seqFrom: { status: wired, wires_to_protocol: Sorted, wires_to_method: "-sorted-seq-from" }
   - name: clojure.lang.IHashEq
     derives_from: "clojure.lang.IHashEq — hasheq for = / hash (Clojure, stable)."
     tier: A
