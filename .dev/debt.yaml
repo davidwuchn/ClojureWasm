@@ -9,6 +9,26 @@
 # md-table-align no longer pads it to ~800 KB of whitespace.
 
 active:
+  - id: "D-271"
+    status: "open (found 2026-06-06, tricky-behaviour sweep) — `(with-meta (range 3) m)` raises type_error; clj attaches meta (range is IObj). The `.range` substrate AND its `.chunked_cons` seq view have no meta slot, so withMetaFn's switch has no arm. map/filter/lazy-seq/list/cons/take all work (lazy_seq is metable)."
+    category: "clj-parity"
+    barrier: |-
+      **with-meta on a raw range / chunked_cons substrate is unsupported.**
+      `(meta (with-meta (range 3) {:a 1}))` → cljw type_error
+      (with_meta_target_not_iobj), clj → `{:a 1}`. cljw's `.range` extern struct
+      (header/start/step/count + a tight 6-byte pad) and the `.chunked_cons` seq
+      view carry NO meta field, so metadata.zig withMetaFn's switch (vector / map
+      / set / list / lazy_seq) routes them to the not-iobj error. EVERY lazy op
+      that goes through lazy_seq (map/filter/take/keep/cons/seq-of-coll) IS
+      metable — only a raw range value (and `(seq range)`=chunked_cons) is not.
+      Fix options: (a) add a `meta: Value` slot to LongRange + ChunkBuffer/
+      ChunkedCons (extern-struct layout change, F-003-sensitive, + GC trace +
+      metaOf/withMeta arms), or (b) a lazy meta-carrying wrapper that withMeta
+      realizes a range/chunked_cons into (must stay lazy — eager-to-list hangs on
+      `(with-meta (range) m)`). NICHE (with-meta on a raw range is almost never
+      written — you map/filter first, which is already metable). Cross-ref F-003
+      (layout owner), F-011, the chunked-seq substrate family.
+    last_reviewed: "2026-06-06"
   - id: "D-270"
     status: "open (found 2026-06-06, invalid-arg sweep) — Java primitive-array constructors/ops missing: `(int-array 3)` etc. name_error; clj returns a `#object[\"[I\" 0x… …]` array."
     category: "clj-parity"
