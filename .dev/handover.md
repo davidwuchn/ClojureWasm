@@ -5,17 +5,24 @@
 
 ## Resume contract
 
-- **HEAD**: see `git log` (Convergence Campaign **Stage 0 DONE** this session —
-  5 SSOTs rebuilt; see § Just landed).
-- **First commit on resume MUST be**: **Convergence Campaign Stage 1.1 —
-  `resolve`-in-stdin regression** (`.dev/convergence_campaign.md` Stage 1).
-  `(resolve 'map)` returns nil via `cljw -` (stdin) but `#'clojure.core/map`
-  via `-e`; the stdin eval path's ns/resolution setup differs from `-e`. Small,
-  unblocks reliable nREPL/cider eval. Then Stage 1 proceeds in order: deps.edn
-  resolution (1.2) → real-lib ladder drive (1.3) → native cljw cider ops (1.4) →
-  v0→v1 bundled-lib backfill (1.5, D-273) → clj-parity sizable (1.6) → **Phase B
-  HARDENING (1.7, D-242 — concurrency is IMPLEMENTED, this is torture/perf
-  residuals not construction)** → Final Stage wiring audit. The campaign is the SSOT.
+- **HEAD**: see `git log`. This session: Campaign **Stage 0 DONE** (5 SSOTs) +
+  **Stage 1.1 DONE** (var-as-IFn, D-231) + **Stage 1.2 DONE** (full deps.edn:
+  `:paths`/`:local/root`/`:aliases`/`:git/url`, 5 slices + ADR-0101 + DA fork,
+  cw's first subprocess) + **Stage 1.3 engine running** (D-275 found + surveyed).
+- **First commit on resume MUST be**: **D-275 slice 1** — `deftype`/`reify`
+  host-supertype recognition + `Object/toString`→print. SPEC =
+  `private/notes/stage1.3-deftype-object-survey.md`. name_error origin
+  `analyzer.zig:559`; fix = **Path A** (quote-wrap the recognised marker head in
+  `expandReify`/`expandExtendType` like the `instance?` precedent
+  `macro_transforms.zig:2854`, so the analyzer never Var-resolves `Object`), then
+  `strValue` consults `dispatchOrNull(v,"Object","-toString")` (the pattern
+  `print.zig` uses for `Seqable/-seq`). Recognize-but-don't-wire = a forbidden
+  silent no-op, so each recognised method wires to real dispatch. Decomposed:
+  slice 1 Object/toString → slice 2 equals/hashCode → slice 3+ `clojure.lang.*`
+  (IDeref etc.). Then Stage 1 continues: 1.4 native cider ops → 1.5 v0→v1
+  bundled-lib backfill (D-273) → 1.6 clj-parity → **1.7 Phase B HARDENING (D-242 —
+  concurrency IMPLEMENTED, torture/perf residuals not construction)** → Final
+  Stage wiring audit. The campaign (`.dev/convergence_campaign.md`) is the SSOT.
 - **⚠ USER must act (time-sensitive, NOT AI-doable)**: see
   `private/clojure_conj_2026_cfp/DEFERRED_USER_ACTIONS.md` — (1) Sessionize submit
   by 6/13 (`SUBMIT_READY.md` copy-paste ready); (2) v0.1.0 tag/Release + make
@@ -25,26 +32,23 @@
   surface); pinning an in-progress zwasm v2 state / tag (F-001: v2 ONLY from
   `zwasm-from-scratch`); trusting `~/Documents/OSS/zig`.
 
-## Just landed — Convergence Campaign Stage 0 (2026-06-06, git log = SSOT)
+## Just landed (2026-06-06, git log = SSOT)
 
-Inventory & SSOT rebuild, 4 commits:
-
-- **0.1** `core_coverage_gaps.md` recipe re-run (168 raw missing, unchanged
-  shape; residue = known-deferred REPL-dynvar/array/proxy classes).
-- **0.2** NEW `.dev/v0_v1_feature_parity.md` (v0's 32 bundled ns + app surface →
-  v1: 12 present / 3 partial / 24 MISSING) + umbrella **D-273** so every MISSING
-  carries a live debt row.
-- **0.3** `compat_tiers.yaml` Java scope: +31 Tier-A / +3 Tier-C host-class
-  **reservations** (smell-caught: draft proposed phantom `files:`; merged as
-  one-liner reservations per the SSOT's own convention, G3-clean).
-- **0.4** debt de-stale −5 active: **DISCOVERY — Phase B concurrency is
-  IMPLEMENTED at HEAD** (landed 2026-06-05, before the campaign was written;
-  real-OS-thread future + MVCC STM + agent/locking/atom-CAS all probe-green).
-  Discharged D-009/010/012/013/211; flipped D-224/046 to actionable; D-242
-  re-scoped "unimplemented core" → "concurrency hardening".
-- **0.5** NEW `docs/works/` ladder (F-010) — 15 libs ranked by pure-Clojure
-  degree; medley / math.combinatorics / tools.cli load green on cljw (`-cp`,
-  ADR-0084); deps.edn (Stage 1.2) is the next unlock.
+- **Stage 0** (5 SSOTs rebuilt): parity `v0_v1_feature_parity.md` + D-273;
+  `compat_tiers.yaml` +31A/+3C Java reservations; debt de-stale −5; `docs/works/`
+  ladder. **DISCOVERY (0.4): Phase B concurrency IMPLEMENTED at HEAD** (landed
+  2026-06-05 before the campaign was written) — discharged D-009/010/012/013/211,
+  D-242 re-scoped to hardening, handover's "open Phase B" was stale.
+- **Stage 1.1** (D-231): var-as-IFn — `((resolve 'f) args)`/`(#'f args)` work
+  (a `.var_ref` arm in the shared `treeWalkCall`, both backends). The literal
+  premise (resolve→nil) was stale-fixed; Step-0.6 pivot to the real gap.
+- **Stage 1.2** (5 slices + ADR-0101): deps.edn fully resolves into the
+  classpath. git fetch = cw's first subprocess (`std.process.run` only in
+  `git_fetch.zig`), content-addressed `$CLJW_HOME/gitlibs/<repo>/<full-sha>`,
+  rev-parse verified, hermetic `file://` e2e. Maven rejected (source-only).
+- **Stage 1.3 engine**: loaded `clojure.data.priority-map` via a deps.edn git
+  coordinate (git fetch + transitive classpath worked end-to-end) → first real
+  blocker **D-275** (deftype/reify `Object` impl-spec unresolved) + surveyed.
 
 ## Process discipline (SSOT = memory + rules; do NOT re-expand here)
 
