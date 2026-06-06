@@ -879,3 +879,84 @@ behavioural equivalence).
 - 2026-06-02 added: user re-asserted the §349 VM-default intent during the
   drift audit; recorded VM-as-production-default as law, the flip gated on
   D-196 parity blockers (the flip experiment surfaced 5 masked VM gaps).
+
+---
+
+## F-013 — Library-driven discovery surfaces gaps; the response is definition-derived comprehensive coverage in canonical (Zig-equivalent, non-JVM) form, never an ad-hoc "just make this lib pass"
+
+**Status**: `confirmed` — direction of travel is law. Amendable only by user
+direction + Revision history entry.
+
+**Declared**: 2026-06-07 (user chat, during the D-275 deftype/reify `Object`
+slice — the question "個別最適化に落ちる入口を構造的に防げないか").
+
+**Verbatim** (user, 2026-06-07):
+
+1. 「ライブラリ駆動は未実装をあぶり出す手法であるけれども（…なんらかの漏れは
+   しかたない）、しかし、その場合ただ「通すだけ」のad-hocを避け、…「登場しうる
+   ことを網羅」「正統な形で（つまり、JVM再実装ではなくて、Zig等価、このプロジェ
+   クトの形を守る）」という形で定式化から導出される対応で一段階システムが向上、
+   その結果ライブラリが実行できるようになる、としたほうが、潜在的に他のライブラ
+   リも対応範囲が増えていて、だんだんライブラリロードのエラーがおきにくくなり
+   そう」
+2. 「java.xxx.の大玉がありますが、ディレクトリ分離などにより明示化（…Java再実装
+   ではなくて、どうせ必要になるものをZigで用意している、正統な用意）しているので、
+   手間がかかっても良いこと」
+
+**What this changes for the loop**:
+
+1. **Real-library loading is a *discovery technique*, not a feature list.**
+   `require`-ing actual Clojure libraries (the convergence campaign's ladder,
+   F-010 `docs/works/`) is how the loop finds the gaps left by fast AI-driven
+   construction. A failed load is a *signal*, not a task to silently satisfy.
+2. **The response to a discovered gap is forbidden to be ad-hoc "make this lib
+   pass."** When a load fails on a missing capability, the fix must:
+   - **網羅 (cover the whole class that can appear)** — derive the full set of
+     things that *can* legitimately appear from the **definition** (the Clojure
+     language spec / the host-interface surface / the numeric tower / …), not
+     from "what this one library happened to use."
+   - **be canonical (定式化から導出)** — implement in cljw's own shape:
+     Zig-equivalent behaviour (F-011), namespace-neutral impl with thin surfaces
+     (F-009), no JVM reimplementation (ADR-0059). A Java/`clojure.lang` surface
+     prepares "what will be needed anyway" in Zig — a legitimate, deliberate
+     preparation, not a per-library shim.
+   - **raise the system one level** — a definition-derived fix monotonically
+     improves coverage for *other* libraries too, so library-load errors trend
+     downward over time. An ad-hoc fix improves exactly one library and leaves
+     the next one to re-discover the same gap.
+3. **The "個別最適化 entry" must be closed structurally, not by vigilance.**
+   Where a capability set is hand-maintained (an allowlist of recognised names,
+   a per-case `if`), it tends to grow library-by-library — the failure mode this
+   F-NNN forbids. The structural defenses: a single closed-set SSOT whose keys
+   come from the *definition* (not from libraries seen), + a mechanical gate that
+   (a) bounds the recognised set to the definition-derived closed set and (b)
+   requires every recognised entry to route to a *generic* surface (so a
+   per-library shim has no slot). `compat_tiers.yaml` (Java classes, A/B/C/D) is
+   the prior art; ADR-0102 applies the same pattern to the deftype/reify
+   host-interface surface (`host_interfaces.yaml`).
+4. **The acceptable bound on comprehensiveness is single-binary cost.** 網羅
+   tempts "model/load everything up-front", which grows binary size + cold-start
+   (a dimension under-considered in the original plan; single-binary is the
+   shipped form, dynamic loading / split binaries are both currently undesirable).
+   The reconciliation: 網羅 the *recognition/closed-set table* (cheap — rows, no
+   impl) up-front; **wire impl incrementally** (each wire generic + gated). The
+   tension (eager comprehensiveness vs binary/startup budget) is tracked as a
+   standing concern (debt row D-277), revisited if the mission cold-start / size
+   target is threatened — not solved pre-emptively.
+
+**Cross-references**: F-009 (impl neutrality — the shared-impl home that makes a
+definition-derived fix reusable across surfaces) · F-011 (behavioural
+equivalence vs `clj` — the "canonical / Zig-equivalent" half) · F-002
+(finished-form wins — the structural close beats the smallest-diff per-lib
+shim) · ADR-0059 / AD-003 (no-JVM — "non-JVM reimplementation") ·
+`.claude/rules/clj_diff_sweep.md` Discipline 2 (big-bang, don't drip-feed — the
+sweep-domain instance of the same principle) · ADR-0102 (the host-interface SSOT
++ gate — the first mechanical instance of clause 3) · D-277 (the binary/startup
+concern of clause 4) · principle.md "Ad-hoc-pass smell".
+
+### Revision history
+
+- 2026-06-07 added: user declared the discovery-vs-response philosophy during
+  the D-275 `Object` slice and asked for the 個別最適化 entry to be closed
+  structurally. Recorded as law; the first mechanical instance is ADR-0102
+  (host-interface closed-set SSOT + gate).

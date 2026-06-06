@@ -47,6 +47,36 @@ active:
       (protocol dispatch). Low frequency in pure-Clojure libs but a real clj
       divergence — classify as bug→fix, not AD.
     last_reviewed: "2026-06-07"
+  - id: "D-277"
+    status: "now/standing-concern (F-013 clause 4, declared 2026-06-07) — comprehensive (網羅) up-front coverage tends toward 'model/load everything from the start', which grows single-binary size + cold-start time. Under-considered in the original plan; single-binary is the shipped form, and both dynamic loading and split binaries are currently undesirable. NOT solved pre-emptively — recorded as the standing tension to revisit IF the mission cold-start/size target is threatened."
+    category: "scope"
+    barrier: |-
+      **Eager comprehensiveness vs single-binary size/startup budget.** F-013's
+      網羅 (cover the definition-derived class up-front) is in tension with the
+      single-binary cold-start / size mission target. Current reconciliation
+      (ADR-0102 §5): 網羅 the *recognition/closed-set tables* (cheap — YAML rows +
+      a StaticStringMap, no impl), wire *impl incrementally* (each generic), so
+      the eager part stays near-zero-cost. The barrier dissolves into action only
+      if a measured `scripts/perf.sh` cold-start or `binary_size_bytes` regression
+      crosses the mission target (ms-level cold start, per the perf bench lock) —
+      at which point the options (tiered bundling / lazy impl init / a non-single
+      distribution) are weighed. Until then it is a watch, not a build. Cross-ref
+      F-013 clause 4, F-010 (perf substrate), ADR-0102, the bench_regression gate.
+    last_reviewed: "2026-06-07"
+  - id: "D-278"
+    status: "now (ADR-0102, accepted 2026-06-07) — implement the host-interface closed-set SSOT: create `host_interfaces.yaml` (rows = the materialized closed set, each with `derives_from:`), `src/runtime/host_interface.zig` (single StaticStringMap read point), consolidate the 5 scattered `std.mem.eql(\"Object\")` sites (macro_transforms.zig ×3, protocol.zig ×3) onto it, add `scripts/check_host_interface.sh` (G4: set-bound + route-soundness) to run_all.sh, and migrate the legacy `Object` row out of `compat_tiers.yaml host_classes`. MUST land BEFORE D-275 slices 3+ (clojure.lang.*) so each interface is a gated row, not a new eql site."
+    category: "polymorphism"
+    barrier: |-
+      **The host-interface recognition scatter is not yet consolidated into the
+      ADR-0102 SSOT + gate.** Until `host_interfaces.yaml` + `host_interface.zig`
+      + `check_host_interface.sh` land, host-supertype recognition is the 5
+      hand-coded `eql` sites D-275 slice 1 created — the 個別最適化 entry F-013
+      clause 3 forbids. Barrier dissolves when: the SSOT exists with the Object
+      row migrated in, all 5 sites read from the single module, and the G4 gate
+      enforces (i) recognised-in-code ⊆ YAML rows and (ii) every protocol route
+      points at a modeled protocol. Cross-ref ADR-0102, F-013, D-275 (the slices
+      this unblocks cleanly), D-276 (Object-as-target becomes a row here).
+    last_reviewed: "2026-06-07"
   - id: "D-274"
     status: "deferred (ADR-0101 Shape C insight, 2026-06-06) — deps.edn `:git/url` resolution is host-bound: it spawns `git` (slice 5, `git_fetch.zig`). The wasm/edge horizon (F-010/F-012, cw's differentiator) cannot spawn a subprocess, so a `git`-free alternative is eventually needed: fetch a source tarball (`…/archive/<sha>.tar.gz`) over an HTTP client into the same content-addressed cache. NOT built now — it adds a new outbound-HTTP-client capability + per-forge URL knowledge that `git clone` handles uniformly; the host-bound path serves the POSIX-host case first."
     category: "scope"

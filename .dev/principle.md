@@ -174,6 +174,25 @@ these — and on others that fit the same shape:
   the gate, but the smell sensor remains the first line of
   detection — if you're about to leave a VM arm as
   `error.NotImplemented` without a marker, that is this smell.
+- **Ad-hoc-pass smell (個別最適化 entry)** — when a real library
+  fails to load (the gap-discovery technique, F-013) and the fix
+  that comes to mind is "make *this* library pass": add the one
+  `clojure.lang.*` interface it used, the one missing var, the one
+  Java method — driven by *what this library happened to need*
+  rather than *what can legitimately appear, derived from the
+  definition*. The tell is a hand-maintained allowlist growing
+  library-by-library (`std.mem.eql(name, "Object") or eql("IDeref")
+  or …` at N sites). F-013 forbids this: the response must 網羅
+  (cover the whole definition-derived class) in canonical
+  (Zig-equivalent, non-JVM) form, so the system rises one level and
+  *other* libraries' coverage improves too. The structural fix is a
+  closed-set SSOT whose keys come from the definition + a gate that
+  bounds the set and requires every entry to route to a *generic*
+  surface (no per-library slot) — ADR-0102 (`host_interfaces.yaml`)
+  is the canonical instance; `compat_tiers.yaml` is the prior art.
+  If you're about to add a name to an allowlist because one library
+  needed it, that is this smell — model the definition-derived
+  family + gate it instead.
 
 The catalogue is not exhaustive. Any felt smell counts.
 

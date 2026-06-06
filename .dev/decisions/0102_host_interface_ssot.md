@@ -1,0 +1,183 @@
+# ADR-0102 — Host-interface recognition is a closed-set SSOT (`host_interfaces.yaml`) + a mechanical gate, not a hand-grown allowlist
+
+- **Status**: Proposed → Accepted (2026-06-07)
+- **Driven by**: F-013 (just declared) clause 3 — the "個別最適化 entry" must be
+  closed *structurally*. D-275 slice 1 landed `Object/toString` recognition by
+  hand-coding `std.mem.eql(name, "Object")` at ~5 sites; slices 3+
+  (`clojure.lang.*`) would multiply that scatter library-by-library. The user
+  asked for the entry to be structurally prevented, not watched.
+- **Relates to**: F-013 (definition-derived comprehensive coverage), F-009
+  (impl neutrality + `compat_tiers.yaml` as the cross-reference index + G1/G2/G3
+  gate precedent), F-002 (finished-form wins), F-011 (behavioural equivalence vs
+  `clj`), ADR-0059 / AD-003 (no-JVM — `Object`/`clojure.lang.*` are NOT real host
+  classes), ADR-0066 (deftype macro), ADR-0008 (protocol dispatch), D-275
+  (the Object slice this generalises), D-276 (`extend-type Object` as-target).
+
+## Context
+
+In `clj`, `deftype`/`reify`/`extend-type` may name host supertypes/interfaces in
+the impl-spec position — `Object` (for `toString`/`equals`/`hashCode`) and the
+`clojure.lang.*` family (`Seqable`, `ISeq`, `ILookup`, `IDeref`, `Counted`,
+`IFn`, `IObj`, `IPersistentMap`, …) that collection libraries implement. cljw has
+**no JVM Class** (ADR-0059); these are not cljw protocol Vars and not real
+classes — they are **marker names that select a dispatch family** (`Object/toString`
+→ the str/print consult; `clojure.lang.Seqable` → cljw's existing `-seq`
+protocol).
+
+D-275 slice 1 made `Object` recognised by hand-coding `std.mem.eql(name,
+"Object")` at 5 sites (`macro_transforms.zig` `isHostMarker` + 2 quote-wrap call
+sites; `protocol.zig` `hostMarkerCanonicalName` + 2 `eql`/guard sites). This is
+the **un-structured recognition entry**: when a real library (the convergence
+campaign's gap-discovery technique, F-013 clause 1) hits a new `clojure.lang.*`
+interface, the loop is tempted to add `or eql("IDeref")…` at each site — the
+recognised set grows **library-by-library** (the ad-hoc "make this lib pass" that
+F-013 clause 2 forbids).
+
+`compat_tiers.yaml` already structurally defends the **Java class** surface (Tier
+A/B/C/D + cw-native alternative + G1/G2/G3 gates) so a library hitting a Java
+class triggers a *tier lookup*, never a per-library special-case. The
+deftype/reify host-interface surface has no equivalent SSOT — only the scatter.
+
+## Decision
+
+Apply `compat_tiers.yaml`'s proven closed-set + tier-gate pattern to the
+host-interface surface, as a **dedicated SSOT** with a **materialized closed
+set** (not re-derived from a mutable clone) + a **two-clause gate**.
+
+1. **SSOT — `host_interfaces.yaml`** (a new top-level file, sibling to
+   `compat_tiers.yaml` / `placement.yaml` / `accepted_divergences.yaml`; NOT a
+   `host_classes` extension — see Alternatives/DA). Each row:
+   ```yaml
+   - name: Object                 # the bare marker name
+     aliases: [java.lang.Object]   # qualified spellings clj source may write
+     routes_to: object-method-family   # protocol name | method-family | feature_not_supported
+     methods:                      # per-method wiring status (so a partial family is honest)
+       toString: { wires_to: "str/print consult", status: wired }
+       equals:   { status: feature_not_supported }
+       hashCode: { status: feature_not_supported }
+     derives_from: "java.lang.Object — clj universal supertype; Clojure 1.12 deftype/reify legal supertype"
+     tier: A
+   ```
+   The **rows ARE the closed set.** Each carries a `derives_from:` note citing the
+   Clojure interface (+ version) it corresponds to — the "is this in the language"
+   judgement happens **once, at row-authoring time** (with `~/Documents/OSS/clojure/`
+   as evidence recorded in the note), NOT re-derived from the pinned clone on every
+   gate run. This keeps the gate **reproducible + fully in-repo** (the DA's decisive
+   refinement — see below).
+
+2. **Single read point** — `src/runtime/host_interface.zig` (Layer 0, neutral)
+   exposes the recognition + routing surface as a `StaticStringMap` generated/
+   checked from `host_interfaces.yaml`. The macro (`isHostMarker`), the canonical-
+   name resolver, and the method-wiring guard all read from this one module. The 5
+   scattered `std.mem.eql("Object")` sites are deleted in favour of it.
+
+3. **Gate — `scripts/check_host_interface.sh`** (sibling to G1/G2/G3, runs in
+   `test/run_all.sh`):
+   - **(i) Set bound**: every name recognised in code (the `host_interface.zig`
+     table) ⊆ the rows in `host_interfaces.yaml`. A name cannot be recognised
+     without a row whose `derives_from:` justifies it as language-defined — so
+     libraries cannot drive growth beyond the definition.
+   - **(ii) Route soundness** (the real anti-個別最適化 lever): every row whose
+     `routes_to`/`wires_to` names a cljw protocol must point to an **actually-
+     modeled** protocol. You cannot recognise a name without a *generic* dispatch
+     surface behind it — a per-library shim has no slot. Unwired methods carry
+     `status: feature_not_supported` (explicit transient per ADR-0018), never a
+     silent drop.
+
+4. **Migration**: the legacy `Object` row currently in `compat_tiers.yaml`
+   `host_classes` (a self-contradiction — ADR-0059 says `Object` is not a class)
+   migrates out to `host_interfaces.yaml` in the implementing cycle.
+
+5. **Sequencing**: this SSOT + gate lands **before** D-275 slices 3+
+   (`clojure.lang.*`). After it, adding an interface is "author a row + wire its
+   protocol", gate-checked — never a new `eql` site. 網羅 the *recognition table*
+   up-front (cheap, closed); wire impl *incrementally* (each generic + gated) —
+   the F-013 clause-4 reconciliation of comprehensiveness vs binary/startup cost.
+
+## Alternatives considered
+
+Devil's-advocate subagent output (verbatim, fresh context, F-NNN envelope):
+
+> **F-NNN reachability note (leading entry, per the brief):** No finished-form-clean option here requires violating any F-NNN. All three alternatives below sit inside the envelope. The genuine tension is not F-NNN-vs-clean; it is *which table is the SSOT* and *what the gate's closed set is derived from*. I flag one place where the proposed shape risks a subtle F-009 / F-013 violation (a `routes_to` table that becomes a dispatch map living in `compat_tiers.yaml`) and route around it in the recommendation.
+>
+> ### Alternative 1 — smallest-diff: single shared `StaticStringMap` in one Zig file, no YAML, no gate
+>
+> Collapse the 5 scattered `std.mem.eql` sites into one `host_marker.zig` (Layer 0, `runtime/`) exposing `recognize(name) -> ?HostMarker` where `HostMarker` is an enum (`.object`, future `.seqable`, `.ilookup`, …) plus a `routesTo()` method. The macro asks "is this a marker" (non-null), the primitive asks "what does it route to". The alias set (bare + `clojure.lang.`-qualified) lives in the `initComptime` table.
+>
+> - **Better than proposed:** Zero new YAML schema, zero new gate script, zero cross-file SSOT drift risk. The recognition logic and the routing logic are co-located in the one file a reader greps for — arguably *more* discoverable than a YAML row that points at a Zig table that points at a protocol. It directly kills the "5 scattered `eql` sites" problem, which is the ADR's stated structural target. It is also the most F-009-honest: the marker→family map is implementation, and implementation belongs in neutral `runtime/`, not in the cross-reference index.
+> - **What it breaks:** It does **not** structurally close the 個別最適化 entry — the thing F-013 and the user most want. Adding `IDeref` is still "append one enum arm + one table row in one file," which is exactly the library-by-library growth temptation, just centralized. Nothing *mechanically prevents* a future loop from adding `.some_lib_specific_iface` because a lib needed it. There is no gate asserting the set ⊆ the language-defined set, and no gate asserting every route points at a real modeled protocol. It solves the *scatter* smell but not the *unbounded-growth* smell. Against F-013's "raise the system one level" bar, this is a refactor, not a structural defense.
+>
+> ### Alternative 2 — finished-form-clean: dedicated `host_interfaces.yaml` SSOT + generated Zig table + the two gates, NOT folded into `compat_tiers.yaml`
+>
+> Same closed-set + dual-gate idea as the proposed shape, but the SSOT is a **new dedicated file** `host_interfaces.yaml` (sibling to `compat_tiers.yaml` / `placement.yaml`), not an extension of `host_classes`. Each row: `{name, aliases: [bare, clojure.lang.X], routes_to, tier, status}`. The Zig `StaticStringMap` is generated/checked from it; `scripts/check_host_interface.sh` enforces (i) set ⊆ language-defined supertypes and (ii) every `routes_to: <protocol>` resolves to a modeled cljw protocol.
+>
+> - **Better than proposed:** Respects the role-split that the project already codified. `compat_tiers.yaml`'s own header (and the `placement.yaml` cross-reference in CLAUDE.md) draws the line explicitly: **`compat_tiers.yaml` = Java/cljw *Class*-level surface; `placement.yaml` = Clojure-ns *var*-level**. Host-supertype *markers* are a third category — they are neither real classes (ADR-0059/AD-003 says `Object`/`clojure.lang.*` are NOT host classes) nor vars. Folding them into `host_classes` forces the schema to host rows that *contradict the schema's own premise* (`host_classes` rows model classes that `(instance? …)` and ctor-resolution treat as real; these markers are explicitly not-real). A dedicated SSOT keeps each index honest about what it indexes — which is the same discipline `accepted_divergences.yaml` and `feature_deps.yaml` already embody (one SSOT per concern). The two gates deliver the F-013 "网罗 from the definition, no per-lib slot" structural close that Alt 1 cannot.
+> - **What it breaks:** A fourth top-level YAML SSOT raises the scaffolding surface `audit_scaffolding` must sweep, and adds a `yq`/parser recipe + a new gate to `test/run_all.sh` (G4, after G1/G2/G3). The framework_completion.md rule then obligates this cycle to also run a discovery sweep + retrofit (the `Object` row currently living in `host_classes` must migrate out, and any other latent marker references must be found). That is more work than extending an existing schema — but per F-002 that is not a reason to reject it.
+>
+> ### Alternative 3 — wildcard: no marker table at all; model the families as real zero-method MARKER protocols in bootstrap `.clj`, recognized through the existing protocol path
+>
+> The codebase already has the machinery: `addProtocolImpl` records zero-method MARKER protocols (`Sequential`, per the D-190/ADR-0068 comment at protocol.zig:258-262). Push that further — define `Object`, `Seqable`, `ISeq`, `ILookup`, etc. as **actual cljw protocol Vars** in a bootstrap namespace (e.g. `clojure.lang` ns shipped in `lang/clj/`), each with the method set it routes to. Then `deftype`/`reify`/`extend-type` need **no special marker recognition at all** — the names resolve through the ordinary protocol-Var path (the existing `.protocol` arm), and the `.symbol` host-marker arm + all 5 `eql` sites **delete entirely**. `Object/toString` becomes a real protocol method dispatching to the str/print consult.
+>
+> - **Better than proposed:** This is the deepest "raise the system one level" reading of F-013 — it doesn't *recognize* markers, it *eliminates the marker concept*. The 5 scattered sites don't get consolidated; they cease to exist. Recognition, routing, and the "is it modeled" question all collapse into "does this protocol Var exist and is it satisfied," which is machinery the runtime already has and tests. No new YAML, no new gate, no closed-set-derivation maintenance question at all — the closed set IS "what bootstrap defines," enforced by the fact that an undefined name is an ordinary unresolved-Var error. It is maximally F-009-clean (impl is protocols-over-primitives, the project's blessed Phase-7.2 pattern per ADR-0008 amendment 2).
+> - **What it breaks:** Three real problems. (a) `Object` is *not* a protocol in any normal sense — making it a cljw protocol Var means every type "satisfies Object," which needs a universal-satisfy short-circuit that is itself a special case (you've moved the special-casing, not removed it). (b) JVM semantics: in real Clojure these names are interfaces the *runtime* implements on built-in types, not protocols user code extends; a bootstrap-protocol model can drift from `clj` behaviour (F-011 risk) for `(satisfies? clojure.lang.ISeq x)`-style probes that real libraries do issue. (c) It front-loads a large bootstrap-`.clj` + dispatch-wiring effort before the marker set is even enumerated, and offers no gate preventing a future loop from defining a *per-library* marker protocol — the 個別最適化 door is still open, just relabeled as "define a protocol." Without a closed-set gate, Alt 3 regresses on the exact structural property F-013 demands.
+>
+> ### Recommendation (within F-NNN)
+>
+> **Adopt Alternative 2 — the dedicated `host_interfaces.yaml` SSOT with the two gates — over the proposed `host_classes` extension.** The proposed shape's *mechanism* (closed-set derivation + dual gate) is correct and is the only candidate that mechanically closes the 個別最適化 door F-013 targets; Alt 1 leaves the door open and Alt 3 both leaves it open and risks F-011 drift on `Object`/`satisfies?`. The single change I'd make to the proposed shape is the **home**: not `compat_tiers.yaml host_classes`. That schema's own documented contract is "Class-level Java surface," and ADR-0059/AD-003 explicitly declares these marker names are *not* host classes — so a `host_classes` row asserting `Object` as a class-level entry is self-contradictory and will confuse `cljw --list-host-classes` (which enumerates real surfaces). A dedicated SSOT mirrors the project's established one-SSOT-per-concern discipline (`accepted_divergences.yaml`, `feature_deps.yaml`, `placement.yaml`) and keeps the `routes_to` dispatch knowledge out of the cross-reference index — important because a `routes_to: <protocol>` column folded into `compat_tiers.yaml` would make the index a *dispatch map*, brushing against F-009 (impl detail leaking into the authoritative cross-reference). The extra YAML + G4 gate + framework_completion retrofit is more diff than extending `host_classes`, and per F-002 that is explicitly not a reason to prefer the smaller shape.
+>
+> ### On the "closed set derived from pinned Clojure source" maintenance question (explicitly assessed)
+>
+> This is the proposed shape's weakest seam and the ADR should address it head-on. Deriving the gate's allowed set from `~/Documents/OSS/clojure/` couples the gate to a **pinned reference clone** that is read-only and not version-tracked inside this repo. Two concrete hazards: (1) When the pinned Clojure version bumps, the `clojure.lang.*` interface roster can shift (interfaces get added across Clojure versions — e.g. `IKVReduce`, `IReduceInit`, `IDrop` arrived in different releases), so a gate that re-derives "legal supertypes" from whatever clone is on disk is **non-reproducible** and can flip green→red on an unrelated clone update. (2) The clone is a *survey textbook* per `reference_clones.md`, explicitly "do not treat as load-bearing" — wiring a hard gate to it elevates a survey input to a build dependency, which the project's own rules discourage. **The clean fix:** the closed set should be **materialized into `host_interfaces.yaml` itself** (the rows ARE the closed set, each with a `derives_from:`-style note citing which Clojure interface/version it corresponds to — mirroring `accepted_divergences.yaml`'s `derives_from` discipline), and the gate enforces "recognized-in-code ⊆ rows-in-YAML" — a fully in-repo, reproducible check. The "is this in the language" judgement happens *once, by a human/loop at row-authoring time* (with the pinned clone as evidence, recorded in the row's note), not *every gate run against a mutable clone*. That converts the version-coupling maintenance burden into an explicit, reviewable, version-pinned row — and makes the gate deterministic. The second gate ("every `routes_to: <protocol>` points at a modeled cljw protocol") is sound as proposed and needs no change; it is the real anti-個別最適化 lever, since it forces "model a generic protocol first" before any name can be recognized.
+
+### Main-loop disposition (within the F-NNN envelope; the DA is advisory, not binding)
+
+**Adopted from Alternative 2 (the DA's recommendation):** (1) a **dedicated
+`host_interfaces.yaml`** SSOT, NOT a `compat_tiers.yaml host_classes` extension —
+the role-split (Class-level vs marker) and the ADR-0059 "not a class" premise make
+folding self-contradictory; (2) the **two-clause gate** (set-bound + route-
+soundness), with route-soundness as the primary anti-個別最適化 lever; (3) the
+DA's decisive refinement — **the closed set is materialized in the YAML rows**
+(each with a `derives_from:` note), and the gate checks "recognised-in-code ⊆
+YAML rows", so it is reproducible and in-repo, NOT re-derived from the mutable
+pinned clone every run; (4) migrate the legacy `Object` row out of `host_classes`.
+
+**Diverged from / not adopted**: Alternative 1 (no gate — leaves the unbounded-
+growth door open, fails F-013 clause 3) and Alternative 3 (model-as-real-protocols
+— moves rather than removes the `Object` special case via a universal-satisfy
+short-circuit, and risks F-011 drift on `(satisfies? clojure.lang.ISeq x)`; also
+leaves the growth door open with no closed-set gate). Alt 3's *insight* (route a
+marker to a generic protocol surface) is preserved inside Alt 2's route-soundness
+gate, without making `Object` itself a protocol Var.
+
+## Consequences
+
+- **The 個別最適化 entry is structurally closed**, not watched: a new
+  `clojure.lang.*` interface requires a `host_interfaces.yaml` row (gate (i):
+  justified as language-defined) wired to a generic modeled protocol (gate (ii):
+  no per-library shim slot). Adding `or eql("X")` at a code site is impossible —
+  there is one read point, and an unrowed name fails the gate.
+- **The 5 scattered `eql("Object")` sites collapse to one module.** D-275 slice 1's
+  hand-coded recognition (the smell noted in its commit) is retired by the
+  implementing cycle.
+- **Coverage trends monotonically (F-013 clause 2):** each interface wired is a
+  *generic* protocol reusable by every type + user code, so one library's gap-fix
+  improves the next library's odds — not a one-library shim.
+- **`derives_from` makes the closed set reviewable + reproducible.** The gate never
+  reads the pinned Clojure clone at run time; the clone is evidence cited in the
+  row, mirroring `accepted_divergences.yaml`'s discipline.
+- **New scaffolding surface**: a 4th top-level YAML SSOT + a G4 gate +
+  `audit_scaffolding` sweep coverage + `yaml_ssot_yq.md` cookbook entry. The
+  framework_completion.md "new discipline ⇒ discovery + retrofit" obligation is
+  satisfied by the legacy-`Object`-row migration + the scatter consolidation in
+  the implementing cycle.
+- **D-276** (`extend-type Object` as-target = default-for-all-types) becomes a
+  `host_interfaces.yaml` row routed to a default-method dispatch tier, not a
+  separate `eql` special-case.
+- **Binary/startup (F-013 clause 4, D-277)**: 網羅 applies to the *recognition
+  rows* (cheap — no impl), not to eager impl loading; the eager-vs-lazy modeling
+  tension stays tracked in D-277, revisited only if the cold-start / size mission
+  target is threatened.
+- **This ADR is the first mechanical instance of F-013 clause 3.** Future hand-
+  maintained capability allowlists (should any arise) cite this pattern: closed-
+  set SSOT (keys from the definition) + a gate bounding the set + a gate requiring
+  a generic route.
