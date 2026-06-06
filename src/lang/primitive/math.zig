@@ -647,6 +647,131 @@ pub fn uncheckedNegate(rt: *Runtime, env: *Env, args: []const Value, loc: Source
     return minus(rt, env, args, loc); // 1-arg minus = negate (float path)
 }
 
+// --- unchecked -int (i32-wrapping) variants + unchecked casts (D-268) ---
+//
+// cljw has no 32-bit int (F-005), so the `-int` ops truncate their i64 operands
+// to i32, do the WRAPPING op, and sign-extend the result back to a cljw integer.
+// The casts narrow to the target width with wraparound (NO overflow check,
+// unlike the checked byte/short/int which throw). The 32-bit truncation is
+// observable: `(unchecked-add-int 2147483647 1)` => -2147483648.
+
+/// Extract an i32 from an integer Value (low 32 bits) for the `-int` ops.
+fn uncheckedI32(v: Value, name: []const u8, loc: SourceLocation) !i32 {
+    return @truncate(try error_catalog.expectI64(v, name, loc));
+}
+
+/// Truncate any numeric (int / float / ratio …) toward zero to an i64 for the
+/// unchecked casts, mapping the promote errors to the catalog like `int`.
+fn uncheckedCastI64(rt: *Runtime, v: Value, name: []const u8, loc: SourceLocation) !i64 {
+    return promote.truncToI64(rt, v) catch |err| switch (err) {
+        error.NotANumber => return error_catalog.raise(.type_arg_not_number, loc, .{ .fn_name = name, .actual = @tagName(v.tag()) }),
+        error.OutOfRange => return error_catalog.raise(.type_arg_invalid, loc, .{ .fn_name = name, .expected = "a value within Long range", .actual = "out-of-range number" }),
+        else => return err,
+    };
+}
+
+pub fn uncheckedAddInt(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = env;
+    try error_catalog.checkArity("unchecked-add-int", args, 2, loc);
+    const a = try uncheckedI32(args[0], "unchecked-add-int", loc);
+    const b = try uncheckedI32(args[1], "unchecked-add-int", loc);
+    return promote.wrapI64(rt, @as(i64, a +% b));
+}
+
+pub fn uncheckedSubtractInt(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = env;
+    try error_catalog.checkArity("unchecked-subtract-int", args, 2, loc);
+    const a = try uncheckedI32(args[0], "unchecked-subtract-int", loc);
+    const b = try uncheckedI32(args[1], "unchecked-subtract-int", loc);
+    return promote.wrapI64(rt, @as(i64, a -% b));
+}
+
+pub fn uncheckedMultiplyInt(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = env;
+    try error_catalog.checkArity("unchecked-multiply-int", args, 2, loc);
+    const a = try uncheckedI32(args[0], "unchecked-multiply-int", loc);
+    const b = try uncheckedI32(args[1], "unchecked-multiply-int", loc);
+    return promote.wrapI64(rt, @as(i64, a *% b));
+}
+
+pub fn uncheckedIncInt(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = env;
+    try error_catalog.checkArity("unchecked-inc-int", args, 1, loc);
+    const a = try uncheckedI32(args[0], "unchecked-inc-int", loc);
+    return promote.wrapI64(rt, @as(i64, a +% 1));
+}
+
+pub fn uncheckedDecInt(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = env;
+    try error_catalog.checkArity("unchecked-dec-int", args, 1, loc);
+    const a = try uncheckedI32(args[0], "unchecked-dec-int", loc);
+    return promote.wrapI64(rt, @as(i64, a -% 1));
+}
+
+pub fn uncheckedNegateInt(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = env;
+    try error_catalog.checkArity("unchecked-negate-int", args, 1, loc);
+    const a = try uncheckedI32(args[0], "unchecked-negate-int", loc);
+    return promote.wrapI64(rt, @as(i64, 0 -% a));
+}
+
+pub fn uncheckedDivideInt(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = env;
+    try error_catalog.checkArity("unchecked-divide-int", args, 2, loc);
+    const a = try uncheckedI32(args[0], "unchecked-divide-int", loc);
+    const b = try uncheckedI32(args[1], "unchecked-divide-int", loc);
+    if (b == 0) return error_catalog.raise(.divide_by_zero, loc, .{});
+    // i32 MIN / -1 overflows; clj's unchecked op wraps to MIN (no throw).
+    if (a == std.math.minInt(i32) and b == -1) return promote.wrapI64(rt, @as(i64, std.math.minInt(i32)));
+    return promote.wrapI64(rt, @as(i64, @divTrunc(a, b)));
+}
+
+pub fn uncheckedRemainderInt(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = env;
+    try error_catalog.checkArity("unchecked-remainder-int", args, 2, loc);
+    const a = try uncheckedI32(args[0], "unchecked-remainder-int", loc);
+    const b = try uncheckedI32(args[1], "unchecked-remainder-int", loc);
+    if (b == 0) return error_catalog.raise(.divide_by_zero, loc, .{});
+    if (a == std.math.minInt(i32) and b == -1) return promote.wrapI64(rt, 0);
+    return promote.wrapI64(rt, @as(i64, @rem(a, b)));
+}
+
+pub fn uncheckedInt(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = env;
+    try error_catalog.checkArity("unchecked-int", args, 1, loc);
+    const i = try uncheckedCastI64(rt, args[0], "unchecked-int", loc);
+    return promote.wrapI64(rt, @as(i64, @as(i32, @truncate(i))));
+}
+
+pub fn uncheckedLong(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = env;
+    try error_catalog.checkArity("unchecked-long", args, 1, loc);
+    return promote.wrapI64(rt, try uncheckedCastI64(rt, args[0], "unchecked-long", loc));
+}
+
+pub fn uncheckedByte(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = env;
+    try error_catalog.checkArity("unchecked-byte", args, 1, loc);
+    const i = try uncheckedCastI64(rt, args[0], "unchecked-byte", loc);
+    return promote.wrapI64(rt, @as(i64, @as(i8, @truncate(i))));
+}
+
+pub fn uncheckedShort(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = env;
+    try error_catalog.checkArity("unchecked-short", args, 1, loc);
+    const i = try uncheckedCastI64(rt, args[0], "unchecked-short", loc);
+    return promote.wrapI64(rt, @as(i64, @as(i16, @truncate(i))));
+}
+
+pub fn uncheckedChar(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = env;
+    try error_catalog.checkArity("unchecked-char", args, 1, loc);
+    const i = try uncheckedCastI64(rt, args[0], "unchecked-char", loc);
+    // Java char is 16-bit; clj truncates to u16 (`(unchecked-char 65601)` => \A).
+    const c16: u16 = @truncate(@as(u64, @bitCast(i)));
+    return Value.initChar(c16);
+}
+
 /// `(min x & more)` — minimum across one or more numerics.
 /// Folds via the existing `<` ladder so all promotion rules
 /// (Long / Float / BigInt / Ratio / BigDecimal) apply.
@@ -1075,6 +1200,22 @@ const ENTRIES = [_]Entry{
     .{ .name = "unchecked-inc", .f = &uncheckedInc },
     .{ .name = "unchecked-dec", .f = &uncheckedDec },
     .{ .name = "unchecked-negate", .f = &uncheckedNegate },
+    .{ .name = "unchecked-add-int", .f = &uncheckedAddInt },
+    .{ .name = "unchecked-subtract-int", .f = &uncheckedSubtractInt },
+    .{ .name = "unchecked-multiply-int", .f = &uncheckedMultiplyInt },
+    .{ .name = "unchecked-inc-int", .f = &uncheckedIncInt },
+    .{ .name = "unchecked-dec-int", .f = &uncheckedDecInt },
+    .{ .name = "unchecked-negate-int", .f = &uncheckedNegateInt },
+    .{ .name = "unchecked-divide-int", .f = &uncheckedDivideInt },
+    .{ .name = "unchecked-remainder-int", .f = &uncheckedRemainderInt },
+    .{ .name = "unchecked-int", .f = &uncheckedInt },
+    .{ .name = "unchecked-long", .f = &uncheckedLong },
+    .{ .name = "unchecked-byte", .f = &uncheckedByte },
+    .{ .name = "unchecked-short", .f = &uncheckedShort },
+    .{ .name = "unchecked-char", .f = &uncheckedChar },
+    // unchecked-float/double ≡ double-coerce: cljw has only f64 (F-005).
+    .{ .name = "unchecked-float", .f = &floatCoerce },
+    .{ .name = "unchecked-double", .f = &floatCoerce },
     .{ .name = "inc'", .f = &inc },
     .{ .name = "dec'", .f = &dec },
     .{ .name = "zero?", .f = &zeroQ },

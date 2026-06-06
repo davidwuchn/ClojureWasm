@@ -1,0 +1,40 @@
+(unchecked-add-int 2147483647 1)
+;;=> -2147483648
+(unchecked-subtract-int 0 1)
+;;=> -1
+(unchecked-multiply-int 100000 100000)
+;;=> 1410065408
+(unchecked-inc-int 2147483647)
+;;=> -2147483648
+(unchecked-dec-int -2147483648)
+;;=> 2147483647
+(unchecked-negate-int -2147483648)
+;;=> -2147483648
+(unchecked-divide-int 7 2)
+;;=> 3
+(unchecked-remainder-int 7 2)
+;;=> 1
+(unchecked-divide-int -7 2)
+;;=> -3
+(unchecked-int 5)
+;;=> 5
+(unchecked-int 3.9)
+;;=> 3
+(unchecked-int 4294967297)
+;;=> 1
+(unchecked-long 5)
+;;=> 5
+(unchecked-byte 300)
+;;=> 44
+(unchecked-byte -1)
+;;=> -1
+(unchecked-short 70000)
+;;=> 4464
+(unchecked-char 65)
+;;=> \A
+(unchecked-char 65601)
+;;=> \A
+(unchecked-float 5)
+;;=> 5.0
+(unchecked-double 3)
+;;=> 3.0

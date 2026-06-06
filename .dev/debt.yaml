@@ -45,7 +45,7 @@ active:
       reader/EOF error). Cross-ref F-011, AD ledger discipline.
     last_reviewed: "2026-06-06"
   - id: "D-268"
-    status: "PARTIAL 2026-06-06 — the plain i64 unchecked arithmetic family LANDED (unchecked-add/subtract/multiply/inc/dec/negate: two's-complement i64 wrap via `+%`/`-%`/`*%` + wrapI64, float operands fall through to promoting arith; corpus unchecked_nthrest_takelast). REMAINING: the i32-wrapping `-int` variants (unchecked-add-int/…/divide-int/remainder-int) + the unchecked CASTS (unchecked-int/long/byte/short/char/float/double)."
+    status: "DISCHARGED 2026-06-06 — the FULL unchecked-* family landed. Plain i64 (add/subtract/multiply/inc/dec/negate: `+%`/`-%`/`*%` wrap + float fall-through). i32-wrapping `-int` variants (add-int/subtract-int/multiply-int/inc-int/dec-int/negate-int truncate to i32, wrap, sign-extend; divide-int/remainder-int with /0 + MIN/-1 guards). Casts (unchecked-int=i32 trunc, -long, -byte=i8, -short=i16, -char=u16→char, -float/-double=floatCoerce per F-005 single-f64). Corpus unchecked_nthrest_takelast + unchecked_int_casts (39 total clj-matched). All match clj incl. the 32-bit truncation (`(unchecked-add-int 2147483647 1)`→-2147483648)."
     category: "clj-parity"
     barrier: |-
       **The `-int` (i32-wrapping) unchecked ops and the unchecked casts are
