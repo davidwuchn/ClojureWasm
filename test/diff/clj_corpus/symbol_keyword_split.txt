@@ -1,0 +1,36 @@
+(namespace (symbol "a/b"))
+;;=> "a"
+(name (symbol "a/b"))
+;;=> "b"
+(symbol nil "x")
+;;=> x
+(namespace (keyword "a/b"))
+;;=> "a"
+(name (keyword "a/b"))
+;;=> "b"
+(keyword nil "x")
+;;=> :x
+(symbol "/")
+;;=> /
+(name (symbol "/"))
+;;=> "/"
+(namespace (symbol "a/b/c"))
+;;=> "a"
+(name (symbol "a/b/c"))
+;;=> "b/c"
+(symbol "a" "b")
+;;=> a/b
+(keyword "a" "b")
+;;=> :a/b
+(symbol "x")
+;;=> x
+(keyword "x")
+;;=> :x
+(= (symbol "a/b") (symbol "a" "b"))
+;;=> true
+(namespace (symbol "x"))
+;;=> nil
+(keyword "my.ns/key")
+;;=> :my.ns/key
+(namespace (keyword "my.ns/key"))
+;;=> "my.ns"

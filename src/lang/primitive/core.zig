@@ -521,13 +521,34 @@ pub fn natIntQ(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation
 /// `(sym.ns, sym.name)` as a keyword. Other input types raise
 /// `feature_not_supported`.
 /// 2-arg: both must be strings; intern `(ns, name)`.
+/// Split a `"ns/name"` string into (ns, name) per clj's Symbol/Keyword
+/// string-intern rule: the FIRST `/` separates ns from name, EXCEPT a lone
+/// `"/"` which is the name itself with no ns (the division symbol). So
+/// `(symbol "a/b")` → ns "a" / name "b", not the whole string as the name.
+fn splitNsName(s: []const u8) struct { ns: ?[]const u8, name: []const u8 } {
+    if (std.mem.eql(u8, s, "/")) return .{ .ns = null, .name = s };
+    if (std.mem.findScalar(u8, s, '/')) |i|
+        return .{ .ns = s[0..i], .name = s[i + 1 ..] };
+    return .{ .ns = null, .name = s };
+}
+
+/// `(symbol ns name)` / `(keyword ns name)` 2-arg ns argument: clj accepts a
+/// nil ns (→ name-only) as well as a string. Returns the ns slice or null;
+/// raises when it is neither nil nor a string.
+fn twoArgNs(ns_arg: Value, fn_name: []const u8, loc: SourceLocation) !?[]const u8 {
+    if (ns_arg.isNil()) return null;
+    if (ns_arg.tag() == .string) return string_mod.asString(ns_arg);
+    return error_catalog.raise(.feature_not_supported, loc, .{ .name = fn_name });
+}
+
 pub fn keywordFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
     _ = env;
     if (args.len == 1) {
         const x = args[0];
         if (x.tag() == .keyword) return x;
         if (x.tag() == .string) {
-            return keyword_mod.intern(rt, null, string_mod.asString(x));
+            const parts = splitNsName(string_mod.asString(x));
+            return keyword_mod.intern(rt, parts.ns, parts.name);
         }
         if (x.tag() == .symbol) {
             const s = symbol_mod.asSymbol(x);
@@ -536,9 +557,10 @@ pub fn keywordFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocati
         if (x.isNil()) return .nil_val;
         return error_catalog.raise(.feature_not_supported, loc, .{ .name = "keyword conversion from non-string/non-keyword/non-symbol" });
     } else if (args.len == 2) {
-        if (args[0].tag() != .string or args[1].tag() != .string)
-            return error_catalog.raise(.feature_not_supported, loc, .{ .name = "keyword (2-arg) requires both ns and name to be strings" });
-        return keyword_mod.intern(rt, string_mod.asString(args[0]), string_mod.asString(args[1]));
+        if (args[1].tag() != .string)
+            return error_catalog.raise(.feature_not_supported, loc, .{ .name = "keyword (2-arg) requires the name to be a string" });
+        const ns = try twoArgNs(args[0], "keyword (2-arg) requires ns to be a string or nil", loc);
+        return keyword_mod.intern(rt, ns, string_mod.asString(args[1]));
     }
     return error_catalog.raise(.arity_out_of_range, loc, .{ .fn_name = "keyword", .got = args.len, .min = 1, .max = 2 });
 }
@@ -579,7 +601,8 @@ pub fn symbolFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocatio
         const x = args[0];
         if (x.tag() == .symbol) return x;
         if (x.tag() == .string) {
-            return symbol_mod.intern(rt, null, string_mod.asString(x));
+            const parts = splitNsName(string_mod.asString(x));
+            return symbol_mod.intern(rt, parts.ns, parts.name);
         }
         if (x.tag() == .keyword) {
             const kw = keyword_mod.asKeyword(x);
@@ -588,9 +611,10 @@ pub fn symbolFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocatio
         if (x.isNil()) return .nil_val;
         return error_catalog.raise(.feature_not_supported, loc, .{ .name = "symbol conversion from non-string/non-symbol/non-keyword" });
     } else if (args.len == 2) {
-        if (args[0].tag() != .string or args[1].tag() != .string)
-            return error_catalog.raise(.feature_not_supported, loc, .{ .name = "symbol (2-arg) requires both ns and name to be strings" });
-        return symbol_mod.intern(rt, string_mod.asString(args[0]), string_mod.asString(args[1]));
+        if (args[1].tag() != .string)
+            return error_catalog.raise(.feature_not_supported, loc, .{ .name = "symbol (2-arg) requires the name to be a string" });
+        const ns = try twoArgNs(args[0], "symbol (2-arg) requires ns to be a string or nil", loc);
+        return symbol_mod.intern(rt, ns, string_mod.asString(args[1]));
     }
     return error_catalog.raise(.arity_out_of_range, loc, .{ .fn_name = "symbol", .got = args.len, .min = 1, .max = 2 });
 }
