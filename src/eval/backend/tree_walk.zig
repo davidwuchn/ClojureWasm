@@ -1031,6 +1031,19 @@ pub fn treeWalkCall(
         // delegation. This is the `((resolve 'f) args)` path nREPL/cider eval
         // rides. A var holding a non-fn falls through to value_not_callable.
         .var_ref => treeWalkCall(rt, env, callee.decodePtr(*const Var).deref(), args, loc),
+        // IFn deftype/reify (D-280d6 functional): an instance implementing
+        // clojure.lang.IFn `-invoke` is callable as `(inst args…)`. `-invoke`
+        // receives (this, …args). Falls through to value_not_callable when the
+        // instance does not implement IFn. Shared treeWalkCall = both backends.
+        .typed_instance, .reified_instance => blk: {
+            var cs: dispatch.CallSite = .{};
+            const inv_args = try rt.gpa.alloc(Value, args.len + 1);
+            defer rt.gpa.free(inv_args);
+            inv_args[0] = callee;
+            @memcpy(inv_args[1..], args);
+            if (try dispatch.dispatchOrNull(rt, env, &cs, callee, "IFn", "-invoke", inv_args, loc)) |v| break :blk v;
+            break :blk error_catalog.raise(.value_not_callable, loc, .{ .actual = @tagName(callee.tag()) });
+        },
         else => |t| error_catalog.raise(.value_not_callable, loc, .{ .actual = @tagName(t) }),
     };
 }

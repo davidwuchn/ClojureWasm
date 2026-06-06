@@ -346,4 +346,20 @@ if [[ "$last" != "[1 :def :my-meta]" ]]; then
 fi
 echo "PASS protocol_remap_ifn_iobj -> [1 :def :my-meta]"
 
-echo "OK — phase14_deftype_object (23 cases) green"
+# --- Case 24 (D-280d6 functional): an IFn deftype is callable as (inst args) ---
+# The call switch (shared treeWalkCall = both backends) consults IFn/-invoke.
+got=$("$BIN" - <<'EOF' 2>/dev/null
+(deftype F [m]
+  clojure.lang.IFn
+  (invoke [this k] (get m k))
+  (invoke [this k nf] (get m k nf)))
+(let [f (F. {:a 1})] [(f :a) (f :z :default) (map f [:a :z])])
+EOF
+) || fail "case24: non-zero exit ($got)"
+last=$(awk 'END { print }' <<< "$got")
+if [[ "$last" != "[1 :default (1 nil)]" ]]; then
+    fail "case24: got '$last', want '[1 :default (1 nil)]'"
+fi
+echo "PASS ifn_deftype_callable -> [1 :default (1 nil)]"
+
+echo "OK — phase14_deftype_object (24 cases) green"
