@@ -95,6 +95,19 @@ const SORTED: HostInterface = .{ .kind = .protocol_remap, .canonical = "Sorted",
     .{ .clj = "seqFrom", .protocol = "Sorted", .method = "-sorted-seq-from" },
 } };
 
+// clojure.lang.IFn — invoke (D-280d6). Load-level: registers (multi-arity via
+// D-279); making `(inst args)` actually call -invoke is a call-path follow-up.
+const IFN: HostInterface = .{ .kind = .protocol_remap, .canonical = "IFn", .remap = &.{
+    .{ .clj = "invoke", .protocol = "IFn", .method = "-invoke" },
+} };
+
+// clojure.lang.IObj — meta/withMeta (D-280d7). Load-level: registers; meta/with-meta
+// consulting -meta/-with-meta for a typed_instance is a follow-up.
+const IOBJ: HostInterface = .{ .kind = .protocol_remap, .canonical = "IObj", .remap = &.{
+    .{ .clj = "meta", .protocol = "IObj", .method = "-meta" },
+    .{ .clj = "withMeta", .protocol = "IObj", .method = "-with-meta" },
+} };
+
 // clojure.lang.IPersistentStack — peek/pop (D-280d2). core.clj peek/pop consult it.
 const IPERSISTENT_STACK: HostInterface = .{ .kind = .protocol_remap, .canonical = "IPersistentStack", .remap = &.{
     .{ .clj = "peek", .protocol = "IPersistentStack", .method = "-peek" },
@@ -142,6 +155,8 @@ const MARKERS = std.StaticStringMap(HostInterface).initComptime(.{
     .{ "clojure.lang.IPersistentStack", IPERSISTENT_STACK },
     .{ "clojure.lang.IHashEq", IHASHEQ },
     .{ "clojure.lang.Sorted", SORTED },
+    .{ "clojure.lang.IFn", IFN },
+    .{ "clojure.lang.IObj", IOBJ },
 });
 
 /// True when `name` is a quote-wrap marker (method_family or zero-method marker)

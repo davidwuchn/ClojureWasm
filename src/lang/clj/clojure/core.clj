@@ -1574,6 +1574,11 @@
 ;; `-sorted-comparator` (not `-comparator` — that name is already the sort
 ;; predicate-coercion helper at L1159; a collision broke `(sort > …)`).
 (defprotocol Sorted (-sorted-comparator [c]) (-entry-key [c e]) (-sorted-seq [c asc]) (-sorted-seq-from [c k asc]))
+;; D-280d6/d7: load-level for a deftype that is callable (IFn) / metadata-carrying
+;; (IObj). The macro registers invoke→-invoke, meta→-meta, withMeta→-with-meta;
+;; calling the instance as a fn + meta/with-meta consulting these are follow-ups.
+(defprotocol IFn (-invoke [f]))
+(defprotocol IObj (-meta [o]) (-with-meta [o m]))
 ;; `Sequential` is a zero-method MARKER protocol (JVM `clojure.lang.Sequential`):
 ;; a type that declares it prints as its seq and answers `sequential?` true
 ;; (D-190 / ADR-0068). The native seq tags carry sequential-ness by tag; this

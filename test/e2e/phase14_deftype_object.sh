@@ -328,4 +328,22 @@ if [[ "$last" != "[:cmp :a :asc [:k false]]" ]]; then
 fi
 echo "PASS protocol_remap_sorted -> ok"
 
-echo "OK — phase14_deftype_object (22 cases) green"
+# --- Case 23 (D-280d6/d7): clojure.lang.IFn (multi-arity invoke) + IObj register ---
+got=$("$BIN" - <<'EOF' 2>/dev/null
+(deftype F [v]
+  clojure.lang.IFn
+  (invoke [this k] (get v k))
+  (invoke [this k nf] (get v k nf))
+  clojure.lang.IObj
+  (meta [this] :my-meta)
+  (withMeta [this m] (F. v)))
+(let [f (F. {:a 1})] [(-invoke f :a) (-invoke f :z :def) (-meta f)])
+EOF
+) || fail "case23: non-zero exit ($got)"
+last=$(awk 'END { print }' <<< "$got")
+if [[ "$last" != "[1 :def :my-meta]" ]]; then
+    fail "case23: got '$last', want '[1 :def :my-meta]'"
+fi
+echo "PASS protocol_remap_ifn_iobj -> [1 :def :my-meta]"
+
+echo "OK — phase14_deftype_object (23 cases) green"

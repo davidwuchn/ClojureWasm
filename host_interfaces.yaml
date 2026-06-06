@@ -67,18 +67,22 @@ interfaces:
   - name: clojure.lang.IFn
     derives_from: "clojure.lang.IFn — invocable instance (Clojure, stable)."
     tier: A
-    recognised: false
-    modeled_as: "(none yet — fn-call on a deftype instance)"
+    recognised: true
+    kind: protocol_remap
+    modeled_as: "IFn (defprotocol IFn (-invoke [f]), D-280d6 — load-level)"
+    note: "Registers invoke→IFn/-invoke (multi-arity via D-279). Making `(inst args)` call -invoke is a call-path follow-up (tree_walk/vm call switch)."
     methods:
-      invoke: { status: feature_not_supported }
+      invoke: { status: wired, wires_to_protocol: IFn, wires_to_method: "-invoke" }
   - name: clojure.lang.IObj
     derives_from: "clojure.lang.IObj — metadata-carrying instance (Clojure, stable)."
     tier: A
-    recognised: false
-    modeled_as: "(none yet — meta on a deftype instance)"
+    recognised: true
+    kind: protocol_remap
+    modeled_as: "IObj (defprotocol IObj (-meta [o]) (-with-meta [o m]), D-280d7 — load-level)"
+    note: "Registers meta→IObj/-meta, withMeta→IObj/-with-meta. meta/with-meta fns consulting these for a typed_instance is a follow-up."
     methods:
-      withMeta: { status: feature_not_supported }
-      meta: { status: feature_not_supported }
+      withMeta: { status: wired, wires_to_protocol: IObj, wires_to_method: "-with-meta" }
+      meta: { status: wired, wires_to_protocol: IObj, wires_to_method: "-meta" }
 
 # --- Design caveats discovered driving clojure.data.priority-map (2026-06-07) ---
 # Implementing the rows below requires TWO mechanisms beyond slice-1 recognition,
