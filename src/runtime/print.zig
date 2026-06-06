@@ -123,6 +123,19 @@ pub fn writeStrValue(rt: *Runtime, env: *env_mod.Env, w: *Writer, v: Value) anye
         // emit plain digits (D-212). Ratio's `1/2` form is already suffix-free.
         .big_int => try w.print("{f}", .{big_int_mod.asManaged(v)}),
         .big_decimal => try writeBigDecimalDigits(w, v),
+        // D-275: a deftype/reify `Object (toString [this] …)` impl supplies the
+        // `str`/`.toString` representation — consulted like the `Seqable/-seq`
+        // print coercion (`dispatchOrNull` so a type without the impl falls back
+        // to the default `printResult` render, no raise mid-str). Covers both
+        // deftype (`.typed_instance`) and reify (`.reified_instance`).
+        .typed_instance, .reified_instance => {
+            var cs: dispatch_mod.CallSite = .{};
+            const noloc: SourceLocation = .{};
+            if (try dispatch_mod.dispatchOrNull(rt, env, &cs, v, "Object", "toString", &.{v}, noloc)) |s| {
+                return writeStrValue(rt, env, w, s);
+            }
+            try printResult(rt, env, w, v);
+        },
         else => try printResult(rt, env, w, v),
     }
 }

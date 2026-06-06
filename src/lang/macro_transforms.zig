@@ -2148,7 +2148,14 @@ fn expandExtendType(
         return error_catalog.raise(.extend_type_form_incomplete, loc, .{});
 
     const target_form = args[0];
-    const protocol_form = args[1];
+    // A host-supertype marker (`Object`, D-275) is quote-wrapped so the analyzer
+    // never Var-resolves it (Path A, the `instance?` / `reify` precedent). This
+    // arm also covers the `deftype`/`defrecord` paths, whose protocol sections
+    // re-expand through `expandExtendType`. A cljw protocol name stays bare.
+    const protocol_form = if (args[1].data == .symbol and isHostMarker(args[1].data.symbol.name))
+        try quoteWrap(arena, args[1])
+    else
+        args[1];
     const method_impls = args[2..];
 
     const impl_pairs = try arena.alloc(Form, method_impls.len);
@@ -2770,6 +2777,24 @@ fn expandLetfn(
     return list(arena, items, loc);
 }
 
+/// A `deftype`/`reify` impl-spec head that names a HOST supertype (not a cljw
+/// protocol) — recognised as a marker rather than Var-resolved (D-275). Slice 1
+/// = `Object`; `clojure.lang.*` interfaces land in follow-up slices (each wires
+/// its methods to a real dispatch surface, so they cannot be recognised before
+/// they are wired — an unwired marker would be a silent no-op).
+fn isHostMarker(name: []const u8) bool {
+    return std.mem.eql(u8, name, "Object");
+}
+
+/// `(quote form)` — wrap a form so the analyzer treats it as a literal value
+/// (a Symbol) instead of resolving it. Mirrors `expandInstanceQ`'s wrap.
+fn quoteWrap(arena: std.mem.Allocator, form: Form) !Form {
+    const items = try arena.alloc(Form, 2);
+    items[0] = sym("quote", form.location);
+    items[1] = form;
+    return list(arena, items, form.location);
+}
+
 fn expandReify(
     arena: std.mem.Allocator,
     rt: *Runtime,
@@ -2795,8 +2820,14 @@ fn expandReify(
     while (i < args.len) {
         if (args[i].data != .symbol)
             return error_catalog.raise(.reify_section_invalid, args[i].location, .{});
-        const proto_form = args[i];
-        // Push 'Proto into interfaces vec (as the bare Symbol Value).
+        // A host-supertype marker (`Object`, D-275) is quote-wrapped so the
+        // analyzer never Var-resolves it (Path A, the `instance?` precedent);
+        // the primitive recognises the Symbol Value. A protocol name stays bare
+        // (resolves to its protocol Var, the existing path).
+        const proto_form = if (isHostMarker(args[i].data.symbol.name))
+            try quoteWrap(arena, args[i])
+        else
+            args[i];
         try interfaces.append(arena, proto_form);
         i += 1;
 

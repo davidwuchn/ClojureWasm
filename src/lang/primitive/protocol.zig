@@ -51,6 +51,18 @@ fn allocFqcn(rt: *Runtime, sym_val: Value) ![]const u8 {
     return rt.gc.infra.dupe(u8, sym.name);
 }
 
+/// Canonical process-lifetime slice for a host-supertype marker name (D-275).
+/// The `.symbol` marker arrives via `(quote Object)`, whose backing bytes are
+/// not guaranteed to outlive the eval; `MethodEntry.protocol_name` is borrowed
+/// (never freed — ProtocolDescriptor-lifetime contract), so the borrow source
+/// must be process-lifetime. A static literal satisfies that. Returns null for
+/// an unrecognised marker (the macro only quote-wraps recognised ones, so the
+/// null arm is defence-in-depth, not a reachable user path).
+fn hostMarkerCanonicalName(name: []const u8) ?[]const u8 {
+    if (std.mem.eql(u8, name, "Object")) return "Object";
+    return null;
+}
+
 /// Build the MethodEntry array for the descriptor from a Clojure
 /// vector of method-name Symbols. cycle 6 keeps the method-spec
 /// surface minimal: each element is a Symbol whose `.name` becomes
@@ -168,7 +180,10 @@ pub fn extendType(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocat
             .actual = @tagName(args[0].tag()),
         });
     }
-    if (args[1].tag() != .protocol) {
+    // A `.protocol` carries its fqcn; a `.symbol` is a host-supertype marker
+    // (`Object`, D-275 — quote-wrapped by the macro) whose name IS the fqcn.
+    // Mirrors `reifyPrim`'s proto-resolution.
+    if (args[1].tag() != .protocol and args[1].tag() != .symbol) {
         return error_catalog.raise(.type_arg_invalid, loc, .{
             .fn_name = "__extend-type!",
             .expected = "protocol",
@@ -183,7 +198,17 @@ pub fn extendType(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocat
         });
     }
     const td = @constCast(td_mod.asTypeDescriptorRef(args[0]));
-    const proto = protocol_mod.asProtocol(args[1]);
+    const proto_name: []const u8 = switch (args[1].tag()) {
+        .protocol => protocol_mod.asProtocol(args[1]).fqcn(),
+        .symbol => hostMarkerCanonicalName(symbol_mod.asSymbol(args[1]).name) orelse {
+            return error_catalog.raise(.type_arg_invalid, loc, .{
+                .fn_name = "__extend-type!",
+                .expected = "protocol or host marker",
+                .actual = "unrecognised host marker",
+            });
+        },
+        else => unreachable,
+    };
     const len = vector_mod.count(args[2]);
     const new_impls = try rt.gc.infra.alloc(td_mod.TypeDescriptor.MethodEntry, len);
     errdefer rt.gc.infra.free(new_impls);
@@ -206,12 +231,21 @@ pub fn extendType(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocat
                 .actual = @tagName(name_val.tag()),
             });
         }
+        const mname = string_mod.asString(name_val);
+        // D-275 slice 1: the `Object` marker wires `toString` (→ str/print);
+        // `equals`/`hashCode` are a transient explicit error (slice 2 wires them)
+        // rather than a silently-dropped method impl. Mirrors `reifyPrim`.
+        if (std.mem.eql(u8, proto_name, "Object") and !std.mem.eql(u8, mname, "toString")) {
+            return error_catalog.raise(.feature_not_supported, loc, .{
+                .name = "deftype/reify Object method other than toString (equals/hashCode not yet wired)",
+            });
+        }
         // Method name slice must outlive the descriptor. Dupe onto
         // infra so a future String GC sweep does not dangle the
         // pointer (same shape as `__make-protocol-fn!`).
-        const name_dup = try rt.gc.infra.dupe(u8, string_mod.asString(name_val));
+        const name_dup = try rt.gc.infra.dupe(u8, mname);
         new_impls[i] = .{
-            .protocol_name = proto.fqcn(),
+            .protocol_name = proto_name,
             .method_name = name_dup,
             .method_val = fn_val,
         };
@@ -225,7 +259,7 @@ pub fn extendType(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocat
     // MARKER protocol (`Sequential`, no method_table entry) is still
     // detectable, and `protocol_impls` stays an honest "implements P" set
     // (D-190 / ADR-0068).
-    try protocol_mod.addProtocolImpl(rt, td, proto.fqcn());
+    try protocol_mod.addProtocolImpl(rt, td, proto_name);
     return args[0];
 }
 
@@ -392,14 +426,18 @@ pub fn reifyPrim(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocati
     var pi: u32 = 0;
     while (pi < proto_count) : (pi += 1) {
         const p = vector_mod.nth(args[0], pi);
-        if (p.tag() != .protocol) {
-            return error_catalog.raise(.type_arg_invalid, loc, .{
+        // A `.protocol` carries its fqcn; a `.symbol` is a host-supertype marker
+        // (`Object`, D-275 — quote-wrapped by the macro) whose name IS the fqcn.
+        const fqcn: []const u8 = switch (p.tag()) {
+            .protocol => protocol_mod.asProtocol(p).fqcn(),
+            .symbol => symbol_mod.asSymbol(p).name,
+            else => return error_catalog.raise(.type_arg_invalid, loc, .{
                 .fn_name = "__reify!",
                 .expected = "protocol",
                 .actual = @tagName(p.tag()),
-            });
-        }
-        protocol_impls[pi] = try rt.gpa.dupe(u8, protocol_mod.asProtocol(p).fqcn());
+            }),
+        };
+        protocol_impls[pi] = try rt.gpa.dupe(u8, fqcn);
     }
 
     // Build method_table — one MethodEntry per row.
@@ -419,17 +457,30 @@ pub fn reifyPrim(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocati
         const name_val = vector_mod.nth(row, 0);
         const proto_val = vector_mod.nth(row, 1);
         const fn_val = vector_mod.nth(row, 2);
-        if (name_val.tag() != .string or proto_val.tag() != .protocol) {
+        if (name_val.tag() != .string or (proto_val.tag() != .protocol and proto_val.tag() != .symbol)) {
             return error_catalog.raise(.type_arg_invalid, loc, .{
                 .fn_name = "__reify!",
                 .expected = "[string proto fn]",
                 .actual = "row shape",
             });
         }
-        const proto = protocol_mod.asProtocol(proto_val);
+        const proto_name: []const u8 = switch (proto_val.tag()) {
+            .protocol => protocol_mod.asProtocol(proto_val).fqcn(),
+            .symbol => symbol_mod.asSymbol(proto_val).name, // host marker (Object)
+            else => unreachable,
+        };
+        const mname = string_mod.asString(name_val);
+        // D-275 slice 1: the `Object` marker wires `toString` (→ str/print);
+        // `equals`/`hashCode` are a transient explicit error (slice 2 wires them
+        // to equal/hash) rather than a silently-dropped method impl.
+        if (std.mem.eql(u8, proto_name, "Object") and !std.mem.eql(u8, mname, "toString")) {
+            return error_catalog.raise(.feature_not_supported, loc, .{
+                .name = "deftype/reify Object method other than toString (equals/hashCode not yet wired)",
+            });
+        }
         method_table[ri] = .{
-            .protocol_name = try rt.gpa.dupe(u8, proto.fqcn()),
-            .method_name = try rt.gpa.dupe(u8, string_mod.asString(name_val)),
+            .protocol_name = try rt.gpa.dupe(u8, proto_name),
+            .method_name = try rt.gpa.dupe(u8, mname),
             .method_val = fn_val,
         };
     }

@@ -10,7 +10,7 @@
 
 active:
   - id: "D-275"
-    status: "now (campaign Stage 1.3 — first real-lib blocker, 2026-06-06) — `deftype`/`reify` cannot name a HOST supertype/interface in the impl-spec position: `(deftype Foo [x] Object (toString [this] …))` and `(reify Object …)` / `(deftype Bar [x] clojure.lang.IDeref (deref …))` all raise name_error 'Unable to resolve symbol: Object' (the analyzer resolves the interface-position symbol as a Var). Surfaced by loading `clojure.data.priority-map` via deps.edn (git fetch worked end-to-end; require reached priority_map.clj:266 `Object`)."
+    status: "PARTIAL (slice 1 landed 2026-06-07) — `Object/toString` recognised in deftype/reify impl-spec position + wired to the str/print consult (both backends; e2e phase14_deftype_object). `Object/equals`+`hashCode` raise explicit transient `feature_not_supported` (slice 2). REMAINING: slice 2 (equals/hashCode → equal.zig/valueHash), slice 3+ (`clojure.lang.*` interface family: IDeref/Counted/IFn/IObj + qualified-name acceptance). NOTE: slice 1 used hand-coded `std.mem.eql(\"Object\")` at 5 sites — the structural consolidation into a single closed-set host-interface SSOT + gate (so the marker set cannot grow library-by-library) is tracked as the host-interface ADR + F-013; do slices 3+ AFTER that consolidation so each new interface is a table row, not a new eql site. Originally (campaign Stage 1.3 — first real-lib blocker, 2026-06-06): the analyzer resolved the interface-position symbol as a Var → name_error. Surfaced by loading `clojure.data.priority-map` via deps.edn (require reached priority_map.clj:266 `Object`)."
     category: "polymorphism"
     barrier: |-
       **`deftype`/`reify` interface-position host types (`Object`, `clojure.lang.*`)
@@ -29,7 +29,24 @@ active:
       mapping). Cross-ref D-232 (frontier mention), ADR-0066 (deftype macro),
       AD-003 (class simple-name), F-011. recall: the ladder drive (docs/works) —
       this is the head blocker for the deftype-heavy rungs."
-    last_reviewed: "2026-06-06"
+    last_reviewed: "2026-06-07"
+  - id: "D-276"
+    status: "now (found 2026-06-07 alongside D-275 slice 1) — `(extend-type Object P (m [this] …))` (Object as the extend TARGET = a default protocol impl for ALL types) raises name_error on `Object`, while clj returns the default (verified: clj → `:default`). D-275 slice 1 only handles `Object` in the deftype/reify SUPERTYPE position (args[1] of extend-type / the section head); Object-as-target is args[0] and is a distinct feature (universal default-method dispatch, not a marker quote-wrap)."
+    category: "polymorphism"
+    barrier: |-
+      **`(extend-type Object P …)` default-for-all-types does not resolve.** clj's
+      `Object` extend target installs a fallback protocol method used when no
+      type-specific impl matches; cljw name_errors because `Object` is not a
+      resolvable target Value (no universal TypeDescriptor). The finished-form fix
+      is NOT a per-site marker hack — it is the host-interface SSOT (D-275 note /
+      F-013): `Object`-as-target routes to a generic "protocol default impl"
+      dispatch tier that every type falls back to. Should land as a row in the
+      same closed host-interface table, wired to the default-method dispatch
+      surface (not a `std.mem.eql` special-case). Cross-ref D-275 (sibling Object
+      handling), F-013 (definition-derived comprehensive coverage), ADR-0008
+      (protocol dispatch). Low frequency in pure-Clojure libs but a real clj
+      divergence — classify as bug→fix, not AD.
+    last_reviewed: "2026-06-07"
   - id: "D-274"
     status: "deferred (ADR-0101 Shape C insight, 2026-06-06) — deps.edn `:git/url` resolution is host-bound: it spawns `git` (slice 5, `git_fetch.zig`). The wasm/edge horizon (F-010/F-012, cw's differentiator) cannot spawn a subprocess, so a `git`-free alternative is eventually needed: fetch a source tarball (`…/archive/<sha>.tar.gz`) over an HTTP client into the same content-addressed cache. NOT built now — it adds a new outbound-HTTP-client capability + per-forge URL knowledge that `git clone` handles uniformly; the host-bound path serves the POSIX-host case first."
     category: "scope"
