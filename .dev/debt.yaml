@@ -506,28 +506,32 @@ active:
       private/notes/torture-full-sweep-gaps.txt. SSOT: .dev/gc_rooting.md §C.
     last_reviewed: "2026-06-05"
   - id: "D-242"
-    status: "Phase B anchor (re-cut ADR-0089, 2026-06-04) — KNOWN-unimplemented CORE, concurrency-led; redesign §7 against Zig 0.16 FIRST, then implement. finished-form, rework-OK with test guards. §7-redesign DONE = ADR-0090 (2026-06-04): io_default-singleton std.Io sync + ThreadGcContext root-publication GC handshake (the DA-fork caught v0's stop-the-world lie) + MVCC retry-only STM; spike-validated. Implementation (concurrency/{io_default,thread_pool,lock_tx,gc_thread}.zig + real future/promise/delay/atom/agent/locking bodies) is the remaining Phase B work; GC handshake lands first (prereq for any real-threading primitive)."
+    status: "Phase B IMPLEMENTED (landed 2026-06-04→06, ADR-0090; campaign Stage 0.4 de-stale 2026-06-06) — row stays open as the concurrency HARDENING anchor, no longer the unimplemented-core anchor. Probed green at HEAD: `future` on a REAL OS thread (timing probe: two 300ms-sleep futures finish <500ms = true parallelism), full STM (`dosync`/`alter`/`commute`/`ensure`/`ref-set`), `agent`/`send`/`send-off`/`await`/`agent-error`/`restart-agent`, `locking`, atom CAS, add-watch/remove-watch on ref+agent, the ThreadGcContext root-publication GC handshake + STW collect. Remaining = hardening + per-item residuals (see barrier), NOT core implementation."
     category: "concurrency"
-    quality_floor: "Phase B: core-unimplemented (concurrency-led) — libraries fail en masse without it"
+    quality_floor: "Phase B: concurrency hardening (torture/perf residuals) — core landed; harden against races/deadlocks + wire the perf residuals"
     barrier: |-
-      **The CORE-unimplemented tier that real libraries depend on (ADR-0089 Phase
-      B). Single consolidated anchor — does NOT duplicate the existing per-item
-      rows; it sequences + scopes them.** Verified 2026-06-04:
-      - **STM transactions** — `dosync`/`alter`/`commute`/`ensure`/`ref-set`
-        UNIMPLEMENTED (only the `ref` shell exists). ROADMAP §7.2 previously
-        claimed "STM is implemented" (false; corrected by ADR-0089). Design =
-        MVCC per ADR-0010, but the §7.1 Zig mapping is pre-0.16 and must be
-        redesigned.
-      - **agent** / `send` / `send-off` / `await` / `agent-error` — entirely
-        missing.
-      - **locking** — missing.
-      - **real threading** — `future`/`promise`/`delay`/`pmap`/`pcalls` run
-        SYNCHRONOUSLY today (`future.zig` eager-inline); real parallelism +
-        `Thread` interop (`Thread/sleep`, `Thread/currentThread`) are Phase B.
-      - **GC thread-safety** — `arena.zig` is single-threaded; real concurrency
-        forces a thread-safe-GC / shared-heap design + atom/ref CAS atomicity +
-        threadlocal-binding conveyance to spawned threads (cross-ref D-241
-        baseline-frame, `bound-fn`).
+      **Phase B core LANDED (ADR-0090); this anchor now sequences the remaining
+      HARDENING + per-item residual work, not unimplemented core.** Implemented
+      (commits `7ac5fb1d`..`0a1fbb73`, 2026-06-04→06): real-OS-thread `future`
+      (`future.zig` `std.Thread.spawn`) · MVCC `LockingTransaction` STM
+      (`stm/ref.zig`+`tval.zig`, `concurrency/lock_tx.zig` — retry/commute/ensure/
+      multi-ref atomic commit/deadlock-free ordering) · `agent` family
+      (`agent.zig`, ADR-0093) · `locking` heap-value monitor
+      (`concurrency/object_monitor.zig`, ADR-0092) · atom CAS · the alloc-prologue
+      worker-park + collectStopTheWorld GC handshake (`concurrency/safepoint.zig`).
+      **Remaining residual work this anchor tracks:**
+      - **concurrency torture / race hardening** — D-244 #4 family (recent fixes
+        still landing: `delay` once-lock blocking-safepoint, STW rendezvous recompute,
+        in-txn-map rooting); D-250..D-253 hardening rows; D-258 dormant agent-torture
+        flake. The engine works; adversarial concurrency edges are still being closed.
+      - **pmap/pcalls parallelism** — D-224: result-correct but still SEQUENTIAL;
+        now an actionable perf item (wire to the work-pool), not a blocker.
+      - **LazySeq.force mutex shape** — D-046: barrier met, pick the disposition now.
+      - **per-item residuals** (do NOT re-mint): D-238 (`*out*`/`*err*`/`with-out-str`
+        per-thread capture), D-239 (alter-meta ns/ref/agent), the
+        `into-array`/`make-array`/`aget`/`aset` F-004-slot rows (D-270), the reflection
+        (Field/Method/`bean`) rows, threadlocal dynamic-binding conveyance to spawned
+        threads (cross-ref D-241 baseline-frame, `bound-fn`).
       Existing per-item rows this anchor sequences (do NOT re-mint): D-238
       (`*out*`/`*err*`/`with-out-str`), D-239 (alter-meta ns/ref/agent), the
       `into-array`/`make-array`/`aget`/`aset` F-004-slot rows, the reflection
@@ -548,7 +552,7 @@ active:
       0.16 primitive first (principle.md). North star = user-observable parity,
       internals free (F-011 §2 + no_jvm). recall trigger: Phase B entry, or any
       library that needs STM/agents/threads/arrays/IO-redirect.
-    last_reviewed: "2026-06-04"
+    last_reviewed: "2026-06-06"
   - id: "D-243"
     status: "RE-OPENED tracking anchor (Phase A discharged-audit, 2026-06-04) — 8 parked-deferral rows in discharged: whose recall trigger FIRED but work is genuinely unbuilt; surfaced by the comment-drift sweep, were invisible to Step-0.5 (they sit in discharged:). This anchor makes them sweep-visible; detail stays in each discharged row (flagged RE-OPENED)."
     category: "debt-hygiene"
@@ -1743,7 +1747,7 @@ active:
       **Namespaced map literals `#:ns{…}` / `#::{…}` / `#::alias{…}` are not supported** (reader + printer): `(read-string "#:foo{:a 1}")` → cljw EDN-reader-error / clj `#:foo{:a 1}` (= `{:foo/a 1}`); `(pr-str #:foo{:a 1 :b 2})` → cljw "Invalid token ':foo'" / clj "#:foo{:a 1, :b 2}". A Clojure 1.9 reader feature: `#:ns{:a 1, :b 2}` reads as `{:ns/a 1, :ns/b 2}` — unqualified keyword/symbol keys are qualified with `ns`; `:_/a` → `:a` (no namespace); already-qualified keys keep their ns; `#::{…}` uses the current ns; `#::alias{…}` resolves the alias. PRINTER: when `*print-namespace-maps*` is true (clojure.main binds it true) and ALL keys are keyword/symbol sharing one namespace, `pr` emits `#:ns{…}`. Scope: tokenizer `readDispatch` (`#:`), reader (read ns + map + qualify keys), printer (common-ns detection, gated on `*print-namespace-maps*`), the `^:dynamic *print-namespace-maps*` var. Discharge = big-bang reader+printer to parity, corpus `namespaced_maps`. Cross-ref ADR-0073 (data-reader infra) / F-011. recall trigger: clj-parity namespaced-map sweep.
     last_reviewed: "2026-06-03"
   - id: "D-224"
-    status: "deferred (perf, not a result-bug) — `pmap`/`pcalls`/`pvalues` run SEQUENTIALLY pending Phase-15 threading."
+    status: "now (perf, not a result-bug) — recall trigger FIRED 2026-06-06: real threading LANDED (`std.Thread.spawn` in `src/runtime/future.zig` + the D-244 worker registry + `concurrency/io_default.zig`), so the Phase-15 block dissolved. `pmap`/`pcalls`/`pvalues` still run SEQUENTIALLY (result-correct, corpus `parallel_seq` 17/17) — now an ACTIONABLE perf item (wire to the work-pool with bounded look-ahead), not a future-phase defer."
     category: "concurrency"
     barrier: |-
       **`pmap`/`pcalls`/`pvalues` are sequential, not parallel** (landed 2026-06-03 as core.clj defns): cw v1 is single-threaded, so `pmap`=`(apply map …)`, `pcalls`=`(map #(%) fns)`, `pvalues`=`(pcalls thunks…)` — the RESULT is identical to clj (pmap is documented "semantically like map"; corpus `parallel_seq` 17/17 clj-verified), only the PARALLELISM is absent. This is NOT a dropped-semantic stub (the result contract is final-form-correct) — it is a perf property deferred to Phase-15 real threading (std.Io.Threaded + a work-pool), at which point pmap/pcalls gain genuine parallel execution (with bounded look-ahead for pmap) behind the same surface. clj-grounded: `(pmap inc [1 2 3])`→(2 3 4) both; side effects realize via `doall`/`dorun` (also landed). Cross-ref D-157/D-220 (Phase-15 concurrency) / the §9.2.R threading window / F-011. recall trigger: when Phase-15 threading (std.Io.Threaded work-pool) lands — wire pmap/pcalls to it.
@@ -1965,7 +1969,7 @@ active:
       **Longs in (2^47, 2^63] print as BigInt (`N` suffix) where JVM keeps a primitive Long** (clj-verified — clj Long is genuinely full i64; promotes only PAST i64): `(parse-long "999999999999999")` → cljw `999999999999999N` (BigInt), clj `999999999999999` (Long); `(class …)` differs (BigInt vs Long). The VALUE is exact — only print form + `(class …)` diverge. Root: cljw Long is i48 in the NaN-box; values beyond ±2^47 promote to heap BigInt (D-014a, lossless but prints `N`) — promotion fires at 2^47 where clj keeps Long to i64. **あるべき論 (C7, LOOP-RESOLVABLE — user-decided 2026-06-02)**: heap-box a distinct **Long** representation for (2^47, i64] so it stays Long (`(class …)`→Long, print no-`N`), promoting to BigInt only PAST i64. **NaN-box i64-inline is fundamentally impossible** (8-byte Value must carry tag + payload; cw v0 also capped at i48 — empirically confirmed) → heap-box is the JVM-mirror finished form (JVM boxes Long on the heap too; `Numbers.num(long)`→`Long.valueOf`). **Representation = B2** (a `Long-origin / fits-i64` flag on the heap-integer struct; **NO new NaN-box slot, F-004 layout UNCHANGED**; print + `(class)` consult the flag). Internal representation is F-005's "Zig-native" domain = loop's call (NOT an F-NNN amendment — F-005's stated surface already wants Long-to-i64). i47-inline window (±1.4e14) covers ms-timestamps (safe ~4400yr) / counters / sizes; only sub-ms timestamps / Snowflake IDs / 64-bit hashes hit the heap path (still ≤ JVM, which boxes everything >127). The OVERFLOW behaviour past i64 (cljw promote vs clj throw) is the separate AD-008 accepted divergence, NOT this row. Cross-ref ADR-0076 §9.2.P C7 / D-210 anchor / D-014a / AD-008 / F-005 (surface) / F-004 (unchanged). recall trigger: clj-parity campaign C7.
     last_reviewed: "2026-06-02"
   - id: "D-211"
-    status: "deferred — `+'`/`*'` (promoting arithmetic) not yet implemented; flagged 2026-06-02 (F-005's `+'`-clause is clj-inverted)."
+    status: "DISCHARGED 2026-06-06 (campaign Stage 0.4 — stale-LIE + DUP of D-260). The 'not yet implemented' text was already false at HEAD: `(*' 1e12 1e12)`→`…N`, `(+' 9223372036854775807 1)`→`9223372036854775808N`, `inc'`/`-'` all probe-green. The whole `'` family landed via ADR-0100 (D-260, corpus numeric_prime_ops.txt 10/10); the F-005-wording-inversion concern was resolved by ADR-0100 / AD-008. Nothing live remains."
     category: "runtime"
     barrier: |-
       **`+'`/`*'`/`-'`/`inc'`/`dec'` (Clojure's promoting arithmetic family) are not implemented**, and F-005's text describing them is **inverted vs real clj**: F-005 says "`+'` family throws on overflow" but clj is the OPPOSITE — clj's `+`/`*` (checked) THROW (`Math.addExact`) and `+'`/`*'` (promoting) AUTO-PROMOTE to BigInt (`addP`), clj-verified 2026-06-02. cljw's current `+`/`*` auto-promote (AD-008, user-ratified) — i.e. cljw's `+` behaves like clj's `+'`. When the `+'`/`*'` family is implemented, decide: (a) cljw `+'`/`*'` = promote (same as cljw `+`, making them redundant — consistent with AD-008's no-throw stance), OR (b) introduce a checked/throwing distinction. This touches F-005's wording (the inverted clause) → a user F-005 decision at that point. Until `+'`/`*'` are on the roadmap, deferred. Cross-ref AD-008 / D-165 / F-005. recall trigger: when promoting-arithmetic (`+'`/`*'`) is taken up OR a corpus needs `+'` parity.
@@ -2247,17 +2251,17 @@ active:
       collections.zig split avoidance | ADR-0016 landed
     last_reviewed: "2026-05-28"
   - id: "D-009"
-    status: "Phase 15 target"
+    status: "DISCHARGED 2026-06-06 (campaign Stage 0.4 de-stale) — STM landed; folded into D-242. `dosync`/`alter`/`commute`/`ensure`/`ref-set` all probe-green against real `src/runtime/stm/ref.zig` + `concurrency/lock_tx.zig` (MVCC). The standalone Phase-15-target row duplicated the D-242 Phase-B STM anchor; remaining STM hardening/torture is tracked there (D-250..D-253)."
     category: "concurrency"
     barrier: |-
       STM (ref / dosync) MVCC implementation | ADR-0010 implementation phase
-    last_reviewed: "2026-05-23"
+    last_reviewed: "2026-06-06"
   - id: "D-010"
-    status: "Phase 15 target"
+    status: "DISCHARGED 2026-06-06 (campaign Stage 0.4 de-stale) — `locking` landed (ADR-0092, `concurrency/object_monitor.zig`); `(locking [] 42)`→42 probe-green. Folded into D-245, the live residual-tracking row (Option C blocking-monitor inflation). The base heap-only-lock feature is done."
     category: "concurrency"
     barrier: |-
       Object header heap-only lock activation | ADR-0009 implementation phase
-    last_reviewed: "2026-05-23"
+    last_reviewed: "2026-06-06"
   - id: "D-011"
     status: "Discharged (8864ca4)"
     category: "runtime"
@@ -2265,17 +2269,17 @@ active:
       mark-sweep GC heap implementation. **Direction confirmed (F-006)**: single-generation mark-sweep + free-pool + 3-layer allocator (GPA / Arena / GC), inheriting cw v0 path. Landed at row 5.3 (16 micro-commits 5.3.a → 5.3.d.9 ending at 8864ca4). cw v0 D100 root-set gaps closed per ADR-0028 §5 amendment 1 (entry walkers ns_vars / current_frame / macro_root_slot / permanent_roots; tag-trace registrations for fn_val / lazy_seq / typed_instance defer to owning rows; ProtocolFn cache closed-by-construction in cw v1 per CallSite per-call-site split). Generational deferred to ROADMAP §89.2. BigInt migration deferred to 5.9 (Managed has non-extern fields); auto-trigger collect deferred to 5.4+ when alloc volume forces it. | (none — row 5.3)
     last_reviewed: "2026-05-24"
   - id: "D-012"
-    status: "Phase 15 target"
+    status: "DISCHARGED 2026-06-06 (campaign Stage 0.4 de-stale) — atom + watch + validator landed (ADR-0084, cross-refs D-157/D-246). Probe: `(let [a (atom 0) seen (atom nil)] (add-watch a :k (fn [_ _ _ n] (reset! seen n))) (reset! a 1) @seen)`→1 (watch fired). Barrier fully dissolved."
     category: "concurrency"
     barrier: |-
       atom + watch implementation | std.atomic.Value wiring
-    last_reviewed: "2026-05-23"
+    last_reviewed: "2026-06-06"
   - id: "D-013"
-    status: "Phase 15.3 target"
+    status: "DISCHARGED 2026-06-06 (campaign Stage 0.4 de-stale) — folded into D-242. STM barge is an internal contention-retry detail of the now-landed MVCC STM (D-009 probes); the user-facing transaction surface works. Not a separate Phase-15.3 gap; remaining contention hardening lives in D-242's checklist."
     category: "concurrency"
     barrier: |-
       STM barge mechanism (priority-based contention) | ADR-0010 §barge subsection landed
-    last_reviewed: "2026-05-23"
+    last_reviewed: "2026-06-06"
   - id: "D-014a"
     status: "Discharged (§9.16 row 14.4, 2026-05-28)"
     category: "scope"
@@ -2511,7 +2515,7 @@ active:
       **RESOLVED via `big_int.parseBase10`** (2026-06-02): instead of waiting on a Zig stdlib fix, a custom base-10 parser builds the value as `acc = acc·10 + digit` over big-int `mul`/`addScalar`, which is exact on EVERY platform (no `setString`). All 8 `setString(10, …)` sites — analyzer `parseBigIntLiteral`/`parseBigDecimalLiteral`, math `parseRatioLiteral`/`bigintCoerce`/`parseDecimalToBigDec`, json `read-str` — now route through it. Unit canary (`parseBase10 "36893488147419103232"` == `1<<65`) + the `bigint_str_big` / `read_bigint_huge` e2e were un-restricted from `< 2^64` to the 2^65 value that setString miscomputed. Original bug: `std.math.big.int.Managed.setString` Zig 0.16 Linux glibc-x86 returned 2^65 + 1 for `"36893488147419103232"` while Mac was correct — the whole ≥2^64-string-input surface inherited it. | discharged (parseBase10 — platform-independent, no setString)
     last_reviewed: "2026-06-02"
   - id: "D-046"
-    status: "Phase 15 entry"
+    status: "now (barrier predicate MET 2026-06-06) — the 'Phase 15 entry — STM activation contention bench' gate this row waited on has PASSED (STM is activated at HEAD, `src/runtime/stm/ref.zig`; future/agent use real `std.Thread`). Re-evaluate the LazySeq.force mutex shape now and record the chosen disposition; the defer condition is no longer in the future. Owner: revisit `lazy_seq.zig` force path against the now-real multi-thread safepoint model."
     category: "concurrency"
     barrier: |-
       LazySeq.force mutex shape re-evaluation per ADR-0009 amendment 2 + 5.1 input bullet #2. Phase 5 (row 5.7) ships single-thread no-lock — the cw v0 path; per `phase5-5.1-survey.md` Block A + cw v0's lazy_seq.zig L665-668, cw v0 used a similar no-lock single-thread design. Phase 15 STM activation makes mutex semantics load-bearing — likely disposition is std.Io.Mutex via the io_default process-wide accessor (matches Block A's mutex precedent throughout cw v0). Alternative shapes: std.atomic.Value busy-spin (lock-free; loser thread re-attempts; cheap when realisation is fast); per-LazySeq mutex with explicit unlock/wait (full blocking, requires io threading). Owner picks at Phase 15 entry based on contention bench. | Phase 15 entry — STM activation contention bench
