@@ -14,21 +14,24 @@
   Iterable host_inert) · D-282 (clojure.core.protocols ns) · D-283 (clj-name `.method`
   dot-calls) · D-284 (`(MapEntry. …)`→2-vec) · D-285 (keys/vals seq-derivation).
   `(priority-map :a 3 :b 1 :c 2)` → peek=[:b 1], count=3, keys=(:b :c :a).
-- **First commit on resume MUST be**: probe the **next `docs/works/ladder.md` rung**
-  — the deftype host-interface capability (D-280/D-281) + clojure.core.protocols
-  (D-282) likely unblock other deftype-heavy / reducer libs, so re-probe the
-  not-probed rungs (e.g. clojure.data.generators, clojure.tools.reader) via `-cp`
-  on `~/Documents/OSS/clojure-corpus/…` and record load/fail + the FIRST blocker as
-  a debt row (the campaign Stage 1.3 ladder-drive loop). Pick the lowest-pure-degree
-  not-probed rung first. Then Stage 1 continues: 1.4 native cider ops → 1.5 v0→v1
-  backfill (D-273) → 1.6 clj-parity → 1.7 Phase B hardening (D-242). The campaign
-  (`.dev/convergence_campaign.md`) is the SSOT.
-- **Deftype host-interface FUNCTIONAL residuals** (open debt, NOT load blockers —
-  pick up if a probed lib needs them): cross-type `(= deftype-map native-map)`
-  (D-280d8, valueEqual pre-tag-gate consult) · find/`-entry-at` consult ·
-  subseq/rsubseq Sorted-nav consult · reduce-kv→IKVReduce / reduce→CollReduce
-  wiring (D-282 functional) · reify protocol_remap (expandReify lacks the
-  rewriteProtocolRemap path; deftype is the proven path).
+- **First commit on resume MUST be**: continue the **Stage 1.3 ladder breadth-probe**
+  — probe `clojure.data.generators` (rung 5) via `-cp` on
+  `~/Documents/OSS/clojure-corpus/01_clojure_official/clojure__data.generators/src`,
+  record its first blocker as a debt row (campaign Stage 1.3 loop). The deftype
+  host-interface capability (D-275→D-286a) is COMPLETE + proven (priority-map fully
+  functional; ordered cleared all its supertypes), so the open deftype gaps below
+  are drive-when-needed, not the forced next task. Then Stage 1: 1.4 native cider
+  ops → 1.5 v0→v1 backfill (D-273) → 1.6 clj-parity → 1.7 Phase B hardening (D-242).
+  SSOT = `.dev/convergence_campaign.md`.
+- **Scoped gaps the ladder probes surfaced** (drive when a target needs them):
+  D-286b (bare names that ARE cljw Vars — IPersistentSet/IPersistentMap with
+  clj-named methods — bypass protocol_remap; needs method-name disambiguation;
+  completes ordered's supertypes) · D-287 (Java arrays: aset/aget/make-array —
+  ordered's backing store; ADR-level repr choice) · D-288 (deftype mutable fields
+  `^:unsynchronized-mutable` + set! — tools.reader; ADR-level) · the deftype
+  FUNCTIONAL residuals: cross-type `(= deftype-map native-map)` (D-280d8) ·
+  find/`-entry-at` · subseq/Sorted-nav · reduce-kv→IKVReduce wiring · reify
+  protocol_remap (expandReify lacks the rewriteProtocolRemap path).
 - **⚠ USER must act (time-sensitive, NOT AI-doable)**: see
   `private/clojure_conj_2026_cfp/DEFERRED_USER_ACTIONS.md` — (1) Sessionize submit
   by 6/13 (`SUBMIT_READY.md` copy-paste ready); (2) v0.1.0 tag/Release + make
@@ -76,3 +79,12 @@ active) + `compat_tiers.yaml` (Java tier scope) + `docs/works/ladder.md` →
 ADR-0090/0089 (Phase B — IMPLEMENTED, Stage 1.7 = hardening) →
 `.dev/project_facts.md` F-004/F-006 → CLAUDE.md (§ Project spirit + The only
 stop) → `.dev/principle.md`.
+
+## Stopped — user requested
+
+User instruction (2026-06-07): 「コンテキストウィンドウ増大につき、クリア
+セッションからcontinueできる形で配線確認しておいて」 / 「終わったら、止めて」.
+Working tree clean, all work pushed to `origin/cw-from-scratch`. Resume with
+`/continue` per the Resume contract above (probe rung 5 clojure.data.generators).
+The directive applied to that session only; the next `/continue` resumes the loop
+normally and deletes this section (handover_framing).

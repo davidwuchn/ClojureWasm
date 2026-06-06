@@ -9,6 +9,23 @@
 # md-table-align no longer pads it to ~800 KB of whitespace.
 
 active:
+  - id: "D-288"
+    status: "now (found 2026-06-07 — probed clojure.tools.reader, rung 6) — its StringReader deftype has `^:unsynchronized-mutable ^long s-pos` + mutates it via `(update! s-pos inc)` / `(set! s-pos …)`. cljw deftype fields are IMMUTABLE: a `^:unsynchronized-mutable` field READS fine (probed: `(deftype T [^:unsynchronized-mutable a] … a)` → 5), but `(set! a …)` on a deftype field → 'Unable to resolve symbol: a' — set!/update! on a mutable deftype field is unsupported. (tools.reader fails at reader_types.clj:52, likely the `^:unsynchronized-mutable ^long` DOUBLE-metadata field-in-scope + the mutation; isolate which.) A different capability class from the deftype host-interface work (D-275→D-286)."
+    category: "polymorphism"
+    barrier: |-
+      **deftype mutable fields (`^:unsynchronized-mutable` + set!) are unsupported.**
+      cljw deftype instances are immutable value records; a field declared
+      `^:unsynchronized-mutable`/`^:volatile-mutable` and assigned via `(set! field
+      v)` inside a method has no mutable storage. Real stateful deftypes (reader
+      cursors, transients, caches — tools.reader's StringReader) need it. Finished-
+      form fix: mutable-field storage on the TypedInstance (the fields slice is
+      already there; needs in-place mutation + `set!` on a deftype-field target
+      resolving to that slot). Also verify the `^:unsynchronized-mutable ^long`
+      double-metadata field is brought into method-body scope for READ (D-202
+      wrapMethodBodyWithFields). ADR-level (mutability in an otherwise-immutable
+      value model). Cross-ref D-202 (field-in-scope), the tools.reader probe
+      (reader_types.clj:52), campaign Stage 1.3 ladder rung 6."
+    last_reviewed: "2026-06-07"
   - id: "D-286"
     status: "PARTIAL (D-286a landed 2026-06-07) — DONE a) bare `IHashEq` alias (the one host-interface name that is NOT a cljw protocol Var, so unambiguous) + the java.util collection host_inert family (Set/List/Collection alongside Map, big-bang). ordered advances past ALL its bare deftype-supertype names (IObj/IFn/IPersistentStack/Reversible/Sorted are already protocol Vars so resolve bare; IHashEq + java.util.Set now recognised) to its NEXT blocker `aset` (Java arrays) → D-287, a different capability class. REMAINING D-286b: bare names that ARE cljw protocol Vars (IPersistentSet/IPersistentMap with clj-named methods like disjoin/assoc) bypass protocol_remap → clj-named methods register under the clj name, cljw core fns (-disjoin/-assoc) miss them. Needs method-name disambiguation (clj name → remap; cljw dash-name → direct) in the bare-name deftype-supertype path. ordered will hit this after D-287 (aset). ORIGINAL: ordered uses `(:import (clojure.lang …))` + BARE-name deftype supertypes vs priority-map's qualified."
     category: "polymorphism"
