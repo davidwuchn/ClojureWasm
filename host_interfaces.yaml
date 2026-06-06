@@ -103,6 +103,28 @@ interfaces:
     kind: host_inert
     note: "iterator accepted-inert; cljw iterates via seq, not java.util.Iterator."
     methods: {}
+  - name: java.util.Set
+    aliases: [Set]
+    derives_from: "java.util.Set — java-interop set compat; recognised-but-inert (no JVM dispatch). flatland.ordered declares it (bare `Set`, set.clj:71)."
+    tier: A
+    recognised: true
+    kind: host_inert
+    note: "D-286a: the java.util collection interface family (Set/List/Collection alongside Map), all inert; cljw collection fns use the clojure.lang.* protocols."
+    methods: {}
+  - name: java.util.List
+    aliases: [List]
+    derives_from: "java.util.List — java-interop list compat; recognised-but-inert (no JVM dispatch)."
+    tier: A
+    recognised: true
+    kind: host_inert
+    methods: {}
+  - name: java.util.Collection
+    aliases: [Collection]
+    derives_from: "java.util.Collection — java-interop collection compat; recognised-but-inert (no JVM dispatch)."
+    tier: A
+    recognised: true
+    kind: host_inert
+    methods: {}
 
 # --- Design caveats discovered driving clojure.data.priority-map (2026-06-07) ---
 # Implementing the rows below requires TWO mechanisms beyond slice-1 recognition,
@@ -182,6 +204,7 @@ interfaces:
       seq: { status: wired, wires_to_protocol: Sorted, wires_to_method: "-sorted-seq" }
       seqFrom: { status: wired, wires_to_protocol: Sorted, wires_to_method: "-sorted-seq-from" }
   - name: clojure.lang.IHashEq
+    aliases: [IHashEq]
     derives_from: "clojure.lang.IHashEq — hasheq for = / hash (Clojure, stable)."
     tier: A
     recognised: true

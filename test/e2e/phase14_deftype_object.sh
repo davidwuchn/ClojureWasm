@@ -459,4 +459,20 @@ if [[ "$last" != "[(:a :b) (1 2)]" ]]; then
 fi
 echo "PASS keys_vals_seq_derive -> [(:a :b) (1 2)]"
 
-echo "OK — phase14_deftype_object (30 cases) green"
+# --- Case 31 (D-286a): bare IHashEq + the java.util collection host_inert family
+# (Set/List/Collection), as used via `(:import [clojure.lang …] [java.util …])` ---
+got=$("$BIN" - <<'EOF' 2>/dev/null
+(deftype S [v]
+  IHashEq (hasheq [this] (* v 5))
+  Set (size [this] v)
+  java.util.List (get [this i] i))
+[(hash (S. 4)) (.size (S. 9))]
+EOF
+) || fail "case31: non-zero exit ($got)"
+last=$(awk 'END { print }' <<< "$got")
+if [[ "$last" != "[20 9]" ]]; then
+    fail "case31: got '$last', want '[20 9]'"
+fi
+echo "PASS bare_ihasheq_java_util_family -> [20 9]"
+
+echo "OK — phase14_deftype_object (31 cases) green"

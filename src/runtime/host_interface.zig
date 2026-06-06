@@ -80,6 +80,11 @@ const SERIALIZABLE: HostInterface = .{ .kind = .marker, .canonical = "java.io.Se
 // declaring them for java-interop load; methods are inert (no java dispatch in cljw).
 const JAVA_UTIL_MAP: HostInterface = .{ .kind = .host_inert, .canonical = "java.util.Map" };
 const JAVA_LANG_ITERABLE: HostInterface = .{ .kind = .host_inert, .canonical = "java.lang.Iterable" };
+// The java.util collection interface family deftypes declare for java-interop
+// (D-286a, big-bang per F-013): Set/List/Collection alongside Map. All inert.
+const JAVA_UTIL_SET: HostInterface = .{ .kind = .host_inert, .canonical = "java.util.Set" };
+const JAVA_UTIL_LIST: HostInterface = .{ .kind = .host_inert, .canonical = "java.util.List" };
+const JAVA_UTIL_COLLECTION: HostInterface = .{ .kind = .host_inert, .canonical = "java.util.Collection" };
 
 // protocol_remap interfaces (D-280b+): the macro rewrites each declared method to
 // its cljw (protocol, method) target. ILookup's valAt → ILookup/-lookup (a 3-arity
@@ -168,6 +173,12 @@ const MARKERS = std.StaticStringMap(HostInterface).initComptime(.{
     .{ "clojure.lang.Reversible", REVERSIBLE },
     .{ "clojure.lang.IPersistentStack", IPERSISTENT_STACK },
     .{ "clojure.lang.IHashEq", IHASHEQ },
+    // bare alias (D-286a): libs `:import [clojure.lang IHashEq]` + use it bare.
+    // IHashEq has NO cljw protocol Var (it routes to Object/hasheq), so the bare
+    // spelling is unambiguous — safe to add. The bare forms of IFn/IObj/etc. are
+    // already protocol Vars, so they resolve bare (their clj→cljw method-name
+    // disambiguation is the harder D-286b, deferred).
+    .{ "IHashEq", IHASHEQ },
     .{ "clojure.lang.Sorted", SORTED },
     .{ "clojure.lang.IFn", IFN },
     .{ "clojure.lang.IObj", IOBJ },
@@ -177,6 +188,12 @@ const MARKERS = std.StaticStringMap(HostInterface).initComptime(.{
     .{ "java.util.Map", JAVA_UTIL_MAP },
     .{ "Iterable", JAVA_LANG_ITERABLE },
     .{ "java.lang.Iterable", JAVA_LANG_ITERABLE },
+    .{ "Set", JAVA_UTIL_SET },
+    .{ "java.util.Set", JAVA_UTIL_SET },
+    .{ "List", JAVA_UTIL_LIST },
+    .{ "java.util.List", JAVA_UTIL_LIST },
+    .{ "Collection", JAVA_UTIL_COLLECTION },
+    .{ "java.util.Collection", JAVA_UTIL_COLLECTION },
 });
 
 /// True when `name` is a quote-wrap marker (method_family or zero-method marker)
