@@ -9,6 +9,59 @@
 # md-table-align no longer pads it to ~800 KB of whitespace.
 
 active:
+  - id: "D-270"
+    status: "open (found 2026-06-06, invalid-arg sweep) — Java primitive-array constructors/ops missing: `(int-array 3)` etc. name_error; clj returns a `#object[\"[I\" 0x… …]` array."
+    category: "clj-parity"
+    barrier: |-
+      **Java primitive arrays are unimplemented** — `int-array` / `long-array` /
+      `double-array` / `object-array` / `make-array` / `aget` / `aset` / `alength`
+      / `aclone` / `amap` / `areduce` raise name_error; clj returns a mutable Java
+      array. This is a sizable host-interop feature (a new mutable-array Value
+      kind + the aget/aset surface), and arrays print as `#object["[I" 0xADDR …]`
+      — an opaque identity-hash repr cljw structurally cannot reproduce (the
+      AD-001/opaque-ref class), so even once implemented the PRINT diverges (AD).
+      Lower priority than the bug-class sweeps (arrays are a perf/interop niche;
+      idiomatic cljw uses persistent collections). Cross-ref F-004 (mutable host
+      memory), F-011. recall: when a Wasm/edge demo needs flat numeric buffers.
+    last_reviewed: "2026-06-06"
+  - id: "D-269"
+    status: "open (found 2026-06-06, invalid-arg sweep) — `(read-string \"\")` / whitespace / comment-only returns nil where clj throws EOF (RuntimeException). A DELIBERATE, e2e-tested divergence (edn.zig comment + phase9_edn_read_string Case 8) but UNRECORDED as an AD — a floating divergence, and a silent-failure (nil masks 'nothing to read')."
+    category: "clj-parity"
+    barrier: |-
+      **`read-string` on empty/blank/comment-only input returns nil, clj throws
+      EOF.** `clojure.edn/read-string` (= cljw's `clojure.core/read-string`, both
+      route to `edn.zig readStringFn`) returns `nil` on no-form input where clj
+      throws `RuntimeException: EOF while reading`. The edn.zig comment calls it a
+      "cljw 1-arity divergence" and phase9_edn_read_string Case 8 PINS it to nil —
+      so it is deliberate + tested, but there is NO AD recording it (a floating
+      divergence the rules forbid), AND returning nil where the read FAILED is a
+      silent-failure (the user can't distinguish "read nil" from "read nothing").
+      DECISION NEEDED (depth-2, DA-worthy): (a) FLIP to throw EOF by default (the
+      `:eof` opt still overrides → clj-faithful + silent-failure-clean; update
+      Case 8 to expect an error), or (b) record an AD-017 justifying nil-default
+      (but no F-NNN invariant backs it → the bar in accepted_divergences.md says
+      that makes it a bug, not an accepted divergence). Leaning (a). `(read-string
+      "(")` additionally raises the wrong `not_implemented` kind (should be a
+      reader/EOF error). Cross-ref F-011, AD ledger discipline.
+    last_reviewed: "2026-06-06"
+  - id: "D-268"
+    status: "PARTIAL 2026-06-06 — the plain i64 unchecked arithmetic family LANDED (unchecked-add/subtract/multiply/inc/dec/negate: two's-complement i64 wrap via `+%`/`-%`/`*%` + wrapI64, float operands fall through to promoting arith; corpus unchecked_nthrest_takelast). REMAINING: the i32-wrapping `-int` variants (unchecked-add-int/…/divide-int/remainder-int) + the unchecked CASTS (unchecked-int/long/byte/short/char/float/double)."
+    category: "clj-parity"
+    barrier: |-
+      **The `-int` (i32-wrapping) unchecked ops and the unchecked casts are
+      unimplemented.** clj's `unchecked-add-int`/`-subtract-int`/`-multiply-int`/
+      `-inc-int`/`-dec-int`/`-negate-int` wrap at 32 bits (`(unchecked-add-int
+      2147483647 1)`→-2147483648); `unchecked-divide-int`/`-remainder-int` are i32
+      div/rem; `unchecked-int`/`-long`/`-byte`/`-short`/`-char`/`-float`/`-double`
+      are wrapping casts (`(unchecked-byte 300)`→44, `(unchecked-short 70000)`→
+      4464, `(unchecked-char 65)`→\\A). cljw has no 32-bit int (F-005 collapses to
+      i64), so the `-int` family truncates to i32, wraps, sign-extends to i64; the
+      casts overlap the existing CHECKED coercions (byte/short/int/long already
+      exist) differing only in overflow handling. Deferred from the plain-6 landing
+      to keep that commit clean; do as one big-bang (per clj_diff_sweep Discipline
+      2) with a corpus. LOW-MEDIUM value (unchecked ops are hot-loop niche).
+      Cross-ref F-005, F-011.
+    last_reviewed: "2026-06-06"
   - id: "D-267"
     status: "open (found 2026-06-06, format clj-diff sweep) — `(format \"%c\" <int>)` diverges: clj accepts an Integer (`(int 66)`→\"B\") but rejects a Long (`65`→IllegalFormatConversionException); cljw collapses int/Long (F-005) so it rejects ALL integers (type_error). char args work in both."
     category: "clj-parity"

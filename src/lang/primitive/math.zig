@@ -574,6 +574,79 @@ pub fn unsignedBitShiftRight(rt: *Runtime, env: *Env, args: []const Value, loc: 
     return promote.wrapI64(rt, @bitCast(r));
 }
 
+// --- unchecked arithmetic (D-268) ---
+//
+// clj's `unchecked-*` ops do two's-complement Long arithmetic with NO overflow
+// check — they WRAP at 64 bits instead of auto-promoting to BigInt (the F-005
+// default for `+`/`*`). They exist for proven-safe hot loops. A FLOAT operand
+// falls through to ordinary (promoting) arithmetic, matching clj's double path;
+// a non-long integer (BigInt) also takes the regular path (the pathological
+// case clj would ClassCastException — a negligible divergence). The `-int`
+// (i32-wrapping) variants and the unchecked CASTS are deferred (D-268).
+
+/// True when `v` is a Long-category integer (inline i48 or a heap `.long`),
+/// i.e. exactly what `expectI64` accepts without promotion.
+fn isLongish(v: Value) bool {
+    return v.tag() == .integer or (v.tag() == .big_int and big_int_mod.originOf(v) == .long);
+}
+
+pub fn uncheckedAdd(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    try error_catalog.checkArity("unchecked-add", args, 2, loc);
+    if (isLongish(args[0]) and isLongish(args[1])) {
+        const a = try error_catalog.expectI64(args[0], "unchecked-add", loc);
+        const b = try error_catalog.expectI64(args[1], "unchecked-add", loc);
+        return promote.wrapI64(rt, a +% b);
+    }
+    return plus(rt, env, args, loc);
+}
+
+pub fn uncheckedSubtract(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    try error_catalog.checkArity("unchecked-subtract", args, 2, loc);
+    if (isLongish(args[0]) and isLongish(args[1])) {
+        const a = try error_catalog.expectI64(args[0], "unchecked-subtract", loc);
+        const b = try error_catalog.expectI64(args[1], "unchecked-subtract", loc);
+        return promote.wrapI64(rt, a -% b);
+    }
+    return minus(rt, env, args, loc);
+}
+
+pub fn uncheckedMultiply(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    try error_catalog.checkArity("unchecked-multiply", args, 2, loc);
+    if (isLongish(args[0]) and isLongish(args[1])) {
+        const a = try error_catalog.expectI64(args[0], "unchecked-multiply", loc);
+        const b = try error_catalog.expectI64(args[1], "unchecked-multiply", loc);
+        return promote.wrapI64(rt, a *% b);
+    }
+    return star(rt, env, args, loc);
+}
+
+pub fn uncheckedInc(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    try error_catalog.checkArity("unchecked-inc", args, 1, loc);
+    if (isLongish(args[0])) {
+        const a = try error_catalog.expectI64(args[0], "unchecked-inc", loc);
+        return promote.wrapI64(rt, a +% 1);
+    }
+    return inc(rt, env, args, loc);
+}
+
+pub fn uncheckedDec(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    try error_catalog.checkArity("unchecked-dec", args, 1, loc);
+    if (isLongish(args[0])) {
+        const a = try error_catalog.expectI64(args[0], "unchecked-dec", loc);
+        return promote.wrapI64(rt, a -% 1);
+    }
+    return dec(rt, env, args, loc);
+}
+
+pub fn uncheckedNegate(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    try error_catalog.checkArity("unchecked-negate", args, 1, loc);
+    if (isLongish(args[0])) {
+        const a = try error_catalog.expectI64(args[0], "unchecked-negate", loc);
+        return promote.wrapI64(rt, 0 -% a);
+    }
+    return minus(rt, env, args, loc); // 1-arg minus = negate (float path)
+}
+
 /// `(min x & more)` — minimum across one or more numerics.
 /// Folds via the existing `<` ladder so all promotion rules
 /// (Long / Float / BigInt / Ratio / BigDecimal) apply.
@@ -996,6 +1069,12 @@ const ENTRIES = [_]Entry{
     .{ .name = "compare", .f = &compare },
     .{ .name = "inc", .f = &inc },
     .{ .name = "dec", .f = &dec },
+    .{ .name = "unchecked-add", .f = &uncheckedAdd },
+    .{ .name = "unchecked-subtract", .f = &uncheckedSubtract },
+    .{ .name = "unchecked-multiply", .f = &uncheckedMultiply },
+    .{ .name = "unchecked-inc", .f = &uncheckedInc },
+    .{ .name = "unchecked-dec", .f = &uncheckedDec },
+    .{ .name = "unchecked-negate", .f = &uncheckedNegate },
     .{ .name = "inc'", .f = &inc },
     .{ .name = "dec'", .f = &dec },
     .{ .name = "zero?", .f = &zeroQ },

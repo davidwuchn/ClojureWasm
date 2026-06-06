@@ -1,0 +1,38 @@
+(unchecked-add 1 2)
+;;=> 3
+(unchecked-add 9223372036854775807 1)
+;;=> -9223372036854775808
+(unchecked-subtract 5 8)
+;;=> -3
+(unchecked-multiply 9223372036854775807 2)
+;;=> -2
+(unchecked-inc 9223372036854775807)
+;;=> -9223372036854775808
+(unchecked-dec -9223372036854775808)
+;;=> 9223372036854775807
+(unchecked-negate -9223372036854775808)
+;;=> -9223372036854775808
+(unchecked-add 1.0 2.0)
+;;=> 3.0
+(unchecked-inc 2.5)
+;;=> 3.5
+(unchecked-multiply 1000000 1000000)
+;;=> 1000000000000
+(nthrest [1 2 3] 0)
+;;=> [1 2 3]
+(nthrest [1 2 3] -1)
+;;=> [1 2 3]
+(nthrest [1 2 3] 2)
+;;=> (3)
+(nthrest (range 5) 2)
+;;=> (2 3 4)
+(nthnext [1 2 3] 0)
+;;=> (1 2 3)
+(take-last 0 [1 2 3])
+;;=> nil
+(take-last 2 [])
+;;=> nil
+(take-last 2 [1 2 3 4])
+;;=> (3 4)
+(take-last 5 [1 2 3])
+;;=> (1 2 3)

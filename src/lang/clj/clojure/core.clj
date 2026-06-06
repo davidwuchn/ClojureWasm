@@ -183,7 +183,9 @@
 ;; destructure `& rest` lowering (D-076) emits (nthnext g idx). nthnext
 ;; seqs (nil when empty); nthrest returns the rest coll as-is.
 (def nthnext (fn* [coll n] (seq (drop n coll))))
-(def nthrest (fn* [coll n] (drop n coll)))
+;; n <= 0 returns coll UNCHANGED (clj preserves the input, not a seq view):
+;; `(nthrest [1 2 3] 0)` => [1 2 3], not (1 2 3).
+(def nthrest (fn* [coll n] (if (pos? n) (drop n coll) coll)))
 (def keep
   (fn* ([f]
         ;; transducer arity: keeps the non-nil (f input)
@@ -1094,8 +1096,10 @@
 (def not-empty (fn* [coll] (if (empty? coll) nil coll)))
 
 ;; `(take-last n coll)` — the last n items (eager).
+;; `(seq …)` so an empty result is nil, not () — clj's take-last returns nil
+;; when there is nothing to take (`(take-last 0 x)` / `(take-last 2 [])` => nil).
 (def take-last
-  (fn* [n coll] (reverse (take n (reverse coll)))))
+  (fn* [n coll] (seq (reverse (take n (reverse coll))))))
 
 ;; `(drop-last coll)` / `(drop-last n coll)` — all but the last 1 / n items.
 ;; clj's n-arity `(map (fn [x _] x) s (drop n s))` pairs each element with the
