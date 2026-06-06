@@ -77,3 +77,88 @@ interfaces:
     methods:
       withMeta: { status: feature_not_supported }
       meta: { status: feature_not_supported }
+
+# --- Design caveats discovered driving clojure.data.priority-map (2026-06-07) ---
+# Implementing the rows below requires TWO mechanisms beyond slice-1 recognition,
+# scoped as prerequisites (do NOT rush — wrong dispatch is worse than a name_error):
+#
+#   D-279 (PREREQUISITE): deftype methods need ARITY OVERLOAD. priority-map
+#     declares `(valAt [this k]) (valAt [this k nf])` — two arities of one method.
+#     cljw method_table holds one entry per (protocol, method) and dispatch picks
+#     one → arity_error on the other. Probed 2026-06-07.
+#
+#   D-280: recognition must remap (clj-interface, clj-method) → (cljw-PROTOCOL,
+#     cljw-method), NOT just translate the method name. cljw dispatch matches on
+#     (protocol, method) STRICTLY (probed: a method registered under the wrong
+#     protocol is not found). priority-map declares `count` under IPersistentMap,
+#     but cljw's `count` dispatches via IPersistentCollection/-count — so the row
+#     must carry `wires_to_protocol` + `wires_to_method`, not a bare name map.
+#
+# These rows therefore stay recognised:false until D-279 + the D-280 remapping
+# mechanism land. Each `methods:` entry below records the TARGET (cljw protocol +
+# method) so the modeling is definition-derived, not rediscovered per library.
+
+  # --- clojure.data.priority-map closed set (the campaign driver, lines 265-450) ---
+  - name: clojure.lang.ILookup
+    derives_from: "clojure.lang.ILookup — get/valAt lookup (Clojure, stable)."
+    tier: A
+    recognised: false
+    modeled_as: "ILookup (defprotocol ILookup (-lookup [c k]), core.clj:1558)"
+    note: "valAt 2-arity → -lookup; valAt 3-arity (not-found) needs D-279 arity-overload + a 3-arity -lookup or core get fallthrough."
+    methods:
+      valAt: { status: feature_not_supported, wires_to_protocol: ILookup, wires_to_method: "-lookup" }
+  - name: clojure.lang.IPersistentMap
+    derives_from: "clojure.lang.IPersistentMap — map ops; in clj it extends IPersistentCollection/Counted/Associative, so impls group count/assoc/etc here (Clojure, stable)."
+    tier: A
+    recognised: false
+    note: "D-280 remap: clj groups count/assoc/cons under IPersistentMap; cljw splits them across IPersistentCollection (-count/-cons/-empty), Associative (-assoc), IPersistentMap (-without/-keys/-vals). Each method routes to its OWN cljw protocol, not 'IPersistentMap'."
+    methods:
+      count: { status: feature_not_supported, wires_to_protocol: IPersistentCollection, wires_to_method: "-count" }
+      assoc: { status: feature_not_supported, wires_to_protocol: Associative, wires_to_method: "-assoc" }
+      without: { status: feature_not_supported, wires_to_protocol: IPersistentMap, wires_to_method: "-without" }
+      cons: { status: feature_not_supported, wires_to_protocol: IPersistentCollection, wires_to_method: "-cons" }
+      empty: { status: feature_not_supported, wires_to_protocol: IPersistentCollection, wires_to_method: "-empty" }
+  - name: clojure.lang.IPersistentStack
+    derives_from: "clojure.lang.IPersistentStack — peek/pop (Clojure, stable)."
+    tier: A
+    recognised: false
+    modeled_as: "(none yet — peek/pop are plain fns; needs a modeled protocol)"
+    methods:
+      peek: { status: feature_not_supported }
+      pop: { status: feature_not_supported }
+  - name: clojure.lang.Reversible
+    derives_from: "clojure.lang.Reversible — rseq (Clojure, stable)."
+    tier: A
+    recognised: false
+    modeled_as: "(none yet)"
+    methods:
+      rseq: { status: feature_not_supported }
+  - name: clojure.lang.Sorted
+    derives_from: "clojure.lang.Sorted — sorted-map nav (Clojure, stable)."
+    tier: A
+    recognised: false
+    modeled_as: "(none yet)"
+    methods:
+      comparator: { status: feature_not_supported }
+      entryKey: { status: feature_not_supported }
+      seq: { status: feature_not_supported }
+      seqFrom: { status: feature_not_supported }
+  - name: clojure.lang.IHashEq
+    derives_from: "clojure.lang.IHashEq — hasheq for = / hash (Clojure, stable)."
+    tier: A
+    recognised: false
+    modeled_as: "(none yet — route to valueHash)"
+    methods:
+      hasheq: { status: feature_not_supported }
+  - name: clojure.lang.MapEquivalence
+    derives_from: "clojure.lang.MapEquivalence — zero-method marker: 'this map = other maps by value' (Clojure, stable)."
+    tier: A
+    recognised: false
+    note: "Zero-method marker (like Sequential). Recognise → record implements-marker; no method wiring."
+    methods: {}
+  - name: java.io.Serializable
+    derives_from: "java.io.Serializable — zero-method marker; priority-map notes 'serialization comes for free'. cljw has no JVM serialization, so this is a pure recognise-and-ignore marker."
+    tier: A
+    recognised: false
+    note: "Zero-method marker. Recognise so the deftype parses; cljw does not implement JVM serialization (AD candidate if a consumer probes it)."
+    methods: {}

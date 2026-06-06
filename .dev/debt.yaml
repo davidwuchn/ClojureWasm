@@ -64,7 +64,7 @@ active:
       F-013 clause 4, F-010 (perf substrate), ADR-0102, the bench_regression gate.
     last_reviewed: "2026-06-07"
   - id: "D-278"
-    status: "now (ADR-0102, accepted 2026-06-07) — implement the host-interface closed-set SSOT: create `host_interfaces.yaml` (rows = the materialized closed set, each with `derives_from:`), `src/runtime/host_interface.zig` (single StaticStringMap read point), consolidate the 5 scattered `std.mem.eql(\"Object\")` sites (macro_transforms.zig ×3, protocol.zig ×3) onto it, add `scripts/check_host_interface.sh` (G4: set-bound + over-claim + no-floating-wire) to run_all.sh. (Refined 2026-06-07: the `compat_tiers.yaml host_classes` `java.lang.Object` row STAYS — it is the CLASS facet for instance?/class; host_interfaces.yaml owns the distinct deftype/reify-marker facet.) MUST land BEFORE D-275 slices 3+ (clojure.lang.*) so each interface is a gated row, not a new eql site."
+    status: "DISCHARGED 97e42e78 (2026-06-07) — host-interface closed-set SSOT landed: `host_interfaces.yaml` (13 rows, Object recognised + clojure.lang.* family materialized recognised:false), `src/runtime/host_interface.zig` single read point, 5 `eql(\"Object\")` sites consolidated, `scripts/check_host_interface.sh` G4 gate in run_all (set-bound + over-claim + no-floating-wire), gate green 258/0. Object's two facets (marker vs host_classes class-reservation) cross-noted. ORIGINAL: implement the host-interface closed-set SSOT: create `host_interfaces.yaml` (rows = the materialized closed set, each with `derives_from:`), `src/runtime/host_interface.zig` (single StaticStringMap read point), consolidate the 5 scattered `std.mem.eql(\"Object\")` sites (macro_transforms.zig ×3, protocol.zig ×3) onto it, add `scripts/check_host_interface.sh` (G4: set-bound + over-claim + no-floating-wire) to run_all.sh. (Refined 2026-06-07: the `compat_tiers.yaml host_classes` `java.lang.Object` row STAYS — it is the CLASS facet for instance?/class; host_interfaces.yaml owns the distinct deftype/reify-marker facet.) MUST land BEFORE D-275 slices 3+ (clojure.lang.*) so each interface is a gated row, not a new eql site."
     category: "polymorphism"
     barrier: |-
       **The host-interface recognition scatter is not yet consolidated into the
@@ -76,6 +76,43 @@ active:
       enforces (i) recognised-in-code ⊆ YAML rows and (ii) every protocol route
       points at a modeled protocol. Cross-ref ADR-0102, F-013, D-275 (the slices
       this unblocks cleanly), D-276 (Object-as-target becomes a row here).
+    last_reviewed: "2026-06-07"
+  - id: "D-279"
+    status: "now/PREREQUISITE (found 2026-06-07 driving priority-map) — deftype/reify methods need ARITY OVERLOAD. clj impls declare multiple arities of one method, e.g. priority-map `(valAt [this k]) (valAt [this k not-found])`. cljw's method_table holds one entry per (protocol, method) and dispatch picks one → the other raises arity_error (probed). Blocks any clojure.lang.* interface whose methods are arity-overloaded (ILookup valAt, many others). Prerequisite for D-280."
+    category: "polymorphism"
+    barrier: |-
+      **deftype/reify method dispatch is single-arity per (protocol, method).**
+      A deftype declaring two arities of one method (clj-idiomatic, e.g. `valAt`
+      2-arg + 3-arg) cannot register both — the method_table keys on (protocol,
+      method) with no arity discriminator, so the second shadows the first and a
+      call at the other arity arity_errors. Finished-form fix: the method_table
+      entry (or the dispatch lookup) carries an arity dimension, so `(valAt [this
+      k])` and `(valAt [this k nf])` coexist and dispatch by arg count. Cross-ref
+      D-280 (the clojure.lang.* modeling that needs this), D-275, ADR-0066
+      (deftype macro), the survey's row-7.4 'definterface extends to arity
+      overload' note. Barrier dissolves when a 2-arity-overloaded deftype method
+      dispatches correctly at both arities.
+    last_reviewed: "2026-06-07"
+  - id: "D-280"
+    status: "now (found 2026-06-07; ADR-0102 follow-on, D-275 slices 3-5 consolidated) — recognise the clojure.lang.* deftype/reify supertype family and route each to its cljw protocol. Two mechanisms beyond slice-1: (1) accept clojure.lang.-QUALIFIED spellings (today only `Object` bare is recognised; `clojure.lang.ILookup` etc. name_error); (2) remap (clj-interface, clj-method) → (cljw-PROTOCOL, cljw-method) — NOT a bare name map: cljw dispatch matches (protocol, method) STRICTLY (probed), and clj groups methods differently (priority-map declares `count` under IPersistentMap; cljw's count is IPersistentCollection/-count). The remap target table is materialized in host_interfaces.yaml (recognised:false rows w/ wires_to_protocol+wires_to_method). Needs D-279 (arity overload) first. Drives docs/works priority-map from 'Object done' to 'loads + usable'."
+    category: "polymorphism"
+    barrier: |-
+      **clojure.lang.* host-interface family is not recognised/wired.** Only
+      `Object` (bare) is a recognised marker; the `clojure.lang.`-qualified family
+      (ILookup/IPersistentMap/IPersistentStack/Reversible/Sorted/IHashEq/IFn/IObj/
+      MapEquivalence + java.io.Serializable marker) name_errors as a deftype/reify
+      supertype, so every real collection lib (priority-map, ordered, …) fails to
+      load. Finished-form fix (definition-derived, F-013; gated by ADR-0102 G4):
+      extend `host_interface.zig` to (a) recognise the qualified names, (b) carry a
+      (clj-method → cljw-protocol + cljw-method) remap so each declared method
+      registers under the cljw protocol that actually dispatches it, (c) model the
+      not-yet-modeled protocols (IPersistentStack peek/pop, Reversible rseq, Sorted,
+      IHashEq→valueHash, IFn invoke, IObj meta) as generic protocols (gate (ii)
+      requires a real route — no per-library shim), (d) treat zero-method markers
+      (MapEquivalence, Serializable) as recognise-and-record. Do BIG-BANG over the
+      priority-map closed set (host_interfaces.yaml rows), not one-per-cycle
+      (F-013 / clj_diff_sweep Discipline 2). Cross-ref D-275, D-279 (prereq),
+      ADR-0102, host_interfaces.yaml design-caveats section.
     last_reviewed: "2026-06-07"
   - id: "D-274"
     status: "deferred (ADR-0101 Shape C insight, 2026-06-06) — deps.edn `:git/url` resolution is host-bound: it spawns `git` (slice 5, `git_fetch.zig`). The wasm/edge horizon (F-010/F-012, cw's differentiator) cannot spawn a subprocess, so a `git`-free alternative is eventually needed: fetch a source tarball (`…/archive/<sha>.tar.gz`) over an HTTP client into the same content-addressed cache. NOT built now — it adds a new outbound-HTTP-client capability + per-forge URL knowledge that `git clone` handles uniformly; the host-bound path serves the POSIX-host case first."
