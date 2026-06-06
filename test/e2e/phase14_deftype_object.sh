@@ -118,4 +118,29 @@ if [[ "$last" != "[:two :three]" ]]; then
 fi
 echo "PASS reify_method_arity_overload -> [:two :three]"
 
-echo "OK — phase14_deftype_object (8 cases) green"
+# --- Case 9 (D-280a): zero-method qualified clojure.lang.*/java.io.* markers ---
+# A deftype may name zero-method host markers (priority-map uses MapEquivalence +
+# Serializable); they parse + record implements, alongside an Object/toString impl.
+got=$("$BIN" - <<'EOF' 2>/dev/null
+(deftype T [a] Object (toString [this] (str "T" a)) clojure.lang.MapEquivalence java.io.Serializable)
+(str (T. 9))
+EOF
+) || fail "case9: non-zero exit ($got)"
+last=$(awk 'END { print }' <<< "$got")
+if [[ "$last" != '"T9"' ]]; then
+    fail "case9: got '$last', want '\"T9\"'"
+fi
+echo "PASS deftype_zero_method_markers -> T9"
+
+# --- Case 10 (D-280a): a stray method on a zero-method marker errors explicitly ---
+diag=$("$BIN" - <<'EOF' 2>&1 || true
+(deftype T [] clojure.lang.MapEquivalence (bogus [this] 1))
+(T.)
+EOF
+)
+if [[ "$diag" != *"not yet wired"* ]]; then
+    fail "case10: expected marker-method-not-wired diagnostic, got '$diag'"
+fi
+echo "PASS marker_stray_method_explicit_error"
+
+echo "OK — phase14_deftype_object (10 cases) green"

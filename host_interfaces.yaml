@@ -153,12 +153,14 @@ interfaces:
   - name: clojure.lang.MapEquivalence
     derives_from: "clojure.lang.MapEquivalence — zero-method marker: 'this map = other maps by value' (Clojure, stable)."
     tier: A
-    recognised: false
-    note: "Zero-method marker (like Sequential). Recognise → record implements-marker; no method wiring."
+    recognised: true
+    kind: marker
+    note: "Zero-method marker (like Sequential). Recognised D-280a → records implements-marker; no method wiring."
     methods: {}
   - name: java.io.Serializable
     derives_from: "java.io.Serializable — zero-method marker; priority-map notes 'serialization comes for free'. cljw has no JVM serialization, so this is a pure recognise-and-ignore marker."
     tier: A
-    recognised: false
-    note: "Zero-method marker. Recognise so the deftype parses; cljw does not implement JVM serialization (AD candidate if a consumer probes it)."
+    recognised: true
+    kind: marker
+    note: "Zero-method marker. Recognised D-280a so the deftype parses; cljw does not implement JVM serialization (AD candidate if a consumer probes it)."
     methods: {}

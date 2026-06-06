@@ -32,12 +32,22 @@ pub const HostInterface = struct {
 
 const OBJECT: HostInterface = .{ .canonical = "Object", .wired_methods = &.{"toString"} };
 
+// Zero-method markers (D-280a): a recognised supertype with NO methods — the
+// deftype/reify just records "implements X" (the Sequential/ADR-0068 precedent).
+// canonical = the full name (process-lifetime literal); no methods wired, so a
+// stray method impl on one raises feature_not_supported.
+const MAP_EQUIVALENCE: HostInterface = .{ .canonical = "clojure.lang.MapEquivalence", .wired_methods = &.{} };
+const SERIALIZABLE: HostInterface = .{ .canonical = "java.io.Serializable", .wired_methods = &.{} };
+
 /// Recognised marker names (+ qualified aliases) → their `HostInterface`.
-/// Slice 1 (D-275): only `Object`/`toString`. The `clojure.lang.*` family lands
-/// as entries here as each interface is modeled (D-275 slices 3+) — always a new
-/// row gated against `host_interfaces.yaml`, never a fresh `eql` site.
+/// D-275 slice 1: `Object`/`toString`. D-280a: the zero-method `clojure.lang.*` /
+/// `java.io.*` markers. The method-bearing `clojure.lang.*` family (ILookup etc.,
+/// D-280b+) lands as entries here as each is wired — always a new row gated
+/// against `host_interfaces.yaml`, never a fresh `eql` site.
 const MARKERS = std.StaticStringMap(HostInterface).initComptime(.{
     .{ "Object", OBJECT },
+    .{ "clojure.lang.MapEquivalence", MAP_EQUIVALENCE },
+    .{ "java.io.Serializable", SERIALIZABLE },
 });
 
 /// True when `name` (a deftype/reify impl-spec head symbol) is a recognised
