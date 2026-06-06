@@ -492,4 +492,23 @@ if [[ "$last" != "[:x :closed]" ]]; then
 fi
 echo "PASS closeable_host_inert_with_body -> [:x :closed]"
 
-echo "OK — phase14_deftype_object (32 cases) green"
+# --- Case 33 (D-292): extend-type with MULTIPLE protocol sections in one form
+# (clj allows `(extend-type T P1 m... P2 m...)`; cljw split-then-re-expand). ---
+got=$("$BIN" - <<'EOF' 2>/dev/null
+(defprotocol P1 (m1 [x]))
+(defprotocol P2 (m2 [x]))
+(defprotocol P3 (m3 [x]))
+(extend-type java.lang.String
+  P1 (m1 [x] 1)
+  P2 (m2 [x] 2)
+  P3 (m3 [x] 3))
+[(m1 "a") (m2 "b") (m3 "c")]
+EOF
+) || fail "case33: non-zero exit ($got)"
+last=$(awk 'END { print }' <<< "$got")
+if [[ "$last" != "[1 2 3]" ]]; then
+    fail "case33: got '$last', want '[1 2 3]'"
+fi
+echo "PASS extend_type_multi_protocol -> [1 2 3]"
+
+echo "OK — phase14_deftype_object (33 cases) green"

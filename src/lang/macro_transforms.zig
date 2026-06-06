@@ -2234,6 +2234,41 @@ fn expandExtendType(
 
     const target_form = args[0];
 
+    // D-292: multiple protocol sections in ONE extend-type
+    // (`(extend-type T P1 (m..) P2 (m..))`, as clj allows + tools.reader uses).
+    // Split into per-protocol `(extend-type T Pi impls...)` forms under a `do`;
+    // each re-expands through this fn as a single-protocol section (deftype
+    // lowering + extend-protocol already split this way). Detect by a second
+    // protocol symbol after the first section's method-impl lists.
+    if (args.len > 2 and args[1].data == .symbol) {
+        var k: usize = 2;
+        while (k < args.len and args[k].data == .list) : (k += 1) {}
+        if (k < args.len) {
+            var sections: std.ArrayList(Form) = .empty;
+            defer sections.deinit(arena);
+            var i: usize = 1;
+            while (i < args.len) {
+                if (args[i].data != .symbol)
+                    return error_catalog.raise(.extend_type_method_invalid, args[i].location, .{});
+                const proto = args[i];
+                i += 1;
+                const start = i;
+                while (i < args.len and args[i].data == .list) : (i += 1) {}
+                const impls = args[start..i];
+                var ext_items = try arena.alloc(Form, 3 + impls.len);
+                ext_items[0] = sym("extend-type", proto.location);
+                ext_items[1] = target_form;
+                ext_items[2] = proto;
+                @memcpy(ext_items[3..], impls);
+                try sections.append(arena, try list(arena, ext_items, proto.location));
+            }
+            var do_items = try arena.alloc(Form, sections.items.len + 1);
+            do_items[0] = sym("do", loc);
+            @memcpy(do_items[1..], sections.items);
+            return list(arena, do_items, loc);
+        }
+    }
+
     // protocol_remap (D-280): a `clojure.lang.*` interface whose methods route to
     // cljw protocols (e.g. ILookup `valAt` → ILookup/`-lookup`; clj groups methods
     // by interface but cljw splits them across protocols). Rewrite the section into

@@ -9,6 +9,27 @@
 # md-table-align no longer pads it to ~800 KB of whitespace.
 
 active:
+  - id: "D-293"
+    status: "now (found 2026-06-07 - tools.reader rung 6, after D-292). extend-type on an UNKNOWN java-class TARGET: `(extend-type java.io.PushbackReader Reader ...)` -> name_error `Unable to resolve symbol java.io.PushbackReader`. cljw has no java.io.PushbackReader type, so the target does not resolve. clj extends any classpath class; cljw has a fixed type set. tools.reader extends java.io.PushbackReader/Reader/InputStream (real JVM I/O classes). Needs either (a) a java.io reader host-class surface, or (b) accept-and-record an extend-type on an unknown target as inert (the value never exists in cljw, so the impl is dead - load-only). reader_types.clj:173."
+    category: "interop"
+    barrier: |-
+      **extend-type on a java class cljw does not model fails to resolve.**
+      tools.reader extends java.io.PushbackReader / java.io.Reader /
+      java.io.InputStream. cljw has no these types. Two finished-form paths:
+      (a) a real java.io reader host surface (PushbackReader/InputStream with
+      read/unread/close) - large, the cw v0 std.Io story; (b) treat an
+      extend-type target that resolves to no cljw type as a load-only inert
+      registration (no value of that type can exist, so dispatch never hits)
+      - small, lets the ns load. ADR-level (which path). Cross-ref ladder
+      rung 6, D-281/ADR-0103 (host_inert supertype precedent for inert-accept).
+    last_reviewed: "2026-06-07"
+  - id: "D-292"
+    status: "DISCHARGED 2026-06-07 (this commit) - extend-type now splits MULTIPLE protocol sections `(extend-type T P1 m.. P2 m..)` into a `(do (extend-type T P1 ..) (extend-type T P2 ..))`, each re-expanding single-protocol (expandExtendType top, mirroring expandExtendProtocol + the deftype multi-protocol lowering D-280). Single-protocol + zero-method marker sections unaffected. e2e phase14_deftype_object case 33 (3 protocols). tools.reader (rung 6) advanced :185 -> :173 (D-293, java.io target)."
+    category: "polymorphism"
+    barrier: |-
+      DISCHARGED. extend-type accepted only one protocol section; now splits
+      N sections like extend-protocol/deftype. macro_transforms expandExtendType.
+    last_reviewed: "2026-06-07"
   - id: "D-292"
     status: "now (found 2026-06-07 - tools.reader rung 6, after D-291). extend-type with MULTIPLE protocol sections fails: `(extend-type T P1 (m1..) P2 (m2..))` raises macroexpand `extend-type method implementation must be a list` at the 2nd protocol symbol. Single-protocol extend-type works; deftype multi-protocol works (priority-map/ordered). expandExtendType does not split on a second protocol head the way the deftype lowering does. reader_types.clj:185 (extend-type java.io.PushbackReader Reader (read-char)(peek-char) IPushbackReader (unread))."
     category: "polymorphism"
