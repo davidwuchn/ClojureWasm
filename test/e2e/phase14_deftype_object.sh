@@ -362,4 +362,19 @@ if [[ "$last" != "[1 :default (1 nil)]" ]]; then
 fi
 echo "PASS ifn_deftype_callable -> [1 :default (1 nil)]"
 
-echo "OK — phase14_deftype_object (24 cases) green"
+# --- Case 25 (D-280d7 functional): meta/with-meta consult IObj on a deftype ---
+got=$("$BIN" - <<'EOF' 2>/dev/null
+(deftype O [m _meta]
+  clojure.lang.IObj
+  (meta [this] _meta)
+  (withMeta [this nm] (O. m nm)))
+(let [o (O. {:a 1} {:tag :orig})] [(meta o) (meta (with-meta o {:tag :new}))])
+EOF
+) || fail "case25: non-zero exit ($got)"
+last=$(awk 'END { print }' <<< "$got")
+if [[ "$last" != "[{:tag :orig} {:tag :new}]" ]]; then
+    fail "case25: got '$last', want '[{:tag :orig} {:tag :new}]'"
+fi
+echo "PASS iobj_meta_with_meta -> orig/new"
+
+echo "OK — phase14_deftype_object (25 cases) green"

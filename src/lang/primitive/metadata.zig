@@ -26,8 +26,6 @@ const atom = @import("../../runtime/atom.zig");
 
 /// `(meta obj)` — obj's metadata map, or nil for a non-IObj / no-meta value.
 pub fn metaFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
-    _ = rt;
-    _ = env;
     try error_catalog.checkArity("meta", args, 1, loc);
     const v = args[0];
     return switch (v.tag()) {
@@ -40,6 +38,12 @@ pub fn metaFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation)
         // populated by `analyzeDef` from a `^meta` def target.
         .var_ref => v.decodePtr(*const env_mod.Var).meta orelse Value.nil_val,
         .atom => atom.metaOf(v),
+        // D-280d7 functional: a deftype/reify implementing clojure.lang.IObj
+        // `meta` → consult IObj/-meta; nil if it does not implement IObj.
+        .typed_instance, .reified_instance => blk: {
+            var cs: dispatch.CallSite = .{};
+            break :blk (try dispatch.dispatchOrNull(rt, env, &cs, v, "IObj", "-meta", &.{v}, loc)) orelse Value.nil_val;
+        },
         else => Value.nil_val,
     };
 }
@@ -71,7 +75,6 @@ pub fn resetMetaFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLoca
 /// `(with-meta obj m)` — a new obj with the same VALUE but metadata = m
 /// (a map or nil). Throws on a non-IObj target or a non-map `m`.
 pub fn withMetaFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
-    _ = env;
     try error_catalog.checkArity("with-meta", args, 2, loc);
     const v = args[0];
     const m = args[1];
@@ -84,6 +87,14 @@ pub fn withMetaFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocat
         .hash_set => try set.withMeta(rt, v, m),
         .list => try list.withMeta(rt, v, m),
         .lazy_seq => try lazy_seq.withMeta(rt, v, m),
+        // D-280d7 functional: a deftype/reify implementing clojure.lang.IObj
+        // `withMeta` → consult IObj/-with-meta; a non-IObj instance keeps the
+        // not-an-IObj error.
+        .typed_instance, .reified_instance => blk: {
+            var cs: dispatch.CallSite = .{};
+            if (try dispatch.dispatchOrNull(rt, env, &cs, v, "IObj", "-with-meta", &.{ v, m }, loc)) |r| break :blk r;
+            break :blk error_catalog.raise(.with_meta_target_not_iobj, loc, .{ .actual = @tagName(v.tag()) });
+        },
         else => error_catalog.raise(.with_meta_target_not_iobj, loc, .{ .actual = @tagName(v.tag()) }),
     };
 }
