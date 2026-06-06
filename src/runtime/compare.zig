@@ -30,6 +30,7 @@ const symbol = @import("symbol.zig");
 const big_int = @import("numeric/big_int.zig");
 const ratio = @import("numeric/ratio.zig");
 const big_decimal = @import("numeric/big_decimal.zig");
+const promote = @import("numeric/promote.zig");
 
 const NumCat = enum { integer, floating, ratio, decimal, none };
 
@@ -69,14 +70,6 @@ fn intOrder(a: Value, b: Value) anyerror!Order {
     return if (ta == .big_int) big_vs_small else big_vs_small.invert();
 }
 
-fn simpleF64(v: Value) ?f64 {
-    return switch (v.tag()) {
-        .integer => @floatFromInt(v.asInteger()),
-        .float => v.asFloat(),
-        else => null, // big_int/ratio/big_decimal cross-category → deferred
-    };
-}
-
 fn numericOrder(rt: *Runtime, a: Value, b: Value, loc: SourceLocation) anyerror!Order {
     const ca = numCat(a);
     const cb = numCat(b);
@@ -89,12 +82,13 @@ fn numericOrder(rt: *Runtime, a: Value, b: Value, loc: SourceLocation) anyerror!
             .none => unreachable,
         };
     }
-    // Cross-category: the int/float reach collapses to f64 (matches the
-    // `<`/`>` surface). Anything mixing ratio/big_decimal/big-magnitude
-    // is the deferred combine ladder (D-014a) → raise.
-    const fa = simpleF64(a) orelse return raiseUncomparable(loc, b);
-    const fb = simpleF64(b) orelse return raiseUncomparable(loc, a);
-    return std.math.order(fa, fb);
+    // Cross-category: the exact sign of the tower-promoting difference (the
+    // D-014a combine ladder, now done exactly). Float contagion → f64 sign
+    // (clj: `(compare 1N 1.0)`→0); a no-float mix (ratio/int/BigDecimal/BigInt)
+    // compares EXACTLY. Replaces the old lossy f64 collapse that raised on any
+    // ratio / BigDecimal / big-magnitude operand.
+    _ = loc;
+    return promote.orderNumeric(rt, a, b);
 }
 
 fn nsNameOrder(ns_a: ?[]const u8, name_a: []const u8, ns_b: ?[]const u8, name_b: []const u8) Order {

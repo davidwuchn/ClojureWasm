@@ -413,6 +413,17 @@ fn numSign(v: Value) std.math.Order {
     };
 }
 
+/// Total order of two numerics ACROSS the whole tower (the D-014a combine
+/// ladder, done exactly): the sign of their tower-promoting difference. Float
+/// contagion matches clj (`(compare 1N 1.0)`→0 because the diff is the float
+/// 0.0); a no-float mix compares EXACTLY (no f64 round-off, so
+/// `(compare (inc 10^30N) 10^30N)`→1). Caller guarantees both are numeric.
+/// `compare.zig`'s cross-category arm delegates here (replacing a lossy f64
+/// collapse that raised on ratio / BigDecimal / BigInt mixes).
+pub fn orderNumeric(rt: *Runtime, a: Value, b: Value) !std.math.Order {
+    return numSign(try subPromoting(rt, a, b));
+}
+
 /// `(quot a b)` — truncating division toward zero, across the numeric
 /// tower. Mirrors JVM `Numbers.quotient`: any float operand → float
 /// trunc; a BigInt/Ratio operand → BigInt result (category contagion);
