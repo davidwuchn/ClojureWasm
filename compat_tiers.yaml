@@ -34,8 +34,7 @@
 # (pure reservations).
 
 version: 0.1.1-draft
-last_updated: 2026-05-29
-
+last_updated: "2026-06-06"
 tiers:
   A:
     description: "Full JVM Clojure semantic equivalence. Test gate: 100% PASS."
@@ -100,12 +99,12 @@ tiers:
       - defrecord
       - reify
       - definterface
-      - dot           # (.method obj args)
-      - new           # (new ClassName args)
-      - set!          # mutable field assignment (deftype volatile-mutable only)
+      - dot # (.method obj args)
+      - new # (new ClassName args)
+      - set! # mutable field assignment (deftype volatile-mutable only)
       - monitor-enter
       - monitor-exit
-      - dosync        # STM transaction
+      - dosync # STM transaction
     host_classes:
       # Top-40 Java stdlib classes per ADR-0011 (the corpus references
       # 578 distinct java.* classes; the top 40 cover most production
@@ -119,8 +118,8 @@ tiers:
       # runtime/java/**/*.zig surface is now D5; the remaining legacy
       # one-liners have no surface yet (pure reservations).
       # java.lang
-      - { fqn: "java.lang.Object",                       native_ns: "cljw.host.java.lang.Object",                       phase: 5 }
-      - { fqn: "java.lang.String",                       native_ns: "cljw.host.java.lang.String",                       phase: 5 }
+      - {fqn: "java.lang.Object", native_ns: "cljw.host.java.lang.Object", phase: 5}
+      - {fqn: "java.lang.String", native_ns: "cljw.host.java.lang.String", phase: 5}
       - fqn: java.lang.Long
         cljw_ns: cljw.java.lang.Long
         keyword: long
@@ -187,8 +186,8 @@ tiers:
           impl: runtime/clock.zig
         methods: [currentTimeMillis, nanoTime]
         clojure_peer_vars: []
-      - { fqn: "java.lang.Throwable",                    native_ns: "cljw.host.java.lang.Throwable",                    phase: 5 }
-      - { fqn: "java.lang.Exception",                    native_ns: "cljw.host.java.lang.Exception",                    phase: 5 }
+      - {fqn: "java.lang.Throwable", native_ns: "cljw.host.java.lang.Throwable", phase: 5}
+      - {fqn: "java.lang.Exception", native_ns: "cljw.host.java.lang.Exception", phase: 5}
       - fqn: java.lang.Thread
         cljw_ns: cljw.java.lang.Thread
         keyword: thread
@@ -210,13 +209,13 @@ tiers:
           clojure_peer: lang/primitive/file_io.zig
         methods: [exists, length, getName, getPath]
         clojure_peer_vars: [clojure.core/slurp, clojure.core/spit]
-      - { fqn: "java.io.InputStream",                    native_ns: "cljw.host.java.io.InputStream",                    phase: 6 }
-      - { fqn: "java.io.OutputStream",                   native_ns: "cljw.host.java.io.OutputStream",                   phase: 6 }
-      - { fqn: "java.io.Reader",                         native_ns: "cljw.host.java.io.Reader",                         phase: 6 }
-      - { fqn: "java.io.Writer",                         native_ns: "cljw.host.java.io.Writer",                         phase: 6 }
-      - { fqn: "java.io.ByteArrayInputStream",           native_ns: "cljw.host.java.io.ByteArrayInputStream",           phase: 6 }
-      - { fqn: "java.io.ByteArrayOutputStream",          native_ns: "cljw.host.java.io.ByteArrayOutputStream",          phase: 6 }
-      - { fqn: "java.io.PrintWriter",                    native_ns: "cljw.host.java.io.PrintWriter",                    phase: 6 }
+      - {fqn: "java.io.InputStream", native_ns: "cljw.host.java.io.InputStream", phase: 6}
+      - {fqn: "java.io.OutputStream", native_ns: "cljw.host.java.io.OutputStream", phase: 6}
+      - {fqn: "java.io.Reader", native_ns: "cljw.host.java.io.Reader", phase: 6}
+      - {fqn: "java.io.Writer", native_ns: "cljw.host.java.io.Writer", phase: 6}
+      - {fqn: "java.io.ByteArrayInputStream", native_ns: "cljw.host.java.io.ByteArrayInputStream", phase: 6}
+      - {fqn: "java.io.ByteArrayOutputStream", native_ns: "cljw.host.java.io.ByteArrayOutputStream", phase: 6}
+      - {fqn: "java.io.PrintWriter", native_ns: "cljw.host.java.io.PrintWriter", phase: 6}
       # java.util
       - fqn: java.util.UUID
         cljw_ns: cljw.java.util.UUID
@@ -249,7 +248,7 @@ tiers:
           impl: runtime/random.zig
         methods: [nextInt, nextLong, nextDouble, setSeed]
         clojure_peer_vars: []
-      - { fqn: "java.util.Locale",                       native_ns: "cljw.host.java.util.Locale",                       phase: 6 }
+      - {fqn: "java.util.Locale", native_ns: "cljw.host.java.util.Locale", phase: 6}
       - fqn: java.util.regex.Pattern
         cljw_ns: cljw.java.util.regex.Pattern
         keyword: regex
@@ -273,8 +272,8 @@ tiers:
           clojure_peer: lang/primitive/regex.zig
         methods: [find, matches, group, groupCount, start, end]
         clojure_peer_vars: [clojure.core/re-find, clojure.core/re-matches, clojure.core/re-seq, clojure.core/re-groups]
-      - { fqn: "java.util.concurrent.Future",            native_ns: "cljw.host.java.util.concurrent.Future",            phase: 14 }
-      - { fqn: "java.util.concurrent.atomic.AtomicLong", native_ns: "cljw.host.java.util.concurrent.atomic.AtomicLong", phase: 15 }
+      - {fqn: "java.util.concurrent.Future", native_ns: "cljw.host.java.util.concurrent.Future", phase: 14}
+      - {fqn: "java.util.concurrent.atomic.AtomicLong", native_ns: "cljw.host.java.util.concurrent.atomic.AtomicLong", phase: 15}
       # java.time
       - fqn: java.time.Instant
         cljw_ns: cljw.java.time.Instant
@@ -286,7 +285,7 @@ tiers:
           impl: runtime/time/instant.zig
         methods: [now, toEpochMilli, getEpochSecond, getNano, parse]
         clojure_peer_vars: []
-      - { fqn: "java.time.LocalDate",                    native_ns: "cljw.host.java.time.LocalDate",                    phase: 6 }
+      - {fqn: "java.time.LocalDate", native_ns: "cljw.host.java.time.LocalDate", phase: 6}
       - fqn: java.time.LocalDateTime
         cljw_ns: cljw.java.time.LocalDateTime
         keyword: time
@@ -317,10 +316,10 @@ tiers:
         methods: [now, of, parse, withZoneSameInstant, toInstant]
         clojure_peer_vars: []
         status: "reservation - TypeDescriptor only; backing deferred (D-105)"
-      - { fqn: "java.time.ZoneId",                       native_ns: "cljw.host.java.time.ZoneId",                       phase: 6 }
+      - {fqn: "java.time.ZoneId", native_ns: "cljw.host.java.time.ZoneId", phase: 6}
       # java.net
-      - { fqn: "java.net.URL",                           native_ns: "cljw.host.java.net.URL",                           phase: 14 }
-      - { fqn: "java.net.URI",                           native_ns: "cljw.host.java.net.URI",                           phase: 14 }
+      - {fqn: "java.net.URL", native_ns: "cljw.host.java.net.URL", phase: 14}
+      - {fqn: "java.net.URI", native_ns: "cljw.host.java.net.URI", phase: 14}
       - fqn: java.net.Socket
         cljw_ns: cljw.java.net.Socket
         keyword: net
@@ -332,11 +331,11 @@ tiers:
         clojure_peer_vars: []
         status: "reservation - TypeDescriptor only; backing runtime/net/socket.zig deferred (D-106)"
       # java.nio
-      - { fqn: "java.nio.file.Path",                     native_ns: "cljw.host.java.nio.file.Path",                     phase: 6 }
-      - { fqn: "java.nio.file.Files",                    native_ns: "cljw.host.java.nio.file.Files",                    phase: 6 }
-      - { fqn: "java.nio.charset.Charset",               native_ns: "cljw.host.java.nio.charset.Charset",               phase: 6 }
+      - {fqn: "java.nio.file.Path", native_ns: "cljw.host.java.nio.file.Path", phase: 6}
+      - {fqn: "java.nio.file.Files", native_ns: "cljw.host.java.nio.file.Files", phase: 6}
+      - {fqn: "java.nio.charset.Charset", native_ns: "cljw.host.java.nio.charset.Charset", phase: 6}
       # java.math
-      - { fqn: "java.math.BigInteger",                   native_ns: "cljw.host.java.math.BigInteger",                   phase: 5 }
+      - {fqn: "java.math.BigInteger", native_ns: "cljw.host.java.math.BigInteger", phase: 5}
       - fqn: java.math.BigDecimal
         cljw_ns: cljw.java.math.BigDecimal
         keyword: big_decimal
@@ -358,29 +357,73 @@ tiers:
         methods: [getInstance, update, digest, reset]
         clojure_peer_vars: []
         status: "reservation - TypeDescriptor only; backing runtime/crypto/message_digest.zig deferred (D-106)"
+      # --- Stage 0.3 (2026-06-06, campaign): Java classes real pure-Clojure
+      # libraries touch, CLASSIFIED here so the lib-compat ladder (docs/works/)
+      # can resolve "this lib needs java.lang.StringBuilder -> Tier?". These are
+      # one-liner RESERVATIONS — `files:`/`keyword:` are intentionally absent
+      # (G3 validates files: against real surfaces; none exist yet). Each lands
+      # its D5 row + runtime/java/**/*.zig surface when the campaign backfills it
+      # (D-273 / D-270 array family). status: records the current real behaviour.
+      # java.lang scalars / builders / supertypes
+      - {fqn: "java.lang.StringBuilder", cljw_ns: "cljw.java.lang.StringBuilder", tier: A, phase: 14, status: "no surface; (StringBuilder.) -> name_error. cw-native runtime/string_builder.zig planned (libs use .append via interop)"}
+      - {fqn: "java.lang.Number", cljw_ns: "cljw.java.lang.Number", tier: A, phase: 14, status: "abstract numeric supertype; (number? x) works, (instance? Number x) reservation"}
+      - {fqn: "java.lang.Float", cljw_ns: "cljw.java.lang.Float", tier: A, phase: 14, status: "no surface; paired with the EXISTS Double. float coercion via clojure.core/float"}
+      - {fqn: "java.lang.Short", cljw_ns: "cljw.java.lang.Short", tier: A, phase: 14, status: "no surface; numeric coercion target (clojure.core/short)"}
+      - {fqn: "java.lang.Byte", cljw_ns: "cljw.java.lang.Byte", tier: A, phase: 14, status: "no surface; numeric coercion target + byte-array element (clojure.core/byte)"}
+      - {fqn: "java.lang.Comparable", cljw_ns: "cljw.java.lang.Comparable", tier: A, phase: 14, status: "compare contract; (instance? Comparable x) reservation; clojure.core/compare works"}
+      - {fqn: "java.lang.Iterable", cljw_ns: "cljw.java.lang.Iterable", tier: A, phase: 14, status: "(instance? Iterable x) works (D-232); iterator-seq base"}
+      - {fqn: "java.lang.CharSequence", cljw_ns: "cljw.java.lang.CharSequence", tier: A, phase: 14, status: "String/StringBuilder supertype; clojure.string arg type. reservation"}
+      - {fqn: "java.lang.Runtime", cljw_ns: "cljw.java.lang.Runtime", tier: A, phase: 15, status: "no surface; (.availableProcessors (Runtime/getRuntime)) reservation"}
+      # java.lang / java.io exception + error hierarchy. catch-dispatch by SIMPLE
+      # name already works (exception_hierarchy); the (X. msg) constructor symbol
+      # does NOT resolve yet. cw-native exception_class surface planned.
+      - {fqn: "java.lang.RuntimeException", cljw_ns: "cljw.java.lang.RuntimeException", tier: A, phase: 14, status: "surface EXISTS (runtime/java/lang/RuntimeException.zig) but unrowed; D5 migration pending (like Exception/Throwable one-liners)"}
+      - {fqn: "java.lang.Error", cljw_ns: "cljw.java.lang.Error", tier: A, phase: 14, status: "catch-dispatch (simple name) works; (Error. msg) ctor reservation"}
+      - {fqn: "java.lang.IllegalArgumentException", cljw_ns: "cljw.java.lang.IllegalArgumentException", tier: A, phase: 14, status: "catch works; (IllegalArgumentException. msg) -> unresolved. ctor reservation"}
+      - {fqn: "java.lang.IllegalStateException", cljw_ns: "cljw.java.lang.IllegalStateException", tier: A, phase: 14, status: "catch works; ctor reservation"}
+      - {fqn: "java.lang.ArithmeticException", cljw_ns: "cljw.java.lang.ArithmeticException", tier: A, phase: 14, status: "catch works ((/ 1 0) caught); ctor reservation"}
+      - {fqn: "java.lang.NumberFormatException", cljw_ns: "cljw.java.lang.NumberFormatException", tier: A, phase: 14, status: "subclass of IllegalArgumentException; catch works; ctor reservation"}
+      - {fqn: "java.lang.IndexOutOfBoundsException", cljw_ns: "cljw.java.lang.IndexOutOfBoundsException", tier: A, phase: 14, status: "catch works; ctor reservation"}
+      - {fqn: "java.lang.UnsupportedOperationException", cljw_ns: "cljw.java.lang.UnsupportedOperationException", tier: A, phase: 14, status: "catch works; ctor reservation"}
+      - {fqn: "java.lang.ClassCastException", cljw_ns: "cljw.java.lang.ClassCastException", tier: A, phase: 14, status: "catch works; ctor reservation"}
+      - {fqn: "java.lang.NullPointerException", cljw_ns: "cljw.java.lang.NullPointerException", tier: A, phase: 14, status: "catch works; ctor reservation"}
+      - {fqn: "java.lang.AssertionError", cljw_ns: "cljw.java.lang.AssertionError", tier: A, phase: 14, status: "assert / clojure.test; catch works; ctor reservation"}
+      - {fqn: "java.lang.StackOverflowError", cljw_ns: "cljw.java.lang.StackOverflowError", tier: A, phase: 14, status: "catch reservation"}
+      - {fqn: "java.lang.OutOfMemoryError", cljw_ns: "cljw.java.lang.OutOfMemoryError", tier: A, phase: 14, status: "catch reservation"}
+      - {fqn: "java.io.IOException", cljw_ns: "cljw.java.io.IOException", tier: A, phase: 14, status: "checked-IO root; catch reservation"}
+      - {fqn: "java.io.FileNotFoundException", cljw_ns: "cljw.java.io.FileNotFoundException", tier: A, phase: 14, status: "subclass of IOException; catch reservation (file slurp)"}
+      - {fqn: "java.io.EOFException", cljw_ns: "cljw.java.io.EOFException", tier: A, phase: 14, status: "subclass of IOException; reader EOF; catch reservation"}
+      # java.io reader/writer family (clojure.java.io / edn read / line-seq).
+      - {fqn: "java.io.StringWriter", cljw_ns: "cljw.java.io.StringWriter", tier: A, phase: 14, status: "no surface; pprint / with-out-str target (with-out-str works via cljw-native path)"}
+      - {fqn: "java.io.StringReader", cljw_ns: "cljw.java.io.StringReader", tier: A, phase: 14, status: "no surface; read-string / edn read source reservation"}
+      - {fqn: "java.io.PushbackReader", cljw_ns: "cljw.java.io.PushbackReader", tier: A, phase: 14, status: "no surface; clojure.core/read + clojure.edn/read reader arg reservation"}
+      - {fqn: "java.io.BufferedReader", cljw_ns: "cljw.java.io.BufferedReader", tier: A, phase: 14, status: "no surface; line-seq source reservation"}
+      - {fqn: "java.io.BufferedWriter", cljw_ns: "cljw.java.io.BufferedWriter", tier: A, phase: 14, status: "no surface; reservation"}
+      # java.util concurrency seed (paired with the EXISTS AtomicLong).
+      - {fqn: "java.util.concurrent.atomic.AtomicInteger", cljw_ns: "cljw.java.util.concurrent.atomic.AtomicInteger", tier: A, phase: 15, status: "no surface; paired with AtomicLong reservation"}
   B:
     description: "Recommended compatibility, target Phase 8-14. Test gate: coverage report (no fail required)."
     namespaces:
       # Implemented + bootstrap-loaded `.clj` (verified 2026-05-29 — each
       # was wrongly marked "planned"). Minimum surfaces; promote to fuller
       # coverage in the quality loop.
-      clojure.edn:         { status: "implemented (read-string / read minimum surface)" }
-      clojure.pprint:      { status: "implemented (pprint minimum surface)" }
-      clojure.tools.cli:   { status: "implemented (parse-opts minimum surface)" }
-      clojure.data.json:   { status: "implemented (read-str / write-str minimum surface)" }
-      clojure.data.csv:    { status: "implemented (read-csv / write-csv; DIVERGENCE — write-csv cells must be strings)" }
+      clojure.edn: {status: "implemented (read-string / read minimum surface)"}
+      clojure.pprint: {status: "implemented (pprint minimum surface)"}
+      clojure.tools.cli: {status: "implemented (parse-opts minimum surface)"}
+      clojure.data.json: {status: "implemented (read-str / write-str minimum surface)"}
+      clojure.data.csv: {status: "implemented (read-csv / write-csv; DIVERGENCE — write-csv cells must be strings)"}
       # Still planned (not yet implemented / verified):
-      clojure.data:        { status: "planned (clojure.data/diff)" }
-      clojure.java.io:     { status: "planned (cw-native rewrite)" }
-      clojure.java.shell:  { status: "planned" }
+      clojure.data: {status: "planned (clojure.data/diff)"}
+      clojure.java.io: {status: "planned (cw-native rewrite)"}
+      clojure.java.shell: {status: "planned"}
       # Down-tiered from A 2026-05-29: these were declared Tier A
       # ("100% PASS gate") but are UNIMPLEMENTED at v0.1.0 — no math.clj,
       # no spec/ directory (verified). Their math/spec surfaces are
       # post-v0.1.0 quality-loop work (F-010), not a v0.1.0 Tier A peer of
       # JVM Clojure. cw v1 math fns currently live in clojure.core.
-      clojure.math:           { status: "deferred (post-v0.1.0 quality loop, F-010; unimplemented)" }
-      clojure.spec.alpha:     { status: "deferred (post-v0.1.0 quality loop, F-010; unimplemented)" }
-      clojure.spec.gen.alpha: { status: "deferred (post-v0.1.0 quality loop, F-010; unimplemented)" }
+      clojure.math: {status: "deferred (post-v0.1.0 quality loop, F-010; unimplemented)"}
+      clojure.spec.alpha: {status: "deferred (post-v0.1.0 quality loop, F-010; unimplemented)"}
+      clojure.spec.gen.alpha: {status: "deferred (post-v0.1.0 quality loop, F-010; unimplemented)"}
   C:
     description: "Thin reflective implementation via TypeDescriptor walk."
     special_forms:
@@ -389,22 +432,30 @@ tiers:
       - bases
       - memfn
       - class?
+    # Stage 0.3 (2026-06-06, campaign): the reflective CLASSES the C special
+    # forms walk, classified for the lib ladder. Reservations (no surface yet;
+    # `files:` absent so G3 stays clean). cw has no JVM reflection — these are a
+    # TypeDescriptor-backed member view, never real java.lang.reflect.
+    host_classes:
+      - {fqn: "java.lang.Class", cljw_ns: "cljw.java.lang.Class", tier: C, phase: 14, status: "(class x)/(type x) work (simple name, ADR-0059); the full Class surface (getSuperclass/isAssignableFrom/supers/bases) is a TypeDescriptor-view reservation"}
+      - {fqn: "java.lang.reflect.Method", cljw_ns: "cljw.java.lang.reflect.Method", tier: C, phase: 14, status: "no surface; bean/memfn reflective dispatch reservation (runtime/host/reflect/ planned)"}
+      - {fqn: "java.lang.reflect.Field", cljw_ns: "cljw.java.lang.reflect.Field", tier: C, phase: 14, status: "no surface; bean field-walk reservation (runtime/host/reflect/ planned)"}
   D:
     description: "Permanent exclusion. MAJOR release required to add."
     rationale_adr: "ADR-0013"
     excluded_special_forms:
-      - { name: "gen-class",       reason: "requires JVM Class system, out of cw scope" }
-      - { name: "gen-interface",   reason: "requires JVM Class system, out of cw scope" }
-      - { name: "compile",         reason: "JVM bytecode emission, out of cw scope" }
-      - { name: "proxy (deep)",    reason: "proxy targeting Apache HC / Swing / java.util.logging base classes (per excluded_proxy_targets below); other proxy uses go through reify against cw-native protocols and are Tier A" }
-      - { name: "bean (reflection-deep)", reason: "deep reflection beyond what TypeDescriptor exposes; basic field walk via TypeDescriptor stays Tier C" }
+      - {name: "gen-class", reason: "requires JVM Class system, out of cw scope"}
+      - {name: "gen-interface", reason: "requires JVM Class system, out of cw scope"}
+      - {name: "compile", reason: "JVM bytecode emission, out of cw scope"}
+      - {name: "proxy (deep)", reason: "proxy targeting Apache HC / Swing / java.util.logging base classes (per excluded_proxy_targets below); other proxy uses go through reify against cw-native protocols and are Tier A"}
+      - {name: "bean (reflection-deep)", reason: "deep reflection beyond what TypeDescriptor exposes; basic field walk via TypeDescriptor stays Tier C"}
     excluded_proxy_targets:
-      - { pattern: "java.awt.*",                        reason: "GUI base classes, out of cw scope" }
-      - { pattern: "javax.swing.*",                     reason: "GUI base classes, out of cw scope" }
-      - { pattern: "Apache HttpComponents base classes", reason: "deep Java extension, replaced by cw native HTTP (Phase 14)" }
-      - { pattern: "java.util.logging.Formatter / Handler", reason: "host-specific logging base, replaced by cw logger" }
+      - {pattern: "java.awt.*", reason: "GUI base classes, out of cw scope"}
+      - {pattern: "javax.swing.*", reason: "GUI base classes, out of cw scope"}
+      - {pattern: "Apache HttpComponents base classes", reason: "deep Java extension, replaced by cw native HTTP (Phase 14)"}
+      - {pattern: "java.util.logging.Formatter / Handler", reason: "host-specific logging base, replaced by cw logger"}
     excluded_java_packages:
-      - { pattern: "java.awt.*",                  reason: "GUI, out of cw scope" }
-      - { pattern: "javax.swing.*",               reason: "GUI, out of cw scope" }
-      - { pattern: "java.applet.*",               reason: "deprecated, out of cw scope" }
-      - { pattern: "java.lang.reflect.* (deep)",  reason: "reflection internals beyond what TypeDescriptor exposes (Method/Field surface stays Tier C via src/runtime/host/reflect/)" }
+      - {pattern: "java.awt.*", reason: "GUI, out of cw scope"}
+      - {pattern: "javax.swing.*", reason: "GUI, out of cw scope"}
+      - {pattern: "java.applet.*", reason: "deprecated, out of cw scope"}
+      - {pattern: "java.lang.reflect.* (deep)", reason: "reflection internals beyond what TypeDescriptor exposes (Method/Field surface stays Tier C via src/runtime/host/reflect/)"}
