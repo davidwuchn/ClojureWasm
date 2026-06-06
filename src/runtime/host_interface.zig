@@ -56,7 +56,7 @@ pub const HostInterface = struct {
     }
 };
 
-const OBJECT: HostInterface = .{ .kind = .method_family, .canonical = "Object", .wired_methods = &.{"toString"} };
+const OBJECT: HostInterface = .{ .kind = .method_family, .canonical = "Object", .wired_methods = &.{ "toString", "equals", "hashCode" } };
 
 // Zero-method markers (D-280a): a recognised supertype with NO methods — the
 // deftype/reify just records "implements X" (the Sequential/ADR-0068 precedent).
@@ -156,10 +156,11 @@ test "Object is a recognised marker; canonical name is the static literal" {
     try std.testing.expect(canonicalName("NotAMarker") == null);
 }
 
-test "Object/toString is wired; equals/hashCode are not (transient)" {
+test "Object toString/equals/hashCode are wired (D-280d1); unknown methods are not" {
     try std.testing.expect(isMethodWired("Object", "toString"));
-    try std.testing.expect(!isMethodWired("Object", "equals"));
-    try std.testing.expect(!isMethodWired("Object", "hashCode"));
+    try std.testing.expect(isMethodWired("Object", "equals"));
+    try std.testing.expect(isMethodWired("Object", "hashCode"));
+    try std.testing.expect(!isMethodWired("Object", "clone"));
     try std.testing.expect(!isMethodWired("NotAMarker", "toString"));
 }
 

@@ -1282,10 +1282,18 @@ pub fn evalFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation)
 }
 
 pub fn hashFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
-    _ = rt;
-    _ = env;
     try error_catalog.checkArity("hash", args, 1, loc);
-    return Value.initInteger(@as(i32, @bitCast(equal_mod.valueHash(args[0]))));
+    // D-280d1: a deftype/reify implementing Object `hashCode` overrides the
+    // default value-hash for `(hash inst)`. (valueHash is rt-free, so a nested
+    // typed_instance inside a collection hash still uses the default — tracked as
+    // a residual; the top-level `(hash inst)` is the common case.)
+    const v = args[0];
+    if (v.tag() == .typed_instance or v.tag() == .reified_instance) {
+        var cs: dispatch.CallSite = .{};
+        if (try dispatch.dispatchOrNull(rt, env, &cs, v, "Object", "hashCode", &.{v}, loc)) |h|
+            return h;
+    }
+    return Value.initInteger(@as(i32, @bitCast(equal_mod.valueHash(v))));
 }
 
 /// `(mix-collection-hash hash-basis count)` — the Murmur3 collection-hash

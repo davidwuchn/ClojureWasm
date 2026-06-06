@@ -44,6 +44,7 @@ const ratio = @import("numeric/ratio.zig");
 const big_decimal = @import("numeric/big_decimal.zig");
 const td_mod = @import("type_descriptor.zig");
 const date_mod = @import("time/date.zig");
+const dispatch_mod = @import("dispatch.zig");
 
 const NumCat = enum { integer, floating, ratio, decimal, none };
 
@@ -579,6 +580,16 @@ fn typedInstanceEqual(rt: *Runtime, env: *Env, a: Value, b: Value) anyerror!bool
     // which would make two equal `#inst` allocations unequal.
     if (date_mod.isDate(rt, a) and date_mod.isDate(rt, b)) {
         return date_mod.epochMsOf(a) == date_mod.epochMsOf(b);
+    }
+    // D-280d1: a deftype/reify implementing Object `equals` overrides identity.
+    // Consulted for the same-type case (both operands reached here past
+    // valueEqual's tag gate, so a == b's tag); cross-type `(= inst other)` short-
+    // circuits before this arm and is a tracked gap (D-280d8, IPersistentCollection
+    // equiv / pre-tag-gate consult). Returns the impl's truthiness.
+    {
+        var cs: dispatch_mod.CallSite = .{};
+        if (try dispatch_mod.dispatchOrNull(rt, env, &cs, a, "Object", "equals", &.{ a, b }, .{ .line = 0, .column = 0 })) |r|
+            return r.isTruthy();
     }
     const ia = a.decodePtr(*const td_mod.TypedInstance);
     const ib = b.decodePtr(*const td_mod.TypedInstance);

@@ -46,26 +46,28 @@ if [[ "$last" != '"F5"' ]]; then
 fi
 echo "PASS deftype_object_tostring -> F5"
 
-# --- Case 3: reify Object/equals → explicit error (slice 2 pending) ---
+# --- Case 3: an UNWIRED Object method (clone) → explicit error, not silent drop ---
+# (equals/hashCode are now wired by D-280d1 — see cases 16-18; clone is still
+# unwired, so it must raise rather than register a no-op method.)
 diag=$("$BIN" - <<'EOF' 2>&1 || true
-(reify Object (equals [this o] true))
+(reify Object (clone [this] this))
 EOF
 )
 if [[ "$diag" != *"not yet wired"* ]]; then
-    fail "case3: expected Object-method-not-wired diagnostic, got '$diag'"
+    fail "case3: expected Object-method-not-wired diagnostic for clone, got '$diag'"
 fi
-echo "PASS reify_object_equals_explicit_error"
+echo "PASS reify_object_unwired_method_explicit_error"
 
-# --- Case 4: deftype Object/equals → explicit error ---
+# --- Case 4: deftype unwired Object method (clone) → explicit error ---
 diag=$("$BIN" - <<'EOF' 2>&1 || true
-(deftype Bar [a] Object (equals [this o] true))
+(deftype Bar [a] Object (clone [this] this))
 (Bar. 1)
 EOF
 )
 if [[ "$diag" != *"not yet wired"* ]]; then
-    fail "case4: expected Object-method-not-wired diagnostic, got '$diag'"
+    fail "case4: expected Object-method-not-wired diagnostic for clone, got '$diag'"
 fi
-echo "PASS deftype_object_equals_explicit_error"
+echo "PASS deftype_object_unwired_method_explicit_error"
 
 # --- Case 5: cljw-protocol path unregressed (deftype) ---
 got=$("$BIN" - <<'EOF' 2>/dev/null
@@ -226,4 +228,40 @@ if [[ "$last" != "[3 [1 2]]" ]]; then
 fi
 echo "PASS protocol_remap_ipersistentstack_peek_pop -> [3 [1 2]]"
 
-echo "OK — phase14_deftype_object (15 cases) green"
+# --- Case 16 (D-280d1): Object equals overrides identity (same-type) ---
+got=$("$BIN" - <<'EOF' 2>/dev/null
+(deftype P [v] Object (equals [this o] (= v (.-v o))))
+[(= (P. 1) (P. 1)) (= (P. 1) (P. 2))]
+EOF
+) || fail "case16: non-zero exit ($got)"
+last=$(awk 'END { print }' <<< "$got")
+if [[ "$last" != "[true false]" ]]; then
+    fail "case16: got '$last', want '[true false]'"
+fi
+echo "PASS object_equals_same_type -> [true false]"
+
+# --- Case 17 (D-280d1): Object hashCode overrides default value-hash ---
+got=$("$BIN" - <<'EOF' 2>/dev/null
+(deftype P [v] Object (hashCode [this] (* v 100)))
+(hash (P. 7))
+EOF
+) || fail "case17: non-zero exit ($got)"
+last=$(awk 'END { print }' <<< "$got")
+if [[ "$last" != "700" ]]; then
+    fail "case17: got '$last', want '700'"
+fi
+echo "PASS object_hashcode -> 700"
+
+# --- Case 18 (D-280d1): a deftype WITHOUT Object equals keeps identity = ---
+got=$("$BIN" - <<'EOF' 2>/dev/null
+(deftype Q [v])
+[(= (Q. 1) (Q. 1)) (let [x (Q. 1)] (= x x))]
+EOF
+) || fail "case18: non-zero exit ($got)"
+last=$(awk 'END { print }' <<< "$got")
+if [[ "$last" != "[false true]" ]]; then
+    fail "case18: got '$last', want '[false true]'"
+fi
+echo "PASS deftype_no_equals_keeps_identity -> [false true]"
+
+echo "OK — phase14_deftype_object (18 cases) green"
