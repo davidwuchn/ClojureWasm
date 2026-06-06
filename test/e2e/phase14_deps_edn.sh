@@ -44,6 +44,18 @@ got="$(cd "$mono/app" && "$BIN" -e "(require 'lib.util) (lib.util/tag)" 2>/dev/n
 [[ "$(last_line "$got")" == '"from-lib"' ]] || fail "local-root: got '$(last_line "$got")'"
 echo "PASS deps_local_root -> from-lib"
 
+# --- Case 5: -A:alias activates :extra-paths (off by default) ---
+al="$WORK/al"; mkdir -p "$al/src/base" "$al/dev/devns"
+printf '{:paths ["src"] :aliases {:dev {:extra-paths ["dev"]}}}\n' > "$al/deps.edn"
+printf '(ns base.core)\n(defn b [] "base")\n' > "$al/src/base/core.clj"
+printf '(ns devns.tool)\n(defn t [] "dev-tool")\n' > "$al/dev/devns/tool.clj"
+if (cd "$al" && "$BIN" -e "(require 'devns.tool)" >/dev/null 2>&1); then
+    fail "alias: devns unexpectedly resolved without -A:dev"
+fi
+got="$(cd "$al" && "$BIN" -A:dev -e "(require 'devns.tool) (devns.tool/t)" 2>/dev/null)"
+[[ "$(last_line "$got")" == '"dev-tool"' ]] || fail "alias: -A:dev got '$(last_line "$got")'"
+echo "PASS deps_alias_extra_paths -> dev-tool (off without -A)"
+
 # --- Case 4: :mvn/version is rejected with a source-only hint, exit 1 ---
 mvn="$WORK/mvn"; mkdir -p "$mvn"
 printf '{:deps {x/y {:mvn/version "1.0"}}}\n' > "$mvn/deps.edn"

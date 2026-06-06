@@ -31,12 +31,26 @@ pub const Dep = struct {
     deps_root: ?[]const u8 = null,
 };
 
-/// Structured deps.edn. Fields land slice by slice; `:aliases` follows.
+/// One `:aliases` entry. Only the classpath-affecting keys are captured;
+/// `:main-opts` / `:exec-fn` (the `-M`/`-X` run modes) are out of Stage 1.2
+/// scope (the v0 divergence — Stage 1.2 resolves a classpath, not a run mode).
+pub const Alias = struct {
+    /// The alias keyword name, e.g. `"dev"` for `:dev`.
+    name: []const u8,
+    /// `:extra-paths` — directories added when the alias is selected.
+    extra_paths: []const []const u8 = &.{},
+    /// `:extra-deps` — extra library coordinates when the alias is selected.
+    extra_deps: []const Dep = &.{},
+};
+
+/// Structured deps.edn. Fields land slice by slice.
 pub const DepsConfig = struct {
     /// `:paths` — source directories (the base classpath).
     paths: []const []const u8 = &.{},
     /// `:deps` — library coordinates.
     deps: []const Dep = &.{},
+    /// `:aliases` — named overlays selected with `-A:name`.
+    aliases: []const Alias = &.{},
 };
 
 /// Parse deps.edn `source` into a `DepsConfig`. The top form must be a map;
@@ -60,9 +74,43 @@ pub fn parseDepsEdn(allocator: std.mem.Allocator, source: []const u8) !DepsConfi
             cfg.paths = try collectStringVec(allocator, pairs[i + 1]);
         } else if (std.mem.eql(u8, key.keyword.name, "deps")) {
             cfg.deps = try parseDeps(allocator, pairs[i + 1]);
+        } else if (std.mem.eql(u8, key.keyword.name, "aliases")) {
+            cfg.aliases = try parseAliases(allocator, pairs[i + 1]);
         }
     }
     return cfg;
+}
+
+/// Parse the `:aliases` map `{:kw alias-map, ...}` into `[]Alias`.
+fn parseAliases(allocator: std.mem.Allocator, v: Form) ![]const Alias {
+    const pairs = switch (v.data) {
+        .map => |kvs| kvs,
+        else => return &.{},
+    };
+    var out: std.ArrayList(Alias) = .empty;
+    var i: usize = 0;
+    while (i + 1 < pairs.len) : (i += 2) {
+        const name = switch (pairs[i].data) {
+            .keyword => |k| k.name,
+            else => continue,
+        };
+        var alias: Alias = .{ .name = name };
+        if (pairs[i + 1].data == .map) {
+            const akvs = pairs[i + 1].data.map;
+            var j: usize = 0;
+            while (j + 1 < akvs.len) : (j += 2) {
+                const ak = akvs[j].data;
+                if (ak != .keyword or ak.keyword.ns != null) continue;
+                if (std.mem.eql(u8, ak.keyword.name, "extra-paths")) {
+                    alias.extra_paths = try collectStringVec(allocator, akvs[j + 1]);
+                } else if (std.mem.eql(u8, ak.keyword.name, "extra-deps")) {
+                    alias.extra_deps = try parseDeps(allocator, akvs[j + 1]);
+                }
+            }
+        }
+        try out.append(allocator, alias);
+    }
+    return out.toOwnedSlice(allocator);
 }
 
 /// Collect a vector-of-strings form into a `[][]const u8`. Non-vectors and
@@ -169,6 +217,18 @@ test "parse: :deps :git/url + :git/sha + :deps/root" {
     try testing.expectEqualStrings("https://x", cfg.deps[0].git_url.?);
     try testing.expectEqualStrings("abc123", cfg.deps[0].git_sha.?);
     try testing.expectEqualStrings("libs/core", cfg.deps[0].deps_root.?);
+}
+
+test "parse: :aliases extra-paths + extra-deps" {
+    const testing = std.testing;
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const cfg = try parseDepsEdn(arena.allocator(),
+        "{:aliases {:dev {:extra-paths [\"dev\"] :extra-deps {u/u {:local/root \"../u\"}}}}}");
+    try testing.expectEqual(@as(usize, 1), cfg.aliases.len);
+    try testing.expectEqualStrings("dev", cfg.aliases[0].name);
+    try testing.expectEqualStrings("dev", cfg.aliases[0].extra_paths[0]);
+    try testing.expectEqualStrings("../u", cfg.aliases[0].extra_deps[0].local_root.?);
 }
 
 test "parse: :mvn/version is rejected (source-only)" {

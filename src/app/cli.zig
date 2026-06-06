@@ -168,6 +168,7 @@ fn dispatchArgsRest(
     var source_label: []const u8 = "<-e>";
     var compare_mode: bool = false;
     var classpath_arg: ?[]const u8 = null;
+    var alias_names: std.ArrayList([]const u8) = .empty;
 
     var current_arg: ?[]const u8 = first_arg;
     while (current_arg) |arg| : (current_arg = args.next()) {
@@ -179,6 +180,8 @@ fn dispatchArgsRest(
                 \\  -                  Read+evaluate from stdin (heredoc-friendly).
                 \\  -cp, --classpath <dirs>  Colon-separated dirs `require` searches
                 \\                     for `.clj`/`.cljc` libs (else $CLJW_PATH, else ".").
+                \\  -A:a1:a2           Select deps.edn aliases (their :extra-paths /
+                \\                     :extra-deps join the classpath).
                 \\  --compare          Run source through tree_walk AND vm backends;
                 \\                     print OK + value on agreement, MISMATCH + both
                 \\                     values (exit 1) on divergence.
@@ -195,6 +198,13 @@ fn dispatchArgsRest(
                 try stderr.flush();
                 std.process.exit(1);
             };
+        } else if (std.mem.startsWith(u8, arg, "-A")) {
+            // `-A:dev:test` selects deps.edn aliases (`:dev`, `:test`). The
+            // names ride one token after `-A`, colon-separated (clojure CLI).
+            var it = std.mem.splitScalar(u8, arg[2..], ':');
+            while (it.next()) |name| {
+                if (name.len > 0) try alias_names.append(arena, name);
+            }
         } else if (std.mem.eql(u8, arg, "-e") or std.mem.eql(u8, arg, "--eval")) {
             const expr = args.next() orelse {
                 try stderr.print("Error: -e / --eval requires an argument\n", .{});
@@ -248,7 +258,7 @@ fn dispatchArgsRest(
     // Stage 1.2: a `./deps.edn` in cwd contributes its `:paths` + `:local/root`
     // deps to the FRONT of the classpath (project sources win over the cwd
     // default). Absent file → base unchanged; `:mvn/version` → parse raises.
-    const load_paths = try prependDepsEdn(io, arena, stderr, base_paths);
+    const load_paths = try prependDepsEdn(io, arena, stderr, base_paths, alias_names.items);
 
     if (compare_mode) {
         try runner.runSourceCompare(io, gpa, arena, stdout, stderr, source_text.?, source_label);
@@ -261,14 +271,14 @@ fn dispatchArgsRest(
 /// `:local/root` deps go to the FRONT of `base`. No deps.edn (or an empty
 /// resolution) → `base` unchanged. A `:mvn/version` dep propagates the parse
 /// error (source-only policy). Reuses the `deps/` parse + resolve modules.
-fn prependDepsEdn(io: std.Io, arena: std.mem.Allocator, stderr: *std.Io.Writer, base: []const []const u8) ![]const []const u8 {
+fn prependDepsEdn(io: std.Io, arena: std.mem.Allocator, stderr: *std.Io.Writer, base: []const []const u8, alias_names: []const []const u8) ![]const []const u8 {
     const src = file_io.readAll(io, arena, "deps.edn") catch |e| switch (e) {
         error.FileNotFound, error.NotDir, error.BadPathName => return base,
         else => return e,
     };
     // A deps.edn error (e.g. a rejected :mvn/version) is a user-facing config
     // error: render it against the deps.edn source + exit, not a Zig trace.
-    const dep_paths = resolveFromSource(io, arena, src) catch |e| {
+    const dep_paths = resolveFromSource(io, arena, src, alias_names) catch |e| {
         const ctx = error_print.SourceContext{ .file = "deps.edn", .text = src };
         error_render.renderAndExit(stderr, ctx, e);
     };
@@ -281,9 +291,9 @@ fn prependDepsEdn(io: std.Io, arena: std.mem.Allocator, stderr: *std.Io.Writer, 
 
 /// Parse + resolve a deps.edn source into its classpath. Split out so the
 /// caller can render any error against the deps.edn source context.
-fn resolveFromSource(io: std.Io, arena: std.mem.Allocator, src: []const u8) ![]const []const u8 {
+fn resolveFromSource(io: std.Io, arena: std.mem.Allocator, src: []const u8, alias_names: []const []const u8) ![]const []const u8 {
     const cfg = try deps_parse.parseDepsEdn(arena, src);
-    return deps_resolve.resolveClasspath(io, arena, ".", cfg);
+    return deps_resolve.resolveClasspath(io, arena, ".", cfg, alias_names);
 }
 
 /// Split a colon-separated classpath string into its directory roots, allocated

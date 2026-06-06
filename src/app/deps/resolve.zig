@@ -18,37 +18,50 @@ const parse = @import("parse.zig");
 const DepsConfig = parse.DepsConfig;
 const file_io = @import("../../runtime/file_io.zig");
 
-/// Expand `cfg` (rooted at `deps_dir`) into a classpath. `:paths` first, then
-/// each `:local/root` dep's transitive classpath. `io` is used only to read
-/// the local deps' `deps.edn` files; a `:paths`-only config never touches it.
+/// Expand `cfg` (rooted at `deps_dir`) into a classpath: `:paths` first, then
+/// each `:local/root` dep's transitive classpath, then each selected alias's
+/// `:extra-paths` + `:extra-deps`. `io` is used only to read local deps'
+/// `deps.edn` files; a `:paths`-only config never touches it. `alias_names`
+/// are the `-A:name` selections (empty = base config only).
 pub fn resolveClasspath(
     io: std.Io,
     allocator: std.mem.Allocator,
     deps_dir: []const u8,
     cfg: DepsConfig,
+    alias_names: []const []const u8,
 ) ![]const []const u8 {
     var out: std.ArrayList([]const u8) = .empty;
     var visited: std.StringHashMapUnmanaged(void) = .empty;
-    try expand(io, allocator, deps_dir, cfg, &out, &visited);
+    try expand(io, allocator, deps_dir, cfg.paths, cfg.deps, &out, &visited);
+    for (alias_names) |name| {
+        const al = findAlias(cfg.aliases, name) orelse continue;
+        try expand(io, allocator, deps_dir, al.extra_paths, al.extra_deps, &out, &visited);
+    }
     return out.toOwnedSlice(allocator);
+}
+
+fn findAlias(aliases: []const parse.Alias, name: []const u8) ?parse.Alias {
+    for (aliases) |a| if (std.mem.eql(u8, a.name, name)) return a;
+    return null;
 }
 
 fn expand(
     io: std.Io,
     allocator: std.mem.Allocator,
     dir: []const u8,
-    cfg: DepsConfig,
+    paths: []const []const u8,
+    deps: []const parse.Dep,
     out: *std.ArrayList([]const u8),
     visited: *std.StringHashMapUnmanaged(void),
 ) !void {
-    for (try expandPaths(allocator, dir, cfg.paths)) |p| try out.append(allocator, p);
-    for (cfg.deps) |dep| {
+    for (try expandPaths(allocator, dir, paths)) |p| try out.append(allocator, p);
+    for (deps) |dep| {
         const lr = dep.local_root orelse continue; // git deps deferred to slice 5
         const dep_dir = try join(allocator, dir, lr);
         if (visited.contains(dep_dir)) continue;
         try visited.put(allocator, dep_dir, {});
         const sub = (try readDepsEdn(io, allocator, dep_dir)) orelse continue;
-        try expand(io, allocator, dep_dir, sub, out, visited);
+        try expand(io, allocator, dep_dir, sub.paths, sub.deps, out, visited);
     }
 }
 
