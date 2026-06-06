@@ -172,4 +172,31 @@ if [[ "$last" != "[1 nil]" ]]; then
 fi
 echo "PASS protocol_remap_ilookup_arity -> [1 nil]"
 
-echo "OK — phase14_deftype_object (12 cases) green"
+# --- Case 13 (D-280c): clojure.lang.IPersistentMap multi-target split ---
+# clj groups count/assoc/containsKey/seq/without/empty/cons under IPersistentMap;
+# the macro regroups by target cljw protocol (IPersistentCollection/Associative/
+# Seqable/IPersistentMap) into a (do …) of bare extend-type sections, and the core
+# fns (count/contains?/get/seq/assoc/dissoc) all route to the deftype's impls.
+got=$("$BIN" - <<'EOF' 2>/dev/null
+(deftype M [m]
+  clojure.lang.IPersistentMap
+  (count [this] (count m))
+  (assoc [this k v] (M. (assoc m k v)))
+  (containsKey [this k] (contains? m k))
+  (seq [this] (seq m))
+  (without [this k] (M. (dissoc m k)))
+  (empty [this] (M. {}))
+  (cons [this e] (M. (conj m e)))
+  clojure.lang.ILookup
+  (valAt [this k] (get m k)))
+(def x (M. {:a 1}))
+[(count x) (contains? x :a) (get x :a) (get (assoc x :b 2) :b) (count (dissoc (assoc x :b 2) :a))]
+EOF
+) || fail "case13: non-zero exit ($got)"
+last=$(awk 'END { print }' <<< "$got")
+if [[ "$last" != "[1 true 1 2 1]" ]]; then
+    fail "case13: got '$last', want '[1 true 1 2 1]'"
+fi
+echo "PASS protocol_remap_ipersistentmap_multitarget -> [1 true 1 2 1]"
+
+echo "OK — phase14_deftype_object (13 cases) green"

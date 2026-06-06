@@ -551,13 +551,20 @@ pub fn assocFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation
             break :blk acc;
         },
         .typed_instance => blk: {
+            var cs: dispatch.CallSite = .{};
+            // A deftype/reify implementing Associative `-assoc` takes the protocol
+            // path (single-pair; mirrors dissoc/-without). D-280c: a deftype is not
+            // a defrecord, so the record-only branch below would otherwise raise on
+            // a perfectly valid Associative impl.
+            if (args.len == 3) {
+                if (try dispatch.dispatchOrNull(rt, env, &cs, coll, ASSOCIATIVE_FQCN, "-assoc", args, loc)) |v| break :blk v;
+            }
             const inst = coll.decodePtr(*const td_mod.TypedInstance);
             if (inst.descriptor.kind != .defrecord) {
-                break :blk error_catalog.raise(.type_arg_invalid, loc, .{
-                    .fn_name = "assoc",
-                    .expected = "map, vector, defrecord, or nil",
-                    .actual = @tagName(coll.tag()),
-                });
+                if (args.len != 3)
+                    break :blk error_catalog.raise(.feature_not_supported, loc, .{ .name = "multi-pair assoc on extend-type Associative receiver" });
+                // Non-record typed instance with no `-assoc` impl → proper no-impl error.
+                break :blk try dispatch.dispatch(rt, env, &cs, coll, ASSOCIATIVE_FQCN, "-assoc", args, loc);
             }
             // Single-pair assoc only on a record. Multi-pair would
             // allocate multiple TypedInstance values; the `__extmap`

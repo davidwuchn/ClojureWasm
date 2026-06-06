@@ -71,6 +71,22 @@ const ILOOKUP: HostInterface = .{ .kind = .protocol_remap, .canonical = "ILookup
     .{ .clj = "valAt", .protocol = "ILookup", .method = "-lookup" },
 } };
 
+// clj `IPersistentMap` extends IPersistentCollection / Associative / Counted, so a
+// deftype groups those methods under one `IPersistentMap` section; cljw splits them
+// across protocols (D-280c multi-target). The macro regroups by target protocol.
+// Object methods (hashCode/equals) + cljw-unmodeled (equiv/entryAt) clj also allows
+// under this section are NOT mapped here → an explicit feature_not_supported (slice 2
+// + entryAt/equiv modeling, D-280d), never a silent drop.
+const IPERSISTENT_MAP: HostInterface = .{ .kind = .protocol_remap, .canonical = "IPersistentMap", .remap = &.{
+    .{ .clj = "count", .protocol = "IPersistentCollection", .method = "-count" },
+    .{ .clj = "cons", .protocol = "IPersistentCollection", .method = "-cons" },
+    .{ .clj = "empty", .protocol = "IPersistentCollection", .method = "-empty" },
+    .{ .clj = "assoc", .protocol = "Associative", .method = "-assoc" },
+    .{ .clj = "containsKey", .protocol = "Associative", .method = "-contains-key?" },
+    .{ .clj = "seq", .protocol = "Seqable", .method = "-seq" },
+    .{ .clj = "without", .protocol = "IPersistentMap", .method = "-without" },
+} };
+
 /// Recognised host-supertype names → their `HostInterface`. D-275 slice 1:
 /// `Object`. D-280a: zero-method markers. D-280b+: the method-bearing
 /// `clojure.lang.*` family, each added as a row gated against
@@ -80,6 +96,7 @@ const MARKERS = std.StaticStringMap(HostInterface).initComptime(.{
     .{ "clojure.lang.MapEquivalence", MAP_EQUIVALENCE },
     .{ "java.io.Serializable", SERIALIZABLE },
     .{ "clojure.lang.ILookup", ILOOKUP },
+    .{ "clojure.lang.IPersistentMap", IPERSISTENT_MAP },
 });
 
 /// True when `name` is a quote-wrap marker (method_family or zero-method marker)
