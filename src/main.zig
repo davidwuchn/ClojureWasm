@@ -82,6 +82,7 @@ test "build_options exposes phase_at_least_N comptime bools (ADR-0023)" {
 test {
     _ = @import("app/cli.zig");
     _ = @import("app/deps/parse.zig");
+    _ = @import("app/deps/resolve.zig");
     _ = @import("app/runner.zig");
     _ = @import("app/builder.zig");
     _ = @import("app/error_render.zig");

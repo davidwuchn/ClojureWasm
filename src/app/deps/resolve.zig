@@ -1,0 +1,91 @@
+// SPDX-License-Identifier: EPL-2.0
+//! deps.edn `DepsConfig` → an expanded classpath (Convergence Campaign
+//! Stage 1.2).
+//!
+//! `resolveClasspath` turns a parsed config (rooted at the deps.edn directory)
+//! into a list of source directories for `rt.load_paths`: the `:paths` joined
+//! to the deps.edn dir, plus each `:local/root` dep's own classpath
+//! (transitively — the local dep's `deps.edn` is read and expanded, with a
+//! visited-set breaking cycles). Git deps (`:git/url`) are skipped here; they
+//! land in the sibling `git_fetch.zig` behind an inline ADR (slice 5).
+//!
+//! Paths are joined `dir/sub` (mirroring `require_resolver.zig`'s relative
+//! path idiom) rather than absolutised, so a relative deps.edn dir stays
+//! relative. All allocations are on the caller's (arena) allocator.
+
+const std = @import("std");
+const parse = @import("parse.zig");
+const DepsConfig = parse.DepsConfig;
+const file_io = @import("../../runtime/file_io.zig");
+
+/// Expand `cfg` (rooted at `deps_dir`) into a classpath. `:paths` first, then
+/// each `:local/root` dep's transitive classpath. `io` is used only to read
+/// the local deps' `deps.edn` files; a `:paths`-only config never touches it.
+pub fn resolveClasspath(
+    io: std.Io,
+    allocator: std.mem.Allocator,
+    deps_dir: []const u8,
+    cfg: DepsConfig,
+) ![]const []const u8 {
+    var out: std.ArrayList([]const u8) = .empty;
+    var visited: std.StringHashMapUnmanaged(void) = .empty;
+    try expand(io, allocator, deps_dir, cfg, &out, &visited);
+    return out.toOwnedSlice(allocator);
+}
+
+fn expand(
+    io: std.Io,
+    allocator: std.mem.Allocator,
+    dir: []const u8,
+    cfg: DepsConfig,
+    out: *std.ArrayList([]const u8),
+    visited: *std.StringHashMapUnmanaged(void),
+) !void {
+    for (try expandPaths(allocator, dir, cfg.paths)) |p| try out.append(allocator, p);
+    for (cfg.deps) |dep| {
+        const lr = dep.local_root orelse continue; // git deps deferred to slice 5
+        const dep_dir = try join(allocator, dir, lr);
+        if (visited.contains(dep_dir)) continue;
+        try visited.put(allocator, dep_dir, {});
+        const sub = (try readDepsEdn(io, allocator, dep_dir)) orelse continue;
+        try expand(io, allocator, dep_dir, sub, out, visited);
+    }
+}
+
+/// Join each of `paths` against `dir` (`dir/p`). I/O-free — the unit-testable
+/// core of the `:paths` expansion.
+pub fn expandPaths(
+    allocator: std.mem.Allocator,
+    dir: []const u8,
+    paths: []const []const u8,
+) ![]const []const u8 {
+    var out: std.ArrayList([]const u8) = .empty;
+    for (paths) |p| try out.append(allocator, try join(allocator, dir, p));
+    return out.toOwnedSlice(allocator);
+}
+
+/// Read + parse `dir/deps.edn`; null when the file is absent (a local dep need
+/// not declare its own deps.edn — it just contributes nothing transitively).
+fn readDepsEdn(io: std.Io, allocator: std.mem.Allocator, dir: []const u8) !?DepsConfig {
+    const path = try join(allocator, dir, "deps.edn");
+    const src = file_io.readAll(io, allocator, path) catch |e| switch (e) {
+        error.FileNotFound, error.NotDir, error.BadPathName => return null,
+        else => return e,
+    };
+    return try parse.parseDepsEdn(allocator, src);
+}
+
+fn join(allocator: std.mem.Allocator, a: []const u8, b: []const u8) ![]const u8 {
+    return std.fmt.allocPrint(allocator, "{s}/{s}", .{ a, b });
+}
+
+test "resolve: :paths joined to deps dir" {
+    const testing = std.testing;
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+    const got = try expandPaths(a, "proj", &.{ "src", "resources" });
+    try testing.expectEqual(@as(usize, 2), got.len);
+    try testing.expectEqualStrings("proj/src", got[0]);
+    try testing.expectEqualStrings("proj/resources", got[1]);
+}

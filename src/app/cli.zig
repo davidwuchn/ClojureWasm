@@ -26,6 +26,10 @@ const builder = @import("builder.zig");
 const render_error_mod = @import("render_error.zig");
 const error_render = @import("error_render.zig");
 const gc_torture = @import("../runtime/gc/gc_torture.zig");
+const file_io = @import("../runtime/file_io.zig");
+const deps_parse = @import("deps/parse.zig");
+const deps_resolve = @import("deps/resolve.zig");
+const error_print = @import("../runtime/error/print.zig");
 
 /// Top-level CLI dispatcher. Called from `src/main.zig::main` with
 /// the Juicy-Main `std.process.Init` bundle. Parses argv, decides
@@ -240,13 +244,46 @@ fn dispatchArgsRest(
     // ADR-0084 classpath: `-cp` wins, else `CLJW_PATH`, else cwd. Colon-split
     // into the filesystem-require search roots (`src:test` is the common shape).
     const cp_spec = classpath_arg orelse cljw_path_env orelse ".";
-    const load_paths = try splitClasspath(arena, cp_spec);
+    const base_paths = try splitClasspath(arena, cp_spec);
+    // Stage 1.2: a `./deps.edn` in cwd contributes its `:paths` + `:local/root`
+    // deps to the FRONT of the classpath (project sources win over the cwd
+    // default). Absent file → base unchanged; `:mvn/version` → parse raises.
+    const load_paths = try prependDepsEdn(io, arena, stderr, base_paths);
 
     if (compare_mode) {
         try runner.runSourceCompare(io, gpa, arena, stdout, stderr, source_text.?, source_label);
     } else {
         try runner.runSource(io, gpa, arena, stdout, stderr, source_text.?, source_label, load_paths);
     }
+}
+
+/// Merge `./deps.edn` (Stage 1.2) into the classpath: its resolved `:paths` +
+/// `:local/root` deps go to the FRONT of `base`. No deps.edn (or an empty
+/// resolution) → `base` unchanged. A `:mvn/version` dep propagates the parse
+/// error (source-only policy). Reuses the `deps/` parse + resolve modules.
+fn prependDepsEdn(io: std.Io, arena: std.mem.Allocator, stderr: *std.Io.Writer, base: []const []const u8) ![]const []const u8 {
+    const src = file_io.readAll(io, arena, "deps.edn") catch |e| switch (e) {
+        error.FileNotFound, error.NotDir, error.BadPathName => return base,
+        else => return e,
+    };
+    // A deps.edn error (e.g. a rejected :mvn/version) is a user-facing config
+    // error: render it against the deps.edn source + exit, not a Zig trace.
+    const dep_paths = resolveFromSource(io, arena, src) catch |e| {
+        const ctx = error_print.SourceContext{ .file = "deps.edn", .text = src };
+        error_render.renderAndExit(stderr, ctx, e);
+    };
+    if (dep_paths.len == 0) return base;
+    var merged: std.ArrayList([]const u8) = .empty;
+    try merged.appendSlice(arena, dep_paths);
+    try merged.appendSlice(arena, base);
+    return merged.toOwnedSlice(arena);
+}
+
+/// Parse + resolve a deps.edn source into its classpath. Split out so the
+/// caller can render any error against the deps.edn source context.
+fn resolveFromSource(io: std.Io, arena: std.mem.Allocator, src: []const u8) ![]const []const u8 {
+    const cfg = try deps_parse.parseDepsEdn(arena, src);
+    return deps_resolve.resolveClasspath(io, arena, ".", cfg);
 }
 
 /// Split a colon-separated classpath string into its directory roots, allocated
