@@ -226,7 +226,7 @@ pub fn extendType(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocat
         // explicit transient error (ADR-0102 `host_interface`), never a
         // silently-dropped impl. A real cljw protocol is not a marker, so the
         // guard does not constrain it.
-        if (host_interface.isMarker(proto_name) and !host_interface.isMethodWired(proto_name, mname)) {
+        if (host_interface.isMarker(proto_name) and !host_interface.isHostInert(proto_name) and !host_interface.isMethodWired(proto_name, mname)) {
             return error_catalog.raise(.feature_not_supported, loc, .{
                 .name = "deftype/reify host-marker method not yet wired (e.g. Object equals/hashCode)",
             });
@@ -464,7 +464,7 @@ pub fn reifyPrim(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocati
         // A recognised host marker wires only its listed methods (ADR-0102
         // `host_interface`); an unwired method is an explicit transient error,
         // never a silently-dropped impl. Mirrors the `__extend-type!` guard.
-        if (host_interface.isMarker(proto_name) and !host_interface.isMethodWired(proto_name, mname)) {
+        if (host_interface.isMarker(proto_name) and !host_interface.isHostInert(proto_name) and !host_interface.isMethodWired(proto_name, mname)) {
             return error_catalog.raise(.feature_not_supported, loc, .{
                 .name = "deftype/reify host-marker method not yet wired (e.g. Object equals/hashCode)",
             });

@@ -48,8 +48,12 @@ fi
 code_names=$(sed -n '/const MARKERS = /,/^});/p' "$ZIG" \
     | grep -oE '\.\{ "[^"]+"' | grep -oE '"[^"]+"' | tr -d '"' | sort -u)
 
-# Names + recognised-rows in the SSOT.
-yaml_names=$(yq -r '.interfaces[].name' "$YAML" | sort -u)
+# Names + recognised-rows in the SSOT. set-bound matches a code name against the
+# row `name` OR any `aliases` entry (a row may carry a bare alias, e.g.
+# java.util.Map ⇄ Map, that the source spells).
+yaml_names=$(yq -r '.interfaces[] | (.name, (.aliases // [])[])' "$YAML" | sort -u)
+# over-claim checks the row NAME is in code (not its aliases — an alias like
+# java.lang.Object need not be a code key; the row is "in code" via its name).
 yaml_recognised=$(yq -r '.interfaces[] | select(.recognised == true) | .name' "$YAML" | sort -u)
 
 # (i) set-bound: code ⊆ yaml.

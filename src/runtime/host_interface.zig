@@ -29,7 +29,16 @@ const std = @import("std");
 ///     macro REWRITES the section into bare cljw-protocol section(s), translating
 ///     each clj method to its (cljw-protocol, cljw-method) target. The primitive
 ///     never sees the qualified name.
-pub const Kind = enum { method_family, marker, protocol_remap };
+pub const Kind = enum {
+    method_family,
+    marker,
+    protocol_remap,
+    /// A no-JVM java host interface (java.util.Map, java.lang.Iterable) a deftype
+    /// declares for java-interop. Recognised so the deftype loads; its methods are
+    /// accepted-and-recorded but NEVER dispatched (cljw has no java-interop, ADR-0059
+    /// / ADR-0103). Reserved for FULLY-inert interfaces; a mixed one uses protocol_remap.
+    host_inert,
+};
 
 /// One clj method's target in cljw's protocol surface (protocol_remap only).
 /// `protocol` is the bare cljw protocol Var name the method registers under;
@@ -66,6 +75,11 @@ const OBJECT: HostInterface = .{ .kind = .method_family, .canonical = "Object", 
 // deftype/reify just records "implements X" (the Sequential/ADR-0068 precedent).
 const MAP_EQUIVALENCE: HostInterface = .{ .kind = .marker, .canonical = "clojure.lang.MapEquivalence" };
 const SERIALIZABLE: HostInterface = .{ .kind = .marker, .canonical = "java.io.Serializable" };
+
+// host_inert java interfaces (D-281 / ADR-0103): recognised so collection deftypes
+// declaring them for java-interop load; methods are inert (no java dispatch in cljw).
+const JAVA_UTIL_MAP: HostInterface = .{ .kind = .host_inert, .canonical = "java.util.Map" };
+const JAVA_LANG_ITERABLE: HostInterface = .{ .kind = .host_inert, .canonical = "java.lang.Iterable" };
 
 // protocol_remap interfaces (D-280b+): the macro rewrites each declared method to
 // its cljw (protocol, method) target. ILookup's valAt → ILookup/-lookup (a 3-arity
@@ -157,6 +171,12 @@ const MARKERS = std.StaticStringMap(HostInterface).initComptime(.{
     .{ "clojure.lang.Sorted", SORTED },
     .{ "clojure.lang.IFn", IFN },
     .{ "clojure.lang.IObj", IOBJ },
+    // host_inert: accept both the bare spelling (priority-map writes `Map`/`Iterable`)
+    // and the fully-qualified one (the canonical, which the primitive re-checks).
+    .{ "Map", JAVA_UTIL_MAP },
+    .{ "java.util.Map", JAVA_UTIL_MAP },
+    .{ "Iterable", JAVA_LANG_ITERABLE },
+    .{ "java.lang.Iterable", JAVA_LANG_ITERABLE },
 });
 
 /// True when `name` is a quote-wrap marker (method_family or zero-method marker)
@@ -164,7 +184,7 @@ const MARKERS = std.StaticStringMap(HostInterface).initComptime(.{
 /// (the macro rewrites them to bare cljw protocols instead); see `isProtocolRemap`.
 pub fn isMarker(name: []const u8) bool {
     const hi = MARKERS.get(name) orelse return false;
-    return hi.kind == .method_family or hi.kind == .marker;
+    return hi.kind == .method_family or hi.kind == .marker or hi.kind == .host_inert;
 }
 
 /// True when `name` is a protocol_remap interface (the macro rewrites its section
@@ -172,6 +192,16 @@ pub fn isMarker(name: []const u8) bool {
 pub fn isProtocolRemap(name: []const u8) bool {
     const hi = MARKERS.get(name) orelse return false;
     return hi.kind == .protocol_remap;
+}
+
+/// True when `name` is a no-JVM host_inert interface (java.util.Map etc.) — its
+/// declared methods are accepted-and-recorded but never dispatched, so the
+/// primitive must NOT raise feature_not_supported on them (ADR-0103). Accepts the
+/// bare and qualified spellings AND the canonical (the primitive re-checks the
+/// canonicalised proto_name).
+pub fn isHostInert(name: []const u8) bool {
+    const hi = MARKERS.get(name) orelse return false;
+    return hi.kind == .host_inert;
 }
 
 /// The full entry for a recognised name, or null.

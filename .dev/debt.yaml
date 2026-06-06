@@ -115,7 +115,7 @@ active:
       ADR-0102, host_interfaces.yaml design-caveats section.
     last_reviewed: "2026-06-07"
   - id: "D-281"
-    status: "now (found 2026-06-07 via D-280e priority-map require) — priority-map also declares the JAVA host interfaces `java.util.Map` (bare `Map`, line 374) + `java.lang.Iterable` (line 388) as deftype supertypes. These are a java.util.*/java.lang.* deftype-supertype family, parallel to the clojure.lang.* family D-280 modeled. Same ADR-0102 mechanism (host_interfaces.yaml rows + remap); java.util.Map has a large method set (size→count, get→-lookup, containsKey→-contains-key?, entrySet/keySet/values→seq-ish, etc.) — most map onto cljw protocols already, a few (entrySet/keySet/values, put/remove mutators) need decisions. Iterable's iterator → a cljw iteration surface."
+    status: "DISCHARGED 2026-06-07 (ADR-0103 host_inert) — java.util.Map (bare `Map`) + java.lang.Iterable recognised as host_inert (recognised-but-inert, no-JVM); methods accepted-any-inert under the canonical name (no -count/-lookup collision by construction; also callable via `.method`). With D-282 (IKVReduce), `(require 'clojure.data.priority-map)` now SUCCEEDS — every supertype the deftype declares resolves; the method bodies (MapEntry/subseq) are def-time-unevaluated so don't block load. e2e 27 (synthetic host_inert). LADDER rung 4 flips fails→LOADS. NOTE: priority-map LOADS but is not yet fully FUNCTIONAL — its construction calls `.assoc`/`.valAt` (clj-name dot-calls) on itself, which `td.lookupMethod(null,name)` resolves by bare name, but protocol_remap translated those to -assoc/-lookup → `.assoc` not found (D-283). ORIGINAL: priority-map also declares the JAVA host interfaces `java.util.Map` (bare `Map`, line 374) + `java.lang.Iterable` (line 388) as deftype supertypes. These are a java.util.*/java.lang.* deftype-supertype family, parallel to the clojure.lang.* family D-280 modeled. Same ADR-0102 mechanism (host_interfaces.yaml rows + remap); java.util.Map has a large method set (size→count, get→-lookup, containsKey→-contains-key?, entrySet/keySet/values→seq-ish, etc.) — most map onto cljw protocols already, a few (entrySet/keySet/values, put/remove mutators) need decisions. Iterable's iterator → a cljw iteration surface."
     category: "polymorphism"
     barrier: |-
       **java.util.Map + java.lang.Iterable are unrecognised deftype supertypes.**
@@ -129,6 +129,24 @@ active:
       that real collection libs (priority-map, ordered, …) hit. Cross-ref D-280
       (the sibling clojure.lang.* family, mechanism proven), ADR-0102, class_name.zig
       (Iterable already known for instance?/class — the CLASS facet, distinct).
+    last_reviewed: "2026-06-07"
+  - id: "D-283"
+    status: "now (found 2026-06-07 — priority-map LOADS but isn't fully functional) — a protocol_remap method is registered under its TRANSLATED cljw name (assoc→-assoc, valAt→-lookup) for the core-fn path. But `.method` dot-calls dispatch via `td.lookupMethod(null, name)` — by BARE clj name — so `(.assoc this …)` (which priority-map uses internally during construction) looks for 'assoc', finds only '-assoc', and errors. Core fns `(assoc x …)`/`(get x …)` work; the clj-name dot-call does not."
+    category: "polymorphism"
+    barrier: |-
+      **protocol_remap method-name translation breaks clj-name `.method` dot-calls.**
+      A deftype implementing e.g. clojure.lang.IPersistentMap `assoc` has it
+      registered as (Associative, -assoc) (D-280c), so `(assoc x …)` dispatches; but
+      `(.assoc x …)` — bare-name lookup — fails because no method named 'assoc' is
+      registered. Real libs call their own clj-named methods via `.assoc`/`.valAt`
+      (priority-map's ctor does). Finished-form fix: rewriteProtocolRemap registers
+      each translated method under BOTH names — the cljw method name (for the core-fn
+      (protocol,method) path) AND the original clj name (so `td.lookupMethod(null,
+      clj-name)` resolves the dot-call), same fn, no cross-talk (core fns look up the
+      cljw name, dot-calls the clj name). Object method-family methods already keep
+      their clj name so dot-calls work there. Unblocks priority-map FULL functionality
+      (peek/assoc/seq usable). Cross-ref D-280c, D-281, tree_walk.zig evalInstanceMember
+      (lookupMethod(null, name)).
     last_reviewed: "2026-06-07"
   - id: "D-282"
     status: "now (found 2026-06-07 via D-280e) — `clojure.core.protocols` ns does NOT exist in cljw (`require` → 'Could not locate'). priority-map implements `clojure.core.protocols/IKVReduce` (line 391, kv-reduce), so its full load needs this ns. Listed MISSING in the convergence campaign Stage 0.2 (v0→v1 parity) + the D-273 v0→v1 backfill umbrella. clojure.core.protocols defines CollReduce/IKVReduce/Datafiable/Navigable — the reduce/datafy protocol surface."
@@ -458,7 +476,7 @@ active:
       D-037, feature_deps.yaml#runtime/cljw/wasm/instance_handle.
     last_reviewed: "2026-06-06"
   - id: "D-258"
-    status: "recorded (2026-06-06; RECURRED 2026-06-07 during D-280d2 gate, identical `[#<fn_val> 2]` vs `[1 2]`, 12/12 standalone PASS → same load-induced flake, unrelated to the deftype/reify host-interface work) — `phase16_gc_torture` agent_conj flaked under gate load (`[#builtin 2]` / `[#<fn_val> 2]` vs `[1 2]`); standalone deterministic PASS → load-induced, not a regression. Confirms the dormant multi-thread-torture race (D-244 #4)."
+    status: "recorded (2026-06-06; RECURRED 2026-06-07 twice — during the D-280d2 gate (`[#<fn_val> 2]`) and the D-281 gate (`[#builtin 2]`), both 12/12 standalone PASS → same load-induced flake, unrelated to the deftype/reify host-interface work; re-gate green each time) — `phase16_gc_torture` agent_conj flaked under gate load (`[#builtin 2]` / `[#<fn_val> 2]` vs `[1 2]`); standalone deterministic PASS → load-induced, not a regression. Confirms the dormant multi-thread-torture race (D-244 #4)."
     category: "concurrency"
     barrier: |-
       During the cljw.http.server gate (2026-06-06, `--serial-e2e`), the

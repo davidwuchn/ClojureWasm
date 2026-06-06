@@ -393,4 +393,26 @@ if [[ "$last" != "3" ]]; then
 fi
 echo "PASS core_protocols_ikvreduce -> 3"
 
-echo "OK — phase14_deftype_object (26 cases) green"
+# --- Case 27 (D-281): host_inert java.util.Map + java.lang.Iterable load alongside
+# clojure.lang.* — the deftype parses; clojure.lang.* methods route, java methods inert ---
+got=$("$BIN" - <<'EOF' 2>/dev/null
+(deftype M [m]
+  clojure.lang.ILookup
+  (valAt [this k] (get m k))
+  clojure.lang.IPersistentMap
+  (count [this] (count m))
+  Map
+  (size [this] (count m))
+  (put [this k v] (throw (ex-info "immutable" {})))
+  Iterable
+  (iterator [this] nil))
+(let [x (M. {:a 1 :b 2})] [(count x) (get x :a) (.size x)])
+EOF
+) || fail "case27: non-zero exit ($got)"
+last=$(awk 'END { print }' <<< "$got")
+if [[ "$last" != "[2 1 2]" ]]; then
+    fail "case27: got '$last', want '[2 1 2]'"
+fi
+echo "PASS host_inert_java_util_map_iterable -> [2 1 2]"
+
+echo "OK — phase14_deftype_object (27 cases) green"

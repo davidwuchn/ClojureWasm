@@ -83,6 +83,26 @@ interfaces:
     methods:
       withMeta: { status: wired, wires_to_protocol: IObj, wires_to_method: "-with-meta" }
       meta: { status: wired, wires_to_protocol: IObj, wires_to_method: "-meta" }
+  # --- host_inert: no-JVM java interfaces (D-281 / ADR-0103) ---
+  # Recognised so collection deftypes declaring them for java-interop LOAD; their
+  # methods are inert (cljw has no java dispatch). `recognised: true`, `kind:
+  # host_inert`; the gate set-bound matches the bare alias the source uses.
+  - name: java.util.Map
+    aliases: [Map]
+    derives_from: "java.util.Map — java-interop map compat; recognised-but-inert in cljw (no JVM dispatch, ADR-0059/ADR-0103). priority-map declares it (bare `Map`, line 374)."
+    tier: A
+    recognised: true
+    kind: host_inert
+    note: "Methods (size/get/put/keySet/…) accepted-any-inert under the canonical name; never dispatched (no collision with -count/-lookup by construction). Accepted divergence: cljw does not implement java.util.Map dispatch."
+    methods: {}
+  - name: java.lang.Iterable
+    aliases: [Iterable]
+    derives_from: "java.lang.Iterable — java-interop iteration compat; recognised-but-inert (no JVM dispatch). priority-map declares it (bare `Iterable`, line 388)."
+    tier: A
+    recognised: true
+    kind: host_inert
+    note: "iterator accepted-inert; cljw iterates via seq, not java.util.Iterator."
+    methods: {}
 
 # --- Design caveats discovered driving clojure.data.priority-map (2026-06-07) ---
 # Implementing the rows below requires TWO mechanisms beyond slice-1 recognition,
