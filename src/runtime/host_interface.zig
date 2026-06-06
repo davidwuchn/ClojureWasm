@@ -60,7 +60,7 @@ pub const HostInterface = struct {
 // `(hash x)` uses hasheq (hashCode is the Java method). cljw has one value-hash, so
 // hashFn consults hasheq → hashCode → valueHash. Distinct method names avoid the
 // (Object, hashCode) collision when a type declares both.
-const OBJECT: HostInterface = .{ .kind = .method_family, .canonical = "Object", .wired_methods = &.{ "toString", "equals", "hashCode", "hasheq" } };
+const OBJECT: HostInterface = .{ .kind = .method_family, .canonical = "Object", .wired_methods = &.{ "toString", "equals", "hashCode", "hasheq", "equiv" } };
 
 // Zero-method markers (D-280a): a recognised supertype with NO methods — the
 // deftype/reify just records "implements X" (the Sequential/ADR-0068 precedent).
@@ -112,6 +112,11 @@ const IPERSISTENT_MAP: HostInterface = .{ .kind = .protocol_remap, .canonical = 
     // the isMarker quote-wrap path; equal.zig/hashFn (D-280d1) consult them.
     .{ .clj = "hashCode", .protocol = "Object", .method = "hashCode" },
     .{ .clj = "equals", .protocol = "Object", .method = "equals" },
+    // equiv = clj collection value-equality (consulted by =); entryAt → Associative
+    // (D-280d8). equiv targets the Object method-family (same-type consult, cross-
+    // type is the residual); entryAt adds an Associative protocol method.
+    .{ .clj = "equiv", .protocol = "Object", .method = "equiv" },
+    .{ .clj = "entryAt", .protocol = "Associative", .method = "-entry-at" },
 } };
 
 /// Recognised host-supertype names → their `HostInterface`. D-275 slice 1:

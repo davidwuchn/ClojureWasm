@@ -41,6 +41,7 @@ interfaces:
       equals: { status: wired, wires_to: "= consult (runtime/equal.zig typedInstanceEqual → dispatchOrNull Object/equals; same-type only, cross-type is D-280d8)" }
       hashCode: { status: wired, wires_to: "hash consult (lang/primitive/core.zig hashFn → dispatchOrNull Object/hashCode; top-level (hash inst), nested-in-collection is a residual)" }
       hasheq: { status: wired, wires_to: "hash consult — clj (hash x) prefers hasheq (D-280d5); hashFn consults Object/hasheq before hashCode" }
+      equiv: { status: wired, wires_to: "= consult — clj collection value-equality (D-280d8); valueEqual consults Object/equiv before equals (same-type)" }
 
   # --- clojure.lang.* deftype/reify supertype family (the closed set; 網羅) ---
   # recognised: false → enumerated as the planned closed set, NOT yet in the
@@ -125,6 +126,8 @@ interfaces:
       without: { status: wired, wires_to_protocol: IPersistentMap, wires_to_method: "-without" }
       hashCode: { status: wired, wires_to: "Object method-family hashCode (D-280d1b — clj inherits Object under IPersistentMap; rewrite emits an Object section)" }
       equals: { status: wired, wires_to: "Object method-family equals (D-280d1b — same-type; cross-type is D-280d8)" }
+      equiv: { status: wired, wires_to: "Object method-family equiv (D-280d8 — clj collection =; same-type, cross-type residual)" }
+      entryAt: { status: wired, wires_to_protocol: Associative, wires_to_method: "-entry-at" }
   - name: clojure.lang.IPersistentStack
     derives_from: "clojure.lang.IPersistentStack — peek/pop (Clojure, stable)."
     tier: A

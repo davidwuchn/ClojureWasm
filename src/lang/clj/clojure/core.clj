@@ -1567,7 +1567,7 @@
 (defprotocol ISeq (-first [s]) (-rest [s]) (-next [s]))
 (defprotocol ILookup (-lookup [c k]))
 (defprotocol Indexed (-nth [c i]))
-(defprotocol Associative (-assoc [c k v]) (-contains-key? [c k]))
+(defprotocol Associative (-assoc [c k v]) (-contains-key? [c k]) (-entry-at [c k]))
 (defprotocol IPersistentMap (-without [m k]) (-keys [m]) (-vals [m]))
 (defprotocol IPersistentSet (-disjoin [s k]))
 (defprotocol Reversible (-rseq [c]))

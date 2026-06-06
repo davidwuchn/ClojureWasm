@@ -295,4 +295,20 @@ if [[ "$last" != "[63 0]" ]]; then
 fi
 echo "PASS ihasheq_hasheq_preferred -> [63 0]"
 
-echo "OK — phase14_deftype_object (20 cases) green"
+# --- Case 21 (D-280d8): equiv (clj collection =) + entryAt register and work ---
+got=$("$BIN" - <<'EOF' 2>/dev/null
+(deftype M [m]
+  clojure.lang.IPersistentMap
+  (count [this] (count m))
+  (equiv [this o] (= m (.-m o)))
+  (entryAt [this k] [k (get m k)]))
+[(= (M. {:a 1}) (M. {:a 1})) (= (M. {:a 1}) (M. {:a 2})) (count (M. {:a 1}))]
+EOF
+) || fail "case21: non-zero exit ($got)"
+last=$(awk 'END { print }' <<< "$got")
+if [[ "$last" != "[true false 1]" ]]; then
+    fail "case21: got '$last', want '[true false 1]'"
+fi
+echo "PASS equiv_same_type_and_entryAt -> [true false 1]"
+
+echo "OK — phase14_deftype_object (21 cases) green"

@@ -588,6 +588,10 @@ fn typedInstanceEqual(rt: *Runtime, env: *Env, a: Value, b: Value) anyerror!bool
     // equiv / pre-tag-gate consult). Returns the impl's truthiness.
     {
         var cs: dispatch_mod.CallSite = .{};
+        // clj collections override `equiv` (IPersistentCollection); `=` prefers it.
+        // Fall back to `equals` (Object). Same-type only (D-280d8 cross-type residual).
+        if (try dispatch_mod.dispatchOrNull(rt, env, &cs, a, "Object", "equiv", &.{ a, b }, .{ .line = 0, .column = 0 })) |r|
+            return r.isTruthy();
         if (try dispatch_mod.dispatchOrNull(rt, env, &cs, a, "Object", "equals", &.{ a, b }, .{ .line = 0, .column = 0 })) |r|
             return r.isTruthy();
     }
