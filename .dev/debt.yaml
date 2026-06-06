@@ -9,6 +9,26 @@
 # md-table-align no longer pads it to ~800 KB of whitespace.
 
 active:
+  - id: "D-286"
+    status: "now (found 2026-06-07 — probed `flatland.ordered` (amalloy/ordered), the next deftype-heavy ladder rung after priority-map). It fails at set.clj:67 `Unable to resolve symbol: 'IHashEq'` — ordered uses the `(:import (clojure.lang IPersistentSet IHashEq IObj …))` + BARE-name deftype-supertype pattern, vs priority-map's fully-qualified `clojure.lang.IHashEq`. Two sub-gaps: (a) the host_interface protocol_remap/host_inert entries are keyed by QUALIFIED name only — bare `IHashEq`/`IObj`/`IFn`/`IPersistentStack`/`Reversible`/`Sorted` (+ java.util `Set`/`List`) aren't recognised; (b) bare names that ARE cljw protocol Vars (IPersistentSet/IPersistentMap/ILookup) resolve as the Var and BYPASS protocol_remap, so clj-named methods (disjoin/assoc) register under the clj name and cljw core fns (-disjoin/-assoc) don't find them — the bare-name resolution-order problem (Var vs host_interface remap)."
+    category: "polymorphism"
+    barrier: |-
+      **`:import`-ed bare clojure.lang.* / java.util.* names in deftype supertype
+      position aren't routed through the host-interface mechanism.** priority-map
+      used qualified names (unambiguously host_interface); ordered (+ many libs)
+      `:import`s clojure.lang.* and uses bare names. Finished-form fix: (a) add the
+      bare spellings as host_interface aliases for the protocol_remap/host_inert
+      entries (IHashEq/IObj/IFn/IPersistentStack/Reversible/Sorted, java.util.Set/
+      List/Collection) — F-013 網羅 of both spellings; (b) the harder part — a bare
+      name that is BOTH a cljw protocol Var AND needs clj→cljw method translation
+      (IPersistentSet/IPersistentMap with clj-named methods) must route through
+      protocol_remap, not the bare-Var path; resolve the order so a host_interface
+      claim wins for a deftype-supertype-position bare name (or detect the
+      clj-method-name mismatch and remap). Cross-ref D-280 (qualified-name family),
+      D-281 (host_inert), the ordered probe (flatland.ordered.set.clj:67), the
+      campaign Stage 1.3 ladder. Likely also needs java.util.Set host_inert (D-281
+      sibling)."
+    last_reviewed: "2026-06-07"
   - id: "D-275"
     status: "PARTIAL (slice 1 landed 2026-06-07) — `Object/toString` recognised in deftype/reify impl-spec position + wired to the str/print consult (both backends; e2e phase14_deftype_object). `Object/equals`+`hashCode` raise explicit transient `feature_not_supported` (slice 2). REMAINING: slice 2 (equals/hashCode → equal.zig/valueHash), slice 3+ (`clojure.lang.*` interface family: IDeref/Counted/IFn/IObj + qualified-name acceptance). NOTE: slice 1 used hand-coded `std.mem.eql(\"Object\")` at 5 sites — the structural consolidation into a single closed-set host-interface SSOT + gate (so the marker set cannot grow library-by-library) is tracked as the host-interface ADR + F-013; do slices 3+ AFTER that consolidation so each new interface is a table row, not a new eql site. Originally (campaign Stage 1.3 — first real-lib blocker, 2026-06-06): the analyzer resolved the interface-position symbol as a Var → name_error. Surfaced by loading `clojure.data.priority-map` via deps.edn (require reached priority_map.clj:266 `Object`)."
     category: "polymorphism"
