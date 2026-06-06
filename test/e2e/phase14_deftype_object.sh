@@ -444,4 +444,19 @@ if [[ "$last" != "[[:a 1] :a 2]" ]]; then
 fi
 echo "PASS map_entry_ctor -> [[:a 1] :a 2]"
 
-echo "OK — phase14_deftype_object (29 cases) green"
+# --- Case 30 (D-285): keys/vals derive from seq for a map deftype (no -keys impl) ---
+got=$("$BIN" - <<'EOF' 2>/dev/null
+(deftype M [m]
+  clojure.lang.IPersistentMap
+  (count [this] (count m))
+  (seq [this] (seq m)))
+(let [x (M. {:a 1 :b 2})] [(keys x) (vals x)])
+EOF
+) || fail "case30: non-zero exit ($got)"
+last=$(awk 'END { print }' <<< "$got")
+if [[ "$last" != "[(:a :b) (1 2)]" ]]; then
+    fail "case30: got '$last', want '[(:a :b) (1 2)]'"
+fi
+echo "PASS keys_vals_seq_derive -> [(:a :b) (1 2)]"
+
+echo "OK — phase14_deftype_object (30 cases) green"

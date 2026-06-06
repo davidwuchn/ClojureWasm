@@ -709,6 +709,36 @@ pub fn dissocFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocatio
 /// Spec: `(keys m)` returns a seq of map keys, or nil if empty.
 /// JVM reference: clojure.core/keys
 /// cw v1 tier: A (Phase 6.16.a-2)
+/// D-285: derive `keys`/`vals` for a seqable map deftype that doesn't impl
+/// `-keys`/`-vals` — `(map key/val (seq coll))`, clj-faithful. `col` is 0 (key) or
+/// 1 (val) of each entry (cljw's entries are 2-vectors). Walks `(seq coll)` via the
+/// seq protocol (firstFn/nextFn), mirroring apply's accumulator walk in
+/// higher_order.zig (same GC-safety). Returns a list in seq order, or nil if empty.
+fn seqDeriveEntryColumn(rt: *Runtime, env: *Env, coll: Value, col: u32, loc: SourceLocation) anyerror!Value {
+    var cells: std.ArrayList(Value) = .empty;
+    defer cells.deinit(rt.gpa);
+    var cur = try sequence.seqFn(rt, env, &.{coll}, loc);
+    while (!cur.isNil()) {
+        const entry = try sequence.firstFn(rt, env, &.{cur}, loc);
+        // An entry is a 2-vector (a deftype's `(MapEntry. k v)`, D-284) OR a native
+        // `.map_entry` (when the deftype's seq delegates to a native map's seq).
+        const cell = switch (entry.tag()) {
+            .map_entry => map_entry.nth(entry, col),
+            else => vector.nth(entry, col),
+        };
+        try cells.append(rt.gpa, cell);
+        cur = try sequence.nextFn(rt, env, &.{cur}, loc);
+    }
+    if (cells.items.len == 0) return .nil_val;
+    var result: Value = .nil_val;
+    var i: usize = cells.items.len;
+    while (i > 0) {
+        i -= 1;
+        result = try list.consHeap(rt, cells.items[i], result);
+    }
+    return result;
+}
+
 pub fn keysFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
     try error_catalog.checkArity("keys", args, 1, loc);
     const coll = args[0];
@@ -724,24 +754,25 @@ pub fn keysFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation)
         },
         .typed_instance => blk: {
             const inst = coll.decodePtr(*const td_mod.TypedInstance);
-            if (inst.descriptor.kind != .defrecord) {
-                break :blk error_catalog.raise(.type_arg_invalid, loc, .{
-                    .fn_name = "keys",
-                    .expected = "map or defrecord",
-                    .actual = @tagName(coll.tag()),
-                });
+            if (inst.descriptor.kind == .defrecord) {
+                const layout = inst.descriptor.field_layout orelse break :blk .nil_val;
+                if (layout.len == 0) break :blk .nil_val;
+                // Build list backwards so declared-order iteration falls out.
+                var result: Value = .nil_val;
+                var i: usize = layout.len;
+                while (i > 0) {
+                    i -= 1;
+                    const kw = try keyword_mod.intern(rt, null, layout[i].name);
+                    result = try list.consHeap(rt, kw, result);
+                }
+                break :blk result;
             }
-            const layout = inst.descriptor.field_layout orelse break :blk .nil_val;
-            if (layout.len == 0) break :blk .nil_val;
-            // Build list backwards so declared-order iteration falls out.
-            var result: Value = .nil_val;
-            var i: usize = layout.len;
-            while (i > 0) {
-                i -= 1;
-                const kw = try keyword_mod.intern(rt, null, layout[i].name);
-                result = try list.consHeap(rt, kw, result);
-            }
-            break :blk result;
+            // D-285: a non-record map deftype (priority-map etc.). Try the optional
+            // IPersistentMap/-keys impl; else derive from seq, clj-faithfully:
+            // keys = (map key (seq m)). Mirrors apply's seq-walk (higher_order.zig).
+            var cs: dispatch.CallSite = .{};
+            if (try dispatch.dispatchOrNull(rt, env, &cs, coll, IPM_FQCN, "-keys", args, loc)) |v| break :blk v;
+            break :blk try seqDeriveEntryColumn(rt, env, coll, 0, loc);
         },
         else => blk: {
             // D-089 row 8.6 cycle 3: IPersistentMap -keys slow-path.
@@ -775,22 +806,22 @@ pub fn valsFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation)
         },
         .typed_instance => blk: {
             const inst = coll.decodePtr(*const td_mod.TypedInstance);
-            if (inst.descriptor.kind != .defrecord) {
-                break :blk error_catalog.raise(.type_arg_invalid, loc, .{
-                    .fn_name = "vals",
-                    .expected = "map or defrecord",
-                    .actual = @tagName(coll.tag()),
-                });
+            if (inst.descriptor.kind == .defrecord) {
+                const fields_slice = inst.fields();
+                if (fields_slice.len == 0) break :blk .nil_val;
+                var result: Value = .nil_val;
+                var i: usize = fields_slice.len;
+                while (i > 0) {
+                    i -= 1;
+                    result = try list.consHeap(rt, fields_slice[i], result);
+                }
+                break :blk result;
             }
-            const fields_slice = inst.fields();
-            if (fields_slice.len == 0) break :blk .nil_val;
-            var result: Value = .nil_val;
-            var i: usize = fields_slice.len;
-            while (i > 0) {
-                i -= 1;
-                result = try list.consHeap(rt, fields_slice[i], result);
-            }
-            break :blk result;
+            // D-285: non-record map deftype — -vals impl, else derive from seq
+            // (clj: vals = (map val (seq m))). col 1 = val of each 2-vector entry.
+            var cs: dispatch.CallSite = .{};
+            if (try dispatch.dispatchOrNull(rt, env, &cs, coll, IPM_FQCN, "-vals", args, loc)) |v| break :blk v;
+            break :blk try seqDeriveEntryColumn(rt, env, coll, 1, loc);
         },
         else => blk: {
             // D-089 row 8.6 cycle 3: IPersistentMap -vals slow-path
