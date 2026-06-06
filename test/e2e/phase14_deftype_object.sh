@@ -281,4 +281,18 @@ if [[ "$last" != "[true false 1000 1]" ]]; then
 fi
 echo "PASS object_methods_in_ipersistentmap_section -> [true false 1000 1]"
 
-echo "OK — phase14_deftype_object (19 cases) green"
+# --- Case 20 (D-280d5): clojure.lang.IHashEq hasheq drives (hash inst), preferred over hashCode ---
+got=$("$BIN" - <<'EOF' 2>/dev/null
+(deftype H [v]
+  Object (hashCode [this] 1)
+  clojure.lang.IHashEq (hasheq [this] (* v 7)))
+[(hash (H. 9)) (hash (H. 0))]
+EOF
+) || fail "case20: non-zero exit ($got)"
+last=$(awk 'END { print }' <<< "$got")
+if [[ "$last" != "[63 0]" ]]; then
+    fail "case20: got '$last', want '[63 0]'"
+fi
+echo "PASS ihasheq_hasheq_preferred -> [63 0]"
+
+echo "OK — phase14_deftype_object (20 cases) green"

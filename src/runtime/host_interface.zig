@@ -56,7 +56,11 @@ pub const HostInterface = struct {
     }
 };
 
-const OBJECT: HostInterface = .{ .kind = .method_family, .canonical = "Object", .wired_methods = &.{ "toString", "equals", "hashCode" } };
+// `hasheq` (clojure.lang.IHashEq, D-280d5) joins the Object method-family: clj's
+// `(hash x)` uses hasheq (hashCode is the Java method). cljw has one value-hash, so
+// hashFn consults hasheq → hashCode → valueHash. Distinct method names avoid the
+// (Object, hashCode) collision when a type declares both.
+const OBJECT: HostInterface = .{ .kind = .method_family, .canonical = "Object", .wired_methods = &.{ "toString", "equals", "hashCode", "hasheq" } };
 
 // Zero-method markers (D-280a): a recognised supertype with NO methods — the
 // deftype/reify just records "implements X" (the Sequential/ADR-0068 precedent).
@@ -88,6 +92,12 @@ const IPERSISTENT_STACK: HostInterface = .{ .kind = .protocol_remap, .canonical 
     .{ .clj = "pop", .protocol = "IPersistentStack", .method = "-pop" },
 } };
 
+// clojure.lang.IHashEq — hasheq (D-280d5). Targets the Object method-family
+// (hasheq), consulted by hashFn before hashCode/valueHash.
+const IHASHEQ: HostInterface = .{ .kind = .protocol_remap, .canonical = "IHashEq", .remap = &.{
+    .{ .clj = "hasheq", .protocol = "Object", .method = "hasheq" },
+} };
+
 const IPERSISTENT_MAP: HostInterface = .{ .kind = .protocol_remap, .canonical = "IPersistentMap", .remap = &.{
     .{ .clj = "count", .protocol = "IPersistentCollection", .method = "-count" },
     .{ .clj = "cons", .protocol = "IPersistentCollection", .method = "-cons" },
@@ -116,6 +126,7 @@ const MARKERS = std.StaticStringMap(HostInterface).initComptime(.{
     .{ "clojure.lang.IPersistentMap", IPERSISTENT_MAP },
     .{ "clojure.lang.Reversible", REVERSIBLE },
     .{ "clojure.lang.IPersistentStack", IPERSISTENT_STACK },
+    .{ "clojure.lang.IHashEq", IHASHEQ },
 });
 
 /// True when `name` is a quote-wrap marker (method_family or zero-method marker)

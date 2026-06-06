@@ -1290,6 +1290,10 @@ pub fn hashFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation)
     const v = args[0];
     if (v.tag() == .typed_instance or v.tag() == .reified_instance) {
         var cs: dispatch.CallSite = .{};
+        // clj `(hash x)` uses hasheq (D-280d5); hashCode is the Java method.
+        // Consult hasheq first, then hashCode, then the default value-hash.
+        if (try dispatch.dispatchOrNull(rt, env, &cs, v, "Object", "hasheq", &.{v}, loc)) |h|
+            return h;
         if (try dispatch.dispatchOrNull(rt, env, &cs, v, "Object", "hashCode", &.{v}, loc)) |h|
             return h;
     }

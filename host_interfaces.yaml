@@ -40,6 +40,7 @@ interfaces:
       toString: { status: wired, wires_to: "str/print dispatch consult (runtime/print.zig writeStrValue → dispatchOrNull Object/toString)" }
       equals: { status: wired, wires_to: "= consult (runtime/equal.zig typedInstanceEqual → dispatchOrNull Object/equals; same-type only, cross-type is D-280d8)" }
       hashCode: { status: wired, wires_to: "hash consult (lang/primitive/core.zig hashFn → dispatchOrNull Object/hashCode; top-level (hash inst), nested-in-collection is a residual)" }
+      hasheq: { status: wired, wires_to: "hash consult — clj (hash x) prefers hasheq (D-280d5); hashFn consults Object/hasheq before hashCode" }
 
   # --- clojure.lang.* deftype/reify supertype family (the closed set; 網羅) ---
   # recognised: false → enumerated as the planned closed set, NOT yet in the
@@ -154,10 +155,11 @@ interfaces:
   - name: clojure.lang.IHashEq
     derives_from: "clojure.lang.IHashEq — hasheq for = / hash (Clojure, stable)."
     tier: A
-    recognised: false
-    modeled_as: "(none yet — route to valueHash)"
+    recognised: true
+    kind: protocol_remap
+    modeled_as: "Object method-family hasheq (D-280d5; hashFn consults hasheq → hashCode → valueHash)"
     methods:
-      hasheq: { status: feature_not_supported }
+      hasheq: { status: wired, wires_to: "Object method-family hasheq (hashFn consult)" }
   - name: clojure.lang.MapEquivalence
     derives_from: "clojure.lang.MapEquivalence — zero-method marker: 'this map = other maps by value' (Clojure, stable)."
     tier: A
