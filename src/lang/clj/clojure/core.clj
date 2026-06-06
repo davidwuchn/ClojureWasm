@@ -1560,6 +1560,7 @@
 (defprotocol Associative (-assoc [c k v]) (-contains-key? [c k]))
 (defprotocol IPersistentMap (-without [m k]) (-keys [m]) (-vals [m]))
 (defprotocol IPersistentSet (-disjoin [s k]))
+(defprotocol Reversible (-rseq [c]))
 ;; `Sequential` is a zero-method MARKER protocol (JVM `clojure.lang.Sequential`):
 ;; a type that declares it prints as its seq and answers `sequential?` true
 ;; (D-190 / ADR-0068). The native seq tags carry sequential-ness by tag; this

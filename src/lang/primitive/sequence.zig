@@ -248,12 +248,22 @@ pub fn seqFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) 
 /// JVM reference: clojure.lang.RT.rseq / Reversible.rseq
 /// cw v1 tier: A
 pub fn rseqFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
-    _ = env;
     try error_catalog.checkArity("rseq", args, 1, loc);
     const coll = args[0];
     return switch (coll.tag()) {
         .vector => if (vector.count(coll) > 0) try vectorToRevList(rt, coll) else .nil_val,
         .sorted_map, .sorted_set => if (sorted.count(coll) > 0) try sorted.rseq(rt, coll) else .nil_val,
+        // A deftype/reify implementing Reversible `-rseq` (D-280d3; clojure.lang.Reversible
+        // host-interface remap) — consult its impl before erroring.
+        .typed_instance, .reified_instance => blk: {
+            var cs: dispatch.CallSite = .{};
+            if (try dispatch.dispatchOrNull(rt, env, &cs, coll, "Reversible", "-rseq", &.{coll}, loc)) |v| break :blk v;
+            break :blk error_catalog.raise(.type_arg_invalid, loc, .{
+                .fn_name = "rseq",
+                .expected = "vector, sorted collection, or Reversible instance",
+                .actual = @tagName(coll.tag()),
+            });
+        },
         else => error_catalog.raise(.type_arg_invalid, loc, .{
             .fn_name = "rseq",
             .expected = "vector or sorted collection",

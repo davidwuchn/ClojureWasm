@@ -199,4 +199,16 @@ if [[ "$last" != "[1 true 1 2 1]" ]]; then
 fi
 echo "PASS protocol_remap_ipersistentmap_multitarget -> [1 true 1 2 1]"
 
-echo "OK — phase14_deftype_object (13 cases) green"
+# --- Case 14 (D-280d3): clojure.lang.Reversible rseq routes via the modeled protocol ---
+got=$("$BIN" - <<'EOF' 2>/dev/null
+(deftype R [v] clojure.lang.Reversible (rseq [this] (reverse v)))
+(rseq (R. [1 2 3]))
+EOF
+) || fail "case14: non-zero exit ($got)"
+last=$(awk 'END { print }' <<< "$got")
+if [[ "$last" != "(3 2 1)" ]]; then
+    fail "case14: got '$last', want '(3 2 1)'"
+fi
+echo "PASS protocol_remap_reversible_rseq -> (3 2 1)"
+
+echo "OK — phase14_deftype_object (14 cases) green"

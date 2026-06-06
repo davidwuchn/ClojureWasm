@@ -77,6 +77,11 @@ const ILOOKUP: HostInterface = .{ .kind = .protocol_remap, .canonical = "ILookup
 // Object methods (hashCode/equals) + cljw-unmodeled (equiv/entryAt) clj also allows
 // under this section are NOT mapped here → an explicit feature_not_supported (slice 2
 // + entryAt/equiv modeling, D-280d), never a silent drop.
+// clojure.lang.Reversible — rseq (D-280d3). Single-target: rseq → Reversible/-rseq.
+const REVERSIBLE: HostInterface = .{ .kind = .protocol_remap, .canonical = "Reversible", .remap = &.{
+    .{ .clj = "rseq", .protocol = "Reversible", .method = "-rseq" },
+} };
+
 const IPERSISTENT_MAP: HostInterface = .{ .kind = .protocol_remap, .canonical = "IPersistentMap", .remap = &.{
     .{ .clj = "count", .protocol = "IPersistentCollection", .method = "-count" },
     .{ .clj = "cons", .protocol = "IPersistentCollection", .method = "-cons" },
@@ -97,6 +102,7 @@ const MARKERS = std.StaticStringMap(HostInterface).initComptime(.{
     .{ "java.io.Serializable", SERIALIZABLE },
     .{ "clojure.lang.ILookup", ILOOKUP },
     .{ "clojure.lang.IPersistentMap", IPERSISTENT_MAP },
+    .{ "clojure.lang.Reversible", REVERSIBLE },
 });
 
 /// True when `name` is a quote-wrap marker (method_family or zero-method marker)

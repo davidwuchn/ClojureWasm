@@ -133,10 +133,11 @@ interfaces:
   - name: clojure.lang.Reversible
     derives_from: "clojure.lang.Reversible — rseq (Clojure, stable)."
     tier: A
-    recognised: false
-    modeled_as: "(none yet)"
+    recognised: true
+    kind: protocol_remap
+    modeled_as: "Reversible (defprotocol Reversible (-rseq [c]), D-280d3)"
     methods:
-      rseq: { status: feature_not_supported }
+      rseq: { status: wired, wires_to_protocol: Reversible, wires_to_method: "-rseq" }
   - name: clojure.lang.Sorted
     derives_from: "clojure.lang.Sorted — sorted-map nav (Clojure, stable)."
     tier: A
