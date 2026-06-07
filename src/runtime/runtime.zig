@@ -167,6 +167,11 @@ pub const Runtime = struct {
     /// on `gc.infra` by `collection/persistent_queue.zig::emptyQueue`; `nil`
     /// until first use. Same process-lifetime discipline as `empty_list`.
     empty_queue: @import("value/value.zig").Value = .nil_val,
+    /// `java.util.Locale/US` and `/ROOT` process-lifetime host_instance
+    /// singletons (gc.infra-allocated, never swept), lazily filled by
+    /// `java/util/Locale.zig::singleton`; freed in `deinit`.
+    locale_us: @import("value/value.zig").Value = .nil_val,
+    locale_root: @import("value/value.zig").Value = .nil_val,
 
     /// User type registry per ADR-0007 + ROADMAP §9.7 / 5.11. Maps
     /// the fully-qualified class name (e.g. `user.Point`) to a
@@ -422,6 +427,7 @@ pub const Runtime = struct {
         // GC-swept — D-164). Idempotent / no-op if never materialised.
         @import("collection/list.zig").deinitEmptyList(self);
         @import("collection/persistent_queue.zig").deinitEmptyQueue(self);
+        @import("locale.zig").deinitSingletons(self);
         // Free the per-Runtime Date descriptor (gc.infra — D-200/ADR-0079).
         @import("time/date.zig").deinitDescriptor(self);
 

@@ -137,6 +137,9 @@ pub fn registerAll(env: *Env) !void {
     try @import("../runtime/java/lang/Class.zig").installNativeMethods(env.rt);
     // D-232: `.name`/`.getName`/`.toString` interop on the Namespace `.ns` value.
     try @import("../runtime/namespace_methods.zig").installNativeMethods(env.rt);
+    // `.sym` interop on the `.keyword` value (clojure.lang.Keyword) — honeysql's
+    // `sql-kw` does `(.sym ^clojure.lang.Keyword k)`.
+    try @import("../runtime/keyword_methods.zig").installNativeMethods(env.rt);
 
     // ADR-0035 D9 (sub-cycle d): boot-time rt → user refer makes
     // primitives (`+`, `=`, `count`, ...) reachable unqualified at

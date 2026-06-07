@@ -100,6 +100,7 @@ const java_surfaces = [_]type{
     @import("time/ZonedDateTime.zig"),
     @import("util/Date.zig"),
     @import("util/Iterator.zig"),
+    @import("util/Locale.zig"),
     @import("util/Random.zig"),
     @import("util/UUID.zig"),
     // Matcher's backing impl is shipped by Pattern's regex/match.zig.

@@ -165,6 +165,25 @@ fn addThread(
                 try addThread(list, alloc, program, pc + 1, pos, input, caps);
             }
         },
+        .look => |lk| {
+            // Zero-width: run the sub-program anchored at `pos`; the thread
+            // continues (consuming nothing) iff a match exists XOR negate. A
+            // POSITIVE lookahead threads its inner capture groups into the
+            // continuing thread (JVM parity — group indices share the global
+            // numbering); a NEGATIVE lookahead exports no captures (it succeeds
+            // only when the sub fails, so there is nothing to capture).
+            const sub_prog = compile.Program{ .insts = lk.sub, .capture_count = 0, .flags = program.flags };
+            const m = try tryMatchAt(alloc, &sub_prog, input, pos);
+            if ((m != null) != lk.negate) {
+                var next_caps = caps;
+                if (m) |res| if (!lk.negate) {
+                    for (res.captures.slots, 0..) |sv, i| {
+                        if (sv != -1) next_caps[i] = sv;
+                    }
+                };
+                try addThread(list, alloc, program, pc + 1, pos, input, next_caps);
+            }
+        },
         else => try list.threads.append(alloc, .{ .pc = pc, .caps = caps }),
     }
 }

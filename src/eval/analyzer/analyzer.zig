@@ -560,6 +560,8 @@ fn analyzeSymbol(
                     // value at analyze time.
                     .singleton => |s| switch (s) {
                         .empty_queue => try @import("../../runtime/collection/persistent_queue.zig").emptyQueue(env.rt),
+                        .locale_us => try @import("../../runtime/locale.zig").singleton(env.rt, .us),
+                        .locale_root => try @import("../../runtime/locale.zig").singleton(env.rt, .root),
                     },
                 };
                 return try makeConstant(arena, fv, form);

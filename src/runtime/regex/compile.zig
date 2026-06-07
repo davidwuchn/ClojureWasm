@@ -68,6 +68,10 @@ pub const Node = union(enum) {
     non_capture: *Node,
     /// Position anchor (`^`, `$`, `\b`, `\B`).
     anchor: Anchor,
+    /// Zero-width lookahead `(?=e)` (negate=false) / `(?!e)` (negate=true). The
+    /// child is matched anchored at the current position and consumes nothing; a
+    /// POSITIVE lookahead's inner captures thread through (JVM parity, ADR-0115).
+    look: struct { child: *Node, negate: bool },
 };
 
 /// Character-class bitmap: 256 bits over the byte alphabet.
@@ -110,6 +114,11 @@ pub const Inst = union(enum) {
     jmp: u32,
     split: struct { a: u32, b: u32 },
     save: u32,
+    /// Zero-width lookahead: run `sub` (its own Program, terminated by `.match`)
+    /// anchored at the current position; the thread continues (consuming nothing)
+    /// iff a match exists XOR `negate`. A positive lookahead merges `sub`'s
+    /// captures into the continuing thread (ADR-0115); a negative one exports none.
+    look: struct { sub: []const Inst, negate: bool },
 };
 
 /// Compiled program — the IR boundary between parser/optimiser
@@ -121,6 +130,14 @@ pub const Program = struct {
     flags: Flags,
 
     pub fn deinit(self: *Program, alloc: std.mem.Allocator) void {
+        // A `look` inst owns a nested sub-Program's IR slice (lookahead); free it
+        // before the top-level slice (recursive for nested lookaheads).
+        for (self.insts) |inst| {
+            if (inst == .look) {
+                var sub = Program{ .insts = inst.look.sub, .capture_count = 0, .flags = self.flags };
+                sub.deinit(alloc);
+            }
+        }
         alloc.free(self.insts);
     }
 };
@@ -227,6 +244,7 @@ fn foldCI(node: *Node) void {
         .non_capture => |child| foldCI(child),
         .group => |g| foldCI(g.child),
         .repeat => |r| foldCI(r.child),
+        .look => |lk| foldCI(lk.child),
     }
 }
 
@@ -436,6 +454,15 @@ const Parser = struct {
             if (self.peek() == @as(?u8, '?')) {
                 _ = self.advance(); // consume '?'
                 capturing = false;
+                // Lookahead `(?=e)` / `(?!e)` — a zero-width assertion, NOT a
+                // group. Parse the child + the closing `)`, build `Node.look`.
+                if (self.peek() == @as(?u8, '=') or self.peek() == @as(?u8, '!')) {
+                    const negate = self.advance().? == '!';
+                    const look_child = try self.parseAlt();
+                    if (self.advance() != @as(?u8, ')')) return CompileError.UnclosedGroup;
+                    node.* = .{ .look = .{ .child = look_child, .negate = negate } };
+                    return node;
+                }
                 if (self.peek() == @as(?u8, ':')) {
                     _ = self.advance();
                 } else {
@@ -702,6 +729,12 @@ fn emitNode(list: *std.ArrayList(Inst), alloc: std.mem.Allocator, node: *const N
             try list.append(alloc, .{ .save = @as(u32, 2) * g.index + 1 });
         },
         .non_capture => |child| try emitNode(list, alloc, child),
+        // Lookahead: compile the child to its own sub-Program (terminated by
+        // `.match`, capture-free) and emit a single zero-width `look` inst.
+        .look => |lk| {
+            const sub = try emit(alloc, lk.child, .{}, 0);
+            try list.append(alloc, .{ .look = .{ .sub = sub.insts, .negate = lk.negate } });
+        },
         // `{n,m}` → n mandatory copies, then (m-n) greedy-optional copies; a
         // `{n,}` (max == REPEAT_INF) appends `*` after the n mandatory copies.
         .repeat => |r| {

@@ -281,6 +281,11 @@ const NATIVE_EXTEND_TARGETS = std.StaticStringMap([]const []const u8).initCompti
     // Named = keyword ∪ symbol (both carry a name).
     .{ "Named", &[_][]const u8{ "keyword", "symbol" } },
     .{ "clojure.lang.Named", &[_][]const u8{ "keyword", "symbol" } },
+    // IPersistentMap spans the three persistent map representations. (Keyword /
+    // Symbol / IPersistentVector resolve to their single native tag via
+    // class_name, so they need no row here.) honeysql extends SqlizeValue to it.
+    .{ "IPersistentMap", &[_][]const u8{ "array_map", "hash_map", "sorted_map" } },
+    .{ "clojure.lang.IPersistentMap", &[_][]const u8{ "array_map", "hash_map", "sorted_map" } },
 });
 
 /// The native `Value.Tag` keyword names a `(extend-protocol P <iface> …)` must

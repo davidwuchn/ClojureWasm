@@ -34,8 +34,11 @@ const vector_collection = @import("../../collection/vector.zig");
 /// cw v1 tier: A (Phase 14 / ADR-0050 am1).
 fn toUpperCase(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
     _ = env;
-    // args[0] is the receiver; a no-arg instance method takes exactly it.
-    try error_catalog.checkArity(".toUpperCase", args, 1, loc);
+    // 1-arg (receiver) or 2-arg with a java.util.Locale (`(.toUpperCase s
+    // Locale/US)`, honeysql). cljw casing is locale-independent, so the Locale
+    // arg is accepted + ignored (US/ROOT map to the same impl — F-011-faithful).
+    if (args.len < 1 or args.len > 2)
+        return error_catalog.raise(.arity_out_of_range, loc, .{ .fn_name = ".toUpperCase", .got = args.len, .min = 1, .max = 2 });
     const up = try charset.upperCaseAlloc(rt.gpa, string_collection.asString(args[0]));
     defer rt.gpa.free(up);
     return string_collection.alloc(rt, up);
@@ -47,7 +50,9 @@ fn toUpperCase(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation
 /// cw v1 tier: A (Phase 14 / ADR-0050 am1).
 fn toLowerCase(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
     _ = env;
-    try error_catalog.checkArity(".toLowerCase", args, 1, loc);
+    // 1-arg or 2-arg with a Locale (ignored; cljw casing is locale-independent).
+    if (args.len < 1 or args.len > 2)
+        return error_catalog.raise(.arity_out_of_range, loc, .{ .fn_name = ".toLowerCase", .got = args.len, .min = 1, .max = 2 });
     const down = try charset.lowerCaseAlloc(rt.gpa, string_collection.asString(args[0]));
     defer rt.gpa.free(down);
     return string_collection.alloc(rt, down);
