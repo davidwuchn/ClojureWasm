@@ -6,25 +6,25 @@
 ## Resume contract
 
 - **HEAD**: see `git log`. The 2026-06-07 ladder session landed a large arc:
-  Pattern/quote · `(extend-type nil …)` nil-punning · deftype method-lowering
-  (qualified params + empty bodies) · **ADR-0108** third host-surface tree
-  `runtime/clojure/lang/` + complete `clojure.lang.Util` (11/11) + `class_of.zig`
-  (D-303) · **ADR-0109 host-class-VALUE resolver CORE**: opaque collapsed-numerics
-  (Integer/BigInteger → numeric-tower :98/:127→:162) + `java.lang.Object` universal
-  root (algo.generic core LOADS) + `java.lang.Number` marker (algo.generic.arithmetic
-  LOADS) — all oracle bit-for-bit. D-293 PARTIAL.
-- **First commit on resume MUST be: the D-293 marker REMAINDER — `clojure.lang.IFn`
-  value-resolution**. `(instance? IFn x)` ALREADY works (class_name.matchInterface);
-  the gap is (a) resolving IFn as a VALUE in analyzeSymbol (interface-shaped names
-  are skipped today — class_name.zig:585 divergence) so core.contracts'
-  `(defmethod funcify* clojure.lang.IFn …)` registers + LOADS, and (b) class-level
-  `(isa? <class> IFn)`. (b) is BLOCKED on a callable-class NAMING gap (D-293 row):
-  `(class fn)`=`fn_val`, `sorted_map`, `var_ref` are RAW @tagName (fqcnForTag lacks
-  entries). PREREQUISITE clj-parity fix: add NATIVE_ENTRIES/fqcnForTag for
-  sorted_map→PersistentTreeMap, sorted_set→PersistentTreeSet, var_ref→Var (clean,
-  re-verify `(class x)` e2e); fn-family stays cljw-named. Then IFn isa? via clean
-  names. Then Stage 1: 1.4 cider → 1.5 v0→v1 (D-273) → 1.6 clj-parity → 1.7 Phase B
-  (D-242). SSOT = `.dev/convergence_campaign.md`.
+  Pattern/quote · `(extend-type nil …)` nil-punning · deftype method-lowering ·
+  **ADR-0108** third host-surface tree `runtime/clojure/lang/` + `clojure.lang.Util`
+  (11/11) + `class_of.zig` (D-303) · **ADR-0109 host-class-VALUE resolver COMPLETE**
+  (opaque collapsed-numerics + `java.lang.Object` universal-root + `java.lang.Number`
+  + `clojure.lang.IFn`) + clj-faithful class names (sorted_map→PersistentTreeMap,
+  var_ref→Var). LOADS now: numeric-tower :98/:127→:162, algo.generic core+arithmetic
+  +comparison, core.contracts. All oracle bit-for-bit. Full gate 273/0.
+- **First commit on resume MUST be: D-304 — SYMBOL metadata** (the D-075 residual;
+  D-075 is discharged, D-304 is its fresh active row). `(with-meta sym m)`/`(meta sym)`
+  error today → core.cache + algo.generic.math-functions die on it. clj (verified):
+  symbol carries meta, `=` IGNORES meta, keyword rejects meta (keep cljw's error).
+  Approach (full reference chain + the load-bearing crux in the D-304 debt row):
+  add optional `meta` to `Symbol` (`symbol.zig`), `with-meta` mints a NON-interned
+  symbol-with-meta, and — THE RISK — change symbol equality+hash from pointer-eq
+  (`equal.zig:551`, interned) to ns+name-structural (meta-ignored), else
+  `(= 'a (with-meta 'a m))` breaks. Likely a small ADR + DA (symbol-repr + eq
+  change). First test: `(meta (with-meta 'a {:x 1}))`→{:x 1}. SCOPE = symbol only
+  (NOT keyword; var/atom meta = D-239). Then Stage 1: 1.4 cider → 1.5 v0→v1 (D-273)
+  → 1.6 clj-parity → 1.7 Phase B (D-242). SSOT = `.dev/convergence_campaign.md`.
 - **Carry-over (permission-blocked, ADR-0108)**: extend
   `.claude/rules/feature_name_consistency.md` scan-set to `runtime/clojure/**` — the
   classifier blocks `.claude/rules/*` edits; the user lands it. zone_check.sh already

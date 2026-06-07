@@ -9,6 +9,45 @@
 # md-table-align no longer pads it to ~800 KB of whitespace.
 
 active:
+  - id: "D-304"
+    status: "now (2026-06-07) — the D-075 RESIDUAL (D-075 is DISCHARGED: collection meta done; symbol meta was its open residual, with no active row until this one). Blocks the ladder: `with-meta`/`meta` on a SYMBOL errors `with-meta target is not an IObj` — core.cache + algo.generic.math-functions both die on `with-meta: cannot attach metadata to symbol`. SCOPE = symbol value-metadata ONLY. NOT keyword (clj rejects `(with-meta :a m)` — cljw keeping the error is clj-faithful), NOT var/atom/ns/ref meta (= D-239, separate mutable-ref alter-meta!/reset-meta!)."
+    category: "runtime"
+    barrier: |-
+      **`(with-meta sym m)` / `(meta sym)` unsupported — symbols carry no metadata.**
+      clj (oracle-verified): `(meta (with-meta 'a {:x 1}))`→{:x 1}; `(= 'a (with-meta
+      'a {:x 1}))`→TRUE (meta is NOT part of symbol identity); `(with-meta :a m)`→
+      error (keyword has no meta — keep cljw's error). Driver libs: core.cache,
+      algo.generic.math-functions.
+
+      REFERENCE CHAIN (audited 2026-06-07):
+      - `src/runtime/symbol.zig` — `Symbol{header, ns, name}` has NO meta field
+        ("ADR-0037 D6, no meta_ptr — deferred to D-075"); `SymbolInterner` interns
+        by ns+name (shared pointers).
+      - `src/lang/primitive/metadata.zig` — `withMetaFn`/`metaFn` switch over
+        collection tags; symbol falls to the `else` → `with_meta_target_not_iobj`.
+        Mirror the COLLECTION precedent (`vector.withMeta`/`metaOf`, per-type meta
+        field — the pattern D-075 core used).
+      - `src/runtime/error/catalog.zig:1200` `with_meta_target_not_iobj`.
+      - ADR-0037 (`0037_symbol_heap_value.md`) D6 — where symbol meta was deferred.
+
+      APPROACH (the load-bearing crux — likely a small ADR + DA, depth ~2):
+      1. Add an optional `meta: Value = nil` to `Symbol` (interned ones = nil).
+      2. `with-meta` on a symbol allocates a FRESH **non-interned** Symbol (same
+         ns+name + meta) — meta-bearing symbols are not interned (clj: with-meta
+         returns a distinct symbol `=` to the original).
+      3. **HOT-PATH CHANGE (the risk):** symbol equality + hash are currently
+         POINTER-EQ relying on interning (`equal.zig:551` — non-bit-identical
+         symbols → false; `hash.zig`). A non-interned with-meta'd symbol has a
+         different pointer, so `(= 'a (with-meta 'a m))` would wrongly be false.
+         Add a `.symbol => ns+name structural compare` arm to `valueEqual` and an
+         ns+name hash for `.symbol` (META IGNORED in both — symbol identity is
+         ns+name only). Verify map-key behaviour (symbols as keys) still holds.
+      4. `metaFn` symbol arm → the meta field; `vary-meta` works over `meta`+`with-meta`.
+
+      FIRST FAILING TEST (Step 2): `(meta (with-meta 'a {:x 1}))` → `{:x 1}`;
+      then `(= 'a (with-meta 'a {:x 1}))` → `true`; `(with-meta :a {})` still errors.
+      Re-probe core.cache (`-cp` priority-map) + algo.generic.math-functions to
+      confirm the load advances. Corpus the `=`/meta behaviours (oracle-comparable).
   - id: "D-303"
     status: "DISCHARGED 2026-06-07 (this commit). classPrim's class-of logic factored into the runtime-layer helper runtime/class_of.zig (classOf(rt,v)); clojure.core/class (classPrim) and clojure.lang.Util/classOf both delegate, so no duplication and no drift. Util/classOf verified `(= (Util/classOf x) (class x))` + `(classOf nil)`→nil (e2e phase14_clojure_lang_util). The clojure.lang.Util surface is now complete (11/11 pure statics). classOf's value print is AD-003 (cljw simple name) so no direct-value corpus line. ORIGINAL: classOf deferred from ADR-0108's Util landing pending this Layer-0 helper factor."
     category: "interop"
