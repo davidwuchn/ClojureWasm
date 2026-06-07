@@ -322,3 +322,19 @@ accepted:
       identity rendering diverges. Same family as AD-002 / AD-020.
     derives_from: "AD-002 (opaque-ref identity-hash print cljw cannot mirror) + AD-003 (simple class name, ADR-0059 no JVM Class) + ADR-0083 (namespace as first-class value)"
     pin: "test/e2e/phase14_var_metadata.sh — synth_ns_render (#object[Namespace \"clojure.core\"]) + synth_ns_core (ns-name equivalence)"
+  - id: "AD-022"
+    summary: "An unresolved `clojure.lang.*` / `clojure.asm.*` reference defers to a CALL-time `feature_not_supported` (ADR-0113) instead of resolving (JVM) — so a fn whose body names such a JVM-internal class DEFINES + the namespace LOADS; the ref errors only if evaluated."
+    example: '(do (defn f [] (clojure.lang.RT/baseLoader)) :ok) => cljw :ok (loads); (f) => "clojure.lang.RT/baseLoader is not supported in ClojureWasm". clj: (clojure.lang.RT/baseLoader) returns a ClassLoader.'
+    why: |-
+      `clojure.lang.*` / `clojure.asm.*` are JVM implementation classes cljw has
+      no value for and will never represent (ADR-0059, no JVM class hierarchy).
+      Failing the WHOLE namespace at analysis blocks libraries whose CORE is pure
+      but whose periphery touches such a class (integrant's optional classpath
+      hierarchy loader). The reference is rewritten to a LOUD runtime
+      feature_not_supported — never a silent no-op — so the error is explicit,
+      just later (call time, not load time). The strict prefix allowlist means a
+      user alias typo (`(myalias/foo)`) still fails loudly at analysis; only
+      provably-JVM-internal prefixes defer. F-011: explicit error preserved, only
+      its timing diverges.
+    derives_from: "ADR-0113 (deferred host-class refs) + ADR-0059 (no JVM class) + provisional_marker.md (explicit runtime error OK, silent no-op forbidden)"
+    pin: "test/e2e/phase15_deferred_host_ref.sh — defines_and_loads + raises_when_called + typo_stays_loud"

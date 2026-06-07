@@ -9,6 +9,18 @@
 # md-table-align no longer pads it to ~800 KB of whitespace.
 
 active:
+  - id: "D-316"
+    status: "now (2026-06-07, integrant probe / defmulti fix) — def-target metadata MAP VALUES are not evaluated. `(defn g {:foo '(a b)} [x] x)` → `(:foo (meta #'g))` is `(quote (a b))` in cljw vs `(a b)` in clj; same for the defmulti attr-map `:arglists '([k v])` (cljw `(quote ([k v]))` vs clj `([k v])`). GENERAL: the attr-map / `^{…}` value FORMS are attached to Var.meta verbatim, not evaluated. Affects defn + defmulti (and any `^meta`). Not defmulti-specific — surfaced while fixing defmulti docstring/attr-map attachment (which itself now matches clj for `:doc`). Low-impact (most metadata values are literals: strings/keywords/bools), but `:arglists`/computed-meta diverge."
+    category: "scope"
+    barrier: |-
+      Def-target metadata map values are attached as unevaluated Forms. clj
+      evaluates `^{:k expr}` / attr-map values at def time. Fix: evaluate the
+      metadata map's VALUES (analyzeDef / the meta-lift path) instead of storing
+      the raw value Forms, so `:arglists '([k v])` → `([k v])`. Touches the meta
+      side-channel lift shared by defn/defmulti (buildDefnMeta + analyzeDef). Most
+      metadata is literal so impact is narrow; surfaced by integrant's defmulti
+      `{:arglists '([k v])}`. Cross-ref D-183 (defn meta), defmulti docstring fix.
+    last_reviewed: "2026-06-07"
   - id: "D-315"
     status: "PARKED (2026-06-07) — honeysql is a DRIP-FEED well; deferred as a whole. After landing clojure.template + defprotocol-options + `..` (811d1f08), honeysql's blocker chain kept revealing one gap at a time: (1) `java.util.Locale/US` + `.toUpperCase`/`.toLowerCase` Locale overload — a host surface was BUILT then REVERTED this session: with the NEXT blocker (3) present, Locale alone lands no verified lib, so it was speculative (no driving lib) + carried host_instance GC-rooting subtlety for a singleton cache. (2) `:extend-via-metadata` dispatch (D-314, separate). (3) **regex lookahead `(?=…)`** — `honey.sql/dehyphen` uses `#\"(\\w)-(?=\\w)\"`; cljw's regex engine rejects lookahead (`unsupported syntax in cycle 1`). This is a regex-ENGINE feature (not interop), a separate substantial unit. Resume honeysql only when (1)+(3) are landed TOGETHER (big-bang, not drip-feed) or honeysql is explicitly prioritized."
     category: "interop"
