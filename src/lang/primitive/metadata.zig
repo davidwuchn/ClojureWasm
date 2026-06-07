@@ -25,6 +25,7 @@ const lazy_seq = @import("../../runtime/lazy_seq.zig");
 const atom = @import("../../runtime/atom.zig");
 const symbol = @import("../../runtime/symbol.zig");
 const keyword = @import("../../runtime/keyword.zig");
+const td_mod = @import("../../runtime/type_descriptor.zig");
 
 /// Project the mechanical var-meta keys onto the Var's stored `.meta`
 /// (Stage 1.4 synthesize-on-read). `:name` (bare symbol) + `:ns` (first-class
@@ -67,9 +68,16 @@ pub fn metaFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation)
         .atom => atom.metaOf(v),
         // D-304 / ADR-0110: a symbol's value-metadata (nil for interned).
         .symbol => symbol.metaOf(v),
-        // D-280d7 functional: a deftype/reify implementing clojure.lang.IObj
-        // `meta` → consult IObj/-meta; nil if it does not implement IObj.
-        .typed_instance, .reified_instance => blk: {
+        // D-312: a record/deftype carries meta natively (nil when unset). A user
+        // IObj `-meta` impl wins (D-280d7); else the native field. `meta` never
+        // throws — a non-IObj deftype just reads its (always-nil) field.
+        .typed_instance => blk: {
+            var cs: dispatch.CallSite = .{};
+            if (try dispatch.dispatchOrNull(rt, env, &cs, v, "IObj", "-meta", &.{v}, loc)) |r| break :blk r;
+            break :blk td_mod.instMetaOf(v);
+        },
+        // A reify has no native field — IObj `-meta` dispatch only (nil if absent).
+        .reified_instance => blk: {
             var cs: dispatch.CallSite = .{};
             break :blk (try dispatch.dispatchOrNull(rt, env, &cs, v, "IObj", "-meta", &.{v}, loc)) orelse Value.nil_val;
         },
@@ -119,10 +127,19 @@ pub fn withMetaFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocat
         // D-304 / ADR-0110: mints a fresh non-interned symbol carrying meta.
         // Keyword stays in the `else` arm (clj rejects keyword metadata).
         .symbol => try symbol.withMeta(rt, v, m),
-        // D-280d7 functional: a deftype/reify implementing clojure.lang.IObj
-        // `withMeta` → consult IObj/-with-meta; a non-IObj instance keeps the
-        // not-an-IObj error.
-        .typed_instance, .reified_instance => blk: {
+        // D-312: a defrecord supports with-meta natively (clj records carry a
+        // hidden __meta field). A user IObj `-with-meta` impl wins (D-280d7); else
+        // records mint a fresh instance with the meta; a plain deftype/reify
+        // without an IObj impl keeps the not-an-IObj error (= clj ClassCastException).
+        .typed_instance => blk: {
+            var cs: dispatch.CallSite = .{};
+            if (try dispatch.dispatchOrNull(rt, env, &cs, v, "IObj", "-with-meta", &.{ v, m }, loc)) |r| break :blk r;
+            if (v.decodePtr(*const td_mod.TypedInstance).descriptor.kind == .defrecord)
+                break :blk try td_mod.instWithMeta(rt, v, m);
+            break :blk error_catalog.raise(.with_meta_target_not_iobj, loc, .{ .actual = @tagName(v.tag()) });
+        },
+        // A reify has no native field — IObj `-with-meta` dispatch only.
+        .reified_instance => blk: {
             var cs: dispatch.CallSite = .{};
             if (try dispatch.dispatchOrNull(rt, env, &cs, v, "IObj", "-with-meta", &.{ v, m }, loc)) |r| break :blk r;
             break :blk error_catalog.raise(.with_meta_target_not_iobj, loc, .{ .actual = @tagName(v.tag()) });

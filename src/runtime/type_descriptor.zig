@@ -205,6 +205,12 @@ pub const TypedInstance = extern struct {
     /// Pointer to a `gc.infra`-owned `[]Value` slice. Owned by this
     /// TypedInstance; finaliser releases it.
     field_values_ptr: [*]Value,
+    /// Instance metadata (D-312, the IObj record/deftype case). `nil` for a
+    /// freshly-constructed instance; `with-meta` mints a fresh instance with
+    /// this set (clj records store meta in a hidden `__meta` field). Ignored by
+    /// equality/hash (those walk descriptor + fields), so `(= r (with-meta r m))`
+    /// → true falls out by construction. GC-traced like the field Values.
+    meta: Value = Value.nil_val,
 
     comptime {
         std.debug.assert(@alignOf(TypedInstance) >= 8);
@@ -412,6 +418,43 @@ pub fn allocInstance(rt: *Runtime, descriptor: *const TypeDescriptor, field_valu
         .field_count = @intCast(field_values.len),
         .descriptor = descriptor,
         .field_values_ptr = buf.ptr,
+        .meta = Value.nil_val,
+    };
+    return Value.encodeHeapPtr(.typed_instance, inst);
+}
+
+/// Read a typed-instance's metadata (`nil` when unset). Distinct from
+/// `TypeDescriptor.meta` (the type-level meta) — this is per-instance (D-312).
+pub fn instMetaOf(v: Value) Value {
+    return v.decodePtr(*const TypedInstance).meta;
+}
+
+/// `with-meta` on a record/deftype instance (D-312): mint a FRESH instance
+/// sharing the descriptor, carrying `meta`. The field array MUST be copied, not
+/// shared — it is `gc.infra`-owned and freed by `finaliseTypedInstance`, so two
+/// instances sharing one `field_values_ptr` would double-free on sweep (the key
+/// divergence from the symbol `withMeta`, which safely shares interner-owned
+/// slices). `(identical? r (with-meta r m))` is false (distinct pointer).
+pub fn instWithMeta(rt: *Runtime, v: Value, meta: Value) !Value {
+    const base = v.decodePtr(*const TypedInstance);
+    return allocInstanceMeta(rt, base.descriptor, base.field_values_ptr[0..base.field_count], meta);
+}
+
+/// `allocInstance` + an explicit `meta`. Shared by `instWithMeta` and the record
+/// `assoc` re-mint path (D-313 — structural ops thread the source instance's meta
+/// so `(meta (assoc (with-meta r m) :k v))` stays `m`, clj-faithful). Copies the
+/// field values into a fresh `gc.infra` array (owned by the new instance).
+pub fn allocInstanceMeta(rt: *Runtime, descriptor: *const TypeDescriptor, field_values: []const Value, meta: Value) !Value {
+    const buf = try rt.gc.infra.alloc(Value, field_values.len);
+    errdefer rt.gc.infra.free(buf);
+    std.mem.copyForwards(Value, buf, field_values);
+    const inst = try rt.gc.alloc(TypedInstance);
+    inst.* = .{
+        .header = HeapHeader.init(.typed_instance),
+        .field_count = @intCast(field_values.len),
+        .descriptor = descriptor,
+        .field_values_ptr = buf.ptr,
+        .meta = meta,
     };
     return Value.encodeHeapPtr(.typed_instance, inst);
 }
@@ -425,6 +468,8 @@ pub fn traceTypedInstance(gc_ptr: *anyopaque, header: *HeapHeader) void {
     while (i < inst.field_count) : (i += 1) {
         if (inst.field_values_ptr[i].heapHeader()) |hdr| mark_sweep.mark(gc, hdr);
     }
+    // D-312: the instance metadata map is a GC child (no-op when nil).
+    if (inst.meta.heapHeader()) |hdr| mark_sweep.mark(gc, hdr);
 }
 
 /// Finaliser for `.typed_instance` — releases the `gc.infra`-owned

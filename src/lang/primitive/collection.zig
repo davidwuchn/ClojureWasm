@@ -615,7 +615,10 @@ pub fn assocFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation
             defer rt.gpa.free(new_fields);
             @memcpy(new_fields, old_fields);
             new_fields[slot_idx.?] = v;
-            break :blk try td_mod.allocInstance(rt, inst.descriptor, new_fields);
+            // D-313: thread the source record's metadata into the re-minted
+            // instance (clj records preserve meta across assoc/update). nil when
+            // the source had none, so a meta-less record is unaffected.
+            break :blk try td_mod.allocInstanceMeta(rt, inst.descriptor, new_fields, inst.meta);
         },
         else => blk: {
             // D-089 row 8.6 cycle 3: Associative -assoc slow-path. The

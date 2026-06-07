@@ -511,6 +511,7 @@ run_step "e2e_phase14_print_family"          "bash test/e2e/phase14_print_family
 run_step "e2e_phase14_var_special"           "bash test/e2e/phase14_var_special.sh"
 run_step "e2e_phase14_deps_edn"              "bash test/e2e/phase14_deps_edn.sh"
 run_step "e2e_phase14_deps_run_mode"         "bash test/e2e/phase14_deps_run_mode.sh"
+run_step "e2e_phase14_typed_instance_metadata" "bash test/e2e/phase14_typed_instance_metadata.sh"
 run_step "e2e_phase14_redef"                 "bash test/e2e/phase14_redef.sh"
 run_step "e2e_phase14_var_metadata"          "bash test/e2e/phase14_var_metadata.sh"
 run_step "e2e_phase14_defn_meta"             "bash test/e2e/phase14_defn_meta.sh"
