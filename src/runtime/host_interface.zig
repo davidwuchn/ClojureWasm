@@ -18,6 +18,7 @@
 //! cljw protocol Vars (which resolve through the ordinary `.protocol` path).
 
 const std = @import("std");
+const interface_membership = @import("interface_membership.zig");
 
 /// The three ways a recognised host-supertype name is handled (ADR-0102):
 ///   - method_family: `Object` — quote-wrapped; methods registered under the
@@ -264,34 +265,28 @@ const MARKERS = std.StaticStringMap(HostInterface).initComptime(.{
     .{ "java.io.Closeable", JAVA_IO_CLOSEABLE },
 });
 
-/// extend-protocol TARGET interfaces that map to cljw native value tags. A
-/// `(extend-protocol P clojure.lang.IPersistentVector …)` distributes the impl
-/// over each listed tag's native descriptor (via `rt/__native-type`), so a cljw
-/// vector / seq / named value dispatches P. These clj interfaces have no cljw
-/// instances of their own — cljw's native collections ARE their implementors
-/// (F-011), so extending TO them must reach the native descriptors. Distinct
-/// from MARKERS (which cover the deftype-supertype / protocol position).
-const NATIVE_EXTEND_TARGETS = std.StaticStringMap([]const []const u8).initComptime(.{
-    .{ "IPersistentVector", &[_][]const u8{"vector"} },
-    .{ "clojure.lang.IPersistentVector", &[_][]const u8{"vector"} },
-    // ISeq spans every cljw seq representation (a literal list, a `for`/`map`
-    // lazy seq, a cons, a chunked cons, range, and the string/array seq views).
-    .{ "ISeq", &[_][]const u8{ "list", "lazy_seq", "cons", "chunked_cons", "range", "string_seq", "array_seq" } },
-    .{ "clojure.lang.ISeq", &[_][]const u8{ "list", "lazy_seq", "cons", "chunked_cons", "range", "string_seq", "array_seq" } },
-    // Named = keyword ∪ symbol (both carry a name).
-    .{ "Named", &[_][]const u8{ "keyword", "symbol" } },
-    .{ "clojure.lang.Named", &[_][]const u8{ "keyword", "symbol" } },
-    // IPersistentMap spans the three persistent map representations. (Keyword /
-    // Symbol / IPersistentVector resolve to their single native tag via
-    // class_name, so they need no row here.) honeysql extends SqlizeValue to it.
-    .{ "IPersistentMap", &[_][]const u8{ "array_map", "hash_map", "sorted_map" } },
-    .{ "clojure.lang.IPersistentMap", &[_][]const u8{ "array_map", "hash_map", "sorted_map" } },
-});
+/// extend-protocol TARGET interfaces → native value-tag NAMES. A
+/// `(extend-protocol P clojure.lang.ISeq …)` distributes the impl over each
+/// listed tag's native descriptor (via `rt/__native-type`), so a cljw seq /
+/// named / map value dispatches P. ISeq / Named / IPersistentMap DERIVE from the
+/// `interface_membership` SSOT (the same source class_name.matchInterface uses),
+/// so the tag lists live in ONE place (ADR-0116 Decision C, D-317 partial).
+/// IPersistentVector is kept EXPLICIT: its extend-target set is {vector} ONLY,
+/// NOT the instance? membership {vector, map_entry} — distributing to map_entry
+/// needs a separate decision (D-317 residual, ADR-0116). Distinct from MARKERS
+/// (which cover the deftype-supertype / protocol position).
+const IPV_EXTEND_TAGS = [_][]const u8{"vector"};
 
 /// The native `Value.Tag` keyword names a `(extend-protocol P <iface> …)` must
-/// distribute the impl over, or null when `name` is not such an interface.
+/// distribute the impl over (bare or `clojure.lang.`-qualified), or null when
+/// `name` is not an extend-target interface.
 pub fn nativeExtendTags(name: []const u8) ?[]const []const u8 {
-    return NATIVE_EXTEND_TARGETS.get(name);
+    const simple = interface_membership.simpleOf(name);
+    if (std.mem.eql(u8, simple, "IPersistentVector")) return &IPV_EXTEND_TAGS;
+    if (std.mem.eql(u8, simple, "ISeq")) return interface_membership.ISEQ_NAMES;
+    if (std.mem.eql(u8, simple, "Named")) return interface_membership.NAMED_NAMES;
+    if (std.mem.eql(u8, simple, "IPersistentMap")) return interface_membership.MAP_NAMES;
+    return null;
 }
 
 /// True when `name` is a quote-wrap marker (method_family or zero-method marker)

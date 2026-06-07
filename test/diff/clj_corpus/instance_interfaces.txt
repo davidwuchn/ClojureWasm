@@ -72,3 +72,29 @@
 ;;=> true
 (instance? clojure.lang.IPersistentCollection (sorted-map :a 1))
 ;;=> true
+(instance? clojure.lang.IDeref (atom 1))
+;;=> true
+(instance? clojure.lang.IDeref (delay 1))
+;;=> true
+(instance? clojure.lang.IDeref (volatile! 1))
+;;=> true
+(instance? clojure.lang.IDeref (reduced 1))
+;;=> true
+(instance? clojure.lang.IDeref 5)
+;;=> false
+(instance? clojure.lang.IRef (atom 1))
+;;=> true
+(instance? clojure.lang.IRef (delay 1))
+;;=> false
+(instance? clojure.lang.IReference (atom 1))
+;;=> true
+(instance? clojure.lang.IPending (delay 1))
+;;=> true
+(instance? clojure.lang.IPending (map inc [1]))
+;;=> true
+(instance? clojure.lang.IPending (atom 1))
+;;=> false
+(instance? clojure.lang.IBlockingDeref (promise))
+;;=> true
+(instance? clojure.lang.IBlockingDeref (delay 1))
+;;=> false

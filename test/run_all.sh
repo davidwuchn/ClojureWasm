@@ -412,6 +412,7 @@ run_step "e2e_phase14_bignum_compare"        "bash test/e2e/phase14_bignum_compa
 run_step "e2e_phase14_boolean_statics"       "bash test/e2e/phase14_boolean_statics.sh"
 run_step "e2e_phase14_math_extra"            "bash test/e2e/phase14_math_extra.sh"
 run_step "e2e_phase14_instance_member"       "bash test/e2e/phase14_instance_member.sh"
+run_step "e2e_phase14_instance_deref_family" "bash test/e2e/phase14_instance_deref_family.sh"
 run_step "e2e_phase14_math"                  "bash test/e2e/phase14_math.sh"
 run_step "e2e_phase14_math_exact"            "bash test/e2e/phase14_math_exact.sh"
 run_step "e2e_phase14_fn_recur"              "bash test/e2e/phase14_fn_recur.sh"

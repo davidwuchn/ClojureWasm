@@ -57,6 +57,7 @@ const TypeDescriptor = @import("type_descriptor.zig").TypeDescriptor;
 const TypedInstance = @import("type_descriptor.zig").TypedInstance;
 const ReifiedInstance = @import("type_descriptor.zig").ReifiedInstance;
 const host_class = @import("error/host_class.zig");
+const interface_membership = @import("interface_membership.zig");
 
 /// One Tag-level entry — exact match against `Value.tag()`.
 const NativeEntry = struct {
@@ -145,6 +146,12 @@ const FQCN_MAP = std.StaticStringMap([]const u8).initComptime(.{
     .{ "java.util.List", "List" },
     .{ "java.util.Set", "Set" },
     .{ "java.util.Collection", "Collection" },
+    // deref / pending / ref family (ADR-0116, D-308).
+    .{ "clojure.lang.IDeref", "IDeref" },
+    .{ "clojure.lang.IRef", "IRef" },
+    .{ "clojure.lang.IReference", "IReference" },
+    .{ "clojure.lang.IPending", "IPending" },
+    .{ "clojure.lang.IBlockingDeref", "IBlockingDeref" },
 });
 
 /// Normalise FQCN inputs to simple names. Falls back to `host_class`
@@ -201,29 +208,9 @@ pub fn isKnown(class_name: []const u8) bool {
 }
 
 fn isInterfaceName(simple: []const u8) bool {
-    return std.mem.eql(u8, simple, "IFn") or
-        std.mem.eql(u8, simple, "Number") or
-        std.mem.eql(u8, simple, "IPersistentMap") or
-        std.mem.eql(u8, simple, "IPersistentSet") or
-        std.mem.eql(u8, simple, "IPersistentCollection") or
-        std.mem.eql(u8, simple, "IEditableCollection") or
-        std.mem.eql(u8, simple, "Iterable") or
-        std.mem.eql(u8, simple, "Seqable") or
-        std.mem.eql(u8, simple, "Sequential") or
-        std.mem.eql(u8, simple, "ISeq") or
-        std.mem.eql(u8, simple, "Associative") or
-        std.mem.eql(u8, simple, "ILookup") or
-        std.mem.eql(u8, simple, "Indexed") or
-        std.mem.eql(u8, simple, "IPersistentVector") or
-        std.mem.eql(u8, simple, "IPersistentList") or
-        std.mem.eql(u8, simple, "IPersistentStack") or
-        std.mem.eql(u8, simple, "Named") or
-        std.mem.eql(u8, simple, "Reversible") or
-        std.mem.eql(u8, simple, "Sorted") or
-        std.mem.eql(u8, simple, "Map") or
-        std.mem.eql(u8, simple, "List") or
-        std.mem.eql(u8, simple, "Set") or
-        std.mem.eql(u8, simple, "Collection");
+    // Derived from the interface_membership SSOT (ADR-0116): the former
+    // 24-deep or-chain is retired so the recognised set has one source.
+    return interface_membership.isInterface(simple);
 }
 
 /// `(instance? Class v)` predicate. Returns true iff `v` is a
@@ -303,127 +290,10 @@ pub fn isCallableClassName(name: []const u8) bool {
 }
 
 fn matchInterface(v: Value, simple: []const u8) bool {
-    const t = v.tag();
-    if (std.mem.eql(u8, simple, "IFn")) {
-        // ADR-0109: `(instance? IFn x)` = `(ifn? x)` — clj's IFn covers every
-        // callable, NOT just fns (Keyword/Symbol/Var/Vector/Map/Set are all IFn
-        // via invoke-as-lookup). Was fn-tags only → (instance? IFn :kw) wrongly
-        // false. Mirrors `core.ifnQ`'s tag set.
-        return switch (t) {
-            .fn_val, .builtin_fn, .multi_fn, .protocol_fn, .keyword, .symbol, .var_ref, .vector, .array_map, .hash_map, .hash_set, .sorted_map, .sorted_set => true,
-            else => false,
-        };
-    }
-    if (std.mem.eql(u8, simple, "Number")) {
-        return t == .integer or t == .float;
-    }
-    if (std.mem.eql(u8, simple, "IPersistentMap")) {
-        return t == .array_map or t == .hash_map or t == .sorted_map;
-    }
-    if (std.mem.eql(u8, simple, "IPersistentSet")) {
-        return t == .hash_set or t == .sorted_set;
-    }
-    // Every persistent collection + seq (Seqable / IPersistentCollection share
-    // this membership in cljw). clj-verified across all collection/seq tags.
-    if (std.mem.eql(u8, simple, "IPersistentCollection") or std.mem.eql(u8, simple, "Seqable")) {
-        return switch (t) {
-            .list, .cons, .lazy_seq, .chunked_cons, .vector, .array_map, .hash_map, .sorted_map, .hash_set, .sorted_set, .persistent_queue, .range, .string_seq, .array_seq, .map_entry => true,
-            else => false,
-        };
-    }
-    // Ordered collections + seqs (NOT maps / sets). map_entry is vector-like;
-    // a queue is Sequential (clj-verified) — kept in sync with the
-    // `sequential?` predicate (lang/primitive/core.zig).
-    if (std.mem.eql(u8, simple, "Sequential")) {
-        return switch (t) {
-            .vector, .map_entry, .list, .cons, .lazy_seq, .chunked_cons, .range, .string_seq, .array_seq, .persistent_queue => true,
-            else => false,
-        };
-    }
-    // Seq view (ISeq): the seq types + list (a PersistentList is a seq); NOT
-    // vector / maps / sets.
-    if (std.mem.eql(u8, simple, "ISeq")) {
-        return switch (t) {
-            .list, .cons, .lazy_seq, .chunked_cons, .range, .string_seq, .array_seq => true,
-            else => false,
-        };
-    }
-    // key→value lookup collections (Associative / ILookup): maps + the indexed
-    // vector + map_entry. Sets are NOT Associative.
-    if (std.mem.eql(u8, simple, "Associative") or std.mem.eql(u8, simple, "ILookup")) {
-        return switch (t) {
-            .vector, .map_entry, .array_map, .hash_map, .sorted_map => true,
-            else => false,
-        };
-    }
-    // Integer-indexed (Indexed) / vector-shaped (IPersistentVector): vector +
-    // map_entry (a MapEntry is an IPersistentVector of [k v]).
-    if (std.mem.eql(u8, simple, "Indexed") or std.mem.eql(u8, simple, "IPersistentVector")) {
-        return t == .vector or t == .map_entry;
-    }
-    // A PersistentQueue is an IPersistentList in clj (clj-verified).
-    if (std.mem.eql(u8, simple, "IPersistentList")) {
-        return t == .list or t == .cons or t == .persistent_queue;
-    }
-    // Stack ops (peek/pop): list, vector, queue, cons, map_entry.
-    if (std.mem.eql(u8, simple, "IPersistentStack")) {
-        return switch (t) {
-            .vector, .list, .cons, .map_entry, .persistent_queue => true,
-            else => false,
-        };
-    }
-    // (name …)-able: keywords + symbols.
-    if (std.mem.eql(u8, simple, "Named")) {
-        return t == .keyword or t == .symbol;
-    }
-    // rseq-able: vector + the sorted collections + map_entry.
-    if (std.mem.eql(u8, simple, "Reversible")) {
-        return switch (t) {
-            .vector, .map_entry, .sorted_map, .sorted_set => true,
-            else => false,
-        };
-    }
-    if (std.mem.eql(u8, simple, "Sorted")) {
-        return t == .sorted_map or t == .sorted_set;
-    }
-    // Collections supporting `transient`: vector + the unsorted maps/sets.
-    // Sorted maps/sets, lists, and seqs are NOT editable (clj-verified).
-    if (std.mem.eql(u8, simple, "IEditableCollection")) {
-        return switch (t) {
-            .vector, .array_map, .hash_map, .hash_set => true,
-            else => false,
-        };
-    }
-    // `java.lang.Iterable` — every cljw collection + seq (the `coll?` set);
-    // scalars, strings, and nil are NOT Iterable (clj-verified).
-    if (std.mem.eql(u8, simple, "Iterable")) {
-        return switch (t) {
-            .list, .cons, .lazy_seq, .chunked_cons, .vector, .array_map, .hash_map, .sorted_map, .hash_set, .sorted_set, .persistent_queue, .range, .string_seq, .array_seq, .map_entry => true,
-            else => false,
-        };
-    }
-    // java.util.* collection interfaces (clj-verified membership). Maps are
-    // NOT java.util.Collection (JVM: Map does not extend Collection); a MapEntry
-    // IS a java.util.List (it is a 2-vector). java.util.Set excludes maps.
-    if (std.mem.eql(u8, simple, "Map")) {
-        return t == .array_map or t == .hash_map or t == .sorted_map;
-    }
-    if (std.mem.eql(u8, simple, "Set")) {
-        return t == .hash_set or t == .sorted_set;
-    }
-    if (std.mem.eql(u8, simple, "List")) {
-        return switch (t) {
-            .list, .cons, .lazy_seq, .chunked_cons, .vector, .range, .string_seq, .array_seq, .map_entry => true,
-            else => false,
-        };
-    }
-    if (std.mem.eql(u8, simple, "Collection")) {
-        return switch (t) {
-            .list, .cons, .lazy_seq, .chunked_cons, .vector, .hash_set, .sorted_set, .persistent_queue, .range, .string_seq, .array_seq, .map_entry => true,
-            else => false,
-        };
-    }
-    return false;
+    // Membership derives from the interface_membership SSOT (ADR-0116) so
+    // instance? and extend-protocol-target distribution share one source
+    // and cannot drift (D-317).
+    return interface_membership.isMember(v.tag(), simple);
 }
 
 fn matchUserType(v: Value, simple: []const u8) bool {
@@ -441,6 +311,18 @@ fn matchUserType(v: Value, simple: []const u8) bool {
         if (t.fqcn) |fqcn| {
             if (std.mem.eql(u8, fqcn, simple)) return true;
             if (std.mem.eql(u8, normalizeClassName(fqcn), simple)) return true;
+        }
+        // ADR-0116 Decision B (∪ arm): a user deftype/reify that EXTENDS a
+        // clojure.lang interface (e.g. IDeref) registers its method under the
+        // bare cljw protocol name; match that against the normalised interface
+        // name so `(instance? clojure.lang.IDeref user-inst)` is true. Mirrors
+        // protocol.satisfies' name comparison; native membership stays primary,
+        // this is the additive arm.
+        for (t.method_table) |entry| {
+            if (std.mem.eql(u8, entry.protocol_name, simple)) return true;
+        }
+        for (t.protocol_impls) |pn| {
+            if (std.mem.eql(u8, pn, simple)) return true;
         }
         cursor = t.parent;
     }
