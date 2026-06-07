@@ -1,0 +1,5 @@
+{:paths ["."]
+ :deps {org.clojure/core.unify
+        {:git/url "https://github.com/clojure/core.unify.git"
+         :git/sha "cbcf559abc86e30fbad83acdb0f8ab787379ad16"}}
+ :aliases {:verify {:main-opts ["-m" "verify"]}}}

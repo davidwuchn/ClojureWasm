@@ -60,14 +60,12 @@ active:
       synthesized form IS the Clojure body that fn would host.
     last_reviewed: "2026-06-07"
   - id: "D-311"
-    status: "now (2026-06-07, verified_projects probe) — `(.isArray <class-value>)` unsupported: `No implementation of method 'isArray' on protocol '<.member>' for type 'type_descriptor'`. Surfaced exercising clojure.core.unify via `cljw -M:verify` (unify's array-detection calls `.isArray` on a `(class x)` value). cljw resolves `(class x)` to a `type_descriptor` but has no host java.lang.Class instance-method surface (`.isArray`/`.getName`/`.getSimpleName`/…). Sibling of D-293 (opaque host-class VALUE) — the instance-method side. Definition-derived fix (F-013): a java.lang.Class method surface over type_descriptor, NOT a per-lib patch. Blocks core.unify functional verification (require loads; unify call hits it)."
+    status: "DISCHARGED 2026-06-07 — java.lang.Class instance-method surface + java.util.* collection interfaces. New src/runtime/java/lang/Class.zig installs `.isArray`/`.getName`/`.getSimpleName`/`.isInstance` on the `.type_descriptor` native descriptor (the value `(class x)` returns); `.isArray` is a pointer-identity test against the `.array` descriptor, `.isInstance` routes through `class_name.isInstance`, getName/getSimpleName read the descriptor fqcn (simple per AD-003). ALSO added `java.util.Map`/`List`/`Set`/`Collection` to class_name's interface recognition (FQCN_MAP + isInterfaceName + matchInterface), clj-verified membership (Map=maps; Set=sets; List=seqs+vector+mapentry; Collection=all-but-maps; maps are NOT Collection per JVM). **clojure.core.unify now functionally verifies** (8th verified_projects proof — its `composite?` uses both `(-> x class .isArray)` and `(instance? java.util.Map x)`). e2e phase15_class_methods (11). Definition-derived (F-013), not a per-lib patch."
     category: "interop"
     barrier: |-
-      `(.isArray klass)` on a `(class x)` type_descriptor raises no-impl. cljw has
-      no java.lang.Class instance-method surface. Add the Class method family
-      (.isArray/.getName/.getSimpleName/.isInstance) over type_descriptor,
-      definition-derived. Cross-ref D-293 (class-VALUE resolution, the static side),
-      ADR-0109. Surfaced: verified_projects core.unify probe.
+      DISCHARGED. java.lang.Class instance methods (Class.zig) + java.util.*
+      collection interfaces (class_name.zig) landed; core.unify verifies. Cross-ref
+      D-293 (class-VALUE static side), ADR-0109, e2e phase15_class_methods.
     last_reviewed: "2026-06-07"
   - id: "D-312"
     status: "DISCHARGED 2026-06-07 (this commit, ADR-0112). `with-meta`/`meta` on a typed_instance landed (Shape α, native field): `TypedInstance.meta` + `instMetaOf` + `instWithMeta` (COPIES the gc.infra-owned field array — can't share, double-free; the one divergence from symbol withMeta) + a trace-mark line (no membrane flip / no registration — typed_instance already GcManaged+registered). metadata.zig `.typed_instance` arms kind-gated: user IObj impl wins; else record→native, non-IObj deftype→`.with_meta_target_not_iobj` (=clj ClassCastException); reify stays IObj-dispatch-only (no field tail). Equality/hash unchanged (already field-structural → `(= r (with-meta r m))`→true free). **clojure.data.zip now functionally verifies** (added as verified_projects proof). e2e phase14_typed_instance_metadata. Record assoc/update thread the source meta too (D-313, folded in same commit per the DA — divergence-suppression priority)."

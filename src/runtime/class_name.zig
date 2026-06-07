@@ -139,6 +139,12 @@ const FQCN_MAP = std.StaticStringMap([]const u8).initComptime(.{
     .{ "clojure.lang.Named", "Named" },
     .{ "clojure.lang.Reversible", "Reversible" },
     .{ "clojure.lang.Sorted", "Sorted" },
+    // java.util collection interfaces (cljw collections implement them, JVM
+    // parity) — surfaced by clojure.core.unify's `(instance? java.util.Map x)`.
+    .{ "java.util.Map", "Map" },
+    .{ "java.util.List", "List" },
+    .{ "java.util.Set", "Set" },
+    .{ "java.util.Collection", "Collection" },
 });
 
 /// Normalise FQCN inputs to simple names. Falls back to `host_class`
@@ -213,7 +219,11 @@ fn isInterfaceName(simple: []const u8) bool {
         std.mem.eql(u8, simple, "IPersistentStack") or
         std.mem.eql(u8, simple, "Named") or
         std.mem.eql(u8, simple, "Reversible") or
-        std.mem.eql(u8, simple, "Sorted");
+        std.mem.eql(u8, simple, "Sorted") or
+        std.mem.eql(u8, simple, "Map") or
+        std.mem.eql(u8, simple, "List") or
+        std.mem.eql(u8, simple, "Set") or
+        std.mem.eql(u8, simple, "Collection");
 }
 
 /// `(instance? Class v)` predicate. Returns true iff `v` is a
@@ -389,6 +399,27 @@ fn matchInterface(v: Value, simple: []const u8) bool {
     if (std.mem.eql(u8, simple, "Iterable")) {
         return switch (t) {
             .list, .cons, .lazy_seq, .chunked_cons, .vector, .array_map, .hash_map, .sorted_map, .hash_set, .sorted_set, .persistent_queue, .range, .string_seq, .array_seq, .map_entry => true,
+            else => false,
+        };
+    }
+    // java.util.* collection interfaces (clj-verified membership). Maps are
+    // NOT java.util.Collection (JVM: Map does not extend Collection); a MapEntry
+    // IS a java.util.List (it is a 2-vector). java.util.Set excludes maps.
+    if (std.mem.eql(u8, simple, "Map")) {
+        return t == .array_map or t == .hash_map or t == .sorted_map;
+    }
+    if (std.mem.eql(u8, simple, "Set")) {
+        return t == .hash_set or t == .sorted_set;
+    }
+    if (std.mem.eql(u8, simple, "List")) {
+        return switch (t) {
+            .list, .cons, .lazy_seq, .chunked_cons, .vector, .range, .string_seq, .array_seq, .map_entry => true,
+            else => false,
+        };
+    }
+    if (std.mem.eql(u8, simple, "Collection")) {
+        return switch (t) {
+            .list, .cons, .lazy_seq, .chunked_cons, .vector, .hash_set, .sorted_set, .persistent_queue, .range, .string_seq, .array_seq, .map_entry => true,
             else => false,
         };
     }

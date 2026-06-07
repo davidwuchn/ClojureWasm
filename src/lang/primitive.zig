@@ -131,6 +131,10 @@ pub fn registerAll(env: *Env) !void {
     // .getData) on the `.ex_info` native descriptor — the high-frequency
     // catch-body pattern. Both backends resolve via receiverDescriptor.
     try @import("../runtime/java/lang/Throwable.zig").installNativeMethods(env.rt);
+    // D-311: java.lang.Class instance methods (.isArray/.getName/.getSimpleName/
+    // .isInstance) on the `.type_descriptor` native descriptor — the value
+    // `(class x)` returns. Surfaced by clojure.core.unify's `composite?`.
+    try @import("../runtime/java/lang/Class.zig").installNativeMethods(env.rt);
     // D-232: `.name`/`.getName`/`.toString` interop on the Namespace `.ns` value.
     try @import("../runtime/namespace_methods.zig").installNativeMethods(env.rt);
 
