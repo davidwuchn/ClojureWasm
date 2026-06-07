@@ -23,6 +23,12 @@
 ;; flag like *warn-on-reflection*; defined so code that toggles it loads
 ;; (clojure.data.avl and other libs set! it at the top of a file).
 (def ^:dynamic *unchecked-math* false)
+
+;; `*command-line-args*` — the seq of strings passed after the run-mode main
+;; option (`cljw -M -m my.ns a b` → `("a" "b")`; nil when none). The `-M`/`-X`
+;; run modes set its root via alter-var-root before the app forms eval (D-310,
+;; ADR-0111); a plain `cljw <file>` / `-e` leaves it nil.
+(def ^:dynamic *command-line-args* nil)
 ;; `*print-length*` / `*print-level*` (ADR-0088) are interned in Zig
 ;; (`bootstrap.registerPrintLimitVars`) alongside the other cached-pointer
 ;; dynamic vars (*ns*, *data-readers*) so the renderer reads them via a cached

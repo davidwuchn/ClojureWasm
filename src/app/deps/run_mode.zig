@@ -109,8 +109,8 @@ fn runMain(
         std.process.exit(1);
     } else {
         // Bare token → a script file path. Load it (no result printing, the
-        // clojure.main script contract). Trailing args are not bound to
-        // *command-line-args* yet (D-310).
+        // clojure.main script contract). The post-path args bind to
+        // *command-line-args* via a setter form prepended to the script (D-310).
         const file = std.Io.Dir.cwd().openFile(io, head, .{}) catch |err| {
             try stderr.print("-M: cannot open script '{s}': {s}\n", .{ head, @errorName(err) });
             try stderr.flush();
@@ -120,16 +120,22 @@ fn runMain(
         var file_buf: [4096]u8 = undefined;
         var file_reader = file.reader(io, &file_buf);
         const file_src = try file_reader.interface.allocRemaining(arena, .unlimited);
-        try runner.runSource(io, gpa, arena, stdout, stderr, file_src, head, load_paths, false);
+        var aw: std.Io.Writer.Allocating = .init(arena);
+        try writeClArgsSetter(&aw.writer, eff[1..]);
+        try aw.writer.writeByte('\n');
+        try aw.writer.writeAll(file_src);
+        try runner.runSource(io, gpa, arena, stdout, stderr, try aw.toOwnedSlice(), head, load_paths, false);
     }
 }
 
-/// `(let [v (requiring-resolve 'ns/-main)] (if v (v "a" "b") (throw …)))`.
-/// The guard turns a missing `-main` into a clean message rather than a bare
-/// resolve failure (survey edge case 2).
+/// `(alter-var-root #'*command-line-args* (constantly ARGS)) (let [v (requiring-
+/// resolve 'ns/-main)] (if v (v "a" "b") (throw …)))`. The guard turns a missing
+/// `-main` into a clean message rather than a bare resolve failure (survey edge
+/// case 2); the prepended setter binds `*command-line-args*` for D-310.
 fn synthMainNs(arena: std.mem.Allocator, ns: []const u8, args: []const []const u8) ![]const u8 {
     var aw: std.Io.Writer.Allocating = .init(arena);
     const w = &aw.writer;
+    try writeClArgsSetter(w, args);
     try w.print(
         "(clojure.core/let [__cljw_main (clojure.core/requiring-resolve (quote {s}/-main))]" ++
             " (if __cljw_main (__cljw_main",
@@ -178,7 +184,7 @@ fn runExec(
         std.process.exit(1);
     }
 
-    const src = try synthExec(arena, fn_sym, lastAliasExecArgs(cfg, alias_names), run_args[kv_start..]);
+    const src = try synthExec(arena, fn_sym, lastAliasExecArgs(cfg, alias_names), run_args[kv_start..], run_args);
     try runner.runSource(io, gpa, arena, stdout, stderr, src, "<-X>", load_paths, false);
 }
 
@@ -186,9 +192,10 @@ fn runExec(
 /// ALIAS_ARGS is the alias's `:exec-args` re-serialized (or `{}`); the CLI map's
 /// values are spliced verbatim so EDN tokens keep their type (`:n 5` → long 5,
 /// not "5" — the v0 string-coercion gap).
-fn synthExec(arena: std.mem.Allocator, fn_sym: []const u8, exec_args: ?form_mod.Form, kvs: []const []const u8) ![]const u8 {
+fn synthExec(arena: std.mem.Allocator, fn_sym: []const u8, exec_args: ?form_mod.Form, kvs: []const []const u8, cl_args: []const []const u8) ![]const u8 {
     var aw: std.Io.Writer.Allocating = .init(arena);
     const w = &aw.writer;
+    try writeClArgsSetter(w, cl_args);
     // writeAll for the brace-heavy literals (Zig's format parser treats a bare
     // `{`/`}` as a placeholder); print only where a `{s}` substitution is needed.
     try w.writeAll("(clojure.core/let [__cljw_fn (clojure.core/requiring-resolve (quote ");
@@ -252,6 +259,26 @@ fn findAlias(cfg: parse.DepsConfig, name: []const u8) ?parse.Alias {
     return null;
 }
 
+/// Write `(alter-var-root (var clojure.core/*command-line-args*) (constantly
+/// ARGS))` — ARGS is `(list "a" "b")` or `nil`. Prepended to a `-M`/`-X` run so a
+/// `-main` / script / exec-fn that reads `*command-line-args*` sees the trailing
+/// args (D-310). It sets the var ROOT rather than `binding`: cljw evals
+/// form-by-form, so a `binding` could not span a multi-form script.
+fn writeClArgsSetter(w: *std.Io.Writer, args: []const []const u8) !void {
+    try w.writeAll("(clojure.core/alter-var-root (var clojure.core/*command-line-args*) (clojure.core/constantly ");
+    if (args.len == 0) {
+        try w.writeAll("nil");
+    } else {
+        try w.writeAll("(clojure.core/list");
+        for (args) |a| {
+            try w.writeByte(' ');
+            try writeStringLiteral(w, a);
+        }
+        try w.writeByte(')');
+    }
+    try w.writeAll(")) ");
+}
+
 /// Write `s` as a Clojure string literal (double-quoted, `\`/`"` escaped).
 fn writeStringLiteral(w: *std.Io.Writer, s: []const u8) !void {
     try w.writeByte('"');
@@ -273,13 +300,17 @@ test "synthMainNs: ns + args → requiring-resolve guarded -main call" {
     // The embedded quote is escaped.
     try testing.expect(std.mem.find(u8, src, "be\\\"ta") != null);
     try testing.expect(std.mem.find(u8, src, "has no -main fn") != null);
+    // The args also bind *command-line-args* via a prepended setter (D-310).
+    try testing.expect(std.mem.find(u8, src, "(var clojure.core/*command-line-args*)") != null);
+    try testing.expect(std.mem.find(u8, src, "(clojure.core/list \"alpha\"") != null);
 }
 
 test "synthExec: exec-fn + CLI kv splices values verbatim (EDN-typed)" {
     const testing = std.testing;
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
-    const src = try synthExec(arena.allocator(), "foo.bar/run", null, &.{ ":n", "5", ":on", "true" });
+    const kvs: []const []const u8 = &.{ ":n", "5", ":on", "true" };
+    const src = try synthExec(arena.allocator(), "foo.bar/run", null, kvs, kvs);
     try testing.expect(std.mem.find(u8, src, "(quote foo.bar/run)") != null);
     // Verbatim splice → 5 stays a long literal, not "5".
     try testing.expect(std.mem.find(u8, src, ":n 5") != null);

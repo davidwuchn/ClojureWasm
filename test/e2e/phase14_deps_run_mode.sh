@@ -25,7 +25,7 @@ trap 'rm -rf "$WORK"' EXIT
 proj="$WORK/proj"; mkdir -p "$proj/src/myapp"
 cat > "$proj/src/myapp/core.clj" <<'EOF'
 (ns myapp.core)
-(defn -main [& args] (println "MAIN" (vec args)))
+(defn -main [& args] (println "MAIN" (vec args) "CLA" (vec *command-line-args*)))
 (defn build [opts] (println "BUILD" (:id opts) (type (:id opts)) (:tag opts)))
 EOF
 cat > "$proj/deps.edn" <<'EOF'
@@ -34,15 +34,15 @@ cat > "$proj/deps.edn" <<'EOF'
            :build {:exec-fn myapp.core/build :exec-args {:id 1 :tag "base"}}}}
 EOF
 
-# --- Case 1: bare -m passes trailing args to -main as strings ---
+# --- Case 1: bare -m passes trailing args to -main + binds *command-line-args* ---
 got="$(cd "$proj" && "$BIN" -m myapp.core a b)"
-[[ "$got" == 'MAIN [a b]' ]] || fail "bare -m: got '$got'"
-echo "PASS run_mode_bare_m -> args reach -main"
+[[ "$got" == 'MAIN [a b] CLA [a b]' ]] || fail "bare -m: got '$got'"
+echo "PASS run_mode_bare_m -> args reach -main + *command-line-args* (D-310)"
 
 # --- Case 2: -M:alias prepends the alias :main-opts, APPENDS user args ---
 got="$(cd "$proj" && "$BIN" -M:run extra)"
-[[ "$got" == 'MAIN [extra]' ]] || fail "-M:run append: got '$got'"
-echo "PASS run_mode_M_alias_append -> alias main-opts + user arg"
+[[ "$got" == 'MAIN [extra] CLA [extra]' ]] || fail "-M:run append: got '$got'"
+echo "PASS run_mode_M_alias_append -> alias main-opts + user arg + *command-line-args*"
 
 # --- Case 3: -X:alias runs :exec-fn with :exec-args; result not printed ---
 got="$(cd "$proj" && "$BIN" -X:build)"
@@ -81,5 +81,13 @@ EOF
 got="$(cd "$proj" && "$BIN" -X myapp.ret/run)"
 [[ "$got" == '' ]] || fail "-X return not printed: got '$got'"
 echo "PASS run_mode_X_no_result_print -> result suppressed"
+
+# --- Case 8: a -M script file reads *command-line-args* (root-set, D-310) ---
+cat > "$proj/cla_script.clj" <<'EOF'
+(println "CLA" (vec *command-line-args*))
+EOF
+got="$(cd "$proj" && "$BIN" -M cla_script.clj p q)"
+[[ "$got" == 'CLA [p q]' ]] || fail "-M file *command-line-args*: got '$got'"
+echo "PASS run_mode_file_command_line_args -> script sees post-path args"
 
 echo "ALL phase14_deps_run_mode PASS"
