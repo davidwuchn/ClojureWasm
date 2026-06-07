@@ -599,6 +599,18 @@ fn analyzeSymbol(
                 const ref = try type_descriptor.makeTypeDescriptorRef(env.rt, td);
                 return try makeConstant(arena, ref, form);
             }
+            // ADR-0109: a recognised OPAQUE host class (java.math.BigInteger,
+            // Integer, …) — a JVM numeric class cljw collapses away (F-005) —
+            // resolves to a distinct class VALUE keyed by its name (reusing the
+            // named-descriptor cache). No cljw value has this type, so instance?
+            // is false and extend-type is a load-only no-op (handled at those
+            // consumers); the descriptor exists only so `(= (type x) Integer)`
+            // and class-dispatch branches resolve clj-faithfully.
+            if (host_class.isKnownOpaqueClass(sym.name)) {
+                const td = try env.rt.exceptionDescriptor(sym.name);
+                const ref = try type_descriptor.makeTypeDescriptorRef(env.rt, td);
+                return try makeConstant(arena, ref, form);
+            }
         }
         return error_catalog.raise(.symbol_unresolved, form.location, .{ .sym = symFullName(sym) });
     };

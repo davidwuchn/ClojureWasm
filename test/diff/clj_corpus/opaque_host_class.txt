@@ -1,0 +1,16 @@
+(= (type 5) Integer)
+;;=> false
+(= (type 5) Long)
+;;=> true
+(= (type (bigint 5)) java.math.BigInteger)
+;;=> false
+(instance? Integer 5)
+;;=> false
+(instance? java.math.BigInteger (bigint 5))
+;;=> false
+(instance? Short 5)
+;;=> false
+(instance? Long 5)
+;;=> true
+(instance? String "x")
+;;=> true

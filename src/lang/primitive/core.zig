@@ -55,6 +55,11 @@ pub fn instanceQPrim(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLo
         });
     }
     const class_sym = symbol_mod.asSymbol(args[0]).name;
+    // ADR-0109: a recognised OPAQUE host class (Integer, java.math.BigInteger, …)
+    // is one cljw COLLAPSES away (F-005) — no cljw value has it as its type, so
+    // `(instance? Integer x)` is uniformly false (clj agrees: a cljw int IS a
+    // Long), never a class_name_unknown error.
+    if (host_class.isKnownOpaqueClass(class_sym)) return .false_val;
     // class_name.isKnown covers native + interface + Throwable; user-
     // defined defrecord / deftype names live in `rt.types` and need
     // a separate check (row 7.13 cycle 1 — was the row 7.12 cycle 1

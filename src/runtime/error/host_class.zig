@@ -142,6 +142,33 @@ pub fn isKnownException(class_name: []const u8) bool {
     return false;
 }
 
+/// Closed set of JVM numeric classes cljw COLLAPSES into its own types (F-005 /
+/// ADR-0059 / AD-016): java.math.BigInteger → cljw BigInt; Integer/Short/Byte/
+/// Float → cljw Long/Double. cljw has NO values of these types, so as class
+/// VALUES they are OPAQUE — distinct from every cljw type. Resolving them
+/// (ADR-0109) makes `(= (type 5) Integer)` / `(instance? Integer 5)` correctly
+/// false (clj-faithful: a cljw int IS a Long, not an Integer) and lets libs that
+/// branch on these JVM classes load with the JVM-class branch correctly dead.
+/// `Character`/`Boolean` are NOT here — cljw models those as real types.
+const OPAQUE_CLASSES = std.StaticStringMap(void).initComptime(.{
+    .{"java.math.BigInteger"},
+    .{"Integer"},
+    .{"java.lang.Integer"},
+    .{"Short"},
+    .{"java.lang.Short"},
+    .{"Byte"},
+    .{"java.lang.Byte"},
+    .{"Float"},
+    .{"java.lang.Float"},
+});
+
+/// True iff `class_name` is a recognised OPAQUE host class (ADR-0109). Such a
+/// class resolves as a distinct class VALUE that no cljw value has as its type:
+/// `instance?` is uniformly false and `extend-type` on it is a load-only no-op.
+pub fn isKnownOpaqueClass(class_name: []const u8) bool {
+    return OPAQUE_CLASSES.has(class_name);
+}
+
 /// Return the immediate parent of `class_name` in the hierarchy, or
 /// `null` for the root (Throwable) or for unknown class names.
 pub fn getParent(class_name: []const u8) ?[]const u8 {

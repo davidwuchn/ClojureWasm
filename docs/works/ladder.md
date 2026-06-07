@@ -83,6 +83,14 @@ so rungs are now probed via real **deps.edn git coordinates**, not just
     needs `clojure.core.reducers` (bundled-ns gap, D-273). **clojure.algo.monads**
     needs `clojure.tools.macro` (Compiler-dep, parked).
 
+- **Opaque host-class VALUES (ADR-0109, 2026-06-07):** recognised JVM numeric
+  classes cljw collapses away (java.math.BigInteger/Integer/Short/Byte/Float)
+  now resolve as distinct class VALUES — `(= (type 5) Integer)`/`(instance?
+  Integer 5)` clj-faithfully false, `(extend-type Integer …)` a load-only no-op
+  (no crash). Advanced numeric-tower :98/:127 → :162. The marker-value facet
+  (Object/IFn as values + Object-root isa? for algo.generic's `(derive Object)`)
+  is the tracked remainder (D-293 PARTIAL).
+
 - **clojure.math.numeric-tower** (probed 2026-06-07 via -cp): a DEEP java.math
   interop chain, parked. Advances :79 (D-301 empty-catch) → :98 (java.math.BigInteger
   class value, D-302) → :127 (Integer class value) → :162 (BigDecimal/ROUND_FLOOR

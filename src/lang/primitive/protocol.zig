@@ -30,6 +30,7 @@ const vector_mod = @import("../../runtime/collection/vector.zig");
 const td_mod = @import("../../runtime/type_descriptor.zig");
 const keyword_mod = @import("../../runtime/keyword.zig");
 const host_interface = @import("../../runtime/host_interface.zig");
+const host_class_mod = @import("../../runtime/error/host_class.zig");
 const class_of = @import("../../runtime/class_of.zig");
 
 const MethodEntry = protocol_mod.MethodEntry;
@@ -188,6 +189,17 @@ pub fn extendType(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocat
             .expected = "vector",
             .actual = @tagName(args[2].tag()),
         });
+    }
+    // ADR-0109: extend-type on an OPAQUE host class (Integer, java.math.BigInteger,
+    // …) is a LOAD-ONLY NO-OP. No cljw value ever has that type (F-005), so the
+    // impl can never dispatch — exactly as in clj, where extending a
+    // never-instantiated class is also dead (F-011-faithful, NOT a silent-drop:
+    // see ADR-0109 / clj_diff). Returning early avoids mutating the opaque
+    // descriptor's const empty method_table (the D-293 coupling crash).
+    if (args[0].tag() == .type_descriptor) {
+        if (td_mod.asTypeDescriptorRef(args[0]).fqcn) |fqcn| {
+            if (host_class_mod.isKnownOpaqueClass(fqcn)) return args[0];
+        }
     }
     const td: *td_mod.TypeDescriptor = if (args[0].tag() == .nil)
         try rt.nativeDescriptor(.nil)
