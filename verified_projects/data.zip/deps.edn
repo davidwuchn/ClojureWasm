@@ -1,0 +1,5 @@
+{:paths ["."]
+ :deps {org.clojure/data.zip
+        {:git/url "https://github.com/clojure/data.zip.git"
+         :git/sha "c4d090b5769a3a4c5772de193e073d4d45e1ea4b"}}
+ :aliases {:verify {:main-opts ["-m" "verify"]}}}
