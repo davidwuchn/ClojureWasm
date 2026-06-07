@@ -78,6 +78,12 @@ const NATIVE_ENTRIES = [_]NativeEntry{
     .{ .name = "PersistentArrayMap", .tag = .array_map },
     .{ .name = "PersistentHashMap", .tag = .hash_map },
     .{ .name = "PersistentHashSet", .tag = .hash_set },
+    // ADR-0109: clj-faithful class names for sorted colls + Var (were raw
+    // @tagName "sorted_map"/"sorted_set"/"var_ref" — fqcnForTag gap). Each maps
+    // 1:1 to a clj class, so `(class (sorted-map …))` → "PersistentTreeMap" etc.
+    .{ .name = "PersistentTreeMap", .tag = .sorted_map },
+    .{ .name = "PersistentTreeSet", .tag = .sorted_set },
+    .{ .name = "Var", .tag = .var_ref },
     .{ .name = "PersistentQueue", .tag = .persistent_queue },
     .{ .name = "Pattern", .tag = .regex },
     .{ .name = "UUID", .tag = .uuid },
@@ -111,6 +117,9 @@ const FQCN_MAP = std.StaticStringMap([]const u8).initComptime(.{
     .{ "clojure.lang.PersistentArrayMap", "PersistentArrayMap" },
     .{ "clojure.lang.PersistentHashMap", "PersistentHashMap" },
     .{ "clojure.lang.PersistentHashSet", "PersistentHashSet" },
+    .{ "clojure.lang.PersistentTreeMap", "PersistentTreeMap" },
+    .{ "clojure.lang.PersistentTreeSet", "PersistentTreeSet" },
+    .{ "clojure.lang.Var", "Var" },
     .{ "clojure.lang.PersistentQueue", "PersistentQueue" },
     .{ "clojure.lang.IFn", "IFn" },
     .{ "clojure.lang.IPersistentMap", "IPersistentMap" },
