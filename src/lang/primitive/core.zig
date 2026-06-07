@@ -1557,7 +1557,43 @@ pub fn popThreadBindingsFn(rt: *Runtime, env: *Env, args: []const Value, loc: So
     return Value.nil_val;
 }
 
+/// `(rt/__unsupported-host-ref "Class/member")` — raises `feature_not_supported`
+/// at runtime (ADR-0113). The analyzer rewrites an unresolved `clojure.lang.*` /
+/// `clojure.asm.*` qualified reference (a JVM-internal class cljw has no value
+/// for, ADR-0059) to this call, so the enclosing fn DEFINES and the namespace
+/// LOADS; the ref errors loudly only if actually evaluated. Variadic so a
+/// rewritten call form's trailing args (if ever threaded) are tolerated.
+fn unsupportedHostRefFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = rt;
+    _ = env;
+    const name = if (args.len >= 1 and args[0].tag() == .string) string_mod.asString(args[0]) else "host reference";
+    return error_catalog.raise(.feature_not_supported, loc, .{ .name = name });
+}
+
+/// `(enumeration-seq e)` / `(iterator-seq i)` — clojure.core fns that wrap a
+/// `java.util.Enumeration` / `Iterator`. cljw has no such host iteration type
+/// (ADR-0059), so these ship as explicit-error stubs (the allowed transient-stub
+/// category, not a silent no-op): referenceable so a peripheral fn body that
+/// names them LOADS, raising loudly only if actually called. Surfaced by
+/// integrant's classpath-resource loader.
+fn enumerationSeqFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = rt;
+    _ = env;
+    _ = args;
+    return error_catalog.raise(.feature_not_supported, loc, .{ .name = "enumeration-seq" });
+}
+
+fn iteratorSeqFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = rt;
+    _ = env;
+    _ = args;
+    return error_catalog.raise(.feature_not_supported, loc, .{ .name = "iterator-seq" });
+}
+
 const ENTRIES = [_]Entry{
+    .{ .name = "__unsupported-host-ref", .f = &unsupportedHostRefFn },
+    .{ .name = "enumeration-seq", .f = &enumerationSeqFn },
+    .{ .name = "iterator-seq", .f = &iteratorSeqFn },
     .{ .name = "hash", .f = &hashFn },
     .{ .name = "get-thread-bindings", .f = &getThreadBindingsFn },
     .{ .name = "push-thread-bindings", .f = &pushThreadBindingsFn },

@@ -1986,15 +1986,52 @@ fn expandDefmulti(
     if (args[0].data != .symbol or args[0].data.symbol.ns != null)
         return error_catalog.raise(.defmulti_name_invalid, args[0].location, .{});
 
-    const name_form = args[0];
-    const dispatch_fn_form = args[1];
+    var name_form = args[0];
+    // clj grammar: `(defmulti name docstring? attr-map? dispatch-fn & options)`.
+    // Consume an optional leading docstring (string) then attr-map (map) before
+    // the dispatch fn — else the docstring is mistaken for the dispatch fn and a
+    // dispatch call raises "Cannot call value of type 'string'" (integrant's
+    // `assert-key` has both a docstring and an `{:arglists …}` attr-map). The
+    // docstring + attr-map are ATTACHED to the Var's metadata (not discarded),
+    // so `(:doc (meta (var m)))` / `(:arglists …)` match clj.
+    var di: usize = 1;
+    var doc_form: ?Form = null;
+    var attr_form: ?Form = null;
+    if (di < args.len and args[di].data == .string) {
+        doc_form = args[di];
+        di += 1;
+    }
+    if (di < args.len and args[di].data == .map) {
+        attr_form = args[di];
+        di += 1;
+    }
+    if (di >= args.len)
+        return error_catalog.raise(.defmulti_form_incomplete, loc, .{});
+    const dispatch_fn_form = args[di];
+
+    // Park the docstring + attr-map onto the name Form's `.meta` side-channel so
+    // `analyzeDef` lifts them into `Var.meta` (same path `defn` uses). clj's
+    // defmulti does NOT synthesize `:arglists` (unlike defn), so we only carry
+    // the explicit attr-map + `:doc`.
+    if (doc_form != null or attr_form != null or name_form.meta != null) {
+        var meta_items: std.ArrayList(Form) = .empty;
+        if (name_form.meta) |m| try meta_items.appendSlice(arena, m.data.map);
+        if (attr_form) |a| try meta_items.appendSlice(arena, a.data.map);
+        if (doc_form) |d| {
+            try meta_items.append(arena, .{ .data = .{ .keyword = .{ .name = "doc" } }, .location = loc });
+            try meta_items.append(arena, d);
+        }
+        const mp = try arena.create(Form);
+        mp.* = .{ .data = .{ .map = try arena.dupe(Form, meta_items.items) }, .location = loc };
+        name_form.meta = mp;
+    }
 
     // Trailing options after the dispatch fn (clj: `:default <val>` overrides
     // the no-match dispatch value, `:hierarchy <h>` swaps the hierarchy var).
     // Inline key/value pairs; unknown keys are ignored (forward-compatible).
     var default_form: Form = .{ .data = .{ .keyword = .{ .ns = null, .name = "default" } }, .location = loc };
     var hierarchy_form: Form = sym("-global-hierarchy", loc);
-    var oi: usize = 2;
+    var oi: usize = di + 1;
     while (oi + 1 < args.len) : (oi += 2) {
         const opt = args[oi];
         if (opt.data == .keyword and opt.data.keyword.ns == null) {
@@ -2045,7 +2082,9 @@ fn expandDefmethod(
     loc: SourceLocation,
 ) macro_dispatch.ExpandError!Form {
     _ = rt;
-    if (args.len < 4)
+    // multifn + dispatch-val + params vector are required; the body is OPTIONAL
+    // (clj: `(defmethod m dv [params])` defines a method returning nil).
+    if (args.len < 3)
         return error_catalog.raise(.defmethod_form_incomplete, loc, .{});
     if (args[2].data != .vector)
         return error_catalog.raise(.defmethod_params_not_vector, args[2].location, .{});
@@ -2055,7 +2094,7 @@ fn expandDefmethod(
     const params_form = args[2];
     const body = args[3..];
 
-    const body_form = if (body.len == 1) body[0] else blk: {
+    const body_form = if (body.len == 0) nilForm(loc) else if (body.len == 1) body[0] else blk: {
         var do_items = try arena.alloc(Form, body.len + 1);
         do_items[0] = sym("do", loc);
         @memcpy(do_items[1..], body);

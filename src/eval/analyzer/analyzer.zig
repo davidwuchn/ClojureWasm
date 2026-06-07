@@ -317,7 +317,7 @@ pub fn analyze(
                 try keyword.intern(rt, sym.ns, sym.name);
             return try makeConstant(arena, v, form);
         },
-        .symbol => |sym| try analyzeSymbol(arena, env, scope, sym, form),
+        .symbol => |sym| try analyzeSymbol(arena, env, scope, sym, form, macro_table),
         .list => |items| try analyzeList(arena, rt, env, scope, items, form, macro_table),
         .string => |s| {
             const v = try string_collection.alloc(rt, s);
@@ -502,6 +502,7 @@ fn analyzeSymbol(
     scope: ?*const Scope,
     sym: SymbolRef,
     form: Form,
+    macro_table: *const macro_dispatch.Table,
 ) AnalyzeError!*const Node {
     // Locals can only match unqualified symbols.
     if (sym.ns == null and scope != null) {
@@ -562,6 +563,23 @@ fn analyzeSymbol(
                 };
                 return try makeConstant(arena, fv, form);
             }
+        }
+        // ADR-0113: an unresolved `clojure.lang.*` / `clojure.asm.*` qualified
+        // reference is a JVM-internal class cljw has no value for (ADR-0059) —
+        // never a user alias typo. Rather than failing the WHOLE namespace at
+        // analysis (which blocks a lib whose CORE is pure but a peripheral fn
+        // touches such a class — e.g. integrant's `(clojure.lang.RT/baseLoader)`
+        // in its optional hierarchy loader), rewrite it to a loud runtime
+        // `(rt/__unsupported-host-ref "ns/name")`. The enclosing fn DEFINES, the
+        // namespace LOADS, and the ref errors only if actually evaluated. Covers
+        // both call-head and value positions (both reach analyzeSymbol). AD-008.
+        if (isDeferredHostNs(ns_name)) {
+            const full = try std.fmt.allocPrint(arena, "{s}/{s}", .{ ns_name, sym.name });
+            const items = try arena.alloc(Form, 2);
+            items[0] = .{ .data = .{ .symbol = .{ .ns = "rt", .name = "__unsupported-host-ref" } }, .location = form.location };
+            items[1] = .{ .data = .{ .string = full }, .location = form.location };
+            const call_form: Form = .{ .data = .{ .list = items }, .location = form.location };
+            return analyze(arena, env.rt, env, scope, call_form, macro_table);
         }
         return error_catalog.raise(.namespace_unknown, form.location, .{ .ns = ns_name });
     } else env.current_ns orelse return error_catalog.raise(.current_namespace_missing, form.location, .{ .sym = sym.name });
@@ -766,6 +784,18 @@ fn analyzeList(
 /// path is in `analyzeSymbol`. Returns null on miss so the caller can
 /// fall through to a regular call (where the error will land with the
 /// right `name_error` Kind).
+/// ADR-0113: is `ns` an unambiguously JVM-internal class namespace whose
+/// unresolved reference should defer to a runtime error rather than fail
+/// analysis? Strictly `clojure.lang.*` / `clojure.asm.*` — these are JVM
+/// implementation classes cljw will never represent as a value (ADR-0059), so
+/// the deferral cannot mask a user alias typo (the discriminator the
+/// Devil's-advocate fork required). `java.*` is intentionally EXCLUDED: those
+/// may be real host surfaces cljw should implement, so they stay loud.
+fn isDeferredHostNs(ns: []const u8) bool {
+    return std.mem.startsWith(u8, ns, "clojure.lang.") or
+        std.mem.startsWith(u8, ns, "clojure.asm.");
+}
+
 fn resolveMaybe(env: *Env, sym: SymbolRef) ?*Var {
     // Mirror `analyzeSymbol`'s ns resolution so the macro-detection path and
     // the symbol-resolution path agree on a qualified head. A qualified
