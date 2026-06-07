@@ -176,6 +176,7 @@ hits. Do not edit `debt.yaml` from this doc; the main loop creates the rows.
 4. `NEEDS-ROW: java.io FileNotFoundException catch + file slurp` — instaparse rung 10.
 5. `NEEDS-ROW: java.io PrintWriter/PushbackReader/StringWriter + clojure.pprint` — data.json rung 11.
 6. `NEEDS-ROW: threads/executors/go-macro` — core.async rung 14 (already Campaign Stage 1.7 / Phase B).
+7. ~~`honeysql: clojure.template / defprotocol options / .. macro`~~ — **all LANDED 2026-06-07 (811d1f08)**: bundled `clojure.template`, defprotocol `:keyword value` option parsing (`:extend-via-metadata` dispatch deferred D-314), and the `..` member-threading macro (was missing + misparsed). honeysql (`honey.sql`) now PARKED on its last gap → **D-315** (`java.util.Locale/US` value + `.toUpperCase`/`.toLowerCase` Locale overload for locale-independent SQL-keyword casing). qbits.ex is the 7th verified proof (drove the aliased-macro analyzer fix, fa8628ea).
 
 Cross-cutting blocker (not a single row): **no deps.edn / Maven resolver
 yet** (Campaign Stage 1.2). Every transitive dependency must be fetched and

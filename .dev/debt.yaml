@@ -9,6 +9,20 @@
 # md-table-align no longer pads it to ~800 KB of whitespace.
 
 active:
+  - id: "D-315"
+    status: "now (2026-06-07, honeysql probe) — `java.util.Locale` value + Locale-arg case overloads. honeysql's `honey.sql/upper-case` calls `(.. s toString (toUpperCase java.util.Locale/US))` to force locale-independent (US) SQL-keyword casing. Blockers: (1) `java.util.Locale/US` does not resolve (`No namespace: 'java.util.Locale'`) — Locale is reserved in compat_tiers (phase 6) but unimplemented; (2) `.toUpperCase`/`.toLowerCase` are arity-1 only (no Locale overload). Surfaced AFTER landing clojure.template + defprotocol-options + `..` (811d1f08), which cleared honeysql's earlier blockers. This is the sole remaining gap for functional honeysql verification."
+    category: "interop"
+    barrier: |-
+      Implement java.util.Locale as a host surface: US/ROOT/ENGLISH static fields
+      resolving to a Locale value (host_instance, ADR-0106 — no new Value tag), +
+      `.toUpperCase`/`.toLowerCase` accept an optional Locale 2nd arg. cljw's
+      casing is already locale-independent Unicode, so US/ROOT/ENGLISH map to the
+      existing impl (correct for ASCII SQL keywords; a non-US-family Locale arg is
+      out of scope — error or default). Unblocks honeysql functional verification
+      (verified_projects/honeysql staged when it passes). Cross-ref compat_tiers
+      java.util.Locale (phase 6 reservation), D-314 (honeysql's other deferred
+      gap, extend-via-metadata).
+    last_reviewed: "2026-06-07"
   - id: "D-314"
     status: "now (2026-06-07, honeysql probe) — `defprotocol` `:extend-via-metadata true` DISPATCH unimplemented. The option is now PARSED (expandDefprotocol skips leading `:keyword value` pairs so the protocol loads), but cljw does not consult a receiver's metadata for a `protocol-ns/method` fn when no extend-type/extend-protocol impl matches. Explicit extension works; a value carrying `^{:honey.sql.protocols/sqlize (fn …)}` would hit `protocol_no_satisfies` instead of dispatching. Honest (errors, not a silent wrong answer) but incomplete. Surfaced by honeysql's InlineValue protocol; NOT on honeysql's basic format path (sqlize only inlines custom values)."
     category: "polymorphism"
