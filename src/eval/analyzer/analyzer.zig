@@ -66,6 +66,7 @@ const print_mod = @import("../../runtime/print.zig");
 const regex_value = @import("../../runtime/regex/value.zig");
 const class_name = @import("../../runtime/class_name.zig");
 const host_class = @import("../../runtime/error/host_class.zig");
+const host_interface = @import("../../runtime/host_interface.zig");
 const type_descriptor = @import("../../runtime/type_descriptor.zig");
 const dispatch = @import("../../runtime/dispatch.zig");
 const error_mod = @import("../../runtime/error/info.zig");
@@ -650,6 +651,26 @@ fn analyzeSymbol(
             // (class_name.matchInterface = ifn?); isa? uses isCallableClassName.
             if (host_class.isIFnClass(sym.name)) {
                 const td = try env.rt.exceptionDescriptor("IFn");
+                const ref = try type_descriptor.makeTypeDescriptorRef(env.rt, td);
+                return try makeConstant(arena, ref, form);
+            }
+            // A registered Java host-surface class (java.util.Random, java.net.URI,
+            // …) resolves to its rt.types descriptor VALUE — the surface analogue
+            // of the opaque-class arm above. This makes `(= (class x) URI)` and
+            // `(extend-protocol P java.net.URI …)` reach the concrete type. After
+            // Var + native + exception + opaque resolution so a user def shadows.
+            if (env.rt.types.get(sym.name)) |td| {
+                const ref = try type_descriptor.makeTypeDescriptorRef(env.rt, td);
+                return try makeConstant(arena, ref, form);
+            }
+            // A host_inert java interface (java.util.Map, …) used as a plain VALUE
+            // (e.g. hiccup's `(not-hint? x java.util.Map)`) resolves to a named
+            // class descriptor. No cljw value has this host type, so isa?/instance?
+            // are false — consistent with the host_inert AD (ADR-0103). The
+            // extend-TARGET and deftype-supertype positions are handled earlier
+            // (macro no-op / quote-wrap); this is the bare-value position only.
+            if (host_interface.isHostInert(sym.name)) {
+                const td = try env.rt.exceptionDescriptor(host_interface.canonicalName(sym.name).?);
                 const ref = try type_descriptor.makeTypeDescriptorRef(env.rt, td);
                 return try makeConstant(arena, ref, form);
             }

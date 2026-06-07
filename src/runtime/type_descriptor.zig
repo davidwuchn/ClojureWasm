@@ -85,6 +85,20 @@ pub const TypeDescriptor = struct {
     /// "inst"`, body = the epoch-ms field formatted as the canonical
     /// `#inst` ISO string). `null` for every other type.
     print_tag: ?[]const u8 = null,
+    /// `.host_instance` finaliser hook (ADR-0106): when this descriptor backs a
+    /// host instance that owns heap state (a gpa-duped string pointer in
+    /// `state[0..1]`, e.g. java.net.URI), the shared `.host_instance` tag
+    /// finaliser routes here to free it. `null` for descriptors whose `state` is
+    /// pure inline words (java.util.Random's LCG seed) — nothing to free. The
+    /// `[4]u64` matches `host_instance.STATE_WORDS` (kept literal to avoid a
+    /// circular import; a comptime assert in host_instance.zig pins them equal).
+    host_finalise: ?*const fn (infra: std.mem.Allocator, state: *[4]u64) void = null,
+    /// `.host_instance` GC-trace hook (ADR-0106): when this descriptor backs a
+    /// host instance that stores a live `Value` in `state` (java.util.Iterator's
+    /// cursor seq), the shared `.host_instance` tag tracer routes here to mark
+    /// it. `null` for leaf host types (Random / URI / StringBuilder store only
+    /// non-Value words). `gc` is the type-erased `*GcHeap` the tracer forwards.
+    host_trace: ?*const fn (gc: *anyopaque, state: *[4]u64) void = null,
 
     pub const FieldEntry = struct {
         name: []const u8,

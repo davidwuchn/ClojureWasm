@@ -27,10 +27,18 @@ const HeapHeader = value_mod.HeapHeader;
 const Runtime = @import("runtime.zig").Runtime;
 const type_descriptor = @import("type_descriptor.zig");
 const TypeDescriptor = type_descriptor.TypeDescriptor;
+const tag_ops = @import("gc/tag_ops.zig");
+const gc_heap_mod = @import("gc/gc_heap.zig");
 
 /// Inline state-word count. Random needs 3 (seed + gaussian value + flag); the
 /// 4th is a spare so a small future host type need not widen the struct.
 pub const STATE_WORDS = 4;
+
+comptime {
+    // `TypeDescriptor.host_finalise` hardcodes `*[4]u64` to avoid importing this
+    // module (circular); pin the two equal so a future widening can't drift.
+    std.debug.assert(STATE_WORDS == 4);
+}
 
 pub const HostInstance = extern struct {
     header: HeapHeader,
@@ -38,9 +46,14 @@ pub const HostInstance = extern struct {
     /// carries its instance method_table. Process-lifetime (not GC-traced).
     descriptor: *const TypeDescriptor,
     /// Fixed inline payload. Interpretation is per-host-type (see the surface).
-    /// LEAF: holds only non-Value words today, so the `.host_instance` tag needs
-    /// NO GC trace. A host type that stores a Value here MUST add a
-    /// per-descriptor trace hook + register a tag trace dispatcher first (D-294).
+    /// CONDITIONALLY non-leaf: a host type whose `descriptor.host_trace` is set
+    /// stores a live `Value` here (java.util.Iterator's cursor seq in state[0]),
+    /// marked by the shared `.host_instance` tracer via that hook (D-294 closed).
+    /// Leaf types (Random / URI / StringBuilder) leave `host_trace` null and hold
+    /// only non-Value words. GC-ROOT: a Value stored here is a raw `u64` the
+    /// standard field-walker cannot see as a pointer, so a FUTURE moving GC must
+    /// RELOCATE it through `host_trace` (mark-only suffices for the current
+    /// non-moving GC) [ref: .dev/gc_rooting.md §H, debt D-318].
     state: [STATE_WORDS]u64,
 
     comptime {
@@ -71,4 +84,28 @@ pub fn asHostInstance(v: Value) *const HostInstance {
 /// `TypedInstance.setField` / atom mutation).
 pub fn setState(v: Value, index: usize, word: u64) void {
     @constCast(asHostInstance(v)).state[index] = word;
+}
+
+/// Shared `.host_instance` tag finaliser: route to the descriptor's
+/// `host_finalise` hook (URI / StringBuilder free their heap state; Random's hook
+/// is null). Most host types are GC-leaf; this is a best-effort free for those
+/// that own heap state.
+fn finaliseGc(gc_ptr: *anyopaque, header: *HeapHeader) void {
+    const gc: *gc_heap_mod.GcHeap = @ptrCast(@alignCast(gc_ptr));
+    const inst: *HostInstance = @ptrCast(@alignCast(header));
+    if (inst.descriptor.host_finalise) |f| f(gc.infra, &inst.state);
+}
+
+/// Shared `.host_instance` tag tracer: route to the descriptor's `host_trace`
+/// hook (java.util.Iterator marks its cursor seq Value). `null` for leaf host
+/// types (Random / URI / StringBuilder store only non-Value words), so they pay
+/// no trace cost.
+fn traceGc(gc_ptr: *anyopaque, header: *HeapHeader) void {
+    const inst: *HostInstance = @ptrCast(@alignCast(header));
+    if (inst.descriptor.host_trace) |f| f(gc_ptr, &inst.state);
+}
+
+pub fn registerGcHooks() void {
+    tag_ops.registerFinaliser(.host_instance, &finaliseGc);
+    tag_ops.registerTrace(.host_instance, &traceGc);
 }

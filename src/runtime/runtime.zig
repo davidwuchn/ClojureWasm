@@ -387,6 +387,7 @@ pub const Runtime = struct {
         @import("numeric/big_decimal.zig").registerGcHooks();
         @import("regex/value.zig").registerGcHooks();
         @import("uuid.zig").registerGcHooks();
+        @import("host_instance.zig").registerGcHooks();
         @import("tagged_literal.zig").registerGcHooks();
         @import("type_descriptor.zig").registerGcHooks();
         @import("multimethod.zig").registerGcHooks();
@@ -442,14 +443,21 @@ pub const Runtime = struct {
             }
         }
 
-        // Free synthetic exception `(class e)` descriptors (D-213). The map
-        // key aliases each descriptor's fqcn dup, so freeing the fqcn frees
-        // the key too; destroy the descriptor, then the map's own storage.
+        // Free synthetic exception / named `(class e)` descriptors (D-213). The
+        // map key aliases each descriptor's fqcn dup, so freeing the fqcn frees
+        // the key too. A user `(extend-protocol P Object …)` / extend onto a
+        // host-class value (java.net.URI via rt.types is separate) reallocates
+        // this descriptor's method_table / protocol_impls on rt.gc.infra via
+        // __extend-type!, so free those too (mirrors the native_descriptors pass);
+        // hiccup extends HtmlRenderer to Object, which first exercised this leak.
         {
             var it = self.exception_descriptors.valueIterator();
             while (it.next()) |td_ptr| {
                 const td = td_ptr.*;
                 if (td.fqcn) |n| self.gc.infra.free(n);
+                for (td.method_table) |entry| self.gc.infra.free(entry.method_name);
+                if (td.method_table.len > 0) self.gc.infra.free(td.method_table);
+                if (td.protocol_impls.len > 0) self.gc.infra.free(td.protocol_impls);
                 self.gc.infra.destroy(td);
             }
             self.exception_descriptors.deinit(self.gc.infra);

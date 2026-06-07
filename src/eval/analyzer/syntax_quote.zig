@@ -58,7 +58,24 @@ pub fn expand(arena: std.mem.Allocator, rt: *Runtime, env: *Env, form: Form, loc
 /// an unresolved name to the current ns (`foo` → `user/foo`, so a macro can
 /// reference its own private helper).
 fn qualifySym(env: *Env, s: SymbolRef, loc: SourceLocation) Form {
-    if (s.ns != null or BARE_SYMS.has(s.name) or hasDot(s.name) or (s.name.len > 0 and s.name[0] == '.'))
+    if (s.ns) |ns_name| {
+        // An aliased ns prefix (`str/join` where `str` is `(:require … :as str)`)
+        // resolves to the alias target's full name — clj syntax-quote hygiene
+        // (`` `str/join `` → `clojure.string/join`), so a macro template's
+        // alias-qualified call still resolves wherever the macro is expanded
+        // (the hiccup.core `html` → `hiccup2.core/html` case). A real ns name or
+        // an unknown prefix is left as-is.
+        if (env.current_ns) |cur| {
+            if (cur.aliases.get(ns_name)) |aliased|
+                return .{ .data = .{ .symbol = .{ .ns = aliased.name, .name = s.name } }, .location = loc };
+        }
+        return .{ .data = .{ .symbol = s }, .location = loc };
+    }
+    // `%`-prefixed names are anon-fn params (`#(…)` lowers to `(fn* [%1 %2] …)`
+    // at read time); like `&`, they must stay BARE so a syntax-quoted `#()` in a
+    // macro template (hiccup's `#(.append sb# %)`) does not qualify them into an
+    // invalid `user/%1` fn* parameter.
+    if (BARE_SYMS.has(s.name) or hasDot(s.name) or (s.name.len > 0 and (s.name[0] == '.' or s.name[0] == '%')))
         return .{ .data = .{ .symbol = s }, .location = loc };
     const cur = env.current_ns orelse return .{ .data = .{ .symbol = s }, .location = loc };
     var home = if (cur.resolve(s.name)) |v|

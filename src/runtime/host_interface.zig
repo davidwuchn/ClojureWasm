@@ -264,6 +264,31 @@ const MARKERS = std.StaticStringMap(HostInterface).initComptime(.{
     .{ "java.io.Closeable", JAVA_IO_CLOSEABLE },
 });
 
+/// extend-protocol TARGET interfaces that map to cljw native value tags. A
+/// `(extend-protocol P clojure.lang.IPersistentVector …)` distributes the impl
+/// over each listed tag's native descriptor (via `rt/__native-type`), so a cljw
+/// vector / seq / named value dispatches P. These clj interfaces have no cljw
+/// instances of their own — cljw's native collections ARE their implementors
+/// (F-011), so extending TO them must reach the native descriptors. Distinct
+/// from MARKERS (which cover the deftype-supertype / protocol position).
+const NATIVE_EXTEND_TARGETS = std.StaticStringMap([]const []const u8).initComptime(.{
+    .{ "IPersistentVector", &[_][]const u8{"vector"} },
+    .{ "clojure.lang.IPersistentVector", &[_][]const u8{"vector"} },
+    // ISeq spans every cljw seq representation (a literal list, a `for`/`map`
+    // lazy seq, a cons, a chunked cons, range, and the string/array seq views).
+    .{ "ISeq", &[_][]const u8{ "list", "lazy_seq", "cons", "chunked_cons", "range", "string_seq", "array_seq" } },
+    .{ "clojure.lang.ISeq", &[_][]const u8{ "list", "lazy_seq", "cons", "chunked_cons", "range", "string_seq", "array_seq" } },
+    // Named = keyword ∪ symbol (both carry a name).
+    .{ "Named", &[_][]const u8{ "keyword", "symbol" } },
+    .{ "clojure.lang.Named", &[_][]const u8{ "keyword", "symbol" } },
+});
+
+/// The native `Value.Tag` keyword names a `(extend-protocol P <iface> …)` must
+/// distribute the impl over, or null when `name` is not such an interface.
+pub fn nativeExtendTags(name: []const u8) ?[]const []const u8 {
+    return NATIVE_EXTEND_TARGETS.get(name);
+}
+
 /// True when `name` is a quote-wrap marker (method_family or zero-method marker)
 /// — the analyzer must never Var-resolve it. protocol_remap names are NOT markers
 /// (the macro rewrites them to bare cljw protocols instead); see `isProtocolRemap`.

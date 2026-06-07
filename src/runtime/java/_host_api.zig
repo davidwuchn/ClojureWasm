@@ -74,6 +74,8 @@ const java_surfaces = [_]type{
     @import("lang/Short.zig"), // D-295 — MIN_VALUE/MAX_VALUE static fields
     @import("lang/Byte.zig"), // D-295
     @import("lang/Math.zig"),
+    @import("lang/String.zig"), // static surface (String/valueOf); instance methods are installNativeMethods
+    @import("lang/StringBuilder.zig"),
     @import("lang/System.zig"),
     @import("lang/Thread.zig"),
     // D-198 / clj-parity C5 — Throwable-family constructors (`(Exception.
@@ -85,6 +87,10 @@ const java_surfaces = [_]type{
     // Socket / MessageDigest backing impls under runtime/net/ +
     // runtime/crypto/ are unbuilt (method_table empty) — D-106.
     @import("net/Socket.zig"),
+    // java.net.URI / URLEncoder — minimal surfaces unblocking hiccup (backing
+    // impls live under runtime/net/).
+    @import("net/URI.zig"),
+    @import("net/URLEncoder.zig"),
     @import("security/MessageDigest.zig"),
     @import("time/Instant.zig"),
     // LocalDateTime / Duration / ZonedDateTime backing impls under
@@ -93,6 +99,7 @@ const java_surfaces = [_]type{
     @import("time/Duration.zig"),
     @import("time/ZonedDateTime.zig"),
     @import("util/Date.zig"),
+    @import("util/Iterator.zig"),
     @import("util/Random.zig"),
     @import("util/UUID.zig"),
     // Matcher's backing impl is shipped by Pattern's regex/match.zig.

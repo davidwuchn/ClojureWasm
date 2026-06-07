@@ -16,6 +16,7 @@ const equal = @import("../../runtime/equal.zig");
 const print_mod = @import("../../runtime/print.zig");
 const string_mod = @import("../../runtime/collection/string.zig");
 const td_mod = @import("../../runtime/type_descriptor.zig");
+const iterator_mod = @import("../../runtime/java/util/Iterator.zig");
 
 /// If `name` is a universal `java.lang.Object` instance method at the right
 /// arity, return its result delegating to the cljw native equivalent;
@@ -54,6 +55,13 @@ pub fn tryObjectMethod(
     }
     if (args.len == 0 and std.mem.eql(u8, name, "getClass")) {
         return try td_mod.makeTypeDescriptorRef(rt, td);
+    }
+    // `.iterator` makes every cljw seqable a java.util.Iterable (clj parity): a
+    // collection / seq yields a java.util.Iterator host cursor (`.hasNext` /
+    // `.next`). hiccup's `iterate!` drives output through this. A non-seqable
+    // receiver surfaces clojure.core/seq's own error via the coercion.
+    if (args.len == 0 and std.mem.eql(u8, name, "iterator")) {
+        return try iterator_mod.fromSeqable(rt, env, receiver, .{});
     }
     return null;
 }

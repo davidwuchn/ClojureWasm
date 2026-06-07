@@ -2383,6 +2383,44 @@ fn expandExtendType(
 
     const target_form = args[0];
 
+    // Extending a protocol TO a host_inert java interface (`(extend-protocol P
+    // java.util.Map …)`, as hiccup.util does) is a load-only NO-OP: no cljw value
+    // has that host type (ADR-0103 / ADR-0059), so the impl could never dispatch —
+    // F-011-faithful for a never-instantiated target, and the documented AD (cljw
+    // does not implement java.util.Map dispatch). Mirrors __extend-type!'s
+    // isKnownOpaqueClass early-return, applied at the TARGET position (where the
+    // marker is NOT quote-wrapped, unlike the PROTOCOL position below).
+    if (target_form.data == .symbol and host_interface.isHostInert(target_form.data.symbol.name)) {
+        return Form{ .data = .nil, .location = loc };
+    }
+
+    // A clj interface whose cljw implementors are NATIVE values
+    // (`clojure.lang.IPersistentVector` → vector, `ISeq` → the seq family,
+    // `Named` → keyword/symbol) distributes the impl over each native tag's
+    // descriptor via `rt/__native-type`, so a cljw vector/seq/named value
+    // dispatches the protocol (the core hiccup `(html [:p …])` path). Only a
+    // single-protocol section reaches here (the multi-section split is below and
+    // requires a symbol target), so `args[1..]` is `proto impls…`.
+    if (target_form.data == .symbol) {
+        if (host_interface.nativeExtendTags(target_form.data.symbol.name)) |tags| {
+            var sections = try arena.alloc(Form, tags.len + 1);
+            sections[0] = sym("do", loc);
+            for (tags, 0..) |tag, ti| {
+                var nt_items = try arena.alloc(Form, 2);
+                nt_items[0] = .{ .data = .{ .symbol = .{ .ns = "rt", .name = "__native-type" } }, .location = loc };
+                nt_items[1] = .{ .data = .{ .keyword = .{ .name = tag } }, .location = loc };
+                const nt = try list(arena, nt_items, loc);
+                var ext_items = try arena.alloc(Form, 3 + (args.len - 2));
+                ext_items[0] = sym("extend-type", loc);
+                ext_items[1] = nt;
+                ext_items[2] = args[1];
+                @memcpy(ext_items[3..], args[2..]);
+                sections[ti + 1] = try list(arena, ext_items, loc);
+            }
+            return list(arena, sections, loc);
+        }
+    }
+
     // D-292: multiple protocol sections in ONE extend-type
     // (`(extend-type T P1 (m..) P2 (m..))`, as clj allows + tools.reader uses).
     // Split into per-protocol `(extend-type T Pi impls...)` forms under a `do`;

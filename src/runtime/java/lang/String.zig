@@ -455,6 +455,50 @@ pub fn installNativeMethods(rt: *Runtime) !void {
     td.method_table = entries;
 }
 
+// --- static surface (java.lang.String/valueOf etc.) ---
+//
+// Distinct from the native-instance methods installed above: static `String/…`
+// calls resolve a `cljw.java.lang.String` descriptor in `rt.types` (the always-on
+// `cljw.java.lang.*` auto-import), like Math/System. hiccup's compiler emits
+// `(String/valueOf x)`.
+
+const host_api = @import("../_host_api.zig");
+const print_mod = @import("../../print.zig");
+
+/// `(String/valueOf x)` — Java `String.valueOf(Object)`: the str-rendering of
+/// `x`, with `nil` → `"null"` (JVM valueOf(null) is the literal "null").
+fn valueOf(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    try error_catalog.checkArity("String/valueOf", args, 1, loc);
+    if (args[0].tag() == .nil) return string_collection.alloc(rt, "null");
+    var aw: std.Io.Writer.Allocating = .init(rt.gpa);
+    defer aw.deinit();
+    try print_mod.writeStrValue(rt, env, &aw.writer, args[0]);
+    return string_collection.alloc(rt, aw.writer.buffered());
+}
+
+fn initStringStatics(td: *type_descriptor.TypeDescriptor, gpa: std.mem.Allocator) anyerror!void {
+    if (td.method_table.len != 0) return; // idempotent
+    const entries = try gpa.alloc(type_descriptor.TypeDescriptor.MethodEntry, 1);
+    entries[0] = .{ .protocol_name = "", .method_name = try gpa.dupe(u8, "valueOf"), .method_val = Value.initBuiltinFn(&valueOf) };
+    td.method_table = entries;
+}
+
+pub const ___HOST_EXTENSION: host_api.Extension = .{
+    .cljw_ns = "cljw.java.lang.String",
+    .descriptor = &static_descriptor,
+    .init = &initStringStatics,
+};
+
+var static_descriptor: type_descriptor.TypeDescriptor = .{
+    .fqcn = "cljw.java.lang.String",
+    .kind = .native,
+    .field_layout = null,
+    .protocol_impls = &.{},
+    .method_table = &.{},
+    .parent = null,
+    .meta = .nil_val,
+};
+
 // --- tests ---
 
 const testing = std.testing;

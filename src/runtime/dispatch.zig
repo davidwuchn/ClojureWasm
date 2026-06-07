@@ -129,6 +129,21 @@ pub fn dispatch(
     loc: SourceLocation,
 ) anyerror!Value {
     if (try dispatchOrNull(rt, env, cs, receiver, protocol_name, method_name, args, loc)) |v| return v;
+    // clj: `(extend-protocol P Object …)` is a UNIVERSAL default — after a
+    // per-type miss, consult the Object descriptor (where the Object extension
+    // registered). nil is excluded: clj nil is not an Object, so a type extends
+    // nil separately (hiccup's HtmlRenderer does both). This is the fallback that
+    // lets a String / number reach the protocol's Object default.
+    if (receiver.tag() != .nil) {
+        if (rt.exception_descriptors.get("Object")) |obj_td| {
+            if (obj_td.lookupMethod(protocol_name, method_name)) |me| {
+                if (me.method_val.tag() != .nil) {
+                    const vt = rt.vtable orelse return error.NoVTable;
+                    return try vt.callFn(rt, env, me.method_val, args, loc);
+                }
+            }
+        }
+    }
     const td = try resolveDescriptor(rt, receiver);
     return error_catalog.raise(.protocol_no_satisfies, loc, .{
         .protocol = protocol_name,

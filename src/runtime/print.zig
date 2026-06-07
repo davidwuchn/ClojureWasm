@@ -136,6 +136,21 @@ pub fn writeStrValue(rt: *Runtime, env: *env_mod.Env, w: *Writer, v: Value) anye
             }
             try printResult(rt, env, w, v);
         },
+        // A host surface that registers a `toString` method (java.net.URI) supplies
+        // its `str`/`.toString` rendering — clj's `(str uri)` calls `.toString`.
+        // A surface without one (java.util.Random) falls through to the opaque
+        // `#<fqcn>` form (AD-020).
+        .host_instance => {
+            const inst = @import("host_instance.zig").asHostInstance(v);
+            if (inst.descriptor.lookupMethod(null, "toString")) |entry| {
+                if (rt.vtable) |vt| {
+                    const noloc: SourceLocation = .{};
+                    const s = try vt.callFn(rt, env, entry.method_val, &.{v}, noloc);
+                    return writeStrValue(rt, env, w, s);
+                }
+            }
+            try printResult(rt, env, w, v);
+        },
         else => try printResult(rt, env, w, v),
     }
 }
