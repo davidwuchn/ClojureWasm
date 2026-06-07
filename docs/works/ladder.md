@@ -38,11 +38,15 @@ so rungs are now probed via real **deps.edn git coordinates**, not just
   cljw's `clojure.core` surface (protocols, records, transducers, sorted
   collections, metadata, regex, reduce-kv) covers a real pure-Clojure library
   end to end.
-- **Rung 8 (cuerdas, partial):** loads after its `cuerdas.regexp` dependency
-  is laid out, but `capitalize` (and other fns) hit
+- **Rung 8 (cuerdas, partial → Pattern/quote landed):** loads after its
+  `cuerdas.regexp` dependency is laid out, but `capitalize` (and other fns) hit
   `(java.util.regex.Pattern/quote ...)` — a static Java-class method call cljw
-  does not resolve. This is the first *real* feature gap the ladder found, as
-  opposed to a missing-resolver blocker.
+  did not resolve. This was the first *real* feature gap the ladder found, as
+  opposed to a missing-resolver blocker. **`Pattern/quote` is now wired**
+  (Pattern.zig static surface; the regex engine already honored `\Q…\E`),
+  clj-faithful bit-for-bit (corpus `regex_pattern.txt`). Re-probe cuerdas when
+  it is re-fetched to find the next blocker (likely more Pattern statics:
+  `compile` / `matches` / flag constants).
 - **Rungs 5, 9–14 (NEEDS-ROW):** static inspection shows each touches a Java
   surface cljw does not yet provide (seeded RNG, StAX XML, `java.io`
   reader/writer, Jackson, threads). These are the honest next gaps; the main
@@ -71,7 +75,7 @@ so rungs are now probed via real **deps.edn git coordinates**, not just
 These are candidate `debt.yaml` rows — the FIRST real blocker each library
 hits. Do not edit `debt.yaml` from this doc; the main loop creates the rows.
 
-1. `NEEDS-ROW: java.util.regex.Pattern static method interop (Pattern/quote)` — cuerdas rung 8, **confirmed by probe** (partial load).
+1. ~~`NEEDS-ROW: java.util.regex.Pattern static method interop (Pattern/quote)`~~ — cuerdas rung 8. **LANDED 2026-06-07** (Pattern.zig `quote` static method; engine already honored `\Q…\E`; corpus `regex_pattern.txt`). Re-probe cuerdas for the next Pattern static (`compile`/`matches`/flags) when re-fetched.
 2. ~~`NEEDS-ROW: java.util.Random seeded RNG`~~ — data.generators rung 5. **Rowed 2026-06-07 → D-289** (probed: fails at ns-load on the seeded ctor; stateful-native-object capability, sibling to D-288).
 3. `NEEDS-ROW: javax.xml.stream StAX reader/writer` — data.xml rung 9.
 4. `NEEDS-ROW: java.io FileNotFoundException catch + file slurp` — instaparse rung 10.

@@ -1,0 +1,12 @@
+(java.util.regex.Pattern/quote "a.b*c")
+;;=> "\\Qa.b*c\\E"
+(java.util.regex.Pattern/quote "")
+;;=> "\\Q\\E"
+(java.util.regex.Pattern/quote "no-meta")
+;;=> "\\Qno-meta\\E"
+(java.util.regex.Pattern/quote "a\\Eb")
+;;=> "\\Qa\\E\\\\E\\Qb\\E"
+(re-find (re-pattern (java.util.regex.Pattern/quote "a.c")) "xa.cy")
+;;=> "a.c"
+(re-find (re-pattern (java.util.regex.Pattern/quote "a.c")) "xaXcy")
+;;=> nil
