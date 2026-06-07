@@ -36,23 +36,13 @@
   builtin var :arglists/:doc table (Slice 3). These block core.memoize's deeper
   load (cache loads; memoize advances :36→:67); NOT blocking verified_projects.
 - **⚠ USER must act (time-sensitive, NOT AI-doable)**: see
-  `private/clojure_conj_2026_cfp/DEFERRED_USER_ACTIONS.md` — (1) Sessionize submit
+  `private/clojure_conj_2026_cfp/archive/DEFERRED_USER_ACTIONS.md` — (1) Sessionize submit
   by 6/13; (2) v0.1.0 tag/Release + make `cw-from-scratch` default branch;
   (3) edge-demo CRUD `git push` + `fly deploy`.
 - **Forbidden**: the 3 USER actions above (credential/product — safety-blocked);
   editing `.claude/rules/*` (permission-blocked → surface as carry-over); the
   naive D-308 `satisfies?`-rewrite; pinning an in-progress zwasm v2 state/tag
   (F-001: v2 ONLY from `zwasm-from-scratch`); trusting `~/Documents/OSS/zig`.
-
-## Stopped — user requested
-
-User instruction (2026-06-07): "ちょっと今回のキリが良くなったところで止めてくだ
-さい。Mac のディスク容量が逼迫してきていますので、わたしが整理します。" Clean
-stop at a good boundary (HEAD `2ac8a405`, tree clean, all pushed). Resume per the
-Resume contract above — first commit = grow `verified_projects/` by one lib
-(next = clojure.core.cache; see `private/notes/stage13-deps-edn-verified-projects.md`
-for the concrete next-experiment + the priority-map-dep blocker). Delete this
-section on resume (the directive applied to that session only).
 
 ## Just landed (2026-06-07, git log = SSOT)
 
