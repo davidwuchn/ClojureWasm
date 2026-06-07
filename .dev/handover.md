@@ -6,27 +6,29 @@
 ## Resume contract
 
 - **HEAD**: see `git log`. The 2026-06-07 sessions landed (newest last): D-304
-  symbol metadata (ADR-0110) · var-metadata Slice 1 (synth :name/:ns/:macro/
-  :dynamic/:private on read) · D-306 collection-base deftype supertypes
-  (IPersistentCollection/Counted/Associative/Seqable) · defn/fn `:pre`/`:post`
-  → **clojure.core.cache FULLY LOADS** · D-307 IDeref/IPending deref-able family
-  · **deps.edn `:mvn`-skip (ADR-0101 am.1)** so libs whose only mvn dep is
-  `org.clojure/clojure` (= cw itself) resolve via git coords · **`verified_projects/`
-  mechanism** (committed real-lib proofs + regression sweep). Full gate 277/0.
-- **First commit on resume MUST be: grow `verified_projects/` by one library.**
-  (User-directed methodology — committed deps.edn-git-coord proofs replace corpus
-  copies / `-cp`.) Pick the next candidate from `docs/works/ladder.md` (next:
-  clojure.core.cache — loads end-to-end; clojure.data.generators; NOTE
-  clojure.tools.cli/data.json/data.csv are BUNDLED in cw, skip), add
-  `verified_projects/<lib>/{deps.edn,verify.clj}`, run
-  `bash scripts/verify_projects.sh <lib>`, commit on green; reconcile the ladder.
-  A failure IS a coverage gap → fix root-cause (definition-derived, F-013) OR
-  improve the deps.edn system (within cljw's control — `:git`/`:local` resolution,
-  NOT Maven JAR). Method + how-to-add: `verified_projects/README.md`. SSOT =
+  symbol metadata (ADR-0110) · D-306 collection-base deftype supertypes ·
+  defn/fn `:pre`/`:post` → **core.cache FULLY LOADS** · D-307 IDeref/IPending ·
+  **deps.edn `:mvn`-skip (ADR-0101 am.1)** · **`verified_projects/` mechanism** ·
+  **D-309 deps.edn RUN-MODE `-M`/`-X` (ADR-0111)**: `-M:alias` clojure.main
+  mini-grammar (`-m ns`→`-main`, `-e`, file, `-h`) + bare `-m` + `-X:alias`
+  exec-fn (EDN-typed `:k v` merge); `verified_projects/` flipped to `-M:verify`.
+  Full gate 278/0.
+- **First commit on resume MUST be: grow `verified_projects/` by one library**
+  using the `-M:verify` convention (deps.edn `:paths ["."]` + `:aliases {:verify
+  {:main-opts ["-m" "verify"]}}`; verify.clj = `(ns verify …)` + `-main`). Next
+  candidate: **clojure.data.zip** (loads, D-299 ns-leniency) or clojure.core.unify
+  (both loads-rows in `docs/works/ladder.md`). NOTE data.generators is maven-layout
+  (no deps.edn → src/main/clojure), deferred; tools.cli/data.json/data.csv are
+  BUNDLED, skip. Add the dir, `bash scripts/verify_projects.sh <lib>`, commit on
+  green; reconcile the ladder. A failure IS a coverage gap → fix root-cause
+  (definition-derived, F-013) OR improve the deps.edn system (`:git`/`:local`, NOT
+  Maven JAR). How-to: `verified_projects/README.md`. SSOT =
   `.dev/convergence_campaign.md` Stage 1.3.
-- **deps.edn next extensions (user ideas, debt-tracked)**: D-309 run-mode
-  `-M:alias` (`:main-opts`/`-m -main`) + `-X:alias` (`:exec-fn`) — cljw resolves a
-  classpath only today; entry = `cljw <file>`/`-e`; v0 has the parse precedent.
+- **deps.edn run-mode remainder = D-310** (ADR-0111 deferral): `*command-line-args*`
+  binding + `-i`/`-r`/`--report`/`@resource`/mixed-init-before-main + `-T` tool
+  mode. FINISHED-FORM = a `clojure.main`-shaped Clojure grammar fn (DA Alt 3),
+  bootstrap-ordering-gated; current Zig source-synthesis migrates cleanly. Not
+  blocking verified_projects.
 - **Deferred — do NOT re-attempt the naive fix**: D-308 `(instance?
   clojure.lang.IDeref x)` needs a per-interface NATIVE-implementer membership
   table ∪ protocol satisfaction — NOT a `satisfies?` alias (the 2026-06-07 try
@@ -46,16 +48,22 @@
 
 ## Just landed (2026-06-07, git log = SSOT)
 
-- **deps.edn unified as the lib-load methodology** (user direction). A
-  `:mvn/version` dep is recorded + SKIPPED (ADR-0101 am.1), not rejected —
-  satisfaction is decided at require-time by namespace availability (cw's bundled
-  namespaces ∪ source-resolved `:paths`); `org.clojure/clojure` silently provided,
-  other skipped coords warned; no coord→provided allowlist. Empty `:paths`→`src`.
-  `verified_projects/<lib>/` (deps.edn `:git/url`+`:git/sha` + `verify.clj`
-  asserting real outputs) are committed proofs; `scripts/verify_projects.sh` is
-  the NETWORK regression sweep (Phase-boundary / on-demand, NOT per-commit — the
-  hermetic deps.edn mechanism test stays in `test/e2e/phase14_deps_edn.sh`).
-  Seeds (3/3 green): medley, data.priority-map, math.combinatorics.
+- **D-309 deps.edn run modes `-M`/`-X` (ADR-0111)**. In-process clojure.main
+  grammar (cljw is JVM-less, no second-process). `-M[:alias]` = alias `:main-opts`
+  ++ user args (APPEND); `-m ns`→`(requiring-resolve 'ns/-main)`+`(-main args)`,
+  `-e` eval+print, bare file load, `-h`; bare top-level `-m` too. `-X[:alias]
+  [ns/fn] [:k v]` = `:exec-fn` + `:exec-args` merged under CLI `:k v` (EDN-typed
+  via `quote`d data maps; result not printed). New `src/app/deps/run_mode.zig`
+  synthesizes a Clojure form → `runner.runSource(print_results=false)`. parse.zig
+  Alias gains main_opts/exec_fn/exec_args. 7-case e2e phase14_deps_run_mode. v0's
+  3 gaps fixed (args→-main, append, EDN coercion). DA Alt 2/Alt 3 in ADR-0111;
+  source-synthesis kept on F-009 (thin Zig; clojure.main is Clojure), Alt 3 = D-310.
+  `verified_projects/` (medley/data.priority-map/math.combinatorics/core.cache,
+  4/4 green) flipped to `cljw -M:verify`.
+- **bench note (user)**: gate bench_regression flags binary_size 2.5x (locked
+  1.13MB → 2.86MB) + others — non-blocking; pre-existing project-wide drift (stale
+  locked baseline, Phase 6→14), not the ~300-line run_mode. A bench-lock re-take
+  may be warranted (user judgement).
 
 ## Process discipline (SSOT = memory + rules; do NOT re-expand here)
 
