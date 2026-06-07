@@ -5,84 +5,74 @@
 
 ## Resume contract
 
-- **HEAD**: see `git log`. The 2026-06-07 ladder session landed a large arc:
-  Pattern/quote · `(extend-type nil …)` nil-punning · deftype method-lowering ·
-  **ADR-0108** third host-surface tree `runtime/clojure/lang/` + `clojure.lang.Util`
-  (11/11) + `class_of.zig` (D-303) · **ADR-0109 host-class-VALUE resolver COMPLETE**
-  (opaque collapsed-numerics + `java.lang.Object` universal-root + `java.lang.Number`
-  + `clojure.lang.IFn`) + clj-faithful class names (sorted_map→PersistentTreeMap,
-  var_ref→Var). LOADS now: numeric-tower :98/:127→:162, algo.generic core+arithmetic
-  +comparison, core.contracts. Then **D-304 SYMBOL metadata landed (ADR-0110)**:
-  `with-meta`/`meta` on a symbol; ns+name-structural identity (meta-ignored);
-  `.symbol` GC-membrane flip + trace. All oracle bit-for-bit. Full gate 274/0.
-- **First commit on resume MUST be: Stage 1.4 prerequisite — populate built-in var
-  metadata** (`(meta (var map))` is nil today; cider `info`/`eldoc` need `:doc`/
-  `:arglists`/`:ns`/`:name` on core vars, generated from `compat_tiers.yaml` + the
-  JVM source, NOT hand-listed). It is the gate into Stage 1.4 native `cljw.nrepl`
-  cider ops (`info`/`complete`/`eldoc`/`load-file`). SSOT =
-  `.dev/convergence_campaign.md` Stage 1 (1.4 cider → 1.5 v0→v1 D-273 → 1.6
-  clj-parity D-210 → 1.7 Phase B D-242). Self-select per the F-010 floor-drain rule
-  at Step 0 (correctness floor D-210 outranks coverage if a clj DIFF surfaces first);
-  the metadata sibling D-239 (alter-meta!/reset-meta! on ns/ref/agent) is the small
-  clean continuation of today's metadata layer.
-- **Carry-over (permission-blocked, ADR-0108)**: extend
-  `.claude/rules/feature_name_consistency.md` scan-set to `runtime/clojure/**` — the
-  classifier blocks `.claude/rules/*` edits; the user lands it. zone_check.sh already
-  gates the third tree; this is doc-accuracy only.
-- **Scoped gaps the ladder probes surfaced** (drive when a target needs them):
-  D-286b (bare names that ARE cljw Vars — IPersistentSet/IPersistentMap with
-  clj-named methods — bypass protocol_remap; needs method-name disambiguation;
-  completes ordered's supertypes) · D-287 (Java arrays: aset/aget/make-array —
-  ordered's backing store; ADR-level repr choice) · D-288 (deftype mutable fields
-  `^:unsynchronized-mutable` + set! — tools.reader; ADR-level) · the deftype
-  FUNCTIONAL residuals: cross-type `(= deftype-map native-map)` (D-280d8) ·
-  find/`-entry-at` · subseq/Sorted-nav · reduce-kv→IKVReduce wiring · reify
-  protocol_remap (expandReify lacks the rewriteProtocolRemap path).
+- **HEAD**: see `git log`. The 2026-06-07 sessions landed (newest last): D-304
+  symbol metadata (ADR-0110) · var-metadata Slice 1 (synth :name/:ns/:macro/
+  :dynamic/:private on read) · D-306 collection-base deftype supertypes
+  (IPersistentCollection/Counted/Associative/Seqable) · defn/fn `:pre`/`:post`
+  → **clojure.core.cache FULLY LOADS** · D-307 IDeref/IPending deref-able family
+  · **deps.edn `:mvn`-skip (ADR-0101 am.1)** so libs whose only mvn dep is
+  `org.clojure/clojure` (= cw itself) resolve via git coords · **`verified_projects/`
+  mechanism** (committed real-lib proofs + regression sweep). Full gate 277/0.
+- **First commit on resume MUST be: grow `verified_projects/` by one library.**
+  (User-directed methodology — committed deps.edn-git-coord proofs replace corpus
+  copies / `-cp`.) Pick the next candidate from `docs/works/ladder.md` (next:
+  clojure.core.cache — loads end-to-end; clojure.data.generators; NOTE
+  clojure.tools.cli/data.json/data.csv are BUNDLED in cw, skip), add
+  `verified_projects/<lib>/{deps.edn,verify.clj}`, run
+  `bash scripts/verify_projects.sh <lib>`, commit on green; reconcile the ladder.
+  A failure IS a coverage gap → fix root-cause (definition-derived, F-013) OR
+  improve the deps.edn system (within cljw's control — `:git`/`:local` resolution,
+  NOT Maven JAR). Method + how-to-add: `verified_projects/README.md`. SSOT =
+  `.dev/convergence_campaign.md` Stage 1.3.
+- **deps.edn next extensions (user ideas, debt-tracked)**: D-309 run-mode
+  `-M:alias` (`:main-opts`/`-m -main`) + `-X:alias` (`:exec-fn`) — cljw resolves a
+  classpath only today; entry = `cljw <file>`/`-e`; v0 has the parse precedent.
+- **Deferred — do NOT re-attempt the naive fix**: D-308 `(instance?
+  clojure.lang.IDeref x)` needs a per-interface NATIVE-implementer membership
+  table ∪ protocol satisfaction — NOT a `satisfies?` alias (the 2026-06-07 try
+  was reverted: it broke `(instance? clojure.lang.IFn :kw)`→true). ADR-level,
+  sibling of D-293. · reify protocol_remap (D-280 residual: expandReify lacks the
+  rewriteProtocolRemap path) · D-288 deftype `^:volatile-mutable`+set! · D-305
+  builtin var :arglists/:doc table (Slice 3). These block core.memoize's deeper
+  load (cache loads; memoize advances :36→:67); NOT blocking verified_projects.
 - **⚠ USER must act (time-sensitive, NOT AI-doable)**: see
   `private/clojure_conj_2026_cfp/DEFERRED_USER_ACTIONS.md` — (1) Sessionize submit
-  by 6/13 (`SUBMIT_READY.md` copy-paste ready); (2) v0.1.0 tag/Release + make
-  `cw-from-scratch` the default branch; (3) edge-demo CRUD `git push` + `fly deploy`.
-- **Forbidden**: the 3 USER actions above (credential / product decisions — the
-  safety layer blocks them); editing `.claude/rules/*` (permission-blocked →
-  surface); pinning an in-progress zwasm v2 state / tag (F-001: v2 ONLY from
-  `zwasm-from-scratch`); trusting `~/Documents/OSS/zig`.
+  by 6/13; (2) v0.1.0 tag/Release + make `cw-from-scratch` default branch;
+  (3) edge-demo CRUD `git push` + `fly deploy`.
+- **Forbidden**: the 3 USER actions above (credential/product — safety-blocked);
+  editing `.claude/rules/*` (permission-blocked → surface as carry-over); the
+  naive D-308 `satisfies?`-rewrite; pinning an in-progress zwasm v2 state/tag
+  (F-001: v2 ONLY from `zwasm-from-scratch`); trusting `~/Documents/OSS/zig`.
 
 ## Just landed (2026-06-07, git log = SSOT)
 
-- **F-013 + ADR-0102** institutionalised the user's directive: library-driven
-  discovery surfaces gaps; the response is definition-derived comprehensive
-  coverage (網羅) in canonical Zig-equivalent (non-JVM) form, NOT ad-hoc
-  "make this lib pass". The 個別最適化 entry is closed structurally — a closed-set
-  SSOT (`host_interfaces.yaml`) + a single read point + a G4 gate (set-bound +
-  route-soundness), not vigilance.
-- **D-275 → D-285** (+ D-279, ADR-0103): the whole deftype/reify host-interface
-  stack — clojure.lang.* family (macro rewrite to bare cljw protocol sections +
-  Object method-family + arity-overload + IFn-call-path + IObj-meta), java.util.*
-  host_inert, clojure.core.protocols ns, clj-name dot-calls, MapEntry ctor,
-  keys/vals seq-derivation — gate-green throughout. PROVEN end-to-end: real
-  `clojure.data.priority-map` is **FULLY FUNCTIONAL** (peek/count/keys/vals/assoc).
-  30 e2e cases (phase14_deftype_object).
+- **deps.edn unified as the lib-load methodology** (user direction). A
+  `:mvn/version` dep is recorded + SKIPPED (ADR-0101 am.1), not rejected —
+  satisfaction is decided at require-time by namespace availability (cw's bundled
+  namespaces ∪ source-resolved `:paths`); `org.clojure/clojure` silently provided,
+  other skipped coords warned; no coord→provided allowlist. Empty `:paths`→`src`.
+  `verified_projects/<lib>/` (deps.edn `:git/url`+`:git/sha` + `verify.clj`
+  asserting real outputs) are committed proofs; `scripts/verify_projects.sh` is
+  the NETWORK regression sweep (Phase-boundary / on-demand, NOT per-commit — the
+  hermetic deps.edn mechanism test stays in `test/e2e/phase14_deps_edn.sh`).
+  Seeds (3/3 green): medley, data.priority-map, math.combinatorics.
 
 ## Process discipline (SSOT = memory + rules; do NOT re-expand here)
 
 - Gate (source only): `timeout 1800 bash test/run_all.sh --serial-e2e` (~5min;
-  -P8 over-runs under load). Doc-only = no gate. Never poll a bg gate.
-- A clj-diff probe runs many `cljw` processes — **never sweep concurrently with a
-  running gate** (contends with the perf-threshold steps → false failures).
-- clj-diff harness = `scripts/clj_diff_sweep.sh exprs --corpus <area>`; for
-  classification, probe **per-expr** (cljw vs clj individually) — a batch desyncs
-  when one expr is a clj READ error (e.g. `08`, `nan?`, a non-required
-  `clojure.set/…`). `clj -M -e` → `timeout 20` + bound infinite seqs.
-- Speed ONLY via `scripts/perf.sh` (never time Debug). Edit/Write TRANSCODES
-  literal non-ASCII (keep source ASCII; splice non-ASCII via python). Default
-  backend = VM (F-012).
+  -P8 over-runs under load). Doc-only / verified_projects-only = no gate. Never
+  poll a bg gate.
+- `verified_projects` sweep + clj-diff probes are NETWORK / many-`cljw` — never
+  run concurrently with the gate (contends with perf-threshold steps).
+- clj-diff harness = `scripts/clj_diff_sweep.sh`; per-expr classify. `clj -M -e`
+  → `timeout 20` + bound infinite seqs. Speed ONLY via `scripts/perf.sh`.
+  Edit/Write TRANSCODES non-ASCII (splice via python). Default backend = VM (F-012).
 
 ## Cold-start reading order (tracked-only)
 
-handover → **`.dev/convergence_campaign.md`** (the driving SSOT/procedure) →
-`.dev/v0_v1_feature_parity.md` (D-273 backfill list) + `.dev/debt.yaml` (133
-active) + `compat_tiers.yaml` (Java tier scope) + `docs/works/ladder.md` →
-ADR-0090/0089 (Phase B — IMPLEMENTED, Stage 1.7 = hardening) →
-`.dev/project_facts.md` F-004/F-006 → CLAUDE.md (§ Project spirit + The only
-stop) → `.dev/principle.md`.
-
+handover → **`.dev/convergence_campaign.md`** (driving SSOT; Stage 1.3 =
+verified_projects) → **`verified_projects/README.md`** (the lib-load method) →
+`docs/works/ladder.md` (ranked candidates) + `.dev/debt.yaml` + `compat_tiers.yaml`
+→ `.dev/decisions/0101_deps_git_fetch.md` (+ amendment 1) → `.dev/project_facts.md`
+(F-013/F-010/F-002) → CLAUDE.md (§ Project spirit + The only stop) →
+`.dev/principle.md`.

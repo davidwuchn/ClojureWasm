@@ -9,6 +9,26 @@
 # md-table-align no longer pads it to ~800 KB of whitespace.
 
 active:
+  - id: "D-309"
+    status: "now (2026-06-07, user idea) — deps.edn RUN-MODE: `-M:alias` (`:main-opts` → `-m ns` → `(ns/-main args)`) + `-X:alias` (`:exec-fn` qualified fn + `:exec-args` map). cljw v1 resolves a CLASSPATH only (parse.zig Alias = name/extra_paths/extra_deps; cli.zig has no -M/-X/-m; the `:main-opts`/`:exec-fn` keys are parsed-skipped, explicitly out of Stage 1.2 scope). Entry today = `cljw <file>` / `cljw -e`. This is a clean extension WITHIN cljw's control (no Java/Maven): after classpath resolution, dispatch `-main`/exec-fn. v0 (src/app/deps.zig) already PARSED `:main-opts`/`:exec-fn`/`:exec-args` (re-derive the parse, then wire the run-mode in cli.zig). Would also let verified_projects/<lib>/ declare its entry in deps.edn (`-M:verify`) instead of a bare verify.clj file — more deps.edn-idiomatic, optional. Scope: -M (main-opts/-m -main) + -X (exec-fn) run modes; NOT -T tool mode initially."
+    category: "app"
+    barrier: |-
+      cljw has no deps.edn run-mode: `:main-opts`/`:exec-fn` are parsed-skipped
+      (Stage 1.2 = classpath only). Add `:main-opts`/`:exec-fn`/`:exec-args` to
+      parse.zig Alias (v0 has the parse) + a `-M:alias`/`-X:alias` run-mode in
+      cli.zig that, after classpath resolution, invokes `(ns/-main args)` or the
+      exec-fn. Within cljw's control (no Java). Cross-ref v0 src/app/deps.zig.
+    last_reviewed: "2026-06-07"
+  - id: "D-308"
+    status: "now (2026-06-07) — DEFERRED (ADR-level). `(instance? clojure.lang.IDeref x)` (and other recognised clojure.lang PROTOCOL markers: IFn/IObj/IPersistentStack/…) errors `class … is not a known class name`. core.memoize:67 needs it. A 2026-06-07 attempt rewrote `(instance? marker x)` → `(satisfies? proto x)` in expandInstanceQ — REVERTED: it broke `(instance? clojure.lang.IFn :kw)` (clj=true, a keyword IS a callable IFn; satisfies?=false since keywords don't extend the IFn protocol). LESSON: instance?-on-host-interface ≠ satisfies?. clj instance? checks the value's CLASS implements the interface, which for a host interface includes NATIVE implementers (keyword/vector/map/fn are IFn; atom/delay/future/var are IDeref) PLUS deftype protocol impls. The proper shape = a per-interface NATIVE-implementer membership predicate (the tag set that implements each clojure.lang interface) ∪ the protocol-satisfaction check — definition-derived, NOT a satisfies? alias. Sibling to D-293 (opaque host-class VALUE) but for clojure.lang PROTOCOL markers. Likely an ADR (host-interface instance? membership). Do NOT re-attempt the naive satisfies?-rewrite."
+    category: "interop"
+    barrier: |-
+      `(instance? clojure.lang.IDeref x)` raises class_name_unknown. The fix is a
+      per-interface native-implementer membership table (keyword/vector/map/fn →
+      IFn; atom/delay/future/var/ref → IDeref; …) ∪ protocol satisfaction for
+      deftype impls — NOT a `satisfies?` alias (that misses native implementers,
+      breaks `(instance? IFn :kw)`→true). Cross-ref D-293, D-280, ADR-0109.
+    last_reviewed: "2026-06-07"
   - id: "D-307"
     status: "DISCHARGED 2026-06-07 (this commit, ADR-0102/F-013). The deref-able interface family: clojure.lang.IDeref + IPending recognised as direct deftype/reify supertypes (protocol_remap). New (defprotocol IDeref (-deref [o])) + (defprotocol IPending (-realized? [o])) in core.clj; `deref`/`@` (stm.zig derefFn) + `realized?` (realizedQFn) consult them for a typed_instance/reified_instance (the IObj precedent). Found via ladder re-drive: core.memoize's RetryingDelay implements both (memoize.clj:33) — IDeref+IPending advanced core.memoize :36 -> :67. G4 30⊆31. 4 e2e (phase14_deftype_ideref). core.memoize's NEXT gaps: (instance? clojure.lang.IDeref v) host-class-VALUE resolution (D-293 family) + reify protocol_remap (expandReify lacks the rewriteProtocolRemap path) + D-288 volatile-mutable fields."
     category: "interop"
