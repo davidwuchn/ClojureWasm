@@ -144,26 +144,64 @@ const IHASHEQ: HostInterface = .{ .kind = .protocol_remap, .canonical = "IHashEq
     .{ .clj = "hasheq", .protocol = "Object", .method = "hasheq" },
 } };
 
-const IPERSISTENT_MAP: HostInterface = .{ .kind = .protocol_remap, .canonical = "IPersistentMap", .remap = &.{
+const IPERSISTENT_MAP: HostInterface = .{
+    .kind = .protocol_remap,
+    .canonical = "IPersistentMap",
+    .remap = &.{
+        .{ .clj = "count", .protocol = "IPersistentCollection", .method = "-count" },
+        .{ .clj = "cons", .protocol = "IPersistentCollection", .method = "-cons" },
+        .{ .clj = "empty", .protocol = "IPersistentCollection", .method = "-empty" },
+        .{ .clj = "assoc", .protocol = "Associative", .method = "-assoc" },
+        .{ .clj = "containsKey", .protocol = "Associative", .method = "-contains-key?" },
+        .{ .clj = "seq", .protocol = "Seqable", .method = "-seq" },
+        .{ .clj = "without", .protocol = "IPersistentMap", .method = "-without" },
+        // clj groups Object's hashCode/equals under IPersistentMap (the interface
+        // inherits Object) — target the Object METHOD-FAMILY (D-280d1b). rewriteProtocolRemap
+        // groups these into an `(extend-type Name Object …)` section that re-expands via
+        // the isMarker quote-wrap path; equal.zig/hashFn (D-280d1) consult them.
+        .{ .clj = "hashCode", .protocol = "Object", .method = "hashCode" },
+        .{ .clj = "equals", .protocol = "Object", .method = "equals" },
+        // equiv = clj collection value-equality (consulted by =); entryAt → Associative
+        // (D-280d8). equiv targets the Object method-family (same-type consult, cross-
+        // type is the residual); entryAt adds an Associative protocol method.
+        .{ .clj = "equiv", .protocol = "Object", .method = "equiv" },
+        .{ .clj = "entryAt", .protocol = "Associative", .method = "-entry-at" },
+    },
+};
+
+// The clojure.lang collection-BASE interfaces a deftype can declare DIRECTLY as
+// supertypes (D-306, F-013 definition-derived family). clj's IPersistentMap
+// EXTENDS IPersistentCollection / Counted / Associative (and IPersistentCollection
+// extends Seqable), so IPERSISTENT_MAP above already remaps these methods when
+// grouped under one IPersistentMap section. A macro like core.cache's `defcache`
+// instead names the base interfaces directly — these rows make the QUALIFIED
+// spellings resolve to the SAME (protocol, method) targets. The bare spellings
+// (Associative/Seqable/IPersistentCollection) already resolve as cljw protocol
+// Vars; only the `clojure.lang.`-qualified forms need a row (+ Counted, which has
+// no protocol Var — its count routes to IPersistentCollection/-count).
+const COUNTED: HostInterface = .{ .kind = .protocol_remap, .canonical = "Counted", .remap = &.{
     .{ .clj = "count", .protocol = "IPersistentCollection", .method = "-count" },
-    .{ .clj = "cons", .protocol = "IPersistentCollection", .method = "-cons" },
-    .{ .clj = "empty", .protocol = "IPersistentCollection", .method = "-empty" },
+} };
+const SEQABLE: HostInterface = .{ .kind = .protocol_remap, .canonical = "Seqable", .remap = &.{
+    .{ .clj = "seq", .protocol = "Seqable", .method = "-seq" },
+} };
+const ASSOCIATIVE: HostInterface = .{ .kind = .protocol_remap, .canonical = "Associative", .remap = &.{
     .{ .clj = "assoc", .protocol = "Associative", .method = "-assoc" },
     .{ .clj = "containsKey", .protocol = "Associative", .method = "-contains-key?" },
-    .{ .clj = "seq", .protocol = "Seqable", .method = "-seq" },
-    .{ .clj = "without", .protocol = "IPersistentMap", .method = "-without" },
-    // clj groups Object's hashCode/equals under IPersistentMap (the interface
-    // inherits Object) — target the Object METHOD-FAMILY (D-280d1b). rewriteProtocolRemap
-    // groups these into an `(extend-type Name Object …)` section that re-expands via
-    // the isMarker quote-wrap path; equal.zig/hashFn (D-280d1) consult them.
-    .{ .clj = "hashCode", .protocol = "Object", .method = "hashCode" },
-    .{ .clj = "equals", .protocol = "Object", .method = "equals" },
-    // equiv = clj collection value-equality (consulted by =); entryAt → Associative
-    // (D-280d8). equiv targets the Object method-family (same-type consult, cross-
-    // type is the residual); entryAt adds an Associative protocol method.
-    .{ .clj = "equiv", .protocol = "Object", .method = "equiv" },
     .{ .clj = "entryAt", .protocol = "Associative", .method = "-entry-at" },
 } };
+const IPERSISTENT_COLLECTION: HostInterface = .{
+    .kind = .protocol_remap,
+    .canonical = "IPersistentCollection",
+    .remap = &.{
+        .{ .clj = "count", .protocol = "IPersistentCollection", .method = "-count" },
+        .{ .clj = "cons", .protocol = "IPersistentCollection", .method = "-cons" },
+        .{ .clj = "empty", .protocol = "IPersistentCollection", .method = "-empty" },
+        // equiv = clj collection value-equality → Object method-family (same as the
+        // IPersistentMap grouping); consulted by = (D-280d8 same-type).
+        .{ .clj = "equiv", .protocol = "Object", .method = "equiv" },
+    },
+};
 
 /// Recognised host-supertype names → their `HostInterface`. D-275 slice 1:
 /// `Object`. D-280a: zero-method markers. D-280b+: the method-bearing
@@ -187,6 +225,13 @@ const MARKERS = std.StaticStringMap(HostInterface).initComptime(.{
     .{ "clojure.lang.Sorted", SORTED },
     .{ "clojure.lang.IFn", IFN },
     .{ "clojure.lang.IObj", IOBJ },
+    // D-306: collection-base interfaces declarable as DIRECT deftype supertypes
+    // (core.cache's defcache). Qualified spelling only — the bare Associative/
+    // Seqable/IPersistentCollection are cljw protocol Vars that resolve already.
+    .{ "clojure.lang.Counted", COUNTED },
+    .{ "clojure.lang.Seqable", SEQABLE },
+    .{ "clojure.lang.Associative", ASSOCIATIVE },
+    .{ "clojure.lang.IPersistentCollection", IPERSISTENT_COLLECTION },
     // host_inert: accept both the bare spelling (priority-map writes `Map`/`Iterable`)
     // and the fully-qualified one (the canonical, which the primitive re-checks).
     .{ "Map", JAVA_UTIL_MAP },

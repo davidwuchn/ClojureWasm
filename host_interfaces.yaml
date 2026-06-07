@@ -58,12 +58,14 @@ interfaces:
     methods:
       deref: { status: feature_not_supported }
   - name: clojure.lang.Counted
-    derives_from: "clojure.lang.Counted — O(1) count marker (Clojure, stable)."
+    derives_from: "clojure.lang.Counted — O(1) count marker; a base interface clj's IPersistentMap/Vector extend, declarable directly as a deftype supertype (Clojure, stable)."
     tier: A
-    recognised: false
-    modeled_as: "(none yet — distinct from IPersistentCollection/-count)"
+    recognised: true
+    kind: protocol_remap
+    modeled_as: "count → IPersistentCollection/-count (cljw has no separate Counted protocol; count dispatches via IPersistentCollection)"
+    note: "D-306: recognised as a DIRECT deftype supertype (core.cache's defcache names it). Qualified spelling only. Load-level: registers count under IPersistentCollection; whether core `count` consults a typed_instance's -count is the functional follow-up shared with the IPersistentMap family."
     methods:
-      count: { status: feature_not_supported }
+      count: { status: wired, wires_to_protocol: IPersistentCollection, wires_to_method: "-count" }
   - name: clojure.lang.IFn
     derives_from: "clojure.lang.IFn — invocable instance (Clojure, stable)."
     tier: A
@@ -182,6 +184,44 @@ interfaces:
       equals: { status: wired, wires_to: "Object method-family equals (D-280d1b — same-type; cross-type is D-280d8)" }
       equiv: { status: wired, wires_to: "Object method-family equiv (D-280d8 — clj collection =; same-type, cross-type residual)" }
       entryAt: { status: wired, wires_to_protocol: Associative, wires_to_method: "-entry-at" }
+  # D-306: the collection-BASE interfaces clj's IPersistentMap decomposes into
+  # (IPersistentCollection / Counted / Associative / Seqable), declarable DIRECTLY
+  # as deftype supertypes — core.cache's `defcache` names them directly rather than
+  # grouping under IPersistentMap. Same (protocol, method) targets IPersistentMap
+  # already remaps to; these rows make the qualified spellings resolve. Bare
+  # Associative/Seqable/IPersistentCollection already resolve as cljw protocol Vars.
+  - name: clojure.lang.Associative
+    derives_from: "clojure.lang.Associative — assoc/containsKey/entryAt; a base interface clj's IPersistentMap extends, declarable directly (Clojure, stable)."
+    tier: A
+    recognised: true
+    kind: protocol_remap
+    modeled_as: "Associative (defprotocol Associative (-assoc …) (-contains-key? …) (-entry-at …))"
+    note: "D-306: direct-supertype spelling of the same Associative targets IPersistentMap remaps to. Load-level."
+    methods:
+      assoc: { status: wired, wires_to_protocol: Associative, wires_to_method: "-assoc" }
+      containsKey: { status: wired, wires_to_protocol: Associative, wires_to_method: "-contains-key?" }
+      entryAt: { status: wired, wires_to_protocol: Associative, wires_to_method: "-entry-at" }
+  - name: clojure.lang.Seqable
+    derives_from: "clojure.lang.Seqable — seq; the base of every persistent collection, declarable directly (Clojure, stable)."
+    tier: A
+    recognised: true
+    kind: protocol_remap
+    modeled_as: "Seqable (defprotocol Seqable (-seq [c]))"
+    note: "D-306: direct-supertype spelling. Load-level."
+    methods:
+      seq: { status: wired, wires_to_protocol: Seqable, wires_to_method: "-seq" }
+  - name: clojure.lang.IPersistentCollection
+    derives_from: "clojure.lang.IPersistentCollection — count/cons/empty/equiv; the persistent-collection base clj's IPersistentMap/Vector/Set extend, declarable directly (Clojure, stable)."
+    tier: A
+    recognised: true
+    kind: protocol_remap
+    modeled_as: "IPersistentCollection (-count/-cons/-empty); equiv → Object method-family (clj collection value-equality)"
+    note: "D-306: direct-supertype spelling of the count/cons/empty targets IPersistentMap remaps to. equiv targets the Object method-family (same-type =, D-280d8). Load-level."
+    methods:
+      count: { status: wired, wires_to_protocol: IPersistentCollection, wires_to_method: "-count" }
+      cons: { status: wired, wires_to_protocol: IPersistentCollection, wires_to_method: "-cons" }
+      empty: { status: wired, wires_to_protocol: IPersistentCollection, wires_to_method: "-empty" }
+      equiv: { status: wired, wires_to: "Object method-family equiv (D-280d8 — clj collection =; same-type, cross-type residual)" }
   - name: clojure.lang.IPersistentStack
     derives_from: "clojure.lang.IPersistentStack — peek/pop (Clojure, stable)."
     tier: A

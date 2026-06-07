@@ -9,6 +9,16 @@
 # md-table-align no longer pads it to ~800 KB of whitespace.
 
 active:
+  - id: "D-306"
+    status: "DISCHARGED 2026-06-07 (this commit, ADR-0102/F-013). The clojure.lang collection-BASE interfaces (IPersistentCollection / Counted / Associative / Seqable) are now recognised as DIRECT deftype supertypes (qualified spelling), remapped to the same cljw (protocol, method) targets IPersistentMap already uses. Found via ladder re-drive: core.cache's `defcache` macro names them directly (cache.clj:115) — D-304 + this advanced core.cache :115 -> :602 (all defcache types load). Functional: count/seq/contains? dispatch through the instance (e2e phase14_deftype_collection_base, 5 cases). G4 28⊆30. Bare Associative/Seqable/IPersistentCollection still resolve as cljw protocol Vars; Counted (no Var) routes count→IPersistentCollection/-count. core.cache's NEXT gap = defn :pre/:post `%` (cache.clj:602)."
+    category: "interop"
+    barrier: |-
+      DISCHARGED. A deftype declaring `clojure.lang.Associative` / `Seqable` /
+      `IPersistentCollection` / `Counted` directly (not grouped under
+      IPersistentMap) raised `Unable to resolve symbol`. host_interface.zig +
+      host_interfaces.yaml now carry the 4 qualified rows as protocol_remap to the
+      existing cljw protocol targets. Cross-ref ADR-0102, F-013, D-280c.
+    last_reviewed: "2026-06-07"
   - id: "D-305"
     status: "now (2026-06-07) — Stage 1.4 var-metadata Slice 3. Slice 1 LANDED (mechanical keys :name/:ns/:macro/:dynamic/:private synthesized on read in metaFn's .var_ref arm; :ns opaque = AD-021). Slice 3 = builtin :arglists/:doc: Zig-builtin primitives (map/filter/reduce/…) + plain-`def` core vars have NO :arglists/:doc on `(meta #'x)` (clj has both). defn-defined vars already get :arglists (the defn macro attaches it). Unblocks full cider eldoc/info on builtins (campaign Stage 1.4)."
     category: "runtime"
