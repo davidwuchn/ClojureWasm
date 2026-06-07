@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 # scripts/verify_projects.sh — real-world library regression sweep.
 #
-# Runs every verified_projects/<lib>/ through cljw using its own deps.edn
-# (git-coordinate resolution + the verify.clj exercise). The PRESENCE of a
+# Runs every verified_projects/<lib>/ through `cljw -M:verify` — the project's
+# own deps.edn resolves the lib (git coordinates), and its `:verify` alias's
+# `:main-opts ["-m" "verify"]` runs `verify/-main` (D-309 run mode). The
+# PRESENCE of a
 # verified_projects/<lib>/ dir is the committed claim "this library loads +
 # works on cljw"; this script re-checks that claim, so a later change that
 # breaks a previously-working lib is caught (the F-010 regression-detection
@@ -32,7 +34,7 @@ for dir in verified_projects/*/; do
     [ -f "$dir/deps.edn" ] && [ -f "$dir/verify.clj" ] || continue
     [ -z "$filter" ] || [ "$filter" = "$name" ] || continue
     n=$((n + 1))
-    if out="$(cd "$dir" && CLJW_HOME="$CACHE" timeout 180 "$BIN" verify.clj 2>&1)"; then
+    if out="$(cd "$dir" && CLJW_HOME="$CACHE" timeout 180 "$BIN" -M:verify 2>&1)"; then
         msg="$(printf '%s' "$out" | grep '^OK' | tail -1)"
         echo "PASS $name -> ${msg:-ok}"
     else

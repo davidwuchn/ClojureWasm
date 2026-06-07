@@ -1,3 +1,5 @@
-{:deps {org.clojure/data.priority-map
+{:paths ["."]
+ :deps {org.clojure/data.priority-map
         {:git/url "https://github.com/clojure/data.priority-map.git"
-         :git/sha "d8d20c74be6391975b15029c143b8694f750f521"}}}
+         :git/sha "d8d20c74be6391975b15029c143b8694f750f521"}}
+ :aliases {:verify {:main-opts ["-m" "verify"]}}}

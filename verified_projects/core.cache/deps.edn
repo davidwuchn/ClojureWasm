@@ -1,8 +1,10 @@
-{:deps {org.clojure/core.cache
+{:paths ["."]
+ :deps {org.clojure/core.cache
         {:git/url "https://github.com/clojure/core.cache.git"
          :git/sha "bdf41c62ce1d2047f8d860a3bd936b85d144f2b3"}
         ;; core.cache's own deps.edn pins this via :mvn/version (skipped by
         ;; cljw, ADR-0101 am.1); declare it via git coord so require resolves.
         org.clojure/data.priority-map
         {:git/url "https://github.com/clojure/data.priority-map.git"
-         :git/sha "d8d20c74be6391975b15029c143b8694f750f521"}}}
+         :git/sha "d8d20c74be6391975b15029c143b8694f750f521"}}
+ :aliases {:verify {:main-opts ["-m" "verify"]}}}

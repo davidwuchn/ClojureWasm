@@ -1,3 +1,5 @@
-{:deps {dev.weavejester/medley
+{:paths ["."]
+ :deps {dev.weavejester/medley
         {:git/url "https://github.com/weavejester/medley.git"
-         :git/sha "822981871facb27630dcba03cce2924a34989963"}}}
+         :git/sha "822981871facb27630dcba03cce2924a34989963"}}
+ :aliases {:verify {:main-opts ["-m" "verify"]}}}

@@ -1,3 +1,5 @@
-{:deps {org.clojure/math.combinatorics
+{:paths ["."]
+ :deps {org.clojure/math.combinatorics
         {:git/url "https://github.com/clojure/math.combinatorics.git"
-         :git/sha "4141ccab0bb1657c6c994472b081138db490114f"}}}
+         :git/sha "4141ccab0bb1657c6c994472b081138db490114f"}}
+ :aliases {:verify {:main-opts ["-m" "verify"]}}}
