@@ -38,4 +38,13 @@ got=$(curl -s -H "X-Test: v" "http://127.0.0.1:$PORT/h" 2>&1)
 [[ "$got" == "h:v" ]] || fail "GET /h :headers: got '$got'"
 echo "PASS http-header -> $got"
 
-echo "OK — phase16_http_server (5 cases) green"
+# Response :headers map → Content-Type + custom header written verbatim.
+hdrs=$(curl -s -D - -o /dev/null "http://127.0.0.1:$PORT/html" 2>&1)
+echo "$hdrs" | grep -qi "^content-type: text/html; charset=utf-8" || fail "resp :headers content-type: got '$hdrs'"
+echo "$hdrs" | grep -qi "^x-custom: yes" || fail "resp :headers x-custom: got '$hdrs'"
+echo "PASS http-resp-headers -> content-type+x-custom"
+body=$(curl -s "http://127.0.0.1:$PORT/html" 2>&1)
+[[ "$body" == "<h1>hi</h1>" ]] || fail "GET /html body: got '$body'"
+echo "PASS http-html-body -> $body"
+
+echo "OK — phase16_http_server (7 cases) green"

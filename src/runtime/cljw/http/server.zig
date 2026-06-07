@@ -53,6 +53,7 @@ pub fn runServer(rt: *Runtime, env: *Env, handler: Value, port: u16, loc: Source
     const kw_uri = try keyword_mod.intern(rt, null, "uri");
     const kw_status = try keyword_mod.intern(rt, null, "status");
     const kw_body = try keyword_mod.intern(rt, null, "body");
+    const kw_headers = try keyword_mod.intern(rt, null, "headers");
 
     var addr = std.Io.net.IpAddress.parse("0.0.0.0", port) catch
         return error_catalog.raiseInternal(loc, "cljw.http.server: invalid bind address");
@@ -84,9 +85,18 @@ pub fn runServer(rt: *Runtime, env: *Env, handler: Value, port: u16, loc: Source
         };
 
         // Render the response: a bare string is a 200 body; a map yields
-        // {:status :body}.
+        // {:status :body :headers}. `:headers` is a string→string map written
+        // verbatim as response headers (Content-Type / Set-Cookie / etc.) — a
+        // real web app on cljw needs to declare its content type and cookies
+        // (D-257 follow-on). std.http writes no default content-type, so a
+        // handler serving HTML must set `"content-type" "text/html; charset=utf-8"`.
         var status: std.http.Status = .ok;
         var body: []const u8 = "";
+        // Response headers are tiny (≤8) and stay an array_map, so iterate its
+        // flat entries directly rather than walk a HAMT. The string slices point
+        // into the GC strings, valid for the synchronous respond() below.
+        var header_buf: [16]std.http.Header = undefined;
+        var n_headers: usize = 0;
         if (resp.tag() == .string) {
             body = string_mod.asString(resp);
         } else {
@@ -94,8 +104,21 @@ pub fn runServer(rt: *Runtime, env: *Env, handler: Value, port: u16, loc: Source
             if (s.isInt()) status = @enumFromInt(@as(u10, @intCast(s.asInteger())));
             const b = map_mod.get(resp, kw_body) catch Value.nil_val;
             if (b.tag() == .string) body = string_mod.asString(b);
+            const h = map_mod.get(resp, kw_headers) catch Value.nil_val;
+            if (h.tag() == .array_map) {
+                const am = h.decodePtr(*const map_mod.ArrayMap);
+                var i: u32 = 0;
+                while (i < am.count and n_headers < header_buf.len) : (i += 1) {
+                    const hk = am.entries[2 * i];
+                    const hv = am.entries[2 * i + 1];
+                    if (hk.tag() == .string and hv.tag() == .string) {
+                        header_buf[n_headers] = .{ .name = string_mod.asString(hk), .value = string_mod.asString(hv) };
+                        n_headers += 1;
+                    }
+                }
+            }
         }
-        req.respond(body, .{ .status = status, .keep_alive = false }) catch {};
+        req.respond(body, .{ .status = status, .keep_alive = false, .extra_headers = header_buf[0..n_headers] }) catch {};
     }
 }
 
