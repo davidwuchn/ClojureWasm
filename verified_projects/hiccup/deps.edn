@@ -1,0 +1,5 @@
+{:paths ["."]
+ :deps {hiccup/hiccup
+        {:git/url "https://github.com/weavejester/hiccup.git"
+         :git/sha "b6b12097ba973141fe87c1b4d6a27ddcce5d5929"}}
+ :aliases {:verify {:main-opts ["-m" "verify"]}}}
