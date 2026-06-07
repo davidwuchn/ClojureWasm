@@ -27,6 +27,7 @@ const SourceLocation = @import("../../error/info.zig").SourceLocation;
 const error_catalog = @import("../../error/catalog.zig");
 const equal = @import("../../equal.zig");
 const compare_mod = @import("../../compare.zig");
+const class_of = @import("../../class_of.zig");
 
 /// `(clojure.lang.Util/equiv a b)` — Clojure `=` equality (category-strict;
 /// `(equiv 1 1.0)` → false, matching cljw `=` and clj's Util.equiv per F-005).
@@ -117,6 +118,15 @@ fn hashCombine(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation
     return Value.initInteger(@as(i32, @bitCast(su ^ mixed)));
 }
 
+/// `(clojure.lang.Util/classOf x)` — the class of `x` as a `.type_descriptor`
+/// (D-303). Delegates to the shared runtime `classOf` so it matches
+/// `(class x)` exactly; `(classOf nil)` → nil (clj returns null).
+fn classOf(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = env;
+    try error_catalog.checkArity("clojure.lang.Util/classOf", args, 1, loc);
+    return class_of.classOf(rt, args[0]);
+}
+
 /// `(clojure.lang.Util/isPrimitive c)` — cljw has no primitive Classes
 /// (F-005/ADR-0059: a class value is a TypeDescriptor, never a JVM primitive),
 /// so this is uniformly false.
@@ -133,7 +143,7 @@ fn initUtil(td: *type_descriptor.TypeDescriptor, gpa: std.mem.Allocator) anyerro
         .{ "equiv", &equiv },             .{ "equals", &equals },       .{ "pcequiv", &pcequiv },
         .{ "identical", &identical },     .{ "isInteger", &isInteger }, .{ "hash", &hash },
         .{ "hasheq", &hash },             .{ "compare", &compare },     .{ "hashCombine", &hashCombine },
-        .{ "isPrimitive", &isPrimitive },
+        .{ "isPrimitive", &isPrimitive }, .{ "classOf", &classOf },
     };
     const entries = try gpa.alloc(type_descriptor.TypeDescriptor.MethodEntry, specs.len);
     inline for (specs, 0..) |spec, i| {

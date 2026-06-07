@@ -28,11 +28,9 @@ const symbol_mod = @import("../../runtime/symbol.zig");
 const string_mod = @import("../../runtime/collection/string.zig");
 const vector_mod = @import("../../runtime/collection/vector.zig");
 const td_mod = @import("../../runtime/type_descriptor.zig");
-const big_int_mod = @import("../../runtime/numeric/big_int.zig");
 const keyword_mod = @import("../../runtime/keyword.zig");
-const ex_info_mod = @import("../../runtime/collection/ex_info.zig");
-const host_class_mod = @import("../../runtime/error/host_class.zig");
 const host_interface = @import("../../runtime/host_interface.zig");
+const class_of = @import("../../runtime/class_of.zig");
 
 const MethodEntry = protocol_mod.MethodEntry;
 const ProtocolDescriptor = protocol_mod.ProtocolDescriptor;
@@ -588,30 +586,10 @@ pub fn extendsPrim(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLoca
 pub fn classPrim(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
     _ = env;
     try error_catalog.checkArity("__class", args, 1, loc);
-    const v = args[0];
-    if (v.tag() == .nil) return Value.nil_val;
-    // A heap-boxed Long (D-165 / ADR-0080) is class Long, not BigInt — it
-    // shares the inline-int (`.integer`) native descriptor.
-    if (v.tag() == .big_int and big_int_mod.originOf(v) == .long) {
-        return td_mod.makeTypeDescriptorRef(rt, try rt.nativeDescriptor(.integer));
-    }
-    // An exception value reports its specific class (D-213): the per-value
-    // `ExInfo.class_name` (null → "ExceptionInfo"), normalized to the simple
-    // name per AD-003 — not the generic `.ex_info` native descriptor.
-    if (v.tag() == .ex_info) {
-        const raw = ex_info_mod.className(v) orelse "ExceptionInfo";
-        const simple = host_class_mod.normalizeClassName(raw);
-        return td_mod.makeTypeDescriptorRef(rt, try rt.exceptionDescriptor(simple));
-    }
-    const td: *const td_mod.TypeDescriptor = switch (v.tag()) {
-        .typed_instance => v.decodePtr(*const td_mod.TypedInstance).descriptor,
-        .reified_instance => v.decodePtr(*const td_mod.ReifiedInstance).descriptor,
-        // ADR-0106: a stateful host object reports its surface descriptor's fqcn
-        // (e.g. java.util.Random), not the generic tag.
-        .host_instance => @import("../../runtime/host_instance.zig").asHostInstance(v).descriptor,
-        else => try rt.nativeDescriptor(v.tag()),
-    };
-    return td_mod.makeTypeDescriptorRef(rt, td);
+    // D-303: the class-of logic lives in the runtime-layer `class_of` helper so
+    // `clojure.lang.Util/classOf` (a Layer-0 surface that cannot import this
+    // Layer-2 primitive) shares the exact same semantics.
+    return class_of.classOf(rt, args[0]);
 }
 
 /// `(class? x)` — true iff `x` is a class object, i.e. the `.type_descriptor`

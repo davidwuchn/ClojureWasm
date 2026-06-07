@@ -10,7 +10,7 @@
 
 active:
   - id: "D-303"
-    status: "now (ADR-0108, found 2026-06-07). clojure.lang.Util ships 10 pure statics (equiv/equals/pcequiv/identical/isInteger/hash/hasheq/compare/hashCombine/isPrimitive), all oracle-verified (corpus clojure_lang_util.txt; hash under AD-009). `Util/classOf` is DEFERRED: a faithful classOf must match `(class x)` exactly (nil->nil, big_int-origin-long->Long, ex_info->named descriptor, typed/reified->own, else native), which lives in classPrim (lang/primitive/protocol.zig, Layer 2) and CANNOT be imported by runtime/clojure/lang/Util.zig (Layer 0, zone rule). Clean fix = factor classPrim's body into a runtime-layer helper (e.g. type_descriptor.classOf(rt,v)) that both classPrim and Util/classOf delegate to — avoids duplicating the 25-line class logic. Low frequency (Util/classOf 4x in corpus). Land with the helper factor."
+    status: "DISCHARGED 2026-06-07 (this commit). classPrim's class-of logic factored into the runtime-layer helper runtime/class_of.zig (classOf(rt,v)); clojure.core/class (classPrim) and clojure.lang.Util/classOf both delegate, so no duplication and no drift. Util/classOf verified `(= (Util/classOf x) (class x))` + `(classOf nil)`→nil (e2e phase14_clojure_lang_util). The clojure.lang.Util surface is now complete (11/11 pure statics). classOf's value print is AD-003 (cljw simple name) so no direct-value corpus line. ORIGINAL: classOf deferred from ADR-0108's Util landing pending this Layer-0 helper factor."
     category: "interop"
     barrier: |-
       Util/classOf unimplemented (the surface ships 10/11 pure statics). A

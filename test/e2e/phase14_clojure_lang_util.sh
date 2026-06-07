@@ -41,6 +41,9 @@ assert_eq 'compare_eq'        "$(last_line "$("$BIN" -e '(clojure.lang.Util/comp
 assert_eq 'pcequiv' "$(last_line "$("$BIN" -e '(clojure.lang.Util/pcequiv [1 2] [1 2])')")" 'true'
 # isPrimitive: cljw has no primitive classes → always false
 assert_eq 'isPrimitive' "$(last_line "$("$BIN" -e '(clojure.lang.Util/isPrimitive Long)')")" 'false'
+# classOf (D-303): matches (class x) exactly; (classOf nil) → nil
+assert_eq 'classOf_eq_class' "$(last_line "$("$BIN" -e '(= (clojure.lang.Util/classOf 5) (class 5))')")" 'true'
+assert_eq 'classOf_nil'      "$(last_line "$("$BIN" -e '(clojure.lang.Util/classOf nil)')")" 'nil'
 # hash: works (was the data.finger-tree blocker) + intra-cljw consistency (AD-009):
 #   Util/hash delegates to cljw value-hash, so it agrees with core `hash`.
 assert_eq 'hash_intra_consistent' "$(last_line "$("$BIN" -e '(= (clojure.lang.Util/hash :a) (hash :a))')")" 'true'
