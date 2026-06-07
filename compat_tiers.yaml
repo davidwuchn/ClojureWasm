@@ -200,6 +200,18 @@ tiers:
           surface: runtime/java/lang/Thread.zig
         methods: [sleep]
         clojure_peer_vars: []
+      # java.lang.StringBuilder — mutable growable buffer (ADR-0114, host_instance).
+      # hiccup's compiler builds HTML with it. java.lang.String also gained a
+      # static `valueOf` surface in String.zig (instances stay installNativeMethods).
+      - fqn: java.lang.StringBuilder
+        cljw_ns: cljw.java.lang.StringBuilder
+        keyword: string_builder
+        tier: A
+        phase: 14
+        files:
+          surface: runtime/java/lang/StringBuilder.zig
+        methods: [append, toString, length]
+        clojure_peer_vars: []
       # java.io
       - fqn: java.io.File
         cljw_ns: cljw.java.io.File
@@ -250,6 +262,17 @@ tiers:
           surface: runtime/java/util/Random.zig
           impl: runtime/random.zig
         methods: [nextInt, nextLong, nextDouble, nextFloat, nextBoolean, setSeed]
+        clojure_peer_vars: []
+      # java.util.Iterator — a stateful cursor over a cljw seq (ADR-0114). Minted
+      # by `(.iterator coll)` (object_method universal fallback), not a ctor.
+      - fqn: java.util.Iterator
+        cljw_ns: cljw.java.util.Iterator
+        keyword: iterator
+        tier: A
+        phase: 14
+        files:
+          surface: runtime/java/util/Iterator.zig
+        methods: [hasNext, next]
         clojure_peer_vars: []
       - {fqn: "java.util.Locale", native_ns: "cljw.host.java.util.Locale", phase: 6}
       - fqn: java.util.regex.Pattern
@@ -322,7 +345,29 @@ tiers:
       - {fqn: "java.time.ZoneId", native_ns: "cljw.host.java.time.ZoneId", phase: 6}
       # java.net
       - {fqn: "java.net.URL", native_ns: "cljw.host.java.net.URL", phase: 14}
-      - {fqn: "java.net.URI", native_ns: "cljw.host.java.net.URI", phase: 14}
+      # java.net.URI / URLEncoder — minimal host surfaces unblocking hiccup
+      # (ADR-0114). URI = a string-backed host_instance (scheme/host/path); not
+      # full RFC 3986. URLEncoder = static encode only.
+      - fqn: java.net.URI
+        cljw_ns: cljw.java.net.URI
+        keyword: uri
+        tier: A
+        phase: 14
+        files:
+          surface: runtime/java/net/URI.zig
+          impl: runtime/net/uri.zig
+        methods: [getHost, getPath, toString]
+        clojure_peer_vars: []
+      - fqn: java.net.URLEncoder
+        cljw_ns: cljw.java.net.URLEncoder
+        keyword: url_encode
+        tier: A
+        phase: 14
+        files:
+          surface: runtime/java/net/URLEncoder.zig
+          impl: runtime/net/url_encode.zig
+        methods: [encode]
+        clojure_peer_vars: []
       - fqn: java.net.Socket
         cljw_ns: cljw.java.net.Socket
         keyword: net

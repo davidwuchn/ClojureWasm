@@ -181,6 +181,26 @@ is the "raw alias breaks under relocation" hazard; hand back the slot address or
 a forwarding-aware handle instead. `isGcManaged` stays correct (the non-GC set
 doesn't move — interned symbols/keywords, Env-lifetime var_ref/ns).
 
+## H. `.host_instance` Value-in-raw-slot (ADR-0106 / ADR-0114)
+
+`.host_instance` (`runtime/host_instance.zig`) carries a fixed `[4]u64 state`
+plus its surface descriptor. Most host types are GC-leaf (Random's LCG seed, URI
+/ StringBuilder's gpa-buffer pointer = non-Value words). **java.util.Iterator is
+the exception**: its cursor seq is a live `Value` stored as a raw `u64` in
+`state[0]`. The shared `.host_instance` tracer forwards to
+`descriptor.host_trace`, which decodes via `heapHeader()` (G1) and marks — so the
+current non-moving GC is correct.
+
+**Migration-impact (the reason this is its own section, not just an F row):**
+unlike every other trace, the Value here lives in a `u64` slot the standard
+typed-field walker CANNOT recognise as a pointer. A moving GC must RELOCATE it
+through `host_trace` (rewrite `state[0]` with the forwarded bits), so the
+`markSlot(gc, *Value)` centralisation (F) does NOT automatically cover it — the
+host_trace hooks need their own mark+rewrite pass. The finished-form fix is a
+closed `host_state_shape` enum on the descriptor (`leaf` / `owns_buffer` /
+`holds_value@idx`) so the shared tracer relocates `holds_value` slots uniformly
+instead of per-hook (DA Alt B-finished-form-clean; debt **D-318**).
+
 ---
 
 ## Migration checklist (moving / compacting GC swap), ordered by risk

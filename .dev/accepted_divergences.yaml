@@ -338,3 +338,20 @@ accepted:
       its timing diverges.
     derives_from: "ADR-0113 (deferred host-class refs) + ADR-0059 (no JVM class) + provisional_marker.md (explicit runtime error OK, silent no-op forbidden)"
     pin: "test/e2e/phase15_deferred_host_ref.sh — defines_and_loads + raises_when_called + typo_stays_loud"
+  - id: "AD-023"
+    summary: "Extending a protocol TO a host_inert java interface (`(extend-protocol P java.util.Map …)`) is a LOAD-ONLY no-op in cljw: the section loads but never dispatches, because no cljw value has a java.util.Map host type (cljw maps are native PersistentArrayMap/HashMap, not java.util.Map). A map receiver falls to the protocol's Object default (or raises if none)."
+    example: '(do (defprotocol P (m [x])) (extend-protocol P java.util.Map (m [x] :map) Object (m [x] :obj)) (m {:a 1})) => cljw :obj (Map impl inert, falls to Object); clj => :map (a Clojure map IS a java.util.Map).'
+    why: |-
+      cljw has no JVM class hierarchy (ADR-0059) and its collections are native
+      types, not java.util.* implementors (ADR-0103 host_inert: java.util.Map is
+      recognised-but-inert). clj's PersistentArrayMap implements java.util.Map, so
+      extending a protocol to java.util.Map covers all clj maps; cljw cannot mirror
+      that without fabricating a java.util.* membership it does not model. Making
+      the extend a LOAD-ONLY no-op (not an analysis error) lets a lib whose core is
+      pure load even when its periphery extends java.util.Map (hiccup's url-encode
+      branch) — F-013-faithful: the impl is dead in cljw exactly as a
+      never-instantiated-class extension is dead in clj, and a map receiver still
+      gets the Object default. Same inert family as the deftype-supertype
+      java.util.Map (ADR-0103), here applied at the extend-TARGET position.
+    derives_from: "ADR-0103 (host_inert java interfaces) + ADR-0059 (no JVM class hierarchy) + ADR-0114 Decision C-1"
+    pin: "test/e2e/phase14_extend_protocol_targets.sh — map_target_inert (falls to Object) + object_fallback"

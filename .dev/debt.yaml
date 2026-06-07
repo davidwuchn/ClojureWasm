@@ -9,6 +9,46 @@
 # md-table-align no longer pads it to ~800 KB of whitespace.
 
 active:
+  - id: "D-319"
+    status: "now (2026-06-07, ADR-0114 hiccup) — Object-extension protocol fallback is a DISPATCH-SITE special case, not a descriptor-chain link. `(extend-protocol P Object …)` registers on the Object class descriptor; dispatch.zig consults it (uncached lookupMethod) after a per-type miss. Correct (DA confirmed no cache hole — lookupWithCache never caches a null), but a defaults-only type re-walks lookupMethod every call and never caches the Object MethodEntry (perf cliff). Finished form (DA Alt A-finished-form-clean): make Object the reserved ROOT of the descriptor lookup chain so lookupMethod walks receiver_td→…→Object_td and the CallSite cache caches the resolved entry uniformly; nil's descriptor terminates WITHOUT Object (nil-exclusion gets an honest home). Also the seam future host-supertype precedence needs."
+    category: "polymorphism"
+    barrier: |-
+      Perf-motivated + structural. The current uncached fallback is CORRECT;
+      the cliff is within the deferred-optimization envelope (memory
+      optimization-deferred-until-15-libs; at 10 libs). Resolve when optimization
+      resumes OR when host-supertype precedence (ADR-0102 markers as dispatch
+      supertypes) needs a chain-walking lookupMethod — whichever first. Fix:
+      lookupMethod walks to a reserved Object root descriptor; drop the
+      dispatch.zig special case; verify satisfies?/extends? semantics (every type
+      would satisfy a protocol with an Object impl — clj-faithful) + re-validate
+      the CallSite cache caches Object-resolved entries. Cross-ref ADR-0114 Dec A.
+    last_reviewed: "2026-06-07"
+  - id: "D-318"
+    status: "now (2026-06-07, ADR-0114 hiccup) — host_instance can now hold a live Value in its `[4]u64` state (java.util.Iterator's cursor seq, state[0]), marked by a per-descriptor host_trace hook. Two finished-form gaps: (1) MOVING-GC relocation — the Value is in a raw u64 slot the typed field-walker can't see, so the F markSlot centralisation does NOT cover it; a moving GC must rewrite state[0] via host_trace (gc_rooting.md §H). (2) host_finalise/host_trace are free fn-pointers; DA Alt B-finished-form-clean prefers a closed `host_state_shape` enum (leaf / owns_buffer@idx / holds_value@idx) so the shared tracer relocates holds_value slots uniformly + the rooting membrane stays queryable, not grep-the-hooks."
+    category: "gc"
+    barrier: |-
+      The current non-moving mark-only trace is CORRECT (F-006: GC is non-moving).
+      Both gaps are moving-GC-future work + a consolidation. Resolve at the
+      moving-GC migration (gc_rooting.md Migration checklist) OR when a 4th host
+      type with irregular Value-state lands (then the enum earns its keep). Until
+      then the fn-pointer hooks are sufficient + documented (gc_rooting.md §H +
+      the host_instance state[] GC-ROOT comment). Cross-ref ADR-0106, ADR-0114
+      Dec B, gc_rooting.md §H.
+    last_reviewed: "2026-06-07"
+  - id: "D-317"
+    status: "now (2026-06-07, ADR-0114 hiccup) — the extend-protocol-TARGET interface→native-tag table (host_interface.NATIVE_EXTEND_TARGETS: IPersistentVector→[vector], ISeq→[7 seq tags], Named→[keyword,symbol]) is HAND-MAINTAINED. Verified complete vs the current Value.Tag seq family (rseq/iterate/repeat/cycle/sequence/interpose/lazy-cat/() all land in list|lazy_seq|vector, covered). RISK (DA finding #3): a FUTURE new seq-producing Value.Tag omitted from the ISeq list would SILENTLY mis-dispatch (fall to the Object fallback, render wrong) — an invisible F-013 coverage hole."
+    category: "polymorphism"
+    barrier: |-
+      No current omission (verified against the live tag set). The finished form
+      (DA Alt C2-finished-form-clean) derives the interface→tag set from the
+      native types' declared interface markers (extend host_interfaces.yaml's
+      closed-set SSOT to the native ISeq/IPersistentVector/Named set) so it cannot
+      drift; minimum acceptable bar is a compiler-forced exhaustive Value.Tag
+      switch (zig_tips.md idiom) so a new seq tag breaks the build until
+      classified. Resolve when a new seq tag lands OR when host_interfaces.yaml
+      becomes the SSOT for native-supertype dispatch. Cross-ref ADR-0114 Dec C,
+      host_interface.zig NATIVE_EXTEND_TARGETS.
+    last_reviewed: "2026-06-07"
   - id: "D-316"
     status: "now (2026-06-07, integrant probe / defmulti fix) — def-target metadata MAP VALUES are not evaluated. `(defn g {:foo '(a b)} [x] x)` → `(:foo (meta #'g))` is `(quote (a b))` in cljw vs `(a b)` in clj; same for the defmulti attr-map `:arglists '([k v])` (cljw `(quote ([k v]))` vs clj `([k v])`). GENERAL: the attr-map / `^{…}` value FORMS are attached to Var.meta verbatim, not evaluated. Affects defn + defmulti (and any `^meta`). Not defmulti-specific — surfaced while fixing defmulti docstring/attr-map attachment (which itself now matches clj for `:doc`). Low-impact (most metadata values are literals: strings/keywords/bools), but `:arglists`/computed-meta diverge."
     category: "scope"

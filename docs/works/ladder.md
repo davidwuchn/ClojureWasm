@@ -177,7 +177,20 @@ hits. Do not edit `debt.yaml` from this doc; the main loop creates the rows.
 5. `NEEDS-ROW: java.io PrintWriter/PushbackReader/StringWriter + clojure.pprint` — data.json rung 11.
 6. `NEEDS-ROW: threads/executors/go-macro` — core.async rung 14 (already Campaign Stage 1.7 / Phase B).
 7. ~~`honeysql: clojure.template / defprotocol options / .. macro`~~ — **all LANDED 2026-06-07 (811d1f08)**: bundled `clojure.template`, defprotocol `:keyword value` option parsing (`:extend-via-metadata` dispatch deferred D-314), and the `..` member-threading macro (was missing + misparsed). honeysql (`honey.sql`) now PARKED as a **drip-feed well** → **D-315**: it keeps revealing one blocker at a time (java.util.Locale → then regex lookahead `(?=…)` in `dehyphen`). Locale was built+reverted this session (speculative without the lib verifying). Resume only when Locale + regex-lookahead land together. qbits.ex is the 7th verified proof (drove the aliased-macro analyzer fix, fa8628ea); core.unify the 8th (drove java.lang.Class methods + java.util.* interfaces, ee1552d6); **integrant the 9th** (drove ADR-0113 deferred `clojure.lang.*` host-refs + defmethod-empty-body + defmulti docstring/attr-map, bfa4c514).
-8. **PRIORITY (user 2026-06-07)**: the next two libs are **hiccup** (→ `java.net.URI` surface) and **honeysql** (→ java.util.Locale D-315 + regex lookahead `(?=…)`, landed together). Once those + the existing 9 verify (→ 11), the library-incorporation campaign STAYs and the loop self-selects remaining quality work. SSOT = `.dev/convergence_campaign.md` Stage 1.3 item 3.
+8. **PRIORITY (user 2026-06-07)**: the next two libs are **hiccup** and **honeysql**.
+   **hiccup LANDED 2026-06-07 (10th verified_projects proof, ADR-0114)** — the
+   handover's "java.net.URI only" was a 7-blocker chain, each a general F-013 gap:
+   java.net.URI + URLEncoder + StringBuilder + java.util.Iterator (GC-traced
+   host_instance) + String/valueOf surfaces; java.util.Map extend-TARGET inert
+   (AD-023); IPersistentVector/ISeq/Named extend-TARGET → native-tag distribution;
+   **Object-extension universal protocol-dispatch fallback**; syntax-quote alias
+   resolution + `%N` anon-param fix; exception_descriptor method_table leak fix.
+   Finished-form follow-ups deferred: D-317 (ISeq tag table → derive from markers),
+   D-318 (host_instance moving-GC / host_state_shape enum), D-319 (Object as
+   descriptor-chain root). **honeysql** remains parked (D-315: java.util.Locale +
+   regex lookahead `(?=…)`, land together). Once honeysql verifies (→ 11) the
+   library-incorporation campaign STAYs and the loop self-selects remaining quality
+   work. SSOT = `.dev/convergence_campaign.md` Stage 1.3 item 3.
 
 Cross-cutting blocker (not a single row): **no deps.edn / Maven resolver
 yet** (Campaign Stage 1.2). Every transitive dependency must be fetched and
