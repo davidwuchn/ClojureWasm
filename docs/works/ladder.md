@@ -54,6 +54,16 @@ so rungs are now probed via real **deps.edn git coordinates**, not just
 
 - **test.check** (probed 2026-06-07 via -cp, data.generators now FULLY FUNCTIONAL): advanced past random.clj:106 hex-literal (fixed D-297, hex>i64 -> BigInt) to random.clj:178 `(proxy [ThreadLocal] …)` -> D-298 (proxy unrecognised; JVM-class proxy = Tier D). PARKED (proxy depth vs partial benefit; seeded paths might work with proxy-recognition level (a)).
 
+- **clojure.math.numeric-tower** (probed 2026-06-07 via -cp): a DEEP java.math
+  interop chain, parked. Advances :79 (D-301 empty-catch) → :98 (java.math.BigInteger
+  class value, D-302) → :127 (Integer class value) → :162 (BigDecimal/ROUND_FLOOR
+  static field), and beyond needs `.setScale`/`.bitLength` instance methods +
+  `(BigDecimal. …)` ctors + extend-type on 8 host classes. Not a single-blocker
+  rung — a full java.math interop unit blocked on D-293 (unified opaque/inert
+  class-value resolver) + a BigDecimal surface. An exploratory opaque-class-VALUE
+  probe (reverted) verified `(= (type 5) Integer)`/`(instance? Integer x)` are
+  clj-faithful in isolation but COUPLED to extend-type (D-293); see debt D-293/D-302.
+
 - **Broad re-probe (2026-06-07)** after the D-287..D-299 arc found 7 libs now LOAD: clojure.data.csv, clojure.data.codec.base64 (over D-287 byte-arrays), clojure.core.unify, potpuri.core (deep-merge bit-identical to clj), bouncer.core, qbits.ex, and **clojure.data.zip** (D-299 ns-form leniency). Deferred/parked: symbol metadata = D-075 (interned symbols, structural); test.check = D-298 (proxy/Tier-D); tools.macro = clojure.lang.Compiler (Tier-D). Full table: private/notes/stage13-broad-reprobe.md.
 
 ## NEEDS-ROW gap summary (for the main loop)
