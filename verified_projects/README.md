@@ -69,6 +69,10 @@ demand and at **Phase boundaries**. The per-commit deps.edn *mechanism* test
 
 ## Relationship to the rest
 
+- **`.dev/library_incorporation_playbook.md`** — the PATTERNS behind this engine:
+  the probe loop, the gap taxonomy (where each blocker class is fixed), and how to
+  raise the coverage rate (read this before a re-expansion; this README is the
+  *method*, the playbook is the *know-how*).
 - **`docs/works/ladder.md`** — the ranked candidate ladder + the first-blocking
   gap per lib. A lib that reaches "loads" graduates into a `verified_projects/`
   entry (the committed, re-runnable proof).

@@ -274,7 +274,18 @@ tiers:
           surface: runtime/java/util/Iterator.zig
         methods: [hasNext, next]
         clojure_peer_vars: []
-      - {fqn: "java.util.Locale", native_ns: "cljw.host.java.util.Locale", phase: 6}
+      # java.util.Locale — US/ROOT object-valued static singletons + .toString
+      # (ADR-0115). cljw casing is locale-independent, so the value is opaque.
+      - fqn: java.util.Locale
+        cljw_ns: cljw.java.util.Locale
+        keyword: locale
+        tier: A
+        phase: 14
+        files:
+          surface: runtime/java/util/Locale.zig
+          impl: runtime/locale.zig
+        methods: [toString]
+        clojure_peer_vars: []
       - fqn: java.util.regex.Pattern
         cljw_ns: cljw.java.util.regex.Pattern
         keyword: regex

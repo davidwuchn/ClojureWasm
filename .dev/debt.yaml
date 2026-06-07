@@ -9,6 +9,20 @@
 # md-table-align no longer pads it to ~800 KB of whitespace.
 
 active:
+  - id: "D-320"
+    status: "now (2026-06-07, ADR-0115 honeysql) — regex lookahead `(?=e)`/`(?!e)` runs a nested `tryMatchAt` per-thread-per-position from inside addThread's epsilon-closure (two fresh ThreadList allocs + a full sub-scan each hit). CORRECT (DA confirmed: fresh ThreadList → seen disjoint, greedy irrelevant, recursion-safe) but a latent O(n²·m) cliff on a quantified lookahead + hot-path allocation. Invisible for honeysql's single-step `(?=\\w)`."
+    category: "perf"
+    barrier: |-
+      The current nested-tryMatchAt is correct; the cliff is within the deferred-
+      optimization envelope (memory optimization-deferred-until-15-libs). Finished
+      form (DA Alt A2): a named `lookaheadHolds(sub,input,pos)` helper with an
+      explicit reentrancy/seen-disjointness contract + a stack-`seen` fast path for
+      small sub-programs (removes the hot-path alloc, no semantic change); the
+      eventual single-pass fuse (inline the sub-program's threads with a
+      zero-width-assertion flag) kills the O(n²·m) but carries a position-local-vs-
+      global-advance semantic trap — a later O-NNN, not the helper refactor. Resolve
+      when optimization resumes. Cross-ref ADR-0115 Dec A, runtime/regex/match.zig.
+    last_reviewed: "2026-06-07"
   - id: "D-319"
     status: "now (2026-06-07, ADR-0114 hiccup) — Object-extension protocol fallback is a DISPATCH-SITE special case, not a descriptor-chain link. `(extend-protocol P Object …)` registers on the Object class descriptor; dispatch.zig consults it (uncached lookupMethod) after a per-type miss. Correct (DA confirmed no cache hole — lookupWithCache never caches a null), but a defaults-only type re-walks lookupMethod every call and never caches the Object MethodEntry (perf cliff). Finished form (DA Alt A-finished-form-clean): make Object the reserved ROOT of the descriptor lookup chain so lookupMethod walks receiver_td→…→Object_td and the CallSite cache caches the resolved entry uniformly; nil's descriptor terminates WITHOUT Object (nil-exclusion gets an honest home). Also the seam future host-supertype precedence needs."
     category: "polymorphism"
@@ -62,7 +76,7 @@ active:
       `{:arglists '([k v])}`. Cross-ref D-183 (defn meta), defmulti docstring fix.
     last_reviewed: "2026-06-07"
   - id: "D-315"
-    status: "PARKED (2026-06-07) — honeysql is a DRIP-FEED well; deferred as a whole. After landing clojure.template + defprotocol-options + `..` (811d1f08), honeysql's blocker chain kept revealing one gap at a time: (1) `java.util.Locale/US` + `.toUpperCase`/`.toLowerCase` Locale overload — a host surface was BUILT then REVERTED this session: with the NEXT blocker (3) present, Locale alone lands no verified lib, so it was speculative (no driving lib) + carried host_instance GC-rooting subtlety for a singleton cache. (2) `:extend-via-metadata` dispatch (D-314, separate). (3) **regex lookahead `(?=…)`** — `honey.sql/dehyphen` uses `#\"(\\w)-(?=\\w)\"`; cljw's regex engine rejects lookahead (`unsupported syntax in cycle 1`). This is a regex-ENGINE feature (not interop), a separate substantial unit. Resume honeysql only when (1)+(3) are landed TOGETHER (big-bang, not drip-feed) or honeysql is explicitly prioritized."
+    status: "DISCHARGED (2026-06-07, ADR-0115) — honeysql verifies (11th verified_projects). The whole chain landed big-bang (anti-drip-feed honoured): java.util.Locale/US+ROOT object-static singletons + String 2-arg Locale overload + regex lookahead `(?=…)`/`(?!…)` (full capture parity, no AD) + clojure.lang.IPersistentMap extend-TARGET (native map tags) + `.sym` keyword method. The (2) `:extend-via-metadata` (D-314) was NOT on honeysql's basic format path. PRIOR: PARKED (2026-06-07) — honeysql is a DRIP-FEED well; deferred as a whole. After landing clojure.template + defprotocol-options + `..` (811d1f08), honeysql's blocker chain kept revealing one gap at a time: (1) `java.util.Locale/US` + `.toUpperCase`/`.toLowerCase` Locale overload — a host surface was BUILT then REVERTED this session: with the NEXT blocker (3) present, Locale alone lands no verified lib, so it was speculative (no driving lib) + carried host_instance GC-rooting subtlety for a singleton cache. (2) `:extend-via-metadata` dispatch (D-314, separate). (3) **regex lookahead `(?=…)`** — `honey.sql/dehyphen` uses `#\"(\\w)-(?=\\w)\"`; cljw's regex engine rejects lookahead (`unsupported syntax in cycle 1`). This is a regex-ENGINE feature (not interop), a separate substantial unit. Resume honeysql only when (1)+(3) are landed TOGETHER (big-bang, not drip-feed) or honeysql is explicitly prioritized."
     category: "interop"
     barrier: |-
       honeysql functional verification needs, landed together (anti-drip-feed):

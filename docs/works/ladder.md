@@ -187,10 +187,17 @@ hits. Do not edit `debt.yaml` from this doc; the main loop creates the rows.
    resolution + `%N` anon-param fix; exception_descriptor method_table leak fix.
    Finished-form follow-ups deferred: D-317 (ISeq tag table → derive from markers),
    D-318 (host_instance moving-GC / host_state_shape enum), D-319 (Object as
-   descriptor-chain root). **honeysql** remains parked (D-315: java.util.Locale +
-   regex lookahead `(?=…)`, land together). Once honeysql verifies (→ 11) the
-   library-incorporation campaign STAYs and the loop self-selects remaining quality
-   work. SSOT = `.dev/convergence_campaign.md` Stage 1.3 item 3.
+   descriptor-chain root). **honeysql LANDED 2026-06-07 (11th proof, ADR-0115)** —
+   the survey's "Locale + lookahead" (2) was a 5-blocker chain: java.util.Locale/US
+   /ROOT object-valued static fields + String.toUpperCase/toLowerCase 2-arg Locale
+   overload + **regex lookahead `(?=…)`/`(?!…)`** (Pike-NFA zero-width predicate;
+   FULL capture parity, no AD) + clojure.lang.IPersistentMap extend-TARGET → native
+   map tags + `.sym` keyword method. D-315 discharged; D-320 (lookahead perf) deferred.
+   **The library-incorporation campaign is now on STAY (user 2026-06-07)**; the loop
+   self-selects remaining quality work. For a future re-expansion, the patterns +
+   gap-taxonomy + coverage-raising know-how are in
+   **`.dev/library_incorporation_playbook.md`**. SSOT =
+   `.dev/convergence_campaign.md` Stage 1.3 item 3.
 
 Cross-cutting blocker (not a single row): **no deps.edn / Maven resolver
 yet** (Campaign Stage 1.2). Every transitive dependency must be fetched and

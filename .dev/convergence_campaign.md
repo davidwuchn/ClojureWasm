@@ -112,8 +112,10 @@ The loop self-selects the next item by the order — **no user touchpoint**.
    exercise instead of a throwaway `-cp` probe, so (a) the dir list shows
    at-a-glance which libs load, and (b) `scripts/verify_projects.sh` re-runs them
    as a real-world-lib **regression sweep** (network; Phase-boundary / on-demand,
-   not per-commit). Method + how-to-add: `verified_projects/README.md`. Grow it
-   one lib at a time; reconcile with `docs/works/ladder.md` (ladder = ranked
+   not per-commit). Method + how-to-add: `verified_projects/README.md`; the
+   PATTERNS / gap-taxonomy / coverage-raising know-how:
+   **`.dev/library_incorporation_playbook.md`** (read before a re-expansion). Grow
+   it one lib at a time; reconcile with `docs/works/ladder.md` (ladder = ranked
    candidates, verified_projects = committed proofs). deps.edn-system gaps found
    while doing this are fixed in-place (within cljw's control — `:git`/`:local`
    resolution, NOT Maven JAR fetch); ADR-0101 + amendments record the policy.
