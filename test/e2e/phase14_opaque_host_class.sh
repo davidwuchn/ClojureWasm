@@ -49,6 +49,14 @@ assert_eq 'inst_object_nonnil' "$(last_line "$("$BIN" -e '(instance? Object 5)' 
 assert_eq 'inst_object_nil'    "$(last_line "$("$BIN" -e '(instance? Object nil)' 2>&1)")" 'false'
 assert_eq 'derive_object'      "$(last_line "$("$BIN" -e '(do (derive (quote ::x) Object) (isa? (quote ::x) Object))' 2>&1)")" 'true'
 
+# ADR-0109: java.lang.Number — numeric-tower supertype marker (narrow membership).
+# Unblocks algo.generic.arithmetic's `(defmethod + [Number Number] …)`.
+assert_eq 'isa_long_number'   "$(last_line "$("$BIN" -e '(isa? Long Number)' 2>&1)")" 'true'
+assert_eq 'isa_string_number' "$(last_line "$("$BIN" -e '(isa? String Number)' 2>&1)")" 'false'
+assert_eq 'inst_number_int'   "$(last_line "$("$BIN" -e '(instance? Number 5)' 2>&1)")" 'true'
+assert_eq 'inst_number_ratio' "$(last_line "$("$BIN" -e '(instance? Number 1/2)' 2>&1)")" 'true'
+assert_eq 'inst_number_str'   "$(last_line "$("$BIN" -e '(instance? Number "x")' 2>&1)")" 'false'
+
 # a genuinely-unknown class name still raises (no silent default-shift)
 if "$BIN" -e '(instance? TotallyFakeClass 5)' >/dev/null 2>&1; then
     fail "unknown_class_still_errors: expected non-zero exit"

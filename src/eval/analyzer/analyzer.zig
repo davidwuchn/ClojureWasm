@@ -619,6 +619,14 @@ fn analyzeSymbol(
                 const ref = try type_descriptor.makeTypeDescriptorRef(env.rt, td);
                 return try makeConstant(arena, ref, form);
             }
+            // ADR-0109: java.lang.Number — the numeric-tower supertype marker as a
+            // class VALUE (defmethod dispatch in algo.generic.arithmetic). isa?/
+            // instance? special-case it (every numeric class isa? Number).
+            if (host_class.isNumberClass(sym.name)) {
+                const td = try env.rt.exceptionDescriptor("Number");
+                const ref = try type_descriptor.makeTypeDescriptorRef(env.rt, td);
+                return try makeConstant(arena, ref, form);
+            }
         }
         return error_catalog.raise(.symbol_unresolved, form.location, .{ .sym = symFullName(sym) });
     };

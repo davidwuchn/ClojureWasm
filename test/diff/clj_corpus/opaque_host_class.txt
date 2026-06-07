@@ -24,3 +24,15 @@
 ;;=> false
 (instance? Object "x")
 ;;=> true
+(isa? Long Number)
+;;=> true
+(isa? Double Number)
+;;=> true
+(isa? String Number)
+;;=> false
+(instance? Number 5)
+;;=> true
+(instance? Number 1/2)
+;;=> true
+(instance? Number "x")
+;;=> false

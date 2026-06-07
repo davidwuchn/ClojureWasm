@@ -178,6 +178,25 @@ pub fn isUniversalClass(class_name: []const u8) bool {
     return std.mem.eql(u8, class_name, "Object") or std.mem.eql(u8, class_name, "java.lang.Object");
 }
 
+/// True iff `class_name` is `java.lang.Number` — the numeric-tower supertype
+/// marker, resolved as a class VALUE (ADR-0109) so `(defmethod + [Number Number]
+/// …)` (algo.generic.arithmetic) works. `(isa? <numeric-class> Number)` is true
+/// and `(instance? Number x)` is `(number? x)` — its membership is the closed
+/// numeric set below (narrow, per DA Assessment 4; not a fabricated hierarchy).
+pub fn isNumberClass(class_name: []const u8) bool {
+    return std.mem.eql(u8, class_name, "Number") or std.mem.eql(u8, class_name, "java.lang.Number");
+}
+
+/// True iff `class_name` is a cljw numeric-tower native class — the members of
+/// `java.lang.Number` (Long/Double/BigInt/Ratio/BigDecimal; `(class n)` names).
+pub fn isNumericClass(class_name: []const u8) bool {
+    const NUMERIC = [_][]const u8{ "Long", "Double", "BigInt", "Ratio", "BigDecimal" };
+    inline for (NUMERIC) |n| {
+        if (std.mem.eql(u8, class_name, n)) return true;
+    }
+    return false;
+}
+
 /// Return the immediate parent of `class_name` in the hierarchy, or
 /// `null` for the root (Throwable) or for unknown class names.
 pub fn getParent(class_name: []const u8) ?[]const u8 {

@@ -90,9 +90,12 @@ so rungs are now probed via real **deps.edn git coordinates**, not just
   (no crash). Advanced numeric-tower :98/:127 → :162. **java.lang.Object** is also
   wired as the universal supertype (`(isa? <any> Object)`→true, `(instance? Object
   x)`→non-nil) — **clojure.algo.generic (core ns) now LOADS** (its `(derive Object
-  root-type)` was the blocker). Remainder (D-293 PARTIAL): `java.lang.Number`
-  (algo.generic.arithmetic), `clojure.lang.IFn` (core.contracts) + other markers
-  as class values, each with its membership predicate (Number→number?, IFn→ifn?).
+  root-type)` was the blocker). **`java.lang.Number`** also wired (narrow members
+  Long/Double/BigInt/Ratio/BigDecimal) — **clojure.algo.generic.arithmetic now
+  LOADS**. Remainder (D-293 PARTIAL): `clojure.lang.IFn` (core.contracts) + other
+  markers as class values (each its narrow membership), and a deeper functional
+  gap — `(ga/+ 3 4)` mis-dispatches on the `[Number Number]` class-vector defmethod
+  (loads but the generic-fn dispatch machinery, separate).
 
 - **clojure.math.numeric-tower** (probed 2026-06-07 via -cp): a DEEP java.math
   interop chain, parked. Advances :79 (D-301 empty-catch) → :98 (java.math.BigInteger

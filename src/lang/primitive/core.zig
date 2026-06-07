@@ -62,6 +62,11 @@ pub fn instanceQPrim(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLo
     if (host_class.isKnownOpaqueClass(class_sym)) return .false_val;
     // ADR-0109: every non-nil value is an instance of Object (clj: nil is not).
     if (host_class.isUniversalClass(class_sym)) return if (args[1].tag() == .nil) .false_val else .true_val;
+    // ADR-0109: (instance? Number x) = (number? x) — the numeric-tower members.
+    if (host_class.isNumberClass(class_sym)) {
+        const t = args[1].tag();
+        return if (t == .integer or t == .float or t == .big_int or t == .ratio or t == .big_decimal) .true_val else .false_val;
+    }
     // class_name.isKnown covers native + interface + Throwable; user-
     // defined defrecord / deftype names live in `rt.types` and need
     // a separate check (row 7.13 cycle 1 — was the row 7.12 cycle 1
@@ -87,6 +92,8 @@ pub fn classIsaPrim(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLoc
     if (std.mem.eql(u8, child, parent)) return .true_val;
     // ADR-0109: Object is the universal supertype — every class isa? Object.
     if (host_class.isUniversalClass(parent)) return .true_val;
+    // ADR-0109: a numeric-tower class isa? java.lang.Number (narrow membership).
+    if (host_class.isNumberClass(parent)) return if (host_class.isNumericClass(child)) .true_val else .false_val;
     return if (host_class.isSubclassOf(host_class.normalizeClassName(child), host_class.normalizeClassName(parent)))
         .true_val
     else
