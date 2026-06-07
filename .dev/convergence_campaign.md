@@ -107,6 +107,16 @@ The loop self-selects the next item by the order — **no user touchpoint**.
    ranking; each new lib's first blocker spawns a fix (folds into the relevant
    item below). This is the campaign's *coverage engine* — it surfaces the
    highest-value missing pieces empirically, not by guessing.
+   **Committed-artifact form (2026-06-07): `verified_projects/<lib>/`** — each
+   proven lib lands as a tracked `deps.edn` (`:git/url`+`:git/sha`) + `verify.clj`
+   exercise instead of a throwaway `-cp` probe, so (a) the dir list shows
+   at-a-glance which libs load, and (b) `scripts/verify_projects.sh` re-runs them
+   as a real-world-lib **regression sweep** (network; Phase-boundary / on-demand,
+   not per-commit). Method + how-to-add: `verified_projects/README.md`. Grow it
+   one lib at a time; reconcile with `docs/works/ladder.md` (ladder = ranked
+   candidates, verified_projects = committed proofs). deps.edn-system gaps found
+   while doing this are fixed in-place (within cljw's control — `:git`/`:local`
+   resolution, NOT Maven JAR fetch); ADR-0101 + amendments record the policy.
 4. **Native `cljw.nrepl` cider ops** — prerequisite: **populate built-in var
    metadata** (`:doc` / `:arglists` on core vars; `(meta (var map))` is nil
    today — generate from `compat_tiers.yaml` / JVM source). Then implement
