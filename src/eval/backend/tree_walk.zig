@@ -724,6 +724,8 @@ fn receiverDescriptor(rt: *Runtime, receiver: Value) !*const type_descriptor_mod
     return switch (receiver.tag()) {
         .typed_instance => receiver.decodePtr(*const type_descriptor_mod.TypedInstance).descriptor,
         .reified_instance => receiver.decodePtr(*const type_descriptor_mod.ReifiedInstance).descriptor,
+        // ADR-0106: a stateful host object carries its surface descriptor inline.
+        .host_instance => @import("../../runtime/host_instance.zig").asHostInstance(receiver).descriptor,
         else => try rt.nativeDescriptor(receiver.tag()),
     };
 }

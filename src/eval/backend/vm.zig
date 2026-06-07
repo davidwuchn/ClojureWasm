@@ -823,6 +823,9 @@ fn stepOnce(
                 break :blk receiver.decodePtr(*const td_mod.TypedInstance).descriptor;
             } else if (receiver.tag() == .reified_instance) blk: {
                 break :blk receiver.decodePtr(*const td_mod.ReifiedInstance).descriptor;
+            } else if (receiver.tag() == .host_instance) blk: {
+                // ADR-0106: a stateful host object carries its surface descriptor inline.
+                break :blk @import("../../runtime/host_instance.zig").asHostInstance(receiver).descriptor;
             } else try rt.nativeDescriptor(receiver.tag());
 
             // FIELD-FIRST: a non-null field_layout implies the receiver

@@ -295,3 +295,17 @@ accepted:
       array-class encoding) is the AD-003 no-JVM-class surface applied to arrays.
     derives_from: "F-004 (uniform Value) + F-005 (no primitive specialization) + ADR-0059 / AD-003 (no JVM class) + ADR-0105"
     pin: "test/e2e/phase14_arrays.sh — type_hint_advisory (a ^\"[B\" array accepts a non-byte) + array_class_simple (class is `array`)"
+  - id: "AD-020"
+    summary: "A java.util.Random (any host_instance) prints opaquely as `#<java.util.Random>` — clj prints `#object[java.util.Random 0x… …]` with a non-reproducible identity hash."
+    example: '(pr-str (java.util.Random. 0)) => cljw "#<java.util.Random>" / clj "#object[java.util.Random 0x.. java.util.Random@..]"'
+    why: |-
+      A stateful host object (ADR-0106 host_instance) carries no identity hash
+      cljw can or should mirror — clj's `#object[… 0xADDR …]` embeds a JVM
+      identity hash + class FQCN that are non-reproducible (same rationale as
+      AD-002's opaque-ref print). cljw prints a stable opaque form from the
+      surface descriptor's fqcn (`#<java.util.Random>`). The VALUE / behaviour
+      (the seeded LCG sequence) is fully clj-faithful (F-011); only the
+      non-reproducible print identity diverges. `(class (java.util.Random.))` =>
+      `java.util.Random` (simple, not the JVM Class object) is the AD-003 surface.
+    derives_from: "AD-002 (opaque-ref identity-hash print cljw cannot mirror) + ADR-0059 (no JVM Class) + ADR-0106"
+    pin: "test/e2e/phase14_random.sh — print_opaque (#<java.util.Random>) + class (java.util.Random)"

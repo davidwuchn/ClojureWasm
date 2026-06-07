@@ -170,6 +170,9 @@ fn resolveDescriptor(rt: *Runtime, receiver: Value) anyerror!*const td_mod.TypeD
     } else if (receiver.tag() == .reified_instance) blk: {
         const inst = receiver.decodePtr(*const td_mod.ReifiedInstance);
         break :blk inst.descriptor;
+    } else if (receiver.tag() == .host_instance) blk: {
+        // ADR-0106: a stateful host object carries its surface descriptor inline.
+        break :blk @import("host_instance.zig").asHostInstance(receiver).descriptor;
     } else try rt.nativeDescriptor(receiver.tag());
 }
 

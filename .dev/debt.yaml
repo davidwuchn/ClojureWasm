@@ -9,6 +9,27 @@
 # md-table-align no longer pads it to ~800 KB of whitespace.
 
 active:
+  - id: "D-295"
+    status: "now (found 2026-06-07 - data.generators rung 5, after D-289). `Short/MIN_VALUE` / `Short/MAX_VALUE` / `Byte/MIN_VALUE` / `Byte/MAX_VALUE` static fields are unresolved (generators.clj:110,115: `No namespace: Short`). cljw has Integer/Long static fields (generators.clj:105 Integer/MIN_VALUE works) but not java.lang.Short / java.lang.Byte. Small: add Short/Byte (maybe Character) static-field surfaces (MIN_VALUE/MAX_VALUE) mirroring Integer/Long. Next data.generators blocker."
+    category: "interop"
+    barrier: |-
+      **java.lang.Short / java.lang.Byte static fields (MIN_VALUE/MAX_VALUE)
+      unresolved.** cljw models Integer/Long statics but not Short/Byte.
+      Finished-form: add the Short/Byte (Character) static-field constants to
+      the host class-name/static-field surface (mirror Integer/Long). Small.
+      Cross-ref ladder rung 5 (data.generators), ADR-0061 (bare Class/FIELD).
+    last_reviewed: "2026-06-07"
+  - id: "D-294"
+    status: "deferred (F-003, opened 2026-06-07 by ADR-0106). The host_instance general container (tag 29) ships LEAF (no GC trace) - correct for java.util.Random (state is u64 seed, no Value refs). A FUTURE host_instance type that stores a Value in state MUST first add a per-descriptor trace/finalise hook on TypeDescriptor + register a tag-29 trace dispatcher (inst.descriptor.trace orelse leaf), else the Value silently sweeps. Deferred per F-003 (structural change for a not-yet-existing type); the DA fork rated it mandatory-now but F-003 (user invariant) governs. Guard: a loud comment on HostInstance.state (host_instance.zig). REVISIT when the 2nd (Value-holding) host_instance type lands."
+    category: "gc"
+    barrier: |-
+      **host_instance is leaf-only; a Value-holding host type needs a
+      per-descriptor trace hook.** Today tag 29 has no trace (Random is a u64
+      leaf). Barrier: the 2nd host_instance type storing a Value in state.
+      Dissolves when that type lands + adds TypeDescriptor.trace + a tag-29
+      trace dispatcher. Until then the loud HostInstance.state comment guards.
+      Cross-ref ADR-0106, host_instance.zig.
+    last_reviewed: "2026-06-07"
   - id: "D-293"
     status: "deferred (low value, Step-0.6 finding 2026-06-07) - the D-293 driver (tools.reader extend-type java.io.PushbackReader/Reader/InputStream) is DEAD interop in cljw: cljw uses its OWN reader path (its own PushbackReader deftype), and no cljw value ever has a java.io.* type, so the extensions can never dispatch. Implementing host-target-inert would only let dead code LOAD. Survey recommends design (b1): NARROW, closed-set-gated via host_interfaces.yaml (symmetric twin of ADR-0103 host_inert) + pure no-op + an AD (clj errors on unknown class; cljw accepts). REVISIT when a lib needs a LIVE host-target extend (none on the current ladder). tools.reader full-load also needs bare `extend` (map-form macro, reader_types.clj:190) + LineNumberingPushbackReader. private/notes/stage13-d293-host-target-survey.md. ORIGINAL: now (found 2026-06-07 - tools.reader rung 6, after D-292). extend-type on an UNKNOWN java-class TARGET: `(extend-type java.io.PushbackReader Reader ...)` -> name_error `Unable to resolve symbol java.io.PushbackReader`. cljw has no java.io.PushbackReader type, so the target does not resolve. clj extends any classpath class; cljw has a fixed type set. tools.reader extends java.io.PushbackReader/Reader/InputStream (real JVM I/O classes). Needs either (a) a java.io reader host-class surface, or (b) accept-and-record an extend-type on an unknown target as inert (the value never exists in cljw, so the impl is dead - load-only). reader_types.clj:173."
     category: "interop"
@@ -65,7 +86,7 @@ active:
       correct (F-011, byte wrap). Cross-ref ADR-0105 Alt B, AD-019.
     last_reviewed: "2026-06-07"
   - id: "D-289"
-    status: "now (found 2026-06-07 — probed clojure.data.generators, rung 5) — its top-level `(def ^:dynamic ^java.util.Random *rnd* (java.util.Random. 42))` fails at ns-load with `arity_error: Wrong number of args (1) passed to java.util.Random, expected 0`. The `java.util.Random` surface (`runtime/java/util/Random.zig`) is RESERVATION-ONLY: empty method_table, no `<init>`, no instance methods. `constructInstance` finds the descriptor, sees field_layout=null + no `<init>` in method_table, falls through to the args.len!=0 arity guard → 'expected 0'. The backing seedable PRNG already exists (`runtime/random.zig` `Prng = std.Random.DefaultPrng`). A different capability class from the deftype host-interface stack (D-275→D-286): this is a STATEFUL NATIVE INSTANCE (a mutable PRNG carried in a Value)."
+    status: "DISCHARGED ADR-0106 (2026-06-07) - java.util.Random landed as a stateful host_instance (general container, dead tag 29 repurposed): Java-LCG bit-exact (F-011, oracle-confirmed) ctor + nextInt/nextLong/nextDouble/nextFloat/nextBoolean/nextInt(bound)/setSeed; nextLong boxed .long (F-005); per-instance descriptor dispatch (3 backend arms); class/print/instance? wired (AD-020). data.generators (rung 5) advanced past the ctor to :110 Short/Byte statics (D-295). nextGaussian deferred (D-289b). 16 e2e + diff parity. ORIGINAL: now (found 2026-06-07 — probed clojure.data.generators, rung 5) — its top-level `(def ^:dynamic ^java.util.Random *rnd* (java.util.Random. 42))` fails at ns-load with `arity_error: Wrong number of args (1) passed to java.util.Random, expected 0`. The `java.util.Random` surface (`runtime/java/util/Random.zig`) is RESERVATION-ONLY: empty method_table, no `<init>`, no instance methods. `constructInstance` finds the descriptor, sees field_layout=null + no `<init>` in method_table, falls through to the args.len!=0 arity guard → 'expected 0'. The backing seedable PRNG already exists (`runtime/random.zig` `Prng = std.Random.DefaultPrng`). A different capability class from the deftype host-interface stack (D-275→D-286): this is a STATEFUL NATIVE INSTANCE (a mutable PRNG carried in a Value)."
     category: "interop"
     barrier: |-
       **java.util.Random seeded constructor + instance methods (stateful native

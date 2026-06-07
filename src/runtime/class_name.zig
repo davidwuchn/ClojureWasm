@@ -368,12 +368,17 @@ fn matchUserType(v: Value, simple: []const u8) bool {
     const td: *const TypeDescriptor = switch (v.tag()) {
         .typed_instance => v.decodePtr(*const TypedInstance).descriptor,
         .reified_instance => v.decodePtr(*const ReifiedInstance).descriptor,
+        // ADR-0106: a stateful host object (java.util.Random) carries its
+        // surface descriptor; its fqcn is FULL (java.util.Random), so match the
+        // normalized simple form too.
+        .host_instance => @import("host_instance.zig").asHostInstance(v).descriptor,
         else => return false,
     };
     var cursor: ?*const TypeDescriptor = td;
     while (cursor) |t| {
         if (t.fqcn) |fqcn| {
             if (std.mem.eql(u8, fqcn, simple)) return true;
+            if (std.mem.eql(u8, normalizeClassName(fqcn), simple)) return true;
         }
         cursor = t.parent;
     }

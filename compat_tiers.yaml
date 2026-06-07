@@ -249,7 +249,7 @@ tiers:
         files:
           surface: runtime/java/util/Random.zig
           impl: runtime/random.zig
-        methods: [nextInt, nextLong, nextDouble, setSeed]
+        methods: [nextInt, nextLong, nextDouble, nextFloat, nextBoolean, setSeed]
         clojure_peer_vars: []
       - {fqn: "java.util.Locale", native_ns: "cljw.host.java.util.Locale", phase: 6}
       - fqn: java.util.regex.Pattern

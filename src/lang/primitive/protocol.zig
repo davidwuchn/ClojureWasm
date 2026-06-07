@@ -598,6 +598,9 @@ pub fn classPrim(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocati
     const td: *const td_mod.TypeDescriptor = switch (v.tag()) {
         .typed_instance => v.decodePtr(*const td_mod.TypedInstance).descriptor,
         .reified_instance => v.decodePtr(*const td_mod.ReifiedInstance).descriptor,
+        // ADR-0106: a stateful host object reports its surface descriptor's fqcn
+        // (e.g. java.util.Random), not the generic tag.
+        .host_instance => @import("../../runtime/host_instance.zig").asHostInstance(v).descriptor,
         else => try rt.nativeDescriptor(v.tag()),
     };
     return td_mod.makeTypeDescriptorRef(rt, td);

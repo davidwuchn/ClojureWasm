@@ -655,6 +655,10 @@ pub fn printValue(w: *Writer, v: Value) Writer.Error!void {
             try w.writeByte(' ');
             try printValue(w, tl.form);
         },
+        // ADR-0106 / AD-020: a stateful host object prints opaquely by its
+        // surface fqcn (e.g. `#<java.util.Random>`) — clj prints an identity
+        // hash cljw cannot mirror.
+        .host_instance => try w.print("#<{s}>", .{@import("host_instance.zig").asHostInstance(v).descriptor.fqcn orelse "host_instance"}),
         else => |t| try w.print("#<{s}>", .{@tagName(t)}),
     }
 }

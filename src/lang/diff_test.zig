@@ -574,6 +574,15 @@ test "diff: row 7.7 reduce via IReduce -reduce fast-path" {
     , 42);
 }
 
+test "diff: java.util.Random seeded LCG parity (ADR-0106)" {
+    var f = try Fixture.init(testing.allocator);
+    defer f.deinit();
+    // A host_instance constructor + instance-method dispatch + in-place seed
+    // mutation must agree on TreeWalk and VM (both share constructInstance +
+    // the receiverDescriptor host_instance arm). Oracle: seed-42 first nextInt.
+    try f.check("(.nextInt (java.util.Random. 42))", -1170105035);
+}
+
 test "diff: Java array aset/aget + seq (ADR-0105)" {
     var f = try Fixture.init(testing.allocator);
     defer f.deinit();
