@@ -1676,7 +1676,7 @@ fn expandDefn(
             // wrapBodyInDo of an empty slice yields `(do)` → nil.
             if (body_forms.len < 1)
                 return error_catalog.raise(.defn_form_incomplete, loc, .{});
-            const body_form = try wrapBodyInDo(arena, body_forms[1..], loc);
+            const body_form = try wrapBodyInDo(arena, try lowerPrePost(arena, body_forms[1..], loc), loc);
             // D-076 cycle 3: lower destructured params (gensym + body let).
             const r = try transformFnArity(arena, rt, body_forms[0], &.{body_form}, loc);
             var fn_items = try arena.alloc(Form, 2 + r.body.len);
@@ -1697,7 +1697,7 @@ fn expandDefn(
                 return error_catalog.raise(.defn_form_incomplete, arity_form.location, .{});
             if (sub[0].data != .vector)
                 return error_catalog.raise(.defn_params_not_vector, sub[0].location, .{});
-            const body_form = try wrapBodyInDo(arena, sub[1..], arity_form.location);
+            const body_form = try wrapBodyInDo(arena, try lowerPrePost(arena, sub[1..], arity_form.location), arity_form.location);
             const r = try transformFnArity(arena, rt, sub[0], &.{body_form}, arity_form.location);
             var method_items = try arena.alloc(Form, 1 + r.body.len);
             method_items[0] = r.params;
@@ -1858,7 +1858,7 @@ fn expandFn(
 
     // Single-arity: `(fn [params] body...)`.
     if (args.len >= 1 and args[0].data == .vector) {
-        const r = try transformFnArity(arena, rt, args[0], args[1..], loc);
+        const r = try transformFnArity(arena, rt, args[0], try lowerPrePost(arena, args[1..], loc), loc);
         var items = try arena.alloc(Form, 2 + r.body.len);
         items[0] = sym("fn*", loc);
         items[1] = r.params;
@@ -1872,7 +1872,7 @@ fn expandFn(
     for (args, 0..) |a, i| {
         if (a.data == .list and a.data.list.len >= 1 and a.data.list[0].data == .vector) {
             const sub = a.data.list;
-            const r = try transformFnArity(arena, rt, sub[0], sub[1..], a.location);
+            const r = try transformFnArity(arena, rt, sub[0], try lowerPrePost(arena, sub[1..], a.location), a.location);
             var m = try arena.alloc(Form, 1 + r.body.len);
             m[0] = r.params;
             @memcpy(m[1..], r.body);
@@ -1890,6 +1890,57 @@ fn wrapBodyInDo(arena: std.mem.Allocator, body: []const Form, loc: SourceLocatio
     do_items[0] = sym("do", loc);
     @memcpy(do_items[1..], body);
     return list(arena, do_items, loc);
+}
+
+/// `(assert cond)` form.
+fn assertForm(arena: std.mem.Allocator, cond: Form, loc: SourceLocation) macro_dispatch.ExpandError!Form {
+    var items = try arena.alloc(Form, 2);
+    items[0] = sym("assert", loc);
+    items[1] = cond;
+    return list(arena, items, loc);
+}
+
+/// defn/fn `:pre`/`:post` condition-map lowering (clj parity). When an arity's
+/// first body form is a MAP literal AND more body follows, that map is a
+/// condition map: each `:pre` expr asserts before the body; each `:post` expr
+/// asserts after, with `%` bound to the return value. A LONE map body is a
+/// return value (clj: only a condition map when more body follows), and a
+/// leading map with neither `:pre` nor `:post` is left as an ordinary body
+/// expression. Applied to every fn arity (fn / defn / defmacro) so the feature
+/// is uniform. Returns the (possibly rewritten) body forms.
+fn lowerPrePost(arena: std.mem.Allocator, body: []const Form, loc: SourceLocation) macro_dispatch.ExpandError![]const Form {
+    if (body.len < 2 or body[0].data != .map) return body;
+    const kvs = body[0].data.map;
+    var pre: ?[]const Form = null;
+    var post: ?[]const Form = null;
+    var i: usize = 0;
+    while (i + 1 < kvs.len) : (i += 2) {
+        if (kvs[i].data != .keyword or kvs[i + 1].data != .vector) continue;
+        const kn = kvs[i].data.keyword.name;
+        if (std.mem.eql(u8, kn, "pre")) pre = kvs[i + 1].data.vector;
+        if (std.mem.eql(u8, kn, "post")) post = kvs[i + 1].data.vector;
+    }
+    if (pre == null and post == null) return body; // not a condition map
+
+    const rest = body[1..];
+    var out: std.ArrayList(Form) = .empty;
+    if (pre) |conds| for (conds) |c| try out.append(arena, try assertForm(arena, c, loc));
+    if (post) |conds| {
+        // (let* [% (do rest...)] (assert post0) ... %)
+        const pct = sym("%", loc);
+        var binding = try arena.alloc(Form, 2);
+        binding[0] = pct;
+        binding[1] = try wrapBodyInDo(arena, rest, loc);
+        var let_items: std.ArrayList(Form) = .empty;
+        try let_items.append(arena, sym("let*", loc));
+        try let_items.append(arena, .{ .data = .{ .vector = binding }, .location = loc });
+        for (conds) |c| try let_items.append(arena, try assertForm(arena, c, loc));
+        try let_items.append(arena, pct);
+        try out.append(arena, try list(arena, let_items.items, loc));
+    } else {
+        try out.appendSlice(arena, rest);
+    }
+    return out.items;
 }
 
 // --- defmulti — multimethod definition (ADR-0008 Phase 7.2 amendment, Alt 1) ---
