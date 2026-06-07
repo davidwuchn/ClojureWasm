@@ -281,12 +281,20 @@ fn prependDepsEdn(io: std.Io, arena: std.mem.Allocator, stderr: *std.Io.Writer, 
         error.FileNotFound, error.NotDir, error.BadPathName => return base,
         else => return e,
     };
-    // A deps.edn error (rejected :mvn/version, a failed git fetch) is a
-    // user-facing config error: render it against deps.edn + exit, not a trace.
-    const dep_paths = resolveFromSource(io, arena, src, alias_names, git_cache_base) catch |e| {
+    // A deps.edn error (a failed git fetch, malformed edn) is a user-facing
+    // config error: render it against deps.edn + exit, not a trace. A `:mvn`
+    // dep is NOT an error (ADR-0101 amendment) — it is skipped + summary-warned.
+    var skipped: std.ArrayList([]const u8) = .empty;
+    const dep_paths = resolveFromSource(io, arena, src, alias_names, git_cache_base, &skipped) catch |e| {
         const ctx = error_print.SourceContext{ .file = "deps.edn", .text = src };
         error_render.renderAndExit(stderr, ctx, e);
     };
+    if (skipped.items.len > 0) {
+        stderr.print("note: deps.edn skipped {d} Maven dep(s) (source-only; cljw resolves :git/url + :local/root): ", .{skipped.items.len}) catch {};
+        for (skipped.items, 0..) |lib, i| stderr.print("{s}{s}", .{ if (i == 0) "" else ", ", lib }) catch {};
+        stderr.print(" — each is satisfied only if its namespace is cw-bundled or laid by another source dep.\n", .{}) catch {};
+        stderr.flush() catch {};
+    }
     if (dep_paths.len == 0) return base;
     var merged: std.ArrayList([]const u8) = .empty;
     try merged.appendSlice(arena, dep_paths);
@@ -296,9 +304,9 @@ fn prependDepsEdn(io: std.Io, arena: std.mem.Allocator, stderr: *std.Io.Writer, 
 
 /// Parse + resolve a deps.edn source into its classpath. Split out so the
 /// caller can render any error against the deps.edn source context.
-fn resolveFromSource(io: std.Io, arena: std.mem.Allocator, src: []const u8, alias_names: []const []const u8, git_cache_base: ?[]const u8) ![]const []const u8 {
+fn resolveFromSource(io: std.Io, arena: std.mem.Allocator, src: []const u8, alias_names: []const []const u8, git_cache_base: ?[]const u8, skipped: *std.ArrayList([]const u8)) ![]const []const u8 {
     const cfg = try deps_parse.parseDepsEdn(arena, src);
-    return deps_resolve.resolveClasspath(io, arena, ".", cfg, alias_names, git_cache_base);
+    return deps_resolve.resolveClasspath(io, arena, ".", cfg, alias_names, git_cache_base, skipped);
 }
 
 /// Split a colon-separated classpath string into its directory roots, allocated

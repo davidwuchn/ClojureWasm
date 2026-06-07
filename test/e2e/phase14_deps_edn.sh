@@ -3,8 +3,11 @@
 #
 # Convergence Campaign Stage 1.2 — deps.edn source resolution.
 # A `./deps.edn` in the working directory contributes its `:paths` and
-# `:local/root` deps to the front of the require classpath; `:mvn/version`
-# is rejected (ClojureWasm resolves source-only). Layer 2 (e2e CLI).
+# `:local/root`/`:git/url` deps to the front of the require classpath.
+# `:mvn/version` is SKIPPED (source-only, ADR-0101 amendment): resolution
+# proceeds + a summary warning names the skipped coords, except
+# `org.clojure/clojure` (cw itself, always satisfied). A dep deps.edn with no
+# `:paths` defaults to `src/` (tools.deps convention). Layer 2 (e2e CLI).
 
 set -euo pipefail
 cd "$(dirname "$0")/../.."
@@ -56,13 +59,32 @@ got="$(cd "$al" && "$BIN" -A:dev -e "(require 'devns.tool) (devns.tool/t)" 2>/de
 [[ "$(last_line "$got")" == '"dev-tool"' ]] || fail "alias: -A:dev got '$(last_line "$got")'"
 echo "PASS deps_alias_extra_paths -> dev-tool (off without -A)"
 
-# --- Case 4: :mvn/version is rejected with a source-only hint, exit 1 ---
-mvn="$WORK/mvn"; mkdir -p "$mvn"
-printf '{:deps {x/y {:mvn/version "1.0"}}}\n' > "$mvn/deps.edn"
-err="$(cd "$mvn" && "$BIN" -e "(+ 1 1)" 2>&1 1>/dev/null)" && fail "mvn: expected non-zero exit"
-case "$err" in
-    *":git/url"*) echo "PASS deps_mvn_reject -> source-only hint" ;;
-    *) fail "mvn: message lacks :git/url hint: $err" ;;
+# --- Case 4: :mvn/version is SKIPPED (source-only), resolution proceeds; a
+#     non-clojure mvn coord is summary-warned on stderr (ADR-0101 amendment) ---
+mvn="$WORK/mvn"; mkdir -p "$mvn/src/mp"
+printf '{:paths ["src"] :deps {com.example/lib {:mvn/version "1.0"}}}\n' > "$mvn/deps.edn"
+printf '(ns mp.core)\n(defn ok [] :ok)\n' > "$mvn/src/mp/core.clj"
+# resolution does NOT abort: the :paths ns still loads despite the :mvn dep
+got="$(cd "$mvn" && "$BIN" -e "(require 'mp.core) (mp.core/ok)" 2>/dev/null)"
+[[ "$(last_line "$got")" == ':ok' ]] || fail "mvn-skip: :paths ns failed to load: '$(last_line "$got")'"
+# the skipped non-clojure mvn coord is named in the stderr summary warning
+warn="$(cd "$mvn" && "$BIN" -e "(+ 1 1)" 2>&1 1>/dev/null)"
+case "$warn" in
+    *skipped*com.example/lib*) echo "PASS deps_mvn_skip -> resolves + warns" ;;
+    *) fail "mvn-skip: expected skip warning naming com.example/lib, got: $warn" ;;
+esac
+
+# --- Case 4b: org.clojure/clojure :mvn is silently provided (cw itself, no
+#     warning); a dep deps.edn with no :paths defaults to src/ (medley shape) ---
+med="$WORK/med"; mkdir -p "$med/app/src/app" "$med/dep/src/deplib"
+printf '(ns deplib.core)\n(defn v [] "dep-src")\n' > "$med/dep/src/deplib/core.clj"
+printf '{:deps {org.clojure/clojure {:mvn/version "1.11.0"}}}\n' > "$med/dep/deps.edn"  # no :paths → src default
+printf '{:paths ["src"] :deps {deplib/deplib {:local/root "../dep"}}}\n' > "$med/app/deps.edn"
+out="$(cd "$med/app" && "$BIN" -e "(require 'deplib.core) (deplib.core/v)" 2>&1)"
+[[ "$(last_line "$out")" == '"dep-src"' ]] || fail "medley-shape: no-:paths dep src default failed: '$(last_line "$out")'"
+case "$out" in
+    *org.clojure/clojure*) fail "medley-shape: org.clojure/clojure should be silently provided, not warned" ;;
+    *) echo "PASS deps_mvn_clojure_provided -> src default + no clojure warning" ;;
 esac
 
 # --- Case 6: :git/url resolves via a hermetic local bare repo (ADR-0101) ---

@@ -7,18 +7,24 @@
 //! keywords/symbols). Resolution (alias merge, `:local/root` join, classpath
 //! expansion) lives in the sibling `resolve.zig`; git fetch in `git_fetch.zig`.
 //!
-//! Source-only by policy (matches v0): `:mvn/version` is rejected via the
-//! error catalog, never resolved. All allocations are on the caller's
-//! allocator (an arena at the call site), so there is no per-field free.
+//! Source-only by policy: `:mvn/version` is recorded (`Dep.mvn_version`) and
+//! skipped at resolve (+ a summary warning, suppressed for cw-provided coords
+//! like `org.clojure/clojure`), never fetched — see ADR-0101 amendment. All
+//! allocations are on the caller's allocator (an arena at the call site), so
+//! there is no per-field free.
 
 const std = @import("std");
 const reader = @import("../../eval/reader.zig");
 const form_mod = @import("../../eval/form.zig");
 const Form = form_mod.Form;
-const error_catalog = @import("../../runtime/error/catalog.zig");
 
-/// One `:deps` entry: a library coordinate. Exactly one of `local_root` /
-/// `git_url` is the resolution source (Maven is rejected at parse time).
+/// One `:deps` entry: a library coordinate. The resolution source is a
+/// `:local/root` or `:git/url`; a `:mvn/version` coordinate has no source cljw
+/// can fetch (no Maven/Clojars), so it is RECORDED (`mvn_version`) and SKIPPED
+/// at resolve — not a hard error (ADR-0101 amendment). Whether the lib is
+/// actually satisfied is decided at `require` time by namespace availability
+/// (cw's bundled namespaces ∪ source-resolved paths); a skipped `:mvn` only
+/// bites if its namespace is required and is neither bundled nor source-laid.
 pub const Dep = struct {
     /// The lib symbol as written, e.g. `"medley/medley"`.
     lib: []const u8,
@@ -29,6 +35,9 @@ pub const Dep = struct {
     git_sha: ?[]const u8 = null,
     /// `:deps/root` — monorepo subdirectory within the dep.
     deps_root: ?[]const u8 = null,
+    /// `:mvn/version` — recorded so resolve can skip (+ summary-warn) rather
+    /// than reject. `org.clojure/clojure` (cw itself) is the universal case.
+    mvn_version: ?[]const u8 = null,
 };
 
 /// One `:aliases` entry. Only the classpath-affecting keys are captured;
@@ -55,9 +64,9 @@ pub const DepsConfig = struct {
 
 /// Parse deps.edn `source` into a `DepsConfig`. The top form must be a map;
 /// recognised keys are populated, unknown keys ignored (forward-compatible).
-/// Raises `feature_not_supported` on a `:mvn/version` dep (source-only policy).
-/// Strings reference the reader's form storage, so they share the caller's
-/// allocator lifetime.
+/// A `:mvn/version` dep is recorded (`Dep.mvn_version`) and skipped at resolve
+/// (source-only policy, ADR-0101 amendment) — not rejected. Strings reference
+/// the reader's form storage, so they share the caller's allocator lifetime.
 pub fn parseDepsEdn(allocator: std.mem.Allocator, source: []const u8) !DepsConfig {
     const top = try reader.readOne(allocator, source) orelse return .{};
     const pairs = switch (top.data) {
@@ -148,7 +157,8 @@ fn parseDeps(allocator: std.mem.Allocator, v: Form) ![]const Dep {
 }
 
 /// Parse one dep-map `{:local/root "..."}` / `{:git/url "..." :git/sha "..."}`.
-/// A `:mvn/version` key is rejected (ClojureWasm resolves source-only).
+/// A `:mvn/version` key is recorded (`Dep.mvn_version`) for skip-at-resolve,
+/// not rejected (source-only policy, ADR-0101 amendment).
 fn parseDep(lib: []const u8, dep_form: Form) !Dep {
     var dep: Dep = .{ .lib = lib };
     const pairs = switch (dep_form.data) {
@@ -163,9 +173,11 @@ fn parseDep(lib: []const u8, dep_form: Form) !Dep {
         const name = k.keyword.name;
         const val = strOf(pairs[i + 1]);
         if (std.mem.eql(u8, ns, "mvn") and std.mem.eql(u8, name, "version")) {
-            return error_catalog.raise(.feature_not_supported, dep_form.location, .{
-                .name = "Maven/Clojars dependency (:mvn/version) — ClojureWasm resolves source-only; use :git/url + :git/sha instead",
-            });
+            // Source-only policy: cljw cannot fetch a Maven/Clojars JAR. Record
+            // the coord (skipped + summary-warned at resolve, ADR-0101 amendment)
+            // instead of rejecting — a transitive `org.clojure/clojure` :mvn (cw
+            // itself, in nearly every lib's deps.edn) must not abort resolution.
+            dep.mvn_version = val orelse "";
         } else if (std.mem.eql(u8, ns, "local") and std.mem.eql(u8, name, "root")) {
             dep.local_root = val;
         } else if (std.mem.eql(u8, ns, "git") and std.mem.eql(u8, name, "url")) {
@@ -211,8 +223,7 @@ test "parse: :deps :git/url + :git/sha + :deps/root" {
     const testing = std.testing;
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
-    const cfg = try parseDepsEdn(arena.allocator(),
-        "{:deps {mono/lib {:git/url \"https://x\" :git/sha \"abc123\" :deps/root \"libs/core\"}}}");
+    const cfg = try parseDepsEdn(arena.allocator(), "{:deps {mono/lib {:git/url \"https://x\" :git/sha \"abc123\" :deps/root \"libs/core\"}}}");
     try testing.expectEqual(@as(usize, 1), cfg.deps.len);
     try testing.expectEqualStrings("https://x", cfg.deps[0].git_url.?);
     try testing.expectEqualStrings("abc123", cfg.deps[0].git_sha.?);
@@ -223,18 +234,23 @@ test "parse: :aliases extra-paths + extra-deps" {
     const testing = std.testing;
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
-    const cfg = try parseDepsEdn(arena.allocator(),
-        "{:aliases {:dev {:extra-paths [\"dev\"] :extra-deps {u/u {:local/root \"../u\"}}}}}");
+    const cfg = try parseDepsEdn(arena.allocator(), "{:aliases {:dev {:extra-paths [\"dev\"] :extra-deps {u/u {:local/root \"../u\"}}}}}");
     try testing.expectEqual(@as(usize, 1), cfg.aliases.len);
     try testing.expectEqualStrings("dev", cfg.aliases[0].name);
     try testing.expectEqualStrings("dev", cfg.aliases[0].extra_paths[0]);
     try testing.expectEqualStrings("../u", cfg.aliases[0].extra_deps[0].local_root.?);
 }
 
-test "parse: :mvn/version is rejected (source-only)" {
+test "parse: :mvn/version is recorded + skipped, not rejected (ADR-0101 amendment)" {
     const testing = std.testing;
     var arena = std.heap.ArenaAllocator.init(testing.allocator);
     defer arena.deinit();
-    try testing.expectError(error.NotImplemented, parseDepsEdn(arena.allocator(),
-        "{:deps {x/y {:mvn/version \"1.0\"}}}"));
+    // Source-only policy: a :mvn dep parses (no error) with mvn_version set and
+    // no source coord, so resolve skips it (the transitive org.clojure/clojure
+    // case must not abort resolution).
+    const cfg = try parseDepsEdn(arena.allocator(), "{:deps {x/y {:mvn/version \"1.0\"}}}");
+    try testing.expectEqual(@as(usize, 1), cfg.deps.len);
+    try testing.expectEqualStrings("1.0", cfg.deps[0].mvn_version.?);
+    try testing.expect(cfg.deps[0].local_root == null);
+    try testing.expect(cfg.deps[0].git_url == null);
 }

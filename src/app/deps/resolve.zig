@@ -24,6 +24,10 @@ const git_fetch = @import("git_fetch.zig");
 /// `:extra-paths` + `:extra-deps`. `io` is used only to read local deps'
 /// `deps.edn` files; a `:paths`-only config never touches it. `alias_names`
 /// are the `-A:name` selections (empty = base config only).
+/// `skipped` (optional) collects the lib names of `:mvn`-only deps that were
+/// skipped (source-only policy, ADR-0101 amendment), so the caller can emit a
+/// summary warning. `org.clojure/clojure` (cw itself) is omitted — it is always
+/// satisfied at require, so warning about it would be pure noise.
 pub fn resolveClasspath(
     io: std.Io,
     allocator: std.mem.Allocator,
@@ -31,13 +35,14 @@ pub fn resolveClasspath(
     cfg: DepsConfig,
     alias_names: []const []const u8,
     git_cache_base: ?[]const u8,
+    skipped: ?*std.ArrayList([]const u8),
 ) ![]const []const u8 {
     var out: std.ArrayList([]const u8) = .empty;
     var visited: std.StringHashMapUnmanaged(void) = .empty;
-    try expand(io, allocator, deps_dir, cfg.paths, cfg.deps, &out, &visited, git_cache_base);
+    try expand(io, allocator, deps_dir, cfg.paths, cfg.deps, &out, &visited, git_cache_base, skipped);
     for (alias_names) |name| {
         const al = findAlias(cfg.aliases, name) orelse continue;
-        try expand(io, allocator, deps_dir, al.extra_paths, al.extra_deps, &out, &visited, git_cache_base);
+        try expand(io, allocator, deps_dir, al.extra_paths, al.extra_deps, &out, &visited, git_cache_base, skipped);
     }
     return out.toOwnedSlice(allocator);
 }
@@ -56,6 +61,7 @@ fn expand(
     out: *std.ArrayList([]const u8),
     visited: *std.StringHashMapUnmanaged(void),
     git_cache_base: ?[]const u8,
+    skipped: ?*std.ArrayList([]const u8),
 ) !void {
     for (try expandPaths(allocator, dir, paths)) |p| try out.append(allocator, p);
     for (deps) |dep| {
@@ -67,13 +73,30 @@ fn expand(
             const sha = dep.git_sha orelse continue; // :git/url without :git/sha
             const cache = try git_fetch.ensureCached(io, allocator, git_cache_base, url, sha, dep.lib);
             break :blk if (dep.deps_root) |dr| try join(allocator, cache, dr) else cache;
-        } else continue;
+        } else {
+            // No source coord cljw can fetch. A :mvn dep is skipped (source-only
+            // policy, ADR-0101 amendment); its lib joins the summary-warning list
+            // unless it is `org.clojure/clojure` (cw itself — always satisfied at
+            // require). Whether the lib is truly satisfied is decided at require
+            // time by namespace availability, not here.
+            if (skipped) |sk| {
+                if (dep.mvn_version != null and !std.mem.eql(u8, dep.lib, "org.clojure/clojure"))
+                    try sk.append(allocator, dep.lib);
+            }
+            continue;
+        };
         if (visited.contains(dep_dir)) continue;
         try visited.put(allocator, dep_dir, {});
         if (try readDepsEdn(io, allocator, dep_dir)) |sub| {
-            try expand(io, allocator, dep_dir, sub.paths, sub.deps, out, visited, git_cache_base);
+            // tools.deps defaults `:paths` to `["src"]` when unspecified — this
+            // applies per-dep too. A dep deps.edn that declares only `:deps`
+            // (e.g. medley: `{:deps {org.clojure/clojure {:mvn/version …}}}`,
+            // no `:paths`) still has its source under `src/`; without the default
+            // it would contribute nothing and `require` would miss it.
+            const eff_paths: []const []const u8 = if (sub.paths.len == 0) &.{"src"} else sub.paths;
+            try expand(io, allocator, dep_dir, eff_paths, sub.deps, out, visited, git_cache_base, skipped);
         } else {
-            // No deps.edn → the tools.deps default classpath is `["src"]`.
+            // No deps.edn at all → the tools.deps default classpath is `["src"]`.
             const src_dir = try join(allocator, dep_dir, "src");
             if (std.Io.Dir.cwd().access(io, src_dir, .{})) |_| {
                 try out.append(allocator, src_dir);

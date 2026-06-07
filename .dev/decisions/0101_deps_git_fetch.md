@@ -82,3 +82,56 @@ Devil's-advocate subagent output (verbatim, fresh context, F-NNN envelope):
 - `src/main.zig` — test aggregator entry.
 - `test/e2e/phase14_deps_edn.sh` — a hermetic `file://` git-dep case.
 - `.dev/debt.yaml` — D-273 note (git coordinate now resolvable).
+
+## Amendment 1 (2026-06-07) — `:mvn/version` is SKIPPED, not rejected; empty `:paths` defaults to `src/`
+
+**Context.** The original `:mvn/version` policy was a hard parse-time error
+("Maven not supported; use :git/url"). Driving the real-world ladder via
+deps.edn git coordinates (the user's "mini deps.edn project replaces corpus
+copies" direction) exposed that this is too brittle: **nearly every real lib's
+own deps.edn declares `org.clojure/clojure {:mvn/version …}`** — i.e. cw
+*itself*. Transitive resolution reads each dep's deps.edn, so a single
+`org.clojure/clojure` mvn coord aborted the whole resolution. medley
+(`{:deps {org.clojure/clojure {:mvn/version "1.9.0"}}}`) — a pure lib that
+loads fine on cljw — was unresolvable for this reason alone.
+
+**Decision.** A `:mvn/version` dep is **recorded (`Dep.mvn_version`) and skipped
+at resolve**, not rejected. Whether the lib is actually satisfied is decided at
+**`require` time by namespace availability** (cw's bundled namespaces ∪
+source-resolved `:paths`), not at parse time — the *implicit provided-set* is
+cw's bundled namespace surface (clojure.core + string/set/walk/edn/zip/pprint/
+test/data/math + data.json/data.csv/tools.cli + future backfill), which grows
+automatically. A skipped non-provided coord is named in a one-line **stderr
+summary warning**; `org.clojure/clojure` is suppressed (cw itself — warning
+about it is pure noise). No hand-maintained coord→provided table (that would be
+the F-013 個別最適化 smell); the only suppressed name is the universal
+`org.clojure/clojure`, decided structurally.
+
+Additionally: a dep deps.edn that declares only `:deps` (no `:paths`) now
+defaults `:paths` to `["src"]` (tools.deps convention, applies per-dep) — medley
+keeps its source under `src/` with no `:paths` key, so without this it would
+contribute nothing and `require` would miss it.
+
+**Result.** `(require '[medley.core])` via a `:git/url`+`:git/sha` mini
+deps.edn project now works end-to-end (clone → skip the clojure-self mvn →
+src-default → require). priority-map (zero-mvn deps.edn) already worked; medley
+(only-clojure-mvn) is the canonical case this amendment unblocks. The boundary
+stays honest: a lib whose *namespace* is neither bundled nor source-laid still
+fails at `require` with the existing "Could not locate" error (now naming the
+missing ns rather than aborting at parse).
+
+**Alternatives considered (main-loop, no DA fork — depth-1 amendment within the
+F-NNN envelope):** (a) keep hard-reject — rejected: makes deps.edn unusable for
+real libs (only zero-mvn libs resolve). (b) skip + a coord→provided allowlist —
+rejected: a hand-grown allowlist is the F-013 個別最適化 smell; require-time
+namespace resolution already IS the provided-set, implicitly. (c) skip silently,
+no warning — rejected: a missing non-clojure dep would surface only as a later
+"Could not locate" with no hint it was a deliberately-skipped mvn coord; the
+summary warning is cheap UX.
+
+**Affected files (amendment).** `src/app/deps/parse.zig` (record `mvn_version`,
+drop the raise + the now-unused error_catalog import), `src/app/deps/resolve.zig`
+(skip + collect skipped coords via an optional out-param; empty-`:paths`→`src`
+default), `src/app/cli.zig` (one-line stderr summary warning),
+`test/e2e/phase14_deps_edn.sh` (Case 4 reworked: skip+warn; Case 4b: clojure
+provided + src default).

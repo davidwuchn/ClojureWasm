@@ -11,6 +11,17 @@ deps.edn resolution works (`:paths`/`:local/root`/`:aliases`/`:git/url`),
 so rungs are now probed via real **deps.edn git coordinates**, not just
 `-cp` (rung 4 below was the first such probe).
 
+**deps.edn `:mvn` policy (2026-06-07, ADR-0101 amendment 1)**: a `:mvn/version`
+dep is now SKIPPED (not rejected) — nearly every lib's own deps.edn declares
+`org.clojure/clojure {:mvn/version …}` (= cw itself), which previously aborted
+resolution. Satisfaction is decided at `require` time by namespace availability;
+`org.clojure/clojure` is silently provided, other skipped coords get a one-line
+stderr warning. A dep deps.edn with no `:paths` defaults to `src/`. **Going-
+forward probe method = a mini deps.edn project with `:git/url`+`:git/sha`**
+(`private/deps_experiments/<lib>/deps.edn`), replacing corpus copies + hand-laid
+`-cp`. Verified end-to-end: **medley** loads via git coords (`find-first`/
+`index-by` correct); priority-map (zero-mvn) already did.
+
 | rank | lib                        | version       | pure-degree | status     | first-blocking-gap                                                                                                                                                                                                                                                                                                                                                                                                                                 |
 |------|----------------------------|---------------|-------------|------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | 1    | medley                     | master        | 1           | loads      | none — find-first/dissoc-in/map-keys/index-by/deep-merge/uuid?/abs all correct                                                                                                                                                                                                                                                                                                                                                                    |
