@@ -65,6 +65,14 @@ cljw
 - **[Polyglot WebAssembly FFI](./examples/wasm/)** — a Clojure program loads a
   WebAssembly module compiled from another language and calls it:
   `(wasm/call (wasm/load "add.wasm") "add" 2 40)` → `42`.
+- **Edge app — "Shelf"** ([clojurewasm/edge-demo](https://github.com/clojurewasm/edge-demo)) —
+  a small multi-user bookshelf (register / edit your shelf / browse others / copy
+  a book / label / favorite), served entirely by `cljw`'s own HTTP server as a
+  ~3 MB static binary on [Fly.io](https://clojurewasm-edge-demo.fly.dev/). Sessions,
+  CRUD, persistence, and server-rendered HTML — no JVM. On a Wasm-FFI build
+  (`-Dwasm`) each book cover's colour is computed by a Zig→Wasm module called over
+  the FFI, so the polyglot story runs inside a real app (the static musl edge build
+  falls back to a pure-Clojure hue until zwasm is musl-portable).
 
 ## Architecture
 
