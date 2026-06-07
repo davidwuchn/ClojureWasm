@@ -103,7 +103,10 @@ fn analyzeCatchClause(
     macro_table: *const macro_dispatch.Table,
 ) AnalyzeError!node_mod.TryNode.CatchClause {
     const items = clause.data.list;
-    if (items.len < 4)
+    // D-301: clj allows an EMPTY catch body — `(catch E e)` swallows + returns
+    // nil. So `(catch <class|kw> <binding>)` (3 items) is valid; the empty
+    // body_forms below build a `(do)` → nil. Fewer than 3 is genuinely malformed.
+    if (items.len < 3)
         return error_catalog.raise(.catch_form_incomplete, clause.location, .{});
     // Row 14.5 (D-014b): accept either a symbol (class-name match via
     // host_class) or a keyword (ex-info `:type` match via interned

@@ -79,6 +79,12 @@ pub const ENTRIES = [_]Entry{
     .{ .name = "IOException", .parent = "Exception" },
     .{ .name = "FileNotFoundException", .parent = "IOException" },
     .{ .name = "EOFException", .parent = "IOException" },
+    // D-301: checked reflective exception (Exception→ReflectiveOperationException→
+    // ClassNotFoundException on the JVM); cw flattens the intermediate. Caught
+    // (never thrown) by libs probing for optional classes, e.g.
+    // clojure.math.numeric-tower's `(catch ClassNotFoundException _ …)`.
+    .{ .name = "ReflectiveOperationException", .parent = "Exception" },
+    .{ .name = "ClassNotFoundException", .parent = "ReflectiveOperationException" },
 
     .{ .name = "RuntimeException", .parent = "Exception" },
     .{ .name = "ArithmeticException", .parent = "RuntimeException" },

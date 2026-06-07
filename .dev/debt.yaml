@@ -9,6 +9,23 @@
 # md-table-align no longer pads it to ~800 KB of whitespace.
 
 active:
+  - id: "D-302"
+    status: "now (found 2026-06-07 - numeric-tower rung, after D-301). numeric_tower.clj:98 Unable to resolve symbol java.math.BigInteger. cljw has BigInt (AD-016 collapses clj BigInt/BigInteger into one .big_int) but the class SYMBOL java.math.BigInteger does not resolve (analyzeSymbol/nativeTagFor). numeric-tower references it (type hint / class compare / static). Small-ish: map java.math.BigInteger (+ simple BigInteger) to the big_int native descriptor in class_name (mirror Integer/Long) so the symbol is a class value. Cross-ref AD-016, ADR-0080."
+    category: "interop"
+    barrier: |-
+      java.math.BigInteger class symbol unresolved. cljw has .big_int but no
+      class-symbol resolution for java.math.BigInteger / BigInteger. Add it to
+      the native-class name table (-> big_int descriptor), mirror Integer/Long.
+      Cross-ref AD-016 (BigInt/BigInteger collapse), numeric-tower rung.
+    last_reviewed: "2026-06-07"
+  - id: "D-301"
+    status: "DISCHARGED 2026-06-07 (this commit) - try/catch clj parity: (1) EMPTY catch body (catch E e) is valid (swallows + returns nil; try_form.zig items.len<4 -> <3, empty body builds do=nil); (2) java.lang.ClassNotFoundException + ReflectiveOperationException added to host_class known exceptions. Both oracle-verified. Unblocked numeric-tower :79 -> :98 (java.math.BigInteger, D-302). General (empty catch + common catch class). e2e phase14_empty_catch + diff parity."
+    category: "eval"
+    barrier: |-
+      DISCHARGED. cljw required a non-empty catch body + did not know
+      ClassNotFoundException. try_form.zig accepts the 3-item empty-body catch;
+      host_class adds the reflective-exception subtree. Oracle-verified parity.
+    last_reviewed: "2026-06-07"
   - id: "D-300"
     status: "DISCHARGED 2026-06-07 (this commit) - cljc libspec leniency (clj parity, oracle-confirmed). parseLibspecForm tolerates the cljs-only LIBSPEC keywords :include-macros / :refer-macros / :require-macros (clj ignores all three inside a [ns …] libspec on the JVM); the top-level (:require-macros …) DIRECTIVE stays rejected (clj rejects it on JVM; well-formed cljc guards it with a reader conditional). Unblocks schema.core:84 [schema.spec.core :as spec :include-macros true] + cljc libs generally. Found via broad re-probe. e2e phase14_cljc_libspec."
     category: "reader"

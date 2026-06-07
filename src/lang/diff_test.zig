@@ -581,6 +581,14 @@ test "diff: row 7.7 reduce via IReduce -reduce fast-path" {
 // core.clj-less fixture does not intern. Coverage: test/e2e/
 // phase14_syntax_quote_exclude.sh on the full runtime.)
 
+test "diff: empty catch body returns nil on both backends (D-301)" {
+    var f = try Fixture.init(testing.allocator);
+    defer f.deinit();
+    // `(catch E e)` with no body swallows + returns nil; TryNode compiles on both
+    // backends, so the empty-body do-node must agree. (1 + the swallowed result.)
+    try f.check("(+ 1 (if (nil? (try (throw (Exception. \"x\")) (catch Exception e))) 41 0))", 42);
+}
+
 test "diff: java.util.Random seeded LCG parity (ADR-0106)" {
     var f = try Fixture.init(testing.allocator);
     defer f.deinit();
