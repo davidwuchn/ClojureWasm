@@ -2164,7 +2164,9 @@ fn rewriteProtocolRemap(
     var protos: std.ArrayList([]const u8) = .empty;
     defer protos.deinit(arena);
     for (impls) |impl| {
-        if (impl.data != .list or impl.data.list.len < 3 or
+        // len < 2 (no name+params) is malformed; an EMPTY body (len == 2) is
+        // valid clj — the method returns nil (body lowers to `(do)` → nil).
+        if (impl.data != .list or impl.data.list.len < 2 or
             impl.data.list[0].data != .symbol or impl.data.list[1].data != .vector)
         {
             return error_catalog.raise(.extend_type_method_invalid, impl.location, .{});
@@ -2217,6 +2219,35 @@ fn rewriteProtocolRemap(
     do_items[0] = sym("do", loc);
     @memcpy(do_items[1..], sections);
     return list(arena, do_items, loc);
+}
+
+/// Strip a namespace qualifier from each simple-symbol param in a deftype /
+/// reify / extend-type method param vector. Inside a syntax-quote the reader
+/// qualifies a bare param symbol like `_` to `user/_`; clj's deftype / reify
+/// strip the ns for method params (a raw `fn*` still rejects a qualified param
+/// — that parity is preserved, this only relaxes the host-method lowering).
+/// Common in macros that emit deftype methods via backtick (e.g.
+/// data.finger-tree's `defdigit`). Returns the input unchanged when no param
+/// is qualified (the overwhelming common case — no allocation).
+fn stripMethodParamNs(arena: std.mem.Allocator, params_form: Form) macro_dispatch.ExpandError!Form {
+    if (params_form.data != .vector) return params_form;
+    const params = params_form.data.vector;
+    var needs_copy = false;
+    for (params) |p| {
+        if (p.data == .symbol and p.data.symbol.ns != null) {
+            needs_copy = true;
+            break;
+        }
+    }
+    if (!needs_copy) return params_form;
+    const out = try arena.alloc(Form, params.len);
+    for (params, 0..) |p, i| {
+        out[i] = if (p.data == .symbol and p.data.symbol.ns != null)
+            .{ .data = .{ .symbol = .{ .ns = null, .name = p.data.symbol.name } }, .location = p.location }
+        else
+            p;
+    }
+    return .{ .data = .{ .vector = out }, .location = params_form.location };
 }
 
 fn expandExtendType(
@@ -2298,7 +2329,8 @@ fn expandExtendType(
     var names: std.ArrayList([]const u8) = .empty;
     defer names.deinit(arena);
     for (method_impls) |impl| {
-        if (impl.data != .list or impl.data.list.len < 3 or
+        // EMPTY body (len == 2) is valid clj (method → nil); only < 2 is malformed.
+        if (impl.data != .list or impl.data.list.len < 2 or
             impl.data.list[0].data != .symbol or
             impl.data.list[1].data != .vector)
         {
@@ -2323,7 +2355,7 @@ fn expandExtendType(
         var name_loc = loc;
         for (method_impls) |impl| {
             if (!std.mem.eql(u8, impl.data.list[0].data.symbol.name, method_name)) continue;
-            const params_form = impl.data.list[1];
+            const params_form = try stripMethodParamNs(arena, impl.data.list[1]);
             const body = impl.data.list[2..];
             const body_form = if (body.len == 1) body[0] else blk: {
                 var do_items = try arena.alloc(Form, body.len + 1);
@@ -2557,8 +2589,15 @@ fn wrapMethodBodyWithFields(
     const params = items[1].data.vector;
     const body = items[2..];
     if (params.len == 0) return impl;
-    const instance = params[0];
-    if (instance.data != .symbol) return impl;
+    if (params[0].data != .symbol) return impl;
+    // The receiver feeds `(.field instance)` in the wrapped body; strip a
+    // syntax-quote-qualified `user/_`-style ns so the body references the bound
+    // param, not an unresolvable var (matches the fn*-param strip at the
+    // extend-type lowering — see stripMethodParamNs).
+    const instance: Form = if (params[0].data.symbol.ns != null)
+        .{ .data = .{ .symbol = .{ .ns = null, .name = params[0].data.symbol.name } }, .location = params[0].location }
+    else
+        params[0];
 
     // ADR-0104: immutable fields ride a `let*` value-copy (a snapshot is correct
     // — they never change); MUTABLE fields must read the live slot, so they are
@@ -3068,7 +3107,8 @@ fn expandReify(
         var section_names: std.ArrayList([]const u8) = .empty;
         defer section_names.deinit(arena);
         for (impls) |impl| {
-            if (impl.data != .list or impl.data.list.len < 3 or
+            // EMPTY body (len == 2) is valid clj (method → nil); only < 2 is malformed.
+            if (impl.data != .list or impl.data.list.len < 2 or
                 impl.data.list[0].data != .symbol or
                 impl.data.list[1].data != .vector)
             {
@@ -3091,7 +3131,7 @@ fn expandReify(
             var name_loc = proto_form.location;
             for (impls) |impl| {
                 if (!std.mem.eql(u8, impl.data.list[0].data.symbol.name, method_name)) continue;
-                const params_form = impl.data.list[1];
+                const params_form = try stripMethodParamNs(arena, impl.data.list[1]);
                 const body = impl.data.list[2..];
                 const body_form = if (body.len == 1) body[0] else blk: {
                     var do_items_local = try arena.alloc(Form, body.len + 1);

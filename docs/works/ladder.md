@@ -63,9 +63,13 @@ so rungs are now probed via real **deps.edn git coordinates**, not just
     extension) was unsupported (`__extend-type!: expected type_descriptor, got
     nil`). **Fixed** (extend-type + extend-protocol now accept a nil target →
     the per-Tag nil descriptor; clj-faithful, e2e `phase14_extend_type_nil`).
-    Advanced :56 → :138 — `(defdigit a)` macro expansion hits `fn* parameter
-    must not be namespace-qualified` (a syntax-quote + deftype/reify
-    method-param-qualification interaction; next finger-tree blocker).
+    Advanced :56 → :138 — `(defdigit a)` macro hit two deftype-method-lowering
+    gaps, both **now fixed** (clj-faithful, e2e `phase14_deftype_method_lowering`):
+    (a) syntax-quote-qualified method params (`user/_` from a bare `_` inside a
+    backtick — clj's deftype/reify strip the ns; raw fn* still rejects, parity
+    kept); (b) empty method bodies `(m [_])` → nil. Advanced :138 → :405 —
+    `clojure.lang.Util/…` static interop (deep JVM-internal, same class family as
+    data.avl). **Parked at :405** (needs a clojure.lang.Util/RT host surface).
   - **clojure.algo.generic** — `(derive Object root-type)`: bare `Object` as a
     class VALUE to `derive` is unresolved (host-class-value family, D-293).
   - **clojure.data.avl** — `(APersistentMap/mapHash …)` + `^AtomicReference`/
