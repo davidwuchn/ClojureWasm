@@ -516,6 +516,7 @@ run_step "e2e_phase14_deftype_object"        "bash test/e2e/phase14_deftype_obje
 run_step "e2e_phase14_deftype_mutable"       "bash test/e2e/phase14_deftype_mutable.sh"
 run_step "e2e_phase14_arrays"                "bash test/e2e/phase14_arrays.sh"
 run_step "e2e_phase14_random"                "bash test/e2e/phase14_random.sh"
+run_step "e2e_phase14_short_byte"            "bash test/e2e/phase14_short_byte.sh"
 run_step "e2e_phase14_var_resolve"           "bash test/e2e/phase14_var_resolve.sh"
 run_step "e2e_phase14_biginteger"            "bash test/e2e/phase14_biginteger.sh"
 run_step "e2e_phase14_read_string"           "bash test/e2e/phase14_read_string.sh"

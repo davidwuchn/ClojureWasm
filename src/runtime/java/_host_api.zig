@@ -71,6 +71,8 @@ const java_surfaces = [_]type{
     @import("lang/Double.zig"),
     @import("lang/Integer.zig"),
     @import("lang/Long.zig"),
+    @import("lang/Short.zig"), // D-295 — MIN_VALUE/MAX_VALUE static fields
+    @import("lang/Byte.zig"), // D-295
     @import("lang/Math.zig"),
     @import("lang/System.zig"),
     @import("lang/Thread.zig"),
