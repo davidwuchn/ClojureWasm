@@ -728,8 +728,18 @@ fn parseLibspecForm(
                     // `:exclude (a b)` (a `:use` blacklist) → refer-all minus these.
                     exclude_names = try parseSymbolNameSeq(arena, val, "require/use :exclude value must be a list or vector of symbols");
                     refer_all_override = true;
+                } else if (std.mem.eql(u8, kw.name, "include-macros") or
+                    std.mem.eql(u8, kw.name, "refer-macros") or
+                    std.mem.eql(u8, kw.name, "require-macros"))
+                {
+                    // D-300: cljs-only LIBSPEC keywords. JVM clj IGNORES all three
+                    // inside a libspec (oracle-confirmed; only `(:require-macros …)`
+                    // as a top-level DIRECTIVE is rejected). The macros are already
+                    // reachable via the ordinary `:require` on the JVM. Tolerate +
+                    // skip the value (boolean for include/require, vector for refer)
+                    // so cljc libraries load. The `i += 2` below consumes the value.
                 } else {
-                    return error_catalog.raise(.feature_not_supported, vec[i].location, .{ .name = "require libspec keyword (only :as / :refer / :only / :exclude supported)" });
+                    return error_catalog.raise(.feature_not_supported, vec[i].location, .{ .name = "require libspec keyword (only :as / :refer / :only / :exclude / :include-macros / :require-macros supported)" });
                 }
                 i += 2;
             }
@@ -845,6 +855,11 @@ pub fn analyzeNs(
         } else if (std.mem.eql(u8, kw.name, "import")) {
             try parseImportForms(arena, inner[1..], &imports);
         } else {
+            // NB `(:require-macros …)` is a cljs-only DIRECTIVE that clj REJECTS
+            // on the JVM (oracle-confirmed) — well-formed cljc guards it behind a
+            // reader conditional, so cljw matches clj by rejecting it here. The
+            // cljs `:include-macros`/`:refer-macros` LIBSPEC keywords (which clj
+            // DOES ignore) are tolerated in parseLibspecForm (D-300).
             return error_catalog.raise(.feature_not_supported, directive.location, .{ .name = "ns directive (only :refer-clojure / :require / :use / :import supported; :rename pending)" });
         }
     }

@@ -9,6 +9,15 @@
 # md-table-align no longer pads it to ~800 KB of whitespace.
 
 active:
+  - id: "D-300"
+    status: "DISCHARGED 2026-06-07 (this commit) - cljc libspec leniency (clj parity, oracle-confirmed). parseLibspecForm tolerates the cljs-only LIBSPEC keywords :include-macros / :refer-macros / :require-macros (clj ignores all three inside a [ns …] libspec on the JVM); the top-level (:require-macros …) DIRECTIVE stays rejected (clj rejects it on JVM; well-formed cljc guards it with a reader conditional). Unblocks schema.core:84 [schema.spec.core :as spec :include-macros true] + cljc libs generally. Found via broad re-probe. e2e phase14_cljc_libspec."
+    category: "reader"
+    barrier: |-
+      DISCHARGED. cljc libs use :include-macros/:refer-macros in libspecs; clj
+      ignores them on JVM, cljw rejected them. parseLibspecForm now tolerates
+      (no-op skip) the three cljs-only libspec keywords; the directive form
+      stays rejected to match clj. Oracle-verified each case.
+    last_reviewed: "2026-06-07"
   - id: "D-299"
     status: "DISCHARGED 2026-06-07 (this commit) - ns-form leniency (clj parity): analyzeNs now accepts (1) a list-OR-vector arg to :refer-clojure :exclude/:only (parseSymbolNameSeq; `(:refer-clojure :exclude (vec))`), and (2) a vector-headed ns directive `[:require …]` (clojure.core string.clj uses it). Both oracle-confirmed valid in clj. Unblocked clojure.data.zip (LOADS). Found via the broad corpus re-probe (private/notes/stage13-broad-reprobe.md). e2e phase14_ns_form_leniency."
     category: "reader"
