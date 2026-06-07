@@ -5,24 +5,29 @@
 
 ## Resume contract
 
-- **HEAD**: see `git log`. This session built the **deftype/reify host-interface
-  capability end-to-end** and drove `clojure.data.priority-map` from name_error to
-  **FULLY FUNCTIONAL** (ladder rung 4): F-013 + ADR-0102/0103 (closed-set
-  `host_interfaces.yaml` SSOT + `host_interface.zig` single read point + G4 gate =
-  the 個別最適化-entry structural close) · D-275/D-279/D-280 (the whole clojure.lang.*
-  family + arity-overload + IFn-call-path + IObj-meta consults) · D-281 (java.util.Map/
-  Iterable host_inert) · D-282 (clojure.core.protocols ns) · D-283 (clj-name `.method`
-  dot-calls) · D-284 (`(MapEntry. …)`→2-vec) · D-285 (keys/vals seq-derivation).
-  `(priority-map :a 3 :b 1 :c 2)` → peek=[:b 1], count=3, keys=(:b :c :a).
-- **First commit on resume MUST be**: continue the **Stage 1.3 ladder breadth-probe**
-  — probe `clojure.data.generators` (rung 5) via `-cp` on
-  `~/Documents/OSS/clojure-corpus/01_clojure_official/clojure__data.generators/src`,
-  record its first blocker as a debt row (campaign Stage 1.3 loop). The deftype
-  host-interface capability (D-275→D-286a) is COMPLETE + proven (priority-map fully
-  functional; ordered cleared all its supertypes), so the open deftype gaps below
-  are drive-when-needed, not the forced next task. Then Stage 1: 1.4 native cider
-  ops → 1.5 v0→v1 backfill (D-273) → 1.6 clj-parity → 1.7 Phase B hardening (D-242).
-  SSOT = `.dev/convergence_campaign.md`.
+- **HEAD**: see `git log`. The 2026-06-07 ladder session landed: Pattern/quote
+  (cuerdas rung 8) · `(extend-type nil …)`/`(extend-protocol P nil …)` nil-punning ·
+  deftype/reify method-lowering clj-parity (syntax-quote-qualified params + empty
+  method bodies; drove data.finger-tree :56→:138→:405→:519) · **ADR-0108 the third
+  host-surface tree `runtime/clojure/lang/`** + the complete `clojure.lang.Util`
+  static surface (11/11 pure statics, oracle-verified, AD-009 for hash) + the shared
+  runtime `class_of.zig` helper (D-303). numeric-tower + the opaque-class VALUE/TARGET
+  coupling fully diagnosed (D-293/D-302).
+- **First commit on resume MUST be: D-293 — the unified host-class-VALUE resolver
+  (ADR-0109 + DA)**. The recurring remaining ladder blocker is a host CLASS used as a
+  VALUE: bare `Object` (algo.generic `(derive Object …)`), `clojure.lang.IFn`
+  (core.contracts), `java.lang.AssertionError` (tools.trace), `Integer`/`java.math.BigInteger`
+  (numeric-tower). Design-of-record = D-293's row (DA Alt 2 verbatim): ONE resolver
+  `exceptionDescriptor`→general `classDescriptor` (NATIVE→OPAQUE/INERT→Throwable→name_error)
+  + a `kind` field all consumers (instance?/isa?/extends?/extend-type) branch on;
+  extend-type on opaque|inert = load-only no-op (NOT the crash the reverted probe hit),
+  instance?/= treat opaque as no-match, comptime OPAQUE∩NATIVE={}; isa? host hierarchy
+  = AD sub-decision. Then Stage 1: 1.4 cider ops → 1.5 v0→v1 backfill (D-273) → 1.6
+  clj-parity → 1.7 Phase B (D-242). SSOT = `.dev/convergence_campaign.md`.
+- **Carry-over (permission-blocked, ADR-0108)**: extend
+  `.claude/rules/feature_name_consistency.md` scan-set to `runtime/clojure/**` — the
+  classifier blocks `.claude/rules/*` edits; the user lands it. zone_check.sh already
+  gates the third tree; this is doc-accuracy only.
 - **Scoped gaps the ladder probes surfaced** (drive when a target needs them):
   D-286b (bare names that ARE cljw Vars — IPersistentSet/IPersistentMap with
   clj-named methods — bypass protocol_remap; needs method-name disambiguation;
@@ -80,11 +85,3 @@ ADR-0090/0089 (Phase B — IMPLEMENTED, Stage 1.7 = hardening) →
 `.dev/project_facts.md` F-004/F-006 → CLAUDE.md (§ Project spirit + The only
 stop) → `.dev/principle.md`.
 
-## Stopped — user requested
-
-User instruction (2026-06-07): 「コンテキストウィンドウ増大につき、クリア
-セッションからcontinueできる形で配線確認しておいて」 / 「終わったら、止めて」.
-Working tree clean, all work pushed to `origin/cw-from-scratch`. Resume with
-`/continue` per the Resume contract above (probe rung 5 clojure.data.generators).
-The directive applied to that session only; the next `/continue` resumes the loop
-normally and deletes this section (handover_framing).
