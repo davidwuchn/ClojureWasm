@@ -39,9 +39,30 @@ ONLY_STEPS=""
 # forces the old sequential path (used to validate parity).
 PARALLEL_E2E=1
 E2E_JOBS="${E2E_JOBS:-8}"
+# ADR-0107 two-tier gate: --smoke runs the fast, contention-tolerant correctness
+# core (zig build test ×2 = the FULL dual-backend diff oracle + all unit, + lint
+# + build_cljw + corpus_regression) plus any changed/new e2e step(s) named after
+# the flag, then stamps .dev/.smoke_pass. This is the per-commit check; the slow
+# 248-step e2e SHELL suite + perf run only in the full (no-flag) gate, batched +
+# run-alone. The single .dev/.gate_cadence ceiling (full gate resets it) bounds
+# how many smoke-only commits ride before a full gate is forced.
+SMOKE_MODE=0
+SMOKE_E2E=""
+SMOKE_CORE="zig_build_test_vm,zig_build_test_tree_walk,zlinter,build_cljw,corpus_regression"
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
+        --smoke)
+            SMOKE_MODE=1
+            # Optional comma-list of e2e step names to include (the unit's
+            # changed/new e2e), e.g. `--smoke e2e_phase14_random`.
+            if [[ $# -ge 2 && "$2" != --* ]]; then
+                SMOKE_E2E="$2"
+                shift 2
+            else
+                shift
+            fi
+            ;;
         --list)
             LIST_ONLY=1
             shift
@@ -68,6 +89,14 @@ while [[ $# -gt 0 ]]; do
             ;;
     esac
 done
+
+# ADR-0107: in --smoke mode, restrict to the correctness core + the named e2e
+# step(s). Everything else (the 248-step e2e shell suite + perf) is skipped; it
+# runs only in the full gate. Implemented by funneling through the existing
+# ONLY_STEPS machinery so run_step's selection logic is reused unchanged.
+if (( SMOKE_MODE )); then
+    ONLY_STEPS="${SMOKE_CORE}${SMOKE_E2E:+,$SMOKE_E2E}"
+fi
 
 # Steps that must NOT run in the parallel e2e pool. Three reasons:
 #   1. Perf workloads whose timing inflates under CPU contention:
@@ -565,12 +594,19 @@ fi
 flush_e2e_queue
 
 if print_summary; then
-    # On a FULL green gate (no --only / --skip): (1) record the verified
-    # source-state fingerprint so scripts/check_gate_cadence.sh can authorise
-    # the matching commit, and (2) clear the additive batch counter — a full
-    # green gate validates everything up to now, so the batch restarts
-    # (.claude/rules/gate_cadence.md). A partial run must not stamp either.
-    if [[ -z "$ONLY_STEPS" && -z "$SKIP_STEPS" ]]; then
+    if (( SMOKE_MODE )); then
+        # ADR-0107: a green smoke stamps .dev/.smoke_pass (the per-commit
+        # authorization fingerprint). It does NOT touch .gate_pass or reset the
+        # batch counter — only a full gate does that. The commit hook consumes a
+        # batch slot per smoke-authorized commit and forces a full gate at the
+        # ceiling.
+        bash scripts/gate_state_hash.sh > .dev/.smoke_pass 2>/dev/null || true
+    elif [[ -z "$ONLY_STEPS" && -z "$SKIP_STEPS" ]]; then
+        # On a FULL green gate: record the verified source-state fingerprint so
+        # scripts/check_gate_cadence.sh can authorise the matching commit, and
+        # clear the batch counter — a full green gate validates everything up to
+        # now, so the batch restarts (ADR-0107 / gate_cadence.md). A partial
+        # (--only/--skip) run must not stamp either.
         bash scripts/gate_state_hash.sh > .dev/.gate_pass 2>/dev/null || true
         echo 0 > .dev/.gate_cadence 2>/dev/null || true
     fi

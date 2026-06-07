@@ -31,6 +31,7 @@ hook_cd_project_root
 
 GATE_MAX_BATCH="${GATE_MAX_BATCH:-5}"
 PASS_FILE=".dev/.gate_pass"
+SMOKE_FILE=".dev/.smoke_pass"
 COUNT_FILE=".dev/.gate_cadence"
 RULE=".claude/rules/gate_cadence.md"
 
@@ -80,24 +81,58 @@ if [[ -n "$gated_hash" && "$now_hash" == "$gated_hash" ]]; then
   exit 0
 fi
 
-# --- 3. not fresh: apply the cadence rule -----------------------------------
+# --- 2b. smoke freshness (ADR-0107) -----------------------------------------
+# A fresh `--smoke` (zig build test ×2 = the full dual-backend diff oracle + all
+# unit, + lint + build_cljw + corpus + the changed e2e) authorises ANY source
+# commit — risky or additive — because the F-012 correctness oracle ran in full.
+# It consumes one batch slot; the ceiling forces a full gate (which also runs the
+# 248-step e2e SHELL suite + perf that smoke skips). A full gate resets the count.
+smoke_hash="$(cat "$SMOKE_FILE" 2>/dev/null || echo '')"
+if [[ -n "$smoke_hash" && "$now_hash" == "$smoke_hash" ]]; then
+  count="$(cat "$COUNT_FILE" 2>/dev/null || echo 0)"
+  [[ "$count" =~ ^[0-9]+$ ]] || count=0
+  count=$((count + 1))
+  if [[ "$count" -gt "$GATE_MAX_BATCH" ]]; then
+    cat >&2 <<EOF
+✗ commit blocked by scripts/check_gate_cadence.sh
+
+$GATE_MAX_BATCH smoke-authorized commits have accumulated since the last full
+gate. The smoke check skips the e2e SHELL suite + perf, so the policy forces a
+full run-alone gate at the ceiling (catches any e2e-shell regression in the
+batch + resets the count):
+
+  Run:  bash test/run_all.sh
+  then re-commit.
+
+Policy: $RULE (ADR-0107 two-tier gate).
+EOF
+    exit 2
+  fi
+  echo "$count" > "$COUNT_FILE"
+  echo "[gate_cadence] smoke-authorized commit ${count}/${GATE_MAX_BATCH} since last full gate — ok (run \`bash test/run_all.sh\` to reset)"
+  exit 0
+fi
+
+# --- 3. neither full-gate nor smoke fresh: apply the cadence rule -----------
 if [[ "$risky" -eq 1 ]]; then
   cat >&2 <<EOF
 ✗ commit blocked by scripts/check_gate_cadence.sh
 
-This is a SHARED-CODE change ($risky_reason). Such changes carry
-regression + dual-backend-parity risk, so the policy requires a fresh
-full gate every time — no batching.
+This is a SHARED-CODE change ($risky_reason). Such changes carry regression +
+dual-backend-parity risk, so the policy requires a fresh gate. Per ADR-0107 the
+fast per-commit check is the smoke gate (the full dual-backend oracle + all unit
++ the changed e2e):
 
-  Run:  bash test/run_all.sh
-  then re-commit (the gate records .dev/.gate_pass for the verified state).
+  Run:  bash test/run_all.sh --smoke <changed-e2e-step>   # ~tens of seconds
+  (or a full  bash test/run_all.sh)  then re-commit.
 
 Policy: $RULE
 EOF
   exit 2
 fi
 
-# Additive + not fresh → consume one batch slot.
+# Additive + not fresh → consume one batch slot (rides without even a smoke; the
+# new files cannot break existing behaviour, and the ceiling still forces a gate).
 count="$(cat "$COUNT_FILE" 2>/dev/null || echo 0)"
 [[ "$count" =~ ^[0-9]+$ ]] || count=0
 count=$((count + 1))
@@ -106,14 +141,13 @@ if [[ "$count" -gt "$GATE_MAX_BATCH" ]]; then
   cat >&2 <<EOF
 ✗ commit blocked by scripts/check_gate_cadence.sh
 
-$GATE_MAX_BATCH additive source commits have accumulated since the last
-full gate. Batch limit reached — run a full gate before continuing:
+$GATE_MAX_BATCH source commits have accumulated since the last full gate. Batch
+limit reached — run a full gate before continuing:
 
   Run:  bash test/run_all.sh
   then re-commit.
 
-Policy: $RULE (additive coverage batches up to $GATE_MAX_BATCH per gate;
-shared-code changes gate every time).
+Policy: $RULE (additive/smoke commits batch up to $GATE_MAX_BATCH per full gate).
 EOF
   exit 2
 fi
