@@ -9,6 +9,15 @@
 # md-table-align no longer pads it to ~800 KB of whitespace.
 
 active:
+  - id: "D-307"
+    status: "DISCHARGED 2026-06-07 (this commit, ADR-0102/F-013). The deref-able interface family: clojure.lang.IDeref + IPending recognised as direct deftype/reify supertypes (protocol_remap). New (defprotocol IDeref (-deref [o])) + (defprotocol IPending (-realized? [o])) in core.clj; `deref`/`@` (stm.zig derefFn) + `realized?` (realizedQFn) consult them for a typed_instance/reified_instance (the IObj precedent). Found via ladder re-drive: core.memoize's RetryingDelay implements both (memoize.clj:33) — IDeref+IPending advanced core.memoize :36 -> :67. G4 30⊆31. 4 e2e (phase14_deftype_ideref). core.memoize's NEXT gaps: (instance? clojure.lang.IDeref v) host-class-VALUE resolution (D-293 family) + reify protocol_remap (expandReify lacks the rewriteProtocolRemap path) + D-288 volatile-mutable fields."
+    category: "interop"
+    barrier: |-
+      DISCHARGED. A deftype/reify declaring clojure.lang.IDeref / IPending raised
+      `Unable to resolve symbol`. host_interface.zig + host_interfaces.yaml carry
+      the 2 rows as protocol_remap; core.clj defines the protocols; derefFn /
+      realizedQFn consult them for typed_instance. Cross-ref ADR-0102, F-013, D-280d6.
+    last_reviewed: "2026-06-07"
   - id: "D-306"
     status: "DISCHARGED 2026-06-07 (this commit, ADR-0102/F-013). The clojure.lang collection-BASE interfaces (IPersistentCollection / Counted / Associative / Seqable) are now recognised as DIRECT deftype supertypes (qualified spelling), remapped to the same cljw (protocol, method) targets IPersistentMap already uses. Found via ladder re-drive: core.cache's `defcache` macro names them directly (cache.clj:115) — D-304 + this advanced core.cache :115 -> :602 (all defcache types load). Functional: count/seq/contains? dispatch through the instance (e2e phase14_deftype_collection_base, 5 cases). G4 28⊆30. Bare Associative/Seqable/IPersistentCollection still resolve as cljw protocol Vars; Counted (no Var) routes count→IPersistentCollection/-count. core.cache's NEXT gap = defn :pre/:post `%` (cache.clj:602)."
     category: "interop"

@@ -1579,6 +1579,12 @@
 ;; calling the instance as a fn + meta/with-meta consulting these are follow-ups.
 (defprotocol IFn (-invoke [f]))
 (defprotocol IObj (-meta [o]) (-with-meta [o m]))
+;; D-307: the deref-able interface family. A deftype implementing
+;; clojure.lang.IDeref/IPending (e.g. core.memoize's RetryingDelay) registers
+;; deref→-deref / isRealized→-realized?; `deref`/`@` and `realized?` consult
+;; these for a typed_instance (stm.zig), mirroring the IObj meta consult.
+(defprotocol IDeref (-deref [o]))
+(defprotocol IPending (-realized? [o]))
 ;; `Sequential` is a zero-method MARKER protocol (JVM `clojure.lang.Sequential`):
 ;; a type that declares it prints as its seq and answers `sequential?` true
 ;; (D-190 / ADR-0068). The native seq tags carry sequential-ness by tag; this

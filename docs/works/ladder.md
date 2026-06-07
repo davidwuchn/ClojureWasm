@@ -132,6 +132,8 @@ so rungs are now probed via real **deps.edn git coordinates**, not just
 
 - **clojure.core.cache FULLY LOADS (2026-06-07)** — defn `:pre`/`:post` condition maps landed (lowered at the fn-arity level for fn/defn/defmacro; `%` binds the return value in `:post`; a lone map stays a return value, clj parity; e2e phase14_fn_prepost). `(clojure.core.cache/basic-cache-factory {:a 1})` → `{:a 1}` end-to-end. The symbol-meta (D-304) → collection-base-ifaces (D-306) → pre/post chain unblocked core.cache completely. **core.memoize** next: advances to memoize.clj:36 = `clojure.lang.IDeref` declared as a DIRECT deftype supertype (host_interfaces.yaml has the IDeref row but `recognised: false` — `deref` is a plain fn, not protocol-dispatched; modeling an IDeref protocol + recognising the supertype is the next vein).
 
+- **IDeref/IPending deref-able family LANDED (2026-06-07, D-307)** — `clojure.lang.IDeref`/`IPending` recognised as direct deftype/reify supertypes; new `IDeref`/`IPending` protocols; `deref`/`@`/`realized?` consult them for typed_instance (e2e phase14_deftype_ideref). core.memoize's RetryingDelay deftype now loads → advanced **:36 → :67**. **core.memoize NEXT gaps** (3, deeper): (1) `(instance? clojure.lang.IDeref v)` = host-class-VALUE resolution of a clojure.lang marker (D-293 family); (2) `(reify clojure.lang.IDeref (deref [_] v))` = reify protocol_remap (expandReify lacks the rewriteProtocolRemap path deftype has); (3) `^:volatile-mutable` fields + `set!` (D-288, ADR-level). core.cache stays fully loaded.
+
 ## NEEDS-ROW gap summary (for the main loop)
 
 These are candidate `debt.yaml` rows — the FIRST real blocker each library

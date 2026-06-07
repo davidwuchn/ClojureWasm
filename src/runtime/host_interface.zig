@@ -132,6 +132,17 @@ const IOBJ: HostInterface = .{ .kind = .protocol_remap, .canonical = "IObj", .re
     .{ .clj = "withMeta", .protocol = "IObj", .method = "-with-meta" },
 } };
 
+// clojure.lang.IDeref / IPending — the deref-able family (D-307). A deftype
+// declaring IDeref registers deref→IDeref/-deref; `deref`/`@` consult it for a
+// typed_instance (stm.zig derefFn). IPending's isRealized→IPending/-realized?,
+// consulted by `realized?`. core.memoize's RetryingDelay implements both.
+const IDEREF: HostInterface = .{ .kind = .protocol_remap, .canonical = "IDeref", .remap = &.{
+    .{ .clj = "deref", .protocol = "IDeref", .method = "-deref" },
+} };
+const IPENDING: HostInterface = .{ .kind = .protocol_remap, .canonical = "IPending", .remap = &.{
+    .{ .clj = "isRealized", .protocol = "IPending", .method = "-realized?" },
+} };
+
 // clojure.lang.IPersistentStack — peek/pop (D-280d2). core.clj peek/pop consult it.
 const IPERSISTENT_STACK: HostInterface = .{ .kind = .protocol_remap, .canonical = "IPersistentStack", .remap = &.{
     .{ .clj = "peek", .protocol = "IPersistentStack", .method = "-peek" },
@@ -232,6 +243,9 @@ const MARKERS = std.StaticStringMap(HostInterface).initComptime(.{
     .{ "clojure.lang.Seqable", SEQABLE },
     .{ "clojure.lang.Associative", ASSOCIATIVE },
     .{ "clojure.lang.IPersistentCollection", IPERSISTENT_COLLECTION },
+    // D-307: the deref-able family (core.memoize's RetryingDelay).
+    .{ "clojure.lang.IDeref", IDEREF },
+    .{ "clojure.lang.IPending", IPENDING },
     // host_inert: accept both the bare spelling (priority-map writes `Map`/`Iterable`)
     // and the fully-qualified one (the canonical, which the primitive re-checks).
     .{ "Map", JAVA_UTIL_MAP },

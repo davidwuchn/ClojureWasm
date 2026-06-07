@@ -53,10 +53,21 @@ interfaces:
   - name: clojure.lang.IDeref
     derives_from: "clojure.lang.IDeref — deftype/reify supertype for deref-able refs (Clojure, stable)."
     tier: A
-    recognised: false
-    modeled_as: "(none yet — `deref` is a plain fn, not protocol-dispatched; slice 4 models an IDeref protocol)"
+    recognised: true
+    kind: protocol_remap
+    modeled_as: "IDeref (defprotocol IDeref (-deref [o]), D-307)"
+    note: "D-307: deref → IDeref/-deref. `deref`/`@` (stm.zig derefFn) consult IDeref/-deref for a typed_instance/reified_instance (the IObj precedent). core.memoize's RetryingDelay implements it."
     methods:
-      deref: { status: feature_not_supported }
+      deref: { status: wired, wires_to_protocol: IDeref, wires_to_method: "-deref" }
+  - name: clojure.lang.IPending
+    derives_from: "clojure.lang.IPending — isRealized marker for deref-able refs (Clojure, stable)."
+    tier: A
+    recognised: true
+    kind: protocol_remap
+    modeled_as: "IPending (defprotocol IPending (-realized? [o]), D-307)"
+    note: "D-307: isRealized → IPending/-realized?. `realized?` (stm.zig realizedQFn) consults it for a typed_instance. core.memoize's RetryingDelay implements it alongside IDeref."
+    methods:
+      isRealized: { status: wired, wires_to_protocol: IPending, wires_to_method: "-realized?" }
   - name: clojure.lang.Counted
     derives_from: "clojure.lang.Counted — O(1) count marker; a base interface clj's IPersistentMap/Vector extend, declarable directly as a deftype supertype (Clojure, stable)."
     tier: A

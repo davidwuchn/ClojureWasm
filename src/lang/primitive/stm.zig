@@ -60,6 +60,13 @@ pub fn derefFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation
         // `@#'x` / `(deref a-var)` reads the Var's active value, mirroring
         // the analyzer's var_ref node (tree_walk.zig). resolve returns one.
         .var_ref => v.decodePtr(*const env_mod.Var).deref(),
+        // D-307: a deftype/reify implementing clojure.lang.IDeref → consult
+        // IDeref/-deref (mirrors metadata.zig's IObj consult for typed_instance).
+        .typed_instance, .reified_instance => blk: {
+            var cs: dispatch.CallSite = .{};
+            if (try dispatch.dispatchOrNull(rt, env, &cs, v, "IDeref", "-deref", &.{v}, loc)) |r| break :blk r;
+            break :blk error_catalog.raise(.feature_not_supported, loc, .{ .name = "deref of non-IDeref value" });
+        },
         else => error_catalog.raise(.feature_not_supported, loc, .{ .name = "deref of non-IDeref value" }),
     };
 }
@@ -106,8 +113,6 @@ pub fn deliverFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocati
 /// completed its computation (or a Ref, which is always realised
 /// per JVM semantics).
 pub fn realizedQFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
-    _ = rt;
-    _ = env;
     try error_catalog.checkArity("realized?", args, 1, loc);
     const v = args[0];
     return switch (v.tag()) {
@@ -117,6 +122,13 @@ pub fn realizedQFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLoca
         .ref => Value.true_val,
         // A lazy seq is IPending: true once its head thunk is forced.
         .lazy_seq => if (lazy_seq_mod.isRealised(v)) Value.true_val else Value.false_val,
+        // D-307: a deftype/reify implementing clojure.lang.IPending → consult
+        // IPending/-realized?.
+        .typed_instance, .reified_instance => blk: {
+            var cs: dispatch.CallSite = .{};
+            if (try dispatch.dispatchOrNull(rt, env, &cs, v, "IPending", "-realized?", &.{v}, loc)) |r| break :blk r;
+            break :blk error_catalog.raise(.feature_not_supported, loc, .{ .name = "realized? called on non-IPending value" });
+        },
         else => error_catalog.raise(.feature_not_supported, loc, .{ .name = "realized? called on non-IPending value" }),
     };
 }
