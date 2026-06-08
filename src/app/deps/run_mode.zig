@@ -43,10 +43,14 @@ pub fn run(
     alias_names: []const []const u8,
     run_args: []const []const u8,
     load_paths: []const []const u8,
+    /// Deploy-mode FS jail root (`CLJW_FS_ROOT`), threaded to every `runSource`
+    /// so a `-M`/`-X` deploy run is confined too — never silently bypassed
+    /// (ADR-0123 / SE-6/7). null = unconfined.
+    fs_jail_root: ?[]const u8,
 ) !void {
     switch (mode) {
-        .main => try runMain(io, gpa, arena, stdout, stderr, cfg, alias_names, run_args, load_paths),
-        .exec => try runExec(io, gpa, arena, stdout, stderr, cfg, alias_names, run_args, load_paths),
+        .main => try runMain(io, gpa, arena, stdout, stderr, cfg, alias_names, run_args, load_paths, fs_jail_root),
+        .exec => try runExec(io, gpa, arena, stdout, stderr, cfg, alias_names, run_args, load_paths, fs_jail_root),
     }
 }
 
@@ -62,6 +66,7 @@ fn runMain(
     alias_names: []const []const u8,
     run_args: []const []const u8,
     load_paths: []const []const u8,
+    fs_jail_root: ?[]const u8,
 ) !void {
     // Effective opts = alias :main-opts (last selected alias wins) ++ user args.
     const alias_opts = lastAliasMainOpts(cfg, alias_names);
@@ -85,7 +90,7 @@ fn runMain(
         }
         const ns = eff[1];
         const src = try synthMainNs(arena, ns, eff[2..]);
-        try runner.runSource(io, gpa, arena, stdout, stderr, src, "<-M>", load_paths, false);
+        try runner.runSource(io, gpa, arena, stdout, stderr, src, "<-M>", load_paths, false, fs_jail_root);
     } else if (std.mem.eql(u8, head, "-e") or std.mem.eql(u8, head, "--eval")) {
         if (eff.len < 2) {
             try stderr.writeAll("-e requires an expression argument\n");
@@ -93,7 +98,7 @@ fn runMain(
             std.process.exit(1);
         }
         // Standalone -e: print non-nil results, matching `cljw -e`.
-        try runner.runSource(io, gpa, arena, stdout, stderr, eff[1], "<-e>", load_paths, true);
+        try runner.runSource(io, gpa, arena, stdout, stderr, eff[1], "<-e>", load_paths, true, fs_jail_root);
     } else if (std.mem.eql(u8, head, "-h") or std.mem.eql(u8, head, "--help") or std.mem.eql(u8, head, "-?")) {
         try stdout.writeAll(
             \\Usage under -M: cljw -M[:aliases] <main-opt> [args]
@@ -124,7 +129,7 @@ fn runMain(
         try writeClArgsSetter(&aw.writer, eff[1..]);
         try aw.writer.writeByte('\n');
         try aw.writer.writeAll(file_src);
-        try runner.runSource(io, gpa, arena, stdout, stderr, try aw.toOwnedSlice(), head, load_paths, false);
+        try runner.runSource(io, gpa, arena, stdout, stderr, try aw.toOwnedSlice(), head, load_paths, false, fs_jail_root);
     }
 }
 
@@ -164,6 +169,7 @@ fn runExec(
     alias_names: []const []const u8,
     run_args: []const []const u8,
     load_paths: []const []const u8,
+    fs_jail_root: ?[]const u8,
 ) !void {
     // A leading non-`:` token overrides the alias's :exec-fn; the rest are
     // `:key value` overrides merged over :exec-args (CLI wins per-key).
@@ -185,7 +191,7 @@ fn runExec(
     }
 
     const src = try synthExec(arena, fn_sym, lastAliasExecArgs(cfg, alias_names), run_args[kv_start..], run_args);
-    try runner.runSource(io, gpa, arena, stdout, stderr, src, "<-X>", load_paths, false);
+    try runner.runSource(io, gpa, arena, stdout, stderr, src, "<-X>", load_paths, false, fs_jail_root);
 }
 
 /// `(let [f (requiring-resolve 'ns/fn)] (if f (f (merge ALIAS_ARGS {CLI})) (throw …)))`.

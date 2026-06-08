@@ -148,7 +148,7 @@ pub fn dispatch(init: std.process.Init) !void {
         // (a HOME-less env; git-fetch raises a clear error if a git dep needs it).
         const git_cache_base: ?[]const u8 = init.environ_map.get("CLJW_HOME") orelse
             if (init.environ_map.get("HOME")) |h| try std.fmt.allocPrint(arena, "{s}/.cljw", .{h}) else null;
-        try dispatchArgsRest(io, gpa, arena, stdout, stderr, first, &args, init.environ_map.get("CLJW_PATH"), git_cache_base);
+        try dispatchArgsRest(io, gpa, arena, stdout, stderr, first, &args, init.environ_map.get("CLJW_PATH"), git_cache_base, init.environ_map.get("CLJW_FS_ROOT"));
         return;
     }
 
@@ -171,6 +171,9 @@ fn dispatchArgsRest(
     args: anytype,
     cljw_path_env: ?[]const u8,
     git_cache_base: ?[]const u8,
+    /// Deploy-mode FS jail root (`CLJW_FS_ROOT`), threaded to `runSource`
+    /// (ADR-0123 / SE-6/7). null = unconfined local CLI.
+    fs_jail_root: ?[]const u8,
 ) !void {
     var source_text: ?[]const u8 = null;
     var source_label: []const u8 = "<-e>";
@@ -308,7 +311,7 @@ fn dispatchArgsRest(
     // D-309: a `-M`/`-X` (or bare `-m`) run mode supersedes the `-e`/file path —
     // it runs a `-main` / `:exec-fn` instead of printing eval results.
     if (run_mode) |mode| {
-        try deps_run_mode.run(io, gpa, arena, stdout, stderr, mode, deps.cfg, alias_names.items, run_args.items, deps.load_paths);
+        try deps_run_mode.run(io, gpa, arena, stdout, stderr, mode, deps.cfg, alias_names.items, run_args.items, deps.load_paths, fs_jail_root);
         return;
     }
 
@@ -321,7 +324,7 @@ fn dispatchArgsRest(
     if (compare_mode) {
         try runner.runSourceCompare(io, gpa, arena, stdout, stderr, source_text.?, source_label);
     } else {
-        try runner.runSource(io, gpa, arena, stdout, stderr, source_text.?, source_label, deps.load_paths, print_results);
+        try runner.runSource(io, gpa, arena, stdout, stderr, source_text.?, source_label, deps.load_paths, print_results, fs_jail_root);
     }
 }
 

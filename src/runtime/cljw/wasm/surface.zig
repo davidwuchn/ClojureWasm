@@ -45,7 +45,15 @@ pub fn wasmLoadFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocat
     var opts: engine.LoadOpts = .{};
     if (args.len == 2) opts = try parseLoadOpts(rt, args[1], loc);
 
-    const bytes = file_io.readAll(rt.io, rt.gpa, path) catch
+    // SE-7: confine to the deploy FS jail (CLJW_FS_ROOT) and read the RESOLVED path.
+    const jailed = file_io.jailResolve(rt.gpa, rt.fs_jail_root, path) catch |e| switch (e) {
+        error.OutOfMemory => return e,
+        error.FsJailEscape => return error_catalog.raise(.fs_jail_escape, loc, .{ .fn_name = "wasm/load", .path = path }),
+    };
+    defer if (jailed) |j| rt.gpa.free(j);
+    const open_path = jailed orelse path;
+
+    const bytes = file_io.readAll(rt.io, rt.gpa, open_path) catch
         return error_catalog.raise(.wasm_load_read_failed, loc, .{ .path = path });
     defer rt.gpa.free(bytes);
 

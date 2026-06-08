@@ -319,6 +319,12 @@ pub const Code = enum {
     /// FileNotFoundException for a missing file; cljw reports IOException — the
     /// supertype — until a FileNotFound Kind is minted, D-321.)
     file_io_error,
+    /// args: `.{ .fn_name = "slurp"|"spit"|"wasm/load", .path = "..." }` — raised
+    /// when a deploy-mode FS jail (`CLJW_FS_ROOT`, ADR-0123) is active and the
+    /// path escapes the configured root (`..` traversal or an absolute path
+    /// outside it). Kind `.value_error` → catchable IllegalArgumentException, so
+    /// a request-derived bad path is a normal exception, not a process abort.
+    fs_jail_escape,
 
     // --- Protocol dispatch (ADR-0008 amendment 1, Phase 7.1) ---
     /// args: `.{ .protocol = "ISeq", .method = "first",
@@ -577,6 +583,11 @@ pub fn entry(comptime code: Code) Entry {
             .kind = .io_error,
             .phase = .eval,
             .template = "{[op]s} '{[path]s}' failed: {[detail]s}",
+        },
+        .fs_jail_escape => .{
+            .kind = .value_error,
+            .phase = .eval,
+            .template = "{[fn_name]s}: path '{[path]s}' escapes the configured filesystem root",
         },
         .protocol_no_satisfies => .{
             .kind = .type_error,

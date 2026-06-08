@@ -25,10 +25,18 @@ pub fn slurp(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) 
         return error_catalog.raise(.type_arg_not_string, loc, .{ .fn_name = "slurp", .actual = @tagName(args[0].tag()) });
     }
     const path = string_collection.asString(args[0]);
+    // SE-6: confine to the deploy FS jail (CLJW_FS_ROOT) and open the RESOLVED
+    // path (so the file read is the one that was containment-checked).
+    const jailed = file_io.jailResolve(rt.gpa, rt.fs_jail_root, path) catch |e| switch (e) {
+        error.OutOfMemory => return e,
+        error.FsJailEscape => return error_catalog.raise(.fs_jail_escape, loc, .{ .fn_name = "slurp", .path = path }),
+    };
+    defer if (jailed) |j| rt.gpa.free(j);
+    const open_path = jailed orelse path;
     // Map the host I/O error to a catchable cljw exception (IOException Kind)
     // rather than letting the raw Zig error abort the program — a real app needs
     // `(try (slurp f) (catch Throwable _ default))` to work.
-    const content = file_io.readAll(rt.io, rt.gpa, path) catch |e|
+    const content = file_io.readAll(rt.io, rt.gpa, open_path) catch |e|
         return error_catalog.raise(.file_io_error, loc, .{ .op = "slurp", .path = path, .detail = @errorName(e) });
     defer rt.gpa.free(content);
     return try string_collection.alloc(rt, content);
@@ -47,7 +55,14 @@ pub fn spit(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) a
     }
     const path = string_collection.asString(args[0]);
     const content = string_collection.asString(args[1]);
-    file_io.writeAll(rt.io, path, content) catch |e|
+    // SE-6: confine to the deploy FS jail (CLJW_FS_ROOT) and write the RESOLVED path.
+    const jailed = file_io.jailResolve(rt.gpa, rt.fs_jail_root, path) catch |e| switch (e) {
+        error.OutOfMemory => return e,
+        error.FsJailEscape => return error_catalog.raise(.fs_jail_escape, loc, .{ .fn_name = "spit", .path = path }),
+    };
+    defer if (jailed) |j| rt.gpa.free(j);
+    const open_path = jailed orelse path;
+    file_io.writeAll(rt.io, open_path, content) catch |e|
         return error_catalog.raise(.file_io_error, loc, .{ .op = "spit", .path = path, .detail = @errorName(e) });
     return .nil_val;
 }

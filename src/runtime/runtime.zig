@@ -80,6 +80,13 @@ pub const Runtime = struct {
     /// by the `*out*` dynamic var when that lands (D-232).
     stdout: ?*std.Io.Writer = null,
 
+    /// Deploy-mode filesystem jail root (ADR-0123 / SE-6/7). When non-null, the
+    /// FS surfaces (slurp / spit / wasm/load) confine every path to this subtree
+    /// via `file_io.enforceJail`. `null` (default) = unconfined (local CLI). Set
+    /// by `runSource` from `CLJW_FS_ROOT`; the env string lives in the process
+    /// arena, so this borrowed slice is valid for the Runtime's lifetime.
+    fs_jail_root: ?[]const u8 = null,
+
     /// Keyword interner. Tied to this Runtime, not a global, so
     /// independent Runtimes (parallel tests / future multi-tenant
     /// nREPL) coexist without sharing a table.

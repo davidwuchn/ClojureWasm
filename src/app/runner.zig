@@ -50,6 +50,9 @@ pub fn runSource(
     /// REPL-print contract). The `-M`/`-X` run modes pass `false`: `clojure.main`
     /// runs a `-main` / `:exec-fn` for side effects and never prints its result.
     print_results: bool,
+    /// Deploy-mode FS jail root (`CLJW_FS_ROOT`), or null for unconfined local
+    /// CLI (ADR-0123 / SE-6/7). Confines slurp / spit / wasm/load to the subtree.
+    fs_jail_root: ?[]const u8,
 ) !void {
     const ctx = error_print.SourceContext{ .file = source_label, .text = source_text };
 
@@ -95,6 +98,7 @@ pub fn runSource(
     // the embedded-only resolver; swap to the embedded-FIRST chain + the
     // classpath so `(require '[my.lib])` loads `my/lib.clj` off `load_paths`.
     rt.load_paths = load_paths;
+    rt.fs_jail_root = fs_jail_root;
     require_resolver.installChained(&rt);
 
     // D-250: activate GC torture (if CLJW_GC_TORTURE armed it) only now that
