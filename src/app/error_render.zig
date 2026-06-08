@@ -159,13 +159,21 @@ fn appendToLogFile(info: error_mod.Info, ctx: error_print.SourceContext) void {
 /// `:cljw/error true` discriminator that lets `cljw render-error`
 /// recognise the event in mixed log output.
 fn formatErrorEdn(info: error_mod.Info, ctx: error_print.SourceContext, w: *Writer) Writer.Error!void {
-    _ = ctx;
+    // ADR-0118 Decision E.1: mirror the text renderer's file fallback — when
+    // the raise site left `info.location.file` as the "unknown" default (the
+    // analyzer/eval set line:col but not file), fall back to the source label
+    // so the EDN `:file` matches the text `<-e>` / `<stdin>` / filename instead
+    // of leaking `"unknown"`.
+    const file_label = if (info.location.file.len > 0 and !std.mem.eql(u8, info.location.file, "unknown"))
+        info.location.file
+    else
+        ctx.file;
     try w.print(
         "{{:cljw/error true :kind :{s} :phase :{s} :file \"{s}\" :line {d} :column {d} :message \"",
         .{
             info.kindLabel(),
             @tagName(info.phase),
-            info.location.file,
+            file_label,
             info.location.line,
             info.location.column,
         },

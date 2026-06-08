@@ -105,5 +105,16 @@ case "$out" in
         fail "error_eval_loc_deep: expected nested.clj:1:<col>, got '$out'" ;;
 esac
 
+# --- Case 10 (ADR-0118 E.1): EDN :file is the source label, not "unknown".
+#     The analyzer/eval set line:col but not file; the EDN emitter must apply
+#     the same ctx.file fallback the text renderer uses. ---
+out=$(CLJW_ERROR_FORMAT=edn "$BIN" -e '(/ 1 0)' 2>&1 1>/dev/null || true)
+case "$out" in
+    *':file "<-e>"'*)
+        echo "PASS error_edn_file_label -> EDN :file is the source label" ;;
+    *)
+        fail "error_edn_file_label: EDN :file should be \"<-e>\", not unknown; got '$out'" ;;
+esac
+
 echo
 echo "Phase 14 row 14.13 (D-066 partial) error format e2e: all green."
