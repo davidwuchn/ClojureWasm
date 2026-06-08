@@ -142,5 +142,24 @@ case "$out" in
         fail "error_edn_trace: expected EDN :trace with :fn \"tf\"/\"tg\", got '$out'" ;;
 esac
 
+# --- Case 13 (ADR-0119 / D-332): the trace-visibility DISCIPLINE. cw stdlib
+#     (`clojure.*` / `cljw.*`) and host (builtin) frames are elided uniformly;
+#     only USER frames show. `(map userfn coll)` where userfn errors → the trace
+#     shows the user fn, NOT `clojure.core/map` and NOT a nameless internal
+#     `fn` frame. (`map` is a .clj stdlib fn over the `-map-eager` builtin.) ---
+out=$(printf '(prn (map (fn* [x] (/ x 0)) [1 2]))\n' | "$BIN" - 2>&1 || true)
+trace=$(printf '%s' "$out" | awk '/Trace:/{f=1} f')
+if [ -z "$trace" ]; then
+    fail "error_trace_discipline: expected a Trace:, got '$out'"
+elif printf '%s' "$trace" | grep -q 'clojure\.'; then
+    fail "error_trace_discipline: a clojure.* stdlib frame leaked into the trace: '$trace'"
+elif printf '%s' "$trace" | grep -qE '^  fn '; then
+    fail "error_trace_discipline: a nameless internal 'fn' frame leaked into the trace: '$trace'"
+elif printf '%s' "$trace" | grep -q 'user/'; then
+    echo "PASS error_trace_discipline -> user-only trace (stdlib + host frames elided)"
+else
+    fail "error_trace_discipline: expected a user/ frame in the trace, got '$trace'"
+fi
+
 echo
 echo "Phase 14 row 14.13 (D-066 partial) error format e2e: all green."

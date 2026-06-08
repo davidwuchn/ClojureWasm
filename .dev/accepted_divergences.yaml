@@ -355,3 +355,22 @@ accepted:
       java.util.Map (ADR-0103), here applied at the extend-TARGET position.
     derives_from: "ADR-0103 (host_inert java interfaces) + ADR-0059 (no JVM class hierarchy) + ADR-0114 Decision C-1"
     pin: "test/e2e/phase14_extend_protocol_targets.sh — map_target_inert (falls to Object) + object_fallback"
+  - id: "AD-024"
+    summary: "A cljw stack trace (`Trace:` / EDN `:trace`) shows ONLY user frames; cljw's own implementation — host builtins AND the embedded stdlib (`clojure.*` / `cljw.*`) — is elided uniformly. clj shows `clojure.core` frames in a full trace (its `pst` filters only the `RestFn`/`AFn` trampolines)."
+    example: '(map (fn [x] (/ x 0)) [1 2]) → cljw trace = just `user/fn__N`, NOT `clojure.core/map` (a .clj stdlib fn over the `-map-eager` builtin) nor a nameless internal `fn` frame. clj''s trace includes clojure.core frames + machinery.'
+    why: |-
+      The trace answers "which of MY fns was running"; the premise is cljw's
+      implementation is correct and the bug is in user code (user directive
+      2026-06-08: principled, not ad-hoc, good UX). cljw's callable surface is
+      non-uniform — some core fns are Zig builtins (no name), some are `.clj`
+      (named), some are AOT-loaded (name dropped) — so a per-fn elision choice
+      would be ad-hoc and inconsistent (e.g. `map` showing but `reduce` not). A
+      single UNIFORM rule — elide a frame whose owning namespace is a cljw-reserved
+      stdlib ns (`clojure.*` / `cljw.*`) or absent (an internal), plus all host
+      builtins — makes the trace consistent regardless of how each callable is
+      implemented. This deliberately diverges from clj's full trace; clj users
+      reach for `pst` / `io.aviso/pretty` to strip exactly this clojure.core noise,
+      so user-only-by-default is the better UX. A future verbose/full-trace mode
+      may surface stdlib frames (like clj's `pst`).
+    derives_from: "ADR-0119 (callable naming + the trace-visibility discipline `isUserNs`) + user directive 2026-06-08 (host/stdlib/user is non-uniform → follow a discipline, not ad-hoc, for good UX)"
+    pin: "test/e2e/phase14_error_format.sh — error_trace_discipline (map → user-only trace, no clojure.* / nameless internal frame)"

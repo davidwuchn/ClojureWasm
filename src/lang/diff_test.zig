@@ -1375,6 +1375,20 @@ test "trace: nested named-fn error → identical frames both backends (ADR-0119 
     try testing.expectEqualStrings(tw[1].fn_name.?, vmt[1].fn_name.?);
 }
 
+test "trace: a builtin HOF is elided, the user fn it calls IS shown (ADR-0119/D-332, both backends)" {
+    var f = try Fixture.init(testing.allocator);
+    defer f.deinit();
+    // `reduce` is a builtin (host) → elided by the trace discipline; the user
+    // fn it invokes (ns = user) is kept. So the trace is exactly ONE frame.
+    const src = "(reduce (fn* [a b] (/ a 0)) [1 2 3])";
+    var tw: [16]error_mod.StackFrame = undefined;
+    var vmt: [16]error_mod.StackFrame = undefined;
+    const tw_n = try traceOf(&f, src, .tree_walk, &tw);
+    const vm_n = try traceOf(&f, src, .vm, &vmt);
+    try testing.expectEqual(@as(usize, 1), tw_n);
+    try testing.expectEqual(@as(usize, 1), vm_n);
+}
+
 test "trace: recur loops push ONE frame, not N (ADR-0119 Stage 2, both backends)" {
     var f = try Fixture.init(testing.allocator);
     defer f.deinit();

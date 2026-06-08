@@ -1046,26 +1046,46 @@ fn evalCall(rt: *Runtime, env: *Env, locals: []Value, n: node_mod.CallNode) !Val
 
 // --- Backend's callFn (registered as rt.vtable.callFn) ---
 
-/// Build the `Trace:` frame for a callable, or `null` to ELIDE it (ADR-0119
-/// Stage 2). Named callables (fn / multimethod / protocol method) push a frame
-/// sourced from the VALUE (Stage 1 put the name there); builtins, data-as-IFn
-/// (keyword / collection), and `.var_ref` (its re-dispatch's inner `.fn_val`
-/// pushes) are elided — the trace answers "which of MY fns was running", so
-/// plumbing frames are noise (cw's analog of clj's `RestFn`/`AFn` filtering).
+/// The trace-visibility DISCIPLINE (ADR-0119 / D-332): a trace shows the
+/// USER's call chain and elides cw's own implementation, by a single uniform
+/// rule rather than ad-hoc per-fn choices. A frame is USER-visible iff its
+/// owning namespace is a user namespace. cw reserves `clojure.*` and `cljw.*`
+/// for its embedded stdlib (the `bootstrap.lookupEmbeddedFile` set); a frame in
+/// those — or with no namespace at all (an unnamed internal / host-built fn) —
+/// is implementation, not the user's bug, so it is elided. This makes the
+/// builtin / `.clj`-stdlib / AOT / unnamed split uniform: provenance is decided
+/// by namespace, not by how the callable happens to be implemented. (Diverges
+/// from clj, which shows `clojure.core` frames — see AD-024.)
+fn isUserNs(ns: ?[]const u8) bool {
+    const n = ns orelse return false;
+    if (std.mem.startsWith(u8, n, "clojure.")) return false;
+    if (std.mem.startsWith(u8, n, "cljw.")) return false;
+    return true;
+}
+
+/// Build the `Trace:` frame for a callable, or `null` to ELIDE it. Named
+/// callables (fn / multimethod / protocol method) carry their name+ns on the
+/// VALUE (Stage 1); the frame is kept only when `isUserNs` (above). Builtins
+/// (host), data-as-IFn (keyword / collection), and `.var_ref` (its re-dispatch's
+/// inner `.fn_val` pushes) are elided unconditionally.
 fn calleeFrame(callee: Value, loc: SourceLocation) ?error_mod.StackFrame {
     return switch (callee.tag()) {
         .fn_val => blk: {
             const f = callee.decodePtr(*const Function);
+            if (!isUserNs(f.defining_ns)) break :blk null;
             break :blk .{ .fn_name = f.name, .ns = f.defining_ns, .file = loc.file, .line = loc.line, .column = loc.column };
         },
         .multi_fn => blk: {
             const mf = callee.decodePtr(*const multimethod_mod.MultiFn);
             const sym = symbol_mod.asSymbol(mf.name);
+            if (!isUserNs(sym.ns)) break :blk null;
             break :blk .{ .fn_name = sym.name, .ns = sym.ns, .file = loc.file, .line = loc.line, .column = loc.column };
         },
         .protocol_fn => blk: {
             const pf = protocol_mod.asProtocolFn(callee);
-            break :blk .{ .fn_name = pf.methodName(), .ns = pf.descriptor.fqcn(), .file = loc.file, .line = loc.line, .column = loc.column };
+            const fqcn = pf.descriptor.fqcn();
+            if (!isUserNs(fqcn)) break :blk null;
+            break :blk .{ .fn_name = pf.methodName(), .ns = fqcn, .file = loc.file, .line = loc.line, .column = loc.column };
         },
         else => null,
     };

@@ -198,8 +198,24 @@ The `Trace:` consumer landed on the Stage-1 names. As-built refinements:
   header. The post-mortem `render-error` decoder's `:trace` parse is deferred
   (D-333). Dual-backend parity + e2e (Case 11/12) cover both.
 - **Post-happy-path verification backlog** (user-directed): trace under
-  multi-threading (D-329), async (D-330), multi-module require chains (D-331),
-  and the host/stdlib/user frame BOUNDARY — how far back to trace (D-332).
+  multi-threading (D-329), async (D-330), multi-module require chains (D-331).
+
+### Trace-visibility discipline (D-332, user-directed — landed 2026-06-08)
+
+The user flagged that host/stdlib/user is inherently non-uniform (some core fns
+are Zig builtins, some `.clj`, some AOT-loaded with names dropped, some nameless
+internals) and asked for a **principled discipline, not ad-hoc per-fn choices**,
+for good UX. Resolution: `tree_walk.isUserNs(ns)` — a frame is kept iff its
+owning namespace is a USER ns; cljw reserves `clojure.*` / `cljw.*` for its
+embedded stdlib, so a frame in those (or with a null ns — an unnamed internal /
+host-built fn) is implementation and is elided, as are all host builtins. One
+uniform ns rule makes the non-uniform implementation consistent: `(map userfn)`
+(`.clj` `map` over the `-map-eager` builtin, possibly nameless internal frames)
+and `(reduce userfn)` (builtin) now BOTH show only the user fn. The trace is
+"your call chain"; the premise is cljw's impl is correct and the bug is in user
+code. Diverges from clj (which shows clojure.core frames) — **AD-024**, pinned by
+the e2e `error_trace_discipline`. A verbose/full-trace mode (clj `pst` style)
+surfacing stdlib frames is a future option, not needed for the default UX.
 
 ## Consequences
 
