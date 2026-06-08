@@ -39,7 +39,7 @@ got=$("$BIN" -e '(count (str (java.util.UUID/randomUUID)))' 2>/dev/null) || fail
 assert_eq 'host_uuid_strlen' "$got" '36'
 
 # --- (4) binding / with-context (row 14.13) ---
-got=$(printf '(require (quote [cljw.error :refer [with-context]]))\n(with-context {:a 1} cljw.error/*error-context*)\n' | "$BIN" - 2>/dev/null | tail -1) || fail "(4) with-context: non-zero exit"
+got=$(printf '(require (quote [cljw.error :refer [with-context]]))\n(prn (with-context {:a 1} cljw.error/*error-context*))\n' | "$BIN" - 2>/dev/null | tail -1) || fail "(4) with-context: non-zero exit"
 assert_eq 'with_context' "$got" '{:a 1}'
 
 # --- (5) cljw build round-trip: compile a .clj to a binary, run it ---

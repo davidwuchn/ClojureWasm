@@ -54,7 +54,7 @@ last_line() {
 got=$("$BIN" - <<'EOF' 2>/dev/null
 (defrecord Point [x y])
 (extend-type Point IPersistentCollection (-count [_] 99))
-(count (->Point 3 4))
+(prn (count (->Point 3 4)))
 EOF
 ) || fail "case1: non-zero exit ($got)"
 assert_eq 'defrecord_count_user_override_wins' "$(last_line "$got")" '99'
@@ -64,7 +64,7 @@ assert_eq 'defrecord_count_user_override_wins' "$(last_line "$got")" '99'
 # fallback wins. Preserves row 7.4 cycle 3 case10.
 got=$("$BIN" - <<'EOF' 2>/dev/null
 (defrecord Plain [a b])
-(count (->Plain 3 4))
+(prn (count (->Plain 3 4)))
 EOF
 ) || fail "case2: non-zero exit ($got)"
 assert_eq 'defrecord_count_field_count_preserved' "$(last_line "$got")" '2'
@@ -76,7 +76,7 @@ assert_eq 'defrecord_count_field_count_preserved' "$(last_line "$got")" '2'
 got=$("$BIN" - <<'EOF' 2>/dev/null
 (def Long (rt/__native-type :integer))
 (extend-type Long IPersistentCollection (-count [n] 5))
-(count 42)
+(prn (count 42))
 EOF
 ) || fail "case3: non-zero exit ($got)"
 assert_eq 'long_count_via_outer_else_slow_path' "$(last_line "$got")" '5'
@@ -99,7 +99,7 @@ echo "PASS long_count_no_extend_raises_diagnostic"
 got=$("$BIN" - <<'EOF' 2>/dev/null
 (defrecord Pair [a b])
 (extend-type Pair Seqable (-seq [_] '(1 2)))
-(seq (->Pair 1 2))
+(prn (seq (->Pair 1 2)))
 EOF
 ) || fail "case5: non-zero exit ($got)"
 assert_eq 'defrecord_seq_via_extend_type' "$(last_line "$got")" '(1 2)'
@@ -108,7 +108,7 @@ assert_eq 'defrecord_seq_via_extend_type' "$(last_line "$got")" '(1 2)'
 got=$("$BIN" - <<'EOF' 2>/dev/null
 (def Long (rt/__native-type :integer))
 (extend-type Long Seqable (-seq [_] '(:a :b)))
-(seq 42)
+(prn (seq 42))
 EOF
 ) || fail "case6: non-zero exit ($got)"
 assert_eq 'long_seq_via_outer_else_slow_path' "$(last_line "$got")" '(:a :b)'
@@ -127,7 +127,7 @@ echo "PASS long_seq_no_extend_raises_diagnostic"
 got=$("$BIN" - <<'EOF' 2>/dev/null
 (defrecord Bag [contents])
 (extend-type Bag IPersistentCollection (-cons [_ x] x))
-(conj (->Bag '()) 99)
+(prn (conj (->Bag '()) 99))
 EOF
 ) || fail "case8: non-zero exit ($got)"
 assert_eq 'defrecord_conj_via_extend_type' "$(last_line "$got")" '99'
@@ -146,7 +146,7 @@ echo "PASS long_conj_no_extend_raises_diagnostic"
 got=$("$BIN" - <<'EOF' 2>/dev/null
 (defrecord Box [v])
 (extend-type Box IReduce (-reduce [_ _] 99))
-(reduce + (->Box 1))
+(prn (reduce + (->Box 1)))
 EOF
 ) || fail "case10: non-zero exit ($got)"
 assert_eq 'defrecord_reduce_via_ireduce' "$(last_line "$got")" '99'
@@ -157,7 +157,7 @@ assert_eq 'defrecord_reduce_via_ireduce' "$(last_line "$got")" '99'
 got=$("$BIN" - <<'EOF' 2>/dev/null
 (defrecord Pair2 [a b])
 (extend-type Pair2 Seqable (-seq [_] '(10 20 30)))
-(reduce + 0 (->Pair2 1 2))
+(prn (reduce + 0 (->Pair2 1 2)))
 EOF
 ) || fail "case11: non-zero exit ($got)"
 assert_eq 'defrecord_reduce_fallback_to_seq_walk' "$(last_line "$got")" '60'

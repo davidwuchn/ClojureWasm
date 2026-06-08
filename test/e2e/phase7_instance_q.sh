@@ -50,7 +50,7 @@ assert_eq 'ifn_fn_val' "$got" 'true'
 
 # --- Case 4: Throwable matches ex-info but NOT non-throwable ---
 got=$("$BIN" - <<'EOF' 2>/dev/null
-(instance? Throwable (ex-info "x" {}))
+(prn (instance? Throwable (ex-info "x" {})))
 EOF
 )
 assert_eq 'throwable_ex_info' "$got" 'true'
@@ -63,7 +63,7 @@ assert_eq 'throwable_int_false' "$got" 'false'
 
 # --- Case 5: Exception via parent walk ---
 got=$("$BIN" - <<'EOF' 2>/dev/null
-(instance? Exception (ex-info "x" {}))
+(prn (instance? Exception (ex-info "x" {})))
 EOF
 )
 assert_eq 'exception_parent_walk' "$got" 'true'

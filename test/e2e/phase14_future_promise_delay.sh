@@ -36,7 +36,7 @@ assert_eq 'delay_unrealised' "$got" 'false'
 # Memoisation: a counter-style delay should produce the same value twice.
 got=$("$BIN" - <<'EOF' 2>/dev/null | last_line
 (def d (delay (+ 1 2)))
-[(deref d) (deref d) (realized? d)]
+(prn [(deref d) (deref d) (realized? d)])
 EOF
 )
 assert_eq 'delay_memoised_cached' "$got" '[3 3 true]'
@@ -55,7 +55,7 @@ assert_eq 'future_deref_blocks_for_result' "$got" '42'
 got=$("$BIN" - <<'EOF' 2>/dev/null | last_line
 (def f (future (+ 100 200)))
 (deref f)
-[(realized? f) (deref f)]
+(prn [(realized? f) (deref f)])
 EOF
 )
 assert_eq 'future_realized_after_deref' "$got" '[true 300]'
@@ -73,14 +73,14 @@ assert_eq 'future_worker_allocates' "$got" '[0 1 2 3 4]'
 got=$("$BIN" - <<'EOF' 2>/dev/null | last_line
 (def p (promise))
 (deliver p 42)
-(deref p)
+(prn (deref p))
 EOF
 )
 assert_eq 'promise_deliver_then_deref' "$got" '42'
 
 got=$("$BIN" - <<'EOF' 2>/dev/null | last_line
 (def p (promise))
-[(realized? p) (do (deliver p :v) (realized? p))]
+(prn [(realized? p) (do (deliver p :v) (realized? p))])
 EOF
 )
 assert_eq 'promise_realized_transition' "$got" '[false true]'
@@ -89,8 +89,8 @@ assert_eq 'promise_realized_transition' "$got" '[false true]'
 got=$("$BIN" - <<'EOF' 2>/dev/null | last_line
 (def p (promise))
 (deliver p :first)
-(let [retry (deliver p :second)]
-  [retry (deref p)])
+(prn (let [retry (deliver p :second)]
+  [retry (deref p)]))
 EOF
 )
 assert_eq 'promise_retry_deliver_nil_preserves' "$got" '[nil :first]'

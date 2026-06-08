@@ -26,37 +26,37 @@ assert_eq() {
 
 # --- Case 1: bare ExceptionInfo (unchanged from cycle 1) ---
 got=$("$BIN" - <<'EOF' 2>/dev/null
-(try (throw (ex-info "boom" {})) (catch ExceptionInfo e (ex-message e)))
+(prn (try (throw (ex-info "boom" {})) (catch ExceptionInfo e (ex-message e))))
 EOF
 )
 assert_eq 'catch_exception_info_direct' "$got" '"boom"'
 
 # --- Case 2: catch Throwable matches everything ---
 got=$("$BIN" - <<'EOF' 2>/dev/null
-(try (throw (ex-info "boom" {})) (catch Throwable e (ex-message e)))
+(prn (try (throw (ex-info "boom" {})) (catch Throwable e (ex-message e))))
 EOF
 )
 assert_eq 'catch_throwable_matches_all' "$got" '"boom"'
 
 # --- Case 3: catch Exception via RuntimeException via ExceptionInfo (parent walk) ---
 got=$("$BIN" - <<'EOF' 2>/dev/null
-(try (throw (ex-info "boom" {})) (catch Exception e (ex-message e)))
+(prn (try (throw (ex-info "boom" {})) (catch Exception e (ex-message e))))
 EOF
 )
 assert_eq 'catch_exception_parent_walk' "$got" '"boom"'
 
 # --- Case 4: sibling IOException does NOT match ExceptionInfo ---
 got=$("$BIN" - <<'EOF' 2>/dev/null
-(try (throw (ex-info "boom" {}))
+(prn (try (throw (ex-info "boom" {}))
   (catch IOException e :wrong)
-  (catch ExceptionInfo e :ok))
+  (catch ExceptionInfo e :ok)))
 EOF
 )
 assert_eq 'catch_sibling_skip' "$got" ':ok'
 
 # --- Case 5: FQCN java.lang.RuntimeException normalises to simple ---
 got=$("$BIN" - <<'EOF' 2>/dev/null
-(try (throw (ex-info "boom" {})) (catch java.lang.RuntimeException e :caught))
+(prn (try (throw (ex-info "boom" {})) (catch java.lang.RuntimeException e :caught)))
 EOF
 )
 assert_eq 'catch_fqcn_normalise' "$got" ':caught'

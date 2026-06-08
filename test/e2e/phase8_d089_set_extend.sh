@@ -32,7 +32,7 @@ last_line() {
 got=$("$BIN" - <<'EOF' 2>/dev/null
 (def Long (rt/__native-type :integer))
 (extend-type Long IPersistentSet (-disjoin [n k] :disjoin-on-int))
-(disj 42 :anything)
+(prn (disj 42 :anything))
 EOF
 ) || fail "case1: non-zero exit ($got)"
 assert_eq 'long_disj_via_extend_type' "$(last_line "$got")" ':disjoin-on-int'
@@ -49,7 +49,7 @@ esac
 got=$("$BIN" - <<'EOF' 2>/dev/null
 (defrecord Bag [items])
 (extend-type Bag IPersistentSet (-disjoin [_ k] (str "removed " k)))
-(disj (->Bag [1 2]) 42)
+(prn (disj (->Bag [1 2]) 42))
 EOF
 ) || fail "case3: non-zero exit ($got)"
 assert_eq 'defrecord_disj_via_extend_type' "$(last_line "$got")" '"removed 42"'

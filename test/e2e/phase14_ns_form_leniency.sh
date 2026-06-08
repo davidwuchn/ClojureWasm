@@ -26,7 +26,7 @@ last_line() { awk 'END { print }' <<< "$1"; }
 got=$("$BIN" - <<'EOF' 2>/dev/null
 (ns t1 (:refer-clojure :exclude (vec inc)))
 (defn inc [x] :my-inc)
-[(inc 5) (clojure.core/inc 5)]
+(prn [(inc 5) (clojure.core/inc 5)])
 EOF
 ) || fail "exclude_list_arg: non-zero exit ($got)"
 assert_eq 'exclude_list_arg' "$(last_line "$got")" '[:my-inc 6]'
@@ -34,7 +34,7 @@ assert_eq 'exclude_list_arg' "$(last_line "$got")" '[:my-inc 6]'
 # --- (2) vector-headed ns directive ---
 got=$("$BIN" - <<'EOF' 2>/dev/null
 (ns t2 [:require [clojure.set :as s]])
-(s/union #{1 2} #{2 3})
+(prn (s/union #{1 2} #{2 3}))
 EOF
 ) || fail "vector_directive: non-zero exit ($got)"
 assert_eq 'vector_directive' "$(last_line "$got")" '#{1 2 3}'
@@ -42,7 +42,7 @@ assert_eq 'vector_directive' "$(last_line "$got")" '#{1 2 3}'
 # --- (2b) vector directive with :refer ---
 got=$("$BIN" - <<'EOF' 2>/dev/null
 (ns t3 [:require [clojure.set :refer [union]]])
-(union #{1} #{4})
+(prn (union #{1} #{4}))
 EOF
 ) || fail "vector_directive_refer: non-zero exit ($got)"
 assert_eq 'vector_directive_refer' "$(last_line "$got")" '#{1 4}'

@@ -46,41 +46,41 @@ esac
 
 # --- Case 2: a runtime-bound *data-readers* reader is applied (eval-time read) ---
 got=$("$BIN" - <<'EOF' 2>/dev/null
-(binding [*data-readers* {'foo (fn [v] (* v 2))}]
-  (read-string "#foo 5"))
+(prn (binding [*data-readers* {'foo (fn [v] (* v 2))}]
+  (read-string "#foo 5")))
 EOF
 ) || fail "case2: non-zero exit ($got)"
 assert_eq 'data_readers_binding_applied' "$(last_line "$got")" '10'
 
 # --- Case 3: *default-data-reader-fn* fallback (called with tag symbol + value) ---
 got=$("$BIN" - <<'EOF' 2>/dev/null
-(binding [*default-data-reader-fn* (fn [tag v] [tag v])]
-  (read-string "#foo 5"))
+(prn (binding [*default-data-reader-fn* (fn [tag v] [tag v])]
+  (read-string "#foo 5")))
 EOF
 ) || fail "case3: non-zero exit ($got)"
 assert_eq 'default_data_reader_fn' "$(last_line "$got")" '[foo 5]'
 
 # --- Case 4: an entry in *data-readers* wins over *default-data-reader-fn* ---
 got=$("$BIN" - <<'EOF' 2>/dev/null
-(binding [*data-readers* {'foo (fn [v] :matched)}
+(prn (binding [*data-readers* {'foo (fn [v] :matched)}
           *default-data-reader-fn* (fn [tag v] :defaulted)]
-  (read-string "#foo 5"))
+  (read-string "#foo 5")))
 EOF
 ) || fail "case4: non-zero exit ($got)"
 assert_eq 'readers_win_over_default' "$(last_line "$got")" ':matched'
 
 # --- Case 5: nested tagged literals (re-entrancy: inner reads while outer reads) ---
 got=$("$BIN" - <<'EOF' 2>/dev/null
-(binding [*data-readers* {'dbl (fn [v] (* v 2)) 'wrap (fn [v] {:w v})}]
-  (read-string "#wrap #dbl 5"))
+(prn (binding [*data-readers* {'dbl (fn [v] (* v 2)) 'wrap (fn [v] {:w v})}]
+  (read-string "#wrap #dbl 5")))
 EOF
 ) || fail "case5: non-zero exit ($got)"
 assert_eq 'nested_tagged_reentrant' "$(last_line "$got")" '{:w 10}'
 
 # --- Case 6: tag applied to a collection form ---
 got=$("$BIN" - <<'EOF' 2>/dev/null
-(binding [*data-readers* {'sum (fn [v] (reduce + v))}]
-  (read-string "#sum [1 2 3 4]"))
+(prn (binding [*data-readers* {'sum (fn [v] (reduce + v))}]
+  (read-string "#sum [1 2 3 4]")))
 EOF
 ) || fail "case6: non-zero exit ($got)"
 assert_eq 'tag_over_collection' "$(last_line "$got")" '10'
@@ -109,21 +109,21 @@ assert_eq 'backend_parity' "$(last_line "$got")" 'OK 81'
 
 # --- Case 9: clojure.edn/read-string 2-arity :readers (opts is the FIRST arg) ---
 got=$("$BIN" - <<'EOF' 2>/dev/null
-(clojure.edn/read-string {:readers {'foo (fn [v] (* v 2))}} "#foo 5")
+(prn (clojure.edn/read-string {:readers {'foo (fn [v] (* v 2))}} "#foo 5"))
 EOF
 ) || fail "case9: non-zero exit ($got)"
 assert_eq 'edn_2arity_readers' "$(last_line "$got")" '10'
 
 # --- Case 10: 2-arity :default fn (called with tag symbol + value) ---
 got=$("$BIN" - <<'EOF' 2>/dev/null
-(clojure.edn/read-string {:default (fn [tag v] [tag v])} "#foo 5")
+(prn (clojure.edn/read-string {:default (fn [tag v] [tag v])} "#foo 5"))
 EOF
 ) || fail "case10: non-zero exit ($got)"
 assert_eq 'edn_2arity_default' "$(last_line "$got")" '[foo 5]'
 
 # --- Case 11: 2-arity :eof returned on empty input ---
 got=$("$BIN" - <<'EOF' 2>/dev/null
-(clojure.edn/read-string {:eof :the-end} "")
+(prn (clojure.edn/read-string {:eof :the-end} ""))
 EOF
 ) || fail "case11: non-zero exit ($got)"
 assert_eq 'edn_2arity_eof' "$(last_line "$got")" ':the-end'
@@ -162,8 +162,8 @@ assert_eq 'tagged_literal_neq' "$("$BIN" -e "(= (tagged-literal 'foo 5) (tagged-
 # --- Case 18: *default-data-reader-fn* = tagged-literal carries unknown tags
 #     (opt-in; the default still RAISES — ADR-0073 contract unchanged) ---
 got=$("$BIN" - <<'EOF' 2>/dev/null
-(binding [*default-data-reader-fn* tagged-literal]
-  (tagged-literal? (read-string "#unknown 42")))
+(prn (binding [*default-data-reader-fn* tagged-literal]
+  (tagged-literal? (read-string "#unknown 42"))))
 EOF
 ) || fail "case18: non-zero exit ($got)"
 assert_eq 'default_fn_carries_unknown' "$(awk 'END{print}' <<< "$got")" 'true'

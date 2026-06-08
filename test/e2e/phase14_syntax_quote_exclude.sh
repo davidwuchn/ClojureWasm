@@ -31,7 +31,7 @@ got=$("$BIN" - <<'EOF' 2>/dev/null
 (defmacro mv [x] `[~x 1])
 (defmacro mm [x] `{~x 1})
 (defmacro ms [x] `#{~x})
-[(mv 5) (mm :k) (ms 9)]
+(prn [(mv 5) (mm :k) (ms 9)])
 EOF
 ) || fail "exclude_syntax_quote: non-zero exit ($got)"
 assert_eq 'exclude_syntax_quote' "$(last_line "$got")" '[[5 1] {:k 1} #{9}]'
@@ -42,7 +42,7 @@ got=$("$BIN" - <<'EOF' 2>/dev/null
 (ns t2 (:refer-clojure :exclude [vec]))
 (defn vec [& _] :my-vec)
 (defmacro build [x] `[~x ~x])
-[(vec 1 2) (build 8)]
+(prn [(vec 1 2) (build 8)])
 EOF
 ) || fail "user_vec_plus_syntax_quote: non-zero exit ($got)"
 assert_eq 'user_vec_plus_syntax_quote' "$(last_line "$got")" '[:my-vec [8 8]]'

@@ -47,7 +47,7 @@ assert_eq 'class_neq_cross_native' "$("$BIN" -e '(= (class 5) (class "x"))' 2>/d
 
 # --- Case 4: class is a valid map key (group-by class) ---
 got=$("$BIN" - <<'EOF' 2>/dev/null
-(get (group-by class [1 2 "a" "b"]) (class 1))
+(prn (get (group-by class [1 2 "a" "b"]) (class 1)))
 EOF
 ) || fail "case4: non-zero exit ($got)"
 assert_eq 'class_as_map_key_groupby' "$(last_line "$got")" '[1 2]'
@@ -55,7 +55,7 @@ assert_eq 'class_as_map_key_groupby' "$(last_line "$got")" '[1 2]'
 # --- Case 5: (type x) = (or (:type (meta x)) (class x)) ---
 assert_eq 'type_falls_to_class' "$("$BIN" -e '(type 5)' 2>/dev/null | tail -1)" 'Long'
 got=$("$BIN" - <<'EOF' 2>/dev/null
-(type (with-meta [1 2] {:type :foo}))
+(prn (type (with-meta [1 2] {:type :foo})))
 EOF
 ) || fail "case5: non-zero exit ($got)"
 assert_eq 'type_honours_meta' "$(last_line "$got")" ':foo'
@@ -63,14 +63,14 @@ assert_eq 'type_honours_meta' "$(last_line "$got")" ':foo'
 # --- Case 6: user record class prints its name + equals its Var ---
 got=$("$BIN" - <<'EOF' 2>/dev/null
 (defrecord Point [x y])
-(class (->Point 1 2))
+(prn (class (->Point 1 2)))
 EOF
 ) || fail "case6a: non-zero exit ($got)"
 assert_eq 'class_user_record_name' "$(last_line "$got")" 'Point'
 
 got=$("$BIN" - <<'EOF' 2>/dev/null
 (defrecord Point [x y])
-(= (class (->Point 1 2)) Point)
+(prn (= (class (->Point 1 2)) Point))
 EOF
 ) || fail "case6b: non-zero exit ($got)"
 assert_eq 'class_user_record_eq_var' "$(last_line "$got")" 'true'

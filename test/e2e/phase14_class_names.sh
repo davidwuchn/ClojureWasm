@@ -24,14 +24,14 @@ last() { awk 'END { print }' <<< "$1"; }
 run() { printf '%s\n' "$1" | "$BIN" - 2>&1; }
 
 # (class x) simple name matches clj's .getSimpleName
-assert_eq 'class_sorted_map' "$(last "$(run '(class (sorted-map 1 2))')")" 'PersistentTreeMap'
-assert_eq 'class_sorted_set' "$(last "$(run '(class (sorted-set 1))')")" 'PersistentTreeSet'
-assert_eq 'class_var'        "$(last "$(run '(class (var inc))')")" 'Var'
+assert_eq 'class_sorted_map' "$(last "$(run '(prn (class (sorted-map 1 2)))')")" 'PersistentTreeMap'
+assert_eq 'class_sorted_set' "$(last "$(run '(prn (class (sorted-set 1)))')")" 'PersistentTreeSet'
+assert_eq 'class_var'        "$(last "$(run '(prn (class (var inc)))')")" 'Var'
 # the simple name resolves as a class value and instance? round-trips
-assert_eq 'inst_treemap'  "$(last "$(run '(instance? PersistentTreeMap (sorted-map 1 2))')")" 'true'
-assert_eq 'inst_treeset'  "$(last "$(run '(instance? PersistentTreeSet (sorted-set 1))')")" 'true'
-assert_eq 'inst_var'      "$(last "$(run '(instance? Var (var inc))')")" 'true'
+assert_eq 'inst_treemap'  "$(last "$(run '(prn (instance? PersistentTreeMap (sorted-map 1 2)))')")" 'true'
+assert_eq 'inst_treeset'  "$(last "$(run '(prn (instance? PersistentTreeSet (sorted-set 1)))')")" 'true'
+assert_eq 'inst_var'      "$(last "$(run '(prn (instance? Var (var inc)))')")" 'true'
 # interface views unaffected (sorted map is still an IPersistentMap)
-assert_eq 'sorted_is_map' "$(last "$(run '(instance? IPersistentMap (sorted-map 1 2))')")" 'true'
+assert_eq 'sorted_is_map' "$(last "$(run '(prn (instance? IPersistentMap (sorted-map 1 2)))')")" 'true'
 # a non-member is false (no over-match)
-assert_eq 'treemap_not_vec' "$(last "$(run '(instance? PersistentTreeMap [1 2])')")" 'false'
+assert_eq 'treemap_not_vec' "$(last "$(run '(prn (instance? PersistentTreeMap [1 2]))')")" 'false'

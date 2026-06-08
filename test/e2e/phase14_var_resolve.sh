@@ -35,7 +35,7 @@ assert_eq 'defn_returns_var_quote' "$("$BIN" -e '(defn f [] 1)' 2>/dev/null | ta
 # --- Case 3: (resolve 'sym) returns the var for a user-defined name ---
 got=$("$BIN" - <<'EOF' 2>/dev/null
 (def myv 42)
-(resolve 'myv)
+(prn (resolve 'myv))
 EOF
 ) || fail "case3: non-zero exit ($got)"
 assert_eq 'resolve_user_var' "$(tail -1 <<< "$got")" "#'user/myv"
@@ -46,7 +46,7 @@ assert_eq 'resolve_unresolvable_nil' "$("$BIN" -e "(resolve 'totally-undefined-x
 # --- Case 5: resolve returns a deref-able var ---
 got=$("$BIN" - <<'EOF' 2>/dev/null
 (def myv 42)
-(deref (resolve 'myv))
+(prn (deref (resolve 'myv)))
 EOF
 ) || fail "case5: non-zero exit ($got)"
 assert_eq 'resolve_var_deref' "$(tail -1 <<< "$got")" '42'

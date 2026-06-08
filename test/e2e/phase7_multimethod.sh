@@ -48,7 +48,7 @@ got=$("$BIN" - <<'EOF' 2>&1
 (defmulti area (fn* [s] (get s :type)))
 (defmethod area :circle [_] :pi)
 (defmethod area :square [_] :sq)
-(area {:type :circle})
+(prn (area {:type :circle}))
 EOF
 ) || fail "case1: non-zero exit ($got)"
 assert_eq 'defmulti_circle' "$(last_line "$got")" ':pi'
@@ -58,7 +58,7 @@ got=$("$BIN" - <<'EOF' 2>&1
 (defmulti area (fn* [s] (get s :type)))
 (defmethod area :circle [_] :pi)
 (defmethod area :square [_] :sq)
-(area {:type :square})
+(prn (area {:type :square}))
 EOF
 ) || fail "case2: non-zero exit ($got)"
 assert_eq 'defmulti_square' "$(last_line "$got")" ':sq'
@@ -68,7 +68,7 @@ got=$("$BIN" - <<'EOF' 2>&1
 (defmulti g (fn* [s] (get s :k)))
 (defmethod g :a [_] :a-result)
 (defmethod g :default [_] :fallback)
-(g {:k :missing})
+(prn (g {:k :missing}))
 EOF
 ) || fail "case3: non-zero exit ($got)"
 assert_eq 'defmulti_default_fallback' "$(last_line "$got")" ':fallback'
@@ -82,7 +82,7 @@ got=$("$BIN" - <<'EOF' 2>&1
 (defmethod h :x [_] :x-result)
 (defmethod h :y [_] :y-result)
 (prefer-method h :x :y)
-(h {:k :x})
+(prn (h {:k :x}))
 EOF
 ) || fail "case4: non-zero exit ($got)"
 assert_eq 'prefer_method_compiles' "$(last_line "$got")" ':x-result'
@@ -91,7 +91,7 @@ assert_eq 'prefer_method_compiles' "$(last_line "$got")" ':x-result'
 got=$("$BIN" - <<'EOF' 2>&1
 (defmulti describe (fn* [s] (get s :k)))
 (defmethod describe :n [s] (get s :v))
-(describe {:k :n :v 42})
+(prn (describe {:k :n :v 42}))
 EOF
 ) || fail "case5: non-zero exit ($got)"
 assert_eq 'defmethod_body_uses_param' "$(last_line "$got")" '42'
@@ -104,7 +104,7 @@ got=$("$BIN" - <<'EOF' 2>&1
 (defmulti area :shape)
 (defmethod area :circle [_] :circ)
 (defmulti area :shape)
-(area {:shape :circle})
+(prn (area {:shape :circle}))
 EOF
 ) || fail "case6: non-zero exit ($got)"
 assert_eq 'defmulti_reeval_noop' "$(last_line "$got")" ':circ'

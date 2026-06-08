@@ -22,7 +22,7 @@ fail() {
 
 PROGRAM=$(cat <<'EOF'
 (defn f [x] (+ x 1))
-(f 2)
+(prn (f 2))
 EOF
 )
 
@@ -30,9 +30,9 @@ run_smoke() {
     local backend="$1"
     local got
     got=$(printf '%s\n' "$PROGRAM" | "$BIN" - 2>&1) || fail "$backend: cljw non-zero exit (output: $got)"
-    # printf appends a newline to PROGRAM; the printValue loop emits
-    # `nil\n` for defn's result then `3\n` for (f 2). We assert the
-    # final non-empty line is `3`.
+    # Script mode (ADR-0117): top-level values are NOT echoed, so the only
+    # output is the explicit `(prn (f 2))` → `3`. We assert the final
+    # non-empty line is `3`.
     local last
     last=$(printf '%s\n' "$got" | tail -1)
     [[ "$last" == "3" ]] || fail "$backend: want last line '3', got '$last' (full output: $got)"

@@ -57,8 +57,8 @@ assert_eq 'bigdecimal_add' "$got" '2.00M'
 
 # 4. deftype + ctor + field access (the ROADMAP test target).
 got="$("$BIN" - <<'EOF'
-(deftype Point [x y])
-(.x (Point. 1 2))
+(prn (deftype Point [x y]))
+(prn (.x (Point. 1 2)))
 EOF
 )"
 assert_eq 'deftype_ctor_field' "$got" $'#\x27user/->Point\n1'

@@ -27,40 +27,40 @@ assert_eq 'next_first_child' "$got" '1'
 
 # --- depth-first walk visits [root, leaves...] in order ---
 got=$("$BIN" - <<'EOF' 2>/dev/null
-(loop* [loc (clojure.zip/vector-zip [1 [2 3] 4]) acc []]
+(prn (loop* [loc (clojure.zip/vector-zip [1 [2 3] 4]) acc []]
   (if (clojure.zip/end? loc)
     acc
-    (recur (clojure.zip/next loc) (conj acc (clojure.zip/node loc)))))
+    (recur (clojure.zip/next loc) (conj acc (clojure.zip/node loc))))))
 EOF
 )
 assert_eq 'dfs_full_walk' "$got" '[[1 [2 3] 4] 1 [2 3] 2 3 4]'
 
 # --- next past end is a fixed point: returns the same loc ---
 got=$("$BIN" - <<'EOF' 2>/dev/null
-(loop* [loc (clojure.zip/vector-zip [1])]
+(prn (loop* [loc (clojure.zip/vector-zip [1])]
   (if (clojure.zip/end? loc)
     (clojure.zip/end? (clojure.zip/next loc))
-    (recur (clojure.zip/next loc))))
+    (recur (clojure.zip/next loc)))))
 EOF
 )
 assert_eq 'next_past_end_fixed' "$got" 'true'
 
 # --- prev steps back to previous DFS position ---
 got=$("$BIN" - <<'EOF' 2>/dev/null
-(clojure.zip/node
+(prn (clojure.zip/node
   (clojure.zip/prev
     (clojure.zip/right
       (clojure.zip/right
-        (clojure.zip/down (clojure.zip/vector-zip [1 [2 3] 4]))))))
+        (clojure.zip/down (clojure.zip/vector-zip [1 [2 3] 4])))))))
 EOF
 )
 assert_eq 'prev_to_rightmost_descendant' "$got" '3'
 
 # --- prev from leftmost sibling goes up to parent ---
 got=$("$BIN" - <<'EOF' 2>/dev/null
-(clojure.zip/node
+(prn (clojure.zip/node
   (clojure.zip/prev
-    (clojure.zip/down (clojure.zip/vector-zip [1 2 3]))))
+    (clojure.zip/down (clojure.zip/vector-zip [1 2 3])))))
 EOF
 )
 assert_eq 'prev_to_parent' "$got" '[1 2 3]'

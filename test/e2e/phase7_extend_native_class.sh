@@ -46,7 +46,7 @@ last_line() {
 got=$("$BIN" - <<'EOF' 2>/dev/null
 (defprotocol P (q [n]))
 (extend-type Long P (q [n] (* n 2)))
-(q 5)
+(prn (q 5))
 EOF
 ) || fail "case1: non-zero exit ($got)"
 assert_eq 'extend_type_long' "$(last_line "$got")" '10'
@@ -55,7 +55,7 @@ assert_eq 'extend_type_long' "$(last_line "$got")" '10'
 got=$("$BIN" - <<'EOF' 2>/dev/null
 (defprotocol Greet (g [s]))
 (extend-type String Greet (g [s] (str "hi " s)))
-(g "bob")
+(prn (g "bob"))
 EOF
 ) || fail "case2: non-zero exit ($got)"
 assert_eq 'extend_type_string' "$(last_line "$got")" '"hi bob"'
@@ -66,7 +66,7 @@ got=$("$BIN" - <<'EOF' 2>/dev/null
 (extend-protocol Desc
   Long (d [_] :int)
   String (d [_] :str))
-[(d 7) (d "x")]
+(prn [(d 7) (d "x")])
 EOF
 ) || fail "case3: non-zero exit ($got)"
 assert_eq 'extend_protocol_two' "$(last_line "$got")" '[:int :str]'
@@ -79,7 +79,7 @@ assert_eq 'class_as_value_eq' "$(last_line "$got")" 'true'
 got=$("$BIN" - <<'EOF' 2>/dev/null
 (defprotocol P (q [n]))
 (extend-type java.lang.Long P (q [n] (+ n 100)))
-(q 5)
+(prn (q 5))
 EOF
 ) || fail "case5: non-zero exit ($got)"
 assert_eq 'extend_type_fqcn' "$(last_line "$got")" '105'
@@ -88,7 +88,7 @@ assert_eq 'extend_type_fqcn' "$(last_line "$got")" '105'
 # Resolution lands AFTER Var lookup, so a user binding takes precedence.
 got=$("$BIN" - <<'EOF' 2>/dev/null
 (def String 42)
-String
+(prn String)
 EOF
 ) || fail "case6: non-zero exit ($got)"
 assert_eq 'user_def_shadows_class' "$(last_line "$got")" '42'
@@ -117,7 +117,7 @@ assert_eq 'backend_parity' "$(last_line "$got")" 'OK 81'
 got=$("$BIN" - <<'EOF' 2>/dev/null
 (defprotocol P (q [n]))
 (extend-type BigInt P (q [n] (* n 2)))
-(q 5N)
+(prn (q 5N))
 EOF
 ) || fail "case9: non-zero exit ($got)"
 assert_eq 'extend_type_bigint' "$(last_line "$got")" '10N'

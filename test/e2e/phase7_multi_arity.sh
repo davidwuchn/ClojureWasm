@@ -114,7 +114,7 @@ got=$("$BIN" - <<'EOF' 2>/dev/null
 (defn greet
   ([] (greet "world"))
   ([name] (str "hello, " name)))
-(greet)
+(prn (greet))
 EOF
 ) || fail "case10: non-zero exit ($got)"
 assert_eq 'defn_multi_arity_calls_other_arity' "$(last_line "$got")" '"hello, world"'
@@ -125,7 +125,7 @@ got=$("$BIN" - <<'EOF' 2>/dev/null
   ([] 0)
   ([x] x)
   ([x y] (+ x y)))
-(add 10 20)
+(prn (add 10 20))
 EOF
 ) || fail "case11: non-zero exit ($got)"
 assert_eq 'defn_multi_arity_three_methods' "$(last_line "$got")" '30'
@@ -133,7 +133,7 @@ assert_eq 'defn_multi_arity_three_methods' "$(last_line "$got")" '30'
 # --- Case 12: single-arity defn (back-compat — no behaviour change) ---
 got=$("$BIN" - <<'EOF' 2>/dev/null
 (defn square [x] (* x x))
-(square 7)
+(prn (square 7))
 EOF
 ) || fail "case12: non-zero exit ($got)"
 assert_eq 'defn_single_arity_back_compat' "$(last_line "$got")" '49'
@@ -148,7 +148,7 @@ assert_eq 'defn_single_arity_back_compat' "$(last_line "$got")" '49'
 # 3-arity body and returns a set Value (= no arity_not_expected raise).
 got=$("$BIN" - <<'EOF' 2>/dev/null
 (require '[clojure.set :as cset])
-(cset/join #{{:a 1 :b 2}} #{{:c 1 :d 99}} {:a :c})
+(prn (cset/join #{{:a 1 :b 2}} #{{:c 1 :d 99}} {:a :c}))
 EOF
 ) || fail "case13: non-zero exit ($got)"
 last=$(last_line "$got")
@@ -160,7 +160,7 @@ echo "PASS clojure_set_join_three_arity_dispatched"
 # --- Case 14: clojure.set/join 2-arity still works (back-compat) ---
 got=$("$BIN" - <<'EOF' 2>/dev/null
 (require '[clojure.set :as cset])
-(cset/join #{{:a 1 :k :x}} #{{:a 1 :v :y}})
+(prn (cset/join #{{:a 1 :k :x}} #{{:a 1 :v :y}}))
 EOF
 ) || fail "case14: non-zero exit ($got)"
 last=$(last_line "$got")

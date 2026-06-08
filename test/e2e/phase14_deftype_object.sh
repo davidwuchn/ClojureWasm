@@ -25,7 +25,7 @@ fail() {
 
 # --- Case 1: reify Object/toString → str ---
 got=$("$BIN" - <<'EOF' 2>/dev/null
-(str (reify Object (toString [this] "hello-obj")))
+(prn (str (reify Object (toString [this] "hello-obj"))))
 EOF
 ) || fail "case1: non-zero exit ($got)"
 last=$(awk 'END { print }' <<< "$got")
@@ -37,7 +37,7 @@ echo "PASS reify_object_tostring -> hello-obj"
 # --- Case 2: deftype Object/toString → str, field reaches body ---
 got=$("$BIN" - <<'EOF' 2>/dev/null
 (deftype Foo [a] Object (toString [this] (str "F" a)))
-(str (Foo. 5))
+(prn (str (Foo. 5)))
 EOF
 ) || fail "case2: non-zero exit ($got)"
 last=$(awk 'END { print }' <<< "$got")
@@ -73,7 +73,7 @@ echo "PASS deftype_object_unwired_method_explicit_error"
 got=$("$BIN" - <<'EOF' 2>/dev/null
 (defprotocol P (m [x]))
 (deftype T [a] P (m [this] (* a 2)))
-(m (T. 21))
+(prn (m (T. 21)))
 EOF
 ) || fail "case5: non-zero exit ($got)"
 last=$(awk 'END { print }' <<< "$got")
@@ -85,7 +85,7 @@ echo "PASS protocol_deftype_unregressed -> 42"
 # --- Case 6: cljw-protocol path unregressed (reify) ---
 got=$("$BIN" - <<'EOF' 2>/dev/null
 (defprotocol P (m [x]))
-(m (reify P (m [this] 99)))
+(prn (m (reify P (m [this] 99))))
 EOF
 ) || fail "case6: non-zero exit ($got)"
 last=$(awk 'END { print }' <<< "$got")
@@ -99,7 +99,7 @@ echo "PASS protocol_reify_unregressed -> 99"
 # the 2-arity is reachable via (get inst k), the 3-arity via direct method call.
 got=$("$BIN" - <<'EOF' 2>/dev/null
 (deftype T [] ILookup (-lookup [this k] :two) (-lookup [this k nf] :three))
-[(get (T.) :a) (.-lookup (T.) :a :nf)]
+(prn [(get (T.) :a) (.-lookup (T.) :a :nf)])
 EOF
 ) || fail "case7: non-zero exit ($got)"
 last=$(awk 'END { print }' <<< "$got")
@@ -111,7 +111,7 @@ echo "PASS deftype_method_arity_overload -> [:two :three]"
 # --- Case 8 (D-279): reify method arity overload ---
 got=$("$BIN" - <<'EOF' 2>/dev/null
 (def r (reify ILookup (-lookup [this k] :two) (-lookup [this k nf] :three)))
-[(get r :a) (.-lookup r :a :nf)]
+(prn [(get r :a) (.-lookup r :a :nf)])
 EOF
 ) || fail "case8: non-zero exit ($got)"
 last=$(awk 'END { print }' <<< "$got")
@@ -125,7 +125,7 @@ echo "PASS reify_method_arity_overload -> [:two :three]"
 # Serializable); they parse + record implements, alongside an Object/toString impl.
 got=$("$BIN" - <<'EOF' 2>/dev/null
 (deftype T [a] Object (toString [this] (str "T" a)) clojure.lang.MapEquivalence java.io.Serializable)
-(str (T. 9))
+(prn (str (T. 9)))
 EOF
 ) || fail "case9: non-zero exit ($got)"
 last=$(awk 'END { print }' <<< "$got")
@@ -150,7 +150,7 @@ echo "PASS marker_stray_method_explicit_error"
 # `ILookup (-lookup [this k] …)`, so (get inst k) dispatches to it.
 got=$("$BIN" - <<'EOF' 2>/dev/null
 (deftype T [m] clojure.lang.ILookup (valAt [this k] (get m k)))
-(get (T. {:a 1}) :a)
+(prn (get (T. {:a 1}) :a))
 EOF
 ) || fail "case11: non-zero exit ($got)"
 last=$(awk 'END { print }' <<< "$got")
@@ -165,7 +165,7 @@ got=$("$BIN" - <<'EOF' 2>/dev/null
   clojure.lang.ILookup
   (valAt [this k] (get m k))
   (valAt [this k nf] (get m k nf)))
-[(get (T. {:a 1}) :a) (get (T. {:a 1}) :z)]
+(prn [(get (T. {:a 1}) :a) (get (T. {:a 1}) :z)])
 EOF
 ) || fail "case12: non-zero exit ($got)"
 last=$(awk 'END { print }' <<< "$got")
@@ -192,7 +192,7 @@ got=$("$BIN" - <<'EOF' 2>/dev/null
   clojure.lang.ILookup
   (valAt [this k] (get m k)))
 (def x (M. {:a 1}))
-[(count x) (contains? x :a) (get x :a) (get (assoc x :b 2) :b) (count (dissoc (assoc x :b 2) :a))]
+(prn [(count x) (contains? x :a) (get x :a) (get (assoc x :b 2) :b) (count (dissoc (assoc x :b 2) :a))])
 EOF
 ) || fail "case13: non-zero exit ($got)"
 last=$(awk 'END { print }' <<< "$got")
@@ -204,7 +204,7 @@ echo "PASS protocol_remap_ipersistentmap_multitarget -> [1 true 1 2 1]"
 # --- Case 14 (D-280d3): clojure.lang.Reversible rseq routes via the modeled protocol ---
 got=$("$BIN" - <<'EOF' 2>/dev/null
 (deftype R [v] clojure.lang.Reversible (rseq [this] (reverse v)))
-(rseq (R. [1 2 3]))
+(prn (rseq (R. [1 2 3])))
 EOF
 ) || fail "case14: non-zero exit ($got)"
 last=$(awk 'END { print }' <<< "$got")
@@ -219,7 +219,7 @@ got=$("$BIN" - <<'EOF' 2>/dev/null
   clojure.lang.IPersistentStack
   (peek [this] (last v))
   (pop [this] (S. (butlast v))))
-(let [s (S. [1 2 3])] [(peek s) (vec (.-v (pop s)))])
+(prn (let [s (S. [1 2 3])] [(peek s) (vec (.-v (pop s)))]))
 EOF
 ) || fail "case15: non-zero exit ($got)"
 last=$(awk 'END { print }' <<< "$got")
@@ -231,7 +231,7 @@ echo "PASS protocol_remap_ipersistentstack_peek_pop -> [3 [1 2]]"
 # --- Case 16 (D-280d1): Object equals overrides identity (same-type) ---
 got=$("$BIN" - <<'EOF' 2>/dev/null
 (deftype P [v] Object (equals [this o] (= v (.-v o))))
-[(= (P. 1) (P. 1)) (= (P. 1) (P. 2))]
+(prn [(= (P. 1) (P. 1)) (= (P. 1) (P. 2))])
 EOF
 ) || fail "case16: non-zero exit ($got)"
 last=$(awk 'END { print }' <<< "$got")
@@ -243,7 +243,7 @@ echo "PASS object_equals_same_type -> [true false]"
 # --- Case 17 (D-280d1): Object hashCode overrides default value-hash ---
 got=$("$BIN" - <<'EOF' 2>/dev/null
 (deftype P [v] Object (hashCode [this] (* v 100)))
-(hash (P. 7))
+(prn (hash (P. 7)))
 EOF
 ) || fail "case17: non-zero exit ($got)"
 last=$(awk 'END { print }' <<< "$got")
@@ -255,7 +255,7 @@ echo "PASS object_hashcode -> 700"
 # --- Case 18 (D-280d1): a deftype WITHOUT Object equals keeps identity = ---
 got=$("$BIN" - <<'EOF' 2>/dev/null
 (deftype Q [v])
-[(= (Q. 1) (Q. 1)) (let [x (Q. 1)] (= x x))]
+(prn [(= (Q. 1) (Q. 1)) (let [x (Q. 1)] (= x x))])
 EOF
 ) || fail "case18: non-zero exit ($got)"
 last=$(awk 'END { print }' <<< "$got")
@@ -272,7 +272,7 @@ got=$("$BIN" - <<'EOF' 2>/dev/null
   (count [this] (count m))
   (equals [this o] (= m (.-m o)))
   (hashCode [this] (* (count m) 1000)))
-[(= (M. {:x 1}) (M. {:x 1})) (= (M. {:x 1}) (M. {:y 2})) (hash (M. {:x 1})) (count (M. {:x 1}))]
+(prn [(= (M. {:x 1}) (M. {:x 1})) (= (M. {:x 1}) (M. {:y 2})) (hash (M. {:x 1})) (count (M. {:x 1}))])
 EOF
 ) || fail "case19: non-zero exit ($got)"
 last=$(awk 'END { print }' <<< "$got")
@@ -286,7 +286,7 @@ got=$("$BIN" - <<'EOF' 2>/dev/null
 (deftype H [v]
   Object (hashCode [this] 1)
   clojure.lang.IHashEq (hasheq [this] (* v 7)))
-[(hash (H. 9)) (hash (H. 0))]
+(prn [(hash (H. 9)) (hash (H. 0))])
 EOF
 ) || fail "case20: non-zero exit ($got)"
 last=$(awk 'END { print }' <<< "$got")
@@ -302,7 +302,7 @@ got=$("$BIN" - <<'EOF' 2>/dev/null
   (count [this] (count m))
   (equiv [this o] (= m (.-m o)))
   (entryAt [this k] [k (get m k)]))
-[(= (M. {:a 1}) (M. {:a 1})) (= (M. {:a 1}) (M. {:a 2})) (count (M. {:a 1}))]
+(prn [(= (M. {:a 1}) (M. {:a 1})) (= (M. {:a 1}) (M. {:a 2})) (count (M. {:a 1}))])
 EOF
 ) || fail "case21: non-zero exit ($got)"
 last=$(awk 'END { print }' <<< "$got")
@@ -319,7 +319,7 @@ got=$("$BIN" - <<'EOF' 2>/dev/null
   (entryKey [this e] (first e))
   (seq [this ascending] (if ascending :asc :desc))
   (seqFrom [this k ascending] [k ascending]))
-(let [s (Srt. {})] [(-sorted-comparator s) (-entry-key s [:a 1]) (-sorted-seq s true) (-sorted-seq-from s :k false)])
+(prn (let [s (Srt. {})] [(-sorted-comparator s) (-entry-key s [:a 1]) (-sorted-seq s true) (-sorted-seq-from s :k false)]))
 EOF
 ) || fail "case22: non-zero exit ($got)"
 last=$(awk 'END { print }' <<< "$got")
@@ -337,7 +337,7 @@ got=$("$BIN" - <<'EOF' 2>/dev/null
   clojure.lang.IObj
   (meta [this] :my-meta)
   (withMeta [this m] (F. v)))
-(let [f (F. {:a 1})] [(-invoke f :a) (-invoke f :z :def) (-meta f)])
+(prn (let [f (F. {:a 1})] [(-invoke f :a) (-invoke f :z :def) (-meta f)]))
 EOF
 ) || fail "case23: non-zero exit ($got)"
 last=$(awk 'END { print }' <<< "$got")
@@ -353,7 +353,7 @@ got=$("$BIN" - <<'EOF' 2>/dev/null
   clojure.lang.IFn
   (invoke [this k] (get m k))
   (invoke [this k nf] (get m k nf)))
-(let [f (F. {:a 1})] [(f :a) (f :z :default) (map f [:a :z])])
+(prn (let [f (F. {:a 1})] [(f :a) (f :z :default) (map f [:a :z])]))
 EOF
 ) || fail "case24: non-zero exit ($got)"
 last=$(awk 'END { print }' <<< "$got")
@@ -368,7 +368,7 @@ got=$("$BIN" - <<'EOF' 2>/dev/null
   clojure.lang.IObj
   (meta [this] _meta)
   (withMeta [this nm] (O. m nm)))
-(let [o (O. {:a 1} {:tag :orig})] [(meta o) (meta (with-meta o {:tag :new}))])
+(prn (let [o (O. {:a 1} {:tag :orig})] [(meta o) (meta (with-meta o {:tag :new}))]))
 EOF
 ) || fail "case25: non-zero exit ($got)"
 last=$(awk 'END { print }' <<< "$got")
@@ -384,7 +384,7 @@ got=$("$BIN" - <<'EOF' 2>/dev/null
 (deftype KV [m]
   clojure.core.protocols/IKVReduce
   (kv-reduce [this f init] (reduce-kv f init m)))
-(clojure.core.protocols/kv-reduce (KV. {:a 1 :b 2}) (fn [acc k v] (+ acc v)) 0)
+(prn (clojure.core.protocols/kv-reduce (KV. {:a 1 :b 2}) (fn [acc k v] (+ acc v)) 0))
 EOF
 ) || fail "case26: non-zero exit ($got)"
 last=$(awk 'END { print }' <<< "$got")
@@ -406,7 +406,7 @@ got=$("$BIN" - <<'EOF' 2>/dev/null
   (put [this k v] (throw (ex-info "immutable" {})))
   Iterable
   (iterator [this] nil))
-(let [x (M. {:a 1 :b 2})] [(count x) (get x :a) (.size x)])
+(prn (let [x (M. {:a 1 :b 2})] [(count x) (get x :a) (.size x)]))
 EOF
 ) || fail "case27: non-zero exit ($got)"
 last=$(awk 'END { print }' <<< "$got")
@@ -424,7 +424,7 @@ got=$("$BIN" - <<'EOF' 2>/dev/null
   clojure.lang.IPersistentMap
   (count [this] (count m))
   (assoc [this k v] (M. (assoc m k v))))
-(let [x (M. {:a 1})] [(get x :a) (.valAt x :a) (count (.assoc x :b 2))])
+(prn (let [x (M. {:a 1})] [(get x :a) (.valAt x :a) (count (.assoc x :b 2))]))
 EOF
 ) || fail "case28: non-zero exit ($got)"
 last=$(awk 'END { print }' <<< "$got")
@@ -435,7 +435,7 @@ echo "PASS protocol_remap_clj_name_dotcall -> [1 1 2]"
 
 # --- Case 29 (D-284): (MapEntry. k v) constructs cljw's 2-vector entry ---
 got=$("$BIN" - <<'EOF' 2>/dev/null
-[(MapEntry. :a 1) (key (MapEntry. :a 1)) (val (new clojure.lang.MapEntry :b 2))]
+(prn [(MapEntry. :a 1) (key (MapEntry. :a 1)) (val (new clojure.lang.MapEntry :b 2))])
 EOF
 ) || fail "case29: non-zero exit ($got)"
 last=$(awk 'END { print }' <<< "$got")
@@ -450,7 +450,7 @@ got=$("$BIN" - <<'EOF' 2>/dev/null
   clojure.lang.IPersistentMap
   (count [this] (count m))
   (seq [this] (seq m)))
-(let [x (M. {:a 1 :b 2})] [(keys x) (vals x)])
+(prn (let [x (M. {:a 1 :b 2})] [(keys x) (vals x)]))
 EOF
 ) || fail "case30: non-zero exit ($got)"
 last=$(awk 'END { print }' <<< "$got")
@@ -466,7 +466,7 @@ got=$("$BIN" - <<'EOF' 2>/dev/null
   IHashEq (hasheq [this] (* v 5))
   Set (size [this] v)
   java.util.List (get [this i] i))
-[(hash (S. 4)) (.size (S. 9))]
+(prn [(hash (S. 4)) (.size (S. 9))])
 EOF
 ) || fail "case31: non-zero exit ($got)"
 last=$(awk 'END { print }' <<< "$got")
@@ -483,7 +483,7 @@ got=$("$BIN" - <<'EOF' 2>/dev/null
 (deftype SR [s]
   Reader (rc [this] s)
   Closeable (close [this] :closed))
-[(rc (->SR :x)) (.close (->SR :y))]
+(prn [(rc (->SR :x)) (.close (->SR :y))])
 EOF
 ) || fail "case32: non-zero exit ($got)"
 last=$(awk 'END { print }' <<< "$got")
@@ -502,7 +502,7 @@ got=$("$BIN" - <<'EOF' 2>/dev/null
   P1 (m1 [x] 1)
   P2 (m2 [x] 2)
   P3 (m3 [x] 3))
-[(m1 "a") (m2 "b") (m3 "c")]
+(prn [(m1 "a") (m2 "b") (m3 "c")])
 EOF
 ) || fail "case33: non-zero exit ($got)"
 last=$(awk 'END { print }' <<< "$got")

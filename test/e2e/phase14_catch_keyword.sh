@@ -31,40 +31,40 @@ assert_eq() {
 
 # --- Case 1: keyword catch matches when :type matches ---
 got=$("$BIN" - <<'EOF' 2>/dev/null
-(try (throw (ex-info "boom" {:type :foo})) (catch :foo e :caught))
+(prn (try (throw (ex-info "boom" {:type :foo})) (catch :foo e :caught)))
 EOF
 )
 assert_eq 'catch_keyword_type_match' "$got" ':caught'
 
 # --- Case 2: keyword catch falls through when :type differs ---
 got=$("$BIN" - <<'EOF' 2>/dev/null
-(try (throw (ex-info "boom" {:type :bar}))
+(prn (try (throw (ex-info "boom" {:type :bar}))
   (catch :foo e :wrong)
-  (catch ExceptionInfo e :fallback))
+  (catch ExceptionInfo e :fallback)))
 EOF
 )
 assert_eq 'catch_keyword_type_mismatch_falls_through' "$got" ':fallback'
 
 # --- Case 3: keyword catch falls through when data lacks :type ---
 got=$("$BIN" - <<'EOF' 2>/dev/null
-(try (throw (ex-info "boom" {}))
+(prn (try (throw (ex-info "boom" {}))
   (catch :foo e :wrong)
-  (catch ExceptionInfo e :fallback))
+  (catch ExceptionInfo e :fallback)))
 EOF
 )
 assert_eq 'catch_keyword_no_type_key_falls_through' "$got" ':fallback'
 
 # --- Case 4: keyword catch binds the thrown ex-info for body access ---
 got=$("$BIN" - <<'EOF' 2>/dev/null
-(try (throw (ex-info "boom" {:type :foo})) (catch :foo e (ex-message e)))
+(prn (try (throw (ex-info "boom" {:type :foo})) (catch :foo e (ex-message e))))
 EOF
 )
 assert_eq 'catch_keyword_binds_exception' "$got" '"boom"'
 
 # --- Case 5: namespaced keyword (:my.app/error) matches by interned identity ---
 got=$("$BIN" - <<'EOF' 2>/dev/null
-(try (throw (ex-info "boom" {:type :my.app/error}))
-  (catch :my.app/error e :caught))
+(prn (try (throw (ex-info "boom" {:type :my.app/error}))
+  (catch :my.app/error e :caught)))
 EOF
 )
 assert_eq 'catch_keyword_namespaced_match' "$got" ':caught'

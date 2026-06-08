@@ -41,7 +41,7 @@ assert_eq() {
 # --- Case 1: minimal defmacro that wraps an if ---
 got=$("$BIN" - <<'EOF' 2>/dev/null | last_line
 (defmacro my-when [t b] (cons 'if (cons t (cons b (cons nil nil)))))
-(my-when true 42)
+(prn (my-when true 42))
 EOF
 )
 assert_eq 'defmacro_my_when_true' "$got" '42'
@@ -49,7 +49,7 @@ assert_eq 'defmacro_my_when_true' "$got" '42'
 # --- Case 2: same macro, falsy path returns nil ---
 got=$("$BIN" - <<'EOF' 2>/dev/null | last_line
 (defmacro my-when [t b] (cons 'if (cons t (cons b (cons nil nil)))))
-(my-when false 42)
+(prn (my-when false 42))
 EOF
 )
 assert_eq 'defmacro_my_when_false' "$got" 'nil'
@@ -57,7 +57,7 @@ assert_eq 'defmacro_my_when_false' "$got" 'nil'
 # --- Case 3: defmacro returning a constant value form ---
 got=$("$BIN" - <<'EOF' 2>/dev/null | last_line
 (defmacro always-42 [] 42)
-(always-42)
+(prn (always-42))
 EOF
 )
 assert_eq 'defmacro_always_42' "$got" '42'
@@ -66,7 +66,7 @@ assert_eq 'defmacro_always_42' "$got" '42'
 # `when` is a built-in macro transform; the user macro composes with it.
 got=$("$BIN" - <<'EOF' 2>/dev/null | last_line
 (defmacro double-when [t b] (cons 'when (cons t (cons b nil))))
-(double-when (= 1 1) :ok)
+(prn (double-when (= 1 1) :ok))
 EOF
 )
 assert_eq 'defmacro_composes_with_zig_macro' "$got" ':ok'
@@ -74,7 +74,7 @@ assert_eq 'defmacro_composes_with_zig_macro' "$got" ':ok'
 # --- Case 5: macro arg passes through unchanged (identity) ---
 got=$("$BIN" - <<'EOF' 2>/dev/null | last_line
 (defmacro identity-macro [x] x)
-(identity-macro :hello)
+(prn (identity-macro :hello))
 EOF
 )
 assert_eq 'defmacro_identity' "$got" ':hello'
@@ -101,7 +101,7 @@ got=$("$BIN" - <<'EOF' 2>/dev/null | last_line
   "doc" {:added "0.1"}
   ([t then] (cons 'if (cons t (cons then (cons nil nil)))))
   ([t then else] (cons 'if (cons t (cons then (cons else nil))))))
-[(my-if true :y) (my-if false :y :n) (:arglists (meta #'my-if)) (:doc (meta #'my-if))]
+(prn [(my-if true :y) (my-if false :y :n) (:arglists (meta #'my-if)) (:doc (meta #'my-if))])
 EOF
 )
 assert_eq 'defmacro_multi_arity_doc' "$got" '[:y :n ([t then] [t then else]) "doc"]'
@@ -113,7 +113,7 @@ got=$("$BIN" - <<'EOF' 2>/dev/null | last_line
 (defmacro fc [& xs] (count &form))
 (defmacro mlk [] (contains? (meta &form) :line))
 (defmacro em? [] (map? &env))
-[(let [a 1 b 2 c 3] (ec)) (ec) (let [q 9] (hl q)) (let [q 9] (hl zz)) (fc 10 20 30) (mlk) (em?)]
+(prn [(let [a 1 b 2 c 3] (ec)) (ec) (let [q 9] (hl q)) (let [q 9] (hl zz)) (fc 10 20 30) (mlk) (em?)])
 EOF
 )
 # clj parity (clj -M /tmp/fe.clj): top-level &env is nil (count 0, map? false),

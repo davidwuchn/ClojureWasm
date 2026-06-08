@@ -55,8 +55,8 @@ assert_eq 'trimr_right_only' "$got" '"  hello"'
 
 # trim-newline only strips trailing \r / \n (not all Unicode whitespace).
 got=$("$BIN" - <<'EOF'
-(clojure.string/trim-newline "line
-")
+(prn (clojure.string/trim-newline "line
+"))
 EOF
 )
 assert_eq 'trim_newline_lf' "$got" '"line"'

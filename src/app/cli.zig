@@ -173,9 +173,9 @@ fn dispatchArgsRest(
 ) !void {
     var source_text: ?[]const u8 = null;
     var source_label: []const u8 = "<-e>";
-    // clj-本家 alignment (ADR-0117): only `-e` and stdin (`-`) echo each
-    // top-level result; a bare `<file.clj>` runs as a script and prints only
-    // what the program prints. Set false in the file-open branch below.
+    // clj-本家 alignment (ADR-0117): only `-e` echoes each top-level result;
+    // a bare `<file.clj>` AND stdin (`-`) run as scripts, printing only what
+    // the program prints. Set false in the file-open + stdin branches below.
     var print_results: bool = true;
     var compare_mode: bool = false;
     var classpath_arg: ?[]const u8 = null;
@@ -198,7 +198,7 @@ fn dispatchArgsRest(
                 \\Usage: cljw [options] [<file.clj> | -]
                 \\  -e, --eval <expr>  Read, analyse, evaluate <expr>; print each result.
                 \\  <file.clj>         Run the named source file as a script (no result echo).
-                \\  -                  Read+evaluate from stdin, printing each result (heredoc-friendly).
+                \\  -                  Run stdin as a script (no result echo; heredoc-friendly).
                 \\  -cp, --classpath <dirs>  Colon-separated dirs `require` searches
                 \\                     for `.clj`/`.cljc` libs (else $CLJW_PATH, else ".").
                 \\  -A:a1:a2           Select deps.edn aliases (their :extra-paths /
@@ -269,6 +269,7 @@ fn dispatchArgsRest(
                 std.process.exit(1);
             };
             source_label = "<stdin>";
+            print_results = false;
         } else if (std.mem.startsWith(u8, arg, "-") and arg.len > 1) {
             try stderr.print("Unknown option: {s}\n", .{arg});
             try stderr.flush();

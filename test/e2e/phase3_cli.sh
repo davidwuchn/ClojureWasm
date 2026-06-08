@@ -51,13 +51,22 @@ got=$("$BIN" "$fixture" 2>&1) || fail "file println: non-zero exit"
 [[ "$got" == "42" ]] || fail "file println: want '42', got '$got'"
 echo "    ✓ <file.clj> (println …) → 42"
 
-# --- Case 3: stdin ('-') ---
+# --- Case 3: stdin ('-') runs as a SCRIPT (no result echo, ADR-0117) — the
+#     value is printed explicitly via (prn …); a bare value is silent. ---
 got=$("$BIN" - <<'EOF' 2>&1
-((fn* [x] (+ x 1)) 41)
+(prn ((fn* [x] (+ x 1)) 41))
 EOF
 ) || fail "stdin: non-zero exit"
 [[ "$got" == "42" ]] || fail "stdin: want '42', got '$got'"
-echo "    ✓ - (stdin/heredoc) → 42"
+echo "    ✓ - (stdin/heredoc, prn) → 42"
+
+# --- Case 3b: stdin bare value is NOT echoed (no-echo script contract) ---
+got=$("$BIN" - <<'EOF' 2>&1
+(+ 100 5)
+EOF
+) || fail "stdin no-echo: non-zero exit"
+[[ -z "$got" ]] || fail "stdin no-echo: want empty (script mode), got '$got'"
+echo "    ✓ - (stdin) bare value → no echo"
 
 # --- Case 4: catch path renders SOMETHING (label + non-empty) ---
 err=$("$BIN" -e '(+ 1 :foo)' 2>&1 || true)
@@ -87,7 +96,7 @@ echo "    ✓ (quote \"hi\") → \"hi\""
 
 # --- Case 9: escape sequences survive Read → printValue round-trip ---
 got=$("$BIN" - <<'EOF' 2>&1
-"line1\nline2"
+(prn "line1\nline2")
 EOF
 ) || fail "escape seq: non-zero exit"
 [[ "$got" == '"line1\nline2"' ]] || fail "escape seq: want '\"line1\\nline2\"', got '$got'"
@@ -95,7 +104,7 @@ echo "    ✓ \"line1\\nline2\" round-trip"
 
 # --- Case 10: heap List round-trips through quote (3.6) ---
 got=$("$BIN" - <<'EOF' 2>&1
-(quote (1 2 3))
+(prn (quote (1 2 3)))
 EOF
 ) || fail "quote list: non-zero exit"
 [[ "$got" == "(1 2 3)" ]] || fail "quote list: want '(1 2 3)', got '$got'"
@@ -103,7 +112,7 @@ echo "    ✓ (quote (1 2 3)) → (1 2 3)"
 
 # --- Case 11: mixed-type quoted list ---
 got=$("$BIN" - <<'EOF' 2>&1
-(quote (1 :a "b"))
+(prn (quote (1 :a "b")))
 EOF
 ) || fail "mixed list: non-zero exit"
 [[ "$got" == '(1 :a "b")' ]] || fail "mixed list: want '(1 :a \"b\")', got '$got'"
@@ -111,7 +120,7 @@ echo "    ✓ (quote (1 :a \"b\")) → (1 :a \"b\")"
 
 # --- Case 12: bootstrap macro `let` (3.7) ---
 got=$("$BIN" - <<'EOF' 2>&1
-(let [x 1] (+ x 2))
+(prn (let [x 1] (+ x 2)))
 EOF
 ) || fail "let macro: non-zero exit"
 [[ "$got" == "3" ]] || fail "let macro: want '3', got '$got'"
@@ -119,7 +128,7 @@ echo "    ✓ (let [x 1] (+ x 2)) → 3"
 
 # --- Case 13: bootstrap macro `when` truthy (3.7) ---
 got=$("$BIN" - <<'EOF' 2>&1
-(when true 42)
+(prn (when true 42))
 EOF
 ) || fail "when truthy: non-zero exit"
 [[ "$got" == "42" ]] || fail "when truthy: want '42', got '$got'"
@@ -127,7 +136,7 @@ echo "    ✓ (when true 42) → 42"
 
 # --- Case 14: bootstrap macro `when` falsy (3.7) ---
 got=$("$BIN" - <<'EOF' 2>&1
-(when false 42)
+(prn (when false 42))
 EOF
 ) || fail "when falsy: non-zero exit"
 [[ "$got" == "nil" ]] || fail "when falsy: want 'nil', got '$got'"
@@ -135,7 +144,7 @@ echo "    ✓ (when false 42) → nil"
 
 # --- Case 15: bootstrap macro `->` thread-first (3.7) ---
 got=$("$BIN" - <<'EOF' 2>&1
-(-> 1 (+ 2) (* 3))
+(prn (-> 1 (+ 2) (* 3)))
 EOF
 ) || fail "thread-first: non-zero exit"
 [[ "$got" == "9" ]] || fail "thread-first: want '9', got '$got'"
@@ -143,7 +152,7 @@ echo "    ✓ (-> 1 (+ 2) (* 3)) → 9"
 
 # --- Case 16: `cond` cascade (3.7) ---
 got=$("$BIN" - <<'EOF' 2>&1
-(cond false 1 false 2 true 3 false 4)
+(prn (cond false 1 false 2 true 3 false 4))
 EOF
 ) || fail "cond: non-zero exit"
 [[ "$got" == "3" ]] || fail "cond: want '3', got '$got'"
@@ -151,14 +160,14 @@ echo "    ✓ (cond ...) selects the first truthy → 3"
 
 # --- Case 17: `and` short-circuits, `or` returns first truthy (3.7) ---
 got=$("$BIN" - <<'EOF' 2>&1
-(and 1 2 3)
+(prn (and 1 2 3))
 EOF
 ) || fail "and: non-zero exit"
 [[ "$got" == "3" ]] || fail "and truthy chain: want '3', got '$got'"
 echo "    ✓ (and 1 2 3) → 3 (last truthy)"
 
 got=$("$BIN" - <<'EOF' 2>&1
-(or false nil 7)
+(prn (or false nil 7))
 EOF
 ) || fail "or: non-zero exit"
 [[ "$got" == "7" ]] || fail "or first-truthy: want '7', got '$got'"
@@ -166,14 +175,14 @@ echo "    ✓ (or false nil 7) → 7"
 
 # --- Case 18: `if-let` truthy / falsy (3.7) ---
 got=$("$BIN" - <<'EOF' 2>&1
-(if-let [x 7] (+ x 1) 0)
+(prn (if-let [x 7] (+ x 1) 0))
 EOF
 ) || fail "if-let truthy: non-zero exit"
 [[ "$got" == "8" ]] || fail "if-let truthy: want '8', got '$got'"
 echo "    ✓ (if-let [x 7] (+ x 1) 0) → 8"
 
 got=$("$BIN" - <<'EOF' 2>&1
-(if-let [x false] (+ x 1) 99)
+(prn (if-let [x false] (+ x 1) 99))
 EOF
 ) || fail "if-let falsy: non-zero exit"
 [[ "$got" == "99" ]] || fail "if-let falsy: want '99', got '$got'"
@@ -181,7 +190,7 @@ echo "    ✓ (if-let [x false] ... 99) → 99"
 
 # --- Case 19: `when-let` (3.7) ---
 got=$("$BIN" - <<'EOF' 2>&1
-(when-let [x 5] (+ x 10))
+(prn (when-let [x 5] (+ x 10)))
 EOF
 ) || fail "when-let truthy: non-zero exit"
 [[ "$got" == "15" ]] || fail "when-let truthy: want '15', got '$got'"
@@ -189,7 +198,7 @@ echo "    ✓ (when-let [x 5] (+ x 10)) → 15"
 
 # --- Case 20: ex-info construct + ex-message round-trip (3.10) ---
 got=$("$BIN" - <<'EOF' 2>&1
-(ex-message (ex-info "boom" 42))
+(prn (ex-message (ex-info "boom" 42)))
 EOF
 ) || fail "ex-info round-trip: non-zero exit"
 [[ "$got" == '"boom"' ]] || fail "ex-info round-trip: want '\"boom\"', got '$got'"
@@ -197,7 +206,7 @@ echo "    ✓ (ex-message (ex-info \"boom\" 42)) → \"boom\""
 
 # --- Case 21: ex-data extracts the data Value (3.10) ---
 got=$("$BIN" - <<'EOF' 2>&1
-(ex-data (ex-info "x" 99))
+(prn (ex-data (ex-info "x" 99)))
 EOF
 ) || fail "ex-data: non-zero exit"
 [[ "$got" == "99" ]] || fail "ex-data: want '99', got '$got'"
@@ -205,7 +214,7 @@ echo "    ✓ (ex-data (ex-info \"x\" 99)) → 99"
 
 # --- Case 22: ex-message returns nil for non-ex-info (3.10) ---
 got=$("$BIN" - <<'EOF' 2>&1
-(ex-message 42)
+(prn (ex-message 42))
 EOF
 ) || fail "ex-message non-exinfo: non-zero exit"
 [[ "$got" == "nil" ]] || fail "ex-message non-exinfo: want 'nil', got '$got'"
@@ -213,7 +222,7 @@ echo "    ✓ (ex-message 42) → nil"
 
 # --- Case 23: ex-info pr-str renders #error{...} (3.10) ---
 got=$("$BIN" - <<'EOF' 2>&1
-(ex-info "boom" 1)
+(prn (ex-info "boom" 1))
 EOF
 ) || fail "ex-info pr-str: non-zero exit"
 [[ "$got" == '#error{:message "boom" :data 1}' ]] || fail "ex-info pr-str: want '#error{:message \"boom\" :data 1}', got '$got'"
@@ -221,7 +230,7 @@ echo "    ✓ (ex-info \"boom\" 1) → #error{...}"
 
 # --- Case 24: loop* / recur sums 0..9 (3.11) ---
 got=$("$BIN" - <<'EOF' 2>&1
-(loop* [i 0 acc 0] (if (< i 10) (recur (+ i 1) (+ acc i)) acc))
+(prn (loop* [i 0 acc 0] (if (< i 10) (recur (+ i 1) (+ acc i)) acc)))
 EOF
 ) || fail "loop/recur: non-zero exit"
 [[ "$got" == "45" ]] || fail "loop/recur: want '45', got '$got'"
@@ -229,7 +238,7 @@ echo "    ✓ (loop* sum 0..9) → 45"
 
 # --- Case 25: try / throw / catch ExceptionInfo binds caught Value (3.11) ---
 got=$("$BIN" - <<'EOF' 2>&1
-(try (throw (ex-info "boom" 0)) (catch ExceptionInfo e (ex-message e)))
+(prn (try (throw (ex-info "boom" 0)) (catch ExceptionInfo e (ex-message e))))
 EOF
 ) || fail "try/catch: non-zero exit"
 [[ "$got" == '"boom"' ]] || fail "try/catch: want '\"boom\"', got '$got'"
@@ -237,8 +246,8 @@ echo "    ✓ (try (throw (ex-info ...)) (catch ExceptionInfo e (ex-message e)))
 
 # --- Case 26: try / finally runs finally on success and side-effects via def (3.11) ---
 got=$("$BIN" - <<'EOF' 2>&1
-(try 1 (finally (def *side* 42)))
-*side*
+(prn (try 1 (finally (def *side* 42))))
+(prn *side*)
 EOF
 ) || fail "try/finally success: non-zero exit"
 [[ "$got" == $'1\n42' ]] || fail "try/finally success: want '1\\n42', got '$got'"
@@ -246,7 +255,7 @@ echo "    ✓ (try 1 (finally (def *side* 42))) → 1; *side* = 42"
 
 # --- Case 27: closure captures outer let binding (3.11) ---
 got=$("$BIN" - <<'EOF' 2>&1
-(((fn* [x] (fn* [y] (+ x y))) 3) 4)
+(prn (((fn* [x] (fn* [y] (+ x y))) 3) 4))
 EOF
 ) || fail "closure: non-zero exit"
 [[ "$got" == "7" ]] || fail "closure: want '7', got '$got'"
@@ -263,8 +272,8 @@ echo "    ✓ bootstrap (not false) → true"
 
 # --- Case 29: defn macro defines top-level fns (3.13 / Phase-3 exit) ---
 got=$("$BIN" - <<'EOF' 2>&1
-(defn f [x] (+ x 1))
-(f 2)
+(prn (defn f [x] (+ x 1)))
+(prn (f 2))
 EOF
 ) || fail "defn macro: non-zero exit"
 # Each top-level form prints; `defn` evaluates to the var, which renders
@@ -275,8 +284,8 @@ echo "    ✓ (defn f [x] (+ x 1)) (f 2) → 3"
 
 # --- Case 30: defn handles multi-form bodies via implicit do ---
 got=$("$BIN" - <<'EOF' 2>&1
-(defn g [x] (+ x 10) (+ x 100))
-(g 5)
+(prn (defn g [x] (+ x 10) (+ x 100)))
+(prn (g 5))
 EOF
 ) || fail "defn multi-body: non-zero exit"
 [[ "$got" == $'#\'user/g\n105' ]] || fail "defn multi-body: want last form value, got '$got'"

@@ -19,11 +19,11 @@ last_line() { awk 'END { print }' <<< "$1"; }
 
 # --- Case 1: basic boolean + value options ---
 got=$("$BIN" - <<'EOF' 2>/dev/null
-(get (clojure.tools.cli/parse-opts
+(prn (get (clojure.tools.cli/parse-opts
   ["--port" "8080" "--verbose" "foo.clj"]
   [["-p" "--port PORT" "Port number"]
    ["-v" "--verbose" "Verbose output"]])
-  :options)
+  :options))
 EOF
 ) || fail "case1: non-zero exit"
 case "$(last_line "$got")" in
@@ -33,61 +33,61 @@ esac
 
 # --- Case 2: positional arguments captured ---
 got=$("$BIN" - <<'EOF' 2>/dev/null
-(get (clojure.tools.cli/parse-opts
+(prn (get (clojure.tools.cli/parse-opts
   ["--port" "8080" "file.clj" "other.clj"]
   [["-p" "--port PORT" "Port"]])
-  :arguments)
+  :arguments))
 EOF
 ) || fail "case2: non-zero exit"
 assert_eq 'arguments_captured' "$(last_line "$got")" '["file.clj" "other.clj"]'
 
 # --- Case 3: unknown option lands in :errors ---
 got=$("$BIN" - <<'EOF' 2>/dev/null
-(get (clojure.tools.cli/parse-opts
+(prn (get (clojure.tools.cli/parse-opts
   ["--unknown"]
   [["-p" "--port PORT" "Port"]])
-  :errors)
+  :errors))
 EOF
 ) || fail "case3: non-zero exit"
 assert_eq 'unknown_option_error' "$(last_line "$got")" '["Unknown option: '"'"'--unknown'"'"'"]'
 
 # --- Case 4: --name=value form ---
 got=$("$BIN" - <<'EOF' 2>/dev/null
-(get (clojure.tools.cli/parse-opts
+(prn (get (clojure.tools.cli/parse-opts
   ["--port=9090"]
   [["-p" "--port PORT" "Port"]])
-  :options)
+  :options))
 EOF
 ) || fail "case4: non-zero exit"
 assert_eq 'eq_form' "$(last_line "$got")" '{:port "9090"}'
 
 # --- Case 5: short flag boolean ---
 got=$("$BIN" - <<'EOF' 2>/dev/null
-(get (clojure.tools.cli/parse-opts
+(prn (get (clojure.tools.cli/parse-opts
   ["-v"]
   [["-v" "--verbose" "Verbose"]])
-  :options)
+  :options))
 EOF
 ) || fail "case5: non-zero exit"
 assert_eq 'short_bool' "$(last_line "$got")" '{:verbose true}'
 
 # --- Case 6: missing value raises error ---
 got=$("$BIN" - <<'EOF' 2>/dev/null
-(get (clojure.tools.cli/parse-opts
+(prn (get (clojure.tools.cli/parse-opts
   ["--port"]
   [["-p" "--port PORT" "Port"]])
-  :errors)
+  :errors))
 EOF
 ) || fail "case6: non-zero exit"
 assert_eq 'missing_value_error' "$(last_line "$got")" '["missing argument for '"'"'--port'"'"'"]'
 
 # --- Case 7: summary string includes both opts ---
 got=$("$BIN" - <<'EOF' 2>/dev/null
-(get (clojure.tools.cli/parse-opts
+(prn (get (clojure.tools.cli/parse-opts
   []
   [["-p" "--port PORT" "Port"]
    ["-v" "--verbose" "Verbose"]])
-  :summary)
+  :summary))
 EOF
 ) || fail "case7: non-zero exit"
 assert_eq 'summary_lines' "$(last_line "$got")" '"  -p, --port PORT  Port\n  -v, --verbose  Verbose"'

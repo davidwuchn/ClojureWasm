@@ -43,35 +43,35 @@ assert_eq 'single_binding' "$(last_line "$got")" '15'
 
 # --- Case 2: self-recursion (the fn calls itself via its letfn slot) ---
 got=$("$BIN" - <<'EOF' 2>/dev/null
-(letfn [(fact [n] (if (= n 0) 1 (* n (fact (dec n)))))]
-  (fact 5))
+(prn (letfn [(fact [n] (if (= n 0) 1 (* n (fact (dec n)))))]
+  (fact 5)))
 EOF
 ) || fail "case2 exit ($got)"
 assert_eq 'self_recursion' "$(last_line "$got")" '120'
 
 # --- Case 3: mutual recursion (even?/odd? cross-reference each other) ---
 got=$("$BIN" - <<'EOF' 2>/dev/null
-(letfn [(my-even? [n] (if (= n 0) true (my-odd? (dec n))))
+(prn (letfn [(my-even? [n] (if (= n 0) true (my-odd? (dec n))))
         (my-odd? [n] (if (= n 0) false (my-even? (dec n))))]
-  [(my-even? 10) (my-odd? 7)])
+  [(my-even? 10) (my-odd? 7)]))
 EOF
 ) || fail "case3 exit ($got)"
 assert_eq 'mutual_recursion' "$(last_line "$got")" '[true true]'
 
 # --- Case 4: a letfn fn closes over an enclosing let* local ---
 got=$("$BIN" - <<'EOF' 2>/dev/null
-(let [base 100]
+(prn (let [base 100]
   (letfn [(add-base [x] (+ base x))]
-    (add-base 23)))
+    (add-base 23))))
 EOF
 ) || fail "case4 exit ($got)"
 assert_eq 'closes_over_outer' "$(last_line "$got")" '123'
 
 # --- Case 5: a multi-arity letfn fn ---
 got=$("$BIN" - <<'EOF' 2>/dev/null
-(letfn [(g ([x] (g x 1))
+(prn (letfn [(g ([x] (g x 1))
            ([x y] (+ x y)))]
-  [(g 5) (g 5 20)])
+  [(g 5) (g 5 20)]))
 EOF
 ) || fail "case5 exit ($got)"
 assert_eq 'multi_arity' "$(last_line "$got")" '[6 25]'

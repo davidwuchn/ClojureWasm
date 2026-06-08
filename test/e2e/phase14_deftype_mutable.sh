@@ -50,7 +50,7 @@ got=$("$BIN" - <<'EOF' 2>/dev/null
 (defprotocol P (bump [c]))
 (deftype Ctr [^:unsynchronized-mutable n] P (bump [this] (set! n (inc n)) n))
 (def c (->Ctr 0))
-(bump c) (bump c) (bump c)
+(bump c) (bump c) (prn (bump c))
 EOF
 ) || fail "counter: non-zero exit ($got)"
 assert_eq 'mutable_counter_live_across_calls' "$(last_line "$got")" '3'
@@ -59,7 +59,7 @@ assert_eq 'mutable_counter_live_across_calls' "$(last_line "$got")" '3'
 got=$("$BIN" - <<'EOF' 2>/dev/null
 (defprotocol P (go [c]))
 (deftype C [^:unsynchronized-mutable n] P (go [this] (set! n 5) (+ n n)))
-(go (->C 0))
+(prn (go (->C 0)))
 EOF
 ) || fail "raw: non-zero exit ($got)"
 assert_eq 'read_after_write_in_one_body' "$(last_line "$got")" '10'
@@ -69,7 +69,7 @@ got=$("$BIN" - <<'EOF' 2>/dev/null
 (defprotocol P (go [c]))
 (deftype C [a ^:unsynchronized-mutable n] P (go [this] (set! n (+ a n)) n))
 (def c (->C 10 0))
-(go c) (go c)
+(go c) (prn (go c))
 EOF
 ) || fail "mix: non-zero exit ($got)"
 assert_eq 'immutable_and_mutable_mix' "$(last_line "$got")" '20'
@@ -79,7 +79,7 @@ got=$("$BIN" - <<'EOF' 2>/dev/null
 (defprotocol P (go [c]))
 (deftype C [^:volatile-mutable n] P (go [this] (set! n (inc n)) n))
 (def c (->C 0))
-(go c) (go c)
+(go c) (prn (go c))
 EOF
 ) || fail "volatile: non-zero exit ($got)"
 assert_eq 'volatile_mutable_same_as_unsynchronized' "$(last_line "$got")" '2'
@@ -89,7 +89,7 @@ got=$("$BIN" - <<'EOF' 2>/dev/null
 (defprotocol P (go [c]) (peek* [c]))
 (deftype C [^:unsynchronized-mutable ^long n] P (go [this] (set! n "hi") n) (peek* [this] n))
 (def c (->C 0))
-(go c)
+(prn (go c))
 EOF
 ) || fail "longhint: non-zero exit ($got)"
 assert_eq 'long_hint_ignored_accepts_non_long' "$(last_line "$got")" '"hi"'

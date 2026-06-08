@@ -41,7 +41,7 @@ last_line() {
 got=$("$BIN" - <<'EOF' 2>/dev/null
 (defprotocol P (m [this]))
 (defrecord R [v] P (m [this] (* v 2)))
-(m (->R 5))
+(prn (m (->R 5)))
 EOF
 ) || fail "case1: non-zero exit ($got)"
 assert_eq 'defrecord_bare_field' "$(last_line "$got")" '10'
@@ -50,7 +50,7 @@ assert_eq 'defrecord_bare_field' "$(last_line "$got")" '10'
 got=$("$BIN" - <<'EOF' 2>/dev/null
 (defprotocol P (m [this]))
 (deftype T [v] P (m [this] (* v 3)))
-(m (->T 4))
+(prn (m (->T 4)))
 EOF
 ) || fail "case2: non-zero exit ($got)"
 assert_eq 'deftype_bare_field' "$(last_line "$got")" '12'
@@ -59,7 +59,7 @@ assert_eq 'deftype_bare_field' "$(last_line "$got")" '12'
 got=$("$BIN" - <<'EOF' 2>/dev/null
 (defprotocol P (m [this v]))
 (defrecord R [v] P (m [this v] v))
-(m (->R 1) 99)
+(prn (m (->R 1) 99))
 EOF
 ) || fail "case3: non-zero exit ($got)"
 assert_eq 'param_shadows_field' "$(last_line "$got")" '99'
@@ -68,7 +68,7 @@ assert_eq 'param_shadows_field' "$(last_line "$got")" '99'
 got=$("$BIN" - <<'EOF' 2>/dev/null
 (defprotocol P (m [this x]))
 (defrecord R [v] P (m [this x] (+ v x)))
-(m (->R 10) 5)
+(prn (m (->R 10) 5))
 EOF
 ) || fail "case4: non-zero exit ($got)"
 assert_eq 'unshadowed_field_with_param' "$(last_line "$got")" '15'
@@ -77,7 +77,7 @@ assert_eq 'unshadowed_field_with_param' "$(last_line "$got")" '15'
 got=$("$BIN" - <<'EOF' 2>/dev/null
 (defprotocol IPt (sx [t]) (sy [t]) (sm [t]))
 (defrecord Pt [a b] IPt (sx [_] a) (sy [_] b) (sm [_] (+ a b)))
-[(sx (->Pt 3 4)) (sy (->Pt 3 4)) (sm (->Pt 3 4))]
+(prn [(sx (->Pt 3 4)) (sy (->Pt 3 4)) (sm (->Pt 3 4))])
 EOF
 ) || fail "case5: non-zero exit ($got)"
 assert_eq 'multi_field_bare' "$(last_line "$got")" '[3 4 7]'
@@ -86,7 +86,7 @@ assert_eq 'multi_field_bare' "$(last_line "$got")" '[3 4 7]'
 got=$("$BIN" - <<'EOF' 2>/dev/null
 (defprotocol P (m [this]))
 (deftype T [v] P (m [_] (inc v)))
-(m (->T 41))
+(prn (m (->T 41)))
 EOF
 ) || fail "case6: non-zero exit ($got)"
 assert_eq 'discard_instance_bare_field' "$(last_line "$got")" '42'
@@ -95,7 +95,7 @@ assert_eq 'discard_instance_bare_field' "$(last_line "$got")" '42'
 got=$("$BIN" - <<'EOF' 2>/dev/null
 (defprotocol Shape (area [s]))
 (defrecord Sq [side] Shape (area [s] (* (:side s) side)))
-(area (->Sq 6))
+(prn (area (->Sq 6)))
 EOF
 ) || fail "case7: non-zero exit ($got)"
 assert_eq 'explicit_and_bare_mix' "$(last_line "$got")" '36'

@@ -35,10 +35,10 @@ assert_eq 'left_node' "$got" '10'
 
 # --- right at rightmost returns nil ---
 got=$("$BIN" - <<'EOF' 2>/dev/null
-(clojure.zip/right
+(prn (clojure.zip/right
   (clojure.zip/right
     (clojure.zip/right
-      (clojure.zip/down (clojure.zip/vector-zip [1 2 3])))))
+      (clojure.zip/down (clojure.zip/vector-zip [1 2 3]))))))
 EOF
 )
 assert_eq 'right_past_end_nil' "$got" 'nil'
@@ -53,20 +53,20 @@ assert_eq 'up_at_root_nil' "$got" 'nil'
 
 # --- root returns the root node value ---
 got=$("$BIN" - <<'EOF' 2>/dev/null
-(clojure.zip/root
+(prn (clojure.zip/root
   (clojure.zip/right
-    (clojure.zip/down (clojure.zip/vector-zip [10 20 30]))))
+    (clojure.zip/down (clojure.zip/vector-zip [10 20 30])))))
 EOF
 )
 assert_eq 'root_value' "$got" '[10 20 30]'
 
 # --- leftmost / rightmost ---
 got=$("$BIN" - <<'EOF' 2>/dev/null
-(clojure.zip/node
+(prn (clojure.zip/node
   (clojure.zip/leftmost
     (clojure.zip/right
       (clojure.zip/right
-        (clojure.zip/down (clojure.zip/vector-zip [10 20 30]))))))
+        (clojure.zip/down (clojure.zip/vector-zip [10 20 30])))))))
 EOF
 )
 assert_eq 'leftmost' "$got" '10'
@@ -77,28 +77,28 @@ assert_eq 'rightmost' "$got" '30'
 # --- lefts / rights — JVM returns a SEQ, not the raw vector field
 # (clojure.zip sweep 2026-06-02: `(lefts …)`→`(10 20)` not `[10 20]`). ---
 got=$("$BIN" - <<'EOF' 2>/dev/null
-(clojure.zip/lefts
+(prn (clojure.zip/lefts
   (clojure.zip/right
     (clojure.zip/right
-      (clojure.zip/down (clojure.zip/vector-zip [10 20 30 40])))))
+      (clojure.zip/down (clojure.zip/vector-zip [10 20 30 40]))))))
 EOF
 )
 assert_eq 'lefts_field' "$got" '(10 20)'
 
 got=$("$BIN" - <<'EOF' 2>/dev/null
-(clojure.zip/rights
+(prn (clojure.zip/rights
   (clojure.zip/right
-    (clojure.zip/down (clojure.zip/vector-zip [10 20 30 40]))))
+    (clojure.zip/down (clojure.zip/vector-zip [10 20 30 40])))))
 EOF
 )
 assert_eq 'rights_field' "$got" '(30 40)'
 
 # --- path walks parent chain, root-down, excluding current ---
 got=$("$BIN" - <<'EOF' 2>/dev/null
-(clojure.zip/path
+(prn (clojure.zip/path
   (clojure.zip/down
     (clojure.zip/right
-      (clojure.zip/down (clojure.zip/vector-zip [10 [20 30] 40])))))
+      (clojure.zip/down (clojure.zip/vector-zip [10 [20 30] 40]))))))
 EOF
 )
 assert_eq 'path_chain' "$got" '[[10 [20 30] 40] [20 30]]'

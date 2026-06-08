@@ -31,21 +31,21 @@ last_line() { awk 'END { print }' <<< "$1"; }
 
 # --- (1) transient round-trip end-to-end (row 8.5) ---
 got=$("$BIN" - <<'EOF' 2>/dev/null
-(persistent! (conj! (conj! (transient []) :a) :b))
+(prn (persistent! (conj! (conj! (transient []) :a) :b)))
 EOF
 ) || fail "(1): non-zero exit ($got)"
 assert_eq 'transient_vector_round_trip' "$(last_line "$got")" '[:a :b]'
 
 # --- (2) transient map round-trip (row 8.5 cycle 2) ---
 got=$("$BIN" - <<'EOF' 2>/dev/null
-(persistent! (assoc! (transient {}) :k 42))
+(prn (persistent! (assoc! (transient {}) :k 42)))
 EOF
 ) || fail "(2): non-zero exit ($got)"
 assert_eq 'transient_map_round_trip' "$(last_line "$got")" '{:k 42}'
 
 # --- (3) transient set round-trip + map-invert discharge form (row 8.5 cycle 3) ---
 got=$("$BIN" - <<'EOF' 2>/dev/null
-(persistent! (disj! (conj! (transient #{}) :a) :a))
+(prn (persistent! (disj! (conj! (transient #{}) :a) :a)))
 EOF
 ) || fail "(3): non-zero exit ($got)"
 assert_eq 'transient_set_round_trip' "$(last_line "$got")" '#{}'
@@ -53,7 +53,7 @@ assert_eq 'transient_set_round_trip' "$(last_line "$got")" '#{}'
 # --- (4) clojure.set/map-invert via the transient form (row 8.5 discharge) ---
 got=$("$BIN" - <<'EOF' 2>/dev/null
 (require '[clojure.set :as s])
-(s/map-invert {:a 1 :b 2})
+(prn (s/map-invert {:a 1 :b 2}))
 EOF
 ) || fail "(4): non-zero exit ($got)"
 case "$(last_line "$got")" in
@@ -65,7 +65,7 @@ esac
 got=$("$BIN" - <<'EOF' 2>/dev/null
 (defrecord Box [v])
 (extend-type Box ISeq (-first [b] (get b :v)))
-(first (->Box :hello))
+(prn (first (->Box :hello)))
 EOF
 ) || fail "(5): non-zero exit ($got)"
 assert_eq 'd089_iseq_extend_smoke' "$(last_line "$got")" ':hello'
@@ -74,7 +74,7 @@ assert_eq 'd089_iseq_extend_smoke' "$(last_line "$got")" ':hello'
 got=$("$BIN" - <<'EOF' 2>/dev/null
 (def Long (rt/__native-type :integer))
 (extend-type Long IPersistentSet (-disjoin [n k] :disj-on-int))
-(disj 42 :x)
+(prn (disj 42 :x))
 EOF
 ) || fail "(6): non-zero exit ($got)"
 assert_eq 'd089_ips_extend_smoke' "$(last_line "$got")" ':disj-on-int'

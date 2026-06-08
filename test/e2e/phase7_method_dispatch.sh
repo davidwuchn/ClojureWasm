@@ -39,7 +39,7 @@ last_line() { awk 'END { print }' <<< "$1"; }
 got=$("$BIN" - <<'EOF' 2>/dev/null
 (defprotocol IShift (shift-by [this n]))
 (defrecord Box [x] IShift (shift-by [this n] (+ (get this :x) n)))
-(.shift-by (->Box 10) 5)
+(prn (.shift-by (->Box 10) 5))
 EOF
 ) || fail "case1: non-zero exit ($got)"
 assert_eq 'defrecord_dot_method_dispatch' "$(last_line "$got")" '15'
@@ -47,7 +47,7 @@ assert_eq 'defrecord_dot_method_dispatch' "$(last_line "$got")" '15'
 # --- Case 2: (.method reified arg) on reify routes through dispatch ---
 got=$("$BIN" - <<'EOF' 2>/dev/null
 (defprotocol IShift (shift-by [this n]))
-(.shift-by (reify IShift (shift-by [this n] (* n 3))) 7)
+(prn (.shift-by (reify IShift (shift-by [this n] (* n 3))) 7))
 EOF
 ) || fail "case2: non-zero exit ($got)"
 assert_eq 'reify_dot_method_dispatch' "$(last_line "$got")" '21'
@@ -55,7 +55,7 @@ assert_eq 'reify_dot_method_dispatch' "$(last_line "$got")" '21'
 # --- Case 3: arity-2 (.field rec) still field-reads (row 7.6 §4 A) ---
 got=$("$BIN" - <<'EOF' 2>/dev/null
 (defrecord Point [x y])
-(.x (->Point 99 100))
+(prn (.x (->Point 99 100)))
 EOF
 ) || fail "case3: non-zero exit ($got)"
 assert_eq 'defrecord_arity2_stays_field_read' "$(last_line "$got")" '99'
@@ -74,8 +74,8 @@ echo "PASS method_unknown_raises"
 # --- Case 5: closure capture across .method dispatch on reify ---
 got=$("$BIN" - <<'EOF' 2>/dev/null
 (defprotocol IAdd (add-it [this n]))
-(let* [outer 1000]
-  (.add-it (reify IAdd (add-it [this n] (+ outer n))) 23))
+(prn (let* [outer 1000]
+  (.add-it (reify IAdd (add-it [this n] (+ outer n))) 23)))
 EOF
 ) || fail "case5: non-zero exit ($got)"
 assert_eq 'reify_dot_method_closure_capture' "$(last_line "$got")" '1023'

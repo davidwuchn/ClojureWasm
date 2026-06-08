@@ -40,7 +40,7 @@ esac
 # --- Case 2: :refer-clojure :exclude allows other clojure.core vars ---
 got=$("$BIN" - <<'EOF' 2>/dev/null | last_line
 (ns my.app (:refer-clojure :exclude [+]))
-(- 5 2)
+(prn (- 5 2))
 EOF
 )
 assert_eq 'ns_refer_clojure_exclude_other_works' "$got" '3'
@@ -60,8 +60,8 @@ esac
 
 # --- Case 4: :refer-clojure :only lets the whitelisted var through ---
 got=$("$BIN" - <<'EOF' 2>/dev/null | last_line
-(ns my.app (:refer-clojure :only [+]))
-(+ 1 2)
+(ns my.app (:refer-clojure :only [+ prn]))
+(prn (+ 1 2))
 EOF
 )
 assert_eq 'ns_refer_clojure_only_whitelist_works' "$got" '3'
@@ -69,7 +69,7 @@ assert_eq 'ns_refer_clojure_only_whitelist_works' "$got" '3'
 # --- Case 5: ns-level (:require [foo :as f]) makes alias reachable ---
 got=$("$BIN" - <<'EOF' 2>/dev/null | last_line
 (ns my.app (:require [clojure.string :as s]))
-(s/upper-case "hi")
+(prn (s/upper-case "hi"))
 EOF
 )
 assert_eq 'ns_require_as_alias' "$got" '"HI"'
@@ -77,7 +77,7 @@ assert_eq 'ns_require_as_alias' "$got" '"HI"'
 # --- Case 6: ns-level (:require [foo :refer [bar]]) makes bar reachable ---
 got=$("$BIN" - <<'EOF' 2>/dev/null | last_line
 (ns my.app (:require [clojure.string :refer [upper-case]]))
-(upper-case "hi")
+(prn (upper-case "hi"))
 EOF
 )
 assert_eq 'ns_require_refer_names' "$got" '"HI"'
@@ -85,7 +85,7 @@ assert_eq 'ns_require_refer_names' "$got" '"HI"'
 # --- Case 7: combined (:as + :refer) inside ns ---
 got=$("$BIN" - <<'EOF' 2>/dev/null | last_line
 (ns my.app (:require [clojure.string :as s :refer [upper-case]]))
-[(s/lower-case "AB") (upper-case "cd")]
+(prn [(s/lower-case "AB") (upper-case "cd")])
 EOF
 )
 assert_eq 'ns_require_combined' "$got" '["ab" "CD"]'

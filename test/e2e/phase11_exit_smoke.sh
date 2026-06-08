@@ -27,7 +27,7 @@ last_line() { awk 'END { print }' <<< "$1"; }
 got=$("$BIN" - <<'EOF' 2>/dev/null
 (clojure.test/deftest t1 (clojure.test/is (= 1 1)))
 (clojure.test/deftest t2 (clojure.test/is true))
-(let [s (clojure.test/run-tests)] [(:pass s) (:fail s)])
+(prn (let [s (clojure.test/run-tests)] [(:pass s) (:fail s)]))
 EOF
 ) || fail "(1): non-zero exit"
 assert_eq 'clojure_test_compose' "$(last_line "$got")" '[2 0]'
@@ -43,7 +43,7 @@ got=$("$BIN" - <<'EOF' 2>/dev/null
     (= 2 (count (clojure.set/intersection
                   (clojure.edn/read-string "#{1 2 3}")
                   #{2 3 4})))))
-(let [s (clojure.test/run-tests)] [(:pass s) (:fail s)])
+(prn (let [s (clojure.test/run-tests)] [(:pass s) (:fail s)]))
 EOF
 ) || fail "(3): non-zero exit"
 assert_eq 'self_host_test_set_edn' "$(last_line "$got")" '[1 0]'

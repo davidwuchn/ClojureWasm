@@ -35,31 +35,31 @@ last_line() { awk 'END { print }' <<< "$1"; }
 
 # --- (1) EDN round-trip ---
 got=$("$BIN" - <<'EOF' 2>/dev/null
-(clojure.edn/read-string "[1 2 3]")
+(prn (clojure.edn/read-string "[1 2 3]"))
 EOF
 ) || fail "(1): non-zero exit"
 assert_eq 'edn_round_trip' "$(last_line "$got")" '[1 2 3]'
 
 # --- (2) JSON round-trip ---
 got=$("$BIN" - <<'EOF' 2>/dev/null
-(clojure.data.json/read-str (clojure.data.json/write-str [1 "x" nil true]))
+(prn (clojure.data.json/read-str (clojure.data.json/write-str [1 "x" nil true])))
 EOF
 ) || fail "(2): non-zero exit"
 assert_eq 'json_round_trip' "$(last_line "$got")" '[1 "x" nil true]'
 
 # --- (3) CSV round-trip ---
 got=$("$BIN" - <<'EOF' 2>/dev/null
-(clojure.data.csv/read-csv (clojure.data.csv/write-csv [["a" "b,c"] ["d" "e\"f"]]))
+(prn (clojure.data.csv/read-csv (clojure.data.csv/write-csv [["a" "b,c"] ["d" "e\"f"]])))
 EOF
 ) || fail "(3): non-zero exit"
 assert_eq 'csv_round_trip' "$(last_line "$got")" '[["a" "b,c"] ["d" "e\"f"]]'
 
 # --- (4) tools.cli parse-opts smoke ---
 got=$("$BIN" - <<'EOF' 2>/dev/null
-(get (clojure.tools.cli/parse-opts
+(prn (get (clojure.tools.cli/parse-opts
   ["--port" "8080" "input.clj"]
   [["-p" "--port PORT" "Port"]])
-  :options)
+  :options))
 EOF
 ) || fail "(4): non-zero exit"
 assert_eq 'cli_parse_opts_smoke' "$(last_line "$got")" '{:port "8080"}'
@@ -76,9 +76,9 @@ echo "PASS modules_zone_check_gate"
 # clojure.core (defn / let / fn) + clojure.set (intersection) +
 # clojure.edn (read-string) — three distinct embedded namespaces.
 got=$("$BIN" - <<'EOF' 2>/dev/null
-(clojure.set/intersection
+(prn (clojure.set/intersection
   #{1 2 3}
-  (clojure.edn/read-string "#{2 3 4}"))
+  (clojure.edn/read-string "#{2 3 4}")))
 EOF
 ) || fail "(6): non-zero exit"
 case "$(last_line "$got")" in

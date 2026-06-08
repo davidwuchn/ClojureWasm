@@ -53,13 +53,13 @@ assert_eq 'fn_rest_pat'   "$("$BIN" -e '((fn [a & [b c]] (+ a b c)) 1 2 3)')"   
 assert_eq 'fn_plain_reg'  "$("$BIN" -e '((fn [a b] (+ a b)) 3 4)')"                      '7'
 defn_map=$("$BIN" - <<'CLJ' 2>/dev/null
 (defn f [{:keys [x]}] x)
-(f {:x 5})
+(prn (f {:x 5}))
 CLJ
 )
 assert_eq 'defn_map_param' "$(awk 'END{print}' <<< "$defn_map")" '5'
 defn_multi=$("$BIN" - <<'CLJ' 2>/dev/null
 (defn g ([[a]] a) ([[a b] c] (+ a b c)))
-[(g [9]) (g [1 2] 3)]
+(prn [(g [9]) (g [1 2] 3)])
 CLJ
 )
 assert_eq 'defn_multi_destructure' "$(awk 'END{print}' <<< "$defn_multi")" '[9 6]'

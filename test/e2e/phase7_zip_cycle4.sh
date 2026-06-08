@@ -57,23 +57,23 @@ got=$("$BIN" -e '(clojure.zip/root (clojure.zip/remove (clojure.zip/down (clojur
 assert_eq 'remove_first_child' "$got" '[2 3]'
 
 got=$("$BIN" - <<'EOF' 2>/dev/null
-(clojure.zip/root
+(prn (clojure.zip/root
   (clojure.zip/remove
     (clojure.zip/right
-      (clojure.zip/down (clojure.zip/vector-zip [1 2 3])))))
+      (clojure.zip/down (clojure.zip/vector-zip [1 2 3]))))))
 EOF
 )
 assert_eq 'remove_middle_child' "$got" '[1 3]'
 
 # --- composition: walk, edit each leaf, return modified root ---
 got=$("$BIN" - <<'EOF' 2>/dev/null
-(loop* [loc (clojure.zip/vector-zip [1 [2 3] 4])]
+(prn (loop* [loc (clojure.zip/vector-zip [1 [2 3] 4])]
   (if (clojure.zip/end? loc)
     (clojure.zip/root loc)
     (let* [n (clojure.zip/node loc)]
       (if (clojure.zip/branch? loc)
         (recur (clojure.zip/next loc))
-        (recur (clojure.zip/next (clojure.zip/replace loc (* n 10))))))))
+        (recur (clojure.zip/next (clojure.zip/replace loc (* n 10)))))))))
 EOF
 )
 assert_eq 'walk_and_edit_leaves' "$got" '[10 [20 30] 40]'

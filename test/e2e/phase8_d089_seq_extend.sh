@@ -36,7 +36,7 @@ last_line() {
 got=$("$BIN" - <<'EOF' 2>/dev/null
 (defrecord Box [v])
 (extend-type Box ISeq (-first [b] (get b :v)))
-(first (->Box 42))
+(prn (first (->Box 42)))
 EOF
 ) || fail "case1: non-zero exit ($got)"
 assert_eq 'defrecord_first_via_extend_type' "$(last_line "$got")" '42'
@@ -45,7 +45,7 @@ assert_eq 'defrecord_first_via_extend_type' "$(last_line "$got")" '42'
 got=$("$BIN" - <<'EOF' 2>/dev/null
 (defrecord Box [v])
 (extend-type Box ISeq (-rest [b] '(99)))
-(rest (->Box 42))
+(prn (rest (->Box 42)))
 EOF
 ) || fail "case2: non-zero exit ($got)"
 assert_eq 'defrecord_rest_via_extend_type' "$(last_line "$got")" '(99)'
@@ -54,7 +54,7 @@ assert_eq 'defrecord_rest_via_extend_type' "$(last_line "$got")" '(99)'
 got=$("$BIN" - <<'EOF' 2>/dev/null
 (defrecord Box [v])
 (extend-type Box ISeq (-next [b] (get b :v)))
-(next (->Box "hi"))
+(prn (next (->Box "hi")))
 EOF
 ) || fail "case3: non-zero exit ($got)"
 assert_eq 'defrecord_next_via_extend_type' "$(last_line "$got")" '"hi"'
@@ -63,7 +63,7 @@ assert_eq 'defrecord_next_via_extend_type' "$(last_line "$got")" '"hi"'
 got=$("$BIN" - <<'EOF' 2>/dev/null
 (defrecord Box [v])
 (extend-type Box IPersistentCollection (-empty [_] :empty-box))
-(empty (->Box 42))
+(prn (empty (->Box 42)))
 EOF
 ) || fail "case4: non-zero exit ($got)"
 assert_eq 'defrecord_empty_via_extend_type' "$(last_line "$got")" ':empty-box'
@@ -72,7 +72,7 @@ assert_eq 'defrecord_empty_via_extend_type' "$(last_line "$got")" ':empty-box'
 got=$("$BIN" - <<'EOF' 2>/dev/null
 (def Long (rt/__native-type :integer))
 (extend-type Long ISeq (-first [n] (+ n 100)))
-(first 42)
+(prn (first 42))
 EOF
 ) || fail "case5: non-zero exit ($got)"
 assert_eq 'long_first_via_outer_else_slow_path' "$(last_line "$got")" '142'

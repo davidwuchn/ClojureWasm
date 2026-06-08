@@ -48,7 +48,7 @@ last_line() {
 # --- Case 1: defprotocol lowers + satisfies? false on integer ---
 got=$("$BIN" - <<'EOF' 2>/dev/null
 (defprotocol IPing (ping [this]))
-(rt/__satisfies? IPing 42)
+(prn (rt/__satisfies? IPing 42))
 EOF
 ) || fail "case1: non-zero exit ($got)"
 assert_eq 'defprotocol_satisfies_false_on_integer' "$(last_line "$got")" 'false'
@@ -56,7 +56,7 @@ assert_eq 'defprotocol_satisfies_false_on_integer' "$(last_line "$got")" 'false'
 # --- Case 2: defprotocol with multi-method form ---
 got=$("$BIN" - <<'EOF' 2>/dev/null
 (defprotocol IPair (first-of [p]) (second-of [p]))
-(rt/__satisfies? IPair "hello")
+(prn (rt/__satisfies? IPair "hello"))
 EOF
 ) || fail "case2: non-zero exit ($got)"
 assert_eq 'defprotocol_multi_method_satisfies_false' "$(last_line "$got")" 'false'
@@ -85,7 +85,7 @@ echo "PASS defprotocol_zero_method_marker"
 # that the method-fn Var lands as a .protocol_fn-tagged Value.
 got=$("$BIN" - <<'EOF' 2>/dev/null
 (defprotocol IPing (ping [this]))
-ping
+(prn ping)
 EOF
 ) || fail "case4: non-zero exit ($got)"
 last=$(last_line "$got")
@@ -97,7 +97,7 @@ echo "PASS defprotocol_per_method_var_binding -> protocol_fn"
 # --- Case 5 (ADR-0038): recursive defn works ---
 got=$("$BIN" - <<'EOF' 2>/dev/null
 (defn fact [n] (if (= n 0) 1 (* n (fact (- n 1)))))
-(fact 5)
+(prn (fact 5))
 EOF
 ) || fail "case5: non-zero exit ($got)"
 assert_eq 'recursive_defn_factorial' "$(last_line "$got")" '120'
@@ -111,7 +111,7 @@ got=$("$BIN" - <<'EOF' 2>/dev/null
 (defprotocol IInc (inc-one [x]))
 (def Long (rt/__native-type :integer))
 (extend-type Long IInc (inc-one [x] (+ x 1)))
-(inc-one 41)
+(prn (inc-one 41))
 EOF
 ) || fail "case6: non-zero exit ($got)"
 assert_eq 'extend_type_long_native_dispatch' "$(last_line "$got")" '42'
@@ -121,7 +121,7 @@ got=$("$BIN" - <<'EOF' 2>/dev/null
 (defprotocol IInc (inc-one [x]))
 (def Long (rt/__native-type :integer))
 (extend-type Long IInc (inc-one [x] (+ x 1)))
-(rt/__satisfies? IInc 7)
+(prn (rt/__satisfies? IInc 7))
 EOF
 ) || fail "case7: non-zero exit ($got)"
 assert_eq 'extend_type_satisfies_native_receiver' "$(last_line "$got")" 'true'
@@ -129,7 +129,7 @@ assert_eq 'extend_type_satisfies_native_receiver' "$(last_line "$got")" 'true'
 # --- Case 8: public satisfies? wrapper false on unextended receiver ---
 got=$("$BIN" - <<'EOF' 2>/dev/null
 (defprotocol IPing (ping [this]))
-(satisfies? IPing 42)
+(prn (satisfies? IPing 42))
 EOF
 ) || fail "case8: non-zero exit ($got)"
 assert_eq 'satisfies_wrapper_false_on_integer' "$(last_line "$got")" 'false'
@@ -139,7 +139,7 @@ got=$("$BIN" - <<'EOF' 2>/dev/null
 (defprotocol IInc (inc-one [x]))
 (def Long (rt/__native-type :integer))
 (extend-type Long IInc (inc-one [x] (+ x 1)))
-(satisfies? IInc 7)
+(prn (satisfies? IInc 7))
 EOF
 ) || fail "case9: non-zero exit ($got)"
 assert_eq 'satisfies_wrapper_true_native_receiver' "$(last_line "$got")" 'true'
@@ -151,7 +151,7 @@ got=$("$BIN" - <<'EOF' 2>/dev/null
 (defprotocol IInc (inc-one [x]))
 (def Long (rt/__native-type :integer))
 (extend-type Long IInc (inc-one [x] (+ x 1)))
-(extends? IInc Long)
+(prn (extends? IInc Long))
 EOF
 ) || fail "case10: non-zero exit ($got)"
 assert_eq 'extends_wrapper_true_for_extended_type' "$(last_line "$got")" 'true'
@@ -162,7 +162,7 @@ got=$("$BIN" - <<'EOF' 2>/dev/null
 (defprotocol IPing (ping [this]))
 (def Long (rt/__native-type :integer))
 (extend-type Long IInc (inc-one [x] (+ x 1)))
-(extends? IPing Long)
+(prn (extends? IPing Long))
 EOF
 ) || fail "case11: non-zero exit ($got)"
 assert_eq 'extends_wrapper_false_for_unextended_protocol' "$(last_line "$got")" 'false'

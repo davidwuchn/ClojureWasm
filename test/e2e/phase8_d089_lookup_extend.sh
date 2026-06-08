@@ -35,7 +35,7 @@ last_line() {
 got=$("$BIN" - <<'EOF' 2>/dev/null
 (defrecord Bag [items])
 (extend-type Bag ILookup (-lookup [b k] :extended))
-(get (->Bag [1 2]) :missing)
+(prn (get (->Bag [1 2]) :missing))
 EOF
 ) || fail "case1: non-zero exit ($got)"
 assert_eq 'defrecord_lookup_via_extend_type' "$(last_line "$got")" ':extended'
@@ -43,7 +43,7 @@ assert_eq 'defrecord_lookup_via_extend_type' "$(last_line "$got")" ':extended'
 # --- Case 2: get without -lookup falls back to default ---
 got=$("$BIN" - <<'EOF' 2>/dev/null
 (defrecord Plain [a])
-(get (->Plain 1) :missing :fallback)
+(prn (get (->Plain 1) :missing :fallback))
 EOF
 ) || fail "case2: non-zero exit ($got)"
 assert_eq 'defrecord_get_no_extend_falls_back_to_default' "$(last_line "$got")" ':fallback'
@@ -52,7 +52,7 @@ assert_eq 'defrecord_get_no_extend_falls_back_to_default' "$(last_line "$got")" 
 got=$("$BIN" - <<'EOF' 2>/dev/null
 (defrecord Pair [x y])
 (extend-type Pair Indexed (-nth [p i] (if (= i 0) (get p :x) (get p :y))))
-(nth (->Pair 10 20) 1)
+(prn (nth (->Pair 10 20) 1))
 EOF
 ) || fail "case3: non-zero exit ($got)"
 assert_eq 'defrecord_nth_via_extend_type' "$(last_line "$got")" '20'
@@ -61,7 +61,7 @@ assert_eq 'defrecord_nth_via_extend_type' "$(last_line "$got")" '20'
 got=$("$BIN" - <<'EOF' 2>/dev/null
 (def Long (rt/__native-type :integer))
 (extend-type Long ILookup (-lookup [n _] (+ n 1000)))
-(get 42 :anything)
+(prn (get 42 :anything))
 EOF
 ) || fail "case4: non-zero exit ($got)"
 assert_eq 'long_lookup_via_outer_else_slow_path' "$(last_line "$got")" '1042'

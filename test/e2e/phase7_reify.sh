@@ -66,7 +66,7 @@ echo "PASS reify_method_invalid_diagnostic"
 # --- Case 5 (cycle 3): reify happy path — method body returns 42 ---
 got=$("$BIN" - <<'EOF' 2>/dev/null
 (defprotocol P (m [x]))
-(m (reify P (m [this] 42)))
+(prn (m (reify P (m [this] 42))))
 EOF
 ) || fail "case5: non-zero exit ($got)"
 last=$(awk 'END { print }' <<< "$got")
@@ -78,8 +78,8 @@ echo "PASS reify_happy_path_dispatch -> 42"
 # --- Case 6 (cycle 3): closure capture across reify body ---
 got=$("$BIN" - <<'EOF' 2>/dev/null
 (defprotocol P (m [x]))
-(let* [outer 100]
-  (m (reify P (m [this] (+ outer 7)))))
+(prn (let* [outer 100]
+  (m (reify P (m [this] (+ outer 7))))))
 EOF
 ) || fail "case6: non-zero exit ($got)"
 last=$(awk 'END { print }' <<< "$got")
@@ -91,7 +91,7 @@ echo "PASS reify_closure_capture -> 107"
 # --- Case 7 (cycle 3): satisfies? returns true on reified instance ---
 got=$("$BIN" - <<'EOF' 2>/dev/null
 (defprotocol P (m [x]))
-(rt/__satisfies? P (reify P (m [this] 42)))
+(prn (rt/__satisfies? P (reify P (m [this] 42))))
 EOF
 ) || fail "case7: non-zero exit ($got)"
 last=$(awk 'END { print }' <<< "$got")

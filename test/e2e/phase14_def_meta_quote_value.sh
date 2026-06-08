@@ -26,7 +26,7 @@ assert_eq() {
 # defn attr-map with a quoted-list value → lifts to the unquoted datum.
 got=$("$BIN" - <<'EOF' 2>/dev/null | tail -1
 (defn g {:foo '(a b)} [x] x)
-(:foo (meta (var g)))
+(prn (:foo (meta (var g))))
 EOF
 )
 assert_eq 'defn_quoted_list_meta' "$got" '(a b)'
@@ -34,7 +34,7 @@ assert_eq 'defn_quoted_list_meta' "$got" '(a b)'
 # defmulti attr-map :arglists '([k v]) → ([k v]) (the integrant case).
 got=$("$BIN" - <<'EOF' 2>/dev/null | tail -1
 (defmulti mm {:arglists '([k v])} (fn [k v] k))
-(:arglists (meta (var mm)))
+(prn (:arglists (meta (var mm))))
 EOF
 )
 assert_eq 'defmulti_quoted_arglists' "$got" '([k v])'
@@ -42,7 +42,7 @@ assert_eq 'defmulti_quoted_arglists' "$got" '([k v])'
 # raw def with reader ^{:tag '(x y)} → (x y).
 got=$("$BIN" - <<'EOF' 2>/dev/null | tail -1
 (def ^{:tag '(x y)} z 1)
-(:tag (meta (var z)))
+(prn (:tag (meta (var z))))
 EOF
 )
 assert_eq 'def_reader_quoted_meta' "$got" '(x y)'
@@ -50,7 +50,7 @@ assert_eq 'def_reader_quoted_meta' "$got" '(x y)'
 # literal (self-evaluating) meta values are unchanged.
 got=$("$BIN" - <<'EOF' 2>/dev/null | tail -1
 (defn h {:foo :bar} [x] x)
-(:foo (meta (var h)))
+(prn (:foo (meta (var h))))
 EOF
 )
 assert_eq 'defn_literal_meta' "$got" ':bar'
@@ -58,7 +58,7 @@ assert_eq 'defn_literal_meta' "$got" ':bar'
 # defn's synthesized :arglists stays a list of param vectors (not quote-wrapped).
 got=$("$BIN" - <<'EOF' 2>/dev/null | tail -1
 (defn k [x y] x)
-(:arglists (meta (var k)))
+(prn (:arglists (meta (var k))))
 EOF
 )
 assert_eq 'defn_synth_arglists' "$got" '([x y])'

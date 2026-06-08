@@ -72,7 +72,7 @@ assert_eq 'native_method_replace_cc'  "$("$BIN" -e '(.replace "abcabc" (char 97)
 # --- Case 4: deftype field read still works (field-first, no regression) ---
 got=$("$BIN" - <<'EOF' 2>/dev/null
 (deftype Point [x y])
-(.x (Point. 7 9))
+(prn (.x (Point. 7 9)))
 EOF
 ) || fail "case4: non-zero exit ($got)"
 assert_eq 'deftype_field_read' "$(last_line "$got")" '7'
@@ -80,7 +80,7 @@ assert_eq 'deftype_field_read' "$(last_line "$got")" '7'
 # --- Case 5: (.-field rec) field-only read on deftype ---
 got=$("$BIN" - <<'EOF' 2>/dev/null
 (deftype Pair [a b])
-(.-b (Pair. 1 33))
+(prn (.-b (Pair. 1 33)))
 EOF
 ) || fail "case5: non-zero exit ($got)"
 assert_eq 'deftype_dash_field_read' "$(last_line "$got")" '33'

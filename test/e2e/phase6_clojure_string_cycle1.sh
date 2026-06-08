@@ -74,7 +74,7 @@ got=$("$BIN" - <<'EOF' | tail -1
 (in-ns (quote my.ns))
 (def x 42)
 (in-ns (quote user))
-my.ns/x
+(prn my.ns/x)
 EOF
 )
 assert_eq 'in_ns_round_trip' "$got" '42'

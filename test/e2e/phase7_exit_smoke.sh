@@ -36,9 +36,9 @@ got=$("$BIN" - <<'EOF' 2>/dev/null | tail -1
 (defprotocol IGreet (greet [this who]))
 (defrecord Greeter [tone] IGreet
   (greet [self who] (str (.tone self) ", " who "!")))
-(str (.greet (->Greeter "hi") "alice")
+(prn (str (.greet (->Greeter "hi") "alice")
      " | "
-     (.greet (->Greeter "hello") "world"))
+     (.greet (->Greeter "hello") "world")))
 EOF
 )
 assert_eq 'defprotocol_extend_methodcall' "$got" '"hi, alice! | hello, world!"'
@@ -51,11 +51,11 @@ got=$("$BIN" - <<'EOF' 2>/dev/null | tail -1
 (defmethod area :circle [s]    (* 3 (* (get s :r) (get s :r))))
 (defmethod area :square [s]    (* (get s :side) (get s :side)))
 (defmethod area :default [_]   :unknown)
-(str (area {:shape :circle :r 2})
+(prn (str (area {:shape :circle :r 2})
      " | "
      (area {:shape :square :side 5})
      " | "
-     (area {:shape :triangle}))
+     (area {:shape :triangle})))
 EOF
 )
 assert_eq 'defmulti_defmethod_dispatch' "$got" '"12 | 25 | :unknown"'
@@ -66,13 +66,13 @@ got=$("$BIN" - <<'EOF' 2>/dev/null | tail -1
 (def shifter (reify IShift (shift-by [_ n] (+ n 100))))
 ;; multi-arity fn* + apply variadic on the same expression
 (def f (fn* ([] 0) ([x] x) ([x y & rest] (apply + x y rest))))
-(str (.shift-by shifter 7)
+(prn (str (.shift-by shifter 7)
      " | "
      (f)
      " | "
      (f 42)
      " | "
-     (apply f 1 2 '(3 4 5)))
+     (apply f 1 2 '(3 4 5))))
 EOF
 )
 assert_eq 'reify_multi_arity_apply' "$got" '"107 | 0 | 42 | 15"'
@@ -83,7 +83,8 @@ got=$("$BIN" - <<'EOF' 2>/dev/null | tail -1
 (defprotocol IScale (scale [this k]))
 (defrecord Wrap [v] IScale (scale [self k] (* (.v self) k)))
 (def w (->Wrap 21))
-(try
+(prn
+ (try
   (if (instance? Wrap w)
     ;; clojure.zip walk-and-edit composition (row 7.13)
     (let* [z (clojure.zip/vector-zip [1 [2 3] 4])
@@ -94,7 +95,7 @@ got=$("$BIN" - <<'EOF' 2>/dev/null | tail -1
                              (conj acc (clojure.zip/node loc)))))]
       (str (.scale w 2) " | " walked))
     (throw (ex-info "wrong" {})))
-  (catch RuntimeException e (ex-message e)))
+  (catch RuntimeException e (ex-message e))))
 EOF
 )
 assert_eq 'phase7_composed' "$got" '"42 | [[1 [2 3] 4] 1 [2 3] 2 3 4]"'

@@ -59,8 +59,8 @@ echo "==> Phase-3 exit criteria"
 # Two top-level forms; `defn` evaluates to the var, rendered as the
 # var-quote form `#'user/f`, then the call yields the integer.
 got=$("$BIN" - <<'EOF' 2>&1
-(defn f [x] (+ x 1))
-(f 2)
+(prn (defn f [x] (+ x 1)))
+(prn (f 2))
 EOF
 ) || { echo "✗ defn exit: cljw exited non-zero" >&2; echo "  output: $got" >&2; exit 1; }
 if [[ "$got" != $'#\'user/f\n3' ]]; then

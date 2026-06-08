@@ -47,7 +47,7 @@ last_line() {
 # --- Case 1: defrecord parses cleanly + ctor + field access ---
 got=$("$BIN" - <<'EOF' 2>/dev/null
 (defrecord Point [x y])
-(.x (Point. 3 4))
+(prn (.x (Point. 3 4)))
 EOF
 ) || fail "case1: non-zero exit ($got)"
 assert_eq 'defrecord_ctor_field_access' "$(last_line "$got")" '3'
@@ -55,7 +55,7 @@ assert_eq 'defrecord_ctor_field_access' "$(last_line "$got")" '3'
 # --- Case 2: defrecord field y access ---
 got=$("$BIN" - <<'EOF' 2>/dev/null
 (defrecord Point [x y])
-(.y (Point. 3 4))
+(prn (.y (Point. 3 4)))
 EOF
 ) || fail "case2: non-zero exit ($got)"
 assert_eq 'defrecord_field_y_access' "$(last_line "$got")" '4'
@@ -84,7 +84,7 @@ echo "PASS defrecord_fields_not_vector_diagnostic"
 # --- Case 6 (cycle 3): implicit get on declared field ---
 got=$("$BIN" - <<'EOF' 2>/dev/null
 (defrecord Point [x y])
-(get (Point. 3 4) :x)
+(prn (get (Point. 3 4) :x))
 EOF
 ) || fail "case6: non-zero exit ($got)"
 assert_eq 'defrecord_get_declared_field' "$(last_line "$got")" '3'
@@ -96,7 +96,7 @@ assert_eq 'defrecord_get_declared_field' "$(last_line "$got")" '3'
 # import lang/primitive/collection.zig). Tracked via D-085 in debt.yaml.
 got=$("$BIN" - <<'EOF' 2>/dev/null
 (defrecord Point [x y])
-(let* [p (Point. 3 4)] (+ (get p :x) (get p :y)))
+(prn (let* [p (Point. 3 4)] (+ (get p :x) (get p :y))))
 EOF
 ) || fail "case7: non-zero exit ($got)"
 assert_eq 'defrecord_get_sum_two_fields' "$(last_line "$got")" '7'
@@ -104,7 +104,7 @@ assert_eq 'defrecord_get_sum_two_fields' "$(last_line "$got")" '7'
 # --- Case 8 (cycle 3): get on undeclared key returns nil ---
 got=$("$BIN" - <<'EOF' 2>/dev/null
 (defrecord Point [x y])
-(get (Point. 3 4) :z)
+(prn (get (Point. 3 4) :z))
 EOF
 ) || fail "case8: non-zero exit ($got)"
 assert_eq 'defrecord_get_undeclared_returns_nil' "$(last_line "$got")" 'nil'
@@ -112,7 +112,7 @@ assert_eq 'defrecord_get_undeclared_returns_nil' "$(last_line "$got")" 'nil'
 # --- Case 9 (cycle 3): get with default on undeclared key ---
 got=$("$BIN" - <<'EOF' 2>/dev/null
 (defrecord Point [x y])
-(get (Point. 3 4) :z 99)
+(prn (get (Point. 3 4) :z 99))
 EOF
 ) || fail "case9: non-zero exit ($got)"
 assert_eq 'defrecord_get_undeclared_default' "$(last_line "$got")" '99'
@@ -120,7 +120,7 @@ assert_eq 'defrecord_get_undeclared_default' "$(last_line "$got")" '99'
 # --- Case 10 (cycle 3): count returns field count ---
 got=$("$BIN" - <<'EOF' 2>/dev/null
 (defrecord Point [x y])
-(count (Point. 3 4))
+(prn (count (Point. 3 4)))
 EOF
 ) || fail "case10: non-zero exit ($got)"
 assert_eq 'defrecord_count_field_count' "$(last_line "$got")" '2'
@@ -128,7 +128,7 @@ assert_eq 'defrecord_count_field_count' "$(last_line "$got")" '2'
 # --- Case 12 (cycle 4): assoc on declared key returns updated record ---
 got=$("$BIN" - <<'EOF' 2>/dev/null
 (defrecord Point [x y])
-(get (assoc (Point. 3 4) :x 99) :x)
+(prn (get (assoc (Point. 3 4) :x 99) :x))
 EOF
 ) || fail "case12: non-zero exit ($got)"
 assert_eq 'defrecord_assoc_declared_field' "$(last_line "$got")" '99'
@@ -136,7 +136,7 @@ assert_eq 'defrecord_assoc_declared_field' "$(last_line "$got")" '99'
 # --- Case 13 (cycle 4): assoc preserves other fields ---
 got=$("$BIN" - <<'EOF' 2>/dev/null
 (defrecord Point [x y])
-(get (assoc (Point. 3 4) :x 99) :y)
+(prn (get (assoc (Point. 3 4) :x 99) :y))
 EOF
 ) || fail "case13: non-zero exit ($got)"
 assert_eq 'defrecord_assoc_preserves_other_field' "$(last_line "$got")" '4'
@@ -153,7 +153,7 @@ echo "PASS defrecord_assoc_undeclared_provisional"
 # --- Case 15 (cycle 4): keys returns the declared field names ---
 got=$("$BIN" - <<'EOF' 2>/dev/null
 (defrecord Point [x y])
-(count (keys (Point. 3 4)))
+(prn (count (keys (Point. 3 4))))
 EOF
 ) || fail "case15: non-zero exit ($got)"
 assert_eq 'defrecord_keys_count' "$(last_line "$got")" '2'
@@ -161,7 +161,7 @@ assert_eq 'defrecord_keys_count' "$(last_line "$got")" '2'
 # --- Case 16 (cycle 4): vals returns the declared values ---
 got=$("$BIN" - <<'EOF' 2>/dev/null
 (defrecord Point [x y])
-(count (vals (Point. 3 4)))
+(prn (count (vals (Point. 3 4))))
 EOF
 ) || fail "case16: non-zero exit ($got)"
 assert_eq 'defrecord_vals_count' "$(last_line "$got")" '2'
@@ -172,7 +172,7 @@ assert_eq 'defrecord_vals_count' "$(last_line "$got")" '2'
 # implicit map routing in `getFn`.
 got=$("$BIN" - <<'EOF' 2>/dev/null
 (deftype Pair [a b])
-(get (Pair. 1 2) :a)
+(prn (get (Pair. 1 2) :a))
 EOF
 ) || fail "case11: non-zero exit ($got)"
 assert_eq 'deftype_get_no_map_routing_returns_nil' "$(last_line "$got")" 'nil'
@@ -180,7 +180,7 @@ assert_eq 'deftype_get_no_map_routing_returns_nil' "$(last_line "$got")" 'nil'
 # --- Case 17 (cycle 5): ->Name positional factory ---
 got=$("$BIN" - <<'EOF' 2>/dev/null
 (defrecord Point [x y])
-(get (->Point 7 8) :x)
+(prn (get (->Point 7 8) :x))
 EOF
 ) || fail "case17: non-zero exit ($got)"
 assert_eq 'defrecord_arrow_factory' "$(last_line "$got")" '7'
@@ -190,7 +190,7 @@ got=$("$BIN" - <<'EOF' 2>/dev/null
 (defprotocol IPos (pos-sum [p]))
 (defrecord Point [x y]
   IPos (pos-sum [this] (+ (get this :x) (get this :y))))
-(pos-sum (->Point 10 20))
+(prn (pos-sum (->Point 10 20)))
 EOF
 ) || fail "case18: non-zero exit ($got)"
 assert_eq 'defrecord_inline_protocol_body' "$(last_line "$got")" '30'
@@ -198,7 +198,7 @@ assert_eq 'defrecord_inline_protocol_body' "$(last_line "$got")" '30'
 # --- Case 19 (cycle 6): record? true on defrecord instance ---
 got=$("$BIN" - <<'EOF' 2>/dev/null
 (defrecord Point [x y])
-(record? (->Point 1 2))
+(prn (record? (->Point 1 2)))
 EOF
 ) || fail "case19: non-zero exit ($got)"
 assert_eq 'defrecord_record_pred_true' "$(last_line "$got")" 'true'
@@ -206,7 +206,7 @@ assert_eq 'defrecord_record_pred_true' "$(last_line "$got")" 'true'
 # --- Case 20 (cycle 6): record? false on deftype instance ---
 got=$("$BIN" - <<'EOF' 2>/dev/null
 (deftype Pair [a b])
-(record? (Pair. 1 2))
+(prn (record? (Pair. 1 2)))
 EOF
 ) || fail "case20: non-zero exit ($got)"
 assert_eq 'deftype_record_pred_false' "$(last_line "$got")" 'false'
@@ -218,7 +218,7 @@ assert_eq 'map_record_pred_false' "$(last_line "$got")" 'false'
 # --- Case 22: record value equality — same type + same fields ---
 got=$("$BIN" - <<'EOF' 2>/dev/null
 (defrecord Point [x y])
-(= (->Point 1 2) (->Point 1 2))
+(prn (= (->Point 1 2) (->Point 1 2)))
 EOF
 ) || fail "case22: non-zero exit ($got)"
 assert_eq 'defrecord_value_equality_true' "$(last_line "$got")" 'true'
@@ -226,7 +226,7 @@ assert_eq 'defrecord_value_equality_true' "$(last_line "$got")" 'true'
 # --- Case 23: record inequality — same type, differing field ---
 got=$("$BIN" - <<'EOF' 2>/dev/null
 (defrecord Point [x y])
-(= (->Point 1 2) (->Point 1 3))
+(prn (= (->Point 1 2) (->Point 1 3)))
 EOF
 ) || fail "case23: non-zero exit ($got)"
 assert_eq 'defrecord_value_equality_false_field' "$(last_line "$got")" 'false'
@@ -234,7 +234,7 @@ assert_eq 'defrecord_value_equality_false_field' "$(last_line "$got")" 'false'
 # --- Case 24: a record is NOT equal to a plain map (defrecord class check) ---
 got=$("$BIN" - <<'EOF' 2>/dev/null
 (defrecord Point [x y])
-(= (->Point 1 2) {:x 1 :y 2})
+(prn (= (->Point 1 2) {:x 1 :y 2}))
 EOF
 ) || fail "case24: non-zero exit ($got)"
 assert_eq 'defrecord_not_eq_map' "$(last_line "$got")" 'false'
@@ -243,7 +243,7 @@ assert_eq 'defrecord_not_eq_map' "$(last_line "$got")" 'false'
 got=$("$BIN" - <<'EOF' 2>/dev/null
 (defrecord A [v])
 (defrecord B [v])
-(= (->A 1) (->B 1))
+(prn (= (->A 1) (->B 1)))
 EOF
 ) || fail "case25: non-zero exit ($got)"
 assert_eq 'defrecord_distinct_types_unequal' "$(last_line "$got")" 'false'
@@ -251,7 +251,7 @@ assert_eq 'defrecord_distinct_types_unequal' "$(last_line "$got")" 'false'
 # --- Case 26: equal records are usable as map keys (= ⇒ same hash bucket) ---
 got=$("$BIN" - <<'EOF' 2>/dev/null
 (defrecord Point [x y])
-(get {(->Point 1 2) :hit} (->Point 1 2))
+(prn (get {(->Point 1 2) :hit} (->Point 1 2)))
 EOF
 ) || fail "case26: non-zero exit ($got)"
 assert_eq 'defrecord_as_map_key' "$(last_line "$got")" ':hit'
@@ -259,7 +259,7 @@ assert_eq 'defrecord_as_map_key' "$(last_line "$got")" ':hit'
 # --- Case 27: keyword-as-fn reads a declared field — (:k rec) ≡ (get rec :k) ---
 got=$("$BIN" - <<'EOF' 2>/dev/null
 (defrecord Point [x y])
-(:x (->Point 1 2))
+(prn (:x (->Point 1 2)))
 EOF
 ) || fail "case27: non-zero exit ($got)"
 assert_eq 'defrecord_keyword_as_fn_field' "$(last_line "$got")" '1'
@@ -267,7 +267,7 @@ assert_eq 'defrecord_keyword_as_fn_field' "$(last_line "$got")" '1'
 # --- Case 28: keyword-as-fn on a non-declared key → nil ---
 got=$("$BIN" - <<'EOF' 2>/dev/null
 (defrecord Point [x y])
-(:missing (->Point 1 2))
+(prn (:missing (->Point 1 2)))
 EOF
 ) || fail "case28: non-zero exit ($got)"
 assert_eq 'defrecord_keyword_as_fn_missing' "$(last_line "$got")" 'nil'
@@ -278,7 +278,7 @@ assert_eq 'defrecord_keyword_as_fn_missing' "$(last_line "$got")" 'nil'
 got=$("$BIN" - <<'EOF' 2>/dev/null
 (defprotocol Shape (area [s]))
 (defrecord Sq [side] Shape (area [s] (* (:side s) (:side s))))
-(area (->Sq 4))
+(prn (area (->Sq 4)))
 EOF
 ) || fail "case29: non-zero exit ($got)"
 assert_eq 'defrecord_protocol_method_keyword_field' "$(last_line "$got")" '16'
@@ -288,7 +288,7 @@ assert_eq 'defrecord_protocol_method_keyword_field' "$(last_line "$got")" '16'
 # is deferred to the ns surface (D-058/079).
 got=$("$BIN" - <<'EOF' 2>/dev/null
 (defrecord Pt [x y])
-(->Pt 1 2)
+(prn (->Pt 1 2))
 EOF
 ) || fail "case30: non-zero exit ($got)"
 assert_eq 'defrecord_print_map_style' "$(last_line "$got")" '#Pt{:x 1, :y 2}'

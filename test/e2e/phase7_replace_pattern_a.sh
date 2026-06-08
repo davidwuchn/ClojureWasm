@@ -32,21 +32,21 @@ assert_eq 'replace_first_string_string' "$got" '"XYZ abc abc"'
 
 # --- Case 3: regex-fn match (whole-match callable) ---
 got=$("$BIN" - <<'EOF' 2>/dev/null
-(clojure.string/replace "abc123def456ghi" #"\d+" (fn* [m] (str "<" m ">")))
+(prn (clojure.string/replace "abc123def456ghi" #"\d+" (fn* [m] (str "<" m ">"))))
 EOF
 )
 assert_eq 'replace_regex_fn' "$got" '"abc<123>def<456>ghi"'
 
 # --- Case 4: regex-fn replace-first stops after first match ---
 got=$("$BIN" - <<'EOF' 2>/dev/null
-(clojure.string/replace-first "abc123def456ghi" #"\d+" (fn* [m] (str "<" m ">")))
+(prn (clojure.string/replace-first "abc123def456ghi" #"\d+" (fn* [m] (str "<" m ">"))))
 EOF
 )
 assert_eq 'replace_first_regex_fn' "$got" '"abc<123>def456ghi"'
 
 # --- Case 5: $0 is the whole match (D-093 discharge — was a literal PROVISIONAL) ---
 got=$("$BIN" - <<'EOF' 2>/dev/null
-(clojure.string/replace "abc123" #"\d+" "$0")
+(prn (clojure.string/replace "abc123" #"\d+" "$0"))
 EOF
 )
 assert_eq 'replace_regex_string_dollar_zero' "$got" '"abc123"'
@@ -68,8 +68,8 @@ esac
 # --- Case 7: unsupported match round-trips through (try ... (catch
 #     ExceptionInfo ...)) so the ex-info message IS reachable ---
 got=$("$BIN" - <<'EOF' 2>/dev/null
-(try (clojure.string/replace "abc" 42 "X")
-  (catch ExceptionInfo e (ex-message e)))
+(prn (try (clojure.string/replace "abc" 42 "X")
+  (catch ExceptionInfo e (ex-message e))))
 EOF
 )
 assert_eq 'replace_unsupported_caught' "$got" '"replace: unsupported match type"'

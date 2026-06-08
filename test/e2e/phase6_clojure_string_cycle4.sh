@@ -78,9 +78,9 @@ assert_eq 'split_pos_limit_1' "$got" '["a,b,c,d"]'
 # --- split-lines ---
 
 got=$("$BIN" - <<'EOF'
-(clojure.string/split-lines "line1
+(prn (clojure.string/split-lines "line1
 line2
-line3")
+line3"))
 EOF
 )
 assert_eq 'split_lines_lf' "$got" '["line1" "line2" "line3"]'
