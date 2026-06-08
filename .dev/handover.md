@@ -5,67 +5,61 @@
 
 ## Resume contract
 
-- **HEAD**: newest pushed ≈ the D-336 trace-across-boundary source commit
-  (see `git log`). The error-display overhaul is comprehensively landed —
-  caret / naming / trace / trace-discipline / cross-thread fidelity +
-  trace-across-boundary all shipped. Working tree clean of source.
-- **First commit on resume MUST be: D-327 — builtins print `#<clojure.core/name>`,
-  not `#builtin`.** This is the last form of the callable-print surface (ADR-0121
-  / AD-025 closed fn/multifn/protocol-fn and co-designed the envelope so D-327
-  only fills the builtin name). Builtins are NaN-boxed immediate fn-pointers
-  (value.zig) with no name slot, so `print.zig`'s `.builtin_fn` arm prints
-  `#builtin`. Plan: build a reverse `ptr → ns/name` map at `primitive.registerAll`
-  into an rt-owned `AutoHashMap(usize, FnIdentity)`, expose a Layer-0 accessor
-  (same setter-injection shape as the `.fn_val` `fn_name_accessor` ADR-0121 added),
-  and have the `.builtin_fn` arm format `#<ns/name>` via `printCallable`. Read
-  FIRST: `.dev/debt.yaml` D-327 + `src/lang/primitive.zig` (registerAll) +
-  `src/runtime/print.zig` (`.builtin_fn` arm + `printCallable` + `setFnNameAccessor`
-  precedent) + `.dev/decisions/0121_callable_print_naming.md`. After D-327 the
-  callable-print area is exhaustively closed; next self-select is a quality-loop
-  floor row (D-210 clj-parity / D-273 bundled-lib / D-242 concurrency — drain
-  highest-value-first per CLAUDE.md).
-- **Forbidden**: trusting a bg-gate notification's exit code (verify ONLY via
-  Summary `failed: 0` + `.gate_pass` == `bash scripts/gate_state_hash.sh`).
-  Skipping `zig build lint` (~2s) before the full gate when you delete/delegate
-  a body or add a file — `no_unused` fires ONLY in the full gate (memory
-  `zlinter_unused_only_full_gate`). Re-introducing a v0-style `defining_ns`
-  current-ns restore (display-only, ADR-0119 §4). Editing `.claude/rules/*`
-  (permission-blocked → carry-over). Pinning a zwasm v2 tag (F-001).
+- **HEAD**: newest pushed ≈ the bench-baseline commit (see `git log`). Working
+  tree clean; gate green (293/0, parallel = serial, no divergence).
+- **MODE for the next session (user-directed pivot, 2026-06-08): INTERACTIVE
+  CFP prep — NOT the autonomous quality-loop.** The user is steering toward
+  Clojure/Conj 2026 CFP work: **demo preparation + repo entry-point tidying**,
+  driven interactively. Do **not** auto-select a quality-loop debt row and grind;
+  instead open the CFP plan and work *with* the user on it. The specifics are
+  deliberately NOT pre-decided here — surface options, let the user choose.
+- **First action on resume**: read `private/clojure_conj_2026_cfp/TODO.md`
+  (the decided plan; **Phase 2** = pre-submission tasks, deadline **2026-06-13
+  landing / 06-14 23:59 ET**) + `SUBMISSION.md` + `MY_CFP.md`, then engage the
+  user on which Phase-2 item to take next (demo-runs-on-current-build check /
+  link validity / Reviewer-info numbers / Recorded-talk assets). Likely
+  near-term, interactive: verify the demos (nREPL+Java interop, polyglot
+  `add.wasm`, edge-demo, Playground) run on the current build; tidy README
+  Demos + links (repo default branch is `main`=old vs `cw-from-scratch`).
+- **Forbidden**: auto-running the autonomous quality-loop this session (the user
+  redirected to interactive CFP mode). Pre-deciding demo specifics without the
+  user. Pushing to `main` / pinning a zwasm v2 tag (F-001). Putting count-based
+  numbers (test count / LOC) into the SUBMISSION (MY_CFP.md:218 — stale +
+  meaningless to reviewers; size + cold-start are the only headline figures).
 
-## Done this session (D-336 trace across the thread boundary)
+## Done this session (error-display tail closed + CFP-prep mop-up)
 
-- **Trace-on-ExInfo** (ADR-0120 §1, D-336): `ExInfo` gains `trace_ptr`/
-  `trace_len`, deep-copied (frame array + each frame's `fn_name`/`ns`/`file`
-  strings GC-owned, freed in `finaliseGc` — same ownership as `message`/
-  `origin_file`). `allocExceptionLoc` gains a `trace` param; the 3 synth/marshal
-  sites (vm.zig, tree_walk.zig, worker_error.zig) pass `info.trace`;
-  `buildThrownInfo` reads `originTrace`. `@(future (boom))` renders
-  `Trace: user/boom` across the OS-thread boundary; the in-thread
-  `(throw (try (boom) …))` trace gap closes too. Discharges D-336 + D-330 + D-335
-  (full cross-thread fidelity: kind/message/location/class/trace). Tests: 2 new
-  e2e (error_future_trace_crosses + error_thrown_trace_inthread) + a deep-copy
-  unit test (survives source-array mutation).
+- **Error-display cluster fully closed** (all pushed): D-336 trace crosses the
+  thread boundary (ADR-0120 §1), D-333 `render-error` decodes EDN `:trace`,
+  D-328 callables print `#<ns/name>` (ADR-0121 + AD-025 + DA), D-325 self-named
+  fn verified already-working (discharged, stale premise). Error UX is now strong
+  (caret / trace / cross-thread fidelity / named callables) — a CFP-grade DX story.
+- **Gate**: parallel (`bash test/run_all.sh`) confirmed divergence-free vs
+  `--serial-e2e` (both 293/0; only execution mode differs, perf steps stay serial
+  in both). Parallel adopted as default; under host load it can run slower /
+  flakier (memory `gate_parallel_e2e_timeout`) — fall back to `--serial-e2e` then.
+- **Proactive measurements** (for the next session's Reviewer-info refresh):
+  Zig 70,735 LOC / Clojure 3,277 / ADRs 122 / active debt 198. Release
+  binary-size + cold-start re-measured at current HEAD (see
+  `private/clojure_conj_2026_cfp/` measurement note) to confirm the
+  submission's <4MB / ~4.5ms claims still hold (were measured at c972d81d).
 
-## Remaining tail (tracked)
+## Tracked tail (deferred, NOT for the CFP pivot)
 
-- **D-333**: post-mortem `render-error` decoder reads EDN `:trace` (next; see
-  resume contract).
-- **D-328**: `pr`/`str` of a fn shows its name (couples to `(class fn)` format).
-- **D-325**: `(fn name ..)` self-name (needs an analyzeFnStar self-name arm).
+- **D-327**: builtins print `#<clojure.core/name>` — depth-2 (immediates have no
+  name slot → needs a side `ptr→name` map; `printValue` has no `rt`). Low value
+  ("pure pr nicety"). Defer; not a CFP blocker.
+- **D-337**: `(class fn)` simple-name (type-system concern, split from ADR-0121).
 
 ## Process discipline (SSOT = memory + rules)
 
-- Full gate (shared-code): `timeout 1800 bash test/run_all.sh --serial-e2e`;
-  verify Summary `failed: 0` + `.gate_pass` == `gate_state_hash.sh`. `zig build`
-  (not `zig build test`) rebuilds `zig-out/bin/cljw`. Backend default = vm
-  (F-012). Tool channel corrupts stdout under load — verify cljw output via
-  per-cmd files + Read, not chained echoes.
+- Gate (shared-code): `timeout 1800 bash test/run_all.sh` (parallel default;
+  `--serial-e2e` fallback under load). Verify Summary `failed: 0` + `.gate_pass`
+  == `gate_state_hash.sh`. Perf numbers ONLY via `bash bench/release_metrics.sh`
+  / `scripts/perf.sh` (Release) — never `time zig-out/bin/cljw` (Debug).
 
-## Cold-start reading order (tracked-only)
+## Cold-start reading order (next session = CFP interactive)
 
-handover → `.dev/debt.yaml` D-333/328/325 → `src/app/render_error.zig` (the
-decoder) + `src/runtime/error/print.zig` (the live `Trace:` text writer) →
-`.dev/decisions/0120_cross_thread_error_fidelity.md` (the trace carrier) →
-`.dev/decisions/0119_callable_naming_surface.md` (naming + trace discipline) →
-`.dev/decisions/0118_error_display_v0_level.md` (caret/cycle base) → CLAUDE.md →
-`.dev/principle.md`.
+handover → `private/clojure_conj_2026_cfp/TODO.md` (Phase 2 + deadline) →
+`SUBMISSION.md` + `REVIEWER_INFO.md` + `MY_CFP.md` → README.md (Demos/links) →
+`examples/wasm/` (polyglot demo) → `bench/RELEASE_METRICS.md` → CLAUDE.md.
