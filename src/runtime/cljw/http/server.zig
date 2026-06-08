@@ -101,7 +101,19 @@ pub fn runServer(rt: *Runtime, env: *Env, handler: Value, port: u16, loc: Source
             body = string_mod.asString(resp);
         } else {
             const s = map_mod.get(resp, kw_status) catch Value.nil_val;
-            if (s.isInt()) status = @enumFromInt(@as(u10, @intCast(s.asInteger())));
+            // Validate the handler-supplied status to a real HTTP range BEFORE the
+            // cast. A bare `@intCast(u10, …)` panics the whole server process on any
+            // `:status` outside 0..1023 (the `respond` catch below does NOT cover a
+            // cast panic here), and 0..1023 non-codes write a bogus status. Clamp to
+            // the valid 100..599 range; anything else falls back to 500 rather than
+            // crashing on handler (or request-derived) data.
+            if (s.isInt()) {
+                const code = s.asInteger();
+                status = if (code >= 100 and code <= 599)
+                    @enumFromInt(@as(u10, @intCast(code)))
+                else
+                    .internal_server_error;
+            }
             const b = map_mod.get(resp, kw_body) catch Value.nil_val;
             if (b.tag() == .string) body = string_mod.asString(b);
             const h = map_mod.get(resp, kw_headers) catch Value.nil_val;

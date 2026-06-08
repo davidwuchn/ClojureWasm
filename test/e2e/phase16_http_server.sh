@@ -47,4 +47,14 @@ body=$(curl -s "http://127.0.0.1:$PORT/html" 2>&1)
 [[ "$body" == "<h1>hi</h1>" ]] || fail "GET /html body: got '$body'"
 echo "PASS http-html-body -> $body"
 
-echo "OK — phase16_http_server (7 cases) green"
+# FIX-2 (SE-4): an out-of-range :status (200000 > 1023) must fall back to 500,
+# NOT panic the whole server process. Assert 500 AND that the server survives (a
+# follow-up request still routes).
+code=$(curl -s -o /dev/null -w "%{http_code}" "http://127.0.0.1:$PORT/badstatus" 2>&1)
+[[ "$code" == "500" ]] || fail "out-of-range :status: got '$code' (expected 500 fallback; @intCast panic?)"
+echo "PASS http-badstatus-500 -> $code"
+got=$(curl -s "http://127.0.0.1:$PORT/still-alive" 2>&1)
+[[ "$got" == "GET /still-alive" ]] || fail "server died after bad :status: got '$got'"
+echo "PASS http-survives-badstatus -> $got"
+
+echo "OK — phase16_http_server (9 cases) green"

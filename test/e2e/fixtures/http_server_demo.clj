@@ -12,6 +12,9 @@
                               :headers {"content-type" "text/html; charset=utf-8"
                                         "x-custom" "yes"}
                               :body "<h1>hi</h1>"}
+      ;; Out-of-range :status must NOT panic the server process — it falls back
+      ;; to 500 (FIX-2 / SE-4). 200000 > 1023 would crash a bare @intCast(u10).
+      (= (:uri req) "/badstatus") {:status 200000 :body "should become 500"}
       (= (:request-method req) :post) {:status 201 :body "created"}
       :else {:status 200 :body (str "GET " (:uri req))}))
   {:port 8157})
