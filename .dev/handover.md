@@ -5,52 +5,52 @@
 
 ## Resume contract
 
-- **HEAD**: `bd240d25` (FIX-1, pushed). Tree clean. FIX-1 = `(wasm/load path
-  {:fuel N :max-memory-pages M})` budget surface (default = zwasm's finite
-  default; `0`/negative axis = unmetered), gated 293/0 `--serial-e2e`.
-- **First commit on resume MUST be: FIX-4** (wasm-error taxonomy). Convert every
-  `raiseInternal` in `src/runtime/cljw/wasm/surface.zig` + `marshal.zig` (Kind
-  `.internal_error` = NOT catchable / exit 70) to a `wasm_*` Code family on
-  catchable Kinds (`type_error` / `value_error` / `arity_error` / `io_error` /
-  `not_implemented`), so a request-derived bad wasm arg or a trapping module is
-  `(catch Throwable …)`able, not process-ending. One uniform sweep over the whole
-  wasm surface (F-011 even taxonomy). Full design: `private/security_audit/91_codev_resume_plan.md`
-  §FIX-4. cljw-internal, no zwasm dep. Then INV-1 (regex ReDoS), then design-gap
-  ADRs (SE-2/3/5/6/7/8).
-- **Forbidden this session**: pushing to `main` / pinning a zwasm tag (F-001 is
-  relative-path co-dev mode). Running two gates at once (share
-  `/tmp/codev_gate.lock` with the zwasm session — `mkdir` acquire, `rmdir`
-  release in all paths).
+- **HEAD**: `1b6f5a5f` (tokenizer overflow fix, pushed). Tree clean. Gate baseline
+  is now **295/0** `--serial-e2e` (new e2e steps: fs_jail, tokenizer_long_input).
+- **First action on resume: check the inbox** —
+  `zwasm_from_scratch/private/security_handover_to_cljw_NN.md`, highest number with
+  no `## CONSUMED` trailer (currently `_01` CONSUMED → none new). If a new one
+  exists, do it (TDD, finished-form), gate, commit, push, append CONSUMED.
+- **Else the security concrete backlog is DRAINED.** Every SE finding is
+  dispositioned (fixed or scheduled debt) and every untrusted-input surface was
+  audited (reader nesting = max_depth-safe; tokenizer overflow = FIXED; number
+  literals = BigInt/clean-error-safe). Remaining work is phase-gated debt only:
+  **D-338** SE-2 import allowlist (first host import), **D-339** SE-3 server
+  slowloris (Phase-15 concurrency), **D-341** SE-8 eval-free build, **D-342**
+  FS-jail symlink-safe, **D-343** require code-loading confinement, **D-344** regex
+  global compile budget, **D-346** VM operand-stack on large literal. None are
+  unblocked now. Self-select per CLAUDE.md § The only stop (quality-loop floor /
+  a fresh audit surface), or await a zwasm handover / phase event.
+- **Forbidden**: pushing to `main` / pinning a zwasm tag (F-001 relative-path
+  co-dev). Two gates at once (share `/tmp/codev_gate.lock` — `mkdir` acquire,
+  `rmdir` release all paths).
 
 ## Mode: security co-dev (cljw ⇄ zwasm), relative-path, /loop 10m
 
-- F-001 amended 2026-06-09 to **relative-path co-dev** (`build.zig.zon` →
-  `../zwasm_from_scratch`, lazy). A zwasm fix is live in cljw immediately; the
-  default gate still never resolves zwasm (lazy + `-Dwasm`-guarded).
-- Two sessions hand off via numbered mailboxes in `zwasm_from_scratch/private/`
-  (`security_handover_{from,to}_cljw_NN.md`; consumed by appending
-  `## CONSUMED by <repo> @ <sha>`). cljw inbox = `to_cljw_NN` (currently `_01`
-  CONSUMED → none new). zwasm's embedder-hardening pass is landed (`to_cljw_01`):
-  `instantiate(.{})` finite-default-bounded, facade always interp, decoder
-  fuzzed, `_exit` CLI-only.
-- Loop runs via `/loop 10m` per CODEV_PROTOCOL.md: each tick checks the inbox,
-  else advances one non-blocked backlog unit, gates, commits, pushes. 10-min
-  cadence staggers the gate lock with the zwasm session.
+- F-001 = **relative-path co-dev** (`build.zig.zon` → `../zwasm_from_scratch`,
+  lazy); a zwasm fix is live in cljw immediately; the default gate never resolves
+  zwasm (lazy + `-Dwasm`-guarded). zwasm's embedder-hardening pass is landed
+  (`to_cljw_01`). Loop runs via `/loop 10m` (cron 8b1e24d1) per CODEV_PROTOCOL.md.
 
-## Live queue + process discipline (SSOT)
+## Landed this session (12 units, all pushed, all gated)
 
-- Live queue: `private/security_audit/91_codev_resume_plan.md`. Backlog after
-  FIX-4: INV-1 (regex ReDoS), design-gap ADRs (SE-2/3/5/6/7/8).
+task4 (wasm GC finaliser), FIX-1 (wasm/load budget), FIX-2 (HTTP :status), FIX-3
+(marshal range-check), FIX-4 (wasm-error taxonomy → catchable), INV-1 (regex
+compile-bomb cap; matcher is Pike-NFA / ReDoS-immune), SE-5 (HTTP header CRLF +
+std.http abort), ADR-0122/AD-026 (read-string eval-free), SE-6/7 (FS-jail v1,
+ADR-0123), SE-9 (nREPL loopback lock), review NUL-fix (FS-jail lexical-vs-kernel),
+tokenizer overflow fix (reader-DoS audit). `git log 65e4c184..1b6f5a5f` is the SSOT.
+
+## Process discipline (SSOT)
+
 - Shared-code gate: `bash test/run_all.sh --serial-e2e`; verify Summary
   `failed: 0` + `.dev/.gate_pass` == `scripts/gate_state_hash.sh`. Wasm work uses
-  `zig build -Dwasm` (resolves the relative-path zwasm tree); the leak-checked
-  `test/e2e/phase16_wasm_ffi.sh` is opt-in (ALLOWLISTed out of the default gate
-  per F-001) — run it explicitly for wasm changes.
-- Audit log (gitignored, do NOT commit): `private/security_audit/` (00..91) +
-  `private/CODEV_STATUS.md`. zwasm-side relay: `zwasm_from_scratch/private/`.
+  `zig build -Dwasm`; `test/e2e/phase16_wasm_ffi.sh` is opt-in (run for wasm
+  changes). Shipped binary is ReleaseSafe — verify panic-class findings there.
+- Audit log (gitignored): `private/security_audit/` (00..92) + `private/CODEV_STATUS.md`.
 
-## Cold-start reading order (security co-dev, overnight)
+## Cold-start reading order
 
-handover → `private/security_audit/91_codev_resume_plan.md` (live queue + FIX-4
-design) → `~/Documents/MyProducts/zwasm_from_scratch/private/CODEV_PROTOCOL.md`
-→ `private/security_audit/50_sharp_edges.md` (finding catalogue) → CLAUDE.md.
+handover → `~/Documents/MyProducts/zwasm_from_scratch/private/CODEV_PROTOCOL.md`
+(inbox + loop) → `.dev/debt.yaml` (D-338..346 = remaining security debt) →
+`private/security_audit/50_sharp_edges.md` (finding catalogue) → CLAUDE.md.
