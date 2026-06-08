@@ -25,6 +25,21 @@ pub const Value = zwasm.Value;
 pub const FuncType = zwasm.ir.zir.FuncType;
 pub const ValType = zwasm.ir.zir.ValType;
 
+/// Per-axis runtime budget for a loaded module (re-exported from zwasm's
+/// `Module.Budget`, ADR-0179). `.unmetered` lifts the cap (trusted modules
+/// only); `.{ .limited = n }` caps it. cljw's `load` defaults each axis to
+/// zwasm's finite default (fuel 1e9 / 4096 pages = 256 MiB), so an untrusted
+/// module is bounded out of the box (SE-1 / ZE-1) — the caller opts INTO a
+/// larger budget or `.unmetered`, never the reverse.
+pub const Budget = zwasm.Module.Budget;
+
+/// Optional load-time budget overrides; each axis defaults to zwasm's finite
+/// default when left null.
+pub const LoadOpts = struct {
+    fuel: ?Budget = null,
+    max_memory_pages: ?Budget = null,
+};
+
 /// A loaded wasm module instance + its owning engine/module, boxed together so
 /// the cross-pointers (Module/Instance borrow Engine's `*Store`) stay valid.
 pub const Loaded = struct {
@@ -58,8 +73,10 @@ pub const Loaded = struct {
 /// Compile + instantiate `bytes` into a fresh `*Loaded`, boxed on `alloc`
 /// (the F-006 seam — pass cljw's layer-1 backing allocator, NOT the moving GC
 /// heap; zwasm keeps its linear memory + bookkeeping in this separate space).
-/// Caller owns the returned box.
-pub fn load(alloc: std.mem.Allocator, bytes: []const u8) !*Loaded {
+/// `opts` caps the module's runtime budget; a null axis uses zwasm's finite
+/// default (so an untrusted module is bounded by default — SE-1 / ZE-1). Caller
+/// owns the returned box.
+pub fn load(alloc: std.mem.Allocator, bytes: []const u8, opts: LoadOpts) !*Loaded {
     const self = try alloc.create(Loaded);
     errdefer alloc.destroy(self);
 
@@ -67,6 +84,11 @@ pub fn load(alloc: std.mem.Allocator, bytes: []const u8) !*Loaded {
     errdefer self.engine.deinit();
     self.module = try self.engine.compile(bytes);
     errdefer self.module.deinit();
-    self.instance = try self.module.instantiate(.{});
+    // Build zwasm InstantiateOpts: a null cljw axis leaves zwasm's struct default
+    // (finite) in place; a provided axis overrides it.
+    var inst_opts: zwasm.Module.InstantiateOpts = .{};
+    if (opts.fuel) |b| inst_opts.fuel = b;
+    if (opts.max_memory_pages) |b| inst_opts.max_memory_pages = b;
+    self.instance = try self.module.instantiate(inst_opts);
     return self;
 }

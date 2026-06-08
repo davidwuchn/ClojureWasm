@@ -23,26 +23,62 @@ const error_catalog = @import("../../error/catalog.zig");
 const SourceLocation = @import("../../error/info.zig").SourceLocation;
 const string_mod = @import("../../collection/string.zig");
 const vector_mod = @import("../../collection/vector.zig");
+const map_mod = @import("../../collection/map.zig");
+const keyword_mod = @import("../../keyword.zig");
 const file_io = @import("../../file_io.zig");
 
-/// `(wasm/load "path.wasm")` — read the file, compile + instantiate it via
-/// zwasm v2, and return an opaque instance handle. F-006: the engine is given
-/// `rt.gpa` (the layer-1 backing allocator), keeping zwasm's space separate
-/// from the cljw GC heap.
+/// `(wasm/load "path.wasm")` / `(wasm/load "path.wasm" {:fuel N :max-memory-pages M})`
+/// — read the file, compile + instantiate it via zwasm v2, and return an opaque
+/// instance handle. F-006: the engine is given `rt.gpa` (the layer-1 backing
+/// allocator), keeping zwasm's space separate from the cljw GC heap. With no opts
+/// the module runs under zwasm's FINITE default budget (fuel 1e9 / 256 MiB) so an
+/// untrusted module is bounded out of the box (SE-1 / ZE-1); an opts map overrides
+/// either axis (`:fuel` / `:max-memory-pages`), and `0` or a negative value on an
+/// axis means "unmetered" (lift the cap — trusted modules only).
 pub fn wasmLoadFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
     _ = env;
-    try error_catalog.checkArity("wasm/load", args, 1, loc);
+    try error_catalog.checkArityRange("wasm/load", args, 1, 2, loc);
     if (!args[0].isString())
         return error_catalog.raiseInternal(loc, "wasm/load: expected a string path");
     const path = string_mod.asString(args[0]);
+
+    var opts: engine.LoadOpts = .{};
+    if (args.len == 2) opts = try parseLoadOpts(rt, args[1], loc);
 
     const bytes = file_io.readAll(rt.io, rt.gpa, path) catch
         return error_catalog.raiseInternal(loc, "wasm/load: cannot read the .wasm file");
     defer rt.gpa.free(bytes);
 
-    const loaded = engine.load(rt.gpa, bytes) catch
+    const loaded = engine.load(rt.gpa, bytes, opts) catch
         return error_catalog.raiseInternal(loc, "wasm/load: failed to compile/instantiate the module");
     return wasm_handle.wrap(rt, loaded);
+}
+
+/// Parse a `{:fuel N :max-memory-pages M}` opts map into `engine.LoadOpts`. A
+/// missing key leaves that axis at zwasm's finite default; a non-positive value
+/// (`<= 0`) selects `.unmetered`; a positive value caps the axis.
+fn parseLoadOpts(rt: *Runtime, m: Value, loc: SourceLocation) anyerror!engine.LoadOpts {
+    const tag = m.tag();
+    if (tag != .array_map and tag != .hash_map)
+        return error_catalog.raiseInternal(loc, "wasm/load: second argument must be an options map");
+    var opts: engine.LoadOpts = .{};
+    if (try axisFromMap(rt, m, "fuel", loc)) |b| opts.fuel = b;
+    if (try axisFromMap(rt, m, "max-memory-pages", loc)) |b| opts.max_memory_pages = b;
+    return opts;
+}
+
+/// Read keyword `:name` from `m` as a `Budget`: absent / nil → null (use the
+/// finite default); integer <= 0 → `.unmetered`; positive integer →
+/// `.{ .limited = n }`.
+fn axisFromMap(rt: *Runtime, m: Value, comptime name: []const u8, loc: SourceLocation) anyerror!?engine.Budget {
+    const kw = try keyword_mod.intern(rt, null, name);
+    const v = map_mod.get(m, kw) catch return null;
+    if (v.isNil()) return null;
+    if (!v.isInt())
+        return error_catalog.raiseInternal(loc, "wasm/load: :" ++ name ++ " must be an integer");
+    const n = v.asInteger();
+    if (n <= 0) return .unmetered;
+    return engine.Budget{ .limited = @intCast(n) };
 }
 
 /// `(wasm/call handle "export" & args)` — invoke an export by name. Arg/result
