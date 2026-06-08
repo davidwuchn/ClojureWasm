@@ -727,9 +727,11 @@ fn emit(alloc: std.mem.Allocator, node: *const Node, flags: Flags, capture_count
 
 fn emitNode(list: *std.ArrayList(Inst), alloc: std.mem.Allocator, node: *const Node) CompileError!void {
     // Compile-bomb guard (INV-1): every node's instructions flow through here
-    // (children recurse, counted reps loop over emitNode), so a single check at
-    // entry bounds total program size. A nested `(a{n}){m}` trips this once its
-    // running expansion crosses the cap, instead of OOMing the process.
+    // (children recurse, counted reps loop over emitNode), so this bounds THIS
+    // program's size — a nested `(a{n}){m}` trips it instead of OOMing. NOTE: a
+    // lookahead's child compiles to its OWN list (a separate program), so this
+    // per-program cap does NOT bound the SUM across many sibling/nested
+    // lookaheads — a global compile budget is the finished form (D-344).
     if (list.items.len > MAX_PROGRAM_INSTS) return CompileError.PatternTooLarge;
     switch (node.*) {
         .lit => |c| try list.append(alloc, .{ .char = c }),

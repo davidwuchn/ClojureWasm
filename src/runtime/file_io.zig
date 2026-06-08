@@ -67,6 +67,14 @@ pub const JailError = error{FsJailEscape} || std.mem.Allocator.Error;
 /// rather than confining against an ambiguous cwd-relative base.
 pub fn jailResolve(alloc: std.mem.Allocator, root: ?[]const u8, path: []const u8) JailError!?[]u8 {
     const r = root orelse return null;
+    // Reject an embedded NUL before the lexical resolve: resolvePosix treats NUL
+    // as an ordinary byte (so `..\x00` is NOT seen as `..` and passes containment),
+    // but the kernel's C-string `open` truncates at the NUL — opening a different,
+    // possibly-escaping path than the one checked. In ReleaseFast the posix
+    // NUL-absence assert is compiled out, so this guard is the only defense
+    // (check-vs-open must agree). No legit path contains a NUL.
+    if (std.mem.findScalar(u8, path, 0) != null or std.mem.findScalar(u8, r, 0) != null)
+        return error.FsJailEscape;
     if (!std.Io.Dir.path.isAbsolute(r)) return error.FsJailEscape;
     const root_abs = try std.Io.Dir.path.resolvePosix(alloc, &.{r});
     defer alloc.free(root_abs);
@@ -151,6 +159,17 @@ test "jailResolve: sibling-prefix boundary is not an escape hatch" {
 
 test "jailResolve: non-absolute root fails closed" {
     try testing.expectError(error.FsJailEscape, jailResolve(testing.allocator, "relative/root", "file.txt"));
+}
+
+test "jailResolve: an embedded NUL is rejected (lexical-vs-kernel-truncation bypass)" {
+    const root = "/srv/app/data";
+    // `..\x00...` would pass the lexical containment (the segment is not `..`)
+    // but the kernel truncates at NUL to `/srv/app/data/..` = /srv/app (escape).
+    try testing.expectError(error.FsJailEscape, jailResolve(testing.allocator, root, "..\x00/escape"));
+    try testing.expectError(error.FsJailEscape, jailResolve(testing.allocator, root, "ok\x00"));
+    try testing.expectError(error.FsJailEscape, jailResolve(testing.allocator, root, "sub/file\x00.txt"));
+    // NUL in the root itself is also rejected.
+    try testing.expectError(error.FsJailEscape, jailResolve(testing.allocator, "/srv/app\x00/data", "file.txt"));
 }
 
 test "jailResolve: root with trailing slash + double slashes normalise" {
