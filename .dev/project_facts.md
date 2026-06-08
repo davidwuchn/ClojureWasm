@@ -146,6 +146,32 @@ the ADR); debt D-036 (Phase 16 inline-vs-Pod decision); ROADMAP
   zwasm code** — feedback is relayed to zwasm via the user) in
   `private/notes/zwasm_v2_feedback.md`; a **cljw-side** issue gets a
   real code fix (root-cause resolution + debt row, not a workaround).
+- **2026-06-08 (user chat — pin the `v2.0.0-alpha.1` dogfood tag;
+  supersedes the 2026-06-05 "NEVER pin a tag" guardrail).** The user cut
+  a deliberate **v2 pre-release tag `v2.0.0-alpha.1`** (commit `3b84fa24`,
+  pushed to `clojurewasm/zwasm`) **off the `zwasm-from-scratch` long-lived
+  branch, explicitly for ClojureWasm dogfooding** (tag message: *"First
+  pre-release from the long-lived zwasm-from-scratch branch for
+  ClojureWasmFromScratch dogfooding (alpha = may break; not merged to
+  main)"*). cw v1 now consumes zwasm v2 by **pinning that tag** in
+  `build.zig.zon` (`url = "git+…/zwasm.git#v2.0.0-alpha.1"` + `hash` +
+  `lazy = true`), replacing the prior relative-path branch-working-tree
+  import. This **supersedes the 2026-06-05 guardrail "the git tags are
+  zwasm v1 — NEVER pin a tag / use only the long-lived branch working
+  tree"**: that guardrail's premise (tags are v1; the tree is mid-rewrite
+  so any pin captures churn) **no longer holds** — a real *v2* alpha tag
+  now exists, cut intentionally as a stable dogfood point, and its content
+  is cryptographically pinned by `.hash` (so it cannot drift even as the
+  branch moves on). UNCHANGED: zwasm stays `lazy` + `-Dwasm`/`-Dzwasm-spike`
+  flag-guarded, so cw v1's DEFAULT build + gate never resolve it (verified:
+  full gate 293/0 green with the tag pin, ReleaseSafe build + `zig build
+  test` pass). Re-pinning to a later `v2.0.0-alpha.N` tag is a routine
+  bump (new tag → `zig fetch` new hash → update `build.zig.zon`), not an
+  F-001 amendment. The finding-handling policy (zwasm-side vs cljw-side
+  split) from the 2026-06-05 entry stays in force, with the user's
+  2026-06-08 addition that **direct edits to `zwasm_from_scratch` are now
+  user-authorized** during this interactive demo-hardening phase (the loop
+  confirms direct-edit vs record-and-relay per zwasm-touching change).
 
 ---
 
