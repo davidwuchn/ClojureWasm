@@ -217,7 +217,11 @@ pub fn compile(alloc: std.mem.Allocator, pattern: []const u8, flags: Flags) Comp
     var group_count: u16 = 0;
     const node = try parsePattern(arena.allocator(), pat, f, &group_count);
     if (f.case_insensitive) foldCI(@constCast(node));
-    return try emit(alloc, node, f, group_count);
+    // D-344: a single global compile budget shared across the top-level program
+    // and every lookahead sub-program, so the TOTAL emitted instruction count is
+    // bounded (not just each program by the per-emitNode cap).
+    var budget: usize = MAX_PROGRAM_INSTS;
+    return try emit(alloc, node, f, group_count, &budget);
 }
 
 /// ASCII case-swap (`a`↔`A`); non-letters unchanged.
@@ -713,11 +717,29 @@ fn isMetaChar(c: u8) bool {
 
 /// IR emitter: walks the AST and emits Pike-VM instructions
 /// into a flat `Inst` slice.
-fn emit(alloc: std.mem.Allocator, node: *const Node, flags: Flags, capture_count: u16) CompileError!Program {
+fn emit(alloc: std.mem.Allocator, node: *const Node, flags: Flags, capture_count: u16, budget: *usize) CompileError!Program {
     var list: std.ArrayList(Inst) = .empty;
-    errdefer list.deinit(alloc);
-    try emitNode(&list, alloc, node);
+    errdefer {
+        // On a mid-build error (e.g. the global budget tripping AFTER a lookahead
+        // child was emitted), free the already-emitted `.look` sub-programs too —
+        // `list.deinit` only frees the list's own backing, not the nested slices.
+        for (list.items) |inst| {
+            if (inst == .look) {
+                var sub = Program{ .insts = inst.look.sub, .capture_count = 0, .flags = flags };
+                sub.deinit(alloc);
+            }
+        }
+        list.deinit(alloc);
+    }
+    try emitNode(&list, alloc, node, budget);
     try list.append(alloc, .{ .match = {} });
+    // D-344 global budget: charge THIS program's size so the SUM across every
+    // sub-program (each lookahead child is its own program) is bounded, not just
+    // each one (the per-program emitNode cap). The `.look` arm threads the same
+    // `budget`, so `(?=a{60000})(?=a{60000})` — two under-cap programs, 120k
+    // total — is rejected instead of compiling.
+    if (budget.* < list.items.len) return CompileError.PatternTooLarge;
+    budget.* -= list.items.len;
     return Program{
         .insts = try list.toOwnedSlice(alloc),
         .capture_count = capture_count,
@@ -725,49 +747,49 @@ fn emit(alloc: std.mem.Allocator, node: *const Node, flags: Flags, capture_count
     };
 }
 
-fn emitNode(list: *std.ArrayList(Inst), alloc: std.mem.Allocator, node: *const Node) CompileError!void {
+fn emitNode(list: *std.ArrayList(Inst), alloc: std.mem.Allocator, node: *const Node, budget: *usize) CompileError!void {
     // Compile-bomb guard (INV-1): every node's instructions flow through here
     // (children recurse, counted reps loop over emitNode), so this bounds THIS
-    // program's size — a nested `(a{n}){m}` trips it instead of OOMing. NOTE: a
-    // lookahead's child compiles to its OWN list (a separate program), so this
-    // per-program cap does NOT bound the SUM across many sibling/nested
-    // lookaheads — a global compile budget is the finished form (D-344).
+    // program's size during build — a nested `(a{n}){m}` trips it instead of
+    // OOMing. The SUM across sub-programs (lookahead children) is bounded
+    // separately by the global `budget` charged in `emit` (D-344).
     if (list.items.len > MAX_PROGRAM_INSTS) return CompileError.PatternTooLarge;
     switch (node.*) {
         .lit => |c| try list.append(alloc, .{ .char = c }),
         .class => |cls| try list.append(alloc, .{ .class = cls }),
         .anchor => |a| try list.append(alloc, .{ .anchor = a }),
         .concat => |children| {
-            for (children) |*ch| try emitNode(list, alloc, ch);
+            for (children) |*ch| try emitNode(list, alloc, ch, budget);
         },
-        .alt => |children| try emitAlt(list, alloc, children),
-        .star => |child| try emitStar(list, alloc, child),
-        .plus => |child| try emitPlus(list, alloc, child),
-        .quest => |child| try emitQuest(list, alloc, child),
+        .alt => |children| try emitAlt(list, alloc, children, budget),
+        .star => |child| try emitStar(list, alloc, child, budget),
+        .plus => |child| try emitPlus(list, alloc, child, budget),
+        .quest => |child| try emitQuest(list, alloc, child, budget),
         .group => |g| {
             // save(2*idx) … child … save(2*idx+1): slot pair brackets the
             // sub-match so the matcher records group `idx`'s [start,end).
             try list.append(alloc, .{ .save = @as(u32, 2) * g.index });
-            try emitNode(list, alloc, g.child);
+            try emitNode(list, alloc, g.child, budget);
             try list.append(alloc, .{ .save = @as(u32, 2) * g.index + 1 });
         },
-        .non_capture => |child| try emitNode(list, alloc, child),
+        .non_capture => |child| try emitNode(list, alloc, child, budget),
         // Lookahead: compile the child to its own sub-Program (terminated by
-        // `.match`, capture-free) and emit a single zero-width `look` inst.
+        // `.match`, capture-free) and emit a single zero-width `look` inst. The
+        // same `budget` flows in so the child's size counts toward the global cap.
         .look => |lk| {
-            const sub = try emit(alloc, lk.child, .{}, 0);
+            const sub = try emit(alloc, lk.child, .{}, 0, budget);
             try list.append(alloc, .{ .look = .{ .sub = sub.insts, .negate = lk.negate } });
         },
         // `{n,m}` → n mandatory copies, then (m-n) greedy-optional copies; a
         // `{n,}` (max == REPEAT_INF) appends `*` after the n mandatory copies.
         .repeat => |r| {
             var i: u16 = 0;
-            while (i < r.min) : (i += 1) try emitNode(list, alloc, r.child);
+            while (i < r.min) : (i += 1) try emitNode(list, alloc, r.child, budget);
             if (r.max == REPEAT_INF) {
-                try emitStar(list, alloc, r.child);
+                try emitStar(list, alloc, r.child, budget);
             } else {
                 var j: u16 = r.min;
-                while (j < r.max) : (j += 1) try emitQuest(list, alloc, r.child);
+                while (j < r.max) : (j += 1) try emitQuest(list, alloc, r.child, budget);
             }
         },
     }
@@ -787,10 +809,10 @@ fn emitNode(list: *std.ArrayList(Inst), alloc: std.mem.Allocator, node: *const N
 /// ```
 /// Each `split` and `jmp` is emitted as a placeholder and
 /// backpatched once the operand's IR position is known.
-fn emitAlt(list: *std.ArrayList(Inst), alloc: std.mem.Allocator, children: []const Node) CompileError!void {
+fn emitAlt(list: *std.ArrayList(Inst), alloc: std.mem.Allocator, children: []const Node, budget: *usize) CompileError!void {
     if (children.len == 0) return;
     if (children.len == 1) {
-        try emitNode(list, alloc, &children[0]);
+        try emitNode(list, alloc, &children[0], budget);
         return;
     }
     var jmp_indices: std.ArrayList(u32) = .empty;
@@ -798,12 +820,12 @@ fn emitAlt(list: *std.ArrayList(Inst), alloc: std.mem.Allocator, children: []con
 
     for (children, 0..) |*ch, i| {
         if (i == children.len - 1) {
-            try emitNode(list, alloc, ch);
+            try emitNode(list, alloc, ch, budget);
         } else {
             const split_idx = list.items.len;
             try list.append(alloc, .{ .split = .{ .a = 0, .b = 0 } });
             const ch_start: u32 = @intCast(list.items.len);
-            try emitNode(list, alloc, ch);
+            try emitNode(list, alloc, ch, budget);
             const jmp_idx: u32 = @intCast(list.items.len);
             try list.append(alloc, .{ .jmp = 0 });
             try jmp_indices.append(alloc, jmp_idx);
@@ -826,12 +848,12 @@ fn emitAlt(list: *std.ArrayList(Inst), alloc: std.mem.Allocator, children: []con
 /// ```
 /// `split.a = body` puts the consume branch ahead of the skip
 /// branch — greedy semantics fall out of Pike VM thread priority.
-fn emitStar(list: *std.ArrayList(Inst), alloc: std.mem.Allocator, child: *const Node) CompileError!void {
+fn emitStar(list: *std.ArrayList(Inst), alloc: std.mem.Allocator, child: *const Node, budget: *usize) CompileError!void {
     const L0: u32 = @intCast(list.items.len);
     const split_idx = list.items.len;
     try list.append(alloc, .{ .split = .{ .a = 0, .b = 0 } });
     const body_start: u32 = @intCast(list.items.len);
-    try emitNode(list, alloc, child);
+    try emitNode(list, alloc, child, budget);
     try list.append(alloc, .{ .jmp = L0 });
     const after: u32 = @intCast(list.items.len);
     list.items[split_idx] = .{ .split = .{ .a = body_start, .b = after } };
@@ -843,9 +865,9 @@ fn emitStar(list: *std.ArrayList(Inst), alloc: std.mem.Allocator, child: *const 
 ///       split{L0, after}
 ///   after:
 /// ```
-fn emitPlus(list: *std.ArrayList(Inst), alloc: std.mem.Allocator, child: *const Node) CompileError!void {
+fn emitPlus(list: *std.ArrayList(Inst), alloc: std.mem.Allocator, child: *const Node, budget: *usize) CompileError!void {
     const L0: u32 = @intCast(list.items.len);
-    try emitNode(list, alloc, child);
+    try emitNode(list, alloc, child, budget);
     const split_idx = list.items.len;
     try list.append(alloc, .{ .split = .{ .a = L0, .b = 0 } });
     const after: u32 = @intCast(list.items.len);
@@ -858,11 +880,11 @@ fn emitPlus(list: *std.ArrayList(Inst), alloc: std.mem.Allocator, child: *const 
 ///   <e>
 ///   after:
 /// ```
-fn emitQuest(list: *std.ArrayList(Inst), alloc: std.mem.Allocator, child: *const Node) CompileError!void {
+fn emitQuest(list: *std.ArrayList(Inst), alloc: std.mem.Allocator, child: *const Node, budget: *usize) CompileError!void {
     const split_idx = list.items.len;
     try list.append(alloc, .{ .split = .{ .a = 0, .b = 0 } });
     const body_start: u32 = @intCast(list.items.len);
-    try emitNode(list, alloc, child);
+    try emitNode(list, alloc, child, budget);
     const after: u32 = @intCast(list.items.len);
     list.items[split_idx] = .{ .split = .{ .a = body_start, .b = after } };
 }
@@ -1209,4 +1231,20 @@ test "INV-1: a large-but-under-cap pattern still compiles" {
     var prog = try compile(alloc, "(a{300}){300}", .{});
     defer prog.deinit(alloc);
     try testing.expect(prog.insts.len > 80_000);
+}
+
+// D-344: a lookahead's child compiles to its OWN program, so the per-program cap
+// (INV-1) does not bound the SUM across many sibling/nested lookaheads — a GLOBAL
+// compile budget does. `(?=a{60000})(?=a{60000})` = two ~60k sub-programs (each
+// under the per-program cap) but 120k total > the 100k global budget → rejected.
+test "D-344: sum across sibling lookaheads is globally bounded" {
+    const alloc = testing.allocator;
+    try testing.expectError(error.PatternTooLarge, compile(alloc, "(?=a{60000})(?=a{60000})", .{}));
+}
+
+test "D-344: a single lookahead under the global budget still compiles" {
+    const alloc = testing.allocator;
+    var prog = try compile(alloc, "(?=a{60000})", .{});
+    defer prog.deinit(alloc);
+    try testing.expect(prog.insts.len >= 1); // the outer program is just the .look
 }

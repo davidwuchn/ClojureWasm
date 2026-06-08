@@ -20,7 +20,7 @@ active:
       Cross-ref the tokenizer long-input fix, vm.zig operand stack.
     last_reviewed: "2026-06-09"
   - id: "D-344"
-    status: "open — security (regex compile-budget completeness). INV-1's MAX_PROGRAM_INSTS (compile.zig) caps EACH program's instruction count, blocking the trivial `(a{n}){m}` bomb. But a lookahead's child compiles to its OWN list (separate program), so the per-program cap does NOT bound the SUM across many sibling/nested lookaheads: `(?=a{99999})(?=a{99999})…` ×N gives N×100k insts from ~N×12 chars, so a ~120 KB untrusted pattern can still OOM. Surfaced by the 2026-06-09 review (rated LOW: needs a large untrusted pattern vs the trivial counted-rep bomb already closed)."
+    status: "DISCHARGED 2026-06-09. A single global compile budget (MAX_PROGRAM_INSTS) is now threaded through emit/emitNode/emitAlt/emitStar/emitPlus/emitQuest and charged per sub-program in emit() — so the SUM across all lookahead sub-programs is bounded (~2x cap peak), not just each program by the per-emitNode cap. `(?=a{60000})(?=a{60000})` (two under-cap programs, 120k total) now → PatternTooLarge instead of compiling. Also fixed a latent error-path leak: emit()s errdefer now frees already-emitted `.look` sub-programs (a mid-build budget trip after a lookahead used to leak them). 2 unit tests (sibling-bomb rejected, single under-budget compiles) + the INV-1 tests intact. ORIGINAL: per-program cap did not bound the sum across sibling/nested lookaheads."
     category: "security"
     barrier: |-
       blocked-by: re-pattern on large untrusted patterns becoming a tracked threat.
