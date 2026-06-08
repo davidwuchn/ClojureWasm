@@ -82,17 +82,20 @@ echo "PASS defprotocol_zero_method_marker"
 # --- Case 4 (ADR-0038): defprotocol binds per-method-Var ---
 # Post-cycle 8.1 defprotocol emits `(do (def P ...) (def m P ...))`;
 # the second def relies on analyzer pre-register (ADR-0038). Verify
-# that the method-fn Var lands as a .protocol_fn-tagged Value.
+# that the method-fn Var lands as a .protocol_fn-tagged Value. Since
+# ADR-0121/AD-025 a protocol-fn prints `#<IPing/ping>` (its qualified
+# name) rather than the leaked internal `#<protocol_fn>` tag — the name
+# form proves the tag just as precisely.
 got=$("$BIN" - <<'EOF' 2>/dev/null
 (defprotocol IPing (ping [this]))
 (prn ping)
 EOF
 ) || fail "case4: non-zero exit ($got)"
 last=$(last_line "$got")
-if [[ "$last" != *"protocol_fn"* ]]; then
-    fail "case4: expected protocol_fn-tagged value, got '$last'"
+if [[ "$last" != *"#<IPing/ping>"* ]]; then
+    fail "case4: expected protocol_fn name form #<IPing/ping>, got '$last'"
 fi
-echo "PASS defprotocol_per_method_var_binding -> protocol_fn"
+echo "PASS defprotocol_per_method_var_binding -> #<IPing/ping>"
 
 # --- Case 5 (ADR-0038): recursive defn works ---
 got=$("$BIN" - <<'EOF' 2>/dev/null

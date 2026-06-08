@@ -38,6 +38,7 @@ const env_mod = @import("../../runtime/env.zig");
 const Env = env_mod.Env;
 const Var = env_mod.Var;
 const error_mod = @import("../../runtime/error/info.zig");
+const print_mod = @import("../../runtime/print.zig");
 const error_catalog = @import("../../runtime/error/catalog.zig");
 const lookup_mod = @import("../../runtime/collection/lookup.zig");
 const host_class = @import("../../runtime/error/host_class.zig");
@@ -205,12 +206,23 @@ pub fn traceFunction(gc_ptr: *anyopaque, header: *HeapHeader) void {
     }
 }
 
-/// Register the `.fn_val` trace. Called from `driver.installVTable` (a
-/// Layer-1 startup hook) rather than `runtime.zig`'s `registerGcHooks`
-/// aggregator, because `Function` lives in this Layer-1 module and Layer 0
-/// must not import it (zone rule).
+/// Read a `.fn_val`'s `{ns, name}` for `print.printCallable` (ADR-0121 / D-328).
+/// `Function` is a Layer-1 type Layer-0 `print.zig` must not import, so the
+/// printer reaches it through this injected accessor (set in `registerGcHooks`),
+/// mirroring `info.context_provider`. Both fields are analyzer-arena-static.
+fn fnIdentity(v: Value) print_mod.FnIdentity {
+    const f = v.decodePtr(*const Function);
+    return .{ .ns = f.defining_ns, .name = f.name };
+}
+
+/// Register the `.fn_val` Layer-0 cross-zone hooks. Called from
+/// `driver.installVTable` (a Layer-1 startup hook) rather than `runtime.zig`'s
+/// `registerGcHooks` aggregator, because `Function` lives in this Layer-1 module
+/// and Layer 0 must not import it (zone rule): the GC trace (D-251) AND the
+/// print-name accessor (ADR-0121) both need the `Function` type.
 pub fn registerGcHooks() void {
     tag_ops.registerTrace(.fn_val, &traceFunction);
+    print_mod.setFnNameAccessor(&fnIdentity);
 }
 
 /// Heap-allocate a Function and wrap it in a NaN-boxed Value. The

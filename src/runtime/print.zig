@@ -36,6 +36,8 @@ const value_mod = @import("value/value.zig");
 const Value = value_mod.Value;
 const keyword = @import("keyword.zig");
 const symbol = @import("symbol.zig");
+const multimethod = @import("multimethod.zig");
+const protocol = @import("protocol.zig");
 const string_collection = @import("collection/string.zig");
 const list_collection = @import("collection/list.zig");
 const vector_collection = @import("collection/vector.zig");
@@ -404,6 +406,35 @@ pub fn printCharReadable(w: *Writer, cp: u21) Writer.Error!void {
 /// `str`-collections keep the default.
 pub threadlocal var print_readably: bool = true;
 
+/// A callable value's qualified identity for printing (ADR-0121 / D-328). Both
+/// fields are borrowed (analyzer-arena / interned), read only for immediate
+/// formatting — no lifetime crosses the accessor boundary.
+pub const FnIdentity = struct { ns: ?[]const u8 = null, name: ?[]const u8 = null };
+
+/// Reads a `.fn_val`'s `{ns, name}` (ADR-0121). `.fn_val`'s `Function` struct is
+/// a Layer-1 (eval) type Layer-0 `print.zig` must not import, so the eval layer
+/// injects this accessor at startup (`tree_walk.registerGcHooks`), mirroring the
+/// `info.context_provider` setter-injection. null until installed → `#<fn>`.
+/// `.multi_fn` / `.protocol_fn` are Layer-0 structs read directly (no accessor).
+var fn_name_accessor: ?*const fn (Value) FnIdentity = null;
+
+pub fn setFnNameAccessor(f: *const fn (Value) FnIdentity) void {
+    fn_name_accessor = f;
+}
+
+/// Write a callable in the `#<ns/name>` form (AD-025): the AD-002 `#<…>` envelope
+/// filled with the qualified name instead of clj's munged `#object[class 0xHASH]`.
+/// A null `name` (truly anonymous) renders `#<fn>`; a null `ns` drops the prefix.
+fn printCallable(w: *Writer, ns: ?[]const u8, name: ?[]const u8) Writer.Error!void {
+    try w.writeAll("#<");
+    if (ns) |n| {
+        try w.writeAll(n);
+        try w.writeByte('/');
+    }
+    try w.writeAll(name orelse "fn");
+    try w.writeByte('>');
+}
+
 /// Clojure's `*print-namespace-maps*` (D-219). When true and every key of a
 /// map is a keyword/symbol sharing one namespace, the map prints in the compact
 /// `#:ns{:a 1, :b 2}` form. Defaults to `true` to match `clojure.main` (which
@@ -674,6 +705,22 @@ pub fn printValue(w: *Writer, v: Value) Writer.Error!void {
         // surface fqcn (e.g. `#<java.util.Random>`) — clj prints an identity
         // hash cljw cannot mirror.
         .host_instance => try w.print("#<{s}>", .{@import("host_instance.zig").asHostInstance(v).descriptor.fqcn orelse "host_instance"}),
+        // ADR-0121 / AD-025: callable values print `#<ns/name>`, not the leaked
+        // internal tag (`#<fn_val>`). `.fn_val` is read via the eval-injected
+        // accessor (its Function is Layer 1); `.multi_fn` / `.protocol_fn` are
+        // Layer-0 structs read directly.
+        .fn_val => {
+            const id = if (fn_name_accessor) |acc| acc(v) else FnIdentity{};
+            try printCallable(w, id.ns, id.name);
+        },
+        .multi_fn => {
+            const sym = symbol.asSymbol(v.decodePtr(*const multimethod.MultiFn).name);
+            try printCallable(w, sym.ns, sym.name);
+        },
+        .protocol_fn => {
+            const pf = protocol.asProtocolFn(v);
+            try printCallable(w, pf.descriptor.fqcn(), pf.methodName());
+        },
         else => |t| try w.print("#<{s}>", .{@tagName(t)}),
     }
 }
@@ -1183,14 +1230,54 @@ test "list: empty and nested" {
 }
 
 test "unhandled heap tag falls back to #<tag>" {
-    // Synthesise a fn_val Value (no construction path yet, so we use
-    // the encodeHeapPtr API directly with a stack-allocated dummy that
-    // never gets dereferenced — printValue's else-arm only reads the
-    // Value's tag, never the pointee).
+    // Synthesise an `.rb_node` Value (an internal LLRB tree node, never
+    // user-printed → no dedicated arm, stable `else`-routed stand-in). We use
+    // the encodeHeapPtr API directly with a stack-allocated dummy that never
+    // gets dereferenced — printValue's else-arm only reads the Value's tag,
+    // never the pointee. (`.fn_val` was the prior stand-in; ADR-0121 gave it a
+    // real arm, so it no longer exercises the fallback.)
+    const Dummy = extern struct { _: u64 align(8) = 0 };
+    var dummy: Dummy = .{};
+    const v = Value.encodeHeapPtr(.rb_node, &dummy);
+
+    var buf: [64]u8 = undefined;
+    try testing.expectEqualStrings("#<rb_node>", try renderToBuf(&buf, v));
+}
+
+test "printCallable renders #<ns/name>, #<name>, and #<fn> (ADR-0121)" {
+    var buf: [64]u8 = undefined;
+    {
+        var w: Writer = .fixed(&buf);
+        try printCallable(&w, "user", "boom");
+        try testing.expectEqualStrings("#<user/boom>", w.buffered());
+    }
+    {
+        var w: Writer = .fixed(&buf);
+        try printCallable(&w, null, "boom");
+        try testing.expectEqualStrings("#<boom>", w.buffered());
+    }
+    {
+        var w: Writer = .fixed(&buf);
+        try printCallable(&w, "user", null);
+        try testing.expectEqualStrings("#<user/fn>", w.buffered());
+    }
+    {
+        var w: Writer = .fixed(&buf);
+        try printCallable(&w, null, null);
+        try testing.expectEqualStrings("#<fn>", w.buffered());
+    }
+}
+
+test "a .fn_val with no accessor installed falls back to #<fn> (ADR-0121)" {
+    // Mirrors the unhandled-tag stand-in but exercises the .fn_val arm's
+    // null-accessor path: the arm reads only the tag + calls the accessor (null
+    // here → FnIdentity{}), never the pointee.
+    const prev = fn_name_accessor;
+    fn_name_accessor = null;
+    defer fn_name_accessor = prev;
     const Dummy = extern struct { _: u64 align(8) = 0 };
     var dummy: Dummy = .{};
     const v = Value.encodeHeapPtr(.fn_val, &dummy);
-
     var buf: [64]u8 = undefined;
-    try testing.expectEqualStrings("#<fn_val>", try renderToBuf(&buf, v));
+    try testing.expectEqualStrings("#<fn>", try renderToBuf(&buf, v));
 }
