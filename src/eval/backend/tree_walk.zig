@@ -152,6 +152,13 @@ pub const Function = struct {
     /// (top-level fn) so the common case stays a single null check
     /// rather than an empty-slice round-trip.
     closure_bindings: ?[]Value,
+    /// Qualified name + defining namespace for traces / `pr` / metadata
+    /// (ADR-0119). Both borrow the analyzer arena (same lifetime as
+    /// `FunctionMethod.params`); static `[]const u8`, so GC-inert (no
+    /// `traceFunction` change). Copied from the `FnNode` at every alloc
+    /// site AND through the VM closure reconstruct (vm.zig op_make_fn).
+    name: ?[]const u8 = null,
+    defining_ns: ?[]const u8 = null,
 
     comptime {
         std.debug.assert(@offsetOf(Function, "header") == 0);
@@ -266,6 +273,8 @@ pub fn allocFunctionTemplate(
         .methods = methods,
         .variadic = variadic,
         .closure_bindings = null,
+        .name = fn_node.name,
+        .defining_ns = fn_node.defining_ns,
     };
     try rt.trackHeap(.{ .ptr = @ptrCast(f), .free = freeFunction });
     return Value.encodeHeapPtr(.fn_val, f);
@@ -304,6 +313,8 @@ fn allocFunctionWithBytecodes(
         .methods = methods,
         .variadic = variadic,
         .closure_bindings = closure,
+        .name = fn_node.name,
+        .defining_ns = fn_node.defining_ns,
     };
     try rt.trackHeap(.{ .ptr = @ptrCast(f), .free = freeFunction });
     return Value.encodeHeapPtr(.fn_val, f);

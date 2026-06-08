@@ -129,6 +129,12 @@ pub const Runtime = struct {
     /// Phase 3.7 wires the first user (bootstrap macro `and` / `or`).
     gensym_counter: u64 = 0,
 
+    /// Separate monotonic counter for anonymous-fn names `fn__<n>`
+    /// (ADR-0119). Kept distinct from `gensym_counter` so naming every
+    /// `fn*` does NOT perturb syntax-quote / `foo#` gensym numbers (which
+    /// some macro tests pin). Per-Runtime, like `gensym_counter`.
+    fn_name_counter: u64 = 0,
+
     /// Non-GC heap-object pool. Each registered Layer-1+ allocation
     /// adds a `(ptr, free_fn)` pair here so `Runtime.deinit` can
     /// release it. The list keeps Layer 0 from needing to know
@@ -350,6 +356,17 @@ pub const Runtime = struct {
         const n = self.gensym_counter;
         self.gensym_counter += 1;
         return std.fmt.allocPrint(arena, "{s}__{d}__auto__", .{ prefix, n });
+    }
+
+    /// Mint an anonymous-fn name `fn__<n>` — clj's `fn__<id>` shape (no
+    /// `__auto__` suffix; that belongs to syntax-quote's `foo#`, not a fn
+    /// name). Uses the dedicated `fn_name_counter` (NOT `gensym_counter`) so
+    /// naming fns does not shift syntax-quote gensym numbers. ADR-0119
+    /// (anonymous fns carry a name on the value for traces / `pr` / metadata).
+    pub fn gensymFn(self: *Runtime, arena: std.mem.Allocator) ![]const u8 {
+        const n = self.fn_name_counter;
+        self.fn_name_counter += 1;
+        return std.fmt.allocPrint(arena, "fn__{d}", .{n});
     }
 
     /// Production initializer. `io` typically comes from

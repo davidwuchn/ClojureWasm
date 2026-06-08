@@ -500,6 +500,9 @@ fn stepOnce(
                     .methods = ms,
                     .variadic = variadic_node,
                     .slot_base = template.slot_base,
+                    // ADR-0119: the closure instance inherits the template's name.
+                    .name = template.name,
+                    .defining_ns = template.defining_ns,
                 };
                 stack[sp] = try tree_walk.allocFunctionWithBytecode(rt, fn_node, locals, chunks, variadic_chunk);
             }

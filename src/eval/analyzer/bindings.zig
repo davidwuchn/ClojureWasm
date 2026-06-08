@@ -109,6 +109,12 @@ pub fn analyzeFnStar(
         .methods = try arena.dupe(node_mod.FnMethod, methods.items),
         .variadic = variadic,
         .slot_base = slot_base,
+        // ADR-0119: every fn carries a name on the value. Default = a gensym
+        // `fn__<id>` (clj parity for anonymous fns); a named context
+        // (`defn` / `letfn*`) overrides this via a post-analyze patch.
+        // `defining_ns` is display-only (the analyze-time current ns).
+        .name = try rt.gensymFn(arena),
+        .defining_ns = if (env.current_ns) |cns| cns.name else null,
         .loc = form.location,
     } };
     return n;
@@ -304,7 +310,13 @@ pub fn analyzeLetfnStar(
     bi = 0;
     fi = 0;
     while (fi < binding_forms.len) : (fi += 2) {
-        bindings[bi].value_expr = try analyzer_mod.analyze(arena, rt, env, &child_scope, binding_forms[fi + 1], macro_table);
+        const init_node = try analyzer_mod.analyze(arena, rt, env, &child_scope, binding_forms[fi + 1], macro_table);
+        // ADR-0119: name a letfn*-bound fn after its binding name (overrides
+        // the gensym the anonymous `fn*` got; same seam as analyzeDef). The
+        // analyzer-arena Node is mutable; `const` is only analyze()'s convention.
+        if (std.meta.activeTag(init_node.*) == .fn_node)
+            @constCast(init_node).fn_node.name = bindings[bi].name;
+        bindings[bi].value_expr = init_node;
         bi += 1;
     }
 

@@ -9,6 +9,16 @@
 # md-table-align no longer pads it to ~800 KB of whitespace.
 
 active:
+  - id: "D-328"
+    status: "blocked-by: ADR-0119 Stage 1 landing (2026-06-08). With ADR-0119 Stage 1 a Function carries `name`/`defining_ns`, but `(pr foo)`/`(str foo)` still render `#<fn_val>` (print.zig:677 fallthrough). A user-facing fn print form (clj: `#object[user$foo__N 0x.. \"..\"]`; cw-native reduced per AD-002 no-hash + AD-003 simple-name) should show `<ns>/<name>`. Couples to the `(class fn)` label (currently raw tag `fn_val`) + the `#object[…]` convention (AD-010) → needs its own format + AD design. Deferred from Stage 1 to keep naming-threading separate from print-format design."
+    category: "error-system"
+    barrier: |-
+      Stage 1 lands the name on the value (white-box verified); making it visible
+      via pr/str is a separate format decision (what class label, #object vs #<>,
+      AD for the clj divergence). Resolve when fn print naming is worth designing
+      the format + AD (and possibly cleaning up `(class fn)` = fn_val → a real
+      simple name). Cross-ref ADR-0119 Stage 1 note, print.zig:677, AD-010.
+    last_reviewed: "2026-06-08"
   - id: "D-327"
     status: "blocked-by: ADR-0119 Stage 1+2 landing (2026-06-08). Builtins are NaN-boxed immediate fn-pointers (value.zig:221) with no name slot, so `(pr +)` shows `#builtin` not `#object[clojure.core/+]`. A reverse `ptr -> ns/name` map built at `registerAll` (primitive.zig:65) into an rt-owned `AutoHashMap(usize,[]const u8)` would let `pr` name a builtin. Out of trace scope (builtins are elided from traces, ADR-0119 §6). Pure `pr`-parity nicety."
     category: "error-system"

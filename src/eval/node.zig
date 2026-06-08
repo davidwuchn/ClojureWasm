@@ -219,6 +219,16 @@ pub const FnNode = struct {
     /// `[slot_base, slot_base + method.arity)`. Top-level fns have
     /// `slot_base == 0` and no closure (Phase 3.11; ROADMAP §9.5).
     slot_base: u16 = 0,
+    /// Qualified name of this fn for traces / `pr` / metadata (ADR-0119).
+    /// `(defn foo ..)` → `"foo"`; anonymous → a gensym `"fn__<id>"`;
+    /// `letfn*` local → the binding name. Borrows the analyzer arena (same
+    /// lifetime as `FnMethod.params`). `null` only on the AOT-deserialized
+    /// path (dropped like `params`, ADR-0119 §2). Carried onto the runtime
+    /// `Function` (and copied through the VM closure reconstruct).
+    name: ?[]const u8 = null,
+    /// Namespace the fn was defined in (display/metadata only — v1 resolves
+    /// vars at analyze time, so this never restores `current_ns`, ADR-0119 §4).
+    defining_ns: ?[]const u8 = null,
     loc: SourceLocation = .{},
 };
 

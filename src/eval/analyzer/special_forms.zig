@@ -547,6 +547,16 @@ pub fn analyzeDef(
         try analyzer_mod.analyze(arena, rt, env, scope, items[idx], macro_table)
     else
         try analyzer_mod.makeConstant(arena, .nil_val, items[1]);
+    // ADR-0119: name the fn after the def target. `defn` is a macro that
+    // expands to `(def name (fn* ..))` leaving the `fn*` anonymous (gensym);
+    // raw `(def x (fn ..))` is the same shape. One post-analyze patch covers
+    // both. The Node lives in the (mutable) analyzer arena; the `const` is only
+    // analyze()'s return convention, so `@constCast` is sound here.
+    if (std.meta.activeTag(value_node.*) == .fn_node) {
+        const fn_node: *Node = @constCast(value_node);
+        fn_node.fn_node.name = name_sym.name;
+        fn_node.fn_node.defining_ns = ns.name;
+    }
     const n = try arena.create(Node);
     n.* = .{ .def_node = .{
         .name = name_sym.name,

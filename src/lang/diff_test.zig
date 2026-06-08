@@ -1260,3 +1260,67 @@ test "diff: arg-precise caret column agrees across backends (ADR-0118 cycle 2.5)
     try testing.expectEqual(@as(u16, 10), try caretColumn(&f, "(+ 1 (/ 2 0))", .tree_walk));
     try testing.expectEqual(@as(u16, 10), try caretColumn(&f, "(+ 1 (/ 2 0))", .vm));
 }
+
+// ADR-0119 Stage 1: a Function carries its `name` + `defining_ns` ON THE VALUE
+// (restoring what cw v0 / clj / SCI have — the v1 redesign dropped it). White-
+// box: read the fields off the evaluated fn on BOTH backends. The naming is
+// stamped at analyze time (shared by both backends), so the one divergence risk
+// is the VM `op_make_fn` closure reconstruct (vm.zig:499) — case (4) exercises it.
+const FnInfo = struct { name: ?[]const u8, defining_ns: ?[]const u8 };
+
+fn evalFnInfo(f: *Fixture, source: []const u8, backend: enum { tree_walk, vm }) !FnInfo {
+    const arena = f.arena.allocator();
+    var reader = Reader.init(arena, source);
+    const form = (try reader.read()).?;
+    const node = try analyze(arena, &f.rt, &f.env, null, form, &f.table);
+    var locals: [256]Value = [_]Value{.nil_val} ** 256;
+    const result = switch (backend) {
+        .tree_walk => blk: {
+            tree_walk.installVTable(&f.rt);
+            break :blk try tree_walk.eval(&f.rt, &f.env, &locals, node);
+        },
+        .vm => blk: {
+            vm.installVTable(&f.rt);
+            const chunk = try vm_compiler.compile(&f.rt, arena, node);
+            break :blk try vm.eval(&f.rt, &f.env, &locals, &chunk);
+        },
+    };
+    try testing.expect(result.tag() == .fn_val);
+    const fnp = result.decodePtr(*const tree_walk.Function);
+    return .{ .name = fnp.name, .defining_ns = fnp.defining_ns };
+}
+
+test "naming: fn carries name+defining_ns on the value (ADR-0119 Stage 1, both backends)" {
+    var f = try Fixture.init(testing.allocator);
+    defer f.deinit();
+    const ns = f.env.current_ns.?.name;
+
+    // (1) defn → name "foo", defining_ns = current ns.
+    const d_tw = try evalFnInfo(&f, "(do (defn foo [x] x) foo)", .tree_walk);
+    try testing.expectEqualStrings("foo", d_tw.name.?);
+    try testing.expectEqualStrings(ns, d_tw.defining_ns.?);
+    const d_vm = try evalFnInfo(&f, "(do (defn foo [x] x) foo)", .vm);
+    try testing.expectEqualStrings("foo", d_vm.name.?);
+    try testing.expectEqualStrings(ns, d_vm.defining_ns.?);
+
+    // (2) anonymous fn* → gensym name (starts with "fn"), defining_ns set.
+    const a_tw = try evalFnInfo(&f, "(fn* [x] x)", .tree_walk);
+    try testing.expect(std.mem.startsWith(u8, a_tw.name.?, "fn"));
+    try testing.expectEqualStrings(ns, a_tw.defining_ns.?);
+    const a_vm = try evalFnInfo(&f, "(fn* [x] x)", .vm);
+    try testing.expect(std.mem.startsWith(u8, a_vm.name.?, "fn"));
+
+    // (3) letfn* local-named fn → name "g".
+    const l_tw = try evalFnInfo(&f, "(letfn* [g (fn* [x] x)] g)", .tree_walk);
+    try testing.expectEqualStrings("g", l_tw.name.?);
+    const l_vm = try evalFnInfo(&f, "(letfn* [g (fn* [x] x)] g)", .vm);
+    try testing.expectEqualStrings("g", l_vm.name.?);
+
+    // (4) VM closure reconstruct (vm.zig:499 op_make_fn): an inner CAPTURING fn
+    // returned from an outer call is rebuilt from the template — the name must
+    // survive the reconstruct. Inner is anonymous → gensym.
+    const c_tw = try evalFnInfo(&f, "((fn* [y] (fn* [x] y)) 5)", .tree_walk);
+    try testing.expect(std.mem.startsWith(u8, c_tw.name.?, "fn"));
+    const c_vm = try evalFnInfo(&f, "((fn* [y] (fn* [x] y)) 5)", .vm);
+    try testing.expect(std.mem.startsWith(u8, c_vm.name.?, "fn"));
+}

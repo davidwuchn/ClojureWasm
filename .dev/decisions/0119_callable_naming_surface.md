@@ -113,11 +113,18 @@ renderer (Stage 2).
 
 ### Staging (each stage: lightweight local verify → full gate at the commit)
 
-- **Stage 1 — naming on the value, observable via `pr`/`str`.** Struct fields +
-  allocator literals (tree_walk.zig:263/301/399) + VM reconstruct (vm.zig:499) +
-  analyzer threading (cases 1/3/4) + `pr`/`str` of a fn renders its name. Dual-
-  backend diff test: `(str a-named-fn)` equal on both backends. Naming is now
-  real and observable WITHOUT the trace machinery.
+- **Stage 1 — naming threaded onto the value, verified white-box.** Struct
+  fields + allocator literals (tree_walk.zig:263/301/399) + VM reconstruct
+  (vm.zig:499) + analyzer threading (cases 1/3/4). Observable = unit + diff
+  tests that read `Function.name`/`defining_ns` after analysis on BOTH backends
+  (the VM reconstruct is the only divergence risk). **`pr`/`str` of a fn is
+  deferred (D-328)**, not bundled here: a user-facing fn print form couples to
+  the `(class fn)` label (currently the raw tag `fn_val`) and the `#object[…]`
+  convention (AD-010), which is its own format + accepted-divergence design —
+  orthogonal to the name *threading* this stage lands. Keeping Stage 1 to the
+  threading + white-box verification avoids dragging a `(class fn)` redesign
+  into the naming foundation. (Refinement found at implementation start,
+  Step-0.6-style.)
 - **Stage 2 — `Trace:` (ADR-0118 cycle 3).** `calleeName` resolver + revive the
   frame stack + push at `treeWalkCall` + `Info.trace` snapshot + renderer
   `Trace:` (text) + EDN `:trace` + decoder + `clearCallStack` per top-level
