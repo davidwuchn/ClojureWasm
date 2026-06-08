@@ -9,6 +9,7 @@
 //! Backend: impl-only
 //! Impl deps: none
 //! Clojure peer: wasm/load, wasm/call
+const std = @import("std");
 const engine = @import("engine.zig");
 const ValType = engine.ValType;
 const ZValue = engine.Value;
@@ -21,14 +22,8 @@ const SourceLocation = @import("../../error/info.zig").SourceLocation;
 /// Coerce one cljw `Value` to a `zwasm.Value` of the param's wasm type.
 pub fn toWasm(arg: Value, vt: ValType, loc: SourceLocation) ClojureWasmError!ZValue {
     switch (vt) {
-        .i32 => {
-            if (!arg.isNumber()) return badArg(loc);
-            return ZValue.fromI32(@intCast(intOf(arg)));
-        },
-        .i64 => {
-            if (!arg.isNumber()) return badArg(loc);
-            return ZValue.fromI64(intOf(arg));
-        },
+        .i32 => return ZValue.fromI32(try coerceInt(arg, i32, loc)),
+        .i64 => return ZValue.fromI64(try coerceInt(arg, i64, loc)),
         .f32 => {
             if (!arg.isNumber()) return badArg(loc);
             const f: f32 = @floatCast(floatOf(arg));
@@ -55,9 +50,28 @@ pub fn fromWasm(res: ZValue, loc: SourceLocation) ClojureWasmError!Value {
     }
 }
 
-/// cljw number → i64 (an int passes through; a float truncates toward zero).
-fn intOf(v: Value) i64 {
-    return if (v.isInt()) v.asInteger() else @intFromFloat(v.asFloat());
+/// Coerce a cljw number to an integer wasm param of width `T` (i32 / i64),
+/// range-checked. A bare `@intCast` here would PANIC in safe builds on any
+/// out-of-`T`-range value (e.g. a 40-bit int into an i32 param), and a float arg
+/// would silently truncate — both forbidden (SE-10 / F-011: observable behaviour,
+/// no silent loss, no host crash on caller data). Rules:
+///   - non-number            → error;
+///   - float with a fraction → error (1.5 is not an integer arg; 2.0 is allowed);
+///   - integer value outside [minInt(T), maxInt(T)] → error;
+/// otherwise return the in-range value.
+fn coerceInt(arg: Value, comptime T: type, loc: SourceLocation) ClojureWasmError!T {
+    if (!arg.isNumber()) return badArg(loc);
+    const i: i64 = if (arg.isInt()) arg.asInteger() else blk: {
+        const f = arg.asFloat();
+        if (@floor(f) != f) return error_catalog.raiseInternal(loc, "wasm/call: a non-integer float cannot be passed to an integer parameter");
+        // The float is integral; widen-range check before the i64 cast.
+        if (f < @as(f64, @floatFromInt(std.math.minInt(i64))) or f > @as(f64, @floatFromInt(std.math.maxInt(i64))))
+            return error_catalog.raiseInternal(loc, "wasm/call: integer argument is out of range");
+        break :blk @intFromFloat(f);
+    };
+    if (i < std.math.minInt(T) or i > std.math.maxInt(T))
+        return error_catalog.raiseInternal(loc, "wasm/call: integer argument is out of range for the parameter type");
+    return @intCast(i);
 }
 
 /// cljw number → f64 (a float passes through; an int widens).
