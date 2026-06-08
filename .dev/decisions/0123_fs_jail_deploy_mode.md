@@ -73,6 +73,31 @@ Linux, `O_NOFOLLOW` walk on macOS) is scheduled as **D-342**, not deferred to
 - The symlink residual is a known, documented, scheduled (D-342) limitation —
   not a silent gap.
 
+## Scope: DATA surfaces, not code-loading
+
+The jail confines the **data** FS surfaces (`slurp`/`spit`/`wasm/load`) — the ones
+a request-derived path reaches. It deliberately does NOT confine **code-loading**:
+`(require …)` reads `.clj` libs off `rt.load_paths` (`require_resolver.zig`), and
+those load paths are operator-supplied deploy config (`CLJW_PATH` / `deps.edn`),
+not request data — and a lib tree legitimately lives OUTSIDE the data root, so
+jailing `require` to `CLJW_FS_ROOT` would break normal library loading. The other
+`std.Io.Dir` opens in `src/app/**` (the entry script, `deps.edn`, the AOT cache,
+`.nrepl-port`, `CLJW_ERROR_LOG`) are all startup/operator-controlled config, not
+request-reachable, so they are out of scope by the same reasoning. The one
+request-reachable residual is `(require (symbol request-data))` (munged-ns
+traversal) — narrow and unusual; tracked as **D-343** (confine code-loading /
+sanitise the munged path if a deploy needs it). A future security note must not
+imply the jail confines code-loading; it confines request-driven data I/O.
+
+## NUL-byte guard (review follow-up)
+
+A fresh-eyes review found that lexical `resolvePosix` treats an embedded NUL as an
+ordinary byte (so `..\x00` is not seen as `..` and passes containment), while the
+kernel's C-string `open` truncates at the NUL — a check-vs-open mismatch that, in
+the shipping ReleaseFast build (where posix's NUL-absence assert is compiled out),
+could open a path the jail did not check. `jailResolve` now rejects any path or
+root containing a NUL up front (no legit path has one). Pinned by a unit test.
+
 ## Alternatives considered
 
 From a fresh-context devil's-advocate fork (F-NNN-constrained), verbatim in

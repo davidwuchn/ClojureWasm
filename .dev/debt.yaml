@@ -9,6 +9,30 @@
 # md-table-align no longer pads it to ~800 KB of whitespace.
 
 active:
+  - id: "D-344"
+    status: "open — security (regex compile-budget completeness). INV-1's MAX_PROGRAM_INSTS (compile.zig) caps EACH program's instruction count, blocking the trivial `(a{n}){m}` bomb. But a lookahead's child compiles to its OWN list (separate program), so the per-program cap does NOT bound the SUM across many sibling/nested lookaheads: `(?=a{99999})(?=a{99999})…` ×N gives N×100k insts from ~N×12 chars, so a ~120 KB untrusted pattern can still OOM. Surfaced by the 2026-06-09 review (rated LOW: needs a large untrusted pattern vs the trivial counted-rep bomb already closed)."
+    category: "security"
+    barrier: |-
+      blocked-by: re-pattern on large untrusted patterns becoming a tracked threat.
+      Finished form = a GLOBAL compile budget: thread a shared `*usize remaining`
+      through emit/emitNode AND the `.look` sub-emit, charged per appended inst
+      across ALL sub-programs, so the TOTAL compiled size is bounded regardless of
+      lookahead nesting/siblings (a ~10-site mechanical change centralised via an
+      appendInst helper). A pattern-length cap is a cheaper partial bound. Cross-ref
+      INV-1, compile.zig MAX_PROGRAM_INSTS, 92_inv1_regex_redos.md.
+    last_reviewed: "2026-06-09"
+  - id: "D-343"
+    status: "open — security (FS-jail code-loading scope). The FS-jail (ADR-0123) confines DATA surfaces (slurp/spit/wasm/load) but NOT code-loading: `(require …)` reads .clj off rt.load_paths (require_resolver.zig:46 file_io.readAll) with no jail check. Intentional for v1 — load_paths are operator deploy-config (CLJW_PATH/deps.edn), not request data, and a lib tree legitimately lives outside the data root, so jailing require would break normal lib loading. The narrow request-reachable residual is `(require (symbol request-data))` → munged-ns traversal (mungeNsToPath only does .→/ and -→_, no `..` strip). Surfaced by the 2026-06-09 review."
+    category: "security"
+    barrier: |-
+      blocked-by: a deploy needing code-loading confinement OR `(require request-data)`
+      becoming a tracked threat. Then either (a) a SEPARATE code-root confinement
+      (distinct from the data CLJW_FS_ROOT, since libs live in a different tree) or
+      (b) sanitise mungeNsToPath to reject `..`/`/`-traversal in the resolved path
+      so a request-derived ns can't escape load_paths. Low priority: require-of-
+      untrusted-data is an unusual pattern; load_paths are operator-controlled.
+      Cross-ref ADR-0123 § Scope, require_resolver.zig, SE-6/7.
+    last_reviewed: "2026-06-09"
   - id: "D-342"
     status: "open — security (SE-6/7 finished form). The FS-jail v1 (ADR-0123, lexical containment) blocks `..`/absolute-path traversal portably but does NOT resolve symlinks: a symlink planted INSIDE the jail pointing outside is followed. Documented residual (mitigate via read-only mount / no symlinks in jail). The symlink-SAFE finished form is the ADR-0123 DA Alt-2."
     category: "security"
