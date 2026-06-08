@@ -391,3 +391,17 @@ accepted:
       is co-designed so D-327 only fills the name).
     derives_from: "ADR-0121 (callable print naming) + AD-002 (opaque refs print #<…> not #object[…]) + AD-003 (simple names) + ADR-0059 (no JVM class hierarchy)"
     pin: "test/e2e/phase14_callable_print.sh — fn_named + fn_anon + defmulti + str_eq_pr"
+  - id: "AD-026"
+    summary: "`read-string` is eval-free: `#=(form)` (clj's read-eval reader macro) is NOT evaluated. clj reads with `*read-eval*` true by default, so `(read-string \"#=(+ 1 2)\")` returns 3; cljw's EDN-based reader has no `#=` reader function, so it raises `No reader function for tag =` — reading data never executes code."
+    example: '(read-string "#=(+ 1 2)") => clj 3 (evaluated) / cljw error "No reader function for tag =" (not evaluated)'
+    why: |-
+      cljw's `read-string` is the same full-reader `readOne → formToValue` path as
+      `clojure.edn/read-string` — no `#=` eval-reader. This is a deliberate
+      secure-by-default property (SE-8): `read-string` on untrusted input is NOT
+      `eval` on untrusted input (the JVM read-eval footgun). Evaluation is reached
+      only via a separate explicit `eval` call on already-read data. Recorded as a
+      permanent intentional divergence (ADR-0122) so a future clj-diff sweep treats
+      the `3`-vs-error difference as the locked decision, never a parity gap to
+      "fix" back into an eval-on-read RCE.
+    derives_from: "ADR-0122 (read-string eval-free by design) + SE-8 (security audit secure-by-default property)"
+    pin: "test/e2e/phase14_read_string.sh — rs_no_read_eval (#=(+ 1 2) must not yield 3)"

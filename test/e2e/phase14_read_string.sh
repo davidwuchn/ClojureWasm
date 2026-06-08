@@ -20,4 +20,10 @@ assert_eq 'rs_kw'      "$("$BIN" -e '(read-string ":foo")')"                ':fo
 assert_eq 'rs_list1st' "$("$BIN" -e '(first (read-string "(a b c)"))')"     'a'
 assert_eq 'rs_nested'  "$("$BIN" -e '(read-string "[1 {:a [2 3]}]")')"      '[1 {:a [2 3]}]'
 assert_eq 'rs_count'   "$("$BIN" -e '(count (read-string "(1 2 3 4)"))')"   '4'
-echo "OK — phase14_read_string (9 cases) green"
+# AD-026 / SE-8: read-string is eval-free BY DESIGN (ADR-0122). clj's read-string
+# evaluates `#=(…)` (read-eval) and returns 3; cljw's EDN-based reader must NOT —
+# reading untrusted data never executes code. Lock the secure-by-default property.
+rs_re="$("$BIN" -e '(read-string "#=(+ 1 2)")' 2>&1 || true)"
+[[ "$rs_re" != "3" ]] || fail "rs_no_read_eval: #= was evaluated (got 3) — read-string must stay eval-free"
+echo "PASS rs_no_read_eval -> not evaluated (eval-free reader)"
+echo "OK — phase14_read_string (10 cases) green"

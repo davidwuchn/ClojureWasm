@@ -9,6 +9,54 @@
 # md-table-align no longer pads it to ~800 KB of whitespace.
 
 active:
+  - id: "D-340"
+    status: "open — security (SE-6/7, edge FS confinement). READY TO BUILD NEXT. slurp/spit AND wasm/load take any string path with no confinement, no `..` rejection, no preopen root (lang/primitive/file_io.zig readAll/writeAll; surface.zig:48 wasm/load reuses file_io.readAll). At the edge, request data → path arg = arbitrary read/write + traversal. Local CLI: fine by design. The shared choke point is file_io.readAll/writeAll, so one jail check there covers all three surfaces (F-009-clean)."
+    category: "security"
+    barrier: |-
+      Build the opt-in FS-jail next unit (the only implementable-now SE item, per
+      the 2026-06-09 DA fork). Design to settle in its ADR: config surface (env
+      `CLJW_FS_ROOT` vs a Clojure API), default OFF (local-CLI parity, F-011), and
+      CORRECT canonicalisation (std.Io.Dir realpath to defeat `..`/symlink escape —
+      a naive prefix check is bypassable; getting this wrong is worse than no jail).
+      A path outside the root → a catchable cljw error. Cross-ref SE-6/SE-7,
+      50_sharp_edges.md, file_io.zig, wasm/surface.zig.
+    last_reviewed: "2026-06-09"
+  - id: "D-338"
+    status: "open — security (SE-2, wasm host-import capability allowlist). FORWARD-LOOKING: today engine.load() instantiates wasm modules with an EMPTY import object (engine.zig:92 `inst_opts`), so only zero-import modules load — safe, but by ACCIDENT. There is no default-deny allowlist; the day the first host import (defineWasi/defineFunc) is wired into load(), it would be granted to ALL modules with no per-load gate. Building the allowlist NOW gates nothing (zero import-providing code path → excessive-skeleton smell), so it is scheduled, not built."
+    category: "security"
+    barrier: |-
+      Lands in the SAME commit as the first host import wired into engine.load():
+      an explicit opt-in allowlist (`:allow #{}` default-deny, e.g. `#{:clock
+      :fs-ro}`) gating which imports a load() may grant, mirroring wasmtime
+      WasiCtxBuilder, with a test that FAILS the day an unlisted import is wired.
+      Until a host import exists, this is a non-gating reservation (deferred per the
+      skeleton smell). Cross-ref SE-2, 50_sharp_edges.md, engine.zig:92.
+    last_reviewed: "2026-06-09"
+  - id: "D-339"
+    status: "open — security (SE-3, HTTP server slowloris). The cljw.http.server accept loop is serial + blocking with NO socket read/idle/header deadline (server.zig:63-71); one client that opens a connection and never completes the request head wedges the WHOLE server (binds 0.0.0.0, internet-facing in a container). The 8 MB body cap guards volume, not time. High severity (one packet DoSes a public deploy)."
+    category: "security"
+    barrier: |-
+      blocked-by: the Phase-15 concurrency model (cancellable Io). The
+      secure-by-default target is per-connection handling (thread/async) + a default
+      header/read/idle deadline (e.g. 10 s), NOT opt-in. std.Io 0.16 HAS the
+      primitives (Io.Timeout, async/cancel) but a real per-conn + cancellable-read
+      fix needs the evented/threaded Io backend the project defers to Phase 15
+      (zig_tips.md: concurrency arrives Phase 15; D-257 lists per-conn threading as a
+      follow-on). Forcing it now would be premature (F-003). Land per-conn + default
+      deadline when Phase-15 concurrency lands. Cross-ref SE-3, server.zig, D-257.
+    last_reviewed: "2026-06-09"
+  - id: "D-341"
+    status: "open — security (SE-8, eval-free deploy build). `eval` (+ read-string) is public with no confinement story. read-string is ALREADY eval-free by design (ADR-0122 / AD-026 — `#=` not evaluated; the read-eval RCE footgun is closed). The residual is the `eval`/nREPL surface itself: a deployed serverless edge binary should be able to ship eval-free, author opts IN."
+    category: "security"
+    barrier: |-
+      blocked-by: a deploy-binary build profile being defined. Then add a
+      build/deploy flag that omits/disables `eval` (and nREPL) from the shipped edge
+      binary → serverless deploy is eval-free by default, author opts IN. Design
+      choice at build time: a `-Dno-eval` build option (compile-out) vs a runtime
+      deny flag; default-deny in the deploy profile only (local CLI keeps eval). The
+      read-string half is already closed (ADR-0122). Cross-ref SE-8, ADR-0122,
+      core.zig eval surface.
+    last_reviewed: "2026-06-09"
   - id: "D-337"
     status: "deferred from ADR-0121 (2026-06-08). `(class fn)` / `(type fn)` return the raw heap-tag name `fn_val` (likewise `multi_fn` / `protocol_fn`) instead of a clj-reduced simple class name. clj returns a munged generated class (`user$boom__7`); cljw has no JVM class (ADR-0059 / AD-003 simple-name). A callable's class is a TYPE-SYSTEM concern (what TypeDescriptor a closure carries), distinct from the ADR-0121 PRINT form — co-designing it would drag TypeDescriptor design into a print cycle, so it was split out. The ADR-0121 print form (`#<ns/name>`) implies NO class decision."
     category: "error-system"
