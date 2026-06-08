@@ -5,61 +5,52 @@
 
 ## Resume contract
 
-- **HEAD**: newest pushed ≈ the bench-baseline commit (see `git log`). Working
-  tree clean; gate green (293/0, parallel = serial, no divergence).
-- **MODE for the next session (user-directed pivot, 2026-06-08): INTERACTIVE
-  CFP prep — NOT the autonomous quality-loop.** The user is steering toward
-  Clojure/Conj 2026 CFP work: **demo preparation + repo entry-point tidying**,
-  driven interactively. Do **not** auto-select a quality-loop debt row and grind;
-  instead open the CFP plan and work *with* the user on it. The specifics are
-  deliberately NOT pre-decided here — surface options, let the user choose.
-- **First action on resume**: read `private/clojure_conj_2026_cfp/TODO.md`
-  (the decided plan; **Phase 2** = pre-submission tasks, deadline **2026-06-13
-  landing / 06-14 23:59 ET**) + `SUBMISSION.md` + `MY_CFP.md`, then engage the
-  user on which Phase-2 item to take next (demo-runs-on-current-build check /
-  link validity / Reviewer-info numbers / Recorded-talk assets). Likely
-  near-term, interactive: verify the demos (nREPL+Java interop, polyglot
-  `add.wasm`, edge-demo, Playground) run on the current build; tidy README
-  Demos + links (repo default branch is `main`=old vs `cw-from-scratch`).
-- **Forbidden**: auto-running the autonomous quality-loop this session (the user
-  redirected to interactive CFP mode). Pre-deciding demo specifics without the
-  user. Pushing to `main` / pinning a zwasm v2 tag (F-001). Putting count-based
-  numbers (test count / LOC) into the SUBMISSION (MY_CFP.md:218 — stale +
-  meaningless to reviewers; size + cold-start are the only headline figures).
+- **HEAD**: `bd240d25` (FIX-1, pushed). Tree clean. FIX-1 = `(wasm/load path
+  {:fuel N :max-memory-pages M})` budget surface (default = zwasm's finite
+  default; `0`/negative axis = unmetered), gated 293/0 `--serial-e2e`.
+- **First commit on resume MUST be: FIX-4** (wasm-error taxonomy). Convert every
+  `raiseInternal` in `src/runtime/cljw/wasm/surface.zig` + `marshal.zig` (Kind
+  `.internal_error` = NOT catchable / exit 70) to a `wasm_*` Code family on
+  catchable Kinds (`type_error` / `value_error` / `arity_error` / `io_error` /
+  `not_implemented`), so a request-derived bad wasm arg or a trapping module is
+  `(catch Throwable …)`able, not process-ending. One uniform sweep over the whole
+  wasm surface (F-011 even taxonomy). Full design: `private/security_audit/91_codev_resume_plan.md`
+  §FIX-4. cljw-internal, no zwasm dep. Then INV-1 (regex ReDoS), then design-gap
+  ADRs (SE-2/3/5/6/7/8).
+- **Forbidden this session**: pushing to `main` / pinning a zwasm tag (F-001 is
+  relative-path co-dev mode). Running two gates at once (share
+  `/tmp/codev_gate.lock` with the zwasm session — `mkdir` acquire, `rmdir`
+  release in all paths).
 
-## Done this session (error-display tail closed + CFP-prep mop-up)
+## Mode: security co-dev (cljw ⇄ zwasm), relative-path, /loop 10m
 
-- **Error-display cluster fully closed** (all pushed): D-336 trace crosses the
-  thread boundary (ADR-0120 §1), D-333 `render-error` decodes EDN `:trace`,
-  D-328 callables print `#<ns/name>` (ADR-0121 + AD-025 + DA), D-325 self-named
-  fn verified already-working (discharged, stale premise). Error UX is now strong
-  (caret / trace / cross-thread fidelity / named callables) — a CFP-grade DX story.
-- **Gate**: parallel (`bash test/run_all.sh`) confirmed divergence-free vs
-  `--serial-e2e` (both 293/0; only execution mode differs, perf steps stay serial
-  in both). Parallel adopted as default; under host load it can run slower /
-  flakier (memory `gate_parallel_e2e_timeout`) — fall back to `--serial-e2e` then.
-- **Proactive measurements** (for the next session's Reviewer-info refresh):
-  Zig 70,735 LOC / Clojure 3,277 / ADRs 122 / active debt 198. Release
-  binary-size + cold-start re-measured at current HEAD (see
-  `private/clojure_conj_2026_cfp/` measurement note) to confirm the
-  submission's <4MB / ~4.5ms claims still hold (were measured at c972d81d).
+- F-001 amended 2026-06-09 to **relative-path co-dev** (`build.zig.zon` →
+  `../zwasm_from_scratch`, lazy). A zwasm fix is live in cljw immediately; the
+  default gate still never resolves zwasm (lazy + `-Dwasm`-guarded).
+- Two sessions hand off via numbered mailboxes in `zwasm_from_scratch/private/`
+  (`security_handover_{from,to}_cljw_NN.md`; consumed by appending
+  `## CONSUMED by <repo> @ <sha>`). cljw inbox = `to_cljw_NN` (currently `_01`
+  CONSUMED → none new). zwasm's embedder-hardening pass is landed (`to_cljw_01`):
+  `instantiate(.{})` finite-default-bounded, facade always interp, decoder
+  fuzzed, `_exit` CLI-only.
+- Loop runs via `/loop 10m` per CODEV_PROTOCOL.md: each tick checks the inbox,
+  else advances one non-blocked backlog unit, gates, commits, pushes. 10-min
+  cadence staggers the gate lock with the zwasm session.
 
-## Tracked tail (deferred, NOT for the CFP pivot)
+## Live queue + process discipline (SSOT)
 
-- **D-327**: builtins print `#<clojure.core/name>` — depth-2 (immediates have no
-  name slot → needs a side `ptr→name` map; `printValue` has no `rt`). Low value
-  ("pure pr nicety"). Defer; not a CFP blocker.
-- **D-337**: `(class fn)` simple-name (type-system concern, split from ADR-0121).
+- Live queue: `private/security_audit/91_codev_resume_plan.md`. Backlog after
+  FIX-4: INV-1 (regex ReDoS), design-gap ADRs (SE-2/3/5/6/7/8).
+- Shared-code gate: `bash test/run_all.sh --serial-e2e`; verify Summary
+  `failed: 0` + `.dev/.gate_pass` == `scripts/gate_state_hash.sh`. Wasm work uses
+  `zig build -Dwasm` (resolves the relative-path zwasm tree); the leak-checked
+  `test/e2e/phase16_wasm_ffi.sh` is opt-in (ALLOWLISTed out of the default gate
+  per F-001) — run it explicitly for wasm changes.
+- Audit log (gitignored, do NOT commit): `private/security_audit/` (00..91) +
+  `private/CODEV_STATUS.md`. zwasm-side relay: `zwasm_from_scratch/private/`.
 
-## Process discipline (SSOT = memory + rules)
+## Cold-start reading order (security co-dev, overnight)
 
-- Gate (shared-code): `timeout 1800 bash test/run_all.sh` (parallel default;
-  `--serial-e2e` fallback under load). Verify Summary `failed: 0` + `.gate_pass`
-  == `gate_state_hash.sh`. Perf numbers ONLY via `bash bench/release_metrics.sh`
-  / `scripts/perf.sh` (Release) — never `time zig-out/bin/cljw` (Debug).
-
-## Cold-start reading order (next session = CFP interactive)
-
-handover → `private/clojure_conj_2026_cfp/TODO.md` (Phase 2 + deadline) →
-`SUBMISSION.md` + `REVIEWER_INFO.md` + `MY_CFP.md` → README.md (Demos/links) →
-`examples/wasm/` (polyglot demo) → `bench/RELEASE_METRICS.md` → CLAUDE.md.
+handover → `private/security_audit/91_codev_resume_plan.md` (live queue + FIX-4
+design) → `~/Documents/MyProducts/zwasm_from_scratch/private/CODEV_PROTOCOL.md`
+→ `private/security_audit/50_sharp_edges.md` (finding catalogue) → CLAUDE.md.
