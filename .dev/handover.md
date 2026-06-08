@@ -5,70 +5,76 @@
 
 ## Resume contract
 
-- **HEAD**: newest pushed = **3673427a** feat(error): arg-precise carets
-  (ADR-0118 cycle 2.5). Cycles 1 + 2 + 2.5 of the error-display overhaul
-  (D-323) are DONE + pushed. Working tree clean of source.
-- **First commit on resume MUST be: ADR-0118 cycle 3 — frame `Trace:`
-  (Decision B).** Turn-key plan lives in
-  **`private/notes/phase14-error-cycle3-trace-plan.md`** — read it FIRST.
-  Steps: revive the dead `info.zig` error call-stack (`StackFrame` /
-  `call_stack` / `pushFrame`…, currently never called); push an error-frame
-  at the shared `treeWalkCall` choke point (tree_walk.zig:1040 — both backends
-  route here); snapshot the live stack into a new `Info.trace` at
-  `setErrorFmt` time (NOT pop-on-success-only — pop-on-both + snapshot, per
-  Decision B); render `Trace:` (text, print.zig) + `:trace` (EDN,
-  error_render.zig:161 `formatErrorEdn`) + the post-mortem decoder
-  (render_error.zig) in lockstep; add a diff_test.zig parity case. **Fork a DA
-  on the frame-NAME source** — `Function` (tree_walk.zig:129) has NO name
-  field and builtins carry none: candidates are the callee's Var name, the
-  call-form symbol, or adding a `Function.name` field (note §"the hard design
-  question").
+- **HEAD**: newest pushed = **7ba484ae** (docs: flow wiring). Error-display
+  cycles 1 + 2 + 2.5 (locations + window + arg-precise caret) DONE + pushed
+  (3673427a). Working tree clean of source.
+- **First commit on resume MUST be: ADR-0119 Stage 1 — function naming on the
+  value.** This is a settled FOUNDATIONAL effort (user-directed 2026-06-08):
+  cw v1's redesign dropped the fn-name + defining_ns that cw v0, Clojure JVM
+  (`Compiler.java:4558` — even anon → `fn__<id>`), and SCI all carry. The
+  trace (old "cycle 3") is now **Stage 2** and consumes these names. Read FIRST:
+  **`private/notes/phase14-cycle3-naming-investigation.md`** (the file:line map)
+  + **`.dev/decisions/0119_callable_naming_surface.md`** (decision = Alt 3 "name
+  on the value", NOT the DA-recommended Alt 2; the 3 naming cases; the
+  arena-borrow string-ownership call).
+- Stage 1 sites: `FnNode`(node.zig:212)+`Function`(tree_walk.zig:129) gain
+  `name`+`defining_ns`; allocator literals tree_walk.zig:263/301/399 + VM
+  reconstruct vm.zig:499 carry them; analyzer threading = `analyzeDef`
+  post-patch (special_forms.zig:~547) + `analyzeFnStar` gensym-for-anon
+  (bindings.zig:107) + `analyzeLetfn` post-patch; consumer = `pr`/`str` of a fn
+  shows the name; dual-backend diff test on `(str a-named-fn)`.
 - **Forbidden**: trusting a bg-gate notification's exit code (verify ONLY via
   `SENTINEL-EXIT` / Summary `failed: 0` + `.gate_pass` ==
-  `bash scripts/gate_state_hash.sh`). Pre-deciding work past the D-324 track
-  below. Editing `.claude/rules/*` (permission-blocked → carry-over). Pinning a
-  zwasm v2 tag (F-001).
+  `bash scripts/gate_state_hash.sh`). Re-introducing a v0-style `defining_ns`
+  current-ns restore (v1 resolves vars at analyze time → display-only, ADR-0119
+  §4). `gpa.dupe`/intern for the fn-name (borrow the analyze arena like
+  `params`, ADR-0119 §2). Editing `.claude/rules/*` (permission-blocked →
+  carry-over). Pinning a zwasm v2 tag (F-001).
 
-## After cycle 3 — user-led CFP brush-up track (D-324, user-directed 2026-06-08)
+## Verification discipline (user-directed 2026-06-08)
 
-The next track after D-323 cycle 3 is **user-led, not autonomous**: the CFP
-brush-up items — **Playground, Edge Demo, documentation, user usability** —
-are worked interactively WITH the user. Cycle 3 (frame Trace:) is therefore
-the last autonomous unit on the error-display track; when it lands (gate green
-+ pushed), the next track is D-324 (the user drives the four items
-interactively). Do NOT auto-open a fresh sweep at that boundary. The durable
-wiring is `.dev/debt.yaml` D-324 (recall trigger); this section mirrors it.
-(span/underline O-NNN under D-323 stays a deferred follow-on, not a blocker.)
+Do NOT run the full e2e gate (`test/run_all.sh`, ~300s) every iteration.
+During TDD use **lightweight local checks**: `zig build test` (unit, Debug,
+fast) for the touched unit + `zig build` then `cljw -e '…'` probes written to a
+file and Read back (tool channel corrupts stdout under load — never chain
+echoes). Full gate (`timeout 1800 bash test/run_all.sh --serial-e2e`) only at
+**commit boundaries** for shared-code changes (gate-cadence rule). Ubuntu =
+lightweight/milestone checks, not per-iteration.
 
-## Cycle status (ADR-0118 error display, D-323)
+## ADR-0119 staging (callable naming → trace)
 
-- Cycle 1 (loc back-fill): DONE, pushed.
-- Cycle 2 (v0-form renderer): DONE, pushed (6d36acc4).
-- Cycle 2.5 (arg-precise carets, Alt 1 — slice side channel + VM loc_stack;
-  arithmetic divide/type family uniform): DONE, pushed (3673427a).
-- Cycle 3 (frame `Trace:`, Decision B): NEXT.
+- **Stage 1 — naming on the value** (`pr`/`str` observable): NEXT. 3 naming
+  cases (defn/def, anonymous gensym, letfn); case 2 `(fn name ..)` deferred
+  (D-325).
+- **Stage 2 — `Trace:`** (ADR-0118 cycle 3 trace, consumes the names):
+  `calleeName` resolver (all callable kinds; elide builtin/collection/keyword) +
+  revive info.zig frame stack + push at `treeWalkCall` (skip-on-`.var_ref`) +
+  `Info.trace` snapshot pop-on-both + renderer `Trace:` + EDN `:trace` + decoder
+  + parity (nested error identical; recur → 1 frame).
+- **Stage 3 — deferred**: D-325 (fn self-name), D-326 (interop method frames),
+  D-327 (builtin `pr` reverse-name).
+
+## CFP brush-up (D-324) — de-prioritized
+
+User said (2026-06-08) not to optimize for CFP timing; the naming route is a
+deliberate foundational effort instead. D-324 (Playground / Edge Demo / docs /
+usability, user-interactive) remains a future track, no longer a near-term
+driver.
 
 ## Process discipline (SSOT = memory + rules; do NOT re-expand here)
 
-- Gate (source only): `timeout 1800 bash test/run_all.sh --serial-e2e` (NOT
-  the -P8 default — it 300s-timeouts mid-e2e under host load). Verify via
-  Summary `failed: 0` + `.gate_pass` == `gate_state_hash.sh`, never the
-  notification.
 - `zig build` (NOT `zig build test`) rebuilds `zig-out/bin/cljw`; `zig build
-  test` only builds the unit-test binary (Debug). The gate's e2e cljw is
-  ReleaseSafe (`run_all.sh:306-307`). Bench `REGRESSION` rows are informational.
-- Docs (`.dev/`, ADRs, this file) do NOT change the gate fingerprint. e2e use
-  BARE exprs (cljw -e of `(prn X)` echoes X then nil). Backend default = vm
-  (F-012). Measure speed ONLY via bench / scripts/perf.sh (Release). The tool
-  channel can corrupt stdout under host load — verify cljw output via per-cmd
-  files + Read, not chained echoes.
+  test` only builds the unit-test binary. Backend default = vm (F-012). Docs
+  (`.dev/`, ADRs, this file) do NOT change the gate fingerprint. e2e use BARE
+  exprs (cljw -e of `(prn X)` echoes X then nil).
+- Both backends touched → dual-backend parity diff test mandatory in each
+  source commit (ADR-0036).
 
 ## Cold-start reading order (tracked-only)
 
-handover → **`private/notes/phase14-error-cycle3-trace-plan.md`** (turn-key
-cycle 3 plan + the frame-name design question + beyond-cycle-3 notes) →
-`.dev/decisions/0118_error_display_v0_level.md` (Decision B + Rev 2
-"Implementation landed") → `.dev/debt.yaml` D-323 + D-324 →
-`src/runtime/error/info.zig` (dead error call-stack to revive) +
-`src/eval/backend/tree_walk.zig:1040` (treeWalkCall choke point) +
-`src/runtime/error/print.zig` (renderer) → CLAUDE.md → `.dev/principle.md`.
+handover → **`private/notes/phase14-cycle3-naming-investigation.md`** (file:line
+map, areas A-H + the 8 change groups) → **`.dev/decisions/0119_callable_naming_surface.md`**
+(decision + Alternatives) → `.dev/decisions/0118_error_display_v0_level.md`
+(Decision B, the trace consumer) → `.dev/debt.yaml` D-325/326/327 →
+`src/eval/node.zig:212` (`FnNode`) + `src/eval/backend/tree_walk.zig:129`
+(`Function`) → CLAUDE.md → `.dev/principle.md`.

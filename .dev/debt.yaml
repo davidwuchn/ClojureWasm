@@ -9,6 +9,35 @@
 # md-table-align no longer pads it to ~800 KB of whitespace.
 
 active:
+  - id: "D-327"
+    status: "blocked-by: ADR-0119 Stage 1+2 landing (2026-06-08). Builtins are NaN-boxed immediate fn-pointers (value.zig:221) with no name slot, so `(pr +)` shows `#builtin` not `#object[clojure.core/+]`. A reverse `ptr -> ns/name` map built at `registerAll` (primitive.zig:65) into an rt-owned `AutoHashMap(usize,[]const u8)` would let `pr` name a builtin. Out of trace scope (builtins are elided from traces, ADR-0119 §6). Pure `pr`-parity nicety."
+    category: "error-system"
+    barrier: |-
+      Builtins are elided from traces (ADR-0119), so this is `pr`/metadata
+      parity only, not trace-blocking. Resolve when builtin `pr` naming is worth
+      a reverse-lookup map (cheap, but its own mini-feature). Cross-ref ADR-0119
+      area C, print.zig:601.
+    last_reviewed: "2026-06-08"
+  - id: "D-326"
+    status: "blocked-by: ADR-0119 Stage 2 landing (2026-06-08). Interop method calls `(.m o)` (evalInstanceMember tree_walk.zig:672 / op_method_call vm.zig:838) and `(T/m x)` (evalStaticMethodCall :738 / op_static_method_call :902) are a SECOND callable family distinct from the IFn `treeWalkCall` choke point. They carry method + receiver-type names on InteropCallNode, so they CAN push `<fqcn>.<m>` trace frames — but via a separate push site. Deferred from cycle 3's IFn-path trace."
+    category: "error-system"
+    barrier: |-
+      The IFn-dispatch trace (ADR-0119 Stage 2) lands first via the single
+      treeWalkCall choke point; interop method frames are a secondary push
+      family at 4 sites (2 backends x instance/static). Resolve when interop
+      methods should appear in traces (clj shows them; v0 did not). Cross-ref
+      ADR-0119 area D, dual_backend_parity.md (4 sites, both backends).
+    last_reviewed: "2026-06-08"
+  - id: "D-325"
+    status: "blocked-by: ADR-0119 Stage 1 landing (2026-06-08). `(fn name [..] ..)` self-name: cw v1's `expandFn` (macro_transforms.zig:1855) lowers the named form to `(letfn* [name (fn ..)] name)`, so the self-name becomes a letfn LOCAL binding and the Function stays anonymous (gensym `fn__<id>`). Giving it a real Function name needs a NEW self-name arm in `analyzeFnStar` (bindings.zig:23) — the only naming case requiring an analyzer change, not a post-patch. Rare surface; the other 3 cases (defn/def, anonymous, letfn) land in Stage 1."
+    category: "error-system"
+    barrier: |-
+      The 3 common naming cases (defn/def post-patch, anonymous gensym, letfn
+      post-patch) land in ADR-0119 Stage 1 via cheap analyzeDef/analyzeLetfn
+      post-patches. The `(fn name ..)` self-name needs a structural analyzeFnStar
+      arm because expandFn lowers it to letfn. Resolve when self-named fns
+      warrant their real name in traces/pr (rare). Cross-ref ADR-0119 §3 case 2.
+    last_reviewed: "2026-06-08"
   - id: "D-324"
     status: "recall trigger / blocked-by: D-323 cycle 3 landing (2026-06-08, user-directed). The CFP-submission brush-up track — Playground, Edge Demo, documentation, user usability — is worked INTERACTIVELY WITH the user, not by autonomous self-selection. D-323 cycle 3 (frame Trace:) is the last autonomous unit on the error-display track; when it lands (gate green + pushed), the next track is the user-led CFP brush-up. Do NOT auto-open a fresh sweep at that boundary."
     category: "project-flow"
