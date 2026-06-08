@@ -11,8 +11,9 @@
 //! holds and the mark phase can read the header), and `wasm_module` carries
 //! `null` tag_ops trace — the correct leaf default, since the `*Loaded` points
 //! into zwasm's separate space (F-006) the cljw GC must NOT trace. The external
-//! `*Loaded` is intentionally not finalised for P1 (short-lived demo,
-//! auto-collect off); D-259 owns finalisation/rooting.
+//! `*Loaded` IS finalised (`registerGcHooks` → `finaliseGc`): sweep tears down
+//! the zwasm triple + frees the box (D-259 (b) discharged). D-259 (a) — the
+//! module/instance/fn representation split — stays Phase-16/F-004's.
 //!
 //! Backend: impl-only
 //! Impl deps: none
@@ -23,6 +24,8 @@ const value_mod = @import("../../value/value.zig");
 const Value = value_mod.Value;
 const HeapHeader = value_mod.HeapHeader;
 const Runtime = @import("../../runtime.zig").Runtime;
+const tag_ops = @import("../../gc/tag_ops.zig");
+const gc_heap_mod = @import("../../gc/gc_heap.zig");
 
 /// Heap carrier for a loaded-wasm handle. `header` at offset 0 (gc.alloc
 /// invariant); `loaded` is an external pointer the GC does not trace.
@@ -54,4 +57,27 @@ pub fn unwrap(v: Value) *engine.Loaded {
 /// True iff `v` is a loaded-wasm handle.
 pub fn isHandle(v: Value) bool {
     return v.tag() == .wasm_module;
+}
+
+/// `.wasm_module` GC finaliser (D-259 (b)). Called by sweep / `GcHeap.deinit`
+/// before the `WasmHandle` block is recycled: tears down the zwasm triple
+/// (instance→module→engine, which also frees zwasm's own `_alloc_witness` etc.)
+/// and frees the external `*Loaded` box back to `gc.infra` — the same allocator
+/// `engine.load` created it on (`rt.gpa`, and `rt.gc.infra == rt.gpa` per
+/// `runtime.zig` `GcHeap.init(gpa)`). No-alloc invariant holds: `Loaded.deinit`
+/// is C-API `*_delete` + the `destroy` is a free, neither allocates.
+fn finaliseGc(gc_ptr: *anyopaque, header: *HeapHeader) void {
+    const gc: *gc_heap_mod.GcHeap = @ptrCast(@alignCast(gc_ptr));
+    const handle: *WasmHandle = @ptrCast(@alignCast(header));
+    handle.loaded.deinit();
+    gc.infra.destroy(handle.loaded);
+}
+
+/// Register the `.wasm_module` finaliser. Called from `surface.register` under
+/// `-Dwasm` (idempotent at the same fn pointer, per `tag_ops.registerFinaliser`).
+/// `wasm_module` carries no GC-managed outgoing pointers (the `*Loaded` lives in
+/// zwasm's separate space, F-006), so NO tracer is registered — the `null`
+/// trace-table default is the correct leaf behaviour.
+pub fn registerGcHooks() void {
+    tag_ops.registerFinaliser(.wasm_module, &finaliseGc);
 }

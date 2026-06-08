@@ -45,9 +45,9 @@ pub const Loaded = struct {
     }
 
     /// Free the zwasm triple (instance→module→engine). Does NOT free the box
-    /// itself — the owning handle allocator does that. (P1 leaks this: the
-    /// `cljw add.clj` demo is short-lived + auto-collect is off; D-259 owns
-    /// finalisation/rooting.)
+    /// itself — the caller frees the `*Loaded` box. Called by the `.wasm_module`
+    /// GC finaliser (`wasm_handle.finaliseGc`), which then frees the box back to
+    /// `gc.infra`; so a swept `(wasm/load …)` handle no longer leaks (D-259 (b)).
     pub fn deinit(self: *Loaded) void {
         self.instance.deinit();
         self.module.deinit();

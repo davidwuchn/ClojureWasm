@@ -92,6 +92,9 @@ pub fn wasmCallFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocat
 /// Create the `wasm` host namespace. Called by
 /// `runtime/cljw/_host_api.zig::installAll` under `build_options.wasm`.
 pub fn register(env: *Env) !void {
+    // Register the `.wasm_module` GC finaliser so a swept `(wasm/load …)` handle
+    // tears down its zwasm triple instead of leaking (D-259 (b)).
+    wasm_handle.registerGcHooks();
     const ns = try env.findOrCreateNs("wasm");
     _ = try env.intern(ns, "load", Value.initBuiltinFn(&wasmLoadFn), null);
     _ = try env.intern(ns, "call", Value.initBuiltinFn(&wasmCallFn), null);

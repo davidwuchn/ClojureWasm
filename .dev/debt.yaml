@@ -1115,7 +1115,7 @@ active:
       ADR-0100.
     last_reviewed: "2026-06-06"
   - id: "D-259"
-    status: "provisional (opened 2026-06-06, ADR-0099) — wasm FFI instance handle. The `(wasm/load …)` result is a minimal opaque `.wasm_module` box; Phase-16/F-004 owns the finished representation."
+    status: "provisional (opened 2026-06-06, ADR-0099) — wasm FFI instance handle. (b) GC finalisation LANDED 2026-06-09 (`.wasm_module` finaliser frees the zwasm triple + `*Loaded` box; leak-checked by `test/e2e/phase16_wasm_ffi.sh`, 0 leaks). Remaining: (a) module/instance/fn representation split + (c) D-036 inline-vs-Pod — Phase-16/F-004 owns the finished representation."
     category: "runtime"
     barrier: |-
       **The wasm FFI instance handle (ADR-0099 / CFP P1) is a deliberate
@@ -1130,12 +1130,14 @@ active:
       single `wasm_module`-tagged handle holding an Instance. Phase-16 decides
       whether load returns a module or instance, and how `wasm_fn` /
       `funcref` / `externref` become first-class cljw Values.
-      (b) **GC finalisation + rooting** — the external `*engine.Loaded` is NOT
-      finalised (the `cljw add.clj` demo is short-lived + auto-collect is off, so
-      it leaks harmlessly). Under auto-collect, the handle needs a finaliser
-      (free the zwasm triple) + the `*Loaded` must survive a collect mid-call.
-      `wasm_module` carries `null` tag_ops trace today (correct leaf default per
-      F-006 — the GC must not trace into zwasm's separate space).
+      (b) **GC finalisation LANDED 2026-06-09** — `wasm_handle.registerGcHooks`
+      registers a `.wasm_module` finaliser (`finaliseGc`) that sweep / `GcHeap.deinit`
+      calls to tear down the zwasm triple + free the `*Loaded` box back to `gc.infra`
+      (== `rt.gpa`); `test/e2e/phase16_wasm_ffi.sh` asserts 0 leaks. `wasm_module`
+      keeps `null` tag_ops trace (correct leaf per F-006 — the GC must not trace into
+      zwasm's separate space). Remaining sub-item: **rooting** — the `*Loaded` must
+      survive a collect mid-call once auto-collect is on (today auto-collect is off,
+      so the live handle is reachable from the operand stack for the call's duration).
       (c) **D-036 inline-vs-Pod** is still open; the handle representation may
       change with that decision. Cross-ref ADR-0099, F-001, F-004, F-006, D-036,
       D-037, feature_deps.yaml#runtime/cljw/wasm/instance_handle.
