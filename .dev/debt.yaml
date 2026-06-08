@@ -45,13 +45,11 @@ active:
       is confusing in practice. Cross-ref ADR-0119 Stage 2 note, survey §position.
     last_reviewed: "2026-06-08"
   - id: "D-333"
-    status: "blocked-by: ADR-0119 Stage 2 landing (2026-06-08). The post-mortem decoder `cljw render-error` (render_error.zig, hand-rolled flat-field scan) does NOT yet decode the new `:trace [{...} …]` nested vector — live text+EDN are in lockstep, but the decoded-log view omits the trace. Needs a nested-map scan in the hand-rolled decoder (or a minimal EDN sub-parse). Lower priority (post-mortem tool); the live render is the primary surface."
+    status: "DISCHARGED 2026-06-08. `render_error.renderTrace` decodes the nested `:trace [{:fn :ns :file :line} …]` vector and prints `  <ns>/<fn> (<file>:<line>)` per frame, byte-matching the live `runtime/error/print.zig` writer (ns omitted when absent, line when 0). Hand-rolled per-frame `{…}` scan reusing scanString/scanInt — no full EDN parser, consistent with the decoder's v0.1.0 fixed-field strategy. Emit side was already in lockstep (ADR-0119 Stage 2); this closes the decode side. Tests: 3 unit (renderTrace round-trip / ns-less frame / absent-trace no-op) + e2e render_error_decodes_trace. ORIGINAL: the decoder omitted the nested `:trace` vector so a decoded log lost the Trace: section."
     category: "error-system"
     barrier: |-
-      Live `Trace:` (text) + `:trace` (EDN) land in ADR-0119 Stage 2; the
-      render-error decoder's nested-vector parse is a separable follow-on.
-      Resolve when decoded-log trace display is wanted. Cross-ref ADR-0055
-      lockstep, render_error.zig:84.
+      DISCHARGED. The decoder mirrors the live Trace: writer. Cross-ref
+      ADR-0119 Stage 2 lockstep, render_error.zig renderTrace.
     last_reviewed: "2026-06-08"
   - id: "D-332"
     status: "DISCHARGED 2026-06-08 (ADR-0119 + AD-024). The trace ORIGIN-DISPLAY BOUNDARY is resolved by a single UNIFORM discipline (`tree_walk.isUserNs`), NOT ad-hoc per-fn: a frame shows iff its owning ns is a USER ns; cljw-reserved stdlib (`clojure.*` / `cljw.*`), nameless internals (null ns), and host builtins are ELIDED. This makes the non-uniform impl (builtin `reduce` vs `.clj` `map` vs AOT vs nameless internal) consistent — `(map userfn)` and `(reduce userfn)` both show only the user fn now. User-directed (2026-06-08: principled, not ad-hoc, good UX). AD-024 records the divergence from clj (which shows clojure.core frames). Tests: diff_test (builtin HOF elided, user fn shown, both backends) + e2e error_trace_discipline."
