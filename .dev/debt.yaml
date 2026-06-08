@@ -129,14 +129,12 @@ active:
       ADR-0119 area D, dual_backend_parity.md (4 sites, both backends).
     last_reviewed: "2026-06-08"
   - id: "D-325"
-    status: "blocked-by: ADR-0119 Stage 1 landing (2026-06-08). `(fn name [..] ..)` self-name: cw v1's `expandFn` (macro_transforms.zig:1855) lowers the named form to `(letfn* [name (fn ..)] name)`, so the self-name becomes a letfn LOCAL binding and the Function stays anonymous (gensym `fn__<id>`). Giving it a real Function name needs a NEW self-name arm in `analyzeFnStar` (bindings.zig:23) — the only naming case requiring an analyzer change, not a post-patch. Rare surface; the other 3 cases (defn/def, anonymous, letfn) land in Stage 1."
+    status: "DISCHARGED 2026-06-08 (already-resolved; premise was stale). `(fn name [..] ..)` ALREADY names the Function value — verified: `(pr-str (fn foo [x] x))` → `\"#<user/foo>\"` and a self-named fn shows `user/boom` in its trace (not gensym `fn__N`). The row claimed this needed a NEW `analyzeFnStar` self-name arm, but the `(fn name ..)` → `(letfn* [name (fn ..)] name)` lowering already routes through `analyzeLetfnStar`, whose ADR-0119 naming patch (bindings.zig:317) names the inner fn after its binding name. So NO analyzer change was needed — the letfn naming patch (also ADR-0119) covers the self-name case for free. Pinned by e2e fn_named_printform (phase14_fn_macro.sh). ORIGINAL: thought self-name needed a structural analyzeFnStar arm because expandFn lowers it to letfn."
     category: "error-system"
     barrier: |-
-      The 3 common naming cases (defn/def post-patch, anonymous gensym, letfn
-      post-patch) land in ADR-0119 Stage 1 via cheap analyzeDef/analyzeLetfn
-      post-patches. The `(fn name ..)` self-name needs a structural analyzeFnStar
-      arm because expandFn lowers it to letfn. Resolve when self-named fns
-      warrant their real name in traces/pr (rare). Cross-ref ADR-0119 §3 case 2.
+      DISCHARGED. The letfn lowering + the ADR-0119 letfn naming patch already put
+      the self-name on the value; no analyzeFnStar arm needed. Regression pinned by
+      e2e fn_named_printform. Cross-ref ADR-0119, bindings.zig:317 analyzeLetfnStar.
     last_reviewed: "2026-06-08"
   - id: "D-324"
     status: "recall trigger / blocked-by: D-323 cycle 3 landing (2026-06-08, user-directed). The CFP-submission brush-up track — Playground, Edge Demo, documentation, user usability — is worked INTERACTIVELY WITH the user, not by autonomous self-selection. D-323 cycle 3 (frame Trace:) is the last autonomous unit on the error-display track; when it lands (gate green + pushed), the next track is the user-led CFP brush-up. Do NOT auto-open a fresh sweep at that boundary."

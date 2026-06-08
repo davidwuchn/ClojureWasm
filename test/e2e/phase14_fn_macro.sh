@@ -47,6 +47,12 @@ assert_eq 'fn_closure'  "$("$BIN" -e '(((fn [x] (fn [y] (+ x y))) 3) 4)')"  '7'
 assert_eq 'fn_named_basic'    "$("$BIN" -e '((fn foo [x] x) 1)')"  '1'
 assert_eq 'fn_named_selfrec'  "$("$BIN" -e '((fn f [n] (if (= n 0) 1 (* n (f (dec n))))) 5)')"  '120'
 assert_eq 'fn_named_multi'    "$("$BIN" -e '((fn g ([x] (g x 0)) ([x y] (+ x y))) 7)')"  '7'
+# --- self-name reaches the Function VALUE, not just scope (D-325 / ADR-0121):
+#     `(fn name ..)` lowers to `(letfn* [name (fn ..)] name)`, and the ADR-0119
+#     letfn naming patch (analyzeLetfnStar) names the inner fn after its binding,
+#     so the named fn prints `#<user/name>` (not the gensym `#<user/fn__N>`).
+#     Pins that the self-name is on the value, closing D-325. ---
+assert_eq 'fn_named_printform' "$("$BIN" -e '(pr-str (fn foo [x] x))')"  '"#<user/foo>"'
 # --- empty-body arity → nil (clj parity; medley deep-merge's `([])`) ---
 assert_eq 'fn_empty_body'     "$("$BIN" -e '((fn []))')"                                  'nil'
 assert_eq 'fn_empty_arity'    "$("$BIN" -e '[((fn ([]) ([a] a))) ((fn ([]) ([a] a)) 5)]')" '[nil 5]'
