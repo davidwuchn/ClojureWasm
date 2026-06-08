@@ -17,10 +17,12 @@
   output + the decision (Alt 1, NOT the DA-recommended Alt 2, with the rebuttal)
   + the exact edit sites (file:line) live in
   **`private/notes/phase14-error-cycle2.5-caret-precision-plan.md`** — read it
-  FIRST; it is turn-key. Steps: (a) write ADR-0118 **Revision 2** (promote
-  arg-precise carets from Decision A's "deferred until a sweep" to required;
-  paste the DA output verbatim into "Alternatives considered"; doc commit
-  first). (b) impl Alt 1 — threadlocal `arg_sources` in `info.zig:171-189`,
+  FIRST for the file:line map. Steps: (a) **ADR-0118 Revision 2 is already
+  written + tracked** — the decision (Alt 1, with the eager-arg rebuttal of the
+  DA's Alt 2), the constraints (threadlocal not Runtime field; no
+  `BytecodeChunk.locs[]` table; span deferred), and the verbatim DA output live
+  in the ADR's "Revision 2" section. Resume starts at impl. (b) impl Alt 1 —
+  threadlocal `arg_sources` in `info.zig:171-189`,
   record in `tree_walk.zig:1019` + the VM `op_call` (`vm.zig:377`), primitives
   name the culprit index (`math.zig` `slash`/`ensureNumeric` first). (c)
   dual-backend parity diff case (`(/ 2 0)` caret col equal vm == tree_walk). (d)
@@ -66,7 +68,8 @@
 
 handover → **`private/notes/phase14-error-cycle2.5-caret-precision-plan.md`**
 (turn-key cycle 2.5 plan + DA output + Alt-1 decision + edit sites) →
-`.dev/decisions/0118_error_display_v0_level.md` (+ Rev 1; Rev 2 to write) →
+`.dev/decisions/0118_error_display_v0_level.md` (Rev 2 = the tracked cycle-2.5
+decision + verbatim DA output) →
 `.dev/debt.yaml` D-323 → `src/runtime/error/print.zig` (renderer) +
 `src/runtime/error/info.zig:171-262` (threadlocal error state + BuiltinFn) +
 `src/eval/backend/tree_walk.zig:1014` (evalCall) → CLAUDE.md → `.dev/principle.md`.

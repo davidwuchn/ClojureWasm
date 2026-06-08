@@ -275,3 +275,126 @@ reconstruction) is held as the perf fallback. Decisions C + D stand as drafted.
 - `src/runtime/error/print.zig` (numbered window + caret tail + trace).
 - `src/app/error_render.zig` (EDN `:file` fix + `:trace` vector).
 - `test/e2e/*`, `test/diff/*` (eval-loc + trace cases, dual-backend parity).
+
+## Revision 2 (2026-06-08) — arg-precise carets promoted from deferred to REQUIRED
+
+**Trigger.** Decision A's last line said: *"Start at sub-form (node) precision;
+add arg-precise carets (v0's 8-slot `arg_sources`) only if a sweep shows it
+matters."* The user gave a direct directive (2026-06-08): the caret MUST land on
+the culprit — `(/ 2 0)` on the `0`, not the `(`; nested `(+ 1 (/ 2 0))` on the
+innermost; UNIFORM discipline, not per-primitive ad-hoc. The user IS the sweep
+signal. This Revision promotes arg-precise carets to **required**, landing as a
+distinct **cycle 2.5** (after the cycle-2 renderer, before the cycle-3 trace).
+Cycle 2 (the renderer) is committed + pushed (6d36acc4); it renders the caret at
+whatever `info.location` says, so it needs no change — 2.5 changes *what loc is
+attributed*, not the renderer.
+
+**Decision (main loop): Alt 1 — threadlocal `arg_sources[N]` + primitive names
+the culprit index.** Before invoking a primitive, the dispatch choke point
+records each evaluated argument's loc into a threadlocal `arg_sources` side
+channel (same storage class as `info.zig`'s existing `last_error` / `call_stack`).
+A primitive that fails on argument *i* raises with `getArgSource(i)`. Back-fill of
+the enclosing form happens only when no fresher loc is set (`line == 0` guard) →
+depth-first eval makes the innermost culprit win for free. The primitive's only
+new job is to NAME the culprit index — it never carries/computes a loc, and the
+`BuiltinFn` ABI (`info.zig:262`, `(args, loc)`) is UNCHANGED (F-009 untouched).
+
+**Premise correction (supersedes the Rev-1 Consequences "Chunk grows a `locs[]`
+array" line).** The DA found that the VM ALREADY carries per-operand loc: each
+`Instruction` has `line`/`column` (`opcode.zig:362`), `compileNode` stamps every
+instruction from its node's `loc()` (`compiler.zig:143`), and `compileCall`
+compiles each arg via `compileNode(a)` BEFORE re-stamping the call-form loc onto
+`op_call` (`compiler.zig:305`) — so the arg-pushing instruction already bears the
+arg's column. Cycle 1 correctly used this per-instruction carrier (NOT a separate
+`Chunk.locs[]` array — confirmed via `git show 0c36cc8a`). So: **no new
+`BytecodeChunk.locs[]` table** (it would be a second copy = bloat-for-symmetry
+smell); the VM arg-loc fill reads the existing instruction metadata.
+
+**Why Alt 1 and NOT the DA-recommended Alt 2 (an F-002 correctness call, not a
+cycle-budget defer).** Alt 2's headline advantage — "primitive never names an
+index", the eval-loc-stack top IS the culprit — assumes the primitive raises
+*while descending into* the culprit sub-expression. **v1 does not work that way**:
+the backend evaluates ALL args eagerly (`tree_walk.zig:1019` loop), THEN invokes
+the primitive with `args: []const Value`. At raise time the eval-loc-stack top is
+the *last* arg, not an arbitrary culprit (`(+ :foo 1)` → top is `1`, culprit is
+`:foo` at index 0). To select the right arg, Alt 2 must still consult the index →
+its premise collapses and it degenerates to "Alt 1 with a heavier hot path". So
+for eager-arg v1, Alt 1 ("primitive names the index") is the *actual* finished
+form. (Alt 2 would be right only under a lazy/CPS evaluator that suspends inside
+arg evaluation — not v1's model. If v1 ever moves there, revisit.) Both DA hard
+constraints are adopted regardless: (1) the channel is **threadlocal, never a
+`Runtime` field** (`Runtime` is process-shared, `runtime.zig:6`, → races under
+Phase-15 concurrency; threadlocal inherits v1's per-thread error-state story); (2)
+**no `BytecodeChunk.locs[]` table** (per above).
+
+**Span/underline (start+end) is DEFERRED, explicitly.** A single `^` on the
+correct column meets the directive. start+end needs an end-position threaded
+through reader/tokenizer (`Form`/`Node` carry only line+col today) + multi-byte
+display-width work — its own reader-surface change. Follow-on O-NNN under D-323.
+Decisions C (text+EDN lockstep) and D (never on Values) stand; the EDN position
+field is populated from the same resolved loc the text caret uses.
+
+**Boundary (state, don't over-claim uniformity).** A primitive that raises
+*between* sub-evaluations, or from a variadic fold / lazy-seq element where the
+culprit is not a positional arg (`(apply / coll)`; a reduce failing on the 4th
+realised element of a lazy seq that was arg 0), falls back to the call-form loc
+(the `line==0` back-fill) — no worse than today, but not arg-precise. The slot
+count `N` (v0 used 8) truncates beyond `N`.
+
+**Cycle 2.5 edit sites + the verbatim DA output** are mirrored in
+`private/notes/phase14-error-cycle2.5-caret-precision-plan.md` (gitignored
+working memory). The load-bearing decision, constraints, and rationale are this
+section (tracked); the plan note adds the file:line implementation map.
+
+### Alternatives considered (Devil's-advocate, fresh-context fork, Rev 2)
+
+**Premise correction the DA found first.** (As above — `Instruction` already
+carries `line/column` at `opcode.zig:362`; `compileNode` stamps at
+`compiler.zig:143`; `compileCall` compiles args before re-stamping the call loc
+onto `op_call` at `compiler.zig:305`; so arg-pushing instructions already bear
+per-operand locs and no parallel `Chunk.locs[]` array is needed.)
+
+**Alt 1 — Smallest-diff: threadlocal `arg_sources[N]`, primitives name the
+index.** Reuses `info.zig:173-189`'s threadlocal class. TreeWalk fills in
+`evalCall`'s arg loop (each `a.loc()` free); the VM fills at `op_call` from the
+arg-pushing instructions' loc. Primitives raise with `getArgSource(i)`
+(`ensureNumeric` already has `i` in scope). *Better:* zero new hot-path struct,
+zero ABI change to the ~200 `BuiltinFn`s (F-009 intact), nested correctness free
+from depth-first + `line==0` back-fill, identical in both backends. *Costs:* (a)
+thread-safety inherits v1's threadlocal error-state story (safer than a shared
+`Runtime` field — reject that option); (b) a real seam — variadic / lazy-element
+/ between-subcall culprits fall back to call-form loc (slot `N` truncates); state
+that boundary.
+
+**Alt 2 — Finished-form-clean (DA's pick): an evaluation-position stack
+co-located with the call-frame stack.** Push the loc of the expression being
+reduced at every value-producing point; pop as consumed; primitive raises
+empty-loc and the back-fill reads stack top. Unifies the arg-precise + variadic
+cases and merges Decision A's caret carrier with Decision B's trace carrier (one
+threadlocal push/pop, one pop-on-both lifecycle). *Better:* removes the index
+convention entirely (strongest F-009); closes the variadic seam structurally.
+*Costs:* larger diff (every value-producing site push/pops; pop-on-both for
+`recur`/caught-`throw`/`reduced` is the known-hard surface Rev-1 flagged for
+frames); granularity subtlety (call-form-vs-culprit depends on *when* the
+primitive raises relative to consuming args); two writes per sub-expression vs
+per call. **Main-loop rebuttal (why rejected):** under v1's eager-arg model the
+stack top at raise time is the last arg, not the culprit, so Alt 2 still needs
+the index — its core advantage evaporates; see "Why Alt 1" above.
+
+**Alt 3 — Wildcard: resolve the culprit loc lazily at render time** from the
+error's frame + the originating Node/Chunk, with a Code→position table
+(`divide_by_zero` → divisor; `type_arg_not_number` → first non-numeric operand).
+*Better:* zero hot-path cost, zero ABI/threadlocal change, one resolution site.
+*Costs:* fragile — the primitive's actual runtime decision (a fold that failed on
+element 3; a cast that tried `a` before `b`) is gone by render time, so a
+Code→position table encodes only the *typical* culprit (data-dependent culprits
+become un-fixable); inverts the dependency (errors-display reads eval/compiler
+internals at render time, widening the renderer contract — opposite of Decision
+D); the VM backward scan must be re-plumbed into the `Info` snapshot anyway, so
+"zero cost" partly evaporates. Hold only as a perf fallback if Alt 1/2's push
+path ever measures.
+
+**DA recommendation (non-binding):** Alt 2 on F-002 grounds. **Main loop chose
+Alt 1** for the eager-arg correctness reason above (Alt 2 is not actually clean
+under v1's evaluation model), adopting both DA hard constraints (threadlocal; no
+`locs[]` table) and the span-defer.
