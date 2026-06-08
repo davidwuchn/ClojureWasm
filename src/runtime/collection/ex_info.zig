@@ -37,6 +37,7 @@ const tag_ops = @import("../gc/tag_ops.zig");
 const gc_heap_mod = @import("../gc/gc_heap.zig");
 const mark_sweep = @import("../gc/mark_sweep.zig");
 const string_mod = @import("string.zig");
+const SourceLocation = @import("../error/info.zig").SourceLocation;
 
 /// Heap ExInfo. `message` is owned (duped from caller bytes); `data`
 /// and `cause` are Values (`cause = .nil_val` when absent, mirroring
@@ -59,6 +60,15 @@ pub const ExInfo = extern struct {
     // literals. So `finaliseGc`/`traceGc` are unchanged.
     class_name_ptr: ?[*]const u8 = null,
     class_name_len: usize = 0,
+    // ADR-0120 Stage A: the source location of the error this exception
+    // represents, for faithful rendering — especially across a thread boundary,
+    // where the worker's threadlocal `Info` dies but this GC-owned copy
+    // survives. `origin_file` is GC-owned (duped like `message`, freed in
+    // `finaliseGc`); `null`/0 ≡ unknown (the renderer falls back as before).
+    origin_file_ptr: ?[*]const u8 = null,
+    origin_file_len: usize = 0,
+    origin_line: u32 = 0,
+    origin_column: u16 = 0,
 
     comptime {
         std.debug.assert(@alignOf(ExInfo) >= 8);
@@ -100,8 +110,21 @@ pub fn alloc(rt: *Runtime, msg_bytes: []const u8, data_v: Value, cause_v: Value)
 /// no cause. `class_name` is a comptime-static catalog string, stored by
 /// pointer (not duped); `msg_bytes` IS duped like `alloc`.
 pub fn allocException(rt: *Runtime, msg_bytes: []const u8, class: []const u8) !Value {
+    return allocExceptionLoc(rt, msg_bytes, class, .{});
+}
+
+/// `allocException` carrying the error's source location (ADR-0120 Stage A).
+/// `loc.file` is GC-owned (duped) when `loc.line != 0`, so the location
+/// survives a thread boundary (the worker's threadlocal Info dies). An empty
+/// loc (`line == 0`) leaves `origin_*` null — the renderer falls back as before.
+pub fn allocExceptionLoc(rt: *Runtime, msg_bytes: []const u8, class: []const u8, loc: SourceLocation) !Value {
     const owned_msg = try rt.gc.infra.dupe(u8, msg_bytes);
     errdefer rt.gc.infra.free(owned_msg);
+    const owned_file: ?[]const u8 = if (loc.line != 0 and loc.file.len > 0)
+        try rt.gc.infra.dupe(u8, loc.file)
+    else
+        null;
+    errdefer if (owned_file) |of| rt.gc.infra.free(of);
     const ex = try rt.gc.alloc(ExInfo);
     ex.* = .{
         .header = HeapHeader.init(.ex_info),
@@ -111,6 +134,10 @@ pub fn allocException(rt: *Runtime, msg_bytes: []const u8, class: []const u8) !V
         .cause = .nil_val,
         .class_name_ptr = class.ptr,
         .class_name_len = class.len,
+        .origin_file_ptr = if (owned_file) |of| of.ptr else null,
+        .origin_file_len = if (owned_file) |of| of.len else 0,
+        .origin_line = loc.line,
+        .origin_column = loc.column,
     };
     return Value.encodeHeapPtr(.ex_info, ex);
 }
@@ -146,6 +173,8 @@ pub fn finaliseGc(gc_ptr: *anyopaque, header: *HeapHeader) void {
     const gc: *gc_heap_mod.GcHeap = @ptrCast(@alignCast(gc_ptr));
     const ex: *ExInfo = @ptrCast(@alignCast(header));
     gc.infra.free(ex.message());
+    // ADR-0120 Stage A: free the GC-owned origin file copy (if any).
+    if (ex.origin_file_ptr) |p| gc.infra.free(p[0..ex.origin_file_len]);
 }
 
 /// Per-tag trace fn called by mark phase. Walks `data` + `cause`
@@ -191,6 +220,15 @@ pub fn cause(val: Value) Value {
 /// a runtime-synthesized internal error, NOT a user ExceptionInfo.
 pub fn className(val: Value) ?[]const u8 {
     return asExInfo(val).className();
+}
+
+/// The error's source location (ADR-0120 Stage A), or an unknown loc
+/// (`line == 0`) when none was captured. The renderer (`buildThrownInfo`)
+/// reads this so a thrown exception shows where it came from.
+pub fn originLoc(val: Value) SourceLocation {
+    const ex = asExInfo(val);
+    const file: []const u8 = if (ex.origin_file_ptr) |p| p[0..ex.origin_file_len] else "unknown";
+    return .{ .file = file, .line = ex.origin_line, .column = ex.origin_column };
 }
 
 // --- tests ---
@@ -248,6 +286,23 @@ test "cause non-nil round-trips" {
     const inner = try alloc(&rt, "inner", .nil_val, .nil_val);
     const outer = try alloc(&rt, "outer", .nil_val, inner);
     try testing.expectEqualStrings("inner", message(cause(outer)));
+}
+
+test "allocExceptionLoc round-trips the origin location; allocException leaves it unknown (ADR-0120 Stage A)" {
+    var th = std.Io.Threaded.init(testing.allocator, .{});
+    defer th.deinit();
+    var rt = Runtime.init(th.io(), testing.allocator);
+    defer rt.deinit(); // leak detector also covers the GC-owned origin_file free
+
+    const with_loc = try allocExceptionLoc(&rt, "boom", "ArithmeticException", .{ .file = "f.clj", .line = 7, .column = 3 });
+    const ol = originLoc(with_loc);
+    try testing.expectEqualStrings("f.clj", ol.file);
+    try testing.expectEqual(@as(u32, 7), ol.line);
+    try testing.expectEqual(@as(u16, 3), ol.column);
+
+    // No loc (line 0) → origin stays unknown (the renderer falls back).
+    const no_loc = try allocException(&rt, "boom", "ExceptionInfo");
+    try testing.expectEqual(@as(u32, 0), originLoc(no_loc).line);
 }
 
 test "Runtime.deinit frees ExInfo without leaking message bytes" {

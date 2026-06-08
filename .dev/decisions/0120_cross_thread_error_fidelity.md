@@ -66,11 +66,19 @@ slot), and fully renderable (location + trace).
 
 ### Staging (each: lightweight local verify → full gate at the commit)
 
-- **Stage A — widen ExInfo + in-thread fidelity.** ex_info `origin_loc`/`trace`
-  fields + GC trace/finalise + populate in `allocException`/`op_throw`/`evalThrow`
-  + `buildThrownInfo` reads them. Observable in-thread: `(throw (ex-info "x" {}))`
-  now renders with location + a `Trace:` (closes the latent gap). Dual-backend
-  diff/e2e.
+- **Stage A — widen ExInfo with `origin_loc` (LOCATION) + in-thread fidelity.**
+  ex_info gains `origin_file_ptr/len` (GC-owned, duped like `message`) +
+  `origin_line`/`origin_column` + GC finalise frees the file; `allocException`
+  populates from the live loc; `buildThrownInfo` reads them. Observable in-thread:
+  `(throw (ex-info "x" {}))` renders with a real location (closes the latent
+  "unknown" gap). **Trace-on-ExInfo is split OUT to a follow-on (D-336):** a
+  single `origin_file` string is a bounded extern-struct widening, but a full
+  trace is an ARRAY of `StackFrame` each with 3 GC-owned strings on the
+  most-allocated heap type — meaningfully heavier than the DA's "same machinery"
+  framing implied. Location-first is the finished-form CORE (the user's primary
+  ask is kind/message/location fidelity, "not just the trace"); the trace is an
+  ADDITIVE enhancement that does not rework the location fields. (Step-0.6
+  refinement found at implementation.)
 - **Stage B — uniform cross-thread helper.** `worker_error.{capture,reraise}` +
   wire future (deref re-raises the marshalled ex_info instead of
   `future_thunk_failed`) + agent (replace captureThrown, fix the class) + pmap.

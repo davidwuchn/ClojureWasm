@@ -9,6 +9,16 @@
 # md-table-align no longer pads it to ~800 KB of whitespace.
 
 active:
+  - id: "D-336"
+    status: "blocked-by: ADR-0120 Stage A landing (2026-06-08). Carry the TRACE on the widened ExInfo (after Stage A lands `origin_loc`). Unlike the single `origin_file` string, a trace is an ARRAY of StackFrame each with 3 GC-owned strings on the most-allocated heap type — its own bounded design (extern-struct frame array + per-frame string dupe + traceGc/finaliseGc walking them, OR a lazy frame-pointer+generation scheme per the ADR-0120 perf note). Once landed, `buildThrownInfo` reads it so a thrown ex_info (in-thread `(throw (ex-info))` AND cross-thread future/agent) renders its Trace:. Additive to Stage A's location fields (no rework)."
+    category: "error-system"
+    barrier: |-
+      Stage A lands location-on-ExInfo first; the trace-on-ExInfo is a separable
+      additive follow-on (heavier: frame array + per-frame string GC ownership).
+      Resolve when the cross-thread / in-thread-throw trace is wanted on top of
+      the location fidelity. Cross-ref ADR-0120 Stage A note + perf (lazy
+      materialisation), D-335, D-330.
+    last_reviewed: "2026-06-08"
   - id: "D-335"
     status: "now (ADR-0120, user-directed 2026-06-08) — UNIFORM cross-thread error-fidelity discipline across ALL threaded constructs, NOT just the trace. DECISION (ADR-0120, DA-validated): the carrier is a location+trace-extended ExInfo (not a parallel type); widen ExInfo + buildThrownInfo reads it (Stage A, closes the latent in-thread (throw (ex-info)) gap too) + a neutral worker_error.{capture,reraise} wired into future/agent/pmap (Stage B). Fixes the agent wrong-class bug (captureThrown hardcodes ExceptionInfo). See ADR-0120 for the staging + verbatim DA. cljw spawns real OS threads in `future` (future.zig:103), `agent` drainers (agent.zig:153/304), and the Phase-B `pmap`/worker infra. When a worker runs user code that errors, the worker catches the Zig error but the FULL threadlocal error Info (kind / message / location / trace / ex-data, all in threadlocal buffers msg_buf/trace_snapshot/last_error) DIES with the thread. The consuming thread (deref / await / agent-error) gets a GENERIC placeholder (`future_thunk_failed`), losing the real error entirely — not just the Trace:. The DISCIPLINE (uniform, not per-construct ad-hoc, mirroring the isUserNs trace discipline): at the worker's catch point, MARSHAL the error into a GC-heap exception Value (shared across threads, survives the worker — reuse cw's existing thrown-Value / ex_info model, ex_info_mod.allocException); store it in the construct's result cell; the consuming thread RE-RAISES that Value faithfully (kind/message/location + trace preserved). One `marshalWorkerError()->Value` + `reraiseMarshalled(v)` pair used by future/agent/pmap. This is the D-115 'Value-carried exception channel' resolution. D-330 (future trace lost) is one facet."
     category: "error-system"

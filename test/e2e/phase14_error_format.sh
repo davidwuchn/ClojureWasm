@@ -161,5 +161,18 @@ else
     fail "error_trace_discipline: expected a user/ frame in the trace, got '$trace'"
 fi
 
+# --- Case 14 (ADR-0120 Stage A): a synthesized internal exception carries its
+#     ORIGIN location across a catch -> re-throw, so it renders WHERE it came
+#     from (not "unknown"). Before ADR-0120 buildThrownInfo dropped the location
+#     for any thrown ex_info; now the widened ExInfo round-trips it (the founda-
+#     tion for cross-thread future/agent error fidelity, ADR-0120 Stage B). ---
+out=$(printf '(throw (try (/ 1 0) (catch java.lang.Throwable e e)))\n' | "$BIN" - 2>&1 || true)
+case "$out" in
+    *"<stdin>:1:"*"Divide by zero"*)
+        echo "PASS error_thrown_keeps_location -> re-thrown synth exception shows its origin loc" ;;
+    *)
+        fail "error_thrown_keeps_location: expected a <stdin>:1:<col> location + message, got '$out'" ;;
+esac
+
 echo
 echo "Phase 14 row 14.13 (D-066 partial) error format e2e: all green."
