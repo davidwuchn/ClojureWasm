@@ -40,9 +40,9 @@ skipManifest/readEnvelopeEntry; deserialize+iterator skip it → runEnvelope
 unchanged). builder: buildMainEnvelope + buildArtifact(BuildSpec). Build stays
 Clojure-AOT-faithful (build=load); `-main` is the "don't run at build" escape
 hatch (no env-vs-side-effect classifier; cw v0 build_mode rejected, F-013). e2e
-cases 7-10 green. RESIDUAL (D-363 row, low-pri): deps.edn `:main-opts` does not
-yet drive the build entry — only explicit CLI `-m`. Script mode (D-356)
-unchanged.
+cases 7-11 green (incl. A4-D4: deps.edn `:main-opts ["-m" ns]` on a selected
+alias drives the build entry — `cljw build -A:run` mirrors `cljw -M:run`; e2e
+main_opts_drive). Script mode (D-356) unchanged.
 
 ## Process discipline (SSOT)
 

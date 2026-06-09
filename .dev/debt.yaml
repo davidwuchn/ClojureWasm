@@ -38,12 +38,22 @@ active:
     status: "DISCHARGED 2026-06-09 (clear→continue session) — `cljw build -m <ns> [args] -o out` main-entry mode (ADR-0034 amendment 4, DA fork → Alt-2 entry-manifest). Resolves the am3 build-time `(-main)` server-start hazard as a real cljw feature: the produced binary invokes `(<ns>/-main args)` at RUN, not build, so a server -main does not hang the build. LANDED: serialize.zig envelope gains an entry manifest at its front (writeManifest/skipManifest/readEnvelopeEntry + EnvelopeEntry{ns,args}; serializeEnvelope takes an entry param; deserializeEnvelope + EnvelopeIterator skip the manifest so runEnvelope is unchanged). run_mode.synthMainNs promoted pub (shared by `cljw -M -m` AND the built -m binary → byte-identical, F-011). builder.buildMainEnvelope (eval `(require ns)` to capture the closure via the am3 sink; -main DEFINED not CALLED; manifest={ns, args}; no entry chunk); buildArtifact (BuildSpec union, one setup+write tail, F-009/F-011) + buildFile/buildMainFile. tryRunEmbedded gains main_args + post-run entry dispatch (all_args = runtime argv if non-empty else baked entry_args → synthMainNs → -main). cli.zig build branch parses `-m <ns> [args]` (mutually exclusive with a source file) + threads the binary's argv[1..] to tryRunEmbedded. cljw-formats :payload-envelope bumped v1→v2 (entry manifest documented). e2e phase14_cljw_build cases 7-10 (main_build_no_invoke / main_run / main_runtime_argv / main_multifile) + serialize entry-manifest round-trip unit. The undecidable env-vs-side-effect classifier stays rejected (build=load Clojure-AOT-faithful; -main is the 'don't run at build' escape hatch); cw v0 build_mode per-primitive suppression stays rejected (F-013). Surfaced 2026-06-09 (user design discussion: 'シングルバイナリビルドは clojurewasm の目玉機能')."
     category: "build"
     barrier: |-
-      DISCHARGED. main mode landed + gated + pushed. RESIDUAL (follow-up, low
-      priority): deps.edn `:main-opts ["-m" ns]` does NOT yet drive the build
-      entry (A4-D4) — only an explicit CLI `-m <ns>` does. `cljw build -A:alias`
-      reading the alias :main-opts to derive the entry is a small follow-up
-      (check the deps.cfg :main-opts extraction API; mirror cljw -M:alias). The
-      bookshelf demo (D-362) works with explicit `-m` so this is not blocking.
+      DISCHARGED (incl. A4-D4). main mode landed + gated + pushed. The A4-D4
+      follow-up is now ALSO done: deps.edn `:main-opts ["-m" ns args…]` on a
+      selected alias drives the build entry (`cljw build -A:run` mirrors
+      `cljw -M:run`) via the now-`pub` run_mode.lastAliasMainOpts; explicit CLI
+      `-m` still wins. e2e case 11 (main_opts_drive). Nothing left open.
+    last_reviewed: "2026-06-09"
+  - id: "D-364"
+    status: "open — bench measures under ReleaseFast but cljw SHIPS ReleaseSafe (dishonest comparison). bench/quick.sh:44 builds `zig build -Doptimize=ReleaseFast` for both the binary_size_bytes metric AND the perf timings, but the DISTRIBUTION build is ReleaseSafe: test/run_all.sh:306 `CLJW_OPT=${CLJW_OPT:-ReleaseSafe}` (gate build_cljw), and serverless-v2/run_local.sh builds cljw-wasm `-Doptimize=ReleaseSafe`. So the bench baseline (binary_size_bytes ~3.85 MB + every perf row + the bench_regression locked ratios) reflects an optimize mode that is NOT what users run. ReleaseSafe keeps ALL safety checks → larger binary (the on-disk ReleaseSafe+wasm cljw-wasm is 4.3 MB vs the 3.85 MB ReleaseFast figure) + somewhat slower. ReleaseFast is realistically only for truly perf-critical, low-network-exposure embedded targets (user 2026-06-09). FIX: switch bench/quick.sh to ReleaseSafe as the headline (or report both, ReleaseSafe tracked), and re-lock the bench_regression baselines under ReleaseSafe (the locked ratios shift). Honest perf comparison should be under the shipped mode. Surfaced 2026-06-09 (user, during a build-size confirmation; user asked to file only, NO re-run)."
+    category: "bench"
+    barrier: |-
+      blocked-by: nothing technical. A bench-harness optimize-flag change
+      (bench/quick.sh ReleaseFast → ReleaseSafe) + a one-time re-lock of the
+      bench_regression baselines under ReleaseSafe (scripts/check_bench_regression.sh
+      locked ratios + bench/quick_baseline.txt). Low priority — measurement
+      honesty, not a correctness gap. Per F-010 the optimization campaign is
+      deferred anyway; this is about WHICH mode the baseline reflects.
     last_reviewed: "2026-06-09"
   - id: "D-357"
     status: "DISCHARGED 2026-06-09 — getAbsolutePath/getCanonicalPath implemented via std.process.currentPathAlloc(rt.io, gpa) (the 0.16 cwd-path accessor; getCwd/realpath were renamed to currentPath, not removed). getAbsolutePath: absolute→as-is, relative→join(cwd,path) (no normalisation, JVM-shape). getCanonicalPath: resolvePosix (lexical `.`/`..`; symlinks NOT resolved — cljw DIVERGENCE, no realpath in the io model). e2e phase16_java_io_file (absPath_abs/absPath_rel/canon_dotdot). ORIGINAL: open — deferred stub (ADR-0126 Cycle 1). Both raise feature_not_supported: the Zig 0.16 std.Io handle model exposes NO process cwd path (getCwd/realpath/posix.getcwd all removed), so a relative path cannot be resolved to a true absolute. Shipping a wrong (e.g. cwd-less) answer would be a silent lie (no-op-stub rule), so the honest transient stub raises instead. Absolute-path inputs could be lexically cleaned now, but a half-working method (works for absolute, errors for relative) is worse than a uniform explicit error. Surfaced 2026-06-09 (ADR-0126)."
@@ -1276,7 +1286,7 @@ active:
       value (biginteger is rare; bigint covers ~all usage). Cross-ref F-005, F-011.
     last_reviewed: "2026-06-06"
   - id: "D-264"
-    status: "DISCHARGED 2026-06-06 — `distinct`/`dedupe` rewritten lazy in core.clj via top-level `-distinct-step`/`-dedupe-step` (avoids the self-named `(fn step …)` cljw fn* lacks, D-2811): each wraps an inner fn* whose skip case `recur`s (stack-safe — 50k consecutive-dup run completes, no overflow) and whose emit case re-enters the step helper (laziness boundary). `(take N (distinct/dedupe <infinite>))` now terminates. Corpus lazy_distinct_dedupe (13/13 clj-matched, incl. lazy-infinite + 3k-dup stack case). NOTE: surfaced a pre-existing non-chunked lazy-seq per-element cost (~0.4ms/elem; `repeat` not chunked while `range` is) — tracked as D-266 (perf, not a D-264 regression: lazy distinct/dedupe add ~0 overhead vs plain count)."
+    status: "DISCHARGED 2026-06-06 — `distinct`/`dedupe` rewritten lazy in core.clj via top-level `-distinct-step`/`-dedupe-step` (avoids the self-named `(fn step …)` cljw fn* lacks, D-147): each wraps an inner fn* whose skip case `recur`s (stack-safe — 50k consecutive-dup run completes, no overflow) and whose emit case re-enters the step helper (laziness boundary). `(take N (distinct/dedupe <infinite>))` now terminates. Corpus lazy_distinct_dedupe (13/13 clj-matched, incl. lazy-infinite + 3k-dup stack case). NOTE: surfaced a pre-existing non-chunked lazy-seq per-element cost (~0.4ms/elem; `repeat` not chunked while `range` is) — tracked as D-266 (perf, not a D-264 regression: lazy distinct/dedupe add ~0 overhead vs plain count)."
     category: "clj-parity"
     barrier: |-
       **`distinct` / `dedupe` are not lazy → they hang over an infinite source.**
@@ -1295,7 +1305,7 @@ active:
       `step` fn with a `seen` set in a `lazy-seq`; dedupe's prev-tracking
       `lazy-seq`). Corpus `lazy_distinct_dedupe` (bound every take). A HANG on
       valid (if uncommon) input is a robustness bug. Cross-ref F-011, ADR-0054
-      (lazy-seq Layer-2), the eager-cluster discharge note. GOTCHA: clojure.core's `distinct` uses a self-named `(fn step …)` which cljw's fn* does NOT support (D-2811) — restructure to a top-level `-distinct-step` helper whose lazy-seq body wraps an inner `fn*` that `recur`s on the skip case (stack-safe over a long dup run; a naive non-recur skip overflows), the emit case calling `-distinct-step` (the laziness boundary). Add a long-dup-run stack case to the corpus.
+      (lazy-seq Layer-2), the eager-cluster discharge note. GOTCHA: clojure.core's `distinct` uses a self-named `(fn step …)` which cljw's fn* does NOT support (D-147) — restructure to a top-level `-distinct-step` helper whose lazy-seq body wraps an inner `fn*` that `recur`s on the skip case (stack-safe over a long dup run; a naive non-recur skip overflows), the emit case calling `-distinct-step` (the laziness boundary). Add a long-dup-run stack case to the corpus.
     last_reviewed: "2026-06-06"
   - id: "D-263"
     status: "DISCHARGED 2026-06-06 — radix literals `<base>r<mantissa>` (base 2..36, case-insensitive, signed) land: tokenizer readNumber recognizes the `[rR]<alnum>` arm as one integer token; reader readInteger parses base-N to i64 (i48/heap-Long boundary free via integerLiteralToValue), promoting to BigInt past i64 via platform-safe mul/add (not setString, D-047). Corpus radix_literals (12/12 clj-matched); invalid base/digit reject == clj NumberFormatException."
