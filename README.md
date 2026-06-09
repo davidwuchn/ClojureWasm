@@ -1,41 +1,41 @@
-# ClojureWasm
+<p align="center">
+  <img src="assets/clojurewasm_logo.png" alt="ClojureWasm" width="320" />
+</p>
 
-A from-scratch Clojure runtime written in Zig 0.16 — no JVM. It runs as a small
-native binary, embeds a WebAssembly engine so Clojure can call modules compiled
-from other languages, and is designed to compile to WebAssembly itself.
+<h1 align="center">ClojureWasm</h1>
 
-> Clojure already runs in a lot of places — on the JVM, in the browser through
-> ClojureScript, on the command line through Babashka, on LLVM through jank, on
-> Flutter through ClojureDart. ClojureWasm explores one more corner: the
-> WebAssembly / edge one. It is a young project finding its footing, not a
-> replacement for any of the above — those runtimes are excellent at what they do.
+<p align="center">
+  <em>A from-scratch Clojure runtime in Zig — no JVM, WebAssembly at the core.</em>
+</p>
 
-> **Status**: this branch (`cw-from-scratch`) is a ground-up redesign,
-> feature-complete on the test gate with the v0.1.0 tag pending. The previous
-> release lives on `main` (v0.5.0).
+> [!NOTE]
+> ClojureWasm is **not yet stable** and is built by a very small team with
+> limited resources. To keep that focus, **Issues and Pull Requests are not
+> being accepted** right now. You are very welcome to read along, try it, and
+> say hello on the [Clojurians Slack](https://clojurians.slack.com).
 
-## What works today
+## What it is
 
-Rebuilding the language from the bottom up means the parts you might expect a
-runtime this small to skip are actually present:
+ClojureWasm is a ground-up implementation of Clojure written in Zig 0.16. It
+runs as a small native binary with no JVM, embeds a WebAssembly engine so
+Clojure can call modules compiled from other languages, and is designed to
+compile to WebAssembly itself.
 
-- **A full numeric tower** — `Long`→`BigInt` promotion, `Ratio`, `BigDecimal`.
-- **MVCC software transactional memory** — `ref` / `dosync` / `alter` / `commute` / `ensure`.
+## Features
+
+- **A real numeric tower** — `Long`→`BigInt` promotion, `Ratio`, `BigDecimal`.
+- **Software transactional memory** — `ref` / `dosync` / `alter` / `commute` / `ensure`.
 - **Concurrency** — `agent`, `future` / `promise` / `delay`, `atom`, reference watches.
 - **Lazy and chunked sequences**, transducers.
 - **Protocols, records, multimethods**, `deftype` / `reify`.
-- **Namespaces** and a **CIDER-compatible nREPL**, plus ~10 `clojure.*` stdlib namespaces.
-- **WebAssembly as an FFI** — load a sandboxed module compiled from Rust / Zig / C
-  and call it like a namespace (see [Demos](#demos)).
+- **Namespaces** and a **CIDER-compatible nREPL**, plus a growing set of
+  `clojure.*` standard-library namespaces.
+- **WebAssembly as an FFI** — load a sandboxed module compiled from Rust / Zig /
+  C and call it like a namespace.
 - **A dual backend** — every end-to-end test runs on both a tree-walking
   interpreter and a bytecode VM in lockstep; a disagreement fails the build.
 
-Compatibility is tracked against a tiered JVM-compatibility ledger
-([`compat_tiers.yaml`](./compat_tiers.yaml)). Intentional divergences and the
-not-yet-implemented surface are catalogued in
-[`docs/clojure_vs_clojurewasm.md`](./docs/clojure_vs_clojurewasm.md).
-
-## 30-second quickstart
+## Quickstart
 
 Build it (needs Zig 0.16 — `direnv allow` loads it via Nix, or `nix develop`):
 
@@ -60,75 +60,37 @@ cljw -e '(let [a (ref 0)] (dosync (alter a + 41) (alter a inc)) @a)'  ;=> 42
 cljw
 ```
 
-## Demos
+## Try it live
 
-- **[Polyglot WebAssembly FFI](./examples/wasm/)** — a Clojure program loads a
-  WebAssembly module compiled from another language and calls it:
-  `(wasm/call (wasm/load "add.wasm") "add" 2 40)` → `42`.
-- **Edge app — "Shelf"** ([clojurewasm/edge-demo](https://github.com/clojurewasm/edge-demo)) —
-  a small multi-user bookshelf (register / edit your shelf / browse others / copy
-  a book / label / favorite), served entirely by `cljw`'s own HTTP server as a
-  ~3 MB static binary on [Fly.io](https://clojurewasm-edge-demo.fly.dev/). Sessions,
-  CRUD, persistence, and server-rendered HTML — no JVM. On a Wasm-FFI build
-  (`-Dwasm`) each book cover's colour is computed by a Zig→Wasm module called over
-  the FFI, so the polyglot story runs inside a real app (the static musl edge build
-  falls back to a pure-Clojure hue until zwasm is musl-portable).
+- **Playground** — <!-- TODO(D-362): fly.io URL --> _(coming soon)_
+- **Bookshelf demo** — <!-- TODO(D-362): fly.io URL --> _(coming soon)_ — a small
+  multi-user bookshelf app served end-to-end by `cljw`'s own HTTP server as a
+  single binary (SQLite-over-Wasm storage, server-rendered pages, no JVM).
 
-## Benchmarks
+## The ideal
 
-A cross-language workload suite ([`bench/`](./bench/)) measures `cljw` against
-Python, Ruby, Node, Java, Babashka, and C. On tight loops and dispatch its
-cold-start already beats every dynamic language here — `fib_loop` 5.2,
-`map_ops` 5.8, `atom_swap` 6.4, `protocol_dispatch` 7.5 ms (only AOT-native C is
-faster). Allocation-heavy and bignum-arith workloads are slower — the
-deliberately optimization-deferred paths (correctness first). The full table,
-how-to-run, and honest caveats live in [`bench/README.md`](./bench/README.md);
-the table is **generated** from the measurement YAML, never hand-curated.
+Clojure already thrives on the JVM, in the browser through ClojureScript, on the
+command line through Babashka, on LLVM through jank, and on Flutter through
+ClojureDart. ClojureWasm reaches for one more place: the **WebAssembly / edge**
+world — Clojure as a small, self-contained binary that starts instantly, runs
+anywhere a tiny runtime can, and treats WebAssembly modules from any language as
+first-class, sandboxed libraries. The goal is a Clojure you can drop into a
+serverless function, an edge node, or a `.wasm` sandbox and have it feel like
+Clojure — interactive, expressive, and honest about its semantics. It is a young
+project finding its footing, not a replacement for the runtimes above; they are
+excellent at what they do.
 
-## Architecture
+## Documentation
 
-[`ARCHITECTURE.md`](./ARCHITECTURE.md) is a 5-minute orientation (zones, dual
-backend, error system, tiers). [`.dev/ROADMAP.md`](./.dev/ROADMAP.md) is the
-authoritative mission and phase plan.
-
-## Building & developing
-
-```sh
-direnv allow         # one-time: load Zig 0.16.0 via Nix (or: nix develop)
-zig build            # build the `cljw` binary
-zig build test       # unit tests
-bash test/run_all.sh # full suite (tests + zone check + e2e + bench)
-zig fmt src/         # format
-```
-
-The polyglot WebAssembly FFI is behind an opt-in flag (it embeds an external
-engine): `zig build -Dwasm`.
-
-### Shared git hooks
-
-Pre-commit gates live in [`.githooks/`](./.githooks/). Activate them once per
-clone:
-
-```sh
-git config core.hooksPath .githooks
-```
-
-The Markdown table formatter (`md-table-align`) used by the gate comes from
-[bbin](https://github.com/babashka/bbin):
-
-```sh
-bbin install io.github.chaploud/babashka-utilities
-```
-
-## Contributing
-
-See [`CONTRIBUTING.md`](./CONTRIBUTING.md). Questions and feedback are welcome on
-the [Clojurians Slack](https://clojurians.slack.com).
+- [`ARCHITECTURE.md`](./ARCHITECTURE.md) — a 5-minute orientation (zones, dual
+  backend, error system, compatibility tiers).
+- [`docs/clojure_vs_clojurewasm.md`](./docs/clojure_vs_clojurewasm.md) —
+  intentional divergences from JVM Clojure and the not-yet-implemented surface.
+- [`compat_tiers.yaml`](./compat_tiers.yaml) — the tiered JVM-compatibility
+  ledger.
 
 ## License
 
-Eclipse Public License 2.0 — see [LICENSE](./LICENSE).
-
-EPL-2.0 follows the Clojure ecosystem convention (Clojure / Babashka / SCI use
-EPL-1.0; newer projects such as Malli use EPL-2.0, the Eclipse Foundation's
-current recommendation).
+Eclipse Public License 2.0 — see [LICENSE](./LICENSE) and [NOTICE](./NOTICE).
+EPL-2.0 follows the Clojure ecosystem convention (Clojure, Babashka, and SCI use
+EPL-1.0; newer projects such as Malli use EPL-2.0).

@@ -10,13 +10,18 @@
         },
         // zwasm v2 embedding API (F-001 / D-037). `lazy` so the DEFAULT build +
         // gate never resolve it — only `-Dwasm` / `-Dzwasm-spike` (b.lazyDependency) do.
-        // RELATIVE-PATH co-development mode (user 2026-06-08, F-001 Revision history):
-        // the two repos are being security-hardened in lockstep, so cljw consumes
-        // zwasm's `zwasm-from-scratch` working tree directly — a zwasm fix is picked
-        // up immediately, no tag/fetch churn. Switch back to a `url`+`.hash` tag pin
-        // (`v2.0.0-alpha.N`) for a stable snapshot / release build. lazy + flag-guard
-        // means the churning relative tree cannot break cljw's default gate.
-        .zwasm = .{ .path = "../zwasm_from_scratch", .lazy = true },
+        // TAG-PIN mode (user 2026-06-10, F-001 Revision history): cljw consumes the
+        // `v2.0.0-alpha.2` dogfood tag from clojurewasm/zwasm, cryptographically pinned
+        // by `.hash` so it cannot drift even as the branch moves on. Switch to
+        // `.path = "../zwasm_from_scratch"` for relative-path co-development when
+        // hardening both repos in lockstep (a routine path<->url edit, not an F-001
+        // amendment). lazy + flag-guard means an unresolved/churning dep cannot break
+        // cljw's default gate.
+        .zwasm = .{
+            .url = "git+https://github.com/clojurewasm/zwasm.git#v2.0.0-alpha.2",
+            .hash = "zwasm-0.0.0-pre-FT1Fv20VeAC0RC_8d4gGeHDT8xQbyU2_DJd-uYXg51vf",
+            .lazy = true,
+        },
     },
     .paths = .{
         "build.zig",
