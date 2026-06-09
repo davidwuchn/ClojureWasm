@@ -178,6 +178,21 @@ const IPERSISTENT_MAP: HostInterface = .{
         // type is the residual); entryAt adds an Associative protocol method.
         .{ .clj = "equiv", .protocol = "Object", .method = "equiv" },
         .{ .clj = "entryAt", .protocol = "Associative", .method = "-entry-at" },
+        // valAt → ILookup/-lookup (D-372): OrderedMap declares valAt under its
+        // IPersistentMap section (clj's IPersistentMap extends ILookup). 2- and
+        // 3-arity collapse onto -lookup via D-279 multi-arity (the not-found arm
+        // is dormant until core get routes a 3-arity -lookup, same as ILookup).
+        .{ .clj = "valAt", .protocol = "ILookup", .method = "-lookup" },
+        // cljw -name identities (D-372/D-286b): the BARE IPersistentMap
+        // deftype-supertype now routes through protocol_remap, so a cljw-NATIVE
+        // `(extend-type T IPersistentMap (-keys …))` (D-089 native-extend test) +
+        // the rewrite's own emitted `(extend-type N IPersistentMap (-without …))`
+        // self-section must pass through unchanged. The IPersistentMap protocol Var
+        // declares -without/-keys/-vals (core.clj), so all three need an identity
+        // entry the sectionNeedsRemap guard reads to detect the cljw-form section.
+        .{ .clj = "-without", .protocol = "IPersistentMap", .method = "-without" },
+        .{ .clj = "-keys", .protocol = "IPersistentMap", .method = "-keys" },
+        .{ .clj = "-vals", .protocol = "IPersistentMap", .method = "-vals" },
     },
 };
 
@@ -296,6 +311,12 @@ const IPERSISTENT_SET: HostInterface = .{ .kind = .protocol_remap, .canonical = 
 const MARKERS = std.StaticStringMap(HostInterface).initComptime(.{
     .{ "Object", OBJECT },
     .{ "clojure.lang.MapEquivalence", MAP_EQUIVALENCE },
+    // bare aliases (D-372): flatland.ordered.map `:import`s + declares these bare.
+    // MapEquivalence is a zero-method marker (safe). IPersistentMap is a cljw
+    // protocol Var, so the bare deftype-supertype routes through protocol_remap +
+    // the -without identity entry (the D-286b harder-part shape, like IPersistentSet).
+    .{ "MapEquivalence", MAP_EQUIVALENCE },
+    .{ "IPersistentMap", IPERSISTENT_MAP },
     .{ "java.io.Serializable", SERIALIZABLE },
     .{ "clojure.lang.ILookup", ILOOKUP },
     .{ "clojure.lang.IPersistentMap", IPERSISTENT_MAP },

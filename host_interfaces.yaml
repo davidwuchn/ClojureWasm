@@ -278,7 +278,8 @@ interfaces:
     methods:
       valAt: { status: wired, wires_to_protocol: ILookup, wires_to_method: "-lookup" }
   - name: clojure.lang.IPersistentMap
-    derives_from: "clojure.lang.IPersistentMap — map ops; in clj it extends IPersistentCollection/Counted/Associative, so impls group count/assoc/etc here (Clojure, stable)."
+    aliases: [IPersistentMap]
+    derives_from: "clojure.lang.IPersistentMap — map ops; in clj it extends IPersistentCollection/Counted/Associative/ILookup, so impls group count/assoc/valAt/etc here (Clojure, stable)."
     tier: A
     recognised: true
     kind: protocol_remap
@@ -295,6 +296,7 @@ interfaces:
       equals: { status: wired, wires_to: "Object method-family equals (D-280d1b — same-type; cross-type is D-280d8)" }
       equiv: { status: wired, wires_to: "Object method-family equiv (D-280d8 — clj collection =; same-type, cross-type residual)" }
       entryAt: { status: wired, wires_to_protocol: Associative, wires_to_method: "-entry-at" }
+      valAt: { status: wired, wires_to_protocol: ILookup, wires_to_method: "-lookup" }
   # D-306: the collection-BASE interfaces clj's IPersistentMap decomposes into
   # (IPersistentCollection / Counted / Associative / Seqable), declarable DIRECTLY
   # as deftype supertypes — core.cache's `defcache` names them directly rather than
@@ -372,6 +374,7 @@ interfaces:
     methods:
       hasheq: { status: wired, wires_to: "Object method-family hasheq (hashFn consult)" }
   - name: clojure.lang.MapEquivalence
+    aliases: [MapEquivalence]
     derives_from: "clojure.lang.MapEquivalence — zero-method marker: 'this map = other maps by value' (Clojure, stable)."
     tier: A
     recognised: true
