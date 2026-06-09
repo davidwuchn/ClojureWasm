@@ -1096,6 +1096,171 @@ test "every wire ValueTag has BOTH a write and a read arm (symmetry gate)" {
     }
 }
 
+test "chunk completeness gate: every side-table + entry field round-trips (D-365 residual)" {
+    // Structural gate for the two serialize-incompleteness axes the Value-tag
+    // symmetry gate does NOT cover: (a) a whole chunk SIDE-TABLE dropped
+    // (ns_filters, D-356) and (b) a side-table FIELD dropped
+    // (call_sites.descriptor + field_only, D-365). Both shipped undetected —
+    // write/read are hand-synced and nothing forced a new table/field to be
+    // serialized — and surfaced only when the bookshelf built binary ran on the
+    // VM. This gate closes the class two ways:
+    //   (1) a COMPILE-TIME exhaustiveness check (std.meta.FieldEnum + an
+    //       else-less switch, mirroring the Value-tag inline-for gate) over the
+    //       BytecodeChunk side-tables AND each side-table entry struct — a NEW
+    //       field is a compile error here until it is classified
+    //       serialized-or-exempt; and
+    //   (2) a populated round-trip that fills EVERY side-table and asserts EVERY
+    //       serialized field survives. The existing per-table tests under-assert
+    //       (the "round-trips call_sites" test never checked descriptor /
+    //       field_only — exactly the field that was silently dropped).
+    var th = std.Io.Threaded.init(testing.allocator, .{});
+    defer th.deinit();
+    var rt = Runtime.init(th.io(), testing.allocator);
+    defer rt.deinit();
+    var env = try @import("../../runtime/env.zig").Env.init(&rt);
+    defer env.deinit();
+
+    const type_descriptor = @import("../../runtime/type_descriptor.zig");
+
+    // --- (1) compile-time field-exhaustiveness gates ---
+    // A new field on any of these structs makes the switch non-exhaustive → a
+    // compile error → the author MUST classify it (serialized-and-asserted
+    // below, or documented exempt). This is the mechanical close of the user's
+    // "構造的に直し忘れ" concern. The `classified` bool only gives each switch a
+    // result (so the prong bodies are non-empty); the exhaustiveness IS the gate.
+    inline for (std.meta.fields(BytecodeChunk)) |f| {
+        const classified: bool = switch (@field(std.meta.FieldEnum(BytecodeChunk), f.name)) {
+            // serialized + asserted in the round-trip below
+            .instructions, .constants, .call_sites, .libspecs, .ns_filters, .ctor_sites, .import_sites => true,
+            // EXEMPT: AOT omits source_file by design; a deserialized chunk
+            // defaults to "unknown" (per the BytecodeChunk doc-comment).
+            .source_file => true,
+        };
+        try testing.expect(classified);
+    }
+    inline for (std.meta.fields(CallSiteEntry)) |f| {
+        const classified: bool = switch (@field(std.meta.FieldEnum(CallSiteEntry), f.name)) {
+            .method_name, .arg_count, .field_only, .descriptor => true,
+            // EXEMPT: `cache` is the runtime monomorphic inline cache (mutated
+            // at first dispatch), not compile-time chunk state — never serialized.
+            .cache => true,
+        };
+        try testing.expect(classified);
+    }
+    inline for (std.meta.fields(LibspecEntry)) |f| {
+        const classified: bool = switch (@field(std.meta.FieldEnum(LibspecEntry), f.name)) {
+            .ns_name, .alias, .refers, .refer_all, .exclude => true,
+        };
+        try testing.expect(classified);
+    }
+    inline for (std.meta.fields(CtorEntry)) |f| {
+        const classified: bool = switch (@field(std.meta.FieldEnum(CtorEntry), f.name)) {
+            .type_name, .arg_count => true,
+        };
+        try testing.expect(classified);
+    }
+    inline for (std.meta.fields(ImportPair)) |f| {
+        const classified: bool = switch (@field(std.meta.FieldEnum(ImportPair), f.name)) {
+            .simple, .fqcn => true,
+        };
+        try testing.expect(classified);
+    }
+    inline for (std.meta.fields(NsFilterEntry)) |f| {
+        const classified: bool = switch (@field(std.meta.FieldEnum(NsFilterEntry), f.name)) {
+            .name, .exclude, .only => true,
+        };
+        try testing.expect(classified);
+    }
+
+    // --- (2) populated round-trip: every side-table non-empty, every field asserted ---
+    // A registered host class so the static-dispatch descriptor re-resolves at
+    // deserialize (resolveJavaSurface(rt, env, fqcn) returns this rt.types entry;
+    // freeChunk does NOT free `descriptor`, which rt.types owns → no double-free).
+    const int_td = try type_descriptor.registerType(&rt, "java.lang.Integer", &.{}, .native);
+
+    const call_sites = [_]CallSiteEntry{
+        // instance dispatch (descriptor null, field_only false)
+        .{ .method_name = "size", .arg_count = 0 },
+        // a `.-field` read (field_only true) + a STATIC descriptor — the two
+        // fields D-365 found silently dropped.
+        .{ .method_name = "parseInt", .arg_count = 1, .field_only = true, .descriptor = int_td },
+    };
+    const refers = [_][]const u8{ "inc", "dec" };
+    const ls_exclude = [_][]const u8{"map"};
+    const libspecs = [_]LibspecEntry{
+        .{ .ns_name = "a.b", .alias = "ab", .refers = &refers, .refer_all = true, .exclude = &ls_exclude },
+    };
+    const nf_exclude = [_][]const u8{"reduce"};
+    const nf_only = [_][]const u8{"inc"};
+    const ns_filters = [_]NsFilterEntry{
+        .{ .name = "app.core", .exclude = &nf_exclude, .only = &nf_only },
+    };
+    const ctor_sites = [_]CtorEntry{
+        .{ .type_name = "java.io.File", .arg_count = 1 },
+    };
+    const import_sites = [_]ImportPair{
+        .{ .simple = "File", .fqcn = "java.io.File" },
+    };
+    const instrs = [_]Instruction{.{ .opcode = .op_const, .operand = 0 }};
+    const consts = [_]Value{Value.initInteger(7)};
+    const chunk: BytecodeChunk = .{
+        .instructions = &instrs,
+        .constants = &consts,
+        .call_sites = @constCast(&call_sites),
+        .libspecs = @constCast(&libspecs),
+        .ns_filters = @constCast(&ns_filters),
+        .ctor_sites = @constCast(&ctor_sites),
+        .import_sites = @constCast(&import_sites),
+    };
+
+    const bytes = try serializeChunk(testing.allocator, chunk);
+    defer testing.allocator.free(bytes);
+    const round = try deserializeChunk(testing.allocator, &rt, &env, bytes);
+    defer freeChunk(testing.allocator, round);
+
+    // instructions + constants
+    try testing.expectEqual(@as(usize, 1), round.instructions.len);
+    try testing.expectEqual(@as(usize, 1), round.constants.len);
+    try testing.expectEqual(@as(i64, 7), round.constants[0].asInteger());
+
+    // call_sites — including the previously-dropped field_only + descriptor
+    try testing.expectEqual(@as(usize, 2), round.call_sites.len);
+    try testing.expectEqualStrings("size", round.call_sites[0].method_name);
+    try testing.expect(!round.call_sites[0].field_only);
+    try testing.expect(round.call_sites[0].descriptor == null);
+    try testing.expectEqualStrings("parseInt", round.call_sites[1].method_name);
+    try testing.expectEqual(@as(u16, 1), round.call_sites[1].arg_count);
+    try testing.expect(round.call_sites[1].field_only);
+    try testing.expect(round.call_sites[1].descriptor != null);
+    try testing.expectEqualStrings("java.lang.Integer", round.call_sites[1].descriptor.?.fqcn.?);
+
+    // libspecs — alias + refers + refer_all + exclude
+    try testing.expectEqual(@as(usize, 1), round.libspecs.len);
+    try testing.expectEqualStrings("a.b", round.libspecs[0].ns_name);
+    try testing.expectEqualStrings("ab", round.libspecs[0].alias.?);
+    try testing.expectEqual(@as(usize, 2), round.libspecs[0].refers.len);
+    try testing.expectEqualStrings("inc", round.libspecs[0].refers[0]);
+    try testing.expect(round.libspecs[0].refer_all);
+    try testing.expectEqual(@as(usize, 1), round.libspecs[0].exclude.len);
+    try testing.expectEqualStrings("map", round.libspecs[0].exclude[0]);
+
+    // ns_filters — exclude + only
+    try testing.expectEqual(@as(usize, 1), round.ns_filters.len);
+    try testing.expectEqualStrings("app.core", round.ns_filters[0].name);
+    try testing.expectEqualStrings("reduce", round.ns_filters[0].exclude[0]);
+    try testing.expectEqualStrings("inc", round.ns_filters[0].only.?[0]);
+
+    // ctor_sites
+    try testing.expectEqual(@as(usize, 1), round.ctor_sites.len);
+    try testing.expectEqualStrings("java.io.File", round.ctor_sites[0].type_name);
+    try testing.expectEqual(@as(u16, 1), round.ctor_sites[0].arg_count);
+
+    // import_sites
+    try testing.expectEqual(@as(usize, 1), round.import_sites.len);
+    try testing.expectEqualStrings("File", round.import_sites[0].simple);
+    try testing.expectEqualStrings("java.io.File", round.import_sites[0].fqcn);
+}
+
 test "artifact trailer frames and extracts the payload" {
     const runtime = "RUNTIME_BINARY_BYTES";
     const payload = "PAYLOAD_ENVELOPE_BYTES";
