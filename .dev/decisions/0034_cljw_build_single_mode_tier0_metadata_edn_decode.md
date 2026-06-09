@@ -478,6 +478,157 @@ existing allocator-explicit deserialize contract. The DA's concern (3)
 consulted at analyze time, which has already happened at build time; a
 deserialized macro fn is harmless dead weight at runtime.
 
+## require-closure embedding (amendment 3)
+
+Amendments 1-2 made `cljw build app.clj -o app` compile + embed the
+**entry file's** top-level forms (sequence-of-chunks + per-form
+compile-then-eval + fn_val serialization). Building the bookshelf
+multi-file demo (D-356) surfaced two gaps the prior amendments left
+open — both required for a multi-file app (`(require '[lib])` over a
+classpath) to ship as a self-contained binary:
+
+1. **Classpath prerequisite (Part 1).** `buildFile` never set
+   `rt.load_paths` nor installed the filesystem require resolver
+   (`setupCore` installs the embedded-ONLY resolver), so a *build-time*
+   `(require '[lib])` raised `lib_not_found` — the build could not even
+   resolve a user lib.
+2. **Require-closure embedding (Part 2, the actual feature).** Even
+   after Part 1 lets the build resolve the lib, the compiled
+   `(require '[lib])` chunk re-runs at run time under `tryRunEmbedded`
+   (`setupCoreAot` + embedded-only resolver, NO filesystem/classpath),
+   so `op_require` → `lib_not_found` (vm.zig): the required ns is not in
+   the payload. The binary is not self-contained.
+
+### A3-D1: the op_require-idempotency enabler
+
+`op_require` is idempotent (vm.zig:713-716: `already_loaded =
+env.findNs(ns) exists AND mappings.count() > 0` → SKIPS the resolver).
+So if every filesystem-resolved user ns the app depends on has its
+defining chunks run BEFORE the entry's `(require …)` chunk at run time,
+the entry require sees the ns loaded → skips the (absent) resolver →
+the app runs with NO run-time filesystem/classpath. This is the run-time
+mechanism that makes embedding sufficient; no resolver needs to exist in
+the shipped binary.
+
+### A3-D2: capture mechanism = chunk-capture during the real load (Alt-2/Alt-B)
+
+The build collects the require-closure chunks **during the one real
+build-time load**, not by a second recompile pass. A Layer-0 optional
+callback `Runtime.build_chunk_sink` (type-erased — the `BytecodeChunk`
+type lives in Layer 1, so the field cannot name it; the builder casts
+back via `@ptrCast`) is installed by the builder (Layer 3) before the
+entry eval. `loader.loadNamespace`'s per-form loop (Layer 1), when the
+sink is set AND the source is filesystem-resolved, ALSO calls
+`vm_compiler.compile` on each analyzed form (a same-Layer-1 import, no
+zone inversion) and feeds the chunk to the sink. Because capture rides
+the genuine load:
+
+- `current_ns` / alias / macro state is correct **by construction**
+  (the same eval the un-instrumented load performs).
+- The closure is eval'd **exactly once** (no double-eval; build
+  semantics == run-once == Clojure AOT, even for build-time-effecting
+  libs — the disqualifier of the source-recompile alternative).
+- Order is **post-order** = correct replay order: `loadNamespace`
+  recurses through nested requires during eval and the sink fires as
+  each ns's forms compile; a dep's forms complete (and fire) before its
+  dependent's. No toposort. Diamond deps load once (loadNamespace
+  early-returns on `loaded_libs.contains`), so the sink fires once per
+  ns — no explicit chunk-level dedup needed.
+
+The production load path is unaffected: `build_chunk_sink` is null at
+run time, so the per-form `if (rt.build_chunk_sink) |sink|` guard skips
+the compile.
+
+### A3-D3: bootstrap-ns exclusion via `ResolvedSource.from_filesystem` (F-013-clean)
+
+At run time `setupCoreAot` restores all bootstrap nses
+(clojure.core/set/string/test/…), so a user lib's
+`(:require [clojure.string])` chunk replays → `op_require` already_loaded
+→ skip. Only **filesystem-resolved user nses** need embedding. The clean
+discriminator (avoiding a hardcoded bootstrap-name allowlist — the
+F-013 ad-hoc-allowlist smell): a `from_filesystem: bool` field on
+`ResolvedSource`, set `true` by `filesystemResolver` and `false` by
+`embeddedResolver` (chainedResolver passes the inner result through).
+The sink captures only when `resolved.from_filesystem`.
+
+### A3-D4: classpath prerequisite (Part 1) — build path mirrors the run path
+
+`buildFile` gains a `load_paths: []const []const u8` param; it sets
+`rt.load_paths = load_paths` + `require_resolver.installChained(&rt)`
+**AFTER `setupCore`** (setupCore installs the embedded-only resolver at
+bootstrap, so an earlier installChained would be overwritten). The
+`cljw build` CLI dispatch branch parses `<in.clj> -o <out> [-cp <dirs>]
+[-A:alias…]` and resolves `load_paths` **identically to the run path**
+(`splitClasspath` + `loadDepsEdn`, the same neutral helpers
+`dispatchArgsRest` uses), so build-mode and run-mode classpath
+resolution cannot drift (F-009).
+
+### A3-D5: payload layout
+
+`buildEnvelope` returns `serializeEnvelope([closure chunks in post-order]
+++ [entry chunks])`. The closure chunks accumulate (via the sink) during
+the entry forms' eval; the combined list is serialized once. The
+existing per-chunk framing (A1-D1) + fn_val serialization (A2) carry the
+closure chunks unchanged (a lib's `(defn …)` is an fn_val constant).
+
+### Amendment-3 Devil's-advocate fork (2026-06-09, capture-mechanism scope, F-002/F-009/F-011/F-013 envelope) — verbatim
+
+All claims verified against source. `ResolvedSource` is `{ source, label }` (line 49-52), `require_resolver` is a single `?RequireResolverFn` field, `loaded_libs` is gpa-keyed. The post-order claim holds: `loadNamespace` marks `loaded_libs` at line 70 (END), recurses through nested requires during eval (line 64). Here is my Devil's-advocate analysis for the ADR.
+
+## Alternatives considered (Devil's-advocate fork, fresh context)
+
+Fork brief: 3 capture-mechanism shapes for collecting the require-closure chunks in correct replay order (bootstrap nses excluded), within the F-NNN envelope. F-002 (finished-form wins, diff size is NOT a constraint), F-009 (impl in neutral homes, builder is a thin driver), F-011 (shared mechanism over duplicated), F-013 (no per-library allowlist), zone deps (Layer-0 callback installed by higher layer = canonical vtable).
+
+### Leading note — no F-NNN block exists
+
+None of the three shapes below requires violating an F-NNN. The finished-form-clean option (Alt-2 / matches Alt-B) is fully F-compliant, so there is no "the only clean option breaks an invariant" finding to surface. The discriminator question (how to exclude bootstrap nses) has a clean F-013-compliant answer in all three (`from_filesystem: bool` on `ResolvedSource`, set by `filesystemResolver` vs `embeddedResolver`) — none needs a hardcoded bootstrap-name allowlist.
+
+### Alt-1 — smallest-diff: source-capture + recompile (== draft Alt-A)
+
+**(a) Shape.** Add a Layer-0 optional callback field `rt.require_sink: ?*const fn(*Runtime, ns_name, source, from_filesystem) void` on `Runtime`. The builder (Layer 3) installs it before the entry eval. At the tail of `loadNamespace` (loader.zig, after line 70, post-order), if the sink is set, invoke it with `(ns_name, resolved.source, resolved.from_filesystem)`. After the entry `buildEnvelope` finishes, the builder filters captured records to `from_filesystem == true`, runs `buildEnvelope`'s per-form loop again on each captured source (post-order = correct replay order, no toposort), and prepends the resulting chunks before the entry chunks.
+
+**(b) Better than the others.** The Layer-0 sink touches only `loadNamespace`'s tail — `eval/` stays ignorant of the vm compiler (the sink takes raw source bytes, not chunks), so the load path's zone surface does not widen toward Layer-1's compiler. The captured payload is just `[]const u8` source, trivially serializable/inspectable, and the recompile loop reuses the *existing* `buildEnvelope` verbatim (F-011: one compile-then-eval mechanism, no second copy).
+
+**(c) Breaks / risks.** Double-eval. Each captured lib's forms eval once during the real load AND once during the recompile pass. For pure-`def` libs this is idempotent; for a lib with a top-level side effect (`(println "loading")`, `(defonce …)` that isn't, an `(atom)` registered in a global registry) the effect fires twice — a *silently wrong* build for exactly the build-time-effecting programs the project already documents as a sharp edge. This is a permanent semantic gap, not a transient one: it cannot be tracked away with a PROVISIONAL marker because there is no upstream feature whose landing closes it; it is intrinsic to "re-run to recompile." Per F-002 this is the disqualifier — the finished form does not double-eval.
+
+### Alt-2 — finished-form-clean: chunk-capture during the real load (== draft Alt-B). RECOMMENDED.
+
+**(a) Shape.** Add a Layer-0 optional callback `rt.build_chunk_sink: ?*const fn(*Runtime, ns_name, *const BytecodeChunk, from_filesystem) anyerror!void` on `Runtime`. `loadNamespace`'s per-form loop (loader.zig line 61-65), when the sink is set, ALSO calls `vm_compiler.compile(rt, arena, node)` on each analyzed form and feeds the chunk to the sink — captured during the one real build-time load. The builder installs the sink, accumulates chunks keyed by post-order ns completion, filters to `from_filesystem`, and prepends them ahead of the entry chunks. `current_ns` is naturally correct because capture rides the genuine load where the lib's `(ns …)` has already switched it. Exactly-once eval, post-order, no toposort.
+
+**(b) Better.** No double-eval — the single disqualifier of Alt-1 is gone. Capture is a byproduct of the load that must happen anyway, so build semantics == run-once semantics == what Clojure AOT does. `current_ns`/alias/macro state is correct by construction (it is the *same* eval that the un-instrumented load performs), eliminating the "recompile-pass current_ns reconstruction" surface Alt-1 carries. This is the shape the finished-form owner would not unwind.
+
+**(c) Breaks / risks.** Couples the shared `eval/` load path to the Layer-1 vm compiler behind a build-only optional hook. This is the stated concern, but it does not violate zone deps: `loader.zig` is Layer 1 and `vm_compiler` is also Layer 1 (`eval/backend/vm/compiler.zig`) — a same-layer import, already permitted, no inversion needed. The sink itself is the canonical Layer-0-callback-installed-by-Layer-3 vtable pattern (explicitly allowed). The real cost is that the production load path now carries a compile call it skips at runtime (sink null) — a branch in the hot require path. That is a negligible, well-marked cost (a single `if (rt.build_chunk_sink) |sink|` guard), and F-009 is satisfied because the *compile mechanism* (`vm_compiler.compile`) stays in its neutral Layer-1 home; the builder only installs a sink and orders the output — it re-implements nothing. The minor sharp edge: the sink fires for EVERY loaded ns including bootstrap ones, so the `from_filesystem` filter must run on the builder side (cheap, already required).
+
+### Alt-3 — wildcard: post-load env-walk replay (no capture hook at all)
+
+**(a) Shape.** Capture nothing during load. After the entry eval finishes, the builder walks `rt.loaded_libs` (or an insertion-ordered sibling) and, for each ns marked `from_filesystem`, re-resolves its source via the resolver (the resolver is idempotent — re-reading a `.clj` is cheap) and runs `buildEnvelope` over each to produce chunks. Order is recovered by recording `loaded_libs` insertion order (which IS post-order, since `loadNamespace` marks at the tail). To carry `from_filesystem`, widen `loaded_libs`'s value from `void` to a small struct, or keep a parallel insertion-ordered list. No hook on the load path at all.
+
+**(b) Better.** Zero coupling of the load path to the compiler — `loadNamespace` is untouched; the production require path carries no build-only branch. The "ordering" problem is solved by data the runtime already has (`loaded_libs` is already maintained), so the mechanism leans entirely on existing state. Conceptually the cleanest *separation*: build is purely a post-pass over runtime state, the load path stays single-purpose.
+
+**(c) Breaks / risks.** Same double-eval as Alt-1 (the recompile re-evals each lib's forms) — disqualifying for the same F-002 reason. Worse, it adds a *re-resolve* (a second filesystem read per lib) and depends on `loaded_libs` being insertion-ordered, which `StringHashMapUnmanaged` is NOT — recovering post-order requires a new parallel ordered structure or a value-struct widening, i.e. a runtime data-shape change to serve a build-only need (a Layer-0 concession to Layer 3 that is heavier than Alt-2's optional callback). It trades Alt-2's "compile branch in the load path" for "re-eval + re-read + ordered-map retrofit," which is a larger and semantically-worse footprint. The "no hook" cleanliness is illusory once the ordering retrofit is counted.
+
+### Recommendation (non-binding)
+
+**Alt-2 (chunk-capture during the real load; == draft Alt-B).** It is the only one of the three that eval-once-s the closure, so it is the only one whose build semantics match run-once / Clojure-AOT semantics for build-time-effecting libs — Alt-1 and Alt-3 both double-eval, an intrinsic (non-closable) semantic gap that F-002's finished-form bar rejects. Its sole concern (load-path↔compiler coupling) is a *same-layer* Layer-1 import gated behind a null-checked build-only sink installed via the sanctioned vtable pattern, satisfying zone deps and F-009 (the compile mechanism stays neutral; the builder only installs + orders). Per F-002 I do not downgrade to Alt-1 on the grounds that "source capture is a smaller diff and keeps eval/ ignorant of the compiler" — that is the Cycle-budget / smallest-diff defer; the finished form captures chunks where they are correct-by-construction. The `from_filesystem: bool` discriminator on `ResolvedSource` (set by `filesystemResolver` returning `true`, `embeddedResolver` returning `false`) is the F-013-clean bootstrap exclusion for whichever shape is chosen, and should land regardless.
+
+One implementation note for whichever shape lands: the sink must capture at the ns granularity's post-order completion, and the builder must dedupe — a diamond require (A→B, A→C, B→D, C→D) loads D once (idempotent `loaded_libs`), so the sink fires for D once; the post-order tail-capture already gives D before B and C, so no toposort, confirmed against loader.zig line 36 (early-return on `loaded_libs.contains`) + line 70 (tail mark).
+
+### Amendment-3 decision
+
+**Alt-2 selected** (matches the DA recommendation). The double-eval gap is
+the decisive disqualifier for Alt-1/Alt-3 under F-002 (a build-time-effecting
+lib would fire its effects twice — a silent semantic divergence with no
+close-out, not a transient stub). The load-path↔compiler coupling is a
+same-Layer-1 import behind a null-checked build-only sink (the sanctioned
+Layer-0-callback / Layer-3-install vtable pattern), so zone deps + F-009 hold.
+The build-time `(-main …)` invocation hazard the bookshelf demo's
+`build_main.clj` would hit (a top-level server-start runs at build per the
+A1-D2 Clojure-AOT semantics, hanging the build) is **out of scope for this
+amendment** — it is a serverless-v2 (demo) concern for D-362's runway, not the
+cljw require-closure feature; the e2e cases use define-and-print libs that are
+harmless to double-print (build stdout vs run stdout are distinct streams; the
+e2e asserts the run output). Tracked as a demo-side note in D-356.
+
 ## Selection rationale
 
 Alt 2 (本提案) を選択。 F-002 (finished-form wins) + cljw メインターゲット
@@ -591,3 +742,23 @@ Phase 12 entry 以降の Affected files (本 cycle 時点では未着地):
   Closes the D-100(b) "serializer Discharged" overclaim — same
   claimed-done-but-incomplete pattern as the cycle-4 lazy fns this
   session.
+- 2026-06-09 (amendment 3): require-closure embedding (D-356). Building the
+  bookshelf multi-file demo surfaced that `cljw build` only embedded the ENTRY
+  file's chunks — a `(require '[lib])` over a classpath (a) raised
+  `lib_not_found` at build (buildFile never set load_paths / installed the fs
+  resolver) and (b) even after that, raised `lib_not_found` at RUN (the lib ns
+  is not in the payload; tryRunEmbedded has no fs/classpath). Added the
+  "require-closure embedding" section (A3-D1..A3-D5): the op_require-idempotency
+  enabler (vm.zig:713-716) makes embedding the closure's chunks BEFORE the entry
+  require chunk sufficient (run-time require → already_loaded → skip, no
+  resolver needed); capture mechanism = chunk-capture during the real
+  build-time load via a Layer-0 type-erased `build_chunk_sink` callback
+  (post-order, exactly-once eval, no toposort, no double-eval); bootstrap-ns
+  exclusion via a new `ResolvedSource.from_filesystem` flag (F-013-clean, no
+  hardcoded allowlist); the classpath prerequisite (buildFile load_paths +
+  installChained-after-setupCore + cli.zig `-cp/-A` parse mirroring the run
+  path, F-009). Devil's-advocate fork (general-purpose, fresh context,
+  F-002/F-009/F-011/F-013 envelope, 3 alternatives) embedded verbatim; Alt-2
+  (chunk-capture during load, finished-form-clean) selected — Alt-1/Alt-3
+  double-eval, an F-002 disqualifier. The build-time `(-main)` server-start
+  hazard is scoped to the serverless-v2 demo (D-362), not this amendment.
