@@ -233,7 +233,10 @@ fn synthExec(arena: std.mem.Allocator, fn_sym: []const u8, exec_args: ?form_mod.
 
 // --- helpers ---
 
-fn lastAliasMainOpts(cfg: parse.DepsConfig, alias_names: []const []const u8) []const []const u8 {
+/// The selected aliases' `:main-opts` (last-selected-alias wins). Shared with
+/// `cljw build -A:alias` (ADR-0034 am4 A4-D4) so a build entry can be driven by
+/// deps.edn `:main-opts ["-m" <ns>]`, mirroring `cljw -M:alias`.
+pub fn lastAliasMainOpts(cfg: parse.DepsConfig, alias_names: []const []const u8) []const []const u8 {
     var out: []const []const u8 = &.{};
     for (alias_names) |name| {
         if (findAlias(cfg, name)) |al| if (al.main_opts.len > 0) {

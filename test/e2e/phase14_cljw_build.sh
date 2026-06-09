@@ -133,4 +133,22 @@ got_svc=$(cd "$TMP/empty" && "$TMP/svc")
 [[ "$got_svc" == "hi from mylib from -main" ]] || fail "main_multifile: got '$got_svc', want 'hi from mylib from -main'"
 echo "PASS main_multifile -> hi from mylib from -main"
 
+# (11) deps.edn `:main-opts` drives the build entry (ADR-0034 am4 A4-D4): no
+#      explicit `-m`, a selected alias's `:main-opts ["-m" <ns>]` supplies it
+#      (mirrors `cljw -M:alias`). Build runs from a cwd with the deps.edn.
+mkdir -p "$TMP/proj/server/myapp"
+cat >"$TMP/proj/server/myapp/core.clj" <<'CLJ'
+(ns myapp.core)
+(defn -main [& args] (println "via main-opts:" (vec args)))
+CLJ
+cat >"$TMP/proj/deps.edn" <<'EDN'
+{:paths ["."]
+ :aliases {:run {:extra-paths ["server"] :main-opts ["-m" "myapp.core"]}}}
+EDN
+bin_abs="$PWD/$BIN" # build runs from $TMP/proj (to read its deps.edn), so the binary path must be absolute
+( cd "$TMP/proj" && "$bin_abs" build -A:run -o "$TMP/mo" ) >/dev/null
+got_mo=$(cd "$TMP/empty" && "$TMP/mo" 7)
+[[ "$got_mo" == "via main-opts: [7]" ]] || fail "main_opts_drive: got '$got_mo', want 'via main-opts: [7]'"
+echo "PASS main_opts_drive -> via main-opts: [7]"
+
 echo "ALL phase14_cljw_build PASS"

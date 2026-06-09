@@ -199,16 +199,27 @@ pub fn dispatch(init: std.process.Init) !void {
                 try stderr.flush();
                 std.process.exit(1);
             }
-            if (main_ns == null and in_path == null) {
-                try stderr.writeAll("build: missing <in.clj> or -m <ns>\n");
-                try stderr.flush();
-                std.process.exit(1);
-            }
             const git_cache_base: ?[]const u8 = init.environ_map.get("CLJW_HOME") orelse
                 if (init.environ_map.get("HOME")) |h| try std.fmt.allocPrint(arena, "{s}/.cljw", .{h}) else null;
             const cp_spec = build_cp orelse init.environ_map.get("CLJW_PATH") orelse ".";
             const base_paths = try splitClasspath(arena, cp_spec);
             const deps = try loadDepsEdn(io, arena, stderr, base_paths, build_aliases.items, git_cache_base);
+            // ADR-0034 am4 A4-D4: with no explicit `-m`, a selected alias's
+            // deps.edn `:main-opts ["-m" <ns> args…]` drives the build entry
+            // (mirrors `cljw -M:alias`). Build accepts only the `-m` form (not
+            // `-e`/file). An explicit CLI `-m` wins (this only fills the gap).
+            if (main_ns == null) {
+                const mo = deps_run_mode.lastAliasMainOpts(deps.cfg, build_aliases.items);
+                if (mo.len >= 2 and (std.mem.eql(u8, mo[0], "-m") or std.mem.eql(u8, mo[0], "--main"))) {
+                    main_ns = mo[1];
+                    try main_args.appendSlice(arena, mo[2..]);
+                }
+            }
+            if (main_ns == null and in_path == null) {
+                try stderr.writeAll("build: missing <in.clj>, -m <ns>, or a deps.edn alias :main-opts\n");
+                try stderr.flush();
+                std.process.exit(1);
+            }
             if (main_ns) |mns| {
                 builder.buildMainFile(io, gpa, arena, mns, main_args.items, out, deps.load_paths) catch |err| {
                     try stderr.print("build failed: {s}\n", .{@errorName(err)});
