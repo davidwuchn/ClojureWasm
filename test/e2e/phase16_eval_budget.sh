@@ -50,10 +50,14 @@ echo "PASS eval-budget-unmetered-default"
 
 # 6. D-352: a live-heap ceiling refuses a runaway allocation (exit 1 + heap msg),
 #    even though the realization happens inside a primitive (no back-edge poll).
-out="$(CLJW_EVAL_MAX_HEAP_MB=16 timeout 20 "$BIN" -e '(vec (range 100000000))' 2>&1)" && fail "heap budget: expected non-zero exit:
-$out"
-echo "$out" | grep -qi "heap budget" || fail "heap budget message missing:
-$out"
+#    D-361: capture the exit code so a Linux-only failure self-reports its cause
+#    (124 = timeout → the cap-trip was too slow; 137 = SIGKILL → OS OOM, i.e. the
+#    cap was bypassed). 30s headroom for a slower CI box's cap-trip.
+set +e  # a failing command-substitution must not trip `set -e` before we read $?
+out="$(CLJW_EVAL_MAX_HEAP_MB=16 timeout 30 "$BIN" -e '(vec (range 100000000))' 2>&1)"; ec=$?
+set -e
+[[ "$ec" -ne 0 ]] || fail "heap budget: expected non-zero exit (got 0): $out"
+echo "$out" | grep -qi "heap budget" || fail "heap budget message missing (exit=$ec): $out"
 echo "PASS eval-budget-heap-refuses-runaway"
 
 # 7. The heap cap is UNCATCHABLE too (a catch-all must NOT swallow it).
