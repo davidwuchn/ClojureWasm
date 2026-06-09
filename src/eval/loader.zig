@@ -18,6 +18,7 @@ const Reader = @import("reader.zig").Reader;
 const analyzeForm = @import("analyzer/analyzer.zig").analyze;
 const macro_dispatch = @import("macro_dispatch.zig");
 const driver = @import("driver.zig");
+const vm_compiler = @import("backend/vm/compiler.zig");
 const error_catalog = @import("../runtime/error/catalog.zig");
 const error_mod = @import("../runtime/error/info.zig");
 const SourceLocation = error_mod.SourceLocation;
@@ -62,6 +63,17 @@ pub fn loadNamespace(
         const node = try analyzeForm(arena, rt, env, null, form, macro_table);
         var locals: [driver.MAX_LOCALS]Value = [_]Value{.nil_val} ** driver.MAX_LOCALS;
         _ = try driver.evalForm(rt, env, &locals, arena, node);
+        // ADR-0034 am3 A3-D2: `cljw build` require-closure embedding. Capture
+        // each filesystem lib form's compiled chunk AFTER eval — a nested
+        // `(require …)` runs during this form's eval and pushes its chunks
+        // first, so deps precede dependents (post-order = correct replay
+        // order). Null sink on every non-build path skips the compile.
+        if (resolved.from_filesystem) {
+            if (rt.build_chunk_sink) |sink| {
+                const chunk = try vm_compiler.compile(rt, arena, node);
+                try sink.push(sink.ctx, &chunk);
+            }
+        }
     }
 
     // Mark fully-loaded only on success (after every form evaluated).

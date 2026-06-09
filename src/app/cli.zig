@@ -131,29 +131,61 @@ pub fn dispatch(init: std.process.Init) !void {
             return nrepl.run(io, gpa, arena, stdout, stderr, port);
         }
         if (std.mem.eql(u8, first, "build")) {
-            // D-100(b): `cljw build <in.clj> -o <out>` — compile
-            // the source into a self-contained binary (ADR-0034 am1/am2).
-            const in_path = args.next() orelse {
+            // D-100(b) + ADR-0034 am3 (D-356): `cljw build <in.clj> -o <out>
+            // [-cp <dirs>] [-A:alias…]` — compile the source AND its require
+            // closure (resolved off the classpath) into a self-contained
+            // binary. Classpath resolution mirrors the run path (A3-D4): `-cp`
+            // wins, else $CLJW_PATH, else ".", plus a cwd `./deps.edn`.
+            var in_path: ?[]const u8 = null;
+            var out_path: ?[]const u8 = null;
+            var build_cp: ?[]const u8 = null;
+            var build_aliases: std.ArrayList([]const u8) = .empty;
+            while (args.next()) |a| {
+                if (std.mem.eql(u8, a, "-o")) {
+                    out_path = args.next() orelse {
+                        try stderr.writeAll("build: -o requires a path\n");
+                        try stderr.flush();
+                        std.process.exit(1);
+                    };
+                } else if (std.mem.eql(u8, a, "-cp") or std.mem.eql(u8, a, "--classpath")) {
+                    build_cp = args.next() orelse {
+                        try stderr.writeAll("build: -cp requires an argument\n");
+                        try stderr.flush();
+                        std.process.exit(1);
+                    };
+                } else if (std.mem.startsWith(u8, a, "-A")) {
+                    var it = std.mem.splitScalar(u8, a[2..], ':');
+                    while (it.next()) |name| {
+                        if (name.len > 0) try build_aliases.append(arena, name);
+                    }
+                } else if (std.mem.startsWith(u8, a, "-") and a.len > 1) {
+                    try stderr.print("build: unknown option '{s}'\n", .{a});
+                    try stderr.flush();
+                    std.process.exit(1);
+                } else if (in_path == null) {
+                    in_path = a;
+                } else {
+                    try stderr.print("build: unexpected argument '{s}'\n", .{a});
+                    try stderr.flush();
+                    std.process.exit(1);
+                }
+            }
+            const in = in_path orelse {
                 try stderr.writeAll("build: missing <in.clj>\n");
                 try stderr.flush();
                 std.process.exit(1);
             };
-            const flag = args.next() orelse {
+            const out = out_path orelse {
                 try stderr.writeAll("build: missing -o <out>\n");
                 try stderr.flush();
                 std.process.exit(1);
             };
-            if (!std.mem.eql(u8, flag, "-o")) {
-                try stderr.print("build: expected -o, got '{s}'\n", .{flag});
-                try stderr.flush();
-                std.process.exit(1);
-            }
-            const out_path = args.next() orelse {
-                try stderr.writeAll("build: -o requires a path\n");
-                try stderr.flush();
-                std.process.exit(1);
-            };
-            builder.buildFile(io, gpa, arena, in_path, out_path) catch |err| {
+            const git_cache_base: ?[]const u8 = init.environ_map.get("CLJW_HOME") orelse
+                if (init.environ_map.get("HOME")) |h| try std.fmt.allocPrint(arena, "{s}/.cljw", .{h}) else null;
+            const cp_spec = build_cp orelse init.environ_map.get("CLJW_PATH") orelse ".";
+            const base_paths = try splitClasspath(arena, cp_spec);
+            const deps = try loadDepsEdn(io, arena, stderr, base_paths, build_aliases.items, git_cache_base);
+            builder.buildFile(io, gpa, arena, in, out, deps.load_paths) catch |err| {
                 try stderr.print("build failed: {s}\n", .{@errorName(err)});
                 try stderr.flush();
                 std.process.exit(1);

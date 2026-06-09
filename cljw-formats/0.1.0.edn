@@ -34,9 +34,16 @@
    ["call-sites-count" "u32"]
    ["call-sites" "each: method-name (u32 len + UTF-8 bytes), arg-count:u16"]
    ["libspecs-count" "u32"]
-   ["libspecs" "each: ns-name (u32 len + bytes), has-alias:u8, optional alias (u32 len + bytes), refers-count:u32, refers entries (u32 len + bytes)"]]
+   ["libspecs" "each: ns-name (u32 len + bytes), has-alias:u8, optional alias (u32 len + bytes), refers-count:u32, refers entries (u32 len + bytes), refer-all:u8, exclude-count:u32, exclude entries (u32 len + bytes)"]
+   ["ns-filters-count" "u32 (ADR-0034 am3)"]
+   ["ns-filters" "each: name (u32 len + bytes), exclude-count:u32, exclude entries (u32 len + bytes), has-only:u8, optional (only-count:u32, only entries (u32 len + bytes))"]
+   ["ctor-sites-count" "u32"]
+   ["ctor-sites" "each: type-name (u32 len + bytes), arg-count:u16"]
+   ["import-sites-count" "u32"]
+   ["import-sites" "each: simple (u32 len + bytes), fqcn (u32 len + bytes)"]]
   :notes
   ["CallSiteEntry.cache is NOT serialized — it is a runtime inline cache rebuilt on first dispatch."
+   "ns-filters (op_ns_with_filter side-table) is required by require-closure embedding (ADR-0034 am3): a user lib's (ns x (:require …)) compiles to op_ns_with_filter, so a closure chunk that loses this table crashes at run."
    "Out of scope (raise an explicit error, never a silent partial archive): hash_map (HAMT iteration, D-045); atom / multi_fn / big_int / wasm_* / transient_* tags."]}
 
  ;; Constant ValueTag wire bytes — a STABLE enum decoupled from the NaN-box

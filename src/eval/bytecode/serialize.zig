@@ -18,6 +18,17 @@
 //!                           + has_alias:u8 + (alias_len:u32 + bytes)?
 //!                           + refers_count:u32
 //!                             + each: refer_len:u32 + bytes
+//!                           + refer_all:u8 + exclude_count:u32
+//!                             + each: exclude_len:u32 + bytes
+//!   [...]     ns_filters_count (u32 LE)   (ADR-0034 am3)
+//!             for each entry: name_len:u32 + bytes + exclude_count:u32
+//!                             + each: exclude_len:u32 + bytes
+//!                           + has_only:u8 + (only_count:u32
+//!                             + each: only_len:u32 + bytes)?
+//!   [...]     ctor_sites_count (u32 LE)
+//!             for each entry: type_name_len:u32 + bytes + arg_count:u16
+//!   [...]     import_sites_count (u32 LE)
+//!             for each entry: simple_len:u32 + bytes + fqcn_len:u32 + bytes
 //!
 //! Per-Value tag-byte approach (NOT raw 8-byte u64 bits) so the
 //! `cljw-formats/<version>.edn` archive (ADR-0034 D11) records a
@@ -43,6 +54,7 @@ const CallSiteEntry = opcode_mod.CallSiteEntry;
 const CtorEntry = opcode_mod.CtorEntry;
 const ImportPair = opcode_mod.ImportPair;
 const LibspecEntry = opcode_mod.LibspecEntry;
+const NsFilterEntry = opcode_mod.NsFilterEntry;
 const value_mod = @import("../../runtime/value/value.zig");
 const Value = value_mod.Value;
 const Runtime = @import("../../runtime/runtime.zig").Runtime;
@@ -489,6 +501,24 @@ pub fn serializeChunk(allocator: std.mem.Allocator, chunk: BytecodeChunk) ![]u8 
         try writeU32(w, @intCast(ls.exclude.len));
         for (ls.exclude) |ex| try writeLenPrefixed(w, ex);
     }
+    // ns_filters (ADR-0034 am3): `(ns x (:require …))` / `:refer-clojure`
+    // filter side-table indexed by op_ns_with_filter. Required for the
+    // require-closure embedding path — a user lib's `(ns …)` form compiles to
+    // op_ns_with_filter, and a closure chunk that loses this table crashes at
+    // run with "op_ns_with_filter index out of range".
+    try writeU32(w, @intCast(chunk.ns_filters.len));
+    for (chunk.ns_filters) |nf| {
+        try writeLenPrefixed(w, nf.name);
+        try writeU32(w, @intCast(nf.exclude.len));
+        for (nf.exclude) |ex| try writeLenPrefixed(w, ex);
+        if (nf.only) |only| {
+            try writeU8(w, 1);
+            try writeU32(w, @intCast(only.len));
+            for (only) |o| try writeLenPrefixed(w, o);
+        } else {
+            try writeU8(w, 0);
+        }
+    }
     try writeU32(w, @intCast(chunk.ctor_sites.len));
     for (chunk.ctor_sites) |ct| {
         try writeLenPrefixed(w, ct.type_name);
@@ -572,6 +602,35 @@ pub fn deserializeChunk(allocator: std.mem.Allocator, rt: *Runtime, env: *@impor
         libspecs[i] = .{ .ns_name = ns_dup, .alias = alias_dup, .refers = refers, .refer_all = refer_all, .exclude = exclude };
     }
 
+    const nf_count = try r.readU32();
+    const ns_filters = try allocator.alloc(NsFilterEntry, nf_count);
+    errdefer allocator.free(ns_filters);
+    i = 0;
+    while (i < nf_count) : (i += 1) {
+        const name_bytes = try r.readLenPrefixed();
+        const name_dup = try allocator.dupe(u8, name_bytes);
+        const exclude_count = try r.readU32();
+        const exclude = try allocator.alloc([]const u8, exclude_count);
+        var e: u32 = 0;
+        while (e < exclude_count) : (e += 1) {
+            const ex = try r.readLenPrefixed();
+            exclude[e] = try allocator.dupe(u8, ex);
+        }
+        const has_only = try r.readU8();
+        var only: ?[]const []const u8 = null;
+        if (has_only != 0) {
+            const only_count = try r.readU32();
+            const only_buf = try allocator.alloc([]const u8, only_count);
+            var o: u32 = 0;
+            while (o < only_count) : (o += 1) {
+                const ob = try r.readLenPrefixed();
+                only_buf[o] = try allocator.dupe(u8, ob);
+            }
+            only = only_buf;
+        }
+        ns_filters[i] = .{ .name = name_dup, .exclude = exclude, .only = only };
+    }
+
     const ctor_count = try r.readU32();
     const ctor_sites = try allocator.alloc(CtorEntry, ctor_count);
     errdefer allocator.free(ctor_sites);
@@ -600,6 +659,7 @@ pub fn deserializeChunk(allocator: std.mem.Allocator, rt: *Runtime, env: *@impor
         .constants = constants,
         .call_sites = call_sites,
         .libspecs = libspecs,
+        .ns_filters = ns_filters,
         .ctor_sites = ctor_sites,
         .import_sites = import_sites,
     };
@@ -654,6 +714,16 @@ pub fn freeChunk(allocator: std.mem.Allocator, chunk: BytecodeChunk) void {
         allocator.free(ls.exclude);
     }
     allocator.free(chunk.libspecs);
+    for (chunk.ns_filters) |nf| {
+        allocator.free(nf.name);
+        for (nf.exclude) |ex| allocator.free(ex);
+        allocator.free(nf.exclude);
+        if (nf.only) |only| {
+            for (only) |o| allocator.free(o);
+            allocator.free(only);
+        }
+    }
+    allocator.free(chunk.ns_filters);
     for (chunk.ctor_sites) |ct| allocator.free(ct.type_name);
     allocator.free(chunk.ctor_sites);
     for (chunk.import_sites) |ip| {
@@ -860,6 +930,56 @@ test "header magic + version round-trips on empty chunk" {
     try testing.expectEqual(@as(usize, 0), round.constants.len);
     try testing.expectEqual(@as(usize, 0), round.call_sites.len);
     try testing.expectEqual(@as(usize, 0), round.libspecs.len);
+}
+
+test "round-trips ns_filters side-table (ADR-0034 am3 — require-closure embedding)" {
+    var th = std.Io.Threaded.init(testing.allocator, .{});
+    defer th.deinit();
+    var rt = Runtime.init(th.io(), testing.allocator);
+    defer rt.deinit();
+    var env = try @import("../../runtime/env.zig").Env.init(&rt);
+    defer env.deinit();
+
+    // A `(ns a (:require [b]) (:refer-clojure :exclude [map] :only [inc]))`
+    // compiles to op_ns_with_filter indexing this entry. Before am3 the
+    // serializer dropped ns_filters, so a deserialized closure chunk crashed
+    // at run with "op_ns_with_filter index out of range".
+    const exclude = [_][]const u8{"map"};
+    const only = [_][]const u8{"inc"};
+    var filters = [_]NsFilterEntry{.{ .name = "a", .exclude = &exclude, .only = &only }};
+    const instrs = [_]Instruction{.{ .opcode = .op_ns_with_filter, .operand = 0 }};
+    const chunk: BytecodeChunk = .{ .instructions = &instrs, .constants = &.{}, .ns_filters = &filters };
+
+    const bytes = try serializeChunk(testing.allocator, chunk);
+    defer testing.allocator.free(bytes);
+    const round = try deserializeChunk(testing.allocator, &rt, &env, bytes);
+    defer freeChunk(testing.allocator, round);
+
+    try testing.expectEqual(@as(usize, 1), round.ns_filters.len);
+    try testing.expectEqualStrings("a", round.ns_filters[0].name);
+    try testing.expectEqual(@as(usize, 1), round.ns_filters[0].exclude.len);
+    try testing.expectEqualStrings("map", round.ns_filters[0].exclude[0]);
+    try testing.expect(round.ns_filters[0].only != null);
+    try testing.expectEqualStrings("inc", round.ns_filters[0].only.?[0]);
+}
+
+test "round-trips ns_filters with no :only (null) — bare (ns x (:require …))" {
+    var th = std.Io.Threaded.init(testing.allocator, .{});
+    defer th.deinit();
+    var rt = Runtime.init(th.io(), testing.allocator);
+    defer rt.deinit();
+    var env = try @import("../../runtime/env.zig").Env.init(&rt);
+    defer env.deinit();
+    var filters = [_]NsFilterEntry{.{ .name = "mylib.greet" }};
+    const chunk: BytecodeChunk = .{ .instructions = &.{}, .constants = &.{}, .ns_filters = &filters };
+    const bytes = try serializeChunk(testing.allocator, chunk);
+    defer testing.allocator.free(bytes);
+    const round = try deserializeChunk(testing.allocator, &rt, &env, bytes);
+    defer freeChunk(testing.allocator, round);
+    try testing.expectEqual(@as(usize, 1), round.ns_filters.len);
+    try testing.expectEqualStrings("mylib.greet", round.ns_filters[0].name);
+    try testing.expectEqual(@as(usize, 0), round.ns_filters[0].exclude.len);
+    try testing.expect(round.ns_filters[0].only == null);
 }
 
 test "round-trips instructions" {

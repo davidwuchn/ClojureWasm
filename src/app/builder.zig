@@ -30,6 +30,24 @@ const driver = @import("../eval/driver.zig");
 const Value = @import("../runtime/value/value.zig").Value;
 const vm = @import("../eval/backend/vm.zig");
 const bootstrap = @import("../lang/bootstrap.zig");
+const require_resolver = @import("../lang/require_resolver.zig");
+
+/// Accumulates the require-closure's compiled chunks during the build-time
+/// load (ADR-0034 amendment 3 A3-D2). Installed on `rt.build_chunk_sink` so
+/// `loader.loadNamespace` feeds each filesystem lib form's chunk here, in
+/// post-order. The pushed `BytecodeChunk` copies hold slices into
+/// `rt.load_arena`, alive until the payload is serialized.
+const ClosureAccum = struct {
+    allocator: std.mem.Allocator,
+    chunks: std.ArrayList(BytecodeChunk),
+
+    /// `chunk_ptr` is a `*const BytecodeChunk` type-erased by the Layer-0 sink.
+    fn push(ctx: *anyopaque, chunk_ptr: *const anyopaque) anyerror!void {
+        const self: *ClosureAccum = @ptrCast(@alignCast(ctx));
+        const chunk: *const BytecodeChunk = @ptrCast(@alignCast(chunk_ptr));
+        try self.chunks.append(self.allocator, chunk.*);
+    }
+};
 
 /// Compile every top-level form in `source_text` to a `BytecodeChunk`
 /// and return the serialized payload envelope (caller frees the bytes
@@ -48,25 +66,43 @@ pub fn buildEnvelope(
     arena: std.mem.Allocator,
     source_text: []const u8,
 ) ![]u8 {
-    var chunks: std.ArrayList(BytecodeChunk) = .empty;
-    defer chunks.deinit(allocator);
+    // ADR-0034 am3 A3-D2: capture the require-closure's chunks during the
+    // entry forms' eval. `loader.loadNamespace` pushes each filesystem lib
+    // form's chunk here (post-order) when this sink is set.
+    var closure = ClosureAccum{ .allocator = allocator, .chunks = .empty };
+    defer closure.chunks.deinit(allocator);
+    rt.build_chunk_sink = .{ .ctx = &closure, .push = ClosureAccum.push };
+    defer rt.build_chunk_sink = null;
+
+    var entry_chunks: std.ArrayList(BytecodeChunk) = .empty;
+    defer entry_chunks.deinit(allocator);
 
     // A1-D2 (ADR-0034 am1, Alt B): compile-THEN-eval each top-level form.
     // The eval step evolves `env` (macros / requires / defs register) so
     // form N+1 analyses against the same state Clojure AOT would see; a
     // top-level side effect (e.g. `(println …)`) runs at build time, as
     // documented in `cljw build` help. Compile produces the payload chunk;
-    // eval (tree_walk via the installed vtable) only mutates env.
+    // eval (tree_walk via the installed vtable) only mutates env — and, for a
+    // `(require …)`, triggers the closure capture via the sink above.
     var locals: [driver.MAX_LOCALS]Value = [_]Value{.nil_val} ** driver.MAX_LOCALS;
     var reader = Reader.init(arena, source_text);
     while (true) {
         const form = (try reader.read()) orelse break;
         const node = try analyzeForm(arena, rt, env, null, form, macro_table);
         const chunk = try vm_compiler.compile(rt, arena, node);
-        try chunks.append(allocator, chunk);
+        try entry_chunks.append(allocator, chunk);
         _ = try driver.evalForm(rt, env, &locals, arena, node);
     }
-    return serialize.serializeEnvelope(allocator, chunks.items);
+
+    // A3-D5: payload = [closure chunks, post-order] ++ [entry chunks]. At run
+    // time the closure chunks define the user nses first, so the entry's
+    // `(require …)` chunk sees them loaded (op_require idempotency, A3-D1) and
+    // skips the resolver the embedded binary does not carry.
+    var all: std.ArrayList(BytecodeChunk) = .empty;
+    defer all.deinit(allocator);
+    try all.appendSlice(allocator, closure.chunks.items);
+    try all.appendSlice(allocator, entry_chunks.items);
+    return serialize.serializeEnvelope(allocator, all.items);
 }
 
 // === cljw build CLI core + embedded-run startup ===
@@ -93,7 +129,7 @@ fn readSelfExe(io: std.Io, gpa: std.mem.Allocator) ![]u8 {
 /// and append it to a copy of the running cljw binary as a self-contained
 /// artifact with a `"CLJC"` trailer (ADR-0034 amendment 1/2). Build-time
 /// eval runs top-level side effects (A1-D2). The output is executable.
-pub fn buildFile(io: std.Io, gpa: std.mem.Allocator, arena: std.mem.Allocator, in_path: []const u8, out_path: []const u8) !void {
+pub fn buildFile(io: std.Io, gpa: std.mem.Allocator, arena: std.mem.Allocator, in_path: []const u8, out_path: []const u8, load_paths: []const []const u8) !void {
     const source = try readFileAll(io, gpa, in_path);
     defer gpa.free(source);
 
@@ -105,6 +141,12 @@ pub fn buildFile(io: std.Io, gpa: std.mem.Allocator, arena: std.mem.Allocator, i
     var macro_table = macro_dispatch.Table.init(gpa);
     defer macro_table.deinit();
     try bootstrap.setupCore(arena, &rt, &env, &macro_table);
+    // ADR-0034 am3 A3-D4: enable filesystem `require` so a build-time
+    // `(require '[lib])` resolves off the classpath (mirrors runner.zig). Set
+    // AFTER setupCore — it installs the embedded-ONLY resolver at bootstrap, so
+    // an earlier installChained would be overwritten.
+    rt.load_paths = load_paths;
+    require_resolver.installChained(&rt);
 
     const payload = try buildEnvelope(gpa, &rt, &env, &macro_table, arena, source);
     defer gpa.free(payload);

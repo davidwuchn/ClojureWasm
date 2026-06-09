@@ -52,7 +52,7 @@ pub fn filesystemResolver(rt: *Runtime, ns_name: []const u8) anyerror!?ResolvedS
                     .detail = @errorName(err),
                 }),
             };
-            return .{ .source = src, .label = path };
+            return .{ .source = src, .label = path, .from_filesystem = true };
         }
     }
     return null;

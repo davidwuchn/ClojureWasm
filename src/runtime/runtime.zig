@@ -49,6 +49,25 @@ const SourceContext = print_mod.SourceContext;
 pub const ResolvedSource = struct {
     source: []const u8,
     label: []const u8,
+    /// True when this source was read off the filesystem classpath (a user
+    /// lib), false for a bootstrap-embedded ns. `cljw build`'s require-closure
+    /// embedding captures ONLY filesystem nses — bootstrap nses are restored by
+    /// `setupCoreAot` at run time (ADR-0034 amendment 3 A3-D3).
+    from_filesystem: bool = false,
+};
+
+/// Build-time hook for `cljw build`'s require-closure embedding (ADR-0034
+/// amendment 3 A3-D2). When set, `loader.loadNamespace` compiles each
+/// filesystem-resolved lib form and pushes the chunk here, so the closure's
+/// defining chunks can be embedded ahead of the entry's `(require …)` chunk.
+/// Type-erased: the `BytecodeChunk` type lives in Layer 1 (eval/), so this
+/// Layer-0 field cannot name it; the builder (Layer 3) casts back via
+/// `@ptrCast`. Null on the production load path (the per-form guard skips the
+/// compile).
+pub const BuildChunkSink = struct {
+    ctx: *anyopaque,
+    /// `chunk_ptr` is a `*const BytecodeChunk` (Layer 1); the builder casts.
+    push: *const fn (ctx: *anyopaque, chunk_ptr: *const anyopaque) anyerror!void,
 };
 
 pub const RequireResolverFn = *const fn (rt: *Runtime, ns_name: []const u8) anyerror!?ResolvedSource;
@@ -221,6 +240,10 @@ pub const Runtime = struct {
     /// can swap for classpath / build-artifact resolvers; Phase 16+
     /// for Wasm pod resolvers.
     require_resolver: ?RequireResolverFn = null,
+
+    /// Build-time require-closure capture sink (ADR-0034 amendment 3). Set by
+    /// `cljw build`; null on every other path (production load, REPL, tests).
+    build_chunk_sink: ?BuildChunkSink = null,
 
     /// Filesystem classpath roots searched by the filesystem require resolver
     /// (ADR-0084). Colon-separated `--classpath`/`CLJW_PATH`, default `["."]`,

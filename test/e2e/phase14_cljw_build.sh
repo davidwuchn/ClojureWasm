@@ -66,4 +66,32 @@ want_multi=$'line-1\nline-2 3\nline-3'
 [[ "$got_multi" == "$want_multi" ]] || fail "multiline_ordered: got '$got_multi', want '$want_multi'"
 echo "PASS multiline_ordered -> 3 lines, ordered + complete"
 
+# (5) Multi-file app: a `(require '[lib])` over a `-cp` classpath. D-356
+#     require-closure embedding (ADR-0034 amendment 3): the build resolves the
+#     lib off the classpath (Part 1) AND embeds the lib's defining chunks ahead
+#     of the entry's require chunk (Part 2), so the produced binary runs
+#     self-contained with NO runtime classpath. The lib's `(defn hello …)` is an
+#     fn_val constant carried by the closure chunks.
+mkdir -p "$TMP/libsrc/mylib"
+cat >"$TMP/libsrc/mylib/greet.clj" <<'CLJ'
+(ns mylib.greet)
+(defn hello [] "hi from mylib")
+CLJ
+cat >"$TMP/caller.clj" <<'CLJ'
+(require '[mylib.greet :as g])
+(println (g/hello))
+CLJ
+"$BIN" build "$TMP/caller.clj" -o "$TMP/caller" -cp "$TMP/libsrc" >/dev/null
+# Run from a directory with NO classpath/lib in sight — proves self-containment.
+mkdir -p "$TMP/empty"
+got_cp=$(cd "$TMP/empty" && "$TMP/caller")
+[[ "$got_cp" == "hi from mylib" ]] || fail "classpath_require: got '$got_cp', want 'hi from mylib'"
+echo "PASS classpath_require -> hi from mylib"
+
+# (6) Same multi-file app via the CLJW_PATH env classpath (instead of -cp).
+CLJW_PATH="$TMP/libsrc" "$BIN" build "$TMP/caller.clj" -o "$TMP/caller2" >/dev/null
+got_path=$(cd "$TMP/empty" && "$TMP/caller2")
+[[ "$got_path" == "hi from mylib" ]] || fail "cljw_path_require: got '$got_path', want 'hi from mylib'"
+echo "PASS cljw_path_require -> hi from mylib"
+
 echo "ALL phase14_cljw_build PASS"
