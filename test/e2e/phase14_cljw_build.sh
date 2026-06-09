@@ -94,4 +94,43 @@ got_path=$(cd "$TMP/empty" && "$TMP/caller2")
 [[ "$got_path" == "hi from mylib" ]] || fail "cljw_path_require: got '$got_path', want 'hi from mylib'"
 echo "PASS cljw_path_require -> hi from mylib"
 
+# (7) Main mode `cljw build -m <ns>` (ADR-0034 am4, D-363): the binary invokes
+#     `(<ns>/-main args)` at RUN — NOT at build. A top-level form in the ns runs
+#     at build (closure capture) AND at run, but `-main` is only CALLED at run.
+mkdir -p "$TMP/appsrc"
+cat >"$TMP/appsrc/myapp.clj" <<'CLJ'
+(ns myapp)
+(println "myapp top-level")
+(defn -main [& args] (println "main:" (vec args)))
+CLJ
+build_out=$("$BIN" build -m myapp -o "$TMP/myapp" -cp "$TMP/appsrc")
+# Build evals the require (top-level runs) but must NOT call -main.
+[[ "$build_out" == "myapp top-level" ]] || fail "main_build_no_invoke: build out '$build_out', want only 'myapp top-level' (no -main)"
+case "$build_out" in *"main:"*) fail "main_build_no_invoke: build called -main";; esac
+echo "PASS main_build_no_invoke -> -main NOT called at build"
+
+# (8) Running the main-mode binary calls -main (after the ns top-level).
+got_main=$(cd "$TMP/empty" && "$TMP/myapp")
+want_main=$'myapp top-level\nmain: []'
+[[ "$got_main" == "$want_main" ]] || fail "main_run: got '$got_main', want '$want_main'"
+echo "PASS main_run -> top-level then (-main)"
+
+# (9) The binary's own runtime argv reaches -main (`./out 8080 foo`).
+got_argv=$(cd "$TMP/empty" && "$TMP/myapp" 8080 foo)
+want_argv=$'myapp top-level\nmain: [8080 foo]'
+[[ "$got_argv" == "$want_argv" ]] || fail "main_runtime_argv: got '$got_argv', want '$want_argv'"
+echo "PASS main_runtime_argv -> [8080 foo]"
+
+# (10) A multi-file -m app: the entry ns requires a lib; the closure + the
+#      -main invocation both embed, run self-contained.
+mkdir -p "$TMP/appsrc/svc"
+cat >"$TMP/appsrc/svc/core.clj" <<'CLJ'
+(ns svc.core (:require [mylib.greet :as g]))
+(defn -main [& _] (println (g/hello) "from -main"))
+CLJ
+"$BIN" build -m svc.core -o "$TMP/svc" -cp "$TMP/appsrc:$TMP/libsrc" >/dev/null
+got_svc=$(cd "$TMP/empty" && "$TMP/svc")
+[[ "$got_svc" == "hi from mylib from -main" ]] || fail "main_multifile: got '$got_svc', want 'hi from mylib from -main'"
+echo "PASS main_multifile -> hi from mylib from -main"
+
 echo "ALL phase14_cljw_build PASS"

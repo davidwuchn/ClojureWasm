@@ -84,9 +84,10 @@
  ;; marker) and deserializes + runs each chunk INTERLEAVED (a later chunk's
  ;; var-ref to an earlier chunk's def needs that def to have run).
  :payload-envelope
- {:version 1
+ {:version 2
   :layout
-  [["n-chunks" "u32"]
+  [["entry-manifest" "ADR-0034 am4: has-entry:u8; if 1 then entry-ns (u32 len + bytes), entry-args-count:u32, each arg (u32 len + bytes). has-entry=0 for script mode (chunks ARE the program). Main mode (cljw build -m <ns>) sets the entry; at run the driver invokes (<ns>/-main args) via run_mode/synthMainNs."]
+   ["n-chunks" "u32"]
    ["chunks" "n-chunks entries of (chunk-len:u32, :chunk-format bytes)"]]}
 
  ;; Self-contained artifact trailer — Deno-style: the payload envelope is

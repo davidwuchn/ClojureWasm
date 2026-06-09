@@ -743,10 +743,63 @@ pub fn freeChunk(allocator: std.mem.Allocator, chunk: BytecodeChunk) void {
 // `serializeChunk` produces. Length-prefixing lets the loader sub-slice
 // and hand each chunk to `deserializeChunk` unchanged (no codec dup).
 
-pub fn serializeEnvelope(allocator: std.mem.Allocator, chunks: []const BytecodeChunk) ![]u8 {
+/// The artifact's entry point (ADR-0034 amendment 4 A4-D2). `cljw build -m
+/// <ns>` records `{ ns, args }` here so the run-side invokes `(<ns>/-main …)`
+/// at startup; a script-mode build records no entry (the chunks ARE the
+/// program). Stored as a manifest at the FRONT of the envelope — the entry
+/// point is artifact metadata (like ELF e_entry / jar Main-Class), not a code
+/// chunk. `ns` / `args` slices point INTO the payload bytes (no copy); the
+/// `args` outer array is allocated by `readEnvelopeEntry`'s caller arena.
+pub const EnvelopeEntry = struct {
+    ns: []const u8,
+    args: []const []const u8 = &.{},
+};
+
+/// Write the entry manifest: `[has_entry:u8]` then, if 1, the entry ns
+/// (len-prefixed) + `[args_count:u32]` + each arg (len-prefixed).
+fn writeManifest(w: *std.Io.Writer, entry: ?EnvelopeEntry) !void {
+    if (entry) |e| {
+        try writeU8(w, 1);
+        try writeLenPrefixed(w, e.ns);
+        try writeU32(w, @intCast(e.args.len));
+        for (e.args) |a| try writeLenPrefixed(w, a);
+    } else {
+        try writeU8(w, 0);
+    }
+}
+
+/// Advance `r` past the entry manifest (without materialising it) so the chunk
+/// readers reach `[u32 n_chunks]`. Mirror of `writeManifest`.
+fn skipManifest(r: *ByteReader) DeserializeError!void {
+    const has_entry = try r.readU8();
+    if (has_entry == 0) return;
+    _ = try r.readLenPrefixed(); // entry ns
+    const args_n = try r.readU32();
+    var i: u32 = 0;
+    while (i < args_n) : (i += 1) _ = try r.readLenPrefixed();
+}
+
+/// Parse the entry manifest, returning the entry (ns + args as slices INTO
+/// `bytes`; the args outer array is `arena`-allocated) or null for a
+/// script-mode (no-entry) envelope. Used by `cljw build`'s embedded-run
+/// startup to dispatch `(<ns>/-main …)`.
+pub fn readEnvelopeEntry(arena: std.mem.Allocator, bytes: []const u8) !?EnvelopeEntry {
+    var r: ByteReader = .{ .bytes = bytes, .pos = 0 };
+    const has_entry = try r.readU8();
+    if (has_entry == 0) return null;
+    const ns = try r.readLenPrefixed();
+    const args_n = try r.readU32();
+    const args = try arena.alloc([]const u8, args_n);
+    var i: u32 = 0;
+    while (i < args_n) : (i += 1) args[i] = try r.readLenPrefixed();
+    return .{ .ns = ns, .args = args };
+}
+
+pub fn serializeEnvelope(allocator: std.mem.Allocator, chunks: []const BytecodeChunk, entry: ?EnvelopeEntry) ![]u8 {
     var aw: std.Io.Writer.Allocating = .init(allocator);
     errdefer aw.deinit();
     const w = &aw.writer;
+    try writeManifest(w, entry);
     try writeU32(w, @intCast(chunks.len));
     for (chunks) |chunk| {
         const chunk_bytes = try serializeChunk(allocator, chunk);
@@ -766,6 +819,7 @@ pub fn deserializeEnvelope(
     bytes: []const u8,
 ) ![]BytecodeChunk {
     var r: ByteReader = .{ .bytes = bytes, .pos = 0 };
+    try skipManifest(&r);
     const n = try r.readU32();
     var chunks: std.ArrayList(BytecodeChunk) = .empty;
     errdefer {
@@ -806,6 +860,7 @@ pub const EnvelopeIterator = struct {
 
     pub fn init(bytes: []const u8) DeserializeError!EnvelopeIterator {
         var r: ByteReader = .{ .bytes = bytes, .pos = 0 };
+        try skipManifest(&r);
         const n = try r.readU32();
         return .{ .r = r, .remaining = n };
     }
@@ -878,7 +933,7 @@ test "payload envelope round-trips two chunks in order" {
     const consts_b = [_]Value{Value.initInteger(99)};
     const chunk_b: BytecodeChunk = .{ .instructions = &.{}, .constants = &consts_b };
 
-    const bytes = try serializeEnvelope(testing.allocator, &.{ chunk_a, chunk_b });
+    const bytes = try serializeEnvelope(testing.allocator, &.{ chunk_a, chunk_b }, null);
     defer testing.allocator.free(bytes);
 
     const out = try deserializeEnvelope(testing.allocator, &rt, &env, bytes);
@@ -891,6 +946,44 @@ test "payload envelope round-trips two chunks in order" {
     try testing.expect(out[0].constants[1].tag() == .keyword);
     try testing.expectEqual(@as(usize, 1), out[1].constants.len);
     try testing.expectEqual(@as(i64, 99), out[1].constants[0].asInteger());
+}
+
+test "envelope entry manifest round-trips; chunk readers skip it (ADR-0034 am4)" {
+    var th = std.Io.Threaded.init(testing.allocator, .{});
+    defer th.deinit();
+    var rt = Runtime.init(th.io(), testing.allocator);
+    defer rt.deinit();
+    var env = try @import("../../runtime/env.zig").Env.init(&rt);
+    defer env.deinit();
+
+    var arena_state = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+
+    var consts = [_]Value{Value.initInteger(5)};
+    const chunk: BytecodeChunk = .{ .instructions = &.{}, .constants = &consts };
+    const args = [_][]const u8{ "8080", "foo" };
+
+    // With an entry manifest: readEnvelopeEntry recovers it; the chunk readers
+    // skip the manifest and still see the one chunk.
+    const bytes = try serializeEnvelope(testing.allocator, &.{chunk}, .{ .ns = "my.app", .args = &args });
+    defer testing.allocator.free(bytes);
+
+    const entry = (try readEnvelopeEntry(arena, bytes)) orelse return error.NoEntry;
+    try testing.expectEqualStrings("my.app", entry.ns);
+    try testing.expectEqual(@as(usize, 2), entry.args.len);
+    try testing.expectEqualStrings("8080", entry.args[0]);
+    try testing.expectEqualStrings("foo", entry.args[1]);
+
+    const out = try deserializeEnvelope(testing.allocator, &rt, &env, bytes);
+    defer freeEnvelope(testing.allocator, out);
+    try testing.expectEqual(@as(usize, 1), out.len);
+    try testing.expectEqual(@as(i48, 5), out[0].constants[0].asInteger());
+
+    // No-entry (script mode) envelope: readEnvelopeEntry returns null.
+    const bytes2 = try serializeEnvelope(testing.allocator, &.{chunk}, null);
+    defer testing.allocator.free(bytes2);
+    try testing.expect((try readEnvelopeEntry(arena, bytes2)) == null);
 }
 
 test "artifact trailer frames and extracts the payload" {

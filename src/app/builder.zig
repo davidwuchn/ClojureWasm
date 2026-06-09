@@ -31,6 +31,7 @@ const Value = @import("../runtime/value/value.zig").Value;
 const vm = @import("../eval/backend/vm.zig");
 const bootstrap = @import("../lang/bootstrap.zig");
 const require_resolver = @import("../lang/require_resolver.zig");
+const run_mode = @import("deps/run_mode.zig");
 
 /// Accumulates the require-closure's compiled chunks during the build-time
 /// load (ADR-0034 amendment 3 A3-D2). Installed on `rt.build_chunk_sink` so
@@ -97,12 +98,48 @@ pub fn buildEnvelope(
     // A3-D5: payload = [closure chunks, post-order] ++ [entry chunks]. At run
     // time the closure chunks define the user nses first, so the entry's
     // `(require …)` chunk sees them loaded (op_require idempotency, A3-D1) and
-    // skips the resolver the embedded binary does not carry.
+    // skips the resolver the embedded binary does not carry. Script mode → no
+    // entry manifest (the chunks ARE the program, run top-to-bottom).
     var all: std.ArrayList(BytecodeChunk) = .empty;
     defer all.deinit(allocator);
     try all.appendSlice(allocator, closure.chunks.items);
     try all.appendSlice(allocator, entry_chunks.items);
-    return serialize.serializeEnvelope(allocator, all.items);
+    return serialize.serializeEnvelope(allocator, all.items, null);
+}
+
+/// `cljw build -m <ns>` (ADR-0034 amendment 4 A4-D1/D2). Build-time eval of
+/// `(require '[<ns>])` captures the require closure (via the am3 sink) +
+/// registers `<ns>`'s defns — but `-main` is DEFINED, never CALLED at build, so
+/// a server-starting `-main` does not hang the build. The payload carries the
+/// closure chunks + an entry manifest `{ ns, args }`; at run, `tryRunEmbedded`
+/// invokes `(<ns>/-main …)` via the shared `synthMainNs` (A4-D3). No entry
+/// chunk is embedded — the entry is artifact metadata, not code.
+pub fn buildMainEnvelope(
+    allocator: std.mem.Allocator,
+    rt: *Runtime,
+    env: *Env,
+    macro_table: *macro_dispatch.Table,
+    arena: std.mem.Allocator,
+    ns: []const u8,
+    args: []const []const u8,
+) ![]u8 {
+    var closure = ClosureAccum{ .allocator = allocator, .chunks = .empty };
+    defer closure.chunks.deinit(allocator);
+    rt.build_chunk_sink = .{ .ctx = &closure, .push = ClosureAccum.push };
+    defer rt.build_chunk_sink = null;
+
+    // Eval `(require '[<ns>])` → the am3 sink captures the closure (incl. <ns>
+    // itself) in post-order; the require itself is build-only (its chunk is not
+    // embedded — the closure chunks define <ns>, and the run-side synthMainNs
+    // re-requires idempotently).
+    const req_src = try std.fmt.allocPrint(arena, "(clojure.core/require (quote [{s}]))", .{ns});
+    var locals: [driver.MAX_LOCALS]Value = [_]Value{.nil_val} ** driver.MAX_LOCALS;
+    var reader = Reader.init(arena, req_src);
+    const form = (try reader.read()) orelse return error.EmptyRequireForm;
+    const node = try analyzeForm(arena, rt, env, null, form, macro_table);
+    _ = try driver.evalForm(rt, env, &locals, arena, node);
+
+    return serialize.serializeEnvelope(allocator, closure.chunks.items, .{ .ns = ns, .args = args });
 }
 
 // === cljw build CLI core + embedded-run startup ===
@@ -125,14 +162,18 @@ fn readSelfExe(io: std.Io, gpa: std.mem.Allocator) ![]u8 {
     return readFileAll(io, gpa, path);
 }
 
-/// `cljw build <in.clj> -o <out>`: compile the source to a payload envelope
-/// and append it to a copy of the running cljw binary as a self-contained
-/// artifact with a `"CLJC"` trailer (ADR-0034 amendment 1/2). Build-time
-/// eval runs top-level side effects (A1-D2). The output is executable.
-pub fn buildFile(io: std.Io, gpa: std.mem.Allocator, arena: std.mem.Allocator, in_path: []const u8, out_path: []const u8, load_paths: []const []const u8) !void {
-    const source = try readFileAll(io, gpa, in_path);
-    defer gpa.free(source);
+/// What to build: a script (the entry file's top-level forms ARE the program)
+/// or a `-m` main entry (require the closure, invoke `(<ns>/-main …)` at run).
+const BuildSpec = union(enum) {
+    script: []const u8, // entry source text
+    main: struct { ns: []const u8, args: []const []const u8 },
+};
 
+/// Shared build driver: bootstrap a runtime + classpath, produce the payload
+/// per `spec`, and append it to a copy of the running cljw binary as a
+/// self-contained `"CLJC"`-trailered executable. `buildFile` / `buildMainFile`
+/// are the two thin entry points (F-009/F-011 — one setup, one write tail).
+fn buildArtifact(io: std.Io, gpa: std.mem.Allocator, arena: std.mem.Allocator, out_path: []const u8, load_paths: []const []const u8, spec: BuildSpec) !void {
     var rt = Runtime.init(io, gpa);
     defer rt.deinit();
     var env = try Env.init(&rt);
@@ -148,7 +189,10 @@ pub fn buildFile(io: std.Io, gpa: std.mem.Allocator, arena: std.mem.Allocator, i
     rt.load_paths = load_paths;
     require_resolver.installChained(&rt);
 
-    const payload = try buildEnvelope(gpa, &rt, &env, &macro_table, arena, source);
+    const payload = switch (spec) {
+        .script => |src| try buildEnvelope(gpa, &rt, &env, &macro_table, arena, src),
+        .main => |m| try buildMainEnvelope(gpa, &rt, &env, &macro_table, arena, m.ns, m.args),
+    };
     defer gpa.free(payload);
 
     const self_bytes = try readSelfExe(io, gpa);
@@ -165,6 +209,24 @@ pub fn buildFile(io: std.Io, gpa: std.mem.Allocator, arena: std.mem.Allocator, i
     try ow.interface.flush();
 }
 
+/// `cljw build <in.clj> -o <out>` (script mode): compile the source to a
+/// payload envelope and append it to a copy of the running cljw binary as a
+/// self-contained artifact with a `"CLJC"` trailer (ADR-0034 amendment 1/2).
+/// Build-time eval runs top-level side effects (A1-D2). The output is executable.
+pub fn buildFile(io: std.Io, gpa: std.mem.Allocator, arena: std.mem.Allocator, in_path: []const u8, out_path: []const u8, load_paths: []const []const u8) !void {
+    const source = try readFileAll(io, gpa, in_path);
+    defer gpa.free(source);
+    return buildArtifact(io, gpa, arena, out_path, load_paths, .{ .script = source });
+}
+
+/// `cljw build -m <ns> [args…] -o <out>` (main mode, ADR-0034 am4): embed the
+/// require closure for `<ns>` + an entry manifest; the produced binary invokes
+/// `(<ns>/-main args)` at run, NOT at build (so a server `-main` does not hang
+/// the build).
+pub fn buildMainFile(io: std.Io, gpa: std.mem.Allocator, arena: std.mem.Allocator, ns: []const u8, args: []const []const u8, out_path: []const u8, load_paths: []const []const u8) !void {
+    return buildArtifact(io, gpa, arena, out_path, load_paths, .{ .main = .{ .ns = ns, .args = args } });
+}
+
 /// Startup hook: if the running binary carries an embedded payload trailer,
 /// deserialize + run it on the VM and return true; otherwise return false so
 /// normal CLI dispatch proceeds. Per-chunk INTERLEAVED deserialize+run (a
@@ -173,7 +235,7 @@ pub fn buildFile(io: std.Io, gpa: std.mem.Allocator, arena: std.mem.Allocator, i
 /// may be called in a later one), bulk-freed by the caller's arena. The
 /// payload's own `(println …)` etc. write straight to process stdout via
 /// `rt.io`, so no writer is threaded here.
-pub fn tryRunEmbedded(io: std.Io, gpa: std.mem.Allocator, arena: std.mem.Allocator, stdout: *std.Io.Writer) !bool {
+pub fn tryRunEmbedded(io: std.Io, gpa: std.mem.Allocator, arena: std.mem.Allocator, stdout: *std.Io.Writer, main_args: []const []const u8) !bool {
     // D-140: reads the whole self-exe to check the tail; a footer-only seek
     // would avoid the full read on every normal startup.
     const self_bytes = try readSelfExe(io, gpa);
@@ -199,6 +261,24 @@ pub fn tryRunEmbedded(io: std.Io, gpa: std.mem.Allocator, arena: std.mem.Allocat
     try bootstrap.setupCoreAot(arena, &rt, &env, &macro_table, @import("bootstrap_cache").data);
 
     try driver.runEnvelope(&rt, &env, arena, payload);
+
+    // ADR-0034 am4 A4-D3: main mode. The payload's entry manifest (if any)
+    // names `<ns>` whose `-main` is the entry point; the closure chunks just
+    // ran, so `<ns>` is defined. Invoke `(<ns>/-main args)` via the SAME
+    // `run_mode.synthMainNs` `cljw -M -m` uses (F-011), with args = the baked
+    // build-time args UNLESS the binary got its own runtime argv (`./out 8080`),
+    // which overrides. `requiring-resolve` is idempotent (ns already loaded).
+    if (try serialize.readEnvelopeEntry(arena, payload)) |entry| {
+        const all_args = if (main_args.len > 0) main_args else entry.args;
+        const src = try run_mode.synthMainNs(arena, entry.ns, all_args);
+        var reader = Reader.init(arena, src);
+        var locals: [driver.MAX_LOCALS]Value = [_]Value{.nil_val} ** driver.MAX_LOCALS;
+        while (try reader.read()) |form| {
+            const node = try analyzeForm(arena, &rt, &env, null, form, &macro_table);
+            _ = try driver.evalForm(&rt, &env, &locals, arena, node);
+        }
+    }
+
     try stdout.flush();
     return true;
 }

@@ -137,7 +137,10 @@ fn runMain(
 /// resolve 'ns/-main)] (if v (v "a" "b") (throw …)))`. The guard turns a missing
 /// `-main` into a clean message rather than a bare resolve failure (survey edge
 /// case 2); the prepended setter binds `*command-line-args*` for D-310.
-fn synthMainNs(arena: std.mem.Allocator, ns: []const u8, args: []const []const u8) ![]const u8 {
+/// Shared by `cljw -M -m` (this module) AND `cljw build -m`'s embedded-run
+/// startup (`builder.tryRunEmbedded`), so the built binary's `-m` behaviour is
+/// byte-identical to the run path (ADR-0034 am4 A4-D3, F-011).
+pub fn synthMainNs(arena: std.mem.Allocator, ns: []const u8, args: []const []const u8) ![]const u8 {
     var aw: std.Io.Writer.Allocating = .init(arena);
     const w = &aw.writer;
     try writeClArgsSetter(w, args);

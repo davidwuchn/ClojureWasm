@@ -84,11 +84,19 @@ pub fn dispatch(init: std.process.Init) !void {
         if (init.environ_map.get("CLJW_EVAL_MAX_HEAP_MB")) |raw| (if (std.fmt.parseInt(usize, raw, 10) catch null) |mb| mb * 1024 * 1024 else null) else null,
     );
 
-    // Self-contained artifact check (ADR-0034 / D-100(b)): if this binary
-    // carries an embedded bytecode payload trailer, run it and exit —
-    // argv is ignored for a built artifact at v0.1.0. A plain `cljw` has
-    // no trailer, so this is a no-op and normal dispatch proceeds.
-    if (try builder.tryRunEmbedded(io, gpa, arena, stdout)) return;
+    // Self-contained artifact check (ADR-0034 / D-100(b) + am4): if this binary
+    // carries an embedded bytecode payload trailer, run it and exit. For a
+    // `-m` (main-mode) artifact the binary's own runtime argv reaches `-main`
+    // (`./out 8080`), so collect argv[1..] and pass it through; a script-mode
+    // artifact ignores it. A plain `cljw` has no trailer → no-op, normal
+    // dispatch proceeds.
+    var embedded_args: std.ArrayList([]const u8) = .empty;
+    {
+        var ait = init.minimal.args.iterate();
+        _ = ait.skip(); // argv[0]
+        while (ait.next()) |a| try embedded_args.append(arena, a);
+    }
+    if (try builder.tryRunEmbedded(io, gpa, arena, stdout, embedded_args.items)) return;
 
     var args = init.minimal.args.iterate();
     _ = args.skip(); // argv[0]
@@ -131,19 +139,27 @@ pub fn dispatch(init: std.process.Init) !void {
             return nrepl.run(io, gpa, arena, stdout, stderr, port);
         }
         if (std.mem.eql(u8, first, "build")) {
-            // D-100(b) + ADR-0034 am3 (D-356): `cljw build <in.clj> -o <out>
-            // [-cp <dirs>] [-A:alias…]` — compile the source AND its require
-            // closure (resolved off the classpath) into a self-contained
-            // binary. Classpath resolution mirrors the run path (A3-D4): `-cp`
-            // wins, else $CLJW_PATH, else ".", plus a cwd `./deps.edn`.
+            // D-100(b) + ADR-0034 am3/am4: `cljw build <in.clj> -o <out>` (script
+            // mode) OR `cljw build -m <ns> [args…] -o <out>` (main mode, am4 —
+            // embed the require closure + invoke `(<ns>/-main args)` at RUN, not
+            // build), both with `[-cp <dirs>] [-A:alias…]`. Classpath resolution
+            // mirrors the run path (A3-D4): `-cp` wins, else $CLJW_PATH, else ".".
             var in_path: ?[]const u8 = null;
             var out_path: ?[]const u8 = null;
             var build_cp: ?[]const u8 = null;
+            var main_ns: ?[]const u8 = null;
             var build_aliases: std.ArrayList([]const u8) = .empty;
+            var main_args: std.ArrayList([]const u8) = .empty;
             while (args.next()) |a| {
                 if (std.mem.eql(u8, a, "-o")) {
                     out_path = args.next() orelse {
                         try stderr.writeAll("build: -o requires a path\n");
+                        try stderr.flush();
+                        std.process.exit(1);
+                    };
+                } else if (std.mem.eql(u8, a, "-m") or std.mem.eql(u8, a, "--main")) {
+                    main_ns = args.next() orelse {
+                        try stderr.writeAll("build: -m requires a namespace\n");
                         try stderr.flush();
                         std.process.exit(1);
                     };
@@ -162,6 +178,9 @@ pub fn dispatch(init: std.process.Init) !void {
                     try stderr.print("build: unknown option '{s}'\n", .{a});
                     try stderr.flush();
                     std.process.exit(1);
+                } else if (main_ns != null) {
+                    // A bare token after `-m <ns>` is a `-main` arg (baked default).
+                    try main_args.append(arena, a);
                 } else if (in_path == null) {
                     in_path = a;
                 } else {
@@ -170,26 +189,39 @@ pub fn dispatch(init: std.process.Init) !void {
                     std.process.exit(1);
                 }
             }
-            const in = in_path orelse {
-                try stderr.writeAll("build: missing <in.clj>\n");
-                try stderr.flush();
-                std.process.exit(1);
-            };
             const out = out_path orelse {
                 try stderr.writeAll("build: missing -o <out>\n");
                 try stderr.flush();
                 std.process.exit(1);
             };
+            if (main_ns != null and in_path != null) {
+                try stderr.writeAll("build: -m <ns> and a source file are mutually exclusive\n");
+                try stderr.flush();
+                std.process.exit(1);
+            }
+            if (main_ns == null and in_path == null) {
+                try stderr.writeAll("build: missing <in.clj> or -m <ns>\n");
+                try stderr.flush();
+                std.process.exit(1);
+            }
             const git_cache_base: ?[]const u8 = init.environ_map.get("CLJW_HOME") orelse
                 if (init.environ_map.get("HOME")) |h| try std.fmt.allocPrint(arena, "{s}/.cljw", .{h}) else null;
             const cp_spec = build_cp orelse init.environ_map.get("CLJW_PATH") orelse ".";
             const base_paths = try splitClasspath(arena, cp_spec);
             const deps = try loadDepsEdn(io, arena, stderr, base_paths, build_aliases.items, git_cache_base);
-            builder.buildFile(io, gpa, arena, in, out, deps.load_paths) catch |err| {
-                try stderr.print("build failed: {s}\n", .{@errorName(err)});
-                try stderr.flush();
-                std.process.exit(1);
-            };
+            if (main_ns) |mns| {
+                builder.buildMainFile(io, gpa, arena, mns, main_args.items, out, deps.load_paths) catch |err| {
+                    try stderr.print("build failed: {s}\n", .{@errorName(err)});
+                    try stderr.flush();
+                    std.process.exit(1);
+                };
+            } else {
+                builder.buildFile(io, gpa, arena, in_path.?, out, deps.load_paths) catch |err| {
+                    try stderr.print("build failed: {s}\n", .{@errorName(err)});
+                    try stderr.flush();
+                    std.process.exit(1);
+                };
+            }
             return;
         }
         // Not a recognised subcommand — fall through to legacy flag
