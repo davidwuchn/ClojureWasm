@@ -28,6 +28,17 @@ active:
       requires, ship a build script + a note on the relative runtime-asset layout.
       $MY/serverless-v2 task; recorded here for discoverability.
     last_reviewed: "2026-06-09"
+  - id: "D-357"
+    status: "open — java.io.File/.getAbsolutePath + .getCanonicalPath deferred stub (ADR-0126 Cycle 1). Both raise feature_not_supported: the Zig 0.16 std.Io handle model exposes NO process cwd path (getCwd/realpath/posix.getcwd all removed), so a relative path cannot be resolved to a true absolute. Shipping a wrong (e.g. cwd-less) answer would be a silent lie (no-op-stub rule), so the honest transient stub raises instead. Absolute-path inputs could be lexically cleaned now, but a half-working method (works for absolute, errors for relative) is worse than a uniform explicit error. Surfaced 2026-06-09 (ADR-0126)."
+    category: "interop"
+    barrier: |-
+      blocked-by: a cwd-path accessor in the cljw io layer. Options: thread the
+      process cwd captured at startup (Juicy Main `init` does not currently expose
+      it as a path), or a libc getcwd shim. When available: resolvePosix(cwd, path)
+      for relative inputs; lexical resolvePosix for absolute. Until then the stub
+      stands. clojure.java.io's file/as-relative-path/make-parents do NOT depend on
+      it (they use isAbsolute/getPath/getParentFile/mkdirs).
+    last_reviewed: "2026-06-09"
   - id: "D-351"
     status: "open — native in-process eval deadline / step budget (isolation dim (a)). cljw has NO eval timeout: an infinite loop in evaluated code hangs the process; the playground relies on an OS subprocess + `timeout` to kill it. The VM back-edge safe-point poll (vm.zig:119-141) already loads an atomic flag every back-edge (predicted-not-taken) — a deadline/step budget rides this at ~zero cost, mirroring zwasm's per-instruction fuel charge (dispatch.zig:109-119). Surfaced 2026-06-09 by the isolation scope study (private/notes/cljw_isolation_scope.md)."
     category: "isolation"

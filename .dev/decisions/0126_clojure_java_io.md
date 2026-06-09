@@ -3,8 +3,10 @@
 - Status: Proposed → Accepted
 - Date: 2026-06-09
 - Deciders: autonomous loop (user-directed: "clojure.io の機能を full に入れたい")
-- Tier: B (ROADMAP §6 host class table: `clojure.java.io: B # same names,
-  Zig-native I/O backing`; `java.io.File: B # via clojure.java.io`)
+- Tier: A for `java.io.File` (per the `compat_tiers.yaml` SSOT, which is
+  authoritative for tier; the ROADMAP §6 table's "B" is superseded by the
+  SSOT). `clojure.java.io` ns: Tier B (ROADMAP §6: same names, Zig-native
+  I/O backing).
 
 ## Context
 

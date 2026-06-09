@@ -6,8 +6,9 @@
 #   - .static_method    : (java.util.UUID/randomUUID),
 #                         (java.lang.System/currentTimeMillis)
 #   - .constructor      : (java.io.File. "/tmp/x.txt")
-#   - .instance_member  : (.path file)  [field-first via op_method_call;
-#                         op_field_access retired in ADR-0050 am1]
+#   - .instance_member  : (.getPath file)  [real java.io.File method, ADR-0126;
+#                         was the placeholder `.path` field of the retired
+#                         typed_instance skeleton before ADR-0126 Cycle 1]
 #   - error path        : unresolved class + unknown method on resolved class
 #
 # Confirms `resolveJavaSurface` closes the cljw-prefix gap that
@@ -42,8 +43,10 @@ out=$("$BIN" -e '(> (java.lang.System/nanoTime) 0)' 2>&1 | tail -n 1)
 [[ "$out" == 'true' ]] || fail "system_nanoTime: expected 'true', got '$out'"
 echo "PASS system_nanoTime -> > 0 true"
 
-# --- Case 4: (java.io.File. path) returns a value carrying .path ---
-out=$("$BIN" -e '(.path (java.io.File. "/tmp/x.txt"))' 2>&1 | tail -n 1)
+# --- Case 4: (java.io.File. path) returns a File whose .getPath is the path
+#     (ADR-0126: java.io.File is now a host_instance with real methods; the old
+#     `.path` field of the typed_instance skeleton is gone). ---
+out=$("$BIN" -e '(.getPath (java.io.File. "/tmp/x.txt"))' 2>&1 | tail -n 1)
 [[ "$out" == '"/tmp/x.txt"' ]] || fail "file_ctor_path: expected '\"/tmp/x.txt\"', got '$out'"
 echo "PASS file_ctor_path -> /tmp/x.txt"
 

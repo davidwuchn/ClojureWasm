@@ -489,6 +489,7 @@ run_step "e2e_phase16_http_client"          "bash test/e2e/phase16_http_client.s
 run_step "e2e_phase16_eval_budget"          "bash test/e2e/phase16_eval_budget.sh"
 run_step "e2e_phase16_file_io_errors"       "bash test/e2e/phase16_file_io_errors.sh"
 run_step "e2e_phase16_fs_jail"              "bash test/e2e/phase16_fs_jail.sh"
+run_step "e2e_phase16_java_io_file"         "bash test/e2e/phase16_java_io_file.sh"
 run_step "e2e_phase16_tokenizer_long_input" "bash test/e2e/phase16_tokenizer_long_input.sh"
 run_step "e2e_phase15_for_while"            "bash test/e2e/phase15_for_while.sh"
 run_step "e2e_phase15_ns_import"            "bash test/e2e/phase15_ns_import.sh"

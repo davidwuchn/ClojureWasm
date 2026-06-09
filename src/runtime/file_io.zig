@@ -43,6 +43,71 @@ pub fn exists(io: std.Io, path: []const u8) bool {
     return true;
 }
 
+// --- java.io.File metadata + mutation (ADR-0126; namespace-neutral per F-009) ---
+// Each operates on an already-jail-resolved path (the surface calls jailResolve
+// first). `statKind` is the single existence/type probe: null == the path does
+// not exist (or could not be stat'd), so `exists`/`isFile`/`isDirectory` all
+// derive from it without three separate syscalls' worth of distinct logic.
+
+/// `stat` a path, following symlinks. Returns null when the path does not exist
+/// (or cannot be stat'd — treated as absent, matching `java.io.File`'s
+/// "missing → false/0" contract for every query method).
+pub fn statKind(io: std.Io, path: []const u8) ?std.Io.File.Kind {
+    const st = std.Io.Dir.cwd().statFile(io, path, .{}) catch return null;
+    return st.kind;
+}
+
+/// Byte length of `path`, or 0 when it does not exist / is not a regular file
+/// (java.io.File.length()'s documented behaviour for non-files).
+pub fn fileSize(io: std.Io, path: []const u8) u64 {
+    const st = std.Io.Dir.cwd().statFile(io, path, .{}) catch return 0;
+    return st.size;
+}
+
+/// `mkdir` — create exactly one directory. False on any failure (already
+/// exists, missing parent, permission), mirroring File.mkdir()'s boolean.
+pub fn makeDir(io: std.Io, path: []const u8) bool {
+    std.Io.Dir.cwd().createDir(io, path, .default_dir) catch return false;
+    return true;
+}
+
+/// `mkdirs` — create the directory and any missing parents. False on failure.
+pub fn makeDirs(io: std.Io, path: []const u8) bool {
+    std.Io.Dir.cwd().createDirPath(io, path) catch return false;
+    return true;
+}
+
+/// `delete` — remove a file or (empty) directory. False when nothing was
+/// deleted (absent / non-empty dir / permission), mirroring File.delete().
+pub fn deletePath(io: std.Io, path: []const u8) bool {
+    if (std.Io.Dir.cwd().deleteFile(io, path)) |_| {
+        return true;
+    } else |_| {
+        // deleteFile failed (path is a directory, or absent) — fall through to
+        // deleteDir; a still-failing deleteDir means nothing was removed.
+    }
+    std.Io.Dir.cwd().deleteDir(io, path) catch return false;
+    return true;
+}
+
+/// List the entry names of directory `path`. Returns null when `path` is not a
+/// readable directory (java.io.File.list() returns null then). Caller owns the
+/// returned slice AND each name slice (free each, then the outer slice).
+pub fn listDir(io: std.Io, alloc: std.mem.Allocator, path: []const u8) !?[][]u8 {
+    var dir = std.Io.Dir.cwd().openDir(io, path, .{ .iterate = true }) catch return null;
+    defer dir.close(io);
+    var names: std.ArrayList([]u8) = .empty;
+    errdefer {
+        for (names.items) |n| alloc.free(n);
+        names.deinit(alloc);
+    }
+    var it = dir.iterate();
+    while (try it.next(io)) |entry| {
+        try names.append(alloc, try alloc.dupe(u8, entry.name));
+    }
+    return try names.toOwnedSlice(alloc);
+}
+
 /// Error from the deploy-mode FS jail (ADR-0123 / SE-6/7).
 pub const JailError = error{FsJailEscape} || std.mem.Allocator.Error;
 
@@ -208,4 +273,59 @@ test "exists distinguishes present from missing" {
     try testing.expect(!exists(io, tmp_path));
     try writeAll(io, tmp_path, "x");
     try testing.expect(exists(io, tmp_path));
+}
+
+test "statKind / fileSize distinguish file, dir, and missing" {
+    var th = std.Io.Threaded.init(testing.allocator, .{});
+    defer th.deinit();
+    const io = th.io();
+
+    const base = "/tmp/cljw_file_io_statkind";
+    const f = base ++ "/a.txt";
+    defer std.Io.Dir.cwd().deleteTree(io, base) catch {};
+    try testing.expect(makeDirs(io, base));
+    try writeAll(io, f, "abcde");
+
+    try testing.expectEqual(@as(?std.Io.File.Kind, .file), statKind(io, f));
+    try testing.expectEqual(@as(?std.Io.File.Kind, .directory), statKind(io, base));
+    try testing.expectEqual(@as(?std.Io.File.Kind, null), statKind(io, base ++ "/missing"));
+    try testing.expectEqual(@as(u64, 5), fileSize(io, f));
+    try testing.expectEqual(@as(u64, 0), fileSize(io, base ++ "/missing"));
+}
+
+test "makeDir / makeDirs / deletePath booleans" {
+    var th = std.Io.Threaded.init(testing.allocator, .{});
+    defer th.deinit();
+    const io = th.io();
+
+    const base = "/tmp/cljw_file_io_mkdir";
+    defer std.Io.Dir.cwd().deleteTree(io, base) catch {};
+
+    try testing.expect(makeDirs(io, base ++ "/x/y")); // creates parents
+    try testing.expect(makeDir(io, base ++ "/x/z")); // single under existing parent
+    try testing.expect(!makeDir(io, base ++ "/nope/deep")); // missing parent → false
+    try testing.expect(deletePath(io, base ++ "/x/z")); // remove empty dir
+    try testing.expect(!deletePath(io, base ++ "/x/z")); // already gone → false
+}
+
+test "listDir returns names, null for a non-directory" {
+    var th = std.Io.Threaded.init(testing.allocator, .{});
+    defer th.deinit();
+    const io = th.io();
+
+    const base = "/tmp/cljw_file_io_listdir";
+    defer std.Io.Dir.cwd().deleteTree(io, base) catch {};
+    try testing.expect(makeDirs(io, base));
+    try writeAll(io, base ++ "/one", "1");
+    try writeAll(io, base ++ "/two", "2");
+
+    const names = (try listDir(io, testing.allocator, base)).?;
+    defer {
+        for (names) |n| testing.allocator.free(n);
+        testing.allocator.free(names);
+    }
+    try testing.expectEqual(@as(usize, 2), names.len);
+
+    // A regular file is not a directory → null.
+    try testing.expectEqual(@as(?[][]u8, null), try listDir(io, testing.allocator, base ++ "/one"));
 }
