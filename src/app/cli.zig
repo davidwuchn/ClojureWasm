@@ -70,7 +70,7 @@ pub fn dispatch(init: std.process.Init) !void {
     // carries an embedded bytecode payload trailer, run it and exit —
     // argv is ignored for a built artifact at v0.1.0. A plain `cljw` has
     // no trailer, so this is a no-op and normal dispatch proceeds.
-    if (try builder.tryRunEmbedded(io, gpa, arena)) return;
+    if (try builder.tryRunEmbedded(io, gpa, arena, stdout)) return;
 
     var args = init.minimal.args.iterate();
     _ = args.skip(); // argv[0]

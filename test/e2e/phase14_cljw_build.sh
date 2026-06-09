@@ -50,4 +50,20 @@ plain=$("$BIN" -e '(+ 1 2)')
 [[ "$plain" == "3" ]] || fail "plain_unaffected: got '$plain', want '3'"
 echo "PASS plain_unaffected -> 3"
 
+# (4) Multi-line stdout must be ordered + complete. Regression for the
+#     embedded-run stdout bug: tryRunEmbedded left rt.stdout null, so each
+#     println built a fresh offset-tracking writer that restarted at offset 0
+#     and overwrote prior lines (garbled / reordered / missing output). Routing
+#     through the one process-shared writer (+ flush) fixes it.
+cat >"$TMP/multi.clj" <<'CLJ'
+(println "line-1")
+(println "line-2" (+ 1 2))
+(println "line-3")
+CLJ
+"$BIN" build "$TMP/multi.clj" -o "$TMP/multi" >/dev/null
+got_multi=$("$TMP/multi")
+want_multi=$'line-1\nline-2 3\nline-3'
+[[ "$got_multi" == "$want_multi" ]] || fail "multiline_ordered: got '$got_multi', want '$want_multi'"
+echo "PASS multiline_ordered -> 3 lines, ordered + complete"
+
 echo "ALL phase14_cljw_build PASS"

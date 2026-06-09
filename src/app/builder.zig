@@ -131,7 +131,7 @@ pub fn buildFile(io: std.Io, gpa: std.mem.Allocator, arena: std.mem.Allocator, i
 /// may be called in a later one), bulk-freed by the caller's arena. The
 /// payload's own `(println …)` etc. write straight to process stdout via
 /// `rt.io`, so no writer is threaded here.
-pub fn tryRunEmbedded(io: std.Io, gpa: std.mem.Allocator, arena: std.mem.Allocator) !bool {
+pub fn tryRunEmbedded(io: std.Io, gpa: std.mem.Allocator, arena: std.mem.Allocator, stdout: *std.Io.Writer) !bool {
     // D-140: reads the whole self-exe to check the tail; a footer-only seek
     // would avoid the full read on every normal startup.
     const self_bytes = try readSelfExe(io, gpa);
@@ -140,6 +140,12 @@ pub fn tryRunEmbedded(io: std.Io, gpa: std.mem.Allocator, arena: std.mem.Allocat
 
     var rt = Runtime.init(io, gpa);
     defer rt.deinit();
+    // Route every println/print/prn through the ONE process-shared, offset-
+    // tracking stdout writer (D-096). Without this, rt.stdout stays null and the
+    // print primitive falls back to a fresh per-call writer whose file offset
+    // restarts at 0 each time, so successive lines overwrite each other (the
+    // built-binary stdout-corruption bug). Mirrors runner.zig's setup + flush.
+    rt.stdout = stdout;
     var env = try Env.init(&rt);
     defer env.deinit();
     vm.installVTable(&rt); // wires evalChunk so deserialized fns run on the VM
@@ -151,6 +157,7 @@ pub fn tryRunEmbedded(io: std.Io, gpa: std.mem.Allocator, arena: std.mem.Allocat
     try bootstrap.setupCoreAot(arena, &rt, &env, &macro_table, @import("bootstrap_cache").data);
 
     try driver.runEnvelope(&rt, &env, arena, payload);
+    try stdout.flush();
     return true;
 }
 
