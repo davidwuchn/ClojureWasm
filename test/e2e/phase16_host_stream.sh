@@ -30,8 +30,9 @@ assert_eq 'slurp_string' "$(run '(rt/__stream-slurp (rt/__string-reader "hello w
 # --- reader: blank-line significance (line-seq must not collapse) ---
 assert_eq 'blank_lines'  "$(run '(let [r (rt/__string-reader "a\n\nb")] [(.readLine r) (.readLine r) (.readLine r)])')" '["a" "" "b"]'
 
-# --- class / instance? (family; leaf-name recognition is a later cycle) ---
-assert_eq 'class_reader'  "$(run '(class (rt/__string-reader "x"))')" 'java.io.Reader'
+# --- class / instance? — (class s) is the clj-concrete buffered type (D-358);
+#     instance? is true for the concrete + its java.io superclass chain.
+assert_eq 'class_reader'  "$(run '(class (rt/__string-reader "x"))')" 'java.io.BufferedReader'
 assert_eq 'inst_reader'   "$(run '(instance? java.io.Reader (rt/__string-reader "x"))')" 'true'
 assert_eq 'inst_reader_neg' "$(run '(instance? java.io.Reader 5)')" 'false'
 assert_eq 'inst_writer'   "$(run "(instance? java.io.Writer (rt/__open-writer \"$TMP/w.txt\"))")" 'true'
