@@ -5,10 +5,10 @@
 
 ## Resume contract
 
-- **HEAD**: see `git log` (D-356 require-closure embedding just landed +
-  pushed; the ADR commit precedes the source commit). Gate: the full
-  `--serial-e2e` gate was run on the D-356 source state before the source
-  commit (it stamps `.dev/.gate_pass`).
+- **HEAD**: see `git log` (D-356 require-closure embedding + D-363 `cljw build
+  -m` main mode both landed + pushed; each ADR commit precedes its source
+  commit). Gate: the full `--serial-e2e` gate is run on each source state before
+  its commit (it stamps `.dev/.gate_pass`).
 - **First commit on resume MUST be**: open **D-362** (Clojure Conj 2026 CFP
   runway) — an ORDERED, user-collaborative sequence: (1) register
   `$MY/playground-v2` as `cw-playground` under the clojurewasm org; (2)
@@ -19,29 +19,30 @@
   relative path to that tag (url+hash — re-read F-001's amendment note first,
   this is the planned relative→tag transition); (7) polish README/CFP. Full
   row in `.dev/debt.yaml` D-362. Start with step 1 + confirm org-repo specifics
-  with the user (genuine external action).
+  with the user (genuine external action). The bookshelf demo now builds via
+  `cljw build -A:cljw -m bookshelf.server -o bookshelf` (D-363 -m mode — the
+  server `-main` runs at RUN, not build).
 - **Forbidden**: pushing to `main`; pinning a zwasm tag UNILATERALLY (step 6 is
   an F-001-adjacent transition — confirm + log an F-001 Revision-history entry
-  when taken). For the bookshelf demo build, a top-level `(-main 8080)` in
-  `build_main.clj` runs at BUILD time (Clojure-AOT, ADR-0034 A1-D2) — the demo
-  entry shape must avoid a build-time server-start (run-time-only entry), this
-  is a demo-side concern, not a cljw gap.
+  when taken).
 
-## Just landed — D-356 cljw build require-closure embedding
+## Just landed — D-363 cljw build -m main-entry mode
 
-ADR-0034 amendment 3 (DA fork → Alt-2 chunk-capture-during-load). `cljw build`
-now produces a self-contained binary for a multi-file `(require '[lib])`-over-
-classpath app. Part 1 = classpath prereq (`buildFile` load_paths +
-`installChained` after `setupCore`; cli.zig build branch parses `-cp/-A` +
-`loadDepsEdn`, mirroring the run path). Part 2 = a Layer-0 type-erased
-`build_chunk_sink`; `loader.loadNamespace` compiles each filesystem lib form
-AFTER eval (post-order replay) → `buildEnvelope` prepends the closure chunks
-before the entry chunks. Run-time enabler = op_require idempotency. Bootstrap-ns
-exclusion via `ResolvedSource.from_filesystem` (F-013-clean). Also fixed a
-pre-existing serialize gap (ns_filters side-table dropped → `(ns x (:require …))`
-closure chunk crashed at run); added serialize/deserialize/free + 2 round-trip
-tests + format header + cljw-formats archive. e2e cases 5/6 green; transitive
-a→b verified self-contained.
+ADR-0034 amendment 4 (DA fork → Alt-2 entry-manifest). `cljw build -m <ns>
+[args] -o out` embeds the require closure for `<ns>` + an entry manifest at the
+payload front (artifact metadata, ELF-`e_entry`-style); the binary invokes
+`(<ns>/-main args)` at RUN, NOT build — so a server `-main` no longer hangs the
+build (resolves the D-356 residual as a real cljw feature). Run-side routes
+through the shared `run_mode.synthMainNs` (pub) so the built `-m` binary is
+byte-identical to `cljw -M -m` (F-011); the binary's runtime argv reaches
+`-main` (`./out 8080`). serialize.zig: envelope manifest (writeManifest/
+skipManifest/readEnvelopeEntry; deserialize+iterator skip it → runEnvelope
+unchanged). builder: buildMainEnvelope + buildArtifact(BuildSpec). Build stays
+Clojure-AOT-faithful (build=load); `-main` is the "don't run at build" escape
+hatch (no env-vs-side-effect classifier; cw v0 build_mode rejected, F-013). e2e
+cases 7-10 green. RESIDUAL (D-363 row, low-pri): deps.edn `:main-opts` does not
+yet drive the build entry — only explicit CLI `-m`. Script mode (D-356)
+unchanged.
 
 ## Process discipline (SSOT)
 
@@ -61,8 +62,9 @@ a→b verified self-contained.
 
 ## Cold-start reading order
 
-handover → `.dev/debt.yaml` (**D-362** = next, CFP runway; D-356 DISCHARGED) →
+handover → `.dev/debt.yaml` (**D-362** = next, CFP runway; D-356 + D-363
+DISCHARGED) →
 `.dev/decisions/0034_cljw_build_single_mode_tier0_metadata_edn_decode.md`
-(amendment 3 = the require-closure embedding model) →
-`private/notes/D356-require-closure-embedding.md` (the session note + residual)
-→ CLAUDE.md.
+(amendment 3 = require-closure embedding; amendment 4 = `-m` main mode) →
+`private/notes/D363-cljw-build-main-mode.md` + `…D356-require-closure-embedding.md`
+(session notes + residuals) → CLAUDE.md.
