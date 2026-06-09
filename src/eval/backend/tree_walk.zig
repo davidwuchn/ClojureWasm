@@ -658,6 +658,7 @@ fn evalSetLiteral(rt: *Runtime, env: *Env, locals: []Value, n: node_mod.SetLiter
 
 const type_descriptor_mod = @import("../../runtime/type_descriptor.zig");
 const object_method = @import("object_method.zig");
+const clojure_lang_method = @import("clojure_lang_method.zig");
 
 /// Unified Java/host interop dispatch arm (ADR-0050, am1). Routes on
 /// `n.kind` to the three kind-specific helpers below.
@@ -726,6 +727,9 @@ fn evalInstanceMember(rt: *Runtime, env: *Env, locals: []Value, n: node_mod.Inte
     const me = td.lookupMethod(null, n.name) orelse {
         // Universal java.lang.Object method fallback (D-207): str/=/hash/class.
         if (try object_method.tryObjectMethod(rt, env, receiver, td, n.name, args_buf[1..])) |r| return r;
+        // clojure.lang read/op methods on a NATIVE collection (D-371): `.valAt`/
+        // `.cons`/`.count`/… delegate to the clojure.core equivalent (get/conj/…).
+        if (try clojure_lang_method.tryClojureLangMethod(rt, env, receiver, n.name, args_buf[1..], n.loc)) |r| return r;
         return error_catalog.raise(.protocol_no_satisfies, n.loc, .{
             .protocol = "<.member>",
             .method = n.name,
