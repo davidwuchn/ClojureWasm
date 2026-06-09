@@ -73,9 +73,9 @@ field completeness, the 2 axes the Value-tag gate doesn't cover) + VM-parity
 
 ## Cold-start reading order
 
-handover → `.dev/debt.yaml` (**D-362** = next, CFP runway; D-356 + D-363
-DISCHARGED; **D-365** = serialize completeness, PARTIAL w/ a structural
-follow-up) →
+handover → `.dev/debt.yaml` (**D-366** = FIRST task (license); **D-362** = CFP
+runway; **D-367** = README; D-356/D-363 DISCHARGED; **D-365** = serialize
+completeness, PARTIAL w/ a structural follow-up) →
 `.dev/decisions/0034_cljw_build_single_mode_tier0_metadata_edn_decode.md`
 (am3 = require-closure embedding; am4 = `-m` main mode) →
 `private/notes/D365-serialize-regex-symmetry.md` +
