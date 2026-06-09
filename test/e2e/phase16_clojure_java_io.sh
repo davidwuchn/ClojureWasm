@@ -52,6 +52,12 @@ assert_eq 'delete_throws' "$(run "(try (clojure.java.io/delete-file \"$TMP/gone\
 assert_eq 'make_parents' "$(run "(clojure.java.io/make-parents (clojure.java.io/file \"$TMP\" \"d1/d2/leaf.txt\"))")" 'true'
 assert_eq 'parents_made' "$(run "(.isDirectory (clojure.java.io/file \"$TMP/d1/d2\"))")" 'true'
 
+# --- as-url / resource deferred stubs (ADR-0126 Cycle 6, D-359) ---
+assert_eq 'as_url_nil'    "$(run '(clojure.java.io/as-url nil)')" 'nil'
+assert_eq 'as_url_throws' "$(run '(try (clojure.java.io/as-url "http://x") (catch Throwable e :threw))')" ':threw'
+assert_eq 'resource_nil'  "$(run '(clojure.java.io/resource "config.edn")')" 'nil'
+assert_eq 'resource_gd'   "$(run '(if-let [r (clojure.java.io/resource "x")] :found :none)')" ':none'
+
 # --- :as alias path (the user-facing form), via a fixture file (sequential eval) ---
 FIX="$TMP/alias_smoke.clj"
 cat > "$FIX" <<EOF

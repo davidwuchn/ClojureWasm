@@ -51,6 +51,16 @@ active:
       both import, or inline in class_name with a cross-ref comment). Low priority:
       family instance? + class already work; leaf instance? is a nicety.
     last_reviewed: "2026-06-09"
+  - id: "D-359"
+    status: "open — clojure.java.io as-url + resource deferred (ADR-0126 Cycle 6). (1) as-url: ClojureWasm has no java.net.URL type (Phase 14+ java.net.*), so as-url throws on a non-nil arg (nil->nil) — an honest stub, not a wrong value. (2) resource: no classpath / resource-loader concept, so resource always returns nil (JVM-faithful 'not found'); callers using (when-let [r (io/resource ...)] ...) degrade gracefully. The IOFactory URL/URI/Socket arms + the do-copy URL arms are likewise absent. Surfaced 2026-06-09 (ADR-0126)."
+    category: "interop"
+    barrier: |-
+      blocked-by: java.net.URL/URI host types (Phase 14+) for as-url + the URL
+      IOFactory arms; an embedded-resource / classpath mechanism for resource.
+      When java.net.URL lands: as-url String/File/URI -> URL, and reader/writer/
+      input-stream/output-stream gain the URL arm. When a resource store lands:
+      resource returns the embedded URL. Until then the stubs stand (honest).
+    last_reviewed: "2026-06-09"
   - id: "D-351"
     status: "open — native in-process eval deadline / step budget (isolation dim (a)). cljw has NO eval timeout: an infinite loop in evaluated code hangs the process; the playground relies on an OS subprocess + `timeout` to kill it. The VM back-edge safe-point poll (vm.zig:119-141) already loads an atomic flag every back-edge (predicted-not-taken) — a deadline/step budget rides this at ~zero cost, mirroring zwasm's per-instruction fuel charge (dispatch.zig:109-119). Surfaced 2026-06-09 by the isolation scope study (private/notes/cljw_isolation_scope.md)."
     category: "isolation"

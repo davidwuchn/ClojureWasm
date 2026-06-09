@@ -26,6 +26,24 @@
     (nil? x) nil
     :else (throw (ex-info (str "Cannot coerce to a java.io.File: " (pr-str x)) {:value x}))))
 
+(defn as-url
+  "Coerce x to a URL. nil -> nil. ClojureWasm has no java.net.URL type yet
+   (Phase 14+, D-359), so a non-nil x cannot be represented as a URL and throws
+   — an honest signal rather than a wrong value."
+  [x]
+  (if (nil? x)
+    nil
+    (throw (ex-info "clojure.java.io/as-url: java.net.URL is not yet available in ClojureWasm" {:value x}))))
+
+(defn resource
+  "Return the URL for a named classpath resource, or nil if not found.
+   ClojureWasm has no classpath / resource loader (D-359), so this always
+   returns nil (every resource is \"not found\"); callers that
+   `(when-let [r (io/resource ...)] ...)` degrade gracefully. Wires up when an
+   embedded-resource mechanism lands."
+  ([n] nil)
+  ([n loader] nil))
+
 (defn as-relative-path
   "Take an as-file-able thing and return its path string if it is relative,
    else throw."
