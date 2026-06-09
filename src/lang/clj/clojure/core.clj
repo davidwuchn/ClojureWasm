@@ -1681,13 +1681,17 @@
 (def resolve (fn* [sym] (rt/__resolve sym)))
 
 ;; Multimethod introspection — thin fn wrappers over the rt/ primitives
-;; (defmulti / defmethod / prefer-method are macros in macro_transforms).
-;; `methods` → dispatch-val→method map; `get-method` → the method (or nil);
-;; `remove-method` → the multifn; `prefers` → the prefer table.
+;; (defmulti / defmethod are macros in macro_transforms; prefer-method is a clj FN
+;; — see below.) `methods` → dispatch-val→method map; `get-method` → the method (or
+;; nil); `remove-method` → the multifn; `prefers` → the prefer table.
 (def methods (fn* [multifn] (rt/__methods multifn)))
 (def get-method (fn* [multifn dispatch-val] (rt/__get-method multifn dispatch-val)))
 (def remove-method (fn* [multifn dispatch-val] (rt/__remove-method! multifn dispatch-val)))
 (def prefers (fn* [multifn] (rt/__prefers multifn)))
+;; `prefer-method` is a FN in clj (D-373 audit: cljw had it as a needless macro —
+;; its args are all values, no quoting — which broke higher-order use). Now a fn so
+;; `(map (partial prefer-method mf) …)` / passing it works, matching clj.
+(def prefer-method (fn* [multifn x y] (rt/__prefer-method! multifn x y)))
 
 ;; `(memoize f)` returns a cached version of f: each distinct argument
 ;; tuple computes f once, then returns the stored result. Keys the

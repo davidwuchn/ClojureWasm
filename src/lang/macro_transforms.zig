@@ -119,7 +119,6 @@ const BOOTSTRAP = [_]Entry{
     .{ .name = "import", .expand = expandImport },
     .{ .name = "defmulti", .expand = expandDefmulti },
     .{ .name = "defmethod", .expand = expandDefmethod },
-    .{ .name = "prefer-method", .expand = expandPreferMethod },
     .{ .name = "defprotocol", .expand = expandDefprotocol },
     .{ .name = "extend-type", .expand = expandExtendType },
     .{ .name = "extend-protocol", .expand = expandExtendProtocol },
@@ -2119,26 +2118,9 @@ fn expandDefmethod(
     return list(arena, call_items, loc);
 }
 
-// --- prefer-method — record preference on a multimethod ---
-//
-// `(prefer-method multifn x y)` → `(rt/__prefer-method! multifn x y)`
-fn expandPreferMethod(
-    arena: std.mem.Allocator,
-    rt: *Runtime,
-    args: []const Form,
-    loc: SourceLocation,
-) macro_dispatch.ExpandError!Form {
-    _ = rt;
-    if (args.len != 3)
-        return error_catalog.raise(.prefer_method_form_incomplete, loc, .{});
-
-    var call_items = try arena.alloc(Form, 4);
-    call_items[0] = .{ .data = .{ .symbol = .{ .ns = "rt", .name = "__prefer-method!" } }, .location = loc };
-    call_items[1] = args[0];
-    call_items[2] = args[1];
-    call_items[3] = args[2];
-    return list(arena, call_items, loc);
-}
+// (prefer-method was a needless macro — it auto-quoted nothing, just forwarded to
+// `rt/__prefer-method!`. D-373 made it a clj-faithful FN in core.clj so it is
+// passable in higher-order position, matching clj. The macro is retired.)
 
 // --- defprotocol — declare a protocol name + its method dispatch fns ---
 //
