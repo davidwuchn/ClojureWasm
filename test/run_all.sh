@@ -494,6 +494,7 @@ run_step "e2e_phase16_clojure_java_io"      "bash test/e2e/phase16_clojure_java_
 run_step "e2e_phase16_host_stream"          "bash test/e2e/phase16_host_stream.sh"
 run_step "e2e_phase16_clojure_java_io_streams" "bash test/e2e/phase16_clojure_java_io_streams.sh"
 run_step "e2e_phase16_clojure_java_io_copy" "bash test/e2e/phase16_clojure_java_io_copy.sh"
+run_step "e2e_phase16_cljw_json_fs"         "bash test/e2e/phase16_cljw_json_fs.sh"
 run_step "e2e_phase16_tokenizer_long_input" "bash test/e2e/phase16_tokenizer_long_input.sh"
 run_step "e2e_phase15_for_while"            "bash test/e2e/phase15_for_while.sh"
 run_step "e2e_phase15_ns_import"            "bash test/e2e/phase15_ns_import.sh"

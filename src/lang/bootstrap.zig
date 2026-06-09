@@ -84,6 +84,10 @@ pub const FILES: []const FileEntry = &.{
     // clojure.java.io — file/stream I/O over the java.io.File host type (ADR-0126);
     // appended last so earlier FILES[N] indices in `lookupEmbeddedFile` stay stable.
     .{ .label = "<clojure.java.io>", .source = @embedFile("clj/clojure/java/io.clj") },
+    // cljw.json / cljw.fs — handy cljw.* wrappers over data.json + clojure.java.io
+    // (ADR-0126 Cycle 7); load after their targets (data.json/walk/clojure.java.io).
+    .{ .label = "<cljw.json>", .source = @embedFile("clj/cljw/json.clj") },
+    .{ .label = "<cljw.fs>", .source = @embedFile("clj/cljw/fs.clj") },
 };
 
 /// First file's source — exposed so `main.zig`'s renderer can fall
@@ -121,6 +125,8 @@ fn lookupEmbeddedFile(ns_name: []const u8) ?FileEntry {
     if (std.mem.eql(u8, ns_name, "clojure.core.protocols")) return FILES[14];
     if (std.mem.eql(u8, ns_name, "clojure.template")) return FILES[15];
     if (std.mem.eql(u8, ns_name, "clojure.java.io")) return FILES[16];
+    if (std.mem.eql(u8, ns_name, "cljw.json")) return FILES[17];
+    if (std.mem.eql(u8, ns_name, "cljw.fs")) return FILES[18];
     return null;
 }
 

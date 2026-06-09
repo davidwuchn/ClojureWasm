@@ -61,6 +61,28 @@ active:
       input-stream/output-stream gain the URL arm. When a resource store lands:
       resource returns the embedded URL. Until then the stubs stand (honest).
     last_reviewed: "2026-06-09"
+  - id: "D-360"
+    status: "open — clojure.data.json/read-str :key-fn / :value-fn parity (ADR-0126 Cycle 7). cljw read-str is 1-arity (string keys); the JVM data.json (read-str s :key-fn keyword :value-fn …) opts form is not accepted (a ported lib calling it with opts gets an arity error). The COMMON keywordize need is met by cljw.json/decode = (keywordize-keys (read-str s)) (recursive, cheshire-parse-string-true shape), so the gap is only direct data.json-opts API parity. Surfaced 2026-06-09 (ADR-0126 Cycle 7)."
+    category: "interop"
+    barrier: |-
+      blocked-by: nothing technical. Either (a) make json.zig readStrFn varargs +
+      thread a :key-fn/:value-fn Value through jsonToCw via rt.vtable.callFn per
+      key (proper data.json parity, a shared/risky change), or (b) wrap read-str in
+      clojure.data.json.clj as a .clj fn that calls a renamed rt/__json-read-str
+      then applies key-fn/value-fn in Clojure (F-009-cleaner: Zig parses, Clojure
+      transforms). Low priority — cljw.json/decode covers the real use.
+    last_reviewed: "2026-06-09"
+  - id: "D-361"
+    status: "open — LINUX-ONLY: e2e_phase16_eval_budget 'heap budget message missing' (D-352 heap cap). On ubuntunote the heap-cap case (CLJW_EVAL_MAX_HEAP_MB=16 (vec (range 1e8))) exits non-zero but WITHOUT the 'evaluation exceeded its heap budget' message; Mac passes it. ROOT-CAUSE HYPOTHESIS: the top-level eval error path renders the breach (builds the error map / :trace Values) while rt.gc.heap_ceiling is STILL set at the just-breached cap, so the renderer's own gc.allocs re-breach (live heap is at the cap) and the message render aborts — process still exits non-zero but prints nothing. Mac's renderer allocs happen to fit under the cap-at-breach; Linux's allocator accounting does not. cljw.eval/with-budget ALREADY guards this (restores heap_ceiling BEFORE building its result map, with_budget.zig); the TOP-LEVEL path (runner eval→render) appears NOT to. NOT an io regression (io e2e all green on Linux this run). Surfaced 2026-06-09 by a look-ahead Linux gate on 839d61fe."
+    category: "isolation"
+    barrier: |-
+      blocked-by: nothing technical, but Mac cannot reproduce (Mac passes), so a
+      fix must be verified on ubuntunote (slow remote gate). FIX: in the top-level
+      eval error handler (src/app/runner.zig render path), on catching the budget/
+      heap breach set rt.gc.heap_ceiling = null (+ clear the hook) BEFORE rendering
+      the error — mirror with_budget.zig's restore-before-build. Defensive on both
+      platforms (cannot regress Mac). Best done in a Linux-focused session.
+    last_reviewed: "2026-06-09"
   - id: "D-351"
     status: "open — native in-process eval deadline / step budget (isolation dim (a)). cljw has NO eval timeout: an infinite loop in evaluated code hangs the process; the playground relies on an OS subprocess + `timeout` to kill it. The VM back-edge safe-point poll (vm.zig:119-141) already loads an atomic flag every back-edge (predicted-not-taken) — a deadline/step budget rides this at ~zero cost, mirroring zwasm's per-instruction fuel charge (dispatch.zig:109-119). Surfaced 2026-06-09 by the isolation scope study (private/notes/cljw_isolation_scope.md)."
     category: "isolation"
