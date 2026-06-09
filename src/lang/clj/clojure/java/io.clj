@@ -27,13 +27,16 @@
     :else (throw (ex-info (str "Cannot coerce to a java.io.File: " (pr-str x)) {:value x}))))
 
 (defn as-url
-  "Coerce x to a URL. nil -> nil. ClojureWasm has no java.net.URL type yet
-   (Phase 14+, D-359), so a non-nil x cannot be represented as a URL and throws
-   — an honest signal rather than a wrong value."
+  "Coerce x to a java.net.URI. ClojureWasm has no java.net.URL type, so URI is
+   the url-ish coercion target (D-359; the JVM as-url returns URL). nil->nil; a
+   URI->itself; a String->(URI. s); a File-> a file: URI of its absolute path."
   [x]
-  (if (nil? x)
-    nil
-    (throw (ex-info "clojure.java.io/as-url: java.net.URL is not yet available in ClojureWasm" {:value x}))))
+  (cond
+    (instance? java.net.URI x)  x
+    (string? x)                 (java.net.URI. x)
+    (instance? java.io.File x)  (java.net.URI. (str "file://" (.getAbsolutePath x)))
+    (nil? x)                    nil
+    :else (throw (ex-info (str "Cannot coerce to a java.net.URI: " (pr-str x)) {:value x}))))
 
 (defn resource
   "Return the URL for a named classpath resource, or nil if not found.
@@ -88,11 +91,16 @@
 
 (defn reader
   "Coerce x into an open java.io.Reader. A String/File names a file to open; an
-   existing Reader is returned as-is. Use inside with-open."
+   http(s) URI is fetched via cljw.http.client and read from the response body;
+   a file: URI opens its path; an existing Reader is returned as-is. Use inside
+   with-open."
   [x & opts]
   (cond
     (instance? java.io.Reader x) x
     (instance? java.io.File x)   (rt/__open-reader (.getPath x))
+    (instance? java.net.URI x)   (if (clojure.string/starts-with? (str x) "http")
+                                   (rt/__string-reader (:body (cljw.http.client/get (str x))))
+                                   (rt/__open-reader (.getPath x)))
     (string? x)                  (rt/__open-reader x)
     :else (throw (ex-info (str "Cannot open as a java.io.Reader: " (pr-str x)) {:value x}))))
 
@@ -103,16 +111,23 @@
   (cond
     (instance? java.io.Writer x) x
     (instance? java.io.File x)   (rt/__open-writer (.getPath x))
+    (instance? java.net.URI x)   (if (clojure.string/starts-with? (str x) "http")
+                                   (throw (ex-info (str "Cannot write to a non-file URI: " (str x)) {:uri (str x)}))
+                                   (rt/__open-writer (.getPath x)))
     (string? x)                  (rt/__open-writer x)
     :else (throw (ex-info (str "Cannot open as a java.io.Writer: " (pr-str x)) {:value x}))))
 
 (defn input-stream
   "Coerce x into an open java.io.InputStream. A String/File names a file; an
+   http(s) URI is fetched via cljw.http.client; a file: URI opens its path; an
    existing InputStream is returned as-is. Use inside with-open."
   [x & opts]
   (cond
     (instance? java.io.InputStream x) x
     (instance? java.io.File x)        (rt/__open-input-stream (.getPath x))
+    (instance? java.net.URI x)        (if (clojure.string/starts-with? (str x) "http")
+                                        (rt/__string-reader (:body (cljw.http.client/get (str x))))
+                                        (rt/__open-input-stream (.getPath x)))
     (string? x)                       (rt/__open-input-stream x)
     :else (throw (ex-info (str "Cannot open as a java.io.InputStream: " (pr-str x)) {:value x}))))
 
@@ -123,6 +138,9 @@
   (cond
     (instance? java.io.OutputStream x) x
     (instance? java.io.File x)         (rt/__open-output-stream (.getPath x))
+    (instance? java.net.URI x)         (if (clojure.string/starts-with? (str x) "http")
+                                         (throw (ex-info (str "Cannot write to a non-file URI: " (str x)) {:uri (str x)}))
+                                         (rt/__open-output-stream (.getPath x)))
     (string? x)                        (rt/__open-output-stream x)
     :else (throw (ex-info (str "Cannot open as a java.io.OutputStream: " (pr-str x)) {:value x}))))
 

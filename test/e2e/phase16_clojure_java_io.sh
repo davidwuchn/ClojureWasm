@@ -52,9 +52,15 @@ assert_eq 'delete_throws' "$(run "(try (clojure.java.io/delete-file \"$TMP/gone\
 assert_eq 'make_parents' "$(run "(clojure.java.io/make-parents (clojure.java.io/file \"$TMP\" \"d1/d2/leaf.txt\"))")" 'true'
 assert_eq 'parents_made' "$(run "(.isDirectory (clojure.java.io/file \"$TMP/d1/d2\"))")" 'true'
 
-# --- as-url / resource deferred stubs (ADR-0126 Cycle 6, D-359) ---
+# --- as-url → java.net.URI (D-359); resource stays nil (no classpath) ---
 assert_eq 'as_url_nil'    "$(run '(clojure.java.io/as-url nil)')" 'nil'
-assert_eq 'as_url_throws' "$(run '(try (clojure.java.io/as-url "http://x") (catch Throwable e :threw))')" ':threw'
+assert_eq 'as_url_str'    "$(run '(str (clojure.java.io/as-url "http://x/y"))')" '"http://x/y"'
+assert_eq 'as_url_file'   "$(run '(str (clojure.java.io/as-url (clojure.java.io/file "/a/b")))')" '"file:///a/b"'
+assert_eq 'as_url_uri'    "$(run '(instance? java.net.URI (clojure.java.io/as-url "http://x"))')" 'true'
+assert_eq 'as_url_bad'    "$(run '(try (clojure.java.io/as-url 42) (catch Throwable e :threw))')" ':threw'
+# reader over a file: URI reads the file (http(s) URIs fetch via cljw.http.client).
+printf 'uri-body' > "$TMP/uri.txt"
+assert_eq 'reader_file_uri' "$(run "(rt/__stream-slurp (clojure.java.io/reader (java.net.URI. \"file://$TMP/uri.txt\")))")" '"uri-body"'
 assert_eq 'resource_nil'  "$(run '(clojure.java.io/resource "config.edn")')" 'nil'
 assert_eq 'resource_gd'   "$(run '(if-let [r (clojure.java.io/resource "x")] :found :none)')" ':none'
 
