@@ -1,3 +1,8 @@
+;; SPDX-License-Identifier: EPL-2.0
+;; Copyright (c) the ClojureWasm authors. Licensed under EPL-2.0.
+;; Independently reimplements the clojure.java.io API (originally Stuart Sierra, Chas Emerick, Stuart Halloway; Clojure, EPL-1.0)
+;; for ClojureWasm; no upstream source text is reproduced.
+
 ;; clojure.java.io — polymorphic I/O utilities (ADR-0126). cljw-native shape.
 ;;
 ;; JVM clojure.java.io is built on the Coercions + IOFactory protocols extended

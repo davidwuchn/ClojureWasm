@@ -1,3 +1,8 @@
+;; SPDX-License-Identifier: EPL-2.0
+;; Copyright (c) the ClojureWasm authors. Licensed under EPL-2.0.
+;; Independently reimplements the clojure.data API (originally Stuart Halloway; Clojure, EPL-1.0)
+;; for ClojureWasm; no upstream source text is reproduced.
+
 ;; clojure.data — `(diff a b)` recursive data diff (D-data-diff sweep).
 ;;
 ;; Loaded by `src/lang/bootstrap.zig::loadCore` after clojure.set (this file

@@ -1,3 +1,8 @@
+;; SPDX-License-Identifier: EPL-2.0
+;; Copyright (c) the ClojureWasm authors. Licensed under EPL-2.0.
+;; Independently reimplements the clojure.set API (originally Rich Hickey; Clojure, EPL-1.0)
+;; for ClojureWasm; no upstream source text is reproduced.
+
 ;; clojure.set — Phase 6.16.b-1 (.clj migration).
 ;;
 ;; Loaded by `src/lang/bootstrap.zig::loadCore` per ADR-0032 multi-file

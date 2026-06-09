@@ -1,3 +1,8 @@
+;; SPDX-License-Identifier: EPL-2.0
+;; Copyright (c) the ClojureWasm authors. Licensed under EPL-2.0.
+;; Independently reimplements the clojure.data.json API (originally Clojure contrib (data.json); Clojure, EPL-1.0)
+;; for ClojureWasm; no upstream source text is reproduced.
+
 ;; clojure.data.json — JSON read/write. cw v1 §9.11 row 9.3 landing.
 ;;
 ;; Surface mirrors JVM clojure.data.json 2.5.x: `read-str` parses a

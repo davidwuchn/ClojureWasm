@@ -1,3 +1,8 @@
+;; SPDX-License-Identifier: EPL-2.0
+;; Copyright (c) the ClojureWasm authors. Licensed under EPL-2.0.
+;; Independently reimplements the clojure.math API (originally Alex Miller; Clojure, EPL-1.0)
+;; for ClojureWasm; no upstream source text is reproduced.
+
 ;; clojure.math — thin Clojure wrappers over the host `Math` static methods
 ;; (D-232). cljw resolves `Math/*` interop without reflection, so each fn is a
 ;; one-line delegate. Mirrors the JVM clojure.math surface: trig, hyperbolics,

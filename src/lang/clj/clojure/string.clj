@@ -1,3 +1,8 @@
+;; SPDX-License-Identifier: EPL-2.0
+;; Copyright (c) the ClojureWasm authors. Licensed under EPL-2.0.
+;; Independently reimplements the clojure.string API (originally Stuart Sierra, Stuart Halloway, David Liebke; Clojure, EPL-1.0)
+;; for ClojureWasm; no upstream source text is reproduced.
+
 ;; clojure.string — ADR-0032 + ADR-0029 + Phase 6.9 cycle 1.
 ;;
 ;; Loaded by `src/lang/bootstrap.zig::loadCore` after `core.clj`.

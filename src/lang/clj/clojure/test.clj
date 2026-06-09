@@ -1,3 +1,8 @@
+;; SPDX-License-Identifier: EPL-2.0
+;; Copyright (c) the ClojureWasm authors. Licensed under EPL-2.0.
+;; Independently reimplements the clojure.test API (originally Stuart Sierra and contributors; Clojure, EPL-1.0)
+;; for ClojureWasm; no upstream source text is reproduced.
+
 ;; clojure.test — assertion + test-runner surface (D-227, ADR-0083-unblocked).
 ;;
 ;; Loaded by `bootstrap.zig::loadCore` after core.clj (so defmacro / syntax-quote

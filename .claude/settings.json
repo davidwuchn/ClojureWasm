@@ -109,6 +109,10 @@
           },
           {
             "type": "command",
+            "command": "bash $CLAUDE_PROJECT_DIR/scripts/check_clj_attribution.sh"
+          },
+          {
+            "type": "command",
             "command": "bash $CLAUDE_PROJECT_DIR/scripts/check_facts_immutable.sh"
           },
           {

@@ -1,3 +1,12 @@
+;; SPDX-License-Identifier: EPL-2.0
+;;
+;;   Copyright (c) Rich Hickey. All rights reserved.
+;;   The use and distribution terms for this software are covered by the
+;;   Eclipse Public License 1.0 (http://opensource.org/licenses/eclipse-1.0.php).
+;;   By using this software in any fashion, you are agreeing to be bound by the
+;;   terms of this license. You must not remove this notice, or any other, from
+;;   this software.
+;;
 ;; clojure.core.protocols — the reduce / datafy protocol surface (D-282).
 ;;
 ;; Mirrors JVM clojure.core.protocols: CollReduce (the reduce internal protocol),
@@ -27,3 +36,5 @@
 
 (defprotocol Navigable
   (nav [coll k v] "Return the value navigated to from coll via k and v."))
+
+;; Docstrings reproduced from clojure.core.protocols; ClojureWasm changes (c) the ClojureWasm authors. EPL-2.0.

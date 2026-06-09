@@ -1,11 +1,18 @@
-;; clojure.template — macros that expand to repeated copies of a template
-;; expression (Stuart Sierra). Ported verbatim from JVM clojure.template; pure
-;; Clojure over clojure.walk + core (zipmap / partition / map). Loaded by
-;; `src/lang/bootstrap.zig::loadCore` per the FILES table (after clojure.walk,
-;; which it requires). Surfaced as a coverage gap by honeysql's `honey.sql`,
-;; which requires it for a templating helper macro.
+;; SPDX-License-Identifier: EPL-2.0
+;;
+;;   Copyright (c) Rich Hickey. All rights reserved.
+;;   The use and distribution terms for this software are covered by the
+;;   Eclipse Public License 1.0 (http://opensource.org/licenses/eclipse-1.0.php).
+;;   By using this software in any fashion, you are agreeing to be bound by the
+;;   terms of this license. You must not remove this notice, or any other, from
+;;   this software.
+;;
+;;   template.clj — by Stuart Sierra. Reproduced in ClojureWasm; redistributed
+;;   under EPL-2.0 per EPL-1.0 §7. ClojureWasm changes (c) the ClojureWasm authors.
 
-(ns clojure.template
+(ns ^{:doc "Macros that expand to repeated copies of a template expression."
+      :author "Stuart Sierra"}
+  clojure.template
   (:require [clojure.walk :as walk]))
 
 (defn apply-template

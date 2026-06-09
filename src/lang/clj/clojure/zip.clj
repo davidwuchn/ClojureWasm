@@ -1,3 +1,8 @@
+;; SPDX-License-Identifier: EPL-2.0
+;; Copyright (c) the ClojureWasm authors. Licensed under EPL-2.0.
+;; Independently reimplements the clojure.zip API (originally Rich Hickey; Clojure, EPL-1.0)
+;; for ClojureWasm; no upstream source text is reproduced.
+
 ;; clojure.zip — Phase 7 §9.9 row 7.13 / D-080 / ADR-0043.
 ;;
 ;; Functional zipper over hierarchical data. cw v1 ports JVM

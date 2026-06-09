@@ -1,3 +1,8 @@
+;; SPDX-License-Identifier: EPL-2.0
+;; Copyright (c) the ClojureWasm authors. Licensed under EPL-2.0.
+;; Independently reimplements the clojure.walk API (originally Stuart Sierra; Clojure, EPL-1.0)
+;; for ClojureWasm; no upstream source text is reproduced.
+
 ;; clojure.walk — Phase 6.11 cycle 1 + Phase 6.16.c Group A.
 ;;
 ;; Loaded by `src/lang/bootstrap.zig::loadCore` per ADR-0032's

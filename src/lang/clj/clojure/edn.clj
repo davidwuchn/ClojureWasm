@@ -1,3 +1,8 @@
+;; SPDX-License-Identifier: EPL-2.0
+;; Copyright (c) the ClojureWasm authors. Licensed under EPL-2.0.
+;; Independently reimplements the clojure.edn API (originally Rich Hickey; Clojure, EPL-1.0)
+;; for ClojureWasm; no upstream source text is reproduced.
+
 ;; clojure.edn — EDN reader. cw v1 row 9.2 (D-074 close) landing.
 ;;
 ;; cw v1's core reader (src/eval/reader.zig) already understands EDN
