@@ -132,6 +132,17 @@ pub fn runSource(
 
         var locals: [driver.MAX_LOCALS]Value = [_]Value{.nil_val} ** driver.MAX_LOCALS;
         const result = driver.evalForm(&rt, &env, &locals, arena, node) catch |err| {
+            // D-361: a budget/heap breach leaves the cap installed, but the error
+            // renderer itself gc-allocates (the :trace + message Values) — under a
+            // just-tripped heap ceiling those allocations re-breach and the message
+            // never renders (the process still exits non-zero, but silently). Lift
+            // the per-eval budget + heap cap before rendering, mirroring
+            // cljw.eval/with-budget's restore-before-build. renderAndExit exits, so
+            // no restore is needed. (Mac happened to fit under the cap; Linux did
+            // not — this makes the render allocation-safe on both.)
+            rt.eval_budget = null;
+            rt.gc.heap_ceiling = null;
+            rt.gc.heap_exceeded_hook = null;
             error_render.renderAndExit(stderr, ctx, err);
         };
 
