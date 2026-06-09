@@ -984,6 +984,17 @@ active:
     barrier: |-
       CLOSED 2026-06-10 (D-371): clojure_lang_method fallback maps .valAt/.cons/.count/… on native collections to clojure.core; both backends; flatland.ordered.set fully works. Was: .member on native collections unimplemented.
     last_reviewed: "2026-06-10"
+  - id: "D-372"
+    status: "open (2026-06-10, the MAP side of the flatland.ordered ladder — set side fully landed via D-286/D-370/D-371). flatland.ordered.MAP fails at map.clj:33 `Unable to resolve symbol: 'MapEquivalence'` — OrderedMap declares the BARE simple names (`:import (clojure.lang MapEquivalence IPersistentMap …)`), but only the QUALIFIED `clojure.lang.MapEquivalence` is a host_interface MARKERS key (D-286 added bare aliases only for the set-side names + IPersistentSet). NEEDED: (a) bare aliases for MapEquivalence (zero-method marker, safe like IHashEq) + IPersistentMap (a cljw protocol Var → needs the D-286b sectionNeedsRemap routing + identity entries `-without`/`-count`/… like IPersistentSet got); (b) IPERSISTENT_MAP remap-table EXTENSION — OrderedMap's IPersistentMap section ALSO declares `valAt`/`iterator`/`entrySet`/`keySet`/`values`/`containsValue` (clj groups java.util.Map + ILookup methods under it), which the current IPERSISTENT_MAP table does not map → feature_not_supported. valAt→ILookup/-lookup is clean; iterator/entrySet/keySet/values are java.util.Map surface (host_inert-ish or map them to seq/keys/vals). Definition-derived (F-013), NOT per-lib. This completes the editable/transient family for the MAP collection. Surfaced 2026-06-10 after the set side landed. recall trigger: the ordered.map probe OR a defrecord/defcache lib declaring bare IPersistentMap with clj-named methods."
+    category: "polymorphism"
+    barrier: |-
+      flatland.ordered.map blocks at bare `MapEquivalence` (map.clj:33); then bare
+      `IPersistentMap` (needs D-286b routing + identity entries) + the IPERSISTENT_MAP
+      remap-table extension (valAt→-lookup; iterator/entrySet/keySet/values/
+      containsValue java.util.Map methods). Definition-derived (F-013), mirrors the
+      set-side D-286/D-371 work. Cross-ref D-286 (set-side family), D-371 (.member on
+      native), D-232 (the IPersistentMap valAt/iterator finding), F-013/F-011.
+    last_reviewed: "2026-06-10"
   - id: "D-287"
     status: "DISCHARGED ADR-0105 (2026-06-07) - Java arrays implemented: type-erased `.array` JavaArray ([]Value, mirror of TypedInstance) + aget/aset/alength/aclone/array? primitives + object-array/int-array/byte-array/make-array/to-array/into-array/aset-*/amap/areduce in core.clj; seqable/indexed/identity-equal; byte/short/char wrap + per-ctor init defaults (F-011); type-erasure = AD-019. flatland.ordered (rung 4b) advanced aset->IEditableCollection; tools.reader (rung 6) aget->Closeable (both new host-interface blockers). ORIGINAL: now (found 2026-06-07 — ordered's blocker after D-286a, a NON-deftype/NON-host-interface class) — flatland.ordered.set.clj:84 `Unable to resolve symbol: 'aset'`. `aset` (Java array element set) is unimplemented; ordered uses Java object-arrays + aset/aget/make-array internally for its backing store. This is the Java-array-interop capability, distinct from the deftype host-interface work (D-275→D-286). cljw has no Java arrays as such — would need an array surface (object-array/aset/aget/alength/make-array) backed by a cljw mutable vector or a native array Value."
     category: "interop"

@@ -5,51 +5,52 @@
 
 ## Resume contract
 
-- **HEAD**: see `git log` (D-366 license + D-368 agent race fix + zwasm alpha.2
-  tag-pin + demo-runway docs landed/pushed; Ubuntu serial gate 302/0 green).
-- **First on resume MUST be (autonomous, overnight)**: the post-M quality loop
-  (F-010), starting with **D-365 residual** — the bytecode-serializer **CHUNK
-  round-trip gate** (side-table + field completeness; the 2 axes the Value-tag
-  symmetry gate does not cover) — then **D-196 VM-parity** (e2e + corpus under
-  `-Dbackend=vm`, toward the F-012 default-VM flip). Then the standing
-  quality-loop floor drain per CLAUDE.md. Run autonomously.
-- **Forbidden**: pushing to `main`. The fly demo deploy (D-362) is a separate
-  user-triggered task, NOT the autonomous focus — if cw-serverless-demo is still
-  crash-looping on resume, see D-362 (the `-Dcpu=baseline` fix + a quick verify),
-  do not fold it into the quality loop.
+- **HEAD**: see `git log` (the F-010 ordered-ladder + serialize-gate work below;
+  Mac gate 306/0 green at each landing).
+- **First on resume MUST be (autonomous, overnight, F-010 quality loop)**:
+  **D-372** — the MAP side of the flatland.ordered ladder (the SET side fully
+  landed via D-286/D-370/D-371). `flatland.ordered.map` blocks at map.clj:33
+  bare `MapEquivalence`, then bare `IPersistentMap` (D-286b routing + identity
+  entries) + the IPERSISTENT_MAP remap-table extension (valAt/iterator/entrySet/
+  keySet/values). Definition-derived (F-013), mirrors the set-side work. Then the
+  standing quality-loop floor drain (`quality_floor:` rows, correctness-first) per
+  CLAUDE.md § The only stop.
+- **Forbidden**: pushing to `main`. The fly demos (D-362) are DONE + live — not the
+  autonomous focus.
 
-## Just landed — D-366 + D-368 + zwasm tag-pin + demos on fly
+## Just landed — flatland.ordered SET ladder complete + serialize gate
 
-- D-366 (`ca1578c9`) EPL-2.0 `clojure/**` attribution; D-368 (`7f12451c`,
-  ADR-0093 am1) agent `await` delivers-after-`notifyWatches` (watch-race fix).
-  Both Ubuntu-serial green (302/0).
-- zwasm `v2.0.0-alpha.2` cut + pushed to clojurewasm/zwasm; build.zig.zon
-  tag-pins it (`a8ca2007`); jtakakura remote removed.
-- **Demos deployed to fly** (fresh self-contained repos: Dockerfile + run_local
-  clone+build cljw `-Dwasm -Dcpu=baseline`, zwasm via the tag pin; committed
-  frontend-release + Wasm + PROVENANCE; bookshelf config.edn → env via direnv /
-  fly secrets + a fly volume for SQLite):
-  - clojurewasm/cw-playground — <https://cw-playground.fly.dev> **verified live**
-    (eval / numeric tower / wasm-FFI `nth_prime`=541 / per-eval budget).
-  - clojurewasm/cw-serverless-demo — <https://cw-serverless-demo.fly.dev>
-    **verified live** (the `-Dcpu=baseline` fix cleared the SIGILL crashloop;
-    `/api/books` serves the seeded SQLite-via-Wasm data).
-  - **Two fly gotchas fixed**: (1) cljw MUST build `-Dcpu=baseline` or it SIGILLs
-    (exit 132) on a shared-cpu run machine lacking the build host's instructions;
-    (2) the Zig tarball URL is `zig-<arch>-linux-<ver>` (arch first, since 0.14).
-- README (D-367) URL-filled + committed (`41b89209`): logo 180px, GitHub
-  Discussions (not Slack), no ideal section.
+The F-010/F-013 convergence pattern (a real lib chains out gaps; close each
+definition-derived, not per-lib):
+
+- **D-365 residual** — bytecode-serializer CHUNK completeness gate: compile-time
+  `std.meta.FieldEnum` exhaustiveness over the BytecodeChunk side-tables AND each
+  entry struct (a new table/field is a compile error until classified) + a
+  populated round-trip asserting every serialized field.
+- **D-286 am1** (ADR-0102 am1) — the editable/transient collection interface family
+  (IEditableCollection / ITransient* / IPersistentSet bare) + the **D-286b**
+  dispatch fix (sectionNeedsRemap self-targeting recursion guard) so a deftype's
+  clj-named methods dispatch.
+- **ADR-0127 + D-370** — `print-method` is a real user-extensible multimethod the
+  native pr path consults behind a dirty flag; A2 host_instance writer handle +
+  B2(b-ii) per-element consult (nested overrides fire, clj parity).
+- **D-371** — clojure.lang read/op methods (`.valAt`/`.cons`/`.count`/…) on NATIVE
+  collections delegate to the clojure.core equivalent (clojure_lang_method.zig,
+  both backends).
+- **Result**: `(ordered-set 3 1 2 1)` → `#ordered/set (3 1 2)` — flatland.ordered.SET
+  fully works (D-286→D-370→D-371 ladder complete). ordered.MAP is D-372.
+- Follow-ups tracked: D-369 (transient dispatch consult — off the critical path),
+  D-238 (bindable `*out*`).
 
 ## Process discipline (SSOT)
 
 - Gate cadence: per-commit `--smoke <step>` (don't block); batch full
   `bash test/run_all.sh` at boundaries. The Ubuntu remote gate (ubuntunote,
   load-immune) is the fallback — `timeout 1800 bash scripts/run_remote_ubuntu.sh`
-  against the pushed HEAD.
+  against the pushed HEAD (run before the next Phase boundary / v0.1.0 tag).
 
 ## Cold-start reading order
 
-handover → `.dev/debt.yaml` (**D-365** residual = NEXT; **D-196** VM-parity;
-**D-362** = fly demo-deploy state) →
-`private/notes/D365-serialize-regex-symmetry.md` → CLAUDE.md § Autonomous
-Workflow + F-010 quality loop.
+handover → `.dev/debt.yaml` (**D-372** = NEXT ordered.map; D-369/D-238 follow-ups;
+`quality_floor:` rows = the floor drain) → `private/notes/D371-member-on-native.md`
+(+ D286/D370 notes) → CLAUDE.md § Autonomous Workflow + F-010 quality loop.
