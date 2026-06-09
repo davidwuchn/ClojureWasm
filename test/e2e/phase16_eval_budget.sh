@@ -48,4 +48,25 @@ $got"
 [[ "$got" == "1000" ]] || fail "unmetered loop wrong result: got '$got'"
 echo "PASS eval-budget-unmetered-default"
 
-echo "OK — phase16_eval_budget (steps/deadline kill + uncatchable + unmetered) green"
+# 6. D-352: a live-heap ceiling refuses a runaway allocation (exit 1 + heap msg),
+#    even though the realization happens inside a primitive (no back-edge poll).
+out="$(CLJW_EVAL_MAX_HEAP_MB=16 timeout 20 "$BIN" -e '(vec (range 100000000))' 2>&1)" && fail "heap budget: expected non-zero exit:
+$out"
+echo "$out" | grep -qi "heap budget" || fail "heap budget message missing:
+$out"
+echo "PASS eval-budget-heap-refuses-runaway"
+
+# 7. The heap cap is UNCATCHABLE too (a catch-all must NOT swallow it).
+out="$(CLJW_EVAL_MAX_HEAP_MB=16 timeout 20 "$BIN" -e '(try (vec (range 100000000)) (catch Throwable _ :swallowed))' 2>&1)" && fail "heap uncatchable: expected non-zero exit:
+$out"
+echo "$out" | grep -q ":swallowed" && fail "heap uncatchable: a (catch …) swallowed the heap-budget error:
+$out"
+echo "PASS eval-budget-heap-uncatchable"
+
+# 8. A small allocation is UNAFFECTED by a generous heap budget (exit 0).
+got="$(CLJW_EVAL_MAX_HEAP_MB=256 "$BIN" -e '(count (vec (range 1000)))')" || fail "metered small alloc errored:
+$got"
+[[ "$got" == "1000" ]] || fail "metered small alloc wrong result: got '$got'"
+echo "PASS eval-budget-heap-normal-unaffected"
+
+echo "OK — phase16_eval_budget (steps/deadline/heap kill + uncatchable + unmetered) green"

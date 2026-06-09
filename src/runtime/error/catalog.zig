@@ -456,6 +456,9 @@ pub const Code = enum {
     /// args: `.{ .ms = <i64> }` — the eval wall-clock deadline (ADR-0125) was
     /// exceeded (untrusted-code isolation; uncatchable).
     eval_deadline_exceeded,
+    /// args: `.{ .bytes = <usize> }` — the eval live-heap ceiling (ADR-0125 /
+    /// D-352) was exceeded (untrusted-code isolation; uncatchable).
+    eval_heap_exceeded,
 };
 
 const Entry = struct {
@@ -1419,6 +1422,11 @@ pub fn entry(comptime code: Code) Entry {
             .kind = .resource_exhausted,
             .phase = .eval,
             .template = "evaluation exceeded its time budget ({[ms]d} ms)",
+        },
+        .eval_heap_exceeded => .{
+            .kind = .resource_exhausted,
+            .phase = .eval,
+            .template = "evaluation exceeded its heap budget ({[bytes]d} bytes)",
         },
         .regex_pattern_too_large => .{
             .kind = .value_error,

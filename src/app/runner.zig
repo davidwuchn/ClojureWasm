@@ -111,6 +111,12 @@ pub fn runSource(
     // complete, so the wall-clock deadline starts at user-eval time (bootstrap
     // is not charged). No-op when no CLJW_EVAL_* env was set.
     eval_budget.installFromEnv(&rt.eval_budget, io);
+    // D-352: the live-heap ceiling lives on the GcHeap (where byte accounting
+    // is); install it + the catalog-raising hook here.
+    if (eval_budget.pendingHeapCeiling()) |cap| {
+        rt.gc.heap_ceiling = cap;
+        rt.gc.heap_exceeded_hook = &eval_budget.heapExceededHook;
+    }
 
     // --- Read - Analyse - Eval - Print loop ---
     var reader = Reader.init(arena, source_text);

@@ -105,6 +105,31 @@ to the top-level CLI handler (`tree_walk.zig:968`).
 - `src/app/cli.zig` + `src/app/runner.zig` (env-var arming)
 - tests: e2e (env budget + infinite loop → uncatchable budget error), unit per backend.
 
+## Extension landed: heap axis (D-352, isolation dim (b))
+
+The memory axis the DA anticipated (DP4 note D-4) landed alongside steps/deadline:
+
+- **`heap_ceiling: ?usize` on `GcHeap`** (not `EvalBudget`) — the byte accounting
+  lives on the heap, so the check rides `GcHeap.alloc` directly. Checked at the
+  **alloc boundary, NOT the back-edge poll**: a Zig primitive (e.g. a bulk seq
+  realization) can allocate megabytes without crossing an eval back-edge, so the
+  deadline/step polls would miss it. The cap compares **live bytes**
+  (`bytes_allocated - bytes_freed`), which stays correct if threshold-driven
+  auto-collect ever lands (today collection is explicit-only).
+- **REFUSE, never trigger-a-collect**: past the cap `alloc` returns
+  `error.OutOfMemory` (uncatchable — a raw Zig error with no catalog Info is not
+  matched by any `(catch …)`; with the hook below, the Info's `resource_exhausted`
+  Kind keeps it uncatchable too).
+- **Message via a vtable hook** (`heap_exceeded_hook: ?*const fn(usize) void`):
+  `gc_heap` may not import the error catalog (the `catalog → big_int → gc_heap`
+  cycle), so a higher layer (`eval_budget.heapExceededHook`, installed on
+  `rt.gc` by `runner`) SETS the `eval_heap_exceeded` Info; `alloc` then returns
+  `error.OutOfMemory`. The hook returns **void** (not `anyerror` — a returning-
+  error hook poisons `alloc`'s inferred error set to the global set, breaking
+  every explicit-error-set caller, e.g. the analyzer / vm compiler).
+- **Armed via `CLJW_EVAL_MAX_HEAP_MB`** (mirrors the step/deadline env vars).
+- New catalog Code `eval_heap_exceeded` (Kind `resource_exhausted`).
+
 ## Main-loop decision after Devil's-advocate
 
 The DA (verbatim below) recommends **Alt 2 (per-eval `ExecBudget` ownership)**

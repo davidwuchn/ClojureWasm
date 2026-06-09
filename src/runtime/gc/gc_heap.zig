@@ -159,6 +159,20 @@ pub const GcHeap = struct {
     /// Bytes allocated since the last `collect()` invocation. Trips
     /// collection when it exceeds `threshold_bytes`.
     bytes_since_last_gc: usize = 0,
+    /// ADR-0125 / D-352 (isolation dim (b)): per-eval LIVE-heap ceiling in bytes.
+    /// When non-null, `alloc` REFUSES (never merely triggers a collect) any
+    /// allocation that would push live bytes (`bytes_allocated - bytes_freed`)
+    /// past the cap, bounding untrusted code's memory in-process. `null` (default)
+    /// = unmetered. Set by `runner.runSource` from `CLJW_EVAL_MAX_HEAP_MB`.
+    heap_ceiling: ?usize = null,
+    /// Installed by a higher layer (eval_budget, which may import the error
+    /// catalog — gc_heap may not, big_int→gc_heap cycle) to SET the catalog
+    /// `eval_heap_exceeded` (resource_exhausted, uncatchable) Info before the
+    /// breach surfaces. Vtable pattern (zone_deps low→high). Returns void —
+    /// `alloc` always returns `error.OutOfMemory` after it, so alloc's error set
+    /// is unchanged (a returning-`anyerror` hook would poison every caller's
+    /// inferred set). When null, the bare `error.OutOfMemory` surfaces.
+    heap_exceeded_hook: ?*const fn (cap: usize) void = null,
     /// Global heap lock (ADR-0090 §2). Serializes `alloc` / `pin` /
     /// `unpin` and the whole `collect()` cycle so allocation is
     /// thread-safe under F-006. Locked via the `io_default` singleton
@@ -288,6 +302,20 @@ pub const GcHeap = struct {
         defer io_default.unlockMutex(&self.gc_mutex);
         const align_t: std.mem.Alignment = .fromByteUnits(@alignOf(T));
         const effective_size: usize = @max(@sizeOf(T), min_alloc_bytes);
+
+        // D-352: per-eval LIVE-heap ceiling. One predicted-not-taken branch when
+        // unmetered (heap_ceiling == null). Checked HERE (the alloc boundary) —
+        // not the back-edge poll — because a Zig primitive (e.g. a bulk seq
+        // realization) can allocate megabytes without crossing an eval back-edge.
+        // `live = allocated - freed` stays correct if auto-collect ever lands.
+        if (self.heap_ceiling) |cap| {
+            const live = self.stats.bytes_allocated - self.stats.bytes_freed;
+            if (live + effective_size > cap) {
+                if (self.heap_exceeded_hook) |hook| hook(cap);
+                return error.OutOfMemory;
+            }
+        }
+
         const key = free_pool_mod.FreePoolKey{ .size = effective_size, .alignment = align_t };
 
         const raw: [*]u8 = self.free_pools.pop(key) orelse blk: {
@@ -328,6 +356,27 @@ test "GcHeap.init / deinit on an empty heap" {
     try testing.expectEqual(@as(usize, 0), gc.stats.bytes_allocated);
     try testing.expectEqual(@as(u64, 0), gc.stats.alloc_count);
     try testing.expectEqual(@as(usize, default_gc_threshold_bytes), gc.threshold_bytes);
+}
+
+test "D-352: heap_ceiling refuses allocations past the live-byte cap" {
+    var gc = GcHeap.init(testing.allocator);
+    defer gc.deinit();
+    const Cell = extern struct { header: HeapHeader, payload: u64 = 0 };
+    gc.heap_ceiling = 200; // bytes — a handful of cells, then refuse
+    var refused = false;
+    var i: u32 = 0;
+    while (i < 1000) : (i += 1) {
+        // No hook installed in this unit test, so the bare error.OutOfMemory
+        // surfaces once live bytes would pass the cap.
+        _ = gc.alloc(Cell) catch {
+            refused = true;
+            break;
+        };
+    }
+    try testing.expect(refused);
+    // An unmetered heap (cap cleared) keeps allocating past the old ceiling.
+    gc.heap_ceiling = null;
+    _ = try gc.alloc(Cell);
 }
 
 test "GcHeap.pin appends to permanent_roots; unpin removes first match" {

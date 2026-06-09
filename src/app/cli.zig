@@ -67,14 +67,15 @@ pub fn dispatch(init: std.process.Init) !void {
     if (init.environ_map.get("CLJW_GC_TORTURE")) |raw|
         gc_torture.configure(std.fmt.parseInt(u32, raw, 10) catch 1);
 
-    // ADR-0125: in-process eval budget arming (isolation dim (a)).
+    // ADR-0125: in-process eval budget arming (isolation dims (a)+(b)).
     // CLJW_EVAL_MAX_STEPS bounds back-edge crossings; CLJW_EVAL_DEADLINE_MS
-    // bounds wall-clock ms. Either / both / neither (unmetered). An invalid
-    // value is ignored (that axis stays unset). Applied to the Runtime at eval
-    // start by `runner.runSource`.
+    // bounds wall-clock ms; CLJW_EVAL_MAX_HEAP_MB bounds live heap. Any subset
+    // (unmetered otherwise). An invalid value is ignored (that axis stays unset).
+    // Applied to the Runtime at eval start by `runner.runSource`.
     eval_budget.configureFromEnv(
         if (init.environ_map.get("CLJW_EVAL_MAX_STEPS")) |raw| (std.fmt.parseInt(u64, raw, 10) catch null) else null,
         if (init.environ_map.get("CLJW_EVAL_DEADLINE_MS")) |raw| (std.fmt.parseInt(i64, raw, 10) catch null) else null,
+        if (init.environ_map.get("CLJW_EVAL_MAX_HEAP_MB")) |raw| (if (std.fmt.parseInt(usize, raw, 10) catch null) |mb| mb * 1024 * 1024 else null) else null,
     );
 
     // Self-contained artifact check (ADR-0034 / D-100(b)): if this binary

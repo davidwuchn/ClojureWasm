@@ -47,13 +47,13 @@ active:
       architecture: in-process-scoped vs process-per-eval is its F-003 call).
     last_reviewed: "2026-06-09"
   - id: "D-352"
-    status: "open — per-eval heap/memory cap (isolation dim (b)). cljw's GC tracks bytes but has NO cap: the threshold only TRIGGERS a collection, never REFUSES an allocation (gc_heap.zig:156). Untrusted code can exhaust memory; the playground relies on OS `ulimit`. A per-eval high-water cap at the GC alloc boundary would bound it in-process. Surfaced 2026-06-09 (isolation scope study)."
+    status: "LANDED 2026-06-09 (ADR-0125 heap-axis extension) — `GcHeap.heap_ceiling: ?usize` REFUSES (never just triggers a collect) any alloc that would push live bytes (`bytes_allocated - bytes_freed`) past the cap, at the alloc boundary (not the back-edge poll — a Zig primitive can allocate megabytes without crossing one). Uncatchable `eval_heap_exceeded` (resource_exhausted) via a void vtable hook (gc_heap may not import the catalog — big_int cycle). Armed via CLJW_EVAL_MAX_HEAP_MB. Pairs with D-351 → D-355's in-process time+memory bound is now unblocked."
     category: "isolation"
     barrier: |-
-      blocked-by: D-351 sibling (same untrusted-embedder need). ~60-120 LOC: a
-      heap-byte ceiling on Runtime checked at the alloc/collect boundary, raising a
-      catchable OOM-class error past the ceiling. Pairs with D-351 for a
-      time+memory in-process bound.
+      DISCHARGED. Implemented per ADR-0125's heap-axis extension. The cap compares
+      LIVE bytes so it stays correct if threshold-driven auto-collect ever lands.
+      The error is uncatchable (consistent with D-351 — untrusted code must not
+      swallow its own OOM-kill), reusing the resource_exhausted Kind.
     last_reviewed: "2026-06-09"
   - id: "D-353"
     status: "open — SCI-style capability gating (var/ns allow-deny) (isolation dim (c)). cljw resolves ANY var (env.zig:173); there is no allow/deny on which vars/namespaces evaluated code may reach (cf. SCI's :allow/:deny/:namespaces). A compat_tiers.yaml-driven allow-list at the var-resolution choke point would let an embedder restrict untrusted code to a safe surface. Surfaced 2026-06-09 (isolation scope study)."

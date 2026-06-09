@@ -83,11 +83,31 @@ pub const EvalBudget = struct {
 
 var pending_max_steps: ?u64 = null;
 var pending_deadline_ms: ?i64 = null;
+var pending_heap_bytes: ?usize = null;
 
 /// Record the parsed env budget at CLI startup (called from `cli.zig`).
-pub fn configureFromEnv(max_steps: ?u64, deadline_ms: ?i64) void {
+pub fn configureFromEnv(max_steps: ?u64, deadline_ms: ?i64, heap_bytes: ?usize) void {
     pending_max_steps = max_steps;
     pending_deadline_ms = deadline_ms;
+    pending_heap_bytes = heap_bytes;
+}
+
+/// The env-armed live-heap ceiling (bytes), or null. The heap cap lives on the
+/// GcHeap (where byte accounting is), so `runner` reads this and sets
+/// `rt.gc.heap_ceiling` + installs `heapExceededHook`.
+pub fn pendingHeapCeiling() ?usize {
+    return pending_heap_bytes;
+}
+
+/// GcHeap cap-breach hook (vtable, installed on `rt.gc.heap_exceeded_hook`):
+/// SETS the uncatchable `eval_heap_exceeded` Info so the refused allocation
+/// renders with a proper message + resource_exhausted Kind. `alloc` then returns
+/// `error.OutOfMemory` (control flow); the Info drives rendering + uncatchability.
+/// Lives here because gc_heap may not import the catalog (big_int cycle).
+pub fn heapExceededHook(cap: usize) void {
+    // We want raise's side effect (set the threadlocal Info), not its returned
+    // error value — `alloc` returns error.OutOfMemory to propagate.
+    _ = error_catalog.raise(.eval_heap_exceeded, .{}, .{ .bytes = cap }) catch {};
 }
 
 /// If either axis was armed via env, install the budget into `slot`
