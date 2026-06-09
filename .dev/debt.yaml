@@ -32,11 +32,19 @@ active:
     status: "open — native in-process eval deadline / step budget (isolation dim (a)). cljw has NO eval timeout: an infinite loop in evaluated code hangs the process; the playground relies on an OS subprocess + `timeout` to kill it. The VM back-edge safe-point poll (vm.zig:119-141) already loads an atomic flag every back-edge (predicted-not-taken) — a deadline/step budget rides this at ~zero cost, mirroring zwasm's per-instruction fuel charge (dispatch.zig:109-119). Surfaced 2026-06-09 by the isolation scope study (private/notes/cljw_isolation_scope.md)."
     category: "isolation"
     barrier: |-
-      blocked-by: deciding eval-budget is a tracked need (it is, for untrusted-code
-      embedders / playground in-process). ~80-150 LOC: a deadline/step field on
-      Runtime + a check at the VM back-edge poll AND the TreeWalk loop poll (both
-      backends, dual-backend parity) raising a CATCHABLE error on expiry. Models
-      on zwasm Module.Budget. Cheapest high-value isolation win.
+      DESIGN: ADR-0125 (accepted 2026-06-09). EvalBudget {step_ceiling, deadline_ns,
+      steps, tripped(latch)} ambient on Runtime (mirrors fs_jail_root), checked at
+      the VM back-edge (vm.zig) + both TreeWalk loop polls (eval-loop + fn-tail-
+      recur), raising an UNCATCHABLE resource_exhausted error (kindToHostClass→null,
+      like out_of_memory — a catchable budget error lets untrusted code swallow the
+      timeout). Armed via CLJW_EVAL_MAX_STEPS / CLJW_EVAL_DEADLINE_MS (mirrors
+      CLJW_FS_ROOT). Deferred follow-ups (DA review, ADR-0125): (DP5) a call-boundary
+      poll site to bound non-allocating straight-line bursts that overshoot the
+      deadline between back-edges; (Alt3) a shared-IR deterministic step unit so
+      budget-EXPIRY itself is diff-testable (today the step count at expiry differs
+      across backends — AD-classified). The Clojure `with-budget` scoped surface +
+      host-observable graceful-report path are owned by D-355 (playground
+      architecture: in-process-scoped vs process-per-eval is its F-003 call).
     last_reviewed: "2026-06-09"
   - id: "D-352"
     status: "open — per-eval heap/memory cap (isolation dim (b)). cljw's GC tracks bytes but has NO cap: the threshold only TRIGGERS a collection, never REFUSES an allocation (gc_heap.zig:156). Untrusted code can exhaust memory; the playground relies on OS `ulimit`. A per-eval high-water cap at the GC alloc boundary would bound it in-process. Surfaced 2026-06-09 (isolation scope study)."
