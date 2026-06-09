@@ -5,75 +5,68 @@
 
 ## Resume contract
 
-- **HEAD**: ≈ `38706fcd` (see `git log` for current). Mac **303/0** + ubuntunote
-  **302/0** (1-step delta = Mac-only zlinter gate, ADR-0003). Tree clean. All
-  three CFP-demo goals delivered + the io/url half-done items completed (D-357
-  getAbsolutePath/getCanonicalPath; D-359 as-url→java.net.URI + reader/writer
-  URI arms) + D-361 cross-platform heap-cap bug root-fixed + Linux-verified.
-  Both demos (`$MY/playground-v2` + `$MY/serverless-v2`) are babashka-free,
-  cljw-native, one-command local (`./run_local.sh`, env mirrors fly.toml) +
-  fly-ready, and verified end-to-end (playground via curl + my-playwright:
-  eval/runaway/static/wasm-FFI nth_prime=541; bookshelf via curl:
-  static/config/books-from-SQLite-wasm).
-- **First commit on resume MUST be**: **D-358** (stream leaf-name `instance?` —
-  add a closed-set of host_stream's READER/WRITER/INPUT/OUTPUT_NAMES to
-  `class_name.isKnown`, mirroring the host_interfaces.yaml pattern; the leaf
-  names are already in each family descriptor's `protocol_impls`, so
-  matchUserType will match once isKnown recognises them — avoid a
-  class_name↔host_stream import cycle, define the name list in a leaf module or
-  inline). **Then D-356** (bookshelf single-binary via `cljw build`: a
-  build-entry .clj requiring bookshelf.server + `(-main 8080)`, classpath for the
-  multi-file requires, runtime assets relative to cwd). After BOTH: see **D-362**
-  — the Clojure Conj 2026 CFP runway (repo migration to clojurewasm org → fly
-  deploy → zwasm v2.0.0-alpha.2 tag → build.zig.zon pin → README/CFP), which is
-  user-collaborative.
+- **HEAD**: ≈ `adfc9d29` (see `git log` for current). D-358 fully landed +
+  clj-faithful. Gate: HEAD is smoke-green; the look-ahead full gate on
+  `59a1821a` was 302/1 where the 1 was a STALE assertion (`phase16_host_stream`
+  `class_reader`), fixed in `adfc9d29` → expect 303/0. The `/continue` resume
+  procedure re-runs the full gate on pickup; do that before D-356 source lands.
+- **First commit on resume MUST be**: the **ADR for `cljw build` require-closure
+  embedding** (D-356 Part 2 — ADR-0034 amendment or new ADR + mandatory DA fork;
+  it is depth-3). THEN re-apply **D-356 Part 1** (the reverted classpath
+  prerequisite — `buildFile` load_paths + `installChained` AFTER `setupCore`;
+  cli.zig build branch `-cp/-A` + `loadDepsEdn`; the exact diff is in
+  `private/notes/D356-cljw-build-classpath-prep.md`), then the closure-embed impl
+  + the e2e. Full design + the op_require-idempotency enabler are in the D-356
+  debt row + that note. After D-356: **D-362** (Clojure Conj 2026 CFP runway —
+  org repo migration → fly deploy → zwasm `v2.0.0-alpha.2` tag → build.zig.zon
+  pin → README/CFP; user-collaborative).
 - **Forbidden**: pushing to `main`; pinning a zwasm tag (F-001 relative-path
-  co-dev). Two gates at once (share `/tmp/codev_gate.lock` — `mkdir` acquire,
-  `rmdir` release).
+  co-dev); committing D-356 Part 1 (classpath) ALONE — it leaves the built
+  BINARY failing at run (`lib_not_found`), so Part 2 (closure embed) must land
+  with it. Two gates at once (share `/tmp/codev_gate.lock`).
 
-## Just landed — clojure.java.io subsystem (ADR-0126, 9 commits)
+## Just landed — D-358 clj-faithful stream class/instance? + import resolution
 
-Full cljw-native io, `bca4eb9d..8a9460fd`: `java.io.File` host type (Cycle 1) ·
-`clojure.java.io` file family + reader/writer/input-stream/output-stream + copy
-+ as-url/resource stubs (Cycles 2,4,5,6) · `clojure.core/line-seq` · generic
-buffer-backed `host_stream` (Cycle 3, `runtime/io/host_stream.zig`) ·
-`cljw.json` (encode/decode-keywordized) + `cljw.fs` (babashka.fs-style) (Cycle
-7) · D-361 Linux heap-render fix. cljw-style (no-JVM, F-009 neutral impl, FS-jail
-reused, cond dispatch). DONE since: D-357 (getAbsolutePath via
-currentPathAlloc), D-359 (as-url→URI + URI reader/writer arms), D-361 (heap-cap
-infra-buffer fix). Still deferred: D-358 (stream leaf-name instance?), D-360
-(read-str :key-fn), resource (no classpath), D-051 (byte-array Value, Phase 16).
+`820977dd` (ADR-0126 amendment + debt) · `59a1821a` (source) · `adfc9d29` (stale
+test fix). `(class s)` now returns the clj-concrete buffered type
+(`io/reader`→`BufferedReader` …); `instance?` is true for the concrete + its
+java.io superclass chain only, with a COMPREHENSIVE sibling set known-false
+(F-013); an imported simple class name resolves LEXICALLY at analyze time
+(`special_forms.resolveInstanceClassArg`, reusing `ns.imports`) + a runtime
+fallback in `__instance?`, so `(import …)` AND `(ns …(:import …))` work incl. the
+cross-ns-fn case. cljw keeps ONE generic host_stream internally; only the
+observable answers mirror clj (F-011). Corpus `io_stream_class.txt` (13 lines).
 
 ## Process discipline (SSOT)
 
-- **Gate cadence**: additive (pure-insertion .clj/new file) commits ride on
-  per-feature smoke (`zig build` + `cljw -e` probes + the new e2e) up to 5
-  before a full gate; **shared-code (existing-line edit / build.zig\*) needs a
-  fresh full gate**. `bash test/run_all.sh --serial-e2e`; verify Summary
-  `failed: 0` + `.dev/.gate_pass` == `scripts/gate_state_hash.sh`.
-- **Linux gate is independent** (ubuntunote, remote): launch in background
-  against a pushed HEAD as look-ahead; it does not contend with local smoke.
-  `timeout 1800 bash scripts/run_remote_ubuntu.sh`.
+- **Gate cadence**: per-commit run the fast **`--smoke <changed-e2e-step>`**
+  (ADR-0107 two-tier) and **don't block** — launch it `run_in_background`, yield,
+  commit+push when the stamp lands. The smoke tier authorizes shared-code commits
+  too, up to 5 before a forced full gate. Batch the **full gate**
+  (`bash test/run_all.sh --serial-e2e`, the 248 e2e shell + perf) at the ceiling
+  / Phase boundary / pre-release — also backgroundable as a look-ahead. See
+  memory `smoke_first_batch_full_gate`. (The look-ahead full gate caught the
+  D-358 stale assertion the smoke missed — keep using it.)
+- **Linux gate is independent** (ubuntunote): `timeout 1800 bash
+  scripts/run_remote_ubuntu.sh` against a pushed HEAD.
 - Demo binary is `cljw-wasm` (separate from the gate's `cljw`); rebuild before
   any playground run.
 
 ## Cold-start reading order
 
-handover → `.dev/decisions/0126_clojure_java_io.md` (the io subsystem ADR +
-DA Alt 2) → `.dev/debt.yaml` (D-358 + D-356 = next; D-362 = CFP runway) →
-`.dev/lessons/io_isolation_findings.md` (budget-scope / heap-cap / cwd /
-look-ahead-gate know-how) → `~/Documents/MyProducts/RESUME_cfp_demos.md` (demo
-background) → CLAUDE.md.
+handover → `.dev/debt.yaml` (**D-356** = next, scope-corrected to require-closure
+embedding; D-362 = CFP runway) → `private/notes/D356-cljw-build-classpath-prep.md`
+(full design + the prototyped Part-1 diff) → `.dev/decisions/0126_clojure_java_io.md`
+(io subsystem ADR + the D-358 amendment) → CLAUDE.md.
 
 ## Stopped — user requested
 
-User instruction (2026-06-09): "ここまでのノウハウや経緯を永続化しつつ、次の
-クリアセッションから continue で D-358, D-356 に取り組めるよう配線、参照
-チェーンを監査して止まって". Then (post-debt) the D-362 CFP runway: register
-playground-v2 → `cw-playground` + serverless-v2 → `cw-serverless-demo` under the
-clojurewasm org, delete the old `playground`/`edge-demo` repos, deploy to fly.io
-collaboratively (fly CLI + dashboard, verify, micro-fix), tag zwasm
-`v2.0.0-alpha.2`, repoint ClojureWasmFromScratch build.zig.zon to that tag, then
-README/CFP polish for Clojure Conj 2026. Resume at **D-358** (then D-356, then
-D-362). Know-how persisted in `.dev/lessons/io_isolation_findings.md` + the
-per-task notes in `private/notes/`.
+User instruction (2026-06-09): after D-358 completed and D-356 was found to be a
+real cljw feature (require-closure AOT embedding, not just a classpath), the user
+agreed to take the あるべき論 (full feature) BUT asked to stop here and wire the
+remaining work for the next clear session: "あるべき論を取るべきだとは思いますが、
+…残件がしっかり次のクリアセッションに伝わるように、配線・参照チェーンを整えて監査し、
+このセッションは止めにしましょう（そしたらclearからcontinueをします）". The D-356
+working changes were prototyped, verified at build-time, then REVERTED so the tree
+stays clean across `/clear`; the design + exact diff are persisted in the D-356
+debt row + `private/notes/D356-cljw-build-classpath-prep.md`. Resume at **D-356**.
