@@ -5,58 +5,67 @@
 
 ## Resume contract
 
-- **HEAD**: see `git log` (the host-interface convergence substrate below; per-commit
-  smoke gate, full gate batched per the user's cadence — run `bash test/run_all.sh`
-  before the next handover if 5 smoke commits have accrued).
-- **First on resume MUST be (autonomous, F-010 quality loop)**: **D-373** — the
-  ordered.map next blocker, root-caused: `instance?` is a cljw MACRO (auto-quotes its
-  class symbol), so it CANNOT be passed as a higher-order fn — `(condp instance? obj
-  Map$Entry …)` (ordered.map cons) evaluates `instance?` to nil → "Cannot call value of
-  type nil". ALL direct `(instance? Class x)` work; the gap is HIGHER-ORDER instance?
-  (condp/map/apply). A class/instance? VALUE-system unit (depth-2, survey + DA-fork):
-  (a) make instance? a real fn taking a class VALUE — needs every class/interface
-  symbol to evaluate to a class value (String does, IPersistentVector/Map$Entry do
-  NOT) — vs (b) keep the macro + bind the var to a fn fallback. SECONDARY sub-gap:
-  java.util.Map$Entry → map_entry instance? membership (class_name.zig). Verify the
-  FULL ordered.map chain after (further blockers may follow). Then the standing
-  quality-loop floor drain (`quality_floor:` rows, correctness-first).
+- **HEAD**: see `git log` (host-interface substrate + prefer-method fn + edge-doc
+  positioning fixes + a reference-chain audit, all pushed). Gate cadence: per-commit
+  **smoke** (`bash test/run_all.sh --smoke <step>`); **batch the full gate**; verify
+  manual probes on a **ReleaseSafe** binary (`zig build -Doptimize=ReleaseSafe
+  -Dcpu=baseline`), not Debug.
+- **First on resume MUST be: D-373 in FINISHED-FORM** (user-directed 2026-06-10 —
+  NOT the workaround). **Read `private/notes/D373-macros-that-should-be-fns.md`
+  FIRST** (the full design + clj-comparison audit + edge cases + DA-fork brief).
+  Summary: `instance?` is a cljw MACRO (auto-quotes the class symbol) so it can't be
+  passed higher-order — `(condp instance? obj Map$Entry …)` (ordered.map) evals it to
+  nil. Finished form = complete the class-symbol-as-value surface (ONE
+  `class_name.isKnown`-driven analyzer arm, analyzer.zig:609-674, replacing the
+  scattered Object/Number/IFn/opaque arms) + **UNIFY with D-293's classDescriptor**
+  (rename rt.exceptionDescriptor → kind-tagged classDescriptor; 9 sites / 3 files) +
+  make `instance?` a real fn (drop expandInstanceQ). Map$Entry = a 1-line FQCN_MAP
+  add. The sibling `prefer-method` was the trivial half (LANDED). spike-first
+  (ADR-0089) + DA-fork (depth-3). Verify the FULL ordered.map chain after.
+- **THEN FREEZE** (user-directed): once D-373 lands, do **NOT** self-select the next
+  F-010 unit — stop and wait for an explicit human go. The loop's usual "self-select
+  + keep going" is suspended for one unit by this directive (see § Stopped below).
 - **Forbidden**: pushing to `main`. The fly demos (D-362) are DONE + live.
 
-## Just landed — host-interface convergence substrate complete (flatland.ordered SET works)
+## Just landed
 
-The F-010/F-013 substrate that unblocks the deftype-load path for the **196 corpus
-libs declaring clojure.lang.* supertypes** (the dominant gap class) — built by chaining
-flatland.ordered's gaps, each closed definition-derived (not per-lib):
+- **Host-interface convergence substrate** (the F-010/F-013 deftype-load path for the
+  196 corpus libs declaring clojure.lang.* supertypes): **D-365 residual** (serializer
+  CHUNK completeness gate), **D-286 / ADR-0102 am1** (editable/transient family +
+  D-286b sectionNeedsRemap guard), **ADR-0127 / D-370** (`print-method` multimethod,
+  A2 writer + B2 consult), **D-371** (`.valAt`/`.cons`/… on native colls → clojure.core),
+  **D-372 / ADR-0102 am2** (map-side aliases + valAt; java.util-method grouping
+  accept-and-dropped, AD-027). `(ordered-set 3 1 2 1)` → `#ordered/set (3 1 2)` (full);
+  ordered.map parses past the ENTIRE host-interface surface to D-373 (a class/instance?
+  gap — a DIFFERENT subsystem). Unlocks the 15+ data-structure libs (finger-tree/
+  core.cache/rrb-vector/avl/priority-map/int-map/gvec).
+- **prefer-method → fn** (D-373 macro→fn audit; the trivial sibling of instance?).
+- **Edge-positioning doc fixes** (CFP): docs/landscape.md + docs/works/demos.md drop
+  edge/serverless-as-current-strength wording (FIX_DOCS git-tracked subset). NOTE:
+  FIX_DOCS §7 binary-size claim is wrong — landscape "~2 MB" MATCHES the
+  RELEASE_METRICS SSOT (default cljw ReleaseSafe stripped 2.24 MB); 4.3 MB is the
+  -Dwasm demo build. Left ~2 MB unchanged (honest).
+- **Reference-chain audit** (this turn): removed a duplicate D-292 row (the open copy
+  of the already-DISCHARGED multi-protocol-extend-type debt); corrected D-373's barrier
+  (was a stale type-hint mis-diagnosis) + wired it to D-293 + the design note.
 
-- **D-365 residual** — bytecode-serializer CHUNK completeness gate (compile-time
-  std.meta.FieldEnum exhaustiveness over side-tables + fields).
-- **D-286 / ADR-0102 am1** — editable/transient interface family + D-286b dispatch
-  (sectionNeedsRemap self-targeting recursion guard).
-- **ADR-0127 / D-370** — `print-method` user-extensible multimethod (A2 host_instance
-  writer + B2 per-element consult).
-- **D-371** — clojure.lang read/op methods (`.valAt`/`.cons`/…) on NATIVE collections
-  delegate to the clojure.core equivalent (both backends).
-- **D-372 / ADR-0102 am2** — map-side bare aliases + valAt; java.util methods grouped
-  under a clojure.lang section accept-and-dropped (AD-027, ADR-0103 rule at method
-  granularity).
-- **Result**: `(ordered-set 3 1 2 1)` → `#ordered/set (3 1 2)` (full); ordered.map now
-  parses past the ENTIRE host-interface surface to D-373 (a class/instance? gap, a
-  DIFFERENT subsystem). The substrate unlocks the 15+ data-structure libs grouping
-  java methods under clojure.lang sections (finger-tree/core.cache/rrb-vector/avl/
-  priority-map/int-map/gvec).
-- Follow-ups tracked: D-369 (transient dispatch, off critical path), D-238 (bindable
-  `*out*`), D-292 (extend-type multi-protocol sections — the next substrate gap).
+## Follow-ups tracked
 
-## Process discipline (SSOT)
-
-- Gate cadence (user-confirmed 2026-06-10): per-commit **smoke** (`bash test/run_all.sh
-  --smoke <step>`, satisfies the cadence hook for shared-code); **batch the full gate**
-  after commits accrue. Verify manual probes against a **ReleaseSafe** binary (`zig
-  build -Doptimize=ReleaseSafe -Dcpu=baseline`), not the Debug default.
+D-369 (transient dispatch, off critical path) · D-238 (bindable `*out*`) · D-293
+(classDescriptor unify — D-373's target) · D-275 slice2 / D-276 (class-value markers).
+quality_floor rows = the standing correctness-first drain.
 
 ## Cold-start reading order
 
-handover → `.dev/debt.yaml` (**D-373** = NEXT instance?-higher-order; D-369/D-238/D-292
-follow-ups; `quality_floor:` rows = the floor drain) →
-`private/notes/D372-map-tail-prep.md` (the substrate landscape + the 196-lib leverage)
-→ CLAUDE.md § Autonomous Workflow + F-010 quality loop.
+handover → `private/notes/D373-macros-that-should-be-fns.md` (D-373 finished-form
+design, READ FIRST) → `.dev/debt.yaml` D-373 + D-293 → CLAUDE.md § Autonomous Workflow.
+
+## Stopped — user requested
+
+User instruction (2026-06-10, verbatim): 「クリアセッションから続行 D-373 を
+finished-form で続けて、そこでしばらく freeze（人間が明示するまで進めない）という予定で、
+配線・参照チェーンを監査して止めてください。」
+→ Audit done (this turn). Plan: a CLEARED session resumes **D-373 in finished-form**
+(read the design note first); **after D-373 lands, FREEZE** — do not self-select the
+next unit, wait for an explicit human go. This directive applies until the human lifts
+it; it is the one sanctioned suspension of the loop's self-select rule.

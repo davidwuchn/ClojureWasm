@@ -861,19 +861,6 @@ active:
       DISCHARGED. extend-type accepted only one protocol section; now splits
       N sections like extend-protocol/deftype. macro_transforms expandExtendType.
     last_reviewed: "2026-06-07"
-  - id: "D-292"
-    status: "now (found 2026-06-07 - tools.reader rung 6, after D-291). extend-type with MULTIPLE protocol sections fails: `(extend-type T P1 (m1..) P2 (m2..))` raises macroexpand `extend-type method implementation must be a list` at the 2nd protocol symbol. Single-protocol extend-type works; deftype multi-protocol works (priority-map/ordered). expandExtendType does not split on a second protocol head the way the deftype lowering does. reader_types.clj:185 (extend-type java.io.PushbackReader Reader (read-char)(peek-char) IPushbackReader (unread))."
-    category: "polymorphism"
-    barrier: |-
-      **extend-type does not accept multiple protocol sections.** clj allows
-      `(extend-type T P1 m... P2 m...)`; cljw expandExtendType parses one
-      protocol then errors on the next protocol symbol (expects a method-impl
-      list). deftype lowering already splits multi-protocol (D-280); the same
-      section-splitting must be applied to extend-type. Finished-form fix:
-      expandExtendType walks the impl specs, starting a new section at each
-      symbol head (mirroring the deftype path). Cross-ref ladder rung 6
-      (tools.reader), D-280 (deftype multi-protocol precedent).
-    last_reviewed: "2026-06-07"
   - id: "D-291"
     status: "DISCHARGED 2026-06-07 (this commit) - java.io.Closeable added to the host_inert family (host_interface.zig + host_interfaces.yaml row, ADR-0103 pattern). tools.reader InputStreamReader/LineNumberingReader declare Closeable + implement (close [this] (.close is)) with a body; host_inert accepts the body (never dispatched, protocol.zig:229 guard skips host_inert). e2e phase14_deftype_object case 32. tools.reader (rung 6) advanced reader_types.clj:75 Closeable -> :185 extend-type multi-protocol (D-292)."
     category: "polymorphism"
@@ -994,11 +981,24 @@ active:
     status: "open (2026-06-10, ordered.map next blocker — ROOT CAUSE corrected). NOT a type-hint gap: `instance?` is a cljw MACRO (macro_transforms.zig expandInstanceQ → `(__instance? (quote Class) x)`, auto-quoting the class symbol so unresolvable markers like clojure.lang.IPersistentMap work directly). A MACRO cannot be passed as a higher-order fn value, so `(condp instance? obj Map$Entry …)` (flatland.ordered.map:59 cons) evaluates `instance?` as a value → nil → `Cannot call value of type nil`. ALL DIRECT cases work: `(instance? String x)`/`(instance? clojure.lang.IPersistentMap {})`/`(instance? clojure.lang.MapEntry (first {:a 1}))` → true. The gap is HIGHER-ORDER instance? (condp/map/apply/partial). clj`s instance? is a FN taking a class VALUE (class symbols evaluate to Class). FIX SHAPE (depth-2, class-system unit; survey+DA-fork): make `instance?` callable as a fn-value for higher-order use — either (a) drop the macro + make instance? a real fn taking a class VALUE (requires EVERY class symbol the lib passes to evaluate to a class value: String/IPersistentVector do via analyzeSymbol class-value arm, but java.util.Map$Entry does NOT — SECONDARY sub-gap: register java.util.Map$Entry → map_entry instance? membership in class_name.zig, since clj MapEntry implements java.util.Map$Entry), or (b) keep the macro for the literal case + bind the `instance?` VAR to a fn fallback so a higher-order reference resolves to the fn. (a) is more clj-faithful but needs the class-value-evaluation surface complete; (b) is narrower. DA-fork decides. SECONDARY: java.util.Map$Entry class-value + instance? membership (→ map_entry). VERIFY the FULL ordered.map chain after (further blockers may follow). Distinct from D-372 (host-interface family) — this is the class/instance? VALUE system. Affects any lib using `(condp instance? …)` / higher-order instance? (common). clj-grounded. Surfaced loading flatland.ordered.map."
     category: "interop"
     barrier: |-
-      `^Map$Entry e` / `^SomeJavaClass x` type-hint on a fn/method param raises
-      `Unable to resolve symbol` — cljw resolves the hint class symbol where it should
-      treat the `:tag` as inert metadata (cljw does no reflection, ADR-0059). Strip /
-      ignore type-hint class symbols during analyze. Blocks flatland.ordered.map (+ any
-      lib hinting params with java classes). Cross-ref D-372 (surfaced it), ADR-0059.
+      `instance?` is a cljw MACRO (expandInstanceQ auto-quotes the class symbol), so
+      it can't be passed as a higher-order fn — `(condp instance? obj Map$Entry …)`
+      (ordered.map cons) evals it to nil. ALL direct `(instance? Class x)` work; the
+      gap is HIGHER-ORDER use (condp/map/apply). FINISHED FORM (NOT a workaround,
+      per user 2026-06-10): make instance? a real fn by completing the
+      class-symbol-as-value surface — a SINGLE analyzer arm driven by
+      `class_name.isKnown` (analyzer.zig:609-674 currently scatters Object/Number/
+      IFn/opaque/exception/host_inert arms) + UNIFY with D-293's classDescriptor
+      (rename rt.exceptionDescriptor → kind-tagged classDescriptor; 9 sites / 3 files
+      = runtime/class_of/analyzer) so every isKnown name evals to a class VALUE;
+      then `instance?` = `(fn [c x] (rt/-instance-of? c x))` (drop expandInstanceQ).
+      Map$Entry = a 1-line FQCN_MAP add (→ MapEntry → map_entry). The sibling
+      prefer-method was the trivial half (landed 869fa3db). spike-first per ADR-0089
+      + DA-fork (depth-3). FULL design + edge cases (unknown-class / imports /
+      opaque-Object-Number special-cases) + the clj-comparison audit in
+      private/notes/D373-macros-that-should-be-fns.md (read FIRST on resume).
+      Cross-ref D-293 (UNIFY — the classDescriptor finished-form), D-372 (surfaced
+      it), ADR-0059/AD-003, ADR-0102.
     last_reviewed: "2026-06-10"
   - id: "D-287"
     status: "DISCHARGED ADR-0105 (2026-06-07) - Java arrays implemented: type-erased `.array` JavaArray ([]Value, mirror of TypedInstance) + aget/aset/alength/aclone/array? primitives + object-array/int-array/byte-array/make-array/to-array/into-array/aset-*/amap/areduce in core.clj; seqable/indexed/identity-equal; byte/short/char wrap + per-ctor init defaults (F-011); type-erasure = AD-019. flatland.ordered (rung 4b) advanced aset->IEditableCollection; tools.reader (rung 6) aget->Closeable (both new host-interface blockers). ORIGINAL: now (found 2026-06-07 — ordered's blocker after D-286a, a NON-deftype/NON-host-interface class) — flatland.ordered.set.clj:84 `Unable to resolve symbol: 'aset'`. `aset` (Java array element set) is unimplemented; ordered uses Java object-arrays + aset/aget/make-array internally for its backing store. This is the Java-array-interop capability, distinct from the deftype host-interface work (D-275→D-286). cljw has no Java arrays as such — would need an array surface (object-array/aset/aget/alength/make-array) backed by a cljw mutable vector or a native array Value."
