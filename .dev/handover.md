@@ -5,52 +5,51 @@
 
 ## Resume contract
 
-- **HEAD**: `1b6f5a5f` (tokenizer overflow fix, pushed). Tree clean. Gate baseline
-  is now **295/0** `--serial-e2e` (new e2e steps: fs_jail, tokenizer_long_input).
-- **First action on resume: check the inbox** —
-  `zwasm_from_scratch/private/security_handover_to_cljw_NN.md`, highest number with
-  no `## CONSUMED` trailer (currently `_01` CONSUMED → none new). If a new one
-  exists, do it (TDD, finished-form), gate, commit, push, append CONSUMED.
-- **Else the security concrete backlog is DRAINED.** Every SE finding is
-  dispositioned (fixed or scheduled debt) and every untrusted-input surface was
-  audited (reader nesting = max_depth-safe; tokenizer overflow = FIXED; number
-  literals = BigInt/clean-error-safe). Remaining work is phase-gated debt only:
-  **D-338** SE-2 import allowlist (first host import), **D-339** SE-3 server
-  slowloris (Phase-15 concurrency), **D-341** SE-8 eval-free build, **D-342**
-  FS-jail symlink-safe, **D-343** require code-loading confinement, **D-344** regex
-  global compile budget, **D-346** VM operand-stack on large literal. None are
-  unblocked now. Self-select per CLAUDE.md § The only stop (quality-loop floor /
-  a fresh audit surface), or await a zwasm handover / phase event.
-- **Forbidden**: pushing to `main` / pinning a zwasm tag (F-001 relative-path
+- **HEAD**: ≈ `8a9460fd` (D-361 runner cap-lift; see `git log` for current).
+  Mac gate baseline **303/0** `--serial-e2e`. Tree clean.
+- **First commit on resume MUST be**: the **D-355 babashka-free playground
+  port** — rewrite `~/Documents/MyProducts/playground-v2/server/playground/
+  {server,sandbox}.clj` to run ON cljw (no babashka), using the now-landed
+  `clojure.java.io` / `cljw.fs` / `cljw.json` / `cljw.eval/with-budget` /
+  `cljw.http.server`. First: `zig build -Dwasm -Doptimize=ReleaseSafe && cp
+  zig-out/bin/cljw zig-out/bin/cljw-wasm` (the demo binary predates the io
+  work). Any cljw gap the port hits → fix cljw-side (TDD, finished-form), the
+  playground repo is NOT cljw-gated.
+- **In flight**: a background ubuntunote Linux gate verifies the D-361 fix on
+  `8a9460fd` (`/tmp/cljw_ubuntu_d361.txt`). If it still shows
+  `e2e_phase16_eval_budget` red, the cap-lift hypothesis was incomplete —
+  re-open D-361 and inspect the actual Linux render path.
+- **Forbidden**: pushing to `main`; pinning a zwasm tag (F-001 relative-path
   co-dev). Two gates at once (share `/tmp/codev_gate.lock` — `mkdir` acquire,
-  `rmdir` release all paths).
+  `rmdir` release).
 
-## Mode: security co-dev (cljw ⇄ zwasm), relative-path, /loop 10m
+## Just landed — clojure.java.io subsystem (ADR-0126, 9 commits)
 
-- F-001 = **relative-path co-dev** (`build.zig.zon` → `../zwasm_from_scratch`,
-  lazy); a zwasm fix is live in cljw immediately; the default gate never resolves
-  zwasm (lazy + `-Dwasm`-guarded). zwasm's embedder-hardening pass is landed
-  (`to_cljw_01`). Loop runs via `/loop 10m` (cron 8b1e24d1) per CODEV_PROTOCOL.md.
-
-## Landed this session (12 units, all pushed, all gated)
-
-task4 (wasm GC finaliser), FIX-1 (wasm/load budget), FIX-2 (HTTP :status), FIX-3
-(marshal range-check), FIX-4 (wasm-error taxonomy → catchable), INV-1 (regex
-compile-bomb cap; matcher is Pike-NFA / ReDoS-immune), SE-5 (HTTP header CRLF +
-std.http abort), ADR-0122/AD-026 (read-string eval-free), SE-6/7 (FS-jail v1,
-ADR-0123), SE-9 (nREPL loopback lock), review NUL-fix (FS-jail lexical-vs-kernel),
-tokenizer overflow fix (reader-DoS audit). `git log 65e4c184..1b6f5a5f` is the SSOT.
+Full cljw-native io, `bca4eb9d..8a9460fd`: `java.io.File` host type (Cycle 1) ·
+`clojure.java.io` file family + reader/writer/input-stream/output-stream + copy
++ as-url/resource stubs (Cycles 2,4,5,6) · `clojure.core/line-seq` · generic
+buffer-backed `host_stream` (Cycle 3, `runtime/io/host_stream.zig`) ·
+`cljw.json` (encode/decode-keywordized) + `cljw.fs` (babashka.fs-style) (Cycle
+7) · D-361 Linux heap-render fix. cljw-style (no-JVM, F-009 neutral impl, FS-jail
+reused, cond dispatch). Deferrals tracked: D-357 (getAbsolutePath, no cwd path),
+D-358 (stream leaf-name instance?), D-359 (URL/resource), D-360 (read-str
+:key-fn), D-051 (byte-array Value, Phase 16).
 
 ## Process discipline (SSOT)
 
-- Shared-code gate: `bash test/run_all.sh --serial-e2e`; verify Summary
-  `failed: 0` + `.dev/.gate_pass` == `scripts/gate_state_hash.sh`. Wasm work uses
-  `zig build -Dwasm`; `test/e2e/phase16_wasm_ffi.sh` is opt-in (run for wasm
-  changes). Shipped binary is ReleaseSafe — verify panic-class findings there.
-- Audit log (gitignored): `private/security_audit/` (00..92) + `private/CODEV_STATUS.md`.
+- **Gate cadence**: additive (pure-insertion .clj/new file) commits ride on
+  per-feature smoke (`zig build` + `cljw -e` probes + the new e2e) up to 5
+  before a full gate; **shared-code (existing-line edit / build.zig\*) needs a
+  fresh full gate**. `bash test/run_all.sh --serial-e2e`; verify Summary
+  `failed: 0` + `.dev/.gate_pass` == `scripts/gate_state_hash.sh`.
+- **Linux gate is independent** (ubuntunote, remote): launch in background
+  against a pushed HEAD as look-ahead; it does not contend with local smoke.
+  `timeout 1800 bash scripts/run_remote_ubuntu.sh`.
+- Demo binary is `cljw-wasm` (separate from the gate's `cljw`); rebuild before
+  any playground run.
 
 ## Cold-start reading order
 
-handover → `~/Documents/MyProducts/zwasm_from_scratch/private/CODEV_PROTOCOL.md`
-(inbox + loop) → `.dev/debt.yaml` (D-338..346 = remaining security debt) →
-`private/security_audit/50_sharp_edges.md` (finding catalogue) → CLAUDE.md.
+handover → `.dev/decisions/0126_clojure_java_io.md` (the io subsystem ADR +
+DA Alt 2) → `.dev/debt.yaml` (D-355 playground, D-357..361 io deferrals) →
+`~/Documents/MyProducts/RESUME_cfp_demos.md` (demo background) → CLAUDE.md.
