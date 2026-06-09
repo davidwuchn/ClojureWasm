@@ -18,8 +18,11 @@ to read/edit it from a shell*.
 
 **mikefarah Go `yq` v4** (NOT the python `yq`/`jq` wrapper). Confirmed
 v4.53.2. Key consequences: expression syntax is jq-like but its own; `-r`
-emits raw (unquoted) scalars; `env(NAME)` reads a shell env var; `-i`
-edits in place.
+emits raw (unquoted) scalars; `-i` edits in place. Reading a shell env var
+has TWO forms with a critical difference: **`strenv(NAME)` injects the value
+as an opaque string; `env(NAME)` TYPE-PARSES the value as YAML first.** Use
+`strenv()` for any string value — `env()` silently breaks on prose (see the
+Golden rule below). This is the single most common yq footgun in this repo.
 
 ## Golden rule for shell-escaping (this is the whole trick)
 
@@ -34,29 +37,57 @@ edits in place.
    Literal double-quotes for string *values* sit fine inside the single
    quotes — no escaping.
 
-2. **Pass shell variables via `env(VAR)`, NEVER string-interpolation.**
+2. **Pass shell variables via `strenv(VAR)`, NEVER string-interpolation.**
    The fragile form `yq "... == \"$x\""` forces double-quoting the whole
    expression (so every `[`/`*`/`"` inside now needs escaping) and breaks
    on values containing quotes. The robust form keeps the expression
    single-quoted and injects the value out-of-band:
 
    ```sh
-   # ✅ robust — expression stays single-quoted, value passed as env
-   DROW="D-203" yq -r '.active[] | select(.id == env(DROW)) | .status' .dev/debt.yaml
+   # ✅ robust — expression stays single-quoted, value passed as strenv
+   DROW="D-203" yq -r '.active[] | select(.id == strenv(DROW)) | .status' .dev/debt.yaml
    # ❌ fragile — nested quotes, breaks on metachars / quotes in $drow
    yq -r ".active[] | select(.id == \"$drow\") | .status" .dev/debt.yaml
    ```
+
+   **`strenv()` not `env()` — this is the footgun that made yq "useless"
+   for editing prose fields.** `env(VAR)` type-parses the value as YAML to
+   infer its type, so a value containing two-or-more `: ` (colon-space)
+   sequences — i.e. EVERY `status:` / `barrier:` / `resolution:` prose
+   field in `debt.yaml` — fails YAML map parsing with
+   `mapping values are not allowed in this context`, and the assignment is
+   **silently dropped** (the field keeps its old value, exit non-zero).
+   `strenv(VAR)` treats the value as an opaque string and is immune.
+   Verified v4.53.2:
+
+   ```sh
+   # ❌ env() — dies on multi-colon prose, field UNCHANGED
+   V='Part 1: foo. Part 2: bar.' yq -i '(.active[0].status) = env(V)' f.yaml
+   #   → Error: yaml: line 1, column N: mapping values are not allowed …
+   # ✅ strenv() — opaque string, assignment lands
+   V='Part 1: foo. Part 2: bar.' yq -i '(.active[0].status) = strenv(V)' f.yaml
+   ```
+
+   Use `env(VAR)` ONLY when you deliberately want the value typed as a
+   number / bool / null (rare). For ids, dates, categories, and all prose,
+   `strenv(VAR)` is the default.
 
 3. **`yq -i` (in-place) PRESERVES comments and `|-` block scalars**
    (verified v4.53.2 — header comments + every barrier block survived a
    field edit). So scalar-field updates are safe to automate:
 
    ```sh
-   DROW="D-203" yq -i '(.active[] | select(.id == env(DROW)) | .last_reviewed) = "2026-06-02"' .dev/debt.yaml
+   DROW="D-203" yq -i '(.active[] | select(.id == strenv(DROW)) | .last_reviewed) = "2026-06-02"' .dev/debt.yaml
+   # Single-line prose field (status / one-line barrier): strenv() works —
+   S='DISCHARGED 2026-06-09 — landed; Part 1: x. Part 2: y.' \
+     DROW="D-356" yq -i '(.active[] | select(.id == strenv(DROW)) | .status) = strenv(S)' .dev/debt.yaml
    ```
-   BUT for **new multi-line prose** (a fresh `barrier:`/`resolution:`
-   block), hand-edit with the Edit tool — authoring a block scalar through
-   `yq -i` string assignment is awkward and easy to mis-indent.
+   `strenv()` makes single-line prose assignment safe (the colon footgun is
+   gone). BUT for a **new multi-line block scalar** (a fresh `barrier: |-`
+   /`resolution: |-` block spanning several lines), still hand-edit with the
+   Edit tool — `yq -i` emits a single-line double-quoted scalar (no `|-`
+   block), so it round-trips correctly but reflows the prose onto one line
+   and loses the block formatting. Use Edit when the block shape matters.
 
 ## debt.yaml cookbook (the recurring queries)
 
@@ -73,7 +104,7 @@ yq -r '.discharged | length' .dev/debt.yaml
 yq -r '.active[].id' .dev/debt.yaml
 
 # one entry's field (escaping-free var)
-DROW="D-203" yq -r '.active[] | select(.id == env(DROW)) | .barrier' .dev/debt.yaml
+DROW="D-203" yq -r '.active[] | select(.id == strenv(DROW)) | .barrier' .dev/debt.yaml
 
 # filter by category / status substring
 yq -r '.active[] | select(.category == "polymorphism") | .id' .dev/debt.yaml
@@ -95,12 +126,12 @@ that check does NOT need yq — keep it grep-based.
 
 ## Other SSOTs (same idioms)
 
-- `compat_tiers.yaml` / `placement.yaml`: same single-quote + `env()`
+- `compat_tiers.yaml` / `placement.yaml`: same single-quote + `strenv()`
   rules. `placement.yaml` automation lives in
   `scripts/check_placement_status.sh`; `feature_deps.yaml` in
   `scripts/check_provisional_sync.sh` + `audit_scaffolding/CHECKS.md`.
 - `bench/history` schema (ADR-0044) is queried in
-  `scripts/check_bench_regression.sh` — mirror the `env()` idiom there for
+  `scripts/check_bench_regression.sh` — mirror the `strenv()` idiom there for
   any var-parameterised query.
 
 ## Scope (forward-looking — like `orphan_prevention.md` / `zig_tips.md`)
@@ -111,8 +142,11 @@ string-splice form work today because their interpolated values are
 controlled (no metachars): `scripts/check_bench_regression.sh:55,85`
 (`'"$MACHINE_ID"'` / `'"$LOCK_ID"'` splices) and
 `scripts/check_placement_status.sh:63,68` (`\"$status\"`). Harden these to
-`env()` **opportunistically** when next touching those files — not as a
-standalone churn.
+`strenv()` **opportunistically** when next touching those files — not as a
+standalone churn. (The two `env(ID)` reads in
+`scripts/check_accepted_divergences.sh:50,56` compare against an `id` token
+with no `: `, so `env()` does not break there — but `strenv()` is the safer
+form to adopt next time that file is touched.)
 
 ## Related
 
