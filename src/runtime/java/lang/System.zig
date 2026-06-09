@@ -24,6 +24,7 @@ const Env = @import("../../env.zig").Env;
 const SourceLocation = @import("../../error/info.zig").SourceLocation;
 const error_catalog = @import("../../error/catalog.zig");
 const clock = @import("../../clock.zig");
+const process_env = @import("../../process_env.zig");
 
 /// Implements `(java.lang.System/currentTimeMillis)`.
 /// Spec: returns the current epoch milliseconds as a long.
@@ -110,9 +111,25 @@ fn propertyMiss(args: []const Value) Value {
     return if (args.len == 2) args[1] else Value.nil_val;
 }
 
+/// Implements `(java.lang.System/getenv name)`.
+/// Spec: returns the value of the environment variable `name`, or nil if unset
+///   (JVM returns `null`). The 0-arg `(getenv)` JVM form returning the whole map
+///   is out of scope until cljw has a map-from-env need.
+/// JVM reference: java.lang.System#getenv(String).
+/// cw v1 tier: A.
+fn getenv(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = env;
+    try error_catalog.checkArity("java.lang.System/getenv", args, 1, loc);
+    if (args[0].tag() != .string)
+        return error_catalog.raise(.type_arg_not_string, loc, .{ .fn_name = "java.lang.System/getenv", .actual = @tagName(args[0].tag()) });
+    const name = string_mod.asString(args[0]);
+    if (process_env.get(name)) |val| return string_mod.alloc(rt, val);
+    return Value.nil_val;
+}
+
 fn initSystem(td: *type_descriptor.TypeDescriptor, gpa: std.mem.Allocator) anyerror!void {
     if (td.method_table.len != 0) return; // idempotent re-run
-    const entries = try gpa.alloc(type_descriptor.TypeDescriptor.MethodEntry, 3);
+    const entries = try gpa.alloc(type_descriptor.TypeDescriptor.MethodEntry, 4);
     entries[0] = .{
         .protocol_name = "",
         .method_name = try gpa.dupe(u8, "currentTimeMillis"),
@@ -127,6 +144,11 @@ fn initSystem(td: *type_descriptor.TypeDescriptor, gpa: std.mem.Allocator) anyer
         .protocol_name = "",
         .method_name = try gpa.dupe(u8, "getProperty"),
         .method_val = Value.initBuiltinFn(&getProperty),
+    };
+    entries[3] = .{
+        .protocol_name = "",
+        .method_name = try gpa.dupe(u8, "getenv"),
+        .method_val = Value.initBuiltinFn(&getenv),
     };
     td.method_table = entries;
 }

@@ -28,4 +28,11 @@ assert_eq 'default'   "$("$BIN" -e '(System/getProperty "no.such.prop.xyz" "fall
 # FQCN form parity
 assert_eq 'fqcn'      "$("$BIN" -e '(java.lang.System/getProperty "file.separator")' 2>&1 | tail -1)" '"/"'
 
-echo "OK — phase15_system_property (10 cases) green"
+# System/getenv (D-355 enabler): reads the process environment. Set inline so the
+# child sees it. Present -> value, unset -> nil, FQCN parity, realistic default.
+assert_eq 'getenv'         "$(CLJW_GETENV_PROBE=hi "$BIN" -e '(System/getenv "CLJW_GETENV_PROBE")' 2>&1 | tail -1)" '"hi"'
+assert_eq 'getenv-missing' "$("$BIN" -e '(System/getenv "CLJW_DEFINITELY_UNSET_XYZ")' 2>&1 | tail -1)" 'nil'
+assert_eq 'getenv-fqcn'    "$(CLJW_GETENV_PROBE=hi "$BIN" -e '(java.lang.System/getenv "CLJW_GETENV_PROBE")' 2>&1 | tail -1)" '"hi"'
+assert_eq 'getenv-default' "$(PG_PORT=9999 "$BIN" -e '(or (System/getenv "PG_PORT") "8080")' 2>&1 | tail -1)" '"9999"'
+
+echo "OK — phase15_system_property (14 cases) green"

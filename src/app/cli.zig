@@ -27,6 +27,7 @@ const render_error_mod = @import("render_error.zig");
 const error_render = @import("error_render.zig");
 const gc_torture = @import("../runtime/gc/gc_torture.zig");
 const eval_budget = @import("../runtime/concurrency/eval_budget.zig");
+const process_env = @import("../runtime/process_env.zig");
 const file_io = @import("../runtime/file_io.zig");
 const deps_parse = @import("deps/parse.zig");
 const deps_resolve = @import("deps/resolve.zig");
@@ -66,6 +67,11 @@ pub fn dispatch(init: std.process.Init) !void {
     // Inert when unset. Test/validation only — not production auto-collect.
     if (init.environ_map.get("CLJW_GC_TORTURE")) |raw|
         gc_torture.configure(std.fmt.parseInt(u32, raw, 10) catch 1);
+
+    // Publish the process env for the runtime surface (`System/getenv`).
+    // `init.environ_map` is already a `*Environ.Map` owned by `init`
+    // (process-lifetime), so the borrow is safe.
+    process_env.publish(init.environ_map);
 
     // ADR-0125: in-process eval budget arming (isolation dims (a)+(b)).
     // CLJW_EVAL_MAX_STEPS bounds back-edge crossings; CLJW_EVAL_DEADLINE_MS

@@ -177,6 +177,7 @@ test {
     // discovery via @import".
     _ = @import("runtime/charset.zig");
     _ = @import("runtime/clock.zig");
+    _ = @import("runtime/process_env.zig");
     _ = @import("runtime/random.zig");
     _ = @import("runtime/regex/value.zig");
     _ = @import("runtime/time/instant.zig");
