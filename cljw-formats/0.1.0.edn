@@ -32,7 +32,7 @@
    ["constants-count" "u32"]
    ["constants" "constants-count values (each per :value-tags)"]
    ["call-sites-count" "u32"]
-   ["call-sites" "each: method-name (u32 len + UTF-8 bytes), arg-count:u16"]
+   ["call-sites" "each: method-name (u32 len + UTF-8 bytes), arg-count:u16, field-only:u8, has-descriptor:u8, optional static-dispatch class fqcn (u32 len + bytes) re-resolved via resolveJavaSurface (ADR-0050 am2 static call; D-365)"]
    ["libspecs-count" "u32"]
    ["libspecs" "each: ns-name (u32 len + bytes), has-alias:u8, optional alias (u32 len + bytes), refers-count:u32, refers entries (u32 len + bytes), refer-all:u8, exclude-count:u32, exclude entries (u32 len + bytes)"]
    ["ns-filters-count" "u32 (ADR-0034 am3)"]

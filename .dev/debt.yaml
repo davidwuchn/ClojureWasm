@@ -55,6 +55,44 @@ active:
       honesty, not a correctness gap. Per F-010 the optimization campaign is
       deferred anyway; this is about WHICH mode the baseline reflects.
     last_reviewed: "2026-06-09"
+  - id: "D-365"
+    status: "PARTIAL (2026-06-10) — bytecode serializer write↔read completeness. Building the bookshelf demo as a `cljw build -m` single binary surfaced a CHAIN of serialize-incompleteness gaps (F-010/F-013 — a real lib exposes them), all of the same structural class: write/read/archive/doc are FOUR hand-synced places with NO mechanical cross-symmetry gate. FIXED this session: (1) regex Value tag — the wire enum (0x0E), readValue, the cljw-formats archive, AND the module-header doc ALL had regex, but writeValue had NO `.regex` arm, so a regex CONSTANT (`#","` in db.clj's `->book`) fell to `else → UnsupportedValueTag`; added the writeValue arm (writes the pattern source; decoder recompiles via regex_value.alloc, same as `re-pattern`). (2) call_sites.descriptor + field_only — serializeChunk wrote only method_name+arg_count, DROPPING the static-dispatch class descriptor, so `op_static_method_call` (e.g. `(Integer/parseInt port)` in bookshelf -main) crashed at RUN with 'missing descriptor (compiler bug)'; now serialize the descriptor's fqcn + re-resolve via special_forms.resolveJavaSurface at deserialize (+ field_only). (3) ns_filters was the FIRST of this class (D-356). STRUCTURAL GATE ADDED: a Value-tag symmetry test (inline for over ValueTag + exhaustive switch — a new wire tag is a compile error until it round-trips, proving write+read both exist). VERIFIED: bookshelf single binary now fully works (HTTP + SQLite-via-wasm + Rust cover + static SPA + OIDC config), `cljw build -A:cljw -m bookshelf.server -o bookshelf` → `./bookshelf 8097` serves /api/config, /api/books (real seeded data + cover colors), /. KEY STRUCTURAL INSIGHT: a `cljw build` artifact ALWAYS runs on the VM (payload = VM bytecode) while the default backend is tree_walk (F-012), so `cljw run` (tree_walk) vs the built binary (VM) is an asymmetry that exposes BOTH serialize-incompleteness AND tree_walk/VM parity gaps only in embedded artifacts. Surfaced 2026-06-10 building bookshelf (user-greenlit demo work)."
+    category: "build"
+    barrier: |-
+      RESIDUAL (structural follow-up, the user's '構造的に直し忘れ' concern): the
+      added symmetry gate covers only the Value-TAG axis. Two axes remain
+      UNGATED: (a) chunk SIDE-TABLE completeness (a whole side-table dropped, like
+      ns_filters was) and (b) side-table FIELD completeness (a field dropped, like
+      call_sites.descriptor/field_only was). The finished-form gate is a CHUNK
+      round-trip test that compiles a chunk exercising EVERY op + side-table,
+      serialize→deserialize→VM-run, asserting equality — a new op/side-table/field
+      then can't ship half-serialized. Broader than this cycle; tracked here.
+      SEPARATELY: the embedded-artifact-runs-on-VM realization means tree_walk/VM
+      parity (F-012/D-196) gates the built-binary surface — any tree_walk-only
+      construct breaks `cljw build` output even when `cljw run` works. Not
+      blocking the bookshelf demo (its constructs now round-trip), but the
+      VM-parity flip (D-196) + a built-binary-on-VM e2e would close it.
+    last_reviewed: "2026-06-10"
+  - id: "D-366"
+    status: "open (user-directed 2026-06-10, NEXT-SESSION FIRST TASK) — ClojureWasm-side license attribution. The zwasm side is DONE; the ClojureWasm side is NOT. Full confirmed work order is `private/20260609_license_research/PROMPT.md` § B (judgement already settled there — just apply, no re-decision). Four MUST items: B-1 per-file EPL-2.0 headers on every `src/lang/clj/clojure/**/*.clj` — TWO variants: (①) upstream-text-reproducing files keep the upstream EPL banner (ONLY template.clj [verbatim] + core/protocols.clj [docstrings reproduced]); (②) the other 14 independent reimpls (core/set/walk/zip/data/string/test/java.io/math/pprint/edn/data.json/data.csv/tools.cli) get the CW-copyright header citing the upstream lineage as courtesy (per the PROMPT's table of <NS>/<ORIG>); `cljw.*` are CW-original = out of scope; docstrings are NOT notices, do not touch. B-2 root NOTICE file (verbatim text in the PROMPT). B-3 `.claude/rules/clj_attribution.md` (rule + discovery grep `git ls-files 'src/lang/clj/clojure/**/*.clj' | xargs grep -L 'SPDX-License-Identifier: EPL-2.0'` + sweep + retrofit, per framework_completion.md). B-4 `scripts/check_clj_attribution.sh` PreToolUse hook (fail-closed: every clojure/**/*.clj must contain `SPDX-License-Identifier: EPL-2.0`; wire into .claude/settings.json like check_smell_audit.sh, reuse hook_lib.sh). Completion = B-1+B-2+B-3+B-4 all done (B-3/B-4 make it judgement-less + machine-guaranteed). NOTE: B-1 variant② is a pure header prepend (no body/docstring change) — but it touches MANY `src/lang/clj/**` files (clj_diff_sweep.md auto-loads); they are header-only, gate as a batch."
+    category: "license"
+    barrier: |-
+      blocked-by: nothing — the PROMPT settled all judgement; apply verbatim.
+      This is the user-designated FIRST task on the next clear-session /continue
+      (handover resume contract). Land B-3 (rule) + B-4 (hook) in the SAME cycle
+      as B-1 (the retrofit) per framework_completion.md (discovery+sweep+retrofit
+      together). Reference: private/20260609_license_research/{PROMPT,REPORT,
+      verify_clojurewasm,inventory_clojurewasm}.md.
+    last_reviewed: "2026-06-10"
+  - id: "D-367"
+    status: "open (user-directed 2026-06-10) — simplify the repo README.md for the Conj CFP submission (part of the D-362 runway, step 7). Rough checklist (user): logo; title; catchphrase; an `> [!NOTE]` saying it is not yet stable + dev resources are limited so Issues/PRs are NOT accepted; features (concise — do NOT mention performance or binary size yet, optimization headroom remains); quickstart; Playground URL; Bookshelf Demo URL; an `ideal`/vision section. Keep it simple. Depends on D-362 steps 1-6 (the Playground + Bookshelf demo URLs come from the fly deploy). Surfaced 2026-06-10 (user)."
+    category: "docs"
+    barrier: |-
+      blocked-by: the Playground + Bookshelf Demo URLs (D-362 steps 1-4 fly
+      deploy) for those two checklist lines; the rest (logo/title/catchphrase/
+      NOTE/features/quickstart/ideal) can be drafted independently. Do NOT cite
+      perf / binary-size numbers (optimization is deferred, F-010 / D-180 / D-364).
+    last_reviewed: "2026-06-10"
   - id: "D-357"
     status: "DISCHARGED 2026-06-09 — getAbsolutePath/getCanonicalPath implemented via std.process.currentPathAlloc(rt.io, gpa) (the 0.16 cwd-path accessor; getCwd/realpath were renamed to currentPath, not removed). getAbsolutePath: absolute→as-is, relative→join(cwd,path) (no normalisation, JVM-shape). getCanonicalPath: resolvePosix (lexical `.`/`..`; symlinks NOT resolved — cljw DIVERGENCE, no realpath in the io model). e2e phase16_java_io_file (absPath_abs/absPath_rel/canon_dotdot). ORIGINAL: open — deferred stub (ADR-0126 Cycle 1). Both raise feature_not_supported: the Zig 0.16 std.Io handle model exposes NO process cwd path (getCwd/realpath/posix.getcwd all removed), so a relative path cannot be resolved to a true absolute. Shipping a wrong (e.g. cwd-less) answer would be a silent lie (no-op-stub rule), so the honest transient stub raises instead. Absolute-path inputs could be lexically cleaned now, but a half-working method (works for absolute, errors for relative) is worse than a uniform explicit error. Surfaced 2026-06-09 (ADR-0126)."
     category: "interop"

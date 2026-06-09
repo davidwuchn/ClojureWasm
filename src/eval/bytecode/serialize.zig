@@ -13,6 +13,8 @@
 //!             for each constant: ValueTag:u8 + per-tag body
 //!   [...]     call_sites_count (u32 LE)
 //!             for each entry: method_name_len:u32 + bytes + arg_count:u16
+//!                           + field_only:u8 + has_descriptor:u8
+//!                           + (static-dispatch class fqcn: u32 len + bytes)?
 //!   [...]     libspecs_count (u32 LE)
 //!             for each entry: ns_name_len:u32 + bytes
 //!                           + has_alias:u8 + (alias_len:u32 + bytes)?
@@ -80,6 +82,10 @@ pub const SerializeError = error{
     /// closure, which is never a compile-time constant (ADR-0034 am2 A2-D2).
     /// Raised as an invariant guard, not a feature gate.
     ClosureNotSerializable,
+    /// A static-dispatch call-site's descriptor has a null `fqcn` (anonymous) —
+    /// it cannot be re-resolved by name at deserialize. Static host-class calls
+    /// always have a named class, so this is an invariant guard.
+    StaticDescriptorUnnamed,
 };
 
 pub const DeserializeError = error{
@@ -89,6 +95,10 @@ pub const DeserializeError = error{
     UnknownOpcode,
     UnknownValueTag,
     OutOfMemory,
+    /// A static-call descriptor's class fqcn did not resolve in the embedded
+    /// runtime (the host class is not registered). Surfaces a concrete error
+    /// rather than the VM's "missing descriptor (compiler bug)".
+    StaticClassUnresolved,
 };
 
 /// Wire-format Value classifier. **Stable enum** — the
@@ -282,6 +292,20 @@ fn writeValue(allocator: std.mem.Allocator, w: *std.Io.Writer, v: Value) Seriali
             } else {
                 try writeU8(w, 0);
             }
+        },
+        .regex => {
+            // Mirror of readValue's `.regex` arm: write the pattern SOURCE; the
+            // decoder recompiles via `regex_value.alloc` (the `re-pattern` /
+            // `#"..."` path). Inline flags `(?i)` live in the source, so source
+            // alone round-trips (the read side passes default Flags). Was
+            // MISSING — the wire enum (0x0E), readValue, and the cljw-formats
+            // archive all carried regex, but writeValue did not, so a regex
+            // CONSTANT (`#","` in a fn body) fell to `else` → UnsupportedValueTag
+            // (surfaced building the bookshelf demo, D-365). The round-trip
+            // symmetry test now gates this class.
+            try writeU8(w, @intFromEnum(ValueTag.regex));
+            const regex_value = @import("../../runtime/regex/value.zig");
+            try writeLenPrefixed(w, regex_value.asRegex(v).source());
         },
         else => return SerializeError.UnsupportedValueTag,
     }
@@ -485,6 +509,22 @@ pub fn serializeChunk(allocator: std.mem.Allocator, chunk: BytecodeChunk) ![]u8 
     for (chunk.call_sites) |cs| {
         try writeLenPrefixed(w, cs.method_name);
         try writeU16(w, cs.arg_count);
+        // field_only (`.-name` reader form) + the STATIC-dispatch descriptor
+        // were BOTH dropped pre-D-365: op_static_method_call reads
+        // `call_sites[i].descriptor` (the analyze-time class TypeDescriptor for
+        // `Integer/parseInt` etc.), so a built binary that ran a static call
+        // crashed with "missing descriptor (compiler bug)" on the VM. Serialize
+        // the descriptor's fqcn; the decoder re-resolves it via the SAME
+        // `resolveJavaSurface` the analyzer used (mirror of the ns_filters /
+        // regex fixes — a chunk side-table field that was silently lost).
+        try writeU8(w, if (cs.field_only) 1 else 0);
+        if (cs.descriptor) |td| {
+            const fqcn = td.fqcn orelse return SerializeError.StaticDescriptorUnnamed;
+            try writeU8(w, 1);
+            try writeLenPrefixed(w, fqcn);
+        } else {
+            try writeU8(w, 0);
+        }
     }
     try writeU32(w, @intCast(chunk.libspecs.len));
     for (chunk.libspecs) |ls| {
@@ -568,7 +608,16 @@ pub fn deserializeChunk(allocator: std.mem.Allocator, rt: *Runtime, env: *@impor
         const name_bytes = try r.readLenPrefixed();
         const name_dup = try allocator.dupe(u8, name_bytes);
         const arg_count = try r.readU16();
-        call_sites[i] = .{ .method_name = name_dup, .arg_count = arg_count };
+        const field_only = (try r.readU8()) != 0;
+        const has_desc = (try r.readU8()) != 0;
+        var descriptor: ?*const @import("../../runtime/type_descriptor.zig").TypeDescriptor = null;
+        if (has_desc) {
+            const fqcn = try r.readLenPrefixed();
+            const special_forms = @import("../analyzer/special_forms.zig");
+            descriptor = special_forms.resolveJavaSurface(rt, env, fqcn) orelse
+                return DeserializeError.StaticClassUnresolved;
+        }
+        call_sites[i] = .{ .method_name = name_dup, .arg_count = arg_count, .field_only = field_only, .descriptor = descriptor };
     }
 
     const ls_count = try r.readU32();
@@ -984,6 +1033,67 @@ test "envelope entry manifest round-trips; chunk readers skip it (ADR-0034 am4)"
     const bytes2 = try serializeEnvelope(testing.allocator, &.{chunk}, null);
     defer testing.allocator.free(bytes2);
     try testing.expect((try readEnvelopeEntry(arena, bytes2)) == null);
+}
+
+test "every wire ValueTag has BOTH a write and a read arm (symmetry gate)" {
+    // Structural gate for the write↔read asymmetry class. writeValue (switch on
+    // Value.Tag, with an `else`) and readValue (exhaustive switch on ValueTag)
+    // are TWO separate switches kept in sync BY HAND — plus the cljw-formats
+    // archive + the module-header doc, four places total. Nothing mechanical
+    // enforced cross-symmetry, so `regex` (0x0E) shipped with a wire enum slot +
+    // a readValue arm + an archive entry + a doc mention but NO writeValue arm —
+    // undetected until the bookshelf demo's `#","` hit it (D-365).
+    //
+    // This `inline for` + exhaustive `switch (tag)` (no `else`) is the gate: a
+    // NEW ValueTag makes the switch non-exhaustive → a COMPILE ERROR here →
+    // the author MUST supply a representative, which round-trips it and thereby
+    // proves both a write arm and a read arm exist + agree on the tag byte.
+    var th = std.Io.Threaded.init(testing.allocator, .{});
+    defer th.deinit();
+    var rt = Runtime.init(th.io(), testing.allocator);
+    defer rt.deinit();
+    var env = try @import("../../runtime/env.zig").Env.init(&rt);
+    defer env.deinit();
+
+    const regex_value = @import("../../runtime/regex/value.zig");
+    const regex_compile = @import("../../runtime/regex/compile.zig");
+    const user_ns = env.current_ns.?; // Env.init creates `user` + sets current_ns
+    const one = Value.initInteger(1);
+
+    inline for (std.meta.fields(ValueTag)) |field| {
+        const tag: ValueTag = @enumFromInt(field.value);
+        const rep: Value = switch (tag) {
+            .nil => Value.nil_val,
+            .true_val => Value.initBoolean(true),
+            .false_val => Value.initBoolean(false),
+            .integer => one,
+            .float => Value.initFloat(1.5),
+            .char => Value.initChar('a'),
+            .string => try string_collection.alloc(&rt, "s"),
+            .symbol => try symbol_mod.intern(&rt, null, "sym"),
+            .keyword => try keyword_mod.intern(&rt, null, "kw"),
+            .list => try list_mod.consHeap(&rt, one, try list_mod.emptyList(&rt)),
+            .vector => try vector_mod.conj(&rt, vector_mod.empty(), one),
+            .array_map => try map_mod.assoc(&rt, map_mod.empty(), one, one),
+            .hash_set => try set_mod.conj(&rt, set_mod.empty(), one),
+            .var_ref => Value.encodeHeapPtr(.var_ref, try env.intern(user_ns, "v", .nil_val, null)),
+            .regex => try regex_value.alloc(&rt, "ab.", regex_compile.Flags{}),
+            .fn_val => try tree_walk.allocFunctionFromSerialized(&rt, 0, &[_]tree_walk.SerializedMethod{}, null),
+        };
+        var sbuf: [4096]u8 = undefined;
+        var sw: std.Io.Writer = .fixed(&sbuf);
+        writeValue(testing.allocator, &sw, rep) catch |e| {
+            std.debug.print("writeValue has NO arm for ValueTag.{s}: {}\n", .{ @tagName(tag), e });
+            return error.WriteArmMissing;
+        };
+        const bytes = sw.buffered();
+        try testing.expectEqual(@intFromEnum(tag), bytes[0]); // write emits the right wire tag
+        var rr: ByteReader = .{ .bytes = bytes, .pos = 0 };
+        _ = readValue(testing.allocator, &rr, &rt, &env) catch |e| {
+            std.debug.print("readValue has NO arm for ValueTag.{s}: {}\n", .{ @tagName(tag), e });
+            return error.ReadArmMissing;
+        };
+    }
 }
 
 test "artifact trailer frames and extracts the payload" {

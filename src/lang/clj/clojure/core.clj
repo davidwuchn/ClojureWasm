@@ -921,7 +921,7 @@
 ;; (stack-safe); the emit case re-enters -dedupe-step (the laziness boundary).
 ;; `have-prev` separates "no previous element yet" from a genuine nil element
 ;; (so a leading nil is not dropped). A self-named `(fn step …)` is avoided —
-;; cljw fn* has no self-name (D-2811).
+;; cljw fn* has no self-name (D-147).
 (def -dedupe-step
   (fn* [coll prev have-prev]
     (lazy-seq
@@ -956,7 +956,7 @@
 ;; Lazy `distinct` engine. The inner fn* `recur`s on the already-seen skip so
 ;; a long run of duplicates is consumed within ONE lazy-seq thunk (stack-safe);
 ;; the emit case re-enters -distinct-step (the laziness boundary). A self-named
-;; `(fn step …)` is avoided — cljw fn* has no self-name (D-2811).
+;; `(fn step …)` is avoided — cljw fn* has no self-name (D-147).
 (def -distinct-step
   (fn* [coll seen]
     (lazy-seq

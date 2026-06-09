@@ -5,44 +5,55 @@
 
 ## Resume contract
 
-- **HEAD**: see `git log` (D-356 require-closure embedding + D-363 `cljw build
-  -m` main mode both landed + pushed; each ADR commit precedes its source
-  commit). Gate: the full `--serial-e2e` gate is run on each source state before
-  its commit (it stamps `.dev/.gate_pass`).
-- **First commit on resume MUST be**: open **D-362** (Clojure Conj 2026 CFP
-  runway) — an ORDERED, user-collaborative sequence: (1) register
-  `$MY/playground-v2` as `cw-playground` under the clojurewasm org; (2)
-  register `$MY/serverless-v2` (bookshelf) as `cw-serverless-demo`; (3) delete
-  the org's old `playground` + `edge-demo` repos; (4) deploy both to fly.io
-  (user drives the dashboard, AI assists with the fly CLI + DEPLOY.md); (5) cut
-  a zwasm `v2.0.0-alpha.2` tag; (6) switch `build.zig.zon` from the F-001
-  relative path to that tag (url+hash — re-read F-001's amendment note first,
-  this is the planned relative→tag transition); (7) polish README/CFP. Full
-  row in `.dev/debt.yaml` D-362. Start with step 1 + confirm org-repo specifics
-  with the user (genuine external action). The bookshelf demo now builds via
-  `cljw build -A:cljw -m bookshelf.server -o bookshelf` (D-363 -m mode — the
-  server `-main` runs at RUN, not build).
-- **Forbidden**: pushing to `main`; pinning a zwasm tag UNILATERALLY (step 6 is
-  an F-001-adjacent transition — confirm + log an F-001 Revision-history entry
-  when taken).
+- **HEAD**: see `git log` (D-356 require-closure embed + D-363 `cljw build -m`
+  + D-365 serialize completeness all landed + pushed; each ADR/source commit
+  pair gated `--serial-e2e` before push, stamping `.dev/.gate_pass`).
+- **On resume, do these IN ORDER** (user-directed 2026-06-10):
+  1. **Launch the Ubuntu full gate in BACKGROUND** —
+     `timeout 1800 bash scripts/run_remote_ubuntu.sh` (look-ahead; the Linux
+     gate is not per-commit per ADR-0049 and a LOT has landed since the last
+     run). Do NOT block on it; keep working. When it reports, **root-fix any
+     failure on the spot** (don't defer) — re-run after the fix.
+  2. **D-366 — license attribution (FIRST source task).** Apply
+     `private/20260609_license_research/PROMPT.md` § B VERBATIM (judgement
+     already settled there): B-1 per-file EPL-2.0 headers on all
+     `src/lang/clj/clojure/**/*.clj` (2 variants), B-2 root NOTICE, B-3
+     `.claude/rules/clj_attribution.md`, B-4 `scripts/check_clj_attribution.sh`
+     hook — B-3+B-4 land in the SAME cycle as B-1 (framework_completion). The
+     zwasm side is already done; only the ClojureWasm side remains.
+  3. **D-362 — Conj CFP runway** (user-collaborative: org-repo register/delete,
+     fly deploy, zwasm `v2.0.0-alpha.2` tag + build.zig.zon pin, README) +
+     **D-367 — README simplify** (logo/title/catchphrase/`[!NOTE]` no-Issues-
+     PRs/features-no-perf/quickstart/Playground+Bookshelf URLs/ideal). Full
+     rows in `.dev/debt.yaml`. The bookshelf demo already builds + runs as a
+     single binary (`cljw build -A:cljw -m bookshelf.server -o bookshelf`).
+- **Forbidden**: pushing to `main`; pinning a zwasm tag UNILATERALLY (D-362
+  step 6 is an F-001-adjacent transition — confirm + log an F-001 Revision-
+  history entry when taken).
 
-## Just landed — D-363 cljw build -m main-entry mode
+## Just landed — bookshelf single binary works; D-365 serialize completeness
 
-ADR-0034 amendment 4 (DA fork → Alt-2 entry-manifest). `cljw build -m <ns>
-[args] -o out` embeds the require closure for `<ns>` + an entry manifest at the
-payload front (artifact metadata, ELF-`e_entry`-style); the binary invokes
-`(<ns>/-main args)` at RUN, NOT build — so a server `-main` no longer hangs the
-build (resolves the D-356 residual as a real cljw feature). Run-side routes
-through the shared `run_mode.synthMainNs` (pub) so the built `-m` binary is
-byte-identical to `cljw -M -m` (F-011); the binary's runtime argv reaches
-`-main` (`./out 8080`). serialize.zig: envelope manifest (writeManifest/
-skipManifest/readEnvelopeEntry; deserialize+iterator skip it → runEnvelope
-unchanged). builder: buildMainEnvelope + buildArtifact(BuildSpec). Build stays
-Clojure-AOT-faithful (build=load); `-main` is the "don't run at build" escape
-hatch (no env-vs-side-effect classifier; cw v0 build_mode rejected, F-013). e2e
-cases 7-11 green (incl. A4-D4: deps.edn `:main-opts ["-m" ns]` on a selected
-alias drives the build entry — `cljw build -A:run` mirrors `cljw -M:run`; e2e
-main_opts_drive). Script mode (D-356) unchanged.
+The D-356 (require-closure embed) + D-363 (`cljw build -m` main mode + A4-D4
+deps `:main-opts`) chain now produces a **fully-working single binary** for the
+bookshelf demo: `cljw-wasm build -A:cljw -m bookshelf.server -o bookshelf` →
+`./bookshelf <port>` serves /api/config, /api/books (real SQLite-via-wasm seeded
+data + Rust-wasm cover colors), and the static SPA — one 4.5 MB ReleaseSafe
+binary (HTTP + SQLite-wasm + Rust-wasm + OIDC). De-risks D-362's fly deploy.
+
+Getting there surfaced **D-365** — a chain of bytecode-serializer write↔read
+INCOMPLETENESS gaps, all one structural class (write/read/archive/doc are 4
+hand-synced places, no cross-symmetry gate; F-010/F-013 — the real lib exposed
+them): (1) `regex` Value tag had wire-enum+read+archive+doc but NO writeValue arm
+(`#","` → UnsupportedValueTag) — added the arm + a **Value-tag symmetry gate**
+(exhaustive over ValueTag, a new tag is a compile error until it round-trips);
+(2) `call_sites.descriptor`+`field_only` dropped → `(Integer/parseInt …)` static
+call crashed at RUN with "missing descriptor" — serialize the fqcn + re-resolve
+via `resolveJavaSurface`. KEY INSIGHT: a `cljw build` artifact ALWAYS runs on the
+VM (payload = bytecode) while the default backend is tree_walk (F-012), so
+embedded artifacts expose serialize-incompleteness + tree_walk/VM parity gaps
+that `cljw run` never hits. D-365 RESIDUAL: a CHUNK round-trip gate (side-table +
+field completeness, the 2 axes the Value-tag gate doesn't cover) + VM-parity
+(D-196).
 
 ## Process discipline (SSOT)
 
@@ -63,8 +74,21 @@ main_opts_drive). Script mode (D-356) unchanged.
 ## Cold-start reading order
 
 handover → `.dev/debt.yaml` (**D-362** = next, CFP runway; D-356 + D-363
-DISCHARGED) →
+DISCHARGED; **D-365** = serialize completeness, PARTIAL w/ a structural
+follow-up) →
 `.dev/decisions/0034_cljw_build_single_mode_tier0_metadata_edn_decode.md`
-(amendment 3 = require-closure embedding; amendment 4 = `-m` main mode) →
-`private/notes/D363-cljw-build-main-mode.md` + `…D356-require-closure-embedding.md`
-(session notes + residuals) → CLAUDE.md.
+(am3 = require-closure embedding; am4 = `-m` main mode) →
+`private/notes/D365-serialize-regex-symmetry.md` +
+`…D363-cljw-build-main-mode.md` (session notes + residuals) → CLAUDE.md.
+
+## Stopped — user requested
+
+User (2026-06-10): 「コンテキスト増大してきたので、コミット完了、pushしたら、
+次のクリアセッションからcontinueで再開できるように、配線・参照チェーン監査をして
+止めてください」。Plus three wired follow-ups for the next session: (a) the
+ClojureWasm-side license attribution — `private/20260609_license_research/PROMPT.md`
+§ B, zwasm side already done — as the FIRST task (D-366); (b) the Ubuntu full
+gate run in BACKGROUND at session start, root-fix issues as they surface; (c)
+the README simplification policy (D-367). All three are in the resume-contract
+ordered list above + tracked in `.dev/debt.yaml` (D-366/D-367). Resume via
+`/continue`; the ordered list is the plan.

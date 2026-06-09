@@ -119,7 +119,7 @@ DROW="D-018"; yq -r '.discharged[].id, (.active[] | select(.status | test("DISCH
 # highest existing id → next free is +1. MUST scope to the `id:` field — a bare
 # `grep -oE 'D-[0-9]+'` over the whole file also matches D-NNN in PROSE (cross-
 # refs, and any typo'd phantom ref), so it can return a number with NO real row
-# (e.g. a stray "D-2811" once made it return 2811 when the true max was 363).
+# (e.g. a stray `D-NNNN` once made it return a too-high phantom when the true max was 363).
 grep -oE 'id: "D-[0-9]+' .dev/debt.yaml | grep -oE '[0-9]+' | sort -n | tail -1
 # yq equivalent (also id-scoped):
 #   yq -r '.active[].id, .discharged[].id' .dev/debt.yaml | grep -oE '[0-9]+' | sort -n | tail -1
@@ -128,7 +128,7 @@ grep -oE 'id: "D-[0-9]+' .dev/debt.yaml | grep -oE '[0-9]+' | sort -n | tail -1
 Note: `check_debt_id_refs.sh` does the phantom/undefined-id gate with
 plain `rg` over the file (any `D-NNN` anywhere counts as "defined"), so
 that check does NOT need yq — keep it grep-based. **Known blind spot**: a
-typo'd reference that itself looks like a `D-NNN` (e.g. a stray `D-2811`)
+typo'd reference that itself looks like a `D-NNN` (e.g. a stray `D-NNNN`)
 appears in its own prose, so the "appears somewhere → defined" rule counts
 it as defined and the gate does NOT flag it. The id-scoped next-id recipe
 above is the robust cross-check (a phantom never has an `id:` row); to
