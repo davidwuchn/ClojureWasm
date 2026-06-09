@@ -37,7 +37,7 @@ const Value = @import("../runtime/value/value.zig").Value;
 ///   decoding + machine-driven tooling (CIDER / editors / log
 ///   aggregators). When `CLJW_ERROR_LOG` is set, the rendered error
 ///   is also appended to that file via `appendToLogFile`.
-pub fn renderError(stderr: *Writer, ctx: error_print.SourceContext, err: anyerror) Writer.Error!void {
+pub fn renderError(stderr: *Writer, ctx: error_print.SourceContext, err: anyerror) anyerror!void {
     if (error_mod.getLastError()) |info| {
         switch (currentFormat) {
             .text => try error_print.formatErrorWithContext(info, ctx, stderr, .{}),
@@ -165,7 +165,7 @@ fn appendToLogFile(info: error_mod.Info, ctx: error_print.SourceContext) void {
 /// `:phase` / `:file` / `:line` / `:column` / `:message` + the
 /// `:cljw/error true` discriminator that lets `cljw render-error`
 /// recognise the event in mixed log output.
-fn formatErrorEdn(info: error_mod.Info, ctx: error_print.SourceContext, w: *Writer) Writer.Error!void {
+fn formatErrorEdn(info: error_mod.Info, ctx: error_print.SourceContext, w: *Writer) anyerror!void {
     // ADR-0118 Decision E.1: mirror the text renderer's file fallback — when
     // the raise site left `info.location.file` as the "unknown" default (the
     // analyzer/eval set line:col but not file), fall back to the source label

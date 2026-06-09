@@ -40,6 +40,7 @@ const error_context = @import("../runtime/error/context.zig");
 const map_collection = @import("../runtime/collection/map.zig");
 const symbol_mod = @import("../runtime/symbol.zig");
 const print_mod = @import("../runtime/print.zig");
+const writer_value = @import("../runtime/writer_value.zig");
 const uuid_prim = @import("primitive/uuid.zig");
 const inst_prim = @import("primitive/inst.zig");
 
@@ -222,11 +223,23 @@ fn finalizeUserNs(env: *Env) !void {
 pub fn setupCore(arena: std.mem.Allocator, rt: *Runtime, env: *Env, macro_table: *macro_dispatch.Table) !void {
     try setupCorePrefix(rt, env, macro_table);
     try loadCore(arena, rt, env, macro_table);
+    try installPrintMethod(rt, env);
     // cw v1's first dynamic var — interned after loadCore creates the
     // `cljw.error` ns (via the embedded file's `(in-ns ...)`), then the
     // raise-time snapshot provider is wired (ADR-0055 D2/D3).
     try error_context.register(env);
     try installBaselineBindings(arena, env);
+}
+
+/// Cache the `clojure.core/print-method` Var (D-370, ADR-0127), AFTER core.clj
+/// defines the defmulti, so the native pr path can consult it. The writer-handle
+/// descriptor is a comptime static (writer_value.zig), so nothing to init here.
+fn installPrintMethod(rt: *Runtime, env: *Env) !void {
+    _ = rt;
+    writer_value.initWriterType();
+    if (env.findNs("clojure.core")) |core| {
+        print_mod.initPrintMethodVar(core.resolve("print-method"));
+    }
 }
 
 /// Intern `clojure.core/*data-readers*` (root `{}`) and
@@ -365,6 +378,7 @@ pub fn setupCoreAot(
 ) !void {
     try setupCorePrefix(rt, env, macro_table);
     try loadCoreAot(arena, rt, env, macro_table, core_blob);
+    try installPrintMethod(rt, env);
     try error_context.register(env);
     try installBaselineBindings(arena, env);
 }

@@ -717,9 +717,10 @@ fn writeArgsSpaced(rt: *Runtime, env: *Env, w: *std.Io.Writer, args: []const Val
             const n = std.unicode.utf8Encode(arg.asChar(), &buf) catch 0;
             try w.writeAll(buf[0..n]);
         } else {
-            // printResult realizes a lazy seq (else delegates to printValue),
-            // so (str/prn/println (map …)) renders the seq, not #<lazy_seq>.
-            try print_mod.printResult(rt, env, w, arg);
+            // printConsult realizes a lazy seq + renders, consulting print-method
+            // first (D-370/ADR-0127): a type with a non-default override prints via
+            // the user method; everything else takes the native printResult path.
+            try print_mod.printConsult(rt, env, w, arg);
         }
     }
 }
@@ -1678,6 +1679,7 @@ const ENTRIES = [_]Entry{
     .{ .name = "prn", .f = &prnFn },
     .{ .name = "__with-out-str", .f = &withOutStrFn },
     .{ .name = "pr", .f = &prFn },
+    .{ .name = "__print-method-default", .f = &print_mod.printMethodDefaultFn },
     .{ .name = "newline", .f = &newlineFn },
     .{ .name = "pr-str", .f = &prStrFn },
     .{ .name = "print-str", .f = &printStrFn },

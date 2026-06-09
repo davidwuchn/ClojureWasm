@@ -60,6 +60,8 @@ const lazy_seq_mod = @import("lazy_seq.zig");
 const range_collection = @import("collection/range.zig");
 const env_mod = @import("env.zig");
 const dispatch_mod = @import("dispatch.zig");
+const writer_value = @import("writer_value.zig");
+const class_of = @import("class_of.zig");
 const SourceLocation = @import("error/info.zig").SourceLocation;
 
 /// Realize any lazy seqs nested in `v` into concrete lists, then render.
@@ -369,13 +371,13 @@ pub fn printFloat(w: *Writer, f: f64) Writer.Error!void {
 /// `print`-form of a char (D-185): the bare UTF-8 character, no `\` literal
 /// prefix. Mirrors `writeArgsSpaced`'s top-level raw-char path (D-154) for
 /// chars nested inside a collection printed under `print`/`println`.
-pub fn printCharRaw(w: *Writer, cp: u21) Writer.Error!void {
+pub fn printCharRaw(w: *Writer, cp: u21) anyerror!void {
     var buf: [4]u8 = undefined;
     const n = std.unicode.utf8Encode(cp, &buf) catch 0;
     try w.writeAll(buf[0..n]);
 }
 
-pub fn printCharReadable(w: *Writer, cp: u21) Writer.Error!void {
+pub fn printCharReadable(w: *Writer, cp: u21) anyerror!void {
     switch (cp) {
         '\n' => try w.writeAll("\\newline"),
         '\t' => try w.writeAll("\\tab"),
@@ -425,7 +427,7 @@ pub fn setFnNameAccessor(f: *const fn (Value) FnIdentity) void {
 /// Write a callable in the `#<ns/name>` form (AD-025): the AD-002 `#<…>` envelope
 /// filled with the qualified name instead of clj's munged `#object[class 0xHASH]`.
 /// A null `name` (truly anonymous) renders `#<fn>`; a null `ns` drops the prefix.
-fn printCallable(w: *Writer, ns: ?[]const u8, name: ?[]const u8) Writer.Error!void {
+fn printCallable(w: *Writer, ns: ?[]const u8, name: ?[]const u8) anyerror!void {
     try w.writeAll("#<");
     if (ns) |n| {
         try w.writeAll(n);
@@ -470,6 +472,101 @@ pub fn initPrintLimitVars(len_v: ?*const env_mod.Var, lvl_v: ?*const env_mod.Var
     print_namespace_maps_var = nsmaps_v;
     print_readably_var = readably_v;
     print_meta_var = meta_v;
+}
+
+// === print-method consult (D-370, ADR-0127) ===
+// Cached `clojure.core/print-method` Var (nullable until bootstrap installs it, so
+// `pr` during core load — before print-method is def'd — takes the native path).
+// The consult derefs the MultiFn live each call (cheap; the multifn Value is
+// defonce-stable per D-184).
+var print_method_var: ?*const env_mod.Var = null;
+
+/// Install the cached `print-method` Var (called once at bootstrap, after core.clj).
+pub fn initPrintMethodVar(v: ?*const env_mod.Var) void {
+    print_method_var = v;
+}
+
+/// The non-default `print-method` override for `(class v)`, or null when only the
+/// `:default` matches (the common no-override case stays native). The
+/// `method_table.count <= 1` guard is the dirty flag — with only `:default`
+/// registered no value pays a classOf/getMethod. Any dispatch error (ambiguous)
+/// degrades to null = native render: printing never raises a dispatch error.
+fn printMethodOverride(rt: *Runtime, v: Value) ?Value {
+    const varp = print_method_var orelse return null;
+    const mfv = varp.deref();
+    if (mfv.tag() != .multi_fn) return null;
+    const mf = mfv.decodePtr(*multimethod.MultiFn);
+    if (map_collection.count(mf.method_table) <= 1) return null; // only :default registered
+    const cls = class_of.classOf(rt, v) catch return null;
+    const default_m = map_collection.get(mf.method_table, mf.default_dispatch_val) catch return null;
+    const m = multimethod.getMethod(rt, mf, cls, .{}) catch return null;
+    if (m.tag() == .nil) return null;
+    if (@intFromEnum(m) == @intFromEnum(default_m)) return null; // resolved to :default
+    return m;
+}
+
+/// The active consult context for the current top-level print (ADR-0127 B2(b-ii)):
+/// set by `printConsult` ONLY when a non-default `print-method` override is
+/// registered (the dirty flag). While set, `printValue` consults `print-method`
+/// per value — so an override-typed value nested inside a NATIVE collection (e.g.
+/// `(pr [(->T)])`) renders via the user method, matching clj's per-element
+/// recursion. Null otherwise ⇒ the pure native path, zero overhead (the common +
+/// bootstrap case). Threadlocal so a concurrent print on another thread is unaffected.
+threadlocal var active_consult: ?struct { rt: *Runtime, env: *env_mod.Env } = null;
+
+/// Is ANY non-default `print-method` override registered? (The dirty flag — gates
+/// whether `active_consult` is armed at all, so the no-override path never consults.)
+fn anyPrintMethodOverride() bool {
+    const varp = print_method_var orelse return false;
+    const mfv = varp.deref();
+    if (mfv.tag() != .multi_fn) return false;
+    return map_collection.count(mfv.decodePtr(*multimethod.MultiFn).method_table) > 1;
+}
+
+/// Fire `v`'s `print-method` override into `w` (mints a single-print-scoped writer
+/// handle, A2), or return false when `v` has no non-default override.
+fn fireOverride(rt: *Runtime, env: *env_mod.Env, w: *Writer, v: Value) anyerror!bool {
+    const method = printMethodOverride(rt, v) orelse return false;
+    const vt = rt.vtable orelse return false;
+    const wv = try writer_value.mint(rt, w);
+    defer writer_value.invalidate(wv);
+    _ = try vt.callFn(rt, env, method, &.{ v, wv }, .{});
+    return true;
+}
+
+/// Print `v` to `w`, consulting `print-method` first (ADR-0127). A type with a
+/// non-default override renders via the user method; every other value renders
+/// natively. The pr/prn/print entry points call this; it arms `active_consult` (so
+/// nested native-collection elements also consult — B2(b-ii)) ONLY when an override
+/// exists. `printResult`/`printValueNative` stay native (they ARE the `:default`),
+/// the recursion guard against an override re-firing on its own value.
+pub fn printConsult(rt: *Runtime, env: *env_mod.Env, w: *Writer, v: Value) anyerror!void {
+    if (!anyPrintMethodOverride()) {
+        try printResult(rt, env, w, v); // no override anywhere → pure native fast path
+        return;
+    }
+    const saved = active_consult;
+    active_consult = .{ .rt = rt, .env = env };
+    defer active_consult = saved;
+    if (try fireOverride(rt, env, w, v)) return;
+    try printResult(rt, env, w, v);
+}
+
+/// `(rt/__print-method-default o w)` — the `print-method` `:default` body. Unwraps
+/// the writer handle and renders `o` NATIVELY via `printResult` (which does NOT
+/// consult print-method), so a user method recursing `(print-method child w)` that
+/// lands here terminates. Bypassing the consult on the same value is the ADR-0127
+/// recursion invariant.
+pub fn printMethodDefaultFn(rt: *Runtime, env: *env_mod.Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    if (args.len != 2)
+        return @import("error/catalog.zig").raise(.arity_not_expected, loc, .{ .got = args.len, .fn_name = "print-method", .expected = 2 });
+    const w = writer_value.unwrap(args[1]) orelse
+        return @import("error/catalog.zig").raise(.type_arg_invalid, loc, .{ .fn_name = "print-method", .expected = "a writer", .actual = @tagName(args[1].tag()) });
+    // printValueNative (NOT printValue): render `o` itself WITHOUT re-consulting its
+    // own override (which just dispatched here), the ADR-0127 recursion guard; its
+    // child elements still consult via the printValue calls inside printValueNative.
+    try printValueNative(w, try deepRealize(rt, env, args[0]));
+    return .nil_val;
 }
 
 /// `*print-meta*` snapshot for the current top-level print (false default).
@@ -585,7 +682,7 @@ fn mapCommonNs(v: Value) ?[]const u8 {
 /// Print a map key, omitting its namespace when `strip` (the compact
 /// `#:ns{…}` form already carries the shared namespace). Non-symbolic keys
 /// are unaffected by `strip`.
-fn printMapKey(w: *Writer, key: Value, strip: bool) Writer.Error!void {
+fn printMapKey(w: *Writer, key: Value, strip: bool) anyerror!void {
     if (!strip) return printValue(w, key);
     switch (key.tag()) {
         .keyword => {
@@ -597,7 +694,22 @@ fn printMapKey(w: *Writer, key: Value, strip: bool) Writer.Error!void {
     }
 }
 
-pub fn printValue(w: *Writer, v: Value) Writer.Error!void {
+/// Print `v`, consulting `print-method` first when `active_consult` is armed (an
+/// override is registered, ADR-0127 B2(b-ii)) — so a nested override-typed value
+/// renders via the user method. Otherwise (the common case) a direct native render.
+/// Collection printers recurse through THIS fn, so every element consults uniformly.
+pub fn printValue(w: *Writer, v: Value) anyerror!void {
+    if (active_consult) |ctx| {
+        if (try fireOverride(ctx.rt, ctx.env, w, v)) return;
+    }
+    try printValueNative(w, v);
+}
+
+/// The native renderer (the `print-method` `:default`): the big tag `switch`, NO
+/// top-level consult on `v` itself (the recursion guard — `__print-method-default`
+/// and the no-override path land here). Child elements recurse via `printValue`,
+/// which re-arms the consult per element.
+fn printValueNative(w: *Writer, v: Value) anyerror!void {
     const vtag = v.tag();
     // *print-level* (ADR-0088): a collection at nesting depth `d` (root = 0)
     // renders as a bare `#` when `d >= level`. The check + depth bookkeeping is
@@ -725,7 +837,7 @@ pub fn printValue(w: *Writer, v: Value) Writer.Error!void {
     }
 }
 
-fn printBigInt(w: *Writer, v: Value) Writer.Error!void {
+fn printBigInt(w: *Writer, v: Value) anyerror!void {
     // A heap integer's Managed renders just the digits; the `N` suffix
     // marks a genuine BigInt. A heap-boxed Long (D-165 / ADR-0080) prints
     // WITHOUT `N` (it is a primitive Long that merely overflowed cljw's i48
@@ -738,21 +850,21 @@ fn printBigInt(w: *Writer, v: Value) Writer.Error!void {
     }
 }
 
-fn printRatio(w: *Writer, v: Value) Writer.Error!void {
+fn printRatio(w: *Writer, v: Value) anyerror!void {
     // numerator and denominator are *BigInt; render each Managed
     // without the trailing `N` and join with `/`.
     const r = v.decodePtr(*const ratio_mod.Ratio);
     try w.print("{f}/{f}", .{ r.numer.m, r.denom.m });
 }
 
-fn printBigDecimal(w: *Writer, v: Value) Writer.Error!void {
+fn printBigDecimal(w: *Writer, v: Value) anyerror!void {
     try writeBigDecimalDigits(w, v);
     // The trailing `M` is the clj reader form (pr/prn). `str`/`.toString`
     // drop it (JVM `BigDecimal.toString` has no suffix) — D-212.
     try w.writeByte('M');
 }
 
-pub fn writeBigDecimalDigits(w: *Writer, v: Value) Writer.Error!void {
+pub fn writeBigDecimalDigits(w: *Writer, v: Value) anyerror!void {
     // value = unscaled * 10^(-scale). Reproduces JVM `BigDecimal.toString`:
     // plain notation when `scale >= 0` AND the adjusted exponent
     // `(precision-1) - scale >= -6`, otherwise scientific `d.dddE±exp`.
@@ -803,7 +915,7 @@ pub fn writeBigDecimalDigits(w: *Writer, v: Value) Writer.Error!void {
     }
 }
 
-fn printTypedInstance(w: *Writer, v: Value) Writer.Error!void {
+fn printTypedInstance(w: *Writer, v: Value) anyerror!void {
     const inst = v.decodePtr(*const td_mod.TypedInstance);
     // Reader-tag host value (ADR-0079): emit `#<tag> "<iso>"`. Today only
     // `#inst` (java.util.Date) — body = the epoch-ms field 0 as the
@@ -847,7 +959,7 @@ fn printTypedInstance(w: *Writer, v: Value) Writer.Error!void {
 /// or a user record's `Point`. Simple name, not a JVM FQCN, per the
 /// no-JVM-assumption rule. Anonymous (reify) descriptors fall back to the
 /// generic placeholder since they carry no name.
-fn printTypeDescriptor(w: *Writer, v: Value) Writer.Error!void {
+fn printTypeDescriptor(w: *Writer, v: Value) anyerror!void {
     const td = td_mod.asTypeDescriptorRef(v);
     if (td.fqcn) |name| {
         try w.writeAll(name);
@@ -859,7 +971,7 @@ fn printTypeDescriptor(w: *Writer, v: Value) Writer.Error!void {
 /// Render a `.var_ref` Value (what `(def x ..)` / `(defn ..)` / `resolve`
 /// yield) as Clojure's var-quote form `#'ns/name`, reading the owning
 /// namespace + symbol name off the Var.
-fn printVarRef(w: *Writer, v: Value) Writer.Error!void {
+fn printVarRef(w: *Writer, v: Value) anyerror!void {
     const var_ptr = v.decodePtr(*const env_mod.Var);
     try w.print("#'{s}/{s}", .{ var_ptr.ns.name, var_ptr.name });
 }
@@ -869,7 +981,7 @@ fn printVarRef(w: *Writer, v: Value) Writer.Error!void {
 /// emits `#object[Namespace "user"]` (AD-010, derives_from ADR-0059 + AD-002).
 /// `(str *ns*)` → bare "user" is handled by `strFn`'s special-case (like regex /
 /// uuid), so this readable form is only reached by pr / prn / print / println.
-fn printNamespace(w: *Writer, v: Value) Writer.Error!void {
+fn printNamespace(w: *Writer, v: Value) anyerror!void {
     const ns_ptr = v.decodePtr(*const env_mod.Namespace);
     try w.print("#object[Namespace \"{s}\"]", .{ns_ptr.name});
 }
@@ -877,7 +989,7 @@ fn printNamespace(w: *Writer, v: Value) Writer.Error!void {
 /// Render an `ex-info` Value in `#error{ :message "..." :data ... }`
 /// form — the same shape Clojure JVM's pr-str emits, modulo ordering.
 /// The data field is any Value, rendered via `printValue`.
-pub fn printExInfo(w: *Writer, v: Value) Writer.Error!void {
+pub fn printExInfo(w: *Writer, v: Value) anyerror!void {
     try w.writeAll("#error{:message ");
     try printString(w, ex_info_collection.message(v));
     try w.writeAll(" :data ");
@@ -896,7 +1008,7 @@ pub fn printExInfo(w: *Writer, v: Value) Writer.Error!void {
 /// `#queue (e1 e2 …)` — a reader-round-trippable form (ADR-0087). clj prints
 /// the opaque non-reproducible `#object[…@hash]`; cljw ships a readable form +
 /// a matching `queue` data-reader. Walks front (list) then rear (vector).
-pub fn printQueue(w: *Writer, v: Value) Writer.Error!void {
+pub fn printQueue(w: *Writer, v: Value) anyerror!void {
     try w.writeAll("#queue (");
     var first_iter = true;
     var emitted: i64 = 0;
@@ -930,7 +1042,7 @@ pub fn printQueue(w: *Writer, v: Value) Writer.Error!void {
     try w.writeByte(')');
 }
 
-pub fn printList(w: *Writer, v: Value) Writer.Error!void {
+pub fn printList(w: *Writer, v: Value) anyerror!void {
     try w.writeByte('(');
     var cur = v;
     var first_iter = true;
@@ -950,7 +1062,7 @@ pub fn printList(w: *Writer, v: Value) Writer.Error!void {
 /// each element with pure scalar math (`start + i*step`) so it needs no
 /// `rt` and allocates nothing — unlike a generic seq-walk. A huge range
 /// prints every element (same as realizing a lazy seq).
-pub fn printRange(w: *Writer, v: Value) Writer.Error!void {
+pub fn printRange(w: *Writer, v: Value) anyerror!void {
     try w.writeByte('(');
     const n = range_collection.countOf(v);
     var i: i64 = 0;
@@ -965,7 +1077,7 @@ pub fn printRange(w: *Writer, v: Value) Writer.Error!void {
 /// Render a heap Vector in `[a b c]` form. Indexes via
 /// `vector_collection.nth` so this stays decoupled from the HAMT
 /// internals.
-pub fn printVector(w: *Writer, v: Value) Writer.Error!void {
+pub fn printVector(w: *Writer, v: Value) anyerror!void {
     try w.writeByte('[');
     const n = vector_collection.count(v);
     var i: u32 = 0;
@@ -983,7 +1095,7 @@ pub fn printVector(w: *Writer, v: Value) Writer.Error!void {
 /// separator across the recursion. Alloc-free — the printer has no
 /// allocator, so it reads `slots` directly rather than materialising a
 /// seq (front-loaded KV pairs, back-loaded children per map.zig).
-fn printHamtEntries(w: *Writer, node: *const map_collection.HamtMapNode, first: *bool, count: *i64, stop: *bool, comptime kv: bool) Writer.Error!void {
+fn printHamtEntries(w: *Writer, node: *const map_collection.HamtMapNode, first: *bool, count: *i64, stop: *bool, comptime kv: bool) anyerror!void {
     const data_count = @popCount(node.data_map);
     var i: u32 = 0;
     while (i < data_count) : (i += 1) {
@@ -1013,7 +1125,7 @@ fn printHamtEntries(w: *Writer, node: *const map_collection.HamtMapNode, first: 
     }
 }
 
-pub fn printMap(w: *Writer, v: Value) Writer.Error!void {
+pub fn printMap(w: *Writer, v: Value) anyerror!void {
     // Compact namespaced-map form `#:ns{:a 1, :b 2}` (D-219) when enabled and
     // all keys share one namespace (array_map only — see `mapCommonNs`).
     const compact_ns: ?[]const u8 = if (print_namespace_maps) mapCommonNs(v) else null;
@@ -1049,7 +1161,7 @@ pub fn printMap(w: *Writer, v: Value) Writer.Error!void {
 /// map's keys directly: an `array_map`'s `entries` array (≤ 8
 /// elements, insertion order) or the HAMT keys for a larger
 /// `hash_map`-backed set.
-pub fn printSet(w: *Writer, v: Value) Writer.Error!void {
+pub fn printSet(w: *Writer, v: Value) anyerror!void {
     try w.writeAll("#{");
     const s = v.decodePtr(*const set_collection.PersistentHashSet);
     if (s.map.tag() == .array_map) {
@@ -1076,7 +1188,7 @@ pub fn printSet(w: *Writer, v: Value) Writer.Error!void {
 
 /// In-order (ascending) walk of an LLRB tree, alloc-free (the printer has
 /// no allocator). `kv` true → "k v" pairs (map), false → bare keys (set).
-fn printSortedEntries(w: *Writer, root: Value, first: *bool, count: *i64, stop: *bool, comptime kv: bool) Writer.Error!void {
+fn printSortedEntries(w: *Writer, root: Value, first: *bool, count: *i64, stop: *bool, comptime kv: bool) anyerror!void {
     if (root.tag() != .rb_node) return;
     if (stop.*) return;
     const n = root.decodePtr(*const sorted_collection.RbNode);
@@ -1101,7 +1213,7 @@ fn printSortedEntries(w: *Writer, root: Value, first: *bool, count: *i64, stop: 
     try printSortedEntries(w, n.right, first, count, stop, kv);
 }
 
-pub fn printSortedMap(w: *Writer, v: Value) Writer.Error!void {
+pub fn printSortedMap(w: *Writer, v: Value) anyerror!void {
     try w.writeByte('{');
     const m = v.decodePtr(*const sorted_collection.SortedMap);
     var first = true;
@@ -1111,7 +1223,7 @@ pub fn printSortedMap(w: *Writer, v: Value) Writer.Error!void {
     try w.writeByte('}');
 }
 
-pub fn printSortedSet(w: *Writer, v: Value) Writer.Error!void {
+pub fn printSortedSet(w: *Writer, v: Value) anyerror!void {
     try w.writeAll("#{");
     const s = v.decodePtr(*const sorted_collection.SortedSet);
     const m = s.map.decodePtr(*const sorted_collection.SortedMap);
@@ -1127,7 +1239,7 @@ pub fn printSortedSet(w: *Writer, v: Value) Writer.Error!void {
 /// bytes are passed through as-is — `(read-string (pr-str s))` round-
 /// trips for ASCII-clean inputs (matches the Reader's `unescapeString`
 /// table at §9.4 / 1.9).
-pub fn printString(w: *Writer, s: []const u8) Writer.Error!void {
+pub fn printString(w: *Writer, s: []const u8) anyerror!void {
     try w.writeByte('"');
     for (s) |c| switch (c) {
         '\n' => try w.writeAll("\\n"),

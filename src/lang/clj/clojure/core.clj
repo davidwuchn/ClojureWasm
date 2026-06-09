@@ -1807,6 +1807,18 @@
                     (make-hierarchy) (partition 2 deriv-seq))
             h)))))
 
+;; print-method (D-370, ADR-0127): the user-extensible print multimethod. The
+;; native pr/prn/print/pr-str path consults it behind an any-override dirty flag —
+;; `(defmethod print-method T [o w] …)` customises T's printing. Dispatches on
+;; (class x); the :default delegates to the native printer (`rt/__print-method-default`
+;; writes o's native render into the writer handle w), so a method that recurses
+;; `(print-method child w)` lands on either another override or the native default.
+;; The consult only fires for a type with a NON-default method, so the no-override
+;; case pays zero clojure calls (ADR-0127 B2 dirty flag). Placed after
+;; `-global-hierarchy` (the defmulti constructor references it).
+(defmulti print-method (fn* [x w] (class x)))
+(defmethod print-method :default [o w] (rt/__print-method-default o w))
+
 ;; `(doc sym)` — print a Var's documentation (name / arglists / docstring)
 ;; in clojure.repl/doc's format (D-187 part 2). The Var-metadata surface
 ;; (D-183) makes this the user-facing payoff: `(defn f "d" [x] x)` then
