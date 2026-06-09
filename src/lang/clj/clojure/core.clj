@@ -1,3 +1,8 @@
+;; SPDX-License-Identifier: EPL-2.0
+;; Copyright (c) the ClojureWasm authors. Licensed under EPL-2.0.
+;; Independently reimplements the clojure.core API (originally Rich Hickey; Clojure, EPL-1.0)
+;; for ClojureWasm; no upstream source text is reproduced.
+
 ;; ClojureWasm Stage-1 prologue.
 ;;
 ;; Loaded by `src/lang/bootstrap.zig::loadCore` after
@@ -824,19 +829,18 @@
        ([f c1 c2 c3] (vec (map f c1 c2 c3)))))
 
 ;; `(await & agents)` — block until all actions dispatched to each agent SO FAR
-;; have run. Sends a sentinel action that delivers a promise to every agent (so
-;; the agents drain concurrently), then blocks on each promise. The sentinel
-;; returns state unchanged. clj uses a per-agent CountDownLatch; a promise is
-;; cljw's cross-thread latch, held alive by the action sitting in the agent's
-;; queue. (await-for + the in-transaction / in-action illegality check are a
-;; later slice.)
+;; have run. `__agent-await` enqueues a barrier action to every agent (so they
+;; drain concurrently) and returns a promise the drainer delivers AFTER that
+;; barrier's `notifyWatches` (incl. the barrier's own no-op `[s s]` fire,
+;; clj-faithful) — then we block on each promise. This delivers-after-notify
+;; ordering replaces the earlier in-body `(deliver p s)` sentinel, which raced:
+;; the awaiter could wake before the barrier's watch fired (D-368, ADR-0093 am1).
+;; clj uses a per-agent CountDownLatch; the promise is cljw's cross-thread latch,
+;; held alive by the barrier sitting in the agent's queue. (await-for + the
+;; in-transaction / in-action illegality check are a later slice.)
 (def await
   (fn* [& agents]
-    (let [ps (mapv (fn* [a]
-                     (let [p (promise)]
-                       (send a (fn* [s] (deliver p s) s))
-                       p))
-                   agents)]
+    (let [ps (mapv (fn* [a] (__agent-await a)) agents)]
       (dorun (map deref ps)))))
 
 ;; agent error mode — the :fail/:continue keyword over the internal flag.

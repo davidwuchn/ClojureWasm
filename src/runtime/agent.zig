@@ -56,6 +56,19 @@ const dispatch = @import("dispatch.zig");
 const error_mod = @import("error/info.zig");
 const lock_tx = @import("concurrency/lock_tx.zig");
 const worker_error = @import("concurrency/worker_error.zig");
+const promise_mod = @import("promise.zig");
+
+/// A queued unit of agent work: an action body + an optional completion promise.
+/// `body` is the `[f & args]` action vector, or nil for a pure barrier (no state
+/// change, used by `await`). `completion`, when non-nil, is a Promise the drainer
+/// delivers AFTER the action stores its new state AND fires its watches — this is
+/// what makes `(await a)` return only once the barrier action's own `notifyWatches`
+/// has run (the `[s s]` no-op fire, clj-faithful), closing the deliver-in-body
+/// race where the awaiter could wake before that watch fired (D-368, ADR-0093 am1).
+const Action = struct {
+    body: Value,
+    completion: Value = .nil_val,
+};
 
 /// Off-heap control block: the queue mutex, the single-drainer flag, and the
 /// pending actions. Held on `rt.gpa` (stable address), freed by the finaliser.
@@ -64,7 +77,7 @@ const worker_error = @import("concurrency/worker_error.zig");
 const AgentCell = struct {
     mutex: std.Io.Mutex = .init,
     draining: bool = false,
-    actions: std.ArrayList(Value) = .empty,
+    actions: std.ArrayList(Action) = .empty,
     head: usize = 0,
     /// Error mode: true = `:fail` (a thrown action halts the agent until
     /// `restart-agent`), false = `:continue` (a thrown action is dropped + the
@@ -132,6 +145,21 @@ pub fn current(v: Value) Value {
 /// the agent. Enqueues under `cell.mutex` and, if no drainer is live, spawns one.
 /// The mutex is held only across the gpa push (leaf-lock invariant).
 pub fn send(rt: *Runtime, agent_val: Value, action: Value) !void {
+    try enqueueAction(rt, agent_val, .{ .body = action });
+}
+
+/// `(await a)`'s engine half: enqueue a pure barrier (no state change) whose
+/// `completion` promise the drainer delivers AFTER the barrier's `notifyWatches`.
+/// `await` blocks on that promise, so it returns only once the barrier action's
+/// own watch fire (`[s s]`, clj-faithful) has run — closing the race where the
+/// awaiter woke before the fire (the in-body `(deliver p s)` did, D-368).
+pub fn sendAwait(rt: *Runtime, agent_val: Value, completion: Value) !void {
+    try enqueueAction(rt, agent_val, .{ .body = .nil_val, .completion = completion });
+}
+
+/// Enqueue an action under `cell.mutex` (leaf lock — gpa push only) and, if no
+/// drainer is live, spawn one. The mutex is never held across `callFn` / a park.
+fn enqueueAction(rt: *Runtime, agent_val: Value, action: Action) !void {
     const a = agent_val.decodePtr(*Agent);
     io_default.lockMutex(&a.cell.mutex);
     if (!a.error_val.isNil()) {
@@ -248,23 +276,32 @@ fn captureThrown(a: *Agent) Value {
     return worker_error.capture(a.rt);
 }
 
-/// `(apply f state args...)` and store the new state. `action` is `[f & args]`.
-fn runAction(a: *Agent, action: Value) !void {
-    const vt = a.rt.vtable orelse return error.InternalError;
-    const n = vector.count(action);
-    if (n == 0) return; // defensive — send always builds [f & args], n >= 1
-    const f = vector.nth(action, 0);
-
-    var call_args: std.ArrayList(Value) = .empty;
-    defer call_args.deinit(a.rt.gpa);
-    try call_args.append(a.rt.gpa, @atomicLoad(Value, &a.state, .acquire));
-    var i: u32 = 1;
-    while (i < n) : (i += 1) try call_args.append(a.rt.gpa, vector.nth(action, i));
-
-    const oldstate = call_args.items[0];
-    const newstate = try vt.callFn(a.rt, a.env, f, call_args.items, .{});
+/// Run one queued unit: `(apply f state args...)` and store the new state, then
+/// fire watches, then deliver any completion promise. `action.body` is the
+/// `[f & args]` vector, or nil for a pure `await` barrier (state unchanged — the
+/// barrier exists only to fire its no-op `[s s]` watch + deliver `completion`).
+fn runAction(a: *Agent, action: Action) !void {
+    const oldstate = @atomicLoad(Value, &a.state, .acquire);
+    var newstate = oldstate;
+    if (!action.body.isNil()) {
+        const vt = a.rt.vtable orelse return error.InternalError;
+        const n = vector.count(action.body);
+        if (n != 0) { // send always builds [f & args], n >= 1
+            const f = vector.nth(action.body, 0);
+            var call_args: std.ArrayList(Value) = .empty;
+            defer call_args.deinit(a.rt.gpa);
+            try call_args.append(a.rt.gpa, oldstate);
+            var i: u32 = 1;
+            while (i < n) : (i += 1) try call_args.append(a.rt.gpa, vector.nth(action.body, i));
+            newstate = try vt.callFn(a.rt, a.env, f, call_args.items, .{});
+        }
+    }
     @atomicStore(Value, &a.state, newstate, .release);
     try notifyWatches(a, oldstate, newstate);
+    // Deliver an await barrier's completion promise AFTER the watch fire above,
+    // so `(await a)` is released only once this action's `notifyWatches` ran
+    // (the deliver-in-body race fix, D-368).
+    if (!action.completion.isNil()) _ = promise_mod.deliver(action.completion, newstate);
 }
 
 /// Fire each registered watch `(fn key agent old new)` after an action stores a
@@ -336,7 +373,8 @@ pub fn traceGc(gc_ptr: *anyopaque, header: *HeapHeader) void {
     if (a.error_val.heapHeader()) |hdr| mark_sweep.mark(gc, hdr);
     if (a.watches.heapHeader()) |hdr| mark_sweep.mark(gc, hdr);
     for (a.cell.actions.items[a.cell.head..]) |action| {
-        if (action.heapHeader()) |hdr| mark_sweep.mark(gc, hdr);
+        if (action.body.heapHeader()) |hdr| mark_sweep.mark(gc, hdr);
+        if (action.completion.heapHeader()) |hdr| mark_sweep.mark(gc, hdr);
     }
 }
 

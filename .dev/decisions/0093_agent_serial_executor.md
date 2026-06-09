@@ -205,3 +205,109 @@ not a cycle-budget defer — the iref extraction lands WITH that surface.
 - `src/runtime/error/catalog.zig` — `agent_options_unsupported`.
 - `src/main.zig` — test-aggregator import for `agent.zig`.
 - `test/e2e/phase16_agent.sh` (new) + `test/run_all.sh` registration.
+
+## Revision history
+
+### am1 (2026-06-10) — `await` delivers AFTER `notifyWatches` (deliver-in-body race fix, D-368)
+
+**Symptom.** The Ubuntu x86_64 full gate failed `e2e_phase16_agent`
+`agent_add_watch`: `got '[[0 1] [1 2]]', want '[[0 1] [1 2] [2 2]]'`. The clj
+oracle (ground truth, F-011) reliably yields the 3 fires `[[0 1] [1 2] [2 2]]`
+— the `[2 2]` is `await`'s own count-down action's no-op watch fire. Mac/JVM
+usually win the race; Linux x86_64 lost it.
+
+**Root cause.** `await` was `(send a (fn* [s] (deliver p s) s))` — the sentinel
+delivered its promise INSIDE the action body. `runAction` runs the body
+(step "newstate = callFn"), THEN stores, THEN `notifyWatches`. So `(deliver p s)`
+released the awaiting thread BEFORE the sentinel action's own watch fired; the
+awaiter could read `@log` before the `[2 2]` `swap!` ran. The e2e comment
+documented the intended CONTRACT ("await guarantees every fire ran, incl. its own
+`[2 2]`, matching JVM ARef") — the implementation violated its own contract. A
+real concurrency-correctness bug, not a flaky test (user-directed root-fix
+2026-06-10).
+
+**Decision.** Move `await`'s promise delivery from the action BODY to a
+drainer-side step AFTER `notifyWatches`. The agent queue element becomes an
+`Action { body: Value, completion: Value }`: `body` is the `[f & args]` vector
+(nil = a pure barrier with no state change), `completion` is an optional promise
+the drainer delivers AFTER the action stores its state AND fires its watches.
+`await` is now `(__agent-await a)` — a primitive that enqueues a nil-body barrier
+(which still fires the clj-faithful `[s s]` no-op watch via `notifyWatches`) and
+returns the completion promise; `await` maps it over its agents then
+`(dorun (map deref …))`. Deterministic, watch-order-independent, clj-faithful.
+The fix is the **minimal** form of the Devil's-advocate Alt 2 below — the typed
+2-field `Action` (NOT the full tagged-union `.normal/.barrier` + 3-phase
+`runAction` refactor + speculative generic continuation slot, which is
+gold-plating for post-action hooks no current slice needs; F-003 / excessive-
+skeleton smell).
+
+**Leaf-lock invariant (F-006) preserved**: the completion deliver runs in the
+drainer AFTER the action's pop+unlock, outside `cell.mutex`; promise.zig's own
+leaf lock does not nest with the agent's. **Behaviour preserved**: send_await,
+serial_order (100), send_args, send_off, concurrent_sends (400/4-thread),
+concurrent_agents (8), remove_watch (`[1 1]`), nested_send, multi-agent await —
+all verified green; `agent_add_watch` now deterministically `[[0 1] [1 2] [2 2]]`
+(30/30 on Mac).
+
+**Affected files (am1)**: `src/runtime/agent.zig` (`Action` struct; `send`→
+`enqueueAction`; new `sendAwait`; `runAction` body-or-barrier + post-notify
+deliver; `traceGc` marks body+completion; `promise.zig` import) ·
+`src/lang/primitive/agent.zig` (`__agent-await` primitive + registration +
+`promise.zig` import) · `src/lang/clj/clojure/core.clj` (`await` over
+`__agent-await`).
+
+#### Alternatives considered (Devil's-advocate fork, fresh context, 2026-06-10)
+
+> The bug: `await`'s sentinel action delivers its promise from *inside* `callFn`
+> (step 2 of `runAction`), so the awaiting thread can wake before step 4
+> (`notifyWatches`) fires the sentinel action's own `[s s]` watch. The fix must
+> move the deliver-equivalent wakeup to *after* the sentinel action's
+> `notifyWatches` completes, deterministically, matching clj's 3-fire output
+> `[[0 1] [1 2] [2 2]]`. All three options preserve the `[2 2]` fire (F-011) and
+> never move work under `cell.mutex` (F-006). None requires a vtable hop for the
+> wakeup, since `promise_mod.deliver` is directly callable from the drainer.
+>
+> **Alt 1 — Smallest-diff: barrier action recognised by a sentinel marker,
+> deliver in a post-`notifyWatches` hook.** The await action vector carries a
+> recognisable barrier marker (distinguished first element); after `runAction`
+> returns, the drainer checks "was this a barrier?" and delivers the promise
+> riding as element 2. Better: minimal new surface, one post-action branch. Risks:
+> a per-action head type-test in the hot serial loop; couples the queue element
+> shape to "first elem is fn OR barrier-marker" (a mild representation smell). F-006
+> preserved (deliver post-unlock). Multi-agent await preserved.
+>
+> **Alt 2 — Finished-form-clean: typed `Action` queue with a post-notify
+> continuation.** Refactor `runAction` into compute→store→notify and make the
+> queue `ArrayList(Action)` with `.normal([f&args])` / `.barrier(promise,[f&args])`
+> variants; the drainer runs the action's continuation after `notify` (for
+> `.barrier`, `deliver(p,new)`). Better: the await ordering becomes a structural
+> property, not a magic-head convention; no per-action head type-test; the natural
+> home for future post-action coordination (validators, completion callbacks). The
+> variant tag is the dispatch; `traceGc` marks both the body vector and the barrier
+> promise by construction. Risks: larger diff (queue element type change ripples
+> through `send`/`restart`/`traceGc`/`finaliseGc` + every `vector.nth(action,…)`);
+> more GC care. Per F-002 the larger diff is NOT a downgrade reason — the typed
+> queue is the cleaner contract. F-006 preserved (deliver is a post-notify,
+> post-unlock continuation). Multi-agent await preserved. **DA recommendation.**
+>
+> **Alt 3 — Wildcard: per-agent monotonic completed-counter + condvar, no barrier
+> action.** `await` snapshots the enqueue index and waits until `completed >=
+> target`. **Violates F-011 (leading entry):** a pure read-side counter barrier
+> produces only `[[0 1] [1 2]]` — it does NOT enqueue a real action, so the
+> clj-faithful `[2 2]` count-down fire never happens. A hybrid (counter + a no-op
+> action to fire `[2 2]`) is strictly worse than Alt 2 (two mechanisms for one
+> behaviour). F-006 is technically satisfiable (the condvar wait parks at a
+> safepoint), but F-011 disqualifies it. Recorded so the rejection is visible.
+>
+> **Recommendation (non-binding): Alt 2** — the finished-form-clean shape under
+> F-002. Alt 1 is the fallback only on a real F-NNN block on the `Action` struct
+> (none). Alt 3 is disqualified by F-011.
+
+**Main-loop choice**: Alt 2's principle (typed `Action` carrying the completion),
+in its **minimal** form (a 2-field struct `{body, completion}` + a nil-body
+barrier), NOT the full tagged-union + 3-phase-refactor + generic continuation
+slot. Rationale: the structural cleanliness the DA recommends (completion bound to
+the action, no magic-head type-test) is captured by the 2-field struct; the
+generic post-action-coordination substrate (validators/callbacks) is speculative
+for needs no current slice has (F-003 defer-to-owner + the excessive-skeleton
+smell). This stays finished-form-clean for the await need without gold-plating.

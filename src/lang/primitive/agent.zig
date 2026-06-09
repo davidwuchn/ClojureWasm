@@ -19,6 +19,7 @@ const SourceLocation = error_mod.SourceLocation;
 const dispatch = @import("../../runtime/dispatch.zig");
 const agent_mod = @import("../../runtime/agent.zig");
 const vector = @import("../../runtime/collection/vector.zig");
+const promise_mod = @import("../../runtime/promise.zig");
 
 fn requireAgent(name: []const u8, v: Value, loc: SourceLocation) !void {
     if (!agent_mod.isAgent(v))
@@ -96,6 +97,24 @@ pub fn failModeQFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLoca
     return Value.initBoolean(agent_mod.failMode(args[0]));
 }
 
+/// `(__agent-await a)` — `await`'s engine half: enqueue a barrier action and
+/// return a promise the drainer delivers AFTER that action's `notifyWatches`.
+/// `await` (core.clj) blocks on the promise, so it returns only once every
+/// action sent so far (incl. the barrier's own no-op `[s s]` fire) has run —
+/// the deliver-in-body race fix (D-368). One barrier per agent; `await` maps it
+/// over its agents then `(dorun (map deref …))`.
+pub fn awaitFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = env;
+    try error_catalog.checkArity("await", args, 1, loc);
+    try requireAgent("await", args[0], loc);
+    const p = try promise_mod.alloc(rt);
+    agent_mod.sendAwait(rt, args[0], p) catch |e| switch (e) {
+        error.AgentFailed => return error_catalog.raise(.agent_failed, loc, .{}),
+        else => return e,
+    };
+    return p;
+}
+
 const Entry = struct {
     name: []const u8,
     f: dispatch.BuiltinFn,
@@ -109,6 +128,7 @@ const ENTRIES = [_]Entry{
     .{ .name = "restart-agent", .f = &restartFn },
     .{ .name = "__agent-set-fail-mode", .f = &setFailModeFn },
     .{ .name = "__agent-fail-mode?", .f = &failModeQFn },
+    .{ .name = "__agent-await", .f = &awaitFn },
 };
 
 pub fn register(env: *Env, rt_ns: *env_mod.Namespace) !void {
