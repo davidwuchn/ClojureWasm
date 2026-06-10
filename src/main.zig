@@ -150,6 +150,7 @@ test {
     _ = @import("eval/macro_dispatch.zig");
     _ = @import("eval/backend/tree_walk.zig");
     _ = @import("eval/backend/vm.zig");
+    _ = @import("eval/backend/intrinsic.zig");
     _ = @import("eval/driver.zig");
     _ = @import("eval/evaluator.zig");
     _ = @import("lang/diff_test.zig");
