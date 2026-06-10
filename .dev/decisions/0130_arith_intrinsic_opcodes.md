@@ -129,3 +129,66 @@ substitute.**
   commit). Naive form (the builtin) remains the F-011 contract.
 - Verified per cycle by a focused quick-bench + the differential oracle + the
   six trap diff cases; GC-torture on the dispatch arms (O-005/O-013 discipline).
+
+## Implementation plan (file-by-file, derived from a v1 source read)
+
+Ground truth found while writing this ADR (so the implementing cycle is
+mechanical):
+
+- `CallNode { callee: *const Node, args, loc }` (node.zig:266); `VarRef {
+  var_ptr: *const Var }` (node.zig:115). Let-shadowing already yields a
+  `.local_ref`, so the gate is `n.callee.* == .var_ref` + pointer identity.
+- The numeric tower is `promote.addPromoting/subPromoting/mulPromoting(rt,a,b)`
+  (promote.zig:255/288/320) — each does i64 `@addWithOverflow` → `wrapI64`
+  (i48/heap-Long/BigInt per F-005). The builtin `plus` (math.zig:76) calls
+  `addPromoting` then `catch`-translates errors to a caret-precise
+  `type_arg_not_number`. **Zone rule (Layer 1 vm/ MUST NOT import Layer 2
+  lang/):** the dispatch arm CANNOT call `math.plus`. So the non-fixnum / error
+  fallback re-dispatches through the cached `+` builtin Value via `vt.callFn`
+  (identical to what op_call did, minus var-resolution) — full error parity.
+- Runtime caches Vars as type-erased `?*anyopaque` populated in
+  `bootstrap.setupCorePrefix` (runtime.zig pattern: `data_readers_var`).
+- op_call dispatch arm shape: vm.zig:400 (pop callee+args, `vt.callFn`, push).
+
+Steps (one commit, ADR-0036 dual-backend contract):
+
+1. **`src/runtime/runtime.zig`** — add `arith_intrinsics: ?ArithIntrinsicCache`
+   holding, per op (+,-,*,<,<=,>,>=): the `*anyopaque` Var ptr + the builtin
+   `Value` (for the fallback) + a `core_arith_pristine: bool` (true at
+   bootstrap). Value is Layer-0 so no erasure; Var ptr type-erased like
+   `data_readers_var`.
+2. **`src/lang/bootstrap.zig` setupCorePrefix** — after core is interned,
+   look up `clojure.core/{+,-,*,<,<=,>,>=}` Vars + their root Values, populate
+   the cache, set pristine = true.
+3. **`src/lang/primitive/core.zig`** — `alterVarRootFn` (1402) + the `def`
+   root-set path: if the target Var is one of the cached arith Vars, set
+   `rt.…core_arith_pristine = false` (the one F-011 hole the analyzer doesn't
+   close).
+4. **`src/eval/backend/vm/opcode.zig`** — add `op_add/op_sub/op_mul/op_lt/
+   op_le/op_gt/op_ge`; NOT `isPurePush` (they have operands on the stack).
+5. **`src/eval/backend/intrinsic.zig`** (new, Layer 1) — `ArithOp` enum +
+   `fastBinaryFixnum(rt, op, a, b) !?Value` (null unless both `.integer`):
+   add/sub/mul → `promote.*Promoting`; comparisons → `Value.bool(a.asInteger()
+   <op> b.asInteger())`. + a compile-time recognizer
+   `opcodeFor(rt, callee_var_ptr) ?Opcode` (pointer-identity table). Closed-set
+   gate test (F-013): recognized set ⊆ the 7 names.
+6. **`src/eval/backend/vm/compiler.zig` compileCall (297)** — before the
+   generic path: if `n.callee.* == .var_ref` and `n.args.len == 2` and
+   `intrinsic.opcodeFor(rt, vp)` hits, compile the 2 args (NOT the callee) +
+   emit that opcode. Variadic/0-1-arity fold (`(+)`→const 0, `(+ x)`→x,
+   `(+ a b c)`→left-folded chain) is a follow-up; first cut = 2-arg only,
+   everything else falls through to op_call.
+7. **`src/eval/backend/vm.zig`** — dispatch arm per opcode: pop b,a; if
+   `rt.pristine and intrinsic.fastBinaryFixnum(...)` non-null → push it; else
+   `vt.callFn(rt, env, cached_builtin_val, &.{a,b}, instr_loc)`.
+8. **`src/eval/backend/tree_walk.zig` treeWalkCall** — same gate: a 2-arg core
+   arith call routes through `intrinsic.fastBinaryFixnum` first (shared path →
+   structural parity), else the existing builtin dispatch.
+9. **`src/lang/diff_test.zig`** — diff cases: `(+ 1 2)`, `(- 5 3)`, `(* 4 6)`,
+   `(< 1 2)`, the i48 boundary `(+ 140737488355327 1)` (→ heap-Long not float),
+   float `(+ 0.1 0.2)`, `(let [+ str] (+ "a" "b"))` (→ "ab", not op_add),
+   `(reduce + (range 5))`, and a redef-deopt e2e (`alter-var-root` on `+`).
+10. **`src/main.zig`** test aggregator — `_ = @import("eval/backend/intrinsic.zig");`.
+
+First sub-cut may land just `op_add` (steps 1-2,4-9 for `+` only) to validate the
+whole pipeline end-to-end, then add `-,*,<,<=,>,>=` in the next commit.
