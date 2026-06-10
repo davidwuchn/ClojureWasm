@@ -5,49 +5,56 @@
 
 ## Resume contract
 
-- **HEAD**: `main` (see `git log`). **The branch model changed 2026-06-10**:
-  the cw-from-scratch redesign was merged into `main` (`-s ours`, superseding
-  v0.5.0 main + its libc hotfix; v0.5.0 tag preserved at `184c873f`). **All
-  work now happens on `main`**; commit + `git push origin main` is the atomic
-  Step 6. The old `cw-from-scratch` branch == `main` (historical alias, do not
-  commit to it). Gate cadence (ADR-0107): per-commit **smoke** (background,
-  don't block); batch the full gate ALONE with `timeout 900 bash test/run_all.sh
-  --serial-e2e` at the ≤5 ceiling / boundary. Probes on a ReleaseSafe binary.
-- **First on resume MUST be: interactive outward-facing-doc improvement (a
-  USER-COLLABORATIVE pass, NOT the autonomous TDD loop).** Order:
-  1. **`README.md` + outward-facing materials** — improve interactively with
-     the user (tone, accuracy, the story; the numbers are now ~3.4 MB default /
-     ~3.8 MB `-Dwasm` / ~5 ms cold-start / 24 bundled `clojure.*` ns / 130 ADRs —
-     see `bench/RELEASE_METRICS.md`).
-  2. **CFP text + materials** (`private/clojure_conj_2026_cfp/`) — interactive
-     refinement of SUBMISSION / REVIEWER_INFO / MY_CFP (numbers already refreshed
-     2026-06-10 to "約4MB(最小1.6MB)/ 約5ms"; remaining = human-gated video /
-     photo / final name).
-  This is collaborative doc work; ask the user for direction on wording, do not
-  autonomously rewrite their outward-facing claims.
-- **Forbidden**: `git push --force*` (settings deny-list). Pushing to `main` is
-  now NORMAL (no longer forbidden). The fly demos (D-362) are DONE + live.
+- **HEAD**: `main` (see `git log`). All work happens on `main`; commit + `git
+  push origin main` is the atomic Step 6 (`git push --force*` is deny-listed).
+  Gate cadence (ADR-0107): per-commit **smoke** (background, don't block); batch
+  the full gate ALONE (`timeout 900 bash test/run_all.sh --serial-e2e`) at the
+  ≤5 ceiling / boundary. **Perf is measured ONLY on a Release binary via
+  `scripts/perf.sh` / `bench/`, NEVER `time zig-out/bin/cljw` (Debug)** —
+  `.claude/rules/perf_measure_release.md`.
+- **First commit on resume MUST be: the performance-tuning campaign
+  (ROADMAP §9.2.S), run continuously and autonomously — user-directed
+  2026-06-11. Only an explicit user stop halts it (CLAUDE.md § The only stop);
+  unit / boundary transitions roll straight into the next unit.** Three axes:
+  **execution speed, startup speed, binary size.**
+  1. **Build / confirm the experiment → measure → keep-or-revert loop first**:
+     baseline with `scripts/perf.sh` (Release) + `bench/run_bench.sh` +
+     `bench/compare_langs.sh`; make ONE change; re-measure; keep if faster, else
+     `git` revert. Each unit is its own commit (revert-friendly); log every
+     speed-for-simplicity trade in [`.dev/optimizations.md`](./optimizations.md)
+     (O-NNN SSOT) + a `// PERF:` marker; the naive form stays the F-011 contract
+     (observably equivalent vs `clj`).
+  2. **Then ROI-ordered units** (impact × frequency / effort · risk), bench-driven
+     from the slowest / most-global spots. Resume at **D-163** (lazy-chain
+     reduce-fusion, ADR-0065 ACTIVE) → **D-140** (startup bootstrap cache —
+     highest dev-velocity ROI). Add a **binary-size** axis (ReleaseSafe / Small;
+     what bloats the binary). O-001 / O-002 / O-003 (D-180) are already DONE.
+  - **Do NOT touch zwasm** — it stays as a long-lived branch for the CFP.
+    Optimize cljw's own Clojure processing only. Step-0 survey may reference cw v0
+    (`~/Documents/MyProducts/ClojureWasm/`: `Meta.range` / `fusedReduce` /
+    incremental-trie transients — re-derive cljw-appropriately per F-004, not
+    copy), other reference clones, and web search.
+  - This supersedes the §9.2.P clj-parity / Phase-A "resume here" markers for
+    this session (user re-prioritization 2026-06-11).
+- **Forbidden this session**: editing zwasm; `git push --force*`. Run
+  continuously per CLAUDE.md § The only stop.
 
-## Just landed — 2026-06-10 mega-session (all pushed to `main`)
+## Just landed — 2026-06-11 (pushed to `main`)
 
-- **main merge**: redesign superseded v0.5.0 main; CLAUDE.md / continue skill /
-  run_remote_ubuntu.sh / this handover rewired from `cw-from-scratch` → `main`.
-- **D-377 facet 2 / ADR-0129**: deftype hasheq+equiv as HAMT key (flatland.ordered
-  fully works) + collHash lazy-seq fix. **D-380 DC1+DC2**: all-28-AD differences
-  doc + lossless debt-ledger hygiene (active 240→114). **D-273 backfills**:
-  clojure.stacktrace / uuid / instant / test.tap (+ clj-compat clojure.test
-  surface). **D-382 Stage 1**: neutral nanosecond java.sql.Timestamp +
-  read-instant-timestamp (clj-exact). **CFP**: metrics re-measured + docs refreshed.
+- **Bench overhaul**: run_bench.sh wasm suite rebuilt on the real FFI API
+  (`wasm/load` + `wasm/call`) + hand-authored `.wat` fixtures (`bench/wasm/ffi/`);
+  +7 benchmarks (numeric tower / STM / regex / sort / destructure / edn);
+  cross-language **Go** column + cold/warm tables; `flake.nix` pins the
+  comparison + wasm toolchains (clang/jdk/python/ruby/node/babashka/go/tinygo/
+  wasmtime/wasm-tools). cold-start re-measured → **~5 ms** (RELEASE_METRICS +
+  this file synced). D-384 = wasm_bench's WASI-import-FFI gap.
+- **CFP** (`private/clojure_conj_2026_cfp/`, USER-OWNED, not an autonomous task):
+  reviewer info finalized (1–8); recorded-talk outline + script DRAFT in
+  SUBMISSION.md, to discuss with the user. Paused on the user.
 
-## Follow-ups tracked (autonomous-loop backlog, AFTER the interactive doc pass)
+## Cold-start reading order (perf campaign)
 
-D-382 Stage 2 (field-rich Calendar — large) · D-381 (lazy hasheq cache, perf) ·
-D-383 (regex literal in bootstrap .clj) · D-273 remaining (clojure.xml / shell /
-spec — large) · quality_floor rows = standing drain. Per-task notes:
-`private/notes/D37{3,5,7}-*.md` + `D377-facet2-*.md` + `D273-*` + `D382-*`.
-
-## Cold-start reading order
-
-handover → `README.md` (the doc to improve first) → `bench/RELEASE_METRICS.md`
-(current numbers) → `private/clojure_conj_2026_cfp/SUBMISSION.md` + `MEASUREMENTS_2026-06-10.md`
-(CFP, the 2nd interactive task) → CLAUDE.md § Identity (the `main` branch model).
+handover → ROADMAP §9.2.S (campaign + resume D-163) → `.dev/optimizations.md`
+(O-NNN SSOT) → `scripts/perf.sh` + `.claude/rules/perf_measure_release.md` (how to
+measure) → `bench/run_bench.sh` / `bench/compare_langs.sh` (ROI from the slow rows)
+→ cw v0 `~/Documents/MyProducts/ClojureWasm/` (perf precedent).
