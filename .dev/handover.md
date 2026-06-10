@@ -52,13 +52,16 @@
   the **hot-loop JIT** for the last-mile arith win. **JIT (user-directed): must
   be correct on BOTH mac (ARM64) AND ubuntu (x86_64) from day one, and
   non-ad-hoc — decide the LAYER via an ADR before any codegen** (details +
-  v0's JIT-bug precedents in `perf_v0_baseline.md` § JIT constraints). Measure
-  cold-start vs Python each round (`bench/compare_langs.sh --cold`, µs; cljw-only
-  A/B `bash bench/run_bench.sh --quick --bench=<name>`). Each opt: `// PERF:`
-  marker + O-NNN ledger row + clj corpus (F-011) + **GC-torture safety** (the
-  O-005/O-013 reverts below — any interpreter-frame / dispatch change MUST hold
-  under `CLJW_GC_TORTURE` + deep recursion). Big surgery welcome (F-002); each
-  unit its own revert-friendly commit.
+  v0's JIT-bug precedents in `perf_v0_baseline.md` § JIT constraints).
+  **Measurement cadence (keep iteration fast — `perf_v0_baseline.md`
+  § Measurement cadence)**: per iteration a FOCUSED quick bench only
+  (`bash bench/run_bench.sh --quick --bench=<name>`); do NOT full-bench or
+  compare to Python every round; commit on ONE smoke (ADR-0107, ≤5 ride);
+  spot-check the impact area (changed e2e smoke + clj corpus + `CLJW_GC_TORTURE`
+  on dispatch/frame changes — the O-005/O-013 reverts below), not a full gate;
+  batch the full gate + full + cross-lang bench + markdown refresh only when
+  wins solidify. Each opt: `// PERF:` marker + O-NNN row + clj corpus (F-011).
+  Big surgery welcome (F-002); each unit its own revert-friendly commit.
 
 - **Forbidden this session**: cheating the benchmarks (handicapping other
   languages or any arbitrary manipulation to fake a cljw win — honest
