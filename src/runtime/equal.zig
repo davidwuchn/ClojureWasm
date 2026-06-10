@@ -579,6 +579,16 @@ pub fn valueEqual(rt: *Runtime, env: *Env, a: Value, b: Value) anyerror!bool {
     // 3. Sequential cross-type (vector / list).
     if (isSequential(a) and isSequential(b)) return seqEqual(rt, env, a, b);
 
+    // 3b. A deftype/reify (non-record) collection overriding `equiv` (clj
+    // IPersistentCollection) — consult it even when the tags differ, so
+    // `(= (ordered-map …) {…})` honours the custom collection's value equality
+    // (D-377; the D-280d8 pre-tag-gate gap). clj's `=` is `Util.equiv(a, b)` =
+    // the LEFT operand's `equiv` only (NOT symmetric): `(= box {…})` consults
+    // box.equiv but `(= {…} box)` consults the map's equiv (→ false for a
+    // non-native operand). So consult `a` (left) only, matching clj. A defrecord
+    // keeps its type-sensitive `=` by exclusion; an impl-less deftype falls through.
+    if (try instanceEquiv(rt, env, a, b)) |r| return r;
+
     // 4. Same-tag content arms; any other tag pairing → false.
     const ta = a.tag();
     if (ta != b.tag()) return false;
@@ -603,6 +613,22 @@ pub fn valueEqual(rt: *Runtime, env: *Env, a: Value, b: Value) anyerror!bool {
         },
         else => false,
     };
+}
+
+/// If `x` is a deftype/reify (non-record) instance with an `equiv` impl, dispatch
+/// `(equiv x other)` and return its truthiness — so a custom collection's value
+/// equality is honoured even against a different-tagged operand (D-377). A
+/// defrecord (type-sensitive `=`, never `=` a plain map) and a non-instance /
+/// impl-less deftype return null (the caller falls through to the same-tag gate).
+/// Lifts typedInstanceEqual's same-type equiv consult ahead of the tag gate.
+fn instanceEquiv(rt: *Runtime, env: *Env, x: Value, other: Value) anyerror!?bool {
+    const t = x.tag();
+    if (t != .typed_instance and t != .reified_instance) return null;
+    if (t == .typed_instance and x.decodePtr(*const td_mod.TypedInstance).descriptor.kind == .defrecord) return null;
+    var cs: dispatch_mod.CallSite = .{};
+    if (try dispatch_mod.dispatchOrNull(rt, env, &cs, x, "Object", "equiv", &.{ x, other }, .{ .line = 0, .column = 0 })) |r|
+        return r.isTruthy();
+    return null;
 }
 
 /// Record value equality (Clojure defrecord overrides equals): same
