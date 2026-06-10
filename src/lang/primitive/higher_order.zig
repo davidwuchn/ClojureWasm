@@ -485,6 +485,66 @@ fn naturalLessThan(ctx: *NaturalSortCtx, a: Value, b: Value) bool {
     return ord == .lt;
 }
 
+/// Context for the keyed stable sort: sorts an index permutation by the
+/// precomputed `keys` (parallel to the element vector), `valueCompare` on the
+/// keys. Same error-stash discipline as `NaturalSortCtx`.
+const KeySortCtx = struct {
+    rt: *Runtime,
+    keys: []const Value,
+    loc: SourceLocation,
+    err: ?anyerror = null,
+};
+
+fn keyLessThan(ctx: *KeySortCtx, ia: u32, ib: u32) bool {
+    if (ctx.err != null) return false;
+    const ord = compare_mod.valueCompare(ctx.rt, ctx.keys[ia], ctx.keys[ib], ctx.loc) catch |e| {
+        ctx.err = e;
+        return false;
+    };
+    return ord == .lt;
+}
+
+/// `(clojure.core/-sort-by-keys keys elems)` — stable sort of `elems` by the
+/// parallel precomputed `keys` vector via `compare` (`valueCompare`), the
+/// native fast path behind `(sort-by f coll)`. PERF (O-010): the naive form is
+/// the `.clj` `-msort` with a `(fn [a b] (compare (f a) (f b)))` comparator
+/// that re-enters eval AND re-applies `f` on EVERY comparison (O(n log n) `f`
+/// calls). Here the caller precomputes `keys = (mapv f coll)` (one `f` per
+/// element), and this sorts an index permutation by `valueCompare` on the keys
+/// — no eval reentry (so no GC safepoint mid-sort → no frame rooting), and the
+/// keys are compared directly. Stable: equal keys keep ascending index order
+/// (block sort is stable + the index array starts ascending), matching JVM
+/// `sort-by` stability. Fewer `f` calls than JVM (n vs n log n) — observably
+/// identical for a pure key fn (the F-011 contract); a side-effecting key fn is
+/// undefined either way.
+fn sortByKeysFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = env;
+    if (args.len != 2) {
+        return error_catalog.raise(.arity_not_expected, loc, .{ .fn_name = "-sort-by-keys", .expected = 2, .got = args.len });
+    }
+    const keys_v = args[0];
+    const elems_v = args[1];
+    const n = vector_mod.count(elems_v);
+    if (n <= 1) return elems_v;
+    const keys = try rt.gpa.alloc(Value, n);
+    defer rt.gpa.free(keys);
+    const idx = try rt.gpa.alloc(u32, n);
+    defer rt.gpa.free(idx);
+    var i: u32 = 0;
+    while (i < n) : (i += 1) {
+        keys[i] = vector_mod.nth(keys_v, i);
+        idx[i] = i;
+    }
+    var ctx: KeySortCtx = .{ .rt = rt, .keys = keys, .loc = loc };
+    std.mem.sort(u32, idx, &ctx, keyLessThan);
+    if (ctx.err) |e| return e;
+    const out = try rt.gpa.alloc(Value, n);
+    defer rt.gpa.free(out);
+    i = 0;
+    while (i < n) : (i += 1) out[i] = vector_mod.nth(elems_v, idx[i]);
+    return vector_mod.fromSlice(rt, out);
+}
+
 /// `(clojure.core/-sort-natural v)` — stable natural-order sort of a vector via
 /// `compare` (`valueCompare`), the native fast path behind `(sort coll)`.
 /// PERF (O-007): the naive form is the `.clj` `-msort` merge sort, which pays
@@ -550,6 +610,7 @@ const LEAF_ENTRIES = [_]Entry{
     .{ .name = "-take-eager", .f = &takeEagerFn },
     .{ .name = "-range", .f = &rangeLeafFn },
     .{ .name = "-sort-natural", .f = &sortNaturalFn },
+    .{ .name = "-sort-by-keys", .f = &sortByKeysFn },
 };
 
 pub fn register(

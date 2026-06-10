@@ -1207,9 +1207,13 @@
 
 ;; `(sort-by f coll)` — order by `(compare (f a) (f b))`. `(sort-by f comp coll)`
 ;; — order by `(comp (f a) (f b))`. Stable. Returns a SEQ (see `sort`).
+;; PERF: 2-arg default order precomputes keys once (mapv f) and runs the native
+;; stable key sort (-sort-by-keys, valueCompare, no per-comparison f/eval
+;; reentry); a custom comparator (3-arg) stays on the .clj -msort. [refs: O-010]
 (def sort-by
   (fn* ([f coll]
-        (-seq-or-empty (-msort (fn* [a b] (compare (f a) (f b))) (vec coll))))
+        (let [v (vec coll)]
+          (-seq-or-empty (-sort-by-keys (mapv f v) v))))
        ([f comp coll]
         (let [c (-comparator comp)]
           (-seq-or-empty (-msort (fn* [a b] (c (f a) (f b))) (vec coll)))))))
