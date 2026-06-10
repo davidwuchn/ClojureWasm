@@ -12,6 +12,15 @@ pub fn build(b: *std.Build) void {
         .root_source_file = b.path("src/main.zig"),
         .target = target,
         .optimize = optimize,
+        // Strip the symbol table from release builds: it is ~400 KB (~10%) of
+        // the binary, and binary size is ClojureWasm's headline metric
+        // (bench/RELEASE_METRICS.md). cljw renders its own error traces from a
+        // runtime StackFrame stack, NOT native symbols, so stripping costs no
+        // user-facing diagnostics. Debug stays unstripped for dev tooling
+        // (lldb / native backtraces). Aligns the installed artifact with the
+        // already-documented stripped release size (O-008). (Debug-mode `zig
+        // build test` is unaffected — strip is false there.)
+        .strip = optimize != .Debug,
     });
 
     // Phase activation manifest (ADR-0023 Pattern A). One comptime
