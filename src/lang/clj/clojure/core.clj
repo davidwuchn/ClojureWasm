@@ -1276,8 +1276,12 @@
                  ([result] (rf result))
                  ([result input] (rf result (f (vswap! iv inc) input)))))))
        ([f coll]
-        ;; Returns a SEQ (JVM parity).
-        (-seq-or-empty (mapv (fn* [i] (f i (nth coll i))) (range (count coll)))))))
+        ;; Returns a SEQ (JVM parity). PERF: route through the 1-arg transducer
+        ;; so the source is walked SEQUENTIALLY (O(n)); the old
+        ;; `(mapv #(f % (nth coll %)) (range (count coll)))` was O(n²) on a
+        ;; non-indexed coll (lazy seq / list), where `(nth coll i)` is O(i).
+        ;; [refs: O-011]
+        (-seq-or-empty (into [] (map-indexed f) coll)))))
 
 ;; `(keep-indexed f)` / `(keep-indexed f coll)` — like map-indexed but drops
 ;; nil results. The 1-arg form is a stateful transducer (running index); the
@@ -1292,10 +1296,10 @@
                   (let [i (vswap! iv inc) v (f i input)]
                     (if (nil? v) result (rf result v))))))))
        ([f coll]
-        (-seq-or-empty (reduce (fn* [acc i]
-                                 (let [r (f i (nth coll i))] (if (nil? r) acc (conj acc r))))
-                               []
-                               (range (count coll)))))))
+        ;; Returns a SEQ (JVM parity). PERF: route through the 1-arg transducer
+        ;; (sequential O(n) walk); the old `(nth coll i)` over `(range (count
+        ;; coll))` was O(n²) on a non-indexed coll. [refs: O-011]
+        (-seq-or-empty (into [] (keep-indexed f) coll)))))
 
 ;; `(butlast coll)` — all but the final element, or nil for a coll of
 ;; ≤1 element (JVM returns `(seq ret)` → nil when empty). The `(seq …)`
