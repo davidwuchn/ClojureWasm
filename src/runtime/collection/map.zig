@@ -125,6 +125,52 @@ pub fn count(v: Value) u32 {
     };
 }
 
+/// Walk every `(key, value)` entry of an `.array_map` or `.hash_map`, calling
+/// `cb(ctx, key, value)` per entry. The iteration order is the map's storage
+/// order (array_map = insertion; hash_map = HAMT order) — the same order
+/// `pr-str` / `seq` expose, so callers that mirror print/seq output stay
+/// consistent. Pure (no `rt`/`env`, no allocation, no GC trigger), so it is
+/// safe to call from a non-reentrant primitive walk. A non-map `v` is a
+/// programming error (callers guard the tag). `.sorted_map` is NOT handled
+/// here (different backing structure); callers needing it dispatch separately.
+pub fn forEachEntry(
+    v: Value,
+    ctx: anytype,
+    comptime cb: fn (@TypeOf(ctx), Value, Value) anyerror!void,
+) anyerror!void {
+    switch (v.tag()) {
+        .array_map => {
+            const am = v.decodePtr(*const ArrayMap);
+            var i: u32 = 0;
+            while (i < am.count) : (i += 1) {
+                try cb(ctx, am.entries[2 * i], am.entries[2 * i + 1]);
+            }
+        },
+        .hash_map => {
+            const phm = v.decodePtr(*const PersistentHashMap);
+            if (phm.root) |root| try hamtForEachEntry(root, ctx, cb);
+        },
+        else => return error.NotAMap,
+    }
+}
+
+fn hamtForEachEntry(
+    node: *const HamtMapNode,
+    ctx: anytype,
+    comptime cb: fn (@TypeOf(ctx), Value, Value) anyerror!void,
+) anyerror!void {
+    const data_count = @popCount(node.data_map);
+    var i: u32 = 0;
+    while (i < data_count) : (i += 1) {
+        try cb(ctx, node.slots[2 * i], node.slots[2 * i + 1]);
+    }
+    const child_count = @popCount(node.node_map);
+    var j: u32 = 0;
+    while (j < child_count) : (j += 1) {
+        try hamtForEachEntry(node.slots[63 - j].decodePtr(*const HamtMapNode), ctx, cb);
+    }
+}
+
 /// Key equality for every HAMT / ArrayMap key compare. Routes to
 /// `equal.eqConsult` (ADR-0129): a custom-`equiv` deftype/reify key is
 /// compared via its impl (reading the ambient `dispatch.current_env`), else

@@ -303,6 +303,30 @@ pub fn count(v: Value) u32 {
     };
 }
 
+/// Walk every `(key, value)` of a `.sorted_map` in ascending key order
+/// (in-order RB-tree traversal), calling `cb(ctx, key, value)` per entry.
+/// Pure (no `rt`/`env`, no allocation), mirroring `map.forEachEntry` so a
+/// non-reentrant primitive can iterate any map kind uniformly.
+pub fn forEachEntry(
+    v: Value,
+    ctx: anytype,
+    comptime cb: fn (@TypeOf(ctx), Value, Value) anyerror!void,
+) anyerror!void {
+    try rbForEachEntry(v.decodePtr(*const SortedMap).root, ctx, cb);
+}
+
+fn rbForEachEntry(
+    node: Value,
+    ctx: anytype,
+    comptime cb: fn (@TypeOf(ctx), Value, Value) anyerror!void,
+) anyerror!void {
+    if (node.tag() != .rb_node) return;
+    const n = node.decodePtr(*const RbNode);
+    try rbForEachEntry(n.left, ctx, cb);
+    try cb(ctx, n.key, n.val);
+    try rbForEachEntry(n.right, ctx, cb);
+}
+
 pub fn assoc(rt: *Runtime, env: *Env, m_val: Value, key: Value, val: Value, loc: SourceLocation) !Value {
     const m = m_val.decodePtr(*const SortedMap);
     const r = try insert(rt, env, m.comparator, m.root, key, val, loc);

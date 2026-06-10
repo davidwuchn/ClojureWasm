@@ -92,6 +92,16 @@ EOF
 ) || fail "round_trip: non-zero exit"
 assert_eq 'round_trip' "$(last_line "$got")" '[1 "x" nil true]'
 
+# --- large map (>8 entries → hash_map/HAMT, not array_map): write-str used to
+# error ("not supported") on any hash_map. Order is HAMT-dependent, so assert
+# round-trip identity (order-independent map =) rather than the exact string. ---
+got=$("$BIN" - <<'EOF' 2>/dev/null
+(let [m (into {} (map (fn [i] [(str i) i]) (range 50)))]
+  (prn (= m (clojure.data.json/read-str (clojure.data.json/write-str m)))))
+EOF
+) || fail "write_hashmap_roundtrip: non-zero exit"
+assert_eq 'write_hashmap_roundtrip' "$(last_line "$got")" 'true'
+
 # --- float write: JVM data.json delegates to Double.toString (scientific
 # notation outside the decimal window) — must match cljw's pr-str float
 # form, NOT Zig's `{d}`. D-171 (sibling of D-166 print.printFloat). ---

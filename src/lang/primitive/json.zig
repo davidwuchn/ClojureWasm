@@ -38,6 +38,7 @@ const dispatch = @import("../../runtime/dispatch.zig");
 const string_collection = @import("../../runtime/collection/string.zig");
 const vector_collection = @import("../../runtime/collection/vector.zig");
 const map_collection = @import("../../runtime/collection/map.zig");
+const sorted_collection = @import("../../runtime/collection/sorted.zig");
 const print = @import("../../runtime/print.zig");
 const big_int_mod = @import("../../runtime/numeric/big_int.zig");
 
@@ -143,7 +144,27 @@ const JsonWriteError = error{
     WriteFailed,
 };
 
-fn cwToJson(v: Value, w: *std.Io.Writer, loc: SourceLocation) JsonWriteError!void {
+/// Per-map-entry emitter for `forEachEntry` (array_map + hash_map). Holds the
+/// writer + a running first-flag for comma separation.
+const MapEmitCtx = struct { w: *std.Io.Writer, first: bool };
+
+fn emitJsonEntry(ctx: *MapEmitCtx, k: Value, val: Value) anyerror!void {
+    if (!ctx.first) try ctx.w.writeAll(",");
+    ctx.first = false;
+    // Coerce non-string keys to their string form (JSON keys must be strings).
+    switch (k.tag()) {
+        .string => try writeJsonString(ctx.w, string_collection.asString(k)),
+        .keyword => {
+            const kw_mod = @import("../../runtime/keyword.zig");
+            try writeJsonString(ctx.w, kw_mod.asKeyword(k).name);
+        },
+        else => return JsonWriteError.UnsupportedJsonTag,
+    }
+    try ctx.w.writeAll(":");
+    try cwToJson(val, ctx.w, .{});
+}
+
+fn cwToJson(v: Value, w: *std.Io.Writer, loc: SourceLocation) anyerror!void {
     _ = loc;
     switch (v.tag()) {
         .nil => try w.writeAll("null"),
@@ -174,27 +195,19 @@ fn cwToJson(v: Value, w: *std.Io.Writer, loc: SourceLocation) JsonWriteError!voi
             }
             try w.writeAll("]");
         },
-        .array_map => {
+        // Both map representations (≤8 = array_map, >8 = hash_map/HAMT) walk via
+        // the shared `map.forEachEntry`; the old code only handled `.array_map`,
+        // so `write-str` errored on any map past the 8-entry promotion threshold.
+        .array_map, .hash_map => {
             try w.writeAll("{");
-            const am = v.decodePtr(*const map_collection.ArrayMap);
-            var i: u32 = 0;
-            while (i < am.count) : (i += 1) {
-                if (i > 0) try w.writeAll(",");
-                const k = am.entries[2 * i];
-                const val = am.entries[2 * i + 1];
-                // Coerce non-string keys to their string form
-                // (JSON keys must be strings).
-                switch (k.tag()) {
-                    .string => try writeJsonString(w, string_collection.asString(k)),
-                    .keyword => {
-                        const kw_mod = @import("../../runtime/keyword.zig");
-                        try writeJsonString(w, kw_mod.asKeyword(k).name);
-                    },
-                    else => return JsonWriteError.UnsupportedJsonTag,
-                }
-                try w.writeAll(":");
-                try cwToJson(val, w, .{});
-            }
+            var ctx = MapEmitCtx{ .w = w, .first = true };
+            try map_collection.forEachEntry(v, &ctx, emitJsonEntry);
+            try w.writeAll("}");
+        },
+        .sorted_map => {
+            try w.writeAll("{");
+            var ctx = MapEmitCtx{ .w = w, .first = true };
+            try sorted_collection.forEachEntry(v, &ctx, emitJsonEntry);
             try w.writeAll("}");
         },
         else => return JsonWriteError.UnsupportedJsonTag,
