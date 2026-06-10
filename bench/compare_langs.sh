@@ -31,7 +31,7 @@ BENCH_FILTER=""
 LANG_FILTER=""
 MODE="cold"  # cold, warm, both
 RUNS=5
-WARMUP=2
+WARMUP=3
 YAML_FILE=""
 SKIP_BUILD=false
 
@@ -57,7 +57,7 @@ for arg in "$@"; do
       echo "  --warm           Startup-subtracted only"
       echo "  --both           Cold + Warm"
       echo "  --runs=N         Hyperfine runs (default: 5)"
-      echo "  --warmup=N       Hyperfine warmup (default: 2)"
+      echo "  --warmup=N       Hyperfine warmup (default: 3)"
       echo "  --yaml=FILE      YAML output file"
       echo "  --skip-build     Skip CW build step"
       echo "  -h, --help       Show this help"
@@ -71,7 +71,7 @@ for arg in "$@"; do
 done
 
 # --- Determine languages ---
-ALL_LANGS=(cw c zig java tgo py rb js bb)
+ALL_LANGS=(cw c zig java tgo go py rb js bb)
 LANGS=()
 if [[ -n "$LANG_FILTER" ]]; then
   IFS=',' read -ra LANGS <<< "$LANG_FILTER"
@@ -91,6 +91,7 @@ lang_display_name() {
     js)   echo "node" ;;
     bb)   echo "babashka" ;;
     tgo)  echo "tinygo" ;;
+    go)   echo "go" ;;
     *)    echo "$1" ;;
   esac
 }
@@ -196,6 +197,13 @@ lang_command() {
       tinygo build -opt=2 -o "$bin" "$bench_dir/bench.go" 2>/dev/null || return 1
       echo "$bin"
       ;;
+    go)
+      [[ -f "$bench_dir/bench.go" ]] || return 1
+      command -v go >/dev/null 2>&1 || return 1
+      local bin="$TMPDIR_CMP/go_$(basename "$bench_dir")"
+      go build -o "$bin" "$bench_dir/bench.go" 2>/dev/null || return 1
+      echo "$bin"
+      ;;
     *)
       return 1
       ;;
@@ -250,6 +258,15 @@ func main() {}
 GOEOF
         tinygo build -opt=2 -o "$TMPDIR_CMP/noop_tgo" "$TMPDIR_CMP/noop.go" 2>/dev/null
         noop_cmd="$TMPDIR_CMP/noop_tgo"
+        ;;
+      go)
+        command -v go >/dev/null 2>&1 || continue
+        cat > "$TMPDIR_CMP/noop_go.go" << 'GOEOF'
+package main
+func main() {}
+GOEOF
+        go build -o "$TMPDIR_CMP/noop_go" "$TMPDIR_CMP/noop_go.go" 2>/dev/null
+        noop_cmd="$TMPDIR_CMP/noop_go"
         ;;
       *)    continue ;;
     esac
@@ -313,8 +330,8 @@ echo -e "${BOLD}═════════════════════�
 echo -e "${BOLD}  Cross-Language Benchmark Comparison${RESET}"
 echo -e "${BOLD}═══════════════════════════════════════════════════════════════${RESET}"
 
-# Sort order: c, zig, java, cw, bb, rb, py (fast to slow typical order)
-DISPLAY_ORDER=(c zig java tgo cw js bb rb py)
+# Sort order: c, zig, java, tgo, go, cw, bb, rb, py (fast to slow typical order)
+DISPLAY_ORDER=(c zig java tgo go cw js bb rb py)
 
 for bench_dir in "${BENCH_DIRS[@]}"; do
   bench_name=$(basename "$bench_dir" | sed 's/^[0-9]*_//')
