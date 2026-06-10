@@ -999,18 +999,46 @@ active:
       `eval`-of-top-level-do contract). Out of D-373 scope; surfaced by its corpus.
     last_reviewed: "2026-06-10"
   - id: "D-375"
-    status: "open (2026-06-10, flatland.ordered.map next blocker after D-373). `(APersistentMap/mapHash this)` (map.clj:123, inside the deftype hashCode impl) → `No namespace: 'APersistentMap'`. cljw has no `clojure.lang.APersistentMap` and no static `mapHash`. This is a clojure.lang static-method gap (a JVM static called from a deftype body), distinct from the class-value/instance? system (D-373). Definition-derived per F-013: the clojure.lang abstract-collection classes expose standard static hash helpers libs call from custom collection impls — APersistentMap/mapHash (unordered map hash), APersistentSet/setHash, APersistentVector hashing, Util/hash(Combine). Provide them as cljw statics computing the SAME hash cljw already uses (hash-unordered-coll for maps/sets; the vector hash), routed generically (not per-lib). Recurs across the data-structure lib cluster (D-372 unlocked finger-tree/core.cache/rrb-vector/avl/priority-map/int-map/gvec — many define custom collections with hashCode via these statics). ordered.map advanced map.clj:59→:123."
+    status: "DISCHARGED 2026-06-10 (ADR-0108 am1). The clojure.lang abstract-collection static hash/equality helpers landed as the F-013 definition-derived closed set across 3 surfaces under runtime/clojure/lang/ (the ADR-0108 'next class = file-add' path): APersistentMap/{mapHash,mapHasheq,mapEquals}, APersistentSet/{setEquals} (JVM has NO setHash static — not invented), Murmur3/{hashOrdered,hashUnordered,mixCollHash}. Neutral impl runtime/coll_hash.zig iterates a map-like via the vtable seq/first/next/nth callback (works on a deftype instance, not just native maps; native colls fast-path to map/set.contentHash). mapHash=mapHasheq=cljw single content hash (DA-fork Alt 2, AD-028) reusing map.entryHash (now pub) so a custom map's .hashCode == an =-equal native map's. mapEquals/setEquals clj-oracle bit-for-bit (corpus clojure_lang_coll_hash.txt). flatland.ordered.map advanced map.clj:123→:159 (its NEXT blocker, multi-pair assoc on an extend-type Associative receiver, D-378 — a different subsystem). Keyword-hash non-determinism found en route fixed separately (the keyword valueHash arm). ADR-0108 am1 DA-fork verbatim."
     category: "interop"
     barrier: |-
-      Custom-collection libs compute hashCode via clojure.lang static helpers
-      (`APersistentMap/mapHash`, `APersistentSet/setHash`, APersistentVector hashing,
-      `Util/hashCombine`) called from a deftype/reify body. cljw lacks these
-      classes/statics → `No namespace: 'APersistentMap'`. Finished-form per F-013:
-      provide the definition-derived closed set of clojure.lang abstract-collection
-      static hash helpers as cljw statics delegating to cljw's existing hash
-      (hash-unordered-coll etc.), routed through one generic surface (not a per-lib
-      add). Blocks flatland.ordered + the broader data-structure cluster. Cross-ref
-      D-372 (host-interface substrate), D-373 (the instance? gap before it), F-013.
+      DISCHARGED — see status. ADR-0108 am1 (DA-fork depth-2 embedded verbatim;
+      Alt 2 = mapHash returns cljw's single content hash). Out-of-scope spinoffs:
+      D-376 (Murmur3/hashUnencodedChars UTF-16), D-377 (cross-impl map-hash
+      consistency), D-378 (ordered.map's next blocker).
+    last_reviewed: "2026-06-10"
+  - id: "D-376"
+    status: "open (2026-06-10, ADR-0108 am1 out-of-scope). `clojure.lang.Murmur3/hashUnencodedChars` (2 sites, data.xml only) hashes a CharSequence's UTF-16 code units. cljw's hashString deliberately hashes UTF-8 bytes (hash.zig — a WASM/edge-native choice, F-011 internals are impl-specific), so there is no UTF-16-codeunit hasher to delegate to. Deferred from the D-375 closed set. Revisit if data.xml is promoted to a verified lib: add a hashUnencodedChars hashing UTF-8 (accept the AD-009 value divergence) or build a real UTF-16 path then."
+    category: "interop"
+    barrier: |-
+      `Murmur3/hashUnencodedChars` hashes UTF-16 code units; cljw hashes UTF-8
+      (no UTF-16 hasher exists). Low value (data.xml only, 2 sites). Revisit when a
+      verified lib needs it; then hash UTF-8 (AD-009) or add a UTF-16 path. Cross-ref
+      ADR-0108 am1, AD-009.
+    last_reviewed: "2026-06-10"
+  - id: "D-377"
+    status: "open (2026-06-10, found during D-375). Two cross-impl map-hash inconsistencies that diverge from clj (clj keeps `(hash m)` == `(hash-unordered-coll m)`): (1) cljw `(hash map)` = map.contentHash (per-entry `vh(k)*31+vh(v)`) ≠ `(hash-unordered-coll map)` = core.collHash (per-entry the map_entry-as-vector hash). (2) `(hash deftype-inst)` does NOT consult the deftype's own hasheq/IHashEq impl — valueHash's typed_instance arm returns the identity bit-hash for a non-defrecord deftype. Consequence: a custom map whose hasheq is `(hash-unordered-coll this)` will not `(hash)`-collide with an `=`-equal native map even after D-375 (D-375's mapHash via .hashCode IS consistent; the `(hash)`/hasheq path is not). A hash-consistency campaign affecting all map hashes (corpus regen): unify contentHash's per-entry with the map_entry-as-vector hash so contentHash==collHash==clj-shape, AND make valueHash consult a deftype's hasheq impl via the vtable. Distinct from adding the static surfaces (D-375)."
+    category: "polymorphism"
+    barrier: |-
+      clj: `(hash m)` == `(hash-unordered-coll m)`; cljw: contentHash (entryHash
+      `vh(k)*31+vh(v)`) ≠ collHash (map_entry-as-vector per entry). Plus `(hash
+      deftype-inst)` ignores the deftype's hasheq impl (identity hash). So a custom
+      map won't `(hash)`-collide with an =-equal native map. Fix: unify the map
+      per-entry hash (contentHash==collHash, clj-shape) + consult deftype hasheq in
+      valueHash via vtable. Changes all map hash values (corpus relational assertions
+      hold; regen goldens). Cross-ref D-375, AD-028, F-011, equal.zig valueHash,
+      map.zig foldHash, core.zig collHash.
+    last_reviewed: "2026-06-10"
+  - id: "D-378"
+    status: "open (2026-06-10, flatland.ordered.map next blocker after D-375). `(apply assoc empty-ordered-map k v more)` (map.clj:159) → `multi-pair assoc on extend-type Associative receiver is not supported` (collection.zig:575/632 feature_not_supported). cljw's assoc on an extend-type/deftype Associative receiver handles the single k/v pair but raises on the multi-pair (`assoc m k1 v1 k2 v2 …`) form. ordered.map's ordered-map ctor uses the variadic assoc. Finished-form: lower multi-pair assoc on an Associative-protocol receiver to a fold of single-pair `-assoc` calls (the same lowering native maps get). Distinct from the hash-static work (D-375). ordered.map advanced map.clj:123→:159."
+    category: "polymorphism"
+    barrier: |-
+      `(apply assoc <deftype-Associative> k v more)` raises `multi-pair assoc on
+      extend-type Associative receiver is not supported` (collection.zig:575/632).
+      Single-pair assoc on the protocol receiver works; the variadic multi-pair form
+      is unimplemented. Fix: fold the multi-pair form into repeated single-pair
+      `-assoc` protocol calls (as native maps do). Blocks flatland.ordered.map (the
+      ordered-map ctor). Cross-ref D-375 (the blocker before it), collection.zig assoc.
     last_reviewed: "2026-06-10"
   - id: "D-287"
     status: "DISCHARGED ADR-0105 (2026-06-07) - Java arrays implemented: type-erased `.array` JavaArray ([]Value, mirror of TypedInstance) + aget/aset/alength/aclone/array? primitives + object-array/int-array/byte-array/make-array/to-array/into-array/aset-*/amap/areduce in core.clj; seqable/indexed/identity-equal; byte/short/char wrap + per-ctor init defaults (F-011); type-erasure = AD-019. flatland.ordered (rung 4b) advanced aset->IEditableCollection; tools.reader (rung 6) aget->Closeable (both new host-interface blockers). ORIGINAL: now (found 2026-06-07 — ordered's blocker after D-286a, a NON-deftype/NON-host-interface class) — flatland.ordered.set.clj:84 `Unable to resolve symbol: 'aset'`. `aset` (Java array element set) is unimplemented; ordered uses Java object-arrays + aset/aget/make-array internally for its backing store. This is the Java-array-interop capability, distinct from the deftype host-interface work (D-275→D-286). cljw has no Java arrays as such — would need an array surface (object-array/aset/aget/alength/make-array) backed by a cljw mutable vector or a native array Value."

@@ -1,0 +1,22 @@
+;; clojure.lang abstract-collection static hash/equality helpers (ADR-0108 am1 /
+;; D-375). Custom-collection deftypes call these from hashCode/hasheq/equals.
+;; clj-oracle-verified 2026-06-10. The mapEquals/setEquals/Murmur3 lines AGREE with
+;; clj; the mapHash lines are the AD-028 divergence (cljw unifies mapHash/mapHasheq/
+;; (hash) into one content hash — clj keeps additive-hashCode vs murmur-hasheq).
+(clojure.lang.APersistentMap/mapEquals {:a 1 :b 2} {:b 2 :a 1})
+;;=> true
+(clojure.lang.APersistentMap/mapEquals {:a 1} {:a 2})
+;;=> false
+(clojure.lang.APersistentSet/setEquals #{1 2 3} #{3 2 1})
+;;=> true
+(clojure.lang.APersistentSet/setEquals #{1 2} #{1 3})
+;;=> false
+(= (clojure.lang.Murmur3/hashOrdered [1 2 3]) (hash-ordered-coll [1 2 3]))
+;;=> true
+(= (clojure.lang.Murmur3/hashUnordered #{1 2 3}) (hash-unordered-coll #{1 2 3}))
+;;=> true
+;; AD-028 pins (cljw: one content hash; clj: false — additive mapHash ≠ hasheq):
+(= (clojure.lang.APersistentMap/mapHash {:a 1 :b 2}) (hash {:a 1 :b 2}))
+;;=> true
+(= (clojure.lang.APersistentMap/mapHash {:a 1 :b 2}) (clojure.lang.APersistentMap/mapHasheq {:a 1 :b 2}))
+;;=> true

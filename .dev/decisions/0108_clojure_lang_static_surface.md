@@ -156,3 +156,91 @@ _Devil's-advocate subagent output (fresh context), verbatim:_
   (same-type-and-value), oracle-pinned in the corpus.
 - The `feature_name_consistency.md` scan-set update is a tracked carry-over until
   the user lands it; the new tree carries the `Backend:` marker regardless.
+
+## Amendment 1 — APersistentMap / APersistentSet / Murmur3 (D-375, 2026-06-10)
+
+The "next class = pure file-add" path promised above is exercised. Custom-collection
+libraries (flatland.ordered, data.avl, gvec, tech.ml.dataset) call clojure.lang
+abstract-collection STATIC hash/equality helpers from their deftype hashCode/hasheq/
+equals bodies. flatland.ordered.map:123 `(hashCode [this] (APersistentMap/mapHash this))`
+errored `No namespace: 'APersistentMap'`. Definition-derived closed set (F-013) across
+three real clojure.lang classes:
+
+- **`clojure.lang.APersistentMap`** statics: `mapHash`, `mapHasheq`, `mapEquals`.
+- **`clojure.lang.APersistentSet`** static: `setEquals` (JVM has NO `setHash` static —
+  hashCode/hasheq are instance methods; inventing a `setHash` would be the 個別最適化 trap).
+- **`clojure.lang.Murmur3`** statics: `hashOrdered`, `hashUnordered`, `mixCollHash` —
+  thin wrappers; `hashOrdered`/`hashUnordered` delegate to the existing
+  `clojure.core/hash-ordered-coll`/`hash-unordered-coll` (the same coll-fold), `mixCollHash`
+  to `runtime/hash.zig::mixCollHash` (byte-for-byte JVM Murmur3, already verified).
+
+Wiring per the gate-amendment checklist (all already in place from the base ADR): 3 new
+`runtime/clojure/lang/*.zig` surface files mirroring `Util.zig` + 3 `@import` lines in
+`_host_api.zig::clojure_surfaces` + a neutral rt+env-taking helper in `runtime/coll_hash.zig`
+(iterates a map-like via the `rt.vtable.callFn`→`clojure.core/seq` callback, the confirmed
+`java/util/Iterator.zig` pattern, so it works on a native map AND a deftype instance) +
+`compat_tiers.yaml` entries. zone_check / resolver unchanged.
+
+### The one design choice: `mapHash` return value (DA-fork, depth-2)
+
+cljw collapsed the JVM's two-hash split (additive Object.hashCode vs Murmur hasheq) into a
+SINGLE value-hash: `Util/hash` and `Util/hasheq` both route to `equal.valueHash`, and
+`(.hashCode native-map)` = `(hash native-map)` = `map.contentHash` (mixCollHash-finalized).
+So `mapHash` and `mapHasheq` return the SAME cljw content hash over the seq'd entries
+(matching an `=`-equal native map's `.hashCode`), NOT JVM's additive `sum(keyHash ^ valHash)`.
+This is the AD-009/F-011 choice: intra-cljw equal-maps-equal-hash beats JVM-bit-parity (which
+is unobservable and impossible since cljw hashes strings UTF-8). The neutral helper REUSES
+the `entryHash` + order-independent `+%` + single `mixCollHash` fold `map.contentHash` uses
+(fast-path native maps to `contentHash` directly; seq-walk for deftype instances).
+
+### Alternatives considered (Devil's-advocate, fresh context — verbatim)
+
+> **Fresh-context grounding:** cljw has ONE value-hash — `Util/hash` (Java hashCode) and
+> `Util/hasheq` (Clojure hasheq) BOTH route to `equal.valueHash`; `valueHash` of a map →
+> `map.contentHash` = `mixCollHash(Σ entryHash(k,v), count)` (order-independent, then
+> mix-finalized). The JVM's additive-vs-murmur duality has no cljw counterpart.
+>
+> **Alt 1 — JVM-shape-additive** (`Σ keyHash ^ valHash`, not finalized): closest to the
+> JVM source text. **Fatal:** `(.hashCode native-map)` in cljw IS finalized contentHash, so
+> an additive mapHash returns a different integer → `(= (.hashCode om) (.hashCode
+> equal-native-map))` is FALSE — the exact invariant the lib wired the call to preserve.
+> Ports the unobservable JVM internal shape (AD-009) while breaking the observable collision
+> contract (F-011). VIOLATES F-011.
+>
+> **Alt 2 — cljw-consistent** (return cljw's `contentHash`-equivalent, mix-finalized, over
+> the seq'd entries): makes both `(.hashCode om)` and `(hash om)` agree with an equal native
+> map within cljw. Honours cljw's "one value-hash" architecture. Risk: the helper MUST reuse
+> the identical `entryHash`+`mixCollHash` fold (don't re-derive) or OrderedMap silently
+> mis-collides. FULLY COMPLIANT (F-011 observable contract; AD-009; F-002).
+>
+> **Alt 3 — route the instance through universal `(hash …)` dispatch**: maximal
+> commonization. **Fatal circularity:** `valueHash` on a `.typed_instance` hits the
+> defrecord-fields hash or the deftype identity bit-hash, NEITHER equal to the native map's
+> content hash — and the lib overrides hashCode *because* the default instance hash is wrong
+> for a collection, so routing back re-introduces the wrong hash. VIOLATES F-011.
+>
+> **RECOMMENDATION: Alt 2.** The libs wire `(APersistentMap/mapHash this)` into hashCode for
+> ONE observable reason — a custom map collides with an `=`-equal native map inside the
+> runtime. cljw collapsed the two-hash split into one finalized `valueHash`/`contentHash`, so
+> mapHash must return that same finalized value over the seq'd entries, reusing the native
+> fold. Alt 1's JVM-shape fidelity is unobservable (AD-009) and trades against the observable
+> contract (Smallest-diff bias). **mapHash and mapHasheq return the SAME value in cljw** —
+> forced, not stylistic: cljw has one hash notion (Util/hash and Util/hasheq both → valueHash),
+> so a single OrderedMap reporting two different hashes from hashCode vs hasheq would break
+> the collision contract on one path. Preserving the JVM additive/murmur distinction here
+> would be Reservation-as-bias (obeying the JVM shape because it is "the named algorithm").
+
+Main loop adopts **Alt 2** verbatim.
+
+### Out of scope (filed as debt, NOT this unit)
+
+- **D-376** — `Murmur3/hashUnencodedChars` (2 sites, data.xml): hashes UTF-16 code units;
+  cljw `hashString` hashes UTF-8 (WASM/edge choice). Defer.
+- **D-377** — cross-impl map-hash consistency: `(hash map)` (= `contentHash`, per-entry
+  `vh(k)*31+vh(v)`) ≠ `(hash-unordered-coll map)` (= `collHash`, per-entry the map_entry-as-
+  vector hash), whereas clj keeps them equal. A deftype map whose `hasheq` uses
+  `hash-unordered-coll` therefore will not `(hash)`-collide with a native map. Plus the
+  deeper gap that `(hash deftype-inst)` does not consult the deftype's own `hasheq`/IHashEq
+  impl (it returns the identity bit-hash). Both are a hash-consistency campaign affecting all
+  map hashes (corpus regen), distinct from adding the static surfaces. mapHash here is
+  unaffected (it computes contentHash directly).

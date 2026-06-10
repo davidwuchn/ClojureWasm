@@ -426,3 +426,21 @@ accepted:
       library-driven discovery survives.
     derives_from: "ADR-0059/AD-003 (no-JVM: java methods have no cljw dispatch) + ADR-0103 (host_inert accept-don't-dispatch) + ADR-0102 am2 (method-granularity application) + F-013 (definition-derived closed set)"
     pin: "test/e2e/phase14_java_method_grouping.sh — case 2 (a dropped .iterator is DECLINED, never silently run)"
+  - id: "AD-028"
+    summary: "`clojure.lang.APersistentMap/mapHash` and `/mapHasheq` return cljw's SINGLE content hash (= `(hash m)`), NOT clj's distinct additive `Object.hashCode` (mapHash) vs murmur `hasheq` (mapHasheq). cljw collapsed the JVM two-hash split into one `valueHash` (ADR-0108), so a custom-collection deftype's `.hashCode` (via mapHash) and `(hash inst)` agree with an `=`-equal native map within cljw — the observable collision contract — at the cost of clj's internal additive/murmur shapes (unobservable per AD-009)."
+    example: '(= (clojure.lang.APersistentMap/mapHash {:a 1 :b 2}) (hash {:a 1 :b 2})) => cljw true / clj false ; (= (APersistentMap/mapHash m) (APersistentMap/mapHasheq m)) => cljw true / clj false'
+    why: |-
+      cljw has ONE value-hash (Util/hash and Util/hasheq both route to
+      equal.valueHash; a native map's (.hashCode) = (hash) = map.contentHash,
+      mix-finalized). The JVM's additive Object.hashCode vs murmur IHashEq split
+      has no cljw counterpart. Custom-collection libraries wire
+      (hashCode [this] (APersistentMap/mapHash this)) so their map collides with an
+      =-equal native map; to honour that observable contract cljw's mapHash returns
+      the same single content hash, reusing map.entryHash + mixCollHash (the native
+      contentHash fold), and mapHash == mapHasheq (one hash notion). Replicating
+      clj's additive form would make mapHash differ from a native map's (.hashCode)
+      and break the collision contract — the inverted priority (AD-009: the JVM hash
+      VALUE/shape is unobservable, intra-cljw equal-colls-equal-hash is what matters).
+      DA-fork (ADR-0108 am1) Alt 2.
+    derives_from: "AD-009 (cljw-native hash, intra-cljw consistency only) + ADR-0108 am1 (the DA-fork decision) + F-011 (observable equivalence over unobservable JVM bit-shape)"
+    pin: "test/diff/clj_corpus/clojure_lang_coll_hash.txt (the two `(= (mapHash …) (hash …))` / `(= (mapHash …) (mapHasheq …))` lines lock cljw=true)"

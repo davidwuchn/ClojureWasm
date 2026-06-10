@@ -114,6 +114,11 @@ const java_surfaces = [_]type{
 /// live under `runtime/clojure/lang/`). Hand-maintained like `java_surfaces`.
 const clojure_surfaces = [_]type{
     @import("../clojure/lang/Util.zig"),
+    // ADR-0108 am1 / D-375: abstract-collection static hash/equality helpers that
+    // custom-collection deftypes call from hashCode/hasheq/equals bodies.
+    @import("../clojure/lang/APersistentMap.zig"),
+    @import("../clojure/lang/APersistentSet.zig"),
+    @import("../clojure/lang/Murmur3.zig"),
 };
 
 /// Walk every enumerated surface's `___HOST_EXTENSION` declaration,
