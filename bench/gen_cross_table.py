@@ -57,14 +57,32 @@ def collect(benches, mode):
     return rows, present
 
 
+def us(ms):
+    """ms (the yaml's native unit) → integer microseconds for display."""
+    return f"{round(float(ms) * 1000)}"
+
+
 def render_table(rows, present):
     cols = [l for l in LANG_ORDER if l in present]
     lines = ["| Benchmark | " + " | ".join(DISPLAY[l] for l in cols) + " |",
              "|" + "---|" * (len(cols) + 1)]
     for name, cells in rows.items():
-        vals = [(f"{float(cells[l]):g}" if cells.get(l) is not None else "—") for l in cols]
+        vals = [(us(cells[l]) if cells.get(l) is not None else "—") for l in cols]
         lines.append(f"| {name} | " + " | ".join(vals) + " |")
     return lines
+
+
+def render_startup(startup):
+    """One-row µs table of per-language process-spawn + runtime-init time — the
+    fixed overhead the warm table subtracts out."""
+    norm_su = {norm(k): v for k, v in startup.items()}
+    cols = [l for l in LANG_ORDER if l in norm_su]
+    if not cols:
+        return []
+    header = "| Startup (µs) | " + " | ".join(DISPLAY[l] for l in cols) + " |"
+    sep = "|" + "---|" * (len(cols) + 1)
+    vals = [us(norm_su[l]) for l in cols]
+    return [header, sep, "| process spawn + init | " + " | ".join(vals) + " |"]
 
 
 def main():
@@ -79,23 +97,50 @@ def main():
     if "cw" not in cold_present:
         sys.exit("no cw cold data in yaml — nothing to table")
 
-    env_line = (f"{env.get('cpu', '?')}, {env.get('os', '?')}, "
-                f"hyperfine runs={env.get('runs', '?')}/warmup={env.get('warmup', '?')}, {date}")
+    # Conditions up front: machine + the hyperfine settings the numbers were
+    # measured under (runs/warmup must be visible at a glance).
+    conditions = (
+        f"**Conditions:** {env.get('machine', '?')}, {env.get('cpu', '?')}, "
+        f"{env.get('ram', '?')} RAM, {env.get('os', '?')}, "
+        f"hyperfine **{env.get('warmup', '?')} warmup + {env.get('runs', '?')} runs**, {date}.")
 
-    print("#### Cold-start wall-clock — startup included (ms, lower is better)")
+    # Cold-start only, on purpose. Cold-start = end-to-end wall-clock (process
+    # launch → exit), the one metric that compares uniformly across languages.
+    # We deliberately do NOT publish a startup-subtracted "compute" table: for
+    # the fast (compiled) languages the per-run compute is far below process-
+    # spawn noise (~3 ms ± 10%), so subtracting startup yields noise, not signal.
+    why = ("_Cold-start = process launch → exit (startup included). Only "
+           "cold-start is shown: it is the metric that compares uniformly across "
+           "languages. A startup-subtracted compute number is omitted because, "
+           "for the fast languages, compute sits below process-spawn noise._")
+
+    print(conditions)
+    print()
+    print(why)
+    print()
+    print("#### Cold-start wall-clock (µs, lower is better)")
     print()
     print("\n".join(render_table(cold_rows, cold_present)))
 
+    # Warm / startup tables are emitted ONLY if the yaml carries that data
+    # (compare_langs.sh --both). The default --cold run omits them by design.
     if warm_rows:
         print()
-        print("#### Warm — startup subtracted (ms, lower is better)")
+        print("#### Warm — startup subtracted (µs, lower is better)")
         print()
         print("\n".join(render_table(warm_rows, warm_present)))
 
-    print()
-    print(f"_{env_line}. Columns: ClojureWasm, then its interpreter peers "
-          f"(Python / Ruby / Node.js / Babashka), then compiled baselines "
-          f"(Java / Go / C) as a reference floor — not a leaderboard._")
+    startup_lines = render_startup(data.get("startup_ms", {}))
+    if startup_lines:
+        print()
+        print("#### Startup — process spawn + runtime init (µs, lower is better)")
+        print()
+        print("\n".join(startup_lines))
+
+    if warm_rows:
+        print()
+        print("_Warm = cold − startup; digits below startup-measurement noise "
+              "are indicative._")
 
 
 if __name__ == "__main__":

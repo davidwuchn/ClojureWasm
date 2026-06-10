@@ -1,578 +1,288 @@
 # Cross-language benchmark comparison
-# Generated: 2026-06-11T00:03:25+09:00
+# Generated: 2026-06-11T07:19:23+09:00
 
 env:
-  cpu: Apple M4 Pro
+  machine: MacBook Pro (Mac16,8)
+  cpu: Apple M4 Pro, 12-core (8P+4E)
   ram: 48 GB
-  os: Darwin 25.5.0
+  os: macOS 26.5 (25F71)
+  kernel: Darwin 25.5.0
   tool: hyperfine
-  runs: 5
-  warmup: 3
+  runs: 10
+  warmup: 5
 
 date: "2026-06-11"
-
-startup_ms:
-  cw: 9.2
-  c: 6.1
-  zig: 9.4
-  java: 20.4
-  tgo: 11.2
-  go: 14.8
-  py: 8.6
-  rb: 26.6
-  js: 22.9
-  bb: 9.8
 
 benchmarks:
   fib_recursive:
     cold:
-      cw: 69.9
-      c: 0.8
-      java: 24.7
-      tgo: 1.5
-      go: 3.1
-      py: 18.7
-      rb: 23.7
-      js: 25.3
-      bb: 25.5
-    warm:
-      cw: 60.7
-      c: 0.0
-      java: 4.3
-      tgo: 0.0
-      go: 0.0
-      py: 10.1
-      rb: 0.0
-      js: 2.4
-      bb: 15.7
+      cw: 67.3304
+      c: 0.8264
+      java: 24.0402
+      go: 2.3444
+      py: 20.8421
+      rb: 32.6901
+      js: 42.5118
+      bb: 23.0250
   fib_loop:
     cold:
-      cw: 4.4
-      c: 0.9
-      java: 23.8
-      tgo: 2.4
-      go: 3.8
-      py: 11.3
-      rb: 29.1
-      js: 25.5
-      bb: 11.0
-    warm:
-      cw: 0.0
-      c: 0.0
-      java: 3.4
-      tgo: 0.0
-      go: 0.0
-      py: 2.7
-      rb: 2.5
-      js: 2.6
-      bb: 1.2
+      cw: 4.2291
+      c: 0.2747
+      java: 25.1160
+      go: 2.9979
+      py: 19.6261
+      rb: 28.6015
+      js: 42.3571
+      bb: 13.8689
   tak:
     cold:
-      cw: 22.5
-      c: 0.3
-      java: 39.7
-      tgo: 2.2
-      go: 2.0
-      py: 13.0
-      rb: 31.6
-      js: 25.4
-      bb: 13.8
-    warm:
-      cw: 13.3
-      c: 0.0
-      java: 19.3
-      tgo: 0.0
-      go: 0.0
-      py: 4.4
-      rb: 5.0
-      js: 2.5
-      bb: 4.0
+      cw: 20.3857
+      c: 0.3053
+      java: 22.9697
+      go: 2.0768
+      py: 15.3881
+      rb: 29.8081
+      js: 42.6246
+      bb: 13.7392
   arith_loop:
     cold:
-      cw: 175.0
-      c: 1.7
-      java: 24.0
-      tgo: 2.5
-      go: 2.5
-      py: 57.4
-      rb: 53.3
-      js: 28.9
-      bb: 50.9
-    warm:
-      cw: 165.8
-      c: 0.0
-      java: 3.6
-      tgo: 0.0
-      go: 0.0
-      py: 48.8
-      rb: 26.7
-      js: 6.0
-      bb: 41.1
+      cw: 169.8921
+      c: 1.1782
+      java: 24.6714
+      go: 2.6323
+      py: 53.8413
+      rb: 52.7291
+      js: 46.6515
+      bb: 47.3780
   map_filter_reduce:
     cold:
-      cw: 28.5
-      c: 0.8
-      java: 24.7
-      tgo: 1.7
-      go: 2.2
-      py: 12.7
-      rb: 28.9
-      js: 27.7
-      bb: 16.3
-    warm:
-      cw: 19.3
-      c: 0.0
-      java: 4.3
-      tgo: 0.0
-      go: 0.0
-      py: 4.1
-      rb: 2.3
-      js: 4.8
-      bb: 6.5
+      cw: 27.2886
+      c: 0.8020
+      java: 22.6585
+      go: 3.2464
+      py: 16.4335
+      rb: 30.6275
+      js: 43.2078
+      bb: 13.3990
   vector_ops:
     cold:
-      cw: 10.4
-      c: 0.9
-      java: 39.2
-      tgo: 1.7
-      go: 1.9
-      py: 12.4
-      rb: 29.1
-      js: 26.8
-      bb: 13.6
-    warm:
-      cw: 1.2
-      c: 0.0
-      java: 18.8
-      tgo: 0.0
-      go: 0.0
-      py: 3.8
-      rb: 2.5
-      js: 3.9
-      bb: 3.8
+      cw: 10.8858
+      c: 0.1102
+      java: 24.4171
+      go: 2.0318
+      py: 15.3673
+      rb: 31.5079
+      js: 42.3859
+      bb: 12.4867
   map_ops:
     cold:
-      cw: 6.5
-      c: 1.6
-      java: 36.4
-      tgo: 2.7
-      go: 3.1
-      py: 10.1
-      rb: 26.1
-      js: 25.9
-      bb: 12.2
-    warm:
-      cw: 0.0
-      c: 0.0
-      java: 16.0
-      tgo: 0.0
-      go: 0.0
-      py: 1.5
-      rb: 0.0
-      js: 3.0
-      bb: 2.4
+      cw: 5.8123
+      c: 0.4923
+      java: 26.9855
+      go: 1.8233
+      py: 14.7563
+      rb: 29.8950
+      js: 42.5946
+      bb: 14.8367
   list_build:
     cold:
-      cw: 6.9
-      c: 1.3
-      java: 22.8
-      tgo: 3.9
-      go: 3.5
-      py: 13.3
-      rb: 27.5
-      js: 25.4
-      bb: 13.6
-    warm:
-      cw: 0.0
-      c: 0.0
-      java: 2.4
-      tgo: 0.0
-      go: 0.0
-      py: 4.7
-      rb: 0.9
-      js: 2.5
-      bb: 3.8
+      cw: 6.7782
+      c: 0.8063
+      java: 24.6313
+      go: 2.3698
+      py: 20.0020
+      rb: 29.9049
+      js: 42.8489
+      bb: 11.3500
   sieve:
     cold:
-      cw: 35.3
-      c: 0.5
-      java: 31.9
-      tgo: 2.9
-      go: 2.3
-      py: 10.3
-      rb: 27.0
-      js: 25.8
-      bb: 15.7
-    warm:
-      cw: 26.1
-      c: 0.0
-      java: 11.5
-      tgo: 0.0
-      go: 0.0
-      py: 1.7
-      rb: 0.4
-      js: 2.9
-      bb: 5.9
+      cw: 34.8508
+      c: 0.7794
+      java: 27.5453
+      go: 1.9295
+      py: 15.1304
+      rb: 30.6920
+      js: 44.0400
+      bb: 12.9667
   nqueens:
     cold:
-      cw: 38.1
-      c: 2.0
-      java: 39.3
-      tgo: 2.5
-      go: 3.0
-      py: 15.1
-      rb: 32.4
-      js: 24.7
-      bb: 21.7
-    warm:
-      cw: 28.9
-      c: 0.0
-      java: 18.9
-      tgo: 0.0
-      go: 0.0
-      py: 6.5
-      rb: 5.8
-      js: 1.8
-      bb: 11.9
+      cw: 38.0301
+      c: 1.0179
+      java: 26.5989
+      go: 2.9122
+      py: 18.8604
+      rb: 36.2217
+      js: 44.4593
+      bb: 21.2773
   atom_swap:
     cold:
-      cw: 9.1
-      c: 2.8
-      java: 25.3
-      tgo: 3.7
-      go: 3.9
-      py: 12.7
-      rb: 27.2
-      js: 26.4
-      bb: 11.6
-    warm:
-      cw: 0.0
-      c: 0.0
-      java: 4.9
-      tgo: 0.0
-      go: 0.0
-      py: 4.1
-      rb: 0.6
-      js: 3.5
-      bb: 1.8
+      cw: 7.6356
+      c: 0.6273
+      java: 23.5642
+      go: 2.1293
+      py: 18.9283
+      rb: 30.5598
+      js: 43.9886
+      bb: 11.7943
   gc_stress:
     cold:
-      cw: 56.6
-      c: 1.9
-      java: 35.4
-      tgo: 17.7
-      go: 5.8
-      py: 26.3
-      rb: 35.0
-      js: 26.3
-      bb: 30.8
-    warm:
-      cw: 47.4
-      c: 0.0
-      java: 15.0
-      tgo: 6.5
-      go: 0.0
-      py: 17.7
-      rb: 8.4
-      js: 3.4
-      bb: 21.0
+      cw: 56.8484
+      c: 21.7162
+      java: 36.3144
+      go: 4.4921
+      py: 28.8382
+      rb: 38.3734
+      js: 44.9146
+      bb: 32.9446
   lazy_chain:
     cold:
-      cw: 28.5
-      c: 1.6
-      java: 21.7
-      tgo: 2.0
-      go: 2.8
-      py: 14.0
-      rb: 30.2
-      js: 25.3
-      bb: 14.0
-    warm:
-      cw: 19.3
-      c: 0.0
-      java: 1.3
-      tgo: 0.0
-      go: 0.0
-      py: 5.4
-      rb: 3.6
-      js: 2.4
-      bb: 4.2
+      cw: 28.3286
+      c: 0.8370
+      java: 22.6245
+      go: 2.3434
+      py: 19.6343
+      rb: 31.3517
+      js: 43.5125
+      bb: 13.6076
   transduce:
     cold:
-      cw: 16.6
-      c: 0.9
-      java: 21.7
-      tgo: 1.9
-      go: 4.2
-      py: 13.7
-      rb: 27.7
-      js: 24.4
-      bb: 13.9
-    warm:
-      cw: 7.4
-      c: 0.0
-      java: 1.3
-      tgo: 0.0
-      go: 0.0
-      py: 5.1
-      rb: 1.1
-      js: 1.5
-      bb: 4.1
+      cw: 16.5032
+      c: 1.3779
+      java: 24.8427
+      go: 2.0058
+      py: 11.5173
+      rb: 30.6701
+      js: 44.7591
+      bb: 12.0699
   keyword_lookup:
     cold:
-      cw: 28.2
-      c: 1.0
-      java: 28.5
-      tgo: 3.4
-      go: 3.4
-      py: 16.6
-      rb: 30.8
-      js: 28.6
-      bb: 20.6
-    warm:
-      cw: 19.0
-      c: 0.0
-      java: 8.1
-      tgo: 0.0
-      go: 0.0
-      py: 8.0
-      rb: 4.2
-      js: 5.7
-      bb: 10.8
+      cw: 29.7511
+      c: 1.1363
+      java: 29.0826
+      go: 2.8913
+      py: 21.0660
+      rb: 33.8743
+      js: 44.5558
+      bb: 20.1629
   protocol_dispatch:
     cold:
-      cw: 9.8
-      c: 3.1
-      java: 24.5
-      tgo: 1.9
-      go: 3.8
-      py: 12.6
-      rb: 26.7
-      js: 21.8
-    warm:
-      cw: 0.6
-      c: 0.0
-      java: 4.1
-      tgo: 0.0
-      go: 0.0
-      py: 4.0
-      rb: 0.1
-      js: 0.0
+      cw: 10.3201
+      c: 0.9579
+      java: 22.5036
+      go: 3.6306
+      py: 17.8290
+      rb: 30.6765
+      js: 44.0077
   nested_update:
     cold:
-      cw: 56.6
-      c: 0.0
-      java: 38.7
-      tgo: 4.7
-      go: 6.0
-      py: 12.0
-      rb: 28.4
-      js: 25.3
-      bb: 13.3
-    warm:
-      cw: 47.4
-      c: 0.0
-      java: 18.3
-      tgo: 0.0
-      go: 0.0
-      py: 3.4
-      rb: 1.8
-      js: 2.4
-      bb: 3.5
+      cw: 55.9804
+      c: 1.1290
+      java: 24.8253
+      go: 0.4524
+      py: 15.2646
+      rb: 31.6683
+      js: 42.8745
+      bb: 12.8019
   string_ops:
     cold:
-      cw: 41.8
-      c: 6.2
-      java: 40.9
-      tgo: 2.0
-      go: 3.5
-      py: 23.4
-      rb: 34.1
-      js: 27.9
-      bb: 18.9
-    warm:
-      cw: 32.6
-      c: 0.1
-      java: 20.5
-      tgo: 0.0
-      go: 0.0
-      py: 14.8
-      rb: 7.5
-      js: 5.0
-      bb: 9.1
+      cw: 39.1131
+      c: 4.0091
+      java: 29.0077
+      go: 2.8896
+      py: 27.4130
+      rb: 37.0707
+      js: 46.3831
+      bb: 17.0979
   multimethod_dispatch:
     cold:
-      cw: 13.3
-      c: 1.1
-      java: 38.3
-      tgo: 4.0
-      go: 4.7
-      py: 12.5
-      rb: 28.0
-      js: 25.2
-      bb: 12.7
-    warm:
-      cw: 4.1
-      c: 0.0
-      java: 17.9
-      tgo: 0.0
-      go: 0.0
-      py: 3.9
-      rb: 1.4
-      js: 2.3
-      bb: 2.9
+      cw: 12.2204
+      c: 1.2073
+      java: 24.1212
+      go: 2.8495
+      py: 15.4789
+      rb: 31.5147
+      js: 44.0988
+      bb: 12.7184
   real_workload:
     cold:
-      cw: 24.4
-      c: 1.2
-      java: 41.5
-      tgo: 2.0
-      go: 2.7
-      py: 10.6
-      rb: 28.6
-      js: 26.8
-      bb: 14.1
-    warm:
-      cw: 15.2
-      c: 0.0
-      java: 21.1
-      tgo: 0.0
-      go: 0.0
-      py: 2.0
-      rb: 2.0
-      js: 3.9
-      bb: 4.3
+      cw: 23.6763
+      c: 1.6185
+      java: 29.6227
+      go: 4.2460
+      py: 18.4940
+      rb: 52.5589
+      js: 43.5911
+      bb: 13.5458
   wasm_load:
     cold:
-    warm:
   wasm_call:
     cold:
-    warm:
   wasm_memory:
     cold:
-    warm:
   wasm_fib:
     cold:
-    warm:
   wasm_sieve:
     cold:
-    warm:
   gc_alloc_rate:
     cold:
-      cw: 144.5
-      js: 28.4
-      bb: 34.4
-    warm:
-      cw: 135.3
-      js: 5.5
-      bb: 24.6
+      cw: 142.7742
+      js: 44.5901
+      bb: 30.5917
   gc_large_heap:
     cold:
-      cw: 81.5
-      js: 32.1
-      bb: 43.7
-    warm:
-      cw: 72.3
-      js: 9.2
-      bb: 33.9
+      cw: 81.2659
+      js: 46.9001
+      bb: 26.8455
   wasm_tak:
     cold:
-    warm:
   wasm_arith:
     cold:
-    warm:
   wasm_gcd:
     cold:
-    warm:
   wasm_fib_loop:
     cold:
-    warm:
   bigint_factorial:
     cold:
-      cw: 23.7
-      java: 40.6
-      tgo: 6.0
-      go: 4.5
-      py: 10.1
-      rb: 42.2
-      js: 30.1
-      bb: 12.5
-    warm:
-      cw: 14.5
-      java: 20.2
-      tgo: 0.0
-      go: 0.0
-      py: 1.5
-      rb: 15.6
-      js: 7.2
-      bb: 2.7
+      cw: 22.8888
+      java: 31.4979
+      go: 2.6741
+      py: 15.1339
+      rb: 40.7858
+      js: 45.7393
+      bb: 14.3764
   ratio_sum:
     cold:
-      cw: 124.3
-      bb: 35.2
-    warm:
-      cw: 115.1
-      bb: 25.4
+      cw: 118.1624
+      bb: 31.0988
   stm_refs:
     cold:
-      cw: 41.1
-      bb: 40.8
-    warm:
-      cw: 31.9
-      bb: 31.0
+      cw: 39.3471
+      bb: 38.1001
   regex_count:
     cold:
-      cw: 57.8
-      c: 13.9
-      java: 50.0
-      tgo: 4.9
-      go: 7.5
-      py: 18.7
-      rb: 37.2
-      js: 28.9
-      bb: 15.8
-    warm:
-      cw: 48.6
-      c: 7.8
-      java: 29.6
-      tgo: 0.0
-      go: 0.0
-      py: 10.1
-      rb: 10.6
-      js: 6.0
-      bb: 6.0
+      cw: 52.3475
+      c: 13.4822
+      java: 30.6422
+      go: 5.5980
+      py: 19.0623
+      rb: 38.7000
+      js: 44.2175
+      bb: 17.6379
   sort:
     cold:
-      cw: 541.5
-      c: 1.8
-      java: 23.0
-      tgo: 2.3
-      go: 4.6
-      py: 11.2
-      rb: 27.9
-      js: 26.0
-      bb: 13.5
-    warm:
-      cw: 532.3
-      c: 0.0
-      java: 2.6
-      tgo: 0.0
-      go: 0.0
-      py: 2.6
-      rb: 1.3
-      js: 3.1
-      bb: 3.7
+      cw: 7.4291
+      c: 1.9390
+      java: 22.4848
+      go: 2.9362
+      py: 15.4773
+      rb: 30.6737
+      js: 44.2525
+      bb: 12.4422
   destructure:
     cold:
-      cw: 83.4
-      bb: 40.1
-    warm:
-      cw: 74.2
-      bb: 30.3
+      cw: 82.0388
+      bb: 40.1332
   edn_roundtrip:
     cold:
-      cw: 24.2
-      bb: 103.8
-    warm:
-      cw: 15.0
-      bb: 94.0
+      cw: 23.1158
+      bb: 98.7379

@@ -30,8 +30,13 @@ RESET='\033[0m'
 BENCH_FILTER=""
 LANG_FILTER=""
 MODE="cold"  # cold, warm, both
-RUNS=5
-WARMUP=3
+# Cross-language wall-clock is process-spawn-dominated for the fast (compiled)
+# languages — the spawn floor (~3 ms) carries ~10% run-to-run variance, so a
+# 5-run mean was unstable (it produced impossible values like a full C program
+# timing FASTER than a C no-op). More runs stabilise the mean. (run_bench.sh's
+# cljw-only A/B stays at 5/3: that path is compute-dominated, not spawn-noisy.)
+RUNS=10
+WARMUP=5
 YAML_FILE=""
 SKIP_BUILD=false
 
@@ -56,8 +61,8 @@ for arg in "$@"; do
       echo "  --cold           Wall clock only (default)"
       echo "  --warm           Startup-subtracted only"
       echo "  --both           Cold + Warm"
-      echo "  --runs=N         Hyperfine runs (default: 5)"
-      echo "  --warmup=N       Hyperfine warmup (default: 3)"
+      echo "  --runs=N         Hyperfine runs (default: 10)"
+      echo "  --warmup=N       Hyperfine warmup (default: 5)"
       echo "  --yaml=FILE      YAML output file"
       echo "  --skip-build     Skip CW build step"
       echo "  -h, --help       Show this help"
@@ -140,7 +145,11 @@ import json
 with open('$json_file') as f:
     data = json.load(f)
 mean_s = data['results'][0]['mean']
-print(f'{mean_s * 1000:.1f}')
+# Record ms at 0.1-µs resolution (4 dp). hyperfine's JSON mean is a full-float
+# seconds value; rounding to 0.1 ms (the old :.1f) collapsed every sub-100µs
+# warm / compiled-lang time to 0. The yaml stays ms (hyperfine's native unit);
+# gen_cross_table.py converts to µs for display.
+print(f'{mean_s * 1000:.4f}')
 "
   rm -f "$json_file"
 }
@@ -310,7 +319,7 @@ for bench_dir in "${BENCH_DIRS[@]}"; do
 
     if [[ "$MODE" == "warm" || "$MODE" == "both" ]]; then
       startup="${STARTUP_MS[$lang]:-0}"
-      warm=$(python3 -c "print(f'{max(0, $cold - $startup):.1f}')")
+      warm=$(python3 -c "print(f'{max(0, $cold - $startup):.4f}')")
       WARM_MS["${bench_name}:${lang}"]="$warm"
     fi
 
@@ -413,9 +422,11 @@ if [[ -n "$YAML_FILE" ]]; then
     echo "# Generated: $(date -Iseconds)"
     echo ""
     echo "env:"
-    echo "  cpu: $(sysctl -n machdep.cpu.brand_string 2>/dev/null || echo 'unknown')"
+    echo "  machine: $(system_profiler SPHardwareDataType 2>/dev/null | awk -F': +' '/Model Name/{print $2; exit}' || echo '?') ($(sysctl -n hw.model 2>/dev/null || echo '?'))"
+    echo "  cpu: $(sysctl -n machdep.cpu.brand_string 2>/dev/null || echo 'unknown'), $(sysctl -n hw.ncpu 2>/dev/null || echo '?')-core ($(sysctl -n hw.perflevel0.physicalcpu 2>/dev/null || echo '?')P+$(sysctl -n hw.perflevel1.physicalcpu 2>/dev/null || echo '?')E)"
     echo "  ram: $(( $(sysctl -n hw.memsize 2>/dev/null || echo 0) / 1073741824 )) GB"
-    echo "  os: $(uname -s) $(uname -r)"
+    echo "  os: $(sw_vers -productName 2>/dev/null || echo macOS) $(sw_vers -productVersion 2>/dev/null) ($(sw_vers -buildVersion 2>/dev/null))"
+    echo "  kernel: $(uname -s) $(uname -r)"
     echo "  tool: hyperfine"
     echo "  runs: $RUNS"
     echo "  warmup: $WARMUP"
