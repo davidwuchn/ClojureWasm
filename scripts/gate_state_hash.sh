@@ -15,8 +15,8 @@
 # HEAD position and of staging — so it still matches after the working-tree
 # edits are `git add`ed and even survives a `git add && git commit` batched
 # into one shell command (where the index is empty when the hook fires).
-# bench/ is excluded (the gate appends to bench/quick_baseline.txt — an
-# artefact, not source).
+# bench/ is excluded — it is perf tooling + recorded measurements, not
+# source whose change should re-trigger the gate.
 set -euo pipefail
 cd "${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
 {

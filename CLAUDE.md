@@ -341,10 +341,10 @@ Before staging:
 
 Then:
 
-4. `git add` source files **and** `bench/quick_baseline.txt` for
-   source-bearing commits, NOT for doc-only / chore commits (see
-   [`.claude/rules/bench_baseline.md`](.claude/rules/bench_baseline.md)
-   for the policy). Then `git commit` with the two-line shape:
+4. `git add` the source files. (The `bench/quick_baseline.txt` auto-baseline
+   was retired 2026-06-11 — the gate no longer runs `bench/quick.sh`; perf is
+   measured on demand via `bench/compare_langs.sh` / `bench/run_bench.sh`.)
+   Then `git commit` with the two-line shape:
    ```
    <type>(<scope>): <one line summary>
 

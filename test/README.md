@@ -4,13 +4,13 @@
 
 ## Layers
 
-| # | Layer        | Where                                     | Tool                  | Open at  |
-|---|--------------|-------------------------------------------|-----------------------|----------|
-| 1 | Unit         | `src/**/*.zig` inside `test "..."` blocks | `zig build test`      | Phase 0  |
-| 2 | E2E (CLI)    | `test/e2e/*.sh`                           | bash + `cljw`         | Phase 2  |
-| 3 | Differential | `test/diff/`                              | `Evaluator.compare()` | Phase 4  |
-| 4 | Bench quick  | `bench/quick.sh`                          | bash + `cljw`         | Phase 4  |
-| 5 | Conformance  | `test/clj/` (Phase 11+)                   | `clojure.test`        | Phase 11 |
+| # | Layer             | Where                                     | Tool                  | Open at               |
+|---|-------------------|-------------------------------------------|-----------------------|-----------------------|
+| 1 | Unit              | `src/**/*.zig` inside `test "..."` blocks | `zig build test`      | Phase 0               |
+| 2 | E2E (CLI)         | `test/e2e/*.sh`                           | bash + `cljw`         | Phase 2               |
+| 3 | Differential      | `test/diff/`                              | `Evaluator.compare()` | Phase 4               |
+| 4 | Bench (on demand) | `bench/compare_langs.sh` / `run_bench.sh` | bash + `cljw`         | on demand (not gated) |
+| 5 | Conformance       | `test/clj/` (Phase 11+)                   | `clojure.test`        | Phase 11              |
 
 ## "Where does this test go?"
 
@@ -19,8 +19,8 @@
 - **CLI smoke / `cljw -e '...'` works end-to-end**: Layer 2.
 - **Same Clojure source must produce the same Value on both
   backends (TreeWalk + VM)**: Layer 3.
-- **Performance baseline / regression catch (informational)**:
-  Layer 4.
+- **Performance measurement**: Layer 4 — run on demand via `bench/`
+  (no longer part of the gate as of 2026-06-11).
 - **Upstream Clojure JVM test (port)**: Layer 5 (Phase 11+).
 
 ## Running
@@ -29,7 +29,7 @@
 bash test/run_all.sh                # all layers, every gate
 zig build test                       # Layer 1 only
 bash test/e2e/phase3_cli.sh          # one specific e2e
-bash bench/quick.sh                  # Layer 4 only (informational)
+bash bench/compare_langs.sh --cold   # Layer 4: cross-language perf (on demand)
 ```
 
 `test/run_all.sh` accepts `--skip <name>` / `--only <name>` /

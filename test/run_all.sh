@@ -21,8 +21,7 @@
 #   --only name[,name,...]  Run only the named steps.
 #
 # Exit code 0 iff every non-optional step passed. `optional` steps
-# (e.g. bench/quick.sh once it lands) are reported but do not fail
-# the run.
+# (e.g. the informational scans) are reported but do not fail the run.
 
 set -euo pipefail
 
@@ -98,11 +97,9 @@ if (( SMOKE_MODE )); then
     ONLY_STEPS="${SMOKE_CORE}${SMOKE_E2E:+,$SMOKE_E2E}"
 fi
 
-# Steps that must NOT run in the parallel e2e pool. Three reasons:
-#   1. Perf workloads whose timing inflates under CPU contention:
-#      cold_start_threshold and phase8_exit_smoke both run bench/quick.sh
-#      (n=50 cold-start spawns + timing loops) — under 8-way contention
-#      phase8_exit_smoke ballooned 3s → 142s and gated the whole pool.
+# Steps that must NOT run in the parallel e2e pool. Two reasons:
+#   1. phase8_exit_smoke: spawns many short cljw processes whose timing
+#      inflates under 8-way CPU contention (it ballooned 3s → 142s once).
 #   2. Shared-binary mutators: the 3 backend-forcing phase4_* e2e run
 #      `zig build -Dbackend=…`, rewriting the shared zig-out/bin/cljw (and
 #      contending the zig cache) mid-run; concurrent pool jobs that exec the
@@ -110,8 +107,7 @@ fi
 #      at their end, so running them serially in the registration pass —
 #      before the flush — leaves the pool a correct, stable binary.
 # These run serially BEFORE the parallel flush, on a quiet machine.
-# bench_quick / bench_regression are not e2e_-prefixed, so already serial.
-SERIAL_STEPS="e2e_phase14_cold_start_threshold,e2e_phase8_exit_smoke,e2e_phase4_cli,e2e_phase4_exit,e2e_phase4_exit_codes,e2e_phase16_http_server,e2e_phase16_http_client"
+SERIAL_STEPS="e2e_phase8_exit_smoke,e2e_phase4_cli,e2e_phase4_exit,e2e_phase4_exit_codes,e2e_phase16_http_server,e2e_phase16_http_client"
 declare -a E2E_QUEUE=()
 
 # --- run_step framework (per ADR-0024) ---
@@ -400,7 +396,6 @@ run_step "e2e_phase14_future_promise_delay"  "bash test/e2e/phase14_future_promi
 run_step "e2e_phase14_repl"                  "bash test/e2e/phase14_repl.sh"
 run_step "e2e_phase14_nrepl"                 "bash test/e2e/phase14_nrepl.sh"
 run_step "e2e_phase14_error_format"          "bash test/e2e/phase14_error_format.sh"
-run_step "e2e_phase14_cold_start_threshold"  "bash test/e2e/phase14_cold_start_threshold.sh"
 run_step "e2e_phase14_render_error"          "bash test/e2e/phase14_render_error.sh"
 run_step "e2e_phase14_callable_print"        "bash test/e2e/phase14_callable_print.sh"
 run_step "e2e_phase14_java_static_dispatch"  "bash test/e2e/phase14_java_static_dispatch.sh"
@@ -617,16 +612,11 @@ run_step "e2e_phase14_exit_smoke"            "bash test/e2e/phase14_exit_smoke.s
 run_step "scan_catalog_only"   "bash scripts/scan_catalog_only.sh" optional
 run_step "scan_panic_audit"    "bash scripts/scan_panic_audit.sh"  optional
 
-# Bench quick — Phase 4 observability (per ROADMAP §10.2). Records
-# numbers, never fails the build until §10.1 lock at Phase 8.
-run_step "bench_quick"         "PHASE_NAME=phase4 bash bench/quick.sh" optional
-
-# Row 8.3 (ADR-0027): 1.2x regression gate. Informational at this
-# wiring point — flips to `--gate` once row 8.7 exit-smoke confirms
-# stable thresholds across both hosts. Reads the latest
-# `bench/quick_baseline.txt` block for the current (machine, backend)
-# tuple + compares against the matching `bench/history.yaml` lock.
-run_step "bench_regression"    "bash scripts/check_bench_regression.sh --check" optional
+# Bench is no longer run in the gate (user-directed 2026-06-11): the Phase-1
+# `bench/quick.sh` + `bench/quick_baseline.txt` rough-baseline machinery has
+# served its role and is retired. Perf is now measured on demand via
+# `bench/compare_langs.sh` (cross-language) + `bench/run_bench.sh` (cljw-only),
+# never inside the gate. (Retired: bench_quick, bench_regression.)
 
 # Future suites (uncomment as their phase lands):
 #   run_step "diff_runner"  "zig build test -Dtest-filter='differential cases'"

@@ -86,11 +86,8 @@ case "$got" in
     *) fail "(7): expected OK prefix, got '$got'" ;;
 esac
 
-# --- (8) bench gate wired-into-run_all proof: bench/quick.sh exits 0 ---
-got=$(bash bench/quick.sh 2>&1 | tail -1)
-case "$got" in
-    *"Baseline rows appended"*|*"binary_size_bytes"*|*"us/run"*) echo "PASS bench_quick_runs_clean -> tail='$got'" ;;
-    *) fail "(8): expected bench/quick.sh to finish cleanly, got '$got'" ;;
-esac
+# (8) retired 2026-06-11: the bench/quick.sh rough-baseline harness was removed
+# from the gate (user-directed). Perf is measured on demand via
+# bench/compare_langs.sh + bench/run_bench.sh, not in the exit-smoke suite.
 
-echo "phase8_exit_smoke: 8/8 cases pass"
+echo "phase8_exit_smoke: 7/7 cases pass"

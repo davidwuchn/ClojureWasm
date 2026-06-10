@@ -97,11 +97,10 @@ without asking**:
      closed phase, pulling from `private/notes/` task-notes.
 3. Synthesise in main: 1 line per check + severity counts.
    No "shall I proceed?" question — proceed.
-4. **Bench sweep**: if `bench/quick_baseline.txt` carries
-   uncommitted samples that doc-only / chore commits left dangling
-   (per CLAUDE.md Step 6 bench policy), commit them now as a
-   single `bench: accumulated samples through Phase <N>` commit
-   so the next Phase opens with a clean working tree.
+4. (Bench sweep retired 2026-06-11 — the `bench/quick.sh` /
+   `bench/quick_baseline.txt` auto-baseline was removed from the gate,
+   so no dangling samples accumulate. Perf is measured on demand via
+   `bench/compare_langs.sh` / `bench/run_bench.sh`.)
 5. Open §9.<N+1>: flip the §9 phase tracker; expand §9.<N+1>
    inline (mirror §9.<N>'s structure); update `handover.md` to
    point at §9.<N+1>'s first task.
