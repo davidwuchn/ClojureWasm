@@ -978,27 +978,39 @@ active:
       LANDED 2026-06-10 (ADR-0102 am1+am2): map-side bare aliases + valAt + java.util-method-grouping drop. ordered.map advances past the host-interface surface to Map$Entry (D-373). Was: map.clj:33 MapEquivalence + the IPERSISTENT_MAP table extension.
     last_reviewed: "2026-06-10"
   - id: "D-373"
-    status: "open (2026-06-10, ordered.map next blocker — ROOT CAUSE corrected). NOT a type-hint gap: `instance?` is a cljw MACRO (macro_transforms.zig expandInstanceQ → `(__instance? (quote Class) x)`, auto-quoting the class symbol so unresolvable markers like clojure.lang.IPersistentMap work directly). A MACRO cannot be passed as a higher-order fn value, so `(condp instance? obj Map$Entry …)` (flatland.ordered.map:59 cons) evaluates `instance?` as a value → nil → `Cannot call value of type nil`. ALL DIRECT cases work: `(instance? String x)`/`(instance? clojure.lang.IPersistentMap {})`/`(instance? clojure.lang.MapEntry (first {:a 1}))` → true. The gap is HIGHER-ORDER instance? (condp/map/apply/partial). clj`s instance? is a FN taking a class VALUE (class symbols evaluate to Class). FIX SHAPE (depth-2, class-system unit; survey+DA-fork): make `instance?` callable as a fn-value for higher-order use — either (a) drop the macro + make instance? a real fn taking a class VALUE (requires EVERY class symbol the lib passes to evaluate to a class value: String/IPersistentVector do via analyzeSymbol class-value arm, but java.util.Map$Entry does NOT — SECONDARY sub-gap: register java.util.Map$Entry → map_entry instance? membership in class_name.zig, since clj MapEntry implements java.util.Map$Entry), or (b) keep the macro for the literal case + bind the `instance?` VAR to a fn fallback so a higher-order reference resolves to the fn. (a) is more clj-faithful but needs the class-value-evaluation surface complete; (b) is narrower. DA-fork decides. SECONDARY: java.util.Map$Entry class-value + instance? membership (→ map_entry). VERIFY the FULL ordered.map chain after (further blockers may follow). Distinct from D-372 (host-interface family) — this is the class/instance? VALUE system. Affects any lib using `(condp instance? …)` / higher-order instance? (common). clj-grounded. Surfaced loading flatland.ordered.map."
+    status: "DISCHARGED 2026-06-10 (ADR-0128, finished form Alt 2'). `instance?` is now a clj FN over a class VALUE — `(def instance? (fn* [c x] (rt/-instance-of? c x)))`; the `expandInstanceQ` macro is dropped. The class arg evaluates to a class value (or a cljw interface-marker protocol), so higher-order use works (condp/map/partial/apply/bound-fn-arg) — clj-grounded, corpus instance_higher_order.txt + e2e phase7 Case 8/9. Five parts: (1) instance? fn + new `-instance-of?` primitive (class VALUE or .protocol → fqcn → isInstance). (2) Completed `class_name.isInstance` into a no-special-case membership oracle: widened NUMBER_TAGS to the full tower {integer,float,big_int,ratio,big_decimal} (== number?), one-line Object-universal arm, opaque returns false naturally — so -instance-of? has zero taxonomy branch (cleaner than the DA's class_role enum; DA-fork verbatim in ADR-0128). (3) ONE classValueKeyFor-driven `classDescriptor` analyzer arm replaces the scattered exception/opaque/Object/Number/IFn/host_inert arms; the missing clojure.lang.* interface markers now resolve as class values (`(prn IPersistentVector)` works); arm consults ns.imports (resolveClassImport) so a bare imported class (Map$Entry) resolves. (4) `exceptionDescriptor`→`classDescriptor` rename (D-293 unify, ~16 sites, behaviour-preserving). (5) `java.util.Map$Entry`/`Map$Entry`→`MapEntry` in FQCN_MAP. clj-oracle bit-for-bit (Number=BigInt/Ratio, Object, opaque, ISeq, FQCN IFn). Full gate corpus 2252/2252. ordered.map advanced PAST the entire instance?/Map$Entry surface (map.clj:59) to its NEXT, different blocker `(APersistentMap/mapHash this)` at map.clj:123 (D-375 — a clojure.lang static-method gap, separate subsystem). sibling prefer-method was the trivial half (869fa3db)."
     category: "interop"
     barrier: |-
-      `instance?` is a cljw MACRO (expandInstanceQ auto-quotes the class symbol), so
-      it can't be passed as a higher-order fn — `(condp instance? obj Map$Entry …)`
-      (ordered.map cons) evals it to nil. ALL direct `(instance? Class x)` work; the
-      gap is HIGHER-ORDER use (condp/map/apply). FINISHED FORM (NOT a workaround,
-      per user 2026-06-10): make instance? a real fn by completing the
-      class-symbol-as-value surface — a SINGLE analyzer arm driven by
-      `class_name.isKnown` (analyzer.zig:609-674 currently scatters Object/Number/
-      IFn/opaque/exception/host_inert arms) + UNIFY with D-293's classDescriptor
-      (rename rt.exceptionDescriptor → kind-tagged classDescriptor; 9 sites / 3 files
-      = runtime/class_of/analyzer) so every isKnown name evals to a class VALUE;
-      then `instance?` = `(fn [c x] (rt/-instance-of? c x))` (drop expandInstanceQ).
-      Map$Entry = a 1-line FQCN_MAP add (→ MapEntry → map_entry). The sibling
-      prefer-method was the trivial half (landed 869fa3db). spike-first per ADR-0089
-      + DA-fork (depth-3). FULL design + edge cases (unknown-class / imports /
-      opaque-Object-Number special-cases) + the clj-comparison audit in
-      private/notes/D373-macros-that-should-be-fns.md (read FIRST on resume).
-      Cross-ref D-293 (UNIFY — the classDescriptor finished-form), D-372 (surfaced
-      it), ADR-0059/AD-003, ADR-0102.
+      DISCHARGED — see status. Finished form per ADR-0128 (DA-fork depth-3 embedded
+      verbatim; adopted Alt 2' = eliminate the opaque/Object/Number taxonomy by
+      completing the isInstance oracle, rather than the DA's class_role enum).
+    last_reviewed: "2026-06-10"
+  - id: "D-374"
+    status: "open (2026-06-10, surfaced by the D-373 corpus). cljw does NOT unroll a top-level `(do …)` — it analyzes the whole form before evaluating, so a side-effecting form and a later form that depends on its effect cannot share one compilation unit. Concretely: `(do (import 'java.io.BufferedReader) (instance? BufferedReader x))` → cljw NameError (BufferedReader resolved at analyze time, before the import effect ran); clj → true (clj treats each top-level-`do` child as if a separate top-level form, compiling+evaluating in sequence). This was MASKED for instance? until D-373: the old macro quoted the class symbol so it resolved at EVAL time (after import). The REALISTIC forms — `(ns … (:import …))` then use, OR separate top-level forms — both work in cljw and match clj (verified). Only the single-`-e`-`(do (import …) (use …))` bundle diverges. Removed the artifact corpus line (io_stream_class.txt:25) that depended on the old late-binding; the divergence is a bug scheduled for fix when top-level-do-unrolling lands."
+    category: "eval-semantics"
+    barrier: |-
+      cljw lacks top-level-`do` unrolling (clj compiles+evals each child of a
+      top-level `(do …)` in sequence, so an `(import …)` / `(in-ns …)` / `(def …)`
+      side-effect is visible to a later sibling in the same `do`). cljw analyzes the
+      whole `do` before eval, so `(do (import 'X) (instance? X y))` NameErrors on the
+      bare imported class (clj → true). Real code uses `(ns … (:import …))` or
+      separate top-level forms (both work). Fix: special-case top-level `do` in the
+      driver/analyzer to analyze→eval each child sequentially (the clj
+      `eval`-of-top-level-do contract). Out of D-373 scope; surfaced by its corpus.
+    last_reviewed: "2026-06-10"
+  - id: "D-375"
+    status: "open (2026-06-10, flatland.ordered.map next blocker after D-373). `(APersistentMap/mapHash this)` (map.clj:123, inside the deftype hashCode impl) → `No namespace: 'APersistentMap'`. cljw has no `clojure.lang.APersistentMap` and no static `mapHash`. This is a clojure.lang static-method gap (a JVM static called from a deftype body), distinct from the class-value/instance? system (D-373). Definition-derived per F-013: the clojure.lang abstract-collection classes expose standard static hash helpers libs call from custom collection impls — APersistentMap/mapHash (unordered map hash), APersistentSet/setHash, APersistentVector hashing, Util/hash(Combine). Provide them as cljw statics computing the SAME hash cljw already uses (hash-unordered-coll for maps/sets; the vector hash), routed generically (not per-lib). Recurs across the data-structure lib cluster (D-372 unlocked finger-tree/core.cache/rrb-vector/avl/priority-map/int-map/gvec — many define custom collections with hashCode via these statics). ordered.map advanced map.clj:59→:123."
+    category: "interop"
+    barrier: |-
+      Custom-collection libs compute hashCode via clojure.lang static helpers
+      (`APersistentMap/mapHash`, `APersistentSet/setHash`, APersistentVector hashing,
+      `Util/hashCombine`) called from a deftype/reify body. cljw lacks these
+      classes/statics → `No namespace: 'APersistentMap'`. Finished-form per F-013:
+      provide the definition-derived closed set of clojure.lang abstract-collection
+      static hash helpers as cljw statics delegating to cljw's existing hash
+      (hash-unordered-coll etc.), routed through one generic surface (not a per-lib
+      add). Blocks flatland.ordered + the broader data-structure cluster. Cross-ref
+      D-372 (host-interface substrate), D-373 (the instance? gap before it), F-013.
     last_reviewed: "2026-06-10"
   - id: "D-287"
     status: "DISCHARGED ADR-0105 (2026-06-07) - Java arrays implemented: type-erased `.array` JavaArray ([]Value, mirror of TypedInstance) + aget/aset/alength/aclone/array? primitives + object-array/int-array/byte-array/make-array/to-array/into-array/aset-*/amap/areduce in core.clj; seqable/indexed/identity-equal; byte/short/char wrap + per-ctor init defaults (F-011); type-erasure = AD-019. flatland.ordered (rung 4b) advanced aset->IEditableCollection; tools.reader (rung 6) aget->Closeable (both new host-interface blockers). ORIGINAL: now (found 2026-06-07 — ordered's blocker after D-286a, a NON-deftype/NON-host-interface class) — flatland.ordered.set.clj:84 `Unable to resolve symbol: 'aset'`. `aset` (Java array element set) is unimplemented; ordered uses Java object-arrays + aset/aget/make-array internally for its backing store. This is the Java-array-interop capability, distinct from the deftype host-interface work (D-275→D-286). cljw has no Java arrays as such — would need an array surface (object-array/aset/aget/alength/make-array) backed by a cljw mutable vector or a native array Value."

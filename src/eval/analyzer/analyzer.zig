@@ -495,6 +495,36 @@ pub fn symFullName(sym: SymbolRef) []const u8 {
 
 threadlocal var sym_name_buf: [256]u8 = undefined;
 
+/// ADR-0128 (D-293 unify): the SSOT mapping a recognised NON-native class name
+/// to the key its class-VALUE descriptor (`rt.classDescriptor`) is cached under.
+/// Replaces the formerly-scattered analyzer arms (exception / opaque / Object /
+/// Number / IFn / interface marker / host_inert / stream), so a class symbol in
+/// value position resolves uniformly — which is what lets `instance?` be a
+/// higher-order fn. Native exact names (String/Long/…) are NOT here: they keep
+/// their tag-keyed `nativeDescriptor` (handled before this is consulted) so
+/// `(class x)` identity holds. Returns null for an unrecognised name.
+fn classValueKeyFor(name: []const u8) ?[]const u8 {
+    if (host_class.isKnownOpaqueClass(name)) return name; // Integer / java.math.BigInteger
+    if (host_class.isUniversalClass(name)) return "Object";
+    // isKnown covers exception + interface markers + Number + IFn + java.io stream
+    // classes; normalize to the simple key `class_name.isInstance` matches on.
+    if (class_name.isKnown(name)) return class_name.normalizeClassName(name);
+    if (host_interface.isHostInert(name)) return host_interface.canonicalName(name);
+    return null;
+}
+
+/// Resolve a bare (dot-free) class name through the current ns's `(:import …)`
+/// map to its FQCN; qualified + unimported names pass through unchanged. Reuses
+/// `ns.imports` (D-235) — the same map `(Class. …)` consults — so an imported
+/// class symbol resolves to a class VALUE uniformly (ADR-0128: needed since
+/// `instance?` is now a fn whose class arg evaluates here, e.g. flatland.ordered's
+/// `(:import (java.util Map$Entry))` then bare `Map$Entry`).
+fn resolveClassImport(env: *Env, name: []const u8) []const u8 {
+    if (std.mem.findScalar(u8, name, '.') != null) return name;
+    const ns = env.current_ns orelse return name;
+    return ns.imports.get(name) orelse name;
+}
+
 // --- Symbol resolution ---
 
 fn analyzeSymbol(
@@ -606,73 +636,36 @@ fn analyzeSymbol(
         // span multiple tags → `nativeTagFor` returns null → they stay
         // unresolved-symbol errors (documented divergence).
         if (sym.ns == null) {
-            if (class_name.nativeTagFor(sym.name)) |tag| {
+            // Resolve a bare imported class name to its FQCN first (D-235
+            // ns.imports), so all three resolution paths below see the qualified
+            // name an `(:import …)` brought in.
+            const cname = resolveClassImport(env, sym.name);
+            if (class_name.nativeTagFor(cname)) |tag| {
                 const td = try env.rt.nativeDescriptor(tag);
                 const ref = try type_descriptor.makeTypeDescriptorRef(env.rt, td);
                 return try makeConstant(arena, ref, form);
             }
-            // A bare host/exception class symbol (`Exception`, `ExceptionInfo`,
-            // `clojure.lang.ExceptionInfo`) resolves to the same TypeDescriptor
-            // `(class e)` returns — so `(= (class e) ExceptionInfo)` works (clj
-            // parity). After native + Var resolution so a user def shadows.
-            if (host_class.isKnownException(sym.name)) {
-                const td = try env.rt.exceptionDescriptor(host_class.normalizeClassName(sym.name));
-                const ref = try type_descriptor.makeTypeDescriptorRef(env.rt, td);
-                return try makeConstant(arena, ref, form);
-            }
-            // ADR-0109: a recognised OPAQUE host class (java.math.BigInteger,
-            // Integer, …) — a JVM numeric class cljw collapses away (F-005) —
-            // resolves to a distinct class VALUE keyed by its name (reusing the
-            // named-descriptor cache). No cljw value has this type, so instance?
-            // is false and extend-type is a load-only no-op (handled at those
-            // consumers); the descriptor exists only so `(= (type x) Integer)`
-            // and class-dispatch branches resolve clj-faithfully.
-            if (host_class.isKnownOpaqueClass(sym.name)) {
-                const td = try env.rt.exceptionDescriptor(sym.name);
-                const ref = try type_descriptor.makeTypeDescriptorRef(env.rt, td);
-                return try makeConstant(arena, ref, form);
-            }
-            // ADR-0109: java.lang.Object is the universal supertype, resolved as a
-            // class VALUE so `(derive Object …)` works; isa?/instance? special-case
-            // it (every class isa? Object; every non-nil value instance? Object).
-            if (host_class.isUniversalClass(sym.name)) {
-                const td = try env.rt.exceptionDescriptor("Object");
-                const ref = try type_descriptor.makeTypeDescriptorRef(env.rt, td);
-                return try makeConstant(arena, ref, form);
-            }
-            // ADR-0109: java.lang.Number — the numeric-tower supertype marker as a
-            // class VALUE (defmethod dispatch in algo.generic.arithmetic). isa?/
-            // instance? special-case it (every numeric class isa? Number).
-            if (host_class.isNumberClass(sym.name)) {
-                const td = try env.rt.exceptionDescriptor("Number");
-                const ref = try type_descriptor.makeTypeDescriptorRef(env.rt, td);
-                return try makeConstant(arena, ref, form);
-            }
-            // ADR-0109: clojure.lang.IFn — the callable marker as a class VALUE
-            // (defmethod dispatch in core.contracts). instance? already works
-            // (class_name.matchInterface = ifn?); isa? uses isCallableClassName.
-            if (host_class.isIFnClass(sym.name)) {
-                const td = try env.rt.exceptionDescriptor("IFn");
+            // ADR-0128 (D-293 unify): every recognised NON-native class name
+            // resolves to a name-keyed class VALUE through ONE `classDescriptor`
+            // call, via the `classValueKeyFor` SSOT — the formerly-scattered
+            // exception / opaque / Object / Number / IFn / interface-marker /
+            // host_inert arms collapse here. This is what makes a class symbol a
+            // value (so `instance?` is a higher-order fn) and keeps `(= (class e)
+            // ExceptionInfo)` / `(= (type x) Integer)` / `(derive Object …)` /
+            // `(prn IPersistentVector)` all resolving uniformly. Membership +
+            // class-level isa? / extend-type semantics live at the consumers
+            // (class_name.isInstance / classIsaPrim), keyed on this same name.
+            if (classValueKeyFor(cname)) |key| {
+                const td = try env.rt.classDescriptor(key);
                 const ref = try type_descriptor.makeTypeDescriptorRef(env.rt, td);
                 return try makeConstant(arena, ref, form);
             }
             // A registered Java host-surface class (java.util.Random, java.net.URI,
-            // …) resolves to its rt.types descriptor VALUE — the surface analogue
-            // of the opaque-class arm above. This makes `(= (class x) URI)` and
-            // `(extend-protocol P java.net.URI …)` reach the concrete type. After
-            // Var + native + exception + opaque resolution so a user def shadows.
-            if (env.rt.types.get(sym.name)) |td| {
-                const ref = try type_descriptor.makeTypeDescriptorRef(env.rt, td);
-                return try makeConstant(arena, ref, form);
-            }
-            // A host_inert java interface (java.util.Map, …) used as a plain VALUE
-            // (e.g. hiccup's `(not-hint? x java.util.Map)`) resolves to a named
-            // class descriptor. No cljw value has this host type, so isa?/instance?
-            // are false — consistent with the host_inert AD (ADR-0103). The
-            // extend-TARGET and deftype-supertype positions are handled earlier
-            // (macro no-op / quote-wrap); this is the bare-value position only.
-            if (host_interface.isHostInert(sym.name)) {
-                const td = try env.rt.exceptionDescriptor(host_interface.canonicalName(sym.name).?);
+            // …) resolves to its rt.types descriptor VALUE — the concrete-type
+            // analogue. Makes `(= (class x) URI)` and `(extend-protocol P
+            // java.net.URI …)` reach the type. After native + recognised-name
+            // resolution so a user def shadows.
+            if (env.rt.types.get(cname)) |td| {
                 const ref = try type_descriptor.makeTypeDescriptorRef(env.rt, td);
                 return try makeConstant(arena, ref, form);
             }

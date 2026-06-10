@@ -1077,36 +1077,16 @@ test "diff: ADR-0060 internal error no-match inner re-raises to outer" {
     , 6);
 }
 
-// Row 7.12 cycle 1 (D-078 prep): `instance?` macro + `__instance?`
-// primitive + `runtime/class_name.zig` registry. Both backends share
-// the macro_dispatch lowering and the Layer-2 primitive, so dispatch
-// shape is identical by construction. Tests lock the 4 dispatch
-// arms: native exact-tag / Number interface / IFn interface / Throwable
-// hierarchy (false on non-throwable).
-
-test "diff: row 7.12 instance? native exact tag" {
-    var f = try Fixture.init(testing.allocator);
-    defer f.deinit();
-    try f.check("(if (instance? String \"abc\") 1 0)", 1);
-}
-
-test "diff: row 7.12 instance? Number matches integer + float" {
-    var f = try Fixture.init(testing.allocator);
-    defer f.deinit();
-    try f.check("(+ (if (instance? Number 42) 1 0) (if (instance? Number 3.14) 2 0))", 3);
-}
-
-test "diff: row 7.12 instance? IFn matches fn_val" {
-    var f = try Fixture.init(testing.allocator);
-    defer f.deinit();
-    try f.check("(if (instance? IFn (fn* [x] x)) 7 0)", 7);
-}
-
-test "diff: row 7.12 instance? Throwable false on non-throwable" {
-    var f = try Fixture.init(testing.allocator);
-    defer f.deinit();
-    try f.check("(+ (if (instance? Throwable nil) 100 0) (if (instance? Throwable 42) 200 0))", 0);
-}
+// `instance?` parity coverage moved to e2e (test/e2e/phase7_instance_q.sh, full
+// runtime) with ADR-0128: `instance?` is now a clj fn over a class VALUE
+// (`(def instance? (fn* [c x] (rt/-instance-of? c x)))`), so it requires the class
+// symbol to resolve to a class value — which needs the full class-value surface
+// (gc.infra descriptors) the minimal dual-eval Fixture here does not bootstrap.
+// There is no dual-backend divergence to lock: `instance?` adds no analyzer Node
+// variant (it is an ordinary call), the class-value resolution happens in the
+// backend-shared analyzer, and `class_name.isInstance` has unit tests in
+// class_name.zig that both backends compile. So the membership oracle is covered
+// at the unit + e2e layers; a diff case would only re-run a backend-agnostic call.
 
 // ADR-0042 row 7.9: `apply` variadic-callee bind-direct gate. Both
 // backends share `tree_walk.callFunction` (vm.zig:573 wires

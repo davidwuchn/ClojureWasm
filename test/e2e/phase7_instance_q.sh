@@ -1,18 +1,21 @@
 #!/usr/bin/env bash
 # test/e2e/phase7_instance_q.sh
 #
-# Phase 7 §9.9 row 7.12 cycle 1 — `instance?` macro + `__instance?`
-# Layer-2 primitive landing (D-078 prep). The macro auto-quotes the
-# Class symbol (`(instance? String x)` → `(__instance? (quote String) x)`)
-# so user-form matches JVM syntax. Primitive consults
-# `runtime/class_name.zig::isInstance` which routes through:
+# `instance?` — ADR-0128 (D-373): now a clj FN over a class VALUE
+# (`(def instance? (fn* [c x] (rt/-instance-of? c x)))`), NOT a macro. The class
+# symbol evaluates to a class value via the analyzer's class-value arm, so
+# `instance?` is passable higher-order (condp / map / partial — Case 8). The
+# `-instance-of?` primitive consults `runtime/class_name.zig::isInstance`, the
+# complete membership oracle:
 #   - host_class.matches for Throwable hierarchy queries
 #   - native exact-tag table (String / Long / Pattern / ...)
 #   - interface multi-tag sets (IFn / Number / IPersistent*)
+#   - Object universal arm (every non-nil value); opaque → false naturally
 #   - TypeDescriptor.parent walk for typed_instance / reified_instance
 #
-# Unknown class symbols raise loud `class_name_unknown` (no silent
-# false — F-002 + permanent-no-op-forbidden per provisional_marker.md).
+# An unknown class symbol now errors at ANALYSIS (`Unable to resolve symbol`) —
+# the class arg evaluates, so an unresolvable class is a compile-time error
+# (closer to clj than the old macro-path `class_name_unknown`).
 
 set -euo pipefail
 cd "$(dirname "$0")/../.."
@@ -72,15 +75,49 @@ assert_eq 'exception_parent_walk' "$got" 'true'
 got=$("$BIN" -e '(instance? java.lang.Long 42)' 2>/dev/null)
 assert_eq 'fqcn_long' "$got" 'true'
 
-# --- Case 7: Unknown class raises loud (no silent false). NOTE: PersistentQueue
-# became a KNOWN class with ADR-0087, so use a genuinely-unknown name here. ---
+# --- Case 7: Unknown class errors at analysis (the class arg evaluates, so an
+# unresolvable class symbol is a compile-time unresolved-symbol error — ADR-0128). ---
 diag=$("$BIN" -e '(instance? NoSuchClassXyz 42)' 2>&1 || true)
 case "$diag" in
-    *"class 'NoSuchClassXyz' is not a known class name"*)
+    *"Unable to resolve symbol: 'NoSuchClassXyz'"*)
         echo "PASS unknown_class_raises -> diagnostic" ;;
     *)
         fail "unknown_class_raises: missing diagnostic ($diag)" ;;
 esac
 
+# --- Case 8: higher-order instance? (the D-373 fix — a macro could not do this) ---
+got=$("$BIN" - <<'EOF' 2>/dev/null
+(prn (condp instance? "x" Number :n String :s :o))
+EOF
+)
+assert_eq 'condp_instance' "$got" ':s'
+
+got=$("$BIN" - <<'EOF' 2>/dev/null
+(prn (mapv (partial instance? Number) [1 :a 2.0 "x"]))
+EOF
+)
+assert_eq 'partial_instance_map' "$got" '[true false true false]'
+
+# interface marker resolves as a class value + matches (was a NameError pre-ADR-0128)
+got=$("$BIN" -e '(instance? clojure.lang.IPersistentVector [1 2])' 2>/dev/null)
+assert_eq 'interface_marker_value' "$got" 'true'
+
+# class symbol passed as a plain fn arg (higher-order), bound then applied
+got=$("$BIN" - <<'EOF' 2>/dev/null
+(prn ((fn [c v] (instance? c v)) Long 42))
+EOF
+)
+assert_eq 'class_as_fn_arg' "$got" 'true'
+
+# --- Case 9: bare IMPORTED class name as the class arg (the flatland.ordered.map
+# scenario: `(:import (java.util Map$Entry))` then bare `Map$Entry`). The analyzer
+# resolves the import to the FQCN, then to the native MapEntry class value. ---
+got=$("$BIN" - <<'EOF' 2>/dev/null
+(ns t (:import (java.util Map$Entry)))
+(prn (instance? Map$Entry (first {:a 1})))
+EOF
+)
+assert_eq 'imported_map_entry' "$got" 'true'
+
 echo
-echo "Phase 7 row 7.12 cycle 1 instance? e2e: all green."
+echo "Phase 7 instance? (ADR-0128 fn over class value) e2e: all green."

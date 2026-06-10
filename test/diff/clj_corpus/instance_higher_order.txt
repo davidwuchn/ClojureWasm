@@ -1,0 +1,19 @@
+;; Higher-order `instance?` (ADR-0128 / D-373): `instance?` is a fn over a class
+;; VALUE, so it is passable to condp / partial / map and bound as a fn arg — a
+;; macro could not do this. clj-oracle-verified 2026-06-10. The class arg is a
+;; native class (String/Long/Number), an FQCN interface marker (clojure.lang.*),
+;; or a bare cljw interface protocol — all resolve to the membership oracle.
+(condp instance? "x" Number :n String :s :o)
+;;=> :s
+(mapv (partial instance? Number) [1 :a 2.0 "x"])
+;;=> [true false true false]
+(mapv (partial instance? clojure.lang.ISeq) [(seq [1]) [2] (list 3)])
+;;=> [true false true]
+((fn [c v] (instance? c v)) Long 42)
+;;=> true
+(instance? clojure.lang.IPersistentVector [1 2])
+;;=> true
+(instance? Number 1N)
+;;=> true
+(instance? clojure.lang.IFn (fn [x] x))
+;;=> true

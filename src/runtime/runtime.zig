@@ -289,8 +289,8 @@ pub const Runtime = struct {
     /// `null` → "ExceptionInfo") that catch-matching already consults, so a
     /// single shared `.ex_info` native descriptor would collapse every
     /// exception to one class. Each distinct class name gets one descriptor,
-    /// lazily built on `gc.infra` by `exceptionDescriptor`, freed in `deinit`.
-    exception_descriptors: std.StringHashMapUnmanaged(*TypeDescriptor) = .empty,
+    /// lazily built on `gc.infra` by `classDescriptor`, freed in `deinit`.
+    class_descriptors: std.StringHashMapUnmanaged(*TypeDescriptor) = .empty,
 
     /// Per-Runtime `java.util.Date` value descriptor (D-200 / ADR-0079;
     /// `#inst` / Date is a no-slot `.typed_instance`). Lazily allocated on
@@ -334,13 +334,18 @@ pub const Runtime = struct {
         return class_name_mod.fqcnForTag(tag) orelse @tagName(tag);
     }
 
-    /// `(class e)` descriptor for an exception value carrying `class_name`
-    /// (already the simple name per AD-003; e.g. "ArithmeticException"). One
-    /// descriptor per distinct class name, cached in `exception_descriptors`
-    /// (D-213). The cache key aliases the descriptor's `fqcn` dup, so both
-    /// share one lifetime freed in `deinit`.
-    pub fn exceptionDescriptor(self: *Runtime, class_name: []const u8) !*TypeDescriptor {
-        if (self.exception_descriptors.get(class_name)) |existing| return existing;
+    /// A name-keyed class-VALUE descriptor (ADR-0128 — was `exceptionDescriptor`,
+    /// renamed since it is NOT exception-specific). Mints one `kind=.native`
+    /// descriptor per distinct class name, cached in `class_descriptors` (D-213).
+    /// Used for: exception classes (`(class e)` → "ArithmeticException", simple
+    /// per AD-003), opaque collapsed classes (Integer / BigInteger), the
+    /// universal Object / Number / IFn markers, the `clojure.lang.*` interface
+    /// markers, host_inert + java.io stream class names — every class symbol the
+    /// analyzer resolves to a value that is not a native exact tag or a
+    /// registered host surface. The cache key aliases the descriptor's `fqcn`
+    /// dup, so both share one lifetime freed in `deinit`.
+    pub fn classDescriptor(self: *Runtime, class_name: []const u8) !*TypeDescriptor {
+        if (self.class_descriptors.get(class_name)) |existing| return existing;
         const fqcn_dup = try self.gc.infra.dupe(u8, class_name);
         errdefer self.gc.infra.free(fqcn_dup);
         const td = try self.gc.infra.create(TypeDescriptor);
@@ -354,7 +359,7 @@ pub const Runtime = struct {
             .parent = null,
             .meta = @import("value/value.zig").Value.nil_val,
         };
-        try self.exception_descriptors.put(self.gc.infra, fqcn_dup, td);
+        try self.class_descriptors.put(self.gc.infra, fqcn_dup, td);
         return td;
     }
 
@@ -512,7 +517,7 @@ pub const Runtime = struct {
         // __extend-type!, so free those too (mirrors the native_descriptors pass);
         // hiccup extends HtmlRenderer to Object, which first exercised this leak.
         {
-            var it = self.exception_descriptors.valueIterator();
+            var it = self.class_descriptors.valueIterator();
             while (it.next()) |td_ptr| {
                 const td = td_ptr.*;
                 if (td.fqcn) |n| self.gc.infra.free(n);
@@ -521,7 +526,7 @@ pub const Runtime = struct {
                 if (td.protocol_impls.len > 0) self.gc.infra.free(td.protocol_impls);
                 self.gc.infra.destroy(td);
             }
-            self.exception_descriptors.deinit(self.gc.infra);
+            self.class_descriptors.deinit(self.gc.infra);
         }
 
         for (self.heap_objects.items) |entry| {

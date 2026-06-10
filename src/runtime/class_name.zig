@@ -116,6 +116,11 @@ const FQCN_MAP = std.StaticStringMap([]const u8).initComptime(.{
     .{ "clojure.lang.PersistentList", "PersistentList" },
     .{ "clojure.lang.PersistentVector", "PersistentVector" },
     .{ "clojure.lang.MapEntry", "MapEntry" },
+    // clj's MapEntry implements java.util.Map$Entry; a lib importing the nested
+    // class (flatland.ordered.map: `(:import (java.util Map$Entry))`) refers to it
+    // bare or FQCN. Both map to the native MapEntry (tag .map_entry) — ADR-0128.
+    .{ "java.util.Map$Entry", "MapEntry" },
+    .{ "Map$Entry", "MapEntry" },
     .{ "clojure.lang.PersistentArrayMap", "PersistentArrayMap" },
     .{ "clojure.lang.PersistentHashMap", "PersistentHashMap" },
     .{ "clojure.lang.PersistentHashSet", "PersistentHashSet" },
@@ -235,6 +240,11 @@ fn isInterfaceName(simple: []const u8) bool {
 /// loud rather than relying on silent false.
 pub fn isInstance(v: Value, class_name: []const u8) bool {
     const simple = normalizeClassName(class_name);
+
+    // ADR-0109/ADR-0128: java.lang.Object is the universal supertype — every
+    // non-nil value is an instance (clj: nil is not). Handled here in the single
+    // membership oracle so `-instance-of?` needs no special-case (ADR-0128).
+    if (host_class.isUniversalClass(simple)) return v.tag() != .nil;
 
     if (host_class.isKnownException(simple)) {
         // `host_class.matches` is the catch-clause predicate where the

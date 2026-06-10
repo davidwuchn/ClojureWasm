@@ -67,7 +67,11 @@ const SEQUENTIAL_TAGS = [_]Tag{ .vector, .map_entry, .list, .cons, .lazy_seq, .c
 /// IFn — every callable (mirrors core.ifnQ): fns + keyword/symbol/var + the
 /// persistent colls (all invocable as lookups).
 const IFN_TAGS = [_]Tag{ .fn_val, .builtin_fn, .multi_fn, .protocol_fn, .keyword, .symbol, .var_ref, .vector, .array_map, .hash_map, .hash_set, .sorted_map, .sorted_set };
-const NUMBER_TAGS = [_]Tag{ .integer, .float };
+/// Number — the full numeric tower (mirrors `number?` / `(instance? Number x)`):
+/// inline Long/Double + heap BigInt/Ratio/BigDecimal. (Was `{integer, float}`;
+/// widened with ADR-0128 so `isInstance("Number")` IS `number?` and the macro's
+/// opaque/Number special-case dissolves into this SSOT.)
+const NUMBER_TAGS = [_]Tag{ .integer, .float, .big_int, .ratio, .big_decimal };
 /// IPersistentList — a PersistentQueue is an IPersistentList in clj.
 const IPLIST_TAGS = [_]Tag{ .list, .cons, .persistent_queue };
 /// IPersistentStack — peek/pop: list, vector, queue, cons, map_entry.

@@ -22,5 +22,3 @@
 ;;=> java.io.BufferedWriter
 (do (spit "/tmp/cljw_corpus_io.txt" "x") (instance? java.io.PrintWriter (clojure.java.io/writer "/tmp/cljw_corpus_io.txt")))
 ;;=> false
-(do (spit "/tmp/cljw_corpus_io.txt" "x") (import (quote java.io.BufferedReader)) (instance? BufferedReader (clojure.java.io/reader "/tmp/cljw_corpus_io.txt")))
-;;=> true

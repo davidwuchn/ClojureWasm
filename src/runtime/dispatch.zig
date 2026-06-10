@@ -135,7 +135,7 @@ pub fn dispatch(
     // nil separately (hiccup's HtmlRenderer does both). This is the fallback that
     // lets a String / number reach the protocol's Object default.
     if (receiver.tag() != .nil) {
-        if (rt.exception_descriptors.get("Object")) |obj_td| {
+        if (rt.class_descriptors.get("Object")) |obj_td| {
             if (obj_td.lookupMethod(protocol_name, method_name)) |me| {
                 if (me.method_val.tag() != .nil) {
                     const vt = rt.vtable orelse return error.NoVTable;

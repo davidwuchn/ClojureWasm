@@ -26,7 +26,7 @@ pub fn classOf(rt: *Runtime, v: Value) !Value {
     if (v.tag() == .ex_info) {
         const raw = ex_info_mod.className(v) orelse "ExceptionInfo";
         const simple = host_class_mod.normalizeClassName(raw);
-        return td_mod.makeTypeDescriptorRef(rt, try rt.exceptionDescriptor(simple));
+        return td_mod.makeTypeDescriptorRef(rt, try rt.classDescriptor(simple));
     }
     const td: *const td_mod.TypeDescriptor = switch (v.tag()) {
         .typed_instance => v.decodePtr(*const td_mod.TypedInstance).descriptor,

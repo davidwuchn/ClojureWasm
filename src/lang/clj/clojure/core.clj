@@ -1693,6 +1693,13 @@
 ;; `(map (partial prefer-method mf) …)` / passing it works, matching clj.
 (def prefer-method (fn* [multifn x y] (rt/__prefer-method! multifn x y)))
 
+;; `instance?` is a FN in clj taking a class VALUE (a class symbol evaluates to a
+;; Class), so it is passable higher-order: `(condp instance? obj Map$Entry …)`,
+;; `(map (partial instance? String) xs)`. cljw had it as a macro (auto-quoting the
+;; class symbol) which broke that. ADR-0128 / D-373: now a fn over the class-value
+;; surface; `rt/-instance-of?` consults the class_name membership oracle.
+(def instance? (fn* [c x] (rt/-instance-of? c x)))
+
 ;; `(memoize f)` returns a cached version of f: each distinct argument
 ;; tuple computes f once, then returns the stored result. Keys the
 ;; atom-backed cache by `(vec args)` — vectors compare by value (D-092),

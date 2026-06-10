@@ -29,66 +29,42 @@ const map = @import("../../runtime/collection/map.zig");
 const print_mod = @import("../../runtime/print.zig");
 const charset_mod = @import("../../runtime/charset.zig");
 const td_mod = @import("../../runtime/type_descriptor.zig");
+const protocol_mod = @import("../../runtime/protocol.zig");
 const class_name = @import("../../runtime/class_name.zig");
 const host_class = @import("../../runtime/error/host_class.zig");
 const driver = @import("../../eval/driver.zig");
 
-/// `(__instance? 'Class x)` — row 7.12 cycle 1 Layer-2 primitive
-/// backing the public `instance?` macro. The macro (registered in
-/// `lang/macro_transforms.zig::expandInstanceQ`) auto-quotes the
-/// Class argument so callers write `(instance? String x)` without an
-/// explicit quote. Path A per the row 7.12 survey Q1 decision:
-/// Symbol-based primitive-side lookup. Unknown class names raise
-/// `class_name_unknown` (no silent-default-shift, per F-002 +
-/// `provisional_marker.md` permanent-no-op-forbidden discipline).
-/// Dispatches through `runtime/class_name.zig::isInstance` which
-/// covers native tags + interface-shaped multi-tag sets + Throwable
-/// hierarchy + user TypeDescriptor parent walk.
-/// Resolve a bare (dot-free) class name through the current ns's `(:import …)`
-/// map to its FQCN; pass qualified names + unimported names through unchanged.
-/// Reuses `ns.imports` (D-235) — the same map `resolveJavaSurface` consults for
-/// `(Class. …)` — so a simple imported class name behaves uniformly in
-/// `instance?` and constructors, via `(import …)` or `(ns … (:import …))`.
-fn resolveClassImport(env: *Env, name: []const u8) []const u8 {
-    if (std.mem.findScalar(u8, name, '.') != null) return name;
-    const ns = env.current_ns orelse return name;
-    return ns.imports.get(name) orelse name;
-}
-
-pub fn instanceQPrim(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+/// `(-instance-of? c x)` — ADR-0128: the fn-side `instance?`. `c` is a class
+/// VALUE (a `.type_descriptor`, produced when a class symbol evaluates via the
+/// analyzer's class-value arm — so higher-order use, `(condp instance? …)` /
+/// `(map (partial instance? C) …)`, works exactly as in clj). Returns true iff
+/// `x` is an instance of `c`.
+///
+/// `runtime/class_name.zig::isInstance` is the COMPLETE membership oracle
+/// (native exact / interface multi-tag / Throwable hierarchy / Object-universal /
+/// user TypeDescriptor walk; an opaque collapsed class — Integer / BigInteger —
+/// is in no table so it returns false, clj-faithful). So this primitive is just
+/// `fqcn → isInstance` with no opaque/Object/Number special-case (those dissolved
+/// into the oracle per ADR-0128). A non-class `c` raises (clj: ClassCastException).
+pub fn instanceOf(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = rt;
+    _ = env;
     try error_catalog.checkArity("instance?", args, 2, loc);
-    if (args[0].tag() != .symbol) {
-        return error_catalog.raise(.type_arg_invalid, loc, .{
+    // The class arg is either a class VALUE (`.type_descriptor` — String / Number /
+    // Object / a user deftype / an exception class / `clojure.lang.IFn` FQCN) OR a
+    // cljw interface-marker PROTOCOL (`.protocol` — bare `IFn`/`ISeq`/`IPersistentMap`/
+    // `IDeref`/… resolve to the defprotocol Var, the cljw representation of the clj
+    // interface). Both name a class in the membership oracle, so dispatch by fqcn.
+    const fqcn = switch (args[0].tag()) {
+        .type_descriptor => td_mod.asTypeDescriptorRef(args[0]).fqcn orelse return .false_val,
+        .protocol => protocol_mod.asProtocol(args[0]).fqcn(),
+        else => return error_catalog.raise(.type_arg_invalid, loc, .{
             .fn_name = "instance?",
-            .expected = "symbol (class name)",
+            .expected = "class",
             .actual = @tagName(args[0].tag()),
-        });
-    }
-    // A bare imported simple name (`(import java.io.BufferedReader)` or
-    // `(ns … (:import [java.io BufferedReader]))`) resolves to its FQCN via the
-    // current ns's import map — the same D-235 `ns.imports` that
-    // `resolveJavaSurface` uses for `(Class. …)`, so class-name resolution is
-    // uniform across constructors and `instance?` (no per-class allowlist).
-    const class_sym = resolveClassImport(env, symbol_mod.asSymbol(args[0]).name);
-    // ADR-0109: a recognised OPAQUE host class (Integer, java.math.BigInteger, …)
-    // is one cljw COLLAPSES away (F-005) — no cljw value has it as its type, so
-    // `(instance? Integer x)` is uniformly false (clj agrees: a cljw int IS a
-    // Long), never a class_name_unknown error.
-    if (host_class.isKnownOpaqueClass(class_sym)) return .false_val;
-    // ADR-0109: every non-nil value is an instance of Object (clj: nil is not).
-    if (host_class.isUniversalClass(class_sym)) return if (args[1].tag() == .nil) .false_val else .true_val;
-    // ADR-0109: (instance? Number x) = (number? x) — the numeric-tower members.
-    if (host_class.isNumberClass(class_sym)) {
-        const t = args[1].tag();
-        return if (t == .integer or t == .float or t == .big_int or t == .ratio or t == .big_decimal) .true_val else .false_val;
-    }
-    // class_name.isKnown covers native + interface + Throwable; user-
-    // defined defrecord / deftype names live in `rt.types` and need
-    // a separate check (row 7.13 cycle 1 — was the row 7.12 cycle 1
-    // gap surfaced by `(instance? ZipLoc loc)` from clojure.zip).
-    if (!class_name.isKnown(class_sym) and !rt.types.contains(class_sym))
-        return error_catalog.raise(.class_name_unknown, loc, .{ .name = class_sym });
-    return if (class_name.isInstance(args[1], class_sym)) .true_val else .false_val;
+        }),
+    };
+    return if (class_name.isInstance(args[1], fqcn)) .true_val else .false_val;
 }
 
 /// `(-class-isa? child parent)` — true iff both args are class values
@@ -1624,7 +1600,7 @@ const ENTRIES = [_]Entry{
     .{ .name = "gensym", .f = &gensymFn },
     .{ .name = "__resolve", .f = &resolvePrim },
     .{ .name = "alter-var-root", .f = &alterVarRootFn },
-    .{ .name = "__instance?", .f = &instanceQPrim },
+    .{ .name = "-instance-of?", .f = &instanceOf },
     .{ .name = "-class-isa?", .f = &classIsaPrim },
     .{ .name = "ifn?", .f = &ifnQ },
     .{ .name = "var?", .f = &varQ },
