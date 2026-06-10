@@ -193,10 +193,13 @@ fn resolveDescriptor(rt: *Runtime, receiver: Value) anyerror!*const td_mod.TypeD
 
 // --- threadlocal call-scoped state ---
 
-/// The Env currently being evaluated. Set on call entry, cleared on
-/// exit. Strictly redundant in most paths because `BuiltinFn` already
-/// receives `env`, but needed in low-level callbacks (e.g. GC root
-/// walks) where `env` isn't otherwise in scope.
+/// The Env currently being evaluated — LIVE since ADR-0129. Armed
+/// (save→set→restore) at `driver.evalForm` (per top-level form) and
+/// `tree_walk.treeWalkCall` (per call, the both-backend choke point), so it
+/// is set during all evaluation and null outside it (bootstrap / host-init).
+/// Read by Layer-0 callbacks that lack `env` in scope: `equal.hashConsult` /
+/// `eqConsult` dispatch a deftype/reify's user hasheq / equiv at the HAMT key
+/// sites via `current_env.?.rt`. A null reader falls to the rt-free path.
 pub threadlocal var current_env: ?*Env = null;
 
 /// Last `(throw ...)`'d exception Value, used to bridge VM ↔ TreeWalk

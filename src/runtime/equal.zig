@@ -47,6 +47,7 @@ const big_decimal = @import("numeric/big_decimal.zig");
 const td_mod = @import("type_descriptor.zig");
 const date_mod = @import("time/date.zig");
 const dispatch_mod = @import("dispatch.zig");
+const ClojureWasmError = @import("error/info.zig").ClojureWasmError;
 
 const NumCat = enum { integer, floating, ratio, decimal, none };
 
@@ -627,6 +628,85 @@ fn instanceEquiv(rt: *Runtime, env: *Env, x: Value, other: Value) anyerror!?bool
     if (t == .typed_instance and x.decodePtr(*const td_mod.TypedInstance).descriptor.kind == .defrecord) return null;
     var cs: dispatch_mod.CallSite = .{};
     if (try dispatch_mod.dispatchOrNull(rt, env, &cs, x, "Object", "equiv", &.{ x, other }, .{ .line = 0, .column = 0 })) |r|
+        return r.isTruthy();
+    return null;
+}
+
+/// Shared rt-aware hash core (ADR-0129 / D-377 facet 2): a non-record
+/// deftype/reify with an `Object/hasheq` impl hashes via that impl (then
+/// `hashCode`); a defrecord and everything else fall to the rt-free
+/// `valueHash`. The `(hash x)` primitive AND the HAMT key-bucketing sites
+/// share this so a deftype key and `(hash deftype)` agree (F-011). clj's
+/// `hasheq` is a 32-bit int, so the dispatched value is truncated to i32.
+pub fn hashDispatch(rt: *Runtime, env: *Env, v: Value) ClojureWasmError!u32 {
+    const t = v.tag();
+    if (t == .typed_instance or t == .reified_instance) {
+        const is_record = t == .typed_instance and
+            v.decodePtr(*const td_mod.TypedInstance).descriptor.kind == .defrecord;
+        if (!is_record) {
+            var cs: dispatch_mod.CallSite = .{};
+            // dispatchOrNull is typed `anyerror` (the vt.callFn fn-pointer), but
+            // the runtime only raises ClojureWasmError variants — narrow at this
+            // single boundary with @errorCast so map.assoc/get keep their error
+            // set (no caller-wide ripple). Safe-checked in safe build modes.
+            if (dispatch_mod.dispatchOrNull(rt, env, &cs, v, "Object", "hasheq", &.{v}, .{ .line = 0, .column = 0 }) catch |e| return @errorCast(e)) |h|
+                return @bitCast(@as(i32, @truncate(h.asInteger())));
+            if (dispatch_mod.dispatchOrNull(rt, env, &cs, v, "Object", "hashCode", &.{v}, .{ .line = 0, .column = 0 }) catch |e| return @errorCast(e)) |h|
+                return @bitCast(@as(i32, @truncate(h.asInteger())));
+        }
+    }
+    return valueHash(v);
+}
+
+/// rt-aware key hash (ADR-0129): a non-record deftype/reify with a hasheq
+/// impl hashes via `hashDispatch`, reading the ambient `dispatch.current_env`
+/// (→ its `rt`); everything else, and the UNARMED case (outside evaluation:
+/// bootstrap / host-init, which never key a map by a custom-hash deftype),
+/// falls to the rt-free `valueHash`. The HAMT key-bucketing sites use this so
+/// a custom-hash deftype key buckets with its `=`-equal value.
+pub fn hashConsult(v: Value) ClojureWasmError!u32 {
+    const t = v.tag();
+    if (t == .typed_instance or t == .reified_instance) {
+        if (dispatch_mod.current_env) |env| return hashDispatch(env.rt, env, v);
+    }
+    return valueHash(v);
+}
+
+/// rt-aware key equality (ADR-0129): consult EITHER operand's deftype/reify
+/// `equiv` impl ahead of the rt-free `keyEqValue`, reading the ambient
+/// `dispatch.current_env`. Symmetric (tries both operands) so a custom-equiv
+/// deftype dedups as a map key / set element regardless of insertion order
+/// (clj-verified: both `(conj (conj #{} a) b)` orders dedup). Unarmed ⇒ the
+/// rt-free path. A user `equiv` that throws propagates (no silent swallow).
+pub fn eqConsult(a: Value, b: Value) ClojureWasmError!bool {
+    if (dispatch_mod.current_env) |env| {
+        // keyInstanceEq is typed `anyerror` (it calls dispatch); narrow with
+        // @errorCast at this single boundary so map.keyEq keeps its error set.
+        if (keyInstanceEq(env.rt, env, a, b) catch |e| return @errorCast(e)) |r| {
+            if (r) return true;
+        }
+        if (keyInstanceEq(env.rt, env, b, a) catch |e| return @errorCast(e)) |r| {
+            if (r) return true;
+        }
+    }
+    return keyEqValue(a, b);
+}
+
+/// Key equality consult for a non-record deftype/reify `x`: dispatch its
+/// `equiv` (clj IPersistentCollection) then `equals` (Object) — clj's
+/// `Util.equiv` uses `pcequiv` for collections and `.equals` for a plain
+/// deftype, so a deftype keying a map via either impl dedups. Returns the
+/// impl's truthiness, or null when `x` is not a consultable instance (defrecord
+/// / native / impl-less) — the caller then falls to the rt-free `keyEqValue`
+/// (which already handles defrecord structural key equality).
+fn keyInstanceEq(rt: *Runtime, env: *Env, x: Value, other: Value) anyerror!?bool {
+    const t = x.tag();
+    if (t != .typed_instance and t != .reified_instance) return null;
+    if (t == .typed_instance and x.decodePtr(*const td_mod.TypedInstance).descriptor.kind == .defrecord) return null;
+    var cs: dispatch_mod.CallSite = .{};
+    if (try dispatch_mod.dispatchOrNull(rt, env, &cs, x, "Object", "equiv", &.{ x, other }, .{ .line = 0, .column = 0 })) |r|
+        return r.isTruthy();
+    if (try dispatch_mod.dispatchOrNull(rt, env, &cs, x, "Object", "equals", &.{ x, other }, .{ .line = 0, .column = 0 })) |r|
         return r.isTruthy();
     return null;
 }

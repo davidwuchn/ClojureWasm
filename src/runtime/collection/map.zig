@@ -125,14 +125,24 @@ pub fn count(v: Value) u32 {
     };
 }
 
-/// Key equality for the linear-scan ArrayMap path. Delegates to
-/// `equal.keyEqValue` (D-151): identity fast path for immediates +
-/// interned keyword·symbol, plus byte-equality for non-interned String
-/// keys (the D-151 fix — `(get {"x" 5} "x")`). Collection / ratio /
-/// big_int keys stay identity-compared (rare residual; the recursive
-/// `=` over them needs `rt`, which the ~68 map call sites lack).
-fn keyEq(a: Value, b: Value) bool {
-    return equal.keyEqValue(a, b);
+/// Key equality for every HAMT / ArrayMap key compare. Routes to
+/// `equal.eqConsult` (ADR-0129): a custom-`equiv` deftype/reify key is
+/// compared via its impl (reading the ambient `dispatch.current_env`), else
+/// the rt-free `equal.keyEqValue` (identity for immediates + interned
+/// keyword·symbol, byte-equality for non-interned String keys per D-151).
+/// Unarmed (outside evaluation) ⇒ the rt-free path. The nested deftype inside
+/// a collection KEY stays rt-free (shared with the `(hash x)` residual).
+fn keyEq(a: Value, b: Value) !bool {
+    return equal.eqConsult(a, b);
+}
+
+/// Bucketing hash for every HAMT key site. Routes to `equal.hashConsult`
+/// (ADR-0129): a custom-`hasheq` deftype/reify key hashes via its impl, else
+/// the rt-free `equal.valueHash`. MUST stay paired with `keyEq` so a deftype
+/// key and its `=`-equal value land in the same bucket. The map's own
+/// recursive content hash (`contentHash`/`entryHash`) stays on `valueHash`.
+fn keyHash(k: Value) !u32 {
+    return equal.hashConsult(k);
 }
 
 /// `(assoc m k v)` — returns a new map with `k → v` per Clojure
@@ -156,7 +166,7 @@ fn assocArrayMap(rt: *Runtime, am: *const ArrayMap, k: Value, val: Value) !Value
     var found_idx: ?u32 = null;
     var i: u32 = 0;
     while (i < am.count) : (i += 1) {
-        if (keyEq(am.entries[2 * i], k)) {
+        if (try keyEq(am.entries[2 * i], k)) {
             found_idx = i;
             break;
         }
@@ -199,7 +209,7 @@ fn dissocArrayMap(rt: *Runtime, am: *const ArrayMap, original: Value, k: Value) 
     var found_idx: ?u32 = null;
     var i: u32 = 0;
     while (i < am.count) : (i += 1) {
-        if (keyEq(am.entries[2 * i], k)) {
+        if (try keyEq(am.entries[2 * i], k)) {
             found_idx = i;
             break;
         }
@@ -275,14 +285,14 @@ pub fn contains(v: Value, k: Value) !bool {
             const am = v.decodePtr(*const ArrayMap);
             var i: u32 = 0;
             while (i < am.count) : (i += 1) {
-                if (keyEq(am.entries[2 * i], k)) break :blk true;
+                if (try keyEq(am.entries[2 * i], k)) break :blk true;
             }
             break :blk false;
         },
         .hash_map => blk: {
             const phm = v.decodePtr(*const PersistentHashMap);
             const root = phm.root orelse break :blk false;
-            break :blk hamtContains(root, k, equal.valueHash(k), 0);
+            break :blk try hamtContains(root, k, try keyHash(k), 0);
         },
         .nil => false,
         else => false,
@@ -372,14 +382,14 @@ pub fn get(v: Value, k: Value) !Value {
             const am = v.decodePtr(*const ArrayMap);
             var i: u32 = 0;
             while (i < am.count) : (i += 1) {
-                if (keyEq(am.entries[2 * i], k)) break :blk am.entries[2 * i + 1];
+                if (try keyEq(am.entries[2 * i], k)) break :blk am.entries[2 * i + 1];
             }
             break :blk Value.nil_val;
         },
         .hash_map => blk: {
             const phm = v.decodePtr(*const PersistentHashMap);
             const root = phm.root orelse break :blk Value.nil_val;
-            break :blk hamtGet(root, k, equal.valueHash(k), 0);
+            break :blk try hamtGet(root, k, try keyHash(k), 0);
         },
         .nil => Value.nil_val,
         else => Value.nil_val,
@@ -583,11 +593,11 @@ fn createTwoNode(
     return node;
 }
 
-fn hamtGet(node: *const HamtMapNode, key: Value, hash_val: u32, shift: u32) Value {
+fn hamtGet(node: *const HamtMapNode, key: Value, hash_val: u32, shift: u32) !Value {
     const bit = hamtBit(hash_val, shift);
     if (node.data_map & bit != 0) {
         const di = sparseIndex(node.data_map, bit);
-        if (keyEq(node.slots[2 * di], key)) return node.slots[2 * di + 1];
+        if (try keyEq(node.slots[2 * di], key)) return node.slots[2 * di + 1];
         return Value.nil_val;
     }
     if (node.node_map & bit != 0) {
@@ -598,11 +608,11 @@ fn hamtGet(node: *const HamtMapNode, key: Value, hash_val: u32, shift: u32) Valu
     return Value.nil_val;
 }
 
-fn hamtContains(node: *const HamtMapNode, key: Value, hash_val: u32, shift: u32) bool {
+fn hamtContains(node: *const HamtMapNode, key: Value, hash_val: u32, shift: u32) !bool {
     const bit = hamtBit(hash_val, shift);
     if (node.data_map & bit != 0) {
         const di = sparseIndex(node.data_map, bit);
-        return keyEq(node.slots[2 * di], key);
+        return try keyEq(node.slots[2 * di], key);
     }
     if (node.node_map & bit != 0) {
         const ni = sparseIndex(node.node_map, bit);
@@ -626,14 +636,14 @@ fn hamtAssoc(
     if (node.data_map & bit != 0) {
         const di = sparseIndex(node.data_map, bit);
         const ek = node.slots[2 * di];
-        if (keyEq(ek, key)) {
+        if (try keyEq(ek, key)) {
             const new = try copyHamtNode(rt, node);
             new.slots[2 * di + 1] = val;
             return .{ .node = new, .added = false };
         }
         // push-down: existing KV + new KV into a sub-node one level down
         const ev = node.slots[2 * di + 1];
-        const sub = try createTwoNode(rt, ek, ev, equal.valueHash(ek), key, val, hash_val, shift + HAMT_SHIFT_STEP);
+        const sub = try createTwoNode(rt, ek, ev, try keyHash(ek), key, val, hash_val, shift + HAMT_SHIFT_STEP);
         const new = try pushDownDataToNode(rt, node, bit, di, sub);
         return .{ .node = new, .added = true };
     }
@@ -706,7 +716,7 @@ fn pushDownDataToNode(rt: *Runtime, node: *const HamtMapNode, bit: u32, di: u32,
 /// assoc on a promoted `.hash_map`: HAMT insert/replace → fresh root +
 /// fresh PersistentHashMap (count grows only when a new key was added).
 fn assocHashMap(rt: *Runtime, phm: *const PersistentHashMap, k: Value, val: Value) !Value {
-    const res = try hamtAssoc(rt, phm.root.?, k, val, equal.valueHash(k), 0);
+    const res = try hamtAssoc(rt, phm.root.?, k, val, try keyHash(k), 0);
     const new_phm = try rt.gc.alloc(PersistentHashMap);
     new_phm.* = .{
         .header = HeapHeader.init(.hash_map),
@@ -731,10 +741,10 @@ fn promoteArrayMap(rt: *Runtime, am: *const ArrayMap, k: Value, val: Value) !Val
     var i: u32 = 0;
     while (i < am.count) : (i += 1) {
         const ek = am.entries[2 * i];
-        const res = try hamtAssoc(rt, root, ek, am.entries[2 * i + 1], equal.valueHash(ek), 0);
+        const res = try hamtAssoc(rt, root, ek, am.entries[2 * i + 1], try keyHash(ek), 0);
         root = res.node;
     }
-    const res = try hamtAssoc(rt, root, k, val, equal.valueHash(k), 0);
+    const res = try hamtAssoc(rt, root, k, val, try keyHash(k), 0);
     const phm = try rt.gc.alloc(PersistentHashMap);
     phm.* = .{
         .header = HeapHeader.init(.hash_map),
@@ -809,7 +819,7 @@ fn hamtDissoc(rt: *Runtime, node: *const HamtMapNode, key: Value, hash_val: u32,
     const bit = hamtBit(hash_val, shift);
     if (node.data_map & bit != 0) {
         const di = sparseIndex(node.data_map, bit);
-        if (!keyEq(node.slots[2 * di], key)) return .{ .node = null, .found = false };
+        if (!try keyEq(node.slots[2 * di], key)) return .{ .node = null, .found = false };
         const new = try removeDataEntry(rt, node, bit, di);
         if (new.data_map == 0 and new.node_map == 0) return .{ .node = null, .found = true };
         return .{ .node = new, .found = true };
@@ -878,7 +888,7 @@ fn seqHashMap(rt: *Runtime, phm: *const PersistentHashMap) !Value {
 }
 
 fn dissocHashMap(rt: *Runtime, phm: *const PersistentHashMap, original: Value, k: Value) !Value {
-    const res = try hamtDissoc(rt, phm.root.?, k, equal.valueHash(k), 0);
+    const res = try hamtDissoc(rt, phm.root.?, k, try keyHash(k), 0);
     if (!res.found) return original;
     const new_phm = try rt.gc.alloc(PersistentHashMap);
     new_phm.* = .{

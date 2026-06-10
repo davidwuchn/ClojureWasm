@@ -1293,21 +1293,12 @@ pub fn evalFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation)
 
 pub fn hashFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
     try error_catalog.checkArity("hash", args, 1, loc);
-    // D-280d1: a deftype/reify implementing Object `hashCode` overrides the
-    // default value-hash for `(hash inst)`. (valueHash is rt-free, so a nested
-    // typed_instance inside a collection hash still uses the default — tracked as
-    // a residual; the top-level `(hash inst)` is the common case.)
-    const v = args[0];
-    if (v.tag() == .typed_instance or v.tag() == .reified_instance) {
-        var cs: dispatch.CallSite = .{};
-        // clj `(hash x)` uses hasheq (D-280d5); hashCode is the Java method.
-        // Consult hasheq first, then hashCode, then the default value-hash.
-        if (try dispatch.dispatchOrNull(rt, env, &cs, v, "Object", "hasheq", &.{v}, loc)) |h|
-            return h;
-        if (try dispatch.dispatchOrNull(rt, env, &cs, v, "Object", "hashCode", &.{v}, loc)) |h|
-            return h;
-    }
-    return Value.initInteger(@as(i32, @bitCast(equal_mod.valueHash(v))));
+    // ADR-0129: share equal.hashDispatch with the HAMT key-bucketing sites so
+    // `(hash deftype)` and a deftype map key / set element AGREE. hashDispatch
+    // consults a non-record deftype/reify's Object/hasheq (then hashCode) —
+    // D-280d1/d5 — else the rt-free valueHash. (A nested typed_instance inside a
+    // collection hashed via valueHash recursion stays the default — a residual.)
+    return Value.initInteger(@as(i32, @bitCast(try equal_mod.hashDispatch(rt, env, args[0]))));
 }
 
 /// `(mix-collection-hash hash-basis count)` — the Murmur3 collection-hash
@@ -1331,12 +1322,18 @@ fn collHash(rt: *Runtime, env: *Env, name: []const u8, args: []const Value, loc:
     try error_catalog.checkArity(name, args, 1, loc);
     var h: u32 = if (ordered) 1 else 0;
     var n: u32 = 0;
+    // D-377 facet 2: walk the GENERAL seq (first/next, realizing a lazy / cons
+    // / deftype-Seqable tail), not just a `.list` tag. Before this, a non-list
+    // seq (`(map f …)`, a deftype's `seq` impl such as flatland.ordered's) read
+    // as empty → `(hash-unordered-coll om)` ≠ a native map's hash, breaking the
+    // `=`⟹same-hash invariant for an ordered-map keyed/elemented against a
+    // native one. Native colls seq to a list, so their hash VALUE is unchanged.
     var cur = try sequence.seqFn(rt, env, args[0..1], loc);
-    while (cur.tag() == .list and list.countOf(cur) > 0) {
-        const eh = equal_mod.valueHash(list.first(cur));
+    while (!cur.isNil()) {
+        const eh = equal_mod.valueHash(try sequence.firstFn(rt, env, (&[_]Value{cur})[0..], loc));
         h = if (ordered) h *% 31 +% eh else h +% eh;
         n +%= 1;
-        cur = list.rest(cur);
+        cur = try sequence.nextFn(rt, env, (&[_]Value{cur})[0..], loc);
     }
     return Value.initInteger(@as(i32, @bitCast(hash_mod.mixCollHash(h, n))));
 }

@@ -29,6 +29,7 @@ const macro_dispatch = @import("macro_dispatch.zig");
 const Form = @import("form.zig").Form;
 const error_catalog = @import("../runtime/error/catalog.zig");
 const SourceLocation = @import("../runtime/error/info.zig").SourceLocation;
+const dispatch = @import("../runtime/dispatch.zig");
 
 pub const MAX_LOCALS = tree_walk.MAX_LOCALS;
 
@@ -63,6 +64,13 @@ pub fn evalForm(
     arena: std.mem.Allocator,
     node: *const Node,
 ) anyerror!Value {
+    // ADR-0129: arm the ambient eval Env for the top-level-form window (before
+    // the first call, e.g. a top-level map literal `{(->Box 1) :a}` whose key is
+    // hashed during arg-eval) so Layer-0 key-hash/equiv consults reach a
+    // deftype's hasheq/equiv. treeWalkCall re-arms per nested call; both restore.
+    const saved_consult_env = dispatch.current_env;
+    dispatch.current_env = env;
+    defer dispatch.current_env = saved_consult_env;
     if (comptime build_options.backend == .vm) {
         const chunk = try vm_compiler.compile(rt, arena, node);
         return vm.eval(rt, env, locals, &chunk);

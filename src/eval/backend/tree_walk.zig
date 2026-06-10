@@ -1120,6 +1120,15 @@ pub fn treeWalkCall(
     args: []const Value,
     loc: SourceLocation,
 ) anyerror!Value {
+    // ADR-0129: publish the ambient eval Env so Layer-0 key-hash / key-equiv
+    // consults (equal.hashConsult / eqConsult at the HAMT key sites) can
+    // dispatch a deftype/reify's user hasheq / equiv. Save→set→restore for
+    // nesting. This is the single both-backend value-producing call choke point
+    // (VM op_call routes here via vt.callFn); driver.evalForm arms the
+    // pre-first-call top-level-form window.
+    const saved_consult_env = dispatch.current_env;
+    dispatch.current_env = env;
+    defer dispatch.current_env = saved_consult_env;
     // ADR-0119 Stage 2: push a runtime call-stack frame for named callables so
     // an uncaught error renders a `Trace:`. Pop on BOTH success and unwind
     // (recur/try/reduced-safe) via `defer`. The single shared choke point covers
