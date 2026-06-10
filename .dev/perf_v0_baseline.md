@@ -137,6 +137,13 @@ Mapping v0's proven winners onto v1's actual structure (from a v1 source read):
   compiler arm + VM dispatch arm + TreeWalk parity + ≥1 diff_test case, one
   commit. Integer-overflow must still auto-promote to bigint (F-005) — the fast
   path checks for overflow and falls back, never silently wraps.
+  **Rebinding safety (v0's proven design, `src/engine/compiler/compiler.zig`
+  F95): emit the intrinsic opcode ONLY when the call's head symbol resolves to
+  the `clojure.core` var — not shadowed by a local binding, not `:exclude`'d /
+  rebound — else fall through to the generic call path.** v0 has a compile-time
+  resolver helper + a test ("F95: excluded intrinsic emits call instead of add").
+  This is the correctness crux of the ADR: `(let [+ str] (+ "a" "b"))` must NOT
+  hit op_add.
 - **Superinstructions (v0 37.2/37.3) are already mapped to v1's Phase 17
   `super_instruction.zig`** (per `vm/peephole.zig` header — peephole is
   removal-only "110% tier"; fusion is the planned "100% tier"). The campaign
