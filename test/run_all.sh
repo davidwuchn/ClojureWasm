@@ -524,6 +524,8 @@ run_step "e2e_phase15_pr_newline"           "bash test/e2e/phase15_pr_newline.sh
 run_step "e2e_phase15_ns_docstring"         "bash test/e2e/phase15_ns_docstring.sh"
 run_step "e2e_phase15_reader_conditional"   "bash test/e2e/phase15_reader_conditional.sh"
 run_step "e2e_phase15_persistent_queue"     "bash test/e2e/phase15_persistent_queue.sh"
+run_step "e2e_phase15_clojure_stacktrace"   "bash test/e2e/phase15_clojure_stacktrace.sh"
+run_step "e2e_phase15_clojure_uuid"         "bash test/e2e/phase15_clojure_uuid.sh"
 run_step "e2e_phase16_gc_torture"           "bash test/e2e/phase16_gc_torture.sh"
 run_step "e2e_phase14_cljw_build"            "bash test/e2e/phase14_cljw_build.sh"
 run_step "e2e_phase14_core_cluster"          "bash test/e2e/phase14_core_cluster.sh"
@@ -606,6 +608,7 @@ run_step "e2e_phase14_uuid_literal"          "bash test/e2e/phase14_uuid_literal
 run_step "e2e_phase14_clojure_lang_coll_hash" "bash test/e2e/phase14_clojure_lang_coll_hash.sh"
 run_step "e2e_phase14_multipair_assoc_extend" "bash test/e2e/phase14_multipair_assoc_extend.sh"
 run_step "e2e_phase14_deftype_equiv"          "bash test/e2e/phase14_deftype_equiv.sh"
+run_step "e2e_phase14_deftype_key_hash"       "bash test/e2e/phase14_deftype_key_hash.sh"
 run_step "e2e_phase14_exit_smoke"            "bash test/e2e/phase14_exit_smoke.sh"
 
 # Informational scans (ADR-0024). Phase 5+ they become blocking.

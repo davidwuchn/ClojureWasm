@@ -92,6 +92,9 @@ pub const FILES: []const FileEntry = &.{
     // clojure.stacktrace (D-273) — pure-Clojure cause-chain printer over the
     // ex-info model; appended last so earlier FILES[N] indices stay stable.
     .{ .label = "<clojure.stacktrace>", .source = @embedFile("clj/clojure/stacktrace.clj") },
+    // clojure.uuid (D-273) — require-compat shim; the #uuid reader + UUID print
+    // are cljw built-ins. Appended last so earlier FILES[N] indices stay stable.
+    .{ .label = "<clojure.uuid>", .source = @embedFile("clj/clojure/uuid.clj") },
 };
 
 /// First file's source — exposed so `main.zig`'s renderer can fall
@@ -132,6 +135,7 @@ fn lookupEmbeddedFile(ns_name: []const u8) ?FileEntry {
     if (std.mem.eql(u8, ns_name, "cljw.json")) return FILES[17];
     if (std.mem.eql(u8, ns_name, "cljw.fs")) return FILES[18];
     if (std.mem.eql(u8, ns_name, "clojure.stacktrace")) return FILES[19];
+    if (std.mem.eql(u8, ns_name, "clojure.uuid")) return FILES[20];
     return null;
 }
 
