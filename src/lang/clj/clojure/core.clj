@@ -1093,18 +1093,28 @@
 
 ;; `(reductions f coll)` / `(reductions f init coll)` — like reduce
 ;; but collects every intermediate; the 2-arg form seeds from the
-;; first element, the 3-arg form from `init`.
-;; Returns a SEQ (JVM parity). (last acc) per step is O(n²) — a perf
-;; residual tracked alongside D-163, not the seq-vs-vector concern here.
+;; first element, the 3-arg form from `init`. Lazy (JVM parity): carries
+;; the running accumulator as `init` through the recursion instead of
+;; re-deriving it with `(last acc)` per step. The old eager form used
+;; `(reduce (conj acc (f (last acc) x)) [init])`, where `(last acc)` is
+;; O(n) on the growing vector → O(n²) overall (100k elems ≈ 100 s). This
+;; lazy + accumulator-threaded shape is JVM's own and is O(n). [refs: O-009]
 (def reductions
   (fn*
     ([f coll]
-      (let [s (seq coll)]
-        (if s
-          (reductions f (first s) (rest s))
-          (seq (vector (f))))))
+      (lazy-seq
+        (let [s (seq coll)]
+          (if s
+            (reductions f (first s) (rest s))
+            (list (f))))))
     ([f init coll]
-      (seq (reduce (fn* [acc x] (conj acc (f (last acc) x))) [init] coll)))))
+      (if (reduced? init)
+        (list (unreduced init))
+        (cons init
+          (lazy-seq
+            (let [s (seq coll)]
+              (when s
+                (reductions f (f init (first s)) (rest s))))))))))
 
 ;; ----------------------------------------------------------------
 ;; D-134 cluster 6 — trivial accessors (no compare dependency).
