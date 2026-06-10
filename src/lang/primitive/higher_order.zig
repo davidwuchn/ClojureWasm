@@ -35,6 +35,7 @@ const dispatch = @import("../../runtime/dispatch.zig");
 const reduced = @import("../../runtime/collection/reduced.zig");
 const range_mod = @import("../../runtime/collection/range.zig");
 const vector_mod = @import("../../runtime/collection/vector.zig");
+const compare_mod = @import("../../runtime/compare.zig");
 const chunked_cons = @import("../../runtime/collection/chunked_cons.zig");
 const sequence = @import("sequence.zig");
 const tree_walk = @import("../../eval/backend/tree_walk.zig");
@@ -462,6 +463,58 @@ fn isFalsy(v: Value) bool {
     return v.isNil() or v == Value.false_val;
 }
 
+// --- native sort (O-007) ---
+
+/// Context for the natural-order stable sort: `valueCompare` is fallible
+/// (uncomparable values raise), but `std.mem.sort`'s `lessThanFn` cannot
+/// propagate an error, so the first failure is stashed here and the sort is
+/// drained returning `false` (any order — the result is discarded). Checked
+/// after the sort.
+const NaturalSortCtx = struct {
+    rt: *Runtime,
+    loc: SourceLocation,
+    err: ?anyerror = null,
+};
+
+fn naturalLessThan(ctx: *NaturalSortCtx, a: Value, b: Value) bool {
+    if (ctx.err != null) return false;
+    const ord = compare_mod.valueCompare(ctx.rt, a, b, ctx.loc) catch |e| {
+        ctx.err = e;
+        return false;
+    };
+    return ord == .lt;
+}
+
+/// `(clojure.core/-sort-natural v)` — stable natural-order sort of a vector via
+/// `compare` (`valueCompare`), the native fast path behind `(sort coll)`.
+/// PERF (O-007): the naive form is the `.clj` `-msort` merge sort, which pays
+/// per-element `take`/`drop`/`vec`/`rest`/`conj`/`first` + a per-comparison
+/// `compare` call through the eval machinery. This copies the vector into a
+/// flat buffer, runs `std.mem.sort` (stable block sort) calling `valueCompare`
+/// directly (no eval reentry — so no GC safepoint can fire mid-sort, hence no
+/// frame rooting is needed), and rebuilds via `vector.fromSlice` (O-003 O(n)
+/// trie build). Custom-comparator `(sort comp coll)` / `sort-by` stay on the
+/// `.clj` `-msort` (a user comparator re-enters eval; the natural path does
+/// not). Stable: `valueCompare` ties → `.eq` → `lessThan` false → block sort
+/// preserves input order (matches `-merge-sorted`'s left-wins tie rule).
+fn sortNaturalFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = env;
+    if (args.len != 1) {
+        return error_catalog.raise(.arity_not_expected, loc, .{ .fn_name = "-sort-natural", .expected = 1, .got = args.len });
+    }
+    const v = args[0];
+    const n = vector_mod.count(v);
+    if (n <= 1) return v; // 0/1 elements are already sorted
+    const buf = try rt.gpa.alloc(Value, n);
+    defer rt.gpa.free(buf);
+    var i: u32 = 0;
+    while (i < n) : (i += 1) buf[i] = vector_mod.nth(v, i);
+    var ctx: NaturalSortCtx = .{ .rt = rt, .loc = loc };
+    std.mem.sort(Value, buf, &ctx, naturalLessThan);
+    if (ctx.err) |e| return e;
+    return vector_mod.fromSlice(rt, buf);
+}
+
 // --- registration ---
 
 const Entry = struct {
@@ -496,6 +549,7 @@ const ENTRIES = [_]Entry{
 const LEAF_ENTRIES = [_]Entry{
     .{ .name = "-take-eager", .f = &takeEagerFn },
     .{ .name = "-range", .f = &rangeLeafFn },
+    .{ .name = "-sort-natural", .f = &sortNaturalFn },
 };
 
 pub fn register(

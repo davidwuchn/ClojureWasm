@@ -1188,8 +1188,11 @@
 ;; the (boolean-or-number) comparator `comp`. Stable (merge sort). Returns a
 ;; SEQ (JVM parity, clj-verified), not a vector; `-msort` sorts a vector
 ;; internally and `seq` exposes it as a sequence (empty → nil per D-164).
+;; PERF: default order routes through the native stable sort (-sort-natural,
+;; valueCompare, no per-element take/drop/conj churn); a custom comparator
+;; re-enters eval per comparison so it stays on the .clj -msort. [refs: O-007]
 (def sort
-  (fn* ([coll] (-seq-or-empty (-msort compare (vec coll))))
+  (fn* ([coll] (-seq-or-empty (-sort-natural (vec coll))))
        ([comp coll] (-seq-or-empty (-msort (-comparator comp) (vec coll))))))
 
 ;; `(sort-by f coll)` — order by `(compare (f a) (f b))`. `(sort-by f comp coll)`
