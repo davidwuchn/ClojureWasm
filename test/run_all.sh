@@ -117,6 +117,8 @@ declare -a STEPS_FAILED=()
 declare -a STEPS_FAILED_OPTIONAL=()
 declare -a STEPS_SKIPPED=()
 declare -a ALL_STEP_NAMES=()
+declare -a STEP_TIMES=()   # D-385: "<elapsed_s> <name>" per step, for the summary
+GATE_START=$(date +%s)     # D-385: total wall-clock baseline
 
 step_in_csv() {
     local name="$1"
@@ -163,10 +165,12 @@ run_step() {
         local elapsed=$(( $(date +%s) - start ))
         echo "    [pass] (${elapsed}s)"
         STEPS_PASSED+=("$name")
+        STEP_TIMES+=("$elapsed $name")  # D-385: per-step timing for the slowest-N summary
     else
         local exit_code=$?
         local elapsed=$(( $(date +%s) - start ))
         echo "    [fail] (exit $exit_code, ${elapsed}s)"
+        STEP_TIMES+=("$elapsed $name")  # D-385
         if [[ "$optional" == "optional" ]]; then
             STEPS_FAILED_OPTIONAL+=("$name")
         else
@@ -214,6 +218,7 @@ flush_e2e_queue() {
         if [[ "$res" == pass* ]]; then
             echo "    [pass] ${name} (${res#pass }s)"
             STEPS_PASSED+=("$name")
+            STEP_TIMES+=("${res#pass } $name")  # D-385: per-step timing for the slowest-N summary
         else
             echo "    [fail] ${name} (exit ${res#fail })"
             sed 's/^/        /' "$tmpdir/$j.out" 2>/dev/null | tail -25
@@ -230,6 +235,15 @@ print_summary() {
     echo "  failed:           ${#STEPS_FAILED[@]}"
     echo "  failed (optional): ${#STEPS_FAILED_OPTIONAL[@]}"
     echo "  skipped:          ${#STEPS_SKIPPED[@]}"
+
+    # D-385: total wall-clock + the 10 slowest steps, so gate-efficiency work is
+    # data-driven (which steps actually dominate the ~30-min run).
+    echo "  total wall:       $(( $(date +%s) - GATE_START ))s"
+    if [[ ${#STEP_TIMES[@]} -gt 0 ]]; then
+        echo ""
+        echo "  Slowest steps (s):"
+        printf '%s\n' "${STEP_TIMES[@]}" | sort -rn | head -10 | sed 's/^/    /'
+    fi
 
     if [[ ${#STEPS_FAILED_OPTIONAL[@]} -gt 0 ]]; then
         echo ""
