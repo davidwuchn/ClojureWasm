@@ -12,29 +12,38 @@
   (`bench/run_bench.sh --quick` / `scripts/perf.sh`), never `time zig-out/bin/cljw`
   (Debug) — `.claude/rules/perf_measure_release.md`.
 
-- **First commit on resume MUST be: D-386 — per-instruction DISPATCH efficiency**
-  (the §9.2.S campaign's real fib/tak lever, found 2026-06-11). The campaign is NOT
-  ROI-gated (optimize relentlessly until cljw beats Python across `bench/`);
-  user-directed 2026-06-11. Autonomous; only an explicit user stop halts.
+- **First commit on resume MUST be: the next Python-loser perf unit** (sieve 33 vs
+  20, map_filter_reduce 26 vs 16, or arith_loop 76 vs 58 — the campaign roadmap +
+  v0 levers are in `private/notes/9.2.S-flat-frame-survey.md § CAMPAIGN ROADMAP`).
+  NOT ROI-gated (relentless until cljw beats Python on EVERY bench, then toward v0);
+  fast-mode in `.dev/perf_campaign_essence.md`. Autonomous; only an explicit user stop halts.
 
-  **State**: cljw beats Python ≥12/23. Landed THIS campaign: O-014 arith + O-015
-  frame rooting; `bindCallFrame` (`ab1959c2`); ADR-0131 (Alt A, +DA); the
-  `frame_local_alloc` torture gate (`13cefee8`); **2a operand arena (`a12fdb09`,
-  O-016) — fib 56→41 ms, tak 18→15** (real win, cache locality); **2b the flatten**
-  (op_call pushes in-VM frames, no host eval re-entry) — **perf-NEUTRAL but a
-  validated robustness fix** (deep non-tail recursion SIGSEGV'd ~1300 → now runs to
-  2048 then a bounded `stack_overflow`; deep1500 ✓). Do NOT re-do 2a/2b.
+  **Current standing (cljw vs Python ms, this session 2026-06-11)**: fib 26 vs 24
+  (parity ✓), tak 13 vs 18 (WIN), nested_update 24 vs 20 (1.2×), arith_loop 76 vs 58,
+  sieve 33 vs 20, map_filter_reduce 26 vs ~16. Session arc: fib 56→26, arith_loop
+  170→76, nested_update 58→24.
 
-  **CAMPAIGN PIVOT (the key finding)**: a `sample` re-profile after 2b showed the
-  5-host-frame cycle COLLAPSED yet fib stayed 39-41 ms → **the tax is NOT the call
-  structure, it's per-instruction DISPATCH** (`stepOnce` is a fn CALLED PER OP +
-  sp/ip read+write-back every op + 3 per-op polls; ~0.3 ns/op vs v0 ~0.1). Both
-  Design 2 (kept recursion) and 2b (removed it) measured neutral — confirmed.
-  **D-386 plan** (cheapest first, measure each): (a) INLINE `stepOnce` into the eval
-  loop (kill the per-op call boundary + write-back); (b) BATCH the safepoint/budget/
-  torture polls v0-style (every ~256 ops, not every op); (c) computed-goto /
-  superinstructions (D-133 JIT territory). Full finding: survey `§ 2b LANDED +
-  CAMPAIGN PIVOT`. Orthogonal to the frame model. Diff oracle + torture each round.
+  **Landed this session (all on `main`, diff-oracle-validated per fast-mode)**:
+  ADR-0131 in-VM frame stack (2a arena O-016 / 2b flatten — perf-neutral but fixes
+  the deep-recursion SIGSEGV; do NOT re-do); **the D-386 dispatch arc** —
+  O-017 inline stepOnce (fib 41→33), O-018 `op_*_local_const` superinstr (fib 33→26),
+  O-019 `op_*_locals` superinstr (arith_loop 94→76); **O-020 update-in 3-arg arity**
+  (nested_update 58→24); + the velocity MECHANIZATION (gate `--resume` ledger D-385
+  slice-2, `.dev/perf_campaign_essence.md` fast-mode, `scripts/perf_campaign_remind.sh`
+  lookahead hook). The CAMPAIGN-PIVOT finding: the fib tax was per-instruction
+  DISPATCH, not call structure (2b confirmed it neutral); superinstructions are the
+  v0-proven lever (more in `private/notes/9.2.S-flat-frame-survey.md`).
+
+  **Next levers** (v0 catalogue, re-derive cljw-clean F-004): branch fusion
+  (`compare + jump_if_false` → 1; fib/arith_loop `(if (< …))`) + `recur_loop` fusion
+  (arith_loop's loop back-edge); fused-reduce (24C.1) for map_filter_reduce;
+  filter-chain collapse (24C.7) for sieve; then the JIT (37.4) for the last mile.
+
+  **OWED (validation debt — fast-mode deferred the heavy e2e)**: a full e2e gate has
+  NOT run since before 2b (diff oracle covered each commit). Run `bash test/run_all.sh
+  --serial-e2e --resume` at the next pause, OR on `ubuntunote` — BUT the ubuntunote
+  working tree is DIRTY (`git checkout main` failed on the remote); `ssh ubuntunote
+  'cd <repo> && git reset --hard'` first, then `scripts/run_remote_ubuntu.sh`.
 
   **Measurement cadence (keep iteration fast)**: per iteration a FOCUSED quick bench
   only (`bash bench/run_bench.sh --quick --bench=<name>`); do NOT full-bench or
