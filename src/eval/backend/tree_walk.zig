@@ -1234,15 +1234,24 @@ pub fn callFunctionBindingRest(rt: *Runtime, env: *Env, fn_val: Value, args: []c
     return callMethodImpl(rt, env, fn_val.decodePtr(*Function), args, loc, .bind_direct);
 }
 
-fn callMethodImpl(rt: *Runtime, env: *Env, f: *Function, args: []const Value, loc: SourceLocation, rest_mode: RestMode) !Value {
-    // Row 7.8 cycle 1 (ADR-0041): linear scan over `methods`, fixed-
-    // arity wins on exact match; fall through to `variadic` when
-    // `args.len >= variadic.arity`. Single-arity fns produce a
-    // 1-element `methods` slice = same code path.
-    const m: *const FunctionMethod = selectMethod(f, args.len) orelse {
-        return raiseArityNotMatched(f, args.len, loc);
-    };
-
+/// Shared call-frame binder — the ONE source of the activation-record
+/// layout. Selecting the method is the caller's job; this computes the
+/// exact frame-slot window, nil-inits it, replays the closure snapshot,
+/// copies the fixed args, and binds `& rest`. Returns `fs` (the live
+/// window is `locals[0..fs]`). Extracted from `callMethodImpl` so the
+/// binding logic is single-source (F-011): the in-VM call-frame lever
+/// (the §9.2.S perf-parity work flattening `op_call`) reuses this exact
+/// binder rather than re-deriving the closure/arg/rest layout, so the two
+/// activation paths cannot drift.
+fn bindCallFrame(
+    rt: *Runtime,
+    f: *const Function,
+    m: *const FunctionMethod,
+    args: []const Value,
+    locals: *[MAX_LOCALS]Value,
+    rest_mode: RestMode,
+    loc: SourceLocation,
+) !usize {
     const arg_region: usize = @as(usize, f.slot_base) + m.arity + @intFromBool(m.has_rest);
     // PERF: init + GC-root only the slots this method actually uses, not all 256
     // — cuts the ~2 KB per-call nil-init on the hottest path [refs: O-015]
@@ -1256,7 +1265,6 @@ fn callMethodImpl(rt: *Runtime, env: *Env, f: *Function, args: []const Value, lo
     if (fs > MAX_LOCALS)
         return error_catalog.raise(.fn_frame_exceeds_max_locals, loc, .{ .base = f.slot_base, .arity = m.arity, .max = MAX_LOCALS });
 
-    var locals: [MAX_LOCALS]Value = undefined;
     @memset(locals[0..fs], .nil_val);
     if (f.closure_bindings) |snap| {
         @memcpy(locals[0..snap.len], snap);
@@ -1284,6 +1292,20 @@ fn callMethodImpl(rt: *Runtime, env: *Env, f: *Function, args: []const Value, lo
             locals[f.slot_base + m.arity] = rest_list;
         }
     }
+    return fs;
+}
+
+fn callMethodImpl(rt: *Runtime, env: *Env, f: *Function, args: []const Value, loc: SourceLocation, rest_mode: RestMode) !Value {
+    // Row 7.8 cycle 1 (ADR-0041): linear scan over `methods`, fixed-
+    // arity wins on exact match; fall through to `variadic` when
+    // `args.len >= variadic.arity`. Single-arity fns produce a
+    // 1-element `methods` slice = same code path.
+    const m: *const FunctionMethod = selectMethod(f, args.len) orelse {
+        return raiseArityNotMatched(f, args.len, loc);
+    };
+
+    var locals: [MAX_LOCALS]Value = undefined;
+    const fs = try bindCallFrame(rt, f, m, args, &locals, rest_mode, loc);
     // VM backend hook: when this method carries compiled bytecode and
     // the vtable has the `evalChunk` slot wired (vm.installVTable), run
     // the chunk instead of walking the Node body. The TreeWalk backend
