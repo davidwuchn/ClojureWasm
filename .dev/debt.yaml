@@ -2331,6 +2331,29 @@ active:
       Predicate to land: the gate log shows per-step + total time AND a faster
       default path exists for the common case (typical re-run cost << 30 min). | none
     last_reviewed: "2026-06-11"
+  - id: "D-386"
+    status: |-
+      open (2026-06-11) — **the §9.2.S perf campaign's real fib/tak lever:
+      per-instruction DISPATCH efficiency.** ADR-0131 2a (operand arena) won ~25%
+      on cache locality; 2b (flatten the call recursion) measured NEUTRAL — a
+      `sample` re-profile of `(fib 35)` confirmed the 5-host-frame cycle collapsed
+      yet fib stayed 39-41 ms. So the tax is NOT the call structure; it is the
+      per-op dispatch cost: `stepOnce` is a function CALLED PER INSTRUCTION with a
+      `var sp = sp_ptr.*` prologue + a 3-write `defer` write-back every op, plus the
+      eval loop's 3 per-op polls (safepoint / budget / torture). cljw ~0.3 ns/op vs
+      v0 ~0.1 (3×); fib_recursive 39 vs Python ~24 still ~1.6× behind.
+    category: "perf"
+    barrier: |-
+      Not blocked — the next perf-campaign unit. Scope (cheapest first, measure
+      each): (a) INLINE `stepOnce` into the eval loop — kill the per-op call
+      boundary + the sp/ip/handler_count read+write-back (keep them loop locals);
+      (b) BATCH the safepoint/budget/torture polls v0-style (every N ops, e.g. 256,
+      not every op); (c) computed-goto / tail-dispatch or superinstructions for the
+      hot arms — D-133 JIT territory (cross-ref). Orthogonal to the frame model.
+      Predicate to land: a measured fib_recursive drop toward v0's 16 ms on a focused
+      quick bench, diff oracle + torture green. Full finding:
+      `private/notes/9.2.S-flat-frame-survey.md § 2b LANDED + CAMPAIGN PIVOT`. | none
+    last_reviewed: "2026-06-11"
 discharged:
   - id: "D-249"
     discharged_at: "docs(diff): Clojure-vs-ClojureWasm differences sheet"

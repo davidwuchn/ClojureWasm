@@ -12,30 +12,29 @@
   (`bench/run_bench.sh --quick` / `scripts/perf.sh`), never `time zig-out/bin/cljw`
   (Debug) — `.claude/rules/perf_measure_release.md`.
 
-- **First commit on resume MUST be: implement ADR-0131 increment 2b — the FLATTEN**
-  (op_call pushes an in-VM frame + continues ONE eval loop; op_ret pops). The
-  campaign is NOT ROI-gated (optimize relentlessly until cljw beats Python across
-  `bench/`); user-directed 2026-06-11. Autonomous; only an explicit user stop halts.
+- **First commit on resume MUST be: D-386 — per-instruction DISPATCH efficiency**
+  (the §9.2.S campaign's real fib/tak lever, found 2026-06-11). The campaign is NOT
+  ROI-gated (optimize relentlessly until cljw beats Python across `bench/`);
+  user-directed 2026-06-11. Autonomous; only an explicit user stop halts.
 
   **State**: cljw beats Python ≥12/23. Landed THIS campaign: O-014 arith + O-015
-  frame rooting; `bindCallFrame` extraction (`ab1959c2`); ADR-0131 (Alt A, +DA);
-  the `frame_local_alloc` allocating-per-frame torture gate (`13cefee8`); and
-  **2a: the per-thread operand arena `VmArena` (`a12fdb09`, O-016) — fib 56→41 ms,
-  tak 18→15** (an unexpected win; arena stays warm vs cold per-eval host arrays).
-  The arena + its `op_top`-rooting are PROVEN under torture. Do NOT re-do 2a.
+  frame rooting; `bindCallFrame` (`ab1959c2`); ADR-0131 (Alt A, +DA); the
+  `frame_local_alloc` torture gate (`13cefee8`); **2a operand arena (`a12fdb09`,
+  O-016) — fib 56→41 ms, tak 18→15** (real win, cache locality); **2b the flatten**
+  (op_call pushes in-VM frames, no host eval re-entry) — **perf-NEUTRAL but a
+  validated robustness fix** (deep non-tail recursion SIGSEGV'd ~1300 → now runs to
+  2048 then a bounded `stack_overflow`; deep1500 ✓). Do NOT re-do 2a/2b.
 
-  **2b (the flatten — where the host `eval` re-entry, the real tax, is removed).**
-  Settled design in **`.dev/decisions/0131…`** + the survey's `## CONVERGED
-  INCREMENT-2a SPEC` + `## 2a LANDED` sections (read both). Plan: add
-  `BytecodeChunk.has_handlers: bool` (compile-finalize). op_call flattens iff callee
-  `.fn_val` + selectMethod hits a bytecode method + `!has_rest` + `!has_handlers`
-  → `bindCallFrame` into a locals window in the arena + push a `CallFrame` +
-  `continue`; op_ret pops; bounded throw-unwind (flattened frames are handler-free);
-  deep recursion → catchable `StackOverflow` at the arena cap. Gates: the
-  `frame_local_alloc` torture + diff oracle + **a new reduce-throw-outer-try diff
-  case** (per-`eval` handler stacks scope reentry — the highest parity risk) +
-  fib/tak quick bench (expect the drop toward v0's 16 ms). DA: NO `saved_ns`
-  (v1 doesn't switch ns per call). Intricate + GC-critical — give it fresh focus.
+  **CAMPAIGN PIVOT (the key finding)**: a `sample` re-profile after 2b showed the
+  5-host-frame cycle COLLAPSED yet fib stayed 39-41 ms → **the tax is NOT the call
+  structure, it's per-instruction DISPATCH** (`stepOnce` is a fn CALLED PER OP +
+  sp/ip read+write-back every op + 3 per-op polls; ~0.3 ns/op vs v0 ~0.1). Both
+  Design 2 (kept recursion) and 2b (removed it) measured neutral — confirmed.
+  **D-386 plan** (cheapest first, measure each): (a) INLINE `stepOnce` into the eval
+  loop (kill the per-op call boundary + write-back); (b) BATCH the safepoint/budget/
+  torture polls v0-style (every ~256 ops, not every op); (c) computed-goto /
+  superinstructions (D-133 JIT territory). Full finding: survey `§ 2b LANDED +
+  CAMPAIGN PIVOT`. Orthogonal to the frame model. Diff oracle + torture each round.
 
   **Measurement cadence (keep iteration fast)**: per iteration a FOCUSED quick bench
   only (`bash bench/run_bench.sh --quick --bench=<name>`); do NOT full-bench or

@@ -162,6 +162,9 @@ pub const Code = enum {
     call_args_exceed_max_locals,
     /// args: `.{ .base = N, .arity = M, .max = K }`
     fn_frame_exceeds_max_locals,
+    /// ADR-0131 2b: the in-VM flattened-call-frame stack (or its operand/locals
+    /// arena) is exhausted — deep recursion. args: `.{ .max = N }`
+    stack_overflow,
 
     // --- Reader macros / nesting / escapes (Phase 1 reader migration) ---
     form_nesting_too_deep,
@@ -890,6 +893,11 @@ pub fn entry(comptime code: Code) Entry {
             .kind = .not_implemented,
             .phase = .eval,
             .template = "fn frame ({[base]d}+{[arity]d}) exceeds the limit of {[max]d}",
+        },
+        .stack_overflow => .{
+            .kind = .resource_exhausted,
+            .phase = .eval,
+            .template = "Stack overflow (call depth exceeded {[max]d})",
         },
 
         // --- Reader macros / nesting / escapes ---

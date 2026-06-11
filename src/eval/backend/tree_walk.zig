@@ -1093,7 +1093,7 @@ fn isUserNs(ns: ?[]const u8) bool {
 /// VALUE (Stage 1); the frame is kept only when `isUserNs` (above). Builtins
 /// (host), data-as-IFn (keyword / collection), and `.var_ref` (its re-dispatch's
 /// inner `.fn_val` pushes) are elided unconditionally.
-fn calleeFrame(callee: Value, loc: SourceLocation) ?error_mod.StackFrame {
+pub fn calleeFrame(callee: Value, loc: SourceLocation) ?error_mod.StackFrame {
     return switch (callee.tag()) {
         .fn_val => blk: {
             const f = callee.decodePtr(*const Function);
@@ -1243,7 +1243,7 @@ pub fn callFunctionBindingRest(rt: *Runtime, env: *Env, fn_val: Value, args: []c
 /// (the §9.2.S perf-parity work flattening `op_call`) reuses this exact
 /// binder rather than re-deriving the closure/arg/rest layout, so the two
 /// activation paths cannot drift.
-fn bindCallFrame(
+pub fn bindCallFrame(
     rt: *Runtime,
     f: *const Function,
     m: *const FunctionMethod,
@@ -1362,7 +1362,7 @@ fn isRestSeqShaped(v: Value) bool {
     };
 }
 
-fn selectMethod(f: *const Function, n: usize) ?*const FunctionMethod {
+pub fn selectMethod(f: *const Function, n: usize) ?*const FunctionMethod {
     for (f.methods) |*m| {
         if (m.arity == n) return m;
     }

@@ -83,60 +83,177 @@ const Handler = struct {
 /// threadlocal call-scoped state in `dispatch.zig`). `ARENA_SLOTS` is sized so
 /// `op_top` stays within `u16`, keeping `root_set.EvalFrame.sp` unchanged.
 const ARENA_SLOTS: usize = 1 << 14; // 16384; keeps `op_top` within u16
-/// The thread's reusable operand arena: the operand stack + its parallel loc
-/// stack, as inline arrays so the storage is threadlocal STATIC (BSS,
-/// demand-paged) — nothing to allocate or free (a never-freed heap arena leaks
-/// under the test DebugAllocator). `op_top` is the global operand watermark.
+/// ADR-0131 2b: in-VM call-frame stack ceiling. A flattened `op_call` pushes one
+/// `VmFrame`; exceeding this → catchable `StackOverflow` (matches v0 + clj). The
+/// operand arena (~8 slots/fib-frame) caps comparable depth, so the two align.
+const FRAMES_MAX: usize = 2048;
+/// The thread's reusable VM arenas: the operand stack + its parallel loc stack +
+/// (2b) the flattened-call-frame locals arena + the in-VM frame stack, as inline
+/// arrays so the storage is threadlocal STATIC (BSS, demand-paged) — nothing to
+/// allocate or free (a never-freed heap arena leaks under the test
+/// DebugAllocator). `op_top` is the global operand watermark; `local_top` /
+/// `frame_top` are the locals-arena / frame-stack watermarks. Each `eval`
+/// invocation borrows from all three watermarks and restores them on return.
 const VmArena = struct {
     stack: [ARENA_SLOTS]Value = undefined,
     loc: [ARENA_SLOTS]SourceLocation = undefined,
     op_top: u16 = 0,
+    /// Locals for FLATTENED frames (the base frame keeps caller-owned locals).
+    local_arena: [ARENA_SLOTS]Value = undefined,
+    local_top: u16 = 0,
+    frames: [FRAMES_MAX]VmFrame = undefined,
+    frame_top: u16 = 0,
 };
 threadlocal var vm_arena: VmArena = .{};
+
+/// ADR-0131 2b: an in-VM call frame. A flattened `op_call` pushes one + continues
+/// the SAME eval loop (no host `eval` re-entry); `op_ret` pops it. Each carries
+/// its OWN `gc_frame`, pushed on the `eval_frame_head` chain at flatten + popped
+/// at ret, so the collector's existing chain-walk roots every active frame's
+/// locals + constants with NO `root_set` change (it cannot hold this vm-local
+/// type — zone rule).
+const VmFrame = struct {
+    ip: usize,
+    chunk: *const BytecodeChunk,
+    locals: []Value,
+    /// `local_arena` index where a flattened frame's locals start (to restore
+    /// `local_top` on pop). Unused for the base frame (`flattened == false`).
+    local_base: u16,
+    flattened: bool,
+    /// Whether this frame pushed a trace frame (ADR-0119) to pop on ret.
+    trace_pushed: bool,
+    gc_frame: root_set.EvalFrame,
+};
+
+/// `op_call`'s request to the eval loop to flatten a monomorphic call: the
+/// resolved callee + where its result lands. The loop binds + pushes the frame
+/// (it owns the `frames` stack); `op_call` only resolves + signals. No
+/// consult-env (ADR-0129) save/restore is needed: a flattened callee runs in the
+/// SAME `env` as this eval (set by the outer `treeWalkCall` / driver), so
+/// `dispatch.current_env` stays invariant across the eval's frames.
+const FlattenReq = struct {
+    callee: Value,
+    f: *Function,
+    m: *const tree_walk.FunctionMethod,
+    arg_count: u16,
+    /// `op_top` slot the callee + args occupy; the result lands here on ret.
+    result_slot: u16,
+    call_loc: SourceLocation,
+};
+
+/// ADR-0131 2b: bind + push a flattened in-VM call frame for `fr`. The eval loop
+/// owns the `frames` stack; `op_call` only resolved + signalled. `op_call` did NOT
+/// pop the callee/args, so they stay rooted via `op_top` until `bindCallFrame`
+/// copies the args into the locals arena here.
+fn flattenPush(rt: *Runtime, ar: *VmArena, fr: FlattenReq) !void {
+    if (ar.frame_top >= FRAMES_MAX)
+        return error_catalog.raise(.stack_overflow, fr.call_loc, .{ .max = FRAMES_MAX });
+    if (@as(usize, ar.local_top) + tree_walk.MAX_LOCALS > ARENA_SLOTS)
+        return error_catalog.raise(.stack_overflow, fr.call_loc, .{ .max = ARENA_SLOTS });
+    const args = ar.stack[@as(usize, fr.result_slot) + 1 ..][0..fr.arg_count];
+    const local_base = ar.local_top;
+    const locals_win: *[tree_walk.MAX_LOCALS]Value = ar.local_arena[local_base..][0..tree_walk.MAX_LOCALS];
+    const fs = try tree_walk.bindCallFrame(rt, fr.f, fr.m, args, locals_win, .wrap, fr.call_loc);
+    ar.local_top = local_base + @as(u16, @intCast(fs));
+    // Consume callee + args: the callee's operands (and its eventual result) start
+    // at the result slot.
+    ar.op_top = fr.result_slot;
+    // Trace (ADR-0119): advance the caller's frame to the call site, then push the
+    // callee's frame for user-ns callables (popped on ret / unwind).
+    error_mod.updateTopFrame(fr.call_loc);
+    const trace_pushed = if (tree_walk.calleeFrame(fr.callee, fr.call_loc)) |tf| error_mod.pushFrame(tf) else false;
+    const chunk: *const BytecodeChunk = fr.m.bytecode.?;
+    const slot = &ar.frames[ar.frame_top];
+    slot.* = .{
+        .ip = 0,
+        .chunk = chunk,
+        .locals = ar.local_arena[local_base..][0..fs],
+        .local_base = local_base,
+        .flattened = true,
+        .trace_pushed = trace_pushed,
+        // GC-ROOT: A1 — each flattened frame roots its own locals window +
+        // constants on the eval_frame_head chain (popped on ret / unwind).
+        .gc_frame = .{
+            .stack = &ar.stack,
+            .sp = &ar.op_top,
+            .locals = ar.local_arena[local_base..][0..fs],
+            .constants = chunk.constants,
+            .parent = root_set.eval_frame_head,
+        },
+    };
+    root_set.eval_frame_head = &slot.gc_frame;
+    ar.frame_top += 1;
+}
 
 /// Evaluate a compiled chunk. `locals` is the caller-owned slot array
 /// (typically a fixed 256-entry stack array, matching `tree_walk.eval`).
 /// Returns the value produced by `op_ret`. The operand stack lives in the
-/// per-thread `VmArena` (ADR-0131 2a), borrowed at `op_base`.
+/// per-thread `VmArena` (ADR-0131 2a), borrowed at `op_base`. A flattened
+/// `op_call` (2b) pushes an in-VM `VmFrame` + continues this loop instead of
+/// re-entering `eval`; `op_ret` pops it.
 pub fn eval(
     rt: *Runtime,
     env: *Env,
     locals: []Value,
     chunk: *const BytecodeChunk,
 ) anyerror!Value {
-    // ADR-0131 2a: borrow this invocation's operand region from the per-thread
-    // arena at `op_base`; restore `op_top` on return so a nested reentrant eval
-    // stacks above us. Operands + parallel locs now live in the arena (`stack`
-    // is `ar.stack`, `sp` is the absolute `ar.op_top`), not on the host C stack.
+    // ADR-0131 2a/2b: borrow this invocation's operand + locals + frame regions
+    // from the per-thread arena; restore all watermarks + the eval-frame chain
+    // head on exit (normal OR a thrown error propagating out — the latter pops
+    // every still-live flattened frame's gc_frame at once and frees its windows).
     const ar = &vm_arena;
     const op_base = ar.op_top;
-    defer ar.op_top = op_base;
-    var ip: usize = 0;
+    const local_base_entry = ar.local_top;
+    const frame_base = ar.frame_top;
+    const head_entry = root_set.eval_frame_head;
+    defer {
+        // Trace frames (ADR-0119) are a separate stack — pop any still-live
+        // flattened frames' (LIFO) on an uncaught throw out of this eval.
+        while (ar.frame_top > frame_base + 1) {
+            ar.frame_top -= 1;
+            if (ar.frames[ar.frame_top].trace_pushed) error_mod.popFrame();
+        }
+        ar.frame_top = frame_base;
+        ar.op_top = op_base;
+        ar.local_top = local_base_entry;
+        root_set.eval_frame_head = head_entry;
+    }
+    if (ar.frame_top >= FRAMES_MAX)
+        return error_catalog.raise(.stack_overflow, .{}, .{ .max = FRAMES_MAX });
+
     var handlers: [HANDLER_STACK_MAX]Handler = undefined;
     var handler_count: u16 = 0;
 
-    // Publish this invocation's operand-stack roots on the thread's eval-frame
-    // chain so a GC collect() walks live operand Values `stack[0..op_top]` +
-    // `locals` (ADR-0091 / D-244 #3b). The arena's whole live prefix is rooted
-    // (each chain EvalFrame over-roots into parent operands — harmless, all live;
-    // each still distinguishes its own `locals`). Runtime-inert today: collect()
-    // runs only at quiescent points; the #3b-step2 alloc-boundary safepoint makes
-    // it fire mid-eval for Phase-B workers.
+    // The base frame: caller-owned locals + the base chunk. Its gc_frame is the 2a
+    // A1 root (operand prefix `stack[0..op_top]` + caller locals + base constants).
     // GC-ROOT: A1 — the VM activation's operand stack + locals + chunk constants [ref: .dev/gc_rooting.md §A]
-    var gc_frame: root_set.EvalFrame = .{
-        .stack = &ar.stack,
-        .sp = &ar.op_top,
+    const base = &ar.frames[ar.frame_top];
+    base.* = .{
+        .ip = 0,
+        .chunk = chunk,
         .locals = locals,
-        // D-251: root this chunk's literal constant pool for its whole
-        // execution — a literal is reachable only here until an `op_const`
-        // loads it onto `stack`, so a pre-load collect would otherwise sweep it.
-        .constants = chunk.constants,
-        .parent = root_set.eval_frame_head,
+        .local_base = 0,
+        .flattened = false,
+        .trace_pushed = false,
+        .gc_frame = .{
+            .stack = &ar.stack,
+            .sp = &ar.op_top,
+            .locals = locals,
+            // D-251: root this chunk's literal constant pool for its whole
+            // execution — a literal is reachable only here until an `op_const`
+            // loads it onto `stack`, so a pre-load collect would otherwise sweep it.
+            .constants = chunk.constants,
+            .parent = root_set.eval_frame_head,
+        },
     };
-    root_set.eval_frame_head = &gc_frame;
-    defer root_set.eval_frame_head = gc_frame.parent;
+    root_set.eval_frame_head = &base.gc_frame;
+    ar.frame_top += 1;
 
     while (true) {
+        // The active in-VM frame (base, or a flattened callee — 2b). Every op
+        // reads/writes its `ip`/`chunk`/`locals` window; the operand stack is the
+        // shared arena (`op_top` absolute).
+        const cur = &ar.frames[ar.frame_top - 1];
         // Liveness-only back-edge safe point (ADR-0090 Alt B / D-244 #3b-step2):
         // a worker spinning in a non-allocating loop never hits the alloc-prologue
         // park, so it must poll here to notice a pending collection and park
@@ -164,10 +281,45 @@ pub fn eval(
         if (gc_torture.period != 0 and !root_set.is_registered_worker and gc_torture.tick()) {
             mark_sweep.collectStopTheWorld(&rt.gc, .{ .envs = &.{env}, .gc = &rt.gc }, false);
         }
-        const step_result = stepOnce(rt, env, locals, chunk, &ar.stack, &ar.loc, &ar.op_top, &ip, &handlers, &handler_count);
+        var flatten_req: ?FlattenReq = null;
+        const step_result = stepOnce(rt, env, cur.locals, cur.chunk, &ar.stack, &ar.loc, &ar.op_top, &cur.ip, &handlers, &handler_count, &flatten_req);
+        if (flatten_req) |fr| {
+            // 2b: op_call resolved a monomorphic bytecode callee — push an in-VM
+            // frame + continue this loop (no host eval re-entry).
+            try flattenPush(rt, ar, fr);
+            continue;
+        }
         if (step_result) |maybe_return| {
-            if (maybe_return) |v| return v;
+            if (maybe_return) |v| {
+                // op_ret on `cur`. Base frame → the eval returns; a flattened
+                // frame → pop it (restore trace / gc head / local_top) and land the
+                // result at the caller's operand top (op_ret left op_top at the
+                // callee's op_base = the result slot).
+                if (ar.frame_top - 1 == frame_base) return v;
+                if (cur.trace_pushed) error_mod.popFrame();
+                root_set.eval_frame_head = cur.gc_frame.parent;
+                ar.local_top = cur.local_base;
+                ar.frame_top -= 1;
+                if (ar.op_top >= ar.stack.len)
+                    return raiseInternal("vm: operand stack overflow on ret");
+                ar.stack[ar.op_top] = v;
+                ar.loc[ar.op_top] = .{};
+                ar.op_top += 1;
+                continue;
+            }
         } else |err| {
+            // Bounded unwind (2b): flattened frames are handler-free, so the live
+            // handlers all belong to the base frame. Pop the flattened frames
+            // (restore trace / gc head / local_top) down to the base; the catch
+            // logic below then targets `bcur` (= the base frame).
+            while (ar.frame_top > frame_base + 1) {
+                ar.frame_top -= 1;
+                const ff = &ar.frames[ar.frame_top];
+                if (ff.trace_pushed) error_mod.popFrame();
+                root_set.eval_frame_head = ff.gc_frame.parent;
+                ar.local_top = ff.local_base;
+            }
+            const bcur = &ar.frames[frame_base];
             var thrown_err = err;
             // ADR-0071: a `.cleanup` handler (binding / bare-try) is a
             // `defer`, not a `catch`. Tested BEFORE the conversion below so
@@ -183,7 +335,7 @@ pub fn eval(
                 handler_count -= 1;
                 const h = handlers[handler_count];
                 dispatch.vm_pending_reraise = thrown_err;
-                ip = h.catch_ip;
+                bcur.ip = h.catch_ip;
                 ar.op_top = h.saved_sp;
                 continue;
             }
@@ -205,7 +357,7 @@ pub fn eval(
             if (thrown_err == error.ThrownValue and handler_count > 0) {
                 handler_count -= 1;
                 const h = handlers[handler_count];
-                ip = h.catch_ip;
+                bcur.ip = h.catch_ip;
                 ar.op_top = h.saved_sp;
                 const thrown = dispatch.last_thrown_exception orelse
                     return raiseInternal("vm: ThrownValue without payload");
@@ -241,6 +393,10 @@ fn stepOnce(
     ip_ptr: *usize,
     handlers: *[HANDLER_STACK_MAX]Handler,
     handler_count_ptr: *u16,
+    /// ADR-0131 2b: when `op_call` resolves a monomorphic bytecode callee it sets
+    /// this (and returns `null`/cont, WITHOUT popping the callee+args) so the eval
+    /// loop flattens it into an in-VM frame instead of a host `vt.callFn` re-entry.
+    flatten_out: *?FlattenReq,
 ) anyerror!?Value {
     var sp = sp_ptr.*;
     var ip = ip_ptr.*;
@@ -420,8 +576,35 @@ fn stepOnce(
             const arg_count: usize = instr.operand;
             if (sp < arg_count + 1)
                 return raiseInternal("vm: op_call underflow");
-            sp -= @intCast(arg_count + 1);
-            const callee = stack[sp];
+            const result_slot: u16 = sp - @as(u16, @intCast(arg_count + 1));
+            const callee = stack[result_slot];
+            // ADR-0131 2b: flatten a monomorphic bytecode `.fn_val` call into an
+            // in-VM frame (the eval loop pushes it). Leave `sp` UNCHANGED so the
+            // callee + args stay rooted via `op_top` until `flattenPush` copies
+            // the args into the locals arena. Exclude rest fns (rest-pack alloc on
+            // the slow binder) and handler-bearing chunks (the bounded throw-unwind
+            // assumes flattened frames are handler-free). Anything else falls
+            // through to the slow `vt.callFn` path — the F-012 oracle seam.
+            if (callee.tag() == .fn_val) {
+                const f = callee.decodePtr(*Function);
+                if (tree_walk.selectMethod(f, arg_count)) |m| {
+                    if (m.bytecode) |bc| {
+                        if (!m.has_rest and !bc.has_handlers) {
+                            flatten_out.* = .{
+                                .callee = callee,
+                                .f = f,
+                                .m = m,
+                                .arg_count = @intCast(arg_count),
+                                .result_slot = result_slot,
+                                .call_loc = instr_loc,
+                            };
+                            return null;
+                        }
+                    }
+                }
+            }
+            // Slow path: pop callee + args, dispatch through the oracle seam.
+            sp = result_slot;
             const args = stack[sp + 1 .. sp + 1 + arg_count];
             const vt = rt.vtable orelse
                 return error_catalog.raiseInternal(.{}, "Runtime vtable not installed; cannot dispatch call");

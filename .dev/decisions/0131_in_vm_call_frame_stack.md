@@ -194,13 +194,29 @@ Each increment is its own revert-friendly commit with an O-NNN row
 
 ## Consequences
 
-- **Positive**: removes the per-call host frame (the confirmed fib/tak tax);
-  re-derives v0's flat-frame speed; fixes the latent deep-recursion SIGSEGV;
-  keeps the dual-backend oracle seam for all non-fast tags.
-- **Negative / risk**: the hottest, most-tested loop is rewritten. GC root
-  reshape + exception-unwind frame-awareness are both UAF/correctness-critical.
-  Mitigated by the two-step increment, `CLJW_GC_TORTURE`, the full diff oracle,
-  and a deep-recursion repro.
+- **AS-LANDED FINDING (2b, 2026-06-11): the flatten is perf-NEUTRAL.** The
+  hypothesis that the host-recursion was the fib/tak tax was WRONG. A `sample`
+  re-profile of `(fib 35)` after 2b shows the 5-host-frame cycle COLLAPSED (the
+  flatten fires; fib runs in one eval loop) yet fib stays 39-41 ms / tak 15 ms.
+  Both Design 2 (kept recursion) and 2b (removed it) measured neutral → the real
+  tax is **per-instruction DISPATCH** (`stepOnce` called per op + its sp/ip
+  read+write-back + the 3 per-op eval-loop polls; ~0.3 ns/op vs v0 ~0.1). The
+  next campaign lever is dispatch efficiency (inline `stepOnce`, batch the polls
+  v0-style every N ops, then computed-goto / superinstructions — D-NNN), NOT the
+  frame model. See `private/notes/9.2.S-flat-frame-survey.md § 2b LANDED`.
+- **Positive (what 2b DOES deliver)**: fixes the latent deep-recursion **SIGSEGV**
+  — a deep non-tail recursion that crashed at ~1300 host frames now runs to the
+  2048 frame cap then raises a bounded `stack_overflow` (deep1500 ✓, deep5000 →
+  clean error). It is v0's finished form (F-002) and keeps the dual-backend oracle
+  seam for all non-fast tags. (The `stack_overflow` is uncatchable for now —
+  `resource_exhausted` kind; a follow-up maps it to a catchable StackOverflowError
+  for full clj parity.)
+- **Negative / risk**: the hottest, most-tested loop is rewritten for a
+  perf-neutral result. GC rooting (each flattened frame's own `EvalFrame` on the
+  chain) is UAF-critical — mitigated by the allocating `frame_local_alloc`
+  `CLJW_GC_TORTURE` gate, the full diff oracle, the reduce-throw-outer-try parity
+  case, and the deep-recursion repro. Kept (not reverted like Design 2) because it
+  is a real bug fix + the finished form, not dead weight.
 - **Dual-backend (F-012)**: no new opcode (reuses `op_call`/`op_ret`); the
   parity surface is "same Value out", covered by the diff corpus + targeted
   recursion cases. TreeWalk keeps its host recursion (it has no VM).
