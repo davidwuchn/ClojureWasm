@@ -2325,6 +2325,16 @@ active:
       whole-tree FP → full re-run); a tiered/affected-subset default is the next
       slice. Campaign uses `--serial-e2e --resume` + the fast-mode in
       `.dev/perf_campaign_essence.md` (per-commit = diff oracle, e2e batched).
+      ROOT CAUSE FOUND + FIXED 2026-06-12 (ADR-0132): the "~30-min gate" was a
+      SYMPTOM, not inherent — the e2e suite ran against a **Debug** cljw (~1.7s
+      cold-start × ~3200 spawns ≈ 90 min) because `test/clj/run_tier_a.sh` did a
+      bare `zig build` (Debug) right before the parallel pool, `build_cljw` was
+      resume-skippable, and the ReleaseSafe guard ran only once. Fixed: ban bare
+      `zig build` in gate scripts (all honour CLJW_SKIP_BUILD or `-Doptimize`),
+      `build_cljw`+guard are NO_RESUME_STEPS, semantic `--version (mode)` guard +
+      pre-pool backstop. **Full gate now ~113 s (FAIL 0, skipped 0).** Remaining
+      slice (3, incremental affected-only) is now LOW priority — a 113s gate does
+      not need it.
     category: "tooling"
     barrier: |-
       Not blocked — a design/review task, deferred only by priority (user: "next or
@@ -2362,6 +2372,31 @@ active:
       quick bench, diff oracle + torture green. Full finding:
       `private/notes/9.2.S-flat-frame-survey.md § 2b LANDED + CAMPAIGN PIVOT`. | none
     last_reviewed: "2026-06-11"
+  - id: "D-387"
+    status: |-
+      open (2026-06-12) — the Wasm-FFI EXECUTION path is not gate-tested.
+      `test/e2e/phase16_wasm_ffi.sh` + `phase16_wasm_run.sh` exist (they build
+      `-Dwasm` and run `(wasm/load)`/`(wasm/call)` fixtures) but are NOT wired
+      into `test/run_all.sh` (`grep wasm run_all.sh` = empty), so the gate never
+      exercises them. Surfaced 2026-06-12 while root-causing the gate perf cliff
+      (ADR-0132) — they were also the only other unguarded `zig build -Dwasm`
+      (Debug), but being unwired did not affect the gate. Net: ClojureWasm's
+      headline feature (Wasm FFI) has ZERO gate coverage; a `(wasm/call)`
+      regression would ship green. User-flagged 2026-06-12 ("wasm 実行テストが
+      できていなかった系").
+    category: "testing"
+    barrier: |-
+      Not blocked — a wiring task. Scope: (a) add `run_step` lines for
+      `e2e_phase16_wasm_ffi` + `_wasm_run`, guarded to SKIP cleanly when
+      `../zwasm_from_scratch` is absent (the scripts already `exit 0` on
+      absence); (b) fix their `zig build -Dwasm` to
+      `-Doptimize="${CLJW_OPT:-ReleaseSafe}"` AND isolate so they do not clobber
+      the shared non-wasm binary mid-pool (dedicated path, or serial + restore)
+      per ADR-0132's binary invariant; (c) decide whether the shared gate binary
+      should itself be `-Dwasm` so wasm e2e need no separate build. Predicate to
+      land: `bash test/run_all.sh` runs the wasm-exec e2e green on a host with
+      zwasm present, without reverting the shared binary to Debug. | none
+    last_reviewed: "2026-06-12"
 discharged:
   - id: "D-249"
     discharged_at: "docs(diff): Clojure-vs-ClojureWasm differences sheet"
