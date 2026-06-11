@@ -311,6 +311,22 @@ const Compiler = struct {
                 // local = arg[0], const = arg[1] (operand order preserved for
                 // non-commutative sub/lt/…); both indices must fit a u8, else fall
                 // back to the 3-op form [refs: O-018, D-386]
+                // O-019: fuse `(<op> local-ref local-ref)` (arith_loop `(< i n)` /
+                // `(+ acc i)`, tak `(< y x)`) into one `op_*_locals`.
+                if (n.args[0] == .local_ref and n.args[1] == .local_ref) {
+                    if (intrinsic.localsVariant(op)) |fused| {
+                        const sa = n.args[0].local_ref.index;
+                        const sb = n.args[1].local_ref.index;
+                        if (sa < 256 and sb < 256) {
+                            if (n.loc.line != 0) {
+                                self.current_line = n.loc.line;
+                                self.current_column = n.loc.column;
+                            }
+                            try self.emit(fused, (@as(u16, @intCast(sa)) << 8) | @as(u16, @intCast(sb)));
+                            return;
+                        }
+                    }
+                }
                 if (n.args[0] == .local_ref and n.args[1] == .constant) {
                     if (intrinsic.localConstVariant(op)) |fused| {
                         const lslot = n.args[0].local_ref.index;

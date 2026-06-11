@@ -116,6 +116,37 @@ pub fn fromLocalConstOpcode(op: Opcode) ?ArithOp {
     };
 }
 
+/// D-386 (O-019): the `*_locals` (local-LOCAL) superinstruction variant of a
+/// plain arith opcode. `null` for a non-arith opcode.
+pub fn localsVariant(op: Opcode) ?Opcode {
+    return switch (op) {
+        .op_add => .op_add_locals,
+        .op_sub => .op_sub_locals,
+        .op_mul => .op_mul_locals,
+        .op_lt => .op_lt_locals,
+        .op_le => .op_le_locals,
+        .op_gt => .op_gt_locals,
+        .op_ge => .op_ge_locals,
+        .op_eq => .op_eq_locals,
+        else => null,
+    };
+}
+
+/// D-386 (O-019): the `ArithOp` a `*_locals` opcode computes. `null` otherwise.
+pub fn fromLocalsOpcode(op: Opcode) ?ArithOp {
+    return switch (op) {
+        .op_add_locals => .add,
+        .op_sub_locals => .sub,
+        .op_mul_locals => .mul,
+        .op_lt_locals => .lt,
+        .op_le_locals => .le,
+        .op_gt_locals => .gt,
+        .op_ge_locals => .ge,
+        .op_eq_locals => .eq,
+        else => null,
+    };
+}
+
 /// Compile-time recogniser: if `var_ptr` is a cached canonical arith Var, return
 /// the opcode to emit. Pointer identity — a let-shadowed name is a `.local_ref`
 /// (never reaches here); the runtime `core_arith_pristine` flag handles a later
