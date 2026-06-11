@@ -70,6 +70,8 @@
 
 | O-025 | `lang/clj/clojure/core.clj` — `update-in` indexed descent | The 3-arg `update-in` recursed via `(next ks)`, which on a VECTOR path (the common shape) allocates a subvec/seq view per level | `-update-in-idx` walks the path by INDEX (`(nth ks i)`, O(1) on a vector) passing the path unchanged — no per-level `next-ks` alloc. The variadic `& args` arity keeps the `next` form | **nested_update 27→25 ms** (Python 20.5; 1.33×→1.22×). The residual is the get+assoc per level (inherent). 10-run ReleaseSafe | `zig build test` ×2 (diff oracle) + spot-check vector path `[:a :b :c]`→inc + list path `(:a :b)`→+10 | D-386 |
 
+| O-026 | `runtime/collection/map.zig` (`fromLiteralPairs`/`allSimpleKeys`) + `eval/backend/vm.zig` (`op_map_literal`) | A map literal `{:a i :b … :c …}` built via an N-deep `assoc` fold — each `assoc` COPIES the whole 16-slot ArrayMap (gc_stress: ×100k 3-entry maps = 300k array-map copies) | When all keys are SIMPLE (keyword/string/int/symbol/char/bool/nil → `keyEq` is pure, no eval/GC) and N/2 ≤ 8, build the ArrayMap in ONE `gc.alloc` + a pure dedup fill (last-key-wins). The single alloc is the only allocation → the fill cannot GC → the unrooted `am` is safe with no rooting frame. HAMT-size / custom-`=` keys fall back to the assoc fold | **gc_stress 41→32 ms** (Python 30; 1.36×→1.07×, ~parity). 10-run ReleaseSafe | `zig build test` ×2 (diff oracle) + `CLJW_GC_TORTURE` + spot-check dedup `{:a 1 :a 2}`→`{:a 2}` + 9-key→HAMT fallback (count 9) | D-386 |
+
 ## Identified high-ROI candidates (measured, not yet implemented)
 
 Ranked by ROI (impact × frequency / effort·risk). Measured 2026-05-31 on

@@ -1180,14 +1180,27 @@ inline fn stepOnce(
             // ArrayMap, push result.
             const n: u16 = instr.operand;
             if (sp < n) return raiseInternal("vm: op_map_literal underflows operand stack");
-            var m = map_mod.empty();
-            var i: u16 = sp - n;
-            while (i < sp) : (i += 2) {
-                m = try map_mod.assoc(rt, m, stack[i], stack[i + 1]);
+            const pairs = stack[sp - n .. sp];
+            // PERF: D-386 (O-026) one-alloc array-map build for the common
+            // small-literal-with-simple-keys case (gc_stress: `{:a i :b … :c …}`
+            // ×100k), instead of an N-deep assoc fold that copies the ArrayMap each
+            // step. Guarded so the dedup keyEq is pure (no GC during the fill).
+            // Else (HAMT-size, or custom-= keys) the assoc fold. [refs: O-026]
+            if (n >= 2 and n <= 2 * map_mod.ARRAY_MAP_THRESHOLD and map_mod.allSimpleKeys(pairs)) {
+                const result = try map_mod.fromLiteralPairs(rt, pairs);
+                sp -= n;
+                stack[sp] = result;
+                sp += 1;
+            } else {
+                var m = map_mod.empty();
+                var i: u16 = sp - n;
+                while (i < sp) : (i += 2) {
+                    m = try map_mod.assoc(rt, m, stack[i], stack[i + 1]);
+                }
+                sp -= n;
+                stack[sp] = m;
+                sp += 1;
             }
-            sp -= n;
-            stack[sp] = m;
-            sp += 1;
         },
         .op_set_literal => {
             // Closes D-061: pop N values, conj-fold into an empty

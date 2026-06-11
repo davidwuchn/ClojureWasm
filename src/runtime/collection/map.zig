@@ -191,6 +191,61 @@ fn keyHash(k: Value) !u32 {
     return equal.hashConsult(k);
 }
 
+/// PERF: O-026 a key whose `keyEq` (eqConsult) is guaranteed PURE — no user
+/// `=`/`hasheq` dispatch, no alloc, no eval. A `.typed_instance` (deftype/reify)
+/// key may carry a custom `=`, so it is excluded; any tag not in this set falls
+/// back to the assoc-fold. Lets `fromLiteralPairs` dedup without a GC-rooting
+/// frame (a pure keyEq cannot trigger GC). [refs: O-026]
+fn isSimpleKey(k: Value) bool {
+    return switch (k.tag()) {
+        .keyword, .symbol, .string, .integer, .char, .boolean, .nil => true,
+        else => false,
+    };
+}
+
+/// PERF: O-026 — true iff every key (even index) of `pairs` is a simple key.
+pub fn allSimpleKeys(pairs: []const Value) bool {
+    var i: usize = 0;
+    while (i < pairs.len) : (i += 2) {
+        if (!isSimpleKey(pairs[i])) return false;
+    }
+    return true;
+}
+
+/// PERF: O-026 build an ArrayMap from N k/v `pairs` in ONE alloc (the map-literal
+/// fast path), instead of an N-deep `assoc` fold that copies the 16-slot ArrayMap
+/// each step. CALLER GUARANTEES: `pairs.len` even, `pairs.len/2 ≤
+/// ARRAY_MAP_THRESHOLD`, and `allSimpleKeys(pairs)` — so the dedup `keyEq` is pure
+/// (no alloc/eval) and the single `gc.alloc` is the ONLY allocation. The fill
+/// therefore cannot trigger GC, so the freshly-alloc'd `am` is safe WITHOUT a
+/// rooting frame (last-key-wins, matching the assoc-fold). [refs: O-026, D-386]
+pub fn fromLiteralPairs(rt: *Runtime, pairs: []const Value) !Value {
+    const am = try rt.gc.alloc(ArrayMap);
+    am.* = .{ .header = HeapHeader.init(.array_map) };
+    var w: u32 = 0;
+    var i: usize = 0;
+    while (i < pairs.len) : (i += 2) {
+        const k = pairs[i];
+        const val = pairs[i + 1];
+        var found = false;
+        var j: u32 = 0;
+        while (j < w) : (j += 1) {
+            if (try keyEq(am.entries[2 * j], k)) {
+                am.entries[2 * j + 1] = val;
+                found = true;
+                break;
+            }
+        }
+        if (!found) {
+            am.entries[2 * w] = k;
+            am.entries[2 * w + 1] = val;
+            w += 1;
+        }
+    }
+    am.count = w;
+    return Value.encodeHeapPtr(.array_map, am);
+}
+
 /// `(assoc m k v)` — returns a new map with `k → v` per Clojure
 /// semantics. ArrayMap path:
 ///   - key found → copy with that slot's value replaced
