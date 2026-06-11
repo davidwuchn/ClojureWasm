@@ -147,20 +147,50 @@ The flat model grows the in-VM frame array to a cap, then raises a **catchable
 `StackOverflow`** — matching v0 (`vm.zig:1611`) and clj (`StackOverflowError`).
 A new `error_catalog` Code + a frame cap. A diff/e2e case locks it.
 
-### Implementation is incremental (two landed, green increments)
+### The shared arena lives in a per-thread `VmArena` (as landed in 2a)
 
-1. **Restructure-only**: introduce the frame array + struct; the top-level `eval`
-   runs with `frame_count == 1`, every op reading its state from the top frame
-   instead of host locals. Behaviour identical (no call-flattening yet). Gate +
-   torture green. This lands the A1 reshape + op-addressing change in a verifiable
-   no-behaviour-change step.
-2. **Flatten**: `op_call` (monomorphic bytecode `.fn_val`) pushes a frame +
-   continues; `op_ret` pops + continues; throw unwinds frames; deep-recursion cap.
-   Slow cases keep `vt.callFn`. Gate + torture + diff + deep-recursion + cross-lang
-   bench.
+The "shared base-windowed arena" cannot be a per-`eval` host-stack array: deep
+recursion needs the arena to hold thousands of frames (a fixed host-stack array
+big enough would blow the C stack, and nested reentrant `eval`s would multiply
+it). v0 resolves this with ONE VM stack reused across calls. cw v1 adopts the
+same as a **threadlocal `VmArena`** — but with **inline arrays (static BSS,
+demand-paged), NOT a lazy heap alloc**: a never-freed heap arena leaks under the
+test `DebugAllocator`, whereas static storage has nothing to free.
+`ARENA_SLOTS = 16384` keeps the global watermark `op_top` within `u16`, so
+`root_set.EvalFrame.sp` is unchanged (no blast radius to the other GC producers).
+Each `eval` borrows from `op_top` (restored on return; nested reentrant evals
+stack above); the A1 `EvalFrame` roots `stack[0..op_top]`.
 
-Each increment is its own revert-friendly commit with a `// PERF:` marker + an
-O-NNN row (`.dev/optimizations.md`) + a clj corpus line (F-011).
+### Implementation is incremental (green, gated increments)
+
+1. **2a — operand arena (LANDED `a12fdb09`, O-016)**: the operand stack + its
+   parallel loc stack moved off the per-`eval` host C stack into the threadlocal
+   `VmArena`; locals stay caller-passed; one frame per eval (host recursion
+   retained). The A1 `EvalFrame` points into the arena. Planned behaviour-identical
+   — turned out a **real ~25% win** (fib 56→41 ms, tak 18→15) from the reused warm
+   arena vs cold fresh host arrays. The key invariant: during `op_call`'s
+   `vt.callFn` the deferred `sp` write-back leaves `op_top` at the PRE-step
+   high-water, so the callee's args stay rooted AND the nested eval borrows above
+   them — NO publish-before-nest (the initial 4-site plan was wrong, would UAF the
+   args). Verified under the allocating `frame_local_alloc` torture gate.
+2. **2b — the flatten**: a `frames` array of `CallFrame`; `op_call` (callee
+   `.fn_val` + bytecode method + `!has_rest` + `!chunk.has_handlers` + frame cap)
+   binds the callee's locals into a NEW `VmArena.local_arena` window via
+   `bindCallFrame` + pushes a `CallFrame` + continues the loop; `op_ret` pops.
+   **GC: each `CallFrame` carries its OWN inline `root_set.EvalFrame`** pushed on
+   the existing chain at flatten / popped at ret — so the collector's existing
+   chain-walk roots every active frame's locals + constants with NO `root_set`
+   change (it cannot hold a vm-type `CallFrame` — zone rule). Bounded throw-unwind
+   (flattened frames are handler-free, so the handler stack is invariant across
+   them → pop flattened frames then run the base frame's catch). Deep recursion →
+   catchable `StackOverflow` at the frame cap. Slow cases keep `vt.callFn`. Gate +
+   allocating-torture + diff + the reduce-throw-outer-try case + deep-recursion +
+   cross-lang bench. (`op_call` must NOT pop the args before the eval loop binds
+   them — args stay rooted via `op_top` until `bindCallFrame` copies them.)
+   Full spec: `private/notes/9.2.S-flat-frame-survey.md § CONVERGED 2b FLATTEN`.
+
+Each increment is its own revert-friendly commit with an O-NNN row
+(`.dev/optimizations.md`) + a clj corpus line (F-011).
 
 ## Consequences
 
