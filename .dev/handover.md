@@ -12,38 +12,38 @@
   (`bench/run_bench.sh --quick` / `scripts/perf.sh`), never `time zig-out/bin/cljw`
   (Debug) — `.claude/rules/perf_measure_release.md`.
 
-- **First commit on resume MUST be: the next Python-loser perf unit** (sieve 33 vs
-  20, map_filter_reduce 26 vs 16, or arith_loop 76 vs 58 — the campaign roadmap +
-  v0 levers are in `private/notes/9.2.S-flat-frame-survey.md § CAMPAIGN ROADMAP`).
-  NOT ROI-gated (relentless until cljw beats Python on EVERY bench, then toward v0);
-  fast-mode in `.dev/perf_campaign_essence.md`. Autonomous; only an explicit user stop halts.
+- **First commit on resume MUST be: the lazy-seq fused-reduce lever** (sieve/mfr —
+  the dispatch arc is DONE, these are alloc/lazy-bound). The cljw-clean plan (IReduce-
+  on-lazy-source vs chunk-the-cons-walk vs transduce-backed) is in
+  `private/notes/9.2.S-v0-perf-deep-survey.md § DISPATCH ARC COMPLETE`. NOT ROI-gated
+  (relentless until cljw beats Python on EVERY bench, then toward v0); fast-mode in
+  `.dev/perf_campaign_essence.md`. Autonomous; only an explicit user stop halts.
 
-  **Current standing (cljw vs Python ms, this session 2026-06-11)**: fib 26 vs 24
-  (parity ✓), tak 13 vs 18 (WIN), nested_update 24 vs 20 (1.2×), arith_loop 76 vs 58,
-  sieve 33 vs 20, map_filter_reduce 26 vs ~16. Session arc: fib 56→26, arith_loop
-  170→76, nested_update 58→24.
+  **Current standing (cljw vs Python ms, 2026-06-11)**: fib 24=24, tak 13<18 (WIN),
+  arith_loop 50<58 (WIN), nested_update 24 vs 20 (1.2×), sieve 33 vs 20 (1.65×),
+  map_filter_reduce 27 vs 16 (1.7×). Session arc: fib 56→24, arith_loop 170→50,
+  nested_update 58→24.
 
   **Landed this session (all on `main`, diff-oracle-validated per fast-mode)**:
-  ADR-0131 in-VM frame stack (2a arena O-016 / 2b flatten — perf-neutral but fixes
-  the deep-recursion SIGSEGV; do NOT re-do); **the D-386 dispatch arc** —
-  O-017 inline stepOnce (fib 41→33), O-018 `op_*_local_const` superinstr (fib 33→26),
-  O-019 `op_*_locals` superinstr (arith_loop 94→76); **O-020 update-in 3-arg arity**
-  (nested_update 58→24); + the velocity MECHANIZATION (gate `--resume` ledger D-385
-  slice-2, `.dev/perf_campaign_essence.md` fast-mode, `scripts/perf_campaign_remind.sh`
-  lookahead hook). The CAMPAIGN-PIVOT finding: the fib tax was per-instruction
-  DISPATCH, not call structure (2b confirmed it neutral); superinstructions are the
-  v0-proven lever (more in `private/notes/9.2.S-flat-frame-survey.md`).
+  ADR-0131 in-VM frame stack (2a arena O-016 / 2b flatten — fixes the deep-recursion
+  SIGSEGV; do NOT re-do); **the D-386 DISPATCH ARC, now COMPLETE** — O-017 inline
+  stepOnce, O-018 `op_*_local_const`, O-019 `op_*_locals`, O-021 `op_branch_*`
+  (compare+branch), O-022 `op_recur_loop` (loop back-edge) → fib/tak/arith_loop now
+  beat/match Python; **O-020 update-in 3-arg arity** (nested_update 58→24); + the
+  velocity MECHANIZATION (gate `--resume` D-385 slice-2, `perf_campaign_essence.md`
+  fast-mode, `scripts/perf_campaign_remind.sh` lookahead hook); + the **v0 deep
+  survey** (`private/notes/9.2.S-v0-perf-deep-survey.md`). PIVOT finding: the fib tax
+  was per-instruction DISPATCH, not call structure — superinstructions were the fix.
 
-  **Next levers** (v0 catalogue, re-derive cljw-clean F-004): branch fusion
-  (`compare + jump_if_false` → 1; fib/arith_loop `(if (< …))`) + `recur_loop` fusion
-  (arith_loop's loop back-edge); fused-reduce (24C.1) for map_filter_reduce;
-  filter-chain collapse (24C.7) for sieve; then the JIT (37.4) for the last mile.
+  **Next levers** (v0 catalogue, re-derive cljw-clean F-004): fused-reduce / IReduce-
+  on-lazy-source (v0 24C.1, mfr 1293→14) for map_filter_reduce; filter-chain collapse
+  (24C.7) for sieve; a small update-in/assoc-in Zig builtin (24C.9) for nested_update
+  (1.2×, close); then the JIT (37.4, cross-platform required) for the last mile.
 
-  **OWED (validation debt — fast-mode deferred the heavy e2e)**: a full e2e gate has
-  NOT run since before 2b (diff oracle covered each commit). Run `bash test/run_all.sh
-  --serial-e2e --resume` at the next pause, OR on `ubuntunote` — BUT the ubuntunote
-  working tree is DIRTY (`git checkout main` failed on the remote); `ssh ubuntunote
-  'cd <repo> && git reset --hard'` first, then `scripts/run_remote_ubuntu.sh`.
+  **OWED (validation debt — fast-mode defers the heavy e2e)**: full e2e ran 311/0 on
+  ubuntunote at HEAD dd4a56db (O-019); O-020/021/022 are validating on ubuntunote NOW
+  (`scripts/run_remote_ubuntu.sh`, the tree is clean). The local serial gate times out
+  (D-385) — prefer ubuntunote or `--serial-e2e --resume`.
 
   **Measurement cadence (keep iteration fast)**: per iteration a FOCUSED quick bench
   only (`bash bench/run_bench.sh --quick --bench=<name>`); do NOT full-bench or
