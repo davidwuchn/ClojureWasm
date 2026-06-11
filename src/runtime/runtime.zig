@@ -157,13 +157,16 @@ pub const Runtime = struct {
     data_readers_var: ?*anyopaque = null,
     default_data_reader_fn_var: ?*anyopaque = null,
 
-    /// ADR-0130: cached `clojure.core/+` Var (type-erased like the data-reader
-    /// vars; cast back to `*const env.Var` at the compiler gate + VM `op_add`
-    /// dispatch). `plus_var` is populated at bootstrap; `core_arith_pristine`
-    /// starts true and is cleared when `+` is redefined via `alter-var-root`,
-    /// deopting `op_add` to the builtin so a redefed `+` is honoured (F-011).
-    /// `null` plus_var (pre-bootstrap) means the compiler never emits op_add.
-    plus_var: ?*anyopaque = null,
+    /// ADR-0130: cached canonical `clojure.core` arith/comparison Vars
+    /// (+ - * < <= > >= =), indexed by `intrinsic.ArithOp` (type-erased like the
+    /// data-reader vars; cast back to `*const env.Var` at the compiler gate + VM
+    /// dispatch). Populated at bootstrap; a null slot (pre-bootstrap or an absent
+    /// op) means the compiler never emits that intrinsic opcode.
+    /// `core_arith_pristine` starts true and is cleared when ANY of these Vars is
+    /// redefined via `alter-var-root`, deopting the intrinsic opcodes to the
+    /// builtin so a redefed op is honoured (F-011). Size 8 = intrinsic.arith_count
+    /// (runtime/ is Layer 0 and cannot import the Layer-1 intrinsic module).
+    arith_vars: [8]?*anyopaque = .{ null, null, null, null, null, null, null, null },
     core_arith_pristine: bool = true,
 
     /// Monotonic counter for `gensym` / auto-gensym (`foo#`). Lives on

@@ -242,6 +242,18 @@ pub const Opcode = enum(u8) {
     /// numeric-tower + arg-precise error parity). Net stack effect −1 (not a pure
     /// push). First cut of the intrinsic family (op_sub/op_mul/op_lt… follow).
     op_add = 0x28,
+    /// ADR-0130 + am1: the rest of the binary arith/comparison intrinsic family,
+    /// same shape as op_add (no operand; pop a,b; fixnum fast path via
+    /// `intrinsic.fastBinaryFixnum`, else defer to the cached builtin Var). `=`
+    /// (op_eq) is fixnum-only — any non-(fixnum,fixnum) pair defers to the builtin
+    /// `=` for full value-equality semantics.
+    op_sub = 0x29,
+    op_mul = 0x2A,
+    op_lt = 0x2B,
+    op_le = 0x2C,
+    op_gt = 0x2D,
+    op_ge = 0x2E,
+    op_eq = 0x2F,
 
     /// True when this opcode carries a **signed-i16 instruction-position
     /// offset** in `operand`, relative to the instruction after itself
@@ -290,6 +302,13 @@ pub const Opcode = enum(u8) {
             .op_ns_import,
             .op_set_field,
             .op_add,
+            .op_sub,
+            .op_mul,
+            .op_lt,
+            .op_le,
+            .op_gt,
+            .op_ge,
+            .op_eq,
             => false,
         };
     }
@@ -343,6 +362,13 @@ pub const Opcode = enum(u8) {
             .op_ns_import,
             .op_set_field,
             .op_add,
+            .op_sub,
+            .op_mul,
+            .op_lt,
+            .op_le,
+            .op_gt,
+            .op_ge,
+            .op_eq,
             => false,
         };
     }

@@ -111,6 +111,26 @@ test "diff: op_add deopt on alter-var-root of + (ADR-0130 F-011 hole)" {
     try f.check("(do (alter-var-root (var +) (fn* [_] (fn* [a b] 999))) (+ 1 2))", 999);
 }
 
+test "diff: arith intrinsic family (ADR-0130 am1) — sub/mul/comparisons/= (inline)" {
+    var f = try Fixture.init(testing.allocator);
+    defer f.deinit();
+    try f.check("(- 5 3)", 2);
+    try f.check("(- 3 10)", -7);
+    try f.check("(* 4 6)", 24);
+    try f.checkEqual("(< 1 2)");
+    try f.checkEqual("(< 2 1)");
+    try f.checkEqual("(<= 2 2)");
+    try f.checkEqual("(> 5 3)");
+    try f.checkEqual("(>= 3 4)");
+    try f.checkEqual("(= 7 7)");
+    try f.checkEqual("(= 7 8)");
+    // = is fixnum-only fast; a non-fixnum pair defers to the builtin = (value
+    // equality): (= 1 1.0) → false per F-005, agreed by both backends.
+    try f.checkEqual("(= 1 1.0)");
+    // shadowed op → .local_ref → no intrinsic: < is bound to -, so (< 10 3) → 7.
+    try f.checkEqual("(let* [< -] (< 10 3))");
+}
+
 test "diff: let* binding" {
     var f = try Fixture.init(testing.allocator);
     defer f.deinit();

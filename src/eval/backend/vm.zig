@@ -425,25 +425,26 @@ fn stepOnce(
             stack[sp] = result;
             sp += 1;
         },
-        .op_add => {
-            // ADR-0130: `(+ a b)` intrinsic. Fixnum fast path skips the
+        .op_add, .op_sub, .op_mul, .op_lt, .op_le, .op_gt, .op_ge, .op_eq => {
+            // ADR-0130: binary arith/comparison intrinsic. Fixnum fast path skips
             // var-resolve + BuiltinFn dispatch; any other case (incl. errors)
-            // defers to the cached `+` builtin for full parity. `pristine` is
-            // cleared by alter-var-root on `+` (deopt → always the builtin).
-            if (sp < 2) return raiseInternal("vm: op_add underflow");
+            // defers to the cached builtin Var for full parity. `pristine` is
+            // cleared by alter-var-root on a cached op (deopt → always builtin).
+            if (sp < 2) return raiseInternal("vm: arith intrinsic underflow");
             sp -= 2;
             const a = stack[sp];
             const b = stack[sp + 1];
+            const aop = intrinsic.fromOpcode(instr.opcode).?;
             const fast: ?Value = if (rt.core_arith_pristine)
-                try intrinsic.fastBinaryFixnum(rt, .add, a, b)
+                try intrinsic.fastBinaryFixnum(rt, aop, a, b)
             else
                 null;
             const result = fast orelse blk: {
                 const vt = rt.vtable orelse
-                    return error_catalog.raiseInternal(.{}, "Runtime vtable not installed; cannot dispatch op_add");
-                const pv = rt.plus_var orelse
-                    return raiseInternal("vm: op_add emitted without a cached + Var");
-                const plus_var: *const env_mod.Var = @ptrCast(@alignCast(pv));
+                    return error_catalog.raiseInternal(.{}, "Runtime vtable not installed; cannot dispatch arith intrinsic");
+                const pv = rt.arith_vars[@intFromEnum(aop)] orelse
+                    return raiseInternal("vm: arith intrinsic emitted without a cached Var");
+                const op_var: *const env_mod.Var = @ptrCast(@alignCast(pv));
                 const two = [2]Value{ a, b };
                 // Publish the operands' recorded locs so a builtin error
                 // (e.g. `(+ 1 "a")`) resolves an arg-precise caret, matching
@@ -451,7 +452,7 @@ fn stepOnce(
                 // the fixnum fast path cannot.
                 const prev_arg_sources = error_mod.swapArgSources(loc_stack[sp .. sp + 2]);
                 defer _ = error_mod.swapArgSources(prev_arg_sources);
-                break :blk try vt.callFn(rt, env, plus_var.deref(), &two, instr_loc);
+                break :blk try vt.callFn(rt, env, op_var.deref(), &two, instr_loc);
             };
             if (sp >= OPERAND_STACK_MAX)
                 return raiseInternal("vm: operand stack overflow");

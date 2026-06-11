@@ -50,6 +50,9 @@ CASES=(
     'add_i48_boundary|(+ 140737488355327 1)'
     'add_shadow|(let [+ str] (+ "a" "b"))'
     'add_deopt|(do (alter-var-root (var +) (fn* [_] (fn* [a b] 999))) (+ 1 2))'
+    # The rest of the family (ADR-0130 am1) shares the same grouped dispatch arm;
+    # one heap-result op_mul case confirms the heap fallback for a non-add op too.
+    'mul_i48_heap|(* 140737488355327 2)'
 )
 
 run_cases() {

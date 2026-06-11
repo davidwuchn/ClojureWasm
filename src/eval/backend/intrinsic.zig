@@ -27,11 +27,74 @@ const std = @import("std");
 const Value = @import("../../runtime/value/value.zig").Value;
 const Runtime = @import("../../runtime/runtime.zig").Runtime;
 const promote = @import("../../runtime/numeric/promote.zig");
+const Opcode = @import("vm/opcode.zig").Opcode;
+const env_mod = @import("../../runtime/env.zig");
 
-/// The intrinsifiable binary operations (first cut). `/`, `=`, `not=` are
-/// intentionally absent (ADR-0130): integer `/` yields a Ratio / divide-by-zero
-/// raise, and `=`/`not=` must match full `valueEqual` on the non-numeric tail.
-pub const ArithOp = enum { add, sub, mul, lt, le, gt, ge };
+/// The intrinsifiable binary operations (ADR-0130 + am1). `/` stays absent
+/// (integer `/` yields a Ratio / divide-by-zero raise — no fixnum fast path).
+/// `=` is INCLUDED but **fixnum-only**: two inline fixnums compare by integer
+/// equality (unambiguous); every other operand pair defers to the builtin `=`
+/// (which honours `(= 1 1.0)`→false, NaN, value-equality across types). `not=`
+/// is left to the builtin (it is `(not (= …))`, rare in hot loops).
+pub const ArithOp = enum { add, sub, mul, lt, le, gt, ge, eq };
+
+/// Stable index into `Runtime.arith_vars` (the per-op cached canonical Var).
+pub const arith_count = @typeInfo(ArithOp).@"enum".fields.len;
+
+/// The `clojure.core` symbol each op resolves to (bootstrap caches these).
+pub fn coreName(op: ArithOp) []const u8 {
+    return switch (op) {
+        .add => "+",
+        .sub => "-",
+        .mul => "*",
+        .lt => "<",
+        .le => "<=",
+        .gt => ">",
+        .ge => ">=",
+        .eq => "=",
+    };
+}
+
+pub fn toOpcode(op: ArithOp) Opcode {
+    return switch (op) {
+        .add => .op_add,
+        .sub => .op_sub,
+        .mul => .op_mul,
+        .lt => .op_lt,
+        .le => .op_le,
+        .gt => .op_gt,
+        .ge => .op_ge,
+        .eq => .op_eq,
+    };
+}
+
+pub fn fromOpcode(op: Opcode) ?ArithOp {
+    return switch (op) {
+        .op_add => .add,
+        .op_sub => .sub,
+        .op_mul => .mul,
+        .op_lt => .lt,
+        .op_le => .le,
+        .op_gt => .gt,
+        .op_ge => .ge,
+        .op_eq => .eq,
+        else => null,
+    };
+}
+
+/// Compile-time recogniser: if `var_ptr` is a cached canonical arith Var, return
+/// the opcode to emit. Pointer identity — a let-shadowed name is a `.local_ref`
+/// (never reaches here); the runtime `core_arith_pristine` flag handles a later
+/// `alter-var-root` on a core arith Var.
+pub fn recognize(rt: *const Runtime, var_ptr: *const env_mod.Var) ?Opcode {
+    for (rt.arith_vars, 0..) |cached, i| {
+        const pv = cached orelse continue;
+        if (@intFromPtr(pv) == @intFromPtr(var_ptr)) {
+            return toOpcode(@enumFromInt(i));
+        }
+    }
+    return null;
+}
 
 /// Fixnum fast path. Returns `null` unless BOTH operands are inline fixnums, so
 /// the caller defers every other case (incl. all error cases) to the builtin.
@@ -45,6 +108,7 @@ pub fn fastBinaryFixnum(rt: *Runtime, op: ArithOp, a: Value, b: Value) !?Value {
         .le => Value.initBoolean(a.asInteger() <= b.asInteger()),
         .gt => Value.initBoolean(a.asInteger() > b.asInteger()),
         .ge => Value.initBoolean(a.asInteger() >= b.asInteger()),
+        .eq => Value.initBoolean(a.asInteger() == b.asInteger()),
     };
 }
 

@@ -130,6 +130,28 @@ substitute.**
 - Verified per cycle by a focused quick-bench + the differential oracle + the
   six trap diff cases; GC-torture on the dispatch arms (O-005/O-013 discipline).
 
+## Amendment 1 (2026-06-11) — family generalized; `=` included fixnum-only
+
+After op_add validated the pipeline (O-014: arith_loop 170→134 ms, fib call-bound),
+the family landed generalized to a **closed-set table** (`Runtime.arith_vars:
+[8]?*anyopaque` indexed by `intrinsic.ArithOp`): op_sub / op_mul / op_lt / op_le /
+op_gt / op_ge, plus **op_eq — reversing the original `=` deferral**. The reversal
+is safe because the intrinsic is **fixnum-only**: two inline fixnums compare by
+integer equality (unambiguous), and EVERY other operand pair (float, bigint,
+string, …) returns `null` from `fastBinaryFixnum` → defers to the builtin `=`,
+which keeps full value-equality semantics (`(= 1 1.0)`→false per F-005, NaN,
+AD-001). So op_eq cannot diverge on the non-(fixnum,fixnum) tail — the exact
+property the original deferral was protecting. `=` is worth including because it
+is the loop condition in `arith_loop`/`tak`-shaped code (`(= i n)`), a hot site.
+`/` and `not=` stay deferred (ratio/raise; `(not (= …))`).
+
+Mechanics: `intrinsic.recognize(rt, var_ptr)` scans the cached table (pointer
+identity) → the opcode to emit; one grouped VM dispatch arm handles all 8
+(`intrinsic.fromOpcode(instr.opcode)` → ArithOp; fallback uses
+`rt.arith_vars[@intFromEnum(op)]`). `alter-var-root` on ANY cached op clears
+`core_arith_pristine`. Coverage: diff_test family block (sub/mul/comparisons/=
+inline + `(= 1 1.0)` defer + shadow) + phase4_cli op_mul i48-heap e2e.
+
 ## Implementation plan (file-by-file, derived from a v1 source read)
 
 Ground truth found while writing this ADR (so the implementing cycle is

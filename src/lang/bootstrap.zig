@@ -326,18 +326,25 @@ pub fn setupCorePrefix(rt: *Runtime, env: *Env, macro_table: *macro_dispatch.Tab
     cacheArithIntrinsics(rt, env);
 }
 
-/// ADR-0130: cache the canonical `clojure.core/+` Var so the VM compiler can
-/// recognise `(+ a b)` by pointer identity and emit `op_add`. `+` is interned in
-/// `rt/` and referred into `clojure.core`, so `resolve` finds the same Var from
-/// either ns. Leaves `plus_var` null if `+` is absent (compiler then never emits
-/// op_add). Sets pristine = true; `alter-var-root` on `+` clears it.
+/// ADR-0130: cache the canonical `clojure.core` arith/comparison Vars (+ - * <
+/// <= > >= =) so the VM compiler recognises `(<op> a b)` by pointer identity and
+/// emits the matching intrinsic opcode. Each is interned in `rt/` and referred
+/// into `clojure.core`, so `resolve` finds the same Var from either ns. A null
+/// slot (op absent) means the compiler never emits that opcode. Sets pristine =
+/// true; `alter-var-root` on any cached op clears it.
 pub fn cacheArithIntrinsics(rt: *Runtime, env: *Env) void {
-    const plus: ?*env_mod.Var = blk: {
-        if (env.findNs("clojure.core")) |core| if (core.resolve("+")) |p| break :blk p;
-        if (env.findNs("rt")) |rt_ns| if (rt_ns.resolve("+")) |p| break :blk p;
-        break :blk null;
-    };
-    if (plus) |p| rt.plus_var = p;
+    const intrinsic = @import("../eval/backend/intrinsic.zig");
+    const core = env.findNs("clojure.core");
+    const rt_ns = env.findNs("rt");
+    inline for (std.meta.tags(intrinsic.ArithOp)) |op| {
+        const name = intrinsic.coreName(op);
+        const v: ?*env_mod.Var = blk: {
+            if (core) |c| if (c.resolve(name)) |p| break :blk p;
+            if (rt_ns) |r| if (r.resolve(name)) |p| break :blk p;
+            break :blk null;
+        };
+        if (v) |p| rt.arith_vars[@intFromEnum(op)] = p;
+    }
     rt.core_arith_pristine = true;
 }
 

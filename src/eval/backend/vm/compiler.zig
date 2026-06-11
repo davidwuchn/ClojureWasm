@@ -17,6 +17,7 @@
 
 const std = @import("std");
 const node_mod = @import("../../node.zig");
+const intrinsic = @import("../intrinsic.zig");
 const opcode_mod = @import("opcode.zig");
 const peephole = @import("peephole.zig");
 const value_mod = @import("../../../runtime/value/value.zig");
@@ -295,23 +296,22 @@ const Compiler = struct {
     }
 
     fn compileCall(self: *Compiler, n: node_mod.CallNode) Error!void {
-        // PERF: emit op_add for `(+ a b)` instead of a generic op_call, skipping
-        // var-resolution + BuiltinFn dispatch + arg-slice on the hot path [refs: O-014]
-        // ADR-0130: gate on Var pointer identity to canonical `clojure.core/+`. A
-        // let-shadowed `+` is a `.local_ref`, not a `.var_ref`, so this gate cannot
-        // fire on it. A later alter-var-root is handled by the runtime
-        // `core_arith_pristine` deopt in the op_add dispatch arm.
+        // PERF: emit an arith/comparison intrinsic opcode for `(<op> a b)` instead
+        // of a generic op_call, skipping var-resolution + BuiltinFn dispatch +
+        // arg-slice on the hot path [refs: O-014]
+        // ADR-0130: gate on Var pointer identity to a canonical `clojure.core` op
+        // (+ - * < <= > >= =). A let-shadowed name is a `.local_ref`, not a
+        // `.var_ref`, so this gate cannot fire on it. A later alter-var-root is
+        // handled by the runtime `core_arith_pristine` deopt in the dispatch arm.
         if (n.args.len == 2 and n.callee.* == .var_ref) {
-            if (self.rt.plus_var) |pv| {
-                if (@intFromPtr(pv) == @intFromPtr(n.callee.var_ref.var_ptr)) {
-                    for (n.args) |*a| try self.compileNode(a);
-                    if (n.loc.line != 0) {
-                        self.current_line = n.loc.line;
-                        self.current_column = n.loc.column;
-                    }
-                    try self.emit(.op_add, 0);
-                    return;
+            if (intrinsic.recognize(self.rt, n.callee.var_ref.var_ptr)) |op| {
+                for (n.args) |*a| try self.compileNode(a);
+                if (n.loc.line != 0) {
+                    self.current_line = n.loc.line;
+                    self.current_column = n.loc.column;
                 }
+                try self.emit(op, 0);
+                return;
             }
         }
         try self.compileNode(n.callee);
