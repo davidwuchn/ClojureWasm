@@ -40,6 +40,7 @@ const error_print = @import("../runtime/error/print.zig");
 const print = @import("../runtime/print.zig");
 
 const error_render = @import("error_render.zig");
+const LineEditor = @import("repl/line_editor.zig").LineEditor;
 
 /// Run the REPL until stdin EOF. `arena` is per-process here — each
 /// form's analysis/eval allocates against it, and we never reset; a
@@ -77,12 +78,73 @@ pub fn run(
 
     try stdout.writeAll("ClojureWasm REPL — :exit / Ctrl-D quits.\n");
 
+    // An interactive TTY gets the raw-mode line editor (history + cursor
+    // editing + multi-line); a piped / redirected stdin (tcgetattr fails)
+    // falls back to the plain buffered line read so heredoc / pipe input
+    // still runs and exits cleanly on EOF.
+    const interactive = if (std.posix.tcgetattr(std.Io.File.stdin().handle)) |_| true else |_| false;
+    if (interactive) {
+        var editor = LineEditor.init(gpa, io, stdout, &env);
+        defer editor.deinit();
+        try runInteractive(&rt, &env, &macro_table, arena, stdout, stderr, &editor);
+    } else {
+        try runPiped(io, &rt, &env, &macro_table, arena, stdout, stderr);
+    }
+}
+
+/// Interactive loop driven by the raw-mode line editor.
+fn runInteractive(
+    rt: *Runtime,
+    env: *Env,
+    macro_table: *const macro_dispatch.Table,
+    arena: std.mem.Allocator,
+    stdout: *Writer,
+    stderr: *Writer,
+    editor: *LineEditor,
+) !void {
+    var line_no: usize = 0;
+    while (true) : (line_no += 1) {
+        const ns_name = if (env.current_ns) |ns| ns.name else "user";
+        editor.setNsPrompt(ns_name);
+
+        const line = editor.readInput() orelse return; // null = EOF
+
+        const trimmed = std.mem.trim(u8, line, " \t\r\n");
+        if (trimmed.len == 0) continue;
+        if (std.mem.eql(u8, trimmed, ":exit") or std.mem.eql(u8, trimmed, ":quit")) {
+            try stdout.writeAll("bye\n");
+            try stdout.flush();
+            return;
+        }
+
+        const label = try std.fmt.allocPrint(arena, "<repl:{d}>", .{line_no + 1});
+        // `line` is a slice into the editor's internal buffer; dupe into the
+        // arena so the per-form ctx outlives the next readInput.
+        const line_owned = try arena.dupe(u8, line);
+        const ctx = error_print.SourceContext{ .file = label, .text = line_owned };
+
+        evalOneLine(rt, env, macro_table, arena, stdout, stderr, ctx, line_owned) catch |err| {
+            error_render.renderError(stderr, ctx, err) catch {};
+            try stderr.flush();
+        };
+    }
+}
+
+/// Plain buffered loop for non-TTY stdin (pipe / heredoc / redirect).
+fn runPiped(
+    io: std.Io,
+    rt: *Runtime,
+    env: *Env,
+    macro_table: *const macro_dispatch.Table,
+    arena: std.mem.Allocator,
+    stdout: *Writer,
+    stderr: *Writer,
+) !void {
     var stdin_buf: [4096]u8 = undefined;
     var stdin_reader = std.Io.File.stdin().readerStreaming(io, &stdin_buf);
     var line_no: usize = 0;
 
     while (true) : (line_no += 1) {
-        // Prompt: <current-ns>=>
         const ns_name = if (env.current_ns) |ns| ns.name else "user";
         try stdout.print("{s}=> ", .{ns_name});
         try stdout.flush();
@@ -105,7 +167,6 @@ pub fn run(
             return;
         };
 
-        // :exit / :quit shortcut so users don't need a Ctrl-D to leave.
         const trimmed = std.mem.trim(u8, line, " \t");
         if (trimmed.len == 0) continue;
         if (std.mem.eql(u8, trimmed, ":exit") or std.mem.eql(u8, trimmed, ":quit")) {
@@ -114,15 +175,11 @@ pub fn run(
             return;
         }
 
-        // Per-line source label so errors attribute to the line number.
         const label = try std.fmt.allocPrint(arena, "<repl:{d}>", .{line_no + 1});
-        // The line bytes belong to stdin_reader's internal buffer; dupe
-        // into the arena so the per-form ctx outlives the read.
         const line_owned = try arena.dupe(u8, line);
         const ctx = error_print.SourceContext{ .file = label, .text = line_owned };
 
-        evalOneLine(&rt, &env, &macro_table, arena, stdout, stderr, ctx, line_owned) catch |err| {
-            // Render and recover; never exit on a per-line error.
+        evalOneLine(rt, env, macro_table, arena, stdout, stderr, ctx, line_owned) catch |err| {
             error_render.renderError(stderr, ctx, err) catch {};
             try stderr.flush();
         };

@@ -81,6 +81,7 @@ test "build_options exposes phase_at_least_N comptime bools (ADR-0023)" {
 // src/, add them here so the unified `zig build test` discovers them.
 test {
     _ = @import("app/cli.zig");
+    _ = @import("app/repl/line_editor.zig");
     _ = @import("app/deps/parse.zig");
     _ = @import("app/deps/resolve.zig");
     _ = @import("app/deps/git_fetch.zig");
