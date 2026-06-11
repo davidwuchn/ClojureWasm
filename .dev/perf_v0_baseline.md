@@ -154,6 +154,40 @@ Mapping v0's proven winners onto v1's actual structure (from a v1 source read):
 - The JIT (v0 37.4) is the only piece needing the cross-platform + ADR-layer
   discipline above; everything else is portable bytecode/runtime work.
 
+## Call-path lever (the fib/tak residue) — survey 2026-06-11
+
+After the arith intrinsic family (O-014: arith_loop 170→107 37%, fib 71→61 14%),
+fib/tak are **call-bound** — the win needs the CALL path, not arith. A fresh-context
+survey (`private/notes/9.2.S-call-path-survey.md`) found:
+
+- **The monomorphic IC (v0 24A.5) is a red herring** — it is a protocol/multimethod
+  cache, and v1 ALREADY has the equivalent (`CallSite.lookupWithCache`,
+  `runtime/dispatch/method_table.zig`); fib/tak call plain `.fn_val`s (no protocol),
+  so an IC never touches them.
+- **The real per-call tax** is in the SHARED `callMethodImpl` (`tree_walk.zig:~1244`):
+  a **~2 KB `[256]Value` nil-init memset on EVERY call**, + a 6-hop host-C-stack
+  recursion (`op_call → vt.callFn → treeWalkCall → callFunction → callMethodImpl →
+  evalChunk → vm.eval`) with 2 vtable indirections.
+
+**Top pick — exact-count frame rooting (the O-005 redo done RIGHT).** Init + GC-root
+only the slots a method actually uses, not all 256. O-005 was reverted because its
+slot count UNDER-counted (it used the outer scope's final `next_slot`, which misses
+the high-water across sibling `let*`s, and mis-handled nested `fn*`). **The correct
+accounting:** thread a per-method `max_slot` pointer through the analyzer so
+`allocSlot` does `max_slot.* = @max(max_slot.*, next_slot)`; each `analyzeFnMethod`
+(incl. a nested `fn*`) gets its OWN `max_slot` (nested-fn slots live in the nested
+frame, not the outer's; the outer only counts the closure-capture slots it already
+allocated). Store the final `max_slot` on `FnMethod` (re-add the field O-005
+removed); `callMethodImpl` inits `[0..max_slot)` and the VM roots only `[0..max_slot)`.
+**GC-CRITICAL (F-006):** the count must be ≥ every slot accessed at runtime or it
+SIGSEGVs (UAF, too-low rooting) / `slot_out_of_range` (too-low bound) — both O-005
+failure modes. MUST be verified under `CLJW_GC_TORTURE` + the `nested_deep` repro
+(deep recursion dirties high slots, then a shallow fn under torture) before trusting.
+This is the campaign's highest-risk unit — needs a focused cycle, not a rushed one.
+
+Second pick (larger, after): the in-VM flat-frame model (cut the 6-hop recursion +
+vtable indirections), v0's call dispatch shape. Bigger ceiling, bigger blast radius.
+
 ## Measurement cadence (user-directed 2026-06-11 — keep iteration FAST)
 
 Balance optimization throughput against test cost. Do NOT full-gate or
