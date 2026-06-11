@@ -311,6 +311,15 @@ fn dispatchArgsRest(
                 \\  --version          Print the version (ClojureWasm v<version>) and exit.
                 \\  -h, --help         Show this help.
                 \\
+                \\Subcommands:
+                \\  repl               Start a terminal REPL.
+                \\  nrepl [--port N]   Start an nREPL server (default port 7888) for
+                \\                     CIDER and other editors.
+                \\  build <in.clj> -o <out> [-cp <dirs>] [-A:alias…]
+                \\                     Compile a script (with the runtime) into one
+                \\                     self-contained native binary. Main-mode variant:
+                \\                     build -m <ns> [args…] -o <out>.
+                \\
             , .{build_options.version});
             try stdout.flush();
             return;
