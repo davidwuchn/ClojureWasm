@@ -119,6 +119,16 @@ fi
 SERIAL_STEPS="e2e_phase8_exit_smoke,e2e_phase4_cli,e2e_phase4_exit,e2e_phase4_exit_codes,e2e_phase16_http_server,e2e_phase16_http_client"
 declare -a E2E_QUEUE=()
 
+# Steps that MUST run on every pass, even under --resume. These are
+# environment setup (not tests): they establish the shared optimised
+# `zig-out/bin/cljw` that all e2e steps then reuse (CLJW_SKIP_BUILD).
+# If `build_cljw` is resume-skipped, the ReleaseSafe binary is never
+# (re)built and e2e silently runs against a stale Debug binary at
+# ~1.7s/spawn vs ~5ms (~100x), turning the gate into hours with NO test
+# failure (D-385 silent perf cliff). `assert_e2e_releasesafe` is the loud
+# guard for the same invariant. Both are cheap (cache-hit build, one stat).
+NO_RESUME_STEPS="build_cljw,assert_e2e_releasesafe"
+
 # --- run_step framework (per ADR-0024) ---
 
 declare -a STEPS_PASSED=()
@@ -160,7 +170,11 @@ run_step() {
     fi
 
     # D-385 resume: this step already passed for the current source content.
-    if resume_done "$name"; then
+    # NO_RESUME_STEPS (env-setup like build_cljw) are exempt — they must run
+    # every pass to keep the shared ReleaseSafe e2e binary correct (see the
+    # NO_RESUME_STEPS comment; resume-skipping build_cljw was the silent
+    # ~100x perf cliff behind the multi-hour gate).
+    if resume_done "$name" && ! step_in_csv "$name" "$NO_RESUME_STEPS"; then
         echo "[resume-skip] $name"
         STEPS_SKIPPED+=("$name")
         return 0
@@ -347,6 +361,15 @@ fi
 export CLJW_OPT="${CLJW_OPT:-ReleaseSafe}"
 run_step "build_cljw"           "zig build -Doptimize=$CLJW_OPT"
 export CLJW_SKIP_BUILD=1
+
+# Loud guard for the silent perf cliff (D-385): the ~3200-spawn e2e suite
+# runs ~100x slower on a Debug binary (~1.7s vs ~5ms cold-start) with NO
+# failure. Refuse to enter e2e unless the shared binary is actually
+# optimised. Size is the deterministic, load-independent signal here:
+# ReleaseSafe ≈ 3.5 MB vs Debug ≈ 12.8 MB. If a future ReleaseSafe binary
+# ever exceeds 8 MB, replace this heuristic with a semantic build-mode
+# check (e.g. a `cljw --build-mode` introspection).
+run_step "assert_e2e_releasesafe" 'mode=$(zig-out/bin/cljw --version 2>/dev/null | sed -nE "s/.*\((.*)\)/\1/p"); { [ -n "$mode" ] && [ "$mode" != Debug ]; } || { echo "    e2e binary build mode=${mode:-unknown} (CLJW_OPT='"$CLJW_OPT"') — Debug/unknown, not optimised. e2e would run ~100x slow; build_cljw must run every pass (NO_RESUME_STEPS). Refusing."; exit 1; }; echo "    e2e binary build mode: $mode"'
 
 # clj-diff corpus regression (cljw-only replay of golden `;;=> …` pairs —
 # no clj/network). Makes a "X/Y landed" discharge claim mechanically
@@ -672,6 +695,18 @@ run_step "scan_panic_audit"    "bash scripts/scan_panic_audit.sh"  optional
 
 if (( LIST_ONLY )); then
     exit 0
+fi
+
+# Backstop for the silent perf cliff (D-385): re-assert the shared binary is
+# STILL optimised right before the expensive parallel pool. assert_e2e_releasesafe
+# ran right after build_cljw, but a later serial step that does a bare `zig build`
+# (Debug) — the test_clj_tier_a class of bug — could have reverted it since. Catch
+# it here so the ~3200-spawn pool never runs ~100x slow on Debug.
+_pool_mode=$(zig-out/bin/cljw --version 2>/dev/null | sed -nE 's/.*\((.*)\)/\1/p')
+if [ -z "$_pool_mode" ] || [ "$_pool_mode" = "Debug" ]; then
+    echo "==> FATAL: e2e binary build mode=${_pool_mode:-unknown} before the parallel pool" >&2
+    echo "    — a step ran a bare 'zig build' (Debug). Aborting; the pool would run ~100x slow (D-385)." >&2
+    exit 1
 fi
 
 # Drain the deferred functional-e2e pool (no-op under --serial-e2e, where

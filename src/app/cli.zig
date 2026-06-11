@@ -286,7 +286,11 @@ fn dispatchArgsRest(
     var current_arg: ?[]const u8 = first_arg;
     while (current_arg) |arg| : (current_arg = args.next()) {
         if (std.mem.eql(u8, arg, "--version")) {
-            try stdout.print("ClojureWasm v{s}\n", .{build_options.version});
+            // Bake the optimize mode into the banner (@import("builtin").mode is
+            // comptime-known) so build mode is readable at a glance instead of
+            // guessed from binary size — and so the gate can assert ReleaseSafe
+            // semantically (D-385 silent Debug-binary perf cliff).
+            try stdout.print("ClojureWasm v{s} ({s})\n", .{ build_options.version, @tagName(@import("builtin").mode) });
             try stdout.flush();
             return;
         } else if (std.mem.eql(u8, arg, "-h") or std.mem.eql(u8, arg, "--help")) {
@@ -308,7 +312,7 @@ fn dispatchArgsRest(
                 \\  --compare          Run source through tree_walk AND vm backends;
                 \\                     print OK + value on agreement, MISMATCH + both
                 \\                     values (exit 1) on divergence.
-                \\  --version          Print the version (ClojureWasm v<version>) and exit.
+                \\  --version          Print the version (ClojureWasm v<version> (<build-mode>)) and exit.
                 \\  -h, --help         Show this help.
                 \\
                 \\Subcommands:

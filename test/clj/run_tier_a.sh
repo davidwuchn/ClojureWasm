@@ -15,7 +15,12 @@ set -euo pipefail
 cd "$(dirname "$0")/../.."
 
 BIN="zig-out/bin/cljw"
-zig build >/dev/null
+# Honor the gate's shared-binary contract: skip the build when run_all.sh
+# already built the optimised cljw (CLJW_SKIP_BUILD), else build ReleaseSafe
+# (NOT a bare `zig build` = Debug, which would clobber the shared binary to
+# Debug right before the parallel e2e pool — the ~100x silent perf cliff that
+# made the whole gate take hours; D-385).
+[ -n "${CLJW_SKIP_BUILD:-}" ] || zig build -Doptimize="${CLJW_OPT:-ReleaseSafe}" >/dev/null
 
 OUT=$("$BIN" test/clj/cw_ported.clj 2>&1) || {
     echo "FAIL test_clj exit non-zero" >&2
