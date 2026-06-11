@@ -2307,6 +2307,30 @@ active:
       real surface (`wasm/load` + `wasm/call`, dropping `wasm/load-wasi` / `wasm/fn`).
       Until then `bench/README.md` § "Not yet wired" flags it. | WASI-import FFI
     last_reviewed: "2026-06-10"
+  - id: "D-385"
+    status: |-
+      open (2026-06-11) — the full gate (`test/run_all.sh`) is a ~30-min run and
+      `--serial-e2e` can approach/exceed the 1800s timeout under load, forcing a
+      wasteful re-run (observed 2026-06-11: a campaign gate at 24 min still mid-e2e,
+      ~5 min of timeout headroom left). Two gaps: (1) NO per-step or total elapsed
+      timing in the gate log, so the slow steps are invisible; (2) the gate is
+      all-or-nothing — no resume-from-middle, no incremental "only what changed"
+      run, no tiered partial-then-full. A throughput drain on the perf campaign
+      (many source commits → many gates); user-flagged for review 2026-06-11.
+    category: "tooling"
+    barrier: |-
+      Not blocked — a design/review task, deferred only by priority (user: "next or
+      later is fine", 2026-06-11). Scope when picked up:
+      (a) emit per-step duration + a running total in run_all.sh's run_step (cheap;
+          do FIRST so the rest is data-driven — see which steps actually dominate);
+      (b) research industry patterns (affected-only / incremental test selection,
+          resume/checkpoint, test sharding / partial-parallel, content-hash skip);
+      (c) re-audit each phase's e2e content for redundancy / consolidation;
+      (d) consider a tiered gate (fast affected-subset by default, full-serial only
+          at Phase boundary / pre-tag). The full run must remain available.
+      Predicate to land: the gate log shows per-step + total time AND a faster
+      default path exists for the common case (typical re-run cost << 30 min). | none
+    last_reviewed: "2026-06-11"
 discharged:
   - id: "D-249"
     discharged_at: "docs(diff): Clojure-vs-ClojureWasm differences sheet"
