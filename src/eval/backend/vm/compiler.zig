@@ -805,7 +805,17 @@ const Compiler = struct {
         // the same path, and the Phase-12 serializer caches the
         // optimized chunk transparently.
         const instrs = try peephole.optimize(self.arena, raw);
-        return .{ .instructions = instrs, .constants = consts, .call_sites = sites, .libspecs = specs, .ns_filters = filters, .ctor_sites = ctors, .import_sites = ns_imports, .source_file = self.source_file };
+        // ADR-0131 2b: precompute whether this chunk carries any try/binding
+        // handler op, so the in-VM call flatten can cheaply gate on a
+        // handler-free callee (the bounded-unwind precondition).
+        var has_handlers = false;
+        for (instrs) |ins| {
+            if (ins.opcode == .op_push_handler or ins.opcode == .op_push_cleanup) {
+                has_handlers = true;
+                break;
+            }
+        }
+        return .{ .instructions = instrs, .constants = consts, .call_sites = sites, .libspecs = specs, .ns_filters = filters, .ctor_sites = ctors, .import_sites = ns_imports, .source_file = self.source_file, .has_handlers = has_handlers };
     }
 };
 

@@ -1135,6 +1135,11 @@ test "chunk completeness gate: every side-table + entry field round-trips (D-365
             // EXEMPT: AOT omits source_file by design; a deserialized chunk
             // defaults to "unknown" (per the BytecodeChunk doc-comment).
             .source_file => true,
+            // EXEMPT: `has_handlers` is a DERIVED field (ADR-0131 2b) — recomputable
+            // by scanning the instructions. AOT omits it; a deserialized chunk
+            // defaults to `true` (conservatively not flattened by the in-VM call
+            // frame path, which is a perf opt with an identical-Value slow fallback).
+            .has_handlers => true,
         };
         try testing.expect(classified);
     }

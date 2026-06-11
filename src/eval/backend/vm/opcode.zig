@@ -498,6 +498,15 @@ pub const BytecodeChunk = struct {
     /// Side-table indexed by `op_ns_import` operand. Empty for chunks with no
     /// `(:import …)` directive.
     import_sites: []ImportPair = &.{},
+    /// ADR-0131 2b: true if this chunk contains any `op_push_handler` /
+    /// `op_push_cleanup` (a `try`/binding form). The in-VM call-frame flatten
+    /// only takes a callee whose chunk is handler-free, so the eval's handler
+    /// stack stays invariant across flattened frames and a throw needs only the
+    /// bounded "pop flattened frames then run the base frame's catch" unwind.
+    /// Defaults to `true` (conservative: an unscanned AOT/test chunk is treated
+    /// as possibly-handlered and is NOT flattened). The compiler's `finalize`
+    /// computes the exact value for every compiled chunk.
+    has_handlers: bool = true,
 };
 
 test "opcode enum tags are stable u8 values" {
