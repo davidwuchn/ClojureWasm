@@ -93,6 +93,42 @@ interfaces:
     methods:
       invoke: { status: wired, wires_to_protocol: IFn, wires_to_method: "-invoke" }
       applyTo: { status: wired, wires_to_protocol: IFn, wires_to_method: "-apply-to" }
+  - name: clojure.lang.IPersistentVector
+    derives_from: "clojure.lang.IPersistentVector — persistent vector contract (Clojure, stable); as a deftype SUPERTYPE-WITH-METHODS (the D-400 composite), pulled by instaparse's AutoFlattenSeq (ADR-0134)."
+    tier: A
+    recognised: true
+    kind: protocol_remap
+    modeled_as: "grouped family remap (assocN/length → Associative/-assoc, IPersistentCollection/-count; + the inherited Associative/Stack/Reversible/Indexed/Seqable/ILookup/Object surface)"
+    note: "extend-protocol TO clojure.lang.IPersistentVector still distributes over the native vector tag (nativeExtendTags precedes the remap check); this row covers the deftype-supertype position only."
+    methods:
+      count: { status: wired, wires_to_protocol: IPersistentCollection, wires_to_method: "-count" }
+      length: { status: wired, wires_to_protocol: IPersistentVector, wires_to_method: "-length" }
+      cons: { status: wired, wires_to_protocol: IPersistentCollection, wires_to_method: "-cons" }
+      empty: { status: wired, wires_to_protocol: IPersistentCollection, wires_to_method: "-empty" }
+      assoc: { status: wired, wires_to_protocol: Associative, wires_to_method: "-assoc" }
+      assocN: { status: wired, wires_to_protocol: IPersistentVector, wires_to_method: "-assoc-n" }
+      containsKey: { status: wired, wires_to_protocol: Associative, wires_to_method: "-contains-key?" }
+      entryAt: { status: wired, wires_to_protocol: Associative, wires_to_method: "-entry-at" }
+      valAt: { status: wired, wires_to_protocol: ILookup, wires_to_method: "-lookup" }
+      seq: { status: wired, wires_to_protocol: Seqable, wires_to_method: "-seq" }
+      nth: { status: wired, wires_to_protocol: Indexed, wires_to_method: "-nth" }
+      peek: { status: wired, wires_to_protocol: IPersistentStack, wires_to_method: "-peek" }
+      pop: { status: wired, wires_to_protocol: IPersistentStack, wires_to_method: "-pop" }
+      rseq: { status: wired, wires_to_protocol: Reversible, wires_to_method: "-rseq" }
+      hashCode: { status: wired, wires_to: "Object method-family (hash consult, D-280d1)" }
+      hasheq: { status: wired, wires_to: "Object method-family (hash consult prefers hasheq, D-280d5)" }
+      equals: { status: wired, wires_to: "Object method-family (= consult, D-280d1)" }
+      equiv: { status: wired, wires_to: "Object method-family (= consult, D-280d8)" }
+      toString: { status: wired, wires_to: "Object method-family (str/print consult, D-275)" }
+  - name: java.lang.Comparable
+    derives_from: "java.lang.Comparable — natural-ordering participant (Java, stable; clj RT.compare casts to it)."
+    tier: A
+    recognised: true
+    kind: protocol_remap
+    modeled_as: "Comparable (compareTo → Comparable/-compare-to, D-400 family)"
+    note: "Both the qualified and bare spellings route here (instaparse declares the qualified form). `compare` (math.zig) consults Comparable/-compare-to for a typed_instance before native valueCompare."
+    methods:
+      compareTo: { status: wired, wires_to_protocol: Comparable, wires_to_method: "-compare-to" }
   - name: clojure.lang.IKVReduce
     derives_from: "clojure.lang.IKVReduce — key/value reduce participant (Clojure, stable)."
     tier: A

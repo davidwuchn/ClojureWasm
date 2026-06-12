@@ -498,12 +498,26 @@ fn isFalsy(v: Value) bool {
 /// after the sort.
 const NaturalSortCtx = struct {
     rt: *Runtime,
+    env: *Env,
     loc: SourceLocation,
     err: ?anyerror = null,
 };
 
 fn naturalLessThan(ctx: *NaturalSortCtx, a: Value, b: Value) bool {
     if (ctx.err != null) return false;
+    // A deftype declaring java.lang.Comparable supplies its own ordering
+    // (instaparse's AutoFlattenSeq): consult Comparable/-compare-to before
+    // the native valueCompare — the same split the compare primitive applies.
+    if (a.tag() == .typed_instance or a.tag() == .reified_instance) {
+        var cs: dispatch.CallSite = .{};
+        const maybe = dispatch.dispatchOrNull(ctx.rt, ctx.env, &cs, a, "Comparable", "-compare-to", &.{ a, b }, ctx.loc) catch |e| {
+            ctx.err = e;
+            return false;
+        };
+        if (maybe) |r| {
+            if (r.tag() == .integer) return r.asInteger() < 0;
+        }
+    }
     const ord = compare_mod.valueCompare(ctx.rt, a, b, ctx.loc) catch |e| {
         ctx.err = e;
         return false;
@@ -584,7 +598,6 @@ fn sortByKeysFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocatio
 /// not). Stable: `valueCompare` ties → `.eq` → `lessThan` false → block sort
 /// preserves input order (matches `-merge-sorted`'s left-wins tie rule).
 fn sortNaturalFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
-    _ = env;
     if (args.len != 1) {
         return error_catalog.raise(.arity_not_expected, loc, .{ .fn_name = "-sort-natural", .expected = 1, .got = args.len });
     }
@@ -595,7 +608,7 @@ fn sortNaturalFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocati
     defer rt.gpa.free(buf);
     var i: u32 = 0;
     while (i < n) : (i += 1) buf[i] = vector_mod.nth(v, i);
-    var ctx: NaturalSortCtx = .{ .rt = rt, .loc = loc };
+    var ctx: NaturalSortCtx = .{ .rt = rt, .env = env, .loc = loc };
     std.mem.sort(Value, buf, &ctx, naturalLessThan);
     if (ctx.err) |e| return e;
     return vector_mod.fromSlice(rt, buf);

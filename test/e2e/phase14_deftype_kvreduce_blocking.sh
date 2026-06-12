@@ -60,6 +60,32 @@ want='{1 :a, 2 :b}
 :pv'
 assert_eq 'kvreduce_blocking_indexed_applyto' "$got" "$want"
 
+# java.lang.Comparable deftype (instaparse's AutoFlattenSeq): compare +
+# the natural sort consult it; IPersistentVector as a supertype-WITH-METHODS
+# (the D-400 composite, ADR-0134-pulled) registers assoc/assocN/length.
+got=$("$BIN" - <<'CLJ' 2>/dev/null
+(deftype Cmp [v]
+  java.lang.Comparable
+  (compareTo [self that] (compare v (.-v that))))
+(prn (compare (->Cmp 1) (->Cmp 2)))
+(prn (mapv (fn [c] (.-v c)) (sort [(->Cmp 2) (->Cmp 1) (->Cmp 0)])))
+(deftype MiniVec [v]
+  clojure.lang.Counted
+  (count [_] (count v))
+  clojure.lang.IPersistentVector
+  (assoc [self i val] (MiniVec. (assoc v i val)))
+  (assocN [self i val] (MiniVec. (.assocN v i val)))
+  (length [_] (count v)))
+(prn (count (->MiniVec [1 2 3])))
+(prn (.-v (.assocN (->MiniVec [1 2 3]) 0 9)))
+CLJ
+) || true
+want='-1
+[0 1 2]
+3
+[9 2 3]'
+assert_eq 'comparable_ipv_supertype' "$got" "$want"
+
 # reduce-kv on a RECORD (no IKVReduce) still takes the keys fallback.
 got=$("$BIN" - <<'EOF' 2>/dev/null
 (defrecord R [a b])
@@ -68,4 +94,4 @@ EOF
 ) || true
 assert_eq 'reduce_kv_record_fallback' "$got" '{1 :a, 2 :b}'
 
-echo "OK — phase14_deftype_kvreduce_blocking (2 cases) green"
+echo "OK — phase14_deftype_kvreduce_blocking (3 cases) green"

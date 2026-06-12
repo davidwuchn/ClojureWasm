@@ -370,7 +370,6 @@ fn isNanFloat(v: Value) bool {
 }
 
 pub fn compare(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
-    _ = env;
     if (args.len != 2)
         return error_catalog.raise(.arity_not_expected, loc, .{ .fn_name = "compare", .got = args.len, .expected = @as(usize, 2) });
     // clojure.core/compare treats a NaN operand as EQUAL (0) to everything,
@@ -378,6 +377,13 @@ pub fn compare(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation
     // path), so this cannot live in the shared valueCompare. `(compare ##NaN 1)`
     // → 0, `(compare ##NaN ##NaN)` → 0.
     if (isNanFloat(args[0]) or isNanFloat(args[1])) return Value.initInteger(0);
+    // A deftype/reify declaring java.lang.Comparable (instaparse's
+    // AutoFlattenSeq) supplies its own ordering: consult Comparable/
+    // -compare-to (clj: RT compare casts to Comparable and calls compareTo).
+    if (args[0].tag() == .typed_instance or args[0].tag() == .reified_instance) {
+        var cs: dispatch.CallSite = .{};
+        if (try dispatch.dispatchOrNull(rt, env, &cs, args[0], "Comparable", "-compare-to", args[0..2], loc)) |r| return r;
+    }
     const order = try compare_mod.valueCompare(rt, args[0], args[1], loc);
     const c: i64 = switch (order) {
         .lt => -1,

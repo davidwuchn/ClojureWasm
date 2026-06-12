@@ -1718,6 +1718,13 @@
 ;; before its keys fallback. 3-arity timed deref → -blocking-deref; the deref
 ;; primitive's (deref x ms timeout-val) arity dispatches it (stm.zig).
 (defprotocol IKVReduce (-kv-reduce [m f init]))
+;; java.lang.Comparable deftype supertype (instaparse): compareTo →
+;; -compare-to; `compare` consults it for a typed_instance (math.zig).
+(defprotocol Comparable (-compare-to [a b]))
+;; IPersistentVector deftype-supertype slots (instaparse, D-400 composite):
+;; assocN/length register here (registration-level; bodies delegate via
+;; dot-calls). Distinct from the native vector's instance? membership.
+(defprotocol IPersistentVector (-assoc-n [v i x]) (-length [v]))
 (defprotocol IBlockingDeref (-blocking-deref [o ms timeout-val]))
 ;; `Sequential` is a zero-method MARKER protocol (JVM `clojure.lang.Sequential`):
 ;; a type that declares it prints as its seq and answers `sequential?` true

@@ -131,6 +131,50 @@ const IFN: HostInterface = .{ .kind = .protocol_remap, .canonical = "IFn", .rema
     .{ .clj = "applyTo", .protocol = "IFn", .method = "-apply-to" },
 } };
 
+// clojure.lang.IPersistentVector as a deftype SUPERTYPE-WITH-METHODS —
+// the D-400 composite the audit deferred; instaparse's AutoFlattenSeq
+// PULLED it (ADR-0134). The remap mirrors the interface's definition-
+// derived grouped surface (it extends Associative / IPersistentStack /
+// Reversible / Indexed / IPersistentCollection / Seqable / ILookup, and
+// clj groups inherited methods under the one section): assocN/length are
+// the vector-specific names (assocN ≡ index assoc; length ≡ count).
+const IPERSISTENT_VECTOR: HostInterface = .{
+    .kind = .protocol_remap,
+    .canonical = "IPersistentVector",
+    .remap = &.{
+        .{ .clj = "count", .protocol = "IPersistentCollection", .method = "-count" },
+        // length/assocN keep DISTINCT method names: sharing -count/-assoc
+        // would merge two same-arity overloads into one fn* (a compile
+        // error when a type declares both). Registration-level; the deftype
+        // bodies reach the native ops via dot-calls (D-283 dual names).
+        .{ .clj = "length", .protocol = "IPersistentVector", .method = "-length" },
+        .{ .clj = "cons", .protocol = "IPersistentCollection", .method = "-cons" },
+        .{ .clj = "empty", .protocol = "IPersistentCollection", .method = "-empty" },
+        .{ .clj = "assoc", .protocol = "Associative", .method = "-assoc" },
+        .{ .clj = "assocN", .protocol = "IPersistentVector", .method = "-assoc-n" },
+        .{ .clj = "containsKey", .protocol = "Associative", .method = "-contains-key?" },
+        .{ .clj = "entryAt", .protocol = "Associative", .method = "-entry-at" },
+        .{ .clj = "valAt", .protocol = "ILookup", .method = "-lookup" },
+        .{ .clj = "seq", .protocol = "Seqable", .method = "-seq" },
+        .{ .clj = "nth", .protocol = "Indexed", .method = "-nth" },
+        .{ .clj = "peek", .protocol = "IPersistentStack", .method = "-peek" },
+        .{ .clj = "pop", .protocol = "IPersistentStack", .method = "-pop" },
+        .{ .clj = "rseq", .protocol = "Reversible", .method = "-rseq" },
+        .{ .clj = "hashCode", .protocol = "Object", .method = "hashCode" },
+        .{ .clj = "hasheq", .protocol = "Object", .method = "hasheq" },
+        .{ .clj = "equals", .protocol = "Object", .method = "equals" },
+        .{ .clj = "equiv", .protocol = "Object", .method = "equiv" },
+        .{ .clj = "toString", .protocol = "Object", .method = "toString" },
+    },
+};
+
+// java.lang.Comparable — compareTo (D-400 family; instaparse's
+// AutoFlattenSeq declares it). `compare` consults Comparable/-compare-to
+// for a typed_instance before the native valueCompare.
+const JAVA_COMPARABLE: HostInterface = .{ .kind = .protocol_remap, .canonical = "Comparable", .remap = &.{
+    .{ .clj = "compareTo", .protocol = "Comparable", .method = "-compare-to" },
+} };
+
 // clojure.lang.IKVReduce — kvreduce (D-400). `reduce-kv` consults
 // IKVReduce/-kv-reduce via rt/__kv-reduce-or before its keys fallback.
 const IKVREDUCE: HostInterface = .{ .kind = .protocol_remap, .canonical = "IKVReduce", .remap = &.{
@@ -418,6 +462,12 @@ const MARKERS = std.StaticStringMap(HostInterface).initComptime(.{
     // D-400 marker-family remainder.
     .{ "clojure.lang.IKVReduce", IKVREDUCE },
     .{ "clojure.lang.IBlockingDeref", IBLOCKING_DEREF },
+    // Qualified spelling ONLY: a bare "Comparable" key would make the
+    // rewrite's own second-pass section (headed by the bare canonical)
+    // re-route and raise on the already-translated -compare-to (the D-286b
+    // self-recursion the identity guard does not cover for this shape).
+    .{ "java.lang.Comparable", JAVA_COMPARABLE },
+    .{ "clojure.lang.IPersistentVector", IPERSISTENT_VECTOR },
     // D-286: the editable / transient collection family (flatland.ordered).
     // BOTH the qualified spelling AND the bare simple name (a deftype `:import`s
     // `(clojure.lang IEditableCollection …)` then declares the BARE name) route to
