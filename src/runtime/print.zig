@@ -81,8 +81,19 @@ pub fn printResult(rt: *Runtime, env: *env_mod.Env, w: *Writer, v: Value) anyerr
     // without a per-element Var deref. Re-snapshotting each call keeps a prior
     // binding from leaking into the next print.
     snapshotPrintLimits();
+    // Arm the realize context (same shape as ADR-0127's `active_consult`) so
+    // nested dispatch-needing renders — an IPersistentMap-declaring deftype's
+    // map-style print — can reach rt/env from inside the pure `printValue`
+    // recursion. Saved/restored so a re-entrant print keeps its own ctx.
+    const saved = realize_ctx;
+    realize_ctx = .{ .rt = rt, .env = env };
+    defer realize_ctx = saved;
     try printValue(w, try deepRealize(rt, env, v));
 }
+
+/// rt/env for dispatch-needing renders inside the pure `printValue` recursion
+/// (armed by `printResult`; the ADR-0127 `active_consult` precedent).
+threadlocal var realize_ctx: ?struct { rt: *Runtime, env: *env_mod.Env } = null;
 
 /// Write `v` in `str`-form (the unquoted `toString` rendering) to `w`. The
 /// single source for `clojure.core/str` (Layer 2) AND the `.toString`
@@ -984,8 +995,45 @@ pub fn writeBigDecimalDigits(w: *Writer, v: Value) anyerror!void {
     }
 }
 
+/// Render an IPersistentMap-declaring deftype map-style `{k v, …}` from its
+/// `-seq`, in SEQ ORDER (clj: core_print's defmethod on the clojure.lang
+/// interface class — data.priority-map prints in priority order). Needs
+/// `realize_ctx` (rt/env for the -seq dispatch + entry realization); without
+/// it the caller falls back to the default `#Name[…]` render. Returns false
+/// when the type has no dispatchable `-seq`.
+fn printMapLikeTypedInstance(rt: *Runtime, env: *env_mod.Env, w: *Writer, v: Value) anyerror!bool {
+    var cs: dispatch_mod.CallSite = .{};
+    const noloc: SourceLocation = .{};
+    const s = (try dispatch_mod.dispatchOrNull(rt, env, &cs, v, "Seqable", "-seq", &.{v}, noloc)) orelse return false;
+    const entries = try realizeSeqWalk(rt, env, s);
+    try w.writeByte('{');
+    var node = entries;
+    var i: i64 = 0;
+    while (node.tag() == .list and list_collection.countOf(node) > 0) : (node = list_collection.rest(node)) {
+        if (try lengthTruncated(w, i, ", ")) break;
+        if (i > 0) try w.writeAll(", ");
+        const e = list_collection.first(node);
+        const k = if (e.tag() == .map_entry) map_entry_collection.keyOf(e) else vector_collection.nth(e, 0);
+        const val = if (e.tag() == .map_entry) map_entry_collection.valOf(e) else vector_collection.nth(e, 1);
+        try printValue(w, try deepRealize(rt, env, k));
+        try w.writeByte(' ');
+        try printValue(w, try deepRealize(rt, env, val));
+        i += 1;
+    }
+    try w.writeByte('}');
+    return true;
+}
+
 fn printTypedInstance(w: *Writer, v: Value) anyerror!void {
     const inst = v.decodePtr(*const td_mod.TypedInstance);
+    // A deftype declaring clojure.lang.IPersistentMap prints map-style when a
+    // realize context is available (printResult arms it; the pure printValue
+    // paths keep the default render).
+    if (inst.descriptor.kind != .defrecord and inst.descriptor.declaresProtocol("IPersistentMap")) {
+        if (realize_ctx) |ctx| {
+            if (try printMapLikeTypedInstance(ctx.rt, ctx.env, w, v)) return;
+        }
+    }
     // Reader-tag host value (ADR-0079): emit `#<tag> "<iso>"`. Today only
     // `#inst` (java.util.Date) — body = the epoch-ms field 0 as the
     // canonical ISO string. Descriptor-driven (no rt, no surface import).

@@ -339,6 +339,9 @@ fn matchUserType(v: Value, simple: []const u8) bool {
         }
         for (t.protocol_impls) |pn| {
             if (std.mem.eql(u8, pn, simple)) return true;
+            // A protocol_remap declaration records the CANONICAL qualified name
+            // (`clojure.lang.IPersistentMap`); match its simple form too.
+            if (std.mem.eql(u8, normalizeClassName(pn), simple)) return true;
         }
         cursor = t.parent;
     }

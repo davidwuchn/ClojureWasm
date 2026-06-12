@@ -502,6 +502,11 @@ pub fn emptyFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation
         .vector => vector.empty(),
         .array_map, .hash_map => map.empty(),
         .hash_set => set.empty(),
+        // Sorted variants keep their comparator (clj PersistentTreeMap.empty()
+        // returns an empty tree with the same comp) — data.priority-map's
+        // `(empty priority->set-of-items)` relies on it.
+        .sorted_map => try sorted.emptyMapBy(rt, coll.decodePtr(*const sorted.SortedMap).comparator),
+        .sorted_set => try sorted.emptySetBy(rt, coll.decodePtr(*const sorted.SortedSet).map.decodePtr(*const sorted.SortedMap).comparator),
         .persistent_queue => try persistent_queue.emptyQueue(rt), // (empty q) → EMPTY
         .list, .cons => try list.emptyList(rt), // (empty '(1 2)) → () (D-164)
         // JVM Clojure: (empty "hi") → nil (String is not a Clojure

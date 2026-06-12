@@ -45,4 +45,46 @@ assert_eq 'miss'       "$(printf '%s' "$out" | grep '^miss'  | tail -1)" 'miss f
 COUNTED_OUT="$("$BIN" -e '(deftype C [n] clojure.lang.Counted (count [_] n)) (count (->C 7))' 2>&1 | tail -1)"
 assert_eq 'counted_only' "$COUNTED_OUT" '7'
 
-echo "OK — phase14_deftype_collection_base (5 cases) green"
+# instance? sees the DECLARED interface even when its methods all remap to
+# OTHER cljw protocols (IPersistentMap's count/assoc/… scatter to
+# IPersistentCollection/Associative/…, so the declared name itself must be
+# recorded; clj: (instance? clojure.lang.IPersistentMap pm) is plainly true).
+INSTANCE_OUT="$("$BIN" - <<'CLJ' 2>&1 | tail -1
+(deftype Pm [m]
+  clojure.lang.IPersistentMap
+  (count [_] (count m))
+  (assoc [_ k v] (Pm. (assoc m k v))))
+(prn [(instance? clojure.lang.IPersistentMap (->Pm {:a 1}))
+      (instance? clojure.lang.IPersistentMap {:a 1})
+      (instance? clojure.lang.IPersistentMap [1])])
+CLJ
+)"
+assert_eq 'declared_iface_instance' "$INSTANCE_OUT" '[true true false]'
+
+# A ZERO-method protocol_remap declaration loads and records the marker
+# (was: "__extend-type!: expected protocol, got type_descriptor").
+ZERO_OUT="$("$BIN" - <<'CLJ' 2>&1 | tail -1
+(deftype Z [m] clojure.lang.IPersistentMap)
+(prn (instance? clojure.lang.IPersistentMap (->Z {})))
+CLJ
+)"
+assert_eq 'zero_method_remap_decl' "$ZERO_OUT" 'true'
+
+# An IPersistentMap-declaring deftype PRINTS map-style from its seq (clj:
+# core_print's defmethod on the clojure.lang.IPersistentMap interface class;
+# data.priority-map prints {:b 1, :c 2, :a 3} in priority order, not
+# #PersistentPriorityMap[…]). Nested + seq-order preservation included.
+PRINT_OUT="$("$BIN" - <<'CLJ' 2>&1 | tail -2
+(deftype Pm [m]
+  clojure.lang.IPersistentMap
+  (count [_] (count m))
+  clojure.lang.Seqable
+  (seq [_] (reverse (seq m))))
+(prn (->Pm {:a 1 :b 2}))
+(prn [{:x (->Pm {:a 1})}])
+CLJ
+)"
+assert_eq 'maplike_print' "$PRINT_OUT" '{:b 2, :a 1}
+[{:x {:a 1}}]'
+
+echo "OK — phase14_deftype_collection_base (8 cases) green"

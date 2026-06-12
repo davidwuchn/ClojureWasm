@@ -91,11 +91,31 @@ fn recordFieldGet(rec: Value, k: Value) ?Value {
 /// `default`. The single source for record associative read — both the
 /// `get` primitive (collection.zig) and the keyword-as-fn `(:k rec)` path
 /// below call it, so `(:k rec)` ≡ `(get rec :k)` by construction.
-pub fn recordGet(rt: *Runtime, env: *Env, rec: Value, k: Value, default: Value, loc: SourceLocation) !Value {
+/// `has_default` mirrors clj's RT.get arity split: a 3-arity get consults
+/// the 3-arity `valAt(k, nf)` impl (a deftype like data.priority-map
+/// returns its not-found THERE, not via a nil from the 2-arity), falling
+/// back to the 2-arity impl when the type declared only that.
+pub fn recordGet(rt: *Runtime, env: *Env, rec: Value, k: Value, has_default: bool, default: Value, loc: SourceLocation) !Value {
     if (recordFieldGet(rec, k)) |v| return v;
     var cs: dispatch.CallSite = .{};
+    if (has_default) {
+        const slow3 = [_]Value{ rec, k, default };
+        if (dispatch.dispatchOrNull(rt, env, &cs, rec, "ILookup", "-lookup", &slow3, loc)) |maybe| {
+            if (maybe) |v| return v;
+        } else |_| {
+            // 3-arity call failed (the type declared only the 2-arity valAt)
+            // — fall through to the 2-arity consult below.
+        }
+    }
+    var cs2: dispatch.CallSite = .{};
     const slow_args = [_]Value{ rec, k };
-    if (try dispatch.dispatchOrNull(rt, env, &cs, rec, "ILookup", "-lookup", &slow_args, loc)) |v| return v;
+    if (try dispatch.dispatchOrNull(rt, env, &cs2, rec, "ILookup", "-lookup", &slow_args, loc)) |v| {
+        // A 2-arity valAt cannot express "absent" vs "present-as-nil"; clj's
+        // RT.get with a default never reaches here (it requires the 3-arity),
+        // so a nil result with an explicit default yields the default.
+        if (has_default and v.isNil()) return default;
+        return v;
+    }
     return default;
 }
 
@@ -113,7 +133,7 @@ pub fn invoke(rt: *Runtime, env: *Env, callee: Value, args: []const Value, loc: 
             // field → ILookup → default), same as the `get` primitive, so
             // `(:k rec)` ≡ `(get rec :k)`. map.get cannot see record fields.
             if (args[0].tag() == .typed_instance)
-                return recordGet(rt, env, args[0], callee, default, loc);
+                return recordGet(rt, env, args[0], callee, args.len == 2, default, loc);
             // `(:tag t)` / `(:form t)` on a TaggedLiteral ≡ `(get t :tag)`.
             if (args[0].tag() == .tagged_literal)
                 return tagged_literal_mod.valAt(args[0], callee, default);

@@ -42,5 +42,19 @@ EOF
 )
 assert_eq 'singlepair_assoc' "$got" '7'
 
+# get with a not-found default consults the 3-arity valAt (clj: RT.get(o,k,nf)
+# → ILookup.valAt(k, nf)); data.priority-map's valAt 3-arity depends on it.
+# Keyword-as-fn 2-arity `(:k b :nf)` rides the same path.
+got=$("$BIN" - <<'EOF' 2>/dev/null
+(deftype Box3 [m]
+  clojure.lang.ILookup
+  (valAt [_ k] (get m k))
+  (valAt [_ k nf] (get m k nf)))
+(let [b (Box3. {:a 1})]
+  (prn [(get b :a) (get b :z) (get b :z :nf) (get b :a :nf) (:z b :kwnf)]))
+EOF
+)
+assert_eq 'valat_3arity_notfound' "$got" '[1 nil :nf 1 :kwnf]'
+
 echo
 echo "Multi-pair assoc on Associative deftype (D-378) e2e: all green."

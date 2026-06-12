@@ -1,0 +1,6 @@
+(empty (sorted-map :a 1))
+;;=> {}
+(empty (sorted-set 1 2))
+;;=> #{}
+(let [m (empty (sorted-map-by > 1 :a))] (assoc m 1 :a 2 :b))
+;;=> {2 :b, 1 :a}

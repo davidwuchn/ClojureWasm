@@ -329,7 +329,7 @@ pub fn getFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) 
         },
         // Declared field → ILookup -lookup slow-path → default. Shared
         // with the keyword-as-fn `(:k rec)` path so the two agree (D-089).
-        .typed_instance => try lookup.recordGet(rt, env, coll, k, default, loc),
+        .typed_instance => try lookup.recordGet(rt, env, coll, k, args.len == 3, default, loc),
         // TaggedLiteral is ILookup-only (`:tag`/`:form`); ADR-0075.
         .tagged_literal => tagged_literal_mod.valAt(coll, k, default),
         else => blk: {

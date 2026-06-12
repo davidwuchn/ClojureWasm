@@ -2246,16 +2246,21 @@ fn expandDefprotocol(
 fn rewriteProtocolRemap(
     arena: std.mem.Allocator,
     hi: host_interface.HostInterface,
+    declared_name: []const u8,
     target_form: Form,
     impls: []const Form,
     loc: SourceLocation,
 ) macro_dispatch.ExpandError!Form {
-    // Zero impls = a marker-style "implements X" under the canonical protocol.
+    // Zero impls = a marker-style "implements X" under the declared name
+    // (a recognised MARKERS key by construction; `hi.canonical` may be a
+    // bare spelling that is NOT a key, e.g. Counted). Quote-wrapped like the
+    // D-275 marker path — a bare symbol would Var-resolve to the interface's
+    // CLASS value and fail __extend-type!'s "expected protocol" check.
     if (impls.len == 0) {
         var ext_items = try arena.alloc(Form, 3);
         ext_items[0] = sym("extend-type", loc);
         ext_items[1] = target_form;
-        ext_items[2] = sym(hi.canonical, loc);
+        ext_items[2] = try quoteWrap(arena, sym(declared_name, loc));
         return list(arena, ext_items, loc);
     }
 
@@ -2290,8 +2295,21 @@ fn rewriteProtocolRemap(
         if (!seen) try protos.append(arena, r.protocol);
     }
 
-    // One bare-protocol section per target protocol.
-    var sections = try arena.alloc(Form, protos.items.len);
+    // One bare-protocol section per target protocol, plus a trailing
+    // zero-method marker registration of the DECLARED canonical name — the
+    // remapped methods register under OTHER protocol names (IPersistentMap's
+    // count → IPersistentCollection/-count), so without this the descriptor
+    // never records "implements IPersistentMap" and `(instance?
+    // clojure.lang.IPersistentMap inst)` is false (data.priority-map's
+    // class facet; clj-faithful: the deftype implements the interface).
+    var sections = try arena.alloc(Form, protos.items.len + 1);
+    {
+        var decl_items = try arena.alloc(Form, 3);
+        decl_items[0] = sym("extend-type", loc);
+        decl_items[1] = target_form;
+        decl_items[2] = try quoteWrap(arena, sym(declared_name, loc));
+        sections[protos.items.len] = try list(arena, decl_items, loc);
+    }
     for (protos.items, 0..) |proto, si| {
         var sec: std.ArrayList(Form) = .empty;
         defer sec.deinit(arena);
@@ -2370,6 +2388,10 @@ fn stripMethodParamNs(arena: std.mem.Allocator, params_form: Form) macro_dispatc
 /// An unknown method (no remap entry) routes so `rewriteProtocolRemap` raises the
 /// precise `feature_not_supported`. (D-286b)
 fn sectionNeedsRemap(hi: host_interface.HostInterface, impls: []const Form) bool {
+    // A ZERO-method section must route: the rewrite emits the quote-wrapped
+    // marker registration (a bare protocol_remap symbol would Var-resolve to
+    // the interface's class value and fail __extend-type!).
+    if (impls.len == 0) return true;
     var any_translate = false;
     for (impls) |impl| {
         if (impl.data != .list or impl.data.list.len < 1 or impl.data.list[0].data != .symbol) continue;
@@ -2494,7 +2516,7 @@ fn expandExtendType(
         // (the segfault-by-stack-overflow this guard fixes). Falling through lets the
         // already-cljw method register under the bare protocol Var directly.
         if (sectionNeedsRemap(hi, args[2..])) {
-            return try rewriteProtocolRemap(arena, hi, target_form, args[2..], loc);
+            return try rewriteProtocolRemap(arena, hi, args[1].data.symbol.name, target_form, args[2..], loc);
         }
     }
 
