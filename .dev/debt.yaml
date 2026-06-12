@@ -2466,7 +2466,13 @@ active:
       - `IKVReduce` (6) — `(kvreduce [self f init])`: cljw has NO -kv-reduce protocol
         / reduce-kv typed_instance dispatch (only a core.clj:959 comment). Must BUILD
         the dispatch first (a `-kv-reduce` protocol + `reduce-kv` consult), else
-        load-but-misbehave. Medium.
+        load-but-misbehave. Medium. BOOTSTRAP WRINKLE (2026-06-12 probe): `reduce-kv`
+        is core.clj:963 but defprotocol machinery is 1677+, so reduce-kv cannot
+        reference an IKVReduce protocol defined later WITHOUT a forward-ref pattern
+        (call-time symbol resolution may work since reduce-kv's body evals at call
+        time — but bootstrap callers hitting the map else-branch before IKVReduce
+        exists would break) OR a `rt/__kv-reduce-dispatch` primitive (always-available).
+        Use the primitive route or move the protocol earlier.
       - `IBlockingDeref` (15) — `(deref [self ms timeout-val])` 3-arity blocking deref:
         cljw IDeref/-deref is 1-arity; needs a timeout-aware target (future/promise).
         Medium.
