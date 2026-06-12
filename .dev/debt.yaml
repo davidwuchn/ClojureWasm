@@ -2459,6 +2459,24 @@ active:
       AD-003 (simple `:type`), ADR-0120 (trace_ptr), F-003 (frame shape = D-232's).
     last_reviewed: "2026-06-12"
 discharged:
+  - id: "D-394"
+    discharged_at: "feat(host-interface): clojure.lang.IMeta deftype marker (D-271 slice)"
+    resolution: |-
+      Found + fixed 2026-06-12 (P4 lib-load: instaparse auto_flatten_seq.cljc:157
+      `(deftype AutoFlattenSeq … clojure.lang.IObj (withMeta …) clojure.lang.IMeta
+      (meta …) …)`). cljw recognised clojure.lang.IObj (meta + withMeta both →
+      IObj protocol) but NOT clojure.lang.IMeta — clj's IObj EXTENDS IMeta
+      (withMeta on IObj, read-only `meta` on IMeta), so a deftype that declares
+      IMeta SEPARATELY raised name_error at the IMeta supertype. FIX: a value-
+      driven D-271 slice (a substrate joins only when a consumer pulls it,
+      ADR-0134) — add IMeta as a recognised protocol_remap marker mapping its sole
+      method `meta` → the SAME IObj/-meta as IObj's meta (host_interface.zig IMETA
+      + MARKERS row + host_interfaces.yaml SSOT row; G4 check_host_interface green,
+      47 recognised ⊆ 48 rows). Load-level, mirroring IObj's status (the `meta` fn
+      consulting -meta for a typed_instance stays the IObj follow-up). Verified:
+      e2e phase14_deftype_imeta (IMeta-alone + IObj+IMeta-together, clj-shaped);
+      smoke. instaparse advances past :157 to :112 (clojure.lang.Sequential / ISeq
+      deftype markers — a richer multi-method ISeq slice, separate tracked gap).
   - id: "D-393"
     discharged_at: "feat(core): clojure.core/extend (runtime protocol-extension fn)"
     resolution: |-

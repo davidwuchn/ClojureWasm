@@ -133,6 +133,15 @@ const IOBJ: HostInterface = .{ .kind = .protocol_remap, .canonical = "IObj", .re
     .{ .clj = "withMeta", .protocol = "IObj", .method = "-with-meta" },
 } };
 
+// clojure.lang.IMeta — the read-only `meta` half of the metadata family. clj's
+// IObj EXTENDS IMeta (withMeta on IObj, meta on IMeta); a deftype may declare
+// IMeta SEPARATELY (instaparse's AutoFlattenSeq: IObj withMeta + IMeta meta), so
+// IMeta is recognised as its own marker mapping `meta` → the same IObj/-meta as
+// IObj's meta (D-271 / D-280d7). Load-level, mirroring IObj.
+const IMETA: HostInterface = .{ .kind = .protocol_remap, .canonical = "IMeta", .remap = &.{
+    .{ .clj = "meta", .protocol = "IObj", .method = "-meta" },
+} };
+
 // clojure.lang.IDeref / IPending — the deref-able family (D-307). A deftype
 // declaring IDeref registers deref→IDeref/-deref; `deref`/`@` consult it for a
 // typed_instance (stm.zig derefFn). IPending's isRealized→IPending/-realized?,
@@ -332,6 +341,7 @@ const MARKERS = std.StaticStringMap(HostInterface).initComptime(.{
     .{ "clojure.lang.Sorted", SORTED },
     .{ "clojure.lang.IFn", IFN },
     .{ "clojure.lang.IObj", IOBJ },
+    .{ "clojure.lang.IMeta", IMETA },
     // D-306: collection-base interfaces declarable as DIRECT deftype supertypes
     // (core.cache's defcache). Qualified spelling only — the bare Associative/
     // Seqable/IPersistentCollection are cljw protocol Vars that resolve already.

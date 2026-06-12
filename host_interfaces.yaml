@@ -96,6 +96,15 @@ interfaces:
     methods:
       withMeta: { status: wired, wires_to_protocol: IObj, wires_to_method: "-with-meta" }
       meta: { status: wired, wires_to_protocol: IObj, wires_to_method: "-meta" }
+  - name: clojure.lang.IMeta
+    derives_from: "clojure.lang.IMeta — the read-only `meta` half of the metadata family; clj's IObj extends IMeta (Clojure, stable)."
+    tier: A
+    recognised: true
+    kind: protocol_remap
+    modeled_as: "IObj (the `meta` method shares IObj/-meta; cljw has no separate IMeta protocol)"
+    note: "D-271 / D-280d7: a deftype may declare IMeta SEPARATELY from IObj (instaparse's AutoFlattenSeq: IObj withMeta + IMeta meta). meta→IObj/-meta, mirroring IObj's meta. Load-level (registers; `meta` fn consulting -meta for a typed_instance is the IObj follow-up)."
+    methods:
+      meta: { status: wired, wires_to_protocol: IObj, wires_to_method: "-meta" }
   # --- editable / transient collection family (D-286, F-013 definition-derived) ---
   # flatland.ordered drives this: OrderedSet declares IEditableCollection (the LOAD
   # blocker) + IPersistentSet with clj-named methods (D-286b); the Transient* types
