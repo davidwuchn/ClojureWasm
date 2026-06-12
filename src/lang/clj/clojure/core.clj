@@ -1769,6 +1769,97 @@
           (reduce-kv (fn* [acc k v] (conj acc [(name k) v])) [] (second pairs)))
         (recur (nnext pairs))))))
 
+;; `(destructure bindings)` — expand the destructuring forms in a binding vector
+;; into plain-symbol bindings (gensym temps + nth/get/seq), suitable for `let*`.
+;; The public binding-expander macro authors call (clojure.core/destructure;
+;; kezban's `letm`, etc.). cljw reimplements clj's algorithm with three
+;; substitutions: `reduce1`→`reduce`; the seq→map coercion uses `(apply hash-map …)`
+;; / `{}` in place of `clojure.lang.PersistentArrayMap/createAsIfByAssoc`/`EMPTY`;
+;; `ident?` in place of `(instance? clojure.lang.Named …)`. No upstream text reproduced.
+(def destructure
+  (fn* [bindings]
+    (let [bents (partition 2 bindings)
+          pb (fn pb [bvec b v]
+               (let [pvec
+                     (fn [bvec b val]
+                       (let [gvec (gensym "vec__")
+                             gseq (gensym "seq__")
+                             gfirst (gensym "first__")
+                             has-rest (some #{'&} b)]
+                         (loop [ret (let [ret (conj bvec gvec val)]
+                                      (if has-rest
+                                        (conj ret gseq (list `seq gvec))
+                                        ret))
+                                n 0
+                                bs b
+                                seen-rest? false]
+                           (if (seq bs)
+                             (let [firstb (first bs)]
+                               (cond
+                                 (= firstb '&) (recur (pb ret (second bs) gseq)
+                                                      n (nnext bs) true)
+                                 (= firstb :as) (pb ret (second bs) gvec)
+                                 :else (if seen-rest?
+                                         (throw (ex-info "Unsupported binding form, only :as can follow & parameter" {}))
+                                         (recur (pb (if has-rest
+                                                      (conj ret gfirst (list `first gseq)
+                                                            gseq (list `next gseq))
+                                                      ret)
+                                                    firstb
+                                                    (if has-rest gfirst (list `nth gvec n nil)))
+                                                (inc n) (next bs) seen-rest?))))
+                             ret))))
+                     pmap
+                     (fn [bvec b v]
+                       (let [gmap (gensym "map__")
+                             defaults (:or b)]
+                         (loop [ret (-> bvec (conj gmap) (conj v)
+                                        (conj gmap) (conj `(if (seq? ~gmap)
+                                                             (if (next ~gmap)
+                                                               (apply hash-map ~gmap)
+                                                               (if (seq ~gmap) (first ~gmap) {}))
+                                                             ~gmap))
+                                        ((fn [ret] (if (:as b) (conj ret (:as b) gmap) ret))))
+                                bes (let [transforms
+                                          (reduce
+                                            (fn [transforms mk]
+                                              (if (keyword? mk)
+                                                (let [mkns (namespace mk)
+                                                      mkn (name mk)]
+                                                  (cond (= mkn "keys") (assoc transforms mk (fn* [k] (keyword (or mkns (namespace k)) (name k))))
+                                                        (= mkn "syms") (assoc transforms mk (fn* [k] (list `quote (symbol (or mkns (namespace k)) (name k)))))
+                                                        (= mkn "strs") (assoc transforms mk str)
+                                                        :else transforms))
+                                                transforms))
+                                            {} (keys b))]
+                                      (reduce
+                                        (fn [bes entry]
+                                          (reduce (fn* [m mk] (assoc m mk ((val entry) mk)))
+                                                  (dissoc bes (key entry))
+                                                  ((key entry) bes)))
+                                        (dissoc b :as :or) transforms))]
+                           (if (seq bes)
+                             (let [bb (key (first bes))
+                                   bk (val (first bes))
+                                   local (if (ident? bb) (with-meta (symbol nil (name bb)) (meta bb)) bb)
+                                   bv (if (contains? defaults local)
+                                        (list `get gmap bk (defaults local))
+                                        (list `get gmap bk))]
+                               (recur (if (ident? bb)
+                                        (-> ret (conj local bv))
+                                        (pb ret bb bv))
+                                      (next bes)))
+                             ret))))]
+                 (cond
+                   (symbol? b) (-> bvec (conj b) (conj v))
+                   (vector? b) (pvec bvec b v)
+                   (map? b) (pmap bvec b v)
+                   :else (throw (ex-info (str "Unsupported binding form: " b) {})))))
+          process-entry (fn* [bvec b] (pb bvec (first b) (second b)))]
+      (if (every? symbol? (map first bents))
+        bindings
+        (reduce process-entry [] bents)))))
+
 ;; `(class x)` — the type of x as an interned type value (ADR-0059):
 ;; native types render as Long / String / PersistentVector, user records
 ;; as their name; (class nil) → nil. Interned, so (= (class 5) (class 6))

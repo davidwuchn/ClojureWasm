@@ -2484,6 +2484,25 @@ active:
       parse returns correct results (NOT just 'defines').
     last_reviewed: "2026-06-12"
 discharged:
+  - id: "D-396"
+    discharged_at: "feat(core): clojure.core/destructure (binding expander fn)"
+    resolution: |-
+      Found + fixed 2026-06-12 (P4 lib-load: kezban core.cljc:228 `(let* ~(destructure
+      bindings) …)` in its `letm` macro). cljw destructures in the Zig analyzer
+      (fn*/let lowering) but did NOT expose the public `clojure.core/destructure`
+      fn, so libs that write their OWN binding macros over it hit name_error. FIX:
+      port clj's 96-line `destructure` algorithm to core.clj (after `extend`) with
+      three cljw substitutions — `reduce1`→`reduce`; the seq→map coercion uses
+      `(apply hash-map …)` / `{}` in place of `clojure.lang.PersistentArrayMap/
+      createAsIfByAssoc`/`EMPTY` (JVM internals, host frontier); `ident?` in place
+      of `(instance? clojure.lang.Named …)`. Pre-verified every primitive it needs
+      (named-fn self-recursion, `(symbol nil n)`, gensym uniqueness, set-as-fn,
+      ex-info, syntax-quote → callable `clojure.core/*`). Verified: e2e
+      phase14_destructure_fn (11 cases — plain/vector/&-rest/:as/:keys/:or/:strs/
+      :syms/nested/map-in-vec/passthrough, end-to-end through a `let*`-splicing
+      macro, clj-matched incl. &+:as combo + :syms). kezban advances past :228 to
+      :315 (`clojure.lang.RT` host frontier, separate gap). EPL variant ② (no
+      upstream text reproduced). Broadly unblocks macro-writing libs.
   - id: "D-394"
     discharged_at: "feat(host-interface): clojure.lang.IMeta deftype marker (D-271 slice)"
     resolution: |-
