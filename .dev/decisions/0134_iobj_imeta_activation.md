@@ -39,11 +39,42 @@ hash_map, lazy_seq, symbol, persistent_queue (+ var_ref/atom/record/reify).
 
 ## Decision
 
-**Make every clj-IObj substrate metable, then activate the full IObj/IMeta
-membership + value-resolution — exactly matching clj's oracle-verified set.**
-(DA-fork Alt 2 "Full" — the only finished-form-clean shape: the clj invariant
-holds for every tag with zero exceptions, no AD is needed, F-011 fully
-satisfied.)
+**Finished form** = every clj-IObj substrate metable + full IObj/IMeta membership
++ value-resolution matching clj's oracle-verified set (DA-fork Alt 2 "Full" — the
+only shape where the clj invariant holds for every tag with zero exceptions, no AD
+needed). This is the terminal target and does not change.
+
+**Execution = VALUE-DRIVEN, not speculative-complete-now (amended 2026-06-12 after
+a user finished-form reconsideration that caught a Progress-pressure /
+scope-escalation smell in the original "do all 13 substrates now" framing).** The
+original D-271 bug (`(with-meta (range 3) m)`) is NICHE and the lone near-term
+consumer is clojure.datafy (one P3 ns-backfill). NOTHING currently pulls the full
+13-substrate change — and the cross-zone fn-meta (tree_walk closure ctors +
+multimethod + protocol, for the rare `(with-meta a-fn m)`) is high-effort /
+near-zero-value. So:
+
+- A substrate is made metable + admitted to IObj/IMeta membership **when a real
+  consumer pulls it** (or opportunistically when its module is already open), NOT
+  speculatively to chase clj-completeness.
+- Membership stays **consistent at every step**: `(instance? IObj x)` is activated
+  for tag x ONLY once x is genuinely metable, so the invariant
+  `instance? IObj ⟹ with-meta` never breaks. The set being NARROWER than clj
+  (range/cons/fn report `(instance? IObj x)` → false until made metable) is an
+  HONEST, TRACKED gap (D-271), NOT a lie and NOT an AD — it is ordinary
+  incremental growth, and `(instance? IObj range)`→false is graceful (a ported
+  `(if (instance? IObj x) (with-meta x m) x)` returns x unchanged, not an error).
+  This is the DA's permitted sequencing variant (interim narrow membership +
+  completion debt row), elevated to the execution path.
+- **The terminal Full membership flip is reached by accretion, not a single
+  speculative leap.** "Big-bang" (the original framing) is reinterpreted: never
+  ship a narrow membership as PERMANENT (that would be the gap-as-AD lie), and
+  never drip COVERAGE claims — but DO grow the metable set value-first.
+
+The first value-driven slice (whenever taken): resolve `clojure.lang.IObj`/`IMeta`
+as class values + activate membership for the CURRENTLY-metable tags (vector/list/
+hash_set/array_map/hash_map/lazy_seq/symbol/persistent_queue/var_ref/atom/record/
+reify) — this clears the `name_error` and is the part datafy's guard exercises.
+Each later substrate (range/cons/sorted/promise/future/fn) joins when pulled.
 
 Per-substrate work (template = `lazy_seq.zig`'s `meta: Value = nil` field):
 
@@ -61,20 +92,21 @@ Per-substrate work (template = `lazy_seq.zig`'s `meta: Value = nil` field):
 5. Resolve `clojure.lang.IObj`/`IMeta` as class values (analyzeSymbol
    interface-marker arm, mirroring IFn/Object).
 
-**Execution sequencing (amended 2026-06-12, same cycle).** Steps 1-3 (adding a
-`meta` field + GC-trace + metaOf/withMeta to a substrate) are an INDEPENDENT
-`(with-meta <substrate> m)` bug-fix per tag and MAY land incrementally — the clj
-invariant is one-directional (`instance? IObj` ⟹ `with-meta`), so making with-meta
-work on a substrate while IObj membership stays INACTIVE introduces no
-inconsistency (nothing yet claims those tags ARE IObj). Steps 4-5 (the membership
-flip + value-resolution) are the FINAL ATOMIC step, landed only once EVERY IObj
-substrate is metable — that is what stays "big-bang" (a consistent, clj-complete
-membership in one flip; never a narrow/partial membership, which the DA ruled
-out). This sequencing is SAFER than a single 13-struct leap: each substrate's GC
-trace is verified independently under torture before the next, and the fn tags
-(cross-zone: `eval/backend/tree_walk.zig` closure ctors + `multimethod.zig` +
-`protocol.zig`) can be sequenced last. It is NOT the drip-feed smell: coverage is
-never claimed mid-way and membership is never shipped narrow.
+**Execution sequencing (value-driven; amended 2026-06-12 per the Decision above).**
+Steps 1-3 (adding a `meta` field + GC-trace + metaOf/withMeta to a substrate) are
+an INDEPENDENT `(with-meta <substrate> m)` bug-fix per tag, done WHEN PULLED. Steps
+4-5 (membership rows + value-resolution) activate PER TAG as that tag becomes
+metable — `(instance? IObj x)` is switched on for x ONLY once x is genuinely
+metable, so the one-directional invariant (`instance? IObj` ⟹ `with-meta`) holds at
+every step. The membership set therefore GROWS toward clj's full set by accretion;
+it is narrower than clj in the interim (an honest, D-271-tracked gap, NOT a
+permanent AD). "Big-bang" is reinterpreted as the two PROHIBITIONS it really
+protects: (1) never ship a narrow membership as PERMANENT (gap-as-AD lie), (2)
+never drip COVERAGE claims — NOT a mandate to build all 13 substrates before any
+membership activates. The cross-zone fn tags (`eval/backend/tree_walk.zig` closure
+ctors + `multimethod.zig` + `protocol.zig`) are LAST and only if a consumer needs
+fn-meta (rare). Each substrate's GC trace is torture-verified independently before
+the next.
 
 **Execution mandates (make Full safe):**
 - **Per-tag with-meta round-trip corpus line under `CLJW_GC_TORTURE`** for each
