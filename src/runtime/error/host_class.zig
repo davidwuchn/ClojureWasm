@@ -107,6 +107,9 @@ const FQCN_MAP = std.StaticStringMap([]const u8).initComptime(.{
     .{ "java.lang.Throwable", "Throwable" },
     .{ "java.lang.Error", "Error" },
     .{ "java.lang.OutOfMemoryError", "OutOfMemoryError" },
+    // `(assert …)` throws AssertionError; clj catches it by simple OR FQCN name
+    // (D-398, surfaced by clojure.tools.trace `extend-type java.lang.AssertionError`).
+    .{ "java.lang.AssertionError", "AssertionError" },
     .{ "java.lang.Exception", "Exception" },
     .{ "java.lang.RuntimeException", "RuntimeException" },
     .{ "java.lang.ArithmeticException", "ArithmeticException" },
@@ -121,6 +124,9 @@ const FQCN_MAP = std.StaticStringMap([]const u8).initComptime(.{
     .{ "java.io.IOException", "IOException" },
     .{ "java.io.FileNotFoundException", "FileNotFoundException" },
     .{ "java.io.EOFException", "EOFException" },
+    // Reflective family (D-301): caught by FQCN by libs probing optional classes.
+    .{ "java.lang.ReflectiveOperationException", "ReflectiveOperationException" },
+    .{ "java.lang.ClassNotFoundException", "ClassNotFoundException" },
     .{ "clojure.lang.ExceptionInfo", "ExceptionInfo" },
 });
 

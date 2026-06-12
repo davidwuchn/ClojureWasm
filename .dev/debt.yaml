@@ -2459,6 +2459,22 @@ active:
       AD-003 (simple `:type`), ADR-0120 (trace_ptr), F-003 (frame shape = D-232's).
     last_reviewed: "2026-06-12"
 discharged:
+  - id: "D-398"
+    discharged_at: "fix(error): catch exceptions by FQCN (java.lang.AssertionError + reflective family)"
+    resolution: |-
+      Found + fixed 2026-06-12 (P4 lib-load: clojure.tools.trace `(extend-type
+      java.lang.AssertionError …)`). clj catches an exception by its simple OR
+      fully-qualified class name; cljw's FQCN→simple map (host_class.zig FQCN_MAP)
+      was MISSING 3 names that ARE in the hierarchy ENTRIES table, so the FQCN form
+      raised "catch class '…' is not a known exception type": java.lang.AssertionError
+      (what `assert` throws), java.lang.ReflectiveOperationException, and
+      java.lang.ClassNotFoundException (caught by FQCN by numeric-tower for optional
+      classes). FIX: add all 3 to FQCN_MAP (big-bang completeness vs ENTRIES, not
+      just the one that surfaced). Verified: e2e phase14_catch_fqcn_exceptions
+      (FQCN AssertionError + simple + FQCN Error supertype + FQCN CNFE fall-through,
+      4 cases clj-matched); lint clean. A non-marker clj-parity fix benefiting any
+      lib that catches by FQCN. (tools.trace itself still needs reflection —
+      .getConstructor/.newInstance — so it does not fully load; separate gap.)
   - id: "D-397"
     discharged_at: "feat(host-interface): clojure.lang.Indexed deftype marker (1-arity nth)"
     resolution: |-
