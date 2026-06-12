@@ -1213,6 +1213,16 @@ is deferred D-211. This overlay runs ahead of §9.2.R and does not renumber it (
 
 ### 9.16 Phase 14 — task list (IN-PROGRESS; opened 2026-05-28, **v0.1.0 milestone**)
 
+> **Resume wiring (read before picking a `[ ]` task)**: the only two open rows —
+> **14.12** (`cljw component build`, **blocked-by zwasm CM readiness** → D-036 /
+> D-404 / ADR-0135) and **14.14** (exit-smoke + **v0.1.0 tag, user-deferred** — not
+> cut yet) — are **both BLOCKED**. So `/continue` does **not** start them. The
+> active work is the **post-M quality-loop operating mode** (F-010 / §1.5 3-track
+> working strategy), **handover + debt-driven** (the `quality-loop floor:` rows +
+> D-400 / D-404–D-407), not §9.16 row order. The handover Resume contract is the
+> authoritative pointer; this note just keeps the §9 mechanism from misdirecting a
+> fresh session to the two blocked rows.
+>
 > **Phase 14 entry note**: this is cljw's **v0.1.0 milestone** —
 > the largest Phase by deliverable count. Rows 14.0-14.14 below
 > are the entry-time first cut; row-internal cycles may subdivide

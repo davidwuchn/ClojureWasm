@@ -52,8 +52,10 @@ hooks). Resume per the Resume contract; this stop applied to that session only.
   puller) has OTHER blockers too (class/.getName, host-class extends,
   clojure.reflect), so verify the whole datafy load before committing to it.
 
-  **State**: Phase 14 (v0.1.0 milestone) ~95% done — only 14.14 (exit-smoke + tag)
-  left; user is NOT cutting the tag yet. Full gate green on Mac (317/0).
+  **State**: Phase 14 (v0.1.0 milestone) ~95% done. Both open §9.16 rows are
+  BLOCKED — 14.12 (component build, zwasm-CM-gated → D-404) + 14.14 (exit-smoke +
+  tag, user-deferred); operate in §1.5/quality-loop mode, not §9 row order (see the
+  §9.16 Resume-wiring note). Full gate green on Mac (328/0; `.dev/.gate_pass`).
 
   **Paused (not abandoned)**: the §9.2.S perf campaign — cljw already WINS/parity vs
   Python on most benches; the 2 cold-losers (regex_count 1.8×, sieve 1.4×) + JIT are
