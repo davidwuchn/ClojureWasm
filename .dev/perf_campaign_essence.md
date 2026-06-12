@@ -1,6 +1,9 @@
 # Perf-campaign essence (the relentless-lookahead injection SSOT)
 
 > Machine-injected at every wait-point by `scripts/perf_campaign_remind.sh`
+> **only while `.dev/.perf_campaign_active` exists** (the campaign-pause
+> switch, 2026-06-13 — while the campaign is paused the hook is silent;
+> `touch` the flag when the user re-opens §9.2.S).
 > (PostToolUse:Bash on a gate / bench / background launch) and at SessionStart.
 > Kept SHORT so it can be force-injected often without diluting; the existing
 > `gate_continue_remind.sh` / `post_commit_remind.sh` are the model. The campaign

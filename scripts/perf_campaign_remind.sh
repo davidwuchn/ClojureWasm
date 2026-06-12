@@ -26,6 +26,15 @@ set -u
 ESSENCE="${CLAUDE_PROJECT_DIR:-.}/.dev/perf_campaign_essence.md"
 [ -f "$ESSENCE" ] || exit 0
 
+# Campaign pause switch (2026-06-13): the §9.2.S campaign resumes ONLY by
+# explicit user direction (handover Resume contract: "Paused (not
+# abandoned)"). While paused this reminder must stay SILENT — firing it
+# during non-campaign work injects a stale "current front" block at every
+# bench-adjacent Bash call (the false-positive-trigger class
+# audit_scaffolding hunts). Reactivate by `touch .dev/.perf_campaign_active`
+# when the user re-opens the campaign.
+[ -f "${CLAUDE_PROJECT_DIR:-.}/.dev/.perf_campaign_active" ] || exit 0
+
 INPUT=$(cat)
 CMD=$(printf '%s' "$INPUT" | python3 -c '
 import sys, json

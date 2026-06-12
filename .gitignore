@@ -37,4 +37,5 @@ private/
 .clj-kondo/
 .lsp/
 .dev/.gate_ledger
+.dev/.perf_campaign_active
 verified_projects/*/.cpcache/
