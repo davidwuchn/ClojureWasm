@@ -5,10 +5,12 @@
 
 ## Stopped — user requested
 
-User instruction (2026-06-12): "さて、きりの良いところで、現状について解説して止めて
-ください". Stopped after D-403 (cl-format subset) landed green. Resume at the
-Resume contract's first item (the clojure.lang.* marker-family big-bang / D-400);
-this stop applied to that session only — the next `/continue` resumes the loop.
+User instruction (2026-06-13): persist the recent strategy durably, "整理を
+しばらくやってください。それが完了したら止めてOK". Done: **ADR-0135**
+(Wasm-component-as-namespace finished form + WIT↔clj mapping table), ROADMAP
+§1.2 axis 4 (Zig-level optimisation-ceiling thesis) + §1.5 (3-track working
+strategy) + §8.2 (component-as-ns), and debt **D-404–D-407** (the actionable
+hooks). Resume per the Resume contract; this stop applied to that session only.
 
 ## Resume contract
 
@@ -21,23 +23,23 @@ this stop applied to that session only — the next `/continue` resumes the loop
   (`bench/run_bench.sh --quick` / `scripts/perf.sh`), never `time zig-out/bin/cljw`
   (Debug) — `.claude/rules/perf_measure_release.md`.
 
-- **First commit on resume MUST be: the clojure.lang.* deftype-marker family
-  big-bang (NOT more single-lib clean-bug triage).** The 2026-06-12 triage swept
-  ~50 corpus libs and CONVERGED: pure libs LOAD + FUNCTION correctly (verified
-  end-to-end — math.combinatorics / priority-map / core.unify / data.json all
-  clj-match), and the 8 clean single-bug wins landed (D-391 cross-ns deftype
-  import, D-392 prefix-list libspecs, D-393 `extend`, D-394 IMeta, D-395
-  Sequential/ISeq, D-396 `destructure`, D-397 Indexed, D-398 FQCN catch). The
-  remaining frontier is UNIFORMLY host-frontier: the clojure.lang.* deftype-marker
-  family (partially cleared — IMeta/Sequential/ISeq/Indexed done; remaining +
-  dispatch follow-ups), `definterface` (deferred-structural, debt:1475), bare
-  host-class symbols (Thread/Class/System), reflection (getConstructor/newInstance),
-  and JVM internals (clojure.lang.Compiler/RT/PersistentArrayMap statics). Doing
-  ONE marker per cycle is now the drip-feed smell — instead ENUMERATE the whole
-  remaining marker surface (instaparse's AutoFlattenSeq alone needs IFn/applyTo +
-  2-arity-nth dispatch; potemkin.collections needs IMapEntry) and drive it big-bang
-  per `.claude/rules/clj_diff_sweep.md` Discipline 2. Open follow-ups: D-397
-  (3-arg nth typed_instance dispatch + IFn/applyTo arity collision). SAFETY: every
+- **First commit on resume: follow ROADMAP §1.5 (3-track working strategy) —
+  the direction is now persisted, pick the highest-ROI track.** The 2026-06-12/13
+  triage CONVERGED (pure libs load+function correctly; **13 clean fixes landed,
+  D-391..D-403** — cross-ns deftype import / prefix-list libspecs / `extend` /
+  IMeta·Sequential·ISeq·Indexed·IReduceInit markers / `destructure` / FQCN catch /
+  data.json options / pprint dispatch / cl-format). The clean single-bug vein is
+  spent; remaining gaps are host-frontier or deferred-structural. So shift from
+  ad-hoc grind to the **§1.5 tracks**:
+  (1) **D-405** build the standing library-conformance harness (measured
+  function-level triage) → then big-bang the clojure.lang.* marker remainder
+  (**D-400**: actionable = IKVReduce/IBlockingDeref need new dispatch + the D-397
+  follow-ups; composites are class-facet-covered) and grow the **D-406** Tier
+  boundary doc; (2) **D-407** the 3 differentiation standing-proofs (fast-Zig-
+  primitive bench / Wasm-FFI demo / startup-size); (3) keep hot paths clean for the
+  later perf campaign. **Wasm-component-as-namespace (D-404 / ADR-0135) is the
+  north star but BLOCKED-BY zwasm's CM embedding-API freeze** — design is frozen,
+  re-check the zwasm freeze each Phase boundary. SAFETY: every
   `clj` oracle batch needs `-J-Xmx2g` + bounded seqs (memory `clj_oracle_heap_cap`);
   register every new e2e in run_all.sh same-commit (memory `e2e-register-in-run-all`).
 

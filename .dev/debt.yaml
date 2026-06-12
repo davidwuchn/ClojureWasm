@@ -2487,6 +2487,69 @@ active:
       pattern: real-win, not just 'defines'). Cross-ref D-394/395/397/399 (landed
       slices), host_interfaces.yaml, G4 check_host_interface.
     last_reviewed: "2026-06-12"
+  - id: "D-404"
+    status: "open (2026-06-13, ADR-0135 — Wasm component as a first-class namespace). The north-star differentiator's finished form: `require` a Wasm COMPONENT (not just a core module) and call its exports with Clojure data, types negotiated by the Canonical ABI. Design + the WIT↔clj value mapping table are FROZEN in ADR-0135; implementation is BLOCKED-BY an external event."
+    category: "wasm"
+    barrier: |-
+      **blocked-by: zwasm's Component-Model embedding-API FREEZE** (zwasm ADR-0170,
+      `-Dcomponent` — functional but API not yet frozen). zwasm must expose: (a)
+      decode a component → list exports + their WIT types; (b) invoke an export with
+      Canonical-ABI lift/lower of host values. THEN cljw builds: the `require [comp
+      :as c]` / `(cljw.wasm/import-component …)` introspection that interns one Var
+      per export, the `deps.edn :cljw/wasm-deps` resolution layer (cw v0 seed), and
+      the ADR-0135 WIT↔clj mapping (record→map, result→throw, list→vector, resource→
+      GC handle, …). NO `.wit` sidecar (component is self-describing). Files (on
+      implement): runtime/cljw/wasm/component.zig (new), require_resolver.zig,
+      deps/parse.zig. Keep ADR-0099 core-module FFI as the layer below (not
+      deprecated). Cross-ref ADR-0135 (design SSOT), ADR-0099 (core spike), F-001,
+      ROADMAP §1.2 axis 2 + §8.2. Re-check the zwasm freeze each Phase boundary.
+    last_reviewed: "2026-06-13"
+  - id: "D-405"
+    status: "open (2026-06-13, ROADMAP §1.5 track 1 — systematic compat grind). Build a STANDING library-conformance harness: function-level triage (load a real corpus lib → exercise its core functions → diff vs the clj oracle) made into a measured, repeatable suite with a coverage number + worklist. Function-level triage (vs load-only) found D-401/402/403 that load-triage missed — make it a harness, not an accident."
+    category: "tooling"
+    barrier: |-
+      **No standing function-level conformance suite** — the 2026-06-12 grind was
+      ad-hoc (`dt()` shell helper). Build `scripts/lib_conformance.sh` (or extend
+      `clj_diff_sweep.sh`): a corpus under `test/conformance/<lib>.txt` of
+      `(require '[lib]) (fn-call …)` exprs, run on BOTH cljw + clj (`-J-Xmx2g` +
+      bounded seqs per orphan_prevention), diff, report PASS/DIFF + a coverage %.
+      Seed with the libs that already LOAD (medley/potpuri/bouncer/core.unify/
+      data.priority-map/math.combinatorics/juxt.clip/data.json/data.csv/tools.cli).
+      This converts "what real Clojure code still doesn't run" from accidental
+      discovery to a converging metric. Cross-ref clj_diff_sweep.md (Discipline 2
+      big-bang), ROADMAP §1.5 track 1, §11.
+    last_reviewed: "2026-06-13"
+  - id: "D-406"
+    status: "open (2026-06-13, ROADMAP §1.5 track 1 — the host-frontier Tier boundary). Document the language-feature ↔ Tier-D line for the JVM host surface AS IT IS HIT during the compat grind, so 'Clojure assets run as-is' CONVERGES instead of being an unbounded treadmill. Currently the line is implicit (reactive marker-by-marker)."
+    category: "scope"
+    barrier: |-
+      **The boundary is undocumented** — which `clojure.lang.*` / `java.*` surface
+      is 'a language feature cljw must provide' vs 'Tier D = JVM implementation
+      detail, use the cljw-native alternative'. Grow a boundary section (an ADR or
+      ROADMAP §6 extension) incrementally: deftype implementing a `clojure.lang.*`
+      interface (IMeta/ISeq/Indexed/IReduceInit — D-394/395/397/399 landed) = language
+      feature; reflection (`getConstructor`/`newInstance`), `clojure.lang.Compiler/*`,
+      bytecode emission (`definterface`/`gen-class`), JVM-internal statics
+      (`PersistentArrayMap/createAsIfByAssoc`) = Tier D. Drawing the line is the
+      finished-form discipline that lets the grind have a goal. Cross-ref ADR-0013
+      (Tier D), compat_tiers.yaml, host_interfaces.yaml, D-086 (record __extmap is
+      a structural cycle, not Tier D), ROADMAP §1.5 / §6.
+    last_reviewed: "2026-06-13"
+  - id: "D-407"
+    status: "open (2026-06-13, ROADMAP §1.5 track 2 — differentiation as standing proof). The §1.2 edges are structurally present but not continuously PROVEN. Add 3 cheap standing proofs so the differentiation is a number/demo, not a claim."
+    category: "tooling"
+    barrier: |-
+      **The differentiators are asserted, not measured.** Add, one at a time (not a
+      campaign): (a) a 'fast Zig primitive' bench — one hot path (JSON parse / regex)
+      where cljw beats the JVM BECAUSE the runtime is rewritable (axis-4 thesis made
+      measurable; Release binary only per perf_measure_release.md); (b) a Wasm-
+      component-FFI demo (ADR-0135 / D-404, once unblocked) loading a real component
+      and calling it as a namespace; (c) a startup-ms + binary-size one-liner in
+      bench/ so 'lightweight' is a tracked number that also guards bloat. These prove
+      'the optimisation ceiling is higher than any JVM-bound Clojure' and 'no other
+      Clojure runtime does Wasm-as-namespace'. Cross-ref ROADMAP §1.2 axis 4 + §1.5
+      track 2 + §10, D-133 (JIT), D-180/perf campaign (paused).
+    last_reviewed: "2026-06-13"
 discharged:
   - id: "D-403"
     discharged_at: "feat(pprint): cl-format common subset (~A ~S ~D ~% ~~)"
