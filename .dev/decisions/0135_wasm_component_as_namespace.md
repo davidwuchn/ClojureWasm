@@ -74,22 +74,22 @@ hand-written wrapper, no `.wit` sidecar.
 This table is the finished-form artifact. It is derivable from the public
 Canonical ABI spec and changes only when the spec does.
 
-| WIT type            | Clojure value                         | Notes                                            |
-|---------------------|----------------------------------------|--------------------------------------------------|
-| `bool`              | boolean                                |                                                  |
-| `s8…s64`/`u8…u64`   | long                                   | `u64`/`s64` may promote to BigInt at the f64 edge (F-005) |
-| `f32`/`f64`         | double                                 |                                                  |
-| `char`              | char                                   | Unicode scalar                                   |
-| `string`            | string                                 | UTF-8 ↔ cljw string                              |
-| `list<T>`           | vector                                 | element-wise lift/lower                          |
-| `tuple<A,B,…>`      | vector `[a b …]`                       | fixed arity                                      |
-| `record{a,b,…}`     | map `{:a … :b …}`                      | field names → keyword keys (kebab preserved)     |
-| `option<T>`         | `nil` \| T                             | `none`→nil, `some(x)`→x                          |
-| `result<T,E>`       | T \| **throw** `(ex-info … {:wit/err e})` | `ok`→value, `err`→catchable cljw exception   |
-| `variant`           | tagged map `{:wit/case :kw :value v}`  | (or a smaller shape if a cleaner one is chosen)  |
-| `enum`              | keyword                                |                                                  |
-| `flags`             | set of keywords                        |                                                  |
-| `resource`          | opaque handle, GC-finalised            | borrow/own tracked; finaliser calls `resource.drop` |
+| WIT type            | Clojure value                              | Notes                                                     |
+|---------------------|--------------------------------------------|-----------------------------------------------------------|
+| `bool`              | boolean                                    |                                                           |
+| `s8…s64`/`u8…u64` | long                                       | `u64`/`s64` may promote to BigInt at the f64 edge (F-005) |
+| `f32`/`f64`         | double                                     |                                                           |
+| `char`              | char                                       | Unicode scalar                                            |
+| `string`            | string                                     | UTF-8 ↔ cljw string                                      |
+| `list<T>`           | vector                                     | element-wise lift/lower                                   |
+| `tuple<A,B,…>`     | vector `[a b …]`                          | fixed arity                                               |
+| `record{a,b,…}`    | map `{:a … :b …}`                        | field names → keyword keys (kebab preserved)             |
+| `option<T>`         | `nil` \| T                                 | `none`→nil, `some(x)`→x                                 |
+| `result<T,E>`       | T \| **throw** `(ex-info … {:wit/err e})` | `ok`→value, `err`→catchable cljw exception              |
+| `variant`           | tagged map `{:wit/case :kw :value v}`      | (or a smaller shape if a cleaner one is chosen)           |
+| `enum`              | keyword                                    |                                                           |
+| `flags`             | set of keywords                            |                                                           |
+| `resource`          | opaque handle, GC-finalised                | borrow/own tracked; finaliser calls `resource.drop`       |
 
 Exports that are interfaces/worlds nest as sub-namespaces or qualified
 names (TBD with zwasm's introspection shape). Imports the component *needs*
