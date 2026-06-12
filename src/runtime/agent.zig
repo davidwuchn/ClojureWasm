@@ -157,9 +157,65 @@ pub fn sendAwait(rt: *Runtime, agent_val: Value, completion: Value) !void {
     try enqueueAction(rt, agent_val, .{ .body = .nil_val, .completion = completion });
 }
 
+/// A nested send held during an action's run: its target agent + the action.
+const PendingSend = struct { agent: Value, action: Action };
+
+/// clj's `nested` ThreadLocal (Agent.java): non-null while THIS thread is running
+/// an agent action, collecting sends made DURING the action so they are dispatched
+/// AFTER it completes (`releasePendingSends`), not immediately. Without this, a
+/// nested `(send a …)` races a concurrently-enqueued `(await a)` barrier: the
+/// barrier is queued before the nested send (clj-faithful → state-at-await) only
+/// if the nested send is deferred. cljw enqueued nested sends immediately, so the
+/// await ordering was timing-dependent (Mac vs ubuntunote) — D-388. Held Values
+/// are `gc.pin`'d: the list is off-heap (gpa), invisible to the mark phase.
+threadlocal var nested_pending: ?std.ArrayList(PendingSend) = null;
+
+fn pinAction(rt: *Runtime, action: Action) !void {
+    if (!action.body.isNil()) try rt.gc.pin(action.body);
+    errdefer if (!action.body.isNil()) {
+        _ = rt.gc.unpin(action.body);
+    };
+    if (!action.completion.isNil()) try rt.gc.pin(action.completion);
+}
+
+fn unpinAction(rt: *Runtime, action: Action) void {
+    if (!action.body.isNil()) _ = rt.gc.unpin(action.body);
+    if (!action.completion.isNil()) _ = rt.gc.unpin(action.completion);
+}
+
+/// Dispatch entry. If THIS thread is mid-action (`nested_pending != null`), HOLD
+/// the send (clj `dispatchAction` nested branch); else enqueue it for real.
+fn enqueueAction(rt: *Runtime, agent_val: Value, action: Action) !void {
+    if (nested_pending) |*list| {
+        try rt.gc.pin(agent_val);
+        errdefer _ = rt.gc.unpin(agent_val);
+        try pinAction(rt, action);
+        errdefer unpinAction(rt, action);
+        try list.append(rt.gpa, .{ .agent = agent_val, .action = action });
+        return;
+    }
+    return enqueueDirect(rt, agent_val, action);
+}
+
+/// Dispatch the sends collected during the just-run action (clj
+/// `releasePendingSends`), then clear the capture. Clears `nested_pending` FIRST
+/// so the released sends enqueue for real (not re-held). Best-effort: an
+/// enqueue that OOMs / fails to spawn a drainer drops that nested send (the held
+/// Values are unpinned regardless, so no leak).
+fn releasePendingSends(rt: *Runtime) void {
+    var list = nested_pending orelse return;
+    nested_pending = null;
+    for (list.items) |ps| {
+        enqueueDirect(rt, ps.agent, ps.action) catch {};
+        unpinAction(rt, ps.action);
+        _ = rt.gc.unpin(ps.agent);
+    }
+    list.deinit(rt.gpa);
+}
+
 /// Enqueue an action under `cell.mutex` (leaf lock — gpa push only) and, if no
 /// drainer is live, spawn one. The mutex is never held across `callFn` / a park.
-fn enqueueAction(rt: *Runtime, agent_val: Value, action: Action) !void {
+fn enqueueDirect(rt: *Runtime, agent_val: Value, action: Action) !void {
     const a = agent_val.decodePtr(*Agent);
     io_default.lockMutex(&a.cell.mutex);
     if (!a.error_val.isNil()) {
@@ -283,6 +339,12 @@ fn captureThrown(a: *Agent) Value {
 fn runAction(a: *Agent, action: Action) !void {
     const oldstate = @atomicLoad(Value, &a.state, .acquire);
     var newstate = oldstate;
+    // clj-style nested-send capture (Agent.java `nested` + `releasePendingSends`):
+    // sends made DURING this action (incl. from watch fns) are held + dispatched
+    // AFTER it completes, so a concurrently-enqueued `(await)` barrier orders
+    // before them — makes the await state clj-faithful + deterministic (D-388).
+    nested_pending = .empty;
+    defer releasePendingSends(a.rt);
     if (!action.body.isNil()) {
         const vt = a.rt.vtable orelse return error.InternalError;
         const n = vector.count(action.body);

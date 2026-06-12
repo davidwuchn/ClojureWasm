@@ -2406,33 +2406,35 @@ active:
     last_reviewed: "2026-06-12"
   - id: "D-388"
     status: |-
-      open (2026-06-12) — `agent_nested_send` race: `(let [a (agent 0)] (send a
-      (fn [s] (send a inc) (inc s))) (await a) @a)` returns **1 instead of 2 on
-      ubuntunote** (passes 3/3 on Mac). The outer action sets state=1 AND enqueues
-      a nested `inc`; `await` (a barrier action delivering a promise, core.clj)
-      must wait for the nested `inc` too. The drain ORDER (barrier vs the
-      nested-enqueued inc) is timing-dependent: on Ubuntu the barrier's promise is
-      delivered before the nested inc runs → `@a`=1. Single-drainer FIFO
-      (agent.zig §await/§drain, ADR-0093) should make this deterministic, so the
-      ordering window is the bug. SURFACED 2026-06-12 by the first full ubuntunote
-      gate after the -Dwasm gate change (ADR-0133) — the heavier gate widened the
-      window. NOT caused by that change (agent.zig unchanged since the 28d97118
-      311/0 Ubuntu-green; latent race). NOT wasm-related (agent has zero wasm
-      refs). The Ubuntu wasm verification itself PASSED (build mode "ReleaseSafe,
-      wasm", wasm_ffi + wasm_run green) — this is the only blocking failure.
+      DISCHARGED 2026-06-12 — the gate failure is fixed + the mechanism made
+      clj-faithful. The original triage was BACKWARDS: a JVM Clojure oracle proves
+      `(send a (fn [s] (send a inc) (inc s))) (await a) @a)` is **deterministically
+      1** (5/5) — `await` waits for `outer` ONLY (which sets 0→1); the nested `inc`
+      is dispatched from the AGENT thread, NOT awaited. So the TEST's expectation of
+      2 was wrong, and cljw's Mac result (2) was the non-clj-faithful one, not
+      Ubuntu's 1. Root divergence: clj DEFERS nested sends (`Agent.java` `nested`
+      ThreadLocal + `releasePendingSends`) until the action completes; cljw enqueued
+      them immediately. Fixes landed: (1) agent.zig grew the same deferral
+      (`nested_pending` threadlocal; held sends `gc.pin`'d — GC-torture-clean, 19/19);
+      (2) the e2e now asserts the DETERMINISTIC full-drain state via a second
+      `(await a)` → 2 on both clj and cljw (a single-await capability check that does
+      not depend on the race). RESIDUAL (known limitation, not fixed): the
+      single-`(await a)` exact result is still timing-dependent on cljw (Mac 2 /
+      Ubuntu 1) vs clj's reliable 1, because cljw's EAGER per-agent drainer runs
+      `outer` before the main thread reaches `await`, whereas clj's executor pool
+      does not start until after — a drainer-MODEL difference (ADR-0093). The
+      deferral alone cannot close it (the drainer still wins the race on Mac, 20/20).
+      A deterministic single-await would need a drainer-model change (lazy/pooled
+      dispatch) — deferred as out-of-scope + risky; the deferral is the right
+      mechanism regardless.
     category: "concurrency"
     barrier: |-
-      Not blocked, but expensive to verify: reproduces ONLY on ubuntunote (Mac
-      passes deterministically), so the fix-verify loop needs the ~7-min remote
-      gate, and a careless agent.zig drain-ordering change risks a worse race.
-      Scope: trace the exact barrier-vs-nested-send enqueue/pop interleaving in
-      agent.zig (the action runs OUTSIDE cell.mutex per ADR-0093, so the nested
-      `send`'s append races the drainer's next-pop); make `await`'s barrier
-      observe nested-enqueued actions deterministically (likely: the barrier must
-      drain to a TRUE empty, i.e. re-check the queue after each action including
-      ones appended during the just-run action, before delivering its promise).
-      Predicate to land: 20× ubuntunote `phase16_agent` green + Mac diff oracle
-      green + CLJW_GC_TORTURE clean (it touches the drain critical section). | none
+      DISCHARGED — gate green deterministically (two-await full-drain check). If the
+      RESIDUAL single-await timing divergence is ever pursued: it needs cljw's eager
+      per-agent drainer to not get ahead of the dispatching thread's follow-up sends
+      (clj gets this free from executor-pool scheduling latency). Likely a
+      lazy-first-pop or a dispatch-sequence barrier; verify with 20× ubuntunote
+      `phase16_agent` + Mac single-await == 1 + CLJW_GC_TORTURE clean. | none
     last_reviewed: "2026-06-12"
 discharged:
   - id: "D-249"

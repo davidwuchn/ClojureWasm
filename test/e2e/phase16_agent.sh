@@ -94,10 +94,16 @@ assert_eq 'agent_continue_mode' "$got" '[1 nil :continue]'
 got=$("$BIN" -e '(error-mode (agent 0))' 2>/dev/null | last_line)
 assert_eq 'agent_error_mode_default' "$got" ':fail'
 
-# An action may send to its OWN agent (clj allows nested send); the running
-# drainer picks the nested action up (it sees draining=true, just enqueues). Here
-# the action sets state to (inc 0)=1 + enqueues inc, which then runs => 2.
-got=$("$BIN" -e '(let [a (agent 0)] (send a (fn [s] (send a inc) (inc s))) (await a) @a)' 2>/dev/null | last_line)
+# An action may send to its OWN agent (clj allows nested send), and the nested
+# send is DEFERRED until the action completes (clj `releasePendingSends`; cljw
+# agent.zig `nested_pending`, D-388). We assert the post-FULL-DRAIN state: outer
+# sets 0→1 and enqueues inc; a SECOND `(await a)` waits for that nested inc too,
+# so @a is deterministically 2 on both clj and cljw. (A single `(await a)` here is
+# clj-faithfully 1 — await waits for `outer` only, not the agent-thread-dispatched
+# nested inc — but cljw's eager per-agent drainer makes that single-await result
+# timing-dependent vs clj's executor pool; the two-await full-drain form is the
+# deterministic capability check. See D-388.)
+got=$("$BIN" -e '(let [a (agent 0)] (send a (fn [s] (send a inc) (inc s))) (await a) (await a) @a)' 2>/dev/null | last_line)
 assert_eq 'agent_nested_send' "$got" '2'
 
 # agent? predicate.
