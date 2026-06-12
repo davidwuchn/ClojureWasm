@@ -1,0 +1,4 @@
+name: "JSON Parse"
+category: primitive
+expected_output: "20000"
+description: "Parse a ~25KB JSON document 100x — the D-407(a) fast-Zig-primitive proof (cljw read-str is Zig std.json; JVM Clojure's data.json is library code)"

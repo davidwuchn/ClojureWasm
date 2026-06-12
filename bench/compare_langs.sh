@@ -57,7 +57,7 @@ for arg in "$@"; do
       echo ""
       echo "Options:"
       echo "  --bench=NAME     Run specific benchmark (e.g. fib_recursive)"
-      echo "  --lang=LANGS     Comma-separated languages (cw,c,zig,java,tgo,py,rb,js,bb)"
+      echo "  --lang=LANGS     Comma-separated languages (cw,c,zig,java,clj,tgo,py,rb,js,bb)"
       echo "  --cold           Wall clock only (default)"
       echo "  --warm           Startup-subtracted only"
       echo "  --both           Cold + Warm"
@@ -76,7 +76,7 @@ for arg in "$@"; do
 done
 
 # --- Determine languages ---
-ALL_LANGS=(cw c zig java tgo go py rb js bb)
+ALL_LANGS=(cw c zig java clj tgo go py rb js bb)
 LANGS=()
 if [[ -n "$LANG_FILTER" ]]; then
   IFS=',' read -ra LANGS <<< "$LANG_FILTER"
@@ -91,6 +91,7 @@ lang_display_name() {
     c)    echo "c" ;;
     zig)  echo "zig" ;;
     java) echo "java" ;;
+    clj)  echo "clojure-jvm" ;;
     py)   echo "python" ;;
     rb)   echo "ruby" ;;
     js)   echo "node" ;;
@@ -194,6 +195,27 @@ lang_command() {
       command -v node >/dev/null 2>&1 || return 1
       echo "node $bench_dir/bench.js"
       ;;
+    clj)
+      # JVM Clojure runs the SAME bench.clj as cw — the apples-to-apples
+      # cljw-vs-JVM-Clojure comparison (D-407(a)). Extra deps (e.g. the
+      # real data.json) come from <bench>/clj-deps.edn via a wrapper so
+      # the hyperfine command stays quote-free. -J-Xmx2g per
+      # orphan_prevention.
+      [[ -f "$bench_dir/bench.clj" ]] || return 1
+      command -v clojure >/dev/null 2>&1 || return 1
+      local wrap="$TMPDIR_CMP/clj_$(basename "$bench_dir").sh"
+      if [[ -f "$bench_dir/clj-deps.edn" ]]; then
+        printf '#!/usr/bin/env bash
+exec clojure -J-Xmx2g -Sdeps "$(cat %s)" -M %s
+'           "$bench_dir/clj-deps.edn" "$bench_dir/bench.clj" > "$wrap"
+      else
+        printf '#!/usr/bin/env bash
+exec clojure -J-Xmx2g -M %s
+'           "$bench_dir/bench.clj" > "$wrap"
+      fi
+      chmod +x "$wrap"
+      echo "$wrap"
+      ;;
     bb)
       [[ -f "$bench_dir/bench.clj" ]] || return 1
       command -v bb >/dev/null 2>&1 || return 1
@@ -248,6 +270,10 @@ JEOF
         mkdir -p "$TMPDIR_CMP/noop_java"
         javac -d "$TMPDIR_CMP/noop_java" "$TMPDIR_CMP/Noop.java" 2>/dev/null
         noop_cmd="java -cp $TMPDIR_CMP/noop_java Noop"
+        ;;
+      clj)
+        command -v clojure >/dev/null 2>&1 || continue
+        noop_cmd="clojure -J-Xmx2g -M -e nil"
         ;;
       py)   noop_cmd="python3 -c pass" ;;
       rb)   noop_cmd="ruby -e nil" ;;
@@ -340,7 +366,7 @@ echo -e "${BOLD}  Cross-Language Benchmark Comparison${RESET}"
 echo -e "${BOLD}═══════════════════════════════════════════════════════════════${RESET}"
 
 # Sort order: c, zig, java, tgo, go, cw, bb, rb, py (fast to slow typical order)
-DISPLAY_ORDER=(c zig java tgo go cw js bb rb py)
+DISPLAY_ORDER=(c zig java tgo go cw clj js bb rb py)
 
 for bench_dir in "${BENCH_DIRS[@]}"; do
   bench_name=$(basename "$bench_dir" | sed 's/^[0-9]*_//')
