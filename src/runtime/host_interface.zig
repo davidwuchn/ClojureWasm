@@ -168,6 +168,20 @@ const IPERSISTENT_VECTOR: HostInterface = .{
     },
 };
 
+// java.lang.CharSequence — length/charAt/subSequence (instaparse's Segment
+// declares the BARE name; java.lang is JVM-auto-imported). Bare + qualified
+// keys; the trailing IDENTITY entries stop the rewrite's own second-pass
+// section from re-routing (the IPersistentSet `-disjoin` precedent).
+const CHAR_SEQUENCE: HostInterface = .{ .kind = .protocol_remap, .canonical = "CharSequence", .remap = &.{
+    .{ .clj = "length", .protocol = "CharSequence", .method = "-cs-length" },
+    .{ .clj = "charAt", .protocol = "CharSequence", .method = "-char-at" },
+    .{ .clj = "subSequence", .protocol = "CharSequence", .method = "-sub-sequence" },
+    .{ .clj = "toString", .protocol = "Object", .method = "toString" },
+    .{ .clj = "-cs-length", .protocol = "CharSequence", .method = "-cs-length" },
+    .{ .clj = "-char-at", .protocol = "CharSequence", .method = "-char-at" },
+    .{ .clj = "-sub-sequence", .protocol = "CharSequence", .method = "-sub-sequence" },
+} };
+
 // java.lang.Comparable — compareTo (D-400 family; instaparse's
 // AutoFlattenSeq declares it). `compare` consults Comparable/-compare-to
 // for a typed_instance before the native valueCompare.
@@ -468,6 +482,8 @@ const MARKERS = std.StaticStringMap(HostInterface).initComptime(.{
     // self-recursion the identity guard does not cover for this shape).
     .{ "java.lang.Comparable", JAVA_COMPARABLE },
     .{ "clojure.lang.IPersistentVector", IPERSISTENT_VECTOR },
+    .{ "java.lang.CharSequence", CHAR_SEQUENCE },
+    .{ "CharSequence", CHAR_SEQUENCE },
     // D-286: the editable / transient collection family (flatland.ordered).
     // BOTH the qualified spelling AND the bare simple name (a deftype `:import`s
     // `(clojure.lang IEditableCollection …)` then declares the BARE name) route to

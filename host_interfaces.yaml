@@ -120,6 +120,19 @@ interfaces:
       equals: { status: wired, wires_to: "Object method-family (= consult, D-280d1)" }
       equiv: { status: wired, wires_to: "Object method-family (= consult, D-280d8)" }
       toString: { status: wired, wires_to: "Object method-family (str/print consult, D-275)" }
+  - name: java.lang.CharSequence
+    aliases: [CharSequence]
+    derives_from: "java.lang.CharSequence — readable character sequence (Java, stable); instaparse's Segment declares the bare name."
+    tier: A
+    recognised: true
+    kind: protocol_remap
+    modeled_as: "CharSequence (defprotocol CharSequence (-cs-length/-char-at/-sub-sequence), registration-level; toString → the Object method-family)"
+    note: "Bare + qualified spellings; trailing identity remap entries stop the second-pass re-route (the IPersistentSet -disjoin precedent)."
+    methods:
+      length: { status: wired, wires_to_protocol: CharSequence, wires_to_method: "-cs-length" }
+      charAt: { status: wired, wires_to_protocol: CharSequence, wires_to_method: "-char-at" }
+      subSequence: { status: wired, wires_to_protocol: CharSequence, wires_to_method: "-sub-sequence" }
+      toString: { status: wired, wires_to: "Object method-family (str/print consult, D-275)" }
   - name: java.lang.Comparable
     derives_from: "java.lang.Comparable — natural-ordering participant (Java, stable; clj RT.compare casts to it)."
     tier: A

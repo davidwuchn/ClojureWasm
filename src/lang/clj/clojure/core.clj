@@ -1725,6 +1725,9 @@
 ;; assocN/length register here (registration-level; bodies delegate via
 ;; dot-calls). Distinct from the native vector's instance? membership.
 (defprotocol IPersistentVector (-assoc-n [v i x]) (-length [v]))
+;; java.lang.CharSequence deftype supertype (instaparse's Segment):
+;; length/charAt/subSequence register here (registration-level).
+(defprotocol CharSequence (-cs-length [s]) (-char-at [s i]) (-sub-sequence [s start end]))
 (defprotocol IBlockingDeref (-blocking-deref [o ms timeout-val]))
 ;; `Sequential` is a zero-method MARKER protocol (JVM `clojure.lang.Sequential`):
 ;; a type that declares it prints as its seq and answers `sequential?` true

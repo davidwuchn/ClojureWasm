@@ -86,6 +86,20 @@ want='-1
 [9 2 3]'
 assert_eq 'comparable_ipv_supertype' "$got" "$want"
 
+# A BARE CharSequence supertype (instaparse's Segment; java.lang is
+# JVM-auto-imported so libs declare it unqualified) registers + its own
+# dot-calls dispatch (oracle-verified).
+got=$("$BIN" - <<'CLJ' 2>/dev/null
+(deftype Seg [s offset cnt]
+  CharSequence
+  (length [this] cnt)
+  (charAt [this i] (.charAt s (+ offset i))))
+(def g (->Seg "hello" 1 3))
+(prn [(.length g) (.charAt g 0)])
+CLJ
+) || true
+assert_eq 'charsequence_supertype' "$got" '[3 \e]'
+
 # reduce-kv on a RECORD (no IKVReduce) still takes the keys fallback.
 got=$("$BIN" - <<'EOF' 2>/dev/null
 (defrecord R [a b])
@@ -94,4 +108,4 @@ EOF
 ) || true
 assert_eq 'reduce_kv_record_fallback' "$got" '{1 :a, 2 :b}'
 
-echo "OK — phase14_deftype_kvreduce_blocking (3 cases) green"
+echo "OK — phase14_deftype_kvreduce_blocking (4 cases) green"
