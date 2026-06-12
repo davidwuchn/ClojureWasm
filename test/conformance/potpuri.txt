@@ -1,0 +1,76 @@
+(potpuri.core/path-vals {:a {:b 1}})
+;;=> ([[:a :b] 1])
+(potpuri.core/assoc-in-path-vals [[[:a :b] 1] [[:c] 2]])
+;;=> {:a {:b 1}, :c 2}
+(potpuri.core/dissoc-in {:a {:b 1 :c 2}} [:a :b])
+;;=> {:a {:c 2}}
+(potpuri.core/dissoc-in {:a {:b 1}} [:a :b])
+;;=> {}
+(potpuri.core/deep-merge {:a {:b 1}} {:a {:c 2}})
+;;=> {:a {:b 1, :c 2}}
+(potpuri.core/deep-merge :into {:a [1]} {:a [2]})
+;;=> {:a [1 2]}
+(potpuri.core/wrap-into [] :a)
+;;=> [:a]
+(potpuri.core/wrap-into [] [:a])
+;;=> [:a]
+(potpuri.core/wrap-into #{} [:a])
+;;=> #{:a}
+(potpuri.core/assoc-if {:a 1} :b 2)
+;;=> {:a 1, :b 2}
+(potpuri.core/assoc-if {:a 1} :b nil)
+;;=> {:a 1}
+((potpuri.core/where-fn {:id 1}) {:id 1 :x 2})
+;;=> true
+((potpuri.core/where-fn {:id 1}) {:id 2})
+;;=> false
+(potpuri.core/find-index [2 4 5] odd?)
+;;=> 2
+(potpuri.core/find-index [{:id 1} {:id 2}] {:id 2})
+;;=> 1
+(potpuri.core/find-first [2 4 5 6] odd?)
+;;=> 5
+(potpuri.core/find-first [{:id 1} {:id 2 :foo :bar}] {:id 2})
+;;=> {:id 2, :foo :bar}
+(potpuri.core/assoc-first [1 2 3] odd? 9)
+;;=> [9 2 3]
+(potpuri.core/update-first [1 2 3] odd? inc)
+;;=> [2 2 3]
+(potpuri.core/conjv nil 1)
+;;=> [1]
+(potpuri.core/conjv [1] 2)
+;;=> [1 2]
+(potpuri.core/consv nil 1)
+;;=> [1]
+(potpuri.core/consv [2 3] 1)
+;;=> [1 2 3]
+(potpuri.core/map-keys name {:a 1 :b 2})
+;;=> {"a" 1, "b" 2}
+(potpuri.core/map-vals inc {:a 1 :b 2})
+;;=> {:a 2, :b 3}
+(potpuri.core/map-entries (fn [[k v]] [(name k) (inc v)]) {:a 1})
+;;=> {"a" 2}
+(potpuri.core/filter-keys keyword? {:a 1 "b" 2})
+;;=> {:a 1}
+(potpuri.core/filter-vals odd? {:a 1 :b 2})
+;;=> {:a 1}
+(potpuri.core/filter-entries (fn [[k v]] (odd? v)) {:a 1 :b 2})
+;;=> {:a 1}
+(potpuri.core/remove-keys keyword? {:a 1 "b" 2})
+;;=> {"b" 2}
+(potpuri.core/remove-vals odd? {:a 1 :b 2})
+;;=> {:b 2}
+(potpuri.core/remove-entries (fn [[k v]] (odd? v)) {:a 1 :b 2})
+;;=> {:b 2}
+(potpuri.core/index-by :id [{:id 1 :x :a} {:id 2 :x :b}])
+;;=> {1 {:id 1, :x :a}, 2 {:id 2, :x :b}}
+(potpuri.core/zip [1 2 3] [:a :b :c])
+;;=> ([1 :a] [2 :b] [3 :c])
+(potpuri.core/zip [1] [1 2] [1 2 3])
+;;=> ([1 1 1])
+(potpuri.core/update-if-contains {:a 1} :a inc)
+;;=> {:a 2}
+(potpuri.core/update-if-contains {:a 1} :b inc)
+;;=> {:a 1}
+(potpuri.core/build-tree {:id-fn :id :parent-fn :parent :assoc-children-fn (fn [i c] (assoc i :children c))} [{:id 1} {:id 2 :parent 1} {:id 3 :parent 1}])
+;;=> ({:id 1, :children ({:id 2, :parent 1} {:id 3, :parent 1})})

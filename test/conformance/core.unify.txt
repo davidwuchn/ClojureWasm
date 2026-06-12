@@ -1,0 +1,30 @@
+(clojure.core.unify/unify (quote (?x 2 ?y)) (quote (1 2 3)))
+;;=> {?x 1, ?y 3}
+(clojure.core.unify/unify (quote (?x ?x)) (quote (1 2)))
+;;=> nil
+(clojure.core.unify/unify (quote (?x ?x)) (quote (1 1)))
+;;=> {?x 1}
+(clojure.core.unify/unify (quote {:a ?x}) {:a 1})
+;;=> {?x 1}
+(clojure.core.unify/unify (quote [?x [?y 3]]) [1 [2 3]])
+;;=> {?x 1, ?y 2}
+(clojure.core.unify/subst (quote (?a 2 ?b)) (quote {?a 1 ?b 3}))
+;;=> (1 2 3)
+(clojure.core.unify/subst (quote [?a [?b]]) (quote {?a 1 ?b 2}))
+;;=> [1 [2]]
+(clojure.core.unify/unifier (quote (?x 2 ?y)) (quote (1 2 3)))
+;;=> (1 2 3)
+(clojure.core.unify/unifier (quote [?x (quote ?y)]) [1 (quote 2)])
+;;=> [1 2]
+(clojure.core.unify/wildcard? (quote ?_))
+;;=> false
+(clojure.core.unify/ignore-variable? (quote ?_))
+;;=> false
+(clojure.core.unify/extract-lvars (quote (?x (a ?y) b)))
+;;=> #{?x}
+(clojure.core.unify/flatten-bindings (quote {?x 1}))
+;;=> {?x 1}
+(clojure.core.unify/unify- (quote (?x 2)) (quote (1 2)))
+;;=> {?x 1}
+(clojure.core.unify/unifier- (quote (?x 2 ?y)) (quote (1 2 3)))
+;;=> (1 2 3)

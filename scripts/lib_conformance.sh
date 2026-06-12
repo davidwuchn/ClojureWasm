@@ -63,17 +63,27 @@ DIR="test/conformance"
 [ -x "$BIN" ] || { echo "building cljw…" >&2; zig build -Dwasm -Doptimize="${CLJW_OPT:-ReleaseSafe}" >/dev/null; }
 
 # ---------- lib context ----------
-# Sets: CTX_DIR (cwd for cljw; also clj when project-backed), SDEPS_ARGS
-# (extra clj args when bundled).
+# Sets: CTX_DIR (cwd for cljw), CLJ_DIR (cwd for clj) and SDEPS_ARGS.
+# cljw: verified_projects/<lib>/ when present (its deps.edn auto-loads), else
+# the repo root (bundled ns). clj: the same deps.edn read from the same cwd —
+# UNLESS test/conformance/deps/<lib>.edn exists, which then supplies the whole
+# clj-side -Sdeps map (run from the repo root so no cwd deps.edn interferes).
+# That override covers both cases where the shared-deps.edn trick fails:
+#   - the lib is BUNDLED in cljw (data.json/data.csv/tools.cli) — clj needs
+#     the real upstream coordinate;
+#   - the upstream repo has NO manifest clj accepts (lein-only, e.g. potpuri)
+#     — cljw resolves it (no-deps.edn → src/, ADR-0101) but clj needs the
+#     same coordinate plus `:deps/manifest :deps`.
 resolve_ctx() {
     local lib="$1"
     SDEPS_ARGS=()
-    if [ -d "verified_projects/$lib" ]; then
-        CTX_DIR="$ROOT/verified_projects/$lib"
-    elif [ -f "$DIR/deps/$lib.edn" ]; then
-        CTX_DIR="$ROOT"
+    CTX_DIR="$ROOT"
+    [ -d "verified_projects/$lib" ] && CTX_DIR="$ROOT/verified_projects/$lib"
+    CLJ_DIR="$CTX_DIR"
+    if [ -f "$DIR/deps/$lib.edn" ]; then
+        CLJ_DIR="$ROOT"
         SDEPS_ARGS=(-Sdeps "$(cat "$DIR/deps/$lib.edn")")
-    else
+    elif [ "$CTX_DIR" = "$ROOT" ]; then
         echo "unknown lib '$lib': no verified_projects/$lib/ and no $DIR/deps/$lib.edn" >&2
         return 2
     fi
@@ -169,7 +179,12 @@ oracle_lib() {
         printf '(try (prn (eval (quote %s))) (catch Throwable e (println (str "<clj-error> " (.getName (class e))))))\n' "$e" >> "$batch"
     done
     local clj_out
-    clj_out="$(cd "$CTX_DIR" && timeout 120 "$CLJ" -J-Xmx2g ${SDEPS_ARGS+"${SDEPS_ARGS[@]}"} -M "$batch" 2>/dev/null)"
+    clj_out="$(cd "$CLJ_DIR" && timeout 120 "$CLJ" -J-Xmx2g ${SDEPS_ARGS+"${SDEPS_ARGS[@]}"} -M "$batch" 2>/dev/null)"
+    if [ -z "$clj_out" ]; then
+        echo "clj batch produced NO output (classpath/manifest failure?) — re-run without 2>/dev/null:" >&2
+        echo "  (cd $CLJ_DIR && $CLJ -J-Xmx2g ${SDEPS_ARGS[*]:-} -M $batch)" >&2
+        return 2
+    fi
     local clj_lines
     mapfile -t clj_lines <<< "$clj_out"
 

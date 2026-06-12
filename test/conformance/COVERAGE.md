@@ -7,6 +7,10 @@
 > `.claude/rules/accepted_divergences.md`; load-only status lives in
 > `docs/works/ladder.md`, load-proof projects in `verified_projects/`.
 
-| lib    | golden ok | known-DIFF | coverage |
-|--------|-----------|------------|----------|
-| medley | 46        | 0          | 100%     |
+| lib                | golden ok | known-DIFF | coverage |
+|--------------------|-----------|------------|----------|
+| core.unify         | 15        | 0          | 100%     |
+| data.priority-map  | 15        | 10         | 60%      |
+| math.combinatorics | 20        | 0          | 100%     |
+| medley             | 46        | 0          | 100%     |
+| potpuri            | 38        | 0          | 100%     |
