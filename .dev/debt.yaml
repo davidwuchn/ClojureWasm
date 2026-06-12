@@ -2504,8 +2504,11 @@ discharged:
       options via `clojure.walk/postwalk` + reduce-kv. Verified: e2e
       phase14_json_options (read :key-fn/:value-fn + write :key-fn + 1-arity
       defaults, 5 cases clj-matched vs real data.json 2.5.0); phase9_json 16/16 +
-      phase16_cljw_json_fs still green; lint clean. Follow-up: `:bigdec` /
-      `:eof-error?` / `:eof-value` (parse-level, need `-read-str-impl` support).
+      phase16_cljw_json_fs still green; lint clean. A same-cycle follow-up added
+      read-str `:eof-error?` / `:eof-value` (empty/blank input → eof-value when
+      eof-error? is false, else throw — done in the wrapper via clojure.string/blank?,
+      8 e2e cases). Remaining follow-up: `:bigdec` (parse-level, needs -read-str-impl
+      BigDecimal support).
   - id: "D-399"
     discharged_at: "feat(host-interface): clojure.lang.IReduceInit deftype marker"
     resolution: |-

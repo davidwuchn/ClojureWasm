@@ -15,7 +15,8 @@
 ;; options (D-401) via clojure.walk.
 (ns clojure.data.json
   (:refer-clojure)
-  (:require [clojure.walk]))
+  (:require [clojure.walk]
+            [clojure.string]))
 
 ;; Apply :key-fn / :value-fn over every JSON object in `x`. `key-fn` maps each
 ;; key; `value-fn` maps (transformed-key, value) — a value-fn returning the
@@ -34,15 +35,21 @@
           node))
       x)))
 
-;; `(read-str s & {:keys [key-fn value-fn]})` — parse JSON, then apply the
-;; post-process options. (`:bigdec` / `:eof-error?` / `:eof-value` are
-;; parse-level and stay a `-read-str-impl` follow-up.)
+;; `(read-str s & {:keys [key-fn value-fn eof-error? eof-value]})` — parse JSON,
+;; then apply the post-process options. Empty/blank input with `:eof-error? false`
+;; returns `:eof-value` (default nil); otherwise it throws like a parse error.
+;; (`:bigdec` is parse-level and stays a `-read-str-impl` follow-up.)
 (def read-str
-  (fn [s & {:keys [key-fn value-fn]}]
-    (let* [raw (-read-str-impl s)]
-      (if (or key-fn value-fn)
-        (-transform-json raw key-fn value-fn)
-        raw))))
+  (fn [s & {:keys [key-fn value-fn eof-error? eof-value]
+            :or {eof-error? true}}]
+    (if (clojure.string/blank? s)
+      (if eof-error?
+        (throw (ex-info "JSON error (end-of-input)" {}))
+        eof-value)
+      (let* [raw (-read-str-impl s)]
+        (if (or key-fn value-fn)
+          (-transform-json raw key-fn value-fn)
+          raw)))))
 
 ;; `(write-str x & {:keys [key-fn value-fn]})` — apply the options, then
 ;; serialise. key-fn typically stringifies keyword keys (e.g. `name`).

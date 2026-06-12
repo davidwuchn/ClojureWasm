@@ -28,5 +28,10 @@ assert_eq 'read-value-fn' "$(run '(prn (json/read-str "{\"a\":1,\"b\":2}" :key-f
 assert_eq 'write-key-fn'  "$(run '(prn (json/write-str {:a 1 :b 2} :key-fn name))')"                 '"{\"a\":1,\"b\":2}"'
 # write-str default still works (1-arity)
 assert_eq 'write-default' "$(run '(prn (json/write-str [1 2 3]))')"                                  '"[1,2,3]"'
+# read-str :eof-error? false + :eof-value → empty/blank input returns the eof-value
+assert_eq 'read-eof-value'  "$(run '(prn (json/read-str "" :eof-error? false :eof-value :none))')"   ':none'
+assert_eq 'read-eof-blank'  "$(run '(prn (json/read-str "   " :eof-error? false :eof-value :empty))')" ':empty'
+# read-str default eof → still parses a real value (no regression)
+assert_eq 'read-eof-ok'     "$(run '(prn (json/read-str "[1]" :eof-error? false))')"                 '[1]'
 
-echo "OK — phase14_json_options (5 cases) green"
+echo "OK — phase14_json_options (8 cases) green"
