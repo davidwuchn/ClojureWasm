@@ -1,0 +1,14 @@
+{:a (map inc [1 2])}
+;;=> {:a (2 3)}
+{:a (lazy-seq [1])}
+;;=> {:a (1)}
+{:a {:b (map inc [1])}}
+;;=> {:a {:b (2)}}
+(sorted-map :a (map inc [1]))
+;;=> {:a (2)}
+(conj #{} (map inc [1]))
+;;=> #{(2)}
+[{:k (take 2 (range))}]
+;;=> [{:k (0 1)}]
+{:a (partition-all 2 [1 2 3])}
+;;=> {:a ((1 2) (3))}

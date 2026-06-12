@@ -72,8 +72,9 @@ const SourceLocation = @import("error/info.zig").SourceLocation;
 /// cycle 2 originally realized only the TOP level; this now realizes
 /// nested lazy seqs in the seq family (lazy_seq / list / vector), fixing
 /// `(partition-by …)` / `(split-at …)` / `(into [] (partition-all …))`
-/// which produced `(#<lazy_seq> …)`. Lazy seqs nested as map values /
-/// set elements are a rare residual (still `#<lazy_seq>`).
+/// which produced `(#<lazy_seq> …)` — and in map values / set elements
+/// (all four map/set tags; hit by potpuri's build-tree, corpus
+/// `lazy_nested_print`).
 pub fn printResult(rt: *Runtime, env: *env_mod.Env, w: *Writer, v: Value) anyerror!void {
     // ADR-0088: snapshot *print-length*/*print-level* once per top-level value
     // (resets depth to 0) so the recursive `printValue` honours a user binding
@@ -226,6 +227,74 @@ fn deepRealize(rt: *Runtime, env: *env_mod.Env, v: Value) anyerror!Value {
             try deepRealize(rt, env, map_entry_collection.keyOf(v)),
             try deepRealize(rt, env, map_entry_collection.valOf(v)),
         ),
+        // Map values / set elements may hold lazy seqs too (potpuri's
+        // build-tree assocs a lazy children seq). Re-assoc / re-conj ONLY the
+        // entries a realize actually changed, so type / comparator / meta and
+        // the untouched structure are preserved (assoc-on-the-original, not a
+        // rebuild). Bit-identity (`@intFromEnum`) detects "realize was a
+        // no-op" — deepRealize returns the same Value when nothing was lazy.
+        .array_map, .hash_map => {
+            var out = v;
+            var ks = try map_collection.keys(rt, v);
+            while (ks.tag() == .list and list_collection.countOf(ks) > 0) : (ks = list_collection.rest(ks)) {
+                const k = list_collection.first(ks);
+                const val = try map_collection.get(v, k);
+                const rk = try deepRealize(rt, env, k);
+                const rv = try deepRealize(rt, env, val);
+                if (@intFromEnum(rk) != @intFromEnum(k)) {
+                    out = try map_collection.dissoc(rt, out, k);
+                    out = try map_collection.assoc(rt, out, rk, rv);
+                } else if (@intFromEnum(rv) != @intFromEnum(val)) {
+                    out = try map_collection.assoc(rt, out, k, rv);
+                }
+            }
+            return out;
+        },
+        // Sorted variants ride the sorted module (comparator-aware assoc/
+        // dissoc need env; a realized KEY is not re-keyed — the comparator
+        // ordered it by value, and a lazy seq as a sorted key is pathological
+        // — only VALUES are realized).
+        .sorted_map => {
+            var out = v;
+            const noloc: SourceLocation = .{};
+            var ks = try sorted_collection.keys(rt, v);
+            while (ks.tag() == .list and list_collection.countOf(ks) > 0) : (ks = list_collection.rest(ks)) {
+                const k = list_collection.first(ks);
+                const val = try sorted_collection.get(rt, env, v, k, noloc);
+                const rv = try deepRealize(rt, env, val);
+                if (@intFromEnum(rv) != @intFromEnum(val)) {
+                    out = try sorted_collection.assoc(rt, env, out, k, rv, noloc);
+                }
+            }
+            return out;
+        },
+        .hash_set => {
+            var out = v;
+            var es = try set_collection.seq(rt, v);
+            while (es.tag() == .list and list_collection.countOf(es) > 0) : (es = list_collection.rest(es)) {
+                const e = list_collection.first(es);
+                const re = try deepRealize(rt, env, e);
+                if (@intFromEnum(re) != @intFromEnum(e)) {
+                    out = try set_collection.disj(rt, out, e);
+                    out = try set_collection.conj(rt, out, re);
+                }
+            }
+            return out;
+        },
+        .sorted_set => {
+            var out = v;
+            const noloc: SourceLocation = .{};
+            var es = try sorted_collection.seq(rt, v);
+            while (es.tag() == .list and list_collection.countOf(es) > 0) : (es = list_collection.rest(es)) {
+                const e = list_collection.first(es);
+                const re = try deepRealize(rt, env, e);
+                if (@intFromEnum(re) != @intFromEnum(e)) {
+                    out = try sorted_collection.disjSet(rt, env, out, e, noloc);
+                    out = try sorted_collection.conjSet(rt, env, out, re, noloc);
+                }
+            }
+            return out;
+        },
         else => return v,
     }
 }
