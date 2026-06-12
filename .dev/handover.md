@@ -3,6 +3,13 @@
 > ≤ 100 lines. Driving doc; framing per
 > [`.claude/rules/handover_framing.md`](../.claude/rules/handover_framing.md).
 
+## Stopped — user requested
+
+User instruction (2026-06-12): "さて、きりの良いところで、現状について解説して止めて
+ください". Stopped after D-403 (cl-format subset) landed green. Resume at the
+Resume contract's first item (the clojure.lang.* marker-family big-bang / D-400);
+this stop applied to that session only — the next `/continue` resumes the loop.
+
 ## Resume contract
 
 - **HEAD**: `main` (`git log` is the SSOT; ≈ 16087139). All work on `main`;
