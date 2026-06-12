@@ -1,0 +1,106 @@
+(nth [1 2 3] 0)
+;;=> 1
+(nth [1 2 3] 2)
+;;=> 3
+(nth [1 2 3] 5 :default)
+;;=> :default
+(nth [1 2 3] -1 :default)
+;;=> :default
+(nth "abc" 1)
+;;=> \b
+(nth '(1 2 3) 1)
+;;=> 2
+(nth (range 5) 3)
+;;=> 3
+(nth [] 0 :none)
+;;=> :none
+(get [1 2 3] 5)
+;;=> nil
+(get [1 2 3] -1)
+;;=> nil
+(get [1 2 3] 1)
+;;=> 2
+(get {:a 1} :b)
+;;=> nil
+(get {:a 1} :b :default)
+;;=> :default
+(get nil :x)
+;;=> nil
+(get nil :x :d)
+;;=> :d
+(take 0 [1 2 3])
+;;=> ()
+(take 10 [1 2 3])
+;;=> (1 2 3)
+(take -1 [1 2 3])
+;;=> ()
+(drop 0 [1 2 3])
+;;=> (1 2 3)
+(drop 10 [1 2 3])
+;;=> ()
+(drop -1 [1 2 3])
+;;=> (1 2 3)
+(take-last 2 [1 2 3 4])
+;;=> (3 4)
+(take-last 10 [1 2])
+;;=> (1 2)
+(drop-last 2 [1 2 3 4])
+;;=> (1 2)
+(drop-last 10 [1 2])
+;;=> ()
+(subvec [1 2 3 4 5] 2)
+;;=> [3 4 5]
+(subvec [1 2 3 4 5] 1 4)
+;;=> [2 3 4]
+(subvec [1 2 3] 3)
+;;=> []
+(subs "hello" 0)
+;;=> "hello"
+(subs "hello" 5)
+;;=> ""
+(subs "hello" 2 4)
+;;=> "ll"
+(first [])
+;;=> nil
+(rest [])
+;;=> ()
+(next [])
+;;=> nil
+(last [])
+;;=> nil
+(peek [])
+;;=> nil
+(seq [])
+;;=> nil
+(empty? [])
+;;=> true
+(first nil)
+;;=> nil
+(rest nil)
+;;=> ()
+(count nil)
+;;=> 0
+(reduce + [])
+;;=> 0
+(reduce + 0 [])
+;;=> 0
+(reduce + 5 [])
+;;=> 5
+(apply max [3 1 2])
+;;=> 3
+(min 1)
+;;=> 1
+(max 5)
+;;=> 5
+(nthrest [1 2 3 4 5] 10)
+;;=> ()
+(nthnext [1 2 3 4 5] 10)
+;;=> nil
+(nthrest [1 2 3] 0)
+;;=> [1 2 3]
+(butlast [1 2 3])
+;;=> (1 2)
+(butlast [])
+;;=> nil
+(butlast [1])
+;;=> nil
