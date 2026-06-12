@@ -22,7 +22,21 @@ clj-oracle infinite-seq) live in
    AND bound sequence-producers with `(take N …)`.** `clojure.main -e`
    prints its result, so an unbounded seq (`(range)`, `(iterate inc 0)`,
    `(repeat 1)`, `(cycle …)`, `(line-seq …)`) realises forever and
-   pins ~160 % CPU.
+   pins ~160 % CPU. **Watch the NON-OBVIOUS infinite producers too**:
+   `(take-nth 0 coll)` / `(take-nth -n coll)` returns clj's infinite
+   `(first coll)` repeat; `(partition n step coll)` with `step` ≤ 0;
+   `(repeatedly f)` 0-arity.
+3. **Every batched / scripted `clj` invocation MUST cap the JVM heap with
+   `-J-Xmx2g`** (e.g. `timeout 60 clj -J-Xmx2g -M batch.clj`). The 2026-06-12
+   incident: an unbounded `(take-nth 0 …)` slipped into a `clj_diff_sweep`
+   batch and an UNCAPPED JVM realised the infinite seq for the full `timeout 60`
+   window, exhausting ~138 GB of system memory + swap (Mac froze). `timeout`
+   alone does NOT bound memory — only CPU-time. `-J-Xmx2g` makes a runaway hit a
+   JVM `OutOfMemoryError` in seconds (the process dies) instead of consuming all
+   system RAM. 2g is ample for any legit batch. **`ulimit -v` does NOT work for
+   `cljw`** (the native binary reserves a large virtual address space and fails
+   to start under a `-v` cap) — bound cljw via `timeout` + the
+   `(take N …)`-every-producer rule instead, never `ulimit -v`.
 
 `timeout` kills only its immediate child, NOT descendants in another
 process group: across an SSH/VM boundary the remote command keeps

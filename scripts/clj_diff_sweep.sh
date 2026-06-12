@@ -93,7 +93,15 @@ done
 for e in "${exprs[@]}"; do
     printf '(try (prn %s) (catch Throwable e (println (str "<clj-error> " (.getName (class e))))))\n' "$e" >> "$batch"
 done
-clj_out="$(timeout 60 "$CLJ" -M "$batch" 2>/dev/null)"
+# MEMORY SAFETY (2026-06-12 incident): an unbounded seq producer that slips into
+# a sweep line (e.g. `(take-nth 0 coll)` → clj's infinite `(first…)` repeat) is
+# realized for the FULL `timeout 60` window by `(prn …)`. Without a heap cap an
+# uncapped JVM grew until it exhausted ~138 GB of system memory + swap. `-J-Xmx2g`
+# bounds the blast radius: a runaway seq now hits a JVM OutOfMemoryError in seconds
+# (the process dies) instead of consuming all system RAM. 2g is ample for any legit
+# batch (a few dozen small values). The `(take N …)`-bound-every-producer rule
+# (orphan_prevention.md) is still the primary discipline; this is the backstop.
+clj_out="$(timeout 60 "$CLJ" -J-Xmx2g -M "$batch" 2>/dev/null)"
 mapfile -t clj_lines <<< "$clj_out"
 
 # --- per-expr cljw + compare ---
