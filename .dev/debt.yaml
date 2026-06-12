@@ -2459,6 +2459,22 @@ active:
       AD-003 (simple `:type`), ADR-0120 (trace_ptr), F-003 (frame shape = D-232's).
     last_reviewed: "2026-06-12"
 discharged:
+  - id: "D-393"
+    discharged_at: "feat(core): clojure.core/extend (runtime protocol-extension fn)"
+    resolution: |-
+      Found + fixed 2026-06-12 (P4 lib-load: clojure.tools.reader reader_types.clj:190
+      `(extend LineNumberingPushbackReader IndexingReader {…})`). cljw shipped the
+      extend-type / extend-protocol MACROS (Zig `expandExtendType`, lowering to
+      `(rt/__extend-type! Foo P [["m" (fn* …)] …])`) but NOT the base runtime fn
+      `clojure.core/extend` they are sugar over — `(extend atype & proto+mmaps)`,
+      each mmap a {:method-kw fn} map. Libs that assemble impl maps at runtime
+      (tools.reader) call `extend` directly → name_error. FIX: a 6-line core.clj
+      def after `extends?` that loops (proto mmap) pairs and calls the SAME
+      `rt/__extend-type!` primitive, building the `[["name" fn] …]` impls vec from
+      the map via reduce-kv + name (mirrors the macro's lowering). Verified: e2e
+      phase14_extend_fn (single/multi-method/multi-protocol, 3 assertions,
+      clj-matched). tools.reader advances past :190 to LineNumberingPushbackReader
+      (java.io host-class frontier, separate tracked gap). Tier A core fn.
   - id: "D-392"
     discharged_at: "feat(analyzer): prefix-list libspecs in require/use/ns"
     resolution: |-

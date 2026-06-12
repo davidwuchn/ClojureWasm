@@ -1754,6 +1754,21 @@
 (def extends?
   (fn* [protocol atype] (rt/__extends? protocol atype)))
 
+;; `(extend atype & proto+mmaps)` — the runtime protocol-extension fn that the
+;; extend-type / extend-protocol macros are sugar over. `atype` is a type value
+;; (a deftype/defrecord name or (class …)); each (protocol method-map) pair
+;; installs onto it, where the map is {:method-kw fn}. Mirrors the macro's
+;; `(rt/__extend-type! atype proto [["m" fn] …])` lowering, built from the map
+;; at runtime. clojure.core/extend (used directly by libs that assemble impl
+;; maps dynamically, e.g. clojure.tools.reader).
+(def extend
+  (fn* [atype & proto+mmaps]
+    (loop [pairs (seq proto+mmaps)]
+      (when pairs
+        (rt/__extend-type! atype (first pairs)
+          (reduce-kv (fn* [acc k v] (conj acc [(name k) v])) [] (second pairs)))
+        (recur (nnext pairs))))))
+
 ;; `(class x)` — the type of x as an interned type value (ADR-0059):
 ;; native types render as Long / String / PersistentVector, user records
 ;; as their name; (class nil) → nil. Interned, so (= (class 5) (class 6))
