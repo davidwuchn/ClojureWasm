@@ -9,12 +9,18 @@
 
 | lib                | golden ok | known-DIFF | coverage |
 |--------------------|-----------|------------|----------|
+| core.cache         | 10        | 0          | 100%     |
 | core.unify         | 15        | 0          | 100%     |
 | data.csv           | 10        | 0          | 100%     |
 | data.json          | 25        | 0          | 100%     |
 | data.priority-map  | 25        | 0          | 100%     |
+| data.zip           | 8         | 0          | 100%     |
+| hiccup             | 29        | 0          | 100%     |
+| honeysql           | 22        | 0          | 100%     |
+| integrant          | 8         | 0          | 100%     |
 | juxt.clip          | 6         | 0          | 100%     |
 | math.combinatorics | 20        | 0          | 100%     |
 | medley             | 46        | 0          | 100%     |
 | potpuri            | 38        | 0          | 100%     |
+| qbits.ex           | 7         | 0          | 100%     |
 | tools.cli          | 15        | 1          | 93%      |

@@ -6,5 +6,8 @@
         ;; the Maven coord; this pure single-file lib resolves source-only).
         weavejester/dependency
         {:git/url "https://github.com/weavejester/dependency.git"
-         :git/sha "45b3fd426352537f0213235a58f12c91b15ff845"}}
+         :git/sha "45b3fd426352537f0213235a58f12c91b15ff845"
+         ;; lein-only upstream: the manifest override lets the clj ORACLE
+         ;; (lib_conformance.sh) build the same classpath; cljw ignores it.
+         :deps/manifest :deps}}
  :aliases {:verify {:main-opts ["-m" "verify"]}}}

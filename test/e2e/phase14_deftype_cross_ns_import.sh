@@ -39,4 +39,17 @@ assert_eq 'cross-ns-instance?' \
 assert_eq 'cross-ns-extend-protocol' \
   "$("$BIN" -cp "$CP" -e '(require (quote ml.cons)) (ml.cons/check-extend)' 2>&1 | tail -1)" '"raw"'
 
-echo "OK — phase14_deftype_cross_ns_import (2 cases) green"
+# A host-class (:import …) simple name inside a FN BODY resolves in the
+# DEFINING ns even when the fn is called from another ns — the analyzer
+# rewrites the ctor name to its FQCN at analyze time (lexical imports;
+# hiccup.util's (URI. s) inside to-uri, called from user code).
+got=$("$BIN" - <<'EOF' 2>/dev/null | tail -1
+(ns t2 (:import java.net.URI))
+(defn mk [s] (URI. s))
+(in-ns 'user)
+(prn (str (t2/mk "/z")))
+EOF
+)
+assert_eq 'lexical-import-in-fn-body' "$got" '"/z"'
+
+echo "OK — phase14_deftype_cross_ns_import (3 cases) green"

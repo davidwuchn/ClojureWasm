@@ -652,15 +652,18 @@ pub fn assocFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation
 /// JVM reference: clojure.core/dissoc
 /// cw v1 tier: A (Phase 6.16.a-2)
 pub fn dissocFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
-    if (args.len < 2) {
+    if (args.len < 1) {
         return error_catalog.raise(.arity_not_expected, loc, .{
             .fn_name = "dissoc",
-            .expected = 2,
+            .expected = 1,
             .got = args.len,
         });
     }
     const coll = args[0];
     if (coll.isNil()) return .nil_val;
+    // clj 1-arity: `(dissoc map)` returns the map untouched (core.cache's
+    // defcache seed path reduces dissoc over possibly-zero keys).
+    if (args.len == 1) return coll;
     return switch (coll.tag()) {
         .array_map, .hash_map => blk: {
             var acc: Value = coll;

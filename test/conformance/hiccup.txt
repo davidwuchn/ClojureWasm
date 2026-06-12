@@ -1,0 +1,58 @@
+(hiccup.core/html [:p "hi"])
+;;=> "<p>hi</p>"
+(hiccup.core/html [:a {:href "/x"} "go"])
+;;=> "<a href=\"/x\">go</a>"
+(hiccup.core/html [:ul (for [i [1 2]] [:li (str i)])])
+;;=> "<ul><li>1</li><li>2</li></ul>"
+(hiccup.core/html [:div#b.a])
+;;=> "<div class=\"a\" id=\"b\"></div>"
+(hiccup.core/html [:div.x.y "z"])
+;;=> "<div class=\"x y\">z</div>"
+(hiccup.core/html [:br])
+;;=> "<br />"
+(hiccup.core/html [:p {:class "a"} [:em "e"] " t"])
+;;=> "<p class=\"a\"><em>e</em> t</p>"
+(hiccup.core/html [:input {:type "checkbox" :checked true}])
+;;=> "<input checked=\"checked\" type=\"checkbox\" />"
+(hiccup.core/html [:input {:type "checkbox" :checked false}])
+;;=> "<input type=\"checkbox\" />"
+(hiccup.core/html [:p (+ 1 2)])
+;;=> "<p>3</p>"
+(hiccup.core/h "<&>\"")
+;;=> "&lt;&amp;&gt;&quot;"
+(hiccup.util/escape-html "<&>")
+;;=> "&lt;&amp;&gt;"
+(hiccup.core/html [:div nil "a" nil])
+;;=> "<div>a</div>"
+(hiccup.core/html [:span {:data-x 1}])
+;;=> "<span data-x=\"1\"></span>"
+(hiccup.core/html [:p {:id nil} "q"])
+;;=> "<p>q</p>"
+(str (hiccup.util/raw-string "<b>"))
+;;=> "<b>"
+(hiccup.core/html [:div (hiccup.util/raw-string "<b>x</b>")])
+;;=> "<div><b>x</b></div>"
+(hiccup.page/html5 [:body "x"])
+;;=> "<!DOCTYPE html>\n<html><body>x</body></html>"
+(hiccup.page/xhtml [:body "y"])
+;;=> "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!DOCTYPE html PUBLIC \"-//W3C//DTD XHTML 1.0 Strict//EN\" \"http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd\">\n<html xmlns=\"http://www.w3.org/1999/xhtml\"><body>y</body></html>"
+(hiccup.element/unordered-list ["a" "b"])
+;;=> [:ul ([:li "a"] [:li "b"])]
+(hiccup.element/ordered-list ["a"])
+;;=> [:ol ([:li "a"])]
+(hiccup.form/text-field :name "v")
+;;=> [:input {:type "text", :name "name", :id "name", :value "v"}]
+(hiccup.form/check-box :agree true)
+;;=> [:input {:type "checkbox", :name "agree", :id "agree", :value "true", :checked true}]
+(hiccup.form/drop-down :sel ["a" "b"] "b")
+;;=> [:select {:name "sel", :id "sel"} ([:option {:selected false} "a"] [:option {:selected true} "b"])]
+(hiccup.form/submit-button "Go")
+;;=> [:input {:type "submit", :value "Go"}]
+(hiccup.core/html (hiccup.element/link-to "/u" "text"))
+;;=> "<a href=\"/u\">text</a>"
+(hiccup.core/html (hiccup.element/image "/i.png"))
+;;=> "<img src=\"/i.png\" />"
+(hiccup.core/html (hiccup.form/form-to [:post "/x"] "body"))
+;;=> "<form action=\"/x\" method=\"POST\">body</form>"
+(hiccup.core/html (hiccup.element/javascript-tag "x=1"))
+;;=> "<script type=\"text/javascript\">//<![CDATA[\nx=1\n//]]></script>"

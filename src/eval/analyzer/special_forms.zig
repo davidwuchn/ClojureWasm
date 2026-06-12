@@ -229,10 +229,33 @@ pub fn analyzeCtorCall(
         const sub = try analyzer_mod.analyze(arena, rt, env, scope, af, macro_table);
         args[i] = sub.*;
     }
+    // A `(:import …)` simple name is rewritten to its FQCN HERE — at analyze
+    // time the current ns is the DEFINING ns, so the import mapping is the
+    // lexically correct one. Eval-time resolution would consult the CALLER's
+    // ns and miss it (hiccup.util's `(URI. s)` inside to-uri, called from
+    // user code). Guarded on the FQCN actually resolving as a registered
+    // surface — a USER deftype registers in rt.types under its BARE name
+    // (its dotted FQCN is not a key), so it keeps the bare spelling and the
+    // eval-time path (which also allows forward refs to later deftypes).
+    var resolved_name = type_name;
+    if (std.mem.findScalar(u8, type_name, '.') == null) {
+        if (env.current_ns) |cur_ns| {
+            if (cur_ns.imports.get(type_name)) |fqcn| {
+                if (rt.types.get(fqcn) != null) {
+                    resolved_name = fqcn;
+                } else {
+                    var ibuf: [256]u8 = undefined;
+                    if (std.fmt.bufPrint(&ibuf, "cljw.{s}", .{fqcn})) |prefixed| {
+                        if (rt.types.get(prefixed) != null) resolved_name = fqcn;
+                    } else |_| {}
+                }
+            }
+        }
+    }
     const n = try arena.create(Node);
     n.* = .{ .interop_call_node = .{
         .kind = .constructor,
-        .type_name = type_name,
+        .type_name = resolved_name,
         .args = args,
         .loc = form.location,
     } };

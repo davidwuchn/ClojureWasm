@@ -486,25 +486,37 @@ fn typedInstanceHash(inst: *const td_mod.TypedInstance) u32 {
 /// takes no `rt`/`env`, so it can serve `valueHash` / `keyEqValue` (whose
 /// call sites lack a Runtime). Lazy / range keys stay identity (cannot be
 /// realized rt-free) — a documented residual shared with their hash.
-const SeqKeyCursor = union(enum) {
-    vec: struct { v: Value, i: u32, n: u32 },
-    /// A MapEntry walked as the 2-vector `[key val]` (D-209) — rt-free.
-    ment: struct { v: Value, i: u32 },
-    /// A PersistentQueue walked front-list then rear-vector (ADR-0087).
-    q: struct { front: Value, rear: Value, ri: u32 },
-    lst: Value,
+const SeqKeyCursor = struct {
+    inner: Inner,
+    /// Set when the walk hit a tail it cannot realize rt-free — a Cons
+    /// whose rest is a LAZY seq (syntax-quote builds these: `(collapse-strs
+    /// \`(f ~@xs))`). The walked prefix is then NOT the whole key, so
+    /// `seqHash`/`seqKeyEq` must fall back to IDENTITY (the same residual
+    /// as a bare lazy key) — silently truncating made two lists differing
+    /// only past the lazy tail hash/compare EQUAL (hiccup's compile-multi
+    /// collapsed its per-mode branches into one).
+    truncated: bool = false,
+
+    const Inner = union(enum) {
+        vec: struct { v: Value, i: u32, n: u32 },
+        /// A MapEntry walked as the 2-vector `[key val]` (D-209) — rt-free.
+        ment: struct { v: Value, i: u32 },
+        /// A PersistentQueue walked front-list then rear-vector (ADR-0087).
+        q: struct { front: Value, rear: Value, ri: u32 },
+        lst: Value,
+    };
 
     fn init(v: Value) SeqKeyCursor {
-        return switch (v.tag()) {
+        return .{ .inner = switch (v.tag()) {
             .vector => .{ .vec = .{ .v = v, .i = 0, .n = vector.count(v) } },
             .map_entry => .{ .ment = .{ .v = v, .i = 0 } },
             .persistent_queue => .{ .q = .{ .front = persistent_queue.frontOf(v), .rear = persistent_queue.rearOf(v), .ri = 0 } },
             else => .{ .lst = v },
-        };
+        } };
     }
 
     fn next(self: *SeqKeyCursor) ?Value {
-        switch (self.*) {
+        switch (self.inner) {
             .vec => |*s| {
                 if (s.i >= s.n) return null;
                 const e = vector.nth(s.v, s.i);
@@ -531,7 +543,11 @@ const SeqKeyCursor = union(enum) {
                 return null;
             },
             .lst => |*node| {
-                if (node.tag() != .list or list.countOf(node.*) == 0) return null;
+                if (node.tag() != .list) {
+                    if (!node.isNil()) self.truncated = true;
+                    return null;
+                }
+                if (list.countOf(node.*) == 0) return null;
                 const e = list.first(node.*);
                 node.* = list.rest(node.*);
                 return e;
@@ -552,6 +568,9 @@ fn seqHash(v: Value) u32 {
         h = h *% 31 +% valueHash(e);
         n += 1;
     }
+    // An unrealizable (lazy) tail means the walked prefix is not the whole
+    // key — identity hash, consistent with seqKeyEq's identity fallback.
+    if (c.truncated) return hash.hashLong(@bitCast(@intFromEnum(v)));
     return hash.mixCollHash(h, n);
 }
 
@@ -563,6 +582,9 @@ fn seqKeyEq(a: Value, b: Value) bool {
     while (true) {
         const ea = ca.next();
         const eb = cb.next();
+        // Either side hitting an unrealizable lazy tail ⇒ the prefix compare
+        // is inconclusive — fall back to identity (the lazy-key residual).
+        if (ca.truncated or cb.truncated) return @intFromEnum(a) == @intFromEnum(b);
         if (ea == null and eb == null) return true;
         if (ea == null or eb == null) return false;
         if (!keyEqValue(ea.?, eb.?)) return false;

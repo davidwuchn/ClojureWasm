@@ -1,0 +1,20 @@
+(let [c (clojure.core.cache/basic-cache-factory {:a 1})] [(clojure.core.cache/has? c :a) (clojure.core.cache/lookup c :a) (clojure.core.cache/has? c :b)])
+;;=> [true 1 false]
+(let [c (clojure.core.cache/basic-cache-factory {})] (clojure.core.cache/lookup (clojure.core.cache/miss c :k 9) :k))
+;;=> 9
+(let [c (clojure.core.cache/lru-cache-factory {} :threshold 2)] (keys (.cache (clojure.core.cache/miss (clojure.core.cache/miss (clojure.core.cache/miss c :a 1) :b 2) :c 3))))
+;;=> (:b :c)
+(let [c (clojure.core.cache/fifo-cache-factory {} :threshold 2)] (sort (keys (.cache (clojure.core.cache/miss (clojure.core.cache/miss (clojure.core.cache/miss c :a 1) :b 2) :c 3)))))
+;;=> (:b :c)
+(let [c (clojure.core.cache/basic-cache-factory {:a 1})] (clojure.core.cache/lookup (clojure.core.cache/evict c :a) :a :gone))
+;;=> :gone
+(let [c (clojure.core.cache/lru-cache-factory {:a 1} :threshold 4)] (clojure.core.cache/lookup (clojure.core.cache/hit c :a) :a))
+;;=> 1
+(let [c (clojure.core.cache/basic-cache-factory {:a 1})] (clojure.core.cache/lookup (clojure.core.cache/through-cache c :b (fn [k] :computed)) :b))
+;;=> :computed
+(let [c (clojure.core.cache/basic-cache-factory {:a 1})] [(contains? c :a) (get c :a) (count c)])
+;;=> [true 1 1]
+(let [c (clojure.core.cache/basic-cache-factory {:a 1 :b 2})] (sort (keys c)))
+;;=> (:a :b)
+(let [c (clojure.core.cache/lu-cache-factory {} :threshold 2)] (sort (keys (.cache (clojure.core.cache/miss (clojure.core.cache/miss c :a 1) :b 2)))))
+;;=> (:a :b)

@@ -2504,6 +2504,18 @@ active:
       deprecated). Cross-ref ADR-0135 (design SSOT), ADR-0099 (core spike), F-001,
       ROADMAP §1.2 axis 2 + §8.2. Re-check the zwasm freeze each Phase boundary.
     last_reviewed: "2026-06-13"
+  - id: "D-408"
+    status: "open (2026-06-13 — surfaced by the SeqKeyCursor truncation fix). A LAZY seq (or cons-over-lazy) used as a map KEY is identity-compared/hashed rt-free, so a content-equal but distinct lazy key misses: (get {(cons 1 (map inc [9])) :v} (cons 1 (map inc [9]))) → nil (clj: :v). Previously this class FALSE-MATCHED on the walked prefix (worse — hiccup's compile-multi collapsed); now it is honestly identity-based."
+    category: "polymorphism"
+    barrier: |-
+      **keyEqValue/valueHash are rt-free** (68 call sites without Runtime/Env —
+      the D-151 note), so they cannot realize a lazy key. Fix shapes: (a) thread
+      an optional rt through the map key path (ripple), (b) realize lazy keys at
+      ASSOC time (normalize-on-entry — clj also hashes lazily-realized seqs; the
+      assoc/get sites DO have rt), (c) accept + AD. (b) is the likely finished
+      form. Low frequency: lazy seqs as map keys are rare in real code (the
+      corpus probe is synthetic); raise priority if a lib hits it.
+    last_reviewed: "2026-06-13"
   - id: "D-406"
     status: "open (2026-06-13, ROADMAP §1.5 track 1 — the host-frontier Tier boundary). Document the language-feature ↔ Tier-D line for the JVM host surface AS IT IS HIT during the compat grind, so 'Clojure assets run as-is' CONVERGES instead of being an unbounded treadmill. Currently the line is implicit (reactive marker-by-marker)."
     category: "scope"

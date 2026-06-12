@@ -90,14 +90,26 @@ resolve_ctx() {
 }
 
 # ---------- cljw: one expr, stdin program mode ----------
+# stdout first line is the value; stderr is consulted ONLY when stdout is
+# empty (error exprs print there) — merging streams would let diagnostics
+# (the deps.edn Maven-skip note) shadow the value line.
 run_cljw() {
-    local expr="$1" prog
+    local expr="$1" prog out
     prog="$(printf '%s\n' "$expr" \
         | grep -oE '[a-zA-Z][a-zA-Z0-9._-]*\.[a-zA-Z0-9._-]+/' \
         | sed 's:/$::' | sort -u \
         | sed "s/.*/(try (require '&) (catch Error _ nil))/")"
-    printf '%s\n(prn %s)\n' "$prog" "$expr" \
-        | (cd "$CTX_DIR" && timeout 20 "$BIN" - 2>&1) | head -1
+    local errf
+    errf="$(mktemp /tmp/lib_conf_err.XXXXXX)"
+    out="$(printf '%s\n(prn %s)\n' "$prog" "$expr" \
+        | (cd "$CTX_DIR" && timeout 20 "$BIN" - 2>"$errf") | head -1)"
+    if [ -z "$out" ]; then
+        # First NON-diagnostic stderr line ("note: …" = the deps.edn
+        # Maven-skip advisory, not the error).
+        out="$(grep -v '^note: ' "$errf" | head -1)"
+    fi
+    rm -f "$errf"
+    printf '%s\n' "$out"
 }
 
 # ---------- replay one lib's corpus; accumulates REPLAY_* globals ----------

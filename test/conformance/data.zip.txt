@@ -1,0 +1,16 @@
+(map clojure.zip/node (clojure.data.zip/descendants (clojure.zip/vector-zip [1 [2 3] 4])))
+;;=> ([1 [2 3] 4] 1 [2 3] 2 3 4)
+(count (clojure.data.zip/descendants (clojure.zip/vector-zip [1 [2 3] 4])))
+;;=> 6
+(map clojure.zip/node (clojure.data.zip/children (clojure.zip/vector-zip [1 [2 3] 4])))
+;;=> (1 [2 3] 4)
+(map clojure.zip/node (clojure.data.zip/ancestors (clojure.zip/down (clojure.zip/vector-zip [1 [2 3] 4]))))
+;;=> (1 [1 [2 3] 4])
+(clojure.data.zip/leftmost? (clojure.zip/down (clojure.zip/vector-zip [1 2])))
+;;=> true
+(clojure.data.zip/rightmost? (clojure.zip/down (clojure.zip/vector-zip [1 2])))
+;;=> false
+(map clojure.zip/node (clojure.data.zip/right-locs (clojure.zip/down (clojure.zip/vector-zip [1 2 3]))))
+;;=> (1 2 3)
+(map clojure.zip/node (clojure.data.zip/left-locs (clojure.zip/right (clojure.zip/down (clojure.zip/vector-zip [1 2 3])))))
+;;=> (2 1)

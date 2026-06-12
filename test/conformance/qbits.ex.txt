@@ -1,0 +1,14 @@
+(do (qbits.ex/derive :vt/child :vt/parent) (qbits.ex/isa? :vt/child :vt/parent))
+;;=> true
+(do (qbits.ex/derive :vt/c2 :vt/p2) (try (throw (ex-info "boom" {:type :vt/c2})) (catch Exception e (if (qbits.ex/isa? (:type (ex-data e)) :vt/p2) :caught-ancestor :missed))))
+;;=> :caught-ancestor
+(qbits.ex/isa? :vt/unrelated :vt/parent)
+;;=> false
+(do (qbits.ex/derive :vt/c6 :vt/p6) (qbits.ex/try+ (throw (ex-info "x" {:type :vt/c6})) (catch-data :vt/p6 d (:type d))))
+;;=> :vt/c6
+(qbits.ex/try+ (throw (ex-info "y" {:type :vt/other})) (catch Exception e :fell-through))
+;;=> :fell-through
+(do (qbits.ex/derive :vt/c7 :vt/p7) (sort (qbits.ex/ancestors :vt/c7)))
+;;=> (:vt/p7)
+(do (qbits.ex/derive :vt/c8 :vt/p8) (qbits.ex/underive :vt/c8 :vt/p8) (qbits.ex/isa? :vt/c8 :vt/p8))
+;;=> false

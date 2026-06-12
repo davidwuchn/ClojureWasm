@@ -1,0 +1,16 @@
+(do (defmethod integrant.core/init-key :t/cfg [_ v] (assoc v :loaded true)) (defmethod integrant.core/init-key :t/db [_ {:keys [cfg]}] [:conn (:url cfg)]) (let [sys (integrant.core/init {:t/cfg {:url "u"} :t/db {:cfg (integrant.core/ref :t/cfg)}})] [(:t/cfg sys) (:t/db sys)]))
+;;=> [{:url "u", :loaded true} [:conn "u"]]
+(integrant.core/ref? (integrant.core/ref :a/b))
+;;=> true
+(do (defmethod integrant.core/init-key :t/x [_ v] v) (integrant.core/init {:t/x 42}))
+;;=> #:t{:x 42}
+(integrant.core/find-derived-1 {[:t/a :t/b] 1} :t/a)
+;;=> [[:t/a :t/b] 1]
+(do (defmethod integrant.core/init-key :t/p [_ v] v) (defmethod integrant.core/init-key :t/q [_ {:keys [p]}] (inc p)) (:t/q (integrant.core/init {:t/p 1 :t/q {:p (integrant.core/ref :t/p)}})))
+;;=> 2
+(integrant.core/expand {:t/x {:a 1}})
+;;=> #:t{:x {:a 1}}
+(do (defmethod integrant.core/init-key :t/x2 [_ v] v) (defmethod integrant.core/init-key :t/y2 [_ v] v) (sort (keys (integrant.core/init {:t/x2 1 :t/y2 2}))))
+;;=> (:t/x2 :t/y2)
+(do (defmethod integrant.core/init-key :t/h [_ v] v) (defmethod integrant.core/halt-key! :t/h [_ v] nil) (let [sys (integrant.core/init {:t/h 5})] (integrant.core/halt! sys) (:t/h sys)))
+;;=> 5

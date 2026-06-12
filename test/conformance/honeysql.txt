@@ -1,0 +1,44 @@
+(honey.sql/format {:select :* :from :foo})
+;;=> ["SELECT * FROM foo"]
+(honey.sql/format {:select [:id :name] :from :user :where [:= :id 1]})
+;;=> ["SELECT id, name FROM user WHERE id = ?" 1]
+(honey.sql/format {:select [:a] :from :t :where [:and [:> :x 1] [:< :y 2]]})
+;;=> ["SELECT a FROM t WHERE (x > ?) AND (y < ?)" 1 2]
+(honey.sql/format {:select [:a] :from :t :where [:or [:= :x 1] [:= :x 2]]})
+;;=> ["SELECT a FROM t WHERE (x = ?) OR (x = ?)" 1 2]
+(honey.sql/format {:select [:a] :from :t :order-by [[:a :desc]]})
+;;=> ["SELECT a FROM t ORDER BY a DESC"]
+(honey.sql/format {:select [:a] :from :t :limit 10 :offset 5})
+;;=> ["SELECT a FROM t LIMIT ? OFFSET ?" 10 5]
+(honey.sql/format {:select [[:%count.* :n]] :from :t})
+;;=> ["SELECT COUNT(*) AS n FROM t"]
+(honey.sql/format {:select [:a] :from :t :group-by [:a] :having [:> :%count.* 1]})
+;;=> ["SELECT a FROM t GROUP BY a HAVING COUNT(*) > ?" 1]
+(honey.sql/format {:insert-into :t :columns [:a :b] :values [[1 2] [3 4]]})
+;;=> ["INSERT INTO t (a, b) VALUES (?, ?), (?, ?)" 1 2 3 4]
+(honey.sql/format {:insert-into :t :values [{:a 1 :b 2}]})
+;;=> ["INSERT INTO t (a, b) VALUES (?, ?)" 1 2]
+(honey.sql/format {:update :t :set {:a 1} :where [:= :id 9]})
+;;=> ["UPDATE t SET a = ? WHERE id = ?" 1 9]
+(honey.sql/format {:delete-from :t :where [:= :id 9]})
+;;=> ["DELETE FROM t WHERE id = ?" 9]
+(honey.sql/format {:select [:a] :from :t :where [:in :id [1 2 3]]})
+;;=> ["SELECT a FROM t WHERE id IN (?, ?, ?)" 1 2 3]
+(honey.sql/format {:select [:a] :from :t :where [:like :name "x%"]})
+;;=> ["SELECT a FROM t WHERE name LIKE ?" "x%"]
+(honey.sql/format {:select [:a] :from :t :where [:between :x 1 10]})
+;;=> ["SELECT a FROM t WHERE x BETWEEN ? AND ?" 1 10]
+(honey.sql/format {:select [:a] :from :t :where [:is :x nil]})
+;;=> ["SELECT a FROM t WHERE x IS NULL"]
+(honey.sql/format {:select [:t.a [:t.b :bb]] :from [[:tbl :t]]})
+;;=> ["SELECT t.a, t.b AS bb FROM tbl AS t"]
+(honey.sql/format {:select [:a] :from :t :join [:u [:= :t.id :u.tid]]})
+;;=> ["SELECT a FROM t INNER JOIN u ON t.id = u.tid"]
+(honey.sql/format {:select [:a] :from :t :left-join [:u [:= :t.id :u.tid]]})
+;;=> ["SELECT a FROM t LEFT JOIN u ON t.id = u.tid"]
+(honey.sql/format {:select [:a] :from :t :where [:= :id 1]} {:inline true})
+;;=> ["SELECT a FROM t WHERE id = 1"]
+(honey.sql/format {:union [{:select [:a] :from :t1} {:select [:a] :from :t2}]})
+;;=> ["SELECT a FROM t1 UNION SELECT a FROM t2"]
+(honey.sql/format {:select [:a] :from :t :where [:not [:= :x 1]]})
+;;=> ["SELECT a FROM t WHERE NOT (x = ?)" 1]

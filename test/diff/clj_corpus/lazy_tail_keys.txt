@@ -1,0 +1,6 @@
+(count {(cons 1 (map inc [1])) :a (cons 1 (map inc [2])) :b})
+;;=> 2
+(count (group-by second {:a (list (quote f) (str "<b" "r>")) :b (list (quote f) (str "<br" " />"))}))
+;;=> 2
+(= (cons 1 (map inc [1])) (cons 1 (map inc [1])))
+;;=> true
