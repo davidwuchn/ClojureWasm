@@ -180,6 +180,23 @@ pub fn errorValue(v: Value) ?Value {
     return if (f.state == .realised_error) f.cached else null;
 }
 
+/// Wait up to `timeout_ms` for the worker (the 3-arity `deref` support).
+/// Zig 0.16's `std.Io.Condition` has no timed wait, so this POLLS
+/// `isRealised` in 1ms sleeps against a wall-clock deadline — ample
+/// precision for the coordination use the timed deref serves. Returns
+/// false on timeout (caller returns its timeout-val); true means the
+/// regular `deref` path now returns without blocking (a failed future
+/// still re-raises properly there).
+pub fn waitRealised(io: std.Io, v: Value, timeout_ms: i64) bool {
+    const clock = @import("clock.zig");
+    const deadline = clock.currentMillis(io) + @max(timeout_ms, 0);
+    while (!isRealised(v)) {
+        if (clock.currentMillis(io) >= deadline) return false;
+        io_default.sleep(1_000_000); // 1ms
+    }
+    return true;
+}
+
 /// `(realized? f)` — non-blocking: true iff the worker has finished (value or
 /// error). Reads the state under the mutex.
 pub fn isRealised(v: Value) bool {

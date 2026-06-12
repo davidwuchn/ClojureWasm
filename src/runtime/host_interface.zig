@@ -122,8 +122,25 @@ const SORTED: HostInterface = .{ .kind = .protocol_remap, .canonical = "Sorted",
 
 // clojure.lang.IFn — invoke (D-280d6). Load-level: registers (multi-arity via
 // D-279); making `(inst args)` actually call -invoke is a call-path follow-up.
+// applyTo registers as its own method (D-400) — the apply path spreads args
+// through -invoke, so -apply-to is reachable only via an explicit
+// `(.applyTo f args)` dot-call; registering it un-blocks the ubiquitous
+// invoke+applyTo deftype boilerplate that previously raised at load.
 const IFN: HostInterface = .{ .kind = .protocol_remap, .canonical = "IFn", .remap = &.{
     .{ .clj = "invoke", .protocol = "IFn", .method = "-invoke" },
+    .{ .clj = "applyTo", .protocol = "IFn", .method = "-apply-to" },
+} };
+
+// clojure.lang.IKVReduce — kvreduce (D-400). `reduce-kv` consults
+// IKVReduce/-kv-reduce via rt/__kv-reduce-or before its keys fallback.
+const IKVREDUCE: HostInterface = .{ .kind = .protocol_remap, .canonical = "IKVReduce", .remap = &.{
+    .{ .clj = "kvreduce", .protocol = "IKVReduce", .method = "-kv-reduce" },
+} };
+
+// clojure.lang.IBlockingDeref — 3-arity timed deref (D-400). The deref
+// primitive's (deref x ms timeout-val) arity dispatches it on deftypes.
+const IBLOCKING_DEREF: HostInterface = .{ .kind = .protocol_remap, .canonical = "IBlockingDeref", .remap = &.{
+    .{ .clj = "deref", .protocol = "IBlockingDeref", .method = "-blocking-deref" },
 } };
 
 // clojure.lang.IObj — meta/withMeta (D-280d7). Load-level: registers; meta/with-meta
@@ -398,6 +415,9 @@ const MARKERS = std.StaticStringMap(HostInterface).initComptime(.{
     // D-307: the deref-able family (core.memoize's RetryingDelay).
     .{ "clojure.lang.IDeref", IDEREF },
     .{ "clojure.lang.IPending", IPENDING },
+    // D-400 marker-family remainder.
+    .{ "clojure.lang.IKVReduce", IKVREDUCE },
+    .{ "clojure.lang.IBlockingDeref", IBLOCKING_DEREF },
     // D-286: the editable / transient collection family (flatland.ordered).
     // BOTH the qualified spelling AND the bare simple name (a deftype `:import`s
     // `(clojure.lang IEditableCollection …)` then declares the BARE name) route to

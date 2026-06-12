@@ -474,11 +474,19 @@ pub fn nthFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) 
             break :blk error_catalog.raise(.index_out_of_range, loc, .{ .fn_name = "nth" });
         },
         else => blk: {
-            // D-089 row 8.6 cycle 2: Indexed -nth slow-path. The
-            // 3-arity not-found arm is the impl's choice; cw native
-            // arms handle it above. For user extensions, the protocol
-            // method is single-arity (k, i) — (extend-type X Indexed
-            // (-nth [c i] …)) is the user contract.
+            // D-089 row 8.6 cycle 2: Indexed -nth slow-path. With an explicit
+            // default, the deftype's 3-arity `(nth [_ i nf])` impl is consulted
+            // FIRST (clj RT.nth(coll,i,nf) calls Indexed.nth(i,nf)); a type
+            // declaring only the 2-arity falls back to it (D-400/D-397).
+            if (has_default) {
+                var cs3: dispatch.CallSite = .{};
+                const slow3 = [_]Value{ coll, i_val, default };
+                if (dispatch.dispatchOrNull(rt, env, &cs3, coll, INDEXED_FQCN, "-nth", &slow3, loc)) |maybe| {
+                    if (maybe) |r| break :blk r;
+                } else |_| {
+                    // 3-arity call failed (2-arity-only impl) — fall through.
+                }
+            }
             var cs: dispatch.CallSite = .{};
             const slow_args = [_]Value{ coll, i_val };
             break :blk try dispatch.dispatch(rt, env, &cs, coll, INDEXED_FQCN, "-nth", &slow_args, loc);
@@ -895,8 +903,20 @@ pub fn queueReader(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLoca
     return q;
 }
 
+/// `(rt/__kv-reduce-or m f init sentinel)` — dispatch IKVReduce/-kv-reduce
+/// on `m` (a deftype declaring `kvreduce`, D-400); return `sentinel` when no
+/// impl exists so `reduce-kv` (core.clj) takes its keys fallback (records /
+/// plain associatives).
+pub fn kvReduceOrFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    try error_catalog.checkArity("__kv-reduce-or", args, 4, loc);
+    var cs: dispatch.CallSite = .{};
+    if (try dispatch.dispatchOrNull(rt, env, &cs, args[0], "IKVReduce", "-kv-reduce", args[0..3], loc)) |r| return r;
+    return args[3];
+}
+
 const ENTRIES = [_]Entry{
     .{ .name = "conj", .f = &conjFn },
+    .{ .name = "__kv-reduce-or", .f = &kvReduceOrFn },
     .{ .name = "queue?", .f = &queueQFn },
     .{ .name = "-queue-pop", .f = &queuePopFn },
     .{ .name = "disj", .f = &disjFn },

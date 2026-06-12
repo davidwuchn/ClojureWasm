@@ -109,6 +109,19 @@ pub fn isRealised(v: Value) bool {
     return p.state == .delivered;
 }
 
+/// Wait up to `timeout_ms` for a delivery (the 3-arity `deref` support).
+/// Polls in 1ms sleeps — Zig 0.16's `std.Io.Condition` has no timed wait
+/// (the future.zig waitRealised twin). False on timeout.
+pub fn waitDelivered(io: std.Io, v: Value, timeout_ms: i64) bool {
+    const clock = @import("clock.zig");
+    const deadline = clock.currentMillis(io) + @max(timeout_ms, 0);
+    while (!isRealised(v)) {
+        if (clock.currentMillis(io) >= deadline) return false;
+        io_default.sleep(1_000_000); // 1ms
+    }
+    return true;
+}
+
 pub fn traceGc(gc_ptr: *anyopaque, header: *HeapHeader) void {
     const gc: *gc_heap_mod.GcHeap = @ptrCast(@alignCast(gc_ptr));
     const p: *Promise = @ptrCast(@alignCast(header));

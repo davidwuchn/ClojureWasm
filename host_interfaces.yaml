@@ -86,6 +86,25 @@ interfaces:
     note: "Registers invoke→IFn/-invoke (multi-arity via D-279). Making `(inst args)` call -invoke is a call-path follow-up (tree_walk/vm call switch)."
     methods:
       invoke: { status: wired, wires_to_protocol: IFn, wires_to_method: "-invoke" }
+      applyTo: { status: wired, wires_to_protocol: IFn, wires_to_method: "-apply-to" }
+  - name: clojure.lang.IKVReduce
+    derives_from: "clojure.lang.IKVReduce — key/value reduce participant (Clojure, stable)."
+    tier: A
+    recognised: true
+    kind: protocol_remap
+    modeled_as: "IKVReduce (kvreduce → IKVReduce/-kv-reduce, D-400)"
+    note: "reduce-kv (core.clj) consults IKVReduce/-kv-reduce via rt/__kv-reduce-or before its keys fallback, so a deftype declaring kvreduce drives reduce-kv exactly as on the JVM."
+    methods:
+      kvreduce: { status: wired, wires_to_protocol: IKVReduce, wires_to_method: "-kv-reduce" }
+  - name: clojure.lang.IBlockingDeref
+    derives_from: "clojure.lang.IBlockingDeref — timed blocking deref (Clojure, stable)."
+    tier: A
+    recognised: true
+    kind: protocol_remap
+    modeled_as: "IBlockingDeref (deref(ms,timeout-val) → IBlockingDeref/-blocking-deref, D-400)"
+    note: "The deref primitive's 3-arity (deref x ms timeout-val) dispatches it on deftypes; native future/promise take a timed wait."
+    methods:
+      deref: { status: wired, wires_to_protocol: IBlockingDeref, wires_to_method: "-blocking-deref" }
   - name: clojure.lang.IObj
     derives_from: "clojure.lang.IObj — metadata-carrying instance (Clojure, stable)."
     tier: A

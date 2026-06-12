@@ -43,7 +43,37 @@ pub fn refFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) 
 /// Future / Var / Volatile / Reduced current value. Every IDeref
 /// arm is wired; real CAS-under-contention for atoms is Phase B.
 pub fn derefFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
-    try error_catalog.checkArity("deref", args, 1, loc);
+    if (args.len != 1 and args.len != 3) {
+        return error_catalog.raise(.arity_not_expected, loc, .{ .fn_name = "deref", .expected = 1, .got = args.len });
+    }
+    // `(deref x timeout-ms timeout-val)` — the clojure.lang.IBlockingDeref
+    // surface (D-400): native future/promise take a timed wait; a deftype
+    // dispatches its 3-arity `deref` impl via IBlockingDeref/-blocking-deref.
+    // Anything else cannot block, so the timeout form is an error (clj:
+    // ClassCastException to IBlockingDeref).
+    if (args.len == 3) {
+        const ref = args[0];
+        if (args[1].tag() != .integer) {
+            return error_catalog.raise(.type_arg_not_integer, loc, .{ .fn_name = "deref", .actual = @tagName(args[1].tag()) });
+        }
+        const timeout_ms = args[1].asInteger();
+        const timeout_val = args[2];
+        switch (ref.tag()) {
+            .future => {
+                if (!future_mod.waitRealised(rt.io, ref, timeout_ms)) return timeout_val;
+                // realised — fall through to the 1-arity logic below.
+            },
+            .promise => {
+                if (!promise_mod.waitDelivered(rt.io, ref, timeout_ms)) return timeout_val;
+            },
+            .typed_instance, .reified_instance => {
+                var cs: dispatch.CallSite = .{};
+                if (try dispatch.dispatchOrNull(rt, env, &cs, ref, "IBlockingDeref", "-blocking-deref", &.{ ref, args[1], timeout_val }, loc)) |r| return r;
+                return error_catalog.raise(.feature_not_supported, loc, .{ .name = "timed deref of a non-IBlockingDeref value" });
+            },
+            else => return error_catalog.raise(.feature_not_supported, loc, .{ .name = "timed deref of a non-blocking reference" }),
+        }
+    }
     const v = args[0];
     return switch (v.tag()) {
         .atom => atom_mod.current(v),

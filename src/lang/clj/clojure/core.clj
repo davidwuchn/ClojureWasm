@@ -968,7 +968,13 @@
           (let* [r (f acc i (nth m i))]
             (if (reduced? r) (deref r) (recur (inc i) r)))
           acc))
-      (reduce (fn* [acc k] (f acc k (get m k))) init (keys m)))))
+      ;; IKVReduce first (a deftype declaring `kvreduce`, D-400 — clj
+      ;; consults the interface before any fallback); the sentinel keyword
+      ;; is interned, so `identical?` detects "no impl" exactly.
+      (let* [r (rt/__kv-reduce-or m f init :clojure.core/kv-reduce-none)]
+        (if (identical? r :clojure.core/kv-reduce-none)
+          (reduce (fn* [acc k] (f acc k (get m k))) init (keys m))
+          r)))))
 
 ;; `(update-keys m f)` — new map with `(f k)` for each key, same vals.
 (def update-keys
@@ -1700,7 +1706,7 @@
 ;; D-280d6/d7: load-level for a deftype that is callable (IFn) / metadata-carrying
 ;; (IObj). The macro registers invoke→-invoke, meta→-meta, withMeta→-with-meta;
 ;; calling the instance as a fn + meta/with-meta consulting these are follow-ups.
-(defprotocol IFn (-invoke [f]))
+(defprotocol IFn (-invoke [f]) (-apply-to [f args]))
 (defprotocol IObj (-meta [o]) (-with-meta [o m]))
 ;; D-307: the deref-able interface family. A deftype implementing
 ;; clojure.lang.IDeref/IPending (e.g. core.memoize's RetryingDelay) registers
@@ -1708,6 +1714,11 @@
 ;; these for a typed_instance (stm.zig), mirroring the IObj meta consult.
 (defprotocol IDeref (-deref [o]))
 (defprotocol IPending (-realized? [o]))
+;; D-400: kvreduce → -kv-reduce; reduce-kv consults it via rt/__kv-reduce-or
+;; before its keys fallback. 3-arity timed deref → -blocking-deref; the deref
+;; primitive's (deref x ms timeout-val) arity dispatches it (stm.zig).
+(defprotocol IKVReduce (-kv-reduce [m f init]))
+(defprotocol IBlockingDeref (-blocking-deref [o ms timeout-val]))
 ;; `Sequential` is a zero-method MARKER protocol (JVM `clojure.lang.Sequential`):
 ;; a type that declares it prints as its seq and answers `sequential?` true
 ;; (D-190 / ADR-0068). The native seq tags carry sequential-ness by tag; this
