@@ -1,6 +1,12 @@
 # host_interfaces.yaml — closed-set SSOT for deftype/reify/extend-type host
 # supertype markers (ADR-0102, F-013).
 #
+# FRONTIER (ADR-0136): this file IS the R2 closed set — every row is a
+# polymorphism seam clojure.core itself dispatches on (supertype / class
+# facet), admitted by rule R2 of the host-frontier procedure (ROADMAP §6.5).
+# A name that fails R2 does not belong here: value-semantic java.* classes
+# are R3 (compat_tiers.yaml); artifact/reflection/Compiler names are Tier D.
+#
 # These are the host-interface names cljw recognises in the deftype/reify/
 # extend-type impl-spec head position. They are MARKER NAMES that select a
 # dispatch family, NOT real host classes (ADR-0059/AD-003 — cljw has no JVM

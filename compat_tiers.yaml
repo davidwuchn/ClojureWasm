@@ -7,6 +7,13 @@
 #   - G3 gate scripts/check_feature_keyword.sh (per ADR-0029 D4)
 # Amendment: see ADR-0013 for Tier D rationale.
 #
+# FRONTIER (ADR-0136): host_classes rows are R3-admitted — value-semantic
+# java.* surfaces over neutral impls (ROADMAP §6.5 procedure). A FUTURE
+# `tier: D` host-class row MUST carry `frontier_rule: R1` (Java
+# artifact/machinery) or `frontier_rule: R4` (implementation leak) so the
+# refusal text can name the right alternative; the gate for that field
+# lands with the first such row.
+#
 # host_classes schema (extended per ADR-0029 D5, 2026-05-24):
 #   - fqn: java.<pkg>.<Class>
 #     cljw_ns: cljw.java.<pkg>.<Class>       # was native_ns: cljw.host.* — host. prefix retired

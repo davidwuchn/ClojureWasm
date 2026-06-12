@@ -2487,25 +2487,6 @@ active:
       form. Low frequency: lazy seqs as map keys are rare in real code (the
       corpus probe is synthetic); raise priority if a lib hits it.
     last_reviewed: "2026-06-13"
-  - id: "D-406"
-    status: "open (2026-06-13, ROADMAP §1.5 track 1 — the host-frontier Tier boundary). Document the language-feature ↔ Tier-D line for the JVM host surface AS IT IS HIT during the compat grind, so 'Clojure assets run as-is' CONVERGES instead of being an unbounded treadmill. Currently the line is implicit (reactive marker-by-marker)."
-    category: "scope"
-    barrier: |-
-      **The boundary is undocumented** — which `clojure.lang.*` / `java.*` surface
-      is 'a language feature cljw must provide' vs 'Tier D = JVM implementation
-      detail, use the cljw-native alternative'. Grow a boundary section (an ADR or
-      ROADMAP §6 extension) incrementally: deftype implementing a `clojure.lang.*`
-      interface (IMeta/ISeq/Indexed/IReduceInit — D-394/395/397/399 landed) = language
-      feature; reflection (`getConstructor`/`newInstance`), `clojure.lang.Compiler/*`,
-      bytecode emission (`definterface`/`gen-class`), JVM-internal statics
-      (`PersistentArrayMap/createAsIfByAssoc`) = Tier D. First concrete
-      lib-blocked-by-the-line example (2026-06-13): bouncer hard-requires
-      clj-time (joda-time, a Java LIBRARY dep) — a lib whose deps cross into
-      Java libraries is on the Tier-D side; cljw offers no shim. Drawing the
-      line is the finished-form discipline that lets the grind have a goal. Cross-ref ADR-0013
-      (Tier D), compat_tiers.yaml, host_interfaces.yaml, D-086 (record __extmap is
-      a structural cycle, not Tier D), ROADMAP §1.5 / §6.
-    last_reviewed: "2026-06-13"
   - id: "D-407"
     status: "open (2026-06-13, ROADMAP §1.5 track 2 — differentiation as standing proof). The §1.2 edges are structurally present but not continuously PROVEN. Add 3 cheap standing proofs so the differentiation is a number/demo, not a claim."
     category: "tooling"
@@ -2522,6 +2503,11 @@ active:
       track 2 + §10, D-133 (JIT), D-180/perf campaign (paused).
     last_reviewed: "2026-06-13"
 discharged:
+  - id: "D-406"
+    status: "DISCHARGED 2026-06-13 — ADR-0136 + ROADMAP §6.5: the host-frontier boundary is now a 4-rule ordered DECISION PROCEDURE (R1 artifact → Tier D / R2 polymorphism-seam → host_interfaces.yaml / R3 value-semantics → compat_tiers.yaml, with the F-011 oracle-checkability tiebreak / R4 implementation-leak DEFAULT-DENY), not reactive precedent. Worked-example table in the ADR maps the 2026-06-12/13 campaign classifications (IKVReduce=R2, Murmur3=R3-tiebreak, .indexOf=R3, StringWriter=R3, bouncer/clj-time=R1, Compiler=R4). Closed sets declare their admitting rule at file level; future tier-D rows carry frontier_rule R1|R4 (schema mandate; gate lands with the first row). Devil's-advocate fork embedded in the ADR (Alt 2 adopted; upstream-corpus scan admitted as non-normative evidence)."
+    category: "scope"
+    barrier: "none — new-name classification is procedural; moving a name across the line needs an ADR amendment per §6.3."
+    last_reviewed: "2026-06-13"
   - id: "D-400"
     status: "DISCHARGED 2026-06-13 — the genuinely-actionable clojure.lang.* marker remainder landed (e2e phase14_deftype_kvreduce_blocking, all values oracle-verified): IKVReduce (kvreduce → IKVReduce/-kv-reduce protocol + reduce-kv consult via rt/__kv-reduce-or with keys fallback for records — the bootstrap wrinkle solved by the always-available primitive route the row prescribed); IBlockingDeref (deref 3-arity → -blocking-deref dispatch on deftypes + REAL timed wait on native future/promise via 1ms-poll waitRealised/waitDelivered — Zig 0.16 Io.Condition has no timed wait); D-397 follow-ups (nth 3-arity not-found typed_instance dispatch with 2-arity fallback; IFn applyTo → IFn/-apply-to registration, unblocking the invoke+applyTo boilerplate). The LOW-value composites (IPersistentVector/IPersistentList/IReference as deftype-supertype-WITH-METHODS) stay non-goals per ADR-0134 value-driven membership — class facet already covers instance?/extend-protocol; revive only when a real consumer pulls."
     category: "polymorphism"

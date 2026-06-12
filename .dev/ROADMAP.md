@@ -804,6 +804,47 @@ work.** Instead:
 This prevents `if cljw then ...` branches from sprawling. Physical fence
 against ad-hoc rot.
 
+### 6.5 The host-frontier boundary (ADR-0136)
+
+Which `clojure.lang.*` / `java.*` surface is **a language feature cljw must
+provide** vs **Tier D = JVM implementation detail** is decided by a 4-rule
+procedure, run **in order** (first match wins). This is what makes "Clojure
+assets run as-is" a *finite, converging* goal instead of a treadmill
+(D-406; the rules were derived from the 2026-06-12/13 conformance
+campaign's classifications).
+
+- **R1 — Artifact test → Tier D.** Satisfying the name requires a Java
+  artifact (joda-time, Jackson, …) or JVM machinery (bytecode emission,
+  classloaders, reflection metadata). The refusal names the cljw-native
+  path (pure-Clojure alternative or a future Wasm component, ADR-0135).
+  Canonical example: bouncer → clj-time → joda. cljw never shims a Java
+  library.
+- **R2 — Polymorphism-seam test → language feature.** A `clojure.lang.*`
+  abstraction clojure.core itself dispatches on (deftype/reify/extend
+  supertype position, or the class facet: `instance?` / `isa?` /
+  `extend-protocol` / `print-method`). Coverage is definition-wide
+  (F-013); closed set = [`host_interfaces.yaml`](../host_interfaces.yaml)
+  (G4).
+- **R3 — Value-semantics test → language feature.** The observable
+  behaviour is a pure function of Clojure values (`Util/equiv`, `Murmur3`,
+  boxed-number statics, `StringBuilder`/`StringWriter`,
+  `Pattern`/`Matcher`, `UUID`, `Date`/`Instant`, java.util collection-VIEW
+  methods). Thin surface over a neutral impl (F-009); closed set =
+  [`compat_tiers.yaml`](../compat_tiers.yaml) (G2/G3). Tiebreak: a name
+  both value-semantic and arguably JVM-internal goes R3 iff its behaviour
+  is clj-oracle-checkable (F-011), else R4.
+- **R4 — Implementation-leak default → Tier D.** Everything else
+  (`clojure.lang.Compiler/*`, host-class reflection, JVM-internal
+  statics). **Default-deny**: a name no rule claims is Tier D until an
+  ADR amendment claims it.
+
+Each closed set declares its admitting rule at the file level
+(host_interfaces.yaml = R2; compat_tiers.yaml host_classes = R3); future
+`tier: D` rows carry a per-row `frontier_rule: R1|R4` (the refusal text
+differs). Worked-example table: ADR-0136. The
+upstream-corpus scan (does `clojure/src/clj/**` use the name?) is
+*non-normative evidence* for R2/R3 judgements, never the rule.
+
 ---
 
 ## 7. Concurrency design
