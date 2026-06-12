@@ -1,0 +1,32 @@
+(re-find #"\p{L}+" "abcДЕЖ?")
+;;=> "abcДЕЖ"
+(re-find #"\p{Lu}" "aБc")
+;;=> "Б"
+(re-find #"\p{N}+" "abc１２３")
+;;=> "１２３"
+(re-find #"\P{L}+" "ab12cd")
+;;=> "12"
+(re-find #"\p{Z}" "a b")
+;;=> " "
+(re-find #"\p{Pe}" "x)y")
+;;=> ")"
+(re-find #"(?u)[^\p{L}\p{N}]+" "ab--cd")
+;;=> "--"
+(re-seq #"(?u)[\p{N}\p{L}_-]+" "foo bar_baz-1 Дом")
+;;=> ("foo" "bar_baz-1" "Дом")
+(re-find #"['\p{Ps}]" "x(y")
+;;=> "("
+(re-find #"(?u)(\p{Lu}[\p{Ll}'\p{Ps}\p{Pe}]*)" "FooBar")
+;;=> ["Foo" "Foo"]
+(re-find #"[a\p{N}]+" "ba12")
+;;=> "a12"
+(re-find #"(?u)^[\s\p{Z}]+$" "   ")
+;;=> "   "
+(re-find #"[']+" "a''b")
+;;=> "''"
+(re-find #"[äö]+" "xööäy")
+;;=> "ööä"
+(re-find #"[à-ö]+" "xäñy")
+;;=> "äñ"
+(re-find #"(?iu)[\p{Ll}]+" "ДЕЖ")
+;;=> "ДЕЖ"

@@ -24,6 +24,7 @@
 
 const std = @import("std");
 const unicode_case = @import("../unicode_case.zig");
+const unicode_category = @import("../unicode_category.zig");
 
 /// Compile flags. `(?i)` inline modifier rewrites at compile
 /// time into case-folded character classes; the runtime sees only
@@ -380,7 +381,7 @@ pub fn parsePattern(arena: std.mem.Allocator, pattern: []const u8, flags: Flags,
         group_count_out.* = 0;
         return node;
     }
-    var parser: Parser = .{ .src = pattern, .pos = 0, .arena = arena, .dotall = flags.dotall, .multiline = flags.multiline, .unicode_case = flags.unicode_case };
+    var parser: Parser = .{ .src = pattern, .pos = 0, .arena = arena, .dotall = flags.dotall, .multiline = flags.multiline, .unicode_case = flags.unicode_case, .case_insensitive = flags.case_insensitive };
     const node = try parser.parseAlt();
     if (!parser.atEnd()) return CompileError.UnexpectedToken;
     group_count_out.* = parser.group_count;
@@ -402,6 +403,11 @@ const Parser = struct {
     /// UNICODE_CASE scope (`(?u)` leading flag): a scoped `(?i:…)` under it
     /// folds with the Unicode orbit (matches Java's flag composition).
     unicode_case: bool = false,
+    /// Leading `(?i)`: with `unicode_case`, a Unicode-bearing class expands
+    /// its member set by the simple fold (Java: `(?iu)[\p{Ll}]` matches
+    /// uppercase too). Scoped `(?iu:[…])` keeps the unexpanded set — a
+    /// documented residual (the scope fold runs after lowering).
+    case_insensitive: bool = false,
 
     fn atEnd(self: Parser) bool {
         return self.pos >= self.src.len;
@@ -520,7 +526,7 @@ const Parser = struct {
             return node;
         }
         if (c == '[') {
-            node.* = .{ .class = try self.parseCharClass() };
+            node.* = try self.parseCharClass();
             return node;
         }
         if (c == '\\') {
@@ -619,7 +625,7 @@ const Parser = struct {
         return node;
     }
 
-    fn parseCharClass(self: *Parser) CompileError!CharClass {
+    fn parseCharClass(self: *Parser) CompileError!Node {
         var negate = false;
         if (self.peek() == @as(?u8, '^')) {
             _ = self.advance();
@@ -633,10 +639,71 @@ const Parser = struct {
             return CompileError.NotImplemented;
         }
         var cls: CharClass = .{};
+        // Unicode members (a `\p{...}` category, a `\uXXXX` ≥ 0x80, or a raw
+        // non-ASCII codepoint — D-409) collect into a codepoint RangeSet; the
+        // whole class then lowers to the byte-level alternation. A pure-ASCII
+        // class keeps the single-bitmap fast shape.
+        var uset: RangeSet = .{};
+        var has_unicode = false;
         while (true) {
             const c = self.advance() orelse return CompileError.UnclosedClass;
             if (c == ']') break;
             if (c == '\\') {
+                // `\Q…\E` quote block inside a class (Java allows it;
+                // cuerdas builds trim classes as `[\Q\n\f\r\t \E]` via
+                // Pattern/quote): every byte until `\E` is a literal member;
+                // non-ASCII decodes to a codepoint member.
+                if (self.peek() == @as(?u8, 'Q')) {
+                    _ = self.advance(); // consume 'Q'
+                    while (true) {
+                        const qc = self.advance() orelse return CompileError.UnclosedClass;
+                        if (qc == '\\' and self.peek() == @as(?u8, 'E')) {
+                            _ = self.advance(); // consume 'E'
+                            break;
+                        }
+                        if (qc >= 0x80) {
+                            const qcp = try self.decodeClassCodepoint(qc);
+                            has_unicode = true;
+                            try uset.add(self.arena, qcp, qcp);
+                        } else {
+                            cls.set(qc);
+                        }
+                    }
+                    continue;
+                }
+                // Property / hex escapes need raw handling inside a class.
+                if (self.peek() == @as(?u8, 'p') or self.peek() == @as(?u8, 'P')) {
+                    const neg = (self.advance().?) == 'P';
+                    switch (try self.parsePropRaw()) {
+                        .posix => |sub| {
+                            const eff = if (neg) negateClass(sub) else sub;
+                            for (0..cls.bits.len) |i| cls.bits[i] |= eff.bits[i];
+                        },
+                        .uni => |ranges| {
+                            has_unicode = true;
+                            if (neg) {
+                                var tmp: RangeSet = .{};
+                                try tmp.addRanges(self.arena, ranges);
+                                try tmp.complement(self.arena);
+                                try uset.addRanges(self.arena, tmp.items());
+                            } else {
+                                try uset.addRanges(self.arena, ranges);
+                            }
+                        },
+                    }
+                    continue;
+                }
+                if (self.peek() == @as(?u8, 'u')) {
+                    _ = self.advance();
+                    const cp = try self.parseHex4();
+                    if (cp < 0x80) {
+                        cls.set(@intCast(cp));
+                    } else {
+                        has_unicode = true;
+                        try uset.add(self.arena, cp, cp);
+                    }
+                    continue;
+                }
                 const esc = try self.parseEscape();
                 switch (esc) {
                     .lit => |b| cls.set(b),
@@ -644,6 +711,26 @@ const Parser = struct {
                         for (0..cls.bits.len) |i| cls.bits[i] |= sub.bits[i];
                     },
                     else => return CompileError.InvalidEscape,
+                }
+                continue;
+            }
+            if (c >= 0x80) {
+                // Decode the full UTF-8 codepoint from the pattern source.
+                const cp = try self.decodeClassCodepoint(c);
+                has_unicode = true;
+                // A cp-cp range (`[à-ö]`).
+                if (self.peek() == @as(?u8, '-') and
+                    self.pos + 1 < self.src.len and
+                    self.src[self.pos + 1] != ']')
+                {
+                    _ = self.advance(); // consume '-'
+                    const c2 = self.advance() orelse return CompileError.UnclosedClass;
+                    if (c2 < 0x80) return CompileError.NotImplemented;
+                    const cp2 = try self.decodeClassCodepoint(c2);
+                    if (cp > cp2) return CompileError.InvalidQuantifier;
+                    try uset.add(self.arena, cp, cp2);
+                } else {
+                    try uset.add(self.arena, cp, cp);
                 }
                 continue;
             }
@@ -663,10 +750,60 @@ const Parser = struct {
                 cls.set(c);
             }
         }
-        if (negate) {
-            for (0..cls.bits.len) |i| cls.bits[i] = ~cls.bits[i];
+        if (!has_unicode) {
+            if (negate) {
+                for (0..cls.bits.len) |i| cls.bits[i] = ~cls.bits[i];
+            }
+            return .{ .class = cls };
         }
-        return cls;
+        // Merge the byte bitmap into the codepoint set, then negate/lower.
+        var b: u16 = 0;
+        while (b < 0x80) : (b += 1) {
+            if (cls.contains(@intCast(b))) try uset.add(self.arena, @intCast(b), @intCast(b));
+        }
+        // Bytes ≥ 0x80 set via escapes cannot occur here (raw bytes decoded
+        // above; \xNN escapes are not part of the surface).
+        if (self.case_insensitive and self.unicode_case) try foldExpand(self.arena, &uset);
+        if (negate) try uset.complement(self.arena);
+        return cpRangesToNode(self.arena, uset.items());
+    }
+
+    /// Decode one UTF-8 codepoint whose FIRST byte (already consumed) is
+    /// `first`; continuation bytes are consumed from the pattern source.
+    fn decodeClassCodepoint(self: *Parser, first: u8) CompileError!u21 {
+        const len = std.unicode.utf8ByteSequenceLength(first) catch return CompileError.InvalidEscape;
+        var b: [4]u8 = undefined;
+        b[0] = first;
+        for (1..len) |k| b[k] = self.advance() orelse return CompileError.UnclosedClass;
+        return decodeUtf8(b[0..len]) orelse CompileError.InvalidEscape;
+    }
+
+    /// Four hex digits after `\u`.
+    fn parseHex4(self: *Parser) CompileError!u21 {
+        var cp: u21 = 0;
+        for (0..4) |_| {
+            const h = self.advance() orelse return CompileError.InvalidEscape;
+            const d = std.fmt.charToDigit(h, 16) catch return CompileError.InvalidEscape;
+            cp = cp * 16 + d;
+        }
+        return cp;
+    }
+
+    const PropRaw = union(enum) { posix: CharClass, uni: []const unicode_category.CpRange };
+
+    /// The `{Name}` after `\p`/`\P` (the p/P byte itself already consumed),
+    /// returned RAW so a class context can range-merge instead of lowering.
+    fn parsePropRaw(self: *Parser) CompileError!PropRaw {
+        if ((self.advance() orelse return CompileError.InvalidEscape) != '{') return CompileError.InvalidEscape;
+        const start = self.pos;
+        while (true) {
+            const ch = self.advance() orelse return CompileError.UnexpectedToken;
+            if (ch == '}') break;
+        }
+        const name = self.src[start .. self.pos - 1];
+        if (posixClass(name)) |cc| return .{ .posix = cc };
+        const ranges = unicode_category.rangesOf(name) orelse return CompileError.NotImplemented;
+        return .{ .uni = ranges };
     }
 
     fn parseEscape(self: *Parser) CompileError!Node {
@@ -689,28 +826,245 @@ const Parser = struct {
             // Routed through here so they also work inside `[…]` (parseCharClass
             // ORs the `.class` payload). Unicode category names (`\p{L}`, scripts)
             // stay NotImplemented — honest staging, not a silent ASCII fallback.
-            'p' => .{ .class = try self.parsePosixClass(false) },
-            'P' => .{ .class = try self.parsePosixClass(true) },
+            'p' => try self.parsePropClass(false),
+            'P' => try self.parsePropClass(true),
+            // `\uXXXX` — a 4-hex-digit codepoint escape (Java regex; cuerdas
+            // uses `\u0027`). ASCII → a plain lit; beyond → the codepoint's
+            // UTF-8 bytes as a concat of lits.
+            'u' => blk: {
+                var cp: u21 = 0;
+                for (0..4) |_| {
+                    const h = self.advance() orelse return CompileError.InvalidEscape;
+                    const d = std.fmt.charToDigit(h, 16) catch return CompileError.InvalidEscape;
+                    cp = cp * 16 + d;
+                }
+                if (cp < 0x80) break :blk .{ .lit = @intCast(cp) };
+                var b: [4]u8 = undefined;
+                const n = std.unicode.utf8Encode(cp, &b) catch return CompileError.InvalidEscape;
+                const lits = try self.arena.alloc(Node, n);
+                for (0..n) |k| lits[k] = .{ .lit = b[k] };
+                break :blk .{ .concat = lits };
+            },
             '.', '*', '+', '?', '(', ')', '[', ']', '|', '\\', '^', '$', '{', '}', '/' => .{ .lit = c },
             else => CompileError.InvalidEscape,
         };
     }
 
-    /// Parse the `{Name}` after `\p` / `\P` and return the matching POSIX
-    /// character class (negated when `negate`). Unknown / Unicode-only names
-    /// raise NotImplemented (kept unsupported rather than silently wrong).
-    fn parsePosixClass(self: *Parser, negate: bool) CompileError!CharClass {
-        if ((self.advance() orelse return CompileError.InvalidEscape) != '{') return CompileError.InvalidEscape;
-        const start = self.pos;
-        while (true) {
-            const ch = self.advance() orelse return CompileError.UnexpectedToken;
-            if (ch == '}') break;
+    /// Parse the `{Name}` after `\p` / `\P`: a POSIX ASCII class name
+    /// (`Alpha`, …) yields a `.class` bitmap exactly as before; a Unicode
+    /// General_Category name (`L`, `Lu`, `Zs`, … — D-409) yields the
+    /// category's codepoint ranges LOWERED to a byte-level alternation
+    /// (`cpRangesToNode`), so the byte-lockstep matcher runs it unchanged.
+    fn parsePropClass(self: *Parser, negate: bool) CompileError!Node {
+        switch (try self.parsePropRaw()) {
+            .posix => |cls| return .{ .class = if (negate) negateClass(cls) else cls },
+            .uni => |ranges| {
+                var set: RangeSet = .{};
+                try set.addRanges(self.arena, ranges);
+                if (self.case_insensitive and self.unicode_case) try foldExpand(self.arena, &set);
+                if (negate) try set.complement(self.arena);
+                return cpRangesToNode(self.arena, set.items());
+            },
         }
-        const name = self.src[start .. self.pos - 1];
-        const cls = posixClass(name) orelse return CompileError.NotImplemented;
-        return if (negate) negateClass(cls) else cls;
     }
 };
+
+/// A sorted, merged set of inclusive codepoint ranges — the compile-time
+/// representation of a Unicode-bearing character class (D-409). Built from
+/// `\p{...}` categories, explicit codepoints, and byte-class bits; negation
+/// is the complement over the scalar-value space (surrogates excluded —
+/// they cannot occur in UTF-8 input).
+const RangeSet = struct {
+    list: std.ArrayList(unicode_category.CpRange) = .empty,
+
+    fn add(self: *RangeSet, arena: std.mem.Allocator, lo: u21, hi: u21) !void {
+        try self.list.append(arena, .{ .lo = lo, .hi = hi });
+    }
+
+    fn addRanges(self: *RangeSet, arena: std.mem.Allocator, rs: []const unicode_category.CpRange) !void {
+        try self.list.appendSlice(arena, rs);
+    }
+
+    fn normalize(self: *RangeSet) void {
+        const S = struct {
+            fn lt(_: void, a: unicode_category.CpRange, b: unicode_category.CpRange) bool {
+                return a.lo < b.lo;
+            }
+        };
+        std.mem.sort(unicode_category.CpRange, self.list.items, {}, S.lt);
+        var w: usize = 0;
+        for (self.list.items) |r| {
+            if (w > 0 and self.list.items[w - 1].hi >= r.lo or (w > 0 and r.lo > 0 and self.list.items[w - 1].hi + 1 == r.lo)) {
+                if (r.hi > self.list.items[w - 1].hi) self.list.items[w - 1].hi = r.hi;
+            } else {
+                self.list.items[w] = r;
+                w += 1;
+            }
+        }
+        self.list.shrinkRetainingCapacity(w);
+    }
+
+    fn complement(self: *RangeSet, arena: std.mem.Allocator) !void {
+        self.normalize();
+        var out: std.ArrayList(unicode_category.CpRange) = .empty;
+        var next: u21 = 0;
+        for (self.list.items) |r| {
+            if (r.lo > next) try out.append(arena, .{ .lo = next, .hi = r.lo - 1 });
+            if (r.hi == 0x10FFFF) {
+                next = 0x10FFFF;
+                break;
+            }
+            next = r.hi + 1;
+        }
+        if (next < 0x10FFFF) try out.append(arena, .{ .lo = next, .hi = 0x10FFFF });
+        self.list = out;
+        // Drop the surrogate block (not encodable in UTF-8 input).
+        var cleaned: std.ArrayList(unicode_category.CpRange) = .empty;
+        for (self.list.items) |r| {
+            if (r.hi < 0xD800 or r.lo > 0xDFFF) {
+                try cleaned.append(arena, r);
+            } else {
+                if (r.lo < 0xD800) try cleaned.append(arena, .{ .lo = r.lo, .hi = 0xD7FF });
+                if (r.hi > 0xDFFF) try cleaned.append(arena, .{ .lo = 0xE000, .hi = r.hi });
+            }
+        }
+        self.list = cleaned;
+    }
+
+    fn items(self: *RangeSet) []const unicode_category.CpRange {
+        self.normalize();
+        return self.list.items;
+    }
+};
+
+/// Expand a codepoint set by the simple case fold (Java (?iu) class
+/// membership): every member's simple upper/lower joins the set. Casing
+/// blocks merge back into ranges at normalize; caseless scripts add nothing.
+fn foldExpand(arena: std.mem.Allocator, set: *RangeSet) CompileError!void {
+    const base = try arena.dupe(unicode_category.CpRange, set.items());
+    for (base) |r| {
+        var cp: u21 = r.lo;
+        while (true) {
+            const u = unicode_case.toUpperSimple(cp);
+            if (u != cp) try set.add(arena, u, u);
+            const l = unicode_case.toLowerSimple(cp);
+            if (l != cp) try set.add(arena, l, l);
+            if (cp == r.hi) break;
+            cp += 1;
+        }
+    }
+}
+
+/// Lower a codepoint-range set to a pure byte-level AST: an `.alt` of
+/// `.concat`s of single-byte `.class` bitmaps (the RE2 UTF-8-ranges
+/// technique). The matcher stays byte-lockstep; nothing downstream of the
+/// parser knows codepoint classes exist. Empty set → an alt of nothing is
+/// invalid, so it lowers to a never-matching empty class.
+fn cpRangesToNode(arena: std.mem.Allocator, ranges: []const unicode_category.CpRange) CompileError!Node {
+    var chains: std.ArrayList(Node) = .empty;
+    for (ranges) |r| try utf8Chains(arena, &chains, r.lo, r.hi);
+    if (chains.items.len == 0) return .{ .class = CharClass{} };
+    if (chains.items.len == 1) return chains.items[0];
+    return .{ .alt = try chains.toOwnedSlice(arena) };
+}
+
+/// Split [lo,hi] by UTF-8 encoded length, then recursively by byte prefix,
+/// appending one `.concat`-of-`.class` chain per uniform byte-range run.
+fn utf8Chains(arena: std.mem.Allocator, out: *std.ArrayList(Node), lo: u21, hi: u21) CompileError!void {
+    const BOUNDS = [_]u21{ 0x7F, 0x7FF, 0xFFFF, 0x10FFFF };
+    var l = lo;
+    while (l <= hi) {
+        var limit: u21 = 0;
+        for (BOUNDS) |b| {
+            if (l <= b) {
+                limit = b;
+                break;
+            }
+        }
+        const h = @min(hi, limit);
+        try utf8ChainsSameLen(arena, out, l, h);
+        if (h == 0x10FFFF) break;
+        l = h + 1;
+    }
+}
+
+/// Both endpoints encode to the same byte length. Recursively split so each
+/// emitted chain has, per byte position, a contiguous independent range.
+fn utf8ChainsSameLen(arena: std.mem.Allocator, out: *std.ArrayList(Node), lo: u21, hi: u21) CompileError!void {
+    var lb: [4]u8 = undefined;
+    var hb: [4]u8 = undefined;
+    const n = std.unicode.utf8Encode(lo, &lb) catch return CompileError.NotImplemented;
+    const n2 = std.unicode.utf8Encode(hi, &hb) catch return CompileError.NotImplemented;
+    std.debug.assert(n == n2);
+    // Find the first byte where lo/hi diverge.
+    var split: usize = n;
+    for (0..n) |i| {
+        if (lb[i] != hb[i]) {
+            split = i;
+            break;
+        }
+    }
+    if (split == n) {
+        // Identical sequence — one exact chain.
+        try appendChain(arena, out, lb[0..n], hb[0..n]);
+        return;
+    }
+    // If every byte AFTER the divergence spans the full continuation range
+    // (lo: 0x80…, hi: …0xBF), one chain covers it.
+    var full = true;
+    for (split + 1..n) |i| {
+        if (lb[i] != 0x80 or hb[i] != 0xBF) {
+            full = false;
+            break;
+        }
+    }
+    if (full) {
+        try appendChain(arena, out, lb[0..n], hb[0..n]);
+        return;
+    }
+    // Split at the divergent byte: [lo .. lo-prefix-max], middle full blocks,
+    // [hi-prefix-min .. hi].
+    var lo_max = lo;
+    {
+        // Max codepoint sharing lo's prefix up to `split` (continuations 0xBF).
+        var b = lb;
+        for (split + 1..n) |i| b[i] = 0xBF;
+        lo_max = decodeUtf8(b[0..n]) orelse return CompileError.NotImplemented;
+    }
+    var hi_min = hi;
+    {
+        var b = hb;
+        for (split + 1..n) |i| b[i] = 0x80;
+        hi_min = decodeUtf8(b[0..n]) orelse return CompileError.NotImplemented;
+    }
+    try utf8ChainsSameLen(arena, out, lo, lo_max);
+    if (lo_max + 1 <= hi_min - 1) try utf8ChainsSameLen(arena, out, lo_max + 1, hi_min - 1);
+    try utf8ChainsSameLen(arena, out, hi_min, hi);
+}
+
+fn decodeUtf8(bytes: []const u8) ?u21 {
+    const view = std.unicode.Utf8View.init(bytes) catch return null;
+    var it = view.iterator();
+    return it.nextCodepoint();
+}
+
+/// One chain: per byte position a `[lo..hi]` byte range as a `.class`
+/// bitmap; a single-position chain stays a bare class node.
+fn appendChain(arena: std.mem.Allocator, out: *std.ArrayList(Node), lob: []const u8, hib: []const u8) CompileError!void {
+    const n = lob.len;
+    const parts = try arena.alloc(Node, n);
+    for (0..n) |i| {
+        var cc = CharClass{};
+        var b: u16 = lob[i];
+        while (b <= hib[i]) : (b += 1) cc.set(@intCast(b));
+        parts[i] = .{ .class = cc };
+    }
+    if (n == 1) {
+        try out.append(arena, parts[0]);
+        return;
+    }
+    try out.append(arena, .{ .concat = parts });
+}
 
 /// Build a CharClass from a list of inclusive `[lo, hi]` byte ranges.
 fn classRanges(ranges: []const [2]u8) CharClass {
@@ -1202,7 +1556,7 @@ test "posixClass builds ASCII bitmaps (Alpha/Digit/Space/Punct)" {
     try testing.expect(posixClass("Bogus") == null);
 }
 
-test "compile \\p{Alpha} ok; \\P negates; Unicode name → NotImplemented" {
+test "compile \\p{Alpha} ok; \\P negates; Unicode categories compile (D-409); unknown name raises" {
     const alloc = testing.allocator;
     {
         var prog = try compile(alloc, "\\p{Alpha}+", .{});
@@ -1212,7 +1566,17 @@ test "compile \\p{Alpha} ok; \\P negates; Unicode name → NotImplemented" {
         var prog = try compile(alloc, "[\\p{Digit}_]", .{}); // works inside a class
         defer prog.deinit(alloc);
     }
-    try testing.expectError(CompileError.NotImplemented, compile(alloc, "\\p{L}", .{}));
+    // D-409: General_Category names compile (lowered to byte alternations).
+    {
+        var prog = try compile(alloc, "\\p{L}+", .{});
+        defer prog.deinit(alloc);
+    }
+    {
+        var prog = try compile(alloc, "(?u)[^\\p{L}\\p{N}]+", .{});
+        defer prog.deinit(alloc);
+    }
+    // An unknown property name still raises (no silent fallback).
+    try testing.expectError(CompileError.NotImplemented, compile(alloc, "\\p{Zz}", .{}));
 }
 
 test "\\s whitespace class includes vertical tab (0x0B)" {

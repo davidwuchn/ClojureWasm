@@ -2505,7 +2505,28 @@ active:
       form. Low frequency: lazy seqs as map keys are rare in real code (the
       corpus probe is synthetic); raise priority if a lib hits it.
     last_reviewed: "2026-06-13"
+  - id: "D-410"
+    status: "open (2026-06-13 — the next cuerdas frontier after D-409). java.text.BreakIterator (grapheme-cluster segmentation): cuerdas.core/abbreviate calls (BreakIterator/getCharacterInstance Locale/ROOT) + first/next/setText/DONE, and the LOAD fails at analysis (cljw resolves host statics eagerly). ADR-0136 classification: R3 (value-semantic, clj-oracle-checkable grapheme boundaries) — language-feature side, needs the UCD GraphemeBreakProperty data (a further gen_unicode_case.py output) + a small host surface."
+    category: "interop"
+    barrier: |-
+      Two halves: (a) grapheme segmentation over UCD GraphemeBreakProperty.txt
+      (+ Emoji data for ZWJ sequences if full fidelity is wanted; Java's ICU
+      BreakIterator is the oracle) generated into a unicode_grapheme.zig; (b) a
+      java.text.BreakIterator host_instance surface (getCharacterInstance /
+      setText / first / next / DONE static). NOTE the cheaper alternative the
+      implementing cycle must weigh: making the ANALYZER defer unknown-class
+      static calls to call time would let cuerdas LOAD (abbreviate failing only
+      on use) and benefits every lib with an optional host path — but it is an
+      analyzer-policy change (eager-vs-lazy host resolution) needing its own
+      DA-forked ADR. recall trigger: a consumer needing abbreviate/grapheme
+      precision, or the analyzer-policy ADR.
+    last_reviewed: "2026-06-13"
 discharged:
+  - id: "D-409"
+    status: "DISCHARGED 2026-06-13 (same cycle as filed — the cuerdas pull): regex Unicode property classes landed. scripts/gen_unicode_case.py additionally emits src/runtime/unicode_category.zig (UCD 16.0.0 General_Category, 29 categories + 7 major-class unions, range-compressed); the compiler lowers \\p{X}/\\P{X}, non-ASCII class members (incl. cp-cp ranges), \\uXXXX escapes, and \\Q…\\E inside classes to BYTE-level alternations via the RE2 UTF-8-ranges technique (RangeSet sort/merge/complement + utf8Chains) — the Pike matcher and emitter are UNTOUCHED (byte-lockstep preserved, P3). (?iu) class membership is fold-aware via foldExpand (Java parity: (?iu)[\\p{Ll}] matches uppercase). Negation complements over scalar values (surrogates excluded). Corpus regex_prop_class (17 golden, oracle-verified incl. the 9 cuerdas pattern shapes). RESIDUAL (documented): scoped (?iu:[…]) does not fold-expand class membership (the scope fold runs post-lowering) — leading-flag form covers real usage. cuerdas now advances to BreakIterator (D-410)."
+    category: "regex"
+    barrier: "none — the scoped-(?iu:[…]) fold residual upgrades only if a real pattern hits it."
+    last_reviewed: "2026-06-13"
   - id: "D-407"
     status: "DISCHARGED 2026-06-13 — the 3 differentiation standing proofs exist as runnable artifacts: (a) bench/benchmarks/26_json_parse + the new `clj` lang in compare_langs.sh (JVM Clojure runs the SAME bench.clj; clj-deps.edn supplies real data.json): cljw 51.1ms cold / 45.8ms warm vs clojure-jvm 584.4 / 292.9 → 11.4x cold / 6.4x warm — the §1.2 axis-4 'fast Zig primitive beats any JVM-bound Clojure' thesis measured (python remains faster on this workload, 29.9ms — a §9.2.S target when that campaign resumes, NOT this row's claim); (b) the Wasm-FFI demo exists in its CORE-MODULE form (docs/works/demos.md §2 + the wasm benches 21-25); the COMPONENT form IS D-404's deliverable (zwasm CM freeze-gated) — not separately tracked here; (c) startup+size standing proof pre-existed: bench/release_metrics.sh + the RELEASE_METRICS.md locked figure (3.24MB ReleaseSafe stripped)."
     category: "tooling"
