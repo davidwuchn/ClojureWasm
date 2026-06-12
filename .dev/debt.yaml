@@ -1186,11 +1186,22 @@ active:
         `runtime/crypto/message_digest.zig` impls + method_tables unbuilt (~300 LOC).
       - **D-104** (tests, HARD) — v0 24C.10 5-canonical bench parity: 4 of 5
         fixtures unported (needs `loop` macro bootstrap first).
-      - **D-054** (tests, soft) — Layer-5 regex conformance port absent (informal
+      - **D-054** (tests, soft) — RESOLVED 2026-06-13 (corpus-satisfies decision,
+        recorded here): Layer-5 upstream regex port is NOT needed — the F-011 diff
+        corpus carries 9 regex corpora (case_insensitive/dotall/multiline/posix_class/
+        bounded_repeat/scoped_flag/quote/pattern/empty_regex), gate-replayed, plus the
+        D-405 conformance harness for lib-level surfaces.
         corpus coverage exists); port OR record corpus-satisfies decision.
-      - **D-056** (regex, soft) — lookahead `(?=...)` unimplemented + honey/sql
+      - **D-056** (regex, soft) — RESOLVED 2026-06-13 (stale entry): lookahead
+        `(?=…)`/`(?!…)` LANDED via ADR-0115 (compile.zig `.look` inst, positive-
+        lookahead capture threading); verified live (`(re-find #"a(?=b)" "ab")`→"a").
+        The anchor predated ADR-0115 and was never re-swept — the exact failure
+        mode this anchor exists to catch, caught.
         compat-tier de-scope decision unrecorded; implement OR record de-scope.
-      - **D-057** (regex/string, soft) — Unicode case-fold ASCII-only; land the
+      - **D-057** (regex/string, soft) — IN DRAIN 2026-06-13: gaps confirmed live
+        ((?iu) raises Not-implemented; string lower-case "ÄÖÜ" unchanged vs clj
+        "äöü"; ß→SS special-casing absent). The Unicode case-mapping unit is the
+        active floor drain.
         fold table OR record an accepted divergence (AD-NNN).
       - **D-049** (structure, USER-OWNED) — ADR-0029 layout-lock F-NNN promotion;
         minting an F-NNN is user-owned (project_facts amendment rule) — do NOT
