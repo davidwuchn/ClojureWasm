@@ -42,17 +42,19 @@
   relative-path `build.zig.zon` (experiment is local-only); `git push --force*`;
   bare `zig build` for any scripted/probe path (ADR-0133).
 
-## Just landed (2026-06-13, on `main`)
+## Just landed (2026-06-14, on `main`)
 
-D-416 `(Object.)` unique-sentinel construction (`8eea48f4`); D-417 bare
-clojure.lang interface method-remap (`0c1a4e30` — the `-`-prefix D-286b
-disambiguation + 9 bare aliases, unblocks data.finger-tree past its bare
-interfaces). Filed D-418 (agent_conj load-flaky `#<promise>` race) + D-419
-(finger-tree method-under-foreign-interface-header).
+D-421 `(resolve 'Class)` → class value: extracted analyzeSymbol's class-value
+arm into shared `analyzer.resolveClassValue`, called from `core.resolvePrim` on
+Var/ns miss (DRY); unblocks `when-available` → numeric-tower `round`. D-420
+math.numeric-tower fully closed: full-surface `verify.clj` green; floor/ceil-on-
+ratio Long-vs-BigInt classified as AD-031 (F-005 narrow-when-fits). e2e
+phase14_var_resolve 11-15. D-418 / D-419 still open.
 
 ## Cold-start reading order (resume)
 
-handover → `.dev/debt.yaml` (D-418 / D-419 open; D-416 / D-417 discharged) →
+handover → `.dev/debt.yaml` (D-418 / D-419 open; D-416 / D-417 / D-420 / D-421
+discharged) →
 for the experiment: `private/notes/p14-wasm-component-experiment.md` +
 `private/20260613_handover_from_zwasm/handover_v2.md`. zwasm repo =
 `~/Documents/MyProducts/zwasm_from_scratch/` (read-only; HEAD ≥ `33e0100c`).

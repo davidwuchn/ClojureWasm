@@ -88,4 +88,30 @@ assert_eq 'qualified_core_own_intern_resolves' \
 assert_eq 'qualified_core_rt_origin_resolves' \
     "$("$BIN" -e '(clojure.core/subs "hello" 1 3)' 2>/dev/null | tail -1)" '"el"'
 
-echo "OK — phase14_var_resolve (10 cases) green"
+# --- D-421: `(resolve 'Class)` returns the class VALUE (not nil), matching clj
+# (which returns the Class). The print form is cljw's simple class name (AD-003),
+# not clj's FQCN, but the value is `=` to the bare class symbol and truthy — which
+# is what unblocks the common `(when-available SomeClass …)` reflection guard
+# (numeric-tower's macro gates an extend-type on `(resolve 'clojure.lang.BigInt)`). ---
+
+# Case 11: bare native class symbol resolves to its class value.
+assert_eq 'resolve_bare_native_class' \
+    "$("$BIN" -e "(resolve 'String)" 2>/dev/null | tail -1)" 'String'
+
+# Case 12: qualified clojure.lang class symbol (the numeric-tower BigInt case).
+assert_eq 'resolve_qualified_clojure_lang_class' \
+    "$("$BIN" -e "(resolve 'clojure.lang.BigInt)" 2>/dev/null | tail -1)" 'BigInt'
+
+# Case 13: the resolved class value is `=` to the bare class symbol (same value).
+assert_eq 'resolve_class_eq_bare' \
+    "$("$BIN" -e "(= (resolve 'String) String)" 2>/dev/null | tail -1)" 'true'
+
+# Case 14: the when-available guard fires (resolve truthy gates the body).
+assert_eq 'resolve_gates_when_available' \
+    "$("$BIN" -e "(if (resolve 'clojure.lang.BigInt) :yes :no)" 2>/dev/null | tail -1)" ':yes'
+
+# Case 15: a qualified non-class miss (ns exists, no var, not a class) → nil.
+assert_eq 'resolve_qualified_nonclass_nil' \
+    "$("$BIN" -e "(resolve 'clojure.core/totally-undefined-xyz)" 2>/dev/null | tail -1)" 'nil'
+
+echo "OK — phase14_var_resolve (15 cases) green"

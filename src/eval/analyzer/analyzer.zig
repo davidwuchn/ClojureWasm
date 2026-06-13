@@ -544,6 +544,40 @@ fn resolveClassImport(env: *Env, name: []const u8) []const u8 {
     return ns.imports.get(name) orelse name;
 }
 
+/// Resolve a class symbol to its class VALUE — the same `TypeDescriptor` ref a
+/// bare class symbol resolves to in `analyzeSymbol`'s var-miss arm. Extracted
+/// (D-421) so `core.resolvePrim` shares the exact same resolution: `(resolve
+/// 'String)` / `(resolve 'clojure.lang.BigInt)` must return the class (clj
+/// returns the Class), not nil — which is what unblocks the `(when-available
+/// SomeClass …)` reflection guard numeric-tower gates an `extend-type` on.
+/// A bare name resolves through the ns `(:import …)` map; a qualified `pkg.Class`
+/// is rebuilt into its dotted FQCN (what `nativeTagFor` / `classValueKeyFor` /
+/// `rt.types` key on). Covers native + opaque + exception + interface-marker +
+/// host-surface + user-deftype classes uniformly. Returns null for an
+/// unrecognised name (so the caller falls back to nil / its own error).
+pub fn resolveClassValue(rt: *Runtime, env: *Env, sym_ns: ?[]const u8, sym_name: []const u8) !?Value {
+    var buf: [256]u8 = undefined;
+    const cname = if (sym_ns) |nsn|
+        (std.fmt.bufPrint(&buf, "{s}.{s}", .{ nsn, sym_name }) catch return null)
+    else
+        resolveClassImport(env, sym_name);
+    if (class_name.nativeTagFor(cname)) |tag| {
+        const td = try rt.nativeDescriptor(tag);
+        return try type_descriptor.makeTypeDescriptorRef(rt, td);
+    }
+    if (classValueKeyFor(cname)) |key| {
+        const td = try rt.classDescriptor(key);
+        return try type_descriptor.makeTypeDescriptorRef(rt, td);
+    }
+    // rt.types keys host-surface classes by FQCN but a USER deftype/record by
+    // its simple name; the bare-symbol fallback to `sym_name` covers an imported
+    // user deftype (D-391). A qualified ref has no simple-name fallback.
+    const type_td = rt.types.get(cname) orelse
+        (if (sym_ns == null and !std.mem.eql(u8, cname, sym_name)) rt.types.get(sym_name) else null);
+    if (type_td) |td| return try type_descriptor.makeTypeDescriptorRef(rt, td);
+    return null;
+}
+
 // --- Symbol resolution ---
 
 fn analyzeSymbol(
@@ -654,48 +688,17 @@ fn analyzeSymbol(
         // value (= `(class x)`). Interface-shaped names (Number/IFn)
         // span multiple tags → `nativeTagFor` returns null → they stay
         // unresolved-symbol errors (documented divergence).
+        // ADR-0128 / ADR-0072 (D-293 unify): a bare class symbol resolves to its
+        // class VALUE — native (tag-keyed `nativeDescriptor`, so `(class x)`
+        // identity holds) → recognised non-native name (one `classDescriptor`
+        // call via the `classValueKeyFor` SSOT — exception / opaque / Object /
+        // Number / IFn / interface-marker / host_inert) → registered Java
+        // host-surface / user deftype (`rt.types`). This is what makes a class
+        // symbol a value (so `instance?` is a higher-order fn). Shared with
+        // `core.resolvePrim` via `resolveClassValue` (D-421). AFTER Var
+        // resolution so a user `(def String …)` / `(deftype String …)` shadows.
         if (sym.ns == null) {
-            // Resolve a bare imported class name to its FQCN first (D-235
-            // ns.imports), so all three resolution paths below see the qualified
-            // name an `(:import …)` brought in.
-            const cname = resolveClassImport(env, sym.name);
-            if (class_name.nativeTagFor(cname)) |tag| {
-                const td = try env.rt.nativeDescriptor(tag);
-                const ref = try type_descriptor.makeTypeDescriptorRef(env.rt, td);
-                return try makeConstant(arena, ref, form);
-            }
-            // ADR-0128 (D-293 unify): every recognised NON-native class name
-            // resolves to a name-keyed class VALUE through ONE `classDescriptor`
-            // call, via the `classValueKeyFor` SSOT — the formerly-scattered
-            // exception / opaque / Object / Number / IFn / interface-marker /
-            // host_inert arms collapse here. This is what makes a class symbol a
-            // value (so `instance?` is a higher-order fn) and keeps `(= (class e)
-            // ExceptionInfo)` / `(= (type x) Integer)` / `(derive Object …)` /
-            // `(prn IPersistentVector)` all resolving uniformly. Membership +
-            // class-level isa? / extend-type semantics live at the consumers
-            // (class_name.isInstance / classIsaPrim), keyed on this same name.
-            if (classValueKeyFor(cname)) |key| {
-                const td = try env.rt.classDescriptor(key);
-                const ref = try type_descriptor.makeTypeDescriptorRef(env.rt, td);
-                return try makeConstant(arena, ref, form);
-            }
-            // A registered Java host-surface class (java.util.Random, java.net.URI,
-            // …) resolves to its rt.types descriptor VALUE — the concrete-type
-            // analogue. Makes `(= (class x) URI)` and `(extend-protocol P
-            // java.net.URI …)` reach the type. After native + recognised-name
-            // resolution so a user def shadows.
-            //
-            // rt.types keys host-surface classes by FQCN but a USER deftype/record
-            // by its SIMPLE name (`registerType` uses the bare name). A cross-ns
-            // `(:import [ns UserType])` rewrites the symbol to the FQCN (cname) for
-            // the host-surface + classValueKeyFor paths above — but a user type's
-            // FQCN is not in rt.types, so fall back to the bare name so an imported
-            // user deftype resolves like the ctor path, which keeps the simple name
-            // (D-391: hiccup.util RawString imported by hiccup.compiler).
-            const type_td = env.rt.types.get(cname) orelse
-                (if (!std.mem.eql(u8, cname, sym.name)) env.rt.types.get(sym.name) else null);
-            if (type_td) |td| {
-                const ref = try type_descriptor.makeTypeDescriptorRef(env.rt, td);
+            if (try resolveClassValue(env.rt, env, null, sym.name)) |ref| {
                 return try makeConstant(arena, ref, form);
             }
         }

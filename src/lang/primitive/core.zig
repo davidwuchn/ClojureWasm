@@ -34,6 +34,7 @@ const protocol_mod = @import("../../runtime/protocol.zig");
 const class_name = @import("../../runtime/class_name.zig");
 const host_class = @import("../../runtime/error/host_class.zig");
 const driver = @import("../../eval/driver.zig");
+const analyzer = @import("../../eval/analyzer/analyzer.zig");
 
 /// `(-instance-of? c x)` — ADR-0128: the fn-side `instance?`. `c` is a class
 /// VALUE (a `.type_descriptor`, produced when a class symbol evaluates via the
@@ -1435,7 +1436,6 @@ pub fn gensymFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocatio
 /// `.clj` `resolve` wraps this; the var_ref derefs to the Var's value and
 /// prints `#'ns/name`.
 pub fn resolvePrim(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
-    _ = rt;
     try error_catalog.checkArity("__resolve", args, 1, loc);
     if (args[0].tag() != .symbol) {
         return error_catalog.raise(.type_arg_invalid, loc, .{
@@ -1446,10 +1446,17 @@ pub fn resolvePrim(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLoca
     }
     const sym = symbol_mod.asSymbol(args[0]);
     const ns: *env_mod.Namespace = if (sym.ns) |ns_name|
-        (env.findNs(ns_name) orelse return Value.nil_val)
+        (env.findNs(ns_name) orelse
+            // A qualified ns miss may be a class symbol (clojure.lang.BigInt,
+            // java.lang.String) — clj's `resolve` returns the Class. D-421.
+            return (try analyzer.resolveClassValue(rt, env, sym.ns, sym.name)) orelse Value.nil_val)
     else
         (env.current_ns orelse return Value.nil_val);
-    const var_ptr = ns.resolve(sym.name) orelse return Value.nil_val;
+    const var_ptr = ns.resolve(sym.name) orelse
+        // Var miss: fall back to a class symbol (bare `String` / imported
+        // deftype / qualified `pkg.Class`), the same resolution `analyzeSymbol`
+        // hands a bare class symbol in value position. D-421.
+        return (try analyzer.resolveClassValue(rt, env, sym.ns, sym.name)) orelse Value.nil_val;
     return Value.encodeHeapPtr(.var_ref, var_ptr);
 }
 

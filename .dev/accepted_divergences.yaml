@@ -481,3 +481,24 @@ accepted:
       IllegalFormatConversionException) per AD-007.
     derives_from: "F-005 (numeric tower: int/Long collapse — cljw has no distinct Integer, so the Integer-accepts/Long-rejects split is unreproducible) + AD-007 (error Kind, not the JVM exception class)"
     pin: "test/e2e/phase14_format_char_int.sh — format_c_int_rejected + format_c_long_rejected lock cljw's integer rejection; format_c_char locks the char-arg parity"
+  - id: "AD-031"
+    summary: "Ratio components `(numerator r)` / `(denominator r)` (and integer results derived from them, e.g. `(clojure.math.numeric-tower/floor 5/2)` / `(ceil 5/2)`) narrow to Long when they fit i64; clj returns a BigInteger (numerator/denominator) / BigInt (floor/ceil). VALUE is `=` in both; only the class NAME + `N`-suffix print diverge."
+    example: '(numerator 5/2) => cljw 5 (Long) / clj 5 (java.math.BigInteger) ; (clojure.math.numeric-tower/floor 5/2) => cljw 2 / clj 2N ; (ceil 5/2) => cljw 3 / clj 3N ; (= 2 2N) => true in both'
+    why: |-
+      F-005 collapses clj's arbitrary-precision integer types into cljw's single
+      `.big_int` AND narrows an integer result to the native Long when it fits i64
+      (the same narrow-when-fits surface AD-016 records for `biginteger`). clj's
+      Ratio stores numerator/denominator as `java.math.BigInteger`, so it returns
+      BigInteger components and BigInt floor/ceil unconditionally; cljw stores the
+      narrowest fitting integer (Long for a small ratio) and returns it directly.
+      The divergence is purely cosmetic — VALUE is identical (`(= 5 (numerator 5/2))`
+      / `(= 2N (floor 5/2))` => true in both) and every downstream arithmetic op
+      agrees — so materialising a BigInteger-typed component purely to match clj's
+      class name would re-introduce the Long/BigInt distinction F-005 abolished, for
+      no behavioural gain. `round` (which lands on a whole BigInt via `(+ 5/2 1/2)`)
+      DOES return `3N` in both (D-421 unblocked the gating `when-available` so the
+      BigInt MathFunctions extend is emitted); only floor/ceil, which compute via
+      the narrowed numerator/denominator, take the Long form. The simple class NAME
+      (not the FQCN) is additionally the AD-003 no-JVM-class surface.
+    derives_from: "F-005 (numeric tower: collapse + narrow-when-fits) + AD-016 (biginteger ≡ bigint, narrow integer results) + AD-003 (simple class name, no JVM Class)"
+    pin: "test/e2e/phase14_ratio_accessors.sh — num + long_eq lock cljw's Long-narrowed numerator/denominator (the divergent type, not clj's BigInteger); floor/ceil-on-ratio derive directly from this narrowing. verified_projects/math.numeric-tower/verify.clj exercises the full surface (round/floor/ceil/sqrt/expt/gcd/lcm/abs) value-equal to clj."
