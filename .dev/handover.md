@@ -14,37 +14,38 @@
   experiments only; it Debug-overwrites zig-out). Bench re-baselined under the
   unified config (bench/cross-lang-latest.yaml, 39 benches; D-411 discharged).
 
-- **zwasm-watch FIRED 2026-06-13**: the readiness predicate is satisfied —
-  zwasm ADR-0184 Implemented (zwasm `8579285e`) AND `exportedFuncs`
-  interface-nested enumeration landed + CWFS-closed (`af112e9a`/`475fba54`).
-  Per the user's second directive the loop switched to the experiment.
+- **zwasm CM-API COMPLETED 2026-06-13** (marker:
+  `private/20260613_handover_from_zwasm/handover.md`, COMPLETED). All 6 cw
+  requests landed at zwasm pin `5795c3d0` (branch zwasm-from-scratch): REQ-1
+  unified `comp.open`→`Opened`, REQ-2 enum/variant/flags VALUE labels, REQ-3
+  public `resolveFuncSig`/`WitType` (replaces the hand-rolled TypeCtx), REQ-4
+  budget threading, REQ-5 `dropResource` (caveat: guest destructor traps,
+  zwasm D-325, doesn't block), REQ-6 typed-invoke diagnostics.
 
-- **First task on resume MUST be: the D-404 ADR-0135
-  Wasm-component-as-namespace EXPERIMENT** per
-  **`private/notes/p14-wasm-component-experiment.md`** (full wiring + step
-  plan). Mode = EXPLORATION (exploration_vs_done.md): flip build.zig.zon to
-  relative-path `../zwasm_from_scratch` LOCALLY (uncommitted; `git stash` it
-  before any tracked landing), experiment in private/ scratch, **do NOT push
-  experimental artifacts**. Steps: zon flip build check → introspect a zwasm
-  fixture component → minimal lift/lower roundtrip → import-component Var
-  intern skeleton. Tracked landings resume the normal gate + atomic push once
-  stable AND the zon is back on a tag pin.
+- **First task on resume MUST be: adopt the new zwasm CM-API in the D-404
+  component EXPERIMENT** (push-suppressed) per
+  **`private/notes/p14-wasm-component-experiment.md`**. Mode = EXPLORATION:
+  build.zig.zon flipped to relative-path `../zwasm_from_scratch` LOCALLY
+  (local zwasm HEAD ≥ 5795c3d0; uncommitted; `git stash` it before any tracked
+  commit), **do NOT push experimental artifacts**. The 手元 component.zig
+  (Opened union + TypeCtx + lower/lift) is in a `git stash`
+  ("wasm-component-experiment"); pop it and REWRITE to use `comp.open` +
+  `resolveFuncSig` + label-carrying lift (enum→keyword, flags→set, variant→
+  tagged map per ADR-0135). Breaking: ComponentValue.@"enum"/.flags are now
+  structs. Probe: greet + typed_payload (working pre-adoption) + resource_counter.
 
-  **Queue after (or interleaved when blocked)**: instaparse end-to-end —
-  re-matcher LANDED (`379c0e9e`, e2e phase14_re_matcher.sh green; refer
-  override per ADR-0035 D9 third amendment); next blocker = cljw's require
-  resolver ignores deps.edn `:paths` dirs for a probe project
-  (`Could not locate 'instaparse.core'` — see
-  `private/notes/p14-instaparse-campaign.md`); then verified_projects corpus;
-  flatland.ordered corpus registration; cuerdas blocked on D-410.
+  **Queue after (or interleaved when blocked)**: library conformance track-1
+  (Maven-layout deps fix 345b1947 unblocked old contrib libs — re-probe);
+  instaparse blocked (D-414 LispReader frontier); cuerdas (D-410); the
+  host_interface S1 yaml/zig consolidation (D-415, focused small ADR).
 
   SAFETY: every `clj` oracle batch needs `-J-Xmx2g` + bounded seqs (memory
   `clj_oracle_heap_cap`); register every new e2e in run_all.sh same-commit.
 
-  **State**: Phase 14 (v0.1.0 milestone) ~95% done. Both open §9.16 rows
-  BLOCKED — 14.12 (component build, zwasm-CM-gated → D-404, now the active
-  experiment) + 14.14 (exit-smoke + tag, user-deferred); operate in
-  §1.5/quality-loop mode. Conformance ladder: 15 corpora 100% golden.
+  **State**: Phase 14 (v0.1.0 milestone) ~95% done. §9.16: 14.12 (component
+  build) now UNBLOCKED (zwasm CM-API complete → the experiment adopts it);
+  14.14 (exit-smoke + tag) user-deferred. Conformance: 17 corpora 100% golden
+  (+ flatland.ordered, data.generators this session).
 
   **Paused (not abandoned)**: the §9.2.S perf campaign — resume ONLY on
   explicit user direction; state in `.dev/perf_v0_baseline.md` +
@@ -60,18 +61,18 @@
 
 ## Just landed (2026-06-13, on `main`)
 
-Build-config unification (ADR-0133 Rev 1+2): 310 e2e fallbacks + 9 bench/perf
-builders → `-Dwasm -Doptimize=ReleaseSafe`; bench cw column re-baselined
-(A/B: -Dwasm ~cost-free). instaparse substrate batch (d6c84985: *out*/*err*
-D-238 LANDED, IObj/IMeta, Character statics). Earlier same day: D-405 harness
-15 corpora, ADR-0136 boundary, D-407 proofs, Unicode D-057/D-409.
+re-matcher/Matcher (`379c0e9e`) + ADR-0035 D9 refer-precedence; regex `(?x)`
++ `\<non-alnum>` escape + deps absolute-`:paths` (`c7845f53`); flatland.ordered
+17/17 + deftype-set contains? (`35159f41`); Maven-layout git-dep resolution +
+data.generators 20/20 (`345b1947`); bare `Counted` supertype (`6865b3c0`).
+D-415 host_interface finished-form right-sized to S1 (per-section attribution
+proven correct); D-414 instaparse/D-416 `(Object.)` frontiers filed.
 
 ## Cold-start reading order (resume)
 
-handover → **`private/notes/p14-instaparse-campaign.md`** (the active task:
-re-matcher design + oracle table) → (when zwasm-watch fires)
-`private/notes/p14-wasm-component-experiment.md` + `.dev/decisions/0135_*.md`
-(WIT↔clj mapping, FROZEN) + `.dev/debt.yaml` D-404.
-clj oracle = `~/Documents/OSS/clojure/` + `clj -J-Xmx2g -M` (`timeout 60`,
-bound seqs); zwasm repo = `~/Documents/MyProducts/zwasm_from_scratch/`
-(read-only here; readiness check via its git log per the watch predicate).
+handover → **`private/notes/p14-wasm-component-experiment.md`** (active task:
+adopt the new zwasm CM-API) → `private/20260613_handover_from_zwasm/handover.md`
+(the 6 COMPLETED APIs) → `.dev/decisions/0135_*.md` (WIT↔clj mapping) →
+`.dev/debt.yaml` D-404. zwasm repo = `~/Documents/MyProducts/zwasm_from_scratch/`
+(read-only here; HEAD ≥ pin 5795c3d0). clj oracle = `~/Documents/OSS/clojure/`
++ `clj -J-Xmx2g -M` (`timeout 60`, bound seqs).
