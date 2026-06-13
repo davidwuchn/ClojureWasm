@@ -1,0 +1,4 @@
+{:paths ["."]
+ :deps {org.clojure/data.generators
+        {:git/url "https://github.com/clojure/data.generators.git"
+         :git/sha "05cb4045aa6368683c8c2d2e27b0cdbfba970a52"}}}

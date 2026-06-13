@@ -12,6 +12,7 @@
 | core.cache         | 10        | 0          | 100%     |
 | core.unify         | 15        | 0          | 100%     |
 | data.csv           | 10        | 0          | 100%     |
+| data.generators    | 20        | 0          | 100%     |
 | data.json          | 25        | 0          | 100%     |
 | data.priority-map  | 25        | 0          | 100%     |
 | data.zip           | 8         | 0          | 100%     |

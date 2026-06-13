@@ -103,6 +103,17 @@ fn expand(
             } else |_| {
                 // No src/ dir either → the dep contributes nothing.
             }
+            // Maven-layout fallback: an old clojure-contrib git dep (no deps.edn,
+            // a pom.xml clj reads but cljw does not) keeps its sources under
+            // `src/main/clojure`. tools.deps derives this from the pom; cljw adds
+            // the conventional Maven root directly so the lib resolves
+            // (data.generators et al.). Harmless when absent.
+            const maven_dir = try join(allocator, dep_dir, "src/main/clojure");
+            if (std.Io.Dir.cwd().access(io, maven_dir, .{})) |_| {
+                try out.append(allocator, maven_dir);
+            } else |_| {
+                // No Maven-layout dir → contributes nothing (the common case).
+            }
         }
     }
 }

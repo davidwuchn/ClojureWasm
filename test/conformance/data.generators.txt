@@ -1,0 +1,40 @@
+(binding [clojure.data.generators/*rnd* (java.util.Random. 42)] (clojure.data.generators/long))
+;;=> -5025562857975149833
+(binding [clojure.data.generators/*rnd* (java.util.Random. 42)] (clojure.data.generators/int))
+;;=> 977378563
+(binding [clojure.data.generators/*rnd* (java.util.Random. 42)] (clojure.data.generators/short))
+;;=> 14913
+(binding [clojure.data.generators/*rnd* (java.util.Random. 42)] (clojure.data.generators/byte))
+;;=> 58
+(binding [clojure.data.generators/*rnd* (java.util.Random. 42)] (clojure.data.generators/boolean))
+;;=> true
+(binding [clojure.data.generators/*rnd* (java.util.Random. 42)] (clojure.data.generators/double))
+;;=> 0.7275636800328681
+(binding [clojure.data.generators/*rnd* (java.util.Random. 42)] (clojure.data.generators/float))
+;;=> 0.7275636792182922
+(binding [clojure.data.generators/*rnd* (java.util.Random. 7)] (clojure.data.generators/uniform 0 100))
+;;=> 73
+(binding [clojure.data.generators/*rnd* (java.util.Random. 7)] (clojure.data.generators/geometric 0.5))
+;;=> 1
+(binding [clojure.data.generators/*rnd* (java.util.Random. 7)] (clojure.data.generators/vec clojure.data.generators/long 3))
+;;=> [-4967725919621401576 -4627004027837150407 6425179856112732765]
+(binding [clojure.data.generators/*rnd* (java.util.Random. 7)] (doall (clojure.data.generators/list clojure.data.generators/int 3)))
+;;=> (990844840 1070175296 -651504865)
+(binding [clojure.data.generators/*rnd* (java.util.Random. 7)] (clojure.data.generators/tuple clojure.data.generators/long clojure.data.generators/boolean))
+;;=> [-4967725919621401576 true]
+(binding [clojure.data.generators/*rnd* (java.util.Random. 7)] (clojure.data.generators/string clojure.data.generators/printable-ascii-char 5))
+;;=> "egAuc"
+(binding [clojure.data.generators/*rnd* (java.util.Random. 7)] (clojure.data.generators/rand-nth [:a :b :c :d :e]))
+;;=> :d
+(binding [clojure.data.generators/*rnd* (java.util.Random. 7)] (clojure.data.generators/one-of :x :y :z))
+;;=> :z
+(binding [clojure.data.generators/*rnd* (java.util.Random. 7)] (clojure.data.generators/weighted {:a 1 :b 99}))
+;;=> :b
+(binding [clojure.data.generators/*rnd* (java.util.Random. 11)] (clojure.data.generators/shuffle [1 2 3 4 5]))
+;;=> [3 1 5 2 4]
+(binding [clojure.data.generators/*rnd* (java.util.Random. 11)] (clojure.data.generators/reservoir-sample 3 (range 20)))
+;;=> [8 13 15]
+(binding [clojure.data.generators/*rnd* (java.util.Random. 11)] (clojure.data.generators/keyword 5))
+;;=> :qgBMCdt
+(binding [clojure.data.generators/*rnd* (java.util.Random. 11)] (clojure.data.generators/symbol 5))
+;;=> qgBMCdt
