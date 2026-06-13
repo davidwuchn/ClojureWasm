@@ -14,27 +14,29 @@
   experiments only; it Debug-overwrites zig-out). Bench re-baselined under the
   unified config (bench/cross-lang-latest.yaml, 39 benches; D-411 discharged).
 
-- **zwasm-watch mode (user directive 2026-06-13, supersedes the earlier
-  "experiment first" contract)**: zwasm's Component-Model surface is NOT yet
-  complete for CWFS — the D-404 experiment (ADR-0135 component-as-namespace)
-  starts only when it is. **At every task boundary (Step 0) + session resume,
-  peek `git -C ~/Documents/MyProducts/zwasm_from_scratch log --oneline -15`.**
-  Readiness predicate (both must be landed): (a) zwasm ADR-0184 step 4
-  (C-API preopen smoke; Status: Implemented), AND (b) the
-  `TypeInfo.exportedFuncs` interface-nested function ENUMERATION chunk
-  (queued right after ADR-0184; zwasm commit 2789899f names it). When BOTH
-  land → next task = the D-404 experiment per
-  **`private/notes/p14-wasm-component-experiment.md`** (EXPLORATION mode:
-  local relative-path zon flip, uncommitted, push-suppressed). Until then →
-  normal development continues on the queue below. Checked 2026-06-13: step 4
-  pending, enumeration not started → NOT ready.
+- **zwasm-watch FIRED 2026-06-13**: the readiness predicate is satisfied —
+  zwasm ADR-0184 Implemented (zwasm `8579285e`) AND `exportedFuncs`
+  interface-nested enumeration landed + CWFS-closed (`af112e9a`/`475fba54`).
+  Per the user's second directive the loop switched to the experiment.
 
-- **First task on resume MUST be: re-matcher + java.util.regex.Matcher
-  host_instance** — design + oracle table pre-laid in
-  `private/notes/p14-instaparse-campaign.md` (incl. the StringBuilder
-  int-capacity-ctor bug Segment.toString hits); then instaparse end-to-end →
-  verified_projects corpus; flatland.ordered corpus registration; cuerdas
-  blocked on D-410.
+- **First task on resume MUST be: the D-404 ADR-0135
+  Wasm-component-as-namespace EXPERIMENT** per
+  **`private/notes/p14-wasm-component-experiment.md`** (full wiring + step
+  plan). Mode = EXPLORATION (exploration_vs_done.md): flip build.zig.zon to
+  relative-path `../zwasm_from_scratch` LOCALLY (uncommitted; `git stash` it
+  before any tracked landing), experiment in private/ scratch, **do NOT push
+  experimental artifacts**. Steps: zon flip build check → introspect a zwasm
+  fixture component → minimal lift/lower roundtrip → import-component Var
+  intern skeleton. Tracked landings resume the normal gate + atomic push once
+  stable AND the zon is back on a tag pin.
+
+  **Queue after (or interleaved when blocked)**: instaparse end-to-end —
+  re-matcher LANDED (`379c0e9e`, e2e phase14_re_matcher.sh green; refer
+  override per ADR-0035 D9 third amendment); next blocker = cljw's require
+  resolver ignores deps.edn `:paths` dirs for a probe project
+  (`Could not locate 'instaparse.core'` — see
+  `private/notes/p14-instaparse-campaign.md`); then verified_projects corpus;
+  flatland.ordered corpus registration; cuerdas blocked on D-410.
 
   SAFETY: every `clj` oracle batch needs `-J-Xmx2g` + bounded seqs (memory
   `clj_oracle_heap_cap`); register every new e2e in run_all.sh same-commit.
