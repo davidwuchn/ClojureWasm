@@ -131,6 +131,9 @@ fn readDepsEdn(io: std.Io, allocator: std.mem.Allocator, dir: []const u8) !?Deps
 }
 
 fn join(allocator: std.mem.Allocator, a: []const u8, b: []const u8) ![]const u8 {
+    // tools.deps parity: an ABSOLUTE :paths / :extra-paths / :local/root entry
+    // is used as-is (joining would silently relativise it to `./abs/...`).
+    if (std.Io.Dir.path.isAbsolute(b)) return allocator.dupe(u8, b);
     return std.fmt.allocPrint(allocator, "{s}/{s}", .{ a, b });
 }
 
@@ -143,4 +146,15 @@ test "resolve: :paths joined to deps dir" {
     try testing.expectEqual(@as(usize, 2), got.len);
     try testing.expectEqualStrings("proj/src", got[0]);
     try testing.expectEqualStrings("proj/resources", got[1]);
+}
+
+test "resolve: an absolute :paths entry is used as-is (tools.deps parity)" {
+    const testing = std.testing;
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+    const got = try expandPaths(a, ".", &.{ ".", "/abs/lib/src" });
+    try testing.expectEqual(@as(usize, 2), got.len);
+    try testing.expectEqualStrings("./.", got[0]);
+    try testing.expectEqualStrings("/abs/lib/src", got[1]);
 }

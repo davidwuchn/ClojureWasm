@@ -43,7 +43,14 @@ pub const Flags = packed struct(u8) {
     /// Encoded into `line_start_multi`/`line_end_multi` anchors at parse time,
     /// so this flag is informational once compiled (the variant carries it).
     multiline: bool = false,
-    _pad: u4 = 0,
+    /// `(?x)` COMMENTS / extended mode — seeds `stripExtended`, which removes
+    /// unescaped whitespace + `#`-to-EOL comments (Java strips these EVERYWHERE
+    /// in extended mode, including inside `[…]`; `\ `/`\#`/`\Q…\E` stay literal)
+    /// before the parser runs. Positional: a mid-pattern `(?x)` only affects the
+    /// rest of the pattern. Once stripped the parser sees a normal pattern, so
+    /// this flag is consumed entirely at preprocess time.
+    extended: bool = false,
+    _pad: u3 = 0,
 };
 
 /// Parsed AST node. The parser produces this tree; the IR
@@ -192,17 +199,20 @@ pub fn compile(alloc: std.mem.Allocator, pattern: []const u8, flags: Flags) Comp
     defer arena.deinit();
     var f = flags;
     var pat = pattern;
-    // Leading `(?flags)` (flags ⊆ {i,s}) — clj applies them to the whole pattern.
-    // `i` → compile-time case-fold (foldCI); `s` → DOTALL (parse-time `.` build).
-    // A `:` before `)` means a scoped group `(?i:…)`, NOT a leading flag — leave
-    // it for the group parser. Other flags (m/x) and mid-pattern flags stay
-    // unsupported (clean parse error).
+    // Leading `(?flags)` (flags ⊆ {i,s,m,u,x}) — clj applies them to the whole
+    // pattern. `i` → compile-time case-fold (foldCI); `s` → DOTALL (parse-time
+    // `.` build); `m` → MULTILINE anchors; `u` → UNICODE_CASE fold; `x` →
+    // extended mode (seeds stripExtended below). A `:` before `)` means a scoped
+    // group `(?i:…)`, NOT a leading flag — leave it for the group parser.
+    // Mid-pattern non-x flags stay unsupported (clean parse error); mid-pattern
+    // `(?x)` IS handled positionally by stripExtended.
     if (pat.len >= 4 and pat[0] == '(' and pat[1] == '?') {
         var j: usize = 2;
         var ci = false;
         var da = false;
         var ml = false;
         var uc = false;
+        var ex = false;
         var only_flags = true;
         while (j < pat.len and pat[j] != ')' and pat[j] != ':') : (j += 1) {
             switch (pat[j]) {
@@ -210,6 +220,7 @@ pub fn compile(alloc: std.mem.Allocator, pattern: []const u8, flags: Flags) Comp
                 's' => da = true,
                 'm' => ml = true,
                 'u' => uc = true,
+                'x' => ex = true,
                 else => {
                     only_flags = false;
                     break;
@@ -221,8 +232,15 @@ pub fn compile(alloc: std.mem.Allocator, pattern: []const u8, flags: Flags) Comp
             f.dotall = f.dotall or da;
             f.multiline = f.multiline or ml;
             f.unicode_case = f.unicode_case or uc;
+            f.extended = f.extended or ex;
             pat = pat[j + 1 ..];
         }
+    }
+    // `(?x)` extended mode: strip unescaped whitespace + `#` comments (and the
+    // `(?x)`/`(?-x)` toggles themselves) before parsing, so the parser sees a
+    // normal pattern. Cheap fast-path when extended is impossible.
+    if (f.extended or std.mem.find(u8, pat, "(?x") != null) {
+        pat = try stripExtended(arena.allocator(), pat, f.extended);
     }
     var group_count: u16 = 0;
     const node = try parsePattern(arena.allocator(), pat, f, &group_count);
@@ -232,6 +250,97 @@ pub fn compile(alloc: std.mem.Allocator, pattern: []const u8, flags: Flags) Comp
     // bounded (not just each program by the per-emitNode cap).
     var budget: usize = MAX_PROGRAM_INSTS;
     return try emit(alloc, node, f, group_count, &budget);
+}
+
+/// Java extended-mode (`(?x)`) preprocessor: returns `pat` with unescaped
+/// whitespace and `#`-to-EOL comments removed from extended regions, and the
+/// `(?x)` / `(?-x)` toggles themselves removed. The result is a normal pattern
+/// the parser handles unchanged.
+///
+/// Java semantics, oracle-verified: in extended mode whitespace + `#` comments
+/// are stripped EVERYWHERE — including inside `[…]` (so `(?x)[a b]` is `[ab]`,
+/// `(?x)[#a]` self-destructs into "unclosed class"). `\ ` / `\t`-style escaped
+/// whitespace and `\#` stay literal (the backslash is dropped, the char kept).
+/// `\Q…\E` literal regions are copied verbatim. The toggle is positional: a
+/// mid-pattern `(?x)` only affects what follows.
+fn stripExtended(arena: std.mem.Allocator, pat: []const u8, initial_extended: bool) CompileError![]const u8 {
+    var out: std.ArrayList(u8) = .empty;
+    var ext = initial_extended;
+    var i: usize = 0;
+    while (i < pat.len) {
+        const c = pat[i];
+        // `\Q…\E` literal region — copy verbatim (whitespace stays significant).
+        if (c == '\\' and i + 1 < pat.len and pat[i + 1] == 'Q') {
+            try out.appendSlice(arena, pat[i .. i + 2]);
+            i += 2;
+            while (i < pat.len) {
+                if (pat[i] == '\\' and i + 1 < pat.len and pat[i + 1] == 'E') {
+                    try out.appendSlice(arena, pat[i .. i + 2]);
+                    i += 2;
+                    break;
+                }
+                try out.append(arena, pat[i]);
+                i += 1;
+            }
+            continue;
+        }
+        // Standalone `(?x)` / `(?-x)` toggle — apply + drop (extended-only; a
+        // combined `(?ix)` is left for the leading extractor / parser).
+        if (c == '(' and i + 3 < pat.len and pat[i + 1] == '?') {
+            if (std.mem.startsWith(u8, pat[i..], "(?x)")) {
+                ext = true;
+                i += 4;
+                continue;
+            }
+            if (std.mem.startsWith(u8, pat[i..], "(?-x)")) {
+                ext = false;
+                i += 5;
+                continue;
+            }
+        }
+        if (ext) {
+            if (c == '\\' and i + 1 < pat.len) {
+                const n = pat[i + 1];
+                // escaped whitespace / `#` → literal char (drop the backslash so
+                // the parser sees a plain literal, not an InvalidEscape).
+                if (isExtWhitespace(n) or n == '#') {
+                    try out.append(arena, n);
+                } else {
+                    try out.appendSlice(arena, pat[i .. i + 2]);
+                }
+                i += 2;
+                continue;
+            }
+            if (isExtWhitespace(c)) {
+                i += 1;
+                continue;
+            }
+            if (c == '#') {
+                i += 1;
+                while (i < pat.len and pat[i] != '\n') i += 1;
+                continue;
+            }
+            try out.append(arena, c);
+            i += 1;
+            continue;
+        }
+        // Non-extended: copy escapes as a unit so a `(?x` inside `\(?x` etc. is
+        // not mistaken for a toggle; copy everything else verbatim.
+        if (c == '\\' and i + 1 < pat.len) {
+            try out.appendSlice(arena, pat[i .. i + 2]);
+            i += 2;
+            continue;
+        }
+        try out.append(arena, c);
+        i += 1;
+    }
+    return out.toOwnedSlice(arena);
+}
+
+/// The whitespace set Java's extended mode ignores: space, tab, newline, CR,
+/// form-feed (`\x0B` vertical-tab is NOT in Java's set).
+fn isExtWhitespace(c: u8) bool {
+    return c == ' ' or c == '\t' or c == '\n' or c == '\r' or c == 12;
 }
 
 /// ASCII case-swap (`a`↔`A`); non-letters unchanged.
@@ -846,7 +955,14 @@ const Parser = struct {
                 break :blk .{ .concat = lits };
             },
             '.', '*', '+', '?', '(', ')', '[', ']', '|', '\\', '^', '$', '{', '}', '/' => .{ .lit = c },
-            else => CompileError.InvalidEscape,
+            // Java rule: `\` before ANY non-alphanumeric ASCII char is a literal
+            // of that char (`\"`→`"`, `\-`→`-`, `\ `→space). `\<letter>` /
+            // `\<digit>` that is not a recognized escape is reserved → error
+            // (we don't implement `\1` backreferences; honest InvalidEscape).
+            else => if (c < 0x80 and !std.ascii.isAlphanumeric(c))
+                .{ .lit = c }
+            else
+                CompileError.InvalidEscape,
         };
     }
 
@@ -1518,6 +1634,60 @@ test "compile \\Q.*\\E emits literal bytes, not metacharacters" {
     try testing.expectEqual(@as(u8, '*'), prog.insts[1].char);
 }
 
+// `(?x)` extended-mode preprocessing (stripExtended) — expectations mirror the
+// JVM `clj` oracle (2026-06-13). The fn is tested directly (a pure transform);
+// the leading-flag path + matching are covered by the e2e.
+fn expectStripped(pat: []const u8, initial_ext: bool, want: []const u8) !void {
+    var arena = std.heap.ArenaAllocator.init(testing.allocator);
+    defer arena.deinit();
+    const got = try stripExtended(arena.allocator(), pat, initial_ext);
+    try testing.expectEqualStrings(want, got);
+}
+
+test "stripExtended: (?x) toggle strips whitespace + comment, drops the token" {
+    try expectStripped("(?x)a b c # tail", false, "abc");
+}
+
+test "stripExtended: (?x) is positional — pre-toggle whitespace is significant" {
+    // clj :pos1 — "a b(?x)c d" matches "a bcd": `a b` normal, `c d` extended.
+    try expectStripped("a b(?x)c d", false, "a bcd");
+}
+
+test "stripExtended: extended mode strips whitespace INSIDE a char class (Java)" {
+    // clj :space-in-class — (?x)[a b] does not match a space → [ab].
+    try expectStripped("(?x)[a b]", false, "[ab]");
+}
+
+test "stripExtended: escaped space/hash stay literal (backslash dropped)" {
+    try expectStripped("(?x)a\\ b", false, "a b");
+    try expectStripped("(?x)[a\\ b]", false, "[a b]");
+    try expectStripped("(?x)a\\#b", false, "a#b");
+}
+
+test "stripExtended: tab + newline stripped; # comment runs to EOL only" {
+    try expectStripped("(?x) a \t b \n c", false, "abc");
+    try expectStripped("(?x)ab # comment\ncd", false, "abcd");
+}
+
+test "stripExtended: \\Q…\\E literal region keeps whitespace even when extended" {
+    try expectStripped("\\Qa b\\E", true, "\\Qa b\\E");
+}
+
+test "stripExtended: (?-x) turns extended back off" {
+    try expectStripped("(?x)a b(?-x)c d", false, "abc d");
+}
+
+test "compile (?x) end-to-end: regex-doc shape matches the bare pattern" {
+    // instaparse cfg.cljc regex-doc appends `(?x) #comment`; the result must
+    // behave as the bare pattern. `\\d+(?x) # digits` ≡ `\\d+`.
+    var prog = try compile(testing.allocator, "\\d+(?x) # digits", .{});
+    defer prog.deinit(testing.allocator);
+    const m = try @import("match.zig").find(testing.allocator, &prog, "ab123");
+    try testing.expect(m != null);
+    try testing.expectEqual(@as(u32, 2), m.?.start);
+    try testing.expectEqual(@as(u32, 5), m.?.end);
+}
+
 test "compile rejects bad escape" {
     try testing.expectError(CompileError.InvalidEscape, compile(testing.allocator, "\\q", .{}));
 }
@@ -1702,4 +1872,16 @@ test "D-344: a single lookahead under the global budget still compiles" {
     var prog = try compile(alloc, "(?=a{60000})", .{});
     defer prog.deinit(alloc);
     try testing.expect(prog.insts.len >= 1); // the outer program is just the .look
+}
+
+test "compile \\\" emits literal quote (Java: backslash before non-alnum = literal)" {
+    var prog = try compile(testing.allocator, "\\\"", .{});
+    defer prog.deinit(testing.allocator);
+    try testing.expectEqual(@as(u8, '"'), prog.insts[0].char);
+}
+
+test "compile \\- emits literal dash; \\y (letter) is still an error" {
+    var prog = try compile(testing.allocator, "a\\-b", .{});
+    defer prog.deinit(testing.allocator);
+    try testing.expectError(CompileError.InvalidEscape, compile(testing.allocator, "\\y", .{}));
 }

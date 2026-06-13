@@ -1,0 +1,18 @@
+(re-find (re-pattern "\\d+(?x) # digits") "ab123")
+;;=> "123"
+(re-find (re-pattern "(?x)a b c # tail") "abc")
+;;=> "abc"
+(re-find (re-pattern "(?x)[a b]+") "a b a")
+;;=> "a"
+(re-find (re-pattern "(?x)a\\ b") "a b")
+;;=> "a b"
+(re-find (re-pattern "a b(?x)c d") "a bcd")
+;;=> "a bcd"
+(re-find (re-pattern "(?ix) a B c") "AbC")
+;;=> "AbC"
+(re-find (re-pattern "\\\"") "a\"b")
+;;=> "\""
+(re-find (re-pattern "a\\-b") "a-b")
+;;=> "a-b"
+(re-matches (re-pattern "\"[^\"\\\\]*\"") "\"hi\"")
+;;=> "\"hi\""
