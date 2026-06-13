@@ -2413,7 +2413,7 @@ active:
       AD-003 (simple `:type`), ADR-0120 (trace_ptr), F-003 (frame shape = D-232's).
     last_reviewed: "2026-06-12"
   - id: "D-404"
-    status: "open (2026-06-13, ADR-0135 — Wasm component as a first-class namespace). The north-star differentiator's finished form: `require` a Wasm COMPONENT (not just a core module) and call its exports with Clojure data, types negotiated by the Canonical ABI. Design + the WIT↔clj value mapping table are FROZEN in ADR-0135; implementation is BLOCKED-BY an external event."
+    status: "UNBLOCKING (2026-06-13 user chat, zwasm-side report) — zwasm embedding API is nearly ready: design / EDN mapping / require-macro skeleton can start TODAY against the current API (introspect + typed invoke + resources); the ONLY missing piece is interface-internal function ENUMERATION, landing as a small chunk right after zwasm ADR-0184 (next zwasm session). User directive: start as a LOCAL EXPERIMENT via relative-path build.zig.zon (../zwasm_from_scratch), PUSH-SUPPRESSED (exploration mode per exploration_vs_done.md — the zon flip stays uncommitted; stash it before any tracked landing); wire the enumeration-dependent part only after ADR-0184 lands. Full wiring note: private/notes/p14-wasm-component-experiment.md. Was: open (ADR-0135 design frozen, BLOCKED-BY zwasm CM embedding-API freeze)."
     category: "wasm"
     barrier: |-
       **blocked-by: zwasm's Component-Model embedding-API FREEZE** (zwasm ADR-0170,
@@ -2458,19 +2458,10 @@ active:
       precision, or the analyzer-policy ADR.
     last_reviewed: "2026-06-13"
   - id: "D-411"
-    status: "open (2026-06-13 — the bench/perf half of the build-config unification, ADR-0133 Revision 2026-06-13). The 310 test/e2e standalone fallbacks now match build_cljw exactly (-Dwasm -Doptimize=${CLJW_OPT:-ReleaseSafe}); the REMAINING non-unified builders are bench/build_bench.sh + bench/release_metrics.sh + bench/compare_langs.sh + bench/run_bench.sh (zig build -Doptimize=ReleaseSafe, no -Dwasm — they overwrite zig-out with a non-wasm binary and add a third zig-cache config) and scripts/perf.sh (separate -p prefix, no overwrite, but measures a non-wasm binary while the shipped form is wasm-enabled)."
+    status: "DISCHARGED 2026-06-13 (same day as filed — user-directed): ALL bench/perf builders unified to -Dwasm + Release (ADR-0133 Rev 2, commit 9e802816; incl. wasm_bench.sh which had benched a NON-wasm binary). The continuity question was resolved by RE-BASELINING: bench/cross-lang-latest.yaml cw column re-measured 2026-06-13 under the unified config (runs 10 / warmup 5; 39 benches incl. the previously-empty wasm_* + json_parse). A/B (wasm vs non-wasm binary, same host+time) showed -Dwasm is ~cost-free (tak/edn identical within noise; multimethod +~1.8ms grey); the larger day-over-day deltas vs 2026-06-11 were environment + real code drift (edn_roundtrip ~23->~31ms in BOTH configs — post-06-11 code change, traceable separately)."
     category: "infra"
     barrier: |-
-      Measurement continuity: adding -Dwasm changes the measured binary (code
-      size, possibly cold-start) vs the recorded baselines
-      (.dev/perf_v0_baseline.md, bench history). The perf campaign is PAUSED
-      (resume = explicit user direction), so flipping bench flags now would
-      silently shift comparability with zero consumers running. Resolve when
-      bench next runs for real: either re-baseline under -Dwasm (preferred —
-      the shipped form is wasm-enabled, measure what ships) or record an
-      explicit non-wasm-bench rationale in ADR-0133. Interim state: e2e +
-      manual-probe paths are unified, so the bench scripts are the only
-      remaining zig-out overwriters with a divergent config.
+      none — discharged by re-baseline; pre-2026-06-13 bench numbers are non-comparable (non-wasm binary), noted in ADR-0133 Rev 2 + the yaml header.
     last_reviewed: "2026-06-13"
 discharged:
   - id: "D-409"

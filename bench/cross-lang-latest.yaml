@@ -1,5 +1,8 @@
 # Cross-language benchmark comparison
 # Generated: 2026-06-11T17:57:13+09:00
+# cw values RE-MEASURED 2026-06-13 under the unified -Dwasm ReleaseSafe build
+# (ADR-0133 Rev 2 re-baseline; runs 10 / warmup 5; A/B showed -Dwasm ~cost-free).
+# Other-language values are from the 2026-06-11 full run (build-config-independent).
 
 env:
   machine: MacBook Pro (Mac16,8)
@@ -16,7 +19,7 @@ date: "2026-06-11"
 benchmarks:
   fib_recursive:
     cold:
-      cw: 23.9110
+      cw: 25.6818
       c: 1.0898
       java: 25.7051
       go: 3.0693
@@ -26,7 +29,7 @@ benchmarks:
       bb: 23.9797
   fib_loop:
     cold:
-      cw: 5.1376
+      cw: 5.4963
       c: 0.5162
       java: 22.5796
       go: 2.6475
@@ -36,7 +39,7 @@ benchmarks:
       bb: 12.3001
   tak:
     cold:
-      cw: 9.9056
+      cw: 13.8269
       c: 1.7063
       java: 23.3933
       go: 2.0896
@@ -46,7 +49,7 @@ benchmarks:
       bb: 13.9801
   arith_loop:
     cold:
-      cw: 49.3028
+      cw: 50.0927
       c: 0.8926
       java: 25.3069
       go: 2.6988
@@ -56,7 +59,7 @@ benchmarks:
       bb: 47.7719
   map_filter_reduce:
     cold:
-      cw: 14.1281
+      cw: 15.7300
       c: 0.5638
       java: 27.5680
       go: 3.0796
@@ -66,7 +69,7 @@ benchmarks:
       bb: 16.8027
   vector_ops:
     cold:
-      cw: 8.3071
+      cw: 7.4122
       c: 0.9367
       java: 25.0815
       go: 2.4706
@@ -76,7 +79,7 @@ benchmarks:
       bb: 13.2763
   map_ops:
     cold:
-      cw: 5.3817
+      cw: 6.1649
       c: 0.3211
       java: 23.8456
       go: 2.2521
@@ -86,7 +89,7 @@ benchmarks:
       bb: 12.1427
   list_build:
     cold:
-      cw: 6.3618
+      cw: 5.7371
       c: 0.5937
       java: 24.8033
       go: 2.6162
@@ -96,7 +99,7 @@ benchmarks:
       bb: 12.4409
   sieve:
     cold:
-      cw: 28.5181
+      cw: 26.4040
       c: 0.8311
       java: 31.2483
       go: 2.4350
@@ -106,7 +109,7 @@ benchmarks:
       bb: 13.3010
   nqueens:
     cold:
-      cw: 20.9998
+      cw: 21.7611
       c: 0.9116
       java: 25.0912
       go: 2.3887
@@ -116,7 +119,7 @@ benchmarks:
       bb: 20.5023
   atom_swap:
     cold:
-      cw: 7.0956
+      cw: 6.2872
       c: 0.8538
       java: 24.2481
       go: 2.7513
@@ -126,7 +129,7 @@ benchmarks:
       bb: 13.1049
   gc_stress:
     cold:
-      cw: 32.2351
+      cw: 35.2491
       c: 1.5996
       java: 37.0680
       go: 5.5210
@@ -136,7 +139,7 @@ benchmarks:
       bb: 32.3133
   lazy_chain:
     cold:
-      cw: 20.7701
+      cw: 22.4473
       c: 0.8959
       java: 23.3470
       go: 2.3195
@@ -146,7 +149,7 @@ benchmarks:
       bb: 13.5780
   transduce:
     cold:
-      cw: 12.3031
+      cw: 14.3020
       c: 2.6798
       java: 23.8442
       go: 2.0438
@@ -156,7 +159,7 @@ benchmarks:
       bb: 14.2934
   keyword_lookup:
     cold:
-      cw: 17.9581
+      cw: 17.5048
       c: 1.0182
       java: 27.8505
       go: 2.9067
@@ -166,7 +169,7 @@ benchmarks:
       bb: 18.8379
   protocol_dispatch:
     cold:
-      cw: 8.0394
+      cw: 8.2345
       c: 1.2165
       java: 25.9745
       go: 1.6329
@@ -175,7 +178,7 @@ benchmarks:
       js: 41.6161
   nested_update:
     cold:
-      cw: 25.6362
+      cw: 25.8169
       c: 1.2513
       java: 25.8793
       go: 2.1283
@@ -185,7 +188,7 @@ benchmarks:
       bb: 13.8098
   string_ops:
     cold:
-      cw: 30.1657
+      cw: 31.0145
       c: 3.6825
       java: 28.0243
       go: 3.1608
@@ -195,7 +198,7 @@ benchmarks:
       bb: 18.2322
   multimethod_dispatch:
     cold:
-      cw: 8.3018
+      cw: 12.4964
       c: 0.9958
       java: 24.8388
       go: 2.6659
@@ -205,7 +208,7 @@ benchmarks:
       bb: 14.4702
   real_workload:
     cold:
-      cw: 15.1496
+      cw: 15.5245
       c: 1.2258
       java: 28.8776
       go: 2.4449
@@ -215,35 +218,44 @@ benchmarks:
       bb: 15.0491
   wasm_load:
     cold:
+      cw: 3.0188
   wasm_call:
     cold:
+      cw: 276.1118
   wasm_memory:
     cold:
+      cw: 113.3569
   wasm_fib:
     cold:
+      cw: 554.3809
   wasm_sieve:
     cold:
+      cw: 917.7366
   gc_alloc_rate:
     cold:
-      cw: 101.8304
+      cw: 106.1769
       js: 46.9299
       bb: 32.2551
   gc_large_heap:
     cold:
-      cw: 66.3003
+      cw: 69.7389
       js: 51.9985
       bb: 28.8183
   wasm_tak:
     cold:
+      cw: 791.2483
   wasm_arith:
     cold:
+      cw: 413.1394
   wasm_gcd:
     cold:
+      cw: 636.9189
   wasm_fib_loop:
     cold:
+      cw: 159.8991
   bigint_factorial:
     cold:
-      cw: 23.6914
+      cw: 26.4169
       java: 32.4437
       go: 2.7859
       py: 15.7778
@@ -252,15 +264,15 @@ benchmarks:
       bb: 15.7869
   ratio_sum:
     cold:
-      cw: 112.9784
+      cw: 115.9961
       bb: 36.5039
   stm_refs:
     cold:
-      cw: 35.1447
+      cw: 42.3553
       bb: 38.3881
   regex_count:
     cold:
-      cw: 44.5271
+      cw: 48.0424
       c: 10.6000
       java: 30.8171
       go: 6.2401
@@ -270,7 +282,7 @@ benchmarks:
       bb: 15.3609
   sort:
     cold:
-      cw: 7.1589
+      cw: 7.5494
       c: 1.0159
       java: 25.2398
       go: 2.3152
@@ -280,9 +292,15 @@ benchmarks:
       bb: 12.3640
   destructure:
     cold:
-      cw: 77.3539
+      cw: 77.2713
       bb: 40.7130
   edn_roundtrip:
     cold:
-      cw: 22.8832
+      cw: 30.7512
       bb: 100.6323
+
+  # Added at the 2026-06-13 cw re-baseline (cw-only; cross-language
+  # columns fill on the next full compare_langs run):
+  json_parse:
+    cold:
+      cw: 50.1522
