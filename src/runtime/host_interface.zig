@@ -248,6 +248,11 @@ const SEQUENTIAL: HostInterface = .{ .kind = .marker, .canonical = "Sequential" 
 // win. instaparse's AutoFlattenSeq + potemkin's collection types declare it.
 const INDEXED: HostInterface = .{ .kind = .protocol_remap, .canonical = "Indexed", .remap = &.{
     .{ .clj = "nth", .protocol = "Indexed", .method = "-nth" },
+    // INHERITED (D-419): clj `Indexed extends Counted`, so a deftype may write
+    // `count` under its `Indexed` header (data.finger-tree's `defdigit`). Flatten
+    // it to the same target every count maps to (mirrors COUNTED → IPersistent
+    // Collection/-count). Unambiguous: `count` only ever targets -count.
+    .{ .clj = "count", .protocol = "IPersistentCollection", .method = "-count" },
 } };
 
 // clojure.lang.IReduceInit (D-399) — a custom reducible deftype declares
@@ -342,6 +347,11 @@ const ASSOCIATIVE: HostInterface = .{ .kind = .protocol_remap, .canonical = "Ass
     .{ .clj = "assoc", .protocol = "Associative", .method = "-assoc" },
     .{ .clj = "containsKey", .protocol = "Associative", .method = "-contains-key?" },
     .{ .clj = "entryAt", .protocol = "Associative", .method = "-entry-at" },
+    // INHERITED (D-419): clj `Associative extends ILookup`, so a deftype may write
+    // `valAt` under its `Associative` header (data.finger-tree's CountedDoubleList).
+    // Flatten it to the same target `ILookup`/`IPersistentSet.get` map valAt to.
+    // Unambiguous: `valAt` only ever targets ILookup/-lookup.
+    .{ .clj = "valAt", .protocol = "ILookup", .method = "-lookup" },
 } };
 const IPERSISTENT_COLLECTION: HostInterface = .{
     .kind = .protocol_remap,
