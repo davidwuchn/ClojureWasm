@@ -100,3 +100,12 @@ i.e. phase4, not the skipped e2e lines).
   dead). Manual-probe guidance follows the same form; remaining non-unified
   builders (`bench/*.sh`, `scripts/perf.sh` — measurement-continuity
   question) are tracked as a debt row, not silently flipped.
+- **2026-06-13 (user-directed, later same day)**: the bench/perf builders are
+  unified too — the user resolved D-411's continuity question by directive:
+  Debug (or any non-gate config) must have NO foothold in e2e/bench/perf
+  tooling; `zig build` bare stays acceptable ONLY for ad-hoc hand experiments.
+  All 9 remaining builders (`bench/{build_bench,release_metrics,compare_langs,
+  run_bench,wasm_bench,simd/run_simd_bench}.sh`, `scripts/{perf,
+  check_vm_parity,verify_projects}.sh`) now carry `-Dwasm` + Release mode, and
+  the bench history is RE-BASELINED under the unified config (same cycle), so
+  pre-2026-06-13 bench numbers are not directly comparable (non-wasm binary).

@@ -36,7 +36,7 @@ done
 
 # Build ReleaseSafe if not already
 echo -e "${CYAN}Building ReleaseSafe...${RESET}"
-(cd "$PROJECT_ROOT" && zig build -Doptimize=ReleaseSafe 2>/dev/null)
+(cd "$PROJECT_ROOT" && zig build -Dwasm -Doptimize=ReleaseSafe 2>/dev/null)
 
 # Test program: fibonacci
 BENCH_SRC="$SCRIPT_DIR/benchmarks/01_fib_recursive/bench.clj"

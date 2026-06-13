@@ -18,7 +18,7 @@ echo "  Native + Wasm (scalar + SIMD) builds: OK"
 
 # Build ClojureWasm (ReleaseSafe)
 echo "  Building cljw (ReleaseSafe)..."
-(cd "$PROJECT_ROOT" && zig build -Doptimize=ReleaseSafe 2>/dev/null)
+(cd "$PROJECT_ROOT" && zig build -Dwasm -Doptimize=ReleaseSafe 2>/dev/null)
 echo "  cljw build: OK"
 echo ""
 

@@ -121,7 +121,7 @@ fi
 # --- Build CW if needed ---
 if ! $SKIP_BUILD; then
   echo -e "${CYAN}Building ClojureWasm (ReleaseSafe)...${RESET}"
-  (cd "$PROJECT_ROOT" && zig build -Doptimize=ReleaseSafe) || {
+  (cd "$PROJECT_ROOT" && zig build -Dwasm -Doptimize=ReleaseSafe) || {
     echo -e "${RED}Build failed${RESET}" >&2
     exit 1
   }

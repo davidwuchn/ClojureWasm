@@ -18,7 +18,7 @@ echo
 
 LAST_STRIPPED=""
 measure() { # <optimize-mode> — prints a size line, sets LAST_STRIPPED to a temp stripped binary
-  zig build -Doptimize="$1" >/dev/null
+  zig build -Dwasm -Doptimize="$1" >/dev/null
   local s sz disk
   s=$(mktemp); strip -o "$s" zig-out/bin/cljw
   sz=$(wc -c < "$s"); disk=$(wc -c < zig-out/bin/cljw)

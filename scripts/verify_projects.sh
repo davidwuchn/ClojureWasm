@@ -21,7 +21,7 @@
 set -uo pipefail
 cd "$(dirname "$0")/.."
 BIN="$PWD/zig-out/bin/cljw"
-[ -x "$BIN" ] || { echo "build cljw first: zig build" >&2; exit 1; }
+[ -x "$BIN" ] || { echo "build cljw first: zig build -Dwasm -Doptimize=ReleaseSafe" >&2; exit 1; }
 if ! command -v git >/dev/null 2>&1; then
     echo "SKIP verify_projects: git not on PATH (deps.edn :git/url needs git)"
     exit 0

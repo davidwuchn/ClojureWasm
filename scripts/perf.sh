@@ -40,7 +40,7 @@ done
 
 PREFIX="${TMPDIR:-/tmp}/cljw-perf"
 echo "[perf] building $MODE into $PREFIX (dev zig-out/bin/cljw untouched)…" >&2
-zig build -Doptimize="$MODE" -p "$PREFIX" >/dev/null
+zig build -Dwasm -Doptimize="$MODE" -p "$PREFIX" >/dev/null
 BIN="$PREFIX/bin/cljw"
 [ -x "$BIN" ] || { echo "perf.sh: build produced no $BIN" >&2; exit 1; }
 echo "[perf] $MODE binary ready; timing $N run(s):" >&2

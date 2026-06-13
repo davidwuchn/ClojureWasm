@@ -18,7 +18,7 @@
 # gate — run on-demand / at Phase boundaries per ADR-0049's per-commit-cost
 # concern, not as a per-commit gate.
 #
-# Restores the DEFAULT (vm ReleaseSafe — bare `zig build`, flip-following)
+# Restores the DEFAULT (vm ReleaseSafe wasm — the unified gate config)
 # binary on exit.
 # Usage: bash scripts/check_vm_parity.sh   # exit 0 = all green; N = N failing.
 

@@ -80,7 +80,7 @@ fi
 
 # --- Build ReleaseSafe ---
 echo -e "${CYAN}Building ClojureWasm (ReleaseSafe)...${RESET}"
-(cd "$PROJECT_ROOT" && zig build -Doptimize=ReleaseSafe "${ZIG_BUILD_FLAGS[@]}") || {
+(cd "$PROJECT_ROOT" && zig build -Dwasm -Doptimize=ReleaseSafe "${ZIG_BUILD_FLAGS[@]}") || {
   echo -e "${RED}Build failed${RESET}" >&2
   exit 1
 }
