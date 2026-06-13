@@ -97,10 +97,23 @@ fn recordFieldGet(rec: Value, k: Value) ?Value {
 /// back to the 2-arity impl when the type declared only that.
 pub fn recordGet(rt: *Runtime, env: *Env, rec: Value, k: Value, has_default: bool, default: Value, loc: SourceLocation) !Value {
     if (recordFieldGet(rec, k)) |v| return v;
+    return lookupDispatch(rt, env, rec, k, has_default, default, loc);
+}
+
+/// `(get x k [default])` via the ILookup `-lookup` slow-path, for ANY value
+/// carrying an `-lookup` extension that has no declared field layout — a reify
+/// instance (`.reified_instance`) or an extend-type'd native. Shared by
+/// `recordGet` (after its field read) and `getFn`'s catch-all arm so the
+/// 3-arity default semantic is identical everywhere: a 3-arity `(get x k d)`
+/// consults the 3-arity `-lookup` first, then falls back to the 2-arity impl
+/// applying `default` on a nil result (a 2-arity `valAt` cannot express
+/// absent-vs-present-nil). Before this was extracted, `getFn`'s catch-all arm
+/// did a 2-arity-only consult and returned the raw nil, ignoring `default`.
+pub fn lookupDispatch(rt: *Runtime, env: *Env, coll: Value, k: Value, has_default: bool, default: Value, loc: SourceLocation) !Value {
     var cs: dispatch.CallSite = .{};
     if (has_default) {
-        const slow3 = [_]Value{ rec, k, default };
-        if (dispatch.dispatchOrNull(rt, env, &cs, rec, "ILookup", "-lookup", &slow3, loc)) |maybe| {
+        const slow3 = [_]Value{ coll, k, default };
+        if (dispatch.dispatchOrNull(rt, env, &cs, coll, "ILookup", "-lookup", &slow3, loc)) |maybe| {
             if (maybe) |v| return v;
         } else |_| {
             // 3-arity call failed (the type declared only the 2-arity valAt)
@@ -108,11 +121,8 @@ pub fn recordGet(rt: *Runtime, env: *Env, rec: Value, k: Value, has_default: boo
         }
     }
     var cs2: dispatch.CallSite = .{};
-    const slow_args = [_]Value{ rec, k };
-    if (try dispatch.dispatchOrNull(rt, env, &cs2, rec, "ILookup", "-lookup", &slow_args, loc)) |v| {
-        // A 2-arity valAt cannot express "absent" vs "present-as-nil"; clj's
-        // RT.get with a default never reaches here (it requires the 3-arity),
-        // so a nil result with an explicit default yields the default.
+    const slow_args = [_]Value{ coll, k };
+    if (try dispatch.dispatchOrNull(rt, env, &cs2, coll, "ILookup", "-lookup", &slow_args, loc)) |v| {
         if (has_default and v.isNil()) return default;
         return v;
     }

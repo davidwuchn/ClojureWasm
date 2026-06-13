@@ -342,16 +342,17 @@ pub fn getFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) 
         .typed_instance => try lookup.recordGet(rt, env, coll, k, args.len == 3, default, loc),
         // TaggedLiteral is ILookup-only (`:tag`/`:form`); ADR-0075.
         .tagged_literal => tagged_literal_mod.valAt(coll, k, default),
-        else => blk: {
-            // D-089 row 8.6 cycle 2: consult ILookup -lookup before
-            // silent default fall-through. dispatchOrNull returns null
-            // when no extension exists → preserve historic `default`
-            // semantic.
-            var cs: dispatch.CallSite = .{};
-            const slow_args = [_]Value{ coll, k };
-            if (try dispatch.dispatchOrNull(rt, env, &cs, coll, ILOOKUP_FQCN, "-lookup", &slow_args, loc)) |v| break :blk v;
-            break :blk default;
-        },
+        // Any other value carrying an ILookup `-lookup` extension — a reify
+        // instance (.reified_instance) or an extend-type'd native. Route through
+        // the shared lookupDispatch so a 3-arity `(get x k default)` consults the
+        // 3-arity -lookup and applies `default` on a nil 2-arity result, exactly
+        // as the typed_instance (recordGet) path does. The prior 2-arity-only
+        // consult here returned the raw -lookup nil for an absent key, ignoring
+        // the explicit default (surfaced making reify ILookup remap-aware, D-419
+        // follow-on). lookupDispatch (NOT recordGet — these tags have no field
+        // layout to decode) returns `default` when no -lookup extension exists
+        // (D-089 row 8.6 historic semantic preserved).
+        else => try lookup.lookupDispatch(rt, env, coll, k, args.len == 3, default, loc),
     };
 }
 

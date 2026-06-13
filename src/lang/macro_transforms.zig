@@ -3280,6 +3280,15 @@ fn quoteWrap(arena: std.mem.Allocator, form: Form) !Form {
     return list(arena, items, form.location);
 }
 
+/// Build one reify method-table row `["name" proto fn]` (consumed by `__reify!`).
+fn reifyMethodRow(arena: std.mem.Allocator, name: []const u8, proto_form: Form, fn_form: Form, loc: SourceLocation) macro_dispatch.ExpandError!Form {
+    var row_items = try arena.alloc(Form, 3);
+    row_items[0] = .{ .data = .{ .string = name }, .location = loc };
+    row_items[1] = proto_form;
+    row_items[2] = fn_form;
+    return vec(arena, row_items, loc);
+}
+
 fn expandReify(
     arena: std.mem.Allocator,
     rt: *Runtime,
@@ -3309,7 +3318,8 @@ fn expandReify(
         // analyzer never Var-resolves it (Path A, the `instance?` precedent);
         // the primitive recognises the Symbol Value. A protocol name stays bare
         // (resolves to its protocol Var, the existing path).
-        const proto_form = if (host_interface.isMarker(args[i].data.symbol.name))
+        const sec_name = args[i].data.symbol.name;
+        const proto_form = if (host_interface.isMarker(sec_name))
             try quoteWrap(arena, args[i])
         else
             args[i];
@@ -3321,6 +3331,22 @@ fn expandReify(
         const impls = args[impls_start..i];
         if (impls.len == 0)
             return error_catalog.raise(.reify_section_invalid, proto_form.location, .{});
+
+        // A protocol_remap interface (clojure.lang.*) routes its clj method names
+        // to cljw (protocol, method) targets — the SAME translation deftype /
+        // extend-type get via rewriteProtocolRemap (D-280/286/417/419). reify
+        // formerly skipped this entirely: a method written under a foreign interface
+        // header (e.g. `valAt` under `Associative`, which clj allows since Associative
+        // extends ILookup) registered verbatim under (Associative, valAt) and
+        // silently never dispatched (the (ILookup, -lookup) dispatch found nothing).
+        // `null` = a plain protocol / marker section (register the method verbatim).
+        const remap_hi: ?host_interface.HostInterface = blk: {
+            if (host_interface.isProtocolRemap(sec_name)) {
+                const hi = host_interface.lookup(sec_name).?;
+                if (sectionNeedsRemap(hi, impls)) break :blk hi;
+            }
+            break :blk null;
+        };
 
         // Validate + collect distinct method names (first-seen order); one method
         // may appear at multiple arities (D-279), grouped into a multi-arity fn*.
@@ -3380,12 +3406,24 @@ fn expandReify(
                 break :blk try list(arena, fn_items, name_loc);
             };
 
-            // ["m-name" Proto fn-form]
-            var row_items = try arena.alloc(Form, 3);
-            row_items[0] = .{ .data = .{ .string = method_name }, .location = name_loc };
-            row_items[1] = proto_form;
-            row_items[2] = fn_form;
-            try method_rows.append(arena, try vec(arena, row_items, name_loc));
+            if (remap_hi) |hi| {
+                const r = hi.remapMethod(method_name) orelse {
+                    // A java.util method grouped under a clojure.lang remap section:
+                    // cljw has no java dispatch → accept-and-drop (D-372). A genuinely
+                    // unwired clojure.lang method is an explicit error, never silent.
+                    if (host_interface.isJavaUtilMethod(method_name)) continue;
+                    return error_catalog.raise(.feature_not_supported, name_loc, .{ .name = "deftype/reify clojure.lang.* method not yet wired" });
+                };
+                const proto_sym = sym(r.protocol, name_loc);
+                try method_rows.append(arena, try reifyMethodRow(arena, r.method, proto_sym, fn_form, name_loc));
+                // D-283: also register the original clj name under the same protocol
+                // so a `.cljname` dot-call on the reified instance resolves.
+                if (!std.mem.eql(u8, method_name, r.method))
+                    try method_rows.append(arena, try reifyMethodRow(arena, method_name, proto_sym, fn_form, name_loc));
+            } else {
+                // ["m-name" Proto fn-form] — verbatim (plain protocol / marker).
+                try method_rows.append(arena, try reifyMethodRow(arena, method_name, proto_form, fn_form, name_loc));
+            }
         }
     }
 
