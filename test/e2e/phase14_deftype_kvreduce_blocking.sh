@@ -108,4 +108,14 @@ EOF
 ) || true
 assert_eq 'reduce_kv_record_fallback' "$got" '{1 :a, 2 :b}'
 
-echo "OK — phase14_deftype_kvreduce_blocking (4 cases) green"
+# BARE `Counted` as a deftype supertype (data.finger-tree imports it bare):
+# cljw has no `Counted` protocol Var, so the bare spelling needs the
+# host_interface MARKERS alias; count consults the deftype's -count.
+got=$("$BIN" - <<'EOF' 2>/dev/null
+(deftype Cnt [n] Counted (count [_] n))
+(prn (count (->Cnt 5)))
+EOF
+) || true
+assert_eq 'bare_counted_supertype' "$got" '5'
+
+echo "OK — phase14_deftype_kvreduce_blocking (5 cases) green"

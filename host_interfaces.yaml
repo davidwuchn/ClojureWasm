@@ -75,6 +75,7 @@ interfaces:
     methods:
       isRealized: { status: wired, wires_to_protocol: IPending, wires_to_method: "-realized?" }
   - name: clojure.lang.Counted
+    aliases: [Counted]
     derives_from: "clojure.lang.Counted — O(1) count marker; a base interface clj's IPersistentMap/Vector extend, declarable directly as a deftype supertype (Clojure, stable)."
     tier: A
     recognised: true

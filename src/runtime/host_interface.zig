@@ -464,8 +464,13 @@ const MARKERS = std.StaticStringMap(HostInterface).initComptime(.{
     .{ "clojure.lang.Indexed", INDEXED },
     .{ "clojure.lang.IReduceInit", IREDUCEINIT },
     // D-306: collection-base interfaces declarable as DIRECT deftype supertypes
-    // (core.cache's defcache). Qualified spelling only — the bare Associative/
-    // Seqable/IPersistentCollection are cljw protocol Vars that resolve already.
+    // (core.cache's defcache). The bare Associative/Seqable/IPersistentCollection
+    // are cljw protocol Vars that resolve already, so only their qualified
+    // spelling needs a MARKERS row. `Counted` is the exception: cljw has NO
+    // `Counted` protocol Var (count routes via IPersistentCollection), so the
+    // BARE spelling must be recognised here too — data.finger-tree imports it
+    // bare (`(:import (clojure.lang Counted …))`) and names it as a supertype.
+    .{ "Counted", COUNTED },
     .{ "clojure.lang.Counted", COUNTED },
     .{ "clojure.lang.Seqable", SEQABLE },
     .{ "clojure.lang.Associative", ASSOCIATIVE },
