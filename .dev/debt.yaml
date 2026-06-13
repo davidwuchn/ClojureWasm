@@ -9,6 +9,20 @@
 # md-table-align no longer pads it to ~800 KB of whitespace.
 
 active:
+  - id: "D-413"
+    status: "open (2026-06-13, surfaced by a since-rewritten diff case) — in the minimal diff_test Fixture (primitive.registerAll only, no core.clj), analyzing an UNRESOLVED symbol that falls through to the host-class lookup (analyzer.zig analyzeSymbol → env.rt.types.get) panics with 'integer overflow' at std hash_map getIndex `capacity() - 1` instead of raising symbol_unresolved. stdlib has a size==0 guard, so the mechanism is NOT a plain empty-map get — needs a minimal repro to classify (corrupt map state vs fixture lifetime vs stdlib edge). Production unaffected (installAll always populates rt.types and the host-class path is exercised constantly). Repro recipe: add `try f.check(\"(re-matcher 1)\", 0);` (any unresolved symbol) to src/lang/diff_test.zig and run zig build test."
+    category: "robustness"
+    barrier: "none — reproduce, then either fix the map-state bug or make the class-lookup fall through cleanly to symbol_unresolved on a types miss."
+    last_reviewed: "2026-06-13"
+  - id: "D-412"
+    status: "open (2026-06-13, ADR-0035 D9 third amendment DA finding) — structural successor to the refer-precedence revision: make clojure.core the SOLE auto-refer source. Boot-intern public rt vars into clojure.core's mappings before core.clj loads (core.clj defs overwrite in-place), demote rt to qualified-only internal access, collapse the 4 auto-refer pair sites + the boot fan-out to one referAll(clojure.core). Kills the rt-vs-core collision class that referAllOverriding currently handles, and gives :refer-clojure :exclude a single source. Entry work: per-rt-var public-vs-internal curation (re-find-from etc. stay internal), the resolveQualified ^:private question, boot-order restructure. Behaviour-identical to today's override rule, so no urgency — this is the finished form of the same semantics."
+    category: "namespace"
+    barrier: |-
+      **Phase 10-11 entry (the rt-elimination reservation owner)** — ADR-0035
+      D9 second amendment already defers full rt elimination (option A) there;
+      this row is its refer-mechanism half. Re-read ADR-0035 D9 third
+      amendment's DA Alt 2 for the worked shape.
+    last_reviewed: "2026-06-13"
   - id: "D-362"
     status: "DONE (2026-06-10) — Conj CFP demo runway COMPLETE. Both demos LIVE + verified on fly: cw-playground (https://cw-playground.fly.dev — eval / numeric tower / wasm-FFI nth_prime=541 / per-eval budget) and cw-serverless-demo (https://cw-serverless-demo.fly.dev — /api/books serves seeded SQLite-via-wasm data; cover via Rust wasm; Google OAuth, origin user-added). Fresh self-contained repos pushed to clojurewasm org; old edge-demo+playground deleted (user). zwasm v2.0.0-alpha.2 tag + build.zig.zon pin + README (D-367, URLs) done. TWO FLY GOTCHAS fixed in both Dockerfiles (see memory fly_deploy_zig_binary_gotchas): (a) Zig tarball URL zig-<arch>-linux-<ver> (arch first since 0.14; old order 404s); (b) cljw MUST build -Dcpu=baseline — `zig build` native-CPU default SIGILLs (exit 132) on shared-cpu run machines; baseline is portable + propagates to zwasm. (Earlier apps-create 500s were a fly Petsem control-plane outage, NOT a name clash — distinguish via an obviously-unique name.) RESIDUAL: none required; optional follow-ups = pin a cljw tag for the demo Dockerfile CLJW_REF (currently cw-from-scratch HEAD), GitHub-Actions auto-deploy. Surfaced 2026-06-09; completed 2026-06-10."
     category: "project-flow"

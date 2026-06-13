@@ -738,3 +738,75 @@ violates-F-NNN finding: なし。
   (re-frame `runtime/eval/in_ns_auto_refer` notes; extend
   `special_form/ns_macro` notes; discharge `runtime/vm/ns_filter`
   status flip); `.dev/debt.md` (D-073 (e) discharge note).
+
+- 2026-06-13 D9 third amendment — **clojure.core overrides rt on the
+  auto-refer collision** (the refer-precedence revision).
+
+  **Trigger**: core.clj's first redefinition of an rt-interned name —
+  `re-find` gained the matcher 1-arity wrapper (`([m] (when (.find m)
+  (re-groups m)))`, the java.util.regex.Matcher landing) — exposed a
+  latent structural bug: `referAll*` skips already-referred names
+  (first-wins) and every site refers `rt` BEFORE `clojure.core`, so the
+  public redefinition was unreachable unqualified in EVERY ns (user via
+  the boot fan-out, every library ns via `(ns … (:refer-clojure))`).
+  JVM semantics: clojure.core's def is what user code sees.
+
+  **Decision**: add `Env.referAllOverriding` (same filter logic as
+  `referAllWithFilter`, but an existing refer of the same name is
+  REPLACED) and use it for the **clojure.core half only** of the
+  auto-refer pair at all 4 sites: `tree_walk.zig` evalNs,
+  `vm.zig` op_ns_with_refer_clojure + op_ns_with_filter,
+  `bootstrap.zig` finalizeUserNs. rt still refers first and fills
+  rt-only names; clojure.core overrides collisions. Explicit
+  `(refer …)` / `(require :refer …)` sites keep first-wins (JVM's
+  `Namespace.reference` replaces only core-originated mappings and
+  throws on other conflicts — uniform last-wins would mask genuine
+  user conflicts, an F-011 regression).
+
+  **Discovery sweep** (framework_completion): `rg 'referAllWithFilter|
+  referAll\(' src/` enumerated every call site; the 4 clojure.core-half
+  sites flipped to overriding; the rt halves + explicit-refer sites
+  (primitive/namespace.zig ×4, tree_walk :require/:refer, vm :require/
+  :refer, env.zig helpers) deliberately keep skip semantics.
+
+  **Devil's-advocate fork** (fresh context, embedded per protocol):
+
+  - **Alt 1 — order-swap (smallest-diff)**: refer clojure.core first,
+    rt second, keep skip-only. Better: no second refer mode. Breaks:
+    cannot cover the boot fan-out — `primitive.zig:152` +
+    `macro_transforms.zig:62` refer rt→user BEFORE clojure.core exists
+    (core.clj needs a working user ns to load), so finalizeUserNs still
+    skip-loses; the "smallest diff" grows into boot-order surgery or a
+    mixed-convention codebase.
+  - **Alt 2 — clojure.core as the SOLE auto-refer source
+    (finished-form-clean)**: boot-intern public rt vars into
+    clojure.core's mappings before core.clj loads (defs overwrite
+    in-place); rt demoted to qualified-only internal access; all sites
+    shrink to one `referAll(clojure.core)`. The collision class
+    vanishes; `:exclude` finally has a single source. This realises the
+    rt-elimination reservation this ADR already carries (deferred to
+    Phase 10-11 per the D9-second-amendment DA). Breaks: boot
+    restructure + per-var public-vs-internal curation + the
+    qualified-private question. **Recorded as the structural successor
+    → debt D-412** (anchored at the Phase 10-11 rt-elimination owner).
+  - **Alt 3 — merged "effective core" view (wildcard)**: one frozen
+    rt⊕core overlay map all auto-refer sites read. Breaks: a third
+    namespace-like entity; post-boot defs into clojure.core go stale —
+    a new bug class. Rejected.
+  - (b) de-interning colliding names from rt = a hand-maintained
+    collision list, a drift machine — rejected. (d) last-wins
+    everywhere = F-011 regression at explicit-refer sites — rejected.
+
+  **DA verdict**: the chosen revision is sound — it encodes the
+  JVM-visible rule (public layer wins over internal) at all 4 sites
+  including the boot fan-out that defeats Alt 1, and is
+  behaviour-identical to what Alt 2 would produce, so it is a genuine
+  stepping stone, not smallest-diff bias. Alt 2 is the finished form;
+  it rides D-412 at the Phase 10-11 rt-elimination entry.
+
+  **Affected files**: src/runtime/env.zig (referAllImpl + the
+  overriding variant), src/eval/backend/tree_walk.zig (evalNs cc
+  branch), src/eval/backend/vm.zig (both ns ops' cc branches),
+  src/lang/bootstrap.zig (finalizeUserNs), src/lang/diff_test.zig
+  (ns-override diff case locking both backends), .dev/debt.yaml
+  (D-412 structural successor row).
