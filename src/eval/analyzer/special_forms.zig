@@ -32,6 +32,7 @@ const analyzer_mod = @import("analyzer.zig");
 const bindings = @import("bindings.zig");
 const map_collection = @import("../../runtime/collection/map.zig");
 const keyword_mod = @import("../../runtime/keyword.zig");
+const host_instance = @import("../../runtime/host_instance.zig");
 
 /// True when `meta` (a Clojure map Value, or null) maps `key` to a truthy value
 /// — used to read `^:dynamic` / `^:private` off a `def` target's metadata.
@@ -138,6 +139,18 @@ pub fn constructInstance(
         if (args.len != 2)
             return error_catalog.raise(.arity_not_expected, loc, .{ .got = args.len, .fn_name = "MapEntry.", .expected = 2 });
         return vector_mod.fromSlice(rt, args);
+    }
+    // D-416: `(Object.)` mints a fresh identity-unique value — the Clojure
+    // unique-sentinel idiom (`(def notfound (Object.))`, data.finger-tree). No
+    // dedicated surface: it reuses the cached `classDescriptor("Object")` (the
+    // SAME descriptor bare `Object` resolves to as a class value, ADR-0128), so
+    // `(class (Object.))` == `Object`. A fresh host_instance pointer gives the
+    // identity distinctness `identical?`/`=` need (host_instance has no `=` arm).
+    if (std.mem.eql(u8, type_name, "Object") or std.mem.eql(u8, type_name, "java.lang.Object")) {
+        if (args.len != 0)
+            return error_catalog.raise(.arity_not_expected, loc, .{ .got = args.len, .fn_name = "Object.", .expected = 0 });
+        const obj_td = try rt.classDescriptor("Object");
+        return host_instance.alloc(rt, obj_td, .{ 0, 0, 0, 0 });
     }
     const td = resolveJavaSurface(rt, env, type_name) orelse
         return error_catalog.raise(.symbol_unresolved, loc, .{ .sym = type_name });

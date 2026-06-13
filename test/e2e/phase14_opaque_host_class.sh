@@ -49,6 +49,17 @@ assert_eq 'inst_object_nonnil' "$(last_line "$("$BIN" -e '(instance? Object 5)' 
 assert_eq 'inst_object_nil'    "$(last_line "$("$BIN" -e '(instance? Object nil)' 2>&1)")" 'false'
 assert_eq 'derive_object'      "$(last_line "$("$BIN" -e '(do (derive (quote ::x) Object) (isa? (quote ::x) Object))' 2>&1)")" 'true'
 
+# D-416: (Object.) constructs a fresh identity-unique value — the Clojure
+# unique-sentinel idiom `(def notfound (Object.))` (data.finger-tree:556). The
+# minted value reuses the SAME cached classDescriptor("Object") as the universal
+# class value, so `(class (Object.))` == `Object` (JVM-faithful, no divergence).
+assert_eq 'obj_ctor_identical_self'  "$(last_line "$("$BIN" -e '(let [o (Object.)] (identical? o o))' 2>&1)")" 'true'
+assert_eq 'obj_ctor_distinct'        "$(last_line "$("$BIN" -e '(identical? (Object.) (Object.))' 2>&1)")" 'false'
+assert_eq 'obj_ctor_not_equal'       "$(last_line "$("$BIN" -e '(= (Object.) (Object.))' 2>&1)")" 'false'
+assert_eq 'obj_ctor_instance'        "$(last_line "$("$BIN" -e '(instance? Object (Object.))' 2>&1)")" 'true'
+assert_eq 'obj_ctor_class_is_object' "$(last_line "$("$BIN" -e '(= (class (Object.)) Object)' 2>&1)")" 'true'
+assert_eq 'obj_ctor_sentinel'        "$(last_line "$("$BIN" -e '(let [nf (Object.)] [(identical? nf nf) (identical? nf (Object.)) (identical? nf 5)])' 2>&1)")" '[true false false]'
+
 # ADR-0109: java.lang.Number — numeric-tower supertype marker (narrow membership).
 # Unblocks algo.generic.arithmetic's `(defmethod + [Number Number] …)`.
 assert_eq 'isa_long_number'   "$(last_line "$("$BIN" -e '(isa? Long Number)' 2>&1)")" 'true'
