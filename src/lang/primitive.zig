@@ -135,6 +135,9 @@ pub fn registerAll(env: *Env) !void {
     // .isInstance) on the `.type_descriptor` native descriptor — the value
     // `(class x)` returns. Surfaced by clojure.core.unify's `composite?`.
     try @import("../runtime/java/lang/Class.zig").installNativeMethods(env.rt);
+    // D-097 / D-420: java.math.BigDecimal `.setScale` on the `.big_decimal`
+    // native descriptor — the math.numeric-tower floor/ceil rounding path.
+    try @import("../runtime/java/math/BigDecimal.zig").installNativeMethods(env.rt);
     // D-232: `.name`/`.getName`/`.toString` interop on the Namespace `.ns` value.
     try @import("../runtime/namespace_methods.zig").installNativeMethods(env.rt);
     // `.sym` interop on the `.keyword` value (clojure.lang.Keyword) — honeysql's

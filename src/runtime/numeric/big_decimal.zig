@@ -359,6 +359,82 @@ pub fn allocMul(rt: *Runtime, a: Value, b: Value) !Value {
     return try allocFromManagedScale(rt, &u, ad.scale + bd.scale);
 }
 
+/// `(.setScale bd newScale roundingMode)` — return a BigDecimal of the given
+/// scale, rounding per the JVM `ROUND_*` int constant (UP=0 DOWN=1 CEILING=2
+/// FLOOR=3 HALF_UP=4 HALF_DOWN=5 HALF_EVEN=6 UNNECESSARY=7). `newScale >= scale`
+/// pads exactly (unscaled·10^Δ, no rounding); a smaller scale divides the
+/// unscaled by 10^Δ and the dropped remainder drives the mode. `v` MUST be a
+/// `.big_decimal`. `error.RoundingNecessary` when mode is UNNECESSARY but the
+/// drop is non-zero; `error.InvalidRoundingMode` for an out-of-range mode.
+pub fn setScale(rt: *Runtime, v: Value, new_scale: i32, mode: i64) !Value {
+    std.debug.assert(v.tag() == .big_decimal);
+    const Managed = std.math.big.int.Managed;
+    const bd = v.decodePtr(*const BigDecimal);
+    const infra = rt.gc.infra;
+
+    var unscaled = try bd.unscaled.m.clone();
+    defer unscaled.deinit();
+
+    if (new_scale >= bd.scale) {
+        const diff: u32 = @intCast(new_scale - bd.scale);
+        if (diff != 0) {
+            var ten = try Managed.initSet(infra, 10);
+            defer ten.deinit();
+            var factor = try Managed.init(infra);
+            defer factor.deinit();
+            try factor.pow(&ten, diff);
+            var prod = try Managed.init(infra);
+            defer prod.deinit();
+            try prod.mul(&unscaled, &factor);
+            unscaled.swap(&prod);
+        }
+        return allocFromManagedScale(rt, &unscaled, new_scale);
+    }
+
+    const drop: u32 = @intCast(bd.scale - new_scale);
+    var ten = try Managed.initSet(infra, 10);
+    defer ten.deinit();
+    var divisor = try Managed.init(infra);
+    defer divisor.deinit();
+    try divisor.pow(&ten, drop);
+
+    var q = try Managed.init(infra);
+    defer q.deinit();
+    var r = try Managed.init(infra);
+    defer r.deinit();
+    try q.divTrunc(&r, &unscaled, &divisor); // q toward zero; sign(r) = sign(unscaled)
+
+    if (r.toConst().orderAgainstScalar(0) != .eq) {
+        const r_neg = r.toConst().orderAgainstScalar(0) == .lt;
+        // 2·|r| vs |divisor| decides the HALF_* tie; divisor is always positive.
+        var abs_r = try r.clone();
+        defer abs_r.deinit();
+        abs_r.abs();
+        var two_abs = try Managed.init(infra);
+        defer two_abs.deinit();
+        try two_abs.add(&abs_r, &abs_r);
+        const half = two_abs.order(divisor); // .lt below half / .eq exactly half / .gt above
+
+        const round_away = switch (mode) {
+            0 => true, // UP — always away from zero
+            1 => false, // DOWN — always toward zero (truncate)
+            2 => !r_neg, // CEILING — toward +inf
+            3 => r_neg, // FLOOR — toward -inf
+            4 => half != .lt, // HALF_UP — tie rounds away
+            5 => half == .gt, // HALF_DOWN — tie rounds toward zero
+            6 => half == .gt or (half == .eq and (q.toConst().limbs[0] & 1) == 1), // HALF_EVEN
+            7 => return error.RoundingNecessary, // UNNECESSARY with a remainder
+            else => return error.InvalidRoundingMode,
+        };
+        if (round_away) {
+            var one = try Managed.initSet(infra, 1);
+            defer one.deinit();
+            if (r_neg) try q.sub(&q, &one) else try q.add(&q, &one);
+        }
+    }
+    return allocFromManagedScale(rt, &q, new_scale);
+}
+
 const AddOrSub = enum { add, sub };
 
 fn alignedCombine(rt: *Runtime, a: Value, b: Value, op: AddOrSub) !Value {

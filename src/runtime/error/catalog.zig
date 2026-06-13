@@ -270,6 +270,7 @@ pub const Code = enum {
     divide_by_zero,
     integer_overflow,
     non_terminating_decimal,
+    rounding_necessary,
 
     // --- Metadata (with-meta) ---
     /// `with-meta`'s metadata arg was not a map or nil. args: `.{ .actual = "..." }`.
@@ -1340,6 +1341,11 @@ pub fn entry(comptime code: Code) Entry {
             .kind = .arithmetic_error,
             .phase = .eval,
             .template = "Non-terminating decimal expansion; no exact representable decimal result.",
+        },
+        .rounding_necessary => .{
+            .kind = .arithmetic_error,
+            .phase = .eval,
+            .template = "Rounding necessary",
         },
 
         // --- Eval (arity) ---

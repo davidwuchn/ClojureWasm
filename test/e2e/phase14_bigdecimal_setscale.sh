@@ -1,0 +1,46 @@
+#!/usr/bin/env bash
+# test/e2e/phase14_bigdecimal_setscale.sh — D-097 / D-420.
+# BigDecimal instance-method surface: `(.setScale bd newScale roundingMode)`
+# with the JVM `ROUND_*` int constants. cljw's BigDecimal was a method-less
+# TypeDescriptor reservation (D-097); this wires setScale + the rounding modes
+# (the math.numeric-tower floor/ceil path, D-420). Expected values are the
+# `clj` oracle (java.math.BigDecimal.setScale) ground truth.
+set -euo pipefail
+cd "$(dirname "$0")/../.."
+BIN="zig-out/bin/cljw"
+[ -n "${CLJW_SKIP_BUILD:-}" ] || zig build -Dwasm -Doptimize="${CLJW_OPT:-ReleaseSafe}" >/dev/null
+fail() { echo "FAIL $1" >&2; exit 1; }
+assert_eq() { local n="$1" g="$2" w="$3"; [[ "$g" == "$w" ]] || fail "$n: got '$g' want '$w'"; echo "PASS $n -> $w"; }
+sc() { "$BIN" -e "(str (.setScale (bigdec \"$1\") $2 BigDecimal/ROUND_$3))" 2>&1 | awk 'END{print}'; }
+
+# ROUND constants resolve as static fields (BigDecimal/ROUND_HALF_UP == 4).
+assert_eq 'round_const' "$("$BIN" -e '[BigDecimal/ROUND_UP BigDecimal/ROUND_DOWN BigDecimal/ROUND_CEILING BigDecimal/ROUND_FLOOR BigDecimal/ROUND_HALF_UP BigDecimal/ROUND_HALF_DOWN BigDecimal/ROUND_HALF_EVEN BigDecimal/ROUND_UNNECESSARY]' 2>&1 | awk 'END{print}')" '[0 1 2 3 4 5 6 7]'
+
+# setScale to 0 — rounding-mode matrix (clj oracle). `sc` wraps in `(str …)`
+# (drops the `M` suffix), which `cljw -e` echoes pr-quoted, so the want is "N".
+assert_eq 'half_up_2.5'    "$(sc 2.5  0 HALF_UP)"    '"3"'
+assert_eq 'half_down_2.5'  "$(sc 2.5  0 HALF_DOWN)"  '"2"'
+assert_eq 'half_even_2.5'  "$(sc 2.5  0 HALF_EVEN)"  '"2"'
+assert_eq 'half_even_3.5'  "$(sc 3.5  0 HALF_EVEN)"  '"4"'
+assert_eq 'floor_2.5'      "$(sc 2.5  0 FLOOR)"      '"2"'
+assert_eq 'ceiling_2.5'    "$(sc 2.5  0 CEILING)"    '"3"'
+assert_eq 'down_2.5'       "$(sc 2.5  0 DOWN)"       '"2"'
+assert_eq 'up_2.5'         "$(sc 2.5  0 UP)"         '"3"'
+assert_eq 'half_up_2.4'    "$(sc 2.4  0 HALF_UP)"    '"2"'
+# negative values: FLOOR toward -inf, CEILING toward +inf, UP away from zero.
+assert_eq 'floor_neg2.5'   "$(sc -2.5 0 FLOOR)"      '"-3"'
+assert_eq 'ceiling_neg2.5' "$(sc -2.5 0 CEILING)"    '"-2"'
+assert_eq 'up_neg2.5'      "$(sc -2.5 0 UP)"         '"-3"'
+assert_eq 'down_neg2.5'    "$(sc -2.5 0 DOWN)"       '"-2"'
+assert_eq 'half_up_neg2.5' "$(sc -2.5 0 HALF_UP)"    '"-3"'
+# newScale >= scale: exact pad (no rounding), trailing zeros kept.
+assert_eq 'pad_1.5_to_3'   "$(sc 1.5  3 FLOOR)"      '"1.500"'
+assert_eq 'exact_2.50_to_0' "$(sc 2.00 0 UNNECESSARY)" '"2"'
+
+# UNNECESSARY with a non-zero dropped remainder throws (no silent rounding).
+if "$BIN" -e '(.setScale (bigdec "2.5") 0 BigDecimal/ROUND_UNNECESSARY)' >/dev/null 2>&1; then
+    fail "unnecessary_throws: expected an error for a rounding-needed UNNECESSARY"
+fi
+echo "PASS unnecessary_throws"
+
+echo "OK — phase14_bigdecimal_setscale (19 cases) green"
