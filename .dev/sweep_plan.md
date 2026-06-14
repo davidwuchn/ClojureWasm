@@ -66,11 +66,69 @@ The user chose recommended **Option C** (see handover § *out*/*in* design + D-4
 - **W0 — instance-caching re-land: DONE 2026-06-14** (un-stashed; relative zon;
   `(wasm/load-component p)` + `(wasm/component-call h …)`; greet roundtrip +
   resource chain validated). Local commit only.
-- **W1 — enrich:** `require`-as-namespace (one callable Var per component export —
-  needs a closure/Var-interning design) + `dropResource` GC-finaliser (D-325, also
-  fixed zwasm 65a760e2) + grow the component surface. [D-404 / ADR-0135]
+- **W1 — require-a-component (export = a Clojure Var). FULL DESIGN below.**
 - **W2+:** the Phase 15-20 Wasm/edge surface (components as the deploy unit, edge
-  runtime). The reason cljw exists over the JVM.
+  runtime). The reason cljw exists over the JVM. North star = **deps.edn
+  `{:wasm/component …}` coords** so `(:require [acme.greeter])` resolves + loads a
+  component, making components distributable/versioned units.
+
+#### W1 design — require-a-component (user-confirmed 2026-06-14)
+
+**Vision (the 書き味 target):** a component's exports become callable Vars in a
+namespace, indistinguishable from normal Clojure fns, with `doc`/`arglists` from
+the WIT. The user proposed this long ago; this is its concretisation.
+
+**Usage vibe (target surface):**
+```clojure
+(require '[cljw.wasm :as w])
+(w/require-component "greet.wasm" :as greeter)   ; explicit form (honest, no magic)
+(greeter/greet "world")            ; => "Hello, world!"  — just a fn
+(doc greeter/greet)                ; greet([name :string]) -> :string  (from WIT)
+(w/require-component "greet.wasm" :refer [greet]) (greet "world")  ; refer form
+;; resource (stateful) — ctor reads as factory, method as handle-fn:
+(w/require-component "counter.wasm" :as ctr)
+(with-open [c (ctr/counter 5)] (ctr/increment c) (ctr/get c))     ; => 6
+;; ultimate (needs W2 deps.edn): (ns my.app (:require [acme.greeter :as g]))
+```
+
+**WIT ↔ EDN marshalling (the core; pin as a table + corpus):**
+record↔map(kw keys) · variant↔`[:tag payload]` (no-payload → bare kw) · enum↔kw ·
+option↔nilable · result↔value on ok / `ex-info` throw on err (opt `:result :tagged`
+→ `[:ok v]`/`[:err e]`) · list↔vector · tuple↔vector · flags↔`#{kw}`. string/
+ints/floats/bool/char already marshal (component-invoke today). The existing
+`component-exports` already returns `{:name :params :result}` maps — params/result
+are WIT type STRINGS (`"string"`, `"u32"`, `"own<21>"`); the marshaller maps those.
+
+**Name cleanup (require layer's #1 job):** strip the raw WIT export name to a clean
+Clojure symbol: `pkg:iface/…#[constructor]counter` → `counter`;
+`…#[method]counter.get` → `get`; `…#[method]counter.increment` → `increment`; a
+plain `greet` stays `greet`. (Collision policy: if two ifaces export the same short
+name, fall back to `iface/name` or require `:as`.)
+
+**Resources:** an opaque handle Value (the `own<N>` from a ctor) + `Closeable`
+(`with-open` → `dropResource`, D-325) + GC-finaliser drop. Methods take the handle
+as first arg → `(ctr/increment c)`. Do NOT fake immutability — cljw 流儀 = "thread
+a Closeable handle through" (honest about WIT's stateful resource model).
+
+**Vars:** one builtin-fn Var per export, interned into a synthetic ns (`:as`) or
+the current ns (`:refer`), closing over the cached `Opened` handle (from
+`load-component`). Each Var carries `:arglists` (from params) + `:doc`/`:wit/sig`
+(from the WIT signature) → `(doc …)` shows the signature = the "reads at a glance"
+payoff.
+
+**Implementation order:** (a) name cleanup + the WIT↔EDN marshalling table (+ a
+class_corpus-style golden corpus of round-trips) → (b) `require-component`/
+`import-component` that interns one Var per export closing over the handle, with
+WIT metadata → (c) resources: handle value + Closeable + GC-drop (D-325) → (d) W2
+deps.edn `{:wasm/component …}` coord resolution.
+
+**Step-0 investigation targets (start here):** how zwasm surfaces WIT param/result
+types via `resolveFuncSig`/`WitType` (read `component.zig` invokeOnOpened + the
+zwasm CM-API); the existing `marshal.zig` (what value mapping already exists); how
+cljw interns a synthetic ns + Vars at runtime (env.intern + a namespace value);
+closure-over-handle for a builtin-fn Var; the result→throw-vs-tagged decision (DA);
+the deps.edn component-coord shape (cf. the existing `:git/url` resolver, D-274).
+ADR this (W1 is load-bearing surface design; DA fork). [D-404 / ADR-0135]
 
 ### 4. Ongoing — D-436 大整理 (finished-form deviation epic)
 Drain candidates as Track C/S touch them: D-435 (diff-oracle full-runtime gap —
