@@ -48,6 +48,15 @@ pub const MAX_LOCALS = tree_walk.MAX_LOCALS;
 pub fn runEnvelope(rt: *Runtime, env: *Env, arena: std.mem.Allocator, payload: []const u8) !void {
     var it = try serialize.EnvelopeIterator.init(payload);
     var locals: [MAX_LOCALS]Value = [_]Value{.nil_val} ** MAX_LOCALS;
+    // ADR-0129 / Track D D1: arm the ambient eval Env for the envelope run — this
+    // is a second top-level-form driver alongside evalForm, so an AOT (`cljw
+    // build`) top-level seq-keyed map literal (e.g. `{(map inc xs) :a}`) must hash
+    // its key by content too. Without this the key hashes by identity at run and
+    // silently misses (the worst F-011 failure class). treeWalkCall re-arms per
+    // nested call; both restore.
+    const saved_consult_env = dispatch.current_env;
+    dispatch.current_env = env;
+    defer dispatch.current_env = saved_consult_env;
     while (try it.next()) |chunk_bytes| {
         var chunk = try serialize.deserializeChunk(arena, rt, env, chunk_bytes);
         _ = try vm.eval(rt, env, &locals, &chunk);

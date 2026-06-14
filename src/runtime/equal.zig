@@ -274,6 +274,46 @@ fn realizeSequentialInstance(rt: *Runtime, env: *Env, start: Value) anyerror!Val
     return result;
 }
 
+/// Realize a (possibly lazy / range / chunked / cons-over-lazy) NATIVE sequential
+/// to a fully-realized `.list` so the rt-free `seqHash`/`seqKeyEq` give it the
+/// content hash/eq of its `=`-equal vector/list (D-432/D-408 key path). Walks the
+/// shared seq protocol (`lazy_seq.seq`/`first`/`rest` — handles lazy_seq / range /
+/// chunked_cons / list, forcing thunks), GC-rooting the accumulator + cursor (a
+/// forced thunk mints fresh values not reachable from the original key). Requires
+/// `rt`/`env` (the thunk + range-chunk dispatch need them). NOT for vector / queue
+/// (those already content-walk rt-free) or Sequential instances (use
+/// `realizeSequentialInstance`). Mirrors realizeSequentialInstance's tail loop.
+fn realizeSeqToList(rt: *Runtime, env: *Env, start: Value) anyerror!Value {
+    var items: std.ArrayList(Value) = .empty;
+    defer items.deinit(rt.gpa);
+    var cur = start;
+    var cur_root: [1]Value = .{cur};
+    var cur_sp: u16 = 1;
+    var gc_frame: root_set.EvalFrame = .{ .stack = &cur_root, .sp = &cur_sp, .locals = items.items, .parent = root_set.eval_frame_head };
+    root_set.eval_frame_head = &gc_frame;
+    defer root_set.eval_frame_head = gc_frame.parent;
+    while (true) {
+        cur_root[0] = cur;
+        gc_frame.locals = items.items;
+        const s = try lazy_seq.seq(rt, env, cur);
+        if (s.isNil()) break;
+        cur_root[0] = s;
+        gc_frame.locals = items.items;
+        const f = try lazy_seq.first(rt, env, s);
+        try items.append(rt.gpa, f);
+        cur_root[0] = s;
+        gc_frame.locals = items.items;
+        cur = try lazy_seq.rest(rt, env, s);
+    }
+    var result: Value = .nil_val;
+    var i: usize = items.items.len;
+    while (i > 0) {
+        i -= 1;
+        result = try list.consHeap(rt, items.items[i], result);
+    }
+    return result;
+}
+
 inline fn isInstanceTag(v: Value) bool {
     const t = v.tag();
     return t == .typed_instance or t == .reified_instance;
@@ -651,7 +691,10 @@ const SeqKeyCursor = struct {
 /// `hash.hashOrdered` formula inlined over a `SeqKeyCursor` so vectors and
 /// lists with equal elements produce one hash; recurses through
 /// `valueHash` so nested collections hash by content too.
-fn seqHash(v: Value) u32 {
+/// `seqHash` core that returns null on an unrealizable (lazy) tail instead of
+/// the identity fallback — so the rt-aware key path can detect a cons-over-lazy
+/// `.list` and realize it (D-408) rather than silently identity-hashing.
+fn seqHashChecked(v: Value) ?u32 {
     var h: u32 = 1;
     var n: u32 = 0;
     var c = SeqKeyCursor.init(v);
@@ -659,27 +702,41 @@ fn seqHash(v: Value) u32 {
         h = h *% 31 +% valueHash(e);
         n += 1;
     }
-    // An unrealizable (lazy) tail means the walked prefix is not the whole
-    // key — identity hash, consistent with seqKeyEq's identity fallback.
-    if (c.truncated) return hash.hashLong(@bitCast(@intFromEnum(v)));
+    if (c.truncated) return null;
     return hash.mixCollHash(h, n);
+}
+
+fn seqHash(v: Value) u32 {
+    // An unrealizable (lazy) tail means the walked prefix is not the whole
+    // key — identity hash, consistent with seqKeyEq's identity fallback. The
+    // rt-aware key path (hashDispatch) realizes such a key first so this
+    // fallback is unreachable during evaluation (D-432/D-408).
+    return seqHashChecked(v) orelse hash.hashLong(@bitCast(@intFromEnum(v)));
 }
 
 /// Element-wise equality of two sequential keys (vector / list, any
 /// cross-pairing), rt-free over `SeqKeyCursor`. Partner of `seqHash`.
-fn seqKeyEq(a: Value, b: Value) bool {
+/// `seqKeyEq` core returning null when either side hits an unrealizable lazy
+/// tail — lets the rt-aware key path (eqConsult) realize both operands and retry
+/// rather than falling to identity (D-432/D-408).
+fn seqKeyEqChecked(a: Value, b: Value) ?bool {
     var ca = SeqKeyCursor.init(a);
     var cb = SeqKeyCursor.init(b);
     while (true) {
         const ea = ca.next();
         const eb = cb.next();
-        // Either side hitting an unrealizable lazy tail ⇒ the prefix compare
-        // is inconclusive — fall back to identity (the lazy-key residual).
-        if (ca.truncated or cb.truncated) return @intFromEnum(a) == @intFromEnum(b);
+        if (ca.truncated or cb.truncated) return null;
         if (ea == null and eb == null) return true;
         if (ea == null or eb == null) return false;
         if (!keyEqValue(ea.?, eb.?)) return false;
     }
+}
+
+fn seqKeyEq(a: Value, b: Value) bool {
+    // An unrealizable lazy tail ⇒ the prefix compare is inconclusive — fall back
+    // to identity (the lazy-key residual). The rt-aware key path realizes both
+    // operands first so this fallback is unreachable during evaluation.
+    return seqKeyEqChecked(a, b) orelse (@intFromEnum(a) == @intFromEnum(b));
 }
 
 /// `(= a b)` semantics. See module docstring + ADR-0052.
@@ -771,47 +828,121 @@ fn instanceEquiv(rt: *Runtime, env: *Env, x: Value, other: Value) anyerror!?bool
 /// share this so a deftype key and `(hash deftype)` agree (F-011). clj's
 /// `hasheq` is a 32-bit int, so the dispatched value is truncated to i32.
 pub fn hashDispatch(rt: *Runtime, env: *Env, v: Value) ClojureWasmError!u32 {
-    const t = v.tag();
-    if (t == .typed_instance or t == .reified_instance) {
-        const is_record = t == .typed_instance and
-            v.decodePtr(*const td_mod.TypedInstance).descriptor.kind == .defrecord;
-        if (!is_record) {
-            var cs: dispatch_mod.CallSite = .{};
-            // dispatchOrNull is typed `anyerror` (the vt.callFn fn-pointer), but
-            // the runtime only raises ClojureWasmError variants — narrow at this
-            // single boundary with @errorCast so map.assoc/get keep their error
-            // set (no caller-wide ripple). Safe-checked in safe build modes.
-            if (dispatch_mod.dispatchOrNull(rt, env, &cs, v, "Object", "hasheq", &.{v}, .{ .line = 0, .column = 0 }) catch |e| return @errorCast(e)) |h|
-                return @bitCast(@as(i32, @truncate(h.asInteger())));
-            if (dispatch_mod.dispatchOrNull(rt, env, &cs, v, "Object", "hashCode", &.{v}, .{ .line = 0, .column = 0 }) catch |e| return @errorCast(e)) |h|
-                return @bitCast(@as(i32, @truncate(h.asInteger())));
+    switch (v.tag()) {
+        // A lazy / range / chunked seq hashes by its realized element content —
+        // realize then `seqHash` so `(hash (map inc [0 1 2]))` == `(hash [1 2 3])`
+        // and a lazy key buckets with its `=`-equal vector/list (D-432). clj
+        // realizes a LazySeq to hash it (`LazySeq.hashCode` calls `seq()`).
+        .lazy_seq, .range, .chunked_cons => {
+            const realized = realizeSeqToList(rt, env, v) catch |e| return @errorCast(e);
+            return seqHash(realized);
+        },
+        // A cons over a lazy tail (syntax-quote) hashes rt-free until the lazy
+        // tail truncates the walk; realize + content-hash only then (D-408) so a
+        // fully-realized list keeps the fast path.
+        .list => return seqHashChecked(v) orelse blk: {
+            const realized = realizeSeqToList(rt, env, v) catch |e| return @errorCast(e);
+            break :blk seqHash(realized);
+        },
+        .typed_instance, .reified_instance => {
+            // A Sequential deftype/reify (D-427) hashes element-wise like its
+            // `=`-equal list (its `=` is element-wise too, ignoring a custom
+            // equiv) — realize then `seqHash`. A non-record non-Sequential
+            // deftype hashes via its custom hasheq/hashCode (ADR-0129).
+            if (isSequential(v)) {
+                const realized = realizeSequentialInstance(rt, env, v) catch |e| return @errorCast(e);
+                return seqHash(realized);
+            }
+            const is_record = v.tag() == .typed_instance and
+                v.decodePtr(*const td_mod.TypedInstance).descriptor.kind == .defrecord;
+            if (!is_record) {
+                var cs: dispatch_mod.CallSite = .{};
+                // dispatchOrNull is typed `anyerror` (the vt.callFn fn-pointer), but
+                // the runtime only raises ClojureWasmError variants — narrow at this
+                // single boundary with @errorCast so map.assoc/get keep their error
+                // set (no caller-wide ripple). Safe-checked in safe build modes.
+                if (dispatch_mod.dispatchOrNull(rt, env, &cs, v, "Object", "hasheq", &.{v}, .{ .line = 0, .column = 0 }) catch |e| return @errorCast(e)) |h|
+                    return @bitCast(@as(i32, @truncate(h.asInteger())));
+                if (dispatch_mod.dispatchOrNull(rt, env, &cs, v, "Object", "hashCode", &.{v}, .{ .line = 0, .column = 0 }) catch |e| return @errorCast(e)) |h|
+                    return @bitCast(@as(i32, @truncate(h.asInteger())));
+            }
+            return valueHash(v);
+        },
+        else => return valueHash(v),
+    }
+}
+
+/// rt-aware key hash (ADR-0129 + Track D D1): a custom-hasheq deftype/reify key
+/// hashes via its impl, and a lazy_seq / range / chunked / cons-over-lazy /
+/// Sequential-instance key hashes by realized content — both via `hashDispatch`,
+/// reading the ambient `dispatch.current_env` (→ its `rt`). Everything else, and
+/// the UNARMED case (outside evaluation: bootstrap / host-init), falls to the
+/// rt-free `valueHash`. The evaluator (evalForm + runEnvelope) arms current_env
+/// around every top-level form, so a real user/AOT seq key is always armed; the
+/// unarmed fallback is reachable only before the evaluator is up (no user assoc).
+/// MUST stay paired with `eqConsult` so a key and its `=`-equal value co-bucket.
+pub fn hashConsult(v: Value) ClojureWasmError!u32 {
+    if (dispatch_mod.current_env) |env| {
+        switch (v.tag()) {
+            .typed_instance, .reified_instance, .lazy_seq, .range, .chunked_cons, .list =>
+                return hashDispatch(env.rt, env, v),
+            else => {},
         }
     }
     return valueHash(v);
 }
 
-/// rt-aware key hash (ADR-0129): a non-record deftype/reify with a hasheq
-/// impl hashes via `hashDispatch`, reading the ambient `dispatch.current_env`
-/// (→ its `rt`); everything else, and the UNARMED case (outside evaluation:
-/// bootstrap / host-init, which never key a map by a custom-hash deftype),
-/// falls to the rt-free `valueHash`. The HAMT key-bucketing sites use this so
-/// a custom-hash deftype key buckets with its `=`-equal value.
-pub fn hashConsult(v: Value) ClojureWasmError!u32 {
-    const t = v.tag();
-    if (t == .typed_instance or t == .reified_instance) {
-        if (dispatch_mod.current_env) |env| return hashDispatch(env.rt, env, v);
-    }
-    return valueHash(v);
+/// Any value participating in sequential (ordered) KEY content equality: native
+/// seqs (incl. lazy / range / chunked / queue) + a Sequential deftype/reify
+/// (D-427). A seq key is only `=` to another seq key. Superset of `keyEqValue`'s
+/// rt-free `isSeqKeyTag` (which can't reach lazy/range/instance), so the armed
+/// eqConsult path also content-compares a queue key (matching the `valueHash`
+/// `.persistent_queue => seqHash` arm — closes a hash/eq inconsistency).
+fn isSeqKeyValue(v: Value) bool {
+    return switch (v.tag()) {
+        .vector, .list, .map_entry, .persistent_queue, .lazy_seq, .range, .chunked_cons => true,
+        .typed_instance, .reified_instance => isSequential(v),
+        else => false,
+    };
 }
 
-/// rt-aware key equality (ADR-0129): consult EITHER operand's deftype/reify
-/// `equiv` impl ahead of the rt-free `keyEqValue`, reading the ambient
-/// `dispatch.current_env`. Symmetric (tries both operands) so a custom-equiv
-/// deftype dedups as a map key / set element regardless of insertion order
-/// (clj-verified: both `(conj (conj #{} a) b)` orders dedup). Unarmed ⇒ the
-/// rt-free path. A user `equiv` that throws propagates (no silent swallow).
+/// Realize a sequential key to a form the rt-free `seqKeyEq` can walk: lazy /
+/// range / chunked / cons-over-lazy → a fully-realized list; a Sequential
+/// instance → its realized list; vector / map_entry / queue are returned as-is
+/// (they already walk rt-free). Partner of `realizeKeyForCompare`'s callers.
+fn realizeKeyForCompare(rt: *Runtime, env: *Env, v: Value) anyerror!Value {
+    return switch (v.tag()) {
+        .lazy_seq, .range, .chunked_cons, .list => try realizeSeqToList(rt, env, v),
+        .typed_instance, .reified_instance => if (isSequential(v)) try realizeSequentialInstance(rt, env, v) else v,
+        else => v,
+    };
+}
+
+/// rt-aware key equality (ADR-0129 + Track D D1): reading the ambient
+/// `dispatch.current_env`. Two sequential keys compare element-wise — the rt-free
+/// walk first, then (on a lazy/range/chunked/cons-over-lazy/Sequential-instance
+/// operand that truncates it) realize both and retry (D-432/D-408); this is ahead
+/// of a custom equiv, mirroring valueEqual routing isSequential first. Otherwise a
+/// non-record deftype/reify `equiv` is consulted (EITHER operand, so a custom-equiv
+/// deftype dedups regardless of insertion order). Unarmed ⇒ the rt-free
+/// `keyEqValue`. A user `equiv` that throws propagates (no silent swallow).
 pub fn eqConsult(a: Value, b: Value) ClojureWasmError!bool {
     if (dispatch_mod.current_env) |env| {
+        if (isSeqKeyValue(a) and isSeqKeyValue(b)) {
+            if (seqKeyEqChecked(a, b)) |r| return r;
+            // A lazy tail truncated the rt-free walk — realize both keys (GC-root
+            // the first realized list while the second realizes) and compare.
+            var roots: [2]Value = .{ a, b };
+            var sp: u16 = 2;
+            var gc_frame: root_set.EvalFrame = .{ .stack = &roots, .sp = &sp, .locals = &.{}, .parent = root_set.eval_frame_head };
+            root_set.eval_frame_head = &gc_frame;
+            defer root_set.eval_frame_head = gc_frame.parent;
+            const ar = realizeKeyForCompare(env.rt, env, a) catch |e| return @errorCast(e);
+            roots[0] = ar;
+            const br = realizeKeyForCompare(env.rt, env, b) catch |e| return @errorCast(e);
+            roots[1] = br;
+            return seqKeyEq(ar, br);
+        }
         // keyInstanceEq is typed `anyerror` (it calls dispatch); narrow with
         // @errorCast at this single boundary so map.keyEq keeps its error set.
         if (keyInstanceEq(env.rt, env, a, b) catch |e| return @errorCast(e)) |r| {

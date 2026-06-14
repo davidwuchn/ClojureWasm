@@ -504,6 +504,7 @@ run_step "e2e_phase14_date_ctor"             "bash test/e2e/phase14_date_ctor.sh
 run_step "e2e_phase14_self_seq_print"        "bash test/e2e/phase14_self_seq_print.sh"
 run_step "e2e_phase14_count_walk"            "bash test/e2e/phase14_count_walk.sh"
 run_step "e2e_phase14_sequential_equal"      "bash test/e2e/phase14_sequential_equal.sh"
+run_step "e2e_phase14_seq_key_hash"          "bash test/e2e/phase14_seq_key_hash.sh"
 run_step "e2e_phase14_with_in_str"           "bash test/e2e/phase14_with_in_str.sh"
 run_step "e2e_phase14_lisp_string_reader"    "bash test/e2e/phase14_lisp_string_reader.sh"
 run_step "e2e_phase14_qualified_deftype"     "bash test/e2e/phase14_qualified_deftype.sh"

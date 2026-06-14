@@ -1,0 +1,20 @@
+(get {(map inc [0 1 2]) :x} '(1 2 3))
+;;=> :x
+(get {(cons 1 (map inc [9])) :v} (cons 1 (map inc [9])))
+;;=> :v
+(get {(range 3) :r} '(0 1 2))
+;;=> :r
+(= (hash (map inc [0 1 2])) (hash [1 2 3]) (hash '(1 2 3)))
+;;=> true
+(contains? #{(map inc [0 1 2])} '(1 2 3))
+;;=> true
+(get {(filter odd? [1 2 3]) :f} '(1 3))
+;;=> :f
+(get (zipmap [(range 2)] [:z]) '(0 1))
+;;=> :z
+(= (hash (range 3)) (hash [0 1 2]))
+;;=> true
+(get {(take 3 (iterate inc 0)) :t} '(0 1 2))
+;;=> :t
+(count (set [(map inc [0]) '(1)]))
+;;=> 1
