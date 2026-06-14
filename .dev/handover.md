@@ -13,21 +13,25 @@
   + `.dev/sweep_plan.md` § Phase mode. Per-commit = smoke (default build is
   zwasm-lazy-safe); wasm work also runs `-Dwasm`.
 
-- **First task on resume MUST be**: **Track C — the `*out*`/`*in*` cljw-native
-  writer/reader value** (user chose recommended Option C, 2026-06-14). Full order
-  in **`.dev/sweep_plan.md`** (the phase SSOT — READ IT). C = ADR + DA fork for one
-  cljw writer value + one reader value (NOT a java.io hierarchy clone); bind
-  `*out*`/`*err*`/`*in*`; route `.write`/`.append`/`.flush` + `read`/`read-char`/…
-  on it; `with-out-str` = rebind to a string-backed writer (kills the `out_capture`
-  threadlocal cross-zone hack + the D-434 `out_writer_method` sentinel special-case).
-  Discharges D-436(b); folds the D-414 reader shims. Then Track S (debt sweep,
-  per sweep_plan.md) + Track W (wasm enrich, W1).
+- **First task on resume MUST be**: **Track C step 3 — the `*in*` reader VALUE**
+  (ADR-0138; steps 1+2 DONE — see below). Add a text_io Reader (fqcn "Reader",
+  string-backed + `?u21` codepoint pushback) with `read`/`read-char`/`peek-char`/
+  `unread-char`/`readLine`/`close`; point `with-in-str` at it; fold the D-414
+  `lispStringReader` shim (special_forms.zig:170-175 ctor special-case) into the
+  reader value. KEEP host_stream (file BufferedReader) separate — JVM `*in*`
+  (PushbackReader) ≠ file reader, per ADR-0138's decision. Verify
+  `phase14_with_in_str` + `phase14_instaparse_substrate` stay green (instaparse's
+  safe-read-string rides lispStringReader). Then Track S (debt sweep) + Track W (W1).
 
-- **D-434 DONE** (this session, superseded by Track C): `*out*` sentinel
-  `.write`/`.append`/`.flush` routed through `clojure.core/print` via the shared
-  `out_writer_method` fallback (both backends). Track C replaces this with the
-  writer-value model. Filed D-435 (diff-oracle full-runtime gap) + D-436 (大整理
-  epic) per the user's finished-form directive.
+- **Track C steps 1+2 DONE** (ADR-0138, this session, LOCAL commits f513c26d /
+  c0557345): `text_io.zig` durable Writer VALUE (`.stdout`/`.stderr`/`.string`
+  modes, host_instance, fqcn "Writer"); `*out*`/`*err*` roots flipped to it;
+  `emitToStdout` renders+pushes to the bound `*out*`; `with-out-str` = defmacro
+  over `(binding [*out* (rt/__string-writer)] …)`; nREPL capture rebinds via a
+  threadlocal BindingFrame. DELETED: sentinel + `out_capture` threadlocal +
+  `out_writer_method.zig` + consult sites + native with-out-str macro. Discharges
+  D-436(b); supersedes D-434. D-435 (diff-oracle full-runtime gap) stays open on
+  the D-436 epic.
 
 - **Track W (wasm north-star, F-014.4) — W0 RE-LANDED this session**: the
   instance-caching component work is un-stashed (relative zon, local-only):
