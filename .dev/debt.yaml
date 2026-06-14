@@ -2520,7 +2520,7 @@ active:
       `phase16_agent` + Mac single-await == 1 + CLJW_GC_TORTURE clean. | none
     last_reviewed: "2026-06-12"
   - id: "D-389"
-    status: "PARTIAL (2026-06-12, polish loop, DA-fork Alt 1) — the `:cause`/`:via`(`:type`/`:message`/`:data`)/`:data` CORE landed as a `.clj` defn in core.clj over the ex-* primitives (PROVISIONAL marker + feature_deps.yaml#clojure.core/Throwable->map; pin test/e2e/phase14_throwable_map.sh, 10 cases). `:type` is the AD-003 simple-name symbol. REMAINING (this row): `:trace` + per-`:via` `:at` are OMITTED (absent, never empty — honest-degraded invariant) pending the D-232 cljw frame-shape decision; adding them is ADDITIVE (pure key-addition). === ORIGINAL: open (found 2026-06-12, polish exception-sweep) — `clojure.core/Throwable->map` was UNIMPLEMENTED (`(Throwable->map (ex-info \"e\" {:k 1}))` → name_error; clj → `{:cause \"e\" :data {:k 1} :via [{:type … :message … :data …}] :trace […]}`). The building blocks are all present (ex-message/ex-data/ex-cause/ex-info), and the ExInfo struct carries frames internally (trace_ptr, ADR-0120), but no var assembles them. NOT tracked anywhere before this row; clojure.stacktrace.clj was reimplemented to AVOID it (ADR-0059 comment)."
+    status: "DISCHARGED 2026-06-14 (ADR-0140). The remaining :trace + per-:via :at keys now land for a CAUGHT exception via (stack-trace e) — cljw-shaped {:ns :fn :file :line :column} maps (AD-033, NOT JVM [class method file line] 4-vectors). A never-thrown ex-info has no frames so the keys stay omitted (honest-degraded invariant preserved). PROVISIONAL marker removed from core.clj; feature_deps#clojure.core/Throwable->map flipped to landed. Pin: test/e2e/phase14_throwable_map.sh (13 cases incl caught_trace_present/caught_at_present/caught_trace_fn). NOTE: the earlier \"pending the D-232 frame-shape decision\" wording was a MISLABEL — D-232 is the validation campaign, not a frame-accessor row; ADR-0140 + D-438 are the real owner. === ORIGINAL (PARTIAL 2026-06-12): :cause/:via/:data core landed; :trace/:at omitted pending the frame-shape decision."
     category: "clj-parity"
     barrier: |-
       **`Throwable->map` (clojure.core) is missing.** A faithful impl returns
@@ -2540,7 +2540,7 @@ active:
       clojure.datafy (Throwable datafy), error-reporting/logging libs, clojure.main
       error printing. MODERATE value. Cross-ref D-232, AD-029, AD-024 (user-frames),
       AD-003 (simple `:type`), ADR-0120 (trace_ptr), F-003 (frame shape = D-232's).
-    last_reviewed: "2026-06-12"
+    last_reviewed: "2026-06-14"
   - id: "D-404"
     status: "PARTIAL (2026-06-13): one-shot CM-API adoption WORKS, instance-caching BLOCKED on zwasm REQ-7. The zwasm-watch fired — all 6 cw CM-API requests landed (zwasm pin 5795c3d0). The experiment (push-suppressed, git stash@{0} 'wasm-component-experiment'; relative-path build.zig.zon) adopted comp.open/Opened + resolveFuncSig/WitType + REQ-2 labels: `(wasm/component-invoke …)` does greet (string→string), typed_payload (record/list/result roundtrip), resource constructor — hand-rolled TypeCtx/Opened deleted, full ADR-0135 value mapping. NEXT (instance caching → require-a-component) is BLOCKED: storing comp.open's Opened in a host heap box breaks resolveFuncSig (Opened not relocatable) → zwasm REQ-7 relayed (private/20260613_handover_from_zwasm/cw_finding_REQ7_opened_heap_stability.md; openBoxed→*Opened or relocatable Opened). Resume: watch that channel for a REQ-7 response → pop stash, re-land instance-caching (code written, in this session's history + note). Full state: private/notes/p14-wasm-component-experiment.md (§ instance caching + Extended challenge). Was: zwasm-WATCH → UNBLOCKING → open."
     category: "wasm"
@@ -2597,6 +2597,11 @@ active:
     category: clj-parity
     barrier: "none structural — Alt-2 is a self-contained equal.zig + lazy_seq/range struct change (add a memoized realized-key-hash field + GC-root the cache via traceLazySeq). Take up as a quality-loop unit when nested lazy/seq keys get a real consumer, or when retiring the ambient current_env duality is worth the memo slot. Until then the common top-level case is fixed (ADR-0139); this is the rare nested tail."
     quality_floor: 'correctness: nested seq/lazy map-KEY content hash + rt-free memoized seq-key hash (ADR-0139 Alt-2 finished form)'
+    last_reviewed: "2026-06-14"
+  - id: D-438
+    status: 'DONE 2026-06-14 (ADR-0140, landed same cycle it was minted). Caught-exception cljw frame-seq accessor: (stack-trace e) → a vector of {:ns :fn :file :line :column} maps, innermost-first (:fn bare, :ns separate), reading the ExInfo own deep-copied frames (ADR-0120); empty for a non-ex_info or never-thrown ex-info. Consumers: clojure.stacktrace/print-stack-trace prints <ns>/<fn> (<file>:<line>) per frame (AD-029 amended: marker→cljw frames, format still diverges from JVM); Throwable->map :trace/:at filled as the same maps (D-389 discharged; AD-033). DA fork chose Alt 2 (one map shape everywhere). user-frames-only via AD-024 (push-time elision). THIS ROW ALSO FIXES the dangling D-232 cross-reference: AD-029/D-389/sweep_plan named the validation-campaign row D-232 as the frame-accessor owner, but that owner row never existed (Reservation-as-bias) — D-438 + ADR-0140 are it. Pins: test/e2e/phase15_clojure_stacktrace.sh + phase14_throwable_map.sh.'
+    category: clj-parity
+    barrier: none — DONE this cycle (ADR-0140).
     last_reviewed: "2026-06-14"
 discharged:
   - id: "D-409"

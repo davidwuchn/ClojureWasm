@@ -50,12 +50,22 @@ and #4 is GATED; the actionable, ease-ordered queue is **D1 → D2 → D3**.
   range + a Sequential deftype key + a `clj_corpus/seq_key_hash.txt` corpus).
   Residual to cover: the nested map-as-key case (`foldHash`/`entryHash` rt-free path).
 
-- **D2 — caught-exception cljw frame-seq accessor (D-232 / AD-029). post-M, moderate.**
+- **D2 — caught-exception cljw frame-seq accessor (D-438 / AD-029). ✅ DONE 2026-06-14
+  (ADR-0140, DA-fork Alt 2).** `(stack-trace e)` → vector of cljw-shaped
+  `{:ns :fn :file :line :column}` maps (NOT JVM `StackTraceElement`), innermost-first,
+  reading the ExInfo's deep-copied frames (ADR-0120). `clojure.stacktrace/print-stack
+  -trace` prints `<ns>/<fn> (<file>:<line>)` per frame (AD-029 AMENDED: marker→cljw
+  frames, format still diverges; a never-thrown ex-info keeps the marker);
+  `Throwable->map` :trace/:at filled as the same maps (D-389 discharged; AD-033 added).
+  **Fixed the dangling D-232 cross-ref** (it named the validation campaign as the
+  frame owner — D-438 is the real row). **Resume → D3 (GATED on Phase 15) — i.e. Track
+  D is effectively drained until Phase 15; self-select the next sweep unit (Track S/W).**
+  Original entry below.
   `clojure.stacktrace/print-stack-trace` degrades to `[no stack trace available]`; the
   ExInfo DOES carry frame data (`trace_ptr`, ADR-0120) but exposes no Clojure-level
   accessor. Expose a cljw-SHAPED frame seq (NOT JVM `StackTraceElement` — AD-024
   user-only stays) wired into `clojure.repl`/`clojure.stacktrace`; flip the AD-029 pin
-  when frames appear. Reads: AD-029 + AD-024 + ADR-0120 (`trace_ptr`) + debt D-232 +
+  when frames appear. Reads: AD-029 + AD-024 + ADR-0120 (`trace_ptr`) + debt D-438 +
   `src/runtime/error/`.
 
 - **D3 — `:volatile-mutable` cross-thread visibility (AD-018). GATED on Phase 15 concurrency.**
@@ -188,7 +198,7 @@ bootstrapping/cached Fixture so dual-backend verifies full-runtime forms),
 moot-coord. Add a candidate the moment a workaround-instead-of-finished-form is taken.
 
 ## Reference chain (audit 2026-06-14, re-audited at the Track D wiring)
-handover.md → THIS file → `.dev/debt.yaml` (Track D: D-432/D-408 [D1], D-232 [D2],
+handover.md → THIS file → `.dev/debt.yaml` (Track D: D-432/D-408 [D1 ✅], D-438 [D2 ✅],
 AD-018/D-288 [D3]; + D-431..D-436 cluster) → `private/notes/p14-seq-key-hash-survey.md`
 (D1 survey) + `.dev/accepted_divergences.yaml` (AD-008/018/024/029 — the kept/gated
 divergences the audit classified) + `.dev/decisions/0137_scope_goal_line.md`

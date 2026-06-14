@@ -647,13 +647,20 @@ entries:
   - name: clojure.core/Throwable->map
     kind: var
     defined_in: src/lang/clj/clojure/core.clj
-    status: provisional
+    status: landed
     requires_features: []
     requires_debts:
       - D-389
-    provisional_markers:
-      - "src/lang/clj/clojure/core.clj (Throwable->map — omits :trace + per-via :at pending D-232 frame shape)"
+    provisional_markers: []
     notes: |
+      DISCHARGED 2026-06-14 (ADR-0140): `:trace` + per-`:via` `:at` now land for
+      a CAUGHT exception via `(stack-trace e)` — cljw-shaped `{:ns :fn :file :line
+      :column}` maps (NOT JVM 4-vectors; AD-033). A never-thrown ex-info has no
+      frames so the keys stay omitted (honest-degraded). The PROVISIONAL marker is
+      removed; D-389 discharged. (The "pending D-232" wording below is the historical
+      partial state — D-232 was a mislabel for the validation campaign; ADR-0140 +
+      D-438 are the real frame-accessor owner.)
+      ---
       D-389 (polish loop 2026-06-12, DA-fork Alt 1). cljw exceptions are
       ex-info VALUES (ADR-0059: no JVM Throwable/StackTraceElement), so the
       partial computes the keys derivable from the ex-* primitives —
