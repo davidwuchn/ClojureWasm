@@ -1101,3 +1101,72 @@ Micro-coverage-grind smell), and it forbids the partial-class trap.
   asking for per-class completeness, a linguistically-general Java boundary,
   pure-leaning lib re-selection, and a cljw.* differentiator purpose. Recorded as
   law; operationalised by ADR-0137.
+
+---
+
+## F-015 — Completion-grade posture: the blind Phase-deferral model is retired; built-but-deferred areas (concurrency first) get hardening/parity/load NOW; the roadmap is reorganized to the accurate current position
+
+**Status**: `confirmed` — direction of travel is law. Amendable only by user
+direction + Revision history entry.
+
+**Declared**: 2026-06-15 (user chat, completion-posture re-cut). **Verbatim**
+(paraphrased): 「Phase 15 領域とかで度々スルーされるのがこれまでもたくさんあった…
+このシステムはほぼ完成に近づいている…Phase 待ち自体みたいなもののロードマップや
+フェーズ評価を変えるべき…もう完成目前、足りてないものをしっかり強化していく…
+ロードマップの書き換えや、debt整理、あるいは既存の開発・AI指示体系の大整理は要る」/
+「並行性なんかもほぼ備わっているはず。ただし、公式にそのPhaseに先送り、みたいに
+されると手薄になりがち。テストや公式parity、負荷ケース、色々」/「昔作ったロード
+マップや動線、ガードレールに縛られることなく、現在のプロジェクトの正確な現在位置と、
+残された未実装や不整合を洗い、色々と組み替えるフェーズを近い将来に入れこんでおいて」。
+
+**Grounded evidence (2026-06-15 assessment)**: concurrency is in fact BUILT and
+functional — `atom` CAS (4×100 concurrent swaps → 400), `future`/`promise`/`deliver`,
+`ref`+`dosync`+`alter`, `agent`+`send`+`await`, `pmap`, `delay`, `locking` all run
+correctly. Yet 19+ active debt rows still carry a future-Phase gate ("Phase 15-19",
+"Phase B", "blocked-by", "GATED on Phase") — the deferral framing, not a real barrier.
+
+**Direction confirmed**:
+
+1. **The reflexive "defer to a future Phase" move is retired.** Phases 15-20 are
+   reframed from "future work not yet started" to **gap areas to bring to
+   completion grade**. The default is NOT to defer; it is to assess whether the
+   thing is already built and, if so, strengthen it (tests / official clj parity /
+   load + concurrency stress) NOW. F-003 (decision-deferral on *structural* plans)
+   still holds for genuinely-unbuilt layout/representation decisions, but it is NOT
+   a licence to park built-but-unhardened behaviour behind a Phase number.
+2. **Concurrency first.** The built concurrency surface gets a completion-grade
+   pass: a concurrency test layer, clj-parity verification of the concurrency vars,
+   and load/stress cases (the D-242/D-244/D-245 "Phase B hardening" rows are
+   un-deferred; their barriers are re-evaluated as "do now").
+3. **A reorganization arc is scheduled (the epic D-440)**: survey the accurate
+   current position; inventory remaining unimplemented + inconsistencies; rewrite
+   ROADMAP §9 (phase tracker + the PENDING-Phase framing); debt整理 (re-evaluate
+   every Phase-gated row — most barriers have dissolved); and a 大整理 of the
+   AI-instruction system (principle.md structural-imagination/defer discipline,
+   CLAUDE.md phase rules, the gate/loop guardrails) so they match a near-complete
+   project rather than an early-phase one.
+4. **Not bound by the old roadmap/guardrails.** The reorganization is free to
+   re-cut the phase model itself; the old §9 numbering is an input, not a
+   constraint. (ADR-0141 records the reframe + the reorganization plan.)
+
+**Relationship to F-010** (re-sequenced, not superseded): F-010's milestone M
+(= Phase 15 完遂 + cw-v0 JIT, then a quality loop) framed "Phase 15 完遂" as a
+future gate. F-015 observes Phase 15's concurrency core is already built, so M's
+"Phase 15 完遂" collapses into "harden + parity + load the built concurrency" —
+a completion-grade pass, not a from-scratch phase. The post-M quality-elevation
+loop (F-010) and the completion-grade posture (F-015) are the same standing mode.
+The JIT half of M is unaffected (genuinely future perf work).
+
+**Cross-references**: F-003 (structural-deferral — narrowed to genuinely-unbuilt
+plans, not built behaviour) · F-010 (milestone M re-sequenced; quality loop = this
+posture) · F-011 (clj parity — now applied to concurrency too) · ADR-0141 (the
+phase-model reframe + reorganization plan) · debt epic D-440 (the reorganization
+work items) · `.dev/sweep_plan.md` (the reorganization wired as the imminent arc).
+
+### Revision history
+
+- 2026-06-15 added: user re-cut the project posture to completion-grade — retire
+  reflexive Phase-deferral, bring built-but-deferred areas (concurrency first) to
+  completion grade now, and schedule a reorganization arc (roadmap rewrite + debt
+  整理 + AI-instruction 大整理). Grounded by the 2026-06-15 concurrency assessment.
+  Recorded as law; operationalised by ADR-0141 + D-440.

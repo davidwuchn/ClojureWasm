@@ -20,6 +20,33 @@
 
 ## Order
 
+### Track R — completion-grade reorganization (USER-DIRECTED 2026-06-15; F-015 / ADR-0141 / D-440) — NEXT MAJOR ARC
+
+The user re-cut the project posture: it is near-complete, the blind "Phase-deferral"
+model is retired, and built-but-deferred areas get hardening/parity/load NOW. This is
+the **next major arc** (above the remaining micro-sweeps below). Sub-items, the loop
+self-selects highest-value-first (CONCURRENCY FIRST per the user):
+
+- **R1 — concurrency completion-grade pass (DO FIRST).** Concurrency is BUILT (atom
+  CAS/future/promise/ref+dosync/agent/pmap/delay/locking all verified 2026-06-15) but
+  officially "Phase 15 / Phase B deferred" → tests/parity/load thin. Add: a concurrency
+  test layer (Layer-1/2), clj-parity verification of the concurrency vars, load/stress
+  cases. Un-defer D-242 (hardening) / D-244 (worker-collect GC-safety rooting) / D-245
+  (locking parking vs spinlock). Reads: F-015 + D-440 + D-242/244/245 + the §9.x
+  concurrency rows.
+- **R2 — accurate-position survey**: what's actually built vs ROADMAP PENDING; remaining
+  genuinely-unimplemented (seque, AD-018 volatile visibility, java.time, broad JIT) +
+  inconsistencies.
+- **R3 — ROADMAP §9 rewrite** to the accurate position (Phases 15-20 reframed: future
+  → gap-areas-to-completion-grade; old numbering is an input, not a constraint).
+- **R4 — debt整理**: re-evaluate every Phase-gated row (~19) — flip dissolved barriers,
+  reclassify the rest off a Phase-number gate.
+- **R5 — AI-instruction 大整理**: principle.md (defer discipline → F-003-narrowed),
+  CLAUDE.md (phase rules / loop chain), gate/guardrails → describe a near-complete project.
+
+(Tracks D/S/W below continue as fill-in micro-units between Track R sub-items; Track R
+is the priority. Track D drained, W1 first slice done — see those sections.)
+
 ### Track D — divergence-burden remediation (user-directed 2026-06-14; ordered by readiness)
 
 The user asked to address ALL of the post-Track-C "intentional clj-divergence"

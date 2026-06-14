@@ -13,18 +13,19 @@
   + `.dev/sweep_plan.md` § Phase mode. Per-commit = smoke (default build is
   zwasm-lazy-safe); wasm work also runs `-Dwasm`.
 
-- **First task on resume**: **W1 next slice — `cljw.wasm/require-component`
-  `:refer [export …]` form + verify/extend WIT↔EDN marshalling against a
-  record/variant/result component fixture (D-404).** The `:as` form + export-name
-  cleanup + resource chain already work (`sweep_plan.md § Track W` W1; e2e
-  `phase16_wasm_require_component.sh`). Marshalling today rides `wasm/component-call`
-  (string/int/float/bool/char + resource handle); the full table
-  (record↔map / variant↔`[:tag …]` / enum↔kw / option↔nilable / result↔value-or-throw
-  / flags↔`#{kw}` / tuple↔vector) needs a component fixture exercising those types
-  — add one or descope. Then `doc`/`arglists` from WIT. Reads: `.dev/sweep_plan.md
-  § Track W` (W1 design) + `src/lang/clj/cljw/wasm.clj` + `src/runtime/cljw/wasm/`
-  (component.zig marshal) + D-404. **If W1 stalls on missing fixtures, self-select
-  Track S** (clj-parity floor drain / S3 Java classes — `sweep_plan.md § Track S`).
+- **First task on resume**: **Track R R1 — concurrency completion-grade pass
+  (USER-DIRECTED 2026-06-15; F-015 / ADR-0141 / D-440).** The project is
+  near-complete; the blind Phase-deferral model is RETIRED. Concurrency is in fact
+  BUILT (atom CAS / future / promise / ref+dosync / agent / pmap / delay / locking
+  all verified 2026-06-15) but officially "Phase 15 / Phase B deferred" → its tests,
+  clj parity, and load/stress are thin. R1 = add a concurrency test layer (Layer
+  1/2) + clj-parity verification of the concurrency vars + load/stress cases;
+  un-defer D-242 (hardening) / D-244 (worker-collect GC-safety rooting) / D-245
+  (locking parking). Then the rest of the reorganization arc (R2 survey → R3 ROADMAP
+  §9 rewrite → R4 debt整理 of ~19 Phase-gated rows → R5 AI-instruction 大整理).
+  **Reads: `.dev/project_facts.md` F-015 + ADR-0141 + D-440 + `.dev/sweep_plan.md
+  § Track R`.** (Earlier-queued W1-remaining / Track S micro-units are now fill-in
+  BELOW Track R, not the lead.)
 
 - **This session landed (git log = SSOT)** — Track D (the user-directed
   divergence-burden queue) DRAINED + 2 more units + W1 first slice:
