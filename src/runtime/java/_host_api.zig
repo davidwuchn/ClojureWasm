@@ -100,6 +100,7 @@ const java_surfaces = [_]type{
     @import("time/LocalDateTime.zig"),
     @import("time/Duration.zig"),
     @import("time/ZonedDateTime.zig"),
+    @import("util/ArrayList.zig"),
     @import("util/Date.zig"),
     @import("util/Iterator.zig"),
     @import("util/Locale.zig"),

@@ -250,6 +250,17 @@ tiers:
           clojure_peer: lang/primitive/uuid.zig
         methods: [randomUUID, fromString, toString]
         clojure_peer_vars: [clojure.core/random-uuid, clojure.core/parse-uuid]
+      # java.util.ArrayList — mutable growable indexed list (D-425, host_instance
+      # over a gc.infra std.ArrayList(Value); elements GC-traced via host_trace).
+      - fqn: java.util.ArrayList
+        cljw_ns: cljw.java.util.ArrayList
+        keyword: array_list
+        tier: A
+        phase: 14
+        files:
+          surface: runtime/java/util/ArrayList.zig
+        methods: [add, get, set, size, isEmpty, contains]
+        clojure_peer_vars: []
       - fqn: java.util.Date
         cljw_ns: cljw.java.util.Date
         keyword: instant
