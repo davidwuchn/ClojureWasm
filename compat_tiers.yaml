@@ -259,7 +259,7 @@ tiers:
         phase: 14
         files:
           surface: runtime/java/util/ArrayList.zig
-        methods: [add, get, set, size, isEmpty, contains]
+        methods: [add, get, set, size, isEmpty, contains, indexOf, remove, clear]
         clojure_peer_vars: []
       # java.util.HashMap — mutable key→value map (D-425, host_instance backing a
       # cljw map Value; one map Value GC-traced via host_trace, reuses cljw
@@ -271,7 +271,7 @@ tiers:
         phase: 14
         files:
           surface: runtime/java/util/HashMap.zig
-        methods: [put, get, containsKey, size, isEmpty, remove]
+        methods: [put, get, containsKey, size, isEmpty, remove, clear]
         clojure_peer_vars: []
       - fqn: java.util.Date
         cljw_ns: cljw.java.util.Date

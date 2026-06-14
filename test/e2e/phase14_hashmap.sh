@@ -70,4 +70,12 @@ EOF
 assert_eq 'ctor_src_immut'  "$(sed -n '1p' <<< "$got")" '1'
 assert_eq 'ctor_after_put'  "$(sed -n '2p' <<< "$got")" '2'
 
-echo "OK — phase14_hashmap (18 cases) green"
+# clear
+assert_eq 'clear' "$("$BIN" - <<'EOF' 2>/dev/null
+(def m (java.util.HashMap. {:a 1 :b 2}))
+(.clear m)
+(prn (.size m))
+EOF
+)" '0'
+
+echo "OK — phase14_hashmap (19 cases) green"

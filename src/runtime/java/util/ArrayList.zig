@@ -135,6 +135,42 @@ fn contains(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) a
     return Value.initBoolean(false);
 }
 
+/// `(.indexOf al x)` — the index of the first `=` element, or -1 (JVM).
+fn indexOf(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    try error_catalog.checkArity(".indexOf", args, 2, loc);
+    for (listOf(args[0]).items, 0..) |e, i| {
+        if (try equal.valueEqual(rt, env, e, args[1])) return Value.initInteger(@intCast(i));
+    }
+    return Value.initInteger(-1);
+}
+
+/// `(.remove al x)` — remove the FIRST `=` element by VALUE (JVM `remove(Object)`),
+/// returning true if removed, else false. This is clj-faithful: Clojure passes an
+/// integer as a boxed Long, so `(.remove al 1)` resolves to `remove(Object)` (a
+/// value-remove → false when 1 is absent), NOT `remove(int)` (index-remove). cljw
+/// cannot distinguish int from Long (F-005, the AD-030 class), so the unambiguous
+/// value-remove is the only faithful surface; index-remove is unreachable here.
+fn remove(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    try error_catalog.checkArity(".remove", args, 2, loc);
+    const lp = listOf(args[0]);
+    for (lp.items, 0..) |e, i| {
+        if (try equal.valueEqual(rt, env, e, args[1])) {
+            _ = lp.orderedRemove(i);
+            return Value.initBoolean(true);
+        }
+    }
+    return Value.initBoolean(false);
+}
+
+/// `(.clear al)` — drop all elements, return nil.
+fn clear(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = rt;
+    _ = env;
+    try error_catalog.checkArity(".clear", args, 1, loc);
+    listOf(args[0]).clearRetainingCapacity();
+    return Value.nil_val;
+}
+
 /// `(Seqable -seq)` — a cljw list of the elements (eager), so `(seq al)` /
 /// `(into [] al)` / `(vec al)` work. Empty → nil (clj's `(seq empty)`).
 fn seqImpl(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
@@ -191,6 +227,9 @@ const METHODS = [_]MethodSpec{
     .{ .name = "size", .proto = "", .f = &size },
     .{ .name = "isEmpty", .proto = "", .f = &isEmpty },
     .{ .name = "contains", .proto = "", .f = &contains },
+    .{ .name = "indexOf", .proto = "", .f = &indexOf },
+    .{ .name = "remove", .proto = "", .f = &remove },
+    .{ .name = "clear", .proto = "", .f = &clear },
     // Seqable / IPersistentCollection so seq / count / into route here.
     .{ .name = "-seq", .proto = "Seqable", .f = &seqImpl },
     .{ .name = "-count", .proto = "IPersistentCollection", .f = &countImpl },

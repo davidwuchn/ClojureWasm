@@ -115,6 +115,15 @@ fn remove(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) any
     return old;
 }
 
+/// `(.clear hm)` — drop all entries (rebind to the empty map), return nil.
+fn clear(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = rt;
+    _ = env;
+    try error_catalog.checkArity(".clear", args, 1, loc);
+    setMap(args[0], map.empty());
+    return Value.nil_val;
+}
+
 /// `(Seqable -seq)` — the entry seq of the backing map (empty → nil).
 fn seqImpl(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
     _ = env;
@@ -154,6 +163,7 @@ const METHODS = [_]MethodSpec{
     .{ .name = "size", .proto = "", .f = &size },
     .{ .name = "isEmpty", .proto = "", .f = &isEmpty },
     .{ .name = "remove", .proto = "", .f = &remove },
+    .{ .name = "clear", .proto = "", .f = &clear },
     .{ .name = "-seq", .proto = "Seqable", .f = &seqImpl },
     .{ .name = "-count", .proto = "IPersistentCollection", .f = &countImpl },
 };

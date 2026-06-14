@@ -57,4 +57,23 @@ assert_eq 'ctor_vec'      "$("$BIN" -e '(vec (java.util.ArrayList. [1 2 3]))' 2>
 assert_eq 'ctor_vec_size' "$("$BIN" -e '(.size (java.util.ArrayList. [:a :b :c]))' 2>/dev/null | tail -1)" '3'
 assert_eq 'ctor_capacity' "$("$BIN" -e '(.size (java.util.ArrayList. 16))' 2>/dev/null | tail -1)" '0'
 
-echo "OK — phase14_arraylist (16 cases) green"
+# indexOf / remove (by VALUE — clj-faithful, AD-030 class) / clear.
+got=$("$BIN" - <<'EOF' 2>/dev/null
+(def a (java.util.ArrayList. [:a :b :c :b]))
+(prn (.indexOf a :b))     ; 1
+(prn (.indexOf a :z))     ; -1
+(prn (.remove a :b))      ; true (value-remove, first :b)
+(prn (vec a))             ; [:a :c :b]
+(prn (.remove a 1))       ; false (boxed int → Object-remove; 1 absent)
+(.clear a)
+(prn (.size a))           ; 0
+EOF
+) || fail "arraylist2: non-zero exit ($got)"
+assert_eq 'indexOf'       "$(sed -n '1p' <<< "$got")" '1'
+assert_eq 'indexOf_miss'  "$(sed -n '2p' <<< "$got")" '-1'
+assert_eq 'remove_val'    "$(sed -n '3p' <<< "$got")" 'true'
+assert_eq 'after_remove'  "$(sed -n '4p' <<< "$got")" '[:a :c :b]'
+assert_eq 'remove_int_obj' "$(sed -n '5p' <<< "$got")" 'false'
+assert_eq 'clear'         "$(sed -n '6p' <<< "$got")" '0'
+
+echo "OK — phase14_arraylist (22 cases) green"
