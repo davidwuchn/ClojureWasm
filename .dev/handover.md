@@ -73,3 +73,10 @@ for the experiment: `private/notes/p14-wasm-component-experiment.md` +
 `private/20260613_handover_from_zwasm/handover_v2.md`. zwasm repo =
 `~/Documents/MyProducts/zwasm_from_scratch/` (read-only; HEAD ≥ `33e0100c`).
 clj oracle = `~/Documents/OSS/clojure/` + `clj -J-Xmx2g -M` (`timeout 60`).
+
+## Stopped — user requested
+
+User instruction (2026-06-14): "キリの良いところで、現在地点の正直な残debtを
+表示してとめてください。…アーキテクチャ…意見なども表示して". Honest open-debt
+summary + architecture explanation + opinions were delivered in chat. Resume per
+the Resume contract (next = library-verification probe; D-430 GLL deferred).
