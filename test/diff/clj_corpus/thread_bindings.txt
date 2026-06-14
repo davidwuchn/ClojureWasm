@@ -12,3 +12,9 @@
 ;;=> 5
 (with-bindings {} (pr-str (range 3)))
 ;;=> "(0 1 2)"
+;; D-241 / ADR-0096: a bound-fn created OUTSIDE any user binding replays the
+;; clojure.main-baseline frame (unbound *print-length* → no truncation),
+;; SHADOWING the call-site (binding [*print-length* 2] …) — proves the baseline
+;; frame is in the capture set. (The inside-binding capture case is line 5.)
+(let [f (bound-fn [] (pr-str (range 9)))] (binding [*print-length* 2] (f)))
+;;=> "(0 1 2 3 4 5 6 7 8)"

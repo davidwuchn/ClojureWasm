@@ -107,25 +107,31 @@ active:
       LOW priority (only blocks static-field diff cases). recall trigger: when a
       future diff case needs a `Class/FIELD` static field.
   - id: "D-241"
-    status: "now (found 2026-06-04 while landing bound-fn/with-bindings) — no clojure.main baseline binding frame, so get-thread-bindings captures only explicitly-bound vars."
+    status: "SUBSTANCE LANDED via ADR-0096 (2026-06-05); residual is feature-gated only (re-laid 2026-06-15). The clojure.main-baseline frame (8 standard dynamic vars) IS pushed at bootstrap; bound-fn capture/replay verified clj-correct BOTH ways (corpus thread_bindings: outside-binding replays baseline → no truncation, shadowing the call site; inside-binding captures the binding). The original headline divergence is FIXED."
     category: "runtime"
     barrier: |-
-      **cljw has no `clojure.main`-style baseline thread-binding frame.** clj's
-      REPL/main pushes a frame binding the standard dynamic vars (`*print-length*`,
-      `*print-level*`, `*out*`, `*warn-on-reflection*`, …) to their defaults, so
-      `(get-thread-bindings)` at top level returns them ALL and `bound-fn` captures
-      + replays them (shadowing the call site). cljw's `-e`/runtime leaves those at
-      ROOT (not thread-bound), so `(get-thread-bindings)` at top level is empty and
-      a `bound-fn` created outside any `binding` does NOT shadow a later call-site
-      `binding`. Divergence: `(let [f (bound-fn [] (pr-str (range 9)))] (binding
-      [*print-length* 2] (f)))` → cljw "(0 1 ...)" / clj "(0 1 2 …8)". The bound-fn
-      LOGIC is correct (an EXPLICIT creation-time binding IS captured + replayed —
-      corpus thread_bindings case 3). Convergeable: push a baseline binding frame
-      for the standard dynamic vars at startup (a clojure.main-equivalent), then the
-      capture set matches clj. LOW value now (cljw is single-threaded pre-Phase 15;
-      bound-fn's thread-handoff use is limited). Cross-ref ADR-0088 (print vars) /
-      F-011 / bound-fn*. recall trigger: when a clojure.main baseline / Phase-15
-      concurrency makes the standard-var capture set matter.
+      Feature-gated residual only — NOT an active code drain (sweep skips until a
+      named standard-var feature lands). ADR-0096's baseline frame
+      (`bootstrap.zig::installBaselineBindings`) thread-binds the 8 standard dynamic
+      vars cljw HAS (`*warn-on-reflection*`/`*unchecked-math*`/`*print-meta|length|
+      level|namespace-maps*`/`*data-readers*`/`*default-data-reader-fn*`); bound-fn
+      + get-thread-bindings match clj for those. The remaining `clojure.main` vars
+      are deliberately NOT fabricated (a no-op binding = permanent-no-op /
+      Silent-default-shift smell): each lands WITH its feature — `*assert*` /
+      `*read-eval*` / `*math-context*` / `*compile-path*` / `*1 *2 *3 *e` (REPL;
+      nREPL already has its own per-connection frame, nrepl.zig). Two findings
+      (2026-06-15 Step 0.6 + DA survey `gapI-D241-baseline-binding-frame-survey.md`):
+      (1) `*command-line-args*` CANNOT join this frame — cljw sets it via
+      `alter-var-root` (D-310 run_mode), so a baseline thread-binding captured at
+      bootstrap would SHADOW the later `alter-var-root` and break D-310 arg
+      visibility (clj thread-binds it, so no conflict). Its VALUE already matches
+      clj (nil with no args); only get-thread-bindings membership differs (LOW).
+      (2) `*print-readably*` can join only via an ADR-0088-snapshot amendment
+      distinguishing baseline-bound-to-default from user-bound (else print/println
+      would always quote strings — the `findBinding`-read exclusion is load-bearing);
+      that is a separate ADR-level unit, not this row. Cross-ref ADR-0096 / ADR-0088
+      / D-310 / F-011. recall trigger: a standard-var FEATURE lands → add its var
+      here; or the `*print-readably*` ADR-0088-snapshot unit is opened.
   - id: "D-246"
     status: "now (2026-06-05, found while sweeping siblings of the doGet/atom lost-update races) — the HIGH-frequency concurrency value-reads are now atomic (atom current/swap!/compare-and-set!, volatile current, ref doGet + out-of-txn current). The LOW-frequency metadata fields are NOT yet synchronized — lower priority, no observed DIFF."
     category: "concurrency"
