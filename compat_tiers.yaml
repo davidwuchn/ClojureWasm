@@ -445,14 +445,14 @@ tiers:
       # does NOT resolve yet. cw-native exception_class surface planned.
       - {fqn: "java.lang.RuntimeException", cljw_ns: "cljw.java.lang.RuntimeException", tier: A, phase: 14, status: "surface EXISTS (runtime/java/lang/RuntimeException.zig) but unrowed; D5 migration pending (like Exception/Throwable one-liners)"}
       - {fqn: "java.lang.Error", cljw_ns: "cljw.java.lang.Error", tier: A, phase: 14, status: "catch-dispatch (simple name) works; (Error. msg) ctor reservation"}
-      - {fqn: "java.lang.IllegalArgumentException", cljw_ns: "cljw.java.lang.IllegalArgumentException", tier: A, phase: 14, status: "catch works; (IllegalArgumentException. msg) -> unresolved. ctor reservation"}
-      - {fqn: "java.lang.IllegalStateException", cljw_ns: "cljw.java.lang.IllegalStateException", tier: A, phase: 14, status: "catch works; ctor reservation"}
-      - {fqn: "java.lang.ArithmeticException", cljw_ns: "cljw.java.lang.ArithmeticException", tier: A, phase: 14, status: "catch works ((/ 1 0) caught); ctor reservation"}
-      - {fqn: "java.lang.NumberFormatException", cljw_ns: "cljw.java.lang.NumberFormatException", tier: A, phase: 14, status: "subclass of IllegalArgumentException; catch works; ctor reservation"}
-      - {fqn: "java.lang.IndexOutOfBoundsException", cljw_ns: "cljw.java.lang.IndexOutOfBoundsException", tier: A, phase: 14, status: "catch works; ctor reservation"}
-      - {fqn: "java.lang.UnsupportedOperationException", cljw_ns: "cljw.java.lang.UnsupportedOperationException", tier: A, phase: 14, status: "catch works; ctor reservation"}
-      - {fqn: "java.lang.ClassCastException", cljw_ns: "cljw.java.lang.ClassCastException", tier: A, phase: 14, status: "catch works; ctor reservation"}
-      - {fqn: "java.lang.NullPointerException", cljw_ns: "cljw.java.lang.NullPointerException", tier: A, phase: 14, status: "catch works; ctor reservation"}
+      - {fqn: "java.lang.IllegalArgumentException", cljw_ns: "cljw.java.lang.IllegalArgumentException", tier: A, phase: 14, status: "catch works; (X. msg)/(X. msg cause) ctor LANDED 2026-06-14 (exception_ctors.zig comptime family, D-425)"}
+      - {fqn: "java.lang.IllegalStateException", cljw_ns: "cljw.java.lang.IllegalStateException", tier: A, phase: 14, status: "catch works; (X. msg)/(X. msg cause) ctor LANDED 2026-06-14 (exception_ctors.zig comptime family, D-425)"}
+      - {fqn: "java.lang.ArithmeticException", cljw_ns: "cljw.java.lang.ArithmeticException", tier: A, phase: 14, status: "catch works ((/ 1 0) caught); (X. msg)/(X. msg cause) ctor LANDED 2026-06-14 (exception_ctors.zig comptime family, D-425)"}
+      - {fqn: "java.lang.NumberFormatException", cljw_ns: "cljw.java.lang.NumberFormatException", tier: A, phase: 14, status: "subclass of IllegalArgumentException; catch works; (X. msg)/(X. msg cause) ctor LANDED 2026-06-14 (exception_ctors.zig comptime family, D-425)"}
+      - {fqn: "java.lang.IndexOutOfBoundsException", cljw_ns: "cljw.java.lang.IndexOutOfBoundsException", tier: A, phase: 14, status: "catch works; (X. msg)/(X. msg cause) ctor LANDED 2026-06-14 (exception_ctors.zig comptime family, D-425)"}
+      - {fqn: "java.lang.UnsupportedOperationException", cljw_ns: "cljw.java.lang.UnsupportedOperationException", tier: A, phase: 14, status: "catch works; (X. msg)/(X. msg cause) ctor LANDED 2026-06-14 (exception_ctors.zig comptime family, D-425)"}
+      - {fqn: "java.lang.ClassCastException", cljw_ns: "cljw.java.lang.ClassCastException", tier: A, phase: 14, status: "catch works; (X. msg)/(X. msg cause) ctor LANDED 2026-06-14 (exception_ctors.zig comptime family, D-425)"}
+      - {fqn: "java.lang.NullPointerException", cljw_ns: "cljw.java.lang.NullPointerException", tier: A, phase: 14, status: "catch works; (X. msg)/(X. msg cause) ctor LANDED 2026-06-14 (exception_ctors.zig comptime family, D-425)"}
       - {fqn: "java.lang.AssertionError", cljw_ns: "cljw.java.lang.AssertionError", tier: A, phase: 14, status: "assert / clojure.test; catch works; ctor reservation"}
       - {fqn: "java.lang.StackOverflowError", cljw_ns: "cljw.java.lang.StackOverflowError", tier: A, phase: 14, status: "catch reservation"}
       - {fqn: "java.lang.OutOfMemoryError", cljw_ns: "cljw.java.lang.OutOfMemoryError", tier: A, phase: 14, status: "catch reservation"}

@@ -134,6 +134,9 @@ const clojure_surfaces = [_]type{
 pub fn installAll(env: *Env) !void {
     inline for (java_surfaces) |S| try registerExtension(env, S.___HOST_EXTENSION);
     inline for (clojure_surfaces) |S| try registerExtension(env, S.___HOST_EXTENSION);
+    // The comptime-generated throwable-ctor family exports a SLICE of Extensions
+    // (one shared impl shape, N names) rather than one `___HOST_EXTENSION` decl.
+    inline for (@import("lang/exception_ctors.zig").EXTENSIONS) |ext| try registerExtension(env, ext);
 }
 
 /// Register one surface `Extension` into the registry: create its `cljw_ns`,

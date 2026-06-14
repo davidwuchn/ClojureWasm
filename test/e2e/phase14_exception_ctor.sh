@@ -46,4 +46,25 @@ assert_eq 'cls_nth'    "$("$BIN" -e '(try (nth [] 5) (catch Throwable e (str (cl
 assert_eq 'cls_same'   "$("$BIN" -e '(= (class (ex-info "a" {})) (class (ex-info "b" {})))')" 'true'
 assert_eq 'cls_diff'   "$("$BIN" -e '(= (class (Exception. "x")) (class (RuntimeException. "y")))')" 'false'
 
+# D-425: the common java.lang throwable-subtype ctors (exception_ctors.zig
+# comptime family). Each `(X. msg)` mints an .ex_info tagged X; catch routes via
+# the hierarchy; (X. msg cause) carries the cause.
+assert_eq 'iae_msg'  "$("$BIN" -e '(.getMessage (IllegalArgumentException. "bad"))')"        '"bad"'
+assert_eq 'ise_msg'  "$("$BIN" -e '(.getMessage (IllegalStateException. "st"))')"            '"st"'
+assert_eq 'uoe_msg'  "$("$BIN" -e '(.getMessage (UnsupportedOperationException. "no"))')"    '"no"'
+assert_eq 'npe_msg'  "$("$BIN" -e '(.getMessage (NullPointerException. "np"))')"             '"np"'
+assert_eq 'ioobe_msg' "$("$BIN" -e '(.getMessage (IndexOutOfBoundsException. "ix"))')"       '"ix"'
+assert_eq 'ae_msg'   "$("$BIN" -e '(.getMessage (ArithmeticException. "ar"))')"              '"ar"'
+assert_eq 'cce_msg'  "$("$BIN" -e '(.getMessage (ClassCastException. "cc"))')"               '"cc"'
+assert_eq 'nfe_msg'  "$("$BIN" -e '(.getMessage (NumberFormatException. "nf"))')"            '"nf"'
+# catch via the parent hierarchy (IllegalArgumentException < RuntimeException < Exception).
+assert_eq 'iae_as_rte' "$("$BIN" -e '(try (throw (IllegalArgumentException. "x")) (catch RuntimeException e (.getMessage e)))')" '"x"'
+assert_eq 'ise_as_thr' "$("$BIN" -e '(try (throw (IllegalStateException. "y")) (catch Throwable e (.getMessage e)))')" '"y"'
+# (X. msg cause) — the cause chains.
+assert_eq 'iae_cause' "$("$BIN" -e '(.getMessage (.getCause (IllegalArgumentException. "o" (RuntimeException. "in"))))')" '"in"'
+# (class e) reports the specific subtype (AD-003 simple name).
+assert_eq 'cls_iae'  "$("$BIN" -e '(str (class (IllegalArgumentException. "x")))')" '"IllegalArgumentException"'
+# instance? rides the hierarchy: an IllegalArgumentException IS a RuntimeException.
+assert_eq 'inst_iae_rte' "$("$BIN" -e '(instance? RuntimeException (IllegalArgumentException. "x"))')" 'true'
+
 echo "ALL phase14_exception_ctor PASS"
