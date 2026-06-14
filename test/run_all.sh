@@ -581,6 +581,7 @@ run_step "e2e_phase16_tokenizer_long_input" "bash test/e2e/phase16_tokenizer_lon
 # cannot resolve zwasm, build_cljw fails first — wasm is a gate prerequisite now.
 run_step "e2e_phase16_wasm_ffi"             "bash test/e2e/phase16_wasm_ffi.sh"
 run_step "e2e_phase16_wasm_run"             "bash test/e2e/phase16_wasm_run.sh"
+run_step "e2e_phase16_wasm_component"       "bash test/e2e/phase16_wasm_component.sh"
 run_step "e2e_phase15_for_while"            "bash test/e2e/phase15_for_while.sh"
 run_step "e2e_phase15_ns_import"            "bash test/e2e/phase15_ns_import.sh"
 run_step "e2e_phase15_dot_form"             "bash test/e2e/phase15_dot_form.sh"

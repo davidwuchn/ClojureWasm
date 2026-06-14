@@ -267,4 +267,14 @@ pub fn register(env: *Env) !void {
     _ = try env.intern(ns, "load", Value.initBuiltinFn(&wasmLoadFn), null);
     _ = try env.intern(ns, "call", Value.initBuiltinFn(&wasmCallFn), null);
     _ = try env.intern(ns, "run", Value.initBuiltinFn(&wasmRunFn), null);
+    // EXPERIMENT (D-404 / ADR-0135, push-suppressed): component introspection +
+    // typed invoke probes — the require-a-component substrate.
+    const component = @import("component.zig");
+    _ = try env.intern(ns, "component-exports", Value.initBuiltinFn(&component.componentExportsFn), null);
+    _ = try env.intern(ns, "component-invoke", Value.initBuiltinFn(&component.componentInvokeFn), null);
+    // Instance caching (REQ-7, zwasm 33e0100c): a long-lived handle persists the
+    // opened component across calls so resource chains (constructor → method
+    // own-handle) and require-a-component (one Var per export) become expressible.
+    _ = try env.intern(ns, "load-component", Value.initBuiltinFn(&component.loadComponentFn), null);
+    _ = try env.intern(ns, "component-call", Value.initBuiltinFn(&component.componentCallFn), null);
 }

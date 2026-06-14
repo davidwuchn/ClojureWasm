@@ -124,6 +124,7 @@ pub fn run(alloc: std.mem.Allocator, io: std.Io, bytes: []const u8, opts: RunOpt
         opts.env_keys,
         opts.env_vals,
         null, // invoke_args
+        .{}, // limits — zwasm-HEAD Limits param (D-347 budget seam); defaults for now
     );
 
     return .{

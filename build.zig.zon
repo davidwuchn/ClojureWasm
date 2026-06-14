@@ -18,8 +18,7 @@
         // amendment). lazy + flag-guard means an unresolved/churning dep cannot break
         // cljw's default gate.
         .zwasm = .{
-            .url = "git+https://github.com/clojurewasm/zwasm.git#v2.0.0-alpha.2",
-            .hash = "zwasm-0.0.0-pre-FT1Fv20VeAC0RC_8d4gGeHDT8xQbyU2_DJd-uYXg51vf",
+            .path = "../zwasm_from_scratch",
             .lazy = true,
         },
     },
