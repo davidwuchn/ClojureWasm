@@ -203,6 +203,30 @@ pub const TypeDescriptor = struct {
         if (self.parent) |par| return par.declaresProtocol(protocol_name);
         return false;
     }
+
+    /// clj `RT.count` discriminator: true iff this descriptor declares `Counted`
+    /// or a Counted-extending `clojure.lang` interface (`Indexed` /
+    /// `IPersistentMap` / `IPersistentVector` / `IPersistentSet`). A Counted
+    /// type's `-count` is authoritative O(1); a type declaring only
+    /// `IPersistentCollection` / `ISeq` / `Seqable` is NOT Counted, so `count`
+    /// WALKS its seq instead of trusting `-count` — matching clj, which ignores
+    /// `IPersistentCollection.count()` unless the type is also `Counted`
+    /// (data.finger-tree's internal trees stub `(count [_])` but aren't Counted;
+    /// only its public `CountedDoubleList` declares `Counted`). The remap
+    /// records the DECLARED interface name verbatim (macro_transforms.zig's
+    /// trailing marker registration), so both bare (D-417) and `clojure.lang.`-
+    /// qualified spellings appear; check both. `defrecord` is Counted-by-nature
+    /// (field_count) and handled by the caller, not here.
+    pub fn isCounted(self: *const TypeDescriptor) bool {
+        const counted_family = [_][]const u8{
+            "Counted",              "Indexed",              "IPersistentMap",              "IPersistentVector",              "IPersistentSet",
+            "clojure.lang.Counted", "clojure.lang.Indexed", "clojure.lang.IPersistentMap", "clojure.lang.IPersistentVector", "clojure.lang.IPersistentSet",
+        };
+        for (counted_family) |name| {
+            if (self.declaresProtocol(name)) return true;
+        }
+        return false;
+    }
 };
 
 /// A `deftype` / `defrecord` runtime value. **Extern struct** so

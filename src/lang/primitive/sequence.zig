@@ -57,6 +57,7 @@ const transient_hash_set = @import("../../runtime/collection/transient/transient
 const lazy_seq = @import("../../runtime/lazy_seq.zig");
 const charset = @import("../../runtime/charset.zig");
 const td_mod = @import("../../runtime/type_descriptor.zig");
+const root_set = @import("../../runtime/gc/root_set.zig");
 
 /// Protocol fqcns the hybrid slow-paths match against `MethodEntry.protocol_name`.
 /// Bootstrap declares each protocol in `lang/clj/clojure/core.clj` so the fqcn
@@ -110,21 +111,25 @@ pub fn countFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation
         // PERF: O(1) precomputed range length, no element walk [refs: O-001]
         .range => Value.initInteger(range.countOf(coll)),
         .typed_instance => blk: {
-            // Row 7.7 R3a (ADR-0008 amendment 4): consult the protocol
-            // method_table first; user `(extend-type X IPersistentCollection
-            // (-count [_] …))` overrides the defrecord field_count default.
-            // Falls back to field_count for defrecord without an override
-            // (preserves row 7.4 cycle 3 semantics) and to
-            // protocol_no_satisfies for deftype.
-            var cs: dispatch.CallSite = .{};
-            if (try dispatch.dispatchOrNull(rt, env, &cs, coll, IPC_FQCN, "-count", args, loc)) |v| break :blk v;
+            // clj RT.count: a Counted (or Counted-extending) type's `-count` is
+            // authoritative; a defrecord counts by field_count (with -count
+            // override honoured — Row 7.7 R3a, ADR-0008 am4). A type declaring
+            // only IPersistentCollection / ISeq / Seqable is NOT Counted, so we
+            // WALK its seq (clj ignores IPersistentCollection.count() for a
+            // non-Counted type — D-422: data.finger-tree's internal trees stub
+            // `(count [_])` → nil but aren't Counted).
             const inst = coll.decodePtr(*const td_mod.TypedInstance);
-            if (inst.descriptor.kind == .defrecord) break :blk Value.initInteger(@intCast(inst.field_count));
-            return error_catalog.raise(.protocol_no_satisfies, loc, .{
-                .protocol = IPC_FQCN,
-                .method = "-count",
-                .type_name = inst.descriptor.fqcn orelse "<anonymous>",
-            });
+            if (inst.descriptor.kind == .defrecord) {
+                var cs: dispatch.CallSite = .{};
+                if (try dispatch.dispatchOrNull(rt, env, &cs, coll, IPC_FQCN, "-count", args, loc)) |v| break :blk v;
+                break :blk Value.initInteger(@intCast(inst.field_count));
+            }
+            if (inst.descriptor.isCounted()) {
+                var cs: dispatch.CallSite = .{};
+                if (try dispatch.dispatchOrNull(rt, env, &cs, coll, IPC_FQCN, "-count", args, loc)) |v| break :blk v;
+                // declared Counted but no -count body resolved → fall through to walk.
+            }
+            break :blk try countBySeqWalk(rt, env, coll, loc);
         },
         .list, .cons, .lazy_seq => {
             // O(n) generic walk. A `.list` cons may hold a non-list seq as
@@ -163,6 +168,50 @@ pub fn countFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation
             break :blk try dispatch.dispatch(rt, env, &cs, coll, IPC_FQCN, "-count", args, loc);
         },
     };
+}
+
+/// Descriptor of a `.typed_instance` / `.reified_instance` Value (the two
+/// decode to different structs — both carry `.descriptor`).
+fn instanceDescriptor(v: Value) *const td_mod.TypeDescriptor {
+    return switch (v.tag()) {
+        .typed_instance => v.decodePtr(*const td_mod.TypedInstance).descriptor,
+        .reified_instance => v.decodePtr(*const td_mod.ReifiedInstance).descriptor,
+        else => unreachable,
+    };
+}
+
+/// clj `RT.countFrom`: count a non-Counted instance by WALKING its seq.
+/// `(seq coll)` then advance via ISeq `-next`, counting one element per node,
+/// with clj's mid-walk Counted shortcut (`s instanceof Counted → i + s.count()`).
+/// A `-next` that hands off to a native seq tail (lazy_seq / list / …) delegates
+/// to `countFn` for the O(chunks) remainder. Used for deftypes that declare
+/// IPersistentCollection / ISeq / Seqable but NOT Counted (D-422). `cur` is
+/// GC-rooted because an ISeq `-next` dispatch may trigger a collect.
+fn countBySeqWalk(rt: *Runtime, env: *Env, coll: Value, loc: SourceLocation) anyerror!Value {
+    var cur = try seqFn(rt, env, &.{coll}, loc);
+    // GC-ROOT: single-slot manual frame for the walk cursor [ref: .dev/gc_rooting.md §A]
+    var gc_roots: [1]Value = .{cur};
+    var gc_sp: u16 = 1;
+    var gc_frame: root_set.EvalFrame = .{ .stack = &gc_roots, .sp = &gc_sp, .locals = &.{}, .parent = root_set.eval_frame_head };
+    root_set.eval_frame_head = &gc_frame;
+    defer root_set.eval_frame_head = gc_frame.parent;
+    var n: i64 = 0;
+    while (cur.tag() == .typed_instance or cur.tag() == .reified_instance) {
+        const desc = instanceDescriptor(cur);
+        if (desc.kind == .defrecord or desc.isCounted()) {
+            const tail = try countFn(rt, env, &.{cur}, loc);
+            return Value.initInteger(n + tail.asInteger());
+        }
+        n += 1;
+        var cs: dispatch.CallSite = .{};
+        cur = (try dispatch.dispatchOrNull(rt, env, &cs, cur, ISEQ_FQCN, "-next", &.{cur}, loc)) orelse .nil_val;
+        gc_roots[0] = cur;
+    }
+    if (!cur.isNil()) {
+        const tail = try countFn(rt, env, &.{cur}, loc);
+        return Value.initInteger(n + tail.asInteger());
+    }
+    return Value.initInteger(n);
 }
 
 // --- seq ---
