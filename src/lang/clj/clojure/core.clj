@@ -2186,7 +2186,7 @@
 ;; java.io.StringReader; cljw uses the host `rt/__string-reader`). Placed with the
 ;; other `with-*` macros — `defmacro` is not usable as early as `read-line`.
 (defmacro with-in-str [s & body]
-  `(binding [*in* (rt/__string-reader ~s)]
+  `(binding [*in* (rt/__in-reader ~s)]
      ~@body))
 
 ;; `(with-out-str & body)` — evaluate body with `*out*` bound to a fresh

@@ -30,6 +30,7 @@ const host_instance = @import("../host_instance.zig");
 const type_descriptor = @import("../type_descriptor.zig");
 const TypeDescriptor = type_descriptor.TypeDescriptor;
 const string_mod = @import("../collection/string.zig");
+const string_escape = @import("../string_escape.zig");
 const env_mod = @import("../env.zig");
 
 /// The sink a Writer value routes to. `.string` owns the accumulator; the
@@ -143,6 +144,191 @@ fn finaliseWriter(infra: std.mem.Allocator, state: *[host_instance.STATE_WORDS]u
     infra.destroy(st);
 }
 
+// ============================ Reader value (ADR-0138) ============================
+// The durable cljw-native Reader VALUE backing `*in*` — fqcn "Reader" (simple),
+// string-backed + a 1-slot CODEPOINT pushback (the `?u21` per ADR-0138, NOT a
+// byte decrement — a byte decrement corrupts multibyte codepoints). Distinct
+// from host_stream's file BufferedReader: JVM `*in*` is a PushbackReader, a file
+// reader is a plain BufferedReader — different class families, so cljw keeps the
+// pushback reader (here, for `*in*`/`with-in-str`) separate from the file reader.
+
+/// `gc.infra`-owned backing for one Reader value (the GC finaliser frees it).
+const ReaderState = struct {
+    /// the source bytes (UTF-8).
+    data: std.ArrayList(u8),
+    /// read cursor (byte offset).
+    pos: usize,
+    /// 1-slot codepoint pushback (`.unread`); consulted first by `.read`/`.peek`.
+    pushback: ?u21,
+};
+
+fn readerStateOf(recv: Value) *ReaderState {
+    return @ptrFromInt(host_instance.asHostInstance(recv).state[0]);
+}
+
+/// True iff `v` is a text_io Reader value (descriptor identity).
+pub fn isTextReader(v: Value) bool {
+    return v.tag() == .host_instance and
+        host_instance.asHostInstance(v).descriptor == &reader_descriptor;
+}
+
+/// Decode the codepoint at `st.pos` + its UTF-8 byte length, or null at EOF.
+/// Invalid UTF-8 degrades to the raw byte as a 1-byte codepoint (no crash).
+const Decoded = struct { cp: u21, len: usize };
+fn decodeAt(st: *ReaderState) ?Decoded {
+    if (st.pos >= st.data.items.len) return null;
+    const rest = st.data.items[st.pos..];
+    const byte_fallback: Decoded = .{ .cp = rest[0], .len = 1 };
+    const n = std.unicode.utf8ByteSequenceLength(rest[0]) catch return byte_fallback;
+    if (n > rest.len) return byte_fallback;
+    // utf8Decode is deprecated (awkward API); the fixed-width variants take a
+    // by-value array and are the non-deprecated form.
+    const cp: u21 = switch (n) {
+        1 => rest[0],
+        2 => std.unicode.utf8Decode2(rest[0..2].*) catch return byte_fallback,
+        3 => std.unicode.utf8Decode3(rest[0..3].*) catch return byte_fallback,
+        4 => std.unicode.utf8Decode4(rest[0..4].*) catch return byte_fallback,
+        else => return byte_fallback,
+    };
+    return .{ .cp = cp, .len = n };
+}
+
+/// `(.read r)` — next codepoint as an int (JVM Reader.read), -1 at EOF. Honors a
+/// pending `.unread` first.
+fn readCharMethod(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = rt;
+    _ = env;
+    try error_catalog.checkArity("read", args, 1, loc);
+    const st = readerStateOf(args[0]);
+    if (st.pushback) |cp| {
+        st.pushback = null;
+        return Value.initInteger(@intCast(cp));
+    }
+    const d = decodeAt(st) orelse return Value.initInteger(-1);
+    st.pos += d.len;
+    return Value.initInteger(@intCast(d.cp));
+}
+
+/// `(.peek r)` — next codepoint as an int WITHOUT advancing; -1 at EOF.
+fn peekCharMethod(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = rt;
+    _ = env;
+    try error_catalog.checkArity("peek", args, 1, loc);
+    const st = readerStateOf(args[0]);
+    if (st.pushback) |cp| return Value.initInteger(@intCast(cp));
+    const d = decodeAt(st) orelse return Value.initInteger(-1);
+    return Value.initInteger(@intCast(d.cp));
+}
+
+/// `(.unread r cp)` — push the codepoint `cp` back so the next `.read` returns it
+/// (1-slot; a second unread before a read overwrites). Returns nil.
+fn unreadCharMethod(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = rt;
+    _ = env;
+    try error_catalog.checkArity("unread", args, 2, loc);
+    if (args[1].tag() != .integer)
+        return error_catalog.raise(.type_arg_invalid, loc, .{ .fn_name = "unread", .expected = "a codepoint int", .actual = @tagName(args[1].tag()) });
+    const cp = args[1].asInteger();
+    if (cp < 0 or cp > 0x10FFFF)
+        return error_catalog.raise(.type_arg_invalid, loc, .{ .fn_name = "unread", .expected = "a valid codepoint", .actual = "out-of-range int" });
+    readerStateOf(args[0]).pushback = @intCast(cp);
+    return Value.nil_val;
+}
+
+/// `(.readLine r)` — the next line (terminator stripped, `\r\n`/`\n` aware) as a
+/// String, or nil at EOF. A pending `.unread` codepoint prefixes the line.
+fn readLineMethod(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = env;
+    try error_catalog.checkArity("readLine", args, 1, loc);
+    const st = readerStateOf(args[0]);
+    // Fast path: no pushback → return a slice of the source (cf. host_stream).
+    if (st.pushback == null) {
+        const items = st.data.items;
+        if (st.pos >= items.len) return Value.nil_val;
+        const nl = std.mem.findScalarPos(u8, items, st.pos, '\n');
+        var end = nl orelse items.len;
+        const next = if (nl) |n| n + 1 else items.len;
+        if (end > st.pos and items[end - 1] == '\r') end -= 1;
+        const line = items[st.pos..end];
+        st.pos = next;
+        return string_mod.alloc(rt, line);
+    }
+    // Pushback present: prepend the pushed codepoint, then the line bytes.
+    const cp = st.pushback.?;
+    st.pushback = null;
+    var buf: [4]u8 = undefined;
+    const n = std.unicode.utf8Encode(cp, &buf) catch 0;
+    if (cp == '\n') return string_mod.alloc(rt, ""); // pushed newline = empty line
+    var line: std.ArrayList(u8) = .empty;
+    defer line.deinit(rt.gpa);
+    try line.appendSlice(rt.gpa, buf[0..n]);
+    const items = st.data.items;
+    const nl = std.mem.findScalarPos(u8, items, st.pos, '\n');
+    var end = nl orelse items.len;
+    const next = if (nl) |x| x + 1 else items.len;
+    if (end > st.pos and items[end - 1] == '\r') end -= 1;
+    try line.appendSlice(rt.gpa, items[st.pos..end]);
+    st.pos = next;
+    return string_mod.alloc(rt, line.items);
+}
+
+/// `(.close r)` — no-op (buffer freed by the GC finaliser); returns nil.
+fn readerCloseMethod(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = rt;
+    _ = env;
+    try error_catalog.checkArity("close", args, 1, loc);
+    return Value.nil_val;
+}
+
+/// The folded `clojure.lang.LispReader$StringReader` reader-macro (D-414). Reads a
+/// string LITERAL from `args[0]` (an `*in*` Reader) — the bytes up to + consuming
+/// the closing `"`, escape-aware so `\"` does not terminate — and returns the
+/// decoded String. The opening `"` is assumed already consumed (clj's LispReader
+/// contract). Extra args (quote-char / opts / pending) are accepted + IGNORED.
+/// `(clojure.lang.LispReader$StringReader.)` returns this fn (special_forms ctor).
+pub fn lispStringReader(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = env;
+    if (args.len < 1 or !isTextReader(args[0]))
+        return error_catalog.raise(.type_arg_invalid, loc, .{ .fn_name = "LispReader$StringReader", .expected = "a reader (*in*)", .actual = if (args.len < 1) "no args" else @tagName(args[0].tag()) });
+    const st = readerStateOf(args[0]);
+    const items = st.data.items;
+    var i = st.pos;
+    const start = i;
+    while (i < items.len) {
+        if (items[i] == '\\') {
+            i += if (i + 1 < items.len) 2 else 1; // skip the escaped char so `\"` is literal
+            continue;
+        }
+        if (items[i] == '"') break;
+        i += 1;
+    }
+    const raw = items[start..i];
+    const had_escape = std.mem.findScalar(u8, raw, '\\') != null;
+    const decoded = try string_escape.unescape(rt.gc.infra, raw, loc);
+    defer if (had_escape) rt.gc.infra.free(decoded);
+    const result = try string_mod.alloc(rt, decoded);
+    st.pos = if (i < items.len) i + 1 else i; // consume the closing quote
+    return result;
+}
+
+/// Mint a Reader value over the bytes of `bytes` (UTF-8). `bytes` is copied into a
+/// fresh gc.infra buffer.
+pub fn mintReader(rt: *Runtime, bytes: []const u8) !Value {
+    var data: std.ArrayList(u8) = .empty;
+    errdefer data.deinit(rt.gc.infra);
+    try data.appendSlice(rt.gc.infra, bytes);
+    const st = try rt.gc.infra.create(ReaderState);
+    st.* = .{ .data = data, .pos = 0, .pushback = null };
+    return host_instance.alloc(rt, &reader_descriptor, .{ @intFromPtr(st), 0, 0, 0 });
+}
+
+/// Free the ReaderState buffer + the struct (GC finaliser hook).
+fn finaliseReader(infra: std.mem.Allocator, state: *[host_instance.STATE_WORDS]u64) void {
+    const st: *ReaderState = @ptrFromInt(state[0]);
+    st.data.deinit(infra);
+    infra.destroy(st);
+}
+
 // --- descriptor (module-static; cf. writer_value.zig) ---
 
 var writer_methods: [4]TypeDescriptor.MethodEntry = undefined;
@@ -159,8 +345,21 @@ var writer_descriptor: TypeDescriptor = .{
     .host_finalise = &finaliseWriter,
 };
 
-/// Fill the Writer descriptor's static method_table (idempotent). Called at
-/// bootstrap (`initBuiltinFn` is a runtime `@intFromPtr`, so not comptime).
+var reader_methods: [5]TypeDescriptor.MethodEntry = undefined;
+
+var reader_descriptor: TypeDescriptor = .{
+    .fqcn = "Reader",
+    .kind = .native,
+    .field_layout = null,
+    .protocol_impls = &.{},
+    .method_table = &.{},
+    .parent = null,
+    .meta = .nil_val,
+    .host_finalise = &finaliseReader,
+};
+
+/// Fill the Writer + Reader descriptors' static method_tables (idempotent).
+/// Called at bootstrap (`initBuiltinFn` is a runtime `@intFromPtr`, not comptime).
 pub fn initTextIoTypes() void {
     if (writer_methods_inited) return;
     writer_methods[0] = .{ .protocol_name = "", .method_name = "write", .method_val = Value.initBuiltinFn(&writeMethod) };
@@ -168,6 +367,12 @@ pub fn initTextIoTypes() void {
     writer_methods[2] = .{ .protocol_name = "", .method_name = "flush", .method_val = Value.initBuiltinFn(&flushMethod) };
     writer_methods[3] = .{ .protocol_name = "", .method_name = "close", .method_val = Value.initBuiltinFn(&closeMethod) };
     writer_descriptor.method_table = &writer_methods;
+    reader_methods[0] = .{ .protocol_name = "", .method_name = "read", .method_val = Value.initBuiltinFn(&readCharMethod) };
+    reader_methods[1] = .{ .protocol_name = "", .method_name = "peek", .method_val = Value.initBuiltinFn(&peekCharMethod) };
+    reader_methods[2] = .{ .protocol_name = "", .method_name = "unread", .method_val = Value.initBuiltinFn(&unreadCharMethod) };
+    reader_methods[3] = .{ .protocol_name = "", .method_name = "readLine", .method_val = Value.initBuiltinFn(&readLineMethod) };
+    reader_methods[4] = .{ .protocol_name = "", .method_name = "close", .method_val = Value.initBuiltinFn(&readerCloseMethod) };
+    reader_descriptor.method_table = &reader_methods;
     writer_methods_inited = true;
 }
 
@@ -218,6 +423,17 @@ fn stringWriterFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocat
     return mintWriter(rt, .string);
 }
 
+/// `(rt/__in-reader s)` — a text_io Reader (pushback) over String `s`. Backs
+/// `with-in-str` (the `*in*` reader); distinct from host_stream's `__string-reader`
+/// (a file BufferedReader, no pushback — used by clojure.java.io).
+fn inReaderFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = env;
+    try error_catalog.checkArity("__in-reader", args, 1, loc);
+    if (args[0].tag() != .string)
+        return error_catalog.raise(.type_arg_not_string, loc, .{ .fn_name = "__in-reader", .actual = @tagName(args[0].tag()) });
+    return mintReader(rt, string_mod.asString(args[0]));
+}
+
 /// `(rt/__writer->str w)` — the accumulated string of a writer (`.string`
 /// mode; process modes own no buffer so return ""). Backs `with-out-str`.
 fn writerToStrFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
@@ -234,6 +450,7 @@ const PRIMS = [_]Prim{
     .{ .name = "__stderr-writer", .f = &stderrWriterFn },
     .{ .name = "__string-writer", .f = &stringWriterFn },
     .{ .name = "__writer->str", .f = &writerToStrFn },
+    .{ .name = "__in-reader", .f = &inReaderFn },
 };
 
 /// Register the text_io `rt/__*` writer primitives. Called from

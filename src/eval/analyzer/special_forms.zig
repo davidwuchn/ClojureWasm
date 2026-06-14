@@ -33,7 +33,7 @@ const bindings = @import("bindings.zig");
 const map_collection = @import("../../runtime/collection/map.zig");
 const keyword_mod = @import("../../runtime/keyword.zig");
 const host_instance = @import("../../runtime/host_instance.zig");
-const host_stream = @import("../../runtime/io/host_stream.zig");
+const text_io = @import("../../runtime/io/text_io.zig");
 const array_list = @import("../../runtime/java/util/ArrayList.zig");
 
 /// True when `meta` (a Clojure map Value, or null) maps `key` to a truthy value
@@ -172,7 +172,7 @@ pub fn constructInstance(
     {
         if (args.len != 0)
             return error_catalog.raise(.arity_not_expected, loc, .{ .got = args.len, .fn_name = "LispReader$StringReader.", .expected = 0 });
-        return Value.initBuiltinFn(&host_stream.lispStringReader);
+        return Value.initBuiltinFn(&text_io.lispStringReader);
     }
     // D-414: cljw models `java.util.LinkedList` as the SAME mutable-list
     // host_instance as ArrayList (both are `java.util.List`; cljw shares one impl).

@@ -41,7 +41,6 @@ const file_io = @import("../file_io.zig");
 const string_mod = @import("../collection/string.zig");
 const env_mod = @import("../env.zig");
 const stream_classes = @import("stream_classes.zig");
-const string_escape = @import("../string_escape.zig");
 
 /// Re-exported from the stream_classes SSOT so the enum has one definition
 /// shared with the chain accessors there.
@@ -114,39 +113,6 @@ fn readLine(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) a
     return string_mod.alloc(rt, line);
 }
 
-/// The `clojure.lang.LispReader$StringReader` reader-macro (D-414). Reads a
-/// string LITERAL from `args[0]` (an `*in*` reader host_instance) — the bytes up
-/// to (and consuming) the closing `"`, escape-aware so `\"` does not terminate —
-/// and returns the decoded String. The opening `"` is assumed already consumed
-/// (clj's LispReader contract; instaparse's `safe-read-string` appends a trailing
-/// `"` to the content and reads it). The macro's extra args (quote-char / opts /
-/// pending LinkedList) are accepted and IGNORED — cljw decodes natively, it does
-/// not need the JVM reader's pending-forms machinery. `(clojure.lang.LispReader$StringReader.)`
-/// returns this fn (special-cased in special_forms.constructInstance).
-pub fn lispStringReader(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
-    _ = env;
-    if (args.len < 1 or args[0].tag() != .host_instance)
-        return error_catalog.raise(.type_arg_invalid, loc, .{ .fn_name = "LispReader$StringReader", .expected = "a reader (*in*)", .actual = if (args.len < 1) "no args" else @tagName(args[0].tag()) });
-    const st = stateOf(args[0]);
-    const items = st.data.items;
-    var i = st.pos;
-    const start = i;
-    while (i < items.len) {
-        if (items[i] == '\\') {
-            i += if (i + 1 < items.len) 2 else 1; // skip the escaped char so `\"` is literal
-            continue;
-        }
-        if (items[i] == '"') break;
-        i += 1;
-    }
-    const raw = items[start..i];
-    const had_escape = std.mem.findScalar(u8, raw, '\\') != null;
-    const decoded = try string_escape.unescape(rt.gc.infra, raw, loc);
-    defer if (had_escape) rt.gc.infra.free(decoded); // unescape allocated a fresh slice
-    const result = try string_mod.alloc(rt, decoded);
-    st.pos = if (i < items.len) i + 1 else i; // consume the closing quote
-    return result;
-}
 
 /// `.write` (String) — append the string's bytes to the accumulator.
 fn write(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
