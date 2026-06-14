@@ -85,9 +85,20 @@ already complete; Double gained `isFinite`, Character gained `isAlphabetic`/
 `toString`), `UUID` (8, fromString/toString + getMostSignificantBits/
 getLeastSignificantBits/version/variant/compareTo — instance accessors were
 missing) and `Random` (6, **seeded** — cljw reproduces Java's exact LCG
-sequence for nextInt/nextLong/nextBoolean, a strong parity).
+sequence for nextInt/nextLong/nextBoolean, a strong parity), `URI` (7,
+`/create` static + ctor + getHost/getPath/toString) and `Date` (6, ctor/getTime/
+equals + `before`/`after`).
 
-The remaining in-scope bare classes are tracked by **D-431**.
+**Per-class coverage of the built + deterministic + touched classes is closed at
+18 classes** (the exhaustive-then-closed discipline, not drip — clj_diff_sweep.md
+§ Discipline 2). What remains is NOT more of this same sweep:
+- feature gaps (build the surface): the `java.time` family / `BigDecimal` /
+  `Arrays` (D-105/D-243) — see the over-claim finding below;
+- non-deterministic classes (`System` clock/env, `UUID/randomUUID`,
+  `Math/random`) — cannot be golden-corpus'd;
+- deliberately-minimal classes (`Locale` — cljw casing is locale-independent).
+The next D-431 work is the ADR-0137 sharpenings (generated `methods:` index +
+the mechanical lib stop-chasing rule), not chasing further small classes.
 
 > **Over-claim finding (D-431 / ADR-0137).** The corpus campaign surfaced that
 > several `compat_tiers.yaml`-listed classes are NOT actually resolvable — their
