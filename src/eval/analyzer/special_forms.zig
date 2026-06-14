@@ -33,6 +33,8 @@ const bindings = @import("bindings.zig");
 const map_collection = @import("../../runtime/collection/map.zig");
 const keyword_mod = @import("../../runtime/keyword.zig");
 const host_instance = @import("../../runtime/host_instance.zig");
+const host_stream = @import("../../runtime/io/host_stream.zig");
+const array_list = @import("../../runtime/java/util/ArrayList.zig");
 
 /// True when `meta` (a Clojure map Value, or null) maps `key` to a truthy value
 /// — used to read `^:dynamic` / `^:private` off a `def` target's metadata.
@@ -160,6 +162,24 @@ pub fn constructInstance(
             return error_catalog.raise(.arity_not_expected, loc, .{ .got = args.len, .fn_name = "Object.", .expected = 0 });
         const obj_td = try rt.classDescriptor("Object");
         return host_instance.alloc(rt, obj_td, .{ 0, 0, 0, 0 });
+    }
+    // D-414: `(clojure.lang.LispReader$StringReader.)` returns the string-literal
+    // reader-MACRO fn (not an instance) — cljw-native, reading from an `*in*`
+    // reader. instaparse's grammar compiler builds parsers through it. The macro's
+    // 0-arg ctor yields the callable; later `(it *in* …)` reads a string literal.
+    if (std.mem.eql(u8, type_name, "clojure.lang.LispReader$StringReader") or
+        std.mem.eql(u8, type_name, "LispReader$StringReader"))
+    {
+        if (args.len != 0)
+            return error_catalog.raise(.arity_not_expected, loc, .{ .got = args.len, .fn_name = "LispReader$StringReader.", .expected = 0 });
+        return Value.initBuiltinFn(&host_stream.lispStringReader);
+    }
+    // D-414: cljw models `java.util.LinkedList` as the SAME mutable-list
+    // host_instance as ArrayList (both are `java.util.List`; cljw shares one impl).
+    // instaparse's reader wrapper builds a `(java.util.LinkedList.)` as a pending
+    // buffer it never reads on the cljw path. add/get/size/seq all work as ArrayList.
+    if (std.mem.eql(u8, type_name, "java.util.LinkedList") or std.mem.eql(u8, type_name, "LinkedList")) {
+        return array_list.initArrayList(rt, env, args, loc);
     }
     const td = resolveJavaSurface(rt, env, type_name) orelse
         return error_catalog.raise(.symbol_unresolved, loc, .{ .sym = type_name });

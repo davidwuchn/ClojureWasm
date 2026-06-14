@@ -49,7 +49,7 @@ fn listOf(recv: Value) *ValueList {
 /// vector (the common literal form). Seeding from a general seqable (list / seq)
 /// is a follow-up: the seq-realization machinery is Layer 2, not reachable from
 /// this Layer-0 surface — use `(ArrayList. (vec coll))`.
-fn initArrayList(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+pub fn initArrayList(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
     _ = env;
     if (args.len > 1)
         return error_catalog.raise(.arity_not_expected, loc, .{ .got = args.len, .fn_name = "java.util.ArrayList.", .expected = 1 });
