@@ -5,40 +5,50 @@
 
 ## Resume contract
 
-- **HEAD**: `main` (`git log` is the SSOT; ≈ `550ff3a3`+). All work on `main`;
+- **HEAD**: `main` (`git log` is the SSOT; ≈ `4f7cb796`+). All work on `main`;
   commit + `git push origin main` is the atomic Step 6 (`--force*` deny-listed).
-  Full gate 351/351 + verify_projects 17/17 (2026-06-14, all validated). Build
-  config UNIFIED (ADR-0133): every e2e/bench/probe uses `zig build -Dwasm
-  -Doptimize=ReleaseSafe` — bare `zig build` = Debug and overwrites zig-out, so
-  it is for hand experiments only.
+  Full gate 351/351 + verify_projects 19/19 (2026-06-14, all validated; data.json
+  + data.csv newly verified). Build config UNIFIED (ADR-0133): every e2e/bench/probe
+  uses `zig build -Dwasm -Doptimize=ReleaseSafe` — bare `zig build` = Debug and
+  overwrites zig-out, so it is for hand experiments only.
 
-- **First task on resume MUST be**: **D-431** (PARTIAL) — continue the F-014 /
-  ADR-0137 per-class completeness gate. Mechanism is LANDED: `clj_diff_sweep.sh
-  --class-corpus <Class>` → `test/diff/class_corpus/<Class>.txt`, gated by the
-  EXISTING `corpus_regression` smoke step (now scans `clj_corpus/` + `class_corpus/`).
-  `String` (44) + `Object` (15) closed (the surface gaps they surfaced — `.indexOf`/
-  `.lastIndexOf` overloads, `.stripLeading/Trailing`, `.compareToIgnoreCase`, `.intern`
-  — fixed same cycle). NEXT: the ~18 remaining in-scope bare classes, java.util
-  containers / Pattern-Matcher / throwable family first. Frequency source =
-  `private/clojure_frequent_java_interop/00a_frequency_overview.md`. Big-bang per
-  class (clj_diff_sweep.md Discipline 2).
-- **Resume PRIORITY SEQUENCE** (so the goal + opinion-residuals resolve by
-  `/continue` alone, finished-form-first): (1) D-431 completeness gate; (2) then
-  pure-lib verification per F-014 clause 3 (grow `verified_projects/`, stop-chasing
-  rule = blocker has a class_corpus home); (3) quality-floor drain (D-210 clj-parity
-  / D-232 conformance / D-242-245). DEFERRED-DEEP, NOT until a consumer/window:
-  D-430 (instaparse GLL parse divergence — NOT regex, terminals == clj), D-424
-  (class-resolution seam, latent), D-432 (seq-key hash-by-identity residual, low-freq).
+- **First task on resume MUST be**: **D-434** — the `*out*` writer-interop gap.
+  cljw's `*out*`/`*err*` root is the keyword SENTINEL `:clojure.core/stdout`, not a
+  Writer, so `(.write *out* s)` / `.append` / `.flush` fail (`.write` on a Keyword) —
+  blocking any lib that writes to `*out*` via the Java Writer interface (surfaced by
+  clojure.data.csv `write-csv` to `*out*`; likely clojure.pprint too). Fix is
+  cross-zone (dot-call dispatch = Layer-1 eval; emitToStdout + the `out_capture`
+  threadlocal = Layer-2 core.zig): relocate `out_capture` to an rt field + add a
+  Layer-1 dot-call arm that routes `.write/.append/.flush` on the *out*/*err*
+  sentinel to rt.out_capture→rt.stdout. ADR-level (DA fork) — the sentinel +
+  emitToStdout precedence (core.zig:740) is deliberate. Pairs with D-105 (time/io
+  build-out) + the pprint writer surface.
 
-- **Directed work DONE (2026-06-14, comprehensively validated)**: (1) finished-form
-  cleanup — the whole reify/instance-seq asymmetry class CLOSED: D-422 (count
-  Counted-vs-walk + self-seq print segfault), D-423 (reify qualified protocol_remap),
-  D-426 (reify equiv construction + keys/vals map-routing), D-427 (element-wise `=`
-  for Sequential deftypes). (2) Java surface (D-425) complete. (3) The `*in*` /
-  LispReader$StringReader reader subsystem (D-414 DISCHARGED) + qualified user-deftype
-  resolution (D-428) + String.subSequence (D-429) — instaparse now LOADS + runs its
-  grammar compiler into the GLL engine (blocked only at D-430). 5 libraries newly
-  verified (finger-tree, flatland.ordered, data.generators, tools.cli + the 12 prior).
+- **D-431 per-class completeness CLOSED** (the prior directed task — DONE this
+  session): mechanism wired + **18 built+deterministic+touched classes** corpus'd
+  (String/Object/Throwable/Pattern/Matcher/Math/ArrayList/HashMap/StringBuilder/
+  Long/Integer/Double/Boolean/Character/UUID/Random/URI/Date), gaps fixed same-cycle.
+  Remaining is NOT more of this sweep: the over-claimed unbuilt surfaces (java.time
+  D-105/D-243, BigDecimal, Arrays) are feature-builds; the ADR-0137 sharpenings
+  (generated `methods:` index + mechanical lib stop-chasing) are the residual. See
+  `test/diff/class_corpus/README.md` for the full map + the over-claim finding.
+- **Resume PRIORITY SEQUENCE** (finished-form-first): (1) D-431 completeness gate
+  — **per-class coverage CLOSED** (18 classes); residual = the ADR-0137 sharpenings
+  (generated `methods:` index + mechanical lib stop-chasing) + feature-builds for
+  the over-claimed classes. (2) pure-lib verification (F-014 clause 3) — **all
+  LOCALLY-available org.clojure pure libs now verified** (data.json + data.csv
+  added; sweep 19/19); the rest need network fetches or feature-builds (D-105 time,
+  D-434 *out*, BreakIterator for cuerdas). (3) quality-floor drain — common surface
+  confirmed clj-parity this session (host classes + clojure.string + set/walk/edn,
+  modulo AD-001 set-order); the deep campaigns remain (D-242-245 concurrency/GC,
+  D-232 validation). DEFERRED-DEEP, NOT until a consumer/window: D-430 (instaparse
+  GLL parse divergence — NOT regex), D-424 (class-resolution seam), D-432 (seq-key
+  hash residual), D-433 (exception str/pr one-liner).
+
+- **Prior-session landings (git log is the SSOT)**: reify/instance-seq asymmetry
+  class (D-422/423/426/427), Java surface D-425, the `*in*`/LispReader$StringReader
+  reader subsystem (D-414) + D-428/429. This session: D-431 (above) + D-433/D-434
+  filed. Discharged: D-414/421-429; open: D-418/424/430/432/433/434.
 
 - **Component experiment (push-suppressed, in `git stash@{0}`)**: zwasm REQ-7
   LANDED (pin `33e0100c`; channel `private/20260613_handover_from_zwasm/
