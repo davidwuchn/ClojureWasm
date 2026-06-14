@@ -78,4 +78,10 @@ assert_eq 'clear' "$("$BIN" - <<'EOF' 2>/dev/null
 EOF
 )" '0'
 
-echo "OK — phase14_hashmap (19 cases) green"
+# keySet / values — cljw seqs (AD-032), value-equal to clj (set print order = AD-001).
+assert_eq 'keySet' "$("$BIN" -e '(into #{} (.keySet (java.util.HashMap. {:a 1 :b 2})))' 2>/dev/null | tail -1)" '#{:a :b}'
+assert_eq 'values' "$("$BIN" -e '(into #{} (.values (java.util.HashMap. {:a 1 :b 2})))' 2>/dev/null | tail -1)" '#{1 2}'
+assert_eq 'keySet_count' "$("$BIN" -e '(count (.keySet (java.util.HashMap. {:a 1 :b 2 :c 3})))' 2>/dev/null | tail -1)" '3'
+assert_eq 'keySet_empty' "$("$BIN" -e '(seq (.keySet (java.util.HashMap.)))' 2>/dev/null | tail -1)" 'nil'
+
+echo "OK — phase14_hashmap (23 cases) green"

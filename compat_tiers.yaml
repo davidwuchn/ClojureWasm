@@ -271,7 +271,7 @@ tiers:
         phase: 14
         files:
           surface: runtime/java/util/HashMap.zig
-        methods: [put, get, containsKey, size, isEmpty, remove, clear]
+        methods: [put, get, containsKey, size, isEmpty, remove, clear, keySet, values]
         clojure_peer_vars: []
       - fqn: java.util.Date
         cljw_ns: cljw.java.util.Date

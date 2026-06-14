@@ -124,6 +124,26 @@ fn clear(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anye
     return Value.nil_val;
 }
 
+/// `(.keySet hm)` — the keys. clj returns a `java.util.Set` view; cljw returns a
+/// cljw seq of keys (no-JVM, AD-032 class) — `(into #{} (.keySet hm))` / seq /
+/// count agree. Empty → nil.
+fn keySet(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = env;
+    try error_catalog.checkArity(".keySet", args, 1, loc);
+    const m = mapOf(args[0]);
+    if (map.count(m) == 0) return Value.nil_val;
+    return map.keys(rt, m);
+}
+
+/// `(.values hm)` — the values (cljw seq; clj returns a Collection view). AD-032.
+fn values(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = env;
+    try error_catalog.checkArity(".values", args, 1, loc);
+    const m = mapOf(args[0]);
+    if (map.count(m) == 0) return Value.nil_val;
+    return map.vals(rt, m);
+}
+
 /// `(Seqable -seq)` — the entry seq of the backing map (empty → nil).
 fn seqImpl(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
     _ = env;
@@ -164,6 +184,8 @@ const METHODS = [_]MethodSpec{
     .{ .name = "isEmpty", .proto = "", .f = &isEmpty },
     .{ .name = "remove", .proto = "", .f = &remove },
     .{ .name = "clear", .proto = "", .f = &clear },
+    .{ .name = "keySet", .proto = "", .f = &keySet },
+    .{ .name = "values", .proto = "", .f = &values },
     .{ .name = "-seq", .proto = "Seqable", .f = &seqImpl },
     .{ .name = "-count", .proto = "IPersistentCollection", .f = &countImpl },
 };
