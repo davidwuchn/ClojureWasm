@@ -20,6 +20,7 @@ const Token = tok_mod.Token;
 const TokenKind = tok_mod.TokenKind;
 const error_mod = @import("../runtime/error/info.zig");
 const error_catalog = @import("../runtime/error/catalog.zig");
+const string_escape = @import("../runtime/string_escape.zig");
 const SourceLocation = error_mod.SourceLocation;
 
 /// Reader error surface. Aliases `error_mod.ClojureWasmError` so that
@@ -895,46 +896,9 @@ pub const Reader = struct {
     // --- string unescaping ---
 
     fn unescapeString(self: *Reader, s: []const u8, loc: SourceLocation) ReadError![]const u8 {
-        if (std.mem.findScalar(u8, s, '\\') == null) return s;
-
-        var buf: std.ArrayList(u8) = .empty;
-        errdefer buf.deinit(self.allocator);
-
-        var i: usize = 0;
-        while (i < s.len) {
-            if (s[i] == '\\') {
-                i += 1;
-                if (i >= s.len)
-                    return error_catalog.raise(.string_escape_trailing_backslash, loc, .{});
-                switch (s[i]) {
-                    'n' => buf.append(self.allocator, '\n') catch return error.OutOfMemory,
-                    't' => buf.append(self.allocator, '\t') catch return error.OutOfMemory,
-                    'r' => buf.append(self.allocator, '\r') catch return error.OutOfMemory,
-                    '\\' => buf.append(self.allocator, '\\') catch return error.OutOfMemory,
-                    '"' => buf.append(self.allocator, '"') catch return error.OutOfMemory,
-                    'b' => buf.append(self.allocator, 0x08) catch return error.OutOfMemory,
-                    'f' => buf.append(self.allocator, 0x0C) catch return error.OutOfMemory,
-                    'u' => {
-                        if (i + 4 >= s.len)
-                            return error_catalog.raise(.unicode_escape_truncated, loc, .{});
-                        const hex = s[i + 1 .. i + 5];
-                        const cp = std.fmt.parseInt(u21, hex, 16) catch
-                            return error_catalog.raise(.unicode_escape_invalid_hex, loc, .{ .hex = hex });
-                        var utf8_buf: [4]u8 = undefined;
-                        const len = std.unicode.utf8Encode(cp, &utf8_buf) catch
-                            return error_catalog.raise(.unicode_codepoint_invalid, loc, .{ .hex = hex });
-                        for (utf8_buf[0..len]) |b| buf.append(self.allocator, b) catch return error.OutOfMemory;
-                        i += 4;
-                    },
-                    else => |c| return error_catalog.raise(.string_escape_unknown, loc, .{ .escape = c }),
-                }
-                i += 1;
-            } else {
-                buf.append(self.allocator, s[i]) catch return error.OutOfMemory;
-                i += 1;
-            }
-        }
-        return buf.toOwnedSlice(self.allocator) catch error.OutOfMemory;
+        // Shared with the `LispReader$StringReader` host shim (D-414); the decode
+        // table lives in `runtime/string_escape.zig` so both layers reach it.
+        return string_escape.unescape(self.allocator, s, loc);
     }
 
     // --- token helpers ---
