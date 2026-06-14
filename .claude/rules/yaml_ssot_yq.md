@@ -138,7 +138,7 @@ DROW="D-018"; yq -r '.discharged[].id, (.active[] | select(.status | test("DISCH
 # highest existing id → next free is +1. PREFER the yq form — it reads the PARSED
 # `.id` values, so it is immune to quote-style drift (an unquoted `+=`-appended row
 # is counted; see Golden-rule #4):
-yq -r '.active[].id, .discharged[].id' .dev/debt.yaml | grep -oE '[0-9]+' | sort -n | tail -1
+yq -r '.active[].id, .standing[].id, .discharged[].id' .dev/debt.yaml | grep -oE '[0-9]+' | sort -n | tail -1
 # grep fallback — MUST scope to the `id:` field (a bare `grep -oE 'D-[0-9]+'` also
 # matches D-NNN in PROSE/cross-refs → a phantom too-high number) AND be
 # quote-TOLERANT (`"?`) so an unquoted `+=` row is not undercounted:
@@ -154,7 +154,7 @@ it as defined and the gate does NOT flag it. The id-scoped next-id recipe
 above is the robust cross-check (a phantom never has an `id:` row); to
 audit for phantoms, diff the set of referenced ids against the set of
 `id:`-defined ids:
-`comm -23 <(grep -oE 'D-[0-9]+' .dev/debt.yaml | sort -u) <(yq -r '.active[].id, .discharged[].id' .dev/debt.yaml | sort -u)`
+`comm -23 <(grep -oE 'D-[0-9]+' .dev/debt.yaml | sort -u) <(yq -r '.active[].id, .standing[].id, .discharged[].id' .dev/debt.yaml | sort -u)`
 prints any referenced-but-undefined id (empty = clean). (The defined-id side uses
 `yq` so it is quote-style-agnostic per Golden-rule #4; a grep fallback must use
 `id: "?D-`.)
@@ -169,7 +169,7 @@ for f in .dev/debt.yaml .dev/accepted_divergences.yaml compat_tiers.yaml \
 
 # (2) Duplicate ids (a stray body-less `- id: "D-NNN"` from a botched edit parses
 #     fine but duplicates a real entry — yq well-formedness does NOT catch it):
-yq -r '.active[].id, .discharged[].id' .dev/debt.yaml | sort | uniq -d   # empty = clean
+yq -r '.active[].id, .standing[].id, .discharged[].id' .dev/debt.yaml | sort | uniq -d   # empty = clean
 yq -r '.[][].id' .dev/accepted_divergences.yaml 2>/dev/null | sort | uniq -d
 
 # (3) Quote-style drift — unquoted ids from `+=` appends (Golden-rule #4):
