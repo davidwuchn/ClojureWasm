@@ -39,6 +39,17 @@ cat > "$FIX" <<'CLJ'
          (valAt [_ k] (str "k=" k))
          (valAt [_ k nf] (str "k=" k))))
 (println (get c :q))            ; -> "k=:q"
+
+;; D-423: a QUALIFIED protocol_remap interface name in the reify section.
+;; Formerly failed `__reify!: expected protocol, got type_descriptor` (the
+;; qualified symbol resolves to a class VALUE, not a protocol Var, which
+;; __reify!'s interfaces vector rejects). Now quote-wrapped like the bare
+;; spelling / the deftype declared-name marker, so both spellings work.
+(def d (reify clojure.lang.ILookup
+         (valAt [_ k] k)
+         (valAt [_ k nf] k)))
+(println (.valAt d :x))                       ; -> :x
+(println (instance? clojure.lang.ILookup d))  ; -> true (membership recorded)
 CLJ
 
 out=$("$BIN" "$FIX" 2>&1) || fail "run: non-zero exit ($out)"
@@ -49,5 +60,7 @@ assert_eq 'valAt_dotcall_dual'   "$(sed -n '3p' <<< "$out")" '42'
 assert_eq 'count_under_indexed'  "$(sed -n '4p' <<< "$out")" '7'
 assert_eq 'nth_under_indexed'    "$(sed -n '5p' <<< "$out")" '2'
 assert_eq 'valAt_under_ilookup'  "$(sed -n '6p' <<< "$out")" 'k=:q'
+assert_eq 'qualified_valAt'      "$(sed -n '7p' <<< "$out")" ':x'
+assert_eq 'qualified_instance'   "$(sed -n '8p' <<< "$out")" 'true'
 
-echo "OK — phase14_reify_remap (6 cases) green"
+echo "OK — phase14_reify_remap (8 cases) green"

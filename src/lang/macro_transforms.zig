@@ -3319,7 +3319,17 @@ fn expandReify(
         // the primitive recognises the Symbol Value. A protocol name stays bare
         // (resolves to its protocol Var, the existing path).
         const sec_name = args[i].data.symbol.name;
-        const proto_form = if (host_interface.isMarker(sec_name))
+        // Host-supertype markers (`Object`, D-275) AND protocol_remap interfaces
+        // (`clojure.lang.*`, D-423) go into the interfaces vector quote-wrapped, so
+        // `__reify!` records the NAME as a `protocol_impls` marker. A BARE
+        // protocol_remap name (`ILookup`) would also resolve to its cljw protocol
+        // Var, but a QUALIFIED one (`clojure.lang.ILookup`) resolves to a class
+        // VALUE which `__reify!` rejects ("expected protocol, got type_descriptor");
+        // quote-wrapping normalizes both spellings (and `Counted`, whose canonical
+        // has no protocol Var), mirroring `rewriteProtocolRemap`'s declared-name
+        // marker registration on the deftype/extend-type path. A plain cljw
+        // protocol (user `defprotocol`) is neither, so it stays bare → its Var.
+        const proto_form = if (host_interface.isMarker(sec_name) or host_interface.isProtocolRemap(sec_name))
             try quoteWrap(arena, args[i])
         else
             args[i];
