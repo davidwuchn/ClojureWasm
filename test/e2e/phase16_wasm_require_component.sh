@@ -24,7 +24,8 @@ $out"
 for marker in \
   "PASS require-component-greet" \
   "PASS require-component-reuse" \
-  "PASS require-component-resource"; do
+  "PASS require-component-resource" \
+  "PASS require-component-refer"; do
   echo "$out" | grep -q "$marker" || fail "missing: $marker
 $out"
 done

@@ -24,24 +24,34 @@
     after-dot))
 
 (defn require-component*
-  "Runtime worker for `require-component`: load `path` as a cached component
-   handle, then intern one Var per export into the `ns-sym` namespace, each a fn
-   that calls the export through the shared handle. Returns the target Namespace."
-  [path ns-sym]
+  "Runtime worker for `require-component`. Loads `path` as a cached component
+   handle, then per `opts`: `:as <sym>` interns ALL exports as Vars in the named
+   namespace; `:refer [<sym> …]` interns the named exports into the CURRENT ns.
+   Each Var is a fn calling its export through the shared handle. Returns the
+   target Namespace (`:as`) or the current ns."
+  [path opts]
   (let [handle (wasm/load-component path)
         exports (wasm/component-exports path)
-        target (create-ns ns-sym)]
-    (doseq [e exports]
-      (let [raw (:name e)
-            clean (strip-export-name raw)]
-        (intern target (symbol clean)
-                (fn [& args] (apply wasm/component-call handle raw args)))))
-    target))
+        var-fn (fn [raw] (fn [& args] (apply wasm/component-call handle raw args)))
+        as-sym (:as opts)
+        refer-syms (:refer opts)]
+    (when as-sym
+      (let [target (create-ns as-sym)]
+        (doseq [e exports]
+          (intern target (symbol (strip-export-name (:name e))) (var-fn (:name e))))))
+    (when (seq refer-syms)
+      (let [cur (the-ns *ns*)
+            by-clean (reduce (fn [m e] (assoc m (strip-export-name (:name e)) (:name e))) {} exports)]
+        (doseq [s refer-syms]
+          (when-let [raw (get by-clean (name s))]
+            (intern cur (symbol (name s)) (var-fn raw))))))
+    (if as-sym (the-ns as-sym) (the-ns *ns*))))
 
 (defmacro require-component
-  "Require a Wasm component's exports as Vars in a namespace, e.g.
-   `(require-component \"greet.wasm\" :as greeter)` then `(greeter/greet \"world\")`.
-   The `:as` name is an unquoted symbol (like `require`'s `:as`)."
+  "Require a Wasm component's exports as Vars, e.g.
+   `(require-component \"greet.wasm\" :as greeter)` then `(greeter/greet \"world\")`,
+   or `(require-component \"greet.wasm\" :refer [greet])` then `(greet \"world\")`.
+   `:as` is an unquoted symbol; `:refer` a vector of unquoted symbols (like `require`)."
   [path & opts]
   (let [o (apply hash-map opts)]
-    `(require-component* ~path '~(:as o))))
+    `(require-component* ~path {:as '~(:as o) :refer '~(:refer o)})))

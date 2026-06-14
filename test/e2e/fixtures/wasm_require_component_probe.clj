@@ -23,4 +23,10 @@
   (assert (= 6 g) (str "counter ctor(5)->increment->get expected 6, got " (pr-str g)))
   (println "PASS require-component-resource"))
 
+;; --- :refer form — named exports interned into the CURRENT ns (callable bare) ---
+(cljw.wasm/require-component "test/e2e/fixtures/wasm/greet_component.wasm" :refer [greet])
+(let [r (greet "refer")]
+  (assert (= "Hello, refer!" r) (pr-str r))
+  (println "PASS require-component-refer"))
+
 (println "DONE")
