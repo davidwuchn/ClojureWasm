@@ -295,8 +295,24 @@ When the sensor interrupts, ask:
 > within the laid-out tree, internal helper organisation, etc.),
 > the Structural imagination phase **does** apply, and decisions
 > defer to the owning Phase entry's owner as before.
+>
+> **F-015 narrowing (added 2026-06-15, ADR-0142)**: the project is
+> near-complete and the phase-queue model is retired — there is no
+> future "Phase N entry owner" to defer to for the **gap areas**
+> (Concurrency / Wasm-edge-native / VM-perf, ROADMAP §9.0; all
+> BUILT). For gap-area work, the draining unit **is** the owner:
+> make the structural decision now (within the F-NNN envelope +
+> the DA-fork discipline), do not defer it to a non-existent phase.
+> Defer-to-a-future-owner survives **only** for the genuinely-future
+> bucket (ClojureScript→JS / C-FFI / broad-JIT, §9.0) — structure
+> there can still be imagined-and-deferred since it is distal. Read
+> "the owning Phase entry" below as "the draining gap-area unit"
+> for everything except that future bucket. F-003 (decision-deferral
+> on genuinely-open future structure) is unchanged in spirit; F-015
+> only removes the blanket "defer to Phase N" for already-built areas.
 
-ROADMAP extends through Phase 20. When a task touches a
+ROADMAP extends through the gap areas + the genuinely-future bucket
+(§9.0; "Phase 20" = broad JIT, the distal tail). When a task touches a
 **structural plan** that future phases will live with, the
 autonomous loop is **not** allowed to decide on the structure's
 behalf for the future. The decision belongs to the owning
