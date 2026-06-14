@@ -24,6 +24,7 @@
 //!   non-first-file errors).
 
 const std = @import("std");
+const build_options = @import("build_options");
 
 const Reader = @import("../eval/reader.zig").Reader;
 const analyzeForm = @import("../eval/analyzer/analyzer.zig").analyze;
@@ -101,6 +102,10 @@ pub const FILES: []const FileEntry = &.{
     // clojure.test.tap (D-273) — TAP reporter for clojure.test; loads after
     // clojure.test (FILES[10]) + clojure.stacktrace (FILES[19]). Appended last.
     .{ .label = "<clojure.test.tap>", .source = @embedFile("clj/clojure/test/tap.clj") },
+    // cljw.wasm (W1, D-404) — require-a-component over the wasm/ primitives.
+    // Require-on-demand AND wasm-gated (the lookup below only serves it under
+    // `-Dwasm`, since the wasm/ ns it rides is absent otherwise). Appended last.
+    .{ .label = "<cljw.wasm>", .source = @embedFile("clj/cljw/wasm.clj") },
 };
 
 /// First file's source — exposed so `main.zig`'s renderer can fall
@@ -144,6 +149,10 @@ fn lookupEmbeddedFile(ns_name: []const u8) ?FileEntry {
     if (std.mem.eql(u8, ns_name, "clojure.uuid")) return FILES[20];
     if (std.mem.eql(u8, ns_name, "clojure.instant")) return FILES[21];
     if (std.mem.eql(u8, ns_name, "clojure.test.tap")) return FILES[22];
+    // cljw.wasm rides the `wasm/` primitive ns, which only exists in a `-Dwasm`
+    // build — so it is resolvable only there (a non-wasm build reports the ns as
+    // not found, honest, rather than failing on an unresolvable `wasm/…` later).
+    if (build_options.wasm and std.mem.eql(u8, ns_name, "cljw.wasm")) return FILES[23];
     return null;
 }
 
