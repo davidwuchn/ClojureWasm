@@ -50,4 +50,31 @@ assert_eq 'bare_counted' "$("$BIN" - <<'EOF' 2>/dev/null
 EOF
 )" '5'
 
-echo "OK — phase14_count_walk (5 cases) green"
+# REIFY shares the same RT.count routing as deftype (D-422 twin): a reify that is
+# ISeq-but-not-Counted with a LYING -count under IPersistentCollection is WALKED
+# (the -count is ignored), not trusted. Formerly reify fell into the count else-arm
+# (direct -count dispatch) → returned the lie 999.
+assert_eq 'reify_iseq_walk' "$("$BIN" - <<'EOF' 2>/dev/null
+(def r (reify
+  clojure.lang.Seqable (seq [this] this)
+  clojure.lang.ISeq (first [_] 1) (more [_] ()) (next [_] nil)
+  clojure.lang.IPersistentCollection (count [_] 999)))
+(prn (count r))
+EOF
+)" '1'
+# a reify that IS Counted → -count is authoritative.
+assert_eq 'reify_counted' "$("$BIN" -e '(count (reify clojure.lang.Counted (count [_] 7)))' 2>/dev/null | tail -1)" '7'
+
+# Seqable-ONLY (no IPersistentCollection/ISeq) is NOT countable: clj throws
+# "count not supported on this type", so cljw must ERROR too — NOT silently walk
+# the seq (the L1 over-permissiveness the D-422 fix must avoid). Both deftype and
+# reify error (non-zero exit).
+"$BIN" -e '(count (reify clojure.lang.Seqable (seq [_] (list 1 2 3))))' >/dev/null 2>&1 \
+  && fail 'seqable_only_reify: expected error, got success' || echo "PASS seqable_only_reify -> error"
+"$BIN" - >/dev/null 2>&1 <<'EOF' \
+  && fail 'seqable_only_deftype: expected error, got success' || echo "PASS seqable_only_deftype -> error"
+(deftype S [] clojure.lang.Seqable (seq [_] (list 1 2 3)))
+(count (S.))
+EOF
+
+echo "OK — phase14_count_walk (9 cases) green"

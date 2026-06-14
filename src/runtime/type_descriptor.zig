@@ -227,6 +227,26 @@ pub const TypeDescriptor = struct {
         }
         return false;
     }
+
+    /// clj `RT.count` / `RT.countFrom` walk-eligibility: true iff this descriptor
+    /// declares `IPersistentCollection` or a `clojure.lang` interface that extends
+    /// it (`ISeq` / `IPersistentList` / `IPersistentStack` / `Associative` /
+    /// `IPersistentMap` / `IPersistentVector` / `IPersistentSet`). clj walks a
+    /// non-Counted collection's seq to count it, but a `Seqable`-ONLY type is NOT
+    /// an IPersistentCollection — clj throws `UnsupportedOperationException`
+    /// ("count not supported on this type"). So `count` walks only when this is
+    /// true; a Seqable-only deftype/reify errors instead of being silently walked.
+    /// Both bare (D-417) and `clojure.lang.`-qualified spellings are checked.
+    pub fn isPersistentCollection(self: *const TypeDescriptor) bool {
+        const coll_family = [_][]const u8{
+            "IPersistentCollection",              "ISeq",              "IPersistentList",              "IPersistentStack",              "Associative",              "IPersistentMap",              "IPersistentVector",              "IPersistentSet",
+            "clojure.lang.IPersistentCollection", "clojure.lang.ISeq", "clojure.lang.IPersistentList", "clojure.lang.IPersistentStack", "clojure.lang.Associative", "clojure.lang.IPersistentMap", "clojure.lang.IPersistentVector", "clojure.lang.IPersistentSet",
+        };
+        for (coll_family) |name| {
+            if (self.declaresProtocol(name)) return true;
+        }
+        return false;
+    }
 };
 
 /// A `deftype` / `defrecord` runtime value. **Extern struct** so
@@ -351,6 +371,19 @@ pub const ReifiedInstance = extern struct {
         std.debug.assert(@sizeOf(ReifiedInstance) == 16);
     }
 };
+
+/// Descriptor of a `.typed_instance` / `.reified_instance` Value — the two decode
+/// to DIFFERENT structs (TypedInstance carries a field tail; ReifiedInstance is
+/// header+descriptor only), both with a `.descriptor` at the same logical slot.
+/// One SSOT so dispatch arms that treat deftype + reify uniformly (count, keys,
+/// vals) don't each re-derive the tag switch. Asserts the tag is one of the two.
+pub fn descriptorOfInstance(v: Value) *const TypeDescriptor {
+    return switch (v.tag()) {
+        .typed_instance => v.decodePtr(*const TypedInstance).descriptor,
+        .reified_instance => v.decodePtr(*const ReifiedInstance).descriptor,
+        else => unreachable,
+    };
+}
 
 /// Allocate a ReifiedInstance on the GC heap with the given anonymous
 /// descriptor. Returns a Value tagged `.reified_instance`. Row 7.5

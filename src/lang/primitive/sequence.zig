@@ -110,26 +110,34 @@ pub fn countFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation
         .chunked_cons => Value.initInteger(@intCast(chunked_cons.count(coll))),
         // PERF: O(1) precomputed range length, no element walk [refs: O-001]
         .range => Value.initInteger(range.countOf(coll)),
-        .typed_instance => blk: {
-            // clj RT.count: a Counted (or Counted-extending) type's `-count` is
-            // authoritative; a defrecord counts by field_count (with -count
-            // override honoured — Row 7.7 R3a, ADR-0008 am4). A type declaring
-            // only IPersistentCollection / ISeq / Seqable is NOT Counted, so we
-            // WALK its seq (clj ignores IPersistentCollection.count() for a
-            // non-Counted type — D-422: data.finger-tree's internal trees stub
-            // `(count [_])` → nil but aren't Counted).
-            const inst = coll.decodePtr(*const td_mod.TypedInstance);
-            if (inst.descriptor.kind == .defrecord) {
+        // deftype/reify share one arm (rseq's pattern): clj RT.count routes BOTH
+        // by the same rules, so a reify must not bypass the deftype logic (D-422
+        // twin). A defrecord counts by field_count (with a -count override honoured
+        // — Row 7.7 R3a, ADR-0008 am4); a Counted (or Counted-extending) type's
+        // -count is authoritative; a non-Counted IPersistentCollection (incl. ISeq)
+        // is WALKED (clj ignores IPersistentCollection.count() for non-Counted —
+        // D-422: data.finger-tree's internal trees stub `(count [_])` → nil but
+        // aren't Counted). A Seqable-ONLY type is NOT an IPersistentCollection, so
+        // it falls through to protocol_no_satisfies — clj throws "count not
+        // supported on this type" there too, NOT a silent seq walk.
+        .typed_instance, .reified_instance => blk: {
+            const desc = instanceDescriptor(coll);
+            if (desc.kind == .defrecord) {
                 var cs: dispatch.CallSite = .{};
                 if (try dispatch.dispatchOrNull(rt, env, &cs, coll, IPC_FQCN, "-count", args, loc)) |v| break :blk v;
-                break :blk Value.initInteger(@intCast(inst.field_count));
+                break :blk Value.initInteger(@intCast(coll.decodePtr(*const td_mod.TypedInstance).field_count));
             }
-            if (inst.descriptor.isCounted()) {
+            if (desc.isCounted()) {
                 var cs: dispatch.CallSite = .{};
                 if (try dispatch.dispatchOrNull(rt, env, &cs, coll, IPC_FQCN, "-count", args, loc)) |v| break :blk v;
                 // declared Counted but no -count body resolved → fall through to walk.
             }
-            break :blk try countBySeqWalk(rt, env, coll, loc);
+            if (desc.isPersistentCollection()) break :blk try countBySeqWalk(rt, env, coll, loc);
+            return error_catalog.raise(.protocol_no_satisfies, loc, .{
+                .protocol = IPC_FQCN,
+                .method = "-count",
+                .type_name = desc.fqcn orelse "<anonymous>",
+            });
         },
         .list, .cons, .lazy_seq => {
             // O(n) generic walk. A `.list` cons may hold a non-list seq as
@@ -170,15 +178,7 @@ pub fn countFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation
     };
 }
 
-/// Descriptor of a `.typed_instance` / `.reified_instance` Value (the two
-/// decode to different structs — both carry `.descriptor`).
-fn instanceDescriptor(v: Value) *const td_mod.TypeDescriptor {
-    return switch (v.tag()) {
-        .typed_instance => v.decodePtr(*const td_mod.TypedInstance).descriptor,
-        .reified_instance => v.decodePtr(*const td_mod.ReifiedInstance).descriptor,
-        else => unreachable,
-    };
-}
+const instanceDescriptor = td_mod.descriptorOfInstance;
 
 /// clj `RT.countFrom`: count a non-Counted instance by WALKING its seq.
 /// `(seq coll)` then advance via ISeq `-next`, counting one element per node,
