@@ -213,9 +213,10 @@ interfaces:
     recognised: true
     kind: protocol_remap
     modeled_as: "Indexed (defprotocol Indexed (-nth [c i]), core.clj:1680)"
-    note: "D-397: nth→Indexed/-nth; the 2-arity (i, not-found) impl shares -nth via D-279 multi-arity. `nthFn`'s else-arm already dispatches Indexed/-nth on a typed_instance (D-089 row 8.6 cycle 2) — a REAL win (nth routes to the deftype's impl). instaparse's AutoFlattenSeq declares it."
+    note: "D-397: nth→Indexed/-nth; the 2-arity (i, not-found) impl shares -nth via D-279 multi-arity. `nthFn`'s else-arm already dispatches Indexed/-nth on a typed_instance (D-089 row 8.6 cycle 2) — a REAL win (nth routes to the deftype's impl). instaparse's AutoFlattenSeq declares it. D-419: clj Indexed extends Counted, so count under an Indexed header flattens to IPersistentCollection/-count (mirrors COUNTED)."
     methods:
       nth: { status: wired, wires_to_protocol: Indexed, wires_to_method: "-nth" }
+      count: { status: wired, wires_to_protocol: IPersistentCollection, wires_to_method: "-count" }
   - name: clojure.lang.IReduceInit
     derives_from: "clojure.lang.IReduceInit — internal-reduce contract `(reduce [coll f init])` (Clojure, stable)."
     tier: A
@@ -440,11 +441,12 @@ interfaces:
     recognised: true
     kind: protocol_remap
     modeled_as: "Associative (defprotocol Associative (-assoc …) (-contains-key? …) (-entry-at …))"
-    note: "D-306: direct-supertype spelling of the same Associative targets IPersistentMap remaps to. Load-level."
+    note: "D-306: direct-supertype spelling of the same Associative targets IPersistentMap remaps to. Load-level. D-419: clj Associative extends ILookup, so valAt under an Associative header flattens to ILookup/-lookup."
     methods:
       assoc: { status: wired, wires_to_protocol: Associative, wires_to_method: "-assoc" }
       containsKey: { status: wired, wires_to_protocol: Associative, wires_to_method: "-contains-key?" }
       entryAt: { status: wired, wires_to_protocol: Associative, wires_to_method: "-entry-at" }
+      valAt: { status: wired, wires_to_protocol: ILookup, wires_to_method: "-lookup" }
   - name: clojure.lang.Seqable
     aliases: [Seqable]
     derives_from: "clojure.lang.Seqable — seq; the base of every persistent collection, declarable directly (Clojure, stable)."

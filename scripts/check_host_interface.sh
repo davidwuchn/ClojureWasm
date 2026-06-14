@@ -15,6 +15,11 @@
 #        lacks — the anti-D-177 false-positive discipline).
 #   (iii) no floating wire — every method with `status: wired` names a
 #        non-empty `wires_to` (a wired method must point at a real surface).
+#   (iv) yaml==zig remap equality (D-415 S1) — the yaml `methods:` maps and the
+#        zig `.remap` tables DUPLICATE the same data; this diffs them so neither
+#        can drift silently (the blind spot that let D-419's zig-only additions
+#        pass). `-`-prefixed identity guards are excluded; Object-method-family
+#        targets are matched on key-presence (yaml documents them via `wires_to`).
 #
 # See .dev/decisions/0102_host_interface_ssot.md + F-013 + .dev/principle.md
 # "Ad-hoc-pass smell".
@@ -96,8 +101,55 @@ if [ -n "$wired" ]; then
     done <<<"$wired"
 fi
 
+# (iv) yaml==zig remap equality (D-415 S1): the yaml `methods:` maps DUPLICATE the
+#   zig `.remap` tables, and (i)-(iii) only check membership/wires, NOT that the two
+#   AGREE — so a zig remap entry added without the matching yaml row (or vice versa)
+#   drifts silently (D-419 introduced exactly that: INDEXED+=count / ASSOCIATIVE+=
+#   valAt in zig without the yaml rows). This clause diffs them. `-`-prefixed clj
+#   entries (internal rewrite-recursion identity guards, e.g. -disjoin/-without) are
+#   NOT user-declarable clj methods and are intentionally yaml-absent → excluded.
+#   Object-method-family targets (clj → Object/<m>) are documented in yaml with a
+#   `wires_to` DESCRIPTION (not wires_to_protocol/method), so they are matched on
+#   key-presence only, not on the protocol/method tuple. The zig `.remap` literal
+#   format is controlled (`.{ .clj = "..", .protocol = "..", .method = ".." }`,
+#   `.canonical = ".."` before its entries); keep it regular so this awk parse holds.
+zig_remap=$(awk '
+  /\.canonical = "/ { if (match($0, /\.canonical = "[^"]+"/)) { s=substr($0,RSTART,RLENGTH); gsub(/\.canonical = "|"/,"",s); cur=s } }
+  /\.clj = "/ && /\.protocol = "/ && /\.method = "/ {
+    c=$0; sub(/.*\.clj = "/,"",c); sub(/".*/,"",c);
+    p=$0; sub(/.*\.protocol = "/,"",p); sub(/".*/,"",p);
+    m=$0; sub(/.*\.method = "/,"",m); sub(/".*/,"",m);
+    if (substr(c,1,1) != "-") print cur"|"c"|"p"|"m
+  }' "$ZIG" | sort -u)
+zig_nonobj=$(printf '%s\n' "$zig_remap" | awk -F'|' '$3!="Object" && NF==4')
+zig_keys=$(printf '%s\n' "$zig_remap" | awk -F'|' 'NF==4{print $1"|"$2}' | sort -u)
+yaml_full=$(yq -r '.interfaces[] as $i | ($i.methods // {}) | to_entries[] | select(.value.wires_to_protocol != null) | (($i.name | sub("^.*\.";"")) + "|" + .key + "|" + .value.wires_to_protocol + "|" + .value.wires_to_method)' "$YAML" | sort -u)
+yaml_keys=$(yq -r '.interfaces[] as $i | ($i.methods // {}) | to_entries[] | (($i.name | sub("^.*\.";"")) + "|" + .key)' "$YAML" | sort -u)
+
+while IFS= read -r t; do
+    [ -z "$t" ] && continue
+    if ! grep -qxF "$t" <<<"$yaml_full"; then
+        note "VIOLATION (yaml/zig drift): zig .remap has '$t' but $YAML has no matching methods entry (wires_to_protocol/wires_to_method)."
+        fail=1
+    fi
+done <<<"$zig_nonobj"
+while IFS= read -r t; do
+    [ -z "$t" ] && continue
+    if ! grep -qxF "$t" <<<"$yaml_keys"; then
+        note "VIOLATION (yaml/zig drift): zig .remap routes '${t%%|*}/${t##*|}' but $YAML lists no methods entry for it."
+        fail=1
+    fi
+done <<<"$zig_keys"
+while IFS= read -r t; do
+    [ -z "$t" ] && continue
+    if ! grep -qxF "$t" <<<"$zig_remap"; then
+        note "VIOLATION (yaml/zig drift): $YAML methods entry '$t' has no matching zig .remap entry (over-claim)."
+        fail=1
+    fi
+done <<<"$yaml_full"
+
 if [ "$fail" -eq 0 ]; then
-    note "OK — $(wc -w <<<"$code_names" | tr -d ' ') recognised name(s) ⊆ $(wc -l <<<"$yaml_names" | tr -d ' ') SSOT row(s); no over-claim; no floating wire."
+    note "OK — $(wc -w <<<"$code_names" | tr -d ' ') recognised name(s) ⊆ $(wc -l <<<"$yaml_names" | tr -d ' ') SSOT row(s); no over-claim; no floating wire; yaml/zig remap in sync."
 fi
 
 if [ "$fail" -ne 0 ] && { [ "$MODE" = "--gate" ] || [ "$MODE" = "--strict" ]; }; then
