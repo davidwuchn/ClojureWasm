@@ -17,21 +17,21 @@
   zwasm-lazy, untouched). NOTE: reproducibility-for-others also needs read access to
   the (currently pre-tag) clojurewasm/zwasm repo — user's external action.
 
-- **First task on resume**: **Track R R3 — ROADMAP §9 rewrite** (D-440 item 3), using
-  the R2 survey `private/notes/p14-r2-accurate-position-survey.md`. Reframe §9: mark
-  the BUILT-but-future phases done (concurrency / Wasm-component build+run+require /
-  bytecode-cache / partial VM-superinstr — survey list A), collapse Phases 15-20 into
-  ~3 completion-grade GAP AREAS (Concurrency-hardening / Wasm+edge-native / VM-perf→JIT)
-  + a small genuinely-future bucket (CLJS, C-FFI, broad-JIT, WIT — survey list B). Fix
-  the version drift (`1.0.0-alpha.1` vs v0.1.0) + stale "Final activation step" framing
-  (survey list C). Old phase NUMBERING is an input, not a constraint (F-015 cl.4).
-  - **Then**: R4 debt整理 (~19 Phase-gated rows, many already read DONE/now:
-    D-037/046/224/242/244/245 — survey C) → R5 AI-instruction 大整理. R1 concurrency
-    parity DONE this session (agent ctor options/D-441, await-for, swap-vals!/reset-vals!,
-    io! — corpus-locked) + remaining gaps filed D-442; R1 hardening (D-244 #4a' auto-collect
-    / D-245 Option C) evaluated as GATED-defer (engine correct without them).
-  - **Reads: `.dev/project_facts.md` F-015 + ADR-0141 + D-440 + the R2 survey note** +
-    ROADMAP §9. (Earlier-queued W1-remaining / Track S micro-units are fill-in below.)
+- **First task on resume**: **Track R R4 — debt整理** (D-440 item 4). ROADMAP §9 was
+  reframed to the gap-area model (R3 / **ADR-0142**): §9.0 gap-area sections + a
+  phase-number→gap-area redirect table, §9.17-9.22 retitled (anchors preserved), version
+  reconciled, stub-swap framing dropped. **ADR-0142 left a sequencing obligation**: R4
+  must rewrite the ~19+ Phase-gated debt rows' "Phase N target/entry" barriers → gap-area
+  barriers (so the §9 redirect table becomes a bridge, not a tombstone). Rows whose body
+  already reads DONE/now but status still says Phase-gated: D-037/046/224/242/244/245;
+  genuinely-still-future (keep): D-005/006/035/036/039/290/350/324/326/327. Also flip the
+  dissolved ones. **Then R5 — AI-instruction 大整理** (principle.md/CLAUDE.md phase-entry
+  machinery + retire vestigial `phase_at_least_N` flags). R3 also filed **D-443** (the
+  Alt-3 capability-matrix successor model — open AFTER R4/R5 drain the citations).
+  - R1 concurrency parity DONE (D-441/await-for/swap-vals!/reset-vals!/io! — corpus-locked);
+    remaining gaps D-442; R1 hardening (D-244 #4a' / D-245 Option C) GATED-defer.
+  - **Reads: `.dev/project_facts.md` F-015 + ADR-0141 + ADR-0142 + D-440 + the R2 survey
+    note** + ROADMAP §9.0. (W1-remaining / Track S micro-units are fill-in below.)
 
 - **This session landed (git log = SSOT)** — Track D (the user-directed
   divergence-burden queue) DRAINED + 2 more units + W1 first slice:

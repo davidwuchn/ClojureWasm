@@ -1007,12 +1007,69 @@ audit trail, not as a forward-looking instruction.
 | 12    | Bytecode cache (serialize + cache_gen)                                                          | Cold start `< 12 ms`; cache format versioning established                                                   |      |
 | 13    | VM optimisation: peephole.zig + STM `Ref`/`TVal` data structures (ADR-0010)                     | Five canonical benchmarks within 110 % of v1 24C.10; `Ref`/`TVal` + read-only `deref` land                  |      |
 | 14    | CLI + REPL + nREPL + deps.edn + Wasm Component build + **v0.1.0**                               | `cljw repl`, `cljw nrepl`, `cljw component build` all work; compat_tiers.yaml complete                      | 🔒    |
-| 15    | Concurrency (atom, agent, future, promise, pmap)                                                | `core.async` Tier-C stub; `(future ...)` deref works                                                        | 🔒    |
-| 16    | ClojureScript → JS compiler                                                                    | (v0.2.0 milestone)                                                                                          |      |
-| 17    | VM optimisation: super_instruction.zig                                                          | Five canonical benchmarks within 100 % of v1 24C.10                                                         |      |
-| 18    | Module system + math + C FFI                                                                    | `zig build -Dmath=true` etc. comptime-gated                                                                 |      |
-| 19    | module: Wasm FFI (zwasm import) + WIT auto-binding                                              | `(wasm/component "x.wasm")` → bindgen → Clojure ns                                                        |      |
-| 20    | module: JIT ARM64 / x86_64                                                                      | **Gated by Phase 17 outcome**. Decide before starting.                                                      |      |
+| 15    | **Concurrency** — BUILT + race-hardened (gap area I; ADR-0142)                                 | atom/ref+STM/agent/future/promise/delay/locking/volatile ship; gap = parity/load (R1) + D-442/D-105/AD-018  | 🔒    |
+| 16    | **Wasm/edge-native** BUILT (gap area II) · ClojureScript→JS = future                          | component build/run/require ship (`cljw.wasm/*`); CLJS→JS genuinely unbuilt                                |      |
+| 17    | **VM perf: fusion → JIT** PARTIAL (gap area III)                                               | superinstruction/fusion slice landed (D-386 / O-018/019/021/023); narrow ARM64 JIT = milestone M            |      |
+| 18    | math + module/deps DONE · **C FFI** = future                                                   | `clojure.math` + deps.edn ship; C FFI (`dlopen`/libffi) genuinely unbuilt                                   |      |
+| 19    | **Wasm/edge-native** cont. — WIT auto-binding (gap area II)                                    | component require BUILT; gap = WIT marshalling (D-404) + zwasm integration shape (D-036/D-350)              |      |
+| 20    | **broad JIT** = future (distal; gated on gap-area-III fusion outcome)                           | narrow ARM64 JIT (milestone M) is the near-term scope; broad JIT decided after fusion lands                 |      |
+
+### 9.0 Completion-grade gap-area model (ADR-0142 / F-015 / D-440)
+
+The project is **near-complete** (R2 accurate-position survey,
+`private/notes/p14-r2-accurate-position-survey.md`). Phases 9-13 are DONE,
+Phase 14 is done modulo the v0.1.0 tag, and the old "Phase 15-20 = future
+work, expand at entry" framing is retired: most of that work is **BUILT**.
+What remains is organized as **three completion-grade gap areas** + a small
+**genuinely-future bucket** — not a forward phase queue. Old phase NUMBERS are
+preserved only as stable section anchors for existing citations (F-015 cl.4 —
+numbering is an input, not a constraint); the gap area is the real unit.
+
+**Phase-number → gap-area redirect** (so existing "Phase N" / §9.N citations
+in ADRs / debt rows / overlays still resolve while R4/R5 rewrite them at source):
+
+| Former phase / §        | Gap area / status                                                                |
+|--------------------------|----------------------------------------------------------------------------------|
+| Phase 9-13 (§9.11-9.15) | **DONE** (Phase 12 = DONE, not "DONE-PARTIAL")                                   |
+| Phase 14 (§9.16)        | **DONE modulo the v0.1.0 tag** — release mechanics (tag + version reconcile)    |
+| Phase 15 (§9.17)        | **Gap area I — Concurrency hardening** (BUILT + race-hardened)                  |
+| Phase 16 (§9.18)        | **Gap area II — Wasm/edge-native** (BUILT) · ClojureScript→JS = future bucket |
+| Phase 17 (§9.19)        | **Gap area III — VM perf: fusion → JIT** (PARTIAL)                             |
+| Phase 18 (§9.20)        | math + module/deps **DONE** · C FFI = future bucket                             |
+| Phase 19 (§9.21)        | **Gap area II — Wasm/edge-native** (WIT auto-binding; D-404)                    |
+| Phase 20 (§9.22)        | **future bucket** — broad JIT (distal; narrow ARM64 JIT = milestone M)          |
+
+**Gap areas (the live hardening fronts):**
+
+- **(I) Concurrency hardening** — atom/ref+STM(MVCC)/agent/future/promise/delay/
+  locking/volatile/pmap all ship + race-hardened (`phase16_concurrency_stress.sh`
+  caught+fixed real races). Gaps: clj-parity/load (Track R R1 — done this session:
+  agent ctor options/D-441, await-for, swap-vals!/reset-vals!, io!), `future-cancel`/
+  `seque`/legacy-agent surface (**D-442**), `:volatile-mutable` cross-thread re-eval
+  (**AD-018**), java.time trio (**D-105**). Hardening defers (gated, engine correct
+  without them): D-244 #4a' auto-collect, D-245 Option C blocking monitor.
+- **(II) Wasm / edge-native** — `cljw.wasm/*` component build/run/require BUILT
+  (`src/runtime/cljw/wasm/`, embeds zwasm v2 per F-001). Gaps: WIT param marshalling
+  (**D-404**), zwasm integration finished-form (**D-036 / D-350 / D-039**).
+- **(III) VM perf (fusion → JIT)** — arith/compare-branch superinstructions +
+  reduce/lazy-seq fusion landed (**D-386 / O-018/019/021/023**). Gaps: remaining
+  fusion surface; **narrow ARM64 JIT (F-010 milestone M)** → broad JIT go/no-go
+  (distal, D-005 / D-035).
+
+**Genuinely-future bucket** (no impl; honest future): ClojureScript→JS compiler,
+C FFI (`dlopen`/libffi), broad JIT (Phase 20).
+
+> **Milestone M** (F-010) = concurrency complete (gap area I drained to parity)
+> + the cw-v0-level narrow ARM64 JIT. M is a **named milestone token**, not a
+> phase number — F-010's gate references it by name, not by "Phase 15".
+
+The §9.17-9.22 sections below keep their numbered anchors but their bodies are
+reframed to the gap-area role (stale stub-swap "Final activation step" /
+`phase_at_least_N` framing dropped — those impls shipped). **Sequencing
+(ADR-0142)**: R4 (debt re-barrier) + R5 (instruction 大整理) run in the same
+D-440 arc to rewrite "Phase N target" barriers + the phase-entry machinery to
+gap-area terms; until then this redirect table is the bridge. The capability-
+matrix successor model (drop phase numbers entirely) is forward debt **D-443**.
 
 ### 9.1 Phase 14 = v0.1.0 milestone
 
@@ -1021,6 +1078,14 @@ Phase 14 = first publishable v0.1.0. **Minimum line for a Conj talk.**
 - compat_tiers.yaml has Tier A/B declarations done
 - Wasm Component output supported (even if minimal)
 - bench/history.yaml has a locked baseline
+
+> **Version-string reconcile (ADR-0142, 2026-06-15)**: the deliverables above
+> all ship; the single remaining item is cutting the tag. `build.zig.zon` is
+> currently `1.0.0-alpha.1` (the working pre-release string), NOT `v0.1.0`. The
+> "v0.1.0" label here + the v0.x ladder in §9.2 are the original milestone naming
+> kept for history; the actual published version is whatever the tag-cut step
+> stamps (user-owned). Treat `1.0.0-alpha.1` as the live version, "v0.1.0" as the
+> milestone *name*, not a literal version assertion.
 
 ### 9.2 v0.2.0 onward
 
@@ -1168,7 +1233,7 @@ renumber it (F-003: §9.2.R's ordering is intact; this is a pulled-forward
 overlay). Granularity (whether D-163/D-140 become numbered phases) defers
 to their entry per F-003.
 
-### 9.2.P clj-parity root-cause campaign (ACTIVE — resume here next session; ADR-0076, 2026-06-02)
+### 9.2.P clj-parity root-cause campaign (largely worked; folded into gap-area-I hardening per ADR-0142; ADR-0076, 2026-06-02)
 
 **User-directed.** A periodic audit surfaced the user's concern that small
 cljw↔clj mismatches "利用されるときの不信感につながりそう". The user directed
@@ -1246,13 +1311,13 @@ is deferred D-211. This overlay runs ahead of §9.2.R and does not renumber it (
 ### 9.13 Phase 11 — task list (DONE; closed 2026-05-27)
 > DONE; expanded task detail archived → [`ROADMAP_archive_phases_1-13.md`](./ROADMAP_archive_phases_1-13.md). §9 tracker + `git log` = SSOT.
 
-### 9.14 Phase 12 — task list (DONE-PARTIAL; closed 2026-05-27)
+### 9.14 Phase 12 — task list (DONE; closed 2026-05-27; "DONE-PARTIAL" corrected to DONE per ADR-0142 — the bytecode cache is complete: AOT envelope embedded + interleaved per-chunk restore)
 > DONE; expanded task detail archived → [`ROADMAP_archive_phases_1-13.md`](./ROADMAP_archive_phases_1-13.md). §9 tracker + `git log` = SSOT.
 
 ### 9.15 Phase 13 — task list (DONE; closed 2026-05-28)
 > DONE; expanded task detail archived → [`ROADMAP_archive_phases_1-13.md`](./ROADMAP_archive_phases_1-13.md). §9 tracker + `git log` = SSOT.
 
-### 9.16 Phase 14 — task list (IN-PROGRESS; opened 2026-05-28, **v0.1.0 milestone**)
+### 9.16 Phase 14 — task list (DONE modulo the v0.1.0 tag; opened 2026-05-28, **v0.1.0 milestone**; ADR-0142 — CLI/REPL/nREPL/deps.edn/Wasm-component-build all ship; the single remaining item is the tag-cut + version-string reconcile, user-owned)
 
 > **Resume wiring (read before picking a `[ ]` task)**: the only two open rows —
 > **14.12** (`cljw component build`, **blocked-by zwasm CM readiness** → D-036 /
@@ -1343,111 +1408,103 @@ ADR-0015 a5). F142/F143/F144 landed ungated (rows 14.9-14.11);
 F140/F141 (HTTP) are out of v0.1.0 scope. 🔒 **ubuntunote**
 x86_64 gate passes (per ADR-0049; OrbStack retired).
 
-### 9.17 Phase 15 — task list (PENDING, expand at Phase 15 entry)
+> **§9.17-9.22 reframed to the §9.0 gap-area model (ADR-0142).** These keep
+> their numbered anchors for citation stability; the "PENDING, expand at entry"
+> placeholders + the `phase_at_least_N` stub-swap "Final activation step"
+> sentences are dropped because those impls SHIPPED. Each section now records
+> BUILT status + the named gaps + the debt rows that drain them.
 
-**Entry ADRs**: 0009 (Object header lock — activation) ·
-0010 (STM — full MVCC commit / retry / barge).
-**Reference**: `private/JVM_TO_ZIG.md` §4 (atom + CAS), §5 (STM
-phases 15.1-15.4), §6 (agent + action queue).
-**Deliverables**: atom + watch, STM `dosync` / `alter` / `commute`
-/ `ensure` / `ref-set` complete behaviours, agent + action queue,
-volatile! / locking activation (Object header lock CAS + heavy
-fallback), concurrent test layer opens (ADR-0021 deferred). 🔒.
-**Final activation step**: flip `build_options.phase_at_least_15 = true`
-(per ADR-0023) — switches `runtime/stm/stub.zig` and Object header
-lock stub imports to the real implementations; removes the STM
-sub-feature catalog Codes (`stm_*_not_supported` family per
-ADR-0010 amendment 2) and the locking catalog Codes
-(`locking_not_supported` family per ADR-0009 amendment 2);
-rewrites the corresponding test expectations.
+### 9.17 Gap area I — Concurrency hardening (formerly "Phase 15"; BUILT + race-hardened)
 
-### 9.18 Phase 16 — task list (PENDING, expand at Phase 16 entry)
+**Status: BUILT.** atom (`swap!`/`swap-vals!`/`reset!`/`reset-vals!`/CAS/
+add-watch/remove-watch/set-validator!/get-validator) · volatile · ref+STM (full
+MVCC `dosync`/`alter`/`commute`/`ensure`/`ref-set`, `runtime/stm/` +
+`concurrency/lock_tx.zig`) · agent (send/send-off/await/await-for/agent-error/
+restart-agent/error-mode/error-handler/validator/meta) · future/promise/delay ·
+locking (`concurrency/object_monitor.zig`) · reduced · pmap/pcalls/pvalues
+(sequential, result-correct). Race-hardened: `phase16_concurrency_stress.sh`
+caught+fixed real races (atom non-atomic swap, STM doGet stale read); corpus
+`test/diff/clj_corpus/concurrency.txt`.
 
-**Entry ADRs**: 0006 (Wasm FFI defer — re-introduction condition;
-**read amendment 3** for the zwasm v2 counterparty + inline-vs-Pod
-re-opening).
-**Entry debts**: **D-036** (zwasm v2 integration master row) ·
-**D-037** (zwasm v2 rewrite timing sync — confirm rewrite
-(ADR-0109) completion before Phase 16; early-prototype window
-Phase 8-15 may need wasm-c-api veneer co-existence) ·
-**D-038** (5 confirmation requests already drafted to zwasm v2
-in `private/notes/zwasm_v2_feedback.md` §4; status =
-"awaiting zwasm v2 reply" — Phase 16 entry should re-fetch
-the reply before opening the §9.18 task table) ·
-**D-039** (cw v1 `io_interface.zig` Tier 1 vs zwasm v2
-`linker.defineWasi(cfg)` responsibility split) ·
-D-006 (Wasm FFI re-introduction).
-**Entry facts** (project_facts.md): F-001 (zwasm v2 unavoidable;
-own JIT + GC) · F-004 (NaN-box slots reserved) · F-006 (heap
-separation + allocator injection) · **F-008** (zwasm v2 spec
-ADR-0109 review record + cw v1 stances on §6 open questions).
-Consult `~/Documents/MyProducts/zwasm_from_scratch/docs/zig_api_design.md`
-(zwasm v2 spec) + `private/notes/zwasm_v2_feedback.md` (cw v1
-feedback draft) at Phase 16 entry.
-**Deliverables**: ClojureScript → JS compiler (v0.2.0 milestone),
-Wasm Component output via Pod boundary per ADR-0006 entry
-conditions.
-**v5 §17.3 + §18.3 拡張**:
-- 「cw v1 Wasm FFI spec ADR」 別途起票 (ADR-0036 候補、 D-067)。 検討項目:
-  module loading interface、 memory marshalling、 function signature
-  mapping、 type system bridge、 multi-instance lifecycle、 WASI
-  integration、 async streaming compile、 Component model 対応
-- 「cw v1 ClojureScript transpiler spec ADR」 別途起票 (ADR-0037 候補、 D-068)。
-  v5 Pattern A `.clj` source の ClojureScript transpiler 入力適合、 `defn-` +
-  `-name` leaf の JS interop 置換戦略 (例: `(-str-upper-case s)` →
-  `(.toUpperCase s)`)、 private check の JS closure scope での semantic 維持
-- cljw user code execution path と zwasm wasm execution path は **別 path**
-  (cljw が zwasm を library として使う、 v5 §17.1 + F-001)
+**Gaps (the hardening front):**
+- **clj-parity / load** — Track R R1 (this session: agent ctor options/D-441,
+  await-for, swap-vals!/reset-vals!, io! — corpus-locked).
+- **D-442** — `future-cancel`/`future-cancelled?`/`seque` (infra-gated) + the
+  low-value legacy/executor agent surface (classify implement/AD/stub).
+- **AD-018** — `:volatile-mutable` cross-thread visibility; the accept rationale
+  weakens now that threading is real → re-evaluate routing through an atomic store.
+- **D-105** — java.time trio (LocalDateTime/Duration/ZonedDateTime are skeletons;
+  Instant + Date ship).
+- **Gated-defer (engine correct without them)**: D-244 #4a' auto-collect
+  (higher-risk; collect is explicit/test-triggered today), D-245 Option C
+  blocking monitor (Option A spinning ships; gated on a real contention workload).
 
-### 9.19 Phase 17 — task list (PENDING, expand at Phase 17 entry)
+**Reference**: `private/JVM_TO_ZIG.md` §4-6. Entry ADRs 0009 (object-header lock)
+/ 0010 (STM MVCC) are LANDED (ADR-0090/0092/0093). 🔒.
 
-**Decision point**: JIT go / no-go per ROADMAP §14.1.
-**Entry debts**: **D-035** (extract backend-shared "callable
-dispatch" layer before adding the JIT vtable — current
-`vm.installVTable` reuses tree_walk's `callFunction` via the
-`evalChunk` vtable hook, which skews the dependency graph when
-a 3rd backend joins; see `.dev/structure_plan.md` for the
-anticipated `src/runtime/dispatch/callable.zig` extraction +
-`src/eval/backend/jit/` subtree) · D-005 (ARM64 JIT decision).
-**Deliverables**: VM optimisation `super_instruction.zig`, five
-canonical benchmarks within 100% of cw v0 24C.10, JIT go / no-go
-ADR landed. If go: ADR-0022 amendment for 3-way differential
-(TreeWalk == VM == JIT) per CLAUDE.md § Autonomous Workflow.
-**v5 §16 + §20.6 拡張 (JIT independence claim)**:
-- ADR-0033 D10 + ADR-0034 D6 (= bytecode format ABI commitment 不要、
-  decoder-only 永久互換性) の前提下で JIT go/no-go どちらでも v5 placement +
-  build pipeline は無影響を bench で確認
-- narrow JIT 路線採用時 = ~1000 LOC、 ARM64 only、 hot loop pattern-match
-  (cw v0 Phase 37.4 同形、 arith_loop 10.3x speedup evidence) 想定
-- broad JIT を採るなら bytecode に source-level metadata 保持 option 追加
-  (v5 §16.3 differentiation、 ADR-0034 amendment で format に optional
-  field 追加で対応可能、 ABI 維持しつつ拡張)
-- zwasm JIT design pattern (single-pass、 ZIR 中間、 comptime
-  dispatch_collector、 JitRuntime ABI) は **参考のみ**、 cljw 自身の JIT は
-  cljw VM bytecode → native の独立 path (zwasm 経由ではない、 F-001 +
-  v5 §17.2)
-**Final activation step (if JIT go)**: flip
-`build_options.phase_at_least_17 = true` (per ADR-0023) — swaps
-`runtime/jit/stub.zig` → real JIT engine, rewrites
-`test/diff/runner.zig` from 2-way (TreeWalk == VM) to 3-way
-(TreeWalk == VM == JIT) per ADR-0022 amendment.
+### 9.18 Gap area II — Wasm / edge-native (formerly "Phase 16"; component BUILT) · CLJS→JS = future
 
-### 9.20 Phase 18 — task list (PENDING, expand at Phase 18 entry)
+**Status: Wasm component BUILT.** `cljw.wasm/*` (`load`/`call`/`run`/
+`component-exports`/`component-invoke`/`load-component`/`component-call`/
+`require-component`) over `src/runtime/cljw/wasm/{engine,component,marshal,
+surface}.zig`, embedding zwasm v2 (`@import("zwasm")`, F-001 — SHA-pinned dep,
+interp-only). e2e `phase16_wasm_{run,component,ffi,require_component}.sh` (real,
+build `-Dwasm`). Gated `-Dwasm` opt-in by design (lazy dep), NOT unimplemented.
 
-**Deliverables**: Module system + math + C FFI;
-`zig build -Dmath=true` etc. comptime-gated builds.
+**Gaps**: WIT param-type marshalling raises `feature_not_supported`
+(`component.zig`) for some types → **D-404** (full WIT↔EDN table); zwasm
+integration finished-form → **D-036 / D-350 / D-039** (responsibility split,
+embedding shape). Entry facts: F-001 (zwasm unavoidable) · F-004 · F-006 · F-008
+(zwasm v2 spec review). Consult zwasm `docs/zig_api_design.md` +
+`docs/consuming_prerelease_zwasm.md` (the SHA-pin procedure).
 
-### 9.21 Phase 19 — task list (PENDING, expand at Phase 19 entry)
+**ClojureScript → JS compiler = genuinely-future bucket.** No `emit-js`/cljs
+backend exists (only `#?(:clj/:cljs)` reader-conditional handling). The original
+`.clj`-source transpiler design (ADR-0037 candidate, D-068) stands as future work;
+F-010 de-prioritizes CLJS. cljw user-code path and zwasm wasm path stay separate
+(F-001).
 
-**Deliverables**: Module Wasm FFI (zwasm import) + WIT
-auto-binding, `(wasm/component "x.wasm")` → bindgen → Clojure
-namespace.
+### 9.19 Gap area III — VM perf: fusion → JIT (formerly "Phase 17"; PARTIAL)
 
-### 9.22 Phase 20 — task list (PENDING, **gated by Phase 17 outcome**)
+**Status: PARTIAL.** A real fusion/superinstruction slice landed: local-const /
+local-LOCAL arith fusion + compare-and-branch fusion (**D-386 / O-018/019/021**,
+`vm.zig` + `intrinsic.zig` + `opcode.zig`) + reduce/lazy-seq fusion (**O-023**).
+The named `super_instruction.zig` file does not exist; the work it represents is
+partly done.
 
-**Decision precondition**: Phase 17 JIT go ADR is `Accepted`.
-**Deliverables**: ARM64 / x86_64 JIT engine, 3-way differential
-testing (TreeWalk == VM == JIT), bench targets per Phase 17 ADR.
+**Gaps**: remaining fusion surface; the **narrow ARM64 JIT** (~1000 LOC, hot-loop
+pattern-match, cw v0 Phase 37.4 shape — arith_loop ~10x evidence) = **F-010
+milestone M** near-term; **broad JIT** go/no-go is distal (gap area / §9.22),
+decided after fusion lands. **D-035** (extract a backend-shared `callable
+dispatch` layer — `src/runtime/dispatch/callable.zig` + `src/eval/backend/jit/`
+subtree — before a 3rd backend joins) · **D-005** (ARM64 JIT decision). If JIT go:
+ADR-0022 amendment for 3-way differential (TreeWalk == VM == JIT). cljw's JIT is
+an independent cljw-bytecode→native path (NOT via zwasm; F-001); bytecode ABI is
+decoder-only-compatible (ADR-0033 D10 / ADR-0034 D6) so JIT go/no-go does not
+perturb placement/build.
+
+### 9.20 math + module/deps DONE (formerly "Phase 18") · C FFI = future
+
+**Status: math + module/deps DONE.** `clojure.math` ships (`clojure/math.clj`,
+e2e `phase14_math*`); the deps.edn resolver + the `modules/` zone rule already
+exist (Phase 14). **C FFI = genuinely-future bucket**: no `dlopen`/`dlsym`/
+`libffi`/`c_ffi`; `zig build -D<lib>` comptime-gated module builds are future
+work, low priority.
+
+### 9.21 Gap area II (cont.) — WIT auto-binding (formerly "Phase 19")
+
+**Status: component require BUILT** (see §9.18). **Gap**: full WIT auto-binding
+(`(wasm/component "x.wasm")` → bindgen → Clojure namespace) — some WIT param
+marshalling is fixture-blocked → **D-404**; the zwasm integration shape is
+**D-036 / D-350**. This is the same Wasm/edge-native gap area as §9.18.
+
+### 9.22 broad JIT = future bucket (formerly "Phase 20"; distal)
+
+**Status: UNBUILT (intentionally distal).** No `jit/` impl (only forward
+comments). The near-term JIT scope is the **narrow ARM64 JIT** (milestone M,
+gap area III / §9.19); a **broad ARM64/x86_64 JIT** with 3-way differential
+(TreeWalk == VM == JIT) is decided only after the gap-area-III fusion outcome.
+**D-005** (ARM64 JIT decision) is the entry debt.
 
 ---
 
