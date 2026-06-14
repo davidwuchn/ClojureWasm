@@ -21,6 +21,9 @@ const Env = @import("../../env.zig").Env;
 const SourceLocation = @import("../../error/info.zig").SourceLocation;
 const error_catalog = @import("../../error/catalog.zig");
 const io_default = @import("../../concurrency/io_default.zig");
+const host_instance = @import("../../host_instance.zig");
+const string_mod = @import("../../collection/string.zig");
+const HeapHeader = @import("../../value/value.zig").HeapHeader;
 
 /// Implements `(Thread/sleep millis)` — block the calling thread for `millis`
 /// milliseconds, return nil. JVM reference: java.lang.Thread#sleep(long). A
@@ -37,10 +40,39 @@ fn sleep(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anye
     return Value.nil_val;
 }
 
+/// Implements `(Thread/currentThread)` — returns the process-lifetime main-thread
+/// host_instance singleton (cached on `rt.thread_current`; identity holds across
+/// calls, clj-faithful). cljw runs user code on one thread; the object exists so
+/// `(.getName (Thread/currentThread))` and thread-as-key idioms resolve.
+fn currentThread(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = env;
+    try error_catalog.checkArity("Thread/currentThread", args, 0, loc);
+    if (!rt.thread_current.isNil()) return rt.thread_current;
+    const td = rt.types.get("cljw.java.lang.Thread") orelse return error.InternalError;
+    const inst = try rt.gc.infra.create(host_instance.HostInstance);
+    inst.* = .{
+        .header = HeapHeader.init(.host_instance),
+        .descriptor = td,
+        .state = .{ 0, 0, 0, 0 },
+    };
+    rt.thread_current = Value.encodeHeapPtr(.host_instance, inst);
+    return rt.thread_current;
+}
+
+/// Implements `(.getName thread)` — the thread name. cljw's single user thread is
+/// "main" (JVM's main-thread name), regardless of the receiver.
+fn getName(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = env;
+    try error_catalog.checkArity("Thread/getName", args, 1, loc);
+    return string_mod.alloc(rt, "main");
+}
+
 fn initThread(td: *type_descriptor.TypeDescriptor, gpa: std.mem.Allocator) anyerror!void {
     if (td.method_table.len != 0) return; // idempotent re-run
     const specs = .{
         .{ "sleep", &sleep },
+        .{ "currentThread", &currentThread },
+        .{ "getName", &getName },
     };
     const entries = try gpa.alloc(type_descriptor.TypeDescriptor.MethodEntry, specs.len);
     inline for (specs, 0..) |spec, i| {

@@ -497,6 +497,7 @@ run_step "e2e_phase14_map_complement_vector" "bash test/e2e/phase14_map_compleme
 run_step "e2e_phase14_seq_core_batch"        "bash test/e2e/phase14_seq_core_batch.sh"
 run_step "e2e_phase14_merge_partition_by"    "bash test/e2e/phase14_merge_partition_by.sh"
 run_step "e2e_phase14_threading_macros"      "bash test/e2e/phase14_threading_macros.sh"
+run_step "e2e_phase14_thread_runtime"        "bash test/e2e/phase14_thread_runtime.sh"
 run_step "e2e_phase14_some_doto"             "bash test/e2e/phase14_some_doto.sh"
 run_step "e2e_phase14_iteration_macros"      "bash test/e2e/phase14_iteration_macros.sh"
 run_step "e2e_phase14_case"                  "bash test/e2e/phase14_case.sh"

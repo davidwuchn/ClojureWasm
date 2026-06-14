@@ -79,6 +79,7 @@ const java_surfaces = [_]type{
     @import("lang/StringBuilder.zig"),
     @import("lang/System.zig"),
     @import("lang/Thread.zig"),
+    @import("lang/Runtime.zig"),
     // D-198 / clj-parity C5 — Throwable-family constructors (`(Exception.
     // msg)` etc. mint an `.ex_info` tagged with the class name).
     @import("lang/Throwable.zig"),

@@ -205,7 +205,7 @@ tiers:
         phase: 15
         files:
           surface: runtime/java/lang/Thread.zig
-        methods: [sleep]
+        methods: [sleep, currentThread, getName]
         clojure_peer_vars: []
       # java.lang.StringBuilder — mutable growable buffer (ADR-0114, host_instance).
       # hiccup's compiler builds HTML with it. java.lang.String also gained a
@@ -439,7 +439,7 @@ tiers:
       - {fqn: "java.lang.Comparable", cljw_ns: "cljw.java.lang.Comparable", tier: A, phase: 14, status: "compare contract; (instance? Comparable x) reservation; clojure.core/compare works"}
       - {fqn: "java.lang.Iterable", cljw_ns: "cljw.java.lang.Iterable", tier: A, phase: 14, status: "(instance? Iterable x) works (D-232); iterator-seq base"}
       - {fqn: "java.lang.CharSequence", cljw_ns: "cljw.java.lang.CharSequence", tier: A, phase: 14, status: "String/StringBuilder supertype; clojure.string arg type. reservation"}
-      - {fqn: "java.lang.Runtime", cljw_ns: "cljw.java.lang.Runtime", tier: A, phase: 15, status: "no surface; (.availableProcessors (Runtime/getRuntime)) reservation"}
+      - {fqn: "java.lang.Runtime", cljw_ns: "cljw.java.lang.Runtime", tier: A, phase: 15, status: "LANDED 2026-06-14 (runtime/java/lang/Runtime.zig): Runtime/getRuntime singleton + .availableProcessors (D-425)"}
       # java.lang / java.io exception + error hierarchy. catch-dispatch by SIMPLE
       # name already works (exception_hierarchy); the (X. msg) constructor symbol
       # does NOT resolve yet. cw-native exception_class surface planned.

@@ -231,6 +231,14 @@ pub const Runtime = struct {
     /// `deinit`. Empty until the first `setProperty`.
     system_properties: std.StringHashMapUnmanaged([]const u8) = .empty,
 
+    /// `(Thread/currentThread)` / `(Runtime/getRuntime)` process-lifetime
+    /// host_instance singletons (gc.infra-allocated, never swept — the locale
+    /// pattern), lazily filled by the Thread / Runtime surfaces; identity holds
+    /// across calls (`(identical? (Thread/currentThread) (Thread/currentThread))`
+    /// → true, clj-faithful). Freed in `deinit`. Carry no user Values (no trace).
+    thread_current: @import("value/value.zig").Value = .nil_val,
+    runtime_instance: @import("value/value.zig").Value = .nil_val,
+
     /// User type registry per ADR-0007 + ROADMAP §9.7 / 5.11. Maps
     /// the fully-qualified class name (e.g. `user.Point`) to a
     /// process-lifetime TypeDescriptor allocated on `gpa`. Populated
@@ -524,6 +532,13 @@ pub const Runtime = struct {
                 self.gpa.free(e.value_ptr.*);
             }
             self.system_properties.deinit(self.gpa);
+        }
+        // Thread/Runtime host_instance singletons (gc.infra-allocated, no user
+        // Values inside — a plain destroy, the locale-singleton pattern).
+        for ([_]*@import("value/value.zig").Value{ &self.thread_current, &self.runtime_instance }) |slot| {
+            if (slot.isNil()) continue;
+            self.gc.infra.destroy(@constCast(@import("host_instance.zig").asHostInstance(slot.*)));
+            slot.* = .nil_val;
         }
 
         // Free per-Tag native descriptors first (their method_table
