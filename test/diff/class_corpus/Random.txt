@@ -1,0 +1,12 @@
+(let [r (java.util.Random. 42)] (.nextInt r))
+;;=> -1170105035
+(let [r (java.util.Random. 42)] (.nextInt r 100))
+;;=> 30
+(let [r (java.util.Random. 42)] (.nextLong r))
+;;=> -5025562857975149833
+(let [r (java.util.Random. 42)] [(.nextInt r) (.nextInt r) (.nextInt r)])
+;;=> [-1170105035 234785527 -1360544799]
+(let [r (java.util.Random. 0)] (.nextInt r 1000))
+;;=> 360
+(let [r (java.util.Random. 12345)] (.nextBoolean r))
+;;=> false

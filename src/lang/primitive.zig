@@ -149,6 +149,9 @@ pub fn registerAll(env: *Env) !void {
     // `(.matcher re s)` on the `.regex` value (java.util.regex.Pattern) —
     // clojure.core/re-matcher's body; instaparse's re-match-at-front.
     try @import("../runtime/java/util/regex/Pattern.zig").installNativeMethods(env.rt);
+    // `.uuid` instance methods (getMostSignificantBits / version / compareTo …),
+    // D-431 per-class completeness for java.util.UUID.
+    try @import("../runtime/java/util/UUID.zig").installNativeMethods(env.rt);
 
     // ADR-0035 D9 (sub-cycle d): boot-time rt → user refer makes
     // primitives (`+`, `=`, `count`, ...) reachable unqualified at

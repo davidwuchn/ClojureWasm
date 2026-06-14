@@ -59,6 +59,94 @@ fn fromString(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation)
 
 const std = @import("std");
 
+// --- instance methods on a `.uuid` value (D-431 per-class completeness) ---
+
+/// `(.getMostSignificantBits u)` — the high 64 bits as a signed long (JVM).
+fn getMostSignificantBits(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = rt;
+    _ = env;
+    try error_catalog.checkArity(".getMostSignificantBits", args, 1, loc);
+    const b = uuid.asUuid(args[0]).bytes;
+    return Value.initInteger(std.mem.readInt(i64, b[0..8], .big));
+}
+
+/// `(.getLeastSignificantBits u)` — the low 64 bits as a signed long (JVM).
+fn getLeastSignificantBits(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = rt;
+    _ = env;
+    try error_catalog.checkArity(".getLeastSignificantBits", args, 1, loc);
+    const b = uuid.asUuid(args[0]).bytes;
+    return Value.initInteger(std.mem.readInt(i64, b[8..16], .big));
+}
+
+/// `(.version u)` — the version nibble (4 for a v4 UUID). JVM UUID#version.
+fn version(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = rt;
+    _ = env;
+    try error_catalog.checkArity(".version", args, 1, loc);
+    const b = uuid.asUuid(args[0]).bytes;
+    return Value.initInteger((b[6] >> 4) & 0x0F);
+}
+
+/// `(.variant u)` — the RFC-4122 variant (2 for a standard UUID). Mirrors JVM
+/// UUID#variant's exact bit formula over the least-significant 64 bits.
+fn variant(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = rt;
+    _ = env;
+    try error_catalog.checkArity(".variant", args, 1, loc);
+    const b = uuid.asUuid(args[0]).bytes;
+    const lsb = std.mem.readInt(u64, b[8..16], .big);
+    const hi2: u32 = @intCast(lsb >> 62);
+    const sh: u6 = @intCast((64 - hi2) & 63); // Java masks the shift to 6 bits
+    const shifted = lsb >> sh;
+    const mask: u64 = @bitCast(@as(i64, @bitCast(lsb)) >> 63); // arithmetic: 0 or all-1s
+    return Value.initInteger(@bitCast(shifted & mask));
+}
+
+/// `(.compareTo a b)` — JVM UUID#compareTo: signed compare of msb then lsb,
+/// normalised to -1 / 0 / 1.
+fn compareTo(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = rt;
+    _ = env;
+    try error_catalog.checkArity(".compareTo", args, 2, loc);
+    if (args[1].tag() != .uuid)
+        return error_catalog.raise(.type_arg_invalid, loc, .{ .fn_name = ".compareTo", .expected = "uuid", .actual = @tagName(args[1].tag()) });
+    const a = uuid.asUuid(args[0]).bytes;
+    const c = uuid.asUuid(args[1]).bytes;
+    const a_msb = std.mem.readInt(i64, a[0..8], .big);
+    const c_msb = std.mem.readInt(i64, c[0..8], .big);
+    if (a_msb != c_msb) return Value.initInteger(if (a_msb < c_msb) -1 else 1);
+    const a_lsb = std.mem.readInt(i64, a[8..16], .big);
+    const c_lsb = std.mem.readInt(i64, c[8..16], .big);
+    if (a_lsb != c_lsb) return Value.initInteger(if (a_lsb < c_lsb) -1 else 1);
+    return Value.initInteger(0);
+}
+
+/// Install the `.uuid`-tag instance methods (bit accessors + version / variant /
+/// compareTo). Called from `lang/primitive.zig` at runtime init alongside
+/// `String.installNativeMethods` (ADR-0050 am1 caveat 3).
+pub fn installNativeMethods(rt: *Runtime) !void {
+    const td = try rt.nativeDescriptor(.uuid);
+    if (td.method_table.len != 0) return; // idempotent re-run
+    const gpa = rt.gc.infra;
+    const specs = .{
+        .{ "getMostSignificantBits", &getMostSignificantBits },
+        .{ "getLeastSignificantBits", &getLeastSignificantBits },
+        .{ "version", &version },
+        .{ "variant", &variant },
+        .{ "compareTo", &compareTo },
+    };
+    const entries = try gpa.alloc(type_descriptor.TypeDescriptor.MethodEntry, specs.len);
+    inline for (specs, 0..) |spec, i| {
+        entries[i] = .{
+            .protocol_name = "",
+            .method_name = try gpa.dupe(u8, spec[0]),
+            .method_val = Value.initBuiltinFn(spec[1]),
+        };
+    }
+    td.method_table = entries;
+}
+
 fn initUUID(td: *type_descriptor.TypeDescriptor, gpa: std.mem.Allocator) anyerror!void {
     if (td.method_table.len != 0) return; // idempotent re-run
     const entries = try gpa.alloc(type_descriptor.TypeDescriptor.MethodEntry, 2);
