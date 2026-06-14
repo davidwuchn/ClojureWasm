@@ -16,9 +16,11 @@
 //! Seqability: a `(Seqable -seq)` + `(IPersistentCollection -count)` MethodEntry
 //! on the descriptor makes `(seq al)` / `(count al)` / `(into [] al)` / `(vec al)`
 //! work through the generic seq/count else-arm dispatch — no shared-code change.
-//! Methods: `<init>` (empty / int-capacity-hint) + add / get / set / size /
-//! isEmpty / contains. `(ArrayList. coll)` seeding + addAll/remove/indexOf are a
-//! follow-up (note in D-425).
+//! Methods: `<init>` (empty / int-capacity-hint / vector-seed) + add / get / set
+//! / size / isEmpty / contains / indexOf / remove / addAll / clear (D-431
+//! per-class completeness). `.remove` is value-remove only (F-005: cljw cannot
+//! distinguish `remove(int)` from `remove(Object)`; index-remove is unreachable);
+//! `.addAll` takes a vector or another ArrayList (Layer-0 walkable).
 
 const std = @import("std");
 const host_api = @import("../_host_api.zig");
@@ -162,6 +164,33 @@ fn remove(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) any
     return Value.initBoolean(false);
 }
 
+/// `(.addAll al coll)` — append every element of `coll`, returning true if the
+/// list changed (JVM `Collection.addAll`). `coll` is a vector or another
+/// ArrayList (both walkable from this Layer-0 surface); for a general seqable use
+/// `(.addAll al (vec coll))` (same Layer-2 realization limit as `(ArrayList. coll)`).
+fn addAll(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = env;
+    try error_catalog.checkArity(".addAll", args, 2, loc);
+    const lp = listOf(args[0]);
+    const before = lp.items.len;
+    switch (args[1].tag()) {
+        .vector => {
+            const n = vector_mod.count(args[1]);
+            var i: u32 = 0;
+            while (i < n) : (i += 1) try lp.append(rt.gc.infra, vector_mod.nth(args[1], i));
+        },
+        .host_instance => {
+            // Another ArrayList (same descriptor) — append its live elements.
+            const expected = al_descriptor orelse return error.NoVTable;
+            if (host_instance.asHostInstance(args[1]).descriptor != expected)
+                return error_catalog.raise(.type_arg_invalid, loc, .{ .fn_name = ".addAll", .expected = "vector or ArrayList", .actual = @tagName(args[1].tag()) });
+            for (listOf(args[1]).items) |e| try lp.append(rt.gc.infra, e);
+        },
+        else => return error_catalog.raise(.type_arg_invalid, loc, .{ .fn_name = ".addAll", .expected = "vector or ArrayList", .actual = @tagName(args[1].tag()) }),
+    }
+    return Value.initBoolean(lp.items.len != before);
+}
+
 /// `(.clear al)` — drop all elements, return nil.
 fn clear(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
     _ = rt;
@@ -229,6 +258,7 @@ const METHODS = [_]MethodSpec{
     .{ .name = "contains", .proto = "", .f = &contains },
     .{ .name = "indexOf", .proto = "", .f = &indexOf },
     .{ .name = "remove", .proto = "", .f = &remove },
+    .{ .name = "addAll", .proto = "", .f = &addAll },
     .{ .name = "clear", .proto = "", .f = &clear },
     // Seqable / IPersistentCollection so seq / count / into route here.
     .{ .name = "-seq", .proto = "Seqable", .f = &seqImpl },

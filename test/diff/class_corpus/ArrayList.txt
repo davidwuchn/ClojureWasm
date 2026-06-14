@@ -1,0 +1,34 @@
+(let [a (java.util.ArrayList.)] (.add a 1) (.add a 2) (.size a))
+;;=> 2
+(let [a (java.util.ArrayList.)] (.add a 1) (.add a 2) (.get a 0))
+;;=> 1
+(let [a (java.util.ArrayList.)] (.add a 1) (.add a 2) (.get a 1))
+;;=> 2
+(.isEmpty (java.util.ArrayList.))
+;;=> true
+(let [a (java.util.ArrayList.)] (.add a 1) (.isEmpty a))
+;;=> false
+(let [a (java.util.ArrayList.)] (.add a 5) (.add a 6) (.set a 0 9) (.get a 0))
+;;=> 9
+(let [a (java.util.ArrayList.)] (.add a 1) (.add a 2) (.contains a 2))
+;;=> true
+(let [a (java.util.ArrayList.)] (.add a 1) (.add a 2) (.contains a 9))
+;;=> false
+(let [a (java.util.ArrayList.)] (.add a 1) (.add a 2) (.indexOf a 2))
+;;=> 1
+(let [a (java.util.ArrayList.)] (.add a 1) (.add a 2) (.indexOf a 9))
+;;=> -1
+(let [a (java.util.ArrayList.)] (.add a "x") (.add a "y") (.remove a "x") (vec a))
+;;=> ["y"]
+(let [a (java.util.ArrayList.)] (.add a 1) (.add a 2) (.clear a) (.size a))
+;;=> 0
+(let [a (java.util.ArrayList. [1 2 3])] (.size a))
+;;=> 3
+(let [a (java.util.ArrayList.)] (.add a 1) (.add a 2) (.addAll a [3 4]) (.size a))
+;;=> 4
+(let [a (java.util.ArrayList.)] (.add a 1) (.addAll a [2 3]) (vec a))
+;;=> [1 2 3]
+(let [a (java.util.ArrayList.)] (.add a 1) (.add a 2) (vec a))
+;;=> [1 2]
+(let [a (java.util.ArrayList. [1 2 3])] (count a))
+;;=> 3

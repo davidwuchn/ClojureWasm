@@ -1,0 +1,36 @@
+(let [m (java.util.HashMap.)] (.put m "a" 1) (.put m "b" 2) (.size m))
+;;=> 2
+(let [m (java.util.HashMap.)] (.put m "a" 1) (.get m "a"))
+;;=> 1
+(let [m (java.util.HashMap.)] (.put m "a" 1) (.get m "z"))
+;;=> nil
+(.isEmpty (java.util.HashMap.))
+;;=> true
+(let [m (java.util.HashMap.)] (.put m "a" 1) (.isEmpty m))
+;;=> false
+(let [m (java.util.HashMap.)] (.put m "a" 1) (.containsKey m "a"))
+;;=> true
+(let [m (java.util.HashMap.)] (.put m "a" 1) (.containsKey m "z"))
+;;=> false
+(let [m (java.util.HashMap.)] (.put m "a" 1) (.put m "a" 9) (.get m "a"))
+;;=> 9
+(let [m (java.util.HashMap.)] (.put m "a" 1) (.remove m "a") (.size m))
+;;=> 0
+(let [m (java.util.HashMap.)] (.put m "a" 1) (.put m "b" 2) (.clear m) (.size m))
+;;=> 0
+(let [m (java.util.HashMap.)] (.put m "a" 1) (.put m "b" 2) (sort (.keySet m)))
+;;=> ("a" "b")
+(let [m (java.util.HashMap.)] (.put m "a" 1) (.put m "b" 2) (sort (.values m)))
+;;=> (1 2)
+(let [m (java.util.HashMap.)] (.put m "a" 1) (.getOrDefault m "z" 0))
+;;=> 0
+(let [m (java.util.HashMap.)] (.put m "a" 1) (.getOrDefault m "a" 0))
+;;=> 1
+(let [m (java.util.HashMap.)] (.putIfAbsent m "a" 1) (.putIfAbsent m "a" 9) (.get m "a"))
+;;=> 1
+(let [m (java.util.HashMap.)] (.put m 1 2) (.containsValue m 2))
+;;=> true
+(let [m (java.util.HashMap. {"a" 1 "b" 2})] (.size m))
+;;=> 2
+(let [m (java.util.HashMap.)] (.put m "a" 1) (into {} m))
+;;=> {"a" 1}

@@ -15,8 +15,10 @@
 //! Value each GC; no `host_finalise` (the map is a GC Value, not a raw pointer).
 //! Seqability: a (Seqable -seq)+(IPersistentCollection -count) MethodEntry routes
 //! `(seq hm)` (entries) / `(count hm)` / `(into {} hm)` through the generic
-//! else-arm dispatch. Methods: <init> (empty) + put/get/containsKey/size/
-//! isEmpty/remove. `(HashMap. map)` seeding + putAll/keySet/values are follow-up.
+//! else-arm dispatch. Methods (D-431 per-class completeness): <init> (empty /
+//! capacity-hint / map-seed) + put/get/containsKey/containsValue/size/isEmpty/
+//! remove/getOrDefault/putIfAbsent/clear/keySet/values. keySet/values return a
+//! cljw seq, not a JVM view (AD-032).
 
 const std = @import("std");
 const host_api = @import("../_host_api.zig");
@@ -28,6 +30,7 @@ const SourceLocation = @import("../../error/info.zig").SourceLocation;
 const error_catalog = @import("../../error/catalog.zig");
 const host_instance = @import("../../host_instance.zig");
 const map = @import("../../collection/map.zig");
+const equal = @import("../../equal.zig");
 const mark_sweep = @import("../../gc/mark_sweep.zig");
 const gc_heap_mod = @import("../../gc/gc_heap.zig");
 
@@ -115,6 +118,46 @@ fn remove(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) any
     return old;
 }
 
+/// `(.getOrDefault hm k default)` — the value for `k`, or `default` if absent
+/// (JVM `Map.getOrDefault`). Note: a key present with value nil returns nil, not
+/// the default (JVM uses containsKey, not a null check) — `map.contains` matches.
+fn getOrDefault(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = rt;
+    _ = env;
+    try error_catalog.checkArity(".getOrDefault", args, 3, loc);
+    const m = mapOf(args[0]);
+    if (try map.contains(m, args[1])) return try map.get(m, args[1]);
+    return args[2];
+}
+
+/// `(.putIfAbsent hm k v)` — associate `k`→`v` only if `k` is absent; returns the
+/// EXISTING value if present (no change), else nil (JVM `Map.putIfAbsent` returns
+/// the previous value or null).
+fn putIfAbsent(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = env;
+    try error_catalog.checkArity(".putIfAbsent", args, 3, loc);
+    const m = mapOf(args[0]);
+    if (try map.contains(m, args[1])) return try map.get(m, args[1]);
+    setMap(args[0], try map.assoc(rt, m, args[1], args[2]));
+    return Value.nil_val;
+}
+
+const ContainsValueCtx = struct { rt: *Runtime, env: *Env, target: Value, found: *bool };
+fn checkValue(ctx: ContainsValueCtx, k: Value, v: Value) anyerror!void {
+    _ = k;
+    if (ctx.found.*) return;
+    if (try equal.valueEqual(ctx.rt, ctx.env, v, ctx.target)) ctx.found.* = true;
+}
+
+/// `(.containsValue hm v)` — whether any entry's value is `=` to `v` (JVM
+/// `Map.containsValue`; O(n) scan).
+fn containsValue(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    try error_catalog.checkArity(".containsValue", args, 2, loc);
+    var found = false;
+    try map.forEachEntry(mapOf(args[0]), ContainsValueCtx{ .rt = rt, .env = env, .target = args[1], .found = &found }, checkValue);
+    return Value.initBoolean(found);
+}
+
 /// `(.clear hm)` — drop all entries (rebind to the empty map), return nil.
 fn clear(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
     _ = rt;
@@ -183,6 +226,9 @@ const METHODS = [_]MethodSpec{
     .{ .name = "size", .proto = "", .f = &size },
     .{ .name = "isEmpty", .proto = "", .f = &isEmpty },
     .{ .name = "remove", .proto = "", .f = &remove },
+    .{ .name = "getOrDefault", .proto = "", .f = &getOrDefault },
+    .{ .name = "putIfAbsent", .proto = "", .f = &putIfAbsent },
+    .{ .name = "containsValue", .proto = "", .f = &containsValue },
     .{ .name = "clear", .proto = "", .f = &clear },
     .{ .name = "keySet", .proto = "", .f = &keySet },
     .{ .name = "values", .proto = "", .f = &values },
