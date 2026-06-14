@@ -20,20 +20,77 @@ const dispatch = @import("../../runtime/dispatch.zig");
 const agent_mod = @import("../../runtime/agent.zig");
 const vector = @import("../../runtime/collection/vector.zig");
 const promise_mod = @import("../../runtime/promise.zig");
+const keyword_mod = @import("../../runtime/keyword.zig");
+const higher_order = @import("higher_order.zig");
+const ex_info = @import("../../runtime/collection/ex_info.zig");
 
 fn requireAgent(name: []const u8, v: Value, loc: SourceLocation) !void {
     if (!agent_mod.isAgent(v))
         return error_catalog.raise(.type_arg_invalid, loc, .{ .fn_name = name, .expected = "agent", .actual = @tagName(v.tag()) });
 }
 
-/// `(agent init)` — construct an agent seeded with `init`. Option kwargs
-/// (`:meta` / `:validator` / `:error-handler` / `:error-mode`) are a later slice.
+/// Run the agent's validator (if any) against `newval` BEFORE exposing it,
+/// throwing IllegalStateException "Invalid reference state" on a falsey return
+/// (clj `ARef.setValidator`). Used for the INITIAL value at construction; the
+/// per-action validation runs on the drainer (`runtime/agent.zig` validateState).
+fn validateOrThrow(rt: *Runtime, env: *Env, a: Value, newval: Value, loc: SourceLocation) !void {
+    const v = agent_mod.validatorOf(a);
+    if (v.isNil()) return;
+    const ok = try higher_order.invokeCallable(rt, env, v, &[_]Value{newval}, loc);
+    if (!ok.isTruthy()) {
+        dispatch.last_thrown_exception = try ex_info.allocException(rt, "Invalid reference state", "IllegalStateException");
+        return error.ThrownValue;
+    }
+}
+
+/// `(agent init & {:keys [meta validator error-handler error-mode]})` — construct
+/// an agent seeded with `init`, with optional `:meta` map + `:validator` fn ctor
+/// kwargs (clj `setup-reference`, mirroring atom D-223). The validator validates
+/// the INITIAL value, so `(agent -1 :validator pos?)` throws. Unknown keys are
+/// ignored (clj's setup-reference acts only on :meta/:validator; :error-handler /
+/// :error-mode set the handler/mode). An odd-length options tail is an error.
 pub fn agentFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
     if (args.len == 0)
         return error_catalog.raise(.arity_below_min, loc, .{ .fn_name = "agent", .got = args.len, .min = 1 });
-    if (args.len > 1)
-        return error_catalog.raise(.agent_options_unsupported, loc, .{});
-    return agent_mod.alloc(rt, env, args[0]);
+    const a = try agent_mod.alloc(rt, env, args[0]);
+    if (args.len == 1) return a;
+    if ((args.len - 1) % 2 != 0)
+        return error_catalog.raise(.ref_options_odd, loc, .{ .fn_name = "agent" });
+
+    const kw_meta = try keyword_mod.intern(rt, null, "meta");
+    const kw_validator = try keyword_mod.intern(rt, null, "validator");
+    const kw_error_handler = try keyword_mod.intern(rt, null, "error-handler");
+    const kw_error_mode = try keyword_mod.intern(rt, null, "error-mode");
+    const kw_continue = try keyword_mod.intern(rt, null, "continue");
+    var validator: Value = .nil_val;
+    var has_handler = false;
+    var explicit_mode: ?bool = null; // null = use clj default; true = :fail
+    var i: usize = 1;
+    while (i + 1 < args.len) : (i += 2) {
+        const k = args[i];
+        const val = args[i + 1];
+        if (@intFromEnum(k) == @intFromEnum(kw_meta)) {
+            agent_mod.setMeta(a, val);
+        } else if (@intFromEnum(k) == @intFromEnum(kw_validator)) {
+            agent_mod.setValidator(a, val);
+            validator = val;
+        } else if (@intFromEnum(k) == @intFromEnum(kw_error_handler)) {
+            agent_mod.setErrorHandler(a, val);
+            has_handler = !val.isNil();
+        } else if (@intFromEnum(k) == @intFromEnum(kw_error_mode)) {
+            explicit_mode = @intFromEnum(val) != @intFromEnum(kw_continue);
+        }
+    }
+    // clj: error-mode defaults to :continue iff an error-handler was supplied,
+    // else :fail; an explicit :error-mode wins. The Agent's own default is :fail.
+    if (explicit_mode) |fail| {
+        agent_mod.setFailMode(a, fail);
+    } else if (has_handler) {
+        agent_mod.setFailMode(a, false);
+    }
+    // clj's setValidator validates the current (initial) value — throw if rejected.
+    if (!validator.isNil()) try validateOrThrow(rt, env, a, args[0], loc);
+    return a;
 }
 
 /// `(send a f & args)` / `(send-off a f & args)` — dispatch an action; returns
@@ -97,6 +154,26 @@ pub fn failModeQFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLoca
     return Value.initBoolean(agent_mod.failMode(args[0]));
 }
 
+/// `(set-error-handler! a handler-fn)` — install the error handler `(fn [a ex])`
+/// called when an action throws (or nil to clear). Returns nil (clj parity).
+pub fn setErrorHandlerFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = rt;
+    _ = env;
+    try error_catalog.checkArity("set-error-handler!", args, 2, loc);
+    try requireAgent("set-error-handler!", args[0], loc);
+    agent_mod.setErrorHandler(args[0], args[1]);
+    return Value.nil_val;
+}
+
+/// `(error-handler a)` — the installed error handler fn, or nil.
+pub fn errorHandlerFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = rt;
+    _ = env;
+    try error_catalog.checkArity("error-handler", args, 1, loc);
+    try requireAgent("error-handler", args[0], loc);
+    return agent_mod.errorHandlerOf(args[0]);
+}
+
 /// `(__agent-await a)` — `await`'s engine half: enqueue a barrier action and
 /// return a promise the drainer delivers AFTER that action's `notifyWatches`.
 /// `await` (core.clj) blocks on the promise, so it returns only once every
@@ -128,6 +205,8 @@ const ENTRIES = [_]Entry{
     .{ .name = "restart-agent", .f = &restartFn },
     .{ .name = "__agent-set-fail-mode", .f = &setFailModeFn },
     .{ .name = "__agent-fail-mode?", .f = &failModeQFn },
+    .{ .name = "set-error-handler!", .f = &setErrorHandlerFn },
+    .{ .name = "error-handler", .f = &errorHandlerFn },
     .{ .name = "__agent-await", .f = &awaitFn },
 };
 

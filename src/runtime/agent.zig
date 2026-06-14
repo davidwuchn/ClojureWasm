@@ -57,6 +57,7 @@ const error_mod = @import("error/info.zig");
 const lock_tx = @import("concurrency/lock_tx.zig");
 const worker_error = @import("concurrency/worker_error.zig");
 const promise_mod = @import("promise.zig");
+const ex_info = @import("collection/ex_info.zig");
 
 /// A queued unit of agent work: an action body + an optional completion promise.
 /// `body` is the `[f & args]` action vector, or nil for a pure barrier (no state
@@ -97,6 +98,17 @@ pub const Agent = extern struct {
     /// Watch map `{key -> fn}` (`add-watch` / `remove-watch`), or nil. An IRef
     /// watch fires `(fn key agent old new)` after each action stores a new state.
     watches: Value = .nil_val,
+    /// Validator fn (`nil` or a fn), `(agent init :validator f)` / `set-validator!`.
+    /// Run by the drainer against each action's new state BEFORE the store; a
+    /// falsey return (or a throw) fails the agent like any action error (D-441).
+    validator: Value = .nil_val,
+    /// Error handler `(fn [agent exception])`, or nil (`:error-handler` ctor /
+    /// `set-error-handler!`). The drainer calls it on an action error (in BOTH
+    /// modes), before the `:fail`/`:continue` decision — clj `Agent` (D-441).
+    error_handler: Value = .nil_val,
+    /// `^meta` / `reset-meta!` / `alter-meta!` metadata (nil or a map). Set at
+    /// construction (`(agent init :meta m)`) or via `reset-meta!` (D-441 / D-239).
+    meta: Value = .nil_val,
     rt: *Runtime,
     env: *Env,
     cell: *AgentCell,
@@ -133,6 +145,38 @@ pub fn watchesOf(v: Value) Value {
 /// add-watch and a drain just see slightly stale watch sets, as on the JVM).
 pub fn setWatches(v: Value, m: Value) void {
     v.decodePtr(*Agent).watches = m;
+}
+
+/// The agent's validator fn (`nil` or a fn). IRef surface (D-441).
+pub fn validatorOf(v: Value) Value {
+    return v.decodePtr(*const Agent).validator;
+}
+
+/// Replace the agent's validator (`set-validator!` / ctor). The drainer is the
+/// sole state writer; the fn pointer is swapped under no lock (a racing
+/// set-validator! and a drain just see a slightly stale validator, as on the JVM).
+pub fn setValidator(v: Value, f: Value) void {
+    v.decodePtr(*Agent).validator = f;
+}
+
+/// The agent's metadata (`nil` or a map). `meta` / `reset-meta!` (D-441).
+pub fn metaOf(v: Value) Value {
+    return v.decodePtr(*const Agent).meta;
+}
+
+/// Replace the agent's metadata (`reset-meta!` / `alter-meta!` / ctor).
+pub fn setMeta(v: Value, m: Value) void {
+    v.decodePtr(*Agent).meta = m;
+}
+
+/// The agent's error handler `(fn [agent ex])`, or nil. `(get-error-handler a)`.
+pub fn errorHandlerOf(v: Value) Value {
+    return v.decodePtr(*const Agent).error_handler;
+}
+
+/// Replace the agent's error handler (`set-error-handler!` / ctor).
+pub fn setErrorHandler(v: Value, f: Value) void {
+    v.decodePtr(*Agent).error_handler = f;
 }
 
 /// `@agent` / `(deref a)` — non-blocking atomic read of the current state.
@@ -301,6 +345,9 @@ fn drainer(a: *Agent) void {
         // Run the action OUTSIDE the lock: (apply f state args...).
         runAction(a, action) catch {
             const thrown = captureThrown(a);
+            // clj: the error handler (if set) runs on an action error in BOTH
+            // modes, before the fail/continue decision; its own throw is dropped.
+            runErrorHandler(a, agent_val, thrown);
             io_default.lockMutex(&a.cell.mutex);
             const fail = a.cell.fail_mode;
             if (fail) {
@@ -315,7 +362,7 @@ fn drainer(a: *Agent) void {
                 _ = a.rt.gc.unpin(agent_val);
                 return;
             }
-            // :continue — state unchanged, keep draining (handler is a follow-up).
+            // :continue — state unchanged, keep draining.
         };
     }
 }
@@ -325,11 +372,53 @@ fn drainer(a: *Agent) void {
 /// `last_thrown_exception` is THIS action's explicit `(throw v)` / ex-info value;
 /// otherwise synthesize an exception from the catalog Info the raise just set.
 /// (Precise cross-thread error identity beyond this is the future-shared D-115.)
+/// Run the agent's error handler `(fn [agent ex])` after an action error, if set
+/// (clj `Agent` dispatch loop). Best-effort: it runs user code on the drainer
+/// thread (vt.callFn), and a throw from the handler itself is swallowed (clj
+/// wraps the handler call in `try/catch(Throwable){}`). `agent_val` + `thrown`
+/// are published on an EvalFrame so the handler's VM re-entry cannot sweep them.
+fn runErrorHandler(a: *Agent, agent_val: Value, thrown: Value) void {
+    const h = a.error_handler;
+    if (h.isNil()) return;
+    const vt = a.rt.vtable orelse return;
+    var gc_roots: [3]Value = .{ agent_val, thrown, h };
+    var gc_sp: u16 = 3;
+    var gc_frame: root_set.EvalFrame = .{ .stack = &gc_roots, .sp = &gc_sp, .locals = &.{}, .parent = root_set.eval_frame_head };
+    root_set.eval_frame_head = &gc_frame;
+    defer root_set.eval_frame_head = gc_frame.parent;
+    _ = vt.callFn(a.rt, a.env, h, &[_]Value{ agent_val, thrown }, .{}) catch {};
+}
+
 fn captureThrown(a: *Agent) Value {
     // ADR-0120: the uniform worker-error marshal — a catalog error now carries
     // its KIND-DERIVED class (was hardcoded "ExceptionInfo", so `(agent-error a)`
     // around `(/ 1 0)` mis-reported the class) + its source location.
     return worker_error.capture(a.rt);
+}
+
+/// Validate an action's proposed new state against the agent's validator BEFORE
+/// the store (clj `Agent.setState` → `validate`). A falsey return throws
+/// IllegalStateException "Invalid reference state"; a validator that itself
+/// throws propagates as-is. Either way the drainer's catch fails the agent
+/// (`:fail` mode) — matching clj's validator-failure → agent-error path (D-441).
+/// Runs on the drainer thread, so it uses the Runtime vtable `callFn` (the
+/// Layer-2 `invokeCallable` is unreachable here), like `iref.notifyWatches`.
+fn validateState(a: *Agent, newstate: Value) !void {
+    if (a.validator.isNil()) return;
+    const vt = a.rt.vtable orelse return error.InternalError;
+    // GC-ROOT: `newstate` lives only as a Zig local across the validator's VM
+    // re-entry; publish it on an EvalFrame so a collect mid-validate cannot
+    // sweep it [ref: .dev/gc_rooting.md §C].
+    var gc_roots: [1]Value = .{newstate};
+    var gc_sp: u16 = 1;
+    var gc_frame: root_set.EvalFrame = .{ .stack = &gc_roots, .sp = &gc_sp, .locals = &.{}, .parent = root_set.eval_frame_head };
+    root_set.eval_frame_head = &gc_frame;
+    defer root_set.eval_frame_head = gc_frame.parent;
+    const ok = try vt.callFn(a.rt, a.env, a.validator, &[_]Value{newstate}, .{});
+    if (!ok.isTruthy()) {
+        dispatch.last_thrown_exception = try ex_info.allocException(a.rt, "Invalid reference state", "IllegalStateException");
+        return error.ThrownValue;
+    }
 }
 
 /// Run one queued unit: `(apply f state args...)` and store the new state, then
@@ -356,6 +445,9 @@ fn runAction(a: *Agent, action: Action) !void {
             var i: u32 = 1;
             while (i < n) : (i += 1) try call_args.append(a.rt.gpa, vector.nth(action.body, i));
             newstate = try vt.callFn(a.rt, a.env, f, call_args.items, .{});
+            // clj validates the new state before committing; a rejection fails
+            // the agent (the drainer's catch records it in :fail mode). D-441.
+            try validateState(a, newstate);
         }
     }
     @atomicStore(Value, &a.state, newstate, .release);
@@ -434,6 +526,9 @@ pub fn traceGc(gc_ptr: *anyopaque, header: *HeapHeader) void {
     if (a.state.heapHeader()) |hdr| mark_sweep.mark(gc, hdr);
     if (a.error_val.heapHeader()) |hdr| mark_sweep.mark(gc, hdr);
     if (a.watches.heapHeader()) |hdr| mark_sweep.mark(gc, hdr);
+    if (a.validator.heapHeader()) |hdr| mark_sweep.mark(gc, hdr);
+    if (a.meta.heapHeader()) |hdr| mark_sweep.mark(gc, hdr);
+    if (a.error_handler.heapHeader()) |hdr| mark_sweep.mark(gc, hdr);
     for (a.cell.actions.items[a.cell.head..]) |action| {
         if (action.body.heapHeader()) |hdr| mark_sweep.mark(gc, hdr);
         if (action.completion.heapHeader()) |hdr| mark_sweep.mark(gc, hdr);

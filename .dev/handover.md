@@ -13,27 +13,23 @@
   + `.dev/sweep_plan.md` § Phase mode. Per-commit = smoke (default build is
   zwasm-lazy-safe); wasm work also runs `-Dwasm`.
 
-- **First task on resume**: **D-441 — `agent` ctor options `:meta`/`:validator`
-  (Track R R1, next sub-unit; do-now, NOT Phase-deferred).** R1 slice 1 landed
-  (concurrency clj-parity corpus `test/diff/clj_corpus/concurrency.txt`, 11/11 — ref/
-  STM/future/promise/delay/agent-basic/pmap), and it SURFACED this gap: `(agent 0
-  :validator number?)` → "Not implemented". Fix per D-441 (full text in debt.yaml):
-  add `validator`+`meta` to the Agent extern struct (`runtime/agent.zig:88`) + GC-trace
-  (l.435) + setters; `agentFn` (`lang/primitive/agent.zig:31`) parses kwargs + validates
-  the initial value (mirror atom D-223); `runAction` (l.339) validates newstate before
-  `@atomicStore` (reject → return error → drainer fails the agent); then re-add the
-  held-out corpus line. **finished-form: add the struct fields properly, don't
-  entry-patch.** Full plan + the extended-challenge 3-item bridge in
-  `private/notes/p14-r1-concurrency-parity.md`.
-  - **Then the rest of Track R** (the USER-DIRECTED completion-grade reorganization,
-    F-015 / ADR-0141 / D-440): R1 cont. (un-defer D-242 hardening / D-244 GC-safety /
-    D-245 locking-parking; load/stress) → R2 accurate-position survey → R3 ROADMAP §9
-    rewrite (Phases 15-20: future → gap-areas-to-completion-grade) → R4 debt整理 (~19
-    Phase-gated rows) → R5 AI-instruction 大整理. The blind Phase-deferral model is
-    RETIRED; concurrency is BUILT, so harden/parity/load NOW.
-  - **Reads: `.dev/project_facts.md` F-015 + ADR-0141 + D-440/D-441 + `.dev/sweep_plan.md
-    § Track R`.** (Earlier-queued W1-remaining / Track S micro-units are fill-in BELOW
-    Track R, not the lead.)
+- **First task on resume**: **Track R R1 cont. — concurrency HARDENING (do-now per
+  D-440 item 1, NOT Phase-deferred).** Re-evaluate the un-deferred rows as do-now:
+  **D-242** (Phase B hardening), **D-244** (worker-collect GC-safety rooting),
+  **D-245** (locking parking vs spinlock) — flip dissolved barriers, implement the
+  live ones. Add concurrency load/stress coverage + continue clj-parity edge cases
+  where the corpus is still thin (ref/STM/future). The loop self-selects within R1
+  highest-value-first. D-441 (agent ctor options `:meta`/`:validator`/`:error-handler`/
+  `:error-mode` + IRef validator/handler surface) DISCHARGED this session — see git
+  log + the discharged D-441 row.
+  - **Then the rest of Track R** (USER-DIRECTED completion-grade reorg, F-015 /
+    ADR-0141 / D-440): R2 accurate-position survey → R3 ROADMAP §9 rewrite (Phases
+    15-20: future → gap-areas-to-completion-grade) → R4 debt整理 (~19 Phase-gated
+    rows) → R5 AI-instruction 大整理. Blind Phase-deferral is RETIRED; concurrency
+    is BUILT, so harden/parity/load NOW.
+  - **Reads: `.dev/project_facts.md` F-015 + ADR-0141 + D-440 + `.dev/sweep_plan.md
+    § Track R`** + the D-242/D-244/D-245 rows in debt.yaml. (Earlier-queued
+    W1-remaining / Track S micro-units are fill-in BELOW Track R, not the lead.)
 
 - **This session landed (git log = SSOT)** — Track D (the user-directed
   divergence-burden queue) DRAINED + 2 more units + W1 first slice:
@@ -55,8 +51,9 @@
   - **yaml/yq hygiene** (user-directed): yaml_ssot_yq.md Golden-rule #4 (yq `+=` writes
     UNQUOTED ids → next-id undercount), audit recipes; fixed a stray `D-396` dup + the
     unquoted D-437/438/439 ids.
-  - **F-015 / ADR-0141 / D-440 (USER-DIRECTED completion-grade reframe)** + R1 slice 1
-    (concurrency parity corpus, 11/11) → see "First task on resume" above.
+  - **F-015 / ADR-0141 / D-440 (USER-DIRECTED completion-grade reframe)** + Track R
+    R1: slice 1 (concurrency parity corpus) + **D-441 DISCHARGED** (agent ctor
+    options + IRef validator/handler surface; corpus +8) → next = R1 hardening above.
 
   SAFETY: every `clj` oracle batch needs `-J-Xmx2g` + bounded seqs (memory
   `clj_oracle_heap_cap`); register every new e2e in run_all.sh same-commit.
@@ -79,13 +76,3 @@ p14-r1-concurrency-parity.md` (D-441 plan + bridge). clj oracle =
 + `-J-Xmx2g`; register new e2e in run_all.sh same-commit; new debt rows via Edit
 (quoted id), NOT `yq +=` (yaml_ssot_yq.md Golden-rule #4).
 
-## Stopped — user requested
-
-User instruction (2026-06-15): 「セッション長さで苦労しているみたいなので、現状が
-すぐわかり、次のクリアセッションからcontinueで継続していけるよう、配線・参照チェーンを
-監査して更新したら、止めてください」(+ 「常に finished form きれい、は心がけてね」=
-F-002 reaffirmed). Wiring audited + updated: working tree clean, all SSOTs
-well-formed (no dup/quote-drift), F-015/ADR-0141/D-440/D-441 + Track R + this
-Resume contract all cross-resolve. **Resume = D-441 (agent ctor options), then the
-rest of Track R.** This stop applies to THIS session only; the next `/continue`
-resumes the loop normally (delete this section on resume per handover_framing).

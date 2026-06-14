@@ -143,7 +143,6 @@ pub const Code = enum {
     stm_retry_limit,
     locking_needs_object,
     locking_nest_overflow,
-    agent_options_unsupported,
     agent_failed,
     catch_class_unknown,
     class_name_unknown,
@@ -842,11 +841,6 @@ pub fn entry(comptime code: Code) Entry {
             .kind = .value_error,
             .phase = .eval,
             .template = "locking nested too deeply on one thread (over {[cap]d} levels)",
-        },
-        .agent_options_unsupported => .{
-            .kind = .not_implemented,
-            .phase = .eval,
-            .template = "agent option arguments (:meta / :validator / :error-handler / :error-mode) are not yet supported",
         },
         .agent_failed => .{
             .kind = .value_error,

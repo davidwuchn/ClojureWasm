@@ -289,23 +289,61 @@ pub fn removeWatchFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLo
     return args[0];
 }
 
-// --- validators (set-validator! / get-validator) — ADR-0081 ---
+// --- validators (set-validator! / get-validator) — ADR-0081 / D-441 ---
+
+/// Validator surface dispatch. `set-validator!` / `get-validator` work on any
+/// IRef carrying a validator field — today the atom and the agent (D-441). Ref /
+/// var join when their field lands. Each type stores its own `validator`.
+fn requireValidatable(name: []const u8, v: Value, loc: SourceLocation) !void {
+    switch (v.tag()) {
+        .atom, .agent => {},
+        else => return error_catalog.raise(.type_arg_invalid, loc, .{
+            .fn_name = name,
+            .expected = "atom or agent",
+            .actual = @tagName(v.tag()),
+        }),
+    }
+}
+
+fn irefCurrent(v: Value) Value {
+    return switch (v.tag()) {
+        .atom => atom_mod.current(v),
+        .agent => agent_mod.current(v),
+        else => unreachable, // gated by requireValidatable
+    };
+}
+
+fn irefValidatorOf(v: Value) Value {
+    return switch (v.tag()) {
+        .atom => atom_mod.validatorOf(v),
+        .agent => agent_mod.validatorOf(v),
+        else => unreachable, // gated by requireValidatable
+    };
+}
+
+fn irefSetValidator(v: Value, f: Value) void {
+    switch (v.tag()) {
+        .atom => atom_mod.setValidator(v, f),
+        .agent => agent_mod.setValidator(v, f),
+        else => unreachable, // gated by requireValidatable
+    }
+}
 
 /// `(set-validator! ref f)` — install validator `f` (or `nil` to clear). clj
 /// validates the CURRENT value against the new validator immediately and throws
 /// IllegalStateException if it fails. Returns nil.
 pub fn setValidatorFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
     try error_catalog.checkArity("set-validator!", args, 2, loc);
-    try requireAtom("set-validator!", args[0], loc);
+    try requireValidatable("set-validator!", args[0], loc);
     const f = args[1];
     if (!f.isNil()) {
-        const ok = try higher_order.invokeCallable(rt, env, f, &[_]Value{atom_mod.current(args[0])}, loc);
+        const ok = try higher_order.invokeCallable(rt, env, f, &[_]Value{irefCurrent(args[0])}, loc);
         if (!ok.isTruthy()) {
             dispatch.last_thrown_exception = try ex_info.allocException(rt, "Invalid reference state", "IllegalStateException");
             return error.ThrownValue;
         }
     }
-    atom_mod.setValidator(args[0], f);
+    irefSetValidator(args[0], f);
     return Value.nil_val;
 }
 
@@ -314,8 +352,8 @@ pub fn getValidatorFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceL
     _ = rt;
     _ = env;
     try error_catalog.checkArity("get-validator", args, 1, loc);
-    try requireAtom("get-validator", args[0], loc);
-    return atom_mod.validatorOf(args[0]);
+    try requireValidatable("get-validator", args[0], loc);
+    return irefValidatorOf(args[0]);
 }
 
 // --- registration ---

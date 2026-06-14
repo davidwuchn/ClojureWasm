@@ -23,6 +23,7 @@ const set = @import("../../runtime/collection/set.zig");
 const list = @import("../../runtime/collection/list.zig");
 const lazy_seq = @import("../../runtime/lazy_seq.zig");
 const atom = @import("../../runtime/atom.zig");
+const agent = @import("../../runtime/agent.zig");
 const symbol = @import("../../runtime/symbol.zig");
 const keyword = @import("../../runtime/keyword.zig");
 const td_mod = @import("../../runtime/type_descriptor.zig");
@@ -66,6 +67,7 @@ pub fn metaFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation)
         // projection (no stored redundant map → no bootstrap allocation cost).
         .var_ref => try synthVarMeta(rt, v),
         .atom => atom.metaOf(v),
+        .agent => agent.metaOf(v),
         // D-304 / ADR-0110: a symbol's value-metadata (nil for interned).
         .symbol => symbol.metaOf(v),
         // D-312: a record/deftype carries meta natively (nil when unset). A user
@@ -86,10 +88,10 @@ pub fn metaFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation)
 }
 
 /// `(reset-meta! iref metadata-map)` — set the metadata of a mutable
-/// reference (Var or atom) to `metadata-map` (a map or nil), returning
+/// reference (Var, atom, or agent) to `metadata-map` (a map or nil), returning
 /// the new metadata. `alter-meta!` (core.clj) is `(reset-meta! r (apply f
-/// (meta r) args))`. Namespace / ref / agent targets are deferred (their
-/// meta slot does not exist yet — D-239).
+/// (meta r) args))`. Namespace / ref targets are deferred (their meta slot
+/// does not exist yet — D-239; agent landed with D-441).
 pub fn resetMetaFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
     _ = rt;
     _ = env;
@@ -104,6 +106,7 @@ pub fn resetMetaFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLoca
             vr.meta = if (m.isNil()) null else m;
         },
         .atom => atom.setMeta(r, m),
+        .agent => agent.setMeta(r, m),
         else => return error_catalog.raise(.reset_meta_target_not_ref, loc, .{ .actual = @tagName(r.tag()) }),
     }
     return m;

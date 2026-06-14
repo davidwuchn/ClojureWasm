@@ -20,3 +20,19 @@
 ;;=> 42
 (let [r (ref 0) s (ref 0)] (dosync (alter r + 3) (alter s + 4)) [@r @s])
 ;;=> [3 4]
+(let [a (agent 0 :validator number?)] (send a inc) (await a) @a)
+;;=> 1
+(meta (agent 0 :meta {:a 1}))
+;;=> {:a 1}
+(let [p (promise) a (agent 0 :error-handler (fn [ag ex] (deliver p :caught)))] (send a (fn [_] (throw (Exception. "boom")))) @p)
+;;=> :caught
+(let [p (promise) a (agent 0 :validator number? :error-handler (fn [ag ex] (deliver p @ag)))] (send a (fn [_] "x")) @p)
+;;=> 0
+(try (agent -1 :validator pos?) (catch Exception e :threw))
+;;=> :threw
+(let [a (agent 0 :error-handler (fn [ag ex] nil) :error-mode :continue)] (send a inc) (await a) @a)
+;;=> 1
+(let [a (agent 0) h (fn [ag ex] nil)] (set-error-handler! a h) (= h (error-handler a)))
+;;=> true
+(error-handler (agent 0))
+;;=> nil
