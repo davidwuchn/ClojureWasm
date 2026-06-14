@@ -45,6 +45,10 @@
 ;; documented residual (rebind first, as real code does).
 (def ^:dynamic *out* :clojure.core/stdout)
 (def ^:dynamic *err* :clojure.core/stderr)
+;; `*in*` — the bindable input reader var (D-414). ROOT is nil (no process-stdin
+;; reader yet); `with-in-str` / `(binding [*in* rdr] …)` set it to a host reader
+;; (e.g. `(rt/__string-reader s)`). `read-line` derefs it.
+(def ^:dynamic *in* nil)
 ;; `*print-length*` / `*print-level*` (ADR-0088) are interned in Zig
 ;; (`bootstrap.registerPrintLimitVars`) alongside the other cached-pointer
 ;; dynamic vars (*ns*, *data-readers*) so the renderer reads them via a cached
@@ -882,6 +886,12 @@
       (if (nil? line)
         nil
         (cons line (lazy-seq (line-seq rdr)))))))
+
+;; `(read-line)` — read the next line from `*in*` (a host reader), or nil at EOF
+;; / when `*in*` is unbound (D-414; cljw has no process-stdin reader yet, so the
+;; root nil yields nil rather than blocking). Bind `*in*` via `with-in-str`.
+(def read-line
+  (fn* [] (when (some? *in*) (.readLine *in*))))
 
 ;; ----------------------------------------------------------------
 ;; Phase 14 §9.16 row 14.13 — D-134 cluster 1. High-frequency eager
@@ -2171,6 +2181,15 @@
                                 (finally
                                   (. ~(bindings 0) ~'close))))
     :else (throw (ex-info "with-open only allows Symbols in bindings" {}))))
+
+;; `(with-in-str s & body)` — evaluate body with `*in*` bound to a reader over
+;; the string `s`, so `read-line` / `line-seq` read from `s` (D-414). Mirrors
+;; clojure.core/with-in-str (JVM binds a LineNumberingPushbackReader over a
+;; java.io.StringReader; cljw uses the host `rt/__string-reader`). Placed with the
+;; other `with-*` macros — `defmacro` is not usable as early as `read-line`.
+(defmacro with-in-str [s & body]
+  `(binding [*in* (rt/__string-reader ~s)]
+     ~@body))
 
 ;; `(with-local-vars [x init ...] body…)` — bind each name to a FRESH anonymous
 ;; dynamic Var (ADR-0097 / D-237) thread-bound to its init for the body's extent,
