@@ -4,19 +4,21 @@
 > this after `handover.md` to pick the next unit autonomously. Order is
 > top-to-bottom; finish a unit, commit LOCALLY, move to the next.
 
-## Phase mode (READ FIRST — overrides standing rules this phase)
+## Phase mode (READ FIRST)
 
-- **LOCAL accumulation, NO push.** Commit each unit locally; do NOT `git push`.
-  The post-commit / gate "push immediately" reminders do NOT apply this phase.
-  (User 2026-06-14: 「スイープサイクルはpushなしでローカルに累積でいいよ」.)
-  SSOT: memory `local-accumulation-sweep-phase`.
-- **wasm uses the RELATIVE-path zon** (`.zwasm = .{ .path = "../zwasm_from_scratch" }`),
-  push-forbidden, because zwasm is not yet re-pinned with REQ-7. The local zwasm
-  checkout HEAD contains REQ-7 (33e0100c) so `-Dwasm` works. Do NOT flip to a git
-  pin until the user re-pins. (User: 「まだpinしてません。相対パスでやるしかない」.)
+- **NORMAL PUSH MODE** (user 2026-06-15 LIFTED the local-accumulation override).
+  After each unit's smoke-green commit, `git push origin main` immediately (Step 6);
+  the post-commit / gate push reminders apply again. SSOT: memory
+  `local-accumulation-sweep-phase` (now marked ENDED).
+- **zwasm = SHA-PIN, not `.path`.** `build.zig.zon` `.zwasm` is pinned to a pushed
+  `clojurewasm/zwasm` commit (`#412966f7…` + content `.hash`, `lazy`) so others build
+  reproducibly. Advance the pin via
+  `zig fetch "git+https://github.com/clojurewasm/zwasm.git#<pushed-SHA>"` (prints the
+  hash) → hand-edit `.url`+`.hash`+`.lazy` (`--save` mangles a prior `.path`).
+  Procedure/rationale: zwasm `docs/consuming_prerelease_zwasm.md`.
 - Per-commit gate = smoke (default build unaffected — zwasm dep is `lazy` +
-  `-Dwasm`-guarded). wasm-touching work additionally runs `-Dwasm` build/probe.
-- Phase ENDS when the user re-pins zwasm (then rebase onto the pin + push) or says push.
+  `-Dwasm`-guarded; `-Dwasm` now fetches zwasm from git). wasm-touching work
+  additionally runs `-Dwasm` build/probe.
 
 ## Order
 

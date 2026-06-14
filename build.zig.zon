@@ -10,15 +10,19 @@
         },
         // zwasm v2 embedding API (F-001 / D-037). `lazy` so the DEFAULT build +
         // gate never resolve it — only `-Dwasm` / `-Dzwasm-spike` (b.lazyDependency) do.
-        // TAG-PIN mode (user 2026-06-10, F-001 Revision history): cljw consumes the
-        // `v2.0.0-alpha.2` dogfood tag from clojurewasm/zwasm, cryptographically pinned
-        // by `.hash` so it cannot drift even as the branch moves on. Switch to
-        // `.path = "../zwasm_from_scratch"` for relative-path co-development when
-        // hardening both repos in lockstep (a routine path<->url edit, not an F-001
-        // amendment). lazy + flag-guard means an unresolved/churning dep cannot break
-        // cljw's default gate.
+        // SHA-PIN mode (user 2026-06-15): pre-tag zwasm pinned to a pushed
+        // `zwasm-from-scratch` commit by FULL SHA + content `.hash`, so others can
+        // build cljw reproducibly without the local `../zwasm_from_scratch` tree
+        // (lifts the local-accumulation co-dev mode). A SHA pin ≡ a tag pin for
+        // reproducibility; switch to the dogfood tag for readability when zwasm cuts
+        // one (user-only). The `.hash` cannot drift even as the branch moves on; no
+        // `--force` on zwasm means the commit is fetchable forever. Procedure +
+        // rationale: zwasm `docs/consuming_prerelease_zwasm.md`. Routine path<->url
+        // edit (not an F-001 amendment). lazy + flag-guard means a churning dep cannot
+        // break cljw's default gate.
         .zwasm = .{
-            .path = "../zwasm_from_scratch",
+            .url = "git+https://github.com/clojurewasm/zwasm.git#412966f79c6ca10a6fdf0c33c9e2c742b311a66e",
+            .hash = "zwasm-0.0.0-pre-FT1Fv3wnfwBytPcvTE5ng09lCvi8qKtZfk17FTLiunhM",
             .lazy = true,
         },
     },

@@ -5,31 +5,33 @@
 
 ## Resume contract
 
-- **HEAD**: `main` (`git log` is the SSOT). **PHASE MODE = LOCAL ACCUMULATION
-  (NO push), wasm = RELATIVE-path zon** — user override 2026-06-14. Commit each
-  unit locally; do NOT `git push` (ignore the push reminders this phase); keep
-  `build.zig.zon` `.zwasm = .{ .path = "../zwasm_from_scratch" }` (push-forbidden;
-  the local zwasm HEAD has REQ-7). SSOT: memory `local-accumulation-sweep-phase`
-  + `.dev/sweep_plan.md` § Phase mode. Per-commit = smoke (default build is
-  zwasm-lazy-safe); wasm work also runs `-Dwasm`.
+- **HEAD**: `main` (`git log` is the SSOT). **NORMAL PUSH MODE** (user 2026-06-15:
+  local-accumulation LIFTED). After each unit's smoke-green commit, `git push origin
+  main` immediately (Step 6). `build.zig.zon` `.zwasm` is **SHA-PINNED** to a pushed
+  clojurewasm/zwasm commit (`#412966f7…` + content `.hash`, `lazy`) so others build
+  reproducibly — NOT the local `../zwasm_from_scratch` path. Advance the pin via
+  `zig fetch "git+https://github.com/clojurewasm/zwasm.git#<pushed-SHA>"` (prints the
+  hash) then hand-edit `.url`+`.hash`+`.lazy` (the `--save` form mangles a prior
+  `.path` entry). Procedure/rationale: zwasm `docs/consuming_prerelease_zwasm.md`.
+  Per-commit = smoke; `-Dwasm` now fetches zwasm from git (default build is
+  zwasm-lazy, untouched). NOTE: reproducibility-for-others also needs read access to
+  the (currently pre-tag) clojurewasm/zwasm repo — user's external action.
 
-- **First task on resume**: **Track R R1 cont. — concurrency HARDENING (do-now per
-  D-440 item 1, NOT Phase-deferred).** Re-evaluate the un-deferred rows as do-now:
-  **D-242** (Phase B hardening), **D-244** (worker-collect GC-safety rooting),
-  **D-245** (locking parking vs spinlock) — flip dissolved barriers, implement the
-  live ones. Add concurrency load/stress coverage + continue clj-parity edge cases
-  where the corpus is still thin (ref/STM/future). The loop self-selects within R1
-  highest-value-first. D-441 (agent ctor options `:meta`/`:validator`/`:error-handler`/
-  `:error-mode` + IRef validator/handler surface) DISCHARGED this session — see git
-  log + the discharged D-441 row.
-  - **Then the rest of Track R** (USER-DIRECTED completion-grade reorg, F-015 /
-    ADR-0141 / D-440): R2 accurate-position survey → R3 ROADMAP §9 rewrite (Phases
-    15-20: future → gap-areas-to-completion-grade) → R4 debt整理 (~19 Phase-gated
-    rows) → R5 AI-instruction 大整理. Blind Phase-deferral is RETIRED; concurrency
-    is BUILT, so harden/parity/load NOW.
-  - **Reads: `.dev/project_facts.md` F-015 + ADR-0141 + D-440 + `.dev/sweep_plan.md
-    § Track R`** + the D-242/D-244/D-245 rows in debt.yaml. (Earlier-queued
-    W1-remaining / Track S micro-units are fill-in BELOW Track R, not the lead.)
+- **First task on resume**: **Track R R3 — ROADMAP §9 rewrite** (D-440 item 3), using
+  the R2 survey `private/notes/p14-r2-accurate-position-survey.md`. Reframe §9: mark
+  the BUILT-but-future phases done (concurrency / Wasm-component build+run+require /
+  bytecode-cache / partial VM-superinstr — survey list A), collapse Phases 15-20 into
+  ~3 completion-grade GAP AREAS (Concurrency-hardening / Wasm+edge-native / VM-perf→JIT)
+  + a small genuinely-future bucket (CLJS, C-FFI, broad-JIT, WIT — survey list B). Fix
+  the version drift (`1.0.0-alpha.1` vs v0.1.0) + stale "Final activation step" framing
+  (survey list C). Old phase NUMBERING is an input, not a constraint (F-015 cl.4).
+  - **Then**: R4 debt整理 (~19 Phase-gated rows, many already read DONE/now:
+    D-037/046/224/242/244/245 — survey C) → R5 AI-instruction 大整理. R1 concurrency
+    parity DONE this session (agent ctor options/D-441, await-for, swap-vals!/reset-vals!,
+    io! — corpus-locked) + remaining gaps filed D-442; R1 hardening (D-244 #4a' auto-collect
+    / D-245 Option C) evaluated as GATED-defer (engine correct without them).
+  - **Reads: `.dev/project_facts.md` F-015 + ADR-0141 + D-440 + the R2 survey note** +
+    ROADMAP §9. (Earlier-queued W1-remaining / Track S micro-units are fill-in below.)
 
 - **This session landed (git log = SSOT)** — Track D (the user-directed
   divergence-burden queue) DRAINED + 2 more units + W1 first slice:
