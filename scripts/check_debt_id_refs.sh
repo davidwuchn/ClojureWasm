@@ -20,6 +20,19 @@ DEBT=.dev/debt.yaml
 gate=0
 [ "${1:-}" = "--gate" ] && gate=1
 
+# 0. debt.yaml MUST be valid YAML. The ID checks below are grep-based, so a
+# malformed SSOT (e.g. an unbalanced quote in a `status:` prose string) would
+# pass them silently while breaking every yq consumer (audit_scaffolding, the
+# yaml_ssot_yq cookbook). Guard it here -- the cheapest place the SSOT is read.
+# (2026-06-14: a D-425 status edit left an unbalanced ", and the grep-based
+# checks + gate stayed green for 6 commits while yq could not parse the file.)
+if command -v yq >/dev/null 2>&1; then
+  if ! yq -r '.active | length' "$DEBT" >/dev/null 2>&1; then
+    echo "check_debt_id_refs: VIOLATION -- $DEBT is not valid YAML (yq parse failed)." >&2
+    [ "$gate" -eq 1 ] && exit 1
+  fi
+fi
+
 # Files that may legitimately cite a debt ID. Exclude debt.yaml itself
 # (it defines + cross-references IDs) and the audit scratch notes.
 search_paths=(src CLAUDE.md .dev .claude scripts test feature_deps.yaml placement.yaml compat_tiers.yaml)

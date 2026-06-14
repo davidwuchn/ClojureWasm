@@ -214,7 +214,13 @@ fn deepRealize(rt: *Runtime, env: *env_mod.Env, v: Value) anyerror!Value {
                 var cs: dispatch_mod.CallSite = .{};
                 const noloc: SourceLocation = .{};
                 if (try dispatch_mod.dispatchOrNull(rt, env, &cs, v, "Seqable", "-seq", &.{v}, noloc)) |s| {
-                    return deepRealize(rt, env, s);
+                    if (s.isNil()) return s; // empty Sequential → nil (prints "()")
+                    // A self-returning ISeq (`-seq` → an instance, incl. `v` itself):
+                    // walk the ISeq protocol, NOT deepRealize(s) which re-dispatches
+                    // `-seq` on the same instance forever (D-422).
+                    if (s.tag() == .typed_instance or s.tag() == .reified_instance)
+                        return realizeInstanceSeq(rt, env, s);
+                    return deepRealize(rt, env, s); // `-seq` → a lazy_seq/list (e.g. Eduction)
                 }
             }
             return v;
@@ -358,6 +364,48 @@ fn realizeSeqWalk(rt: *Runtime, env: *env_mod.Env, v: Value) anyerror!Value {
         else => Value.nil_val,
     };
     return if (m.isNil() or realized.tag() != .list) realized else try list_collection.withMeta(rt, realized, m);
+}
+
+/// Realize an instance ISeq whose `-seq` returns ITSELF (the clj
+/// ISeq-is-its-own-seq idiom — e.g. data.finger-tree's SingleTree/DoubleList
+/// `(seq [this] this)`). Walk the ISeq protocol (`-first`/`-next`), NOT
+/// `deepRealize(-seq …)` which would re-dispatch `-seq` → the same instance →
+/// forever (D-422 segfault). `*print-length*`-bounded; deepRealizes each element;
+/// GC-rooted like `realizeSeqWalk`. A `-next` that yields a non-instance seq
+/// (lazy/list) hands off to `realizeSeqWalk` for the tail.
+fn realizeInstanceSeq(rt: *Runtime, env: *env_mod.Env, start: Value) anyerror!Value {
+    var items: std.ArrayList(Value) = .empty;
+    defer items.deinit(rt.gpa);
+    var cur = start;
+    var cur_root: [1]Value = .{cur};
+    var cur_sp: u16 = 1;
+    var gc_frame: root_set.EvalFrame = .{ .stack = &cur_root, .sp = &cur_sp, .locals = items.items, .parent = root_set.eval_frame_head };
+    root_set.eval_frame_head = &gc_frame;
+    defer root_set.eval_frame_head = gc_frame.parent;
+    const noloc: SourceLocation = .{};
+    while (cur.tag() == .typed_instance or cur.tag() == .reified_instance) {
+        if (print_length_limit) |lim| {
+            if (items.items.len > lim) break;
+        }
+        cur_root[0] = cur;
+        gc_frame.locals = items.items;
+        var cs1: dispatch_mod.CallSite = .{};
+        const f = (try dispatch_mod.dispatchOrNull(rt, env, &cs1, cur, "ISeq", "-first", &.{cur}, noloc)) orelse break;
+        try items.append(rt.gpa, try deepRealize(rt, env, f));
+        gc_frame.locals = items.items;
+        var cs2: dispatch_mod.CallSite = .{};
+        cur = (try dispatch_mod.dispatchOrNull(rt, env, &cs2, cur, "ISeq", "-next", &.{cur}, noloc)) orelse break;
+    }
+    // A `-next` that returned a non-instance seq (lazy_seq/list): realize its tail.
+    if (!cur.isNil() and cur.tag() != .typed_instance and cur.tag() != .reified_instance) {
+        cur_root[0] = cur;
+        var t = try realizeSeqWalk(rt, env, cur);
+        while (t.tag() == .list and list_collection.countOf(t) > 0) : (t = list_collection.rest(t)) {
+            try items.append(rt.gpa, list_collection.first(t));
+            gc_frame.locals = items.items;
+        }
+    }
+    return listFromItems(rt, items.items);
 }
 
 /// True iff a `.typed_instance`'s descriptor declares the `Sequential`
