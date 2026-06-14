@@ -1,0 +1,22 @@
+(let [r (ref 0)] (dosync (alter r inc) (alter r inc)) @r)
+;;=> 2
+(let [r (ref 10)] (dosync (ref-set r 5)) @r)
+;;=> 5
+(let [r (ref 0)] (dosync (commute r + 5)) @r)
+;;=> 5
+@(future (reduce + (range 100)))
+;;=> 4950
+(let [p (promise)] (deliver p :x) @p)
+;;=> :x
+@(delay (+ 1 2))
+;;=> 3
+(let [a (agent 0)] (send a + 5) (await a) @a)
+;;=> 5
+(let [a (agent [])] (send a conj 1) (send a conj 2) (await a) @a)
+;;=> [1 2]
+(reduce + (pmap inc (range 10)))
+;;=> 55
+(deref (future 42) 1000 :timeout)
+;;=> 42
+(let [r (ref 0) s (ref 0)] (dosync (alter r + 3) (alter s + 4)) [@r @s])
+;;=> [3 4]
