@@ -19,8 +19,21 @@ const std = @import("std");
 const value = @import("../value/value.zig");
 const Value = value.Value;
 const Runtime = @import("../runtime.zig").Runtime;
+const Env = @import("../env.zig").Env;
 const td_mod = @import("../type_descriptor.zig");
 const TypeDescriptor = td_mod.TypeDescriptor;
+const error_catalog = @import("../error/catalog.zig");
+const SourceLocation = @import("../error/info.zig").SourceLocation;
+
+/// `(.getTime date)` — the epoch-millis the Date wraps (JVM `Date.getTime`).
+/// Registered on the per-Runtime Date descriptor, so dispatch only reaches it
+/// with a Date receiver. `(inst-ms d)` reads the same field via the clj surface.
+fn getTimeFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = rt;
+    _ = env;
+    try error_catalog.checkArity("getTime", args, 1, loc);
+    return Value.initInteger(epochMsOf(args[0]));
+}
 const TypedInstance = td_mod.TypedInstance;
 
 /// The per-Runtime canonical Date descriptor (lazily allocated on
@@ -40,6 +53,15 @@ pub fn descriptorOf(rt: *Runtime) !*const TypeDescriptor {
         .meta = .nil_val,
         .print_tag = "inst",
     };
+    // `.getTime` instance method (the Date VALUE carries this descriptor, so
+    // instance dispatch resolves here). gc.infra-owned; freed in deinitDescriptor.
+    const entries = try rt.gc.infra.alloc(td_mod.TypeDescriptor.MethodEntry, 1);
+    entries[0] = .{
+        .protocol_name = "",
+        .method_name = try rt.gc.infra.dupe(u8, "getTime"),
+        .method_val = Value.initBuiltinFn(&getTimeFn),
+    };
+    td.method_table = entries;
     rt.date_descriptor = td;
     return td;
 }
@@ -67,6 +89,8 @@ pub fn epochMsOf(v: Value) i64 {
 /// `Runtime.deinit`; idempotent.
 pub fn deinitDescriptor(rt: *Runtime) void {
     if (rt.date_descriptor) |td| {
+        for (td.method_table) |e| rt.gc.infra.free(e.method_name);
+        if (td.method_table.len > 0) rt.gc.infra.free(td.method_table);
         rt.gc.infra.destroy(td);
         rt.date_descriptor = null;
     }

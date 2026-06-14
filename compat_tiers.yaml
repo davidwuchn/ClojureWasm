@@ -281,8 +281,10 @@ tiers:
         files:
           surface: runtime/java/util/Date.zig
           impl: runtime/time/instant.zig
-        methods: [getTime, setTime, toString, toInstant]
-        clojure_peer_vars: []
+        # D-425: ctor (java.util.Date. [ms]) + .getTime landed; setTime/toString/
+        # toInstant are a follow-up (NOT listed — anti-overclaim, D-177).
+        methods: [getTime]
+        clojure_peer_vars: [clojure.core/inst-ms]
       - fqn: java.util.Random
         cljw_ns: cljw.java.util.Random
         keyword: random

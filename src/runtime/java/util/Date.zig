@@ -3,23 +3,57 @@
 //! for pre-Java-8 corpus compatibility).
 //!
 //! Backend: impl-only
-//! Impl deps: instant
-//! Clojure peer: none
+//! Impl deps: date, instant
+//! Clojure peer: clojure.core/inst-ms (reads the same epoch-ms field)
 //!
-//! `java.util.Date` is essentially an epoch-ms wrapper; cw v1
-//! routes through `runtime/time/instant.zig` rather than a separate
-//! impl. The `___HOST_EXTENSION` declaration is registered, but the
-//! method_table is empty: instance methods (getTime / setTime /
-//! toString / toInstant) are not yet wired. (The `#inst` Date value
-//! itself lives in `runtime/time/date.zig` and works; this is only
-//! the Java-surface wrapper.)
+//! `java.util.Date` is an epoch-ms wrapper. The VALUE is a `.typed_instance`
+//! minted by `runtime/time/date.zig` (one epoch-ms field, `print_tag = "inst"`
+//! → prints `#inst "…"`). This SURFACE adds the constructor `<init>`:
+//! `(java.util.Date.)` = now, `(java.util.Date. ms)` = an epoch-ms Date. The
+//! `.getTime` INSTANCE method lives on the per-Runtime Date descriptor (date.zig)
+//! since the value carries that descriptor, not this surface one; `(inst-ms d)`
+//! reads the same field. setTime / toInstant remain a follow-up (D-425).
 
 const host_api = @import("../_host_api.zig");
 const type_descriptor = @import("../../type_descriptor.zig");
+const Value = @import("../../value/value.zig").Value;
+const Runtime = @import("../../runtime.zig").Runtime;
+const Env = @import("../../env.zig").Env;
+const SourceLocation = @import("../../error/info.zig").SourceLocation;
+const error_catalog = @import("../../error/catalog.zig");
+const date_impl = @import("../../time/date.zig");
+const instant = @import("../../time/instant.zig");
+
+/// `(java.util.Date.)` → a Date for the current epoch-ms (wall clock).
+/// `(java.util.Date. ms)` → a Date for the given epoch-ms (long).
+fn dateCtor(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = env;
+    if (args.len == 0) return date_impl.make(rt, instant.nowEpochMillis(rt.io));
+    if (args.len == 1) {
+        if (args[0].tag() != .integer)
+            return error_catalog.raise(.type_arg_not_integer, loc, .{ .fn_name = "java.util.Date.", .actual = @tagName(args[0].tag()) });
+        return date_impl.make(rt, args[0].asInteger());
+    }
+    return error_catalog.raise(.arity_not_expected, loc, .{ .got = args.len, .fn_name = "java.util.Date.", .expected = 1 });
+}
+
+fn initDate(td: *type_descriptor.TypeDescriptor, gpa: std.mem.Allocator) anyerror!void {
+    if (td.method_table.len != 0) return; // idempotent re-run
+    const entries = try gpa.alloc(type_descriptor.TypeDescriptor.MethodEntry, 1);
+    entries[0] = .{
+        .protocol_name = "",
+        .method_name = try gpa.dupe(u8, "<init>"),
+        .method_val = Value.initBuiltinFn(&dateCtor),
+    };
+    td.method_table = entries;
+}
+
+const std = @import("std");
 
 pub const ___HOST_EXTENSION: host_api.Extension = .{
     .cljw_ns = "cljw.java.util.Date",
     .descriptor = &descriptor,
+    .init = &initDate,
 };
 
 var descriptor: type_descriptor.TypeDescriptor = .{
