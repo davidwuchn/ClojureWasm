@@ -23,6 +23,57 @@ const Value = @import("../../value/value.zig").Value;
 const SourceLocation = @import("../../error/info.zig").SourceLocation;
 const error_catalog = @import("../../error/catalog.zig");
 const big_decimal = @import("../../numeric/big_decimal.zig");
+const big_int = @import("../../numeric/big_int.zig");
+
+fn requireBd(v: Value, name: []const u8, loc: SourceLocation) !void {
+    if (v.tag() != .big_decimal)
+        return error_catalog.raise(.type_arg_not_number, loc, .{ .fn_name = name, .actual = @tagName(v.tag()) });
+}
+
+/// `(.scale bd)` — the scale (number of digits after the decimal point; may be
+/// negative). JVM `BigDecimal.scale()`.
+fn scaleFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = rt;
+    _ = env;
+    try error_catalog.checkArity("scale", args, 1, loc);
+    try requireBd(args[0], "scale", loc);
+    return Value.initInteger(big_decimal.asScale(args[0]));
+}
+
+/// `(.signum bd)` — -1 / 0 / 1 by the sign of the value. JVM `BigDecimal.signum()`.
+fn signumFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = rt;
+    _ = env;
+    try error_catalog.checkArity("signum", args, 1, loc);
+    try requireBd(args[0], "signum", loc);
+    const m = big_decimal.asUnscaled(args[0]).m;
+    const s: i64 = if (m.eqlZero()) 0 else if (m.isPositive()) 1 else -1;
+    return Value.initInteger(s);
+}
+
+/// `(.unscaledValue bd)` — the unscaled significand as a BigInteger (cljw big_int).
+/// JVM `BigDecimal.unscaledValue()`.
+fn unscaledValueFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = env;
+    try error_catalog.checkArity("unscaledValue", args, 1, loc);
+    try requireBd(args[0], "unscaledValue", loc);
+    return big_int.allocFromManaged(rt, big_decimal.asUnscaled(args[0]).m, .bigint);
+}
+
+/// `(.precision bd)` — the number of significant digits in the unscaled value
+/// (a zero value has precision 1). JVM `BigDecimal.precision()`.
+fn precisionFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = env;
+    try error_catalog.checkArity("precision", args, 1, loc);
+    try requireBd(args[0], "precision", loc);
+    const m = big_decimal.asUnscaled(args[0]).m;
+    const s = try m.toString(rt.gc.infra, 10, .lower);
+    defer rt.gc.infra.free(s);
+    var digits: []const u8 = s;
+    if (digits.len > 0 and digits[0] == '-') digits = digits[1..];
+    const prec: i64 = if (digits.len == 0) 1 else @intCast(digits.len);
+    return Value.initInteger(prec);
+}
 
 /// `(.setScale bd newScale)` / `(.setScale bd newScale roundingMode)` — JVM
 /// `BigDecimal.setScale(int)` / `setScale(int, int)`. `newScale` is the desired
@@ -59,6 +110,10 @@ pub fn installNativeMethods(rt: *Runtime) !void {
     const gpa = rt.gc.infra;
     const specs = .{
         .{ "setScale", &setScale },
+        .{ "scale", &scaleFn },
+        .{ "signum", &signumFn },
+        .{ "unscaledValue", &unscaledValueFn },
+        .{ "precision", &precisionFn },
     };
     const entries = try gpa.alloc(type_descriptor.TypeDescriptor.MethodEntry, specs.len);
     inline for (specs, 0..) |spec, i| {

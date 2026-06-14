@@ -52,4 +52,12 @@ if "$BIN" -e '(.setScale (bigdec "1.55") 1)' >/dev/null 2>&1; then
 fi
 echo "PASS 2arg_unnecessary_throws"
 
-echo "OK — phase14_bigdecimal_setscale (22 cases) green"
+# BigDecimal read accessors: scale / signum / unscaledValue / precision (clj oracle).
+assert_eq 'scale'        "$("$BIN" -e '(.scale (bigdec "1.23"))' 2>&1 | awk 'END{print}')"               '2'
+assert_eq 'signum_neg'   "$("$BIN" -e '(.signum (bigdec "-1.5"))' 2>&1 | awk 'END{print}')"              '-1'
+assert_eq 'signum_zero'  "$("$BIN" -e '(.signum (bigdec "0.00"))' 2>&1 | awk 'END{print}')"              '0'
+assert_eq 'unscaled'     "$("$BIN" -e '(str (.unscaledValue (bigdec "1.23")))' 2>&1 | awk 'END{print}')" '"123"'
+assert_eq 'precision'    "$("$BIN" -e '(.precision (bigdec "123.45"))' 2>&1 | awk 'END{print}')"         '5'
+assert_eq 'precision_zero' "$("$BIN" -e '(.precision (bigdec "0.00"))' 2>&1 | awk 'END{print}')"         '1'
+
+echo "OK — phase14_bigdecimal_setscale (28 cases) green"

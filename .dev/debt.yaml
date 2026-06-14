@@ -2592,16 +2592,21 @@ active:
     barrier: |-
       none — discharged by re-baseline; pre-2026-06-13 bench numbers are non-comparable (non-wasm binary), noted in ADR-0133 Rev 2 + the yaml header.
     last_reviewed: "2026-06-13"
-  - id: D-437
+  - id: "D-437"
     status: "open (2026-06-14, ADR-0139 Alt-2, the deferred finished form). TWO related residuals left by Option A: (1) NESTED seq/lazy key — a lazy/seq key INSIDE a collection that is itself a map/set KEY (e.g. {{(map inc xs) 1} :outer}) still hashes the inner lazy element by IDENTITY, because valueHash/contentHash/seqHash per-element recursion stays rt-free. (2) The dual mechanism — Option A relies on the ADR-0129 ambient current_env (armed by evalForm + runEnvelope); the finished form makes the seq-key hash rt-FREE via a memoized realized-hash on the lazy_seq/range/Sequential-instance value, retiring the armed/unarmed duality AND fixing the nested case uniformly. NOTE (DA fork correction): Alt-2 needs only a heap-struct cache field + one traceLazySeq GC root — NOT a NaN-box layout change — so this is a STANDALONE F-011 quality-loop item, NOT Phase-gated. Rare in practice; low priority. Repro for (1): (get {{(map inc [0 1 2]) 1} :v} {(list 1 2 3) 1}) → nil vs clj :v."
     category: clj-parity
     barrier: "none structural — Alt-2 is a self-contained equal.zig + lazy_seq/range struct change (add a memoized realized-key-hash field + GC-root the cache via traceLazySeq). Take up as a quality-loop unit when nested lazy/seq keys get a real consumer, or when retiring the ambient current_env duality is worth the memo slot. Until then the common top-level case is fixed (ADR-0139); this is the rare nested tail."
     quality_floor: 'correctness: nested seq/lazy map-KEY content hash + rt-free memoized seq-key hash (ADR-0139 Alt-2 finished form)'
     last_reviewed: "2026-06-14"
-  - id: D-438
+  - id: "D-438"
     status: 'DONE 2026-06-14 (ADR-0140, landed same cycle it was minted). Caught-exception cljw frame-seq accessor: (stack-trace e) → a vector of {:ns :fn :file :line :column} maps, innermost-first (:fn bare, :ns separate), reading the ExInfo own deep-copied frames (ADR-0120); empty for a non-ex_info or never-thrown ex-info. Consumers: clojure.stacktrace/print-stack-trace prints <ns>/<fn> (<file>:<line>) per frame (AD-029 amended: marker→cljw frames, format still diverges from JVM); Throwable->map :trace/:at filled as the same maps (D-389 discharged; AD-033). DA fork chose Alt 2 (one map shape everywhere). user-frames-only via AD-024 (push-time elision). THIS ROW ALSO FIXES the dangling D-232 cross-reference: AD-029/D-389/sweep_plan named the validation-campaign row D-232 as the frame-accessor owner, but that owner row never existed (Reservation-as-bias) — D-438 + ADR-0140 are it. Pins: test/e2e/phase15_clojure_stacktrace.sh + phase14_throwable_map.sh.'
     category: clj-parity
     barrier: none — DONE this cycle (ADR-0140).
+    last_reviewed: "2026-06-14"
+  - id: "D-439"
+    status: 'open (2026-06-14, found probing the BigDecimal interop surface during the clj-parity floor drain). The BigDecimal instance-method surface is PARTIAL: setScale (2+3 arg) + scale/signum/unscaledValue/precision are LANDED (e2e phase14_bigdecimal_setscale, 28 cases); the value-TRANSFORMING methods remain unimplemented: movePointLeft/movePointRight (scale shift), stripTrailingZeros (trailing-zero strip + scale reduce), negate/abs/plus, toBigInteger/toBigIntegerExact (truncate to int), add/subtract/multiply/divide instance forms. Each returns a new BigDecimal needing Managed arithmetic (negate/clone/mul-10^n) — fiddly but bounded. NICHE: clojure.core ops (- abs + * / and bigdec contagion) cover most arithmetic; the .method interop forms are reached mainly by Java-ported lib code. Take up when a real consumer hits one, or as a big-bang BigDecimal-interop-completion unit (clj_diff_sweep Discipline 2). Probe: (.movePointLeft (bigdec "150") 2) -> No implementation of method.'
+    category: clj-parity
+    barrier: none — bounded numeric work (Managed negate/clone/mul-by-10^n + scale arithmetic), each clj-oracle-verifiable. Deferred as NICHE (clojure.core arithmetic covers the common path; .method interop is Java-port-only). Do as one big-bang completion unit or when a lib pulls a specific method.
     last_reviewed: "2026-06-14"
 discharged:
   - id: "D-409"
