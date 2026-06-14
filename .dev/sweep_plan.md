@@ -20,7 +20,53 @@
 
 ## Order
 
-### 1. Track C — `*out*`/`*in*` cljw-native writer/reader value (CHOSEN, FIRST)
+### Track D — divergence-burden remediation (user-directed 2026-06-14; ordered by readiness)
+
+The user asked to address ALL of the post-Track-C "intentional clj-divergence"
+burden items #1–#5 from the 2026-06-14 chat audit, and to wire them so `/continue`
+acts concretely. **The audit corrected the list**: #2 and #5 were ALREADY RESOLVED
+and #4 is GATED; the actionable, ease-ordered queue is **D1 → D2 → D3**.
+
+- **D1 — seq-as-map-KEY content hash (D-432 + D-408). READY — DO FIRST.**
+  Bug: a content-equal `lazy_seq` / `cons` / `range` / Sequential-deftype used as a
+  map/set KEY hashes by IDENTITY → `(get {(map inc [0 1 2]) :x} '(1 2 3))` silently
+  `nil` (clj `:x`). `=` already content-matches; only the key-HASH diverges.
+  **Chosen shape = Option A** (survey done): make the key path rt-aware via the
+  EXISTING `dispatch_mod.current_env` ambient threadlocal (ADR-0129) — realize
+  lazy/range/Sequential-instance keys, then delegate to `seqHash`/`seqKeyEq`.
+  ~1 file, **NO signature change**. Why it's clean now: the "key-hash must be
+  rt-free" premise is ALREADY broken by ADR-0129 — temporising it further is the
+  Reservation-as-bias the audit flagged as the **#1 finished-form win**.
+  Reads: `private/notes/p14-seq-key-hash-survey.md` · `src/runtime/collection/map.zig`
+  (`keyHash`:190 + its callers) · `src/runtime/equal.zig` (`hashConsult`/`current_env`,
+  `SeqKeyCursor`:119, `seqHash`:654, `isSequential`:67) · `src/runtime/hash.zig`
+  (`hashOrdered`:102) · ADR-0129 · debt D-432/D-408 · F-011.
+  First red: e2e `(get {(map inc [0 1 2]) :x} '(1 2 3))` → `:x` (+ cons-over-lazy +
+  range + a Sequential deftype key + a `clj_corpus/seq_key_hash.txt` corpus).
+  Residual to cover: the nested map-as-key case (`foldHash`/`entryHash` rt-free path).
+
+- **D2 — caught-exception cljw frame-seq accessor (D-232 / AD-029). post-M, moderate.**
+  `clojure.stacktrace/print-stack-trace` degrades to `[no stack trace available]`; the
+  ExInfo DOES carry frame data (`trace_ptr`, ADR-0120) but exposes no Clojure-level
+  accessor. Expose a cljw-SHAPED frame seq (NOT JVM `StackTraceElement` — AD-024
+  user-only stays) wired into `clojure.repl`/`clojure.stacktrace`; flip the AD-029 pin
+  when frames appear. Reads: AD-029 + AD-024 + ADR-0120 (`trace_ptr`) + debt D-232 +
+  `src/runtime/error/`.
+
+- **D3 — `:volatile-mutable` cross-thread visibility (AD-018). GATED on Phase 15 concurrency.**
+  D-288 / ADR-0104 landed the mutable-field MECHANISM; the volatile-vs-unsynchronized
+  VISIBILITY distinction is dormant-by-design (single-thread). When Phase 15 concurrency
+  lands, route `:volatile-mutable` through an atomic store. Reads: AD-018 + D-288 +
+  ADR-0104 + the Phase 15 concurrency ADR. **Do NOT start before Phase 15 concurrency exists.**
+
+- **RESOLVED by the 2026-06-14 audit (do NOT re-chase):**
+  - **#2 `+'`/`*'` promoting family** — DONE (D-260 / ADR-0100; `(+' Long/MAX 1)` → `…808N`).
+    The kept divergence is AD-008 (`+` promotes where clj throws — user-ratified). AD-008's
+    "tracked in D-211" text is stale (D-211/D-260 discharged); no work remains.
+  - **#5 VM-as-shipped-default** — DONE (D-196 discharged; `build.zig:52` `orelse .vm`).
+    F-012's "flip is gated" wording is stale future-tense (F-NNN is user-owned; left as-is).
+
+### Track C — `*out*`/`*in*` cljw-native writer/reader value (DONE 2026-06-14, ADR-0138 steps 1-3)
 The user chose recommended **Option C** (see handover § *out*/*in* design + D-436(b)).
 - **C1 (ADR + DA fork):** a single cljw-native writer value + reader value
   (NOT a java.io.Writer/Reader hierarchy clone). `*out*`/`*err*`/`*in*` bind to
@@ -136,7 +182,11 @@ bootstrapping/cached Fixture so dual-backend verifies full-runtime forms),
 *out*-sentinel (→ Track C), compat_tiers generated index (→ S3), bundled-lib
 moot-coord. Add a candidate the moment a workaround-instead-of-finished-form is taken.
 
-## Reference chain (audit 2026-06-14)
-handover.md → THIS file → `.dev/debt.yaml` (D-431..D-436 + the cluster IDs) +
-`.dev/decisions/0137_scope_goal_line.md` (F-014/ADR-0137) + memories
-`local-accumulation-sweep-phase` + `finished-form-no-workaround-accumulate`.
+## Reference chain (audit 2026-06-14, re-audited at the Track D wiring)
+handover.md → THIS file → `.dev/debt.yaml` (Track D: D-432/D-408 [D1], D-232 [D2],
+AD-018/D-288 [D3]; + D-431..D-436 cluster) → `private/notes/p14-seq-key-hash-survey.md`
+(D1 survey) + `.dev/accepted_divergences.yaml` (AD-008/018/024/029 — the kept/gated
+divergences the audit classified) + `.dev/decisions/0137_scope_goal_line.md`
+(F-014/ADR-0137) + memories `local-accumulation-sweep-phase` +
+`finished-form-no-workaround-accumulate`. Verified at wiring: every Track D debt ID
+resolves (`check_debt_id_refs` ok); D1 is the only READY item (DO FIRST).

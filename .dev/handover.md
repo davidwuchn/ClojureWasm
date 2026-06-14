@@ -13,12 +13,15 @@
   + `.dev/sweep_plan.md` § Phase mode. Per-commit = smoke (default build is
   zwasm-lazy-safe); wasm work also runs `-Dwasm`.
 
-- **First task on resume MUST be**: **Track S — honest debt sweep** (sweep_plan.md
-  §2; Track C COMPLETE — see below). S1 = debt-hygiene 棚卸し (fold DONE/VERIFIED
-  active rows into `discharged:` — D-366/D-362/D-331/D-250/Phase-reserve rows;
-  shrinks the active count to real). Then S2 = clj-parity bugs (D-432/D-408/D-271/
-  D-270/D-374/D-228/D-220/D-223/D-389 + D-433) — correctness floor outranks
-  hygiene, so S2 is the real value. Interleave Track W (wasm W1) per sweep_plan.
+- **First task on resume MUST be**: **Track D D1 — seq-as-map-KEY content hash
+  (D-432 + D-408), Option A** (sweep_plan.md § Track D — the user-directed
+  2026-06-14 divergence-burden queue; READ IT). Survey done
+  (`private/notes/p14-seq-key-hash-survey.md`): make the key-hash path rt-aware via
+  the existing ADR-0129 `current_env` ambient threadlocal; realize lazy/range/
+  Sequential-instance keys → `seqHash`. First red: `(get {(map inc [0 1 2]) :x}
+  '(1 2 3))` → `:x`. Then Track D D2 (D-232/AD-029 frame accessor, post-M), then
+  D3 (AD-018 volatile, GATED on Phase 15). #2/#5 were RESOLVED by the audit (no
+  re-chase). Track S/W per sweep_plan after Track D.
 
 - **Track C DONE (ADR-0138, steps 1-3, this session — LOCAL commits)**: `text_io.zig`
   durable Writer VALUE (`.stdout`/`.stderr`/`.string`, fqcn "Writer") + Reader VALUE
@@ -47,19 +50,6 @@
   D-105/D-243, BigDecimal, Arrays) are feature-builds; the ADR-0137 sharpenings
   (generated `methods:` index + mechanical lib stop-chasing) are the residual. See
   `test/diff/class_corpus/README.md` for the full map + the over-claim finding.
-- **Resume PRIORITY SEQUENCE** (finished-form-first): (1) D-431 completeness gate
-  — **per-class coverage CLOSED** (18 classes); residual = the ADR-0137 sharpenings
-  (generated `methods:` index + mechanical lib stop-chasing) + feature-builds for
-  the over-claimed classes. (2) pure-lib verification (F-014 clause 3) — **all
-  LOCALLY-available org.clojure pure libs now verified** (data.json + data.csv
-  added; sweep 19/19); the rest need network fetches or feature-builds (D-105 time,
-  D-434 *out*, BreakIterator for cuerdas). (3) quality-floor drain — common surface
-  confirmed clj-parity this session (host classes + clojure.string + set/walk/edn,
-  modulo AD-001 set-order); the deep campaigns remain (D-242-245 concurrency/GC,
-  D-232 validation). DEFERRED-DEEP, NOT until a consumer/window: D-430 (instaparse
-  GLL parse divergence — NOT regex), D-424 (class-resolution seam), D-432 (seq-key
-  hash residual), D-433 (exception str/pr one-liner).
-
 - **Prior-session landings (git log is the SSOT)**: reify/instance-seq asymmetry
   class (D-422/423/426/427), Java surface D-425, the `*in*`/LispReader$StringReader
   reader subsystem (D-414) + D-428/429. This session: D-431 (above) + D-433/D-434
@@ -74,23 +64,24 @@
   relative-path `build.zig.zon` (experiment is local-only); `git push --force*`;
   bare `zig build` for any scripted/probe path (ADR-0133).
 
-## Just landed (2026-06-14, on `main`) — cleanup + reader subsystem + instaparse chain
+## Stopped — user requested
 
-reify/instance-seq class CLOSED (D-422 count Counted-vs-walk + self-seq print;
-D-423 reify qualified-remap; D-426 reify equiv ctor + keys/vals map-gate; D-427
-element-wise `=` for Sequential deftypes, GC-rooted realize). `*in*` reader
-subsystem (D-414): `*in*`+read-line+with-in-str, runtime/string_escape factor,
-clojure.lang.LispReader$StringReader shim + java.util.LinkedList. Qualified
-user-deftype resolution (D-428); String.subSequence (D-429). instaparse advanced
-4 blockers → D-430 (deep GLL parse divergence, documented). 5 libs verified.
-AD-031/032. Filed D-424/430 (open); D-414/421-429 discharged.
+User instruction (2026-06-14): 「それらは #1〜#5すべて対応したいです。…今の
+取り組みのあとか、途中でも、continueするだけで具体的に取り組めるよう、配線・
+参照チェーンを監査して止めてください…取り組みやすい順番に並べて、良い配線を」.
+Done: audited the 2026-06-14 chat's divergence-burden list (#1–#5) against the
+SSOTs — found **#2 (`+'`/`*'`, D-260) and #5 (VM-default, D-196) ALREADY
+RESOLVED**, **#4 (AD-018 volatile) GATED on Phase 15 concurrency** — and wired the
+actionable, ease-ordered queue into `sweep_plan.md § Track D` (D1 → D2 → D3) with
+grounded reads + self-locating debt cross-refs (D-432/D-408). Resume = Track D D1.
+The directive applied to THIS session; the next `/continue` resumes the loop
+normally (delete this section on resume per handover_framing).
 
 ## Cold-start reading order (resume)
 
-handover → **`.dev/project_facts.md` F-014** (scope goal line, user-owned) +
-**ADR-0137** (its operationalisation; 0136 = sibling host-frontier ADR) → `.dev/debt.yaml` (next: D-431 completeness
-gate; open: D-418/424/430/432; discharged this session: D-414/421-429) →
-for the experiment: `private/notes/p14-wasm-component-experiment.md` +
-`private/20260613_handover_from_zwasm/handover_v2.md`. zwasm repo =
-`~/Documents/MyProducts/zwasm_from_scratch/` (read-only; HEAD ≥ `33e0100c`).
-clj oracle = `~/Documents/OSS/clojure/` + `clj -J-Xmx2g -M` (`timeout 60`).
+handover → **`.dev/sweep_plan.md` § Track D** (the resume queue D1→D2→D3) →
+`private/notes/p14-seq-key-hash-survey.md` (D1 survey) → `.dev/debt.yaml`
+(D-432/D-408 [D1], D-232 [D2], AD-018/D-288 [D3]) → `.dev/accepted_divergences.yaml`
+(AD-008/018/024/029 — the kept/gated divergences) + `.dev/project_facts.md` F-014 +
+ADR-0137/0129. clj oracle = `~/Documents/OSS/clojure/` + `clj -J-Xmx2g -M`
+(`timeout 60`). SAFETY: bounded seqs + register new e2e in run_all.sh same-commit.
