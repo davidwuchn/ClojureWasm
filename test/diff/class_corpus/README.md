@@ -82,9 +82,23 @@ charAt/deleteCharAt/insert/setLength/reverse), and the boxing/`Character` family
 `Long` (19) + `Integer` (19) + `Double` (15) + `Boolean` (11) + `Character` (13)
 — parse/valueOf/toString/radix/bit-ops/predicates/case-fold (Long/Integer/Boolean
 already complete; Double gained `isFinite`, Character gained `isAlphabetic`/
-`toString`). The remaining in-scope bare classes are tracked by **D-431**;
-`java.util.HashSet`/`TreeMap` are not yet implemented (absent, not partial —
-candidates, not a completeness gap).
+`toString`), `UUID` (8, fromString/toString + getMostSignificantBits/
+getLeastSignificantBits/version/variant/compareTo — instance accessors were
+missing) and `Random` (6, **seeded** — cljw reproduces Java's exact LCG
+sequence for nextInt/nextLong/nextBoolean, a strong parity).
+
+The remaining in-scope bare classes are tracked by **D-431**.
+
+> **Over-claim finding (D-431 / ADR-0137).** The corpus campaign surfaced that
+> several `compat_tiers.yaml`-listed classes are NOT actually resolvable — their
+> `methods:` list is aspirational, not built: the whole `java.time` family
+> (Instant/Duration/LocalDateTime/ZonedDateTime — `runtime/time/` method_tables
+> unbuilt, **D-105/D-243**), `java.math.BigDecimal`, and `java.util.Arrays` all
+> error with "No namespace". These are **feature gaps (build the surface), not
+> D-431 completeness gaps**, and the corpus correctly cannot include them. This
+> is exactly the stale-hand-list problem ADR-0137 fixes by generating `methods:`
+> from the passing corpus. `java.util.HashSet`/`TreeMap` are likewise absent
+> (candidates, not partial classes).
 
 > Note: `(Math/scalb 1.0 3)` is excluded — clj raises a COMPILE error ("More
 > than one matching method found") because it needs a type hint to pick the
