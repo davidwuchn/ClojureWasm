@@ -1040,3 +1040,64 @@ concern of clause 4) · principle.md "Ad-hoc-pass smell".
   the D-275 `Object` slice and asked for the 個別最適化 entry to be closed
   structurally. Recorded as law; the first mechanical instance is ADR-0102
   (host-interface closed-set SSOT + gate).
+
+---
+
+## F-014 — Scope goal line: linguistically-general Java only (not a JVM reimpl), per-class completeness when touched, pure-leaning Clojure-lib re-selection, cljw.* = the differentiator
+
+**Status**: `confirmed` — user-declared scope boundary. Amendable only by user
+direction + a Revision history entry. Operationalised by ADR-0136; complements
+F-013 (F-013 = *how* to respond to a discovered gap; F-014 = *where* the boundary is).
+
+**Declared**: 2026-06-14 (user chat, after the session-stop scope review).
+
+**Verbatim** (user, 2026-06-14):
+
+> 「Javaをどこまで対応するか、もしクラスを使うなら触れた部分については完備して
+> 欲しい（どれかを意図的に欠落させる、方が面倒臭いので）、しかし…JavaやJVMの
+> 再実装でないのも事実。Javaであっても言語的に一般的なものはこのプロジェクトに
+> 取り込む価値があるが、一方でClojureライブラリの有名なやつ（…Java密結合のやつ
+> は難しい、なるべくPureに近いものを再選定するか）+せっかくcljw名前空間を用意
+> しているのだから、あって良いものとかもアイデア…ゴールラインを引く」
+
+**The four boundary clauses**:
+
+1. **Java in-scope = "linguistically general", NOT a JVM reimplementation.** A
+   Java class is included iff it models a concept any language runtime needs or
+   that idiomatic Clojure uses pervasively (String, numeric tower, collections,
+   Math/System, regex, time, Random, UUID, string/byte IO, the throwable
+   vocabulary). JVM-platform artifacts are OUT (gen-class/proxy/compile/bean,
+   deep reflection, JDBC, Jackson, AWT, nio channels, StAX, OS threads-as-Java).
+   The D-425 six-model tree + the linguistically-general test decide; ADR-0136 §1.
+
+2. **Per-class completeness when touched (the central new invariant).** Any Java
+   class that exposes ANY surface method MUST be complete for its *commonly-used
+   surface* — no intentional partial omission within an in-scope class. Sibling
+   methods ship together (`.subSequence` rides with `.substring`); a class is
+   finished in the campaign that touches it, never left half-wired "for a real
+   consumer". A method genuinely outside the common surface is an explicit
+   OPAQUE/Tier-D line in `compat_tiers.yaml`, not silent absence. Sharpens F-013's
+   網羅 to the per-class level. Rationale (user): a partial class is a worse trap
+   than an absent one.
+
+3. **Clojure-lib target = pure-leaning re-selection.** Grow `verified_projects/`
+   toward famous *pure* libs (pure-degree ≤ 3); re-select AWAY from Java-tight-
+   coupled famous ones (cheshire/next.jdbc/clj-time/core.async — boundary markers,
+   not chased). Stop-chasing rule: pursue a lib while its blockers are *general*
+   cljw capabilities; stop when they are library-specific deep internals.
+
+4. **cljw.* = the differentiator surface.** `cljw.*` carries what makes cljw worth
+   using over the JVM (fast cold-start CLI, Wasm components, edge runtime,
+   single-binary build), never re-implements JVM conveniences. An addition must
+   answer "why not just the JVM?".
+
+**Why this is law (not a tie-breaker)**: it bounds the F-013 discovery loop so
+breadth-grind cannot displace the Wasm/perf differentiator (principle.md
+Micro-coverage-grind smell), and it forbids the partial-class trap.
+
+### Revision history
+
+- 2026-06-14 added: user drew the scope goal line during the post-session review,
+  asking for per-class completeness, a linguistically-general Java boundary,
+  pure-leaning lib re-selection, and a cljw.* differentiator purpose. Recorded as
+  law; operationalised by ADR-0136.
