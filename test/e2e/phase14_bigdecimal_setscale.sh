@@ -43,4 +43,13 @@ if "$BIN" -e '(.setScale (bigdec "2.5") 0 BigDecimal/ROUND_UNNECESSARY)' >/dev/n
 fi
 echo "PASS unnecessary_throws"
 
-echo "OK — phase14_bigdecimal_setscale (19 cases) green"
+# 2-arg setScale (no rounding mode) = JVM setScale(int) = ROUND_UNNECESSARY:
+# rescales exactly, throws ArithmeticException if rounding would be needed.
+assert_eq '2arg_pad'   "$("$BIN" -e '(str (.setScale (bigdec "1.5") 3))' 2>&1 | awk 'END{print}')"   '"1.500"'
+assert_eq '2arg_exact' "$("$BIN" -e '(str (.setScale (bigdec "1.500") 1))' 2>&1 | awk 'END{print}')" '"1.5"'
+if "$BIN" -e '(.setScale (bigdec "1.55") 1)' >/dev/null 2>&1; then
+    fail "2arg_unnecessary_throws: expected an error for a rounding-needed 2-arg setScale"
+fi
+echo "PASS 2arg_unnecessary_throws"
+
+echo "OK — phase14_bigdecimal_setscale (22 cases) green"

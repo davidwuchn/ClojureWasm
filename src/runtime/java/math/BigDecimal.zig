@@ -24,16 +24,24 @@ const SourceLocation = @import("../../error/info.zig").SourceLocation;
 const error_catalog = @import("../../error/catalog.zig");
 const big_decimal = @import("../../numeric/big_decimal.zig");
 
-/// `(.setScale bd newScale roundingMode)` — JVM `BigDecimal.setScale(int, int)`.
-/// `newScale` is the desired scale; `roundingMode` is a `ROUND_*` int constant.
+/// `(.setScale bd newScale)` / `(.setScale bd newScale roundingMode)` — JVM
+/// `BigDecimal.setScale(int)` / `setScale(int, int)`. `newScale` is the desired
+/// scale; `roundingMode` is a `ROUND_*` int constant. The 1-arg-method (2 total)
+/// form is `ROUND_UNNECESSARY` (rescale exactly, throw if rounding is needed).
 fn setScale(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
     _ = env;
-    try error_catalog.checkArity("setScale", args, 3, loc);
+    try error_catalog.checkArityRange("setScale", args, 2, 3, loc);
     if (args[0].tag() != .big_decimal)
         return error_catalog.raise(.type_arg_not_number, loc, .{ .fn_name = "setScale", .actual = @tagName(args[0].tag()) });
-    if (!args[1].isInt() or !args[2].isInt())
+    // ROUND_UNNECESSARY (7) for the no-mode form (JVM setScale(int)).
+    const mode: i64 = if (args.len == 3) blk: {
+        if (!args[2].isInt())
+            return error_catalog.raise(.type_arg_not_number, loc, .{ .fn_name = "setScale", .actual = "non-integer scale/mode" });
+        break :blk args[2].asInteger();
+    } else 7;
+    if (!args[1].isInt())
         return error_catalog.raise(.type_arg_not_number, loc, .{ .fn_name = "setScale", .actual = "non-integer scale/mode" });
-    return big_decimal.setScale(rt, args[0], @intCast(args[1].asInteger()), args[2].asInteger()) catch |e| switch (e) {
+    return big_decimal.setScale(rt, args[0], @intCast(args[1].asInteger()), mode) catch |e| switch (e) {
         error.RoundingNecessary => error_catalog.raise(.rounding_necessary, loc, .{}),
         error.InvalidRoundingMode => error_catalog.raise(.type_arg_invalid, loc, .{ .fn_name = "setScale", .expected = "a ROUND_* mode (0-7)", .actual = "an unknown rounding mode" }),
         else => e,
