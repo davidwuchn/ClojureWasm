@@ -50,5 +50,7 @@ and nil-receiver method calls (error-format differs per F-011).
 
 Landed: `String` (44), `Object` (15, universal `.toString`/`.equals`),
 `Throwable` (15, the exception family's `.getMessage`/`.getLocalizedMessage`/
-`.getCause`/`.getData` on the shared `.ex_info` descriptor). The remaining
+`.getCause`/`.getData` on the shared `.ex_info` descriptor), `Pattern` (7,
+`.pattern`/`/compile`/`/quote`/`/matches`) + `Matcher` (11, `.find`/`.group`/
+`.start`/`.end`/`.groupCount`/`.matches`/`.lookingAt`/`.reset`). The remaining
 in-scope bare classes are tracked by **D-431**.
