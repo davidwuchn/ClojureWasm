@@ -31,29 +31,23 @@
   - **debt.yaml** = `active:`(drain easiest-first) / `standing:`(NOT drained) /
     `discharged:`. Self-select drain-units from `active:` ONLY; correctness/clj-parity
     floor outranks coverage.
-  First `active:` rows (easiest-first): D-023, D-025, D-022, D-042, D-046, D-222, D-228,
-  D-240, D-241 … → (medium) … → PERF cluster (D-386 et al) → large. The PERF cluster is
-  the "then perf 専念" phase.
+  First `active:` rows (easiest-first): D-023, D-025, D-022 (all opportunistic — barriers
+  unmet), D-042, D-222, D-228, D-240, D-241 … → (medium) … → PERF cluster (D-386 et al)
+  → large. The PERF cluster is the "then perf 専念" phase. (D-046 discharged this session.)
   - **Reads: `.dev/project_facts.md` F-015 + ADR-0142 + ROADMAP §9.0 + debt.yaml header
     + `active:` top rows** + memory `debt-ledger-audit-decisions`. Discharging a row =
     MOVE to `discharged:` (don't inline-discharge), or let D-175 batch-relocate.
 
-- **This session landed (git log = SSOT)** — the full Track R (D-440) arc + the
-  zwasm release:
-  - **Track R R1-R5** (F-015 / ADR-0141 / **ADR-0142**): R1 concurrency parity
-    (D-441 agent ctor options + await-for + swap-vals!/reset-vals! + io!, corpus-locked);
-    R2 accurate-position survey; R3 §9 gap-area reframe (ADR-0142, **D-443** filed);
-    R4 future-row re-barriers → gap-area; R5 retired `phase_at_least_N` +
-    CLAUDE.md/principle.md → gap-area model. Stale agent e2e (the full gate caught it)
-    updated for the landed options.
-  - **zwasm SHA-pin + push restored**: `build.zig.zon` `.zwasm` is now a content-hash
-    git pin (`#412966f7`); the 2026-06-14 local-accumulation/no-push override **LIFTED**;
-    ~30 accumulated commits released to origin (memory `local-accumulation-sweep-phase`
-    = ENDED). Two full gates green (356/356) against the git-pinned zwasm.
-  - **DEBT-LEDGER AUDIT** (user-directed; 6-agent code+git fan-out over all 121 open-ish
-    rows): 58 rows discharged (23 silently-resolved + 35 already-DONE-status that sat in
-    active and re-surfaced as "remaining"); new `standing:` section (30 rows); `active:`
-    (68) re-ordered easiest-first. 445 rows preserved, parse/dup/refs clean.
+- **This session landed (git log = SSOT)**: **D-046 → discharged (ADR-0143)** —
+  LazySeq.force is now thread-safe (future/agent spawn real `std.Thread`, so the
+  unsynchronized realise was a live race). Inline lock-free double-checked atomic flag
+  + CAS-claim on the existing `realized_flag` byte: lock-free acquire-load fast path
+  (clj's shape), at-most-once via the single CAS winner, loser spins with the ADR-0092
+  safepoint poll; zero struct growth / off-heap cell / finaliser. REJECTED the off-heap
+  Io.Mutex cell (per-element cost on the highest-cardinality object) + at-most-once
+  relaxation (F-011); Alt 3 (futex) unimplementable — Zig 0.16 dropped `std.Thread`
+  sync prims. Devil's-advocate fork verbatim in ADR-0143 § Alternatives. (Prior
+  session: the Track-R/D-440 gap-area reframe arc + zwasm SHA-pin release — git log.)
 
   SAFETY: `clj` oracle batches need `-J-Xmx2g` + bounded seqs (memory
   `clj_oracle_heap_cap`); register every new e2e in run_all.sh same-commit; **the
@@ -66,18 +60,6 @@
 - **Forbidden this session**: `git push --force*`; bare `zig build` for any
   scripted / probe path (ADR-0133 — use a ReleaseSafe binary). (Local-accumulation /
   no-push is LIFTED — push per Step 6.)
-
-## Stopped — user requested
-
-User instruction (2026-06-15): debt台帳がコード現実と乖離している → 全 active 行を
-コード真実 + git log で監査し、解決済みを discharge、再表示されないよう整理、解消容易順に
-配置、ユーザー判断が要る件は今セッションで確定、次のクリアセッションから完全自律で進める
-状態にして止めて。**Done**: 6-agent audit (121 rows) → 58 discharged + `standing:`
-split + `active:` easiest-first; 3 user decisions captured (work-order quick-wins→perf /
-future-bucket defer-indefinitely / 3-section ledger — memory `debt-ledger-audit-decisions`).
-No open user-judgment items remain → resume is fully autonomous: drain `active:` top-down.
-This stop applies to THIS session only; the next `/continue` resumes the loop (delete this
-section on resume per handover_framing).
 
 ## Cold-start reading order (resume)
 

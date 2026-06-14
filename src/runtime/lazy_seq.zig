@@ -9,16 +9,28 @@
 //! sets `realized_flag = 1` so subsequent calls short-circuit
 //! without re-invoking.
 //!
-//! ## Mutex shape
+//! ## Thread-safety (ADR-0143, D-046)
 //!
-//! **No lock — single-thread today.** cw v1 is single-threaded (per
-//! the Runtime.io io_default accessor). The cw v0 LazySeq similarly
-//! had no lock (`value.zig:665-668`); thread-safety was a
-//! single-thread invariant. JVM's LazySeq locks on realise; that
-//! lock-on-realise contention path (two threads forcing the same
-//! LazySeq) lands at Phase B with real threading/locking (debt
-//! D-046). The Zig-0.16 locking primitive is chosen at Phase B entry
-//! (the pre-0.16 plan referenced removed APIs).
+//! `future`/`agent` spawn real OS threads, so multiple threads can
+//! `force()` the same LazySeq. `force` uses an **inline lock-free
+//! double-checked atomic flag + CAS-claim** (the atom.zig idiom, D-246
+//! — no off-heap cell, no finaliser, no struct growth): the
+//! `realized_flag` byte is a 3-state atomic word (PENDING/REALISED/
+//! CLAIMING). The steady-state read is a lock-free acquire-load (clj's
+//! shape — clj nulls a volatile Lock so realised reads need no lock);
+//! exactly one CAS winner invokes the thunk (clj's at-most-once),
+//! publishing via a release-store that fences the plain `realized`
+//! write; losers spin until publish, polling the ADR-0092 §2 safepoint
+//! (the thunk eval is exclusion-bearing). A thrown thunk resets the
+//! flag to PENDING (clj does not cache a thrown realisation → retry).
+//! NOT the off-heap `Io.Mutex` cell delay/promise use: LazySeq is the
+//! highest-cardinality heap object, so a per-element cell+finaliser is
+//! the wrong trade (Zig 0.16 has no inline blocking wait — `std.Thread`
+//! sync primitives are gone — so a blocking loser would force that
+//! cell). See ADR-0143 § Alternatives for the full design space.
+//! Known limitation (shared with delay/promise/future): a thunk that
+//! forces its own LazySeq hangs (clj StackOverflows) — degenerate,
+//! unguarded for memo-family consistency.
 //!
 //! ## Field layout (extern struct)
 //!
@@ -40,6 +52,7 @@ const env_mod = @import("env.zig");
 const tag_ops = @import("gc/tag_ops.zig");
 const gc_heap_mod = @import("gc/gc_heap.zig");
 const mark_sweep = @import("gc/mark_sweep.zig");
+const safepoint = @import("concurrency/safepoint.zig");
 const list_mod = @import("collection/list.zig");
 const chunked_cons_mod = @import("collection/chunked_cons.zig");
 const range_mod = @import("collection/range.zig");
@@ -55,7 +68,10 @@ const persistent_queue_mod = @import("collection/persistent_queue.zig");
 /// thunk and realized may equal Value.nil_val at runtime.
 pub const LazySeq = extern struct {
     header: HeapHeader,
-    /// 0 = thunk pending; 1 = thunk invoked, result in `realized`.
+    /// 3-state atomic realise word (ADR-0143): `flag_pending` (0) /
+    /// `flag_realised` (1, result in `realized`) / `flag_claiming` (2,
+    /// a thread holds the CAS-claim and is invoking the thunk). Accessed
+    /// only via `@atomicLoad`/`@cmpxchgStrong`/`@atomicStore` in `force`.
     realized_flag: u8 = 0,
     _pad: [5]u8 = .{ 0, 0, 0, 0, 0 },
     /// Arity-0 Fn Value that produces the realised seq. After
@@ -82,6 +98,13 @@ pub const LazySeq = extern struct {
     }
 };
 
+/// `realized_flag` states (ADR-0143). PENDING/REALISED keep the original
+/// 0/1 semantics (`isRealised` / `(realized? ls)` check REALISED); CLAIMING
+/// marks the CAS-claim held by the thread invoking the thunk.
+const flag_pending: u8 = 0;
+const flag_realised: u8 = 1;
+const flag_claiming: u8 = 2;
+
 /// Build a fresh LazySeq wrapping a thunk Fn Value. The thunk is
 /// expected to be a 0-arity callable that returns the realised
 /// seq (typically a Cons or nil) when invoked via `rt.vtable.callFn`.
@@ -101,7 +124,7 @@ pub fn alloc(rt: *Runtime, thunk_fn: Value) !Value {
 /// True iff the LazySeq's thunk has already been forced. Powers
 /// `(realized? ls)` introspection (the `realized_flag` discriminator).
 pub fn isRealised(v: Value) bool {
-    return v.decodePtr(*const LazySeq).realized_flag == 1;
+    return @atomicLoad(u8, &v.decodePtr(*const LazySeq).realized_flag, .acquire) == flag_realised;
 }
 
 /// `force(rt, env, v)` — realise the LazySeq's thunk on first
@@ -111,25 +134,61 @@ pub fn isRealised(v: Value) bool {
 pub fn force(rt: *Runtime, env: *env_mod.Env, v: Value) !Value {
     if (v.tag() != .lazy_seq) return v;
     const ls = v.decodePtr(*LazySeq);
-    if (ls.realized_flag == 1) return ls.realized;
 
-    // Thunk dispatch. Requires the vtable to be installed (Layer
-    // 1 backend wires this at startup); else surface an internal
-    // error rather than silently no-op.
-    const vt = rt.vtable orelse return error.LazySeqVTableNotInstalled;
-    const raw = try vt.callFn(rt, env, ls.thunk, &[_]Value{}, .{});
-    // clj `LazySeq.seq` runs the realized body through `RT.seq`: a lazy-seq
-    // body may legitimately return a non-seq seqable (e.g. `(lazy-seq [2 3])`
-    // → a vector), which must be seq-coerced or the seq-walk would drop the
-    // tail (`(1 nil)`). Coerce the terminal seqable collections to a list/seq
-    // here so seq/first/rest/count all see a walkable value. A `.lazy_seq`
-    // result is left for the caller's force-loop; `.list`/`.cons`/`.range`/
-    // `.chunked_cons`/the seq-views are already walkable.
-    const result = try coerceRealized(rt, raw);
+    // Thread-safe realise (ADR-0143). Re-observe the 3-state flag in a
+    // loop so a loser that sees the winner's claim spins for the publish,
+    // and a loser that sees a thrown winner reset the flag to PENDING
+    // re-claims (clj retries a thrown realisation; it is not cached).
+    while (true) {
+        switch (@atomicLoad(u8, &ls.realized_flag, .acquire)) {
+            // Steady-state lock-free read: the acquire-load synchronises
+            // with the winner's release-store, so `realized` is visible.
+            flag_realised => return ls.realized,
+            flag_pending => {
+                // Try to win the realise window. Loser falls through to
+                // re-observe (the winner is now CLAIMING).
+                if (@cmpxchgStrong(u8, &ls.realized_flag, flag_pending, flag_claiming, .acq_rel, .acquire) != null) continue;
 
-    ls.realized = result;
-    ls.realized_flag = 1;
-    return result;
+                // Won the claim — invoke the thunk exactly once. On any
+                // error, release the claim back to PENDING (do NOT cache a
+                // thrown realisation) so a later force / a spinning loser
+                // retries, then propagate.
+                const vt = rt.vtable orelse {
+                    @atomicStore(u8, &ls.realized_flag, flag_pending, .release);
+                    return error.LazySeqVTableNotInstalled;
+                };
+                const raw = vt.callFn(rt, env, ls.thunk, &[_]Value{}, .{}) catch |e| {
+                    @atomicStore(u8, &ls.realized_flag, flag_pending, .release);
+                    return e;
+                };
+                // clj `LazySeq.seq` runs the realized body through `RT.seq`:
+                // a lazy-seq body may legitimately return a non-seq seqable
+                // (e.g. `(lazy-seq [2 3])` → a vector), which must be
+                // seq-coerced or the seq-walk would drop the tail
+                // (`(1 nil)`). Coerce terminal seqable collections to a
+                // list/seq so seq/first/rest/count all see a walkable value.
+                const result = coerceRealized(rt, raw) catch |e| {
+                    @atomicStore(u8, &ls.realized_flag, flag_pending, .release);
+                    return e;
+                };
+                ls.realized = result;
+                // Publish: the release-store fences the plain `realized`
+                // write so a fast-path acquire-load observes it (clj's
+                // volatile-lock visibility trick).
+                @atomicStore(u8, &ls.realized_flag, flag_realised, .release);
+                return result;
+            },
+            // Another thread holds the claim and is invoking the thunk.
+            // Spin for the publish, honoring the safepoint protocol
+            // (ADR-0092 §2): the thunk eval is exclusion-bearing, so a
+            // non-parking spin would stall a stop-the-world collector.
+            flag_claiming => {
+                if (safepoint.gc_requested.load(.monotonic)) safepoint.park();
+                std.atomic.spinLoopHint();
+            },
+            else => unreachable,
+        }
+    }
 }
 
 /// Seq-coerce a realized lazy-seq body (clj `RT.seq` parity). Non-seq seqable
@@ -357,6 +416,55 @@ test "force on uncached LazySeq without vtable: surfaces error.LazySeqVTableNotI
 
     const v = try alloc(&fix.rt, Value.true_val); // non-nil thunk so force tries to invoke
     try testing.expectError(error.LazySeqVTableNotInstalled, force(&fix.rt, &env, v));
+}
+
+test "force: concurrent first-force invokes the thunk at most once (D-046, ADR-0143)" {
+    // future/agent spawn real OS threads, so multiple threads can force the
+    // same LazySeq. The CAS-claim must let exactly ONE thread invoke the
+    // thunk; the losers observe the published result. Pre-ADR-0143 (no
+    // synchronization) all threads read realized_flag == 0 and double-run.
+    var fix = RuntimeFixture.init();
+    defer fix.deinit();
+
+    var env = try env_mod.Env.init(&fix.rt);
+    defer env.deinit();
+
+    const Mock = struct {
+        var invocations: std.atomic.Value(usize) = .init(0);
+        var start: std.atomic.Value(bool) = .init(false);
+        fn callFn(_: *Runtime, _: *env_mod.Env, _: Value, _: []const Value, _: @import("error/info.zig").SourceLocation) anyerror!Value {
+            _ = invocations.fetchAdd(1, .monotonic);
+            // Widen the realise window so the pre-fix unsynchronized force
+            // double-runs deterministically.
+            var i: usize = 0;
+            while (i < 20_000) : (i += 1) std.atomic.spinLoopHint();
+            return Value.nil_val;
+        }
+        fn typeKey(_: Value) []const u8 {
+            return "mock";
+        }
+    };
+    Mock.invocations.store(0, .monotonic);
+    Mock.start.store(false, .monotonic);
+    fix.rt.vtable = .{ .callFn = Mock.callFn, .valueTypeKey = Mock.typeKey };
+
+    const v = try alloc(&fix.rt, Value.true_val);
+
+    const Worker = struct {
+        fn run(rt: *Runtime, e: *env_mod.Env, lazy: Value) void {
+            while (!Mock.start.load(.acquire)) std.atomic.spinLoopHint();
+            _ = force(rt, e, lazy) catch unreachable;
+        }
+    };
+
+    var threads: [8]std.Thread = undefined;
+    for (&threads) |*t| t.* = try std.Thread.spawn(.{}, Worker.run, .{ &fix.rt, &env, v });
+    Mock.start.store(true, .release); // release all workers simultaneously
+    for (threads) |t| t.join();
+
+    try testing.expectEqual(@as(usize, 1), Mock.invocations.load(.monotonic));
+    try testing.expect(isRealised(v));
+    try testing.expectEqual(Value.nil_val, v.decodePtr(*const LazySeq).realized);
 }
 
 test "first/rest/next on .list pass through to list ops" {
