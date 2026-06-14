@@ -225,6 +225,12 @@ pub const Runtime = struct {
     locale_us: @import("value/value.zig").Value = .nil_val,
     locale_root: @import("value/value.zig").Value = .nil_val,
 
+    /// User-set Java system properties (`(System/setProperty k v)`). Keys +
+    /// values are `gpa`-owned dupes; consulted by `getProperty` BEFORE the
+    /// OS-truthful static table (JVM: a set property overrides). Freed in
+    /// `deinit`. Empty until the first `setProperty`.
+    system_properties: std.StringHashMapUnmanaged([]const u8) = .empty,
+
     /// User type registry per ADR-0007 + ROADMAP §9.7 / 5.11. Maps
     /// the fully-qualified class name (e.g. `user.Point`) to a
     /// process-lifetime TypeDescriptor allocated on `gpa`. Populated
@@ -509,6 +515,16 @@ pub const Runtime = struct {
         // Free the per-Runtime Date descriptor (gc.infra — D-200/ADR-0079).
         @import("time/date.zig").deinitDescriptor(self);
         @import("time/timestamp.zig").deinitDescriptor(self);
+
+        // User-set system properties (gpa-owned key+value dupes).
+        {
+            var it = self.system_properties.iterator();
+            while (it.next()) |e| {
+                self.gpa.free(e.key_ptr.*);
+                self.gpa.free(e.value_ptr.*);
+            }
+            self.system_properties.deinit(self.gpa);
+        }
 
         // Free per-Tag native descriptors first (their method_table
         // slice was re-allocated on rt.gc.infra by extendTypeWithImpls

@@ -53,4 +53,20 @@ assert_eq 'exit_flushed_stdout' "$out" 'before-exit '
 # exit code wraps to the low 8 bits (256 & 0xFF == 0).
 assert_eq 'exit_wrap_256' "$wrap" '0'
 
-echo "OK — phase14_system_statics (8 cases) green"
+# --- setProperty: returns previous value (nil first), overrides getProperty ---
+got=$("$BIN" - <<'EOF' 2>/dev/null
+(prn (System/setProperty "cljw.test.k" "v1"))
+(prn (System/getProperty "cljw.test.k"))
+(prn (System/setProperty "cljw.test.k" "v2"))
+(prn (System/getProperty "cljw.test.k"))
+(prn (System/getProperty "line.separator"))
+EOF
+) || fail "setProperty: non-zero exit ($got)"
+assert_eq 'setProperty_prev_nil'  "$(sed -n '1p' <<< "$got")" 'nil'
+assert_eq 'setProperty_get'       "$(sed -n '2p' <<< "$got")" '"v1"'
+assert_eq 'setProperty_prev'      "$(sed -n '3p' <<< "$got")" '"v1"'
+assert_eq 'setProperty_override'  "$(sed -n '4p' <<< "$got")" '"v2"'
+# the static table still answers after a user setProperty (OS-stable key)
+assert_eq 'setProperty_static_ok' "$(sed -n '5p' <<< "$got")" '"\n"'
+
+echo "OK — phase14_system_statics (13 cases) green"

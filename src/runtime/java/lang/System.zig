@@ -99,6 +99,9 @@ fn getProperty(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation
     if (args[0].tag() != .string)
         return error_catalog.raise(.type_arg_not_string, loc, .{ .fn_name = "java.lang.System/getProperty", .actual = @tagName(args[0].tag()) });
     const name = string_mod.asString(args[0]);
+    // A user-set property (setProperty) overrides the OS-truthful static set,
+    // matching the JVM (a set value wins for any key, incl. e.g. user.dir).
+    if (rt.system_properties.get(name)) |val| return string_mod.alloc(rt, val);
     if (staticProperty(name)) |val| return string_mod.alloc(rt, val);
     if (std.mem.eql(u8, name, "user.dir")) {
         var buf: [std.Io.Dir.max_path_bytes]u8 = undefined;
@@ -191,9 +194,44 @@ fn arraycopy(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) 
     return Value.nil_val;
 }
 
+/// Implements `(java.lang.System/setProperty key value)`.
+/// Spec: sets the system property `key` to `value` and returns the PREVIOUS
+/// value for `key` (nil if unset), JVM-faithful. The value is stored on the
+/// runtime's `system_properties` map (gpa-owned dupe) and overrides the
+/// OS-truthful static set on the next `getProperty`. A previously-set key's old
+/// value is freed; the static-table value is NOT a "previous" (returns nil) —
+/// matching the JVM, where the OS-derived defaults are not user-set entries.
+/// JVM reference: java.lang.System#setProperty.
+/// cw v1 tier: A.
+fn setProperty(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = env;
+    try error_catalog.checkArity("java.lang.System/setProperty", args, 2, loc);
+    if (args[0].tag() != .string)
+        return error_catalog.raise(.type_arg_not_string, loc, .{ .fn_name = "java.lang.System/setProperty", .actual = @tagName(args[0].tag()) });
+    if (args[1].tag() != .string)
+        return error_catalog.raise(.type_arg_not_string, loc, .{ .fn_name = "java.lang.System/setProperty", .actual = @tagName(args[1].tag()) });
+    const key = string_mod.asString(args[0]);
+    const val = string_mod.asString(args[1]);
+    const new_val = try rt.gpa.dupe(u8, val);
+    errdefer rt.gpa.free(new_val);
+    const gop = try rt.system_properties.getOrPut(rt.gpa, key);
+    var prev: Value = Value.nil_val;
+    if (gop.found_existing) {
+        prev = try string_mod.alloc(rt, gop.value_ptr.*);
+        rt.gpa.free(gop.value_ptr.*);
+    } else {
+        gop.key_ptr.* = rt.gpa.dupe(u8, key) catch |e| {
+            rt.gpa.free(new_val);
+            return e;
+        };
+    }
+    gop.value_ptr.* = new_val;
+    return prev;
+}
+
 fn initSystem(td: *type_descriptor.TypeDescriptor, gpa: std.mem.Allocator) anyerror!void {
     if (td.method_table.len != 0) return; // idempotent re-run
-    const entries = try gpa.alloc(type_descriptor.TypeDescriptor.MethodEntry, 7);
+    const entries = try gpa.alloc(type_descriptor.TypeDescriptor.MethodEntry, 8);
     entries[0] = .{
         .protocol_name = "",
         .method_name = try gpa.dupe(u8, "currentTimeMillis"),
@@ -228,6 +266,11 @@ fn initSystem(td: *type_descriptor.TypeDescriptor, gpa: std.mem.Allocator) anyer
         .protocol_name = "",
         .method_name = try gpa.dupe(u8, "arraycopy"),
         .method_val = Value.initBuiltinFn(&arraycopy),
+    };
+    entries[7] = .{
+        .protocol_name = "",
+        .method_name = try gpa.dupe(u8, "setProperty"),
+        .method_val = Value.initBuiltinFn(&setProperty),
     };
     td.method_table = entries;
 }
