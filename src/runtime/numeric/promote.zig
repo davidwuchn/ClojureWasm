@@ -78,6 +78,28 @@ fn coerceToManaged(rt: *Runtime, v: Value) !Managed {
     return error.NotAnInteger;
 }
 
+/// Owned scratch for the integer/BigInt arithmetic operand path. `active`
+/// is false when the operand is a BigInt (the ref aliases its stored
+/// Managed — nothing to free).
+const OwnedManaged = struct {
+    m: Managed = undefined,
+    active: bool = false,
+    fn deinit(self: *OwnedManaged) void {
+        if (self.active) self.m.deinit();
+    }
+};
+
+/// Resolve an integer/BigInt operand to a `*const Managed`. A BigInt aliases
+/// its stored Managed (PERF: no clone — `add`/`sub`/`mul` only read it;
+/// O-039); an immediate Long materialises into `owned` (a stable caller
+/// local). Mirrors `partsOf`/`OwnedParts` for the single-Managed path.
+fn operandManaged(rt: *Runtime, v: Value, owned: *OwnedManaged) !*const Managed {
+    if (v.tag() == .big_int) return big_int.asManaged(v);
+    owned.m = try coerceToManaged(rt, v);
+    owned.active = true;
+    return &owned.m;
+}
+
 /// Wrap an i64 result as a Value, choosing immediate-Long
 /// (`Value.initInteger`) when it fits in i48, else BigInt. This is the
 /// canonical "exact i64 → Value" entry: unlike `Value.initInteger` (which
@@ -288,13 +310,15 @@ pub fn addPromoting(rt: *Runtime, a: Value, b: Value) !Value {
         defer bm.deinit();
         return try big_int.allocAddManaged(rt, &am, &bm, .bigint);
     }
-    var am = try coerceToManaged(rt, a);
-    defer am.deinit();
-    var bm = try coerceToManaged(rt, b);
-    defer bm.deinit();
+    var oa: OwnedManaged = .{};
+    defer oa.deinit();
+    const am = try operandManaged(rt, a, &oa);
+    var ob: OwnedManaged = .{};
+    defer ob.deinit();
+    const bm = try operandManaged(rt, b, &ob);
     var r = try Managed.init(rt.gc.infra);
     defer r.deinit();
-    try r.add(&am, &bm);
+    try r.add(am, bm);
     return try wrapArith(rt, &r, a, b);
 }
 
@@ -320,13 +344,15 @@ pub fn subPromoting(rt: *Runtime, a: Value, b: Value) !Value {
         defer bm.deinit();
         return try big_int.allocSubManaged(rt, &am, &bm, .bigint);
     }
-    var am = try coerceToManaged(rt, a);
-    defer am.deinit();
-    var bm = try coerceToManaged(rt, b);
-    defer bm.deinit();
+    var oa: OwnedManaged = .{};
+    defer oa.deinit();
+    const am = try operandManaged(rt, a, &oa);
+    var ob: OwnedManaged = .{};
+    defer ob.deinit();
+    const bm = try operandManaged(rt, b, &ob);
     var r = try Managed.init(rt.gc.infra);
     defer r.deinit();
-    try r.sub(&am, &bm);
+    try r.sub(am, bm);
     return try wrapArith(rt, &r, a, b);
 }
 
@@ -352,13 +378,15 @@ pub fn mulPromoting(rt: *Runtime, a: Value, b: Value) !Value {
         defer bm.deinit();
         return try big_int.allocMulManaged(rt, &am, &bm, .bigint);
     }
-    var am = try coerceToManaged(rt, a);
-    defer am.deinit();
-    var bm = try coerceToManaged(rt, b);
-    defer bm.deinit();
+    var oa: OwnedManaged = .{};
+    defer oa.deinit();
+    const am = try operandManaged(rt, a, &oa);
+    var ob: OwnedManaged = .{};
+    defer ob.deinit();
+    const bm = try operandManaged(rt, b, &ob);
     var r = try Managed.init(rt.gc.infra);
     defer r.deinit();
-    try r.mul(&am, &bm);
+    try r.mul(am, bm);
     return try wrapArith(rt, &r, a, b);
 }
 
