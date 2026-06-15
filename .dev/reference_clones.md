@@ -107,6 +107,26 @@ consumed. See the planning note `private/notes/recut-goal-synthesis.md`
 - `~/Documents/OSS/mattpocock_skills/` — TypeScript / typing learning material
   - Use: type system design reference (secondary)
 
+## Perf-reference clones (clone reference impls freely for a perf lever)
+
+For the "beat Python on every bench" campaign (memory
+`perf-beat-python-every-bench`), the reference implementation of any slow
+primitive may be **cloned into `~/Documents/OSS/` and studied** to design a
+Zig-native equivalent-but-faster path (user direction 2026-06-15 — explicit
+approach flexibility, not just for regex). Re-derive, never copy verbatim.
+
+- **Regex** (the `35_regex_count` loser, ~1.75× behind Python): study engine
+  designs — `~/Documents/OSS/openjdk24/` already carries `java.util.regex`
+  (`Pattern.java`/`Matcher.java`, NFA backtracking); clone **CPython `sre`**
+  (`Modules/_sre/`, `Lib/re/`) on demand for its compiled bytecode-VM matcher;
+  RE2 (`google/re2`) for a DFA design if a non-backtracking rewrite is weighed.
+  The gap may be partly non-engine (re-seq allocation, match-object
+  construction) — profile before assuming it's the matcher. Cross-lang
+  **equivalence audit first** (ADR-0145): cljw regex stays clj/Java-compatible.
+- **General**: for nested_update (persistent HAMT update path), bigint
+  (multiplication algorithm), etc., the JVM (`openjdk24/`) + cw v0 + the
+  relevant OSS lib are the textbooks. Clone what is missing when the lever opens.
+
 ## Reading discipline
 
 At each Phase Step 0 (textbook_survey):
