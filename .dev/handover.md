@@ -11,19 +11,23 @@
   clojurewasm/zwasm commit (`#412966f7…`, `lazy`) — not the local path.
   Per-commit = smoke; full gate batches at ceiling / boundary / pre-tag.
 
-- **First commit on resume MUST be**: continue the **perf campaign** (user work
-  order: perf 専念 → beat-Python north-star). The tractable **dispatch** wins are
-  landed this session (O-028 ip-register-hoist + O-029 alloc-free fixnum arith =
-  fib 536→420 ms, ~22%). Self-select the highest-ROI remaining unit:
-  - The Python-LOSING benches are the north-star gap — **sieve ~1.4× / regex_count
-    ~1.8× / nested_update ~1.22×** (`.dev/perf_v0_baseline.md` + the O-NNN ledger
-    rows; measure via `bench/run_bench.sh` / hyperfine ReleaseSafe, never Debug).
-  - The narrow ARM64 **JIT (D-133)** is the user-stated big dispatch lever (v0:
-    arith_loop 31→3 ms) — a multi-cycle arc.
-  - **SKIP D-386 sub-step 2** (op_top register hoist): LOW-ROI + blocked. LOAD-only
-    half measured ~1% (noise; the op_top load is store-forwarded); the full hoist
-    needs D-244 #4 `gc_self_guard` fabrication rooting to be validatable at the
-    literal-fold sites (a design-level capstone arc). Details in D-386's barrier.
+- **First commit on resume MUST be**: the perf campaign's **3-loser runtime
+  campaign — sieve first** (ADR-0145, the JIT go/no-go decision). sieve is ~1.5×
+  behind Python; v0 won it with **filter-chain collapsing / fused-reduce** (24C.7,
+  103×) — a cross-platform, no-machine-code runtime lever. Step 0 survey the lazy
+  `filter`/`first`/`rest` walk hot path (`src/lang/clj/clojure/core.clj` filter +
+  the lazy-seq machinery; cross-ref O-004 chunked-seq + O-023 fused-reduce); the
+  fix is GC-rooting-sensitive (O-005/O-013 class) → torture-gate with
+  `CLJW_GC_TORTURE` + `CLJW_GC_TORTURE_ALLOC`. Then nested_update (update-in/assoc-in
+  Zig builtins) then regex_count (after a cross-lang equivalence audit). Validate
+  each: diff oracle + `clj` corpus (F-011) + bench re-measure (hyperfine ReleaseSafe).
+  - **JIT (D-133) is re-sequenced LAST** (ADR-0145): `04_arith_loop` already beats
+    Python 1.87× (cold + compute), so the JIT is v0-parity-only at the project's
+    highest cost/risk; it touches none of the 3 losers. Re-open only when its ROI
+    predicate fires (a hot loop the runtime levers can't reach, OR losers closed,
+    OR user re-affirms). Do NOT open the executable-memory/codegen surface now.
+  - **SKIP D-386 sub-step 2** (op_top register hoist): LOW-ROI (LOAD-only ~1% noise)
+    + blocked on D-244 #4 `gc_self_guard` fabrication rooting. Details in D-386.
 
 - **New this session — validation infra**: alloc-driven GC torture
   (`CLJW_GC_TORTURE_ALLOC=N`, inert-by-default) forces a collect inside `gc.alloc`
