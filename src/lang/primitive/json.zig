@@ -232,8 +232,10 @@ fn cwToJson(v: Value, w: *std.Io.Writer, opts: WriteOpts) anyerror!void {
         .big_int => try w.print("{f}", .{big_int_mod.asManaged(v)}),
         // JVM data.json writes a Ratio as its double value (1/2 → 0.5).
         .ratio => {
-            const r = v.decodePtr(*const ratio_mod.Ratio);
-            const f = (r.numer.m.toFloat(f64, .nearest_even)[0]) / (r.denom.m.toFloat(f64, .nearest_even)[0]);
+            const f = switch (ratio_mod.parts(v)) {
+                .small => |s| @as(f64, @floatFromInt(s.n)) / @as(f64, @floatFromInt(s.d)),
+                .big => |b| b.n.m.toFloat(f64, .nearest_even)[0] / b.d.m.toFloat(f64, .nearest_even)[0],
+            };
             try print.printFloat(w, f);
         },
         .string => try writeJsonString(w, string_collection.asString(v), opts),

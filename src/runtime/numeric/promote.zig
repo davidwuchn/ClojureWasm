@@ -43,8 +43,10 @@ fn toF64(rt: *Runtime, v: Value) f64 {
         return managedToF64(rt, big_int.asManaged(v));
     }
     if (v.tag() == .ratio) {
-        const r = v.decodePtr(*const ratio_mod.Ratio);
-        return managedToF64(rt, r.numer.m) / managedToF64(rt, r.denom.m);
+        return switch (ratio_mod.parts(v)) {
+            .small => |s| @as(f64, @floatFromInt(s.n)) / @as(f64, @floatFromInt(s.d)),
+            .big => |b| managedToF64(rt, b.n.m) / managedToF64(rt, b.d.m),
+        };
     }
     if (v.tag() == .big_decimal) {
         // value = unscaled · 10^(−scale). Lossy (float-contagion semantics).
@@ -181,8 +183,20 @@ const OwnedParts = struct {
 /// stable caller local, so `&owned.num` stays valid for the call scope).
 fn partsOf(rt: *Runtime, v: Value, owned: *OwnedParts) !RatioParts {
     if (v.tag() == .ratio) {
-        const r = v.decodePtr(*const ratio_mod.Ratio);
-        return .{ .num = r.numer.m, .den = r.denom.m };
+        switch (ratio_mod.parts(v)) {
+            // big ratio: alias the stored BigInts (zero alloc, O-037).
+            .big => |b| return .{ .num = b.n.m, .den = b.d.m },
+            // small ratio: materialise the inline i64s into owned scratch (the
+            // Managed cross-multiply path; the i64 FAST path in ratioArith
+            // avoids reaching here for the common small⊗small case). [ADR-0149]
+            .small => |s| {
+                owned.num = try Managed.initSet(rt.gc.infra, s.n);
+                errdefer owned.num.deinit();
+                owned.den = try Managed.initSet(rt.gc.infra, s.d);
+                owned.active = true;
+                return .{ .num = &owned.num, .den = &owned.den };
+            },
+        }
     }
     owned.num = try coerceToManaged(rt, v);
     errdefer owned.num.deinit();
@@ -193,6 +207,64 @@ fn partsOf(rt: *Runtime, v: Value, owned: *OwnedParts) !RatioParts {
 
 const RatioOp = enum { add, sub, mul, div };
 
+/// A numeric operand as an i64 numerator/denominator, IF it is i64-representable
+/// for the small-ratio fast path: a small ratio yields its inline pair; an
+/// immediate integer yields `int/1`. A big ratio / heap-Long / BigInt / float /
+/// BigDecimal yields null → the caller falls back to the Managed path. [ADR-0149]
+const SmallParts = struct { n: i64, d: i64 };
+fn smallParts(v: Value) ?SmallParts {
+    if (v.tag() == .ratio) {
+        return switch (ratio_mod.parts(v)) {
+            .small => |s| .{ .n = s.n, .d = s.d },
+            .big => null,
+        };
+    }
+    if (v.tag() == .integer) return .{ .n = @as(i64, v.asInteger()), .d = 1 };
+    return null;
+}
+
+/// i64 small-ratio arithmetic fast path. Returns null on ANY i64 overflow (the
+/// caller falls back to the Managed path) — `@mulWithOverflow`/`@addWithOverflow`
+/// guard every product/sum, since a cross-multiply can overflow even when the
+/// operands fit. The reduced result routes through `allocFromI64Pair` (which
+/// re-reduces + emits a canonical small ratio, or null on integer-collapse → a
+/// BigInt, matching clj's `(+ 1/2 1/2)`→1N). [ADR-0149]
+fn ratioArithSmall(rt: *Runtime, ap: SmallParts, bp: SmallParts, op: RatioOp) !?Value {
+    var rn: i64 = undefined;
+    var rd: i64 = undefined;
+    switch (op) {
+        .mul => {
+            const n, const o1 = @mulWithOverflow(ap.n, bp.n);
+            const d, const o2 = @mulWithOverflow(ap.d, bp.d);
+            if (o1 != 0 or o2 != 0) return null;
+            rn = n;
+            rd = d;
+        },
+        .div => {
+            const n, const o1 = @mulWithOverflow(ap.n, bp.d);
+            const d, const o2 = @mulWithOverflow(ap.d, bp.n);
+            if (o1 != 0 or o2 != 0) return null;
+            rn = n;
+            rd = d;
+        },
+        .add, .sub => {
+            const ad, const o1 = @mulWithOverflow(ap.n, bp.d);
+            const bc, const o2 = @mulWithOverflow(bp.n, ap.d);
+            if (o1 != 0 or o2 != 0) return null;
+            const s, const o3 = if (op == .add) @addWithOverflow(ad, bc) else @subWithOverflow(ad, bc);
+            const d, const o4 = @mulWithOverflow(ap.d, bp.d);
+            if (o3 != 0 or o4 != 0) return null;
+            rn = s;
+            rd = d;
+        },
+    }
+    if (rd == 0) return error.DivideByZero;
+    if (try ratio_mod.allocFromI64Pair(rt, rn, rd)) |r| return r;
+    // Integer collapse: the reduced denom is 1 → rd | rn exactly. A ratio op
+    // that reduces to a whole number yields a BigInt in clj (`(+ 1/2 1/2)`→1N).
+    return try big_int.allocFromI64(rt, @divTrunc(rn, rd), .bigint);
+}
+
 /// Rational arithmetic over operands where at least one is a ratio (the
 /// other may be ratio / integer / BigInt). Computes the result as a
 /// numerator/denominator Managed pair, then reduces via
@@ -200,6 +272,17 @@ const RatioOp = enum { add, sub, mul, div };
 /// integer quotient is returned (Long if it fits i48, else BigInt) —
 /// matching JVM Clojure, where `(+ 1/2 1/2)` is `1`, not `1/1`.
 fn ratioArith(rt: *Runtime, a: Value, b: Value, op: RatioOp) !Value {
+    // PERF: i64 small-ratio fast path (ADR-0149) — when both operands are small
+    // ratios / immediate ints, cross-multiply in i64 (overflow → Managed path),
+    // skipping all Managed alloc + the gcd/divTrunc scratch. The harmonic-sum
+    // hot path (`(+ small-ratio small-ratio)`) lands here.
+    if (smallParts(a)) |ap_s| {
+        if (smallParts(b)) |bp_s| {
+            if (try ratioArithSmall(rt, ap_s, bp_s, op)) |result| return result;
+            // overflow → fall through to the Managed path below.
+        }
+    }
+
     var owned_a: OwnedParts = .{};
     defer owned_a.deinit();
     const ap = try partsOf(rt, a, &owned_a);
@@ -263,9 +346,15 @@ fn coerceToBigDecimal(rt: *Runtime, v: Value) !Value {
     return switch (v.tag()) {
         .big_decimal => v,
         .big_int => try big_decimal_mod.allocFromManagedScale(rt, big_int.asManaged(v), 0),
-        .ratio => blk: {
-            const r = v.decodePtr(*const ratio_mod.Ratio);
-            break :blk try big_decimal_mod.allocFromRatioParts(rt, r.numer.m, r.denom.m);
+        .ratio => switch (ratio_mod.parts(v)) {
+            .big => |b| try big_decimal_mod.allocFromRatioParts(rt, b.n.m, b.d.m),
+            .small => |s| blk: {
+                var nm = try Managed.initSet(rt.gc.infra, s.n);
+                defer nm.deinit();
+                var dm = try Managed.initSet(rt.gc.infra, s.d);
+                defer dm.deinit();
+                break :blk try big_decimal_mod.allocFromRatioParts(rt, &nm, &dm);
+            },
         },
         else => try big_decimal_mod.allocFromI64Scale(rt, @as(i64, v.asInteger()), 0),
     };
@@ -411,6 +500,18 @@ pub fn divPromoting(rt: *Runtime, a: Value, b: Value) !Value {
         return try ratioArith(rt, a, b, .div);
     }
 
+    // PERF: both immediate integers → pure i64 division (ADR-0149): a small
+    // reduced ratio (no Managed/arena/BigInt) or an exact i64 quotient. The
+    // `(/ 1 x)` harmonic-sum hot path lands here. Both are i48 (≠ MIN_I64).
+    if (a.tag() == .integer and b.tag() == .integer) {
+        const ai = @as(i64, a.asInteger());
+        const bi = @as(i64, b.asInteger());
+        if (bi == 0) return error.DivideByZero;
+        if (try ratio_mod.allocFromI64Pair(rt, ai, bi)) |r| return r;
+        // exact integer quotient — Long category (both operands Long), `(/ 6 3)`→2.
+        return try wrapI64(rt, @divTrunc(ai, bi));
+    }
+
     // Integer / integer path: build Managed for both, compute gcd,
     // collapse to BigInt if exact; otherwise Ratio.
     var am = try coerceToManaged(rt, a);
@@ -449,7 +550,10 @@ fn numSign(v: Value) std.math.Order {
         .char => std.math.order(@as(i64, v.asChar()), 0),
         .float => std.math.order(v.asFloat(), 0),
         .big_int => big_int.asManaged(v).toConst().orderAgainstScalar(0),
-        .ratio => v.decodePtr(*const ratio_mod.Ratio).numer.m.toConst().orderAgainstScalar(0),
+        .ratio => switch (ratio_mod.parts(v)) {
+            .small => |s| std.math.order(s.n, 0),
+            .big => |b| b.n.m.toConst().orderAgainstScalar(0),
+        },
         .big_decimal => v.decodePtr(*const big_decimal_mod.BigDecimal).unscaled.m.toConst().orderAgainstScalar(0),
         else => .eq,
     };
@@ -551,14 +655,17 @@ pub fn truncToI64(rt: *Runtime, v: Value) !i64 {
             return @intFromFloat(f);
         },
         .big_int => return big_int.asManaged(v).toInt(i64) catch error.OutOfRange,
-        .ratio => {
-            const ratio = v.decodePtr(*const ratio_mod.Ratio);
-            var q = try Managed.init(rt.gc.infra);
-            defer q.deinit();
-            var r = try Managed.init(rt.gc.infra);
-            defer r.deinit();
-            try q.divTrunc(&r, ratio.numer.m, ratio.denom.m);
-            return q.toInt(i64) catch error.OutOfRange;
+        .ratio => switch (ratio_mod.parts(v)) {
+            // small: |n/d| <= |n| < 2^63 → exact i64, no overflow.
+            .small => |s| return @divTrunc(s.n, s.d),
+            .big => |b| {
+                var q = try Managed.init(rt.gc.infra);
+                defer q.deinit();
+                var r = try Managed.init(rt.gc.infra);
+                defer r.deinit();
+                try q.divTrunc(&r, b.n.m, b.d.m);
+                return q.toInt(i64) catch error.OutOfRange;
+            },
         },
         .big_decimal => {
             const bd = v.decodePtr(*const big_decimal_mod.BigDecimal);

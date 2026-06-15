@@ -909,6 +909,15 @@ active:
 # Trackers + the user-directed indefinitely-deferred future bucket (broad JIT / CLJS->JS / C-FFI /
 # generational-GC / virtual-threads / out-of-process isolation / wasm structural-future). 2026-06-15.
 standing:
+  - id: "D-451"
+    status: "Ratio canonical-invariant guard (ADR-0149 / O-046). The two-tier Ratio (small inline-i64 / big BigInt) is CANONICAL — small IFF reduced numer+denom both fit i64 — so a small `1/2` and a big `1/2` never coexist, which is what keeps the rt-free `equal.zig::ratioKeyEq` + `.ratio` hash arms correct WITHOUT an rt param (small-vs-big never equal). INVARIANT: every Ratio constructor MUST funnel through `allocFromI64Pair` / `allocFromManagedPair` (the canonicalizing allocators, which collapse a reduced i64-fitting pair to small). A constructor that emits a big ratio whose value fits i64 silently breaks ratio map keys. Guarded by: ratio.zig unit tests (small/big/collapse) + `test/diff/clj_corpus/ratio_small_canonical.txt` (cross-rep eq/hash/map-key pins)."
+    category: "perf"
+    barrier: |-
+      Standing invariant — never closes. Re-check when adding any new Ratio
+      constructor or numeric→Ratio path (e.g. a future BigDecimal→Ratio, or a
+      reader Ratio-literal change): it MUST route through the canonicalizing
+      allocators, and a new cross-rep eq/hash pin SHOULD be added to the corpus.
+    last_reviewed: "2026-06-16"
   - id: "D-005"
     status: "gap area III — VM perf→JIT (§9.22): broad ARM64/x86_64 JIT go/no-go. Future/distal — decided after the fusion slice + the narrow ARM64 JIT (milestone M) land. (Was 'Phase 17 target'; re-barriered per ADR-0142.)"
     category: "perf"

@@ -45,9 +45,9 @@ fn toF64(v: Value) f64 {
         .integer => @floatFromInt(v.asInteger()),
         .char => @floatFromInt(v.asChar()),
         .big_int => big_int_mod.asManaged(v).toFloat(f64, .nearest_even)[0],
-        .ratio => blk: {
-            const r = v.decodePtr(*const ratio_mod.Ratio);
-            break :blk r.numer.m.toFloat(f64, .nearest_even)[0] / r.denom.m.toFloat(f64, .nearest_even)[0];
+        .ratio => switch (ratio_mod.parts(v)) {
+            .small => |s| @as(f64, @floatFromInt(s.n)) / @as(f64, @floatFromInt(s.d)),
+            .big => |b| b.n.m.toFloat(f64, .nearest_even)[0] / b.d.m.toFloat(f64, .nearest_even)[0],
         },
         .big_decimal => blk: {
             const bd = v.decodePtr(*const big_decimal_mod.BigDecimal);
@@ -169,8 +169,10 @@ fn numerator(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) 
     try error_catalog.checkArity("numerator", args, 1, loc);
     if (args[0].tag() != .ratio)
         return error_catalog.raise(.type_arg_not_ratio, loc, .{ .fn_name = "numerator", .actual = @tagName(args[0].tag()) });
-    const r = args[0].decodePtr(*const ratio_mod.Ratio);
-    return promote.wrapManaged(rt, r.numer.m);
+    return switch (ratio_mod.parts(args[0])) {
+        .small => |s| promote.wrapI64(rt, s.n),
+        .big => |b| promote.wrapManaged(rt, b.n.m),
+    };
 }
 
 /// `(denominator r)` — the denominator of a Ratio as an integer (always > 0,
@@ -180,8 +182,10 @@ fn denominator(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation
     try error_catalog.checkArity("denominator", args, 1, loc);
     if (args[0].tag() != .ratio)
         return error_catalog.raise(.type_arg_not_ratio, loc, .{ .fn_name = "denominator", .actual = @tagName(args[0].tag()) });
-    const r = args[0].decodePtr(*const ratio_mod.Ratio);
-    return promote.wrapManaged(rt, r.denom.m);
+    return switch (ratio_mod.parts(args[0])) {
+        .small => |s| promote.wrapI64(rt, s.d),
+        .big => |b| promote.wrapManaged(rt, b.d.m),
+    };
 }
 
 /// `(rationalize x)` — convert to an exact rational. Integer / BigInt / Ratio
@@ -962,8 +966,19 @@ fn bigdecTruncToBigInt(rt: *Runtime, bd: Value) anyerror!Value {
 /// integer is `n · 5^(a−b)` (a ≥ b) or `n · 2^(b−a)` (b > a). A non-{2,5}
 /// factor in `d` is non-terminating → `non_terminating_decimal`.
 fn bigdecFromRatio(rt: *Runtime, v: Value, loc: SourceLocation) anyerror!Value {
-    const r = v.decodePtr(*const ratio_mod.Ratio);
-    return big_decimal_mod.allocFromRatioParts(rt, r.numer.m, r.denom.m) catch |err| switch (err) {
+    const res = blk: {
+        switch (ratio_mod.parts(v)) {
+            .big => |b| break :blk big_decimal_mod.allocFromRatioParts(rt, b.n.m, b.d.m),
+            .small => |s| {
+                var nm = try std.math.big.int.Managed.initSet(rt.gc.infra, s.n);
+                defer nm.deinit();
+                var dm = try std.math.big.int.Managed.initSet(rt.gc.infra, s.d);
+                defer dm.deinit();
+                break :blk big_decimal_mod.allocFromRatioParts(rt, &nm, &dm);
+            },
+        }
+    };
+    return res catch |err| switch (err) {
         error.NonTerminatingDecimal => error_catalog.raise(.non_terminating_decimal, loc, .{}),
         else => err,
     };

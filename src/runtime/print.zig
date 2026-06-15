@@ -979,10 +979,12 @@ fn printBigInt(w: *Writer, v: Value) anyerror!void {
 }
 
 fn printRatio(w: *Writer, v: Value) anyerror!void {
-    // numerator and denominator are *BigInt; render each Managed
-    // without the trailing `N` and join with `/`.
-    const r = v.decodePtr(*const ratio_mod.Ratio);
-    try w.print("{f}/{f}", .{ r.numer.m, r.denom.m });
+    // Render numerator `/` denominator without a trailing `N` (ADR-0149: small =
+    // inline i64s; big = the stored BigInt Manageds via `{f}`).
+    switch (ratio_mod.parts(v)) {
+        .small => |s| try w.print("{d}/{d}", .{ s.n, s.d }),
+        .big => |b| try w.print("{f}/{f}", .{ b.n.m, b.d.m }),
+    }
 }
 
 fn printBigDecimal(w: *Writer, v: Value) anyerror!void {

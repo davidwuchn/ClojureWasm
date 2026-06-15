@@ -1310,8 +1310,11 @@ pub fn valueToForm(
         // forms (e.g. a macro returning `(/ 1 2)`'s value, or a bigint literal).
         // big_decimal is deferred (needs a print-helper export; rare in macros).
         .ratio => blk: {
-            const r = v.decodePtr(*const ratio_mod.Ratio);
-            break :blk .{ .data = .{ .ratio_literal = try std.fmt.allocPrint(arena, "{f}/{f}", .{ r.numer.m, r.denom.m }) }, .location = call_loc };
+            const lit = switch (ratio_mod.parts(v)) {
+                .small => |s| try std.fmt.allocPrint(arena, "{d}/{d}", .{ s.n, s.d }),
+                .big => |b| try std.fmt.allocPrint(arena, "{f}/{f}", .{ b.n.m, b.d.m }),
+            };
+            break :blk .{ .data = .{ .ratio_literal = lit }, .location = call_loc };
         },
         .big_int => .{ .data = .{ .big_int_literal = try std.fmt.allocPrint(arena, "{f}", .{big_int.asManaged(v)}) }, .location = call_loc },
         .big_decimal => blk: {

@@ -24,7 +24,10 @@ const SourceLocation = @import("error/info.zig").SourceLocation;
 fn ratioNumerator(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
     _ = env;
     _ = loc;
-    return promote.wrapManaged(rt, args[0].decodePtr(*const ratio_mod.Ratio).numer.m);
+    return switch (ratio_mod.parts(args[0])) {
+        .small => |s| promote.wrapI64(rt, s.n),
+        .big => |b| promote.wrapManaged(rt, b.n.m),
+    };
 }
 
 /// `(.denominator r)` — the Ratio's denominator as an integer (always > 0).
@@ -32,7 +35,10 @@ fn ratioNumerator(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocat
 fn ratioDenominator(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
     _ = env;
     _ = loc;
-    return promote.wrapManaged(rt, args[0].decodePtr(*const ratio_mod.Ratio).denom.m);
+    return switch (ratio_mod.parts(args[0])) {
+        .small => |s| promote.wrapI64(rt, s.d),
+        .big => |b| promote.wrapManaged(rt, b.d.m),
+    };
 }
 
 /// Populate the per-Runtime `.ratio` native descriptor's method table.

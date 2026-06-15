@@ -204,14 +204,19 @@ fn intEqual(a: Value, b: Value) bool {
 }
 
 /// rt-free Ratio key equality (D-205). Ratios are gcd-reduced with a
-/// strictly-positive denominator, so two equal ratios have bit-identical
-/// numer + denom — a field compare matches the numeric `=` without needing
-/// `rt`. Partner of the `.ratio` valueHash arm.
+/// strictly-positive denominator AND canonical (small IFF reduced fits i64,
+/// ADR-0149), so two equal ratios have bit-identical fields and small-vs-big can
+/// never be equal — a field compare matches the numeric `=` without `rt`.
+/// Partner of the `.ratio` valueHash arm.
 fn ratioKeyEq(a: Value, b: Value) bool {
     const ra = a.decodePtr(*const ratio.Ratio);
     const rb = b.decodePtr(*const ratio.Ratio);
-    return big_int.compareManaged(ra.numer.m, rb.numer.m) == .eq and
-        big_int.compareManaged(ra.denom.m, rb.denom.m) == .eq;
+    // Canonical invariant: a small `1/2` and a big `1/2` cannot coexist, so a
+    // differing tier means differing value.
+    if (ra.is_small != rb.is_small) return false;
+    if (ra.is_small == 1) return ra.a == rb.a and ra.b == rb.b; // i64 bits (reduced/normalised → identical)
+    return big_int.compareManaged(ra.bigNum().m, rb.bigNum().m) == .eq and
+        big_int.compareManaged(ra.bigDen().m, rb.bigDen().m) == .eq;
 }
 
 /// BigDecimal map-key equality, rt-free + scale-INDEPENDENT (ADR-0077 /
@@ -587,7 +592,13 @@ pub fn valueHash(v: Value) u32 {
         .big_int => big_int.managedHash(big_int.asManaged(v)),
         .ratio => blk: {
             const r = v.decodePtr(*const ratio.Ratio);
-            break :blk 31 *% big_int.managedHash(r.numer.m) +% big_int.managedHash(r.denom.m);
+            // Small: hash the inline i64s via `hashLong` — identical to what
+            // `managedHash` yields for an i64-fitting Managed, so cross-rep hash
+            // parity holds (a small `1/2` hashes as a big `1/2` would). The
+            // canonical invariant means the big form of an i64-fitting ratio
+            // never exists, but the formulas agree regardless (ADR-0149).
+            if (r.is_small == 1) break :blk 31 *% hash.hashLong(r.smallNum()) +% hash.hashLong(r.smallDen());
+            break :blk 31 *% big_int.managedHash(r.bigNum().m) +% big_int.managedHash(r.bigDen().m);
         },
         .big_decimal => blk: {
             // Hash the cached STRIPPED projection (ADR-0077 / D-205) so

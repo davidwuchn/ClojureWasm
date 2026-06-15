@@ -54,9 +54,10 @@ pub const BigDecimal = extern struct {
     comptime {
         std.debug.assert(@alignOf(BigDecimal) >= 8);
         std.debug.assert(@offsetOf(BigDecimal, "header") == 0);
-        // unscaled lands at the same offset as BigInt.m / Ratio.numer
-        // so all three numeric heap structs share the trailing-pad
-        // pattern.
+        // unscaled lands at the same offset as BigInt.m so the two
+        // BigInt-backed numeric heap structs share the trailing-pad pattern.
+        // (Ratio is now a two-tier inline-i64/big union, ADR-0149 — no longer
+        // a fixed *BigInt pair, so it is not part of this offset family.)
         std.debug.assert(@offsetOf(BigDecimal, "unscaled") == @offsetOf(BigInt, "m"));
     }
 };
