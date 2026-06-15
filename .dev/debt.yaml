@@ -24,6 +24,23 @@
 # md-table-align no longer pads it to ~800 KB of whitespace.
 
 active:
+  - id: "D-448"
+    status: "open (2026-06-16, regex correctness sweep during ADR-0147 S3 design). SILENTLY WRONG (distinct from D-447's NotImplemented gaps): a capture group inside an outer quantifier, where the INNER can match empty, does not take Java's final empty-iteration capture value."
+    category: "clj-parity"
+    barrier: |-
+      `(re-find #"(a*)*" "aaa")` → cljw `["aaa" "aaa"]` vs clj `["aaa" ""]`;
+      same for `(a*)+`. Java runs one final empty iteration of the outer
+      quantifier (inner `a*` matches "" at end) and that empty capture becomes
+      group 1's value; cljw's Pike-VM empty-loop dedup (`seen[pc]` cuts a thread
+      that revisits a PC at the same position) suppresses that final iteration,
+      so the last NON-empty capture survives. Narrow: only when the inner group
+      can match empty — `(a+)*`/`(a)*`/`(ab)*`/`(a|b)*` all already match clj.
+      Fix is subtle (replicate "one empty iteration updates captures, then stop"
+      without reintroducing an infinite empty-loop) and risky; deferred as a
+      bounded clj-parity gap, NOT campaign-blocking. Does NOT affect ADR-0147 S3
+      (the lazy DFA is span-only; captures stay the Pike VM). Found via the
+      pre-S3 correctness sweep that also caught the leftmost-first bug (4b734803).
+    last_reviewed: "2026-06-16"
   - id: "D-023"
     status: "Opportunistic — when an e2e expansion forces the split"
     category: "tooling"
