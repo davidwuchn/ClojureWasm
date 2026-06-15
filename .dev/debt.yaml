@@ -144,25 +144,30 @@ active:
       / D-310 / F-011. recall trigger: a standard-var FEATURE lands → add its var
       here; or the `*print-readably*` ADR-0088-snapshot unit is opened.
   - id: "D-246"
-    status: "now (2026-06-05, found while sweeping siblings of the doGet/atom lost-update races) — the HIGH-frequency concurrency value-reads are now atomic (atom current/swap!/compare-and-set!, volatile current, ref doGet + out-of-txn current). The LOW-frequency metadata fields are NOT yet synchronized — lower priority, no observed DIFF."
+    status: "PARTIAL (re-laid 2026-06-15 with an explicit do/don't per the user's anti-defer-residue directive). (a) atom watches/validator/meta = DONE (atomic acquire/release, matching the `current` idiom + clj's synchronized Atom state). (b) Var root + (c) ns intern = explicitly DEFERRED with reasons (see barrier) — not a vague workload-gate. The HIGH-frequency value-reads were already atomic (atom current/swap!/CAS, volatile current, ref doGet)."
     category: "concurrency"
     barrier: |-
-      Remaining unsynchronized concurrency state, all setup-time-mostly with
-      coherent (old-or-new, never torn) Value-pointer reads, so no result DIFF
-      observed — tracked so the atomicity sweep is not silently capped:
-      (a) **atom `watches` / `validator` / `meta`** (atom.zig setWatches/
-      setValidator/setMeta + the reads in notifyWatches/validateOrThrow) — plain
-      read/write. A concurrent add-watch/set-validator! DURING a swap! can be
-      missed for one notification; the persistent map pointer read is coherent.
-      Make them atomic acquire/release like `current` if a real workload hits it.
-      (b) **Var root** (alter-var-root mutating a Var's root binding while another
-      thread reads it) — load-time-mostly. (c) **Namespace intern** (concurrent
-      intern into the same ns) — load-time-mostly; def is not a hot concurrent
-      path. recall trigger: a workload that concurrently mutates atom watches/
-      validator under swaps, or alter-var-root under concurrent var reads. The
-      fix shape is identical to the landed sweep (@atomicLoad/@atomicStore on the
-      Value field, enum(u64)).
-    last_reviewed: "2026-06-05"
+      (a) atom `watches`/`validator`/`meta` — **DONE 2026-06-15**: atomicLoad(.acquire)
+      / atomicStore(.release) in atom.zig (readers notifyWatches/validateOrThrow go
+      through the now-atomic watchesOf/validatorOf accessors; traceGc reads raw but
+      runs under STW). Fence-only (aligned Value reads never tear; this adds the
+      visibility ordering), no behavioural change; 1109/1109 -Dwasm.
+      (b) **Var root — DEFERRED (explicit, not pressure)**: `Var.deref` reading
+      `self.root` is the HOTTEST deref path (every symbol→var resolution). Whether to
+      put an acquire-load there to protect the rare `alter-var-root`-concurrent-read
+      VISIBILITY race (aligned read, no tear; one-read staleness) is a perf-vs-
+      correctness micro-decision that must be made WITH the D-386 var-deref perf
+      campaign (the beat-Python north-star), not bolted on now — else the hot path is
+      touched twice. clj uses a volatile root; cljw matches it WHEN the perf campaign
+      settles the var-deref shape. Barrier: D-386 var-deref work opens, OR a real
+      concurrent-alter-var-root workload appears.
+      (c) **ns intern — DEFERRED (explicit, not pressure)**: a concurrent intern into
+      the same ns is a MAP-mutation race (HashMap insert), NOT a single-Value atomic —
+      it needs a mutex around the ns var-table, a different mechanism than (a)/(b).
+      def is not a hot concurrent path (load-time-mostly); clj synchronizes ns intern.
+      Barrier: a concurrent-def-into-same-ns workload appears, OR the ns var-table
+      gains a second concurrent writer.
+    last_reviewed: "2026-06-15"
   - id: "D-258"
     status: "recorded (2026-06-06; RECURRED 2026-06-07 twice — during the D-280d2 gate (`[#<fn_val> 2]`) and the D-281 gate (`[#builtin 2]`), both 12/12 standalone PASS → same load-induced flake, unrelated to the deftype/reify host-interface work; re-gate green each time) — `phase16_gc_torture` agent_conj flaked under gate load (`[#builtin 2]` / `[#<fn_val> 2]` vs `[1 2]`); standalone deterministic PASS → load-induced, not a regression. Confirms the dormant multi-thread-torture race (D-244 #4)."
     category: "concurrency"

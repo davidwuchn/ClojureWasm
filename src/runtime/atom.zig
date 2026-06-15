@@ -59,26 +59,32 @@ pub fn allocWith(rt: *Runtime, init: Value, validator: Value) !Value {
     return Value.encodeHeapPtr(.atom, cell);
 }
 
-/// The atom's validator fn (`nil` or a fn). ADR-0081.
+/// The atom's validator fn (`nil` or a fn). ADR-0081. Atomic acquire/release
+/// (D-246): an atom is a coordinated cross-thread reference, so a concurrent
+/// `set-validator!` must be visible to a reader (JVM holds these in the
+/// synchronized Atom state). Aligned Value reads never tear; the fence supplies
+/// the missing visibility ordering.
 pub fn validatorOf(v: Value) Value {
-    return v.decodePtr(*const Atom).validator;
+    const a = v.decodePtr(*const Atom);
+    return @atomicLoad(Value, &a.validator, .acquire);
 }
 
-/// Replace the atom's validator (`set-validator!`). ADR-0081.
+/// Replace the atom's validator (`set-validator!`). ADR-0081 / D-246 atomic-release.
 pub fn setValidator(v: Value, f: Value) void {
     const a: *Atom = @constCast(v.decodePtr(*const Atom));
-    a.validator = f;
+    @atomicStore(Value, &a.validator, f, .release);
 }
 
-/// The atom's watches map (`nil` or a persistent `{key → fn}`). ADR-0081.
+/// The atom's watches map (`nil` or a persistent `{key → fn}`). ADR-0081 / D-246.
 pub fn watchesOf(v: Value) Value {
-    return v.decodePtr(*const Atom).watches;
+    const a = v.decodePtr(*const Atom);
+    return @atomicLoad(Value, &a.watches, .acquire);
 }
 
-/// Replace the atom's watches map (add-watch / remove-watch). ADR-0081.
+/// Replace the atom's watches map (add-watch / remove-watch). ADR-0081 / D-246 release.
 pub fn setWatches(v: Value, m: Value) void {
     const a: *Atom = @constCast(v.decodePtr(*const Atom));
-    a.watches = m;
+    @atomicStore(Value, &a.watches, m, .release);
 }
 
 /// True when `v` is an atom.
@@ -111,15 +117,16 @@ pub fn compareAndSet(v: Value, old: Value, new: Value) bool {
     return @cmpxchgStrong(Value, &a.current, old, new, .acq_rel, .acquire) == null;
 }
 
-/// The atom's metadata (`nil` or a map). `meta` / `reset-meta!`.
+/// The atom's metadata (`nil` or a map). `meta` / `reset-meta!`. D-246 atomic acquire.
 pub fn metaOf(v: Value) Value {
-    return v.decodePtr(*const Atom).meta;
+    const a = v.decodePtr(*const Atom);
+    return @atomicLoad(Value, &a.meta, .acquire);
 }
 
-/// Replace the atom's metadata (`reset-meta!` / `alter-meta!`).
+/// Replace the atom's metadata (`reset-meta!` / `alter-meta!`). D-246 atomic release.
 pub fn setMeta(v: Value, m: Value) void {
     const a: *Atom = @constCast(v.decodePtr(*const Atom));
-    a.meta = m;
+    @atomicStore(Value, &a.meta, m, .release);
 }
 
 /// Per-tag trace fn — the atom owns one Value (`current`) the GC must
