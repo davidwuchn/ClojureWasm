@@ -164,6 +164,7 @@ test {
     _ = @import("runtime/process_env.zig");
     _ = @import("runtime/random.zig");
     _ = @import("runtime/regex/value.zig");
+    _ = @import("runtime/regex/dfa.zig");
     _ = @import("runtime/time/instant.zig");
     _ = @import("runtime/time/timestamp.zig");
     _ = @import("runtime/bencode/bencode.zig");

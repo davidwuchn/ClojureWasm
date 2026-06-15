@@ -162,6 +162,24 @@ pub fn matchFull(
     return result;
 }
 
+/// Anchored match at exactly `start` (no leftmost scan): the leftmost-first
+/// greedy match that BEGINS at `start`, or null. This is the Pike-VM reference
+/// the lazy DFA (`dfa.zig`, ADR-0147 S3) is equivalence-tested against — the DFA
+/// must produce byte-identical spans. Allocates its own ThreadLists per call
+/// (test/oracle use; the hot scan paths reuse a pair via `scanFrom`).
+pub fn matchAnchored(
+    alloc: std.mem.Allocator,
+    program: *const compile.Program,
+    input: []const u8,
+    start: u32,
+) MatchError!?MatchResult {
+    var current = try ThreadList.init(alloc, program.insts.len);
+    defer current.deinit(alloc);
+    var next = try ThreadList.init(alloc, program.insts.len);
+    defer next.deinit(alloc);
+    return tryMatchAt(&current, &next, alloc, program, input, start);
+}
+
 /// Per-step thread list — set of PCs the VM is about to step
 /// from. The `seen` stamps prevent re-processing the same PC
 /// within a single input position (key Pike-VM invariant that
