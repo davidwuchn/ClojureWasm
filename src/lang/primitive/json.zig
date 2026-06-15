@@ -111,20 +111,43 @@ fn jsonToCw(rt: *Runtime, jv: std.json.Value, loc: SourceLocation) anyerror!Valu
         },
         .string => |s| try string_collection.alloc(rt, s),
         .array => |arr| blk: {
-            var out = vector_collection.empty();
-            for (arr.items) |item| {
-                const v = try jsonToCw(rt, item, loc);
-                out = try vector_collection.conj(rt, out, v);
+            // PERF: bulk-build via fromSlice instead of empty + N×conj (which
+            // allocated N throwaway intermediate vectors per JSON array). Mirrors
+            // O-040 (op_vector_literal). Shares the pre-existing D-244 #4 alloc-
+            // torture fabrication status (the buffer is unrooted across the build,
+            // identical to the old conj-fold accumulator; production never collects
+            // mid-alloc). [refs: O-041]
+            const n = arr.items.len;
+            if (n == 0) break :blk vector_collection.empty();
+            const buf = try rt.gc.infra.alloc(Value, n);
+            defer rt.gc.infra.free(buf);
+            for (arr.items, 0..) |item, i| {
+                buf[i] = try jsonToCw(rt, item, loc);
             }
-            break :blk out;
+            break :blk try vector_collection.fromSlice(rt, buf);
         },
         .object => |obj| blk: {
-            var out = map_collection.empty();
+            // PERF: bulk-build small maps via fromLiteralPairs (one alloc) instead
+            // of empty + N×assoc (N intermediate array-maps). Mirrors O-026. JSON
+            // keys are unique strings (simple keys), so the dedup keyEq is pure.
+            // Larger maps fall back to the assoc fold. [refs: O-041]
+            const n = obj.count();
+            if (n == 0) break :blk map_collection.empty();
+            const buf = try rt.gc.infra.alloc(Value, n * 2);
+            defer rt.gc.infra.free(buf);
             var it = obj.iterator();
-            while (it.next()) |entry| {
-                const k = try string_collection.alloc(rt, entry.key_ptr.*);
-                const v = try jsonToCw(rt, entry.value_ptr.*, loc);
-                out = map_collection.assoc(rt, out, k, v) catch |err| switch (err) {
+            var i: usize = 0;
+            while (it.next()) |entry| : (i += 2) {
+                buf[i] = try string_collection.alloc(rt, entry.key_ptr.*);
+                buf[i + 1] = try jsonToCw(rt, entry.value_ptr.*, loc);
+            }
+            if (n <= map_collection.ARRAY_MAP_THRESHOLD and map_collection.allSimpleKeys(buf)) {
+                break :blk try map_collection.fromLiteralPairs(rt, buf);
+            }
+            var out = map_collection.empty();
+            var j: usize = 0;
+            while (j < buf.len) : (j += 2) {
+                out = map_collection.assoc(rt, out, buf[j], buf[j + 1]) catch |err| switch (err) {
                     error.AssocOnNonMap => unreachable,
                     else => |e| return e,
                 };
