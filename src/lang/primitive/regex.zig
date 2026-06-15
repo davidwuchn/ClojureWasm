@@ -12,7 +12,8 @@
 //! `re-find` / `re-matches` return the whole-match `String` for a
 //! group-less pattern and the `[whole g1 g2 …]` capture vector when
 //! the pattern has capturing groups (Pike-VM slot arrays via
-//! `buildMatchResult`). `re-find-from` backs `re-seq`. Compile-error
+//! `buildMatchResult`). `re-find-all` backs `re-seq` (one-pass scan, O-035);
+//! `re-find-from` is the public scan-from-offset primitive. Compile-error
 //! message fidelity (a `PatternSyntaxException`-aligned rendering) is
 //! still a gap — unsupported syntax raises `feature_not_supported`
 //! (D-051).
@@ -27,6 +28,8 @@ const SourceLocation = error_mod.SourceLocation;
 const dispatch = @import("../../runtime/dispatch.zig");
 const string_collection = @import("../../runtime/collection/string.zig");
 const vector_collection = @import("../../runtime/collection/vector.zig");
+const list_collection = @import("../../runtime/collection/list.zig");
+const root_set = @import("../../runtime/gc/root_set.zig");
 const regex_value = @import("../../runtime/regex/value.zig");
 const regex_match = @import("../../runtime/regex/match.zig");
 const compile_mod = @import("../../runtime/regex/compile.zig");
@@ -156,6 +159,53 @@ pub fn reFindFrom(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocat
     });
 }
 
+/// `(re-find-all re s)` — the one-pass Zig backing for `clojure.core/re-seq`.
+/// Returns a seq of the successive non-overlapping match elements (each the
+/// `re-find` shape: the whole-match string, or `[whole g1 …]` when the pattern
+/// has groups) in order, or `nil` when there are no matches (matching the
+/// `.clj` `re-seq`'s `(seq acc)` → nil on empty). Replaces re-seq's `.clj`
+/// `loop/recur` over `re-find-from`: one Zig scan (reusing a single ThreadList
+/// pair across all matches) instead of N `re-find-from` calls each round-
+/// tripping a `[match start end]` vector through the interpreter. [O-035]
+pub fn reFindAll(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = env;
+    try error_catalog.checkArity("re-find-all", args, 2, loc);
+    const r = try coerceRegex(rt, args[0], loc, "re-find-all");
+    if (args[1].tag() != .string) {
+        return error_catalog.raise(.type_arg_not_string, loc, .{ .fn_name = "re-find-all", .actual = @tagName(args[1].tag()) });
+    }
+    const input = string_collection.asString(args[1]);
+
+    // Phase 1: collect match bounds (plain structs, no GC Values) — reuses ONE
+    // ThreadList pair across the whole scan (vs re-find-from's per-call pair).
+    var bounds: std.ArrayList(regex_match.MatchResult) = .empty;
+    defer bounds.deinit(rt.gpa);
+    try regex_match.findAll(rt.gpa, r.program, input, &bounds);
+    if (bounds.items.len == 0) return .nil_val; // (seq []) → nil
+
+    // Phase 2: build the PersistentList from the end, rooting the growing tail
+    // (slot 0) + each freshly-built match value (slot 1) across the
+    // buildMatchResult + consHeap allocs (the O-032 reentrant-alloc frame).
+    // GC-ROOT: O-035 — [list, head] [ref: .dev/gc_rooting.md]
+    var gc_roots: [2]Value = .{ .nil_val, .nil_val };
+    var gc_sp: u16 = 2;
+    var gc_frame: root_set.EvalFrame = .{ .stack = &gc_roots, .sp = &gc_sp, .locals = &.{}, .parent = root_set.eval_frame_head };
+    root_set.eval_frame_head = &gc_frame;
+    defer root_set.eval_frame_head = gc_frame.parent;
+
+    var list = try list_collection.emptyList(rt);
+    gc_roots[0] = list;
+    var i: usize = bounds.items.len;
+    while (i > 0) {
+        i -= 1;
+        const head = try buildMatchResult(rt, r.program, input, bounds.items[i]);
+        gc_roots[1] = head;
+        list = try list_collection.consHeap(rt, head, list);
+        gc_roots[0] = list;
+    }
+    return list;
+}
+
 /// Coerce a Value to `*const Regex`. Accepts an existing regex
 /// Value directly, or a string (compiled on the spot — matches
 /// JVM `Pattern.compile` flexibility). Other types raise a
@@ -192,6 +242,7 @@ const ENTRIES = [_]Entry{
     .{ .name = "re-find", .f = &reFind },
     .{ .name = "re-matches", .f = &reMatches },
     .{ .name = "re-find-from", .f = &reFindFrom },
+    .{ .name = "re-find-all", .f = &reFindAll },
 };
 
 pub fn register(env: *Env, rt_ns: *env_mod.Namespace) !void {

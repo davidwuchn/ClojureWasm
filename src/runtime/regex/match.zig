@@ -90,11 +90,47 @@ pub fn findFrom(
     defer current.deinit(alloc);
     var next = try ThreadList.init(alloc, program.insts.len);
     defer next.deinit(alloc);
+    return scanFrom(&current, &next, alloc, program, input, start);
+}
+
+/// Leftmost match at or after `start`, using caller-owned ThreadLists. Extracted
+/// from `findFrom` so `findAll` can reuse ONE list pair across every match in a
+/// scan (tryMatchAt clears them per position, so reuse across scans is safe).
+fn scanFrom(
+    current: *ThreadList,
+    next: *ThreadList,
+    alloc: std.mem.Allocator,
+    program: *const compile.Program,
+    input: []const u8,
+    start: u32,
+) MatchError!?MatchResult {
     var pos: u32 = start;
     while (pos <= input.len) : (pos += 1) {
-        if (try tryMatchAt(&current, &next, alloc, program, input, pos)) |result| return result;
+        if (try tryMatchAt(current, next, alloc, program, input, pos)) |result| return result;
     }
     return null;
+}
+
+/// Append every non-overlapping match (scanning from offset 0) to `out`, reusing
+/// ONE ThreadList pair across the whole scan — the one-pass backing for `re-seq`
+/// (O-035, ADR-0147 Stage 1b). A zero-width match advances the scan by 1 so the
+/// loop terminates (clj `re-seq` parity: `(re-seq #"a*" "aaa")` → `("aaa" "")`).
+pub fn findAll(
+    alloc: std.mem.Allocator,
+    program: *const compile.Program,
+    input: []const u8,
+    out: *std.ArrayList(MatchResult),
+) MatchError!void {
+    var current = try ThreadList.init(alloc, program.insts.len);
+    defer current.deinit(alloc);
+    var next = try ThreadList.init(alloc, program.insts.len);
+    defer next.deinit(alloc);
+    var pos: u32 = 0;
+    while (pos <= input.len) {
+        const m = (try scanFrom(&current, &next, alloc, program, input, pos)) orelse break;
+        try out.append(alloc, m);
+        pos = if (m.end == m.start) m.end + 1 else m.end;
+    }
 }
 
 /// `(re-matches pattern input)` baseline: succeeds iff the
@@ -546,4 +582,39 @@ test "find ab+ matches one a followed by greedy b run" {
     const r = (try find(testing.allocator, &prog, "xabbby")).?;
     try testing.expectEqual(@as(u32, 1), r.start);
     try testing.expectEqual(@as(u32, 5), r.end);
+}
+
+test "findAll collects every \\d+ run in order" {
+    var prog = try compile.compile(testing.allocator, "\\d+", .{});
+    defer prog.deinit(testing.allocator);
+    var out: std.ArrayList(MatchResult) = .empty;
+    defer out.deinit(testing.allocator);
+    try findAll(testing.allocator, &prog, "a12b345c6789d0e", &out);
+    try testing.expectEqual(@as(usize, 4), out.items.len);
+    try testing.expectEqual(@as(u32, 1), out.items[0].start);
+    try testing.expectEqual(@as(u32, 3), out.items[0].end); // "12"
+    try testing.expectEqual(@as(u32, 13), out.items[3].start);
+    try testing.expectEqual(@as(u32, 14), out.items[3].end); // "0"
+}
+
+test "findAll zero-width: a* over aaa yields aaa then empty (re-seq parity)" {
+    var prog = try compile.compile(testing.allocator, "a*", .{});
+    defer prog.deinit(testing.allocator);
+    var out: std.ArrayList(MatchResult) = .empty;
+    defer out.deinit(testing.allocator);
+    try findAll(testing.allocator, &prog, "aaa", &out);
+    try testing.expectEqual(@as(usize, 2), out.items.len);
+    try testing.expectEqual(@as(u32, 0), out.items[0].start);
+    try testing.expectEqual(@as(u32, 3), out.items[0].end); // "aaa"
+    try testing.expectEqual(@as(u32, 3), out.items[1].start);
+    try testing.expectEqual(@as(u32, 3), out.items[1].end); // ""
+}
+
+test "findAll no match yields empty out" {
+    var prog = try compile.compile(testing.allocator, "z", .{});
+    defer prog.deinit(testing.allocator);
+    var out: std.ArrayList(MatchResult) = .empty;
+    defer out.deinit(testing.allocator);
+    try findAll(testing.allocator, &prog, "abc", &out);
+    try testing.expectEqual(@as(usize, 0), out.items.len);
 }

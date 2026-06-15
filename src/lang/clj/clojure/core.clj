@@ -1993,17 +1993,13 @@
     (reset-meta! iref (apply f (meta iref) args))))
 
 ;; `(re-seq re s)` — seq of successive non-overlapping match strings of `re`
-;; in `s` via the `re-find-from` primitive (loop/recur, advancing past each
-;; match's end; +1 on an empty match to avoid looping). Capture-group vectors
-;; land when groups do (regex cycle 3+).
+;; in `s`. The whole scan runs in one `re-find-all` Zig pass (O-035): a single
+;; ThreadList reused across all matches, no per-match `[match start end]` Value
+;; round-trip through the interpreter loop. Returns nil on no match (clj parity
+;; via `re-find-all`'s empty → nil). Capture-group vectors land when groups do.
 (def re-seq
   (fn* [re s]
-    (loop [pos 0 acc []]
-      (let [m (re-find-from re s pos)]
-        (if (nil? m)
-          (seq acc)
-          (recur (if (= (nth m 2) (nth m 1)) (inc (nth m 2)) (nth m 2))
-                 (conj acc (nth m 0))))))))
+    (re-find-all re s)))
 
 ;; `(re-matcher re s)` — a stateful java.util.regex.Matcher over `re` + `s`.
 ;; A non-string CharSequence (e.g. instaparse's Segment deftype) is coerced
