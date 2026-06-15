@@ -53,24 +53,13 @@
     + `active:` top rows** + memory `debt-ledger-audit-decisions`. Discharging a row =
     MOVE to `discharged:` (don't inline-discharge), or let D-175 batch-relocate.
 
-- **This session landed (git log = SSOT)** — 6 commits, HEAD `4ed40f93`:
-  - **D-046** (ADR-0143): LazySeq.force thread-safe — inline lock-free CAS-claim
-    atomic flag on `realized_flag` (lock-free acquire read, at-most-once, safepoint
-    loser-spin; rejected off-heap Io.Mutex + futex-unavailable). 8-thread test.
-  - **D-228**: nested syntax-quote depth-correct (fresh-gmap inner-expand → outer
-    re-walk; clj-verified; corpus). **D-317**: IPersistentVector extend-protocol
-    reaches MapEntry (SSOT-derived extend-target; was a parity gap). **D-248**
-    (ADR-0027 am6): Group D NaN-box slot reorg (Clojure internals up, wasm to tail).
-  - **D-246(a)**: atom watches/validator/meta atomic. **D-241** re-barriered
-    (substance was already done by ADR-0096; feature-gated residual). **D-240**
-    re-barriered (fix direction confirmed = install java surfaces in diff Fixture;
-    deferred on an unexplained eval_budget/compare interaction — see the row).
-  - **GATE STATUS**: last FULL gate (356/356) was at D-248 (`3cab52fa`). Since then
-    D-317 (smoke 5/5) + D-246a (`zig build test -Dwasm` 1109/1109, full smoke NOT
-    run — fence-only). **Run a full gate (`bash scripts/run_gate.sh`) early on resume**
-    — 2 commits rode past the last full gate, and the D-246a content has no matching
-    smoke/gate fingerprint. (warm caches → ~2-3min; cold → the inner 300s timeout
-    fires before e2e, re-run warm.)
+- **Last session landed (git log = SSOT, HEAD `01e700b5`, all pushed)** — clj-parity
+  quick-wins drained + perf grounded: **D-321** (FileNotFoundException leaf Kind),
+  **D-322** (classpath-aware REPL ×3 entry paths), **D-314** (+ADR-0144,
+  extend-via-metadata dispatch) discharged; full gate **358/358**. Perf: **hyperfine
+  installed** (was missing — bench prerequisite), fib baseline **29ms**, (b)
+  poll-batching empirically ruled out (the D-386 row carries the grounding + the
+  precise (a) op_top-inline UAF invariant + sub-steps).
 
   SAFETY: `clj` batches need `-J-Xmx2g` + bounded seqs; `zig build test` needs
   `-Dwasm` (memory `zig_build_test_needs_dwasm` — bare drops the bootstrap_core embed
@@ -79,6 +68,19 @@
 
 - **Forbidden this session**: `git push --force*`; bare `zig build test` WITHOUT
   `-Dwasm` (false fails); bare `zig build` for scripted/probe (ADR-0133 — ReleaseSafe).
+
+## Stopped — user requested
+
+User instruction (2026-06-15): 「さて、キリの良いところで、次のクリアセッションから
+continueだけで引き続き継続していけるだけの配線・参照チェーン監査をして止めてください。」
+Done: the wiring / reference-chain audit is CLEAN — tree clean + HEAD `01e700b5` ==
+origin/main (pushed); debt.yaml parses + no dup ids; `check_debt_id_refs` → "all cited
+debt IDs resolve"; D-321/322/314 present in `discharged:`; ADR-0144 + `src/runtime/meta.zig`
++ the two new e2e scripts tracked; all 3 new e2e steps registered in run_all.sh; no
+untracked non-ignored files. This stop applies to THIS session only; the next
+`/continue` resumes the loop normally (delete this section on resume) — take the
+**First task on resume** above (D-386 (a) op_top dispatch inline, the grounded focused
+cycle; D-413/D-374 are clean smaller alternatives).
 
 ## Cold-start reading order (resume)
 
