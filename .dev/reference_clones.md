@@ -115,14 +115,20 @@ primitive may be **cloned into `~/Documents/OSS/` and studied** to design a
 Zig-native equivalent-but-faster path (user direction 2026-06-15 — explicit
 approach flexibility, not just for regex). Re-derive, never copy verbatim.
 
-- **Regex** (the `35_regex_count` loser, ~1.75× behind Python): study engine
-  designs — `~/Documents/OSS/openjdk24/` already carries `java.util.regex`
-  (`Pattern.java`/`Matcher.java`, NFA backtracking); clone **CPython `sre`**
-  (`Modules/_sre/`, `Lib/re/`) on demand for its compiled bytecode-VM matcher;
-  RE2 (`google/re2`) for a DFA design if a non-backtracking rewrite is weighed.
-  The gap may be partly non-engine (re-seq allocation, match-object
-  construction) — profile before assuming it's the matcher. Cross-lang
-  **equivalence audit first** (ADR-0145): cljw regex stays clj/Java-compatible.
+- **Regex** (the `35_regex_count` loser; ADR-0147 = the perf approach): the
+  closest blueprint is **`~/Documents/OSS/ezi-gex/`** (cloned 2026-06-15) — a Zig
+  Thompson-NFA engine with the EXACT technique stack cljw wants (Literal Prefilter
+  + Lazy/Eager DFA + Teddy SIMD + zero-alloc). **Targets Zig 0.17.0-dev — will NOT
+  compile on stable 0.16**, so it is a *source blueprint, not a dependency*; the
+  applicable files are `src/engine/{memmem,teddy,simd,redos}.zig` +
+  `src/engine/backends/{literal,dfa,edfa,pikevm,auto}.zig`. Also: `openjdk24/`
+  java.util.regex (`BnM` Boyer-Moore prefilter); burntsushi `regex-internals` blog +
+  Rust `regex-automata` (the authoritative meta-engine); clone **CPython `_sre`**
+  (`SRE_OP_LITERAL` prefix scan) / **google/re2** (lazy-DFA, refuses backrefs like
+  cljw) on demand. Borrow the ALGORITHM, re-derive in cljw's Pike-NFA + Zig 0.16;
+  the 48-golden `regex_equivalence` corpus is the F-011 proof. Cross-lang
+  equivalence audit DONE (ADR-0145 gate); profile each lever (the gap is the
+  matcher walk + per-match alloc, not recompilation — `#"…"` compiles once).
 - **General**: for nested_update (persistent HAMT update path), bigint
   (multiplication algorithm), etc., the JVM (`openjdk24/`) + cw v0 + the
   relevant OSS lib are the textbooks. Clone what is missing when the lever opens.
