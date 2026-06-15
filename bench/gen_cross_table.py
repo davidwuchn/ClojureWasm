@@ -47,6 +47,13 @@ def collect(benches, mode):
     """rows[name] = {lang: ms}, plus the set of langs present, for one mode."""
     rows, present = {}, set()
     for name, modes in benches.items():
+        # `wasm_*` workloads are cljw-FFI-only (no other-language source) — they
+        # belong to the wasm harness (wasm_bench.sh), NOT the cross-language table,
+        # where they would render as a cljw-only row with every other column "—".
+        # Excluded here so the table stays cross-language-comparable regardless of
+        # whether the source YAML carries them (compare_langs.sh runs every dir).
+        if name.startswith("wasm_"):
+            continue
         cells = {}
         for lang, ms in ((modes or {}).get(mode) or {}).items():
             nl = norm(lang)
