@@ -24,6 +24,23 @@
 # md-table-align no longer pads it to ~800 KB of whitespace.
 
 active:
+  - id: "D-449"
+    status: "open (2026-06-16, ADR-0147 S3). The Alt-2 forward+reverse lazy DFA (`src/runtime/regex/dfa.zig`) is BUILT + equivalence-locked but UNWIRED — measurement showed wiring it REGRESSES perf vs the S2-prefiltered Pike VM (regex_count 17→23ms, sparse 0.05→0.47s). RESERVED engine, not the default matcher."
+    category: "perf"
+    quality_floor: "regex DFA: integrate S2 prefilter into forward findEnd + cache reverse transitions, OR remove dfa.zig as dead code"
+    barrier: |-
+      `dfa.zig` is a correct, tested, but slower-than-Pike-VM regex engine (ADR-0147
+      § Stage 3 measured outcome). To make it competitive: (a) integrate the S2 leading-
+      byte prefilter into the DFA forward `findEnd` start-scan (currently visits every
+      byte — the sparse regression), (b) cache the reverse-DFA transitions (currently
+      recomputes the closure per backward step), (c) gate on a large input size (the
+      two-pass only amortizes on huge inputs cljw rarely sees). **Review trigger**: if no
+      huge-input / ReDoS-pathological workload materializes (gap area II edge-native is
+      the only plausible source) AND (a)+(b) are not pursued within a future regex cycle,
+      REMOVE `dfa.zig` + its main.zig aggregator entry + the `matchAnchored` wrapper
+      rather than carry ~500 lines of dead-but-tested code. Not campaign-blocking
+      (regex_count already CLOSED by S1+S2). Engine committed at cd536ec2 + d0ff3b84.
+    last_reviewed: "2026-06-16"
   - id: "D-448"
     status: "open (2026-06-16, regex correctness sweep during ADR-0147 S3 design). SILENTLY WRONG (distinct from D-447's NotImplemented gaps): a capture group inside an outer quantifier, where the INNER can match empty, does not take Java's final empty-iteration capture value."
     category: "clj-parity"

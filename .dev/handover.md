@@ -10,23 +10,22 @@
   `build.zig.zon` `.zwasm` is SHA-PINNED (`#412966f7…`, `lazy`). Per-commit = smoke;
   full gate batches at ceiling / boundary / pre-tag.
 
-- **First commit on resume MUST be**: **ADR-0147 S3 — the lazy DFA** (regex engine,
-  "incorporate properly" goal). GOAL (user 2026-06-15): beat Python on EVERY bench via
-  Zig-backed equivalent-semantics impls (memory `perf-beat-python-every-bench`).
-  regex_count is CLOSED (S1 O-034/O-035 + S2 O-036); bigint_factorial DEFERRED (below).
-  **The APPROACH = ADR-0147** (user: do it properly — "腰を据えて…工夫をしっかり入れ込む").
-  Stay Pike-NFA (ReDoS-immune, ADR-0031); STAGES, each equivalence-locked (corpus 51/51
-  + diff oracle) + measured. DONE: **S1** seen-gen + `re-find-all` one-pass; **S2** the
-  leading first-byte PREFILTER (`compile.zig` computeLeading + `match.zig` scanFrom skip,
-  O-036 — bench within noise but ReleaseSafe A/B **~27× on sparse `\d+`**; exact-or-disabled,
-  equivalence-neutral). NEXT: **S3** the lazy DFA (ADR-0031's reserved `dfa.zig`; ezi-gex's
-  `backends/{dfa,edfa,auto}.zig` is the blueprint — byte-equivalence classes + lazy cache in
-  Scratch + anchored-restart; captures stay two-pass via the Pike VM). **Stamping ADR-0147
-  Proposed→Accepted pairs with S3 (the lazy-DFA structural choice) → DA fork mandatory then.**
-  NO-GO: backtracking + machine-code JIT. **Read the refs DIRECTLY (no survey/DA fork for
-  design) + measure-first** (ADR-0146 + memory `direct-explore-fork-mechanical`).
-  Refs: ADR-0147 + `ezi-gex` (cloned blueprint — 0.17-dev, won't compile on 0.16),
-  burntsushi regex-internals, RE2. Parity gaps = **D-447**.
+- **First commit on resume MUST be**: **self-selected next quality unit** — the
+  ADR-0147 regex arc is COMPLETE. S1 (O-034/O-035) + S2 (O-036 leading-byte prefilter) are
+  WIRED + winning (regex_count CLOSED, ~tie/win vs Python; sparse ~27× via prefilter). S3
+  (Alt-2 forward+reverse lazy DFA, `dfa.zig`) is BUILT + equivalence-locked but **NOT
+  wired** — measurement (ADR-0147 § Stage 3 measured outcome) showed wiring REGRESSES perf
+  (regex_count 17→23ms, sparse 0.05→0.47s) because the DFA forward scan lacks the S2
+  prefilter + the reverse pass is uncached; the **S2-prefiltered Pike VM is the finished-
+  form default matcher**. DFA = correct RESERVED engine, **D-449** (re-wire needs prefilter-
+  integration + reverse-cache + a huge-input gate, else remove as dead code). Also fixed
+  this session: the Pike-VM **leftmost-FIRST** bug (cut-on-match, `a|ab`→"a"; was leftmost-
+  longest — a false-positive 2026-06-01 discharge); **D-448** = nested-empty-quantifier
+  capture divergence (silently-wrong, deferred). regex correctness floor is solid (full
+  corpus 3120/3120). GOAL (`perf-beat-python-every-bench`): regex CLOSED, bigint_factorial
+  DEFERRED (no cheap touchpoint) → the "beat Python" targets are met/deferred; self-select
+  the next unit (gap-area / debt floor, highest-value first — NEVER ask). NO-GO:
+  backtracking + machine-code JIT. Parity gaps = **D-447**.
   - **bigint** DEFERRED (profiled: no cheap touchpoint — inherent std.math.big mul +
     per-step alloc, not dispatch; only lever = a BigInt-reduce-accumulator, involved;
     `private/notes/9.2.S-bigint-factorial-lookahead.md`).

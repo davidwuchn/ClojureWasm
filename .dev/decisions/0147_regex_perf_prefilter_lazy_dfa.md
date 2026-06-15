@@ -1,11 +1,15 @@
 # ADR-0147 — Regex perf: borrow-and-adapt the literal-prefilter + lazy-DFA techniques into cljw's Pike-NFA, equivalence-locked (goal = properly incorporate the optimizations, not just beat Python)
 
 - **Status**: **Accepted** (2026-06-16). Stages 1 (O-034/O-035) + 2 (O-036 leading
-  first-byte prefilter) committed; Stage 3 (lazy DFA) decided = **Alternative 2 —
-  forward + reverse lazy DFA** (true O(input) `find`) per the mandatory Devil's-advocate
-  pass below (§ Alternatives considered). Alt 1 (anchored-restart-only minimal slice) was
-  re-rejected as the cycle-budget-defer smell (CLAUDE.md); Alt 3 (anchors/`\b` folded into
-  the DFA state) is a follow-up ADR carrying a latent byte-vs-Unicode-`\b` F-011 exposure.
+  first-byte prefilter) committed + WIRED (the default matcher win). Stage 3 (lazy DFA)
+  was built as decided = **Alternative 2 — forward + reverse lazy DFA** (`dfa.zig`,
+  equivalence-locked vs the Pike VM), **but NOT wired** — direct measurement (§ Stage 3
+  measured outcome) showed the wired DFA *regresses* regex_count (17→23 ms) and sparse
+  `\d+` (0.05→0.47 s) vs the S2-prefiltered Pike VM, because the DFA's forward scan does
+  not use the S2 prefilter (visits every byte) and its reverse pass is uncached. The DFA
+  stays a committed, correct, RESERVED engine (D-449); the Pike VM + S2 prefilter remains
+  the default matcher. Alt 1 (anchored-restart-only) re-rejected as cycle-budget-defer;
+  Alt 3 (anchors/`\b` in the DFA state) is a follow-up ADR.
   Authored 2026-06-15 as the next-session bridge (user-directed "腰を据えて … 工夫をしっかり入れ込む").
 - **Relates to**: ADR-0031 (regex engine choice — Pike NFA over backtracking, the
   reserved lazy-DFA design `src/runtime/regex/dfa.zig`), ADR-0145 (regex after sieve +
@@ -170,6 +174,41 @@ Pike VM as the two-pass capture engine + the DECLINE fallback. **Reverse-DFA sco
 cljw's current Pike-VM `find` is itself per-position anchored-restart (same Θ(n²) class),
 so even a forward-only milestone is not a regression — but per the DA the *committed* S3
 form is the forward+reverse pair, not a forward-only intermediate.
+
+## Stage 3 measured outcome (2026-06-16 — measurement falsified the "DFA wins" premise)
+
+The Alt-2 forward+reverse lazy DFA was built and equivalence-locked (`dfa.zig`:
+`find` == Pike VM span over a 120-pair fuzz matrix + leftmost-first + quadratic-shape
+cases). It was then WIRED behind a Regex-Value-cached `LazyDfa` (eligible programs;
+captures via two-pass Pike-VM `matchAnchored`) — clj-equivalence held (full corpus
+3120/3120, captures correct, anchors→Pike fallback). **But the wired DFA REGRESSED
+perf** (ReleaseSafe, measured directly):
+
+| workload | S2-prefiltered Pike VM | wired lazy DFA | result |
+|----------|------------------------|----------------|--------|
+| regex_count (dense `\d+`, 10000×) | 17 ms | 23 ms | **~35% slower** |
+| sparse `\d+` (~4000-char, 20000×) | 0.05 s | 0.47 s | **~9× slower** |
+
+**Why** (the falsified premise): the DA's recommendation assumed the DFA's O(input)
+`find` would win. It does not, for cljw's regime, because (1) the DFA's forward scan
+does NOT use the S2 leading-byte prefilter — it visits *every* byte, where the
+prefilter skips to candidate-start bytes (the whole sparse win); (2) the reverse pass
+is uncached (recomputes the closure per backward step); (3) for cljw's typical SHORT
+regex inputs the forward+reverse two-pass overhead exceeds a single prefiltered Pike
+pass. The DFA's asymptotic edge only materialises on huge / pathological inputs cljw
+rarely sees, and even there it would need the prefilter integrated into its forward
+scan to compete. This mirrors the ADR-0146 lesson: a forked/textbook premise ("the
+reverse DFA is the point") that **direct measurement falsified**.
+
+**Decision**: do NOT wire the DFA (a regression is not shippable; regex_count was
+already CLOSED by S1+S2). The wire-in (Regex-Value cache + `findLeftmost`/`collectBounds`
+dispatch) was reverted; `dfa.zig` stays committed as a correct, equivalence-locked,
+RESERVED engine. Re-wiring requires (a) integrating the S2 prefilter into the DFA's
+forward `findEnd` start-scan + (b) caching the reverse transitions, and even then likely
+only wins above a large input-size gate — tracked as **D-449** with a review trigger (if
+no huge-input workload + the optimization is not pursued, remove `dfa.zig` rather than
+let it rot as dead code). The S2-prefiltered Pike VM is the finished-form default matcher
+for cljw's workloads.
 
 ## Consequences
 
