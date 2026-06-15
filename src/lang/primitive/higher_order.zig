@@ -255,16 +255,28 @@ pub fn reduceFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocatio
     // semantics for a general f, so 2-arg falls through to the generic walk.
     // [refs: O-023, D-386]
     if (args.len == 3 and coll.tag() == .lazy_seq and !lazy_seq_mod.fuseOf(coll).isNil()) {
-        // Delegate to the `.clj` `-fused-reduce`: it walks the `[xform coll]` fuse
-        // chain (composing the transducers inner-first, reaching the base source)
-        // and runs ONE `(transduce composed (completing f) init base)` pass — the
-        // composition uses `comp`/`transduce`/`completing` which exist post-load
-        // (avoids a load-order forward reference in `map`/`filter`).
-        if (env.findNs("clojure.core")) |core| {
-            if (core.resolve("-fused-reduce")) |fr| {
-                gc_roots[1] = args[1]; // init
-                gc_roots[2] = coll; // its fuse descriptor transitively roots the chain
-                return try invokeCallable(rt, env, fr.deref(), &.{ f, args[1], coll }, loc);
+        // PERF: O-023 fusion helps a NON-chunked source (a cons-list map/filter
+        // chain — the generic walk forces a `.clj` lazy thunk per transform per
+        // element). But for a CHUNKED source (range/vector-backed), the generic
+        // walk's in-Zig chunk drain (`-chunk-map-step`, O-032, + the chunked arm
+        // below) is ~2.5× FASTER than the `.clj`-transducer-per-element fused path
+        // (measured: `(into [] (map f (range 100k)))` 39→16 ms; gc_large_heap
+        // 59→35 ms). So fire fusion ONLY when the realized head is non-chunked; a
+        // chunked head falls through to the generic walk. The `seq` force is
+        // memoized — the generic walk re-seqs the same node. [refs: O-045, O-023, O-032]
+        gc_roots[1] = args[1];
+        gc_roots[2] = coll;
+        const head = try sequence.seqFn(rt, env, &.{coll}, loc);
+        if (head.tag() != .chunked_cons) {
+            // Delegate to the `.clj` `-fused-reduce`: it walks the `[xform coll]`
+            // fuse chain (composing transducers inner-first, reaching the base)
+            // and runs ONE `(transduce composed (completing f) init base)` pass.
+            if (env.findNs("clojure.core")) |core| {
+                if (core.resolve("-fused-reduce")) |fr| {
+                    gc_roots[1] = args[1]; // init
+                    gc_roots[2] = coll; // fuse descriptor transitively roots the chain
+                    return try invokeCallable(rt, env, fr.deref(), &.{ f, args[1], coll }, loc);
+                }
             }
         }
     }
