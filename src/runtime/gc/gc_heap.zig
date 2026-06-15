@@ -41,6 +41,12 @@ const value_mod = @import("../value/value.zig");
 const io_default = @import("../concurrency/io_default.zig");
 const safepoint = @import("../concurrency/safepoint.zig");
 
+/// Reentrancy guard for the alloc-driven GC torture (D-386): a torture collect
+/// must not re-enter itself if the collector's own bookkeeping reaches `alloc`.
+/// Threadlocal — each thread's torture cadence is independent. Inert (false)
+/// unless `CLJW_GC_TORTURE_ALLOC` is armed.
+threadlocal var in_alloc_torture: bool = false;
+
 const HeapHeader = heap_header.HeapHeader;
 const FreePoolMap = free_pool_mod.FreePoolMap;
 const Value = value_mod.Value;
@@ -298,6 +304,27 @@ pub const GcHeap = struct {
         // the collection sees this thread's roots quiescent. Runtime-inert until
         // a collector arms `gc_requested` (#4 wires the VM-safe-point trigger).
         if (safepoint.gc_requested.load(.acquire)) safepoint.park();
+        // D-386 alloc-driven GC torture (validation only; inert unless
+        // CLJW_GC_TORTURE_ALLOC is armed → `alloc_period != 0`, one global load +
+        // predicted-not-taken branch otherwise). Force a STW collect HERE — at the
+        // mid-op alloc boundary, BEFORE contending on `gc_mutex`, and BEFORE the new
+        // obj exists (the roots are quiescent per the park comment above) — so a VM
+        // op that did not publish its operand watermark / fabrication before
+        // allocating surfaces as a deterministic UAF, not a rare crash. Scoped to
+        // the main (unregistered) thread WITH a live `active_env`; a reentrancy
+        // guard stops the collect's own bookkeeping from re-triggering.
+        torture: {
+            const gc_torture = @import("gc_torture.zig");
+            if (gc_torture.alloc_period == 0) break :torture;
+            const root_set = @import("root_set.zig");
+            if (root_set.is_registered_worker or in_alloc_torture) break :torture;
+            const e = root_set.active_env orelse break :torture;
+            if (!gc_torture.allocTick()) break :torture;
+            const mark_sweep = @import("mark_sweep.zig");
+            in_alloc_torture = true;
+            defer in_alloc_torture = false;
+            mark_sweep.collectStopTheWorld(self, .{ .envs = &.{e}, .gc = self }, false);
+        }
         io_default.lockMutex(&self.gc_mutex);
         defer io_default.unlockMutex(&self.gc_mutex);
         const align_t: std.mem.Alignment = .fromByteUnits(@alignOf(T));

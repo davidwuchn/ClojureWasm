@@ -154,6 +154,16 @@ pub threadlocal var eval_frame_head: ?*EvalFrame = null;
 /// its walk are the runtime-inert infra.
 pub threadlocal var gc_self_guard: ?Value = null;
 
+/// The `Env` the current thread's outermost `vm.eval` is running under, or null
+/// when no VM eval is on the C stack. The VM publishes it (set on entry, restore
+/// on exit) ONLY so the alloc-driven GC torture (`gc_torture.allocTick`, D-386)
+/// can build a `WalkContext` for a collect forced from inside `gc.alloc` — that
+/// path has only `*GcHeap`, no `env`. Outside a VM eval it stays null and the
+/// alloc-torture collect is skipped (no root context). It is NOT a production
+/// root source (the collect's roots come from the env passed explicitly); it is
+/// validation-mode plumbing, inert unless `CLJW_GC_TORTURE_ALLOC` is armed.
+pub threadlocal var active_env: ?*Env = null;
+
 // =====================================================================
 // Worker-thread GC-root registry (ADR-0090 "D-244 decision", Alt B).
 //

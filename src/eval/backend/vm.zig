@@ -206,6 +206,11 @@ pub fn eval(
     const local_base_entry = ar.local_top;
     const frame_base = ar.frame_top;
     const head_entry = root_set.eval_frame_head;
+    // Publish this eval's env for the alloc-driven GC torture (D-386): a collect
+    // forced from inside `gc.alloc` has no `env`, so it reads this threadlocal.
+    // Validation-only; restored on exit (nested evals stack/unstack their env).
+    const active_env_entry = root_set.active_env;
+    root_set.active_env = env;
     defer {
         // Trace frames (ADR-0119) are a separate stack — pop any still-live
         // flattened frames' (LIFO) on an uncaught throw out of this eval.
@@ -217,6 +222,7 @@ pub fn eval(
         ar.op_top = op_base;
         ar.local_top = local_base_entry;
         root_set.eval_frame_head = head_entry;
+        root_set.active_env = active_env_entry;
     }
     if (ar.frame_top >= FRAMES_MAX)
         return error_catalog.raise(.stack_overflow, .{}, .{ .max = FRAMES_MAX });

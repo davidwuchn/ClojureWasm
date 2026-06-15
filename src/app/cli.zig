@@ -67,6 +67,11 @@ pub fn dispatch(init: std.process.Init) !void {
     // Inert when unset. Test/validation only — not production auto-collect.
     if (init.environ_map.get("CLJW_GC_TORTURE")) |raw|
         gc_torture.configure(std.fmt.parseInt(u32, raw, 10) catch 1);
+    // D-386: alloc-driven torture — `CLJW_GC_TORTURE_ALLOC=N` forces a collect
+    // every N `gc.alloc` calls (mid-op rooting validation). Independent of the
+    // safepoint mode above; both armed together by `gc_torture.arm()`.
+    if (init.environ_map.get("CLJW_GC_TORTURE_ALLOC")) |raw|
+        gc_torture.configureAlloc(std.fmt.parseInt(u32, raw, 10) catch 1);
 
     // Publish the process env for the runtime surface (`System/getenv`).
     // `init.environ_map` is already a `*Environ.Map` owned by `init`
