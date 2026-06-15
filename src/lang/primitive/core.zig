@@ -834,6 +834,15 @@ pub fn printStrFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocat
 /// 0-arg form returns the empty string.
 pub fn strFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
     _ = loc;
+    // PERF: a single immediate-integer arg renders its decimal straight into a
+    // stack buffer, skipping the heap `Allocating` writer alloc+free (string_ops:
+    // `(str i)` ×100K). Heap-Long / BigInt (tag .big_int) keep the full path
+    // (isInt() is the immediate-int discriminator). [refs: O-042]
+    if (args.len == 1 and args[0].isInt()) {
+        var dbuf: [24]u8 = undefined;
+        const s = std.fmt.bufPrint(&dbuf, "{d}", .{args[0].asInteger()}) catch unreachable;
+        return try string_mod.alloc(rt, s);
+    }
     var aw: std.Io.Writer.Allocating = .init(rt.gpa);
     defer aw.deinit();
     // Per-value str rendering lives in `print.writeStrValue` — the single
