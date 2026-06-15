@@ -90,22 +90,33 @@ active:
       lazy-seq-length hang is taken up.
     last_reviewed: "2026-06-04"
   - id: "D-240"
-    status: "now (pre-existing, surfaced by ADR-0087 queue diff attempt)"
+    status: "investigated 2026-06-15 (Step 0); fix DIRECTION confirmed, deferred on an eval_budget interaction + LOW value (working fallback). Only blocks static-field DIFF cases — the analyze/CLI/e2e/corpus paths already cover them."
     category: "tests"
     barrier: |-
-      **The dual-backend diff Fixture (`src/lang/diff_test.zig` /
-      `evaluator.zig`) crashes on any analyze-time `Class/FIELD` static-field
-      resolution** (e.g. `Long/MIN_VALUE`, `clojure.lang.PersistentQueue/
-      EMPTY`). The primitive-only Fixture skips the java-surface install (or
-      raising `namespace_unknown` in that minimal rt hits an alignment panic in
-      the error path) — so no diff case can exercise a static field. No existing
-      diff test used `Class/FIELD`, so it was never hit. Impact: ADR-0087's
-      PersistentQueue diff coverage had to fall back to CLI dual-backend
-      verification + e2e + corpus (the queue adds no new Node/opcode, so
-      ADR-0036 does not mandate a diff case). Fix: either install java surfaces
-      in the Fixture, or make the minimal-rt error-raise path alignment-safe.
-      LOW priority (only blocks static-field diff cases). recall trigger: when a
-      future diff case needs a `Class/FIELD` static field.
+      **The dual-backend diff Fixture (`src/lang/diff_test.zig` / `evaluator.zig`)
+      cannot exercise an analyze-time `Class/FIELD` static-field read** (e.g.
+      `Integer/MAX_VALUE`, `Long/MIN_VALUE`, `clojure.lang.PersistentQueue/EMPTY`).
+      The primitive-only Fixture leaves `rt.types` empty (no java-surface install),
+      so the static-field analyze (`analyzer.zig` ~L645 `resolveJavaSurface`) misses,
+      falls through to `namespace_unknown`, and that raise trips an alignment panic
+      in the minimal-rt error path. No existing diff test used `Class/FIELD`, so it
+      was never hit. ADR-0087's PersistentQueue diff coverage fell back to CLI
+      dual-backend + e2e + corpus (no new Node/opcode, so ADR-0036 does not mandate
+      a diff case).
+      2026-06-15 Step-0 investigation (REVERTED, not landed): adding
+      `try java_host_api.installAll(&f.env)` to the Fixture (a pure ~1 KB comptime
+      surface registration, no core.clj) DOES resolve the surfaces and ELIMINATES
+      the alignment panic — all 1109 existing diff/unit tests stay green (no
+      regression). The fix DIRECTION (the row's first option, "install java surfaces
+      in the Fixture") is confirmed correct. BUT a `f.check("Integer/MAX_VALUE",
+      2147483647)` diff case then trips `eval_steps_exceeded` via `tree_walk`
+      `evalLoop` + `budget.tick` — anomalous: neither `compare`/`runOnce` nor the
+      Fixture set `rt.eval_budget` (tick is skipped when null), yet a static-field
+      constant eval (no loop) reaches an evalLoop budget tick. That eval_budget /
+      compare interaction must be understood before a static-field diff case can
+      land. LOW priority + working fallback → deferred. recall trigger: a future
+      diff case genuinely needs a `Class/FIELD` static field, OR the eval_budget
+      interaction surfaces elsewhere.
   - id: "D-241"
     status: "SUBSTANCE LANDED via ADR-0096 (2026-06-05); residual is feature-gated only (re-laid 2026-06-15). The clojure.main-baseline frame (8 standard dynamic vars) IS pushed at bootstrap; bound-fn capture/replay verified clj-correct BOTH ways (corpus thread_bindings: outside-binding replays baseline → no truncation, shadowing the call site; inside-binding captures the binding). The original headline divergence is FIXED."
     category: "runtime"
