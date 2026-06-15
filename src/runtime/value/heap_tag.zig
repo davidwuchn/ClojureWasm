@@ -33,11 +33,11 @@
 //!     C2 ref            C6 reduced        C10 trans_set      C14 sorted_map
 //!     C3 volatile       C7 ex_info        C11 rb_node        C15 sorted_set
 //!
-//!   Group D — Numeric + wasm + extension (slots 48..63):
-//!     D0 big_int        D4 wasm_module    D8 matcher         D12 tail_node
-//!     D1 ratio          D5 wasm_fn        D9 tuple           D13 hamt_map_node
-//!     D2 big_decimal    D6 wasm_funcref   D10 box            D14 hash_collision_map_node
-//!     D3 array          D7 wasm_externref D11 hamt_node      D15 tval
+//!   Group D — Numeric + Clojure collection internals + wasm tail (slots 48..63):
+//!     D0 big_int        D4 hamt_node                  D8 tval     D12 wasm_module
+//!     D1 ratio          D5 tail_node                  D9 matcher  D13 wasm_fn
+//!     D2 big_decimal    D6 hamt_map_node              D10 tuple   D14 wasm_funcref
+//!     D3 array          D7 hash_collision_map_node    D11 box     D15 wasm_externref
 
 /// Heap object discriminant — 64 entries (4 group × 16 sub-type) per
 /// F-004 + ADR-0027 §2. Each entry's integer value is the contiguous
@@ -98,23 +98,28 @@ pub const HeapTag = enum(u8) {
     sorted_map = 46,
     sorted_set = 47,
 
-    // Group D — Numeric + wasm + extension (slots 48..63)
+    // Group D — Numeric + Clojure collection internals + wasm tail (slots 48..63)
+    // (D-248 reorg 2026-06-15: Clojure persistent-collection internals moved UP to
+    // D4..D8, the wasm surfaces moved to the D12..D15 TAIL — finished-form
+    // cleanliness, ADR-0027 §2 slot-map. Slot ORDER is a discriminant only; runtime
+    // dispatch is enum-NAME-based and serialized bytecode uses a decoupled ValueTag,
+    // so this renumber is non-breaking. HeapTag + Value.Tag stay in sync — a test asserts it.)
     big_int = 48,
     ratio = 49,
     big_decimal = 50,
     array = 51,
-    wasm_module = 52,
-    wasm_fn = 53,
-    wasm_funcref = 54,
-    wasm_externref = 55,
-    matcher = 56,
-    tuple = 57,
-    box = 58,
-    hamt_node = 59, // D11 — PersistentVector interior/leaf node (5.4.a)
-    tail_node = 60, // D12 — PersistentVector 32-element tail array (5.4.a)
-    hamt_map_node = 61, // D13 — PersistentHashMap CHAMP-style HAMT node (5.5.a)
-    hash_collision_map_node = 62, // D14 — PersistentHashMap collision bucket (5.5.c, declared here)
-    tval = 63, // D15 — STM Ref history-ring node (Phase 14 row 14.11.5, ADR-0010 amendment 4)
+    hamt_node = 52, // D4 — PersistentVector interior/leaf node (5.4.a)
+    tail_node = 53, // D5 — PersistentVector 32-element tail array (5.4.a)
+    hamt_map_node = 54, // D6 — PersistentHashMap CHAMP-style HAMT node (5.5.a)
+    hash_collision_map_node = 55, // D7 — PersistentHashMap collision bucket (5.5.c)
+    tval = 56, // D8 — STM Ref history-ring node (ADR-0010 amendment 4)
+    matcher = 57,
+    tuple = 58,
+    box = 59,
+    wasm_module = 60, // D12 — wasm surfaces at the tail (Phase 16+)
+    wasm_fn = 61,
+    wasm_funcref = 62,
+    wasm_externref = 63,
 };
 
 /// GC-managed membrane SSOT (D-251 / ADR-0095 Alt D). `true` iff a Value with

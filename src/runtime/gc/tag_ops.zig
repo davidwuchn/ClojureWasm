@@ -195,5 +195,5 @@ test "HeapTag enum integer indices fit the dispatch table bounds (0..63)" {
     try testing.expectEqual(@as(u8, 30), @intFromEnum(HeapTag.typed_instance));
     try testing.expectEqual(@as(u8, 32), @intFromEnum(HeapTag.atom));
     try testing.expectEqual(@as(u8, 48), @intFromEnum(HeapTag.big_int));
-    try testing.expectEqual(@as(u8, 63), @intFromEnum(HeapTag.tval));
+    try testing.expectEqual(@as(u8, 63), @intFromEnum(HeapTag.wasm_externref)); // D15 = last slot (D-248 reorg: was tval)
 }

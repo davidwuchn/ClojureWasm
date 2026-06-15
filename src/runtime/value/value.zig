@@ -93,23 +93,25 @@ pub const Value = enum(u64) {
         persistent_queue = 45,
         sorted_map = 46,
         sorted_set = 47,
-        // Group D (slots 48..63)
+        // Group D (slots 48..63) — synced with HeapTag (D-248 reorg 2026-06-15:
+        // Clojure collection internals up to D4..D8, wasm to the D12..D15 tail).
+        // MUST match heap_tag.zig exactly — the test below asserts the sync.
         big_int = 48,
         ratio = 49,
         big_decimal = 50,
         array = 51,
-        wasm_module = 52,
-        wasm_fn = 53,
-        wasm_funcref = 54,
-        wasm_externref = 55,
-        matcher = 56,
-        tuple = 57,
-        box = 58,
-        hamt_node = 59, // D11 — PersistentVector interior/leaf node (5.4.a)
-        tail_node = 60, // D12 — PersistentVector 32-element tail array (5.4.a)
-        hamt_map_node = 61, // D13 — PersistentHashMap CHAMP-style HAMT node (5.5.a)
-        hash_collision_map_node = 62, // D14 — PersistentHashMap collision bucket (5.5.c)
-        tval = 63, // D15 — STM Ref TVal (ADR-0010 amendment 4; HeapTag-only — TVal is not NaN-boxed as a Value)
+        hamt_node = 52, // D4 — PersistentVector interior/leaf node (5.4.a)
+        tail_node = 53, // D5 — PersistentVector 32-element tail array (5.4.a)
+        hamt_map_node = 54, // D6 — PersistentHashMap CHAMP-style HAMT node (5.5.a)
+        hash_collision_map_node = 55, // D7 — PersistentHashMap collision bucket (5.5.c)
+        tval = 56, // D8 — STM Ref TVal (ADR-0010 amendment 4; HeapTag-only — TVal is not NaN-boxed as a Value)
+        matcher = 57,
+        tuple = 58,
+        box = 59,
+        wasm_module = 60, // D12 — wasm surfaces at the tail (Phase 16+)
+        wasm_fn = 61,
+        wasm_funcref = 62,
+        wasm_externref = 63,
         // Immediates (not in heap slot space; classified by top16 band,
         // not by integer-indexed lookup against HeapTag)
         nil = 64,
