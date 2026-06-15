@@ -791,7 +791,12 @@
 ;; form. [refs: O-020, O-025, D-386].
 (def update-in
   (fn*
-    ([m ks f] (-update-in-idx m ks f 0 (count ks)))
+    ;; PERF: O-033 route a non-empty VECTOR path through the in-Zig `-update-in`
+    ;; (descent+ascent in one prim, no `.clj` per-level recursion); `-update-in-idx`
+    ;; stays the fallback for non-vector / empty paths (clj-parity edge unchanged).
+    ([m ks f] (if (and (vector? ks) (seq ks))
+                (-update-in m ks f)
+                (-update-in-idx m ks f 0 (count ks))))
     ([m ks f & args]
      (let [k (first ks) nks (next ks)]
        (if nks

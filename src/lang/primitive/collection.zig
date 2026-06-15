@@ -58,6 +58,10 @@ const transient_array_map = @import("../../runtime/collection/transient/transien
 const transient_hash_set = @import("../../runtime/collection/transient/transient_hash_set.zig");
 const td_mod = @import("../../runtime/type_descriptor.zig");
 const keyword_mod = @import("../../runtime/keyword.zig");
+const root_set = @import("../../runtime/gc/root_set.zig");
+// O-033: the reentrant-call helper `update-in`'s leaf `f` rides (no cycle —
+// `higher_order` imports `runtime/collection/*`, not this Layer-2 file).
+const invokeCallable = @import("higher_order.zig").invokeCallable;
 
 // --- conj ---
 
@@ -944,8 +948,51 @@ pub fn kvReduceOrFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLoc
     return args[3];
 }
 
+/// PERF: O-033 in-Zig `update-in` descent/ascent. Walks the (vector) path in Zig
+/// — `get` each level down, call `f` at the leaf via `invokeCallable`, `assoc` back
+/// up — replacing the `.clj` `-update-in-idx` recursion (N frames + per-level
+/// `nth`/`get`/`assoc` prim calls). The `.clj` `update-in` keeps the variadic
+/// `& args` arity and routes only a NON-EMPTY VECTOR path here. [refs: O-033, O-004]
+///
+/// GC-ROOT: O-033 — reentrant-primitive frame [f, m, ks, child] (mirrors reduceFn /
+/// chunk_transform O-032) [ref: .dev/gc_rooting.md]. `m` (slot 1) transitively roots
+/// the whole descent chain — every parent map is a sub-value of the original `m`, so
+/// no per-level descent root is needed. The ONLY eval reentry is the leaf `f`. The
+/// ascent `assoc`s allocate NEW maps (not reachable from `m`), so slot 3 (`child`) is
+/// re-rooted before each `assoc` so an alloc-driven collect cannot sweep the
+/// in-progress result.
+pub fn updateInFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    try error_catalog.checkArity("-update-in", args, 3, loc);
+    const m = args[0];
+    const ks = args[1]; // guaranteed a non-empty vector by the `.clj` `update-in` guard
+    const f = args[2];
+    const n = vector.count(ks);
+    var gc_roots: [4]Value = .{ f, m, ks, .nil_val };
+    var gc_sp: u16 = 4;
+    var gc_frame: root_set.EvalFrame = .{ .stack = &gc_roots, .sp = &gc_sp, .locals = &.{}, .parent = root_set.eval_frame_head };
+    root_set.eval_frame_head = &gc_frame;
+    defer root_set.eval_frame_head = gc_frame.parent;
+    return updateInRec(rt, env, m, ks, 0, n, f, loc, &gc_roots);
+}
+
+fn updateInRec(rt: *Runtime, env: *Env, m: Value, ks: Value, i: u32, n: u32, f: Value, loc: SourceLocation, gc_roots: *[4]Value) anyerror!Value {
+    const k = vector.nth(ks, i);
+    if (i + 1 == n) {
+        // leaf: (assoc m k (f (get m k)))
+        const old = try getFn(rt, env, &.{ m, k }, loc);
+        const nv = try invokeCallable(rt, env, f, &.{old}, loc);
+        gc_roots[3] = nv; // root the new leaf value across the assoc alloc
+        return try assocFn(rt, env, &.{ m, k, nv }, loc);
+    }
+    // descend: (assoc m k (update-in (get m k) (rest path) f))
+    const child = try updateInRec(rt, env, try getFn(rt, env, &.{ m, k }, loc), ks, i + 1, n, f, loc, gc_roots);
+    gc_roots[3] = child; // root the new sub-map across this level's assoc alloc
+    return try assocFn(rt, env, &.{ m, k, child }, loc);
+}
+
 const ENTRIES = [_]Entry{
     .{ .name = "conj", .f = &conjFn },
+    .{ .name = "-update-in", .f = &updateInFn },
     .{ .name = "__kv-reduce-or", .f = &kvReduceOrFn },
     .{ .name = "queue?", .f = &queueQFn },
     .{ .name = "-queue-pop", .f = &queuePopFn },
