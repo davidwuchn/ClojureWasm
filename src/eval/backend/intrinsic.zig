@@ -12,12 +12,13 @@
 //! (`.integer`); anything else (float / ratio / bigint / heap-Long / non-number)
 //! returns `null`, and the caller falls back to the cached builtin Var via
 //! `vt.callFn` — identical to the generic path, including the builtin's
-//! arg-precise error translation (F-011). add/sub/mul delegate to the existing
-//! `promote.*Promoting` (i64 `@addWithOverflow` → `wrapI64`, so an i48 overflow
-//! becomes a heap-Long / BigInt per F-005 — never a silent wrap, never a float).
-//! Comparisons are exact i48 (`.integer` is always in-range). The non-overflow
-//! integer path allocates nothing → no GC safepoint, no rooting (the O-007
-//! no-alloc-fast-path precedent; F-006).
+//! arg-precise error translation (F-011). add/sub/mul compute the result inline
+//! (`@add/sub/mulWithOverflow` on i64); a result outside the i48 fixnum window
+//! (i64 overflow OR > i48) returns `null` so the slow builtin path produces the
+//! heap-Long / BigInt per F-005 — never a silent wrap, never a float.
+//! Comparisons are exact i48 (`.integer` is always in-range). The WHOLE fast
+//! path allocates nothing (overflow defers to the builtin), so the VM hot arith
+//! op needs no GC `op_top` sync (the O-007 no-alloc-fast-path precedent; F-006).
 //!
 //! The compile-time recogniser (`opcodeFor`, gated on canonical-Var pointer
 //! identity + the `core_arith_pristine` deopt flag) lands with the opcodes
@@ -26,7 +27,7 @@
 const std = @import("std");
 const Value = @import("../../runtime/value/value.zig").Value;
 const Runtime = @import("../../runtime/runtime.zig").Runtime;
-const promote = @import("../../runtime/numeric/promote.zig");
+const nb = @import("../../runtime/value/nan_box.zig");
 const Opcode = @import("vm/opcode.zig").Opcode;
 const env_mod = @import("../../runtime/env.zig");
 
@@ -193,18 +194,29 @@ pub fn recognize(rt: *const Runtime, var_ptr: *const env_mod.Var) ?Opcode {
 
 /// Fixnum fast path. Returns `null` unless BOTH operands are inline fixnums, so
 /// the caller defers every other case (incl. all error cases) to the builtin.
-pub fn fastBinaryFixnum(rt: *Runtime, op: ArithOp, a: Value, b: Value) !?Value {
+pub fn fastBinaryFixnum(_: *Runtime, op: ArithOp, a: Value, b: Value) !?Value {
     if (a.tag() != .integer or b.tag() != .integer) return null;
-    return switch (op) {
-        .add => try promote.addPromoting(rt, a, b),
-        .sub => try promote.subPromoting(rt, a, b),
-        .mul => try promote.mulPromoting(rt, a, b),
-        .lt => Value.initBoolean(a.asInteger() < b.asInteger()),
-        .le => Value.initBoolean(a.asInteger() <= b.asInteger()),
-        .gt => Value.initBoolean(a.asInteger() > b.asInteger()),
-        .ge => Value.initBoolean(a.asInteger() >= b.asInteger()),
-        .eq => Value.initBoolean(a.asInteger() == b.asInteger()),
+    const ai: i64 = a.asInteger();
+    const bi: i64 = b.asInteger();
+    const res: i64, const ov: u1 = switch (op) {
+        .add => @addWithOverflow(ai, bi),
+        .sub => @subWithOverflow(ai, bi),
+        .mul => @mulWithOverflow(ai, bi),
+        .lt => return Value.initBoolean(ai < bi),
+        .le => return Value.initBoolean(ai <= bi),
+        .gt => return Value.initBoolean(ai > bi),
+        .ge => return Value.initBoolean(ai >= bi),
+        .eq => return Value.initBoolean(ai == bi),
     };
+    // i64 overflow OR a result outside the i48 fixnum window → defer (null) to
+    // the slow builtin path, which allocates the heap-Long / BigInt (D-165,
+    // F-005). Keeping this fn ALLOC-FREE is what lets the VM hot arith path skip
+    // the GC `op_top` sync under D-386 sub-step 2, and inlines past
+    // `promote.*Promoting`'s float/ratio/bigdec type-dispatch on the hot case.
+    // NB: `initInteger` returns a FLOAT out of i48 range, so the explicit window
+    // check is required — a blind `initInteger(res)` would be wrong.
+    if (ov != 0 or res < nb.NB_I48_MIN or res > nb.NB_I48_MAX) return null;
+    return Value.initInteger(res);
 }
 
 // --- tests ------------------------------------------------------------------
@@ -239,12 +251,15 @@ test "fastBinaryFixnum add/sub/mul on two fixnums" {
     try testing.expectEqual(@as(i48, 35), (try fastBinaryFixnum(&fix.rt, .mul, a, b)).?.asInteger());
 }
 
-test "fastBinaryFixnum mul overflowing i48 promotes (F-005), not a float" {
+test "fastBinaryFixnum mul overflowing i48 defers (null) — slow path promotes" {
     var fix = Fixture.init();
     defer fix.deinit();
     const a = Value.initInteger((1 << 47) - 1); // i48 max
-    const v = (try fastBinaryFixnum(&fix.rt, .mul, a, Value.initInteger(2))).?;
-    try testing.expect(v.tag() == .big_int); // heap-Long / BigInt, never .float
+    // Overflowing i48 is no longer handled inline (the fast path is alloc-free);
+    // it returns null so the slow builtin path produces the heap-Long / BigInt
+    // (F-005). Observable `(* i48max 2)` → heap-Long is locked by the VM e2e +
+    // diff oracle (TreeWalk already routes overflow through the builtin).
+    try testing.expect((try fastBinaryFixnum(&fix.rt, .mul, a, Value.initInteger(2))) == null);
 }
 
 test "fastBinaryFixnum comparisons are exact" {
