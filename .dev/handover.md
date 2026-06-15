@@ -10,30 +10,20 @@
   `build.zig.zon` `.zwasm` is SHA-PINNED (`#412966f7…`, `lazy`). Per-commit = smoke;
   full gate batches at ceiling / boundary / pre-tag.
 
-- **First commit on resume MUST be**: **ADR-0148 fastest-script perf campaign**
-  (user-directed 2026-06-16) — make cljw the FASTEST script interpreter (among
-  `{cljw, Python, Ruby, Node.js, Babashka}` cold-start) on the **9 top-gap benches**,
-  highest-ROI first: **ratio_sum 3.15× · gc_alloc_rate 2.81× · gc_large_heap 2.22× ·
-  destructure 1.72× · json_parse 1.59× · bigint_factorial 1.49× · nested_update 1.37× ·
-  string_ops 1.35× · sieve 1.23×** (ratios = cljw ÷ fastest-script, `bench/cross-lang-
-  latest.yaml` 2026-06-16). nqueens/regex_count (1.04×) EXCLUDED = cold-start/noise.
-  **Method (v0 mostly exhausted)**: other-language internal-impl study (JVM Ratio/
-  HashMap/BigInteger, GraalVM/Babashka GC, CPython C-json) + web search + cljw deep-
-  dive + measurement-driven experiments + recombining DEFERRED levers. **Experiment
-  aggressively, revert freely — a reverted experiment's commit MAY stay in the log**
-  (tests are the backstop; never leave `main` red); no regressions (diff oracle + corpus
-  3157 stay green); short benches carry noise (≥10 runs, cold-vs-compute). Themes/ROI +
-  per-target opt directions: **ADR-0148**. After the 9 (or provably cold-start-floor +
-  D-140 cache landed) → resume the original front (VM-perf **D-386** dispatch→
-  superinstructions→JIT; §9.0 gap areas). `.dev/.perf_campaign_active` is SET.
-  - **GC architecture** (F-006) is DE-PRIORITISED for gc_alloc_rate/gc_large_heap:
-    cycle-1 `sample` profiling proved both are dispatch/construction-bound, ~0.5% malloc
-    (ADR-0148 Measurement update). Bump/generational GC would not move them. **D-140
-    startup cache** still lifts the cold-start-floor targets (sieve, partly nested_update).
-  - regex arc DONE (ADR-0147: S1+S2 wired+winning, S3 DFA reserved/D-449, leftmost-first
-    fixed, reluctant quantifiers landed); **D-448** nested-empty-quant capture deferred.
-  - **bigint** = a target now (was deferred): the BigInt-reduce-accumulator lever, likely
-    combined with the alloc work; `private/notes/9.2.S-bigint-factorial-lookahead.md`.
+- **First commit on resume MUST be**: continue the **ADR-0148 fastest-script campaign**
+  (`.dev/.perf_campaign_active` SET). Cycle 1 is DONE — all 9 top-gap benches crushed from
+  their multi-× gaps to ≤1.25× (ratio_sum + nested_update CLOSED <1.0×; see Last landed).
+  Next, highest-ROI first: **(1) D-140 startup-cache** — PROFILE the ~0.48 s cold start
+  (AOT-envelope restore is the suspect; `bench/`), the residual 1.1–1.25× on the small
+  benches is largely the ~3 ms spawn floor → one lever lifts sieve/gc_alloc/gc_large/json/
+  string together. **(2)** per-target: bigint_factorial 1.25× (deep bignum / fused
+  accumulator) · destructure 1.23× (dispatch). **(3)** the original front: VM-perf **D-386**
+  dispatch → superinstructions → **D-133** ARM64 JIT (§9.0 gap area III). Method: cljw
+  deep-dive + measure-first (5 campaign hypotheses already refuted by measurement — see
+  ADR-0148); experiment-and-revert (reverted commits MAY stay in log; never leave `main`
+  red; diff oracle + corpus 3181 stay green; ≥10 runs, ReleaseSafe only).
+  - regex arc DONE (ADR-0147); **D-448** nested-empty-quant capture deferred; **D-449**
+    lazy-DFA reserved. **D-451** = Ratio canonical-invariant guard (ADR-0149).
   - **JIT (D-133)** re-sequenced LAST (ADR-0145). **D-244 #4** capstone below.
 
 - **Validation infra / D-244 #4 gap**: `CLJW_GC_TORTURE_ALLOC=N` validates MID-ALLOC
@@ -52,24 +42,26 @@
 
 ## Last landed (git log = SSOT; all pushed)
 
-ADR-0148 fastest-script campaign, **cycle 1 = 9 wins (O-037…O-045)**. Standing vs
-fastest-script (Babashka/Python): nested_update 0.95× CLOSED · string_ops 1.08× ·
-json_parse 1.14× · gc_alloc_rate 1.15× · gc_large_heap 1.18× · sieve 1.18× (cold-start
-floor, D-140) · destructure 1.22× · bigint_factorial 1.30× · **ratio_sum 2.34× (lone
-deep holdout)**. 8/9 ≤1.30×. Levers: O-037/38 ratio zero-copy+arena · O-039 alias BigInt
-operands · O-040 op_vector_literal fromSlice · O-041 json bulk-build · O-042 str int
-fast-path · O-043 op_get/op_nth collection intrinsics · O-044 op_nth2 · O-045 fusion gate
-(gc_large_heap 1.99→1.18×). All diff-oracle + corpus 3157 + smoke green.
-**4 hypotheses refuted by measurement** (recorded ADR-0148): GC-arch bump-allocator,
-closure-call cost (~3ns), call-site-cache, fusion-always-wins (O-023 was a 2.5×
-regression for chunked sources). SAFETY: `clj` → `clojure -J-Xmx2g` + bounded seqs;
+ADR-0148 fastest-script campaign, **cycle 1 COMPLETE = 10 wins (O-037…O-046)**. ALL 9
+targets crushed from their multi-× gaps to ≤1.25× (2 CLOSED outright). Standing vs
+fastest-script: ratio_sum **0.91× CLOSED** (was 3.15×) · nested_update **0.89× CLOSED** ·
+string_ops 1.04× · json_parse 1.13× · sieve 1.13× · gc_alloc_rate 1.15× · gc_large_heap
+1.16× · destructure 1.23× · bigint_factorial 1.25×. Levers: O-037/38 ratio zero-copy+arena
+· O-039 alias BigInt · O-040 op_vector_literal fromSlice · O-041 json bulk-build · O-042
+str int fast-path · O-043 op_get/op_nth intrinsics · O-044 op_nth2 · O-045 fusion gate ·
+**O-046 small-ratio inline-i64 (ADR-0149: canonical two-tier Ratio; ratio_sum 81→32 ms)**.
+All diff-oracle + corpus 3181 + smoke green. **5 hypotheses refuted by measurement**
+(ADR-0148): GC-arch bump-allocator, closure-call cost (~3ns), call-site-cache,
+fusion-always-wins, [bignum-compute-bound — was alloc]. D-451 guards the Ratio canonical
+invariant. SAFETY: `clj` → `clojure -J-Xmx2g` (harness `clj` is rlwrap-broken on this host);
 measure ReleaseSafe only.
 
-**Next (self-select):** **ratio_sum** is the lone far target — needs DEEP numeric work
-(small-ratio inline-i64 repr, OR fused rational accumulator in reduce, OR faster bignum;
-all F-004/F-005, need ADR + DA fork). Detail + lever analysis:
-`private/notes/9.2.S-ratio-bigint-alloc-levers.md`. Secondary: nudge bigint_factorial
-1.30× / sieve 1.18× (D-140 startup cache). Then D-386 dispatch / D-133 JIT.
+**Next (self-select):** the multi-× gaps are gone — remaining residuals are 1.04–1.25×,
+mostly **cold-start-floor** bound (~3 ms spawn is ~8–16% of these small benches). Highest
+cross-target ROI = **D-140 startup-cache** (PROFILE the ~0.48 s startup → AOT-envelope
+restore; lifts sieve/gc/json/string at once). Then per-target: bigint_factorial 1.25×
+(deep bignum) · destructure 1.23× (dispatch). Then the original front: **D-386 dispatch →
+D-133 JIT**. Lever analysis: `private/notes/9.2.S-ratio-bigint-alloc-levers.md`.
 
 ## Cold-start reading order (resume)
 
