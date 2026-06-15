@@ -249,11 +249,18 @@ pub fn eval(
     root_set.eval_frame_head = &base.gc_frame;
     ar.frame_top += 1;
 
+    // PERF: hoist `ip` to a loop-carried register; sync `cur.ip` only at frame transitions [refs: O-028, D-386]
+    // The active in-VM frame (base, or a flattened callee — 2b) + its `ip` are
+    // loop-carried so the hot dispatch keeps `ip` in a register (D-386 sub-step
+    // 1): `cur.ip` (arena heap) is synced only at frame transitions (flatten /
+    // ret / catch), not per-op. `ip` is NOT a GC root (only `op_top` is, via
+    // `gc_frame.sp`), so hoisting it carries zero UAF risk — unlike a hoisted
+    // `op_top` (sub-step 2). Every op reads/writes `cur`'s `chunk`/`locals`
+    // window; the operand stack is the shared arena (`op_top` absolute). The
+    // naive form (recompute `cur` + pass `&cur.ip` per op) is the contract.
+    var cur = &ar.frames[ar.frame_top - 1];
+    var ip: usize = cur.ip;
     while (true) {
-        // The active in-VM frame (base, or a flattened callee — 2b). Every op
-        // reads/writes its `ip`/`chunk`/`locals` window; the operand stack is the
-        // shared arena (`op_top` absolute).
-        const cur = &ar.frames[ar.frame_top - 1];
         // Liveness-only back-edge safe point (ADR-0090 Alt B / D-244 #3b-step2):
         // a worker spinning in a non-allocating loop never hits the alloc-prologue
         // park, so it must poll here to notice a pending collection and park
@@ -282,11 +289,16 @@ pub fn eval(
             mark_sweep.collectStopTheWorld(&rt.gc, .{ .envs = &.{env}, .gc = &rt.gc }, false);
         }
         var flatten_req: ?FlattenReq = null;
-        const step_result = stepOnce(rt, env, cur.locals, cur.chunk, &ar.stack, &ar.loc, &ar.op_top, &cur.ip, &handlers, &handler_count, &flatten_req);
+        const step_result = stepOnce(rt, env, cur.locals, cur.chunk, &ar.stack, &ar.loc, &ar.op_top, &ip, &handlers, &handler_count, &flatten_req);
         if (flatten_req) |fr| {
             // 2b: op_call resolved a monomorphic bytecode callee — push an in-VM
-            // frame + continue this loop (no host eval re-entry).
+            // frame + continue this loop (no host eval re-entry). Save the
+            // caller's advanced `ip` into its frame, then re-seat `cur`/`ip` on
+            // the callee (D-386 sub-step 1).
+            cur.ip = ip;
             try flattenPush(rt, ar, fr);
+            cur = &ar.frames[ar.frame_top - 1];
+            ip = cur.ip;
             continue;
         }
         if (step_result) |maybe_return| {
@@ -305,6 +317,9 @@ pub fn eval(
                 ar.stack[ar.op_top] = v;
                 ar.loc[ar.op_top] = .{};
                 ar.op_top += 1;
+                // Re-seat on the caller frame; restore its `ip` saved at flatten.
+                cur = &ar.frames[ar.frame_top - 1];
+                ip = cur.ip;
                 continue;
             }
         } else |err| {
@@ -320,6 +335,9 @@ pub fn eval(
                 ar.local_top = ff.local_base;
             }
             const bcur = &ar.frames[frame_base];
+            // All handlers belong to the base frame; re-seat `cur` there (the
+            // per-continue `ip = …` below restores the catch target).
+            cur = bcur;
             var thrown_err = err;
             // ADR-0071: a `.cleanup` handler (binding / bare-try) is a
             // `defer`, not a `catch`. Tested BEFORE the conversion below so
@@ -336,6 +354,7 @@ pub fn eval(
                 const h = handlers[handler_count];
                 dispatch.vm_pending_reraise = thrown_err;
                 bcur.ip = h.catch_ip;
+                ip = h.catch_ip;
                 ar.op_top = h.saved_sp;
                 continue;
             }
@@ -358,6 +377,7 @@ pub fn eval(
                 handler_count -= 1;
                 const h = handlers[handler_count];
                 bcur.ip = h.catch_ip;
+                ip = h.catch_ip;
                 ar.op_top = h.saved_sp;
                 const thrown = dispatch.last_thrown_exception orelse
                     return raiseInternal("vm: ThrownValue without payload");
