@@ -16,14 +16,19 @@
   Zig-backed equivalent-semantics impls (memory `perf-beat-python-every-bench`).
   **Current Python-losers (re-measured 2026-06-15, post-O-030/031/032/033):
   regex_count 1.74× + bigint_factorial 1.26×** — sieve + nested_update are now
-  cljw-FASTER (CLOSED this session). regex first step = the **cross-lang
-  equivalence audit** ADR-0145 mandates BEFORE engine work (cljw's own regex engine
-  `src/runtime/regex/{compile,match}.zig`; `#"…"` literals compile once, the cost is
-  the match-engine walk + per-match String alloc + re-seq lazy nodes). Then PROFILE
-  (engine vs String-alloc vs lazy-seq split) before touching the engine. Reference
-  impls clonable per user direction (`reference_clones.md` § Perf-reference):
-  `openjdk24/` java.util.regex, clone CPython `sre` / RE2. Scoped in
-  `private/notes/9.2.S-regex-count-lookahead.md`. **bigint** is DEFERRED (profiled:
+  cljw-FASTER (CLOSED this session). The ADR-0145 **cross-lang equivalence audit is
+  DONE** (GO): `test/diff/clj_corpus/regex_equivalence.txt` committed (48 goldens =
+  the F-011 lock; cljw's Pike-NFA matcher is non-backtracking, ReDoS-immune); full
+  analysis + the lever DESIGN in `private/notes/9.2.S-regex-equivalence-audit.md`.
+  So the **first commit = the GO-path levers** (NOT re-do the audit), in order, each
+  keeping the 48-corpus 48/48 + diff oracle, re-measuring the bench after each: (1)
+  `seen` generation-counter in `match.zig` `tryMatchAt` (equivalence-neutral memset
+  shave — a stopped fork measured 45→41.5ms; clean re-do), (2) a `rt/re-find-all`
+  Zig primitive backing `re-seq` (removes the ~10ms `.clj` layer, one ThreadList
+  reuse), (3) **a leading first-byte/class prefilter in `findFrom`** (CPython
+  `_sre`-style — the actual beat-Python lever for `\d+`; skip non-startable
+  positions). NO-GO on a full DFA rewrite. Optional follow-up: reluctant quantifiers
+  `*?`/`+?` + the `compile.zig:22-23` stale lookaround doc. **bigint** is DEFERRED (profiled:
   no cheap touchpoint — cost is the inherent std.math.big mul + per-step alloc, not
   dispatch; only lever is a BigInt-reduce-accumulator, involved + modest;
   `private/notes/9.2.S-bigint-factorial-lookahead.md`).
@@ -49,7 +54,22 @@
   `-Dwasm` (false fails — memory `zig_build_test_needs_dwasm`); bare `zig build`
   for scripted/probe (ADR-0133 — ReleaseSafe). Measure perf only ReleaseSafe.
 
-## Last landed (git log = SSOT; HEAD `3469c0f0`, all pushed)
+## Stopped — user requested
+
+User instruction (2026-06-15): "クリアセッションからcontinueだけで継続できる配線か
+参照チェーンか、今のforkの役割はなにか、再監査して止めてください". Re-audit done +
+the regex-perf fork was stopped (it had landed only lever-1 seen-gen, 45→41.5ms,
+uncommitted + half-done lever-2) and its changes REVERTED — tree is clean at HEAD,
+all pushed, so a fresh `/continue` resumes from a verified state. **Resume = the
+regex GO-path levers** (Resume contract above; the audit + corpus are committed,
+the lever design is in `private/notes/9.2.S-regex-equivalence-audit.md`).
+Re-audit verdict: the reference chain RESOLVES (every handover-referenced note /
+corpus / debt-ID / ADR / memory exists); the one stale pointer (regex "first step =
+the audit" when the audit is DONE) is fixed above. Same-machine caveat: the detailed
+lever design lives in a gitignored `private/notes/` note (reachable on this machine;
+on a fresh clone the levers are still NAMED in the handover + the corpus commit).
+
+## Last landed (git log = SSOT; HEAD `fd2c9ca1`, all pushed)
 
 **Perf campaign — 2 losers CLOSED + a broad call-system win this session:**
 **O-030** fixnum mod/rem/quot intrinsic (sieve 1.40→1.23×) · **O-031** fixnum not=
