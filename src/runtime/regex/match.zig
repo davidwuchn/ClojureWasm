@@ -105,8 +105,21 @@ fn scanFrom(
     start: u32,
 ) MatchError!?MatchResult {
     var pos: u32 = start;
-    while (pos <= input.len) : (pos += 1) {
+    while (pos <= input.len) {
+        // PERF: leading first-byte prefilter (O-036, ADR-0147 S2). When the
+        // program must consume a determinable first byte, skip positions whose
+        // byte cannot start a match with a cheap membership scan, instead of a
+        // full ThreadList-clearing tryMatchAt at every position. The set is
+        // exact-or-disabled (compile.zig:computeLeading), so this never skips a
+        // position where a match could start — equivalence-neutral. A
+        // non-nullable program cannot match at input.len, so exhausting the
+        // scan returns null. [refs: O-036]
+        if (program.leading) |lead| {
+            while (pos < input.len and !lead.contains(input[pos])) pos += 1;
+            if (pos >= input.len) return null;
+        }
         if (try tryMatchAt(current, next, alloc, program, input, pos)) |result| return result;
+        pos += 1;
     }
     return null;
 }

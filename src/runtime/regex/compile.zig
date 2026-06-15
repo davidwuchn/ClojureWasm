@@ -151,6 +151,12 @@ pub const Program = struct {
     insts: []const Inst,
     capture_count: u16,
     flags: Flags,
+    /// PERF: leading first-byte set for the scan prefilter (O-036, ADR-0147 S2).
+    /// `null` disables the prefilter — set only when every match must consume a
+    /// determinable first byte; then `match.zig:scanFrom` skips positions whose
+    /// byte is not in the set instead of running the VM at each. Owned by value
+    /// (no heap), so sub-Program literals default it to null. [refs: O-036]
+    leading: ?CharClass = null,
 
     pub fn deinit(self: *Program, alloc: std.mem.Allocator) void {
         // A `look` inst owns a nested sub-Program's IR slice (lookahead); free it
@@ -1301,11 +1307,66 @@ fn emit(alloc: std.mem.Allocator, node: *const Node, flags: Flags, capture_count
     // total — is rejected instead of compiling.
     if (budget.* < list.items.len) return CompileError.PatternTooLarge;
     budget.* -= list.items.len;
+    const insts = try list.toOwnedSlice(alloc);
     return Program{
-        .insts = try list.toOwnedSlice(alloc),
+        .insts = insts,
         .capture_count = capture_count,
         .flags = flags,
+        .leading = try computeLeading(alloc, insts),
     };
+}
+
+/// PERF: compute the prefilter's leading first-byte set (O-036, ADR-0147 S2).
+/// Walks the epsilon-closure from pc 0 and returns the EXACT set of bytes that
+/// can be the first *consumed* byte of any match. Returns `null` (prefilter
+/// disabled) when:
+///   - a match can complete without consuming (`.match` reachable via epsilon →
+///     an empty match can start anywhere, so no position is skippable),
+///   - the first byte is undeterminable (a leading `look` sub-program), or
+///   - the set is empty or near-full (`.`/`[^x]` → ~255 bytes → no useful skip).
+/// Anchors / `save` are zero-width (walk past them); the residual anchor
+/// constraint (`^`, `\b`) is still enforced by the VM, so an exact first-byte
+/// set never skips a position where a match could actually start. `visited`
+/// breaks `jmp`/`split` cycles (`a*`, `(a|b)*`). Allocation-bounded by
+/// `insts.len` (heap, not a 100k-entry stack array). [refs: O-036]
+fn computeLeading(alloc: std.mem.Allocator, insts: []const Inst) std.mem.Allocator.Error!?CharClass {
+    const visited = try alloc.alloc(bool, insts.len);
+    defer alloc.free(visited);
+    @memset(visited, false);
+    var stack: std.ArrayList(u32) = .empty;
+    defer stack.deinit(alloc);
+    try stack.append(alloc, 0);
+    var set = CharClass{};
+    while (stack.pop()) |pc| {
+        if (visited[pc]) continue;
+        visited[pc] = true;
+        switch (insts[pc]) {
+            .char => |c| set.set(c),
+            .range => |r| {
+                var b: u16 = r.lo;
+                while (b <= r.hi) : (b += 1) set.set(@intCast(b));
+            },
+            .class => |cls| {
+                for (&set.bits, cls.bits) |*dst, src| dst.* |= src;
+            },
+            // Zero-width epsilon ops: walk past to the next consuming inst.
+            .anchor, .save => try stack.append(alloc, pc + 1),
+            .jmp => |t| try stack.append(alloc, t),
+            .split => |s| {
+                try stack.append(alloc, s.a);
+                try stack.append(alloc, s.b);
+            },
+            // `.match` via epsilon ⇒ empty match can start anywhere; `.look` ⇒
+            // the first byte is constrained by a sub-program we don't unfold.
+            // Either way, disable the prefilter (correctness over tightness).
+            .match, .look => return null,
+        }
+    }
+    var count: u16 = 0;
+    for (set.bits) |byte| count += @popCount(byte);
+    // Empty (unreachable in practice) or near-full sets give no useful skip.
+    if (count == 0 or count >= 250) return null;
+    return set;
 }
 
 fn emitNode(list: *std.ArrayList(Inst), alloc: std.mem.Allocator, node: *const Node, budget: *usize) CompileError!void {
@@ -1884,4 +1945,79 @@ test "compile \\- emits literal dash; \\y (letter) is still an error" {
     var prog = try compile(testing.allocator, "a\\-b", .{});
     defer prog.deinit(testing.allocator);
     try testing.expectError(CompileError.InvalidEscape, compile(testing.allocator, "\\y", .{}));
+}
+
+// --- O-036 / ADR-0147 S2: leading first-byte prefilter set ---
+
+test "leading set: \\d+ is the digit set, excludes non-digits" {
+    var prog = try compile(testing.allocator, "\\d+", .{});
+    defer prog.deinit(testing.allocator);
+    const lead = prog.leading.?;
+    try testing.expect(lead.contains('0'));
+    try testing.expect(lead.contains('9'));
+    try testing.expect(!lead.contains('a'));
+    try testing.expect(!lead.contains(' '));
+}
+
+test "leading set: literal abc is just {a}" {
+    var prog = try compile(testing.allocator, "abc", .{});
+    defer prog.deinit(testing.allocator);
+    const lead = prog.leading.?;
+    try testing.expect(lead.contains('a'));
+    try testing.expect(!lead.contains('b'));
+    try testing.expect(!lead.contains('c'));
+}
+
+test "leading set: alternation a|bc unions first bytes {a,b}" {
+    var prog = try compile(testing.allocator, "a|bc", .{});
+    defer prog.deinit(testing.allocator);
+    const lead = prog.leading.?;
+    try testing.expect(lead.contains('a'));
+    try testing.expect(lead.contains('b'));
+    try testing.expect(!lead.contains('c'));
+}
+
+test "leading set: nullable a* disables the prefilter (null)" {
+    var prog = try compile(testing.allocator, "a*", .{});
+    defer prog.deinit(testing.allocator);
+    try testing.expectEqual(@as(?CharClass, null), prog.leading);
+}
+
+test "leading set: a*b is non-nullable, set {a,b}" {
+    var prog = try compile(testing.allocator, "a*b", .{});
+    defer prog.deinit(testing.allocator);
+    const lead = prog.leading.?;
+    try testing.expect(lead.contains('a'));
+    try testing.expect(lead.contains('b'));
+    try testing.expect(!lead.contains('c'));
+}
+
+test "leading set: anchor ^abc is zero-width, set {a}" {
+    var prog = try compile(testing.allocator, "^abc", .{});
+    defer prog.deinit(testing.allocator);
+    const lead = prog.leading.?;
+    try testing.expect(lead.contains('a'));
+    try testing.expect(!lead.contains('x'));
+}
+
+test "leading set: \\bword is zero-width \\b then {w}" {
+    var prog = try compile(testing.allocator, "\\bword", .{});
+    defer prog.deinit(testing.allocator);
+    const lead = prog.leading.?;
+    try testing.expect(lead.contains('w'));
+    try testing.expect(!lead.contains('o'));
+}
+
+test "leading set: near-full . disables the prefilter (null)" {
+    var prog = try compile(testing.allocator, ".", .{});
+    defer prog.deinit(testing.allocator);
+    try testing.expectEqual(@as(?CharClass, null), prog.leading);
+}
+
+test "leading set: capture group (ab)+ sees through save to {a}" {
+    var prog = try compile(testing.allocator, "(ab)+", .{});
+    defer prog.deinit(testing.allocator);
+    const lead = prog.leading.?;
+    try testing.expect(lead.contains('a'));
+    try testing.expect(!lead.contains('b'));
 }

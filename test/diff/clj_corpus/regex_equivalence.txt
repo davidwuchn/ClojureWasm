@@ -101,3 +101,11 @@
 ;;=> ("aaa" "")
 (map count (re-seq #"\d+" "a12b345c6789d0e"))
 ;;=> (2 3 4 1)
+;; O-036 leading-byte prefilter: sparse inputs (long non-matching runs the
+;; scan skips) — range / single-byte / alternation leading sets, all neutral.
+(re-seq #"\d+" "aaaaaaaaaabbbbbbbbbb42cccccccccc")
+;;=> ("42")
+(re-find #"\d+" "xxxxxxxxxxxxxxxxxxxx7")
+;;=> "7"
+(re-seq #"cat|dog" "zzzzzzzzzzcatzzzzzzzzzzdog")
+;;=> ("cat" "dog")

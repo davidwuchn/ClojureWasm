@@ -10,27 +10,23 @@
   `build.zig.zon` `.zwasm` is SHA-PINNED (`#412966f7…`, `lazy`). Per-commit = smoke;
   full gate batches at ceiling / boundary / pre-tag.
 
-- **First commit on resume MUST be**: **regex_count** — the last open Python-loser.
-  GOAL (user 2026-06-15): beat Python on EVERY bench via Zig-backed
-  equivalent-semantics impls (memory `perf-beat-python-every-bench`). Current losers:
-  **regex_count 1.74× + bigint_factorial 1.26×** (sieve + nested_update CLOSED this
-  session). The ADR-0145 cross-lang equivalence audit is DONE (GO): 48-golden
-  `test/diff/clj_corpus/regex_equivalence.txt` committed = the F-011 lock.
-  **The APPROACH = ADR-0147** (user: do it properly — "腰を据えて…工夫をしっかり
-  入れ込む", not just barely-beat-Python). Stay Pike-NFA (ReDoS-immune, ADR-0031);
-  incorporate the fast-regex techniques in STAGES, each equivalence-locked (corpus
-  48/48 + diff oracle) + measured: **S1** seen-gen counter (`match.zig` `tryMatchAt`,
-  45→41.5ms) + `rt/re-find-all` Zig prim backing `re-seq` (kills the ~10ms `.clj`
-  layer); **S2** the literal/first-byte/class PREFILTER in `findFrom` (the
-  beat-Python lever for `\d+`; borrow the SIMD byte-scan from `~/Documents/OSS/
-  ezi-gex/src/engine/memmem.zig` + `backends/literal.zig`); **S3** the lazy DFA
-  (ADR-0031's reserved `dfa.zig`; the "incorporate properly" goal — ezi-gex's
-  `auto`/`dfa` is the blueprint; captures stay two-pass via the Pike VM). NO-GO:
-  backtracking + machine-code JIT. **Read the refs DIRECTLY (no survey/DA fork) +
-  measure-first** (ADR-0146 lesson + user pref; memory `direct-explore-fork-mechanical`).
-  Refs: ADR-0147 + the audit note `private/notes/9.2.S-regex-equivalence-audit.md`,
-  `ezi-gex` (cloned blueprint — 0.17-dev, won't compile on 0.16), burntsushi
-  regex-internals, RE2. Parity gaps = **D-447**.
+- **First commit on resume MUST be**: **ADR-0147 S3 — the lazy DFA** (regex engine,
+  "incorporate properly" goal). GOAL (user 2026-06-15): beat Python on EVERY bench via
+  Zig-backed equivalent-semantics impls (memory `perf-beat-python-every-bench`).
+  regex_count is CLOSED (S1 O-034/O-035 + S2 O-036); bigint_factorial DEFERRED (below).
+  **The APPROACH = ADR-0147** (user: do it properly — "腰を据えて…工夫をしっかり入れ込む").
+  Stay Pike-NFA (ReDoS-immune, ADR-0031); STAGES, each equivalence-locked (corpus 51/51
+  + diff oracle) + measured. DONE: **S1** seen-gen + `re-find-all` one-pass; **S2** the
+  leading first-byte PREFILTER (`compile.zig` computeLeading + `match.zig` scanFrom skip,
+  O-036 — bench within noise but ReleaseSafe A/B **~27× on sparse `\d+`**; exact-or-disabled,
+  equivalence-neutral). NEXT: **S3** the lazy DFA (ADR-0031's reserved `dfa.zig`; ezi-gex's
+  `backends/{dfa,edfa,auto}.zig` is the blueprint — byte-equivalence classes + lazy cache in
+  Scratch + anchored-restart; captures stay two-pass via the Pike VM). **Stamping ADR-0147
+  Proposed→Accepted pairs with S3 (the lazy-DFA structural choice) → DA fork mandatory then.**
+  NO-GO: backtracking + machine-code JIT. **Read the refs DIRECTLY (no survey/DA fork for
+  design) + measure-first** (ADR-0146 + memory `direct-explore-fork-mechanical`).
+  Refs: ADR-0147 + `ezi-gex` (cloned blueprint — 0.17-dev, won't compile on 0.16),
+  burntsushi regex-internals, RE2. Parity gaps = **D-447**.
   - **bigint** DEFERRED (profiled: no cheap touchpoint — inherent std.math.big mul +
     per-step alloc, not dispatch; only lever = a BigInt-reduce-accumulator, involved;
     `private/notes/9.2.S-bigint-factorial-lookahead.md`).
