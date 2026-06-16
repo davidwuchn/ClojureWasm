@@ -75,8 +75,13 @@ assert_eq 'money_npad'  "$(run '(prn (pp/cl-format nil "~,4$" 3.14159))')"      
 assert_eq 'money_width' "$(run '(prn (pp/cl-format nil "~,,8$" 3.14))')"         '"    3.14"'
 assert_eq 'money_sign'  "$(run '(prn (pp/cl-format nil "~@$" 3.14))')"           '"+3.14"'
 assert_eq 'money_neg'   "$(run '(prn (pp/cl-format nil "~$" -3.14159))')"        '"-3.14"'
+assert_eq 'money_dn'    "$(run '(prn (pp/cl-format nil "~3,5$" 22.375))')"       '"00022.375"'
+assert_eq 'money_dnw'   "$(run '(prn (pp/cl-format nil "~3,5,10$" 22.375))')"    '" 00022.375"'
+assert_eq 'money_at_w'  "$(run '(prn (pp/cl-format nil "~3,5,14@$" 22.375))')"   '"    +00022.375"'
+assert_eq 'money_atcol' "$(run '(prn (pp/cl-format nil "~3,5,14@:$" 22.375))')"  '"+    00022.375"'
+assert_eq 'money_round' "$(run '(prn (pp/cl-format nil "~1$" 0.99))')"           '"1.0"'
 
 # still-unimplemented directive raises explicitly (not silent mishandle)
 assert_eq 'unsupported-raises' "$(run '(prn (try (pp/cl-format nil "~<x~>" 2) (catch Throwable e :raised)))')" ':raised'
 
-echo "OK — phase14_cl_format (49 cases) green"
+echo "OK — phase14_cl_format (54 cases) green"
