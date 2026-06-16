@@ -22,13 +22,23 @@
   D-244 #4b fix unblocked + I built ADR-0028 alloc-driven auto-collect (env, default
   OFF) and measured it — ZERO change on gc_alloc_rate / gc_large_heap (corroborates
   O-040: gc_alloc_rate is construction-bound, 0.5% malloc leaf). Auto-collect
-  experiment REVERTED. So the gaps are **construction / dispatch-bound → the lever
-  is D-386** (op fusion → superinstructions; "fair game", only JIT-D-133 is fenced).
-  Next: pick the highest-ROI dispatch hot path (the 1.2–1.3× cluster shares the VM
-  op-dispatch overhead), design a fusion/superinstruction lever, ADR + DA fork,
-  measure. (A generational GC would NOT move these benches — they are not
-  GC-time-bound.) Regenerate stale `cross-lang-latest.yaml`. DEFERRED: D-446 arity
-  residual (Micro-coverage-grind smell); D-456 defprotocol return (1-line trivial).
+  experiment REVERTED — plus TWO more cheap levers REFUTED (do NOT re-try):
+  chunk-buffer `undefined` slots (~3% at noise floor + drops a safety margin) and
+  the free-pool `pop()` empty fast-path (flat). **`-Dprofile` LANDED** (keep
+  symbols on an optimised build for `sample`); the trustworthy profile shows the
+  1.1–1.3× gaps are DIFFUSELY bound (per-alloc bookkeeping + VM dispatch +
+  jsonToCw recursion, no single dominant cost). **So the ONLY remaining
+  accessible lever is the structural D-386 (a)**: inline `stepOnce`'s per-op
+  `var sp = sp_ptr.*` / `sp_ptr.* = sp` marshalling into eval-loop locals — its
+  row flags it "a risky UAF-class cycle not to be rushed"; do it with FRESH FOCUS
+  + the (now #4b-clean) `CLJW_GC_TORTURE_ALLOC` suite as the safety net (the
+  flattened locals must stay GC-published at every alloc). JIT (c)=D-133 is
+  user-fenced; a generational GC would NOT move these (not GC-time-bound).
+  **Alternative high-value front while perf is structurally blocked**: §9.0 gap
+  area II (Wasm-edge-native, the stated differentiator) — pivoting is reasonable
+  (clj_diff_sweep Discipline 2: don't let perf-grind displace the differentiator);
+  the user owns the `.dev/.perf_campaign_active` flag. Regenerate stale
+  `cross-lang-latest.yaml`. DEFERRED: D-446 arity residual; D-456 defprotocol (1-line).
 
 - **Forbidden this session**: JIT integration (D-133 — user-fenced 2026-06-16;
   the ARM64 codegen substrate is DONE + execution-verified, but the coupled
