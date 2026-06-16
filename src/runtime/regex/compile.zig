@@ -1481,6 +1481,61 @@ fn emitAlt(list: *std.ArrayList(Inst), alloc: std.mem.Allocator, children: []con
     }
 }
 
+/// Whether `node` can match the empty string (consume zero bytes). Drives the
+/// D-448 final-empty-iteration fix: a nullable quantifier body needs one trailing
+/// empty iteration whose capture `save`s run (Java semantics).
+fn nullable(node: *const Node) bool {
+    return switch (node.*) {
+        .lit, .class => false,
+        .anchor, .look => true, // zero-width
+        .star, .quest => true,
+        .plus => |q| nullable(q.child),
+        .repeat => |r| r.min == 0 or nullable(r.child),
+        .group => |g| nullable(g.child),
+        .non_capture => |c| nullable(c),
+        .concat => |children| {
+            for (children) |*ch| if (!nullable(ch)) return false;
+            return true;
+        },
+        .alt => |children| {
+            for (children) |*ch| if (nullable(ch)) return true;
+            return false;
+        },
+    };
+}
+
+/// Whether `node`'s subtree contains a capturing group. The D-448 copy is emitted
+/// only when the body is nullable AND captures — without a capture group the extra
+/// empty iteration is unobservable (identical match span), so skipping it keeps the
+/// program small.
+fn containsCapture(node: *const Node) bool {
+    return switch (node.*) {
+        .lit, .class, .anchor => false,
+        .group => true,
+        .star, .plus, .quest => |q| containsCapture(q.child),
+        .repeat => |r| containsCapture(r.child),
+        .non_capture => |c| containsCapture(c),
+        .look => |lk| containsCapture(lk.child),
+        .concat, .alt => |children| {
+            for (children) |*ch| if (containsCapture(ch)) return true;
+            return false;
+        },
+    };
+}
+
+/// D-448: `(e)*` / `(e)+` with a nullable, capturing body takes Java's FINAL
+/// empty-iteration capture — `(re-find #"(a*)*" "aaa")` → group 1 = "" (not
+/// "aaa"). Append one optional body copy (`(e)* → (e)*(e)?`) so the trailing empty
+/// match re-runs the body's `save`s. The copy is a fresh PC range, so the
+/// per-position `seen` dedup is untouched and the O(n·m) bound holds; the language
+/// is unchanged (`{eⁿ} = {eⁿ·e⁰ᐟ¹}`). cljw otherwise matches RE2/Go here, which
+/// diverge from Java's backtracking on exactly this case.
+fn emitNullableTail(list: *std.ArrayList(Inst), alloc: std.mem.Allocator, child: *const Node, greedy: bool, budget: *usize) CompileError!void {
+    if (nullable(child) and containsCapture(child)) {
+        try emitQuest(list, alloc, child, greedy, budget);
+    }
+}
+
 /// `e*` (greedy) →
 /// ```text
 ///   L0: split{body, after}
@@ -1504,6 +1559,7 @@ fn emitStar(list: *std.ArrayList(Inst), alloc: std.mem.Allocator, child: *const 
         .{ .split = .{ .a = body_start, .b = after } }
     else
         .{ .split = .{ .a = after, .b = body_start } };
+    try emitNullableTail(list, alloc, child, greedy, budget);
 }
 
 /// `e+` (greedy) →
@@ -1523,6 +1579,7 @@ fn emitPlus(list: *std.ArrayList(Inst), alloc: std.mem.Allocator, child: *const 
         .{ .split = .{ .a = L0, .b = after } }
     else
         .{ .split = .{ .a = after, .b = L0 } };
+    try emitNullableTail(list, alloc, child, greedy, budget);
 }
 
 /// `e?` (greedy) →

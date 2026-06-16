@@ -1,0 +1,50 @@
+(re-find #"(a*)*" "aaa")
+;;=> ["aaa" ""]
+(re-find #"(a*)+" "aaa")
+;;=> ["aaa" ""]
+(re-find #"(a+)*" "aaa")
+;;=> ["aaa" "aaa"]
+(re-find #"(a)*" "aaa")
+;;=> ["aaa" "a"]
+(re-find #"(ab)*" "abab")
+;;=> ["abab" "ab"]
+(re-find #"(a|b)*" "ab")
+;;=> ["ab" "b"]
+(re-find #"(a*)*" "")
+;;=> ["" ""]
+(re-find #"(a*)*" "b")
+;;=> ["" ""]
+(re-find #"(a*)+" "")
+;;=> ["" ""]
+(re-find #"(a*b*)*" "aabb")
+;;=> ["aabb" ""]
+(re-find #"(a*)*c" "aaac")
+;;=> ["aaac" ""]
+(re-find #"((a*)*)*" "aaa")
+;;=> ["aaa" "" ""]
+(re-find #"(\d*)*" "123")
+;;=> ["123" ""]
+(re-find #"(a?)*" "aaa")
+;;=> ["aaa" ""]
+(re-find #"(a?)+" "aaa")
+;;=> ["aaa" ""]
+(re-find #"(a*)*?" "aaa")
+;;=> ["" nil]
+(re-find #"(a*)+?" "aaa")
+;;=> ["aaa" "aaa"]
+(re-find #"(.*)* " "x ")
+;;=> ["x " ""]
+(re-matches #"(a*)*" "aaa")
+;;=> ["aaa" ""]
+(re-seq #"(a*)*" "aaa")
+;;=> (["aaa" ""] ["" ""])
+(re-find #"(a*)" "aaa")
+;;=> ["aaa" "aaa"]
+(re-find #"(a*)?" "aaa")
+;;=> ["aaa" "aaa"]
+(re-find #"x(a*)*y" "xaaay")
+;;=> ["xaaay" ""]
+(re-find #"([a-z]*)*" "abc")
+;;=> ["abc" ""]
+(re-find #"(a{0,2})*" "aaaa")
+;;=> ["aaaa" ""]

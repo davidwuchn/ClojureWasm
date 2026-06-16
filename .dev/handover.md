@@ -10,16 +10,16 @@
   `build.zig.zon` `.zwasm` is SHA-PINNED (`#412966f7…`, `lazy`). Per-commit = smoke;
   full gate batches at ceiling / boundary / pre-tag.
 
-- **First commit on resume MUST be**: **D-448 — regex capture-in-outer-quantifier
-  SILENTLY-WRONG** (the gaps/bugs sweep's first correctness item). D-386 sub-lever (b)
-  was RE-CONFIRMED DEAD (debt.yaml D-386 reconciliation 2026-06-16): the per-op polls are
-  near-free in production (one relaxed atomic load + two predicted-not-taken gates), and
-  the every-256 experiment was already run + reverted 2026-06-15. (a) is risky UAF-class
-  "not to be rushed", (c) JIT is user-fenced → the dispatch axis is exhausted, campaign
-  goal already MET, so the loop pivots straight to the sweep.
+- **First commit on resume MUST be**: continue the gaps/bugs SWEEP at **D-435 —
+  dual-backend diff-oracle coverage hole** (bootstrap-core Fixture so full-runtime forms
+  are parity-checked). If Step 0 shows D-435 is epic-sized (it is tagged part of the D-436
+  大整理 epic — a real diff-Fixture harness change), take **D-374** (top-level `(do (import…)
+  …)` unroll, narrow eval-semantics) as the smaller next correctness unit instead.
+  **D-448 DONE** (nullable-capturing-quantifier final-empty-iteration capture; `(a*)*`→`""`;
+  compile.zig `nullable`+`emitQuest` tail; 25-pattern sweep + corpus green). D-386 dispatch
+  axis exhausted (b dead / a risky-UAF / c JIT-fenced) — see debt.yaml D-386.
 - **The gaps/bugs SWEEP** (user-directed 2026-06-16: actually drain these, don't defer).
-  Prioritized order (easiest/highest-value first): **D-448** regex
-  capture-in-outer-quantifier SILENTLY-WRONG (correctness) → **D-435**
+  Prioritized order (easiest/highest-value first): ~~D-448 DONE~~ → **D-435**
   dual-backend diff-oracle coverage hole (bootstrap-core Fixture so full-runtime forms are
   parity-checked) → **D-374** top-level `(do (import…) …)` unroll (eval-semantics) → **D-266**
   `(repeat n x)` non-chunked realization (perf pathology) → **D-446** arity-divergence audit
@@ -31,8 +31,9 @@
   oracle integration build is a SEPARATE large unit GATED behind an explicit user greenlight.
   Full integration plan kept ready in `private/notes/9.2.S-d133-jit-survey.md § INTEGRATION`.
   (D-386 dispatch perf is NOT the JIT — it is fair game. Only the JIT integration is fenced.)
-  - regex arc DONE (ADR-0147); **D-448** nested-empty-quant capture deferred; **D-449**
-    lazy-DFA reserved. **D-451** = Ratio canonical-invariant guard (ADR-0149).
+  - regex arc DONE (ADR-0147); **D-448** nested-empty-quant capture DONE (2026-06-16);
+    **D-449** lazy-DFA reserved; **D-454** = regex O(n²) leftmost find-scan (new, perf).
+    **D-451** = Ratio canonical-invariant guard (ADR-0149).
   - **D-244 #4b** (eval-reentrant lazy-realization/reduce rooting under alloc-torture —
     `(into {} (map f (range N)))` → wrong count) is an OPEN follow-on (the gc_self_guard
     set/clear sites); NOT a production bug (auto-collect OFF). Independent of op_top hoist.

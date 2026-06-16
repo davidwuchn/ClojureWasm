@@ -100,7 +100,7 @@ active:
       (regex_count already CLOSED by S1+S2). Engine committed at cd536ec2 + d0ff3b84.
     last_reviewed: "2026-06-16"
   - id: "D-448"
-    status: "open (2026-06-16, regex correctness sweep during ADR-0147 S3 design). SILENTLY WRONG (distinct from D-447's NotImplemented gaps): a capture group inside an outer quantifier, where the INNER can match empty, does not take Java's final empty-iteration capture value."
+    status: "DISCHARGED 2026-06-16 (gaps/bugs sweep; Devil's-advocate forked). A nullable, CAPTURING quantifier body now takes Java's final empty-iteration capture: `(re-find #\"(a*)*\" \"aaa\")` → `[\"aaa\" \"\"]` (was `[\"aaa\" \"aaa\"]`), same for `(a*)+`. Fix (compile.zig): `nullable(node)` + `containsCapture(node)` AST predicates; `emitStar`/`emitPlus` append ONE `emitQuest(child)` when both hold — i.e. `(e)* → (e)*(e)?` — so the trailing empty match re-runs the body's `save`s. The copy is a FRESH PC range, so the per-position `seen` dedup is untouched and the O(n·m) bound holds (`(a*)*` matching 50k a's = 0.01s; the pre-existing O(n²) leftmost find-scan on non-matching input is orthogonal, now tracked D-454). Language unchanged (`{eⁿ}={eⁿ·e⁰ᐟ¹}`). The DA fork REFUTED my initial AD-reclassification lean: a bounded linear-time fix exists, so this is fixed not accepted. Validation: match.zig unit tests (2 fix + 2 regression guards) + 25-pattern clj-diff sweep 0 diffs (nested `((a*)*)*`, reluctant `(a*)*?`, `re-matches`/`re-seq`, bounded `(a{0,2})*`, context `x(a*)*y`) → corpus test/diff/clj_corpus/regex_nullable_quant.txt (25 golden pairs) + corpus_regression green + smoke green. cljw had matched RE2/Go here (Thompson-family); now matches Java. ORIGINAL: SILENTLY WRONG (distinct from D-447's NotImplemented gaps): a capture group inside an outer quantifier, where the INNER can match empty, does not take Java's final empty-iteration capture value."
     category: "clj-parity"
     barrier: |-
       `(re-find #"(a*)*" "aaa")` → cljw `["aaa" "aaa"]` vs clj `["aaa" ""]`;
@@ -115,6 +115,19 @@ active:
       bounded clj-parity gap, NOT campaign-blocking. Does NOT affect ADR-0147 S3
       (the lazy DFA is span-only; captures stay the Pike VM). Found via the
       pre-S3 correctness sweep that also caught the leftmost-first bug (4b734803).
+    last_reviewed: "2026-06-16"
+  - id: "D-454"
+    status: "open (2026-06-16, observed while perf-probing the D-448 fix). The leftmost `re-find` scan (match.zig findFrom/scanFrom) retries `tryMatchAt` at EVERY start position; on a long input where no match exists (or the prefilter can't skip because the input is all in the leading-byte set), this is O(n²·m). Measured: `(re-find #\"(a*)*c\" \"aaaa…\")` on 50k a's (no `c`) = 63s; `(re-find #\"(a+)*c\" …)` (NO D-448 transform) = 36s on the same input — so this is the find-scan, INDEPENDENT of D-448 (a matching `(a*)*` on 50k a's is 0.01s = per-attempt O(n·m) is fine). Pre-existing; quadratic not exponential (Thompson, not a backtracker), and ADR-0031 notes regex is not the hot path."
+    category: "perf"
+    barrier: |-
+      Not blocked. The leftmost-scan retries each start; the ADR-0147 lazy DFA is
+      span-only and (for capture patterns) does not short-circuit the per-start
+      Pike-VM retries on a non-matching all-prefilter-byte input. Finished form:
+      a single forward DFA/NFA scan that finds the leftmost match start in one O(n)
+      pass (then the Pike VM runs ONCE over the matched span for captures), or a
+      reverse-scan start-finder — so `re-find` is O(n·m), not O(n²·m). Lower
+      priority than correctness sweep items (pathological non-matching inputs only;
+      real corpora don't hit it). Cross-ref ADR-0147 (lazy DFA), ADR-0031, D-448.
     last_reviewed: "2026-06-16"
   - id: "D-023"
     status: "Opportunistic — when an e2e expansion forces the split"

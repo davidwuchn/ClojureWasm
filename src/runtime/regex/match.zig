@@ -474,6 +474,56 @@ test "dot matches any single character" {
     try testing.expectEqual(@as(u32, 1), r2.end);
 }
 
+// D-448: a capture group inside an outer quantifier where the INNER can match
+// empty takes Java's FINAL empty-iteration capture value. `(a*)*` on "aaa": the
+// outer `*` runs one final empty inner iteration (inner `a*` matches "" at pos 3),
+// so group 1 = [3,3] = "" — NOT the last non-empty [0,3] = "aaa". `(a+)* / (a)*`
+// (non-nullable inner) already capture the last non-empty run, unchanged.
+fn group1(r: MatchResult) struct { s: i32, e: i32 } {
+    return .{ .s = r.captures.slots[2], .e = r.captures.slots[3] };
+}
+
+test "D-448 nullable-inner outer star: final empty iteration owns the capture" {
+    var prog = try compile.compile(testing.allocator, "(a*)*", .{});
+    defer prog.deinit(testing.allocator);
+    const r = (try find(testing.allocator, &prog, "aaa")).?;
+    try testing.expectEqual(@as(u32, 3), r.end);
+    const g = group1(r);
+    try testing.expectEqual(@as(i32, 3), g.s); // group 1 start = 3 (empty final iter)
+    try testing.expectEqual(@as(i32, 3), g.e); // group 1 end   = 3 → ""
+}
+
+test "D-448 nullable-inner outer plus: final empty iteration owns the capture" {
+    var prog = try compile.compile(testing.allocator, "(a*)+", .{});
+    defer prog.deinit(testing.allocator);
+    const r = (try find(testing.allocator, &prog, "aaa")).?;
+    try testing.expectEqual(@as(u32, 3), r.end);
+    const g = group1(r);
+    try testing.expectEqual(@as(i32, 3), g.s);
+    try testing.expectEqual(@as(i32, 3), g.e);
+}
+
+test "D-448 regression: non-nullable inner keeps the last non-empty capture" {
+    // `(a+)*` on "aaa" → group 1 = [0,3] = "aaa" (inner `a+` cannot match empty,
+    // so no final empty iteration); matches clj. Must NOT regress.
+    var prog = try compile.compile(testing.allocator, "(a+)*", .{});
+    defer prog.deinit(testing.allocator);
+    const r = (try find(testing.allocator, &prog, "aaa")).?;
+    const g = group1(r);
+    try testing.expectEqual(@as(i32, 0), g.s);
+    try testing.expectEqual(@as(i32, 3), g.e);
+}
+
+test "D-448 regression: single-char group star keeps the last iteration" {
+    // `(a)*` on "aaa" → group 1 = [2,3] = "a" (last iteration); matches clj.
+    var prog = try compile.compile(testing.allocator, "(a)*", .{});
+    defer prog.deinit(testing.allocator);
+    const r = (try find(testing.allocator, &prog, "aaa")).?;
+    const g = group1(r);
+    try testing.expectEqual(@as(i32, 2), g.s);
+    try testing.expectEqual(@as(i32, 3), g.e);
+}
+
 test "a.c matches abc / aZc but not ac" {
     var prog = try compile.compile(testing.allocator, "a.c", .{});
     defer prog.deinit(testing.allocator);
