@@ -550,3 +550,21 @@ accepted:
       locks. See ADR-0152 (the conscious election + the DA's seq_cst analysis).
     derives_from: "ADR-0152 (uniform acquire/release volatile-grade ordering) — JMM volatile = seq_cst across volatile accesses; cljw's acquire/release omits the IRIW cross-cell total order. Substrate: atom.zig/volatile.zig/iref.zig/agent.zig + the D-444 deftype field path."
     pin: "test/e2e/phase14_deftype_mutable.sh — the :volatile-mutable field increments correctly (the by-construction half: the field IS atomic acquire/release; the IRIW gap itself is non-deterministic + untestable)"
+  - id: "AD-035"
+    summary: "A defrecord prints with its SIMPLE name (`#R{:x 1, :y 2}`), not clj's namespace-qualified `#user.R{:x 1, :y 2}`."
+    example: '(pr-str (->R 1 2)) => cljw "#R{:x 1, :y 2}" / clj "#user.R{:x 1, :y 2}" ; with extras: cljw "#R{:x 1, :y 2, :z 9}" / clj "#user.R{:x 1, :y 2, :z 9}"'
+    why: |-
+      cljw registers a defrecord/deftype by its SIMPLE name (the descriptor's
+      `fqcn` is `R`, not `user.R`) — the same no-JVM-Class simple-name surface
+      AD-003 records for `(class x)`. clj prints a record reader-tag qualified by
+      its defining namespace because the JVM record class IS `user.R`; cljw has
+      no defining-ns on the descriptor (ADR-0059, no JVM Class hierarchy), so it
+      prints the simple name it actually carries. The record CONTENT (declared
+      fields + extmap entries, in declared-then-extmap order) is byte-identical
+      to clj modulo this prefix — verified across assoc/dissoc/get/keys/vals/
+      count/seq/merge/select-keys/find/update/assoc-in/reduce-kv (D-086). Adding
+      the ns prefix would require threading a defining-ns through every record
+      descriptor purely for the print fiction, contradicting the AD-003 simple-
+      name policy for no behavioural gain.
+    derives_from: "ADR-0059 (no-JVM Class hierarchy) + AD-003 (simple class name, not FQCN); no_jvm_specific_assumption.md. Records carry only a simple `fqcn`, so the printer emits `#<simple>{…}`."
+    pin: "test/e2e/phase9_record_extmap.sh — record_extmap_print locks cljw's `#R{:x 1, :y 2, :z 9}` (simple name, no `user.` prefix)"
