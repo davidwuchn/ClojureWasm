@@ -68,7 +68,15 @@ assert_eq 'star_abs'    "$(run '(prn (pp/cl-format nil "~a ~2@*~a" 1 2 3))')"   
 assert_eq 'tab_col'     "$(run '(prn (pp/cl-format nil "ab~10Tcd"))')"           '"ab        cd"'
 assert_eq 'tab_inc'     "$(run '(prn (pp/cl-format nil "~a~,8T~a" "abc" "z"))')" '"abc      z"'
 
+# ~$ monetary (D-455 chunk3; clj-oracle: ~d,n,w,padchar$ — d=2/n=1/w=0 defaults)
+assert_eq 'money_basic' "$(run '(prn (pp/cl-format nil "~$" 3.14159))')"         '"3.14"'
+assert_eq 'money_int'   "$(run '(prn (pp/cl-format nil "~$" 5))')"               '"5.00"'
+assert_eq 'money_npad'  "$(run '(prn (pp/cl-format nil "~,4$" 3.14159))')"       '"0003.14"'
+assert_eq 'money_width' "$(run '(prn (pp/cl-format nil "~,,8$" 3.14))')"         '"    3.14"'
+assert_eq 'money_sign'  "$(run '(prn (pp/cl-format nil "~@$" 3.14))')"           '"+3.14"'
+assert_eq 'money_neg'   "$(run '(prn (pp/cl-format nil "~$" -3.14159))')"        '"-3.14"'
+
 # still-unimplemented directive raises explicitly (not silent mishandle)
 assert_eq 'unsupported-raises' "$(run '(prn (try (pp/cl-format nil "~<x~>" 2) (catch Throwable e :raised)))')" ':raised'
 
-echo "OK — phase14_cl_format (43 cases) green"
+echo "OK — phase14_cl_format (49 cases) green"

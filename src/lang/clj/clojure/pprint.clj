@@ -183,6 +183,20 @@
                (if (<= colinc 0) 0 (- colinc (mod (- col colnum) colinc))))]
     (apply str (repeat (max 0 need) \space))))
 
+;; ~$ monetary: ~d,n,w,padchar$ — d decimals after point (default 2), n minimum
+;; integer digits (default 1, zero-padded), w minimum total width, padchar (default
+;; space). `@` forces a leading "+" on non-negatives. The sign is part of the body,
+;; so width padding goes to its left (CL default, no `:` modelled).
+(defn cl-money [x dec n w padc at?]
+  (let [neg? (neg? x)
+        mag (format (str "%." dec "f") (if neg? (- (double x)) (double x)))
+        di (clojure.string/index-of mag ".")
+        intp (if di (subs mag 0 di) mag)
+        frac (if di (subs mag di) "")
+        intp (if (< (count intp) n) (str (apply str (repeat (- n (count intp)) \0)) intp) intp)
+        sign (cond neg? "-" at? "+" :else "")]
+    (cl-pad (str sign intp frac) w padc)))
+
 ;; Run `fmt` over the operand vector `argv` from index `pos0`, returning
 ;; [acc next-pos]. The index navigator lets ~* jump and ~:P / ~:* back up. `~^`
 ;; (escape) returns early, which `~{~}` iteration uses to stop before the
@@ -247,6 +261,10 @@
                 (= d \&)
                 (let [fresh (if (or (= acc "") (= (last acc) \newline)) acc (str acc \newline))]
                   (recur ni pos (apply str fresh (repeat (if p0 (dec p0) 0) \newline))))
+                ;; ~$ — monetary fixed-format (params ~d,n,w,padchar$).
+                (= d \$)
+                (recur ni (inc pos)
+                       (str acc (cl-money x (or p0 2) (or p1 1) (nth params 2 nil) (nth params 3 \space) at?)))
                 (= d \~) (recur ni pos (str acc \~))
                 :else (throw (ex-info (str "cl-format: directive ~" d " is not supported in ClojureWasm") {}))))
             (recur (inc i) pos (str acc c))))))))
