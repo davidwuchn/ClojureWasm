@@ -1150,11 +1150,12 @@ pub fn formToValue(rt: *Runtime, env: *Env, form: Form) AnalyzeError!Value {
         },
         .unquote, .unquote_splicing => return error_catalog.raise(.token_invalid, form.location, .{ .token = "~ / ~@ outside a syntax-quote" }),
     };
-    // D-186: honour a reader `^meta` map on a collection literal. The reader
-    // (readMeta) parks normalised meta on `Form.meta`; lift + attach it to an
-    // IObj value (vector/map/set/list). Non-IObj values (numbers, keywords,
-    // strings, …) cannot carry metadata in cljw — matching JVM — so the meta
-    // is dropped there rather than erroring.
+    // D-186: honour a reader `^meta` map on a literal. The reader (readMeta)
+    // parks normalised meta on `Form.meta`; lift + attach it to an IObj value:
+    // collections (vector/map/set/list) AND symbols (ADR-0110 — a symbol carries
+    // value-metadata, e.g. `^String x` → `{:tag String}`; `^:dyn x` → `{:dyn true}`).
+    // Non-IObj values (numbers, keywords, strings, …) cannot carry metadata in
+    // cljw — matching JVM — so the meta is dropped there rather than erroring.
     if (form.meta) |meta_form| {
         const m = try formToValue(rt, env, meta_form.*);
         return switch (base.tag()) {
@@ -1162,6 +1163,7 @@ pub fn formToValue(rt: *Runtime, env: *Env, form: Form) AnalyzeError!Value {
             .array_map, .hash_map => try map_collection.withMeta(rt, base, m),
             .hash_set => try set_collection.withMeta(rt, base, m),
             .list => try list_collection.withMeta(rt, base, m),
+            .symbol => try symbol_mod.withMeta(rt, base, m),
             else => base,
         };
     }

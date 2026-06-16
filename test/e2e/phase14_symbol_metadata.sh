@@ -35,6 +35,13 @@ assert_eq 'sym_vary_nil' "$("$BIN" -e "(meta (vary-meta 'a assoc :y 2))")" '{:y 
 # so its `.symbol` trace (ADR-0110 membrane flip) must mark it across the
 # collections the inner allocations trigger.
 assert_eq 'sym_meta_gc_survives' "$("$BIN" -e "(let [s (with-meta 'a {:x 1})] (dotimes [_ 50000] (vec (range 20))) (:x (meta s)))")" '1'
+# READER metadata on a symbol (^meta sym) — clj attaches it to the symbol value;
+# cljw previously dropped it (formToValue applied ^meta to collections only). The
+# `^Sym`/`^"s"`→{:tag Sym}, `^:kw`→{:kw true}, `^{m}` normalisations all apply.
+assert_eq 'sym_reader_tag'   "$("$BIN" -e '(:tag (meta (read-string "^String x")))')" 'String'
+assert_eq 'sym_reader_kw'    "$("$BIN" -e '(meta (read-string "^:foo x"))')"          '{:foo true}'
+assert_eq 'sym_reader_map'   "$("$BIN" -e '(:tag (meta (read-string "^{:tag Long} x")))')" 'Long'
+assert_eq 'sym_reader_quote' "$("$BIN" -e '(:tag (meta (quote ^String x)))')"          'String'
 # keyword still rejects meta (clj ClassCastException; cljw type error)
 assert_has 'kw_rejects' "$("$BIN" -e '(with-meta :a {:x 1})' 2>&1)" 'keyword'
-echo "OK — phase14_symbol_metadata smoke (15 cases) green"
+echo "OK — phase14_symbol_metadata smoke (19 cases) green"
