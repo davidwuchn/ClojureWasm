@@ -12,17 +12,19 @@
 
 - **First commit on resume MUST be**: continue the **ADR-0148 fastest-script campaign**
   (`.dev/.perf_campaign_active` SET). **4 of 9 targets CLOSED** (cljw fastest-script):
-  string_ops + bigint_factorial + ratio_sum + nested_update. **NEXT = the GC-arch
-  generational/nursery ADR** (gc_alloc_rate ~1.33× + gc_large_heap ~1.25× — the biggest
-  remaining gap, 2 targets; F-006, own DA fork). Start with a CLEAN profiling foundation
-  (instrument GC counters — ReleaseSafe is symbol-stripped so `sample` only shows
-  malloc-churn). Tractable secondary lever (measured): intrinsify `seq?` (the map-`:keys`
-  destructure guard, ~5.5 ms/100k — see § Next). THEN the original front: VM-perf **D-386**
-  dispatch → superinstructions → **D-133** ARM64 JIT (sieve/destructure are dispatch-bound).
-  Method: measure-first (ReleaseSafe only; 5 campaign hypotheses already refuted by
-  measurement — ADR-0148); experiment-and-revert (reverted commits MAY stay in log; never
-  leave `main` red; diff oracle + corpus 3181 stay green; ≥10 runs). D-453 (Alt C
-  op_load_class) deferred.
+  string_ops + bigint_factorial + ratio_sum + nested_update. **NEXT = D-386 (VM dispatch
+  → superinstructions → JIT)** — per ADR-0148 §"Measurement update" the GC pair
+  (gc_alloc_rate ~1.33× + gc_large_heap ~1.25×) + sieve + destructure ALL converge on
+  dispatch (NOT a generational GC — de-prioritised; the construction half is mined via
+  O-040). Extend the superinstruction set (O-029..O-031 added arith + local_const/locals)
+  to more hot sequences; D-133 ARM64 JIT is re-sequenced LAST (ADR-0145). A tractable
+  measured sub-lever: the map-`:keys` destructure emits `(if (seq? mm) (apply hash-map mm)
+  mm)` per iter (~5.5 ms/100k) — a `seq?`/predicate intrinsic would trim it, but it is LOW
+  ROI (full new-opcode machinery for ~2-3 ms on a 1.13× bench) so do it only as part of a
+  broader predicate-intrinsic batch. json_parse ~1.20× is vs CPython C-json (near floor).
+  Method: measure-first (ReleaseSafe only; trust ADR-0148 %-profiles over crude `sample`);
+  experiment-and-revert (reverted commits MAY stay in log; never leave `main` red; diff
+  oracle + corpus 3181 stay green; ≥10 runs). D-453 (Alt C op_load_class) deferred.
   - regex arc DONE (ADR-0147); **D-448** nested-empty-quant capture deferred; **D-449**
     lazy-DFA reserved. **D-451** = Ratio canonical-invariant guard (ADR-0149).
   - **JIT (D-133)** re-sequenced LAST (ADR-0145). **D-244 #4** capstone below.
@@ -56,28 +58,12 @@ op_load_class) deferred. SAFETY: `clj` → `clojure -J-Xmx2g`; measure ReleaseSa
 
 **Next (self-select):** post-D-452 + O-047 re-measure DONE (ReleaseSafe, this session).
 **4 of 9 CLOSED** (cljw fastest-script): string_ops (cold-start AOT), bigint_factorial
-(O-047 no-clone bignum result), ratio_sum (O-046), nested_update (O-033). Remaining gaps
-(quiet machine): **gc_alloc_rate ~1.33× + gc_large_heap ~1.25× = the GC pair (BIGGEST,
-2 targets)** · sieve ~1.23× + destructure ~1.13× (dispatch-bound → D-386) · json_parse
-~1.20× (vs CPython C-json, near floor).
-
-**NEXT BIG LEVER = GC ALLOC-OVERHEAD (gc_alloc_rate + gc_large_heap).** ⚠️ PREMISE
-CORRECTED 2026-06-16: **auto-collect is OFF** (gc_heap.zig:280, agent.zig) — cljw NEVER
-collects mid-run, so gc_alloc_rate's 200k 4-elem vectors are pure ALLOCATION throughput
-(every alloc → `infra.rawAlloc`/malloc since `free_pools` stays empty without a sweep) +
-per-alloc bookkeeping (`allocations.append` grows to ~400k, `gc_mutex` lock/unlock,
-safepoint+ceiling checks). **A *generational* GC does NOT help this** (nothing is collected
-— generational only pays off when you sweep). The real lever is per-alloc COST: a slab/
-arena/bump heap (but "GC-arch bump-allocator" is on the REFUTED list — re-investigate WHY
-with per-alloc instrumentation: is malloc actually dominant, or is it `allocations.append`/
-the mutex/the vector construction?) and/or dropping the uncontended single-thread `gc_mutex`
-+ the always-append tracking. Needs the instrumentation FIRST (ReleaseSafe is stripped →
-`sample` only shows `main+offset`+malloc; add alloc/collect counters). **Tractable secondary lever** (measured this
-session): map `:keys` destructure emits `(if (seq? mm) (apply hash-map mm) mm)` per iter —
-the seq? guard costs ~5.5 ms over 100k (d_noguard 33.4 vs d_guard 38.9). Intrinsify `seq?`
-(O-043 op_get/op_nth pattern, F-011-safe: same semantics, faster dispatch) → partial
-destructure win. Then the original front **D-386 dispatch → D-133 JIT** (sieve/destructure
-are dispatch-bound). Lever analysis: `private/notes/9.2.S-ratio-bigint-alloc-levers.md`.
+(O-047), ratio_sum (O-046), nested_update (O-033). Remaining: gc_alloc_rate ~1.33× +
+gc_large_heap ~1.25× + sieve ~1.23× + destructure ~1.13× (ALL dispatch/construction-bound
+→ D-386, per ADR-0148 §"Measurement update": the GC pair is ~0.5% malloc, NOT generational
+— de-prioritised; gc_large_heap residual = ~200k closure calls) · json_parse ~1.20× (vs
+CPython C-json, near floor — low priority). See the first-commit bullet for the D-386 path
++ the seq?-guard sub-lever. Lever analysis: `private/notes/9.2.S-ratio-bigint-alloc-levers.md`.
 
 ## Cold-start reading order (resume)
 
