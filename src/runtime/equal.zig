@@ -526,7 +526,10 @@ fn typedInstanceKeyEq(a: Value, b: Value) bool {
     while (i < fa.len) : (i += 1) {
         if (!keyEqValue(fa[i], fb[i])) return false;
     }
-    return true;
+    // D-086 / ADR-0154: extmap is part of record value identity. keyEqValue
+    // compares nil↔nil (identity), map↔map (content, order-independent), and
+    // nil↔map → false. Empty extmap normalizes to nil so this stays correct.
+    return keyEqValue(ia.extmap, ib.extmap);
 }
 
 /// HAMT key hash — also the user-facing `(hash x)` (core.hashFn delegates
@@ -620,7 +623,13 @@ fn typedInstanceHash(inst: *const td_mod.TypedInstance) u32 {
     for (fields) |fv| {
         h = h *% 31 +% valueHash(fv);
     }
-    return hash.mixCollHash(h, @intCast(fields.len));
+    h = hash.mixCollHash(h, @intCast(fields.len));
+    // D-086 / ADR-0154: fold the extmap as ONE separate term — valueHash on a
+    // map is the order-independent content hash, so `(hash (assoc r :a 1 :b 2))`
+    // == `(hash (assoc r :b 2 :a 1))`. Only when present, so a no-extras record
+    // hashes exactly as before (no churn for the common case).
+    if (!inst.extmap.isNil()) h = h *% 31 +% valueHash(inst.extmap);
+    return h;
 }
 
 /// An rt-free element cursor over an already-realized sequential
@@ -1048,5 +1057,8 @@ fn typedInstanceEqual(rt: *Runtime, env: *Env, a: Value, b: Value) anyerror!bool
     for (fa, fb) |va, vb| {
         if (!try valueEqual(rt, env, va, vb)) return false;
     }
-    return true;
+    // D-086 / ADR-0154: extmap is part of record value identity (unlike meta).
+    // valueEqual compares nil↔nil, map↔map (content), nil↔map → false; empty
+    // extmap normalizes to nil so `(= (assoc r :z 9) (-> r (assoc :z 9)))` holds.
+    return try valueEqual(rt, env, ia.extmap, ib.extmap);
 }

@@ -263,6 +263,19 @@ pub const TypeDescriptor = struct {
     pub fn isPersistentMap(self: *const TypeDescriptor) bool {
         return self.declaresProtocol("IPersistentMap") or self.declaresProtocol("clojure.lang.IPersistentMap");
     }
+
+    /// The defrecord/deftype declared/extmap partition chokepoint (ADR-0154):
+    /// the field-slot index for a declared field `name`, or null when `name`
+    /// is not a declared field (= an extmap key on a record). Single source so
+    /// `assoc`/`dissoc`/`get`/`contains?` cannot disagree on which keys are
+    /// declared (the DA's hazard 2). nil layout → null (no declared fields).
+    pub fn fieldSlotByName(self: *const TypeDescriptor, name: []const u8) ?u16 {
+        const layout = self.field_layout orelse return null;
+        for (layout) |fe| {
+            if (std.mem.eql(u8, fe.name, name)) return fe.index;
+        }
+        return null;
+    }
 };
 
 /// A `deftype` / `defrecord` runtime value. **Extern struct** so
@@ -285,6 +298,13 @@ pub const TypedInstance = extern struct {
     /// equality/hash (those walk descriptor + fields), so `(= r (with-meta r m))`
     /// → true falls out by construction. GC-traced like the field Values.
     meta: Value = Value.nil_val,
+    /// Non-declared keys assoc'd onto a defrecord (D-086 / ADR-0154 — clj's
+    /// hidden `__extmap`). `nil` when the record carries no extras (the common
+    /// case); otherwise a NON-EMPTY persistent map (the empty state normalizes
+    /// back to nil on dissoc so `(= (assoc r :z 9 (dissoc :z)) r)`). Unlike
+    /// `meta`, extmap IS part of record value identity — equality/hash include
+    /// it (the map's content `=`/order-independent hash). GC-traced.
+    extmap: Value = Value.nil_val,
 
     comptime {
         std.debug.assert(@alignOf(TypedInstance) >= 8);
@@ -519,19 +539,7 @@ pub fn registerType(
 /// into a freshly-allocated `gc.infra` array. Returns a Value tagged
 /// `.typed_instance`.
 pub fn allocInstance(rt: *Runtime, descriptor: *const TypeDescriptor, field_values: []const Value) !Value {
-    const buf = try rt.gc.infra.alloc(Value, field_values.len);
-    errdefer rt.gc.infra.free(buf);
-    std.mem.copyForwards(Value, buf, field_values);
-
-    const inst = try rt.gc.alloc(TypedInstance);
-    inst.* = .{
-        .header = HeapHeader.init(.typed_instance),
-        .field_count = @intCast(field_values.len),
-        .descriptor = descriptor,
-        .field_values_ptr = buf.ptr,
-        .meta = Value.nil_val,
-    };
-    return Value.encodeHeapPtr(.typed_instance, inst);
+    return allocInstanceFull(rt, descriptor, field_values, Value.nil_val, Value.nil_val);
 }
 
 /// Read a typed-instance's metadata (`nil` when unset). Distinct from
@@ -540,22 +548,35 @@ pub fn instMetaOf(v: Value) Value {
     return v.decodePtr(*const TypedInstance).meta;
 }
 
+/// Read a record's extmap (`nil` when no extra keys). The non-declared-key
+/// store (D-086 / ADR-0154); a non-nil value is a non-empty persistent map.
+pub fn instExtmapOf(v: Value) Value {
+    return v.decodePtr(*const TypedInstance).extmap;
+}
+
 /// `with-meta` on a record/deftype instance (D-312): mint a FRESH instance
-/// sharing the descriptor, carrying `meta`. The field array MUST be copied, not
-/// shared — it is `gc.infra`-owned and freed by `finaliseTypedInstance`, so two
-/// instances sharing one `field_values_ptr` would double-free on sweep (the key
+/// sharing the descriptor, carrying `meta` — and the source's extmap (D-086,
+/// extmap survives with-meta). The field array MUST be copied, not shared — it
+/// is `gc.infra`-owned and freed by `finaliseTypedInstance`, so two instances
+/// sharing one `field_values_ptr` would double-free on sweep (the key
 /// divergence from the symbol `withMeta`, which safely shares interner-owned
 /// slices). `(identical? r (with-meta r m))` is false (distinct pointer).
 pub fn instWithMeta(rt: *Runtime, v: Value, meta: Value) !Value {
     const base = v.decodePtr(*const TypedInstance);
-    return allocInstanceMeta(rt, base.descriptor, base.field_values_ptr[0..base.field_count], meta);
+    return allocInstanceFull(rt, base.descriptor, base.field_values_ptr[0..base.field_count], meta, base.extmap);
 }
 
-/// `allocInstance` + an explicit `meta`. Shared by `instWithMeta` and the record
-/// `assoc` re-mint path (D-313 — structural ops thread the source instance's meta
-/// so `(meta (assoc (with-meta r m) :k v))` stays `m`, clj-faithful). Copies the
-/// field values into a fresh `gc.infra` array (owned by the new instance).
+/// `allocInstance` + an explicit `meta` (extmap nil). Kept for callers that
+/// only thread meta (the historic D-313 record `assoc` site name); new
+/// extmap-bearing re-mints call `allocInstanceFull` directly.
 pub fn allocInstanceMeta(rt: *Runtime, descriptor: *const TypeDescriptor, field_values: []const Value, meta: Value) !Value {
+    return allocInstanceFull(rt, descriptor, field_values, meta, Value.nil_val);
+}
+
+/// The single TypedInstance mint: copies `field_values` into a fresh
+/// `gc.infra` array (owned by the new instance) and threads both `meta`
+/// (D-312) and `extmap` (D-086 / ADR-0154). All other ctors are thin wrappers.
+pub fn allocInstanceFull(rt: *Runtime, descriptor: *const TypeDescriptor, field_values: []const Value, meta: Value, extmap: Value) !Value {
     const buf = try rt.gc.infra.alloc(Value, field_values.len);
     errdefer rt.gc.infra.free(buf);
     std.mem.copyForwards(Value, buf, field_values);
@@ -566,6 +587,7 @@ pub fn allocInstanceMeta(rt: *Runtime, descriptor: *const TypeDescriptor, field_
         .descriptor = descriptor,
         .field_values_ptr = buf.ptr,
         .meta = meta,
+        .extmap = extmap,
     };
     return Value.encodeHeapPtr(.typed_instance, inst);
 }
@@ -581,6 +603,8 @@ pub fn traceTypedInstance(gc_ptr: *anyopaque, header: *HeapHeader) void {
     }
     // D-312: the instance metadata map is a GC child (no-op when nil).
     if (inst.meta.heapHeader()) |hdr| mark_sweep.mark(gc, hdr);
+    // D-086: the extmap (non-declared keys) is a GC child (no-op when nil).
+    if (inst.extmap.heapHeader()) |hdr| mark_sweep.mark(gc, hdr);
 }
 
 /// Finaliser for `.typed_instance` — releases the `gc.infra`-owned

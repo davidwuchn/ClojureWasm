@@ -97,6 +97,10 @@ fn recordFieldGet(rec: Value, k: Value) ?Value {
 /// back to the 2-arity impl when the type declared only that.
 pub fn recordGet(rt: *Runtime, env: *Env, rec: Value, k: Value, has_default: bool, default: Value, loc: SourceLocation) !Value {
     if (recordFieldGet(rec, k)) |v| return v;
+    // D-086 / ADR-0154: a non-declared key may live in the extmap (consulted
+    // after the declared-field miss, before the ILookup slow-path).
+    const ext = rec.decodePtr(*const td_mod.TypedInstance).extmap;
+    if (!ext.isNil() and try map.contains(ext, k)) return map.get(ext, k);
     return lookupDispatch(rt, env, rec, k, has_default, default, loc);
 }
 

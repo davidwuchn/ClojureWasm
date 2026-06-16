@@ -3032,10 +3032,14 @@ fn lowerDefType(
     def_arrow_items[2] = factory_fn;
     const def_arrow = try list(arena, def_arrow_items, loc);
 
-    // (def map->Name (fn* [m] (Name. (get m :f1) (get m :f2) ...))) — the map
-    // factory clj generates for every DEFRECORD (not deftype). Missing keys →
-    // nil (via get); extra keys are dropped (cljw defrecord has no __extmap,
-    // D-086). Gated on the record ctor_prim (comptime).
+    // (def map->Name (fn* [m] (rt/__map->record Name m))) — the map factory clj
+    // generates for every DEFRECORD (not deftype). `rt/__map->record` (D-086 /
+    // ADR-0154) pulls each declared field from `m` by keyword (nil if absent)
+    // and holds the remaining keys in the record's extmap (clj's `__extmap`).
+    // It is a PRIMITIVE (not core.clj `reduce-kv`/`assoc`) so the generated
+    // factory stays bootstrap-safe — analyzable in a core-less environment (the
+    // F-012 diff fixture), exactly as the prior `(get …)`-only body was. Gated
+    // on the record ctor_prim (comptime).
     const is_record = comptime std.mem.eql(u8, ctor_prim, "__defrecord!");
     const def_map_arrow: ?Form = if (is_record) blk: {
         const map_arrow_name = mblk: {
@@ -3047,20 +3051,15 @@ fn lowerDefType(
         };
         const m_param = sym("m", loc);
         const m_params_vec = Form{ .data = .{ .vector = try arena.dupe(Form, &[_]Form{m_param}) }, .location = loc };
-        const map_ctor_args = try arena.alloc(Form, fields_in.len + 1);
-        map_ctor_args[0] = ctor_sym;
-        for (fields_in, 0..) |f, idx| {
-            const kw = Form{ .data = .{ .keyword = .{ .name = f.data.symbol.name } }, .location = loc };
-            const get_items = try arena.alloc(Form, 3);
-            get_items[0] = sym("get", loc);
-            get_items[1] = m_param;
-            get_items[2] = kw;
-            map_ctor_args[idx + 1] = try list(arena, get_items, loc);
-        }
+        // (rt/__map->record Name m)
+        const body_args = try arena.alloc(Form, 3);
+        body_args[0] = .{ .data = .{ .symbol = .{ .ns = "rt", .name = "__map->record" } }, .location = loc };
+        body_args[1] = args[0];
+        body_args[2] = m_param;
         var map_fn_items = try arena.alloc(Form, 3);
         map_fn_items[0] = sym("fn*", loc);
         map_fn_items[1] = m_params_vec;
-        map_fn_items[2] = try list(arena, map_ctor_args, loc);
+        map_fn_items[2] = try list(arena, body_args, loc);
         var def_map_arrow_items = try arena.alloc(Form, 3);
         def_map_arrow_items[0] = sym("def", loc);
         def_map_arrow_items[1] = map_arrow_name;

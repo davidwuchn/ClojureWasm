@@ -217,8 +217,6 @@ pub const Code = enum {
     defrecord_fields_not_vector,
     defrecord_field_invalid,
     defrecord_mutable_field,
-    /// args: `.{ .name = "<field-name>" }`
-    defrecord_assoc_undeclared_key,
     reify_form_incomplete,
     reify_section_invalid,
     letfn_form_incomplete,
@@ -1248,11 +1246,6 @@ pub fn entry(comptime code: Code) Entry {
             .kind = .syntax_error,
             .phase = .macroexpand,
             .template = ":volatile-mutable or :unsynchronized-mutable not supported for record fields",
-        },
-        .defrecord_assoc_undeclared_key => .{
-            .kind = .not_implemented,
-            .phase = .eval,
-            .template = "assoc on defrecord with non-declared key '{[name]s}' is not yet supported",
         },
         .letfn_form_incomplete => .{
             .kind = .syntax_error,

@@ -561,21 +561,19 @@ entries:
   - name: runtime/record_extmap
     kind: runtime_layer
     defined_in: src/lang/primitive/collection.zig
-    status: provisional
+    status: landed
     requires_features: []
-    requires_debts:
-      - D-086
-    provisional_markers:
-      - src/lang/primitive/collection.zig (assocFn .typed_instance — empty field_layout fallback)
-      - src/lang/primitive/collection.zig (assocFn .typed_instance — unmatched declared key)
+    requires_debts: []
+    provisional_markers: []
     notes: |
-      JVM `defrecord` keeps non-declared keys in a hidden `__extmap`
-      HashMap so the record's IRecord identity survives `(assoc rec
-      :extra v)`. cw v1's `TypedInstance` extern struct (header +
-      descriptor pointer + flat Value field tail) has no extmap slot
-      today; row 7.4 cycle 4 ships single-pair declared-key assoc and
-      raises `defrecord_assoc_undeclared_key` for both the
-      empty-layout and the unmatched-key paths.
+      LANDED 2026-06-16 (ADR-0154, discharges D-086). `TypedInstance`
+      gained a trailing `extmap: Value` slot (mirroring the `meta`
+      field, ADR-0112) holding non-declared keys assoc'd onto a record.
+      assoc/dissoc/get/contains?/keys/vals/count/seq/print/=/hash and
+      the `map->R` factory all route declared-then-extmap; the
+      declared/extmap partition lives once in
+      `TypeDescriptor.fieldSlotByName`. The two PROVISIONAL raise sites
+      + the `defrecord_assoc_undeclared_key` error Code are removed.
 
       Discharge route lands a dedicated cycle that picks one of two
       shapes (per survey §6 Q1):

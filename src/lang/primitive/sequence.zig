@@ -126,7 +126,10 @@ pub fn countFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation
             if (desc.kind == .defrecord) {
                 var cs: dispatch.CallSite = .{};
                 if (try dispatch.dispatchOrNull(rt, env, &cs, coll, IPC_FQCN, "-count", args, loc)) |v| break :blk v;
-                break :blk Value.initInteger(@intCast(coll.decodePtr(*const td_mod.TypedInstance).field_count));
+                // D-086 / ADR-0154: count = declared fields + extmap entries.
+                const inst = coll.decodePtr(*const td_mod.TypedInstance);
+                const ext_n: i64 = if (inst.extmap.isNil()) 0 else @intCast(map.count(inst.extmap));
+                break :blk Value.initInteger(@as(i64, inst.field_count) + ext_n);
             }
             if (desc.isCounted()) {
                 var cs: dispatch.CallSite = .{};
@@ -221,6 +224,16 @@ fn countBySeqWalk(rt: *Runtime, env: *Env, coll: Value, loc: SourceLocation) any
 /// so `seq`/`into {}`/`vec` over a record yield its `[k v]` map entries like a
 /// map — JVM records are Seqable as their entry seq. (cljw has no `__extmap`
 /// yet — D-086 — so only declared fields participate.)
+/// `map.forEachEntry` accumulator: assoc each extmap entry into the demoted map
+/// (D-086 — a record's full associative view is declared fields then extmap).
+const RecordMapExtCtx = struct {
+    rt: *Runtime,
+    m: *Value,
+    fn cb(ctx: *RecordMapExtCtx, k: Value, v: Value) anyerror!void {
+        ctx.m.* = try map.assoc(ctx.rt, ctx.m.*, k, v);
+    }
+};
+
 fn recordToMap(rt: *Runtime, inst: *const td_mod.TypedInstance) !Value {
     const layout = inst.descriptor.field_layout orelse return map.empty();
     const vals = inst.fields();
@@ -228,6 +241,12 @@ fn recordToMap(rt: *Runtime, inst: *const td_mod.TypedInstance) !Value {
     for (layout, 0..) |f, i| {
         const kw = try keyword_mod.intern(rt, null, f.name);
         m = try map.assoc(rt, m, kw, vals[i]);
+    }
+    // D-086 / ADR-0154: append the extmap entries (non-declared keys) so `seq`
+    // (and any `recordToMap` consumer) sees `([:declared v]… [:extra v]…)`.
+    if (!inst.extmap.isNil()) {
+        var ctx = RecordMapExtCtx{ .rt = rt, .m = &m };
+        try map.forEachEntry(inst.extmap, &ctx, RecordMapExtCtx.cb);
     }
     return m;
 }

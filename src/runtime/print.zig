@@ -1074,6 +1074,21 @@ fn printMapLikeTypedInstance(rt: *Runtime, env: *env_mod.Env, w: *Writer, v: Val
     return true;
 }
 
+/// `map.forEachEntry` accumulator for a record's extmap (D-086): print each
+/// `<k> <v>` after the declared fields, comma-separated. `printed` tracks how
+/// many entries (declared + prior extmap) are already out so the comma lands.
+const ExtmapPrintCtx = struct {
+    w: *Writer,
+    printed: usize,
+    fn cb(ctx: *ExtmapPrintCtx, k: Value, val: Value) anyerror!void {
+        if (ctx.printed > 0) try ctx.w.writeAll(", ");
+        try printValue(ctx.w, k);
+        try ctx.w.writeByte(' ');
+        try printValue(ctx.w, val);
+        ctx.printed += 1;
+    }
+};
+
 fn printTypedInstance(w: *Writer, v: Value) anyerror!void {
     const inst = v.decodePtr(*const td_mod.TypedInstance);
     // A deftype declaring clojure.lang.IPersistentMap prints map-style when a
@@ -1114,6 +1129,13 @@ fn printTypedInstance(w: *Writer, v: Value) anyerror!void {
                 if (i > 0) try w.writeAll(", ");
                 try w.print(":{s} ", .{fe.name});
                 try printValue(w, fs[fe.index]);
+            }
+            // D-086 / ADR-0154: non-declared keys (extmap) print after the
+            // declared fields — `#R{:x 1, :y 2, :z 9}`. (The `#R` vs clj's
+            // `#user.R` ns prefix is a separate divergence, D-058/D-079.)
+            if (!inst.extmap.isNil()) {
+                var ctx = ExtmapPrintCtx{ .w = w, .printed = layout.len };
+                try map_collection.forEachEntry(inst.extmap, &ctx, ExtmapPrintCtx.cb);
             }
             try w.writeByte('}');
             return;

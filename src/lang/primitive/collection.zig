@@ -245,6 +245,8 @@ pub fn containsQFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLoca
                 for (layout) |f| {
                     if ((try keyword_mod.intern(rt, null, f.name)) == k) break :blk .true_val;
                 }
+                // D-086 / ADR-0154: a non-declared key may live in the extmap.
+                if (!inst.extmap.isNil() and try map.contains(inst.extmap, k)) break :blk .true_val;
                 break :blk .false_val;
             }
             // A deftype SET answers `contains?` via membership: clj's `contains?`
@@ -511,6 +513,41 @@ pub fn nthFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) 
 
 // --- assoc ---
 
+/// `map.forEachEntry` accumulator: assoc each visited extmap entry into the
+/// pointed-to map (D-086 — fold a record's extmap into a demoted plain map).
+const ExtmapMergeCtx = struct {
+    rt: *Runtime,
+    m: *Value,
+    fn cb(ctx: *ExtmapMergeCtx, k: Value, v: Value) anyerror!void {
+        ctx.m.* = try map.assoc(ctx.rt, ctx.m.*, k, v);
+    }
+};
+
+/// Re-mint a defrecord with one key set (D-086 / ADR-0154). A declared field
+/// (per the descriptor's `fieldSlotByName` partition chokepoint) writes its
+/// slot; any other key (a non-declared keyword, or a non-keyword) lands in the
+/// extmap. `meta` and the rest of the field/extmap state are preserved, so
+/// folding pairs through this composes (clj records preserve meta + accumulate
+/// extras across assoc/update). `rec` must be a `.typed_instance` defrecord.
+fn recordAssoc1(rt: *Runtime, rec: Value, k: Value, v: Value) !Value {
+    const inst = rec.decodePtr(*const td_mod.TypedInstance);
+    if (k.tag() == .keyword) {
+        if (inst.descriptor.fieldSlotByName(keyword_mod.asKeyword(k).name)) |slot| {
+            const old_fields = inst.fields();
+            const new_fields = try rt.gpa.alloc(Value, old_fields.len);
+            defer rt.gpa.free(new_fields);
+            @memcpy(new_fields, old_fields);
+            new_fields[slot] = v;
+            return td_mod.allocInstanceFull(rt, inst.descriptor, new_fields, inst.meta, inst.extmap);
+        }
+    }
+    // Non-declared key → extmap. Seed an empty map when the record had none.
+    var ext = inst.extmap;
+    if (ext.isNil()) ext = map.empty();
+    ext = try map.assoc(rt, ext, k, v);
+    return td_mod.allocInstanceFull(rt, inst.descriptor, inst.fields(), inst.meta, ext);
+}
+
 /// Implements clojure.core/assoc.
 /// Spec: `(assoc map k v)` returns new map with k→v.
 /// `(assoc vec i v)` returns new vector with index i replaced.
@@ -607,49 +644,16 @@ pub fn assocFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation
             if (args.len == 3) {
                 if (try dispatch.dispatchOrNull(rt, env, &cs, coll, ASSOCIATIVE_FQCN, "-assoc", args, loc)) |v| break :blk v;
             }
-            // Single-pair assoc only on a record. Multi-pair would
-            // allocate multiple TypedInstance values; the `__extmap`
-            // overflow work (D-086) would cover this in the same
-            // surgery.
-            if (args.len > 3) {
-                break :blk error_catalog.raise(.feature_not_supported, loc, .{
-                    .name = "multi-pair assoc on defrecord",
-                });
+            // D-086 / ADR-0154: fold over pairs (clj reduces over kv pairs). Each
+            // pair routes through `recordAssoc1`: a declared field writes its
+            // slot; a non-declared key lands in the extmap. Multi-pair re-mints
+            // per pair (correctness-first; extras are rare).
+            var acc: Value = coll;
+            var i: usize = 1;
+            while (i + 1 < args.len) : (i += 2) {
+                acc = try recordAssoc1(rt, acc, args[i], args[i + 1]);
             }
-            const k = args[1];
-            const v = args[2];
-            if (k.tag() != .keyword) {
-                break :blk error_catalog.raise(.type_arg_invalid, loc, .{
-                    .fn_name = "assoc",
-                    .expected = "keyword key on defrecord",
-                    .actual = @tagName(k.tag()),
-                });
-            }
-            const key_name = keyword_mod.asKeyword(k).name;
-            const layout = inst.descriptor.field_layout orelse {
-                // PROVISIONAL: __extmap overflow deferred [refs: D-086, feature_deps.yaml#runtime/record_extmap]
-                break :blk error_catalog.raise(.defrecord_assoc_undeclared_key, loc, .{ .name = key_name });
-            };
-            var slot_idx: ?u16 = null;
-            for (layout) |fe| {
-                if (std.mem.eql(u8, fe.name, key_name)) {
-                    slot_idx = fe.index;
-                    break;
-                }
-            }
-            if (slot_idx == null) {
-                // PROVISIONAL: __extmap overflow deferred [refs: D-086, feature_deps.yaml#runtime/record_extmap]
-                break :blk error_catalog.raise(.defrecord_assoc_undeclared_key, loc, .{ .name = key_name });
-            }
-            const old_fields = inst.fields();
-            const new_fields = try rt.gpa.alloc(Value, old_fields.len);
-            defer rt.gpa.free(new_fields);
-            @memcpy(new_fields, old_fields);
-            new_fields[slot_idx.?] = v;
-            // D-313: thread the source record's metadata into the re-minted
-            // instance (clj records preserve meta across assoc/update). nil when
-            // the source had none, so a meta-less record is unaffected.
-            break :blk try td_mod.allocInstanceMeta(rt, inst.descriptor, new_fields, inst.meta);
+            break :blk acc;
         },
         else => blk: {
             // D-089 row 8.6 cycle 3: Associative -assoc slow-path for a non-native
@@ -705,9 +709,10 @@ pub fn dissocFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocatio
             break :blk acc;
         },
         // A defrecord: dissoc of a DECLARED key degrades to a map (a record can't
-        // drop a declared field, clj parity); dissoc of only undeclared keys
-        // returns the record unchanged (D-262). cljw has no __extmap (D-086), so a
-        // record is exactly its declared fields.
+        // drop a declared field, clj parity), folding in any extmap entries;
+        // dissoc of an extmap key removes it (normalizing the emptied extmap back
+        // to nil); dissoc of an absent key returns the record unchanged (D-262 /
+        // D-086 / ADR-0154).
         .typed_instance => blk: {
             var cs: dispatch.CallSite = .{};
             if (try dispatch.dispatchOrNull(rt, env, &cs, coll, IPM_FQCN, "-without", args, loc)) |v| break :blk v;
@@ -716,23 +721,43 @@ pub fn dissocFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocatio
                 break :blk try dispatch.dispatch(rt, env, &cs, coll, IPM_FQCN, "-without", args, loc);
             const layout = inst.descriptor.field_layout orelse break :blk coll;
             const fields = inst.fields();
+            // Does any removed key name a DECLARED field? (clj demotes to a map.)
             var any_declared = false;
-            var m = map.empty();
-            for (layout, 0..) |f, i| {
-                const kw = try keyword_mod.intern(rt, null, f.name);
-                var removed = false;
-                var ai: usize = 1;
-                while (ai < args.len) : (ai += 1) {
-                    if (kw == args[ai]) removed = true;
-                }
-                if (removed) {
+            var ai: usize = 1;
+            while (ai < args.len) : (ai += 1) {
+                if (args[ai].tag() == .keyword and
+                    inst.descriptor.fieldSlotByName(keyword_mod.asKeyword(args[ai]).name) != null)
                     any_declared = true;
-                } else {
-                    m = try map.assoc(rt, m, kw, fields[i]);
-                }
             }
-            // No declared field removed → record unchanged (record-ness preserved).
-            break :blk if (any_declared) m else coll;
+            if (any_declared) {
+                // Demote to a plain map: ALL declared fields + ALL extmap entries,
+                // then dissoc every removed key (declared order then extmap order).
+                var m = map.empty();
+                for (layout, 0..) |f, i| {
+                    m = try map.assoc(rt, m, try keyword_mod.intern(rt, null, f.name), fields[i]);
+                }
+                if (!inst.extmap.isNil()) {
+                    var ctx = ExtmapMergeCtx{ .rt = rt, .m = &m };
+                    try map.forEachEntry(inst.extmap, &ctx, ExtmapMergeCtx.cb);
+                }
+                ai = 1;
+                while (ai < args.len) : (ai += 1) m = try map.dissoc(rt, m, args[ai]);
+                break :blk m;
+            }
+            // No declared field removed. Drop any extmap keys; record-ness kept.
+            if (inst.extmap.isNil()) break :blk coll;
+            var ext = inst.extmap;
+            var changed = false;
+            ai = 1;
+            while (ai < args.len) : (ai += 1) {
+                const before = map.count(ext);
+                ext = try map.dissoc(rt, ext, args[ai]);
+                if (map.count(ext) != before) changed = true;
+            }
+            if (!changed) break :blk coll;
+            // Emptied extmap normalizes to nil so the result `=` a fresh record.
+            if (map.count(ext) == 0) ext = .nil_val;
+            break :blk try td_mod.allocInstanceFull(rt, inst.descriptor, fields, inst.meta, ext);
         },
         else => blk: {
             // D-089 row 8.6 cycle 3: IPersistentMap -without slow-path.
@@ -805,9 +830,11 @@ pub fn keysFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation)
             const desc = td_mod.descriptorOfInstance(coll);
             if (desc.kind == .defrecord) {
                 const layout = desc.field_layout orelse break :blk .nil_val;
-                if (layout.len == 0) break :blk .nil_val;
-                // Build list backwards so declared-order iteration falls out.
-                var result: Value = .nil_val;
+                // D-086 / ADR-0154: seed the tail with the extmap keys (in extmap
+                // order), then prepend declared keys in declaration order, so the
+                // result is `(declared… extmap…)`. Empty record + empty extmap → nil.
+                const ext = coll.decodePtr(*const td_mod.TypedInstance).extmap;
+                var result: Value = if (ext.isNil()) .nil_val else try map.keys(rt, ext);
                 var i: usize = layout.len;
                 while (i > 0) {
                     i -= 1;
@@ -864,9 +891,12 @@ pub fn valsFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation)
         .typed_instance, .reified_instance => blk: {
             const desc = td_mod.descriptorOfInstance(coll);
             if (desc.kind == .defrecord) {
-                const fields_slice = coll.decodePtr(*const td_mod.TypedInstance).fields();
-                if (fields_slice.len == 0) break :blk .nil_val;
-                var result: Value = .nil_val;
+                const inst = coll.decodePtr(*const td_mod.TypedInstance);
+                const fields_slice = inst.fields();
+                // D-086 / ADR-0154: extmap vals tail (extmap order), then declared
+                // vals prepended in declaration order → `(declared… extmap…)`,
+                // pairing with `keys`. Empty record + empty extmap → nil.
+                var result: Value = if (inst.extmap.isNil()) .nil_val else try map.vals(rt, inst.extmap);
                 var i: usize = fields_slice.len;
                 while (i > 0) {
                     i -= 1;
