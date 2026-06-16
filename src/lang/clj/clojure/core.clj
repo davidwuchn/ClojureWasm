@@ -283,10 +283,12 @@
 ;; build a list by prepend, which the transient path would not reproduce.
 ;; Sorted maps/sets are also excluded: they have no transient (and JVM's
 ;; sorted collections are not IEditableCollection either), so they keep
-;; the persistent-conj path.
+;; the persistent-conj path. A defrecord is `map?` but is NOT
+;; IEditableCollection (no transient), so `(into rec …)` must use the
+;; persistent-conj path too (D-086 — conj onto a record assocs into its extmap).
 (def -editable?
   (fn* [coll]
-    (if (sorted? coll)
+    (if (or (sorted? coll) (record? coll))
       false
       (or (vector? coll) (map? coll) (set? coll)))))
 

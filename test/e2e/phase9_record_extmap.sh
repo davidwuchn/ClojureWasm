@@ -89,4 +89,20 @@ got="$("$BIN" "$WORK/meta.clj" 2>&1 | grep '^OK' || true)"
 [[ "$got" == "OK record-extmap-meta" ]] || fail "meta+extmap: got '$("$BIN" "$WORK/meta.clj" 2>&1 | tail -4)'"
 echo "PASS record_extmap_meta_interaction"
 
+# --- conj / into on a record: [k v] / map-entry / map → assoc into extmap ---
+cat > "$WORK/conj.clj" <<'EOF'
+(defrecord R [x y])
+(assert (= (assoc (->R 1 2) :z 9) (conj (->R 1 2) [:z 9])))   ; [k v] pair
+(assert (= (assoc (->R 1 2) :x 100) (conj (->R 1 2) [:x 100]))) ; declared key
+(assert (= (assoc (->R 1 2) :z 9) (conj (->R 1 2) (first {:z 9})))) ; map-entry
+(assert (record? (conj (->R 1 2) [:z 9])))
+(assert (= (assoc (->R 1 2) :z 9 :w 8) (conj (->R 1 2) {:z 9 :w 8}))) ; map → merge
+(assert (= (assoc (->R 1 2) :z 9 :w 8) (into (->R 1 2) {:z 9 :w 8}))) ; into rides conj
+(assert (= (->R 1 2) (conj (->R 1 2) nil)))                    ; conj nil → unchanged
+(println "OK record-extmap-conj")
+EOF
+got="$("$BIN" "$WORK/conj.clj" 2>&1 | grep '^OK' || true)"
+[[ "$got" == "OK record-extmap-conj" ]] || fail "conj: got '$("$BIN" "$WORK/conj.clj" 2>&1 | tail -4)'"
+echo "PASS record_extmap_conj_into"
+
 echo "ALL phase9_record_extmap PASS"

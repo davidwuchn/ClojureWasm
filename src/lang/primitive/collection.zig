@@ -109,17 +109,63 @@ fn conjOne(rt: *Runtime, env: *Env, coll: Value, x: Value, loc: SourceLocation) 
         .sorted_set => try sorted.conjSet(rt, env, coll, x, loc),
         .sorted_map => sortedMapConj(rt, env, coll, x, loc),
         .array_map, .hash_map => mapConj(rt, coll, x, loc),
+        // A defrecord conjs like a map (D-086 / ADR-0154): a `[k v]` / map-entry
+        // assocs the pair, a map merges its entries — all extmap-aware, record-
+        // ness preserved (clj's defrecord `cons`). A user `-cons` impl wins first;
+        // a deftype/reify falls through to the protocol dispatch below.
+        .typed_instance => blk: {
+            const inst = coll.decodePtr(*const td_mod.TypedInstance);
+            if (inst.descriptor.kind == .defrecord) {
+                var cs: dispatch.CallSite = .{};
+                if (try dispatch.dispatchOrNull(rt, env, &cs, coll, "IPersistentCollection", "-cons", &.{ coll, x }, loc)) |v| break :blk v;
+                break :blk try recordConj(rt, coll, x, loc);
+            }
+            var cs: dispatch.CallSite = .{};
+            break :blk try dispatch.dispatch(rt, env, &cs, coll, "IPersistentCollection", "-cons", &.{ coll, x }, loc);
+        },
         else => blk: {
             // Row 7.7 cycle 3: outer-else routes through dispatch against
             // `IPersistentCollection -cons` (JVM `RT.conj` dispatches via
             // `IPersistentCollection.cons`). Reaches `(extend-type X
-            // IPersistentCollection (-cons [c x] …))` on defrecord /
-            // reified_instance / native-Tag receivers via the row 7.3
-            // per-Tag descriptor registry.
+            // IPersistentCollection (-cons [c x] …))` on reified_instance /
+            // native-Tag receivers via the row 7.3 per-Tag descriptor registry.
             var cs: dispatch.CallSite = .{};
             break :blk try dispatch.dispatch(rt, env, &cs, coll, "IPersistentCollection", "-cons", &.{ coll, x }, loc);
         },
     };
+}
+
+/// `map.forEachEntry` accumulator: conj each entry of a map onto a record by
+/// re-minting through `recordAssoc1` (D-086 — `(conj rec a-map)` / `(into rec
+/// a-map)` folds every entry into the record, extmap-aware).
+const RecordConjCtx = struct {
+    rt: *Runtime,
+    acc: *Value,
+    fn cb(ctx: *RecordConjCtx, k: Value, v: Value) anyerror!void {
+        ctx.acc.* = try recordAssoc1(ctx.rt, ctx.acc.*, k, v);
+    }
+};
+
+/// `(conj record x)` for a defrecord (clj's defrecord `cons`): a `[k v]` vector
+/// or map-entry assocs the pair; a map merges every entry; nil is a no-op. A
+/// non-pair vector or a non-collection raises (clj parity). `rec` is a defrecord.
+fn recordConj(rt: *Runtime, rec: Value, x: Value, loc: SourceLocation) anyerror!Value {
+    switch (x.tag()) {
+        .nil => return rec,
+        .map_entry => return recordAssoc1(rt, rec, map_entry.keyOf(x), map_entry.valOf(x)),
+        .vector => {
+            if (vector.count(x) != 2)
+                return error_catalog.raise(.type_arg_invalid, loc, .{ .fn_name = "conj", .expected = "[k v] pair when conj-ing onto a record", .actual = "vector of different arity" });
+            return recordAssoc1(rt, rec, vector.nth(x, 0), vector.nth(x, 1));
+        },
+        .array_map, .hash_map => {
+            var acc = rec;
+            var ctx = RecordConjCtx{ .rt = rt, .acc = &acc };
+            try map.forEachEntry(x, &ctx, RecordConjCtx.cb);
+            return acc;
+        },
+        else => return error_catalog.raise(.type_arg_invalid, loc, .{ .fn_name = "conj", .expected = "[k v] pair, map-entry, or map when conj-ing onto a record", .actual = @tagName(x.tag()) }),
+    }
 }
 
 fn mapConj(rt: *Runtime, m: Value, entry: Value, loc: SourceLocation) anyerror!Value {
