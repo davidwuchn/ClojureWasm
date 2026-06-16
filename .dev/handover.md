@@ -11,19 +11,24 @@
   full gate batches at ceiling / boundary / pre-tag.
 
 - **First commit on resume MUST be**: **perf campaign (D-450 / ADR-0148),
-  conversion-group front**. The campaign is active (landed O-037/O-038 ratio_sum
-  3.15×→2.45×, O-039 bigint 1.49×→1.29×, O-040 gc_alloc_rate 2.81×→1.36×).
-  ADR-0148's own next-front: "mine the conversion group (**destructure** 1.72× /
-  **json_parse** 1.59× / **string_ops** 1.35×) for localized O-040-style alloc-
-  cutting levers, then D-386 dispatch." **MEASURE FIRST** (`bash bench/...` /
-  scripts/perf.sh, ReleaseFast, ≥10 runs — the 2026-06-16 ratios have shifted)
-  to pick the true highest-ROI target NOW, read its ADR-0148 row direction, fork
-  a DA per the standing per-optimization rule, implement one localized lever,
-  re-measure, keep diff-oracle + corpus green. The D-446 arity mid/under residual
-  is DEFERRED — a low-signal sweep that would displace the differentiator (the
-  Micro-coverage-grind smell, clj_diff_sweep Discipline 2); leave it a tracked
-  floor row. (Also trivially takeable anytime: D-456 defprotocol-return = `P` not
-  `#'user/m`, a 1-line `expandDefprotocol` final-form fix.)
+  GC-allocation-throughput front**. RE-MEASURED 2026-06-17 (fresh, ReleaseSafe,
+  10-run, canonical `compare_langs.sh` — see
+  `private/notes/9.2.S-perf-remeasure-2026-06-17.md`): the 2026-06-16 baseline is
+  STALE (pre-O-037..O-042). Current truth: **ratio_sum (was 3.15×) + nested_update
+  are now WON (0.95× / 0.84×)**; the other 7 sit at 1.10–1.29× — biggest
+  gc_alloc_rate 1.29× · json_parse 1.28× · string_ops 1.25× · bigint 1.20× ·
+  gc_large_heap 1.18×. The localized construction levers (O-040/041/042) are MINED
+  (the json `.alloc_if_needed` experiment measured INSIDE noise → reverted, NOT
+  committed). Diagnosis: the big gaps share ONE root cause — **cljw allocation
+  throughput** (malloc-per-object; the gc_heap free-pool only refills on a COLLECT,
+  auto-collect OFF → short-lived-object benches malloc every object, no reuse). So
+  the next lever is a **nursery / pre-warmed free-list over the non-moving heap**
+  (F-006), lifting gc_alloc_rate + gc_large_heap + json_parse + string_ops at once —
+  a major unit: survey JVM/GraalVM nursery + bump-alloc techniques, ADR + DA fork,
+  implement, re-measure gc_alloc_rate. Regenerate `cross-lang-latest.yaml` (stale).
+  DEFERRED: D-446 arity residual (Micro-coverage-grind smell); D-456 defprotocol
+  return (1-line, trivial). Compute-bound residuals (sieve/destructure/bigint
+  dispatch) → D-386.
 
 - **Forbidden this session**: JIT integration (D-133 — user-fenced 2026-06-16;
   the ARM64 codegen substrate is DONE + execution-verified, but the coupled
