@@ -10,20 +10,20 @@
   `build.zig.zon` `.zwasm` is SHA-PINNED (`#412966f7…`, `lazy`). Per-commit = smoke;
   full gate batches at ceiling / boundary / pre-tag.
 
-- **First commit on resume MUST be**: **D-446 arity-parity residual** — the
-  mid/under-arity sweep. The 2026-06-16 PARTIAL pass swept the high-signal 0-arg
-  boundary (10 cljw↔clj arity divergences aligned: `= < > <= >= distinct?
-  every-pred some-fn` now throw at 0-arg; `into`/`conj!` 0/1-arity relaxed) +
-  the 22-fn over-arity sample. RESIDUAL (NOT swept): a per-fn MID/UNDER-arity
-  diff vs clj (a fn accepting 2 where clj needs 3, or missing a valid
-  mid-arity). Methodology = the established probe-and-align: enumerate core.clj
-  defns + Zig builtins, diff each arity envelope vs `clojure -J-Xmx2g -M -e`,
-  classify bug→fix (align) OR accept→AD-NNN, corpus-pin the probes
-  (`test/e2e/phase14_arity_parity.sh` + a corpus). Big-bang-then-closed
-  (clj_diff_sweep Discipline 2). If the mid-arity yield proves low, pivot to the
-  **perf campaign** (ROADMAP §9.2.S; resume D-180 bulk `persistent!` /
-  `vector.fromSlice` — the into/vec bottleneck — + D-386 dispatch; perf is the
-  raised differentiator per memory `perf_beat_python_every_bench`).
+- **First commit on resume MUST be**: **perf campaign (D-450 / ADR-0148),
+  conversion-group front**. The campaign is active (landed O-037/O-038 ratio_sum
+  3.15×→2.45×, O-039 bigint 1.49×→1.29×, O-040 gc_alloc_rate 2.81×→1.36×).
+  ADR-0148's own next-front: "mine the conversion group (**destructure** 1.72× /
+  **json_parse** 1.59× / **string_ops** 1.35×) for localized O-040-style alloc-
+  cutting levers, then D-386 dispatch." **MEASURE FIRST** (`bash bench/...` /
+  scripts/perf.sh, ReleaseFast, ≥10 runs — the 2026-06-16 ratios have shifted)
+  to pick the true highest-ROI target NOW, read its ADR-0148 row direction, fork
+  a DA per the standing per-optimization rule, implement one localized lever,
+  re-measure, keep diff-oracle + corpus green. The D-446 arity mid/under residual
+  is DEFERRED — a low-signal sweep that would displace the differentiator (the
+  Micro-coverage-grind smell, clj_diff_sweep Discipline 2); leave it a tracked
+  floor row. (Also trivially takeable anytime: D-456 defprotocol-return = `P` not
+  `#'user/m`, a 1-line `expandDefprotocol` final-form fix.)
 
 - **Forbidden this session**: JIT integration (D-133 — user-fenced 2026-06-16;
   the ARM64 codegen substrate is DONE + execution-verified, but the coupled
@@ -49,8 +49,10 @@ assoc/dissoc/get/keys/vals/count/seq/merge/select-keys/find/update/reduce-kv.
 
 ## Cold-start reading order (resume)
 
-handover → `.dev/project_facts.md` (F-002/F-011/F-015) → ADR-0142 (§9 gap-area
-model) → ROADMAP §9.0 + §9.2.S (perf) → the D-446 row in `.dev/debt.yaml` (the
-PARTIAL-pass methodology + residual) + `test/e2e/phase14_arity_parity.sh`. clj
-oracle = `clojure -J-Xmx2g -M -e` (timeout 60). memory
-`direct-explore-fork-mechanical` + `clj-diff-sweep-methodology`.
+handover → `.dev/project_facts.md` (F-002/F-006/F-015) → ADR-0148 (perf campaign
+goal + landed O-037..O-040 + the 9-target table + conversion-group next-front) →
+`.dev/perf_campaign_essence.md` (exploration modes + experiment-revert) → D-450
+row in `.dev/debt.yaml` → `bench/README.md` (measured scoreboard). Perf measured
+ReleaseFast/ReleaseSafe only (memory `perf-measure-release` /
+`verify-against-releasesafe-binary`); each optimization gets its own ADR + DA
+fork. memory `direct-explore-fork-mechanical` + `perf-beat-python-every-bench`.
