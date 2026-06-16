@@ -141,14 +141,18 @@ EOF
 ) || fail "case13: non-zero exit ($got)"
 assert_eq 'defrecord_assoc_preserves_other_field' "$(last_line "$got")" '4'
 
-# --- Case 14 (cycle 4): assoc on non-declared key raises PROVISIONAL ---
-# D-086: __extmap overflow is deferred — non-declared key assoc raises
-# feature_not_supported until the layout migration lands.
-diag=$("$BIN" -e '(defrecord Point [x y]) (assoc (Point. 3 4) :z 99)' 2>&1 || true)
-if [[ "$diag" != *"defrecord"* ]] || [[ "$diag" != *"non-declared"* ]]; then
-    fail "case14: expected defrecord non-declared-key diagnostic, got '$diag'"
-fi
-echo "PASS defrecord_assoc_undeclared_provisional"
+# --- Case 14: assoc on a non-declared key holds it in the extmap (D-086) ---
+# D-086 / ADR-0154 landed: a non-declared key is kept in the record's extmap
+# (clj's __extmap), so the assoc succeeds and the value reads back, record-ness
+# preserved. (Full extmap coverage: test/e2e/phase9_record_extmap.sh.)
+got=$("$BIN" - <<'EOF' 2>/dev/null
+(defrecord Point [x y])
+(prn (get (assoc (Point. 3 4) :z 99) :z))
+(prn (record? (assoc (Point. 3 4) :z 99)))
+EOF
+) || fail "case14: non-zero exit ($got)"
+assert_eq 'defrecord_assoc_undeclared_extmap' "$(printf '%s\n' "$got" | sed -n '1p')" '99'
+assert_eq 'defrecord_assoc_undeclared_stays_record' "$(last_line "$got")" 'true'
 
 # --- Case 15 (cycle 4): keys returns the declared field names ---
 got=$("$BIN" - <<'EOF' 2>/dev/null
