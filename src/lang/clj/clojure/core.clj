@@ -1573,6 +1573,11 @@
 (def qualified-symbol? (fn* [x] (boolean (and (symbol? x) (namespace x) true))))
 (def simple-keyword? (fn* [x] (and (keyword? x) (not (namespace x)))))
 (def qualified-keyword? (fn* [x] (boolean (and (keyword? x) (namespace x) true))))
+
+(defn namespace-munge
+  "Convert a Clojure namespace name to a legal Java package name."
+  [ns]
+  (.replace (str ns) \- \_))
 ;; `(take-nth n)` / `(take-nth n coll)` — every nth item. The 1-arg form is a
 ;; stateful transducer (emit when the running index is a multiple of n); the
 ;; 2-arg form is lazy.

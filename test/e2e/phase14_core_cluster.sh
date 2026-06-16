@@ -54,4 +54,9 @@ assert_eq 'mapcat_3coll'  "$("$BIN" -e '(into [] (mapcat vector [1 2] [3 4] [5 6
 # lazy over an infinite outer coll (must not hang)
 assert_eq 'mapcat_lazy'   "$("$BIN" -e '(into [] (take 5 (mapcat (fn* [x] [x x]) (range))))')" '[0 0 1 1 2]'
 
+# --- namespace-munge (D-457 item 4): ns name -> legal package name (- => _, . kept) ---
+assert_eq 'nsmunge_hyphen' "$("$BIN" -e '(= (namespace-munge "foo-bar.baz") "foo_bar.baz")')" 'true'
+assert_eq 'nsmunge_sym'    "$("$BIN" -e '(= (namespace-munge (quote a-b-c)) "a_b_c")')"        'true'
+assert_eq 'nsmunge_noop'   "$("$BIN" -e '(= (namespace-munge "abc") "abc")')"                   'true'
+
 echo "ALL phase14_core_cluster PASS"
