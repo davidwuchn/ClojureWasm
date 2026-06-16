@@ -139,6 +139,7 @@ pub const Code = enum {
     defmacro_arity_invalid,
     macro_var_not_callable,
     future_thunk_failed,
+    future_cancelled,
     stm_no_transaction,
     stm_retry_limit,
     locking_needs_object,
@@ -832,6 +833,16 @@ pub fn entry(comptime code: Code) Entry {
             .kind = .not_implemented,
             .phase = .eval,
             .template = "deref of a future whose body raised — the original error is not yet re-raised at deref time (Phase 15.1 / D-115)",
+        },
+        // D-442 / ADR-0153: deref of a cancelled future. clj throws a
+        // CancellationException (a RuntimeException subtype). `.value_error` maps
+        // to a CATCHABLE RuntimeException-family class (vs the uncatchable
+        // `future_thunk_failed`); the precise `CancellationException` class is the
+        // ADR-0153 sub-step-2 follow-on (a new Kind + host-class entry).
+        .future_cancelled => .{
+            .kind = .value_error,
+            .phase = .eval,
+            .template = "deref of a cancelled future",
         },
         .stm_no_transaction => .{
             .kind = .value_error,

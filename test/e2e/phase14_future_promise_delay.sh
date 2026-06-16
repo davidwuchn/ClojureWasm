@@ -106,5 +106,37 @@ assert_eq 'future_predicate' "$got" '[true false]'
 got=$("$BIN" -e '(let [f (future 1)] @f (future-done? f))' 2>/dev/null | last_line)
 assert_eq 'future_done_after_deref' "$got" 'true'
 
+# --- future-cancel / future-cancelled? (D-442 / ADR-0153, state-machine half) ---
+# A future blocked on an undelivered promise is reliably PENDING → future-cancel
+# wins (returns true), future-cancelled? true. Deliver afterwards so the worker
+# unblocks + exits cleanly (its result discarded by the .pending-guarded store).
+got=$("$BIN" - <<'EOF' 2>/dev/null | last_line
+(def p (promise))
+(def f (future (deref p)))
+(let [c (future-cancel f) q (future-cancelled? f)] (deliver p 1) (prn [c q]))
+EOF
+)
+assert_eq 'future_cancel_pending' "$got" '[true true]'
+
+# deref of a cancelled future throws a (catchable) cancellation error.
+got=$("$BIN" - <<'EOF' 2>/dev/null | last_line
+(def p (promise))
+(def f (future (deref p)))
+(future-cancel f)
+(deliver p 1)
+(prn (try (deref f) :no-throw (catch Throwable e :threw)))
+EOF
+)
+assert_eq 'future_cancel_deref_throws' "$got" ':threw'
+
+# future-cancel on an already-realised future → false (clj parity).
+got=$("$BIN" - <<'EOF' 2>/dev/null | last_line
+(def g (future 42))
+(deref g)
+(prn [(future-cancel g) (future-cancelled? g)])
+EOF
+)
+assert_eq 'future_cancel_done_false' "$got" '[false false]'
+
 echo
 echo "Phase 14 row 14.8 future/promise/delay e2e: all green."

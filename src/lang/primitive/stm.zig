@@ -92,6 +92,9 @@ pub fn derefFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation
         // nil (no error info — shouldn't happen at a real thunk failure).
         .future => blk: {
             if (future_mod.deref(v)) |val| break :blk val;
+            // D-442 / ADR-0153: a cancelled future's deref throws a
+            // CancellationException (distinct from a thunk failure).
+            if (future_mod.isCancelled(v)) break :blk error_catalog.raise(.future_cancelled, loc, .{});
             if (future_mod.errorValue(v)) |ev| break :blk worker_error.reraise(ev);
             break :blk error_catalog.raise(.future_thunk_failed, loc, .{});
         },
@@ -217,6 +220,28 @@ pub fn futureDoneQFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLo
     return if (future_mod.isRealised(args[0])) Value.true_val else Value.false_val;
 }
 
+/// `(future-cancel f)` — D-442 / ADR-0153. Marks a still-pending future
+/// `.cancelled` (its later result is discarded; deref throws); returns true if
+/// it was cancelled, false if it had already realised/cancelled (clj parity).
+pub fn futureCancelFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = rt;
+    _ = env;
+    try error_catalog.checkArity("future-cancel", args, 1, loc);
+    if (!future_mod.isFuture(args[0]))
+        return error_catalog.raise(.type_arg_invalid, loc, .{ .fn_name = "future-cancel", .expected = "future", .actual = @tagName(args[0].tag()) });
+    return if (future_mod.cancel(args[0])) Value.true_val else Value.false_val;
+}
+
+/// `(future-cancelled? f)` — D-442 / ADR-0153. True iff `future-cancel` won.
+pub fn futureCancelledQFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = rt;
+    _ = env;
+    try error_catalog.checkArity("future-cancelled?", args, 1, loc);
+    if (!future_mod.isFuture(args[0]))
+        return error_catalog.raise(.type_arg_invalid, loc, .{ .fn_name = "future-cancelled?", .expected = "future", .actual = @tagName(args[0].tag()) });
+    return if (future_mod.isCancelled(args[0])) Value.true_val else Value.false_val;
+}
+
 fn requireRef(name: []const u8, v: Value, loc: SourceLocation) !void {
     if (!ref_mod.isRef(v)) {
         return error_catalog.raise(.type_arg_invalid, loc, .{
@@ -321,6 +346,8 @@ const ENTRIES = [_]Entry{
     .{ .name = "future?", .f = &futureQFn },
     .{ .name = "agent?", .f = &agentQFn },
     .{ .name = "future-done?", .f = &futureDoneQFn },
+    .{ .name = "future-cancel", .f = &futureCancelFn },
+    .{ .name = "future-cancelled?", .f = &futureCancelledQFn },
 };
 
 pub fn register(env: *Env, rt_ns: *env_mod.Namespace) !void {

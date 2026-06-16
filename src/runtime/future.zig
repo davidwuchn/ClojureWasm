@@ -45,6 +45,10 @@ pub const FutureState = enum(u8) {
     pending = 0,
     realised_value = 1,
     realised_error = 2,
+    /// `(future-cancel f)` won the race while the worker was still `.pending`
+    /// (D-442 / ADR-0153). Terminal: the worker's later store is discarded
+    /// (guarded on `.pending`); `deref` raises a CancellationException.
+    cancelled = 3,
 };
 
 /// The blocking result cell, held off the GC heap (`std.Io.Condition` has
@@ -142,11 +146,45 @@ fn worker(f: *Future) void {
     }
 
     io_default.lockMutex(&f.cell.mutex);
-    f.cached = result_value;
-    f.state = result_state;
+    // D-442 / ADR-0153: guard the store on `.pending` — a `future-cancel` that
+    // won the mutex first set `.cancelled`; the worker must NOT clobber it
+    // (mark-cancelled-wins). A cancelled future's computed result is discarded.
+    if (f.state == .pending) {
+        f.cached = result_value;
+        f.state = result_state;
+    }
     io_default.condBroadcast(&f.cell.cond);
     io_default.unlockMutex(&f.cell.mutex);
     _ = f.rt.gc.unpin(fut_val);
+}
+
+/// `(future-cancel f)` — D-442 / ADR-0153 (state-machine half of the cooperative
+/// model). If the worker has not yet stored a result (`.pending`), mark
+/// `.cancelled` + wake any deref'er, returning `true` (matches clj `cancel(true)`
+/// on a pending/running task). A future that already realised / was cancelled
+/// returns `false`. NOTE: the worker thread is NOT yet aborted here — a thunk
+/// blocked at a primitive runs until that primitive returns (the cooperative
+/// abort at blocking points is the ADR-0153 follow-on); the result is discarded.
+pub fn cancel(v: Value) bool {
+    std.debug.assert(v.tag() == .future);
+    const f = v.decodePtr(*Future);
+    io_default.lockMutex(&f.cell.mutex);
+    defer io_default.unlockMutex(&f.cell.mutex);
+    if (f.state == .pending) {
+        f.state = .cancelled;
+        io_default.condBroadcast(&f.cell.cond);
+        return true;
+    }
+    return false;
+}
+
+/// `(future-cancelled? f)` — true iff `future-cancel` won (terminal `.cancelled`).
+pub fn isCancelled(v: Value) bool {
+    std.debug.assert(v.tag() == .future);
+    const f = v.decodePtr(*Future);
+    io_default.lockMutex(&f.cell.mutex);
+    defer io_default.unlockMutex(&f.cell.mutex);
+    return f.state == .cancelled;
 }
 
 pub fn isFuture(v: Value) bool {
