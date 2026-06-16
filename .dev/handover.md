@@ -61,13 +61,18 @@ op_load_class) deferred. SAFETY: `clj` → `clojure -J-Xmx2g`; measure ReleaseSa
 2 targets)** · sieve ~1.23× + destructure ~1.13× (dispatch-bound → D-386) · json_parse
 ~1.20× (vs CPython C-json, near floor).
 
-**NEXT BIG LEVER = the GC-arch generational/nursery ADR** (F-006; gc_alloc_rate +
-gc_large_heap). The GC has a `free_pools` free-list fast path but EVERY alloc still
-appends to the global `allocations` list that mark-sweep walks; gc_alloc_rate is 200k
-short-lived 4-elem vectors (pure alloc+GC throughput). This is a MAJOR ADR needing its own
-DA fork + a CLEAN profiling foundation FIRST (ReleaseSafe symbols are stripped → `sample`
-only shows `main+offset` + malloc churn; instrument GC counters — alloc/GC-trigger/sweep —
-to ground the design, don't sample-guess). **Tractable secondary lever** (measured this
+**NEXT BIG LEVER = GC ALLOC-OVERHEAD (gc_alloc_rate + gc_large_heap).** ⚠️ PREMISE
+CORRECTED 2026-06-16: **auto-collect is OFF** (gc_heap.zig:280, agent.zig) — cljw NEVER
+collects mid-run, so gc_alloc_rate's 200k 4-elem vectors are pure ALLOCATION throughput
+(every alloc → `infra.rawAlloc`/malloc since `free_pools` stays empty without a sweep) +
+per-alloc bookkeeping (`allocations.append` grows to ~400k, `gc_mutex` lock/unlock,
+safepoint+ceiling checks). **A *generational* GC does NOT help this** (nothing is collected
+— generational only pays off when you sweep). The real lever is per-alloc COST: a slab/
+arena/bump heap (but "GC-arch bump-allocator" is on the REFUTED list — re-investigate WHY
+with per-alloc instrumentation: is malloc actually dominant, or is it `allocations.append`/
+the mutex/the vector construction?) and/or dropping the uncontended single-thread `gc_mutex`
++ the always-append tracking. Needs the instrumentation FIRST (ReleaseSafe is stripped →
+`sample` only shows `main+offset`+malloc; add alloc/collect counters). **Tractable secondary lever** (measured this
 session): map `:keys` destructure emits `(if (seq? mm) (apply hash-map mm) mm)` per iter —
 the seq? guard costs ~5.5 ms over 100k (d_noguard 33.4 vs d_guard 38.9). Intrinsify `seq?`
 (O-043 op_get/op_nth pattern, F-011-safe: same semantics, faster dispatch) → partial
