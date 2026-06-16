@@ -117,6 +117,18 @@ pub fn ret() u32 {
     return 0xD65F03C0;
 }
 
+/// `ADD Xd, Xn, Xm` (64-bit, shifted-register form, shift 0). Base 0x8B000000
+/// | (Rm << 16) | (Rn << 5) | Rd. The integer-loop body's `op_add_locals` lowers
+/// to this once both operands are unboxed in registers.
+pub fn addRegX(rd: u5, rn: u5, rm: u5) u32 {
+    return 0x8B000000 | (@as(u32, rm) << 16) | (@as(u32, rn) << 5) | rd;
+}
+
+/// `SUB Xd, Xn, Xm` (64-bit, shifted-register, shift 0). Base 0xCB000000.
+pub fn subRegX(rd: u5, rn: u5, rm: u5) u32 {
+    return 0xCB000000 | (@as(u32, rm) << 16) | (@as(u32, rn) << 5) | rd;
+}
+
 test "exec_mem: emit + call a trivial ARM64 leaf fn returning a constant" {
     if (builtin.cpu.arch != .aarch64) return error.SkipZigTest;
     var buf = try CodeBuffer.init(64);
@@ -136,4 +148,24 @@ test "exec_mem: a second emitted fn with a different constant" {
     buf.emit(ret());
     const f = try buf.finalize(*const fn () callconv(.c) u64);
     try std.testing.expectEqual(@as(u64, 1337), f());
+}
+
+test "exec_mem: 2-arg leaf proves C-ABI args (x0,x1) + add/sub by execution" {
+    if (builtin.cpu.arch != .aarch64) return error.SkipZigTest;
+    // fn(a, b) -> u64 { return a + b; }  =  add x0, x0, x1 ; ret
+    var add_buf = try CodeBuffer.init(64);
+    defer add_buf.deinit();
+    add_buf.emit(addRegX(0, 0, 1));
+    add_buf.emit(ret());
+    const add = try add_buf.finalize(*const fn (u64, u64) callconv(.c) u64);
+    try std.testing.expectEqual(@as(u64, 42), add(40, 2));
+
+    // fn(a, b) -> i64 { return a - b; }  =  sub x0, x0, x1 ; ret
+    var sub_buf = try CodeBuffer.init(64);
+    defer sub_buf.deinit();
+    sub_buf.emit(subRegX(0, 0, 1));
+    sub_buf.emit(ret());
+    const sub = try sub_buf.finalize(*const fn (i64, i64) callconv(.c) i64);
+    try std.testing.expectEqual(@as(i64, 38), sub(40, 2));
+    try std.testing.expectEqual(@as(i64, -5), sub(5, 10));
 }
