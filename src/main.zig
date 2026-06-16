@@ -139,6 +139,7 @@ test {
     _ = @import("lang/diff_test.zig");
     _ = @import("eval/backend/vm/opcode.zig");
     _ = @import("eval/backend/vm/compiler.zig");
+    _ = @import("eval/backend/jit/exec_mem.zig");
     _ = @import("lang/primitive/math.zig");
     _ = @import("lang/primitive/core.zig");
     _ = @import("lang/primitive/error.zig");
