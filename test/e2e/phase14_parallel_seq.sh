@@ -1,15 +1,21 @@
 #!/usr/bin/env bash
 # test/e2e/phase14_parallel_seq.sh — pmap / pcalls / pvalues + doall / dorun.
-# cw v1 is single-threaded, so pmap/pcalls/pvalues run SEQUENTIALLY — the RESULT
-# is identical to clj (pmap is "semantically like map"); real parallelism is
-# deferred to Phase-15 threading (D-224). doall/dorun realize a lazy seq for
-# side effects (the natural companion to lazy pmap results). Layer 2.
+# pmap/pcalls/pvalues run f in PARALLEL via real future threads with bounded
+# look-ahead (D-224 — clj's exact impl over future/deref/lazy-seq), so the
+# RESULT matches clj (pmap is "semantically like map") AND f runs concurrently.
+# doall/dorun realize a lazy seq for side effects (the natural companion to lazy
+# pmap results). Layer 2.
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 BIN="zig-out/bin/cljw"
 [ -n "${CLJW_SKIP_BUILD:-}" ] || zig build -Dwasm -Doptimize="${CLJW_OPT:-ReleaseSafe}" >/dev/null
 fail() { echo "FAIL $1" >&2; exit 1; }
 assert_eq() { local n="$1" g="$2" w="$3"; [[ "$g" == "$w" ]] || fail "$n: got '$g' want '$w'"; echo "PASS $n -> $w"; }
+
+# pmap runs f in PARALLEL (D-224): 4 thunks each sleeping 150ms complete
+# concurrently (~150-250ms), NOT sequentially (~600ms). Generous <450ms margin so
+# the assertion is robust under gate load. Sequential pmap would be ~600ms → red.
+assert_eq 'pmap_parallel' "$("$BIN" -e '(let [t0 (System/currentTimeMillis) _ (doall (pmap (fn [_] (Thread/sleep 150)) (range 4))) el (- (System/currentTimeMillis) t0)] (< el 450))')" 'true'
 
 # pmap (result == map): 1-coll, multi-coll, empty
 assert_eq 'pmap'      "$("$BIN" -e '(pmap inc [1 2 3])')"          '(2 3 4)'

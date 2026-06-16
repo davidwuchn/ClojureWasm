@@ -440,15 +440,9 @@
           [old v]
           (recur))))))
 
-;; `(pmap f & colls)` / `(pcalls & fns)` — clj's parallel map / parallel calls.
-;; cw v1 is single-threaded, so these run SEQUENTIALLY: the RESULT is identical
-;; to clj (pmap is "semantically like map"), only the parallelism is absent.
-;; Real parallelism arrives with Phase B threading (D-224); the result contract
-;; is final-form-correct now, so this is not a dropped-semantic stub.
-(def pmap
-  (fn* [f & colls] (apply map f colls)))
-(def pcalls
-  (fn* [& fns] (map (fn* [g] (g)) fns)))
+;; `pmap` / `pcalls` are PARALLEL (D-224) and defined later in this file
+;; (search "parallel map"), once `future`/`lazy-seq`/`if-let`/named-`fn` are
+;; available — they need those, so they cannot live this early in the bootstrap.
 
 ;; `(dorun coll)` / `(dorun n coll)` — realize a (lazy) seq for side effects,
 ;; holding no head; returns nil. `(doall coll)` / `(doall n coll)` — same forcing
@@ -2144,9 +2138,33 @@
 (defmacro doc [sym]
   (list (quote print-doc) (list (quote var) sym)))
 
-;; `(pvalues & exprs)` — clj's parallel-eval of each expr. cw v1 is single-
-;; threaded so it expands to `pcalls` over thunks = SEQUENTIAL eval (result
-;; identical to clj; parallelism deferred to Phase B threading, D-224).
+;; `(pmap f coll & colls)` / `(pcalls & fns)` — PARALLEL map / parallel calls
+;; (D-224), clj's exact impl: each element's `(f x)` runs on its own
+;; `future` (a real OS thread); a `step`/`drop n` bounded look-ahead (n =
+;; processors+2) keeps the parallel computation AHEAD of consumption without
+;; realizing the whole result — semi-lazy, like clj. Defined here (not with the
+;; other seq fns) because it needs `future`/`lazy-seq`/`if-let`/named-`fn`.
+(defn pmap
+  ([f coll]
+   (let [n (+ 2 (.availableProcessors (Runtime/getRuntime)))
+         rets (map (fn [x] (future (f x))) coll)
+         step (fn step [vs fs]
+                (lazy-seq
+                  (if-let [s (seq fs)]
+                    (cons (deref (first vs)) (step (rest vs) (rest s)))
+                    (map deref vs))))]
+     (step rets (drop n rets))))
+  ([f coll & colls]
+   (let [step (fn step [cs]
+                (lazy-seq
+                  (let [ss (map seq cs)]
+                    (when (every? identity ss)
+                      (cons (map first ss) (step (map rest ss)))))))]
+     (pmap (fn [args] (apply f args)) (step (cons coll colls))))))
+(defn pcalls [& fns] (pmap (fn [g] (g)) fns))
+
+;; `(pvalues & exprs)` — clj's parallel-eval of each expr: expands to `pcalls`
+;; over thunks, so each expr runs in parallel via `pmap`'s futures (D-246).
 (defmacro pvalues [& exprs]
   ;; `apply list` realizes the map seq so the expansion is a concrete list,
   ;; not a cons over a lazy tail (which the macroexpander cannot re-analyze).
