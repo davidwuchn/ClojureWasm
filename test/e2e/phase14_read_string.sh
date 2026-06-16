@@ -26,4 +26,11 @@ assert_eq 'rs_count'   "$("$BIN" -e '(count (read-string "(1 2 3 4)"))')"   '4'
 rs_re="$("$BIN" -e '(read-string "#=(+ 1 2)")' 2>&1 || true)"
 [[ "$rs_re" != "3" ]] || fail "rs_no_read_eval: #= was evaluated (got 3) — read-string must stay eval-free"
 echo "PASS rs_no_read_eval -> not evaluated (eval-free reader)"
-echo "OK — phase14_read_string (10 cases) green"
+# D-457(3): read-string REJECTS a reader conditional #? (clj: "Conditional read
+# not allowed") unless the caller opts in with :read-cond :allow.
+assert_eq 'rs_readcond_rejected' "$("$BIN" -e '(try (read-string "#?(:clj 1 :cljs 2)") (catch Throwable e :raised))')" ':raised'
+assert_eq 'rs_readcond_optin'    "$("$BIN" -e '(read-string {:read-cond :allow} "#?(:clj 1 :cljs 2)")')" '1'
+# Safety: SOURCE evaluation still allows #? (require/load/eval of a .clj(c) is a
+# source-load context — the Reader default). cljw -e is source-eval, not a data read.
+assert_eq 'rs_source_allows_cond' "$("$BIN" -e '#?(:clj 42 :cljs 0)')" '42'
+echo "OK — phase14_read_string (13 cases) green"

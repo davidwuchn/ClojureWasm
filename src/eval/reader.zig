@@ -46,6 +46,14 @@ pub const Reader = struct {
     /// True while reading a `#(...)` body, so a nested `#(` is rejected
     /// (JVM-compatible — `%` would be ambiguous across levels). D-146.
     in_fn_lit: bool = false,
+    /// Whether `#?`/`#?@` reader conditionals are permitted (D-457(3)). Default
+    /// TRUE = source-loading context (require/load/eval of a .clj(c) file allows
+    /// `#?`, clj-faithful). The DATA-read path (`read-string`) flips this FALSE so
+    /// `#?` is rejected with "Conditional read not allowed" unless the caller opts
+    /// in via `:read-cond :allow` — matching clj, which disallows `#?` in plain
+    /// `read`/`read-string`. Defaulting TRUE keeps every existing source-load
+    /// Reader.init site unchanged (no risk of breaking .cljc load).
+    allow_reader_cond: bool = true,
     /// Set by reader macros that contribute NO value (`#_` discard, a
     /// non-matching `#?`). `readValue` observes it to skip the slot and
     /// keep reading, rather than the macro recursing into the next form
@@ -843,6 +851,10 @@ pub const Reader = struct {
     /// as nothing (like `#_` — the next form is returned).
     fn readReaderConditional(self: *Reader, tok: Token) ReadError!Form {
         const loc = self.locOf(tok);
+        // D-457(3): `#?` is rejected in a data-read (`read-string`) unless opted in
+        // (clj: "Conditional read not allowed"); allowed when source-loading.
+        if (!self.allow_reader_cond)
+            return error_catalog.raise(.reader_cond_not_allowed, loc, .{});
         const list_tok = self.nextToken();
         if (list_tok.kind != .lparen)
             return error_catalog.raise(.feature_not_supported, loc, .{ .name = "#? must be followed by a (…) list of feature/form pairs" });
@@ -872,6 +884,9 @@ pub const Reader = struct {
     /// Returns the elements to splice (empty when no branch matches).
     fn readReaderConditionalSplice(self: *Reader, tok: Token) ReadError![]const Form {
         const loc = self.locOf(tok);
+        // D-457(3): same data-read gate as `#?` (see readReaderConditional).
+        if (!self.allow_reader_cond)
+            return error_catalog.raise(.reader_cond_not_allowed, loc, .{});
         const list_tok = self.nextToken();
         if (list_tok.kind != .lparen)
             return error_catalog.raise(.feature_not_supported, loc, .{ .name = "#?@ must be followed by a (…) list of feature/form pairs" });

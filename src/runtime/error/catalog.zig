@@ -178,6 +178,9 @@ pub const Code = enum {
     reader_cond_splice_not_sequential,
     /// `#?@` splice outside a collection (top level / reader-macro position).
     reader_cond_splice_top_level,
+    /// `#?`/`#?@` in a data-read (`read-string`) without `:read-cond :allow`
+    /// (D-457(3); clj rejects reader conditionals in plain read/read-string).
+    reader_cond_not_allowed,
     /// `#(... #(...) ...)` — nested anonymous-fn literals. JVM forbids
     /// this because `%` would be ambiguous across levels (D-146).
     fn_lit_nested,
@@ -978,6 +981,11 @@ pub fn entry(comptime code: Code) Entry {
             .kind = .syntax_error,
             .phase = .parse,
             .template = "#?@ splice is only allowed inside a list, vector, set, or map",
+        },
+        .reader_cond_not_allowed => .{
+            .kind = .syntax_error,
+            .phase = .parse,
+            .template = "Conditional read not allowed",
         },
         .fn_lit_nested => .{
             .kind = .syntax_error,

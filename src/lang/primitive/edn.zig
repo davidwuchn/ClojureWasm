@@ -99,7 +99,23 @@ pub fn readStringFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLoc
     var arena = std.heap.ArenaAllocator.init(rt.gpa);
     defer arena.deinit();
 
-    const form_opt = reader_mod.readOne(arena.allocator(), source) catch {
+    // D-457(3): a data read rejects `#?` (clj: "Conditional read not allowed")
+    // unless the caller opts in with `:read-cond :allow`. Source-loading
+    // (require/load/eval) keeps allowing `#?` via the Reader's default; only this
+    // DATA-read path flips it off.
+    var allow_cond = false;
+    if (opts) |o| {
+        if (try optGet(rt, o, "read-cond")) |rc| {
+            if (rc == try keyword.intern(rt, null, "allow")) allow_cond = true;
+        }
+    }
+    var reader = reader_mod.Reader.init(arena.allocator(), source);
+    reader.allow_reader_cond = allow_cond;
+    const form_opt = reader.read() catch |e| {
+        // A specific reader diagnostic (e.g. reader_cond_not_allowed) carries its
+        // own catalog Info; re-raise it so the message survives rather than being
+        // flattened to the generic EDN-reader-error wrapper.
+        if (e == error.SyntaxError) return e;
         return error_catalog.raise(.feature_not_supported, loc, .{
             .name = "EDN reader error in clojure.edn/read-string",
         });
