@@ -129,6 +129,42 @@ EOF
 )
 assert_eq 'future_cancel_deref_throws' "$got" ':threw'
 
+# D-442 sub-step 2: the precise class is java.util.concurrent.CancellationException
+# (a RuntimeException via IllegalStateException), NOT IllegalArgumentException.
+got=$("$BIN" - <<'EOF' 2>/dev/null | last_line
+(def p (promise))
+(def f (future (deref p)))
+(future-cancel f)
+(deliver p 1)
+(prn (try (deref f) :no-throw (catch java.util.concurrent.CancellationException e :cancel)))
+EOF
+)
+assert_eq 'future_cancel_deref_cancellation_class' "$got" ':cancel'
+
+# A CancellationException is NOT an IllegalArgumentException (sibling under
+# RuntimeException) — so an IAE catch must NOT match; Throwable catches it.
+got=$("$BIN" - <<'EOF' 2>/dev/null | last_line
+(def p (promise))
+(def f (future (deref p)))
+(future-cancel f)
+(deliver p 1)
+(prn (try (deref f) (catch IllegalArgumentException e :iae) (catch Throwable e :other)))
+EOF
+)
+assert_eq 'future_cancel_deref_not_iae' "$got" ':other'
+
+# CancellationException is catchable by its simple name + its supertypes
+# (IllegalStateException / RuntimeException).
+got=$("$BIN" - <<'EOF' 2>/dev/null | last_line
+(def p (promise))
+(def f (future (deref p)))
+(future-cancel f)
+(deliver p 1)
+(prn (try (deref f) (catch IllegalStateException e :ise)))
+EOF
+)
+assert_eq 'future_cancel_deref_ise_supertype' "$got" ':ise'
+
 # future-cancel on an already-realised future → false (clj parity).
 got=$("$BIN" - <<'EOF' 2>/dev/null | last_line
 (def g (future 42))

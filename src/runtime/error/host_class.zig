@@ -93,6 +93,8 @@ pub const ENTRIES = [_]Entry{
     .{ .name = "ArityException", .parent = "IllegalArgumentException" },
     .{ .name = "NumberFormatException", .parent = "IllegalArgumentException" },
     .{ .name = "IllegalStateException", .parent = "RuntimeException" },
+    // java.util.concurrent.CancellationException ⊂ IllegalStateException (D-442).
+    .{ .name = "CancellationException", .parent = "IllegalStateException" },
     .{ .name = "IndexOutOfBoundsException", .parent = "RuntimeException" },
     .{ .name = "NullPointerException", .parent = "RuntimeException" },
     .{ .name = "UnsupportedOperationException", .parent = "RuntimeException" },
@@ -118,6 +120,7 @@ const FQCN_MAP = std.StaticStringMap([]const u8).initComptime(.{
     .{ "clojure.lang.ArityException", "ArityException" },
     .{ "java.lang.NumberFormatException", "NumberFormatException" },
     .{ "java.lang.IllegalStateException", "IllegalStateException" },
+    .{ "java.util.concurrent.CancellationException", "CancellationException" },
     .{ "java.lang.IndexOutOfBoundsException", "IndexOutOfBoundsException" },
     .{ "java.lang.NullPointerException", "NullPointerException" },
     .{ "java.lang.UnsupportedOperationException", "UnsupportedOperationException" },
@@ -269,6 +272,7 @@ pub fn kindToHostClass(kind: Kind) ?[]const u8 {
         .type_error => "ClassCastException",
         .index_error => "IndexOutOfBoundsException",
         .value_error => "IllegalArgumentException",
+        .cancellation_error => "CancellationException",
         .arity_error => "ArityException",
         .number_error => "NumberFormatException",
         .name_error, .syntax_error, .string_error => "RuntimeException",
@@ -374,6 +378,18 @@ test "normalizeClassName: simple name passes through unchanged" {
 test "normalizeClassName: unknown FQCN passes through unchanged (caller decides)" {
     try testing.expectEqualStrings("foo.bar.Quux", normalizeClassName("foo.bar.Quux"));
     try testing.expectEqualStrings("", normalizeClassName(""));
+}
+
+test "CancellationException hierarchy (D-442): ⊂ IllegalStateException ⊂ RuntimeException, ≠ IllegalArgumentException" {
+    try testing.expect(isKnownException("CancellationException"));
+    try testing.expect(isKnownException("java.util.concurrent.CancellationException"));
+    try testing.expectEqualStrings("CancellationException", normalizeClassName("java.util.concurrent.CancellationException"));
+    try testing.expect(isSubclassOf("CancellationException", "IllegalStateException"));
+    try testing.expect(isSubclassOf("CancellationException", "RuntimeException"));
+    try testing.expect(isSubclassOf("CancellationException", "Throwable"));
+    // Sibling, not a subtype: an IllegalArgumentException catch must NOT match.
+    try testing.expect(!isSubclassOf("CancellationException", "IllegalArgumentException"));
+    try testing.expectEqualStrings("CancellationException", kindToHostClass(.cancellation_error).?);
 }
 
 test "kindToHostClass: file_not_found maps to the leaf FileNotFoundException (D-321)" {

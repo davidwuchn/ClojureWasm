@@ -53,6 +53,11 @@ pub const Kind = enum {
     type_error,
     arithmetic_error,
     index_error,
+    /// `(deref <cancelled-future>)` — `java.util.concurrent.CancellationException`
+    /// (D-442 / ADR-0153). CATCHABLE (maps to the CancellationException class, a
+    /// RuntimeException via IllegalStateException), distinct from the worker's
+    /// uncatchable cancel-abort signal and the stale `future_thunk_failed` trap.
+    cancellation_error,
     // I/O (future phases)
     io_error,
     /// A missing file/directory specifically — the leaf
@@ -164,6 +169,7 @@ pub const ClojureWasmError = error{
     TypeError,
     ArithmeticError,
     IndexError,
+    CancellationError,
     IoError,
     FileNotFound,
     InternalError,
@@ -183,6 +189,7 @@ fn kindToError(kind: Kind) ClojureWasmError {
         .type_error => ClojureWasmError.TypeError,
         .arithmetic_error => ClojureWasmError.ArithmeticError,
         .index_error => ClojureWasmError.IndexError,
+        .cancellation_error => ClojureWasmError.CancellationError,
         .io_error => ClojureWasmError.IoError,
         .file_not_found => ClojureWasmError.FileNotFound,
         .internal_error => ClojureWasmError.InternalError,
