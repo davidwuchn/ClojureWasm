@@ -2792,6 +2792,26 @@ fn fieldIsMutable(field_form: Form) bool {
     return false;
 }
 
+/// True iff a deftype field symbol carries `^:volatile-mutable` (D-444 /
+/// ADR-0152) — the subset of `fieldIsMutable` that needs atomic acquire/release
+/// field access for cross-thread happens-before. `^:unsynchronized-mutable`
+/// returns false (a plain slot, JVM-faithful: a plain field shared across
+/// threads is a data race on the JVM too).
+fn fieldIsVolatile(field_form: Form) bool {
+    const m = field_form.meta orelse return false;
+    if (m.data != .map) return false;
+    const kvs = m.data.map;
+    var i: usize = 0;
+    while (i + 1 < kvs.len) : (i += 2) {
+        if (kvs[i].data != .keyword) continue;
+        if (std.mem.eql(u8, kvs[i].data.keyword.name, "volatile-mutable")) {
+            const v = kvs[i + 1];
+            return if (v.data == .boolean) v.data.boolean else true;
+        }
+    }
+    return false;
+}
+
 /// Bring a defrecord/deftype's declared fields into scope as implicit locals
 /// inside a protocol method body (D-202 gap 1), matching Clojure: a method
 /// `(m [this] (* v 2))` sees the bare field `v` without an explicit
@@ -2924,6 +2944,11 @@ fn lowerDefType(
 
     const fields_in = args[1].data.vector;
     const quoted_fields = try arena.alloc(Form, fields_in.len);
+    // D-444 / ADR-0152: collect the `^:volatile-mutable` field names so the
+    // registration primitive can flag them for atomic acquire/release access.
+    // defrecord forbids mutable fields (below), so this stays empty there.
+    const quoted_volatile = try arena.alloc(Form, fields_in.len);
+    var n_volatile: usize = 0;
     for (fields_in, 0..) |field_form, i| {
         if (field_form.data != .symbol or field_form.data.symbol.ns != null)
             return error_catalog.raise(.defrecord_field_invalid, field_form.location, .{});
@@ -2936,8 +2961,16 @@ fn lowerDefType(
         q[0] = sym("quote", loc);
         q[1] = field_form;
         quoted_fields[i] = try list(arena, q, loc);
+        if (fieldIsVolatile(field_form)) {
+            var qv = try arena.alloc(Form, 2);
+            qv[0] = sym("quote", loc);
+            qv[1] = field_form;
+            quoted_volatile[n_volatile] = try list(arena, qv, loc);
+            n_volatile += 1;
+        }
     }
     const fields_vec_form = try vec(arena, quoted_fields, loc);
+    const volatile_vec_form = try vec(arena, quoted_volatile[0..n_volatile], loc);
 
     // (quote Name)
     var quoted_name_items = try arena.alloc(Form, 2);
@@ -2945,11 +2978,13 @@ fn lowerDefType(
     quoted_name_items[1] = args[0];
     const quoted_name = try list(arena, quoted_name_items, loc);
 
-    // (rt/<ctor_prim> 'Name ['f1 'f2 ...])
-    var call_items = try arena.alloc(Form, 3);
+    // (rt/<ctor_prim> 'Name ['f1 'f2 ...] ['vol-field ...])  — arg 3 = the
+    // `^:volatile-mutable` field names (D-444; empty for defrecord / no-volatile).
+    var call_items = try arena.alloc(Form, 4);
     call_items[0] = .{ .data = .{ .symbol = .{ .ns = "rt", .name = ctor_prim } }, .location = loc };
     call_items[1] = quoted_name;
     call_items[2] = fields_vec_form;
+    call_items[3] = volatile_vec_form;
     const defrecord_call = try list(arena, call_items, loc);
 
     // (def Name (rt/__defrecord! ...)) — binds Name to a

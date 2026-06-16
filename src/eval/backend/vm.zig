@@ -579,7 +579,8 @@ inline fn stepOnce(
             var wrote = false;
             for (layout) |fe| {
                 if (std.mem.eql(u8, fe.name, field_name)) {
-                    inst.setField(fe.index, value);
+                    // D-444 / ADR-0152: `^:volatile-mutable` → atomic release store.
+                    if (fe.is_volatile) inst.setFieldVolatile(fe.index, value) else inst.setField(fe.index, value);
                     wrote = true;
                     break;
                 }
@@ -1381,8 +1382,11 @@ inline fn stepOnce(
             // decode below is safe.
             const field_val: ?Value = if (td.field_layout) |layout| fblk: {
                 for (layout) |fe| {
-                    if (std.mem.eql(u8, fe.name, cs_entry.method_name))
-                        break :fblk receiver.decodePtr(*const td_mod.TypedInstance).fields()[fe.index];
+                    if (std.mem.eql(u8, fe.name, cs_entry.method_name)) {
+                        // D-444 / ADR-0152: `^:volatile-mutable` → atomic acquire read.
+                        const inst = receiver.decodePtr(*const td_mod.TypedInstance);
+                        break :fblk if (fe.is_volatile) inst.getFieldVolatile(fe.index) else inst.fields()[fe.index];
+                    }
                 }
                 break :fblk null;
             } else null;

@@ -272,32 +272,6 @@ accepted:
       `:volatile-mutable` keyword (assignability) is acted on.
     derives_from: "F-004 (NaN-box uniform 8-byte Value, no primitive field storage) + F-005 (no primitive specialization) + ADR-0104"
     pin: "test/e2e/phase14_deftype_mutable.sh — long_hint_ignored_accepts_non_long (a `^long` mutable field accepts a String set)"
-  - id: "AD-018"
-    summary: "`:unsynchronized-mutable` and `:volatile-mutable` are unified into one 'assignable' flag while cljw is single-threaded; the cross-thread visibility distinction is dormant."
-    example: '(deftype C [^:volatile-mutable n] …) behaves identically to ^:unsynchronized-mutable (both: in-place slot write)'
-    why: |-
-      On the JVM the two keywords differ only in cross-thread memory visibility
-      (`:volatile-mutable` → a `volatile` field with happens-before ordering;
-      `:unsynchronized-mutable` → a plain field). Both collapse in cljw to the
-      same observable behaviour: a plain in-place slot write.
-      **Re-evaluated 2026-06-15 (F-015 / ADR-0142, gap area I):** the original
-      accept derived from "cljw is single-threaded" — that is NO LONGER TRUE
-      (future / agent drainers run user code on real OS threads). A deftype
-      instance with a `:volatile-mutable` field CAN now be shared across threads
-      (put in an atom/ref/agent) and mutated via a method on one thread + read on
-      another, where cljw's plain slot write lacks the JVM happens-before barrier.
-      So the divergence is now REAL, not dormant. It stays an accepted divergence
-      (not a bug-to-fix-now) because: (a) it is **non-deterministic** — a
-      memory-ordering race, so it cannot be deterministically pinned/TDD'd;
-      (b) it is low-frequency (mutable-field deftypes shared+mutated cross-thread
-      are rare); (c) the keyword is recoverable from source, so the finished-form
-      fix is well-defined. **Finished form** = route `:volatile-mutable` slot
-      read/write through an atomic load(.acquire)/store(.release) while
-      `:unsynchronized-mutable` stays a plain access; this needs the TypeDescriptor
-      to track per-field volatility (currently collapsed) — tracked as **D-444**.
-      Records reject BOTH (clj parity, defrecord_mutable_field).
-    derives_from: "non-deterministic cross-thread memory-ordering divergence — real since threading landed (F-015 re-eval 2026-06-15) but unpinnable + low-frequency; finished-form atomic-store routing tracked D-444. ADR-0104."
-    pin: "test/e2e/phase14_deftype_mutable.sh — volatile_mutable_same_as_unsynchronized (a :volatile-mutable counter increments identically)"
   - id: "AD-019"
     summary: "Java arrays are type-erased: element type hints (`^\"[B\"`, `^ints`, `^bytes`) are advisory only, and a typed-array constructor / `aset` does not coerce or type-check non-byte/short/char elements."
     example: '(let [^"[B" b (byte-array 1)] (aset b 0 65) (aget b 0)) => 65 (a non-byte stored into a byte-typed array, no error); (class (object-array 0)) => cljw "array" / clj "[Ljava.lang.Object;"'
@@ -555,3 +529,24 @@ accepted:
       clj-documented way gets the map (not 4 slots) — the recorded divergence.
     derives_from: "ADR-0059 (no JVM StackTraceElement) + AD-003 (no JVM class fiction) + AD-007 (cljw-native trace representation) + ADR-0140 (frame-seq shape)"
     pin: "test/e2e/phase14_throwable_map.sh — caught_trace_present/caught_at_present/caught_trace_fn lock the map-shaped :trace/:at for a caught exception; trace_absent/at_absent lock the omit-when-frame-less invariant"
+  - id: "AD-034"
+    summary: "cljw's volatile-grade concurrency cells (atom / volatile / ref / agent / `^:volatile-mutable` deftype fields) use `.acquire`/`.release` ordering, NOT `.seq_cst`; the JMM cross-independent-volatile total order (IRIW) is not guaranteed."
+    example: "Two independent `^:volatile-mutable` fields (or two atoms) written on two threads: two observer threads can disagree on the relative order of the writes — JVM `volatile` (sequentially consistent across volatile accesses) forbids this; cljw's acquire/release permits it."
+    why: |-
+      cljw's entire lock-free substrate uses `@atomicLoad(.acquire)` /
+      `@atomicStore(.release)` (CAS: `.acq_rel`/`.acquire`) — atom.zig,
+      volatile.zig, iref.zig, agent.zig, and (D-444 / ADR-0152) the
+      `^:volatile-mutable` deftype field path. Acquire/release gives full
+      happens-before for the dominant single-cell publish/consume pattern
+      (≥99.9% of real code) but is strictly weaker than JMM `volatile`, which is
+      sequentially consistent ACROSS independent volatile accesses (the IRIW /
+      two-independent-volatiles total-order property). cljw consciously elects a
+      UNIFORM acquire/release volatile-grade ordering (internal consistency +
+      the IRIW scenario is pathological — real Clojure code does not depend on a
+      cross-independent-volatile total order) rather than a per-cell `.seq_cst`
+      that would tax every store for an unused guarantee. Non-deterministic +
+      multi-thread, so not clj-oracle-observable via the diff sweep; the
+      by-construction half (the cells ARE atomic acquire/release) is what the pin
+      locks. See ADR-0152 (the conscious election + the DA's seq_cst analysis).
+    derives_from: "ADR-0152 (uniform acquire/release volatile-grade ordering) — JMM volatile = seq_cst across volatile accesses; cljw's acquire/release omits the IRIW cross-cell total order. Substrate: atom.zig/volatile.zig/iref.zig/agent.zig + the D-444 deftype field path."
+    pin: "test/e2e/phase14_deftype_mutable.sh — the :volatile-mutable field increments correctly (the by-construction half: the field IS atomic acquire/release; the IRIW gap itself is non-deterministic + untestable)"

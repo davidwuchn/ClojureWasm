@@ -103,6 +103,12 @@ pub const TypeDescriptor = struct {
     pub const FieldEntry = struct {
         name: []const u8,
         index: u16,
+        /// `^:volatile-mutable` (D-444 / ADR-0152): the field's read/write go
+        /// through atomic acquire/release for cross-thread happens-before.
+        /// `false` = a plain slot (an immutable field OR `^:unsynchronized-mutable`,
+        /// which is JVM-faithfully a plain field — sharing it across threads is a
+        /// data race on the JVM too).
+        is_volatile: bool = false,
     };
 
     pub const MethodEntry = struct {
@@ -296,6 +302,22 @@ pub const TypedInstance = extern struct {
     pub fn setField(self: *const TypedInstance, index: u32, v: Value) void {
         self.field_values_ptr[index] = v;
     }
+
+    /// Atomic-release write of a `^:volatile-mutable` field slot (D-444 /
+    /// ADR-0152). `Value` is an `enum(u64)`; a naturally-aligned 8-byte slot is
+    /// already hardware-atomic on aarch64/x86_64, so the builtin is for the
+    /// ORDERING fence (+ to stop the compiler reordering/coalescing) — the
+    /// publish half of cross-thread happens-before. Pairs with `getFieldVolatile`.
+    pub fn setFieldVolatile(self: *const TypedInstance, index: u32, v: Value) void {
+        @atomicStore(Value, &self.field_values_ptr[index], v, .release);
+    }
+
+    /// Atomic-acquire read of a `^:volatile-mutable` field slot (D-444 /
+    /// ADR-0152) — the consume half; sees every write ordered-before the
+    /// matching `setFieldVolatile`'s release.
+    pub fn getFieldVolatile(self: *const TypedInstance, index: u32) Value {
+        return @atomicLoad(Value, &self.field_values_ptr[index], .acquire);
+    }
 };
 
 /// Value handle to a process-lifetime `TypeDescriptor`. Sits on the
@@ -437,13 +459,21 @@ pub fn registerType(
     rt: *Runtime,
     name: []const u8,
     field_names: []const []const u8,
+    /// Per-field `^:volatile-mutable` flag (D-444 / ADR-0152), aligned with
+    /// `field_names`. Empty slice = all plain (the defrecord path + any deftype
+    /// with no volatile fields). Length, when non-empty, equals `field_names`.
+    field_volatile: []const bool,
     kind: TypeKind,
 ) !*const TypeDescriptor {
     const layout = try rt.gpa.alloc(TypeDescriptor.FieldEntry, field_names.len);
     errdefer rt.gpa.free(layout);
     for (field_names, 0..) |fname, i| {
         const dup = try rt.gpa.dupe(u8, fname);
-        layout[i] = .{ .name = dup, .index = @intCast(i) };
+        layout[i] = .{
+            .name = dup,
+            .index = @intCast(i),
+            .is_volatile = i < field_volatile.len and field_volatile[i],
+        };
     }
 
     const td = try rt.gpa.create(TypeDescriptor);
@@ -714,6 +744,37 @@ test "allocInstance allocates TypedInstance with field copy + tag .typed_instanc
     try testing.expectEqual(@as(i48, 3), inst.fields()[0].asInteger());
     try testing.expectEqual(@as(i48, 4), inst.fields()[1].asInteger());
     try testing.expect(inst.descriptor == td);
+}
+
+test "D-444 volatile field accessors round-trip + agree with plain access single-threaded" {
+    var fix = TdFixture.init();
+    defer fix.deinit();
+
+    const td = try testing.allocator.create(TypeDescriptor);
+    defer testing.allocator.destroy(td);
+    td.* = .{
+        .fqcn = "user.Vol",
+        .kind = .deftype,
+        .field_layout = null,
+        .protocol_impls = &.{},
+        .method_table = &.{},
+        .parent = null,
+        .meta = .nil_val,
+    };
+
+    const fields = [_]Value{ Value.initInteger(10), Value.initInteger(20) };
+    const v = try allocInstance(&fix.rt, td, &fields);
+    const inst = v.decodePtr(*const TypedInstance);
+
+    // Atomic release-store / acquire-load round-trips (the by-construction half
+    // of D-444 — the cross-thread guarantee itself is not deterministically
+    // testable; ADR-0152). Single-threaded, the atomic path observes the same
+    // value as the plain path.
+    inst.setFieldVolatile(0, Value.initInteger(99));
+    try testing.expectEqual(@as(i48, 99), inst.getFieldVolatile(0).asInteger());
+    try testing.expectEqual(@as(i48, 99), inst.fields()[0].asInteger()); // plain read sees the atomic write
+    inst.setField(1, Value.initInteger(77));
+    try testing.expectEqual(@as(i48, 77), inst.getFieldVolatile(1).asInteger()); // atomic read sees the plain write
 }
 
 test "TypeDescriptorRef round-trips a TypeDescriptor pointer through .type_descriptor Value" {

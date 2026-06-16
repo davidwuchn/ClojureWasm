@@ -510,7 +510,9 @@ fn evalSetField(rt: *Runtime, env: *Env, locals: []Value, n: node_mod.SetFieldNo
     if (td.field_layout) |layout| {
         for (layout) |fe| {
             if (std.mem.eql(u8, fe.name, n.field_name)) {
-                receiver.decodePtr(*const type_descriptor_mod.TypedInstance).setField(fe.index, value);
+                // D-444 / ADR-0152: `^:volatile-mutable` → atomic release store.
+                const inst = receiver.decodePtr(*const type_descriptor_mod.TypedInstance);
+                if (fe.is_volatile) inst.setFieldVolatile(fe.index, value) else inst.setField(fe.index, value);
                 return value;
             }
         }
@@ -715,7 +717,11 @@ fn evalInstanceMember(rt: *Runtime, env: *Env, locals: []Value, n: node_mod.Inte
     if (td.field_layout) |layout| {
         for (layout) |fe| {
             if (std.mem.eql(u8, fe.name, n.name)) {
-                return receiver.decodePtr(*const type_descriptor_mod.TypedInstance).fields()[fe.index];
+                // D-444 / ADR-0152: a `^:volatile-mutable` field reads via an
+                // atomic acquire load (cross-thread happens-before); a plain /
+                // unsynchronized field is a direct slot read.
+                const inst = receiver.decodePtr(*const type_descriptor_mod.TypedInstance);
+                return if (fe.is_volatile) inst.getFieldVolatile(fe.index) else inst.fields()[fe.index];
             }
         }
     }

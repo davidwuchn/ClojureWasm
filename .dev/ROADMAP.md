@@ -1007,7 +1007,7 @@ audit trail, not as a forward-looking instruction.
 | 12    | Bytecode cache (serialize + cache_gen)                                                          | Cold start `< 12 ms`; cache format versioning established                                                   |      |
 | 13    | VM optimisation: peephole.zig + STM `Ref`/`TVal` data structures (ADR-0010)                     | Five canonical benchmarks within 110 % of v1 24C.10; `Ref`/`TVal` + read-only `deref` land                  |      |
 | 14    | CLI + REPL + nREPL + deps.edn + Wasm Component build + **v0.1.0**                               | `cljw repl`, `cljw nrepl`, `cljw component build` all work; compat_tiers.yaml complete                      | 🔒    |
-| 15    | **Concurrency** — BUILT + race-hardened (gap area I; ADR-0142)                                 | atom/ref+STM/agent/future/promise/delay/locking/volatile ship; gap = parity/load (R1) + D-442/D-105/AD-018  | 🔒    |
+| 15    | **Concurrency** — BUILT + race-hardened (gap area I; ADR-0142)                                 | atom/ref+STM/agent/future/promise/delay/locking/volatile ship; gap = parity/load (R1) + D-442/D-105 (`:volatile-mutable` happens-before DONE 2026-06-16: ADR-0152)  | 🔒    |
 | 16    | **Wasm/edge-native** BUILT (gap area II) · ClojureScript→JS = future                          | component build/run/require ship (`cljw.wasm/*`); CLJS→JS genuinely unbuilt                                |      |
 | 17    | **VM perf: fusion → JIT** PARTIAL (gap area III)                                               | superinstruction/fusion slice landed (D-386 / O-018/019/021/023); narrow ARM64 JIT = milestone M            |      |
 | 18    | math + module/deps DONE · **C FFI** = future                                                   | `clojure.math` + deps.edn ship; C FFI (`dlopen`/libffi) genuinely unbuilt                                   |      |
@@ -1045,9 +1045,11 @@ in ADRs / debt rows / overlays still resolve while R4/R5 rewrite them at source)
   locking/volatile/pmap all ship + race-hardened (`phase16_concurrency_stress.sh`
   caught+fixed real races). Gaps: clj-parity/load (Track R R1 — done this session:
   agent ctor options/D-441, await-for, swap-vals!/reset-vals!, io!), `future-cancel`/
-  `seque`/legacy-agent surface (**D-442**), `:volatile-mutable` cross-thread re-eval
-  (**AD-018**), java.time trio (**D-105**). Hardening defers (gated, engine correct
-  without them): D-244 #4a' auto-collect, D-245 Option C blocking monitor.
+  `seque`/legacy-agent surface (**D-442**), java.time trio (**D-105**).
+  (`:volatile-mutable` cross-thread happens-before DONE 2026-06-16 — ADR-0152 /
+  D-444; un-accepted AD-018, the residual IRIW gap = AD-034.) Hardening defers
+  (gated, engine correct without them): D-244 #4a' auto-collect, D-245 Option C
+  blocking monitor.
 - **(II) Wasm / edge-native** — `cljw.wasm/*` component build/run/require BUILT
   (`src/runtime/cljw/wasm/`, embeds zwasm v2 per F-001). Gaps: WIT param marshalling
   (**D-404**), zwasm integration finished-form (**D-036 / D-350 / D-039**).
@@ -1431,8 +1433,11 @@ caught+fixed real races (atom non-atomic swap, STM doGet stale read); corpus
   await-for, swap-vals!/reset-vals!, io! — corpus-locked).
 - **D-442** — `future-cancel`/`future-cancelled?`/`seque` (infra-gated) + the
   low-value legacy/executor agent surface (classify implement/AD/stub).
-- **AD-018** — `:volatile-mutable` cross-thread visibility; the accept rationale
-  weakens now that threading is real → re-evaluate routing through an atomic store.
+- **`:volatile-mutable` cross-thread happens-before — DONE 2026-06-16** (ADR-0152
+  / D-444): volatile fields route through `@atomicLoad(.acquire)`/`@atomicStore(.release)`,
+  distinct from the plain `:unsynchronized-mutable`. Un-accepted AD-018; the
+  residual JMM IRIW cross-volatile total-order gap (acquire/release, not seq_cst)
+  = AD-034.
 - **D-105** — java.time trio (LocalDateTime/Duration/ZonedDateTime are skeletons;
   Instant + Date ship).
 - **Gated-defer (engine correct without them)**: D-244 #4a' auto-collect

@@ -363,7 +363,11 @@ fn registerTypePrim(
     kind: td_mod.TypeKind,
     comptime prim_name: []const u8,
 ) anyerror!Value {
-    try error_catalog.checkArity(prim_name, args, 2, loc);
+    // arg 2 (optional) = the `^:volatile-mutable` field-names vector (D-444 /
+    // ADR-0152). Absent (defrecord, or a deftype with no volatile fields) ⇒ all
+    // plain. defrecord forbids mutable fields at macro-expand, so only deftype
+    // ever passes a non-empty vector.
+    try error_catalog.checkArityRange(prim_name, args, 2, 3, loc);
     if (args[0].tag() != .symbol) {
         return error_catalog.raise(.type_arg_invalid, loc, .{
             .fn_name = prim_name,
@@ -398,7 +402,25 @@ fn registerTypePrim(
         field_names[i] = symbol_mod.asSymbol(elt).name;
     }
 
-    const td = try td_mod.registerType(rt, name_sym.name, field_names, kind);
+    // Mark which fields are `^:volatile-mutable` (D-444): the optional arg 2 is
+    // a vector of those field-name symbols. Build a flag aligned with field_names.
+    const field_volatile = try rt.gpa.alloc(bool, len);
+    defer rt.gpa.free(field_volatile);
+    @memset(field_volatile, false);
+    if (args.len == 3 and args[2].tag() == .vector) {
+        const vn = vector_mod.count(args[2]);
+        var j: u32 = 0;
+        while (j < vn) : (j += 1) {
+            const velt = vector_mod.nth(args[2], j);
+            if (velt.tag() != .symbol) continue;
+            const vname = symbol_mod.asSymbol(velt).name;
+            for (field_names, 0..) |fname, k| {
+                if (std.mem.eql(u8, fname, vname)) field_volatile[k] = true;
+            }
+        }
+    }
+
+    const td = try td_mod.registerType(rt, name_sym.name, field_names, field_volatile, kind);
     return td_mod.makeTypeDescriptorRef(rt, td);
 }
 
