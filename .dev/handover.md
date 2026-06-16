@@ -17,18 +17,19 @@
   gc_large_heap ~1.25×) + sieve + destructure ALL converge on dispatch (NOT a generational
   GC — de-prioritised). Extend the superinstruction set (O-029..O-031 added arith +
   local_const/locals) to more hot sequences; D-133 ARM64 JIT re-sequenced LAST (ADR-0145).
-  **CONCRETE ENTRY: the convergent call-ABI fast path** (the biggest remaining non-JIT
-  lever, helps sieve + gc_large_heap + all map/filter/reduce workloads). Measured this
-  session: micro-levers (TLV/trace-push/memset/mutex) all inert; auto-collect net-negative;
-  the GC pair is dispatch/alloc-bound. Primitive-invoked closures (map/filter/reduce call
-  back via `treeWalkCall`→`eval` per element) pay `current_env` 3×TLV + trace-push 4-6×TLV
-  (≈4% of sieve) + full eval prologue/epilogue per call. Design a lighter call entry for
-  simple-bytecode closures (ADR-level, GC-rooting-sensitive, DA-fork). Full measurement map
-  + the refuted-lever list: `private/notes/9.2.S-d386-flatten-path-orientation.md`. The
-  D-386 "lever (a) error-trace push" framing is REFUTED (A/B = 0.2-0.8 ms). D-133 ARM64 JIT
-  alternative: gate ("dispatch/alloc micro-opts exhausted") now empirically met. Method:
-  measure-first (ReleaseSafe only); experiment-and-revert (reverted commits MAY stay in log;
-  never leave `main` red; diff oracle + corpus 3181 stay green; ≥10 runs).
+  **CONCRETE ENTRY: scope + start D-133 ARM64 integer-loop JIT** (the decisive remaining
+  lever). This session empirically EXHAUSTED the non-JIT space for all 5 open ADR-0148
+  targets (destructure 1.05× / gc_large_heap 1.08× / gc_alloc_rate 1.15× / sieve 1.23× /
+  json_parse 1.14×): redundancy wins landed (O-048/O-049), micro-levers (TLV/trace-push/
+  memset/mutex) inert, auto-collect net-negative, **call-ABI fast-path ceiling measured
+  ~3-4.5% (refuted — current_env needed for correctness, trace-push needs risky lazy-rebuild)**.
+  Both D-386 "lever (a) error-trace push" and "lever 1 call-ABI" are REFUTED by A/B. D-133's
+  gate ("dispatch/alloc/call micro-opts exhausted") is now MET; ADR-0145 sequenced it last.
+  F-010 scope = ~700-1000 LOC ARM64 integer-loop JIT (counter trigger, leaf C-ABI, deopt-on-
+  non-int). Full measurement map + refuted-lever list:
+  `private/notes/9.2.S-d386-flatten-path-orientation.md`. Method: measure-first (ReleaseSafe
+  only); experiment-and-revert (reverted commits MAY stay in log; never leave `main` red;
+  diff oracle + corpus 3181 stay green; ≥10 runs).
   - regex arc DONE (ADR-0147); **D-448** nested-empty-quant capture deferred; **D-449**
     lazy-DFA reserved. **D-451** = Ratio canonical-invariant guard (ADR-0149).
   - **D-244 #4b** (eval-reentrant lazy-realization/reduce rooting under alloc-torture —
