@@ -1,12 +1,13 @@
 // SPDX-License-Identifier: EPL-2.0
 //! Bytecode serializer + deserializer — §9.16 row 14.11(a), D-100(a).
 //!
-//! Wire format v2 (extends cycle-1's instruction-only v1 per
-//! ADR-0034 §format-version policy "decoder-only permanent
+//! Wire format v3 (v3 adds the `type_descriptor` value tag per ADR-0034
+//! am5; v2 added fn_val/ns_filters; extends cycle-1's instruction-only v1
+//! per ADR-0034 §format-version policy "decoder-only permanent
 //! compatibility"):
 //!
 //!   [0..4]    magic  = "CLJW"
-//!   [4..6]    version (u16 LE, currently 2)
+//!   [4..6]    version (u16 LE, currently 3)
 //!   [6..10]   instr_count (u32 LE)
 //!   [10..]    instructions = instr_count * (opcode:u8 + operand:u16 LE)
 //!   [...]     constants_count (u32 LE)
@@ -41,7 +42,8 @@
 //! universe: immediates (nil / true / false / integer / float /
 //! char) + interned literals (string / symbol / keyword / var_ref
 //! / regex) + quoted collections (list / vector / array_map /
-//! hash_set) + compiled `fn_val` (ADR-0034 am2). Out of scope (raise
+//! hash_set) + compiled `fn_val` (ADR-0034 am2) + class-value
+//! `type_descriptor` (ADR-0034 am5, re-resolved by name). Out of scope (raise
 //! explicit `UnsupportedValueTag`): atom / multi_fn / big_int /
 //! wasm_* / transient_* / any runtime-only Value (per
 //! `no_op_stub_forbidden.md` — no silent
@@ -71,7 +73,7 @@ const tree_walk = @import("../backend/tree_walk.zig");
 const Function = tree_walk.Function;
 
 pub const MAGIC: [4]u8 = .{ 'C', 'L', 'J', 'W' };
-pub const VERSION: u16 = 2;
+pub const VERSION: u16 = 3;
 
 pub const SerializeError = error{
     OutOfMemory,
@@ -86,6 +88,11 @@ pub const SerializeError = error{
     /// it cannot be re-resolved by name at deserialize. Static host-class calls
     /// always have a named class, so this is an invariant guard.
     StaticDescriptorUnnamed,
+    /// A `.type_descriptor` constant wraps an anonymous descriptor (null `fqcn`,
+    /// e.g. a `reify` descriptor). An anonymous descriptor is a runtime value,
+    /// never an analyze-time class-symbol constant, so this is an invariant
+    /// guard — it cannot be re-resolved by name at deserialize.
+    TypeDescriptorUnnamed,
 };
 
 pub const DeserializeError = error{
@@ -99,6 +106,11 @@ pub const DeserializeError = error{
     /// runtime (the host class is not registered). Surfaces a concrete error
     /// rather than the VM's "missing descriptor (compiler bug)".
     StaticClassUnresolved,
+    /// A `.type_descriptor` constant's class name did not resolve at load
+    /// (the type's `deftype`/`defrecord`/`defprotocol` chunk has not run, or
+    /// the name is not a registered class). Surfaces a concrete error rather
+    /// than silently substituting nil.
+    TypeDescriptorUnresolved,
 };
 
 /// Wire-format Value classifier. **Stable enum** — the
@@ -124,6 +136,15 @@ pub const ValueTag = enum(u8) {
     /// Function constant (ADR-0034 am2). Body is its method bytecode
     /// chunk(s), serialized recursively via `serializeChunk`.
     fn_val = 0x0F,
+    /// Class-value constant (ADR-0034 am5): the boxed `.type_descriptor`
+    /// ref a class symbol resolves to at analyze time (`resolveClassValue`).
+    /// Serialized by NAME (the descriptor's `fqcn`), re-resolved on load via
+    /// `resolveClassValue` to the runtime's canonical descriptor — the same
+    /// re-resolution shape as `var_ref` and the static-call descriptor. The
+    /// descriptor it names is registered by an EARLIER chunk's
+    /// `deftype`/`defrecord`/`defprotocol` (which `runEnvelope` runs before
+    /// this chunk deserializes), so the lookup always hits.
+    type_descriptor = 0x10,
 };
 
 // --- Writer helpers (length-prefixed UTF-8) ---
@@ -307,6 +328,18 @@ fn writeValue(allocator: std.mem.Allocator, w: *std.Io.Writer, v: Value) Seriali
             const regex_value = @import("../../runtime/regex/value.zig");
             try writeLenPrefixed(w, regex_value.asRegex(v).source());
         },
+        .type_descriptor => {
+            // ADR-0034 am5: a class-value constant. Write the descriptor's
+            // `fqcn` (its `rt.types` key — the SIMPLE name for a user
+            // deftype/record/protocol, the dotted FQCN for a host surface);
+            // readValue re-resolves it via `resolveClassValue` to the same
+            // canonical ref. An anonymous (reify) descriptor has no name and
+            // is never an analyze-time constant — guard it loudly.
+            const ref = v.decodePtr(*const @import("../../runtime/type_descriptor.zig").TypeDescriptorRef);
+            const fqcn = ref.td_ptr.fqcn orelse return SerializeError.TypeDescriptorUnnamed;
+            try writeU8(w, @intFromEnum(ValueTag.type_descriptor));
+            try writeLenPrefixed(w, fqcn);
+        },
         else => return SerializeError.UnsupportedValueTag,
     }
 }
@@ -447,6 +480,25 @@ fn readValue(allocator: std.mem.Allocator, r: *ByteReader, rt: *Runtime, env: *@
             const regex_value = @import("../../runtime/regex/value.zig");
             const regex_compile = @import("../../runtime/regex/compile.zig");
             return regex_value.alloc(rt, src, regex_compile.Flags{}) catch return DeserializeError.OutOfMemory;
+        },
+        .type_descriptor => {
+            // ADR-0034 am5: re-resolve a class-value constant by its canonical
+            // key (the `fqcn` writeValue emitted) through the import-BLIND
+            // `resolveDescriptorByKey` — NOT `resolveClassValue`, whose
+            // ns-import + simple-name-fallback layers serve source symbols, not
+            // a wire key, and could mis-resolve under a shadowing import at the
+            // deserialize-time current ns (ADR-0034 am5 DA fork, Alt B). The
+            // type's defining chunk has already run (interleaved `runEnvelope`),
+            // so the lookup hits; `makeTypeDescriptorRef` returns the SAME
+            // canonical ref the build-time constant held (ADR-0059). A miss is a
+            // concrete error, never silent nil.
+            const fqcn = try r.readLenPrefixed();
+            const analyzer = @import("../analyzer/analyzer.zig");
+            const td = (analyzer.resolveDescriptorByKey(rt, fqcn) catch
+                return DeserializeError.OutOfMemory) orelse
+                return DeserializeError.TypeDescriptorUnresolved;
+            const td_mod = @import("../../runtime/type_descriptor.zig");
+            return td_mod.makeTypeDescriptorRef(rt, td) catch return DeserializeError.OutOfMemory;
         },
         .fn_val => {
             // ADR-0034 am2: reconstruct a Function from its serialized
@@ -1079,6 +1131,11 @@ test "every wire ValueTag has BOTH a write and a read arm (symmetry gate)" {
             .var_ref => Value.encodeHeapPtr(.var_ref, try env.intern(user_ns, "v", .nil_val, null)),
             .regex => try regex_value.alloc(&rt, "ab.", regex_compile.Flags{}),
             .fn_val => try tree_walk.allocFunctionFromSerialized(&rt, 0, &[_]tree_walk.SerializedMethod{}, null),
+            .type_descriptor => blk: {
+                const td_mod = @import("../../runtime/type_descriptor.zig");
+                const td = try td_mod.registerType(&rt, "SymGateType", &.{}, .deftype);
+                break :blk try td_mod.makeTypeDescriptorRef(&rt, td);
+            },
         };
         var sbuf: [4096]u8 = undefined;
         var sw: std.Io.Writer = .fixed(&sbuf);
@@ -1094,6 +1151,51 @@ test "every wire ValueTag has BOTH a write and a read arm (symmetry gate)" {
             return error.ReadArmMissing;
         };
     }
+}
+
+test "type_descriptor constant round-trips by name (ADR-0034 am5; D-452)" {
+    // A class-value constant — the `.type_descriptor` ref `resolveClassValue`
+    // mints for a class symbol — round-trips by NAME: writeValue emits the
+    // descriptor's fqcn, readValue re-resolves it through `resolveClassValue`
+    // to the runtime's canonical ref. This is the serializer half of D-452's
+    // non-core-.clj AOT unblock (the prior `UnsupportedValueTag` blocker).
+    var th = std.Io.Threaded.init(testing.allocator, .{});
+    defer th.deinit();
+    var rt = Runtime.init(th.io(), testing.allocator);
+    defer rt.deinit();
+    var env = try @import("../../runtime/env.zig").Env.init(&rt);
+    defer env.deinit();
+
+    const type_descriptor = @import("../../runtime/type_descriptor.zig");
+    // The defining chunk has run by load time → the type is registered. Mirror
+    // that here by registering BEFORE deserialize.
+    const td = try type_descriptor.registerType(&rt, "ZipLoc", &.{}, .defrecord);
+    const ref = try type_descriptor.makeTypeDescriptorRef(&rt, td);
+
+    const consts = [_]Value{ Value.initInteger(1), ref };
+    const chunk: BytecodeChunk = .{ .instructions = &.{}, .constants = &consts };
+    const bytes = try serializeChunk(testing.allocator, chunk);
+    defer testing.allocator.free(bytes);
+
+    const out = try deserializeChunk(testing.allocator, &rt, &env, bytes);
+    defer freeChunk(testing.allocator, out);
+    try testing.expectEqual(@as(usize, 2), out.constants.len);
+    try testing.expect(out.constants[1].tag() == .type_descriptor);
+    // ADR-0059 one-ref-per-descriptor: the re-resolved ref decodes to the SAME
+    // canonical descriptor as the original constant.
+    try testing.expectEqual(td, out.constants[1].decodePtr(*const type_descriptor.TypeDescriptorRef).td_ptr);
+
+    // An UNREGISTERED class name → a concrete error, never silent nil.
+    const consts2 = [_]Value{ref};
+    const bogus = try serializeChunk(testing.allocator, (BytecodeChunk{ .instructions = &.{}, .constants = &consts2 }));
+    defer testing.allocator.free(bogus);
+    // Overwrite the embedded name "ZipLoc" region is fragile; instead drop the
+    // type and re-deserialize: a fresh runtime without the registration misses.
+    var rt2 = Runtime.init(th.io(), testing.allocator);
+    defer rt2.deinit();
+    var env2 = try @import("../../runtime/env.zig").Env.init(&rt2);
+    defer env2.deinit();
+    try testing.expectError(DeserializeError.TypeDescriptorUnresolved, deserializeChunk(testing.allocator, &rt2, &env2, bogus));
 }
 
 test "chunk completeness gate: every side-table + entry field round-trips (D-365 residual)" {

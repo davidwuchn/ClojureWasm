@@ -555,36 +555,44 @@ fn resolveClassImport(env: *Env, name: []const u8) []const u8 {
 /// `rt.types` key on). Covers native + opaque + exception + interface-marker +
 /// host-surface + user-deftype classes uniformly. Returns null for an
 /// unrecognised name (so the caller falls back to nil / its own error).
+/// Resolve a CANONICAL class key — a native class name, a class-value key, or a
+/// user-deftype `rt.types` key — directly to its descriptor. NO ns-import
+/// resolution and NO simple-name fallback: the key is taken verbatim.
+///
+/// This is the single dispatch-order SSOT shared by `resolveClassValue` (the
+/// import-aware analyze-time path) and the AOT deserializer
+/// (`serialize.readValue`'s `type_descriptor` arm). The wire carries the
+/// descriptor's `fqcn` — already a canonical key — so the load path MUST NOT
+/// route it back through import resolution: an import shadowing the bare name
+/// at deserialize time would mis-resolve a baked class-value constant
+/// (ADR-0034 am5; the import-blind lookup is what makes the AOT round-trip
+/// shadow-proof).
+pub fn resolveDescriptorByKey(rt: *Runtime, key: []const u8) !?*const type_descriptor.TypeDescriptor {
+    if (class_name.nativeTagFor(key)) |tag| return try rt.nativeDescriptor(tag);
+    if (classValueKeyFor(key)) |k| return try rt.classDescriptor(k);
+    return rt.types.get(key);
+}
+
 pub fn resolveClassValue(rt: *Runtime, env: *Env, sym_ns: ?[]const u8, sym_name: []const u8) !?Value {
     var buf: [256]u8 = undefined;
     const cname = if (sym_ns) |nsn|
         (std.fmt.bufPrint(&buf, "{s}.{s}", .{ nsn, sym_name }) catch return null)
     else
         resolveClassImport(env, sym_name);
-    if (class_name.nativeTagFor(cname)) |tag| {
-        const td = try rt.nativeDescriptor(tag);
+    if (try resolveDescriptorByKey(rt, cname)) |td|
         return try type_descriptor.makeTypeDescriptorRef(rt, td);
-    }
-    if (classValueKeyFor(cname)) |key| {
-        const td = try rt.classDescriptor(key);
-        return try type_descriptor.makeTypeDescriptorRef(rt, td);
-    }
     // rt.types keys host-surface classes by FQCN but a USER deftype/record by its
     // SIMPLE name (AD-003: cljw class names are simple, ADR-0059). So a deftype
     // `Failure` in ns `instaparse.gll` is registered as `Failure`, and a reference
     // by its qualified `instaparse.gll.Failure` form (cfg.cljc:312
     // `(instance? instaparse.gll.Failure x)`) must fall back to the simple name —
-    // host classes are already resolved above (nativeTagFor / classValueKeyFor), so
-    // by here a qualified miss is a user-deftype reference (D-428/D-391). Consistent
-    // with cljw's simple-name deftype model: `a.b.T` and bare `T` are the same type.
-    const type_td = rt.types.get(cname) orelse blk: {
-        // A user deftype is keyed by its SIMPLE name, so a dotted reference
-        // (`instaparse.gll.Failure`, parsed as one name since it has no `/`) falls
-        // back to its last `.`-segment; a bare imported name keeps `sym_name`.
-        const simple = if (std.mem.findScalarLast(u8, cname, '.')) |dot| cname[dot + 1 ..] else sym_name;
-        break :blk if (!std.mem.eql(u8, simple, cname)) rt.types.get(simple) else null;
-    };
-    if (type_td) |td| return try type_descriptor.makeTypeDescriptorRef(rt, td);
+    // host classes are already resolved above, so by here a qualified miss is a
+    // user-deftype reference (D-428/D-391). Consistent with cljw's simple-name
+    // deftype model: `a.b.T` and bare `T` are the same type.
+    const simple = if (std.mem.findScalarLast(u8, cname, '.')) |dot| cname[dot + 1 ..] else sym_name;
+    if (!std.mem.eql(u8, simple, cname)) {
+        if (rt.types.get(simple)) |td| return try type_descriptor.makeTypeDescriptorRef(rt, td);
+    }
     return null;
 }
 
