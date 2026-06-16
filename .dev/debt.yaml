@@ -688,7 +688,7 @@ active:
       **`pmap`/`pcalls`/`pvalues` are sequential, not parallel** (landed 2026-06-03 as core.clj defns): cw v1 is single-threaded, so `pmap`=`(apply map …)`, `pcalls`=`(map #(%) fns)`, `pvalues`=`(pcalls thunks…)` — the RESULT is identical to clj (pmap is documented "semantically like map"; corpus `parallel_seq` 17/17 clj-verified), only the PARALLELISM is absent. This is NOT a dropped-semantic stub (the result contract is final-form-correct) — it is a perf property deferred to Phase-15 real threading (std.Io.Threaded + a work-pool), at which point pmap/pcalls gain genuine parallel execution (with bounded look-ahead for pmap) behind the same surface. clj-grounded: `(pmap inc [1 2 3])`→(2 3 4) both; side effects realize via `doall`/`dorun` (also landed). Cross-ref D-157/D-220 (Phase-15 concurrency) / the §9.2.R threading window / F-011. recall trigger: when Phase-15 threading (std.Io.Threaded work-pool) lands — wire pmap/pcalls to it.
     last_reviewed: "2026-06-03"
   - id: "D-266"
-    status: "open (found 2026-06-06 while discharging D-264) — non-chunked lazy-seq realization has a high per-element cost (~0.4ms/elem); `repeat` is not chunked while `range` is."
+    status: "open (found 2026-06-06; PREMISE CORRECTED 2026-06-16 during the sweep). Per-element cost of realizing `(repeat …)` is high (~0.4ms/elem) — the lazy-seq thunk+cons+closure overhead per `rest`. PREMISE FIX: 'chunk repeat like range' is the WRONG fix — clj's `repeat` is NOT a chunked-seq (`(chunked-seq? (seq (repeat 3 :x)))` → FALSE in clj, FALSE in cljw today); clj uses a lightweight native `Repeat` type optimized via `IReduce`/`internal-reduce`, keeping chunked-seq? false. Chunking cljw's repeat would FLIP chunked-seq? to true = a NEW divergence (verified vs clj 2026-06-16). The clj-faithful fix is a native lightweight `Repeat` seq type in Zig (O(1) `next()` like `LongRange`, + an internal-reduce fast path), NOT a `.clj` chunk-buffer producer. Substantial (a new native seq type w/ GC + seq-protocol + reduce integration) — fresh-context unit."
     category: "perf"
     barrier: |-
       **Non-chunked lazy-seq realization is slow (~0.4ms/element).** Measured
@@ -698,13 +698,17 @@ active:
       is faster (~1.1s) because `range` emits 32-chunks while the 2-arg
       `(repeat n x)` builds a one-cons-per-thunk lazy-seq. NOT a correctness bug
       and NOT a D-264 regression (lazy distinct/dedupe add ~0 overhead vs plain
-      count over the same source). Discharge candidates: (1) chunk `(repeat n x)`
-      (and `repeatedly`, `iterate`?) to 32-element chunks like `range`/`map`;
-      (2) lower the per-thunk lazy-seq realization constant in the VM
-      (thunk alloc / closure call on each `rest`). ROI-order under the perf
-      campaign. Cross-ref §9.2.S perf campaign, D-180 (bulk persistent!/
-      vector.fromSlice), O-004 (chunk-preserving filter), F-011.
-    last_reviewed: "2026-06-06"
+      count over the same source). Discharge candidates (CORRECTED 2026-06-16):
+      (1) a native lightweight `Repeat` seq type in Zig — O(1) `next()` + an
+      internal-reduce fast path — mirroring clj's `clojure.lang.Repeat` (keeps
+      `chunked-seq?` FALSE = clj-parity; NOT a `.clj` 32-chunk producer, which
+      would flip chunked-seq? true = divergence); (2) lower the per-thunk lazy-seq
+      realization constant in the VM (thunk alloc / closure call on each `rest`) —
+      this helps ALL non-chunked lazy seqs, not just repeat. ROI-order under the
+      perf campaign (campaign goal already MET, so low priority). Cross-ref §9.2.S
+      perf campaign, D-180 (bulk persistent!/vector.fromSlice), O-004
+      (chunk-preserving filter), F-011.
+    last_reviewed: "2026-06-16"
   - id: "D-319"
     status: "now (2026-06-07, ADR-0114 hiccup) — Object-extension protocol fallback is a DISPATCH-SITE special case, not a descriptor-chain link. `(extend-protocol P Object …)` registers on the Object class descriptor; dispatch.zig consults it (uncached lookupMethod) after a per-type miss. Correct (DA confirmed no cache hole — lookupWithCache never caches a null), but a defaults-only type re-walks lookupMethod every call and never caches the Object MethodEntry (perf cliff). Finished form (DA Alt A-finished-form-clean): make Object the reserved ROOT of the descriptor lookup chain so lookupMethod walks receiver_td→…→Object_td and the CallSite cache caches the resolved entry uniformly; nil's descriptor terminates WITHOUT Object (nil-exclusion gets an honest home). Also the seam future host-supertype precedence needs."
     category: "polymorphism"
