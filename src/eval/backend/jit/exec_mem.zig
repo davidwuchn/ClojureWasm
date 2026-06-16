@@ -129,6 +129,27 @@ pub fn subRegX(rd: u5, rn: u5, rm: u5) u32 {
     return 0xCB000000 | (@as(u32, rm) << 16) | (@as(u32, rn) << 5) | rd;
 }
 
+/// `SBFM Xd, Xn, #immr, #imms` (64-bit, sf=1 N=1). Base 0x93400000. The
+/// alias `SBFX Xd, Xn, #lsb, #width` is `SBFM` with immr=lsb, imms=lsb+width-1
+/// — the JIT unboxes a fixnum payload with `SBFX Xd, Xn, #0, #48` (sign-extend
+/// the i48 NaN-box payload into a full i64).
+pub fn sbfmX(rd: u5, rn: u5, immr: u6, imms: u6) u32 {
+    return 0x93400000 | (@as(u32, immr) << 16) | (@as(u32, imms) << 10) | (@as(u32, rn) << 5) | rd;
+}
+
+/// `SBFX Xd, Xn, #lsb, #width` (sign-extracting bitfield) = the `SBFM` alias.
+pub fn sbfxX(rd: u5, rn: u5, lsb: u6, width: u6) u32 {
+    return sbfmX(rd, rn, lsb, lsb + width - 1);
+}
+
+/// `MOVK Xd, #imm16, LSL #(hw*16)` (64-bit) — overwrite a 16-bit field, keep the
+/// rest. Base 0xF2800000 | (hw << 21). The JIT re-boxes a fixnum by stamping the
+/// `0xFFFC` tag into bits [63:48] with `MOVK Xd, #0xFFFC, LSL #48` (hw=3) over
+/// the in-range i48 result.
+pub fn movkX(rd: u5, imm16: u16, hw: u2) u32 {
+    return 0xF2800000 | (@as(u32, hw) << 21) | (@as(u32, imm16) << 5) | rd;
+}
+
 test "exec_mem: emit + call a trivial ARM64 leaf fn returning a constant" {
     if (builtin.cpu.arch != .aarch64) return error.SkipZigTest;
     var buf = try CodeBuffer.init(64);
@@ -168,4 +189,34 @@ test "exec_mem: 2-arg leaf proves C-ABI args (x0,x1) + add/sub by execution" {
     const sub = try sub_buf.finalize(*const fn (i64, i64) callconv(.c) i64);
     try std.testing.expectEqual(@as(i64, 38), sub(40, 2));
     try std.testing.expectEqual(@as(i64, -5), sub(5, 10));
+}
+
+test "exec_mem: fixnum unbox (SBFX) + rebox (MOVK tag) round-trip vs value.zig" {
+    if (builtin.cpu.arch != .aarch64) return error.SkipZigTest;
+    const Value = @import("../../../runtime/value/value.zig").Value;
+    const nb = @import("../../../runtime/value/nan_box.zig");
+    const INT_TOP16: u16 = @truncate(nb.NB_INT_TAG >> nb.NB_TAG_SHIFT); // 0xFFFC
+
+    // unbox: fn(boxed_value_bits) -> i64 { sbfx x0, x0, #0, #48 ; ret }
+    var ub = try CodeBuffer.init(64);
+    defer ub.deinit();
+    ub.emit(sbfxX(0, 0, 0, 48));
+    ub.emit(ret());
+    const unbox = try ub.finalize(*const fn (u64) callconv(.c) i64);
+
+    // rebox: fn(int) -> u64 { movk x0, #0xFFFC, lsl #48 ; ret }  (in-range i48 only)
+    var rb = try CodeBuffer.init(64);
+    defer rb.deinit();
+    rb.emit(movkX(0, INT_TOP16, 3));
+    rb.emit(ret());
+    const rebox = try rb.finalize(*const fn (i64) callconv(.c) u64);
+
+    const cases = [_]i64{ 0, 42, -5, 1, -1, nb.NB_I48_MAX, nb.NB_I48_MIN };
+    for (cases) |k| {
+        const boxed: u64 = @intFromEnum(Value.initInteger(k));
+        // JIT unbox == value.zig's asInteger (the deopt-free fixnum path).
+        try std.testing.expectEqual(k, unbox(boxed));
+        // JIT rebox of the in-range int == value.zig's boxed encoding.
+        try std.testing.expectEqual(boxed, rebox(k));
+    }
 }
