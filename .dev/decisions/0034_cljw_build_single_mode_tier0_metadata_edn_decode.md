@@ -755,6 +755,124 @@ cold start (negligible for a long-running `-m` server). Alt 3's auto-detection i
 rejected (F-013). The choice is on design grounds (finished-form entry encoding +
 F-011-clean runtime args), NOT diff size.
 
+## type_descriptor class-value constant serialization (amendment 5)
+
+Amendments 2-3 closed the `fn_val` + side-table serialization gaps that blocked
+`cljw build`. The cold-start AOT lever (D-452: AOT-cache the 23 non-core
+bundled `.clj` libs into the startup envelope, ~2.9 ms across all benches,
+ADR-0056 Cycle 3) surfaced the LAST `UnsupportedValueTag`: a `.type_descriptor`
+constant. The analyzer's `resolveClassValue` mints a canonical boxed class-value
+ref (ADR-0059) when a class symbol — a `deftype`/`defrecord`/`defprotocol` name
+or a host class — is resolved at analyze time and baked into a chunk's constant
+pool (it appears in `clojure.core/protocols` + `clojure.zip`). The v2 serializer
+had no arm for it.
+
+### A5-D1: serialize by canonical name, re-resolve import-blind
+
+A `.type_descriptor` constant is serialized by NAME — the descriptor's `fqcn`
+(its `rt.types` key: the SIMPLE name for a user deftype/record/protocol, the
+dotted FQCN for a host surface), behind a new wire tag `type_descriptor = 0x10`.
+No descriptor CONTENT (field layout / method table / `kind`) is serialized:
+the descriptor's behaviour is reconstructed when its DEFINING chunk runs (the
+`deftype`/`defrecord`/`defprotocol` form registers the type at runtime via the
+`__deftype!`/`__defrecord!` primitives + `extend-type`), and `runEnvelope`
+interleaves deserialize→run per chunk in form order, so the defining chunk
+ALWAYS runs before any referencing chunk deserializes. Baking a second content
+copy would fork the descriptor-of-record and break the ADR-0059 one-ref-per-
+descriptor invariant. This mirrors the `var_ref` (write ns+name, re-resolve via
+env) and static-call-descriptor (write fqcn, re-resolve via `resolveJavaSurface`)
+precedents.
+
+On load the name is re-resolved through a NEW import-BLIND
+`analyzer.resolveDescriptorByKey(rt, key)` — the shared dispatch-order SSOT
+(native → class-value → `rt.types`) that `resolveClassValue` also calls for its
+primary lookup — NOT `resolveClassValue` itself. `resolveClassValue`'s
+ns-import + simple-name-fallback layers serve SOURCE symbols; the wire carries
+an already-canonical key, so routing it back through import resolution would
+mis-resolve a baked constant under a shadowing import at the deserialize-time
+current ns. `makeTypeDescriptorRef` returns the SAME canonical ref the build-time
+constant held (ADR-0059). A miss is a concrete `TypeDescriptorUnresolved`, never
+a silent nil (`no_op_stub_forbidden`). An anonymous (reify) descriptor — null
+`fqcn`, a runtime value never an analyze-time constant — is an invariant guard
+(`TypeDescriptorUnnamed`).
+
+The wire `VERSION` bumps 2→3 (the format-version policy: adding a value tag is a
+version bump). `cljw build` artifacts embed their own runtime binary
+(Deno-style), so a v2 artifact runs with its v2 decoder; the new cljw only reads
+v3 payloads it builds. The `cljw-formats/0.1.0.edn` archive gains the byte-16
+entry.
+
+### Amendment-5 Devil's-advocate fork (2026-06-16, type_descriptor wire encoding, F-002/F-004/F-009/F-011/ADR-0059 envelope) — verbatim
+
+> **Alt A — smallest-diff: serialize the raw `kind` byte alongside the name.**
+> Keep the name-string write, additionally emit `kind` + field count; on read
+> still call the resolver but assert the re-resolved descriptor matches.
+> *Better:* a corruption tripwire for a name re-resolving to a DIFFERENT
+> descriptor (host class vs user deftype colliding on a simple name — reachable
+> via `resolveClassValue`'s simple-name fallback). *Breaks:* a half-measure —
+> `kind` does not FIX the collision (two deftypes, same simple name + field
+> count, still pass), and it bloats the wire with redundancy the
+> var_ref/fn_val/static-descriptor precedents all refused. Smallest-diff bias:
+> papers a detector over an ambiguous resolver instead of fixing it.
+>
+> **Alt B — finished-form-clean: resolve through a shadowing-proof
+> `rt.types`/native lookup, not `resolveClassValue`.** Keep name-only (contents-
+> not-pointers is F-004-correct; defining-chunk-runs-first is sound). Change the
+> RESOLVER: `resolveClassValue` routes a bare name through
+> `env.current_ns.imports` + a simple-name fallback, so the resolved descriptor
+> depends on which ns is current at deserialize time — an import shadowing a bare
+> class name could re-resolve a baked constant to the wrong descriptor. The wire
+> already carries the canonical `rt.types` key, so re-resolve through a direct,
+> import-blind lookup that cannot be shadowed. Should the wire also store
+> `kind`/field-layout/method-table? NO — the descriptor's content is
+> reconstructed by the defining chunk running (`registerType` + `extend-type`);
+> serializing the method-table means serializing runtime-constructed `Value` fn
+> pointers and forking the ADR-0059 descriptor-of-record. Name-only IS the
+> finished form for identity; the only gap is WHICH name-resolution path
+> re-hydrates, and Alt B closes it. *Better:* eliminates the ns-shadowing
+> mis-resolution class structurally. *Risk:* needs a small new resolver entry
+> point; mitigate dispatch-order drift by factoring the key→descriptor dispatch
+> core into a shared helper both resolvers call (itself finished-form-positive).
+>
+> **Alt C — wildcard: don't bake `type_descriptor` constants at all; lower the
+> class symbol to a name-load opcode.** Change the ANALYZER so a class symbol in
+> value position emits an `op_load_class` (name as an already-serializable
+> string/symbol constant), resolved at execution time — like `var_ref`. *Better:*
+> removes a wire tag from the decoder-permanence ledger entirely; unifies
+> class-value with var-value under "named runtime entity, resolved at execution".
+> *Breaks:* a depth-3 analyzer+VM+compiler surgery touching the runtime HOT path
+> for a cold-path benefit (perf-campaign regression risk); half-applied it is two
+> mechanisms (strictly worse); an F-011 resolution-TIMING shift (analyze-time →
+> execution-time for an undefined class) needs its own equivalence audit. Out of
+> proportion to D-452.
+>
+> **Recommendation: Alt B**, with the shared-dispatch-core factoring. The chosen
+> design is correct on the two hard questions (name-only, not content; defining-
+> chunk-runs-first ordering — verified against `runEnvelope`). It does NOT need
+> `kind`/layout/method-table (Alt A is actively wrong — forks the descriptor-of-
+> record, breaks ADR-0059). Its one real weakness is reusing the import-aware
+> `resolveClassValue` as the load-time resolver when the wire carries a canonical
+> key deserving an import-blind resolver. Alt C is the deepest-clean conceptual
+> form but disproportionate; record as forward debt. No F-NNN blocks Alt B
+> (F-004-clean, F-009-neutral, F-011-stronger, ADR-0059-preserving).
+
+### Amendment-5 decision
+
+**Alt B selected** (matches the DA recommendation). The first-cut implementation
+reused `resolveClassValue` (the smallest-diff convenience — it was already there
+and mostly works); the DA fork rated that the Cycle-budget-defer trap and Alt B
+finished-form-clean, so the loop re-picked Alt B per `principle.md`. Landed:
+(a) the import-blind `resolveDescriptorByKey(rt, key)` shared helper (the
+native → class-value → `rt.types` dispatch core, now the single SSOT
+`resolveClassValue` also calls for its primary lookup — no dispatch-order drift);
+(b) `serialize.readValue`'s `type_descriptor` arm calls it directly (no `env`,
+no import resolution). Alt A's `kind`/content baking is rejected on ADR-0059
+grounds (the DA's leading correctness finding, not a size call). Alt C
+(no-tag, `op_load_class`) is recorded as forward debt **D-453** — the deepest
+conceptual finished form, deferred as a depth-3 hot-path surgery disproportionate
+to the cold-start lever. The choice is on design grounds (shadow-proof canonical-
+key re-resolution), NOT diff size.
+
 ## Selection rationale
 
 Alt 2 (本提案) を選択。 F-002 (finished-form wins) + cljw メインターゲット
@@ -907,3 +1025,25 @@ Phase 12 entry 以降の Affected files (本 cycle 時点では未着地):
   mirrors real executable formats + F-011-clean runtime argv; Alt-3
   auto-detection rejected (F-013 hazard). Choice on design grounds, not diff
   size.
+- 2026-06-16 (amendment 5): `type_descriptor` class-value constant serialization
+  (D-452) — the last `UnsupportedValueTag` blocking the cold-start AOT of the 23
+  non-core bundled `.clj` libs. Added the "type_descriptor class-value constant
+  serialization" section (A5-D1): a class-value constant serializes by canonical
+  NAME (the descriptor `fqcn`, wire tag `0x10`); no descriptor content is baked
+  (the defining `deftype`/`defrecord`/`defprotocol` chunk reconstructs it at run,
+  and `runEnvelope` interleaves so it always runs first — content-baking would
+  fork the ADR-0059 descriptor-of-record). Re-resolved on load through a new
+  import-BLIND `analyzer.resolveDescriptorByKey` (the native → class-value →
+  `rt.types` dispatch core, now shared with `resolveClassValue`) — NOT
+  `resolveClassValue`, whose ns-import + simple-name-fallback layers would
+  mis-resolve a canonical wire key under a shadowing import at the deserialize ns.
+  Wire `VERSION` 2→3; `cljw-formats/0.1.0.edn` gains the byte-16 entry; a miss is
+  a concrete `TypeDescriptorUnresolved` (never silent nil). Devil's-advocate fork
+  (general-purpose, fresh context, F-002/F-004/F-009/F-011/ADR-0059 envelope, 3
+  alternatives) embedded verbatim; **Alt B (finished-form-clean, import-blind
+  resolver) selected** — the first cut reused `resolveClassValue` (smallest-diff
+  convenience), the DA rated that the Cycle-budget-defer trap, the loop re-picked
+  Alt B per `principle.md`. Alt A (`kind`/content baking) rejected on ADR-0059
+  grounds; Alt C (no-tag `op_load_class`, deepest conceptual form) recorded as
+  forward debt **D-453** (depth-3 hot-path surgery disproportionate to the
+  cold-start lever). Choice on design grounds, not diff size.

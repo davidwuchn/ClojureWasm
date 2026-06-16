@@ -17,16 +17,17 @@
 
 {:cljw-formats-version "0.1.0"
 
- ;; BytecodeChunk wire format. :version 2 covers BOTH the opcode layout AND
+ ;; BytecodeChunk wire format. :version covers BOTH the opcode layout AND
  ;; the peephole rule set (D-103): a peephole change that alters emitted
  ;; bytecode requires a version bump, else a cached artifact would replay
- ;; stale-optimized bytecode silently.
+ ;; stale-optimized bytecode silently. v3 adds the type_descriptor value tag
+ ;; (ADR-0034 am5); v2 added fn_val + ns_filters.
  :chunk-format
- {:version 2
+ {:version 3
   :magic "CLJW"
   :layout
   [["magic" "4 bytes = CLJW"]
-   ["version" "u16 = 2"]
+   ["version" "u16 = 3"]
    ["instr-count" "u32"]
    ["instructions" "instr-count entries of (opcode:u8, operand:u16)"]
    ["constants-count" "u32"]
@@ -75,7 +76,17 @@
   ;; whose closure is filled at runtime by op_make_fn). Param-name strings
   ;; are not serialized at v0.1.0 (D-139).
   {:byte 15 :hex "0x0F" :name :fn-val
-   :body "slot-base:u16, methods-count:u32, methods each (arity:u16, has-rest:u8, has-bytecode:u8, optional chunk (u32 len + :chunk-format bytes)), has-variadic:u8, optional variadic method (same shape)"}]
+   :body "slot-base:u16, methods-count:u32, methods each (arity:u16, has-rest:u8, has-bytecode:u8, optional chunk (u32 len + :chunk-format bytes)), has-variadic:u8, optional variadic method (same shape)"}
+  ;; ADR-0034 amendment 5: class-value constant — the boxed type_descriptor ref
+  ;; resolveClassValue mints for a class symbol (deftype/defrecord/defprotocol
+  ;; name or host class). Serialized by canonical NAME (the descriptor fqcn =
+  ;; its rt.types key); re-resolved on load via the import-BLIND
+  ;; resolveDescriptorByKey to the runtime's canonical descriptor (ADR-0059
+  ;; one-ref-per-descriptor). No descriptor content is baked — the defining
+  ;; chunk reconstructs it at run, before any referencing chunk deserializes
+  ;; (interleaved runEnvelope). A miss is a concrete error, never silent nil.
+  {:byte 16 :hex "0x10" :name :type-descriptor
+   :body "fqcn (u32 len + UTF-8 bytes); re-resolved by canonical key on load"}]
 
  ;; Payload envelope — a SEQUENCE of chunks (one per top-level form,
  ;; ADR-0034 am1 Alt B). Archived SEPARATELY from :chunk-format so envelope

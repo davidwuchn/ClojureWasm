@@ -25,26 +25,41 @@
 
 active:
   - id: "D-452"
-    status: "open (2026-06-16, ADR-0148 cold-start lever = ADR-0056 Cycle 3). The 23 NON-core bundled `.clj` libs (clojure.string/set/walk/zip/edn/data.json/csv/cli/pprint/test/data/math/protocols/template/java.io/cljw.json/cljw.fs/stacktrace/uuid/instant/test.tap/cljw.wasm/cljw.error) are re-parsed+analyzed+evaled FROM SOURCE on EVERY startup by `bootstrap.loadCoreFiles(FILES[1..])` — MEASURED ~2.9 ms (cold start 6.2→3.3 ms when skipped; the core AOT-envelope restore is only ~0.9 ms). They are eager-loaded (string/set/pprint work WITHOUT require — the optimizations.md 'lazy on require' note is STALE). AOT-caching them into the envelope (like core, ADR-0056) would cut ~2.9 ms across ALL benches — CLOSES sieve + string_ops, pushes json/gc_alloc/gc_large/bigint/destructure ~3 ms closer."
+    status: "open (2026-06-16, ADR-0148 cold-start lever = ADR-0056 Cycle 3). SERIALIZER BLOCKER RESOLVED 2026-06-16 (ADR-0034 am5): the `type_descriptor` wire tag (0x10) now serializes by canonical name + re-resolves import-blind via `resolveDescriptorByKey` — path (a), the finished form, NOT partial (b). Remaining = PART B (the cold-start win): wire the bootstrap AOT. The 23 NON-core bundled `.clj` libs (clojure.string/set/walk/zip/edn/data.json/csv/cli/pprint/test/data/math/protocols/template/java.io/cljw.json/cljw.fs/stacktrace/uuid/instant/test.tap/cljw.wasm/cljw.error) are re-parsed+analyzed+evaled FROM SOURCE on EVERY startup by `bootstrap.loadCoreFiles(FILES[1..])` — MEASURED ~2.9 ms (cold start 6.2→3.3 ms when skipped; the core AOT-envelope restore is only ~0.9 ms). They are eager-loaded (string/set/pprint work WITHOUT require — the optimizations.md 'lazy on require' note is STALE). AOT-caching them into the envelope (like core, ADR-0056) cuts ~2.9 ms across ALL benches — CLOSES sieve + string_ops, pushes json/gc_alloc/gc_large/bigint/destructure ~3 ms closer."
     category: "perf"
     barrier: |-
-      BLOCKED on envelope-serializer Value-tag coverage. Attempted 2026-06-16
-      (cache_gen: buildEnvelope over all FILES concatenated; loadCoreAot:
-      runEnvelope only, drop loadCoreFiles) — hit `UnsupportedValueTag` at build
-      time. EXACT TAG (debug-print diagnosed): **`type_descriptor`** — a
-      `defprotocol`/`deftype` descriptor lands as a chunk CONSTANT in a non-core
-      file (`zip.clj` and/or `core/protocols.clj`). (NB core.clj also has
-      defmulti/atom/defprotocol yet AOT-caches fine — those create runtime values,
-      not chunk constants; the type_descriptor-as-constant is the non-core
-      differentiator.) Reverted (experiment-and-revert; main green). Unblock paths:
-      (a) extend `serialize.zig`/`deserialize` to serialize a `type_descriptor`
-      (field layout + method table + protocol/supertype refs — complex, the hard
-      part); OR (b) PARTIAL AOT — cache the serializable majority, leave the
-      type_descriptor-producing files (zip/protocols) eager (captures most of the
-      ~2.9 ms). THEN drop the eager `loadCoreFiles` for the AOT'd set. Verify:
-      diff oracle + corpus 3181 + the bundled libs' behaviour == eager-load. ALT
-      (lazy-on-require) rejected: corpus/tests rely on eager availability → wide
-      breakage; AOT is the finished form.
+      Part A (serializer) DONE 2026-06-16 (ADR-0034 am5, Alt B): `type_descriptor`
+      constants round-trip by canonical name + import-blind re-resolution; the
+      end-to-end was probed (defprotocol + defrecord + extend AOT-builds,
+      deserializes, re-resolves, dispatches → 105). Part B (the cold-start win)
+      remains: cache_gen builds an envelope over the non-core FILES (mirror the
+      buildEnvelope-over-CORE_SOURCE path) and loadCoreAot runs it via runEnvelope
+      instead of `loadCoreFiles(FILES[1..])`. Open Part-B points: (1) one big
+      envelope (all FILES concatenated) vs a second envelope for FILES[1..]; the
+      non-core files use `(in-ns)`/`require` + depend on each other, so build-time
+      eval order + the embedded resolver must be live during the build
+      (buildEnvelope already evals each form + captures the require closure). (2)
+      the `-Dwasm`-gated cljw.wasm (FILES[23]) stays conditionally embedded.
+      Verify: diff oracle + corpus 3181 + bundled-lib behaviour == eager-load +
+      MEASURE cold start (ReleaseSafe, ≥10 runs). ALT (lazy-on-require) rejected:
+      corpus/tests rely on eager availability → wide breakage; AOT is the finished
+      form.
+    last_reviewed: "2026-06-16"
+  - id: "D-453"
+    status: "open (2026-06-16, ADR-0034 am5 Alt C — forward debt, deferred). Deepest conceptual finished form for class-value AOT: do NOT bake `.type_descriptor` constants at all — lower a class symbol in value position to an `op_load_class` (name as an already-serializable string/symbol constant) resolved at EXECUTION time, like `var_ref`. Removes the 0x10 wire tag from the decoder-permanence ledger entirely + unifies class-value with var-value under one 'named runtime entity, resolved at execution' model."
+    category: "structure"
+    barrier: |-
+      Depth-3 analyzer + VM + compiler surgery touching the runtime HOT path
+      (every `(class x)`/`instance?`/class-symbol eval) for a cold-path (AOT-load)
+      benefit — perf-campaign regression risk (MEMORY perf-beat-python). Also an
+      F-011 resolution-TIMING shift: a class symbol currently resolves at analyze
+      time; execution-time resolution changes WHEN an undefined-class reference
+      errors (user-observable) → needs its own equivalence audit. Half-applied it
+      is two class-resolution mechanisms (strictly worse). Disproportionate to the
+      D-452 cold-start lever, which ADR-0034 am5 Alt B already delivers cleanly.
+      Review trigger: if a future cycle reworks the analyzer's class-symbol
+      resolution OR the wire-tag ledger needs trimming, re-evaluate folding 0x10
+      into an op_load_class. Not campaign-blocking.
     last_reviewed: "2026-06-16"
   - id: "D-450"
     status: "open (2026-06-16, ADR-0148, user-directed). Make cljw the FASTEST script interpreter (among cljw/Python/Ruby/Node.js/Babashka cold-start) on the 9 top-gap benches. The active perf-campaign front; resume target in handover."
