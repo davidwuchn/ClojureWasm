@@ -8,6 +8,14 @@ pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
+    // `-Dprofile` (D-450 perf campaign): keep the symbol table on an OPTIMISED
+    // build so `sample` / Instruments / dtrace can attribute the hot path
+    // per-function. Without it, a release build is stripped (below) → profilers
+    // catch-all huge code ranges into one exported symbol, making the campaign's
+    // per-target deep-dive method (now that v0 is mined) unreliable. Profiling
+    // only; the SHIPPED artifact stays stripped. Default false.
+    const profile = b.option(bool, "profile", "Keep symbols on an optimised build for profiling (perf campaign)") orelse false;
+
     const exe_mod = b.createModule(.{
         .root_source_file = b.path("src/main.zig"),
         .target = target,
@@ -19,8 +27,9 @@ pub fn build(b: *std.Build) void {
         // user-facing diagnostics. Debug stays unstripped for dev tooling
         // (lldb / native backtraces). Aligns the installed artifact with the
         // already-documented stripped release size (O-008). (Debug-mode `zig
-        // build test` is unaffected — strip is false there.)
-        .strip = optimize != .Debug,
+        // build test` is unaffected — strip is false there.) `-Dprofile` keeps
+        // symbols on an optimised build for the perf-campaign profiler.
+        .strip = optimize != .Debug and !profile,
     });
 
     // Build-time options module (consumed via `@import("build_options")`):
