@@ -21,6 +21,7 @@ const Env = @import("../../env.zig").Env;
 const SourceLocation = @import("../../error/info.zig").SourceLocation;
 const error_catalog = @import("../../error/catalog.zig");
 const io_default = @import("../../concurrency/io_default.zig");
+const future = @import("../../future.zig");
 const host_instance = @import("../../host_instance.zig");
 const string_mod = @import("../../collection/string.zig");
 const HeapHeader = @import("../../value/value.zig").HeapHeader;
@@ -34,9 +35,29 @@ fn sleep(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anye
     _ = env;
     try error_catalog.checkArity("Thread/sleep", args, 1, loc);
     const ms = try error_catalog.expectInteger(args[0], "Thread/sleep", loc);
-    if (ms > 0) {
-        io_default.sleep(@as(u64, @intCast(ms)) * std.time.ns_per_ms);
+    if (ms <= 0) return Value.nil_val;
+    const total_ns = @as(u64, @intCast(ms)) * std.time.ns_per_ms;
+    // Off a cancellable future worker (the common case — main thread, agent
+    // drainer), one uninterrupted sleep. No behaviour change there.
+    if (future.current_future == null) {
+        io_default.sleep(total_ns);
+        return Value.nil_val;
     }
+    // On a future worker: D-442 / ADR-0153 sub-step 2a — poll the worker's cancel
+    // flag in slices so `future-cancel` aborts the sleep promptly (releasing the
+    // worker thread + GC pin) via the UNCATCHABLE `future_cancel_abort` signal,
+    // which unwinds the thunk past its own `(catch Throwable …)`.
+    const slice_ns: u64 = 20 * std.time.ns_per_ms;
+    var remaining = total_ns;
+    while (remaining > 0) {
+        if (future.cancelRequested()) return error_catalog.raise(.future_cancel_abort, loc, .{});
+        const this_slice = @min(remaining, slice_ns);
+        io_default.sleep(this_slice);
+        remaining -= this_slice;
+    }
+    // A cancel that landed during the final slice still aborts (so the worker
+    // unwinds rather than running on into work whose result is discarded).
+    if (future.cancelRequested()) return error_catalog.raise(.future_cancel_abort, loc, .{});
     return Value.nil_val;
 }
 

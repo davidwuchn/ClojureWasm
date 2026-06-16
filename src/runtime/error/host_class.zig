@@ -278,7 +278,7 @@ pub fn kindToHostClass(kind: Kind) ?[]const u8 {
         .name_error, .syntax_error, .string_error => "RuntimeException",
         .io_error => "IOException",
         .file_not_found => "FileNotFoundException",
-        .not_implemented, .internal_error, .out_of_memory, .resource_exhausted => null,
+        .not_implemented, .internal_error, .out_of_memory, .resource_exhausted, .cancellation_abort => null,
     };
 }
 

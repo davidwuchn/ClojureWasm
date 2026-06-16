@@ -165,6 +165,21 @@ EOF
 )
 assert_eq 'future_cancel_deref_ise_supertype' "$got" ':ise'
 
+# D-442 sub-step 2a: a future blocked in (Thread/sleep) aborts COOPERATIVELY on
+# future-cancel. The sleep raises an UNCATCHABLE signal (past the thunk's own
+# catch), so neither the post-sleep body (:slept) nor the catch (:caught) runs.
+# Main waits 900ms (> the thunk's 500ms sleep): without abort @a would be :slept
+# by 500ms; an un-swallowable abort leaves @a at :init.
+got=$("$BIN" - <<'EOF' 2>/dev/null | last_line
+(def a (atom :init))
+(def f (future (try (Thread/sleep 500) (reset! a :slept) (catch Throwable e (reset! a :caught)))))
+(future-cancel f)
+(Thread/sleep 900)
+(prn @a)
+EOF
+)
+assert_eq 'future_cancel_sleep_cooperative_abort' "$got" ':init'
+
 # future-cancel on an already-realised future → false (clj parity).
 got=$("$BIN" - <<'EOF' 2>/dev/null | last_line
 (def g (future 42))

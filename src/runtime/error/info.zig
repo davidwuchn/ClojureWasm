@@ -75,6 +75,13 @@ pub const Kind = enum {
     /// `kindToHostClass`) so untrusted code cannot swallow its own timeout via
     /// `(try … (catch Throwable …))`.
     resource_exhausted,
+    /// A worker thunk hit a blocking primitive after its future was
+    /// `future-cancel`led (D-442 / ADR-0153 sub-step 2). UNCATCHABLE (maps to
+    /// null in `kindToHostClass`) so a `(try (Thread/sleep …) (catch Throwable …))`
+    /// in the thunk cannot swallow the cooperative abort — it unwinds the worker,
+    /// releasing its thread + GC pin. Distinct from the CATCHABLE
+    /// `cancellation_error` a consumer's `deref` raises.
+    cancellation_abort,
 };
 
 /// Compilation/execution phase where the error occurred.
@@ -175,6 +182,7 @@ pub const ClojureWasmError = error{
     InternalError,
     OutOfMemory,
     ResourceExhausted,
+    CancellationAbort,
 };
 
 fn kindToError(kind: Kind) ClojureWasmError {
@@ -195,6 +203,7 @@ fn kindToError(kind: Kind) ClojureWasmError {
         .internal_error => ClojureWasmError.InternalError,
         .out_of_memory => ClojureWasmError.OutOfMemory,
         .resource_exhausted => ClojureWasmError.ResourceExhausted,
+        .cancellation_abort => ClojureWasmError.CancellationAbort,
     };
 }
 

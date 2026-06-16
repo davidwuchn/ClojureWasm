@@ -140,6 +140,7 @@ pub const Code = enum {
     macro_var_not_callable,
     future_thunk_failed,
     future_cancelled,
+    future_cancel_abort,
     stm_no_transaction,
     stm_retry_limit,
     locking_needs_object,
@@ -843,6 +844,16 @@ pub fn entry(comptime code: Code) Entry {
             .kind = .cancellation_error,
             .phase = .eval,
             .template = "deref of a cancelled future",
+        },
+        // D-442 / ADR-0153 sub-step 2a: the worker-internal cooperative-abort
+        // signal a blocking primitive (Thread/sleep) raises when its future was
+        // cancelled. UNCATCHABLE (`.cancellation_abort` maps to null) so the
+        // thunk's own try/catch cannot swallow it; never user-rendered (the
+        // worker catches + discards it via the .pending-guarded store).
+        .future_cancel_abort => .{
+            .kind = .cancellation_abort,
+            .phase = .eval,
+            .template = "future cancelled at a blocking point",
         },
         .stm_no_transaction => .{
             .kind = .value_error,

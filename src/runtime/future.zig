@@ -80,6 +80,24 @@ pub const Future = extern struct {
     }
 };
 
+/// The Future the CURRENT thread's worker is running, or null on the main
+/// thread and any non-worker thread. Set by `worker` (D-442 / ADR-0153 sub-step
+/// 2a) so a blocking primitive (Thread/sleep, …) can poll whether THIS worker's
+/// future was cancelled and abort cooperatively — releasing the thread + GC pin
+/// promptly. Threadlocal: each worker sees only its own future.
+pub threadlocal var current_future: ?*Future = null;
+
+/// True iff the current worker's future was `future-cancel`led — a blocking
+/// primitive polls this to abort promptly (ADR-0153 sub-step 2a). false on the
+/// main thread (no `current_future`) or an un-cancelled worker. Reads the state
+/// under the cell mutex (the same serialisation `cancel` writes under).
+pub fn cancelRequested() bool {
+    const f = current_future orelse return false;
+    io_default.lockMutex(&f.cell.mutex);
+    defer io_default.unlockMutex(&f.cell.mutex);
+    return f.state == .cancelled;
+}
+
 /// Spawn a worker thread to run `thunk`; return a pending Future. `loc` is
 /// accepted for surface symmetry but unused — a thrown thunk is caught on the
 /// worker and re-raised at deref time with a default location (D-115).
@@ -130,6 +148,11 @@ fn worker(f: *Future) void {
     const registered = if (root_set.registerThread(&ctx)) |_| true else |_| false;
     defer if (registered) root_set.unregisterThread(&ctx);
 
+    // Publish this worker's future so its thunk's blocking primitives can poll
+    // `cancelRequested` and abort cooperatively (ADR-0153 sub-step 2a).
+    current_future = f;
+    defer current_future = null;
+
     var result_state: FutureState = .realised_error;
     var result_value: Value = .nil_val;
     if (f.rt.vtable) |vt| {
@@ -162,9 +185,12 @@ fn worker(f: *Future) void {
 /// model). If the worker has not yet stored a result (`.pending`), mark
 /// `.cancelled` + wake any deref'er, returning `true` (matches clj `cancel(true)`
 /// on a pending/running task). A future that already realised / was cancelled
-/// returns `false`. NOTE: the worker thread is NOT yet aborted here — a thunk
-/// blocked at a primitive runs until that primitive returns (the cooperative
-/// abort at blocking points is the ADR-0153 follow-on); the result is discarded.
+/// returns `false`. The worker is not interrupted synchronously here; instead a
+/// blocking primitive in the thunk (`Thread/sleep`) polls `cancelRequested` and
+/// aborts cooperatively (ADR-0153 sub-step 2a), so a sleeping thunk's thread + GC
+/// pin release promptly. A thunk in a tight CPU loop (no blocking primitive) runs
+/// to completion, matching the JVM's best-effort `cancel(true)`; its result is
+/// discarded by the `.pending`-guarded store either way.
 pub fn cancel(v: Value) bool {
     std.debug.assert(v.tag() == .future);
     const f = v.decodePtr(*Future);
@@ -273,4 +299,11 @@ const testing = std.testing;
 test "Future isFuture predicate" {
     try testing.expect(!isFuture(Value.initInteger(7)));
     try testing.expect(!isFuture(.nil_val));
+}
+
+test "cancelRequested: false with no current worker future (main-thread path)" {
+    // No worker is running on the test thread, so the cooperative-abort poll is
+    // a no-op (Thread/sleep stays a single uninterrupted sleep off a worker).
+    current_future = null;
+    try testing.expect(!cancelRequested());
 }
