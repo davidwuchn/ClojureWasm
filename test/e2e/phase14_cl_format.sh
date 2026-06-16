@@ -59,7 +59,16 @@ assert_eq 'fresh_collapse' "$(run '(prn (pp/cl-format nil "ab~&~&cd"))')"       
 assert_eq 'fresh_atstart'  "$(run '(prn (pp/cl-format nil "~&top"))')"           '"top"'
 assert_eq 'fresh_n'        "$(run '(prn (pp/cl-format nil "x~3&y"))')"           '"x\n\n\ny"'
 
-# still-unimplemented directive raises explicitly (not silent mishandle)
-assert_eq 'unsupported-raises' "$(run '(prn (try (pp/cl-format nil "~p" 2) (catch Throwable e :raised)))')" ':raised'
+# ~P plural / ~* arg-jump / ~T tabulate (D-455 long-tail; arg-navigator; clj-oracle)
+assert_eq 'plural_one'  "$(run '(prn (pp/cl-format nil "~D dog~:P" 1))')"        '"1 dog"'
+assert_eq 'plural_many' "$(run '(prn (pp/cl-format nil "~D dog~:P" 2))')"        '"2 dogs"'
+assert_eq 'plural_y'    "$(run '(prn (pp/cl-format nil "~D pupp~:@P" 2))')"      '"2 puppies"'
+assert_eq 'star_skip'   "$(run '(prn (pp/cl-format nil "~a~*~a" 1 2 3))')"       '"13"'
+assert_eq 'star_abs'    "$(run '(prn (pp/cl-format nil "~a ~2@*~a" 1 2 3))')"    '"1 3"'
+assert_eq 'tab_col'     "$(run '(prn (pp/cl-format nil "ab~10Tcd"))')"           '"ab        cd"'
+assert_eq 'tab_inc'     "$(run '(prn (pp/cl-format nil "~a~,8T~a" "abc" "z"))')" '"abc      z"'
 
-echo "OK — phase14_cl_format (36 cases) green"
+# still-unimplemented directive raises explicitly (not silent mishandle)
+assert_eq 'unsupported-raises' "$(run '(prn (try (pp/cl-format nil "~<x~>" 2) (catch Throwable e :raised)))')" ':raised'
+
+echo "OK — phase14_cl_format (43 cases) green"

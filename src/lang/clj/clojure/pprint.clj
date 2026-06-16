@@ -169,64 +169,100 @@
 
 (declare cl-iter)
 
-;; Run `fmt` over the arg-seq `as`, returning [acc remaining-as]. `~^` (escape)
-;; returns early with the args left, which `~{~}` iteration uses to stop before
-;; the trailing separator once the list is exhausted.
-(defn cl-run [fmt as]
-  (let [n (count fmt)]
-    (loop [i 0 as as acc ""]
+;; Current output column = chars since the last newline in `s` (~T uses it).
+(defn cl-col [s]
+  (loop [i (dec (count s)) c 0]
+    (if (or (< i 0) (= (nth s i) \newline)) c (recur (dec i) (inc c)))))
+
+;; ~T tabulate: spaces to reach column `colnum`; if already at/past it, advance
+;; to the next `colinc` multiple beyond `colnum` (CL semantics; colinc<=0 = no-op).
+(defn cl-tab [acc colnum colinc]
+  (let [col (cl-col acc)
+        need (if (< col colnum)
+               (- colnum col)
+               (if (<= colinc 0) 0 (- colinc (mod (- col colnum) colinc))))]
+    (apply str (repeat (max 0 need) \space))))
+
+;; Run `fmt` over the operand vector `argv` from index `pos0`, returning
+;; [acc next-pos]. The index navigator lets ~* jump and ~:P / ~:* back up. `~^`
+;; (escape) returns early, which `~{~}` iteration uses to stop before the
+;; trailing separator once the operands are exhausted.
+(defn cl-run [fmt argv pos0]
+  (let [n (count fmt) na (count argv)]
+    (loop [i 0 pos pos0 acc ""]
       (if (>= i n)
-        [acc as]
+        [acc pos]
         (let [c (nth fmt i)]
           (if (and (= c \~) (< (inc i) n))
             (let [pd (cl-dir fmt (inc i))
                   params (nth pd 0) colon? (nth pd 1) at? (nth pd 2) d (nth pd 3) ni (nth pd 4)
-                  p0 (first params) p1 (second params) x (first as)]
+                  p0 (first params) p1 (second params)
+                  x (when (< pos na) (nth argv pos))]
               (cond
-                (or (= d \a) (= d \A)) (recur ni (next as) (str acc (if (string? x) x (pr-str x))))
-                (or (= d \s) (= d \S)) (recur ni (next as) (str acc (pr-str x)))
+                (or (= d \a) (= d \A)) (recur ni (inc pos) (str acc (if (string? x) x (pr-str x))))
+                (or (= d \s) (= d \S)) (recur ni (inc pos) (str acc (pr-str x)))
                 (or (= d \d) (= d \D))
-                (recur ni (next as) (str acc (cl-pad (if colon? (format "%,d" x) (str x)) p0 (or p1 \space))))
+                (recur ni (inc pos) (str acc (cl-pad (if colon? (format "%,d" x) (str x)) p0 (or p1 \space))))
                 (or (= d \f) (= d \F))
-                (recur ni (next as) (str acc (format (str "%" (if p0 p0 "") "." (or p1 0) "f") (double x))))
-                (or (= d \x) (= d \X)) (recur ni (next as) (str acc (cl-pad (format "%x" x) p0 (or p1 \space))))
-                (or (= d \o) (= d \O)) (recur ni (next as) (str acc (cl-pad (format "%o" x) p0 (or p1 \space))))
-                (or (= d \b) (= d \B)) (recur ni (next as) (str acc (cl-pad (Long/toBinaryString x) p0 (or p1 \space))))
+                (recur ni (inc pos) (str acc (format (str "%" (if p0 p0 "") "." (or p1 0) "f") (double x))))
+                (or (= d \x) (= d \X)) (recur ni (inc pos) (str acc (cl-pad (format "%x" x) p0 (or p1 \space))))
+                (or (= d \o) (= d \O)) (recur ni (inc pos) (str acc (cl-pad (format "%o" x) p0 (or p1 \space))))
+                (or (= d \b) (= d \B)) (recur ni (inc pos) (str acc (cl-pad (Long/toBinaryString x) p0 (or p1 \space))))
                 (or (= d \r) (= d \R))
-                (recur ni (next as) (str acc (cond p0 (Long/toString x p0)
+                (recur ni (inc pos) (str acc (cond p0 (Long/toString x p0)
                                                    at? (cl-roman x)
                                                    colon? (cl-ordinal x)
                                                    :else (cl-cardinal x))))
-                (= d \{) (let [cl (cl-close fmt ni \})] (recur (nth cl 1) (next as) (str acc (cl-iter (nth cl 0) x))))
+                ;; ~{...~} — iterate over a list arg (~@{ over the remaining args).
+                (= d \{)
+                (let [cl (cl-close fmt ni \})]
+                  (if at?
+                    (recur (nth cl 1) na (str acc (cl-iter (nth cl 0) (subvec argv (min pos na)))))
+                    (recur (nth cl 1) (inc pos) (str acc (cl-iter (nth cl 0) x)))))
                 (= d \()
-                (let [cl (cl-close fmt ni \)) r (cl-run (nth cl 0) as)]
+                (let [cl (cl-close fmt ni \)) r (cl-run (nth cl 0) argv pos)]
                   (recur (nth cl 1) (nth r 1) (str acc (cl-case (nth r 0) colon? at?))))
-                (= d \^) (if (nil? (seq as)) [acc as] (recur ni as acc))
-                (= d \%) (recur ni as (str acc \newline))
-                ;; ~C — print a character (D-455 long-tail). Plain only; the
-                ;; ~:C (named) / ~@C (readable) variants need the arg-navigator.
-                (and (or (= d \c) (= d \C)) (not colon?) (not at?))
-                (recur ni (next as) (str acc x))
+                (= d \^) (if (>= pos na) [acc pos] (recur ni pos acc))
+                (= d \%) (recur ni pos (str acc \newline))
+                ;; ~T — tabulate: pad with spaces to reach column p0 (default 1),
+                ;; then at least colinc=p1 (default 1) more if already at/past it.
+                (or (= d \t) (= d \T)) (recur ni pos (str acc (cl-tab acc (or p0 1) (or p1 1))))
+                ;; ~P plural — "s" unless arg is 1; ~@P → y/ies; ~:P backs up to
+                ;; re-read the previous arg (the common "~D dog~:P" idiom).
+                (or (= d \p) (= d \P))
+                (let [pv (if colon? (nth argv (dec pos)) x)
+                      np (if colon? pos (inc pos))]
+                  (recur ni np (str acc (if at? (if (= pv 1) "y" "ies") (if (= pv 1) "" "s")))))
+                ;; ~* arg-jump — ~N* forward N (default 1), ~N:* back N, ~N@* absolute.
+                (= d \*)
+                (let [np (cond at? (or p0 0)
+                               colon? (- pos (or p0 1))
+                               :else (+ pos (or p0 1)))]
+                  (recur ni np acc))
+                ;; ~C — print a character (plain; ~:C/~@C named/readable variants
+                ;; are not modelled).
+                (and (or (= d \c) (= d \C)) (not colon?) (not at?)) (recur ni (inc pos) (str acc x))
                 ;; ~& — fresh-line: a newline only if not already at line start;
-                ;; ~N& adds N-1 further newlines (D-455 long-tail).
+                ;; ~N& adds N-1 further newlines.
                 (= d \&)
                 (let [fresh (if (or (= acc "") (= (last acc) \newline)) acc (str acc \newline))]
-                  (recur ni as (apply str fresh (repeat (if p0 (dec p0) 0) \newline))))
-                (= d \~) (recur ni as (str acc \~))
+                  (recur ni pos (apply str fresh (repeat (if p0 (dec p0) 0) \newline))))
+                (= d \~) (recur ni pos (str acc \~))
                 :else (throw (ex-info (str "cl-format: directive ~" d " is not supported in ClojureWasm") {}))))
-            (recur (inc i) as (str acc c))))))))
+            (recur (inc i) pos (str acc c))))))))
 
 ;; Apply `subfmt` repeatedly over `lst`, consuming elements each pass; `~^` in
 ;; `subfmt` exits when the list is exhausted (so the trailing separator is dropped
 ;; on the last element). `(cl-run subfmt items)` returning `items` unchanged means
 ;; `~^` fired with nothing consumed → stop.
 (defn cl-iter [subfmt lst]
-  (loop [items (seq lst) acc ""]
-    (if (nil? items)
-      acc
-      (let [r (cl-run subfmt items)]
-        (if (= (nth r 1) items) acc (recur (seq (nth r 1)) (str acc (nth r 0))))))))
+  (let [v (vec lst) nv (count v)]
+    (loop [pos 0 acc ""]
+      (if (>= pos nv)
+        acc
+        (let [r (cl-run subfmt v pos)]
+          (if (= (nth r 1) pos) acc (recur (nth r 1) (str acc (nth r 0)))))))))
 
 (defn cl-format [stream fmt & args]
-  (let [result (nth (cl-run fmt (seq args)) 0)]
+  (let [result (nth (cl-run fmt (vec args) 0) 0)]
     (if (nil? stream) result (do (print result) nil))))
