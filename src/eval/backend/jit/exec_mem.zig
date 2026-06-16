@@ -179,6 +179,18 @@ pub fn bCond(cond: Cond, imm19: i19) u32 {
     return 0x54000000 | (off << 5) | @intFromEnum(cond);
 }
 
+/// `UBFM Xd, Xn, #immr, #imms` (64-bit, sf=1 N=1). Base 0xD3400000. `LSR` is the
+/// alias `UBFM Xd, Xn, #shift, #63`.
+pub fn ubfmX(rd: u5, rn: u5, immr: u6, imms: u6) u32 {
+    return 0xD3400000 | (@as(u32, immr) << 16) | (@as(u32, imms) << 10) | (@as(u32, rn) << 5) | rd;
+}
+
+/// `LSR Xd, Xn, #shift` (logical shift right) = the `UBFM Xd,Xn,#shift,#63`
+/// alias. The JIT extracts a NaN-box top-16 tag with `LSR Xd, Xn, #48`.
+pub fn lsrX(rd: u5, rn: u5, shift: u6) u32 {
+    return ubfmX(rd, rn, shift, 63);
+}
+
 test "exec_mem: emit + call a trivial ARM64 leaf fn returning a constant" {
     if (builtin.cpu.arch != .aarch64) return error.SkipZigTest;
     var buf = try CodeBuffer.init(64);
@@ -302,4 +314,54 @@ test "exec_mem: CMP + B.cond control flow proven by execution" {
     try std.testing.expectEqual(@as(u64, 0), loop(0));
     try std.testing.expectEqual(@as(u64, 1), loop(1));
     try std.testing.expectEqual(@as(u64, 1000), loop(1000));
+}
+
+test "exec_mem: deopt arm — fixnum tag-check + i48-overflow range-check (F-005)" {
+    if (builtin.cpu.arch != .aarch64) return error.SkipZigTest;
+    const Value = @import("../../../runtime/value/value.zig").Value;
+    const nb = @import("../../../runtime/value/nan_box.zig");
+    const INT_TOP16: u16 = @truncate(nb.NB_INT_TAG >> nb.NB_TAG_SHIFT); // 0xFFFC
+
+    // fn(boxed_a, boxed_b) -> { value: u64, status: u64 }  (x0, x1)
+    //   status 0 = both fixnum AND sum fits i48 → value = boxed(a+b)
+    //   status 1 = deopt (non-fixnum operand OR i48 overflow) → VM runs it
+    const Ret = extern struct { value: u64, status: u64 };
+    var buf = try CodeBuffer.init(128);
+    defer buf.deinit();
+    buf.emit(movzX(2, INT_TOP16)); //  0: x2 = 0xFFFC (tag)
+    buf.emit(lsrX(3, 0, 48)); //        1: x3 = top16(a)
+    buf.emit(cmpRegX(3, 2)); //         2: cmp x3, x2
+    buf.emit(bCond(.ne, 14)); //        3: a not fixnum -> deopt (instr 17)
+    buf.emit(lsrX(3, 1, 48)); //        4: x3 = top16(b)
+    buf.emit(cmpRegX(3, 2)); //         5
+    buf.emit(bCond(.ne, 11)); //        6: b not fixnum -> deopt (instr 17)
+    buf.emit(sbfxX(3, 0, 0, 48)); //    7: x3 = unbox(a)
+    buf.emit(sbfxX(4, 1, 0, 48)); //    8: x4 = unbox(b)
+    buf.emit(addRegX(3, 3, 4)); //      9: x3 = a + b (full i64)
+    buf.emit(sbfxX(4, 3, 0, 48)); //   10: x4 = sign-extend low48 of sum
+    buf.emit(cmpRegX(4, 3)); //        11: fits i48 iff x4 == x3
+    buf.emit(bCond(.ne, 5)); //        12: overflow -> deopt (instr 17)
+    buf.emit(movkX(3, INT_TOP16, 3)); //13: rebox sum (stamp tag into [63:48])
+    buf.emit(addRegX(0, 3, 31)); //    14: x0 = value = x3
+    buf.emit(movzX(1, 0)); //          15: x1 = status = 0
+    buf.emit(ret()); //                16
+    buf.emit(movzX(1, 1)); //          17: deopt: status = 1
+    buf.emit(movzX(0, 0)); //          18: value = 0 (sentinel)
+    buf.emit(ret()); //                19
+    const f = try buf.finalize(*const fn (u64, u64) callconv(.c) Ret);
+
+    // ok: 40 + 2 = 42, both fixnum, fits i48.
+    const ok = f(@intFromEnum(Value.initInteger(40)), @intFromEnum(Value.initInteger(2)));
+    try std.testing.expectEqual(@as(u64, 0), ok.status);
+    try std.testing.expectEqual(@intFromEnum(Value.initInteger(42)), ok.value);
+    // ok: negatives.
+    const okn = f(@intFromEnum(Value.initInteger(5)), @intFromEnum(Value.initInteger(-12)));
+    try std.testing.expectEqual(@as(u64, 0), okn.status);
+    try std.testing.expectEqual(@intFromEnum(Value.initInteger(-7)), okn.value);
+    // deopt: non-fixnum operand (nil).
+    const dn = f(@intFromEnum(Value.initInteger(40)), @intFromEnum(Value.nil_val));
+    try std.testing.expectEqual(@as(u64, 1), dn.status);
+    // deopt: i48 overflow (MAX + 1 leaves the i48 window → VM auto-promotes to BigInt).
+    const dov = f(@intFromEnum(Value.initInteger(nb.NB_I48_MAX)), @intFromEnum(Value.initInteger(1)));
+    try std.testing.expectEqual(@as(u64, 1), dov.status);
 }
