@@ -101,10 +101,7 @@ pub fn allocFromI64(rt: *Runtime, v: i64, origin: IntOrigin) !Value {
     m_ptr.* = try std.math.big.int.Managed.init(rt.gc.infra);
     errdefer m_ptr.deinit();
     try m_ptr.set(v);
-
-    const bi = try rt.gc.alloc(BigInt);
-    bi.* = .{ .header = HeapHeader.init(.big_int), .origin = origin, .m = m_ptr };
-    return Value.encodeHeapPtr(.big_int, bi);
+    return wrapManaged(rt, m_ptr, origin);
 }
 
 /// Allocate a BigInt as a copy of an existing Managed. The source's
@@ -121,6 +118,20 @@ pub fn allocFromManaged(rt: *Runtime, src: *const std.math.big.int.Managed, orig
     errdefer rt.gc.infra.destroy(m_ptr);
     m_ptr.* = try src.cloneWithDifferentAllocator(rt.gc.infra);
 
+    const bi = try rt.gc.alloc(BigInt);
+    bi.* = .{ .header = HeapHeader.init(.big_int), .origin = origin, .m = m_ptr };
+    return Value.encodeHeapPtr(.big_int, bi);
+}
+
+/// Wrap an already-computed, `gc.infra`-owned `*Managed` as a GC BigInt Value
+/// WITHOUT cloning. The arith fast path computes its result DIRECTLY into a
+/// fresh `m_ptr` (no temp Managed + `allocFromManaged` deep-copy), so this only
+/// attaches the GC wrapper. The caller owns `m_ptr`'s cleanup (its two
+/// errdefers: `destroy` the Managed alloc + `deinit` its limbs) until this
+/// returns; on `gc.alloc` failure those errdefers free it (this fn never
+/// deinits, so no double-free). PERF: O-047 — the no-clone result path shared
+/// by the arith primitives here AND `promote.zig`'s `wrapArithCell`.
+pub fn wrapManaged(rt: *Runtime, m_ptr: *std.math.big.int.Managed, origin: IntOrigin) !Value {
     const bi = try rt.gc.alloc(BigInt);
     bi.* = .{ .header = HeapHeader.init(.big_int), .origin = origin, .m = m_ptr };
     return Value.encodeHeapPtr(.big_int, bi);
@@ -187,10 +198,14 @@ pub fn allocAddManaged(
     b: *const std.math.big.int.Managed,
     origin: IntOrigin,
 ) !Value {
-    var r = try std.math.big.int.Managed.init(rt.gc.infra);
-    defer r.deinit();
-    try r.add(a, b);
-    return allocFromManaged(rt, &r, origin);
+    // PERF: O-047 — compute directly into the final GC cell (no temp Managed +
+    // allocFromManaged deep-copy). [refs: O-047, D-450]
+    const m_ptr = try rt.gc.infra.create(std.math.big.int.Managed);
+    errdefer rt.gc.infra.destroy(m_ptr);
+    m_ptr.* = try std.math.big.int.Managed.init(rt.gc.infra);
+    errdefer m_ptr.deinit();
+    try m_ptr.add(a, b);
+    return wrapManaged(rt, m_ptr, origin);
 }
 
 /// Allocate `a - b`.
@@ -200,10 +215,13 @@ pub fn allocSubManaged(
     b: *const std.math.big.int.Managed,
     origin: IntOrigin,
 ) !Value {
-    var r = try std.math.big.int.Managed.init(rt.gc.infra);
-    defer r.deinit();
-    try r.sub(a, b);
-    return allocFromManaged(rt, &r, origin);
+    // PERF: O-047 — direct-into-cell, no clone. [refs: O-047, D-450]
+    const m_ptr = try rt.gc.infra.create(std.math.big.int.Managed);
+    errdefer rt.gc.infra.destroy(m_ptr);
+    m_ptr.* = try std.math.big.int.Managed.init(rt.gc.infra);
+    errdefer m_ptr.deinit();
+    try m_ptr.sub(a, b);
+    return wrapManaged(rt, m_ptr, origin);
 }
 
 /// Allocate `a * b`.
@@ -213,10 +231,15 @@ pub fn allocMulManaged(
     b: *const std.math.big.int.Managed,
     origin: IntOrigin,
 ) !Value {
-    var r = try std.math.big.int.Managed.init(rt.gc.infra);
-    defer r.deinit();
-    try r.mul(a, b);
-    return allocFromManaged(rt, &r, origin);
+    // PERF: O-047 — direct-into-cell, no clone (the bigint_factorial hot path:
+    // ~100k multiplies, each previously alloc'd a temp + memcpy'd the limbs).
+    // [refs: O-047, D-450]
+    const m_ptr = try rt.gc.infra.create(std.math.big.int.Managed);
+    errdefer rt.gc.infra.destroy(m_ptr);
+    m_ptr.* = try std.math.big.int.Managed.init(rt.gc.infra);
+    errdefer m_ptr.deinit();
+    try m_ptr.mul(a, b);
+    return wrapManaged(rt, m_ptr, origin);
 }
 
 /// Floor-divide `a / b` (integer quotient toward -∞). Raises
@@ -231,12 +254,16 @@ pub fn allocDivFloorManaged(
     origin: IntOrigin,
 ) !Value {
     if (b.eqlZero()) return error.DivideByZero;
-    var q = try std.math.big.int.Managed.init(rt.gc.infra);
-    defer q.deinit();
-    var r = try std.math.big.int.Managed.init(rt.gc.infra);
-    defer r.deinit();
-    try q.divFloor(&r, a, b);
-    return allocFromManaged(rt, &q, origin);
+    // PERF: O-047 — quotient computed directly into the final GC cell; the
+    // remainder is a throwaway temp. [refs: O-047, D-450]
+    const m_ptr = try rt.gc.infra.create(std.math.big.int.Managed);
+    errdefer rt.gc.infra.destroy(m_ptr);
+    m_ptr.* = try std.math.big.int.Managed.init(rt.gc.infra);
+    errdefer m_ptr.deinit();
+    var rem = try std.math.big.int.Managed.init(rt.gc.infra);
+    defer rem.deinit();
+    try m_ptr.divFloor(&rem, a, b);
+    return wrapManaged(rt, m_ptr, origin);
 }
 
 // --- tests ---

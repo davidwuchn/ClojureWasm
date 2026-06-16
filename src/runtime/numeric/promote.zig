@@ -133,9 +133,27 @@ fn isTrueBigInt(v: Value) bool {
 /// — BigInt per AD-008). This is the operand-propagation the both-`isInt`
 /// dispatch misses (a heap-Long is tag `.big_int`, so it falls to the
 /// Managed arm yet must stay a Long).
-fn wrapArith(rt: *Runtime, r: *const Managed, a: Value, b: Value) !Value {
-    if (isTrueBigInt(a) or isTrueBigInt(b)) return try big_int.allocFromManaged(rt, r, .bigint);
-    return try wrapManaged(rt, r);
+/// Wrap an integer arithmetic result that was computed DIRECTLY into the
+/// `gc.infra`-owned heap Managed `m_ptr` (the add/sub/mul Managed arms) — no
+/// temp + clone. Consumes `m_ptr`: on the inline-Long collapse it frees it; on
+/// a heap wrap it MOVES it into the BigInt cell (`big_int.wrapManaged`, no
+/// limb copy); on error the CALLER's errdefers free it. PERF: O-047 — the
+/// bigint_factorial hot path (`(reduce *' …)` grows the accumulator, so every
+/// `*` previously cloned ~9 limbs via `allocFromManaged`). [refs: O-047, D-450]
+fn wrapArithCell(rt: *Runtime, m_ptr: *Managed, a: Value, b: Value) !Value {
+    if (!(isTrueBigInt(a) or isTrueBigInt(b))) {
+        // Long-category result: collapse to an immediate Long when it fits i48,
+        // else keep as a heap Long (D-165: no `N`) — both via the moved cell.
+        if (m_ptr.toInt(i64) catch null) |x| {
+            if (inI48(x)) {
+                m_ptr.deinit();
+                rt.gc.infra.destroy(m_ptr);
+                return Value.initInteger(x);
+            }
+            return try big_int.wrapManaged(rt, m_ptr, .long);
+        }
+    }
+    return try big_int.wrapManaged(rt, m_ptr, .bigint);
 }
 
 /// Collapse a Managed integer to a Value: immediate-Long when it fits i48,
@@ -405,10 +423,14 @@ pub fn addPromoting(rt: *Runtime, a: Value, b: Value) !Value {
     var ob: OwnedManaged = .{};
     defer ob.deinit();
     const bm = try operandManaged(rt, b, &ob);
-    var r = try Managed.init(rt.gc.infra);
-    defer r.deinit();
-    try r.add(am, bm);
-    return try wrapArith(rt, &r, a, b);
+    // PERF: O-047 — compute into the final GC cell; wrapArithCell collapses or
+    // MOVES it (no clone). [refs: O-047, D-450]
+    const m_ptr = try rt.gc.infra.create(Managed);
+    errdefer rt.gc.infra.destroy(m_ptr);
+    m_ptr.* = try Managed.init(rt.gc.infra);
+    errdefer m_ptr.deinit();
+    try m_ptr.add(am, bm);
+    return try wrapArithCell(rt, m_ptr, a, b);
 }
 
 /// `a - b` with auto-promotion.
@@ -439,10 +461,13 @@ pub fn subPromoting(rt: *Runtime, a: Value, b: Value) !Value {
     var ob: OwnedManaged = .{};
     defer ob.deinit();
     const bm = try operandManaged(rt, b, &ob);
-    var r = try Managed.init(rt.gc.infra);
-    defer r.deinit();
-    try r.sub(am, bm);
-    return try wrapArith(rt, &r, a, b);
+    // PERF: O-047 — compute into the final GC cell; no temp + clone. [refs: O-047, D-450]
+    const m_ptr = try rt.gc.infra.create(Managed);
+    errdefer rt.gc.infra.destroy(m_ptr);
+    m_ptr.* = try Managed.init(rt.gc.infra);
+    errdefer m_ptr.deinit();
+    try m_ptr.sub(am, bm);
+    return try wrapArithCell(rt, m_ptr, a, b);
 }
 
 /// `a * b` with auto-promotion.
@@ -473,10 +498,14 @@ pub fn mulPromoting(rt: *Runtime, a: Value, b: Value) !Value {
     var ob: OwnedManaged = .{};
     defer ob.deinit();
     const bm = try operandManaged(rt, b, &ob);
-    var r = try Managed.init(rt.gc.infra);
-    defer r.deinit();
-    try r.mul(am, bm);
-    return try wrapArith(rt, &r, a, b);
+    // PERF: O-047 — compute into the final GC cell; the bigint_factorial hot
+    // path (accumulator grows, every `*` previously cloned its limbs). [refs: O-047, D-450]
+    const m_ptr = try rt.gc.infra.create(Managed);
+    errdefer rt.gc.infra.destroy(m_ptr);
+    m_ptr.* = try Managed.init(rt.gc.infra);
+    errdefer m_ptr.deinit();
+    try m_ptr.mul(am, bm);
+    return try wrapArithCell(rt, m_ptr, a, b);
 }
 
 /// `a / b` with auto-promotion. Integer/Integer evenly-divisible
