@@ -1,130 +1,113 @@
 # ADR-0150 — Fabrication no-collect region (D-244 #4 alloc-torture rooting)
 
-- **Status**: **REJECTED 2026-06-16 — contradicts the already-DECIDED ADR-0090 (D-244 =
-  Alt B, "publish a precise root, do NOT disable the collector").** This ADR is kept as a
-  RECORD of why the no-collect-region (suppressCollection) approach was explored + rejected,
-  so a future session does not re-propose it. The DA fork recommended Alt A but did not
-  weight the committed stance; digging into the D-244 row (debt.yaml:1770) found D-244 was
-  DECIDED 2026-06-04 as **Alt B via ADR-0090 + DA-fork**, and the `gc_self_guard` mechanism
-  ALREADY LANDED (#3b-step2b). The remaining D-244 #4 work (#4b-future-ii) explicitly lists
-  "the Q1 gc_self_guard set/clear sites" — **wiring gc_self_guard at the fabrication/builder
-  sites IS the decided fix**. Alt A IS the `suppressCollection` escape hatch ADR-0090
-  refused. **The correct path = execute ADR-0090's Alt B** (see § Correct path below).
-
-## Correct path (ADR-0090 Alt B — the decided approach)
-
-Wire `gc_self_guard` (the landed single-`?Value` slot, root_set.zig:155) to publish the
-in-flight partial at each fabrication/builder site, per ADR-0090. **Open question this
-ADR's investigation surfaced**: ADR-0090's "a SINGLE slot suffices" claim assumes the
-unrooted window is at the op-LOOP level (the partial accumulator across `conj`/`assoc`
-calls, which ARE on `stack[0..sp]`). But the confirmed `(conj [1 2 3] 4)` corruption — a
-SINGLE conj, no loop — shows an unrooted window INSIDE the builder: `conj` allocs a
-`*TailNode` (NOT a Value), then a Vector; a collect between them sweeps the TailNode, which
-a partial-Value `gc_self_guard` does not root. So executing Alt B must resolve: does
-publishing the partial Value at the builder ENTRY suffice (if conj re-derives the tail from
-the rooted partial each call), or does the builder-internal node-alloc need its own
-publication (a node-level extension of the precise-root mechanism)? This is the genuine D-244
-#4 design question — resolve it WITHIN ADR-0090's publish-precise-root stance, NOT by
-suppressing the collector.
-
-## Why Alt A (no-collect region) was REJECTED — discovered post-DA
-
-`root_set.zig:138-154` (the `gc_self_guard` docstring) shows the codebase already has a
-**designed, committed fix for THIS exact bug** + an explicit design stance:
-
-> "The fabrication loop sets this slot to the partial before each alloc and clears it
-> after the result lands on the stack. A SINGLE slot suffices … **Refuses cw v0's
-> `suppressCollection` escape hatch (publish a precise root, do not disable the
-> collector)**. The fabrication-site set/clear wiring lands with #4."
-
-Alt A (a no-collect region) **IS** the `suppressCollection` escape hatch the codebase
-deliberately refused. So Alt A contradicts a committed invariant — and the DA fork cited
-line 152 but did not weight it as binding (it judged Alt B "gold-plating vs an uncommitted
-moving GC", missing that the stance is committed INDEPENDENT of moving GC — it is a
-"don't disable the collector" principle refusing a v0 escape hatch).
-
-**BUT** — the codebase's own designed mechanism is ALSO incomplete: `gc_self_guard` is a
-single `?Value` slot set to the *partial accumulator*; it roots the partial VECTOR but NOT
-the in-flight internal NODE (`*TailNode`/`*HamtNode`, not a Value) that `conj`/`assoc`
-allocate INTERNALLY. The confirmed `(conj [1 2 3] 4)` corruption (a SINGLE conj, no
-fabrication loop) proves the unrooted window is INSIDE the builder, which the "single slot
-at the op-loop level" model does not cover. So the codebase's intended fix, as documented,
-would not fix the standalone-conj case either.
-
-**Resolution needed (next focused session)**: re-run the Devil's-advocate fork with the
-`root_set.zig:150` "never suppress, publish precise root" stance as an EXPLICIT BINDING
-constraint, and resolve the three-way tension:
-  (a) extend the precise-root mechanism to internal nodes (Alt B + a node-level guard —
-      stance-aligned, "the hard part"); OR
-  (b) amend the stance to permit a BOUNDED no-collect region for pure-Zig builders (Alt A
-      + a documented stance amendment with rationale — is the v0-escape-hatch refusal still
-      load-bearing for a non-moving GC?); OR
-  (c) a hybrid (publish the partial Value via gc_self_guard AND a minimal node-guard only
-      for the builder-internal window).
-Check whether the "never suppress" stance is backed by an ADR / F-NNN (more binding) or is
-a code-comment preference (loop-amendable with rationale) before choosing.
-- **Deciders**: autonomous loop + Devil's-advocate fork (general-purpose, fresh
+- **Status**: **ACCEPTED 2026-06-16.** (Briefly REJECTED earlier the same day on a
+  premise error — see Revision history.) A bounded no-collect **fabrication region**
+  brackets each multi-alloc collection BUILDER so a mid-builder stop-the-world
+  collect is DEFERRED — closing the D-244 #4 alloc-torture corruption. Correct under
+  F-006 (non-moving mark-sweep). Implemented as `GcHeap.enterFabrication` /
+  `exitFabrication` + a threadlocal `fabrication_depth` gating the alloc-torture (and
+  the future ADR-0028 alloc-driven auto-collect) in `gc_heap.zig`.
+- **Deciders**: autonomous loop + two Devil's-advocate forks (general-purpose, fresh
   context, F-006/F-002/F-011 envelope).
 - **Supersedes / relates**: ADR-0028 (mark-sweep GC + the alloc-driven auto-collect
-  trigger), F-006 (non-moving GC strategy), D-244 #4, D-386 sub-step 2 (the op_top
-  register hoist whose alloc-torture validation this unblocks).
+  trigger), F-006 (non-moving GC strategy), ADR-0090 (D-244 = the multi-thread
+  safepoint mechanism), D-244 #4, D-386 sub-step 2 (the op_top register hoist whose
+  alloc-torture validation this unblocks).
 
 ## Context
 
 `CLJW_GC_TORTURE_ALLOC=1` forces a stop-the-world mark-sweep collect inside EVERY
 `gc.alloc` — the strictest rooting validation (catches an object unrooted across a
-mid-alloc collect). It is BLOCKED: any multi-alloc collection builder corrupts under
-it. Confirmed live (ReleaseSafe):
+mid-alloc collect). It was BLOCKED: any multi-alloc collection builder corrupted
+under it. Confirmed live (ReleaseSafe):
 
 - `[1 2 3 4 5]` → `[1 nil nil nil nil]` (silent corruption)
 - `(conj [1 2 3] 4)` → `@memcpy arguments alias` panic — **a single conj**, so the
   bug is at the BUILDER level, not just the op_*_literal fabrication ops
-- `(conj #{1 2} 3)` / `(hash-map :a 1 :b 2)` / `(vector 1 2 3)` → OOB / overflow panics
+- `(conj #{1 2} 3)` / `(hash-map :a 1 :b 2)` / `(vector 1 2 3)` / `(list 1 2 3)` →
+  OOB / overflow / corruption
 
 Cause: a builder (`conj` → `alloc(TailNode)` then `alloc(Vector)`; HAMT `assoc` →
-leaf + interior nodes; `fromSlice` → a whole `level_nodes: []*HamtNode` tower) holds
-an intermediate NODE — a `*TailNode`/`*HamtNode`, NOT a `Value` — in an unrooted Zig
-local across the next alloc. A per-alloc collect sweeps it.
+leaf + interior nodes; `fromSlice` → a whole `level_nodes: []*HamtNode` tower;
+the `list` builtin's `acc = consHeap(rt, x, acc)` cons-fold) holds an intermediate
+NODE — a `*TailNode`/`*HamtNode`/`*Cons`, NOT a `Value` — in an unrooted Zig local
+across the next alloc. A per-alloc collect sweeps it.
 
 **Not reachable in normal operation today**: auto-collect is OFF (gc_heap.zig:280);
 collects fire only at safepoints / eval-reentry, never mid-pure-Zig-builder. It is a
 torture-tool artifact today + a latent hazard once ADR-0028's **alloc-driven**
 auto-collect (a `bytes_since_last_gc > threshold` check inside `gc.alloc`) is wired.
-A prior `fromSlice` swap was tried + reverted (it MOVED the bug — its own node tower
-is unrooted).
 
 ## Decision
 
-**Alt A — a narrowest-span no-collect region per builder.** A threadlocal
-`gc_fabrication_depth: u32`; each multi-alloc collection builder brackets its internal
-alloc sequence with `enterFabrication()` / `defer exitFabrication()`. The per-alloc
-collect (the torture block in `gc_heap.alloc`, and ADR-0028's future auto-collect)
-skips when `depth > 0`.
+**A narrowest-span no-collect region per builder.** A threadlocal
+`fabrication_depth: u32`; each multi-alloc collection builder brackets its body with
+`enterFabrication()` / `defer exitFabrication()`. The per-alloc collect (the torture
+block in `gc.alloc`, and ADR-0028's future auto-collect) skips when `depth > 0`.
 
-- **Narrowest span**: only one builder's internal multi-alloc — never wrapping a path
-  that can reenter eval (collection builders are pure Zig; no user code runs inside, so
-  no reentrant collect — the only REAL F-006 hazard — is ever suppressed). `depth` is 0
-  at every safepoint / eval-reentry, so the torture tool's real hazard class stays fully
-  exercised.
-- **Covers all call sites** (op_*_literal, the vector/hash-map builtins, bare
-  `conj`/`assoc`) + **nests correctly** (a builder calling a wrapped builder balances).
-- **The alloc-torture is the completeness guard**: a builder that forgets the wrap still
-  trips it → self-enforcing regression test (so per-site rot is caught, not silent).
+- **Whole-body bracket, not first-alloc-out.** Deferring the builder's *first* alloc
+  too is what makes a Zig-caller fold loop safe: in `op_set_literal` / the transient
+  HAMT-promote loop / the `consHeap` fold, the partial accumulator is held in a Zig
+  local with **no alloc between builder calls**, so a whole-body bracket removes every
+  synchronous collect point and the partial is never exposed. (The existing
+  `gc_self_guard` `?Value` slot — ADR-0090 #3b-step2b — stays as the inert
+  publication infra for the FUTURE worker/safepoint trigger, a different path not
+  exercised by the synchronous alloc-torture. It is kept, not retired.)
+- **Covers all call sites + nests correctly** (a builder calling a wrapped builder
+  balances). The **alloc-torture is the completeness guard**: a builder that forgets
+  the wrap still trips it → self-enforcing regression test.
+- **Cost**: 2 threadlocal increments per builder (no lock). Always-on (the region
+  must be live in production once ADR-0028 auto-collect lands), so the array-map /
+  small-map single-alloc fast paths pay it too — measured negligible vs the alloc.
 
-**Correct under F-006 (non-moving mark-sweep)**: a collect suppressed across a BOUNDED
-builder runs harmlessly just after (nothing relocates; the result is rooted on the
-operand stack by then). **No regression vs today** — today no collect fires mid-builder
-anyway (folds already pile up until the next safepoint); the region preserves that and
-extends it to the future alloc-driven auto-collect case. Cost = 2 threadlocal increments
-per builder (no lock), vs Alt B's per-node heap-touch.
+**Scope**: this fixes the SYNCHRONOUS builder window (no eval reentry). The
+complementary class — a collect during an eval-REENTRANT lazy-seq realization /
+reduce that sweeps the accumulator (e.g. `(into {} (map f (range N)))`, which under
+alloc-torture yields a wrong count) — is the `gc_self_guard` / EvalFrame
+reentrant-rooting scope (the D-251/ADR-0094 family). It is tracked as **D-244 #4b**,
+a distinct and larger effort, NOT closed here.
 
-**Forward debt** (barriered, not on the distal moving GC but on the nearer trigger): when
-a MOVING/concurrent GC — or any collect that must run mid-builder and RELOCATE — is
-committed, the region must be replaced with published precise roots (Alt B's node-level
-guard). A non-moving alloc-driven auto-collect (ADR-0028) does NOT require this: deferring
-a bounded builder's collect is a legitimate brief critical section, not a correctness mask.
+**Correct under F-006 (non-moving mark-sweep)**: a collect suppressed across a
+BOUNDED builder runs harmlessly just after (nothing relocates; the result is rooted
+on the operand stack by then). **No regression vs today** — today no collect fires
+mid-builder anyway (folds already pile up until the next safepoint); the region
+preserves that and extends it to the future alloc-driven auto-collect case.
 
-## Alternatives considered (Devil's-advocate fork, fresh context — verbatim)
+**Forward debt** (barriered on the nearer trigger, not the distal moving GC): when a
+MOVING/concurrent GC — or any collect that must run mid-builder and RELOCATE — is
+committed, the region must be replaced with published precise roots (a node-level
+guard). A non-moving alloc-driven auto-collect (ADR-0028) does NOT require this:
+deferring a bounded builder's collect is a legitimate brief critical section, not a
+correctness mask. Row: D-244 #4 forward.
+
+## Why the "never suppress" stance does NOT forbid this (the reversal)
+
+This ADR was briefly rejected on the belief that a no-collect region contradicts an
+already-decided "publish a precise root, do NOT disable the collector" stance. Read
+directly, that belief was wrong:
+
+- **ADR-0090's D-244 decision text** (lines 389-435) decides the **multi-thread
+  safepoint** mechanism. Its "self-guard not a guard-list" language (410-413) rejects
+  a per-site guard-LIST for partial **VALUES** in favour of a single `gc_self_guard`
+  slot — it is about the `op_*_literal` accumulator (a *Value*), and says **nothing**
+  about the raw `*TailNode`/`*HamtNode`/`*Cons` allocated INSIDE one builder. ADR-0090
+  also explicitly defers concurrent/incremental mark to ROADMAP §89.2 under F-006.
+- The "Refuses cw v0's `suppressCollection` escape hatch" line lives in
+  `root_set.zig` (the `gc_self_guard` docstring) — a **code comment** on the
+  partial-Value slot, loop-amendable, not ADR-0090 decision text and not an F-NNN.
+- A bounded no-collect region for a **pure-Zig builder** (no user code, no
+  eval-reentry) is **not** cw v0's un-scoped `suppressCollection` (which could wrap
+  arbitrary eval-reentry — the real F-006 hazard). The region never blinds a
+  safepoint / back-edge collect (`depth` is 0 there). Same verb, different hazard
+  class.
+
+The code comment is amended in the same change to record this distinction (still
+refused: un-scoped suppression that could wrap eval-reentry; introduced: the bounded
+pure-Zig-builder region).
+
+## Alternatives considered (Devil's-advocate forks, fresh context — verbatim)
+
+### Fork 1 (design) — recommended Alt A, the no-collect region
 
 > **Shared premise**: under F-006 (non-moving mark-sweep) a mid-fold collect changes
 > nothing semantically — objects don't move; the only corruption is sweeping an
@@ -136,78 +119,105 @@ a bounded builder's collect is a legitimate brief critical section, not a correc
 > brackets its fold; the collect skips when >0. *Better*: structurally complete with the
 > smallest correct surface — covers the partial AND every internal node regardless of how
 > many allocs a builder does; no node-guard infra, no per-alloc overhead, no per-builder
-> wiring that rots silently (it does not care how `fromSlice`'s level tower is shaped).
-> *Risks*: makes alloc-torture skip mid-fold collects — but only the mid-pure-Zig-fold
-> collect F-006 forbids; it does NOT blind any safepoint/eval-reentry collect (depth is 0
-> there). Residual risk is purely forward (a moving GC), mitigated by a forward-note +
-> debt row. *Diagnostic value*: preserved for every hazard real under F-006; declines only
-> the non-hazard — the rule's sanctioned case.
+> wiring that rots silently. *Risks*: makes alloc-torture skip mid-fold collects — but
+> only the mid-pure-Zig-fold collect F-006 forbids; it does NOT blind any
+> safepoint/eval-reentry collect (depth is 0 there). Residual risk is purely forward (a
+> moving GC), mitigated by a forward-note + debt row. *Diagnostic value*: preserved for
+> every hazard real under F-006; declines only the non-hazard — the rule's sanctioned case.
 >
 > **Alt B (root every intermediate: partial Value via gc_self_guard + a NEW node-level
-> guard)** — *Better*: also correct under a future moving/concurrent GC (publishes precise
-> roots, the discipline root_set.zig:152 endorses). *Breaks/gold-plating*: pervasive +
-> load-bearing — `fromSlice` holds a whole `level_nodes: []*HamtNode` slice across the
-> level loop (a scalar guard cannot root it → effectively a second mini-root-set); `conj`
-> has up to 4 unrooted-node windows; every future builder must remember to wire it or
-> silently reintroduce the bug. The ENTIRE payoff is correctness against a GC the project
-> has NOT committed to (F-006) — Reservation-as-bias compounded by gold-plating. Under
-> non-moving mark-sweep it buys nothing A does not, at many times the surface + a per-node
-> heap-touch on the hot path.
+> guard)** — *Better*: also correct under a future moving/concurrent GC. *Breaks/gold-
+> plating*: pervasive — `fromSlice` holds a whole `level_nodes: []*HamtNode` slice across
+> the level loop (a scalar guard cannot root it → a second mini-root-set); `conj` has up
+> to 4 unrooted-node windows; every future builder must remember to wire it or silently
+> reintroduce the bug. The ENTIRE payoff is correctness against a GC the project has NOT
+> committed to (F-006) — Reservation-as-bias compounded by gold-plating. Under non-moving
+> mark-sweep it buys nothing A does not, at many times the surface.
 >
-> **Alt C (single-alloc builder + publish the one internal node)** — *Better*: keeps the
-> single-alloc perf win. *Fatal, verified in code*: the premise is FALSE — `fromSlice`
-> does NOT have one internal node; it allocates `leaf_count` leaves then interior nodes
-> level-by-level, holding them in `level_nodes` across each `alloc(HamtNode)`. Publishing
-> "the one TailNode" leaves the whole tower unrooted → torture moves the corruption from
-> the tail to the tree (the silent `[1 nil nil]` the 2026-06-15 revert already saw). To
-> fix C you rebuild Alt B's tower guard → C is either incorrect (one slot) or Alt B in
-> disguise. Its single-alloc perf goal is ORTHOGONAL — pursue it separately, riding inside
-> A's region.
+> **Alt C (single-alloc builder + publish the one internal node)** — *Fatal, verified in
+> code*: `fromSlice` does NOT have one internal node; it holds the whole tower. Publishing
+> "the one TailNode" leaves the tower unrooted → torture moves the corruption from the tail
+> to the tree. To fix C you rebuild Alt B's tower guard → C is either incorrect or Alt B in
+> disguise.
 >
-> **Recommendation: Alt A.** Finished-form for the COMMITTED architecture. The corruption
-> it suppresses is, under non-moving mark-sweep, a non-event. It roots the partial AND every
-> internal node by construction, needs no node-level guard, adds no per-node hot-path
-> overhead, and does not rot when a new builder lands. Alt B is right ONLY if F-006 flips to
-> a moving GC — at which point B's node-guard is subsumed by the moving GC's own
-> barrier/handle machinery, so B is not even the right shape for that future. Alt C is
-> rejected on a verified factual error.
+> **Recommendation: Alt A.** Finished-form for the COMMITTED architecture. Alt B is right
+> ONLY if F-006 flips to a moving GC — at which point B's node-guard is subsumed by the
+> moving GC's own barrier/handle machinery, so B is not even the right shape for that
+> future.
+
+### Fork 2 (reversal-check) — steelmanned Alt B, then confirmed the reversal
+
+> **Steelman of Alt B**: a GC's value is *one* invariant — "every live object is reachable
+> from a precise root, always." A `suppressCollection`-shaped hatch creates two contracts
+> ("rooted" OR "inside a suppress window") that every future collect-trigger must check;
+> cw v0 deliberately refused exactly this. Under that lens Alt A is functionally identical
+> today but a *worse finished form*.
 >
-> **Conditions on A**: (1) narrowest span — only the pure-Zig builder, errdefer-restored,
-> never wrapping eval-reentry; (2) a forward-note marker + debt row barriered on "a
-> mid-alloc-collecting RELOCATING GC lands"; (3) keep alloc-torture's edge for every other
-> `gc.alloc` site. Caveat: ADR-0028 auto-collect is alloc-driven — if it lands as a
-> NON-relocating collect, A's deferral is still correct (bounded builder; runs just after);
-> only a RELOCATING collect would force B.
+> **Why the steelman does NOT survive F-006**: (1) the precise-root surface is ALREADY a
+> union of bespoke mechanisms (permanent_roots, eval_frame chain, binding heads, ns_vars,
+> macro_root_slot, AND gc_self_guard — itself an exception to the operand-stack model); a
+> bounded pure-Zig critical section is no more a "second contract" than macro_root_slot
+> already is. (2) A bounded region over pure-Zig builders that cannot reenter eval is NOT
+> v0's un-scoped hatch (which could wrap eval-reentry — the real hazard); same verb,
+> different hazard class. (3) "Right shape for a moving GC" cuts AGAINST B: a moving GC
+> supplies its own root-fixup machinery, so B's hand-rolled node-guard array would be
+> ripped out — B is speculative infra mis-shaped for the future it targets
+> (Reservation-as-bias).
+>
+> **Stance verdict**: ADR-0090's decision TEXT does not forbid Alt A for builder-internal
+> nodes; the "never suppress" line is a code-comment preference (root_set.zig:150),
+> loop-amendable. **Reversing the rejection is sound, not the opposite premise error**,
+> provided: (a) justify on finished-form grounds, not diff size; (b) amend the code
+> comment to distinguish the still-refused un-scoped suppression from the introduced
+> bounded region; (c) keep the forward (moving-GC) debt row.
+>
+> **Recommendation: Alt C (hybrid)** — keep the landed `gc_self_guard` for the op-loop
+> partial-Value window, add the bounded region for the builder-internal raw-node window;
+> collapse to pure Alt A only if gc_self_guard proves subsumed (verify, don't assume).
+
+**Implementation finding (post-Fork-2)**: verified that under the SYNCHRONOUS
+alloc-torture the whole-body region subsumes the op-loop partial-Value window (no
+alloc between builder calls in the in-VM folds), so the synchronous fix is pure Alt A
+and `gc_self_guard` stays inert future infra (kept). The reentrant partial-Value
+window (lazy-realization/reduce) is the genuinely-different D-244 #4b scope.
 
 ## Consequences
 
-- `CLJW_GC_TORTURE_ALLOC` validates all collection-building code again → unblocks D-386
-  sub-step 2 (op_top register hoist) validation + restores the alloc-torture's value for
-  every future perf producer (the O-032/O-033 producers re-validate under it).
-- A real latent UAF/corruption (reachable once alloc-driven auto-collect lands) is closed.
-- Per-builder cost: 2 threadlocal increments (no lock). Negligible on the hot path.
-- The implementation is a builder-level sweep, validated by the torture probe set
-  converging to zero panics (the self-enforcing completeness guard).
+- `CLJW_GC_TORTURE_ALLOC` validates all SYNCHRONOUS collection-building code again
+  (16 builder probes in `test/e2e/phase16_gc_torture.sh`) → unblocks D-386 sub-step 2
+  (op_top register hoist) validation for synchronous builders.
+- A real latent UAF/corruption (reachable once alloc-driven auto-collect lands) is
+  closed for the synchronous builder class.
+- Per-builder cost: 2 threadlocal increments (no lock). Always-on; measured negligible.
+- The eval-reentrant lazy-realization/reduce rooting under alloc-torture remains open
+  as **D-244 #4b** (a wrong-count, not a panic — see the `(into {} (map f …))` probe).
 
-## Affected files (implementation unit, immediately following)
+## Affected files
 
-- `src/runtime/gc/root_set.zig` — `gc_fabrication_depth` threadlocal.
-- `src/runtime/gc/gc_heap.zig` — gate the alloc torture block + a note at the future
-  auto-collect site; `enterFabrication`/`exitFabrication` helpers.
-- `src/runtime/collection/{vector,set,map}.zig` (+ sorted variants) — wrap each
-  multi-alloc builder.
-- `.dev/debt.yaml` — re-open D-244 #4 as the sweep unit + the forward (moving-GC) row.
+- `src/runtime/gc/gc_heap.zig` — `fabrication_depth` threadlocal +
+  `enterFabrication`/`exitFabrication` + the alloc-torture gate (+ the future
+  auto-collect note).
+- `src/runtime/collection/{vector,map,set,list}.zig` (+ `transient/*`) — wrap each
+  multi-alloc builder (`vector.conj`/`fromSlice`/`assoc`/`pop`; `map.assoc`/`dissoc`;
+  `set.conj`/`disj`; `list.consHeap`; transient `toPersistent`/`fromSet`). `map.assoc`'s
+  array-map fast path + `map.fromLiteralPairs` are single-alloc → not bracketed.
+- `src/runtime/gc/root_set.zig` — amend the `gc_self_guard` docstring's "never
+  suppress" line to scope it to un-scoped eval-reentry suppression.
+- `test/e2e/phase16_gc_torture.sh` — the 16 alloc-torture builder probes.
+- `.dev/debt.yaml` — D-244 #4 discharged (synchronous builders) + the D-244 #4b
+  (reentrant realization) follow-on + the forward (moving-GC) row.
 
 ## Revision history
 
-- 2026-06-16 issued + **REJECTED same day**. Explored the no-collect-region (Alt A) fix for
-  D-244 #4 with a Devil's-advocate fork (general-purpose, fresh context, F-006/F-002/F-011
-  envelope, 3 alternatives verbatim; the DA recommended Alt A). Bug confirmed live + scoped
-  to the builder level (a SINGLE `(conj [1 2 3] 4)` corrupts under `CLJW_GC_TORTURE_ALLOC`).
-  **Post-DA, found Alt A contradicts ADR-0090's already-DECIDED D-244 Alt B** ("publish a
-  precise root, do not disable the collector" — the `suppressCollection` escape hatch the
-  codebase deliberately refused; the `gc_self_guard` slot for it already landed at
-  #3b-step2b). REJECTED; the correct path is wiring `gc_self_guard` per ADR-0090 (§ Correct
-  path) + resolving the builder-internal-node question. The DA fork's miss (not weighting the
-  committed stance) is itself recorded as the lesson. Design note:
-  `private/notes/9.2.S-d244-4-design.md`.
+- 2026-06-16 issued + **REJECTED same day**, then **REVERSED to ACCEPTED same day**.
+  The design (Alt A no-collect region) was DA-forked (Fork 1, recommended Alt A). It
+  was then rejected on the belief that Alt A contradicts ADR-0090's "never suppress,
+  publish precise root" stance. A reversal-check (Fork 2, steelmanning Alt B) +
+  reading ADR-0090's decision text directly found that belief rested on **over-reading
+  root_set.zig:150's code comment as binding ADR text** — ADR-0090 decides the
+  multi-thread safepoint and rejects a per-site guard-LIST for partial VALUES; it says
+  nothing about builder-internal raw nodes and defers concurrent GC to §89.2. Under
+  F-006 the no-collect region is the finished form; Alt B is gold-plating for an
+  uncommitted moving GC. Reversed and implemented. Design notes:
+  `private/notes/9.2.S-d244-4-design.md` (rejected-Alt-A record) +
+  `private/notes/9.2.S-d244-4-decision.md` (the reversal).
