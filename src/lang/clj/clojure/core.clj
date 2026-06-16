@@ -297,7 +297,9 @@
 ;; bare-`conj` reducing fn work for the transduce path.
 ;; PERF: editable targets build via a transient (O(n) persistent! over a flat buffer) vs N persistent conjs O(n log n) [refs: O-003, D-180]
 (def into
-  (fn* ([to from]
+  (fn* ([] [])
+       ([to] to)
+       ([to from]
          (if (-editable? to)
            (persistent! (reduce conj! (transient to) from))
            (reduce conj to from)))
@@ -527,24 +529,29 @@
 ;; `(pi & args)`, else the LAST pred's value (JVM `(or (p1 x) (p2 x) …)`
 ;; semantics: `((some-fn neg? even?) 3)`→false, not nil). `(every-pred …)`
 ;; → true iff every `(pi & args)` is logical-true, else false (D-134).
+;; clj some-fn is min-1-arity (D-446): `(some-fn)` throws. `[p & preds]`
+;; enforces ≥1; rebind preds to the full list so the body is unchanged.
 (def some-fn
-  (fn* [& preds]
-    (fn* [& args]
-      (if (seq preds)
-        (loop [ps preds]
-          (let* [r (apply (first ps) args)]
-            (if r
-              r
-              (if (seq (rest ps)) (recur (rest ps)) r))))
-        nil))))
+  (fn* [p & preds]
+    (let* [preds (cons p preds)]
+      (fn* [& args]
+        (if (seq preds)
+          (loop [ps preds]
+            (let* [r (apply (first ps) args)]
+              (if r
+                r
+                (if (seq (rest ps)) (recur (rest ps)) r))))
+          nil)))))
 
+;; clj every-pred is min-1-arity (D-446): `(every-pred)` throws.
 (def every-pred
-  (fn* [& preds]
-    (fn* [& args]
-      (loop [ps preds]
-        (if (seq ps)
-          (if (apply (first ps) args) (recur (rest ps)) false)
-          true)))))
+  (fn* [p & preds]
+    (let* [preds (cons p preds)]
+      (fn* [& args]
+        (loop [ps preds]
+          (if (seq ps)
+            (if (apply (first ps) args) (recur (rest ps)) false)
+            true))))))
 
 ;; `(trampoline f & args)` — call f; while the result is a fn, call it
 ;; (mutual-recursion without growing the stack). Self-recursive def.
@@ -733,8 +740,11 @@
 ;; `(distinct? x …)` — true iff no two arguments are equal (by value).
 ;; A set dedups by `=`, so distinct ⇔ the set keeps every element.
 ;; Defined after `set` (it folds args through it).
+;; clj distinct? is min-1-arity (D-446): `(distinct?)` throws.
 (def distinct?
-  (fn* [& args] (= (count args) (count (set args)))))
+  (fn* [x & args]
+    (let* [args (cons x args)]
+      (= (count args) (count (set args))))))
 
 ;; ----------------------------------------------------------------
 ;; Phase 14 §9.16 row 14.13 — D-126 clojure.core daily-driver cluster.

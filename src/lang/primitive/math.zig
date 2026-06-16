@@ -281,8 +281,10 @@ fn pairwise(
     comptime fpred: fn (a: f64, b: f64) bool,
     comptime opred: fn (o: std.math.Order) bool,
 ) !Value {
+    // clj comparators are min-1-arity (D-446): `(<)` throws ArityException.
+    try error_catalog.checkArityMin(name, args, 1, loc);
     try ensureNumeric(args, name, loc);
-    if (args.len < 2) return Value.true_val; // (< 1) and (<) are true in Clojure
+    if (args.len < 2) return Value.true_val; // (< 1) is true in Clojure
     var i: usize = 1;
     while (i < args.len) : (i += 1) {
         const a = args[i - 1];
@@ -332,8 +334,9 @@ fn oEQ(o: std.math.Order) bool {
 /// All args must equal the first (transitive). Never raises on type
 /// mismatch — see `runtime/equal.zig` + ADR-0052.
 pub fn equals(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
-    _ = loc;
-    if (args.len < 2) return Value.true_val; // (=) and (= x) are true
+    // clj `=` is min-1-arity (D-446): `(=)` throws ArityException, `(= x)` → true.
+    try error_catalog.checkArityMin("=", args, 1, loc);
+    if (args.len == 1) return Value.true_val; // (= x) is true
     var i: usize = 1;
     while (i < args.len) : (i += 1) {
         if (!try equal.valueEqual(rt, env, args[0], args[i])) return Value.false_val;
@@ -1395,8 +1398,9 @@ test "equals / lt / gt / le / ge — numeric pairwise" {
     try testing.expectEqual(Value.true_val, try ge(&fix.rt, &fix.env, &equal_run, .{}));
     try testing.expectEqual(Value.false_val, try lt(&fix.rt, &fix.env, &equal_run, .{}));
 
-    // Trivial arities: (<) / (< 1) are true in Clojure.
-    try testing.expectEqual(Value.true_val, try lt(&fix.rt, &fix.env, &.{}, .{}));
+    // Arity (D-446 — match clj): (<) throws ArityException (min-1-arity);
+    // (< 1) is true.
+    try testing.expectError(error.ArityError, lt(&fix.rt, &fix.env, &.{}, .{}));
     try testing.expectEqual(Value.true_val, try lt(&fix.rt, &fix.env, &.{Value.initInteger(1)}, .{}));
 }
 

@@ -1,0 +1,60 @@
+#!/usr/bin/env bash
+# e2e: arity-divergence parity with JVM Clojure (D-446).
+# The arity audit (2026-06-16) found fns whose accepted ARITY set diverged
+# from clj — silent "works in cljw, throws in clj" (or vice versa) bugs.
+# This pins the clj-aligned boundaries so a regression re-surfaces here.
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+CLJW="$ROOT/zig-out/bin/cljw"
+
+pass=0
+fail=0
+
+# Exact-output check (value-producing).
+check() {
+  local desc="$1" expr="$2" want="$3" got
+  got="$("$CLJW" -e "$expr" 2>&1)" || true
+  if [[ "$got" == "$want" ]]; then pass=$((pass + 1)); else
+    fail=$((fail + 1)); echo "FAIL: $desc"; echo "  expr: $expr"; echo "  want: $want"; echo "  got:  $got"
+  fi
+}
+
+# Arity-error check: the call must raise an arity error (matches clj's
+# ArityException). Greps for cljw's "Wrong number of args" render.
+check_arity_err() {
+  local desc="$1" expr="$2" got
+  got="$("$CLJW" -e "$expr" 2>&1)" || true
+  if [[ "$got" == *"Wrong number of args"* ]]; then pass=$((pass + 1)); else
+    fail=$((fail + 1)); echo "FAIL (expected arity error): $desc"; echo "  expr: $expr"; echo "  got:  $got"
+  fi
+}
+
+# --- cljw-lenient bugs fixed: these now THROW at 0-arg (clj parity) ---
+check_arity_err "(=) throws"          '(=)'
+check_arity_err "(<) throws"          '(<)'
+check_arity_err "(>) throws"          '(>)'
+check_arity_err "(<=) throws"         '(<=)'
+check_arity_err "(>=) throws"         '(>=)'
+check_arity_err "(distinct?) throws"  '(distinct?)'
+check_arity_err "(every-pred) throws" '(every-pred)'
+check_arity_err "(some-fn) throws"    '(some-fn)'
+# Valid arities of the same fns still work (no over-correction).
+check "(= 1) is true"        '(= 1)'        'true'
+check "(< 1) is true"        '(< 1)'        'true'
+check "(distinct? 1) true"   '(distinct? 1)' 'true'
+check "(distinct? 1 1) false" '(distinct? 1 1)' 'false'
+check "(every-pred pos?) fn works" '((every-pred pos?) 3)' 'true'
+check "(some-fn pos?) fn works"    '((some-fn neg?) 3)'    'false'
+
+# --- cljw-strict bugs fixed: these now RETURN clj's value (0/1 arity) ---
+check "(into) is []"             '(into)'                              '[]'
+check "(into [9]) is [9]"        '(into [9])'                          '[9]'
+check "(into [9] [1 2]) works"   '(into [9] [1 2])'                    '[9 1 2]'
+check "(persistent! (conj!)) []" '(persistent! (conj!))'              '[]'
+check "(conj! coll) returns coll" '(persistent! (conj! (transient [1])))' '[1]'
+check "(conj! coll x) still works" '(persistent! (conj! (transient [1]) 2))' '[1 2]'
+
+echo "pass=$pass fail=$fail"
+if [[ $fail -gt 0 ]]; then exit 1; fi

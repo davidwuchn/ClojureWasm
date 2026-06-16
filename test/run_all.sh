@@ -459,6 +459,7 @@ run_step "e2e_phase14_multifn_introspect"    "bash test/e2e/phase14_multifn_intr
 run_step "e2e_phase14_auto_keyword"          "bash test/e2e/phase14_auto_keyword.sh"
 run_step "e2e_phase14_data_diff"             "bash test/e2e/phase14_data_diff.sh"
 run_step "e2e_phase14_eval"                  "bash test/e2e/phase14_eval.sh"
+run_step "e2e_phase14_arity_parity"          "bash test/e2e/phase14_arity_parity.sh"
 run_step "e2e_phase14_fn_macro"              "bash test/e2e/phase14_fn_macro.sh"
 run_step "e2e_phase14_anon_fn_reader"        "bash test/e2e/phase14_anon_fn_reader.sh"
 run_step "e2e_phase14_defmacro_user"         "bash test/e2e/phase14_defmacro_user.sh"

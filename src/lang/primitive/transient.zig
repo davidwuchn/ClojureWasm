@@ -85,6 +85,11 @@ pub fn persistentBangFn(rt: *Runtime, env: *Env, args: []const Value, loc: Sourc
 /// cw v1 tier: A (Phase 8.5 cycle 1)
 pub fn conjBangFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
     _ = env;
+    // clj conj! (D-446): `(conj!)` → (transient []), `(conj! coll)` → coll,
+    // `(conj! coll x)` → in-place add. The 0/1 arities are the transducer
+    // identity/completion arities (clojure.core 1.7+).
+    if (args.len == 0) return try transient_vector.fromVector(rt, Value.nil_val);
+    if (args.len == 1) return args[0];
     try error_catalog.checkArity("conj!", args, 2, loc);
     const tcoll = args[0];
     const x = args[1];
