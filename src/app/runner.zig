@@ -16,7 +16,6 @@ const std = @import("std");
 const Writer = std.Io.Writer;
 
 const Reader = @import("../eval/reader.zig").Reader;
-const analyzeForm = @import("../eval/analyzer/analyzer.zig").analyze;
 const macro_dispatch = @import("../eval/macro_dispatch.zig");
 const driver = @import("../eval/driver.zig");
 const evaluator = @import("../eval/evaluator.zig");
@@ -126,12 +125,11 @@ pub fn runSource(
         };
         const form = form_opt orelse break;
 
-        const node = analyzeForm(arena, &rt, &env, null, form, &macro_table) catch |err| {
-            error_render.renderAndExit(stderr, ctx, err);
-        };
-
+        // D-374: evalTopLevelForm analyses+evaluates the form, unrolling a
+        // top-level `(do …)` so each child sees earlier children's effects
+        // (clj parity). One catch covers both analyse + eval errors.
         var locals: [driver.MAX_LOCALS]Value = [_]Value{.nil_val} ** driver.MAX_LOCALS;
-        const result = driver.evalForm(&rt, &env, &locals, arena, node) catch |err| {
+        const result = driver.evalTopLevelForm(&rt, &env, &locals, arena, form, &macro_table) catch |err| {
             // D-361: a budget/heap breach leaves the cap installed, but the error
             // renderer itself gc-allocates (the :trace + message Values) — under a
             // just-tripped heap ceiling those allocations re-breach and the message

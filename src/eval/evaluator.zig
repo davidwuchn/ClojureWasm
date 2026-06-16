@@ -29,6 +29,7 @@ const Value = @import("../runtime/value/value.zig").Value;
 const tree_walk = @import("backend/tree_walk.zig");
 const vm = @import("backend/vm.zig");
 const vm_compiler = @import("backend/vm/compiler.zig");
+const driver = @import("driver.zig");
 
 pub const CompareResult = struct {
     tree_walk: anyerror!Value,
@@ -75,17 +76,37 @@ fn runOnce(
     while (true) {
         const form_opt = try reader.read();
         const form = form_opt orelse break;
-        const node = try analyzer.analyze(arena, rt, env, null, form, table);
-        var locals: [256]Value = [_]Value{.nil_val} ** 256;
-        last = switch (backend) {
-            .tree_walk => try tree_walk.eval(rt, env, &locals, node),
-            .vm => blk: {
-                const chunk = try vm_compiler.compile(rt, arena, node);
-                break :blk try vm.eval(rt, env, &locals, &chunk);
-            },
-        };
+        // D-374: unroll a top-level `(do …)` so the compare oracle exercises the
+        // same per-child analyze+eval sequencing as the production eval paths.
+        last = try evalTopLevelInBackend(rt, env, table, arena, form, backend);
     }
     return last;
+}
+
+/// Backend-parameterized twin of `driver.evalTopLevelForm` for the `--compare`
+/// oracle (which pins a specific backend rather than `build_options.backend`).
+fn evalTopLevelInBackend(
+    rt: *Runtime,
+    env: *Env,
+    table: *const macro_dispatch.Table,
+    arena: std.mem.Allocator,
+    form: @import("form.zig").Form,
+    backend: BackendChoice,
+) anyerror!Value {
+    if (driver.topLevelDoChildren(form)) |children| {
+        var result: Value = .nil_val;
+        for (children) |child| result = try evalTopLevelInBackend(rt, env, table, arena, child, backend);
+        return result;
+    }
+    const node = try analyzer.analyze(arena, rt, env, null, form, table);
+    var locals: [256]Value = [_]Value{.nil_val} ** 256;
+    return switch (backend) {
+        .tree_walk => tree_walk.eval(rt, env, &locals, node),
+        .vm => blk: {
+            const chunk = try vm_compiler.compile(rt, arena, node);
+            break :blk vm.eval(rt, env, &locals, &chunk);
+        },
+    };
 }
 
 // --- tests ---

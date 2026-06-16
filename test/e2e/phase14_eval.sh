@@ -44,5 +44,16 @@ check "eval built-in macro and"  '(eval (quote (and 1 2 3)))' '3'
 # Nested eval.
 check "eval nested" '(eval (quote (eval (quote (+ 4 5)))))' '9'
 
+# D-374: a top-level `(do …)` is unrolled — each child is analyzed+evaluated in
+# sequence, so an effect in an earlier child is visible to a later child's
+# ANALYSIS (clj parity). Without unrolling, `(m)` is analyzed before `defmacro m`
+# runs → "macro Var not callable".
+check "top-level do: defmacro then use" '(do (defmacro m374 [] 42) (m374))' '42'
+check "top-level do: def then use"      '(do (def x374 5) (+ x374 1))' '6'
+check "top-level do: value is last child" '(do 1 2 3)' '3'
+check "top-level do: nested do unrolls"  '(do (do (def y374 9)) (inc y374))' '10'
+# eval of a top-level (do …) unrolls too (eval treats its arg as a top-level form).
+check "eval top-level do unrolls" '(eval (quote (do (defmacro n374 [] 7) (n374))))' '7'
+
 echo "pass=$pass fail=$fail"
 if [[ $fail -gt 0 ]]; then exit 1; fi

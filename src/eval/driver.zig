@@ -88,6 +88,49 @@ pub fn evalForm(
     }
 }
 
+/// Children of a literal top-level `(do …)` form, or null if `form` is not one.
+/// Returns a (possibly empty) slice of the `do`'s argument forms — the seam the
+/// top-level `do`-unroll (D-374) hangs on. Only a LITERAL `do` head is matched
+/// (the reported case + clj's common top-level forms); a macro expanding to `do`
+/// is not unrolled (tracked as the residual in D-374).
+pub fn topLevelDoChildren(form: Form) ?[]const Form {
+    return switch (form.data) {
+        .list => |items| if (items.len >= 1 and items[0].data == .symbol and
+            items[0].data.symbol.ns == null and
+            std.mem.eql(u8, items[0].data.symbol.name, "do"))
+            items[1..]
+        else
+            null,
+        else => null,
+    };
+}
+
+/// Analyze + evaluate one top-level form, unrolling a top-level `(do …)`
+/// recursively so each child is analyzed+evaluated IN SEQUENCE (D-374, clj
+/// parity): an effect in an earlier child (`(import …)` / `(defmacro …)`) is
+/// visible to a later child's ANALYSIS. cljw otherwise analyzes the whole `do`
+/// before evaluating, so `(do (defmacro m [] 42) (m))` fails (m resolved before
+/// its def ran). The `do`'s value is its LAST child's value (empty `(do)` → nil),
+/// so a `-e`/REPL prints one result per source form. The loader uses
+/// `topLevelDoChildren` directly (it also pushes each leaf's chunk to the
+/// `cljw build` sink).
+pub fn evalTopLevelForm(
+    rt: *Runtime,
+    env: *Env,
+    locals: []Value,
+    arena: std.mem.Allocator,
+    form: Form,
+    table: *const macro_dispatch.Table,
+) anyerror!Value {
+    if (topLevelDoChildren(form)) |children| {
+        var result: Value = .nil_val;
+        for (children) |child| result = try evalTopLevelForm(rt, env, locals, arena, child, table);
+        return result;
+    }
+    const node = try analyzer.analyze(arena, rt, env, null, form, table);
+    return evalForm(rt, env, locals, arena, node);
+}
+
 /// Evaluate a runtime data Value as code — the typed Layer-1 verb the
 /// `eval` primitive (and future `load-string` / REPL read+eval) consume
 /// (ADR-0058). Reconstructs a Form from the Value (`valueToForm`),
@@ -115,8 +158,9 @@ pub fn evalValue(
     // `analyze` takes a Form by value (D-197: this verb was dead code until the
     // `eval` primitive wired it, so the old `*Form` arg never type-checked).
     const form = try analyzer.valueToForm(arena, rt, env, value, loc);
-    const node = try analyzer.analyze(arena, rt, env, null, form, table);
-    return evalForm(rt, env, locals, arena, node);
+    // D-374: `(eval '(do …))` treats its arg as a top-level form, so a top-level
+    // `do` unrolls (clj parity) — each child sees earlier children's effects.
+    return evalTopLevelForm(rt, env, locals, arena, form, table);
 }
 
 /// Install the active backend's vtable. Called once at startup, after

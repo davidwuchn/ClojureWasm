@@ -27,7 +27,6 @@ const std = @import("std");
 const build_options = @import("build_options");
 
 const Reader = @import("../eval/reader.zig").Reader;
-const analyzeForm = @import("../eval/analyzer/analyzer.zig").analyze;
 const macro_dispatch = @import("../eval/macro_dispatch.zig");
 const driver = @import("../eval/driver.zig");
 const primitive = @import("primitive.zig");
@@ -210,14 +209,14 @@ fn loadCoreFiles(
         // errors. Idempotent — re-running reuses the first-writer entry.
         try rt.registerSource(file.label, file.source);
         var reader = Reader.init(arena, file.source);
+        var locals: [driver.MAX_LOCALS]Value = [_]Value{.nil_val} ** driver.MAX_LOCALS;
         while (true) {
             const form_opt = try reader.read();
             const form = form_opt orelse break;
-
-            const node = try analyzeForm(arena, rt, env, null, form, macro_table);
-
-            var locals: [driver.MAX_LOCALS]Value = [_]Value{.nil_val} ** driver.MAX_LOCALS;
-            _ = try driver.evalForm(rt, env, &locals, arena, node);
+            // D-374: unroll a top-level `(do …)` (clj parity); semantically a
+            // no-op for the hand-written core (no effect-dependent top-level do),
+            // kept here so every form-loading path shares one rule.
+            _ = try driver.evalTopLevelForm(rt, env, &locals, arena, form, macro_table);
         }
     }
 }

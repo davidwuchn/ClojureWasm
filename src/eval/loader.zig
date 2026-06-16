@@ -19,6 +19,7 @@ const analyzeForm = @import("analyzer/analyzer.zig").analyze;
 const macro_dispatch = @import("macro_dispatch.zig");
 const driver = @import("driver.zig");
 const vm_compiler = @import("backend/vm/compiler.zig");
+const Form = @import("form.zig").Form;
 const error_catalog = @import("../runtime/error/catalog.zig");
 const error_mod = @import("../runtime/error/info.zig");
 const SourceLocation = error_mod.SourceLocation;
@@ -60,26 +61,44 @@ pub fn loadNamespace(
     var reader = Reader.init(arena, resolved.source);
     reader.file_name = resolved.label;
     while (try reader.read()) |form| {
-        const node = try analyzeForm(arena, rt, env, null, form, macro_table);
-        var locals: [driver.MAX_LOCALS]Value = [_]Value{.nil_val} ** driver.MAX_LOCALS;
-        _ = try driver.evalForm(rt, env, &locals, arena, node);
-        // ADR-0034 am3 A3-D2: `cljw build` require-closure embedding. Capture
-        // each filesystem lib form's compiled chunk AFTER eval — a nested
-        // `(require …)` runs during this form's eval and pushes its chunks
-        // first, so deps precede dependents (post-order = correct replay
-        // order). Null sink on every non-build path skips the compile.
-        if (resolved.from_filesystem) {
-            if (rt.build_chunk_sink) |sink| {
-                const chunk = try vm_compiler.compile(rt, arena, node);
-                try sink.push(sink.ctx, &chunk);
-            }
-        }
+        try loadTopLevelForm(rt, env, arena, macro_table, form, resolved.from_filesystem);
     }
 
     // Mark fully-loaded only on success (after every form evaluated).
     const loaded_key = try gpa.dupe(u8, ns_name);
     errdefer gpa.free(loaded_key);
     try rt.loaded_libs.put(gpa, loaded_key, {});
+}
+
+/// Analyze + evaluate one top-level form from a loaded namespace, unrolling a
+/// top-level `(do …)` recursively (D-374) so a later child sees an earlier
+/// child's analyze-time effect (`(import …)` / `(defmacro …)`). On the `cljw
+/// build` path each LEAF form's compiled chunk is pushed to the sink AFTER eval
+/// (post-order — a nested `require` ran during eval and pushed its deps first),
+/// so an unrolled `do` embeds its children as separate top-level chunks with the
+/// identical replay order.
+fn loadTopLevelForm(
+    rt: *Runtime,
+    env: *Env,
+    arena: @import("std").mem.Allocator,
+    macro_table: *const macro_dispatch.Table,
+    form: Form,
+    from_filesystem: bool,
+) !void {
+    if (driver.topLevelDoChildren(form)) |children| {
+        for (children) |child|
+            try loadTopLevelForm(rt, env, arena, macro_table, child, from_filesystem);
+        return;
+    }
+    const node = try analyzeForm(arena, rt, env, null, form, macro_table);
+    var locals: [driver.MAX_LOCALS]Value = [_]Value{.nil_val} ** driver.MAX_LOCALS;
+    _ = try driver.evalForm(rt, env, &locals, arena, node);
+    if (from_filesystem) {
+        if (rt.build_chunk_sink) |sink| {
+            const chunk = try vm_compiler.compile(rt, arena, node);
+            try sink.push(sink.ctx, &chunk);
+        }
+    }
 }
 
 /// Return the named namespace, loading it from disk via the require resolver
