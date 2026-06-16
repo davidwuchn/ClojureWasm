@@ -10,19 +10,26 @@
   `build.zig.zon` `.zwasm` is SHA-PINNED (`#412966f7…`, `lazy`). Per-commit = smoke;
   full gate batches at ceiling / boundary / pre-tag.
 
-- **First commit on resume MUST be**: a **deeper validation unit** — the common
-  surface is verified mature (3 broad clj-diff probes 2026-06-16 came back clean bar
-  one accepted error-class divergence; curated bug-debt is drained/deferred). Run a
-  LESS-common real surface through the clj oracle — `clojure.data` / `clojure.zip` /
-  `clojure.pprint` edge cases, or a small real library — find the first genuine DIFF,
-  fix it as a TDD unit + leave a corpus line (clj_diff_sweep Discipline 1). This is
-  the highest-leverage next step now that guessing-at-niche-rows has low yield.
+- **First commit on resume MUST be**: **D-086 — record `__extmap` (assoc a non-declared
+  key onto a defrecord)**. The 2026-06-16 deeper-validation swept common/edge/stateful
+  surfaces (8 clj-diff probes; print-table + cl-format number+iteration directives FIXED;
+  low-value edges classified as D-455/D-456/D-457) and surfaced D-086 as the TOP remaining
+  real gap: `(assoc (->R 1 2) :z 9)` raises "not yet supported", `(map->R {…extra…})` drops
+  extra keys — clj holds them in `__extmap`. MEDIUM-HIGH value (assoc-on-record is common),
+  but a STRUCTURAL unit (TypedInstance extern-struct gains an extmap slot + GC trace +
+  IPersistentMap routing for seq/keys/count/dissoc over extmap + a co-issued ADR amending
+  the layout). The F-003 "layout owner" deferral now resolves to the loop itself (gap-area
+  model) — so it IS takeable; do it with fresh context (read the D-086 row in debt.yaml +
+  `private/notes/phase7-7.4-cycle4.md` DA analysis + collection.zig assocFn .typed_instance
+  arm). If a smaller win is wanted first: cl-format `~R`/`~:(` (D-455 niche follow-on).
 - **The gaps/bugs SWEEP is DRAINED of clean high-value items** (user-directed
   2026-06-16). DONE this session: ~~D-448~~ ~~D-374~~ ~~D-446~~ ~~D-444~~ ~~D-442~~
   (sub-step 2 = CancellationException class + Thread/sleep cooperative abort; ADR-0153)
-  ~~D-224~~ (pmap/pcalls/pvalues now genuinely parallel — clj's future + bounded
-  look-ahead, no work-pool needed). REMAINING are appropriately DEFERRED behind their
-  own barriers: D-266 (native Repeat, perf low-pri), D-319/D-320 (perf cliffs,
+  ~~D-224~~ (pmap/pcalls/pvalues genuinely parallel — clj's future + bounded look-ahead,
+  no work-pool) + **print-table** clj-exact format (F-011) + **D-455 PARTIAL** (cl-format
+  number + iteration directives; only ~R/~:( niche remain). NEXT = D-086 (above). Other
+  REMAINING appropriately DEFERRED behind their own barriers: D-266 (native Repeat,
+  perf low-pri), D-319/D-320 (perf cliffs,
   deferred-opt envelope), D-410/D-424/D-425/D-431 (niche/need-a-consumer or
   campaign-CLOSED), D-245 (locking Option-C, recall-trigger not fired), D-246 b/c
   (atom Var-root atomicity, tied to D-386 perf), D-433/D-437 (rare tails). D-435 is
