@@ -159,9 +159,12 @@ assert_eq 'delay_concurrent' "$("$BIN" -e '(let [n (atom 0) d (delay (swap! n in
 # mid-builder collect is DEFERRED (correct under F-006 non-moving mark-sweep).
 #
 # SCOPE: these are pure SYNCHRONOUS builders (no eval reentry). The complementary
-# class — a collect during an eval-REENTRANT lazy-seq realization / reduce sweeping
-# the accumulator (e.g. `(into {} (map f (range N)))`) — is D-244 #4b (the
-# gc_self_guard / EvalFrame reentrant-rooting scope), tracked separately.
+# class — a collect during an eval-REENTRANT lazy-seq realization / reduce over a
+# RANGE source (e.g. `(into {} (map f (range N)))`) — is D-244 #4b, FIXED
+# 2026-06-17: `range.seqChunk` left its `ChunkBuffer` unrooted across the tail
+# `make` + `ChunkedCons` allocs, and `-take-eager` walked a seq into an untraced
+# gpa `ArrayList` with an unrooted cursor — both now bracket the fabrication
+# no-collect region. The #4b regression cases are the `#4b` block below.
 #
 # Probes are SMALL/EAGER (alloc-torture = O(allocs) full collects; large or
 # lazy-seq realizations are deliberately avoided) and assert STRUCTURE, not
@@ -193,5 +196,17 @@ assert_alloc 'set_promote'    '(count (into #{} (range 12)))'              '12'
 assert_alloc 'hashmap_fn'     '(get (hash-map :a 1 :b 2) :b)'               '2'
 assert_alloc 'map_literal'    '(get {:a 1 :b 2 :c 3} :c)'                   '3'
 assert_alloc 'map_promote'    '(count (into {} [[1 1] [2 2] [3 3] [4 4] [5 5] [6 6] [7 7] [8 8] [9 9] [10 10]]))' '10'
+
+# D-244 #4b — eval-REENTRANT lazy-seq realization / reduce over a RANGE source.
+# Before the fix these returned 1 / nil-errors under alloc-torture (the range
+# ChunkBuffer / -take-eager cursor were swept mid-realization). Small N (alloc
+# torture = O(allocs) full collects); assert count/structure, not order (AD-001).
+assert_alloc '4b_into_map_range'  '(count (into {} (map (fn [i] [i i]) (range 20))))'  '20'
+assert_alloc '4b_reduce_map_inc'  '(reduce + 0 (map inc (range 20)))'                  '210'
+assert_alloc '4b_filter_range'    '(reduce + 0 (filter odd? (range 20)))'              '100'
+assert_alloc '4b_take_range'      '(reduce + 0 (take 5 (range 20)))'                   '10'
+assert_alloc '4b_into_vec_lazy'   '(count (into [] (map inc (range 40))))'             '40'
+assert_alloc '4b_multichunk'      '(count (into {} (map (fn [i] [i i]) (range 50))))'  '50'
+assert_alloc '4b_take_multichunk' '(reduce + 0 (take 40 (range 100)))'                 '780'
 
 echo "ALL phase16_gc_torture PASS"

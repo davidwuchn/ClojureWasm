@@ -126,6 +126,16 @@ pub fn seqChunk(rt: *Runtime, v: Value) !Value {
     const r = v.decodePtr(*const LongRange);
     const n: u32 = @intCast(@min(@as(i64, chunked_cons.CHUNK_SIZE), r.count));
 
+    // D-244 #4b: a multi-alloc builder — `cb` (the ChunkBuffer) is live-but-
+    // UNROOTED across the later `make` (the `.range` tail) + `gc.alloc(ChunkedCons)`
+    // allocations, so a collect THERE (alloc-torture, or ADR-0028 auto-collect)
+    // would sweep `cb` → `cc.chunk` dangles → reads as nil (the
+    // `(reduce + 0 (map inc (range N)))` → `(inc nil)` UAF). Bracket the whole
+    // build in the fabrication no-collect region, like the vector/map/set/list
+    // builders (ADR-0150 missed this range site). [ref: .dev/gc_rooting.md §A]
+    rt.gc.enterFabrication();
+    defer rt.gc.exitFabrication();
+
     const cb = try rt.gc.alloc(chunked_cons.ChunkBuffer);
     cb.* = .{ .header = HeapHeader.init(.chunk_buffer), .count = n };
     var i: u32 = 0;

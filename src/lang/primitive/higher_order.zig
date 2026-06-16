@@ -440,6 +440,15 @@ pub fn takeEagerFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLoca
     // (take 0 …) / (take -1 …) → () not nil (D-164): JVM take yields an
     // empty seq for a non-positive count.
     if (n <= 0) return try list_mod.emptyList(rt);
+    // D-244 #4b: `cur` (the source cursor) AND each `collected` element are held
+    // in a gpa `ArrayList` the GC does NOT trace, so a collect during `nextFn`'s
+    // alloc (alloc-torture / ADR-0028 auto-collect) sweeps the source chunk +
+    // any heap elements → reads as nil (`(take 5 (range 20))` → `(f nil)`).
+    // Bracket the bounded build in the fabrication no-collect region, like the
+    // other multi-alloc builders (vector/map/set/list + range.seqChunk).
+    // [ref: .dev/gc_rooting.md §A]
+    rt.gc.enterFabrication();
+    defer rt.gc.exitFabrication();
     var cur = try sequence.seqFn(rt, env, &.{args[1]}, loc);
     var collected: std.ArrayList(Value) = .empty;
     defer collected.deinit(rt.gpa);
