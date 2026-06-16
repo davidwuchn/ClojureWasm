@@ -274,10 +274,11 @@ pub fn recognizeColl(rt: *const Runtime, var_ptr: *const env_mod.Var) ?CollOp {
 pub fn fastGet(coll: Value, k: Value) !?Value {
     return switch (coll.tag()) {
         .nil => Value.nil_val,
-        .array_map, .hash_map => if (try map_mod.contains(coll, k))
-            try map_mod.get(coll, k)
-        else
-            Value.nil_val,
+        // PERF: `map_mod.get` already returns nil_val for an absent key — identical
+        // to the 2-arg `(get coll k)` nil default — so the prior `contains`-then-`get`
+        // pair scanned the map TWICE for the same result. One scan now (halves the
+        // hot map-lookup work: `(get m :k)`, `:keys` destructure, gc_large_heap). [refs: O-048]
+        .array_map, .hash_map => try map_mod.get(coll, k),
         else => null,
     };
 }
