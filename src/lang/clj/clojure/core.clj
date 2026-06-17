@@ -99,10 +99,10 @@
 ;; `(first (drop 100 (range)))` → 100). `take` stays bounded-eager (it
 ;; realizes only N, so it already terminates on an infinite source).
 ;; The `-*-eager` map/filter/keep/remove/drop leaves are deleted.
-;; `map` — 1/2/3-coll. Multi-coll walks colls in parallel, stops at the
-;; shortest (D-134). N-coll variadic (`& colls`) deferred: it needs
-;; every?/identity which are later core.clj defns (def-order; fn-body
-;; symbols resolve at def time), so it would need a primitive-only seq-all.
+;; `map` — 1/2/3-coll + n-coll variadic. Multi-coll walks colls in parallel,
+;; stopping at the shortest (D-134). The n-ary arm delegates to `-map-n-step`,
+;; forward-declared here so map can reference it at def time (fn-body symbols
+;; resolve at def time; `declare` interns the Var first — D-446).
 ;; PERF: O-023 fusion descriptor `[xform coll]` for the reduce-site fuse. If
 ;; `coll` already carries one (a chained map/filter), compose the transducers
 ;; (`comp` runs left-to-right per element: inner xform first) + reach past to the
@@ -129,6 +129,8 @@
             (chunk-cons (-chunk-map-step f s) (-map-lazy f (chunk-rest s)))
             (cons (f (first s)) (-map-lazy f (rest s))))
           nil)))))
+;; Forward-declared so map's n-ary arm resolves it at def time (D-446).
+(declare -map-n-step)
 (def map
   (fn* ([f]
         ;; transducer arity: (map f) returns a transducer
@@ -157,7 +159,20 @@
             (if (and s1 s2 s3)
               (cons (f (first s1) (first s2) (first s3))
                     (map f (rest s1) (rest s2) (rest s3)))
-              nil))))))
+              nil))))
+       ;; n-ary: zip 4+ colls, stopping at the shortest (clj parity).
+       ([f c1 c2 c3 & colls]
+        (map (fn* [args] (apply f args)) (-map-n-step (conj colls c3 c2 c1))))))
+;; n-ary `map` step: lazily zip the seqs in `cs`, yielding a seq of each
+;; position's firsts until any seq is exhausted. Top-level recursive because a
+;; named local fn is unavailable in this bootstrap layer (D-147, cf. tree-seq).
+(def -map-n-step
+  (fn* [cs]
+    (lazy-seq
+      (let* [ss (map seq cs)]
+        (if (every? identity ss)
+          (cons (map first ss) (-map-n-step (map rest ss)))
+          nil)))))
 ;; PERF: O-023 internal lazy body for `filter` — recurses on itself, no stamp.
 (def -filter-lazy
   (fn* [pred coll]
@@ -589,7 +604,8 @@
 (def bit-clear (fn* [x n] (bit-and x (bit-not (bit-shift-left 1 n)))))
 (def bit-flip  (fn* [x n] (bit-xor x (bit-shift-left 1 n))))
 (def bit-test  (fn* [x n] (not (zero? (bit-and x (bit-shift-left 1 n))))))
-(def bit-and-not (fn* [x y] (bit-and x (bit-not y))))
+(def bit-and-not (fn* ([x y] (bit-and x (bit-not y)))
+                      ([x y & more] (reduce bit-and-not (bit-and-not x y) more))))
 
 ;; `(peek coll)` / `(pop coll)` — stack ops. Vector: peek = last element,
 ;; pop = drop the last (returns a vector). List/seq: peek = first, pop =
@@ -917,7 +933,8 @@
 (def mapv
   (fn* ([f coll] (reduce (fn* [acc x] (conj acc (f x))) [] coll))
        ([f c1 c2] (vec (map f c1 c2)))
-       ([f c1 c2 c3] (vec (map f c1 c2 c3)))))
+       ([f c1 c2 c3] (vec (map f c1 c2 c3)))
+       ([f c1 c2 c3 & colls] (vec (apply map f c1 c2 c3 colls)))))
 
 ;; `(await & agents)` — block until all actions dispatched to each agent SO FAR
 ;; have run. `__agent-await` enqueues a barrier action to every agent (so they
@@ -1594,14 +1611,23 @@
         (lazy-seq
           (let [s (seq coll)]
             (if s (cons (first s) (take-nth n (drop n s))) nil))))))
+;; `(-spread arglist)` — flatten the trailing seq of a `list*`/`apply`-style
+;; arglist: the last element is a seq spliced in, the rest stay as-is. Top-level
+;; recursive (a named local fn is unavailable in this bootstrap layer, D-147).
+(def -spread
+  (fn* [arglist]
+    (cond
+      (nil? arglist) nil
+      (nil? (next arglist)) (seq (first arglist))
+      :else (cons (first arglist) (-spread (next arglist))))))
 ;; `(list* a* tail)` — prepend the leading args onto the final seq arg.
-;; Explicit 1-4 arg forms (the common cases incl. the `(list* a args)`
-;; macro idiom); 5+-arg variadic deferred (needs a primitive-only spread).
+;; Explicit 1-4 arg forms are the common cases; the 5+ arm spreads the rest.
 (def list*
   (fn* ([args] (seq args))
        ([a args] (cons a args))
        ([a b args] (cons a (cons b args)))
-       ([a b c args] (cons a (cons b (cons c args))))))
+       ([a b c args] (cons a (cons b (cons c args))))
+       ([a b c d & more] (cons a (cons b (cons c (cons d (-spread more))))))))
 ;; `(partition-by f coll)` — lazy seq of runs where `(f x)` is constant
 ;; (a new run starts each time `(f x)` changes) (D-134). `run` is a
 ;; `take-while` lazy_seq (NOT `(cons fst (take-while …))`): a raw cons
@@ -1952,7 +1978,11 @@
 ;; `(resolve sym)` — the Var sym names in the current namespace (or the
 ;; named ns when qualified), or nil. Returns a var_ref that derefs to the
 ;; Var's value and prints #'ns/name.
-(def resolve (fn* [sym] (rt/__resolve sym)))
+;; `(resolve sym)` / `(resolve env sym)` — resolve a symbol to its Var (or
+;; class), nil if unresolved. The 2-arg form takes a local-binding env (e.g.
+;; macro `&env`); a symbol that names a local resolves to nil (clj parity).
+(def resolve (fn* ([sym] (rt/__resolve sym))
+                  ([env sym] (if (contains? env sym) nil (rt/__resolve sym)))))
 
 ;; Multimethod introspection — thin fn wrappers over the rt/ primitives
 ;; (defmulti / defmethod are macros in macro_transforms; prefer-method is a clj FN

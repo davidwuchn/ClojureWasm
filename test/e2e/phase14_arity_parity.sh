@@ -56,5 +56,20 @@ check "(persistent! (conj!)) []" '(persistent! (conj!))'              '[]'
 check "(conj! coll) returns coll" '(persistent! (conj! (transient [1])))' '[1]'
 check "(conj! coll x) still works" '(persistent! (conj! (transient [1]) 2))' '[1 2]'
 
+# --- cljw-strict (missing arity) bugs fixed: n-ary / variadic forms clj
+#     accepts but cljw used to reject (D-446 residual sweep, 2026-06-18). ---
+# n-ary map/mapv/mapcat: zip 4+ colls, stopping at the shortest.
+check "(map + 4 colls)"   '(map + [1 2] [10 20] [100 200] [1000 2000])'   '(1111 2222)'
+check "(map vec 5 colls)" '(map vector [1] [2] [3] [4] [5])'              '([1 2 3 4 5])'
+check "(mapv + 4 colls)"  '(mapv + [1 2] [10 20] [100 200] [1000 2000])'  '[1111 2222]'
+check "(mapcat 4 colls)"  '(mapcat list [1 2] [3 4] [5 6] [7 8])'         '(1 3 5 7 2 4 6 8)'
+# list* 5+ args: spread the trailing seq.
+check "(list* 1..5 tail)" '(list* 1 2 3 4 5 [6 7])'                       '(1 2 3 4 5 6 7)'
+check "(list* 8 args)"    '(list* 1 2 3 4 5 6 7 [8 9])'                   '(1 2 3 4 5 6 7 8 9)'
+# bit-and-not fold over 3+ args.
+check "(bit-and-not 3 args)" '(bit-and-not 15 9 2)'                       '4'
+# resolve 2-arg env form: a local named in env resolves to nil.
+check "(resolve env local)"  "(resolve '{x nil} 'x)"                      'nil'
+
 echo "pass=$pass fail=$fail"
 if [[ $fail -gt 0 ]]; then exit 1; fi
