@@ -65,8 +65,8 @@ assert_eq 'defprotocol_multi_method_satisfies_false' "$(last_line "$got")" 'fals
 # A name-only `(defprotocol Empty)` is now accepted (JVM-faithful) and a
 # deftype can extend the marker without error.
 diag=$("$BIN" -e '(defprotocol Empty)' 2>&1 || true)
-if [[ "$diag" != *"user/Empty"* ]]; then
-    fail "case3: marker defprotocol should define Empty, got '$diag'"
+if [[ "$diag" != "Empty" ]]; then
+    fail "case3: marker defprotocol should return the symbol Empty (D-456 clj parity), got '$diag'"
 fi
 ext=$("$BIN" - <<'EOF' 2>&1
 (defprotocol Mark)
