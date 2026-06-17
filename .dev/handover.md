@@ -3,6 +3,13 @@
 > ≤ 100 lines. Driving doc; framing per
 > [`.claude/rules/handover_framing.md`](../.claude/rules/handover_framing.md).
 
+## Stopped — user requested
+
+User instruction (2026-06-17): 「いまどういう状況か表示して停止してください。」
+(show current status + stop). cl-format COMPLETE + pushed (HEAD f118555d); full gate
+GREEN (fingerprint match); working tree clean. Resume at the quality-loop floor drain
+(D-446) per the Resume contract. (Next `/continue` deletes this section.)
+
 ## Resume contract
 
 - **HEAD**: `main` (`git log` = SSOT; may lag). **NORMAL PUSH MODE**: after each
@@ -10,8 +17,17 @@
   `build.zig.zon` `.zwasm` is SHA-PINNED (`#412966f7…`, `lazy`). Per-commit = smoke;
   full gate batches at ceiling / boundary / pre-tag.
 
-- **First commit on resume MUST be**: **perf campaign (D-450 / ADR-0148),
-  D-386 dispatch front**. RE-MEASURED + DIAGNOSED 2026-06-17 (fresh, ReleaseSafe,
+- **First commit on resume MUST be**: **quality-loop floor drain — D-446 (fn
+  arity envelopes vs clj, complete the MID/UNDER/over-arity sweep + arity-boundary
+  corpus)**. RATIONALE: the D-386 row (SSOT) says the accessible perf dispatch axis
+  is EXHAUSTED — (a) inline-stepOnce-SP-marshalling is a risky UAF-class cycle "not
+  to be rushed / fresh focus", (b) batch-polls DEAD (don't re-run), (c) JIT fenced
+  (D-133); perf goal (fastest-script 19/30) already MET → pivot to quality sweep.
+  Candidates after D-446: D-449 (regex dfa.zig dead-code decision), D-239
+  (alter-meta! on ns/ref/agent). D-386(a) stays open for a FRESH-FOCUS session with
+  the CLJW_GC_TORTURE_ALLOC safety net (do not rush at the tail of a long context).
+  Below = the prior perf-campaign detail (kept for when D-386(a) is taken fresh):
+  RE-MEASURED + DIAGNOSED 2026-06-17 (fresh, ReleaseSafe,
   10-run, canonical `compare_langs.sh` — full detail in
   `private/notes/9.2.S-perf-remeasure-2026-06-17.md`). The 2026-06-16 baseline was
   STALE (pre-O-037..O-042). Current truth: **ratio_sum + nested_update are now WON
