@@ -20,4 +20,4 @@
   [form]
   (if (string? form)
     (java.util.UUID/fromString form)
-    (throw (ex-info "#uuid data reader expected a string" {:form form}))))
+    (throw (IllegalArgumentException. "#uuid data reader expected a string"))))

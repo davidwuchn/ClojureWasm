@@ -164,4 +164,15 @@ EOF
 ) || fail "case14: non-zero exit ($got)"
 assert_eq 'exinfo_to_specific_class' "$(ll "$got")" '[:ise :cce :iae :iae]'
 
-echo "OK — phase14_catch_internal (20 cases) green"
+# --- Case 15: clojure.java.io coercion failures throw IllegalArgumentException
+#     (clj parity; were ex-info → ExceptionInfo). ---
+got=$("$BIN" - <<'EOF' 2>/dev/null
+(require '[clojure.java.io :as io])
+(prn [(try (io/file 5) :no (catch IllegalArgumentException e :iae))
+      (try (io/reader 5) :no (catch IllegalArgumentException e :iae))
+      (try (io/as-relative-path "/abs") :no (catch IllegalArgumentException e :iae))])
+EOF
+) || fail "case15: non-zero exit ($got)"
+assert_eq 'io_coerce_illegalarg' "$(ll "$got")" '[:iae :iae :iae]'
+
+echo "OK — phase14_catch_internal (21 cases) green"

@@ -11,9 +11,10 @@
 ;; native collection interfaces, ADR-0059), so the coercion/factory entry points
 ;; are plain fns that dispatch on the coercible kinds with `cond`. This is the
 ;; documented cljw-style divergence: the surface is NOT user-extensible the way
-;; JVM IOFactory is (no realistic cljw caller extends it). Errors raise `ex-info`
-;; — the cljw throw idiom (the JVM IllegalArgumentException / IOException ctors
-;; are catch-only reservations, not constructable; see compat_tiers.yaml).
+;; JVM IOFactory is (no realistic cljw caller extends it). A bad coercion arg
+;; throws `IllegalArgumentException` (clj's class — constructable from `.clj`);
+;; a delete failure stays an `ex-info` because the `IOException` ctor is a
+;; catch-only reservation (not constructable; see compat_tiers.yaml).
 ;;
 ;; Cycle 2 (this file as it stands): Coercions (as-file) + file / as-relative-path
 ;; / delete-file / make-parents over the java.io.File host type. reader / writer /
@@ -29,7 +30,7 @@
     (instance? java.io.File x) x
     (string? x) (java.io.File. x)
     (nil? x) nil
-    :else (throw (ex-info (str "Cannot coerce to a java.io.File: " (pr-str x)) {:value x}))))
+    :else (throw (IllegalArgumentException. (str "Cannot coerce to a java.io.File: " (pr-str x))))))
 
 (defn as-url
   "Coerce x to a java.net.URI. ClojureWasm has no java.net.URL type, so URI is
@@ -41,7 +42,7 @@
     (string? x)                 (java.net.URI. x)
     (instance? java.io.File x)  (java.net.URI. (str "file://" (.getAbsolutePath x)))
     (nil? x)                    nil
-    :else (throw (ex-info (str "Cannot coerce to a java.net.URI: " (pr-str x)) {:value x}))))
+    :else (throw (IllegalArgumentException. (str "Cannot coerce to a java.net.URI: " (pr-str x))))))
 
 (defn resource
   "Return the URL for a named classpath resource, or nil if not found.
@@ -58,7 +59,7 @@
   [x]
   (let [f (as-file x)]
     (if (.isAbsolute f)
-      (throw (ex-info (str f " is not a relative path") {:path (str f)}))
+      (throw (IllegalArgumentException. (str f " is not a relative path")))
       (.getPath f))))
 
 (defn file
@@ -107,7 +108,7 @@
                                    (rt/__string-reader (:body (cljw.http.client/get (str x))))
                                    (rt/__open-reader (.getPath x)))
     (string? x)                  (rt/__open-reader x)
-    :else (throw (ex-info (str "Cannot open as a java.io.Reader: " (pr-str x)) {:value x}))))
+    :else (throw (IllegalArgumentException. (str "Cannot open as a java.io.Reader: " (pr-str x))))))
 
 (defn writer
   "Coerce x into an open java.io.Writer (truncating). A String/File names the
@@ -117,10 +118,10 @@
     (instance? java.io.Writer x) x
     (instance? java.io.File x)   (rt/__open-writer (.getPath x))
     (instance? java.net.URI x)   (if (clojure.string/starts-with? (str x) "http")
-                                   (throw (ex-info (str "Cannot write to a non-file URI: " (str x)) {:uri (str x)}))
+                                   (throw (IllegalArgumentException. (str "Cannot write to a non-file URI: " (str x))))
                                    (rt/__open-writer (.getPath x)))
     (string? x)                  (rt/__open-writer x)
-    :else (throw (ex-info (str "Cannot open as a java.io.Writer: " (pr-str x)) {:value x}))))
+    :else (throw (IllegalArgumentException. (str "Cannot open as a java.io.Writer: " (pr-str x))))))
 
 (defn input-stream
   "Coerce x into an open java.io.InputStream. A String/File names a file; an
@@ -134,7 +135,7 @@
                                         (rt/__string-reader (:body (cljw.http.client/get (str x))))
                                         (rt/__open-input-stream (.getPath x)))
     (string? x)                       (rt/__open-input-stream x)
-    :else (throw (ex-info (str "Cannot open as a java.io.InputStream: " (pr-str x)) {:value x}))))
+    :else (throw (IllegalArgumentException. (str "Cannot open as a java.io.InputStream: " (pr-str x))))))
 
 (defn output-stream
   "Coerce x into an open java.io.OutputStream (truncating). A String/File names
@@ -144,10 +145,10 @@
     (instance? java.io.OutputStream x) x
     (instance? java.io.File x)         (rt/__open-output-stream (.getPath x))
     (instance? java.net.URI x)         (if (clojure.string/starts-with? (str x) "http")
-                                         (throw (ex-info (str "Cannot write to a non-file URI: " (str x)) {:uri (str x)}))
+                                         (throw (IllegalArgumentException. (str "Cannot write to a non-file URI: " (str x))))
                                          (rt/__open-output-stream (.getPath x)))
     (string? x)                        (rt/__open-output-stream x)
-    :else (throw (ex-info (str "Cannot open as a java.io.OutputStream: " (pr-str x)) {:value x}))))
+    :else (throw (IllegalArgumentException. (str "Cannot open as a java.io.OutputStream: " (pr-str x))))))
 
 ;; `(copy input output & opts)` — copy input to output, returns nil. Input may be
 ;; a Reader / InputStream, a File, or a String (the String's CONTENT, matching
@@ -164,13 +165,13 @@
               (instance? java.io.InputStream input) input
               (instance? java.io.File input)        (reader input)
               (string? input)                       (rt/__string-reader input)
-              :else (throw (ex-info (str "copy: cannot read from " (pr-str input)) {:value input})))
+              :else (throw (IllegalArgumentException. (str "copy: cannot read from " (pr-str input)))))
         out (cond
               (instance? java.io.Writer output)       output
               (instance? java.io.OutputStream output) output
               (instance? java.io.File output)         (writer output)
               (string? output)                        (rt/__open-writer output)
-              :else (throw (ex-info (str "copy: cannot write to " (pr-str output)) {:value output})))
+              :else (throw (IllegalArgumentException. (str "copy: cannot write to " (pr-str output)))))
         own? (or (instance? java.io.File output) (string? output))]
     (rt/__stream-copy in out)
     (when own? (.close out))
