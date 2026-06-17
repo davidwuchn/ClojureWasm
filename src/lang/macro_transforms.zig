@@ -1441,16 +1441,25 @@ fn expandComment(arena: std.mem.Allocator, rt: *Runtime, args: []const Form, loc
 }
 
 /// `(assert expr)` / `(assert expr msg)` →
-/// `(if expr nil (throw (__assertion-error MSG)))`. MSG is the supplied msg
-/// form, or the string "Assert failed". A failed assert throws an
-/// `AssertionError` (D-192) — catchable as `AssertionError`/`Error`/`Throwable`
-/// but NOT `Exception`, and with no ex-data, matching JVM `assert`.
+/// `(if expr nil (throw (__assertion-error MSG)))`. MSG includes the asserted
+/// FORM (clj parity): `(str "Assert failed: " (pr-str 'expr))` for 1-arg, and
+/// `(str "Assert failed: " msg "\n" (pr-str 'expr))` for 2-arg — built lazily
+/// in the failure branch only. A failed assert throws an `AssertionError`
+/// (D-192) — catchable as `AssertionError`/`Error`/`Throwable` but NOT
+/// `Exception`, and with no ex-data, matching JVM `assert`.
 fn expandAssert(arena: std.mem.Allocator, rt: *Runtime, args: []const Form, loc: SourceLocation) macro_dispatch.ExpandError!Form {
     _ = rt;
     if (args.len < 1 or args.len > 2)
         return error_catalog.raise(.assert_form_incomplete, loc, .{});
     const expr = args[0];
-    const msg: Form = if (args.len == 2) args[1] else .{ .data = .{ .string = "Assert failed" }, .location = loc };
+    const prefix: Form = .{ .data = .{ .string = "Assert failed: " }, .location = loc };
+    // (pr-str (quote <expr>)) — the asserted form, printed clj-style.
+    const quoted = try makeCall(arena, "quote", &.{expr}, loc);
+    const pr_form = try makeCall(arena, "pr-str", &.{quoted}, loc);
+    const msg: Form = if (args.len == 2) blk: {
+        const nl: Form = .{ .data = .{ .string = "\n" }, .location = loc };
+        break :blk try makeCall(arena, "str", &.{ prefix, args[1], nl, pr_form }, loc);
+    } else try makeCall(arena, "str", &.{ prefix, pr_form }, loc);
     const ae = try makeCall(arena, "__assertion-error", &.{msg}, loc);
     const throw_form = try makeCall(arena, "throw", &.{ae}, loc);
     return makeIf(arena, expr, nilForm(loc), throw_form, loc);

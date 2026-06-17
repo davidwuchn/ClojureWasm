@@ -2,7 +2,8 @@
 # test/e2e/phase14_assert_distinct.sh
 #
 # D-134 — assert (macro) + distinct? (fn). assert -> (if expr nil (throw
-# (ex-info MSG {:form 'expr}))); distinct? -> true iff no two args equal
+# (__assertion-error MSG))) where MSG is clj's "Assert failed: <form>" (or
+# "Assert failed: <msg>\n<form>"); distinct? -> true iff no two args equal
 # (a set dedups by =, so distinct <=> the set keeps every element).
 # distinct? is core.clj (rides the AOT blob); assert is a Zig macro.
 
@@ -34,6 +35,10 @@ echo "PASS assert_fail_default -> Assert failed"
 out="$("$BIN" -e '(assert (= 1 2) "one is not two")' 2>&1 || true)"
 [[ "$out" == *"one is not two"* ]] || fail "assert_fail_msg: got '$out'"
 echo "PASS assert_fail_msg -> one is not two"
+# clj parity: the message includes the asserted FORM (was omitted).
+out="$("$BIN" -e '(assert (= 1 2))' 2>&1 || true)"
+[[ "$out" == *"Assert failed: (= 1 2)"* ]] || fail "assert_msg_form: got '$out'"
+echo "PASS assert_msg_form -> Assert failed: (= 1 2)"
 
 # --- D-192: assert throws an AssertionError (under Error, NOT Exception) ---
 assert_eq 'assert_catch_assertion_error' "$("$BIN" -e '(try (assert false "nope") (catch AssertionError e :ae))')" ':ae'

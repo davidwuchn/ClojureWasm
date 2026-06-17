@@ -1,0 +1,10 @@
+(try (assert (= 1 2)) (catch Throwable e (ex-message e)))
+;;=> "Assert failed: (= 1 2)"
+(try (assert (= 1 2) "custom") (catch Throwable e (ex-message e)))
+;;=> "Assert failed: custom\n(= 1 2)"
+(try (assert (pos? -3)) (catch Throwable e (ex-message e)))
+;;=> "Assert failed: (pos? -3)"
+(try (assert nil) (catch Throwable e (ex-message e)))
+;;=> "Assert failed: nil"
+(do (assert (= 1 1)) :passed)
+;;=> :passed
