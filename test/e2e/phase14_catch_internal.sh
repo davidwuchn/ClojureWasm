@@ -152,4 +152,16 @@ EOF
 ) || fail "case13: non-zero exit ($got)"
 assert_eq 'subvec_oob_indexbounds' "$(ll "$got")" ':caught'
 
-echo "OK — phase14_catch_internal (19 cases) green"
+# --- Case 14: more ex-info→specific-class fixes (clj parity): pop-empty →
+#     IllegalStateException, peek/pop non-stack → ClassCastException, str/replace
+#     bad match + requiring-resolve non-qualified → IllegalArgumentException. ---
+got=$("$BIN" - <<'EOF' 2>/dev/null
+(prn [(try (pop []) :no (catch IllegalStateException e :ise))
+      (try (peek 5) :no (catch ClassCastException e :cce))
+      (try (clojure.string/replace "abc" 42 "X") :no (catch IllegalArgumentException e :iae))
+      (try (requiring-resolve 'foo) :no (catch IllegalArgumentException e :iae))])
+EOF
+) || fail "case14: non-zero exit ($got)"
+assert_eq 'exinfo_to_specific_class' "$(ll "$got")" '[:ise :cce :iae :iae]'
+
+echo "OK — phase14_catch_internal (20 cases) green"

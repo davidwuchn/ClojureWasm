@@ -113,8 +113,8 @@
       (instance? String match)  (-str-replace-string s match repl)
       (instance? Character match) (-str-replace-char s match repl)
       (instance? Pattern match) (-str-replace-pattern s match repl)
-      :else (throw (ex-info "replace: unsupported match type"
-                            {:fn "replace" :match match})))))
+      ;; clj throws IllegalArgumentException "Invalid match arg: <match>" here.
+      :else (throw (IllegalArgumentException. (str "Invalid match arg: " match))))))
 
 (def replace-first
   (fn* [s match repl]
@@ -122,8 +122,8 @@
       (instance? String match)  (-str-replace-first-string s match repl)
       (instance? Character match) (-str-replace-first-char s match repl)
       (instance? Pattern match) (-str-replace-first-pattern s match repl)
-      :else (throw (ex-info "replace-first: unsupported match type"
-                            {:fn "replace-first" :match match})))))
+      ;; clj throws IllegalArgumentException "Invalid match arg: <match>" here.
+      :else (throw (IllegalArgumentException. (str "Invalid match arg: " match))))))
 
 ;; `re-quote-replacement` — escape the regex-replacement metacharacters
 ;; `\` and `$` so a string is used LITERALLY as the replacement in a regex

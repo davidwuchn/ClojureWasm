@@ -633,7 +633,7 @@
             ;; D-280d2: a deftype/reify implementing clojure.lang.IPersistentStack.
             (if (rt/__satisfies? IPersistentStack coll)
               (-peek coll)
-              (throw (ex-info "Can't peek: not a stack (list, vector)" {:value coll})))))))))
+              (throw (ClassCastException. "Can't peek: not a stack (list, vector)")))))))))
 (def pop
   (fn* [coll]
     (if (nil? coll)
@@ -643,15 +643,15 @@
         (if (vector? coll)
           (if (pos? (count coll))
             (into [] (take (dec (count coll)) coll))
-            (throw (ex-info "Can't pop empty vector" {})))
+            (throw (IllegalStateException. "Can't pop empty vector")))
           (if (list? coll)
             (if (seq coll)
               (rest coll)
-              (throw (ex-info "Can't pop empty list" {})))
+              (throw (IllegalStateException. "Can't pop empty list")))
             ;; D-280d2: a deftype/reify implementing clojure.lang.IPersistentStack.
             (if (rt/__satisfies? IPersistentStack coll)
               (-pop coll)
-              (throw (ex-info "Can't pop: not a stack (list, vector)" {:value coll})))))))))
+              (throw (ClassCastException. "Can't pop: not a stack (list, vector)")))))))))
 
 ;; `(find m k)` — the map entry `[k v]` for key k if present, else nil
 ;; (distinguishes "absent" from "present with nil value" via contains?).
@@ -2308,7 +2308,7 @@
   (fn* [sym]
     (if (qualified-symbol? sym)
       (do (require (symbol (namespace sym))) (resolve sym))
-      (throw (ex-info (str "Not a qualified symbol: " sym) {:sym sym})))))
+      (throw (IllegalArgumentException. (str "Not a qualified symbol: " sym))))))
 
 
 ;; --- Java arrays (ADR-0105 / D-287) ---

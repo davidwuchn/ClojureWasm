@@ -52,27 +52,25 @@ EOF
 assert_eq 'replace_regex_string_dollar_zero' "$got" '"abc123"'
 
 # --- Case 6: unsupported match type raises (cond :else clause) ---
-# The top-level renders the thrown ex-info's message + the `exception`
-# label (ADR-0055 am2 / D-144) — surfacing the ex-info message at the
-# CLI tail, not the old generic "ThrownValue". The :else clause being
-# reached at all is what this case verifies — that the cond did not
-# silently fall through.
+# clj throws IllegalArgumentException "Invalid match arg: <match>" here (NOT a
+# generic ex-info) — the :else clause being reached at all is what this case
+# verifies (the cond did not silently fall through), now with the clj class.
 diag=$("$BIN" -e '(clojure.string/replace "abc" 42 "X")' 2>&1 || true)
 case "$diag" in
-    *"Exception"*"replace: unsupported match type"*)
-        echo "PASS replace_unsupported_match_raises -> ex-info message surfaced" ;;
+    *"Invalid match arg"*)
+        echo "PASS replace_unsupported_match_raises -> Invalid match arg surfaced" ;;
     *)
-        fail "replace_unsupported_match_raises: missing ex-info message ($diag)" ;;
+        fail "replace_unsupported_match_raises: missing message ($diag)" ;;
 esac
 
 # --- Case 7: unsupported match round-trips through (try ... (catch
-#     ExceptionInfo ...)) so the ex-info message IS reachable ---
+#     IllegalArgumentException ...)) — clj-class parity (was ExceptionInfo) ---
 got=$("$BIN" - <<'EOF' 2>/dev/null
 (prn (try (clojure.string/replace "abc" 42 "X")
-  (catch ExceptionInfo e (ex-message e))))
+  (catch IllegalArgumentException e (ex-message e))))
 EOF
 )
-assert_eq 'replace_unsupported_caught' "$got" '"replace: unsupported match type"'
+assert_eq 'replace_unsupported_caught' "$got" '"Invalid match arg: 42"'
 
 # --- $N capture-group backreferences in the replacement (D-093 discharge) ---
 got=$("$BIN" -e '(clojure.string/replace "abc" #"(.)" "$1$1")' 2>/dev/null)
