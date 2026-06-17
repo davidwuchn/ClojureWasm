@@ -173,10 +173,22 @@ it as defined and the gate does NOT flag it. The id-scoped next-id recipe
 above is the robust cross-check (a phantom never has an `id:` row); to
 audit for phantoms, diff the set of referenced ids against the set of
 `id:`-defined ids:
-`comm -23 <(grep -oE 'D-[0-9]+' .dev/debt.yaml | sort -u) <(yq -r '.active[].id, .standing[].id, .discharged[].id' .dev/debt.yaml | sort -u)`
-prints any referenced-but-undefined id (empty = clean). (The defined-id side uses
-`yq` so it is quote-style-agnostic per Golden-rule #4; a grep fallback must use
-`id: "?D-`.)
+`comm -23 <(grep -oE 'D-[0-9]+' .dev/debt.yaml | sort -u) <(yq -r '(.active[],.standing[],.discharged[]).id' .dev/debt.yaml | sort -u)`
+prints any referenced-but-undefined id. (The defined-id side uses `yq` so it is
+quote-style-agnostic per Golden-rule #4; a grep fallback must use `id: "?D-`.)
+
+> **This recipe is a SCREEN, not a verdict — it has FALSE POSITIVES (verified
+> 2026-06-17). `grep -oE 'D-[0-9]+'` strips letter suffixes, so a sub-id ref
+> `D-014a` (a REAL row) shows up as a phantom `D-014`; and it matches digits
+> embedded in unrelated tokens, e.g. `UCD-16.0.0` (Unicode 16) → phantom `D-16`.
+> Do NOT use a `\b` word-boundary "fix" — BSD/macOS `grep -oE '\bD-[0-9]+'`
+> emits MORE garbage (partial `D-01`/`D-07`). Instead, `grep -nF` EACH flagged
+> id to see its real context before acting. In the 2026-06-17 audit only 1 of 3
+> hits was real: a typo `D-2026-06-13` (a date `2026-06-13` with an erroneous
+> `D-` prefix); `D-014` (=`D-014a/b` sub-ids) and `D-16` (=`UCD-16.0.0`) were
+> recipe noise. The lesson the user flagged: a noisy audit recipe + the gate's
+> blind spot let that one typo accumulate — confirm each hit, don't dismiss the
+> batch as "probably all noise" and don't chase the noise as if all real.
 
 ## Auditing the SSOTs (run these when asked to audit, or after bulk yq edits)
 
