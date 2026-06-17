@@ -95,7 +95,18 @@ assert_eq 'gen_exp'    "$(run '(prn (pp/cl-format nil "~9,2G" 314.159))')"      
 assert_eq 'gen_wd'     "$(run '(prn (pp/cl-format nil "~10,3G" 0.8))')"          '" 0.800    "'
 assert_eq 'gen_ratio'  "$(run '(prn (pp/cl-format nil "~10,3g" 4/5))')"          '" 0.800    "'
 
+# ~[ conditional (D-455 chunk4a; clj-oracle square-bracket-tests; nesting-aware)
+assert_eq 'cond_idx0'  "$(run '(prn (pp/cl-format nil "I ~[don'"'"'t ~]have one" 0))')"  '"I don'"'"'t have one"'
+assert_eq 'cond_idx1'  "$(run '(prn (pp/cl-format nil "I ~[don'"'"'t ~]have one" 1))')"  '"I have one"'
+assert_eq 'cond_semi'  "$(run '(prn (pp/cl-format nil "~[a~;b~;c~]" 1))')"               '"b"'
+assert_eq 'cond_deflt' "$(run '(prn (pp/cl-format nil "~[a~;b~:;d~]" 9))')"              '"d"'
+assert_eq 'cond_bool'  "$(run '(prn (pp/cl-format nil "~:[no~;yes~]" true))')"           '"yes"'
+assert_eq 'cond_boolf' "$(run '(prn (pp/cl-format nil "~:[no~;yes~]" nil))')"            '"no"'
+assert_eq 'cond_at_nil' "$(run '(prn (pp/cl-format nil "x~@[ (~D)~]" nil))')"            '"x"'
+assert_eq 'cond_at_val' "$(run '(prn (pp/cl-format nil "x~@[ (~D)~]" 7))')"              '"x (7)"'
+assert_eq 'cond_nest'  "$(run '(prn (pp/cl-format nil "~[B ~D~:[~; ok~]~;R~]." 0 7 true))')" '"B 7 ok."'
+
 # still-unimplemented directive raises explicitly (not silent mishandle)
 assert_eq 'unsupported-raises' "$(run '(prn (try (pp/cl-format nil "~<x~>" 2) (catch Throwable e :raised)))')" ':raised'
 
-echo "OK — phase14_cl_format (64 cases) green"
+echo "OK — phase14_cl_format (73 cases) green"

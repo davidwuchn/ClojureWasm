@@ -102,6 +102,43 @@
   (loop [j i]
     (if (and (= (nth fmt j) \~) (= (nth fmt (inc j)) close)) [(subs fmt i j) (+ j 2)] (recur (inc j)))))
 
+;; Nesting-aware closer match for `~[`/`~]` and `~<`/`~>` (which nest). Scans from
+;; `i` (just after the opener), using cl-dir to step over each directive's params
+;; so a `~10,2[` param prefix or a quoted `~']` char-param is not mistaken for a
+;; bracket. Returns [body-between next-i].
+(defn cl-close-nested [fmt i open close]
+  (let [n (count fmt)]
+    (loop [j i depth 0]
+      (if (>= j n)
+        [(subs fmt i) n]
+        (if (= (nth fmt j) \~)
+          (let [pd (cl-dir fmt (inc j)) dc (nth pd 3) ni (nth pd 4)]
+            (cond
+              (= dc close) (if (= depth 0) [(subs fmt i j) ni] (recur ni (dec depth)))
+              (= dc open) (recur ni (inc depth))
+              :else (recur ni depth)))
+          (recur (inc j) depth))))))
+
+;; Split a conditional/justification body on its TOP-LEVEL `~;` separators
+;; (respecting nested `open`/`close` pairs). Returns [clauses default-idx], where
+;; default-idx is the index of the clause introduced by `~:;` (the ~[ else / ~<
+;; per-line overflow clause), or nil.
+(defn cl-clauses [fmt open close]
+  (let [n (count fmt)]
+    (loop [j 0 start 0 depth 0 clauses [] didx nil]
+      (if (>= j n)
+        [(conj clauses (subs fmt start)) didx]
+        (if (= (nth fmt j) \~)
+          (let [pd (cl-dir fmt (inc j)) colon? (nth pd 1) dc (nth pd 3) ni (nth pd 4)]
+            (cond
+              (= dc open) (recur ni start (inc depth) clauses didx)
+              (= dc close) (recur ni start (dec depth) clauses didx)
+              (and (= dc \;) (= depth 0))
+              (recur ni ni depth (conj clauses (subs fmt start j))
+                     (if colon? (inc (count clauses)) didx))
+              :else (recur ni start depth clauses didx)))
+          (recur (inc j) start depth clauses didx))))))
+
 ;; Capitalize the first letter of each space-separated word, lowercasing the rest
 ;; (the `~:(` transform). Manual char walk — a regex literal cannot live in a
 ;; bundled `.clj` (cycle-1 reader limitation).
@@ -397,6 +434,27 @@
                 (= d \()
                 (let [cl (cl-close fmt ni \)) r (cl-run (nth cl 0) argv pos)]
                   (recur (nth cl 1) (nth r 1) (str acc (cl-case (nth r 0) colon? at?))))
+                ;; ~[...~;...~] — conditional. Plain: select clause by integer arg
+                ;; (~:; = default). ~:[f~;t~] boolean (nil/false→0). ~@[c~] runs c
+                ;; only if next arg non-nil (and lets c consume it). ~#[ count-select
+                ;; is deferred (D-458 `#` param). Clauses nest (cl-close-nested).
+                (= d \[)
+                (let [clc (cl-close-nested fmt ni \[ \]) body (nth clc 0) after (nth clc 1)
+                      cls (cl-clauses body \[ \]) clauses (nth cls 0) didx (nth cls 1)]
+                  (cond
+                    at? (if (or (>= pos na) (nil? x))
+                          (recur after (inc pos) acc)
+                          (let [r (cl-run (nth clauses 0) argv pos)]
+                            (recur after (nth r 1) (str acc (nth r 0)))))
+                    colon? (let [sel (if (or (>= pos na) (nil? x) (false? x)) 0 1)
+                                 r (cl-run (nth clauses sel) argv (inc pos))]
+                             (recur after (nth r 1) (str acc (nth r 0))))
+                    :else (let [normal (or didx (count clauses))
+                                chosen (cond (and (>= x 0) (< x normal)) x didx didx :else nil)]
+                            (if chosen
+                              (let [r (cl-run (nth clauses chosen) argv (inc pos))]
+                                (recur after (nth r 1) (str acc (nth r 0))))
+                              (recur after (inc pos) acc)))))
                 (= d \^) (if (>= pos na) [acc pos] (recur ni pos acc))
                 (= d \%) (recur ni pos (str acc \newline))
                 ;; ~T — tabulate: pad with spaces to reach column p0 (default 1),
