@@ -118,4 +118,30 @@ EOF
 ) || fail "case11c: non-zero exit ($got)"
 assert_eq 'timed_deref_nonblocking_classcast' "$(ll "$got")" ':caught'
 
-echo "OK — phase14_catch_internal (14 cases) green"
+# --- Case 12: conversion / ns fns raise CATCHABLE arg-type errors (were
+#     uncatchable feature_not_supported). clj classes: symbol→IllegalArgument,
+#     realized?/name/the-ns(non-sym)/symbol-2arg→ClassCast, the-ns(missing
+#     sym)→Exception. D-446 follow-up sweep. ---
+got=$("$BIN" - <<'EOF' 2>/dev/null
+(prn (try (symbol 5) :no (catch IllegalArgumentException e :caught)))
+EOF
+) || fail "case12a: non-zero exit ($got)"
+assert_eq 'symbol_badconv_illegalarg' "$(ll "$got")" ':caught'
+got=$("$BIN" - <<'EOF' 2>/dev/null
+(prn (try (realized? 5) :no (catch ClassCastException e :caught)))
+EOF
+) || fail "case12b: non-zero exit ($got)"
+assert_eq 'realized_nonpending_classcast' "$(ll "$got")" ':caught'
+got=$("$BIN" - <<'EOF' 2>/dev/null
+(prn (try (name 5) :no (catch ClassCastException e :caught)))
+EOF
+) || fail "case12c: non-zero exit ($got)"
+assert_eq 'name_nonnamed_classcast' "$(ll "$got")" ':caught'
+got=$("$BIN" - <<'EOF' 2>/dev/null
+(prn [(try (the-ns 5) :no (catch ClassCastException e :ccast))
+      (try (the-ns 'definitely-no-such-ns) :no (catch Throwable e :nofound))])
+EOF
+) || fail "case12d: non-zero exit ($got)"
+assert_eq 'the_ns_split' "$(ll "$got")" '[:ccast :nofound]'
+
+echo "OK — phase14_catch_internal (18 cases) green"

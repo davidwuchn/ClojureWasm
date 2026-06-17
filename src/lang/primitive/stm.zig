@@ -197,10 +197,21 @@ pub fn realizedQFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLoca
         .typed_instance, .reified_instance => blk: {
             var cs: dispatch.CallSite = .{};
             if (try dispatch.dispatchOrNull(rt, env, &cs, v, "IPending", "-realized?", &.{v}, loc)) |r| break :blk r;
-            break :blk error_catalog.raise(.feature_not_supported, loc, .{ .name = "realized? called on non-IPending value" });
+            break :blk realizedTypeError(v, loc);
         },
-        else => error_catalog.raise(.feature_not_supported, loc, .{ .name = "realized? called on non-IPending value" }),
+        // clj throws a catchable ClassCastException on a non-IPending value.
+        else => realizedTypeError(v, loc),
     };
+}
+
+/// A non-IPending value reached `realized?` — a CATCHABLE type error
+/// (clj: ClassCastException), not a missing feature (D-446 follow-up).
+fn realizedTypeError(v: Value, loc: SourceLocation) anyerror!Value {
+    return error_catalog.raise(.type_arg_invalid, loc, .{
+        .fn_name = "realized?",
+        .expected = "an IPending (delay, future, promise, lazy seq) or a clojure.lang.IPending",
+        .actual = @tagName(v.tag()),
+    });
 }
 
 /// `(force x)` — if `x` is a delay, force + return its value (memoised);

@@ -50,7 +50,11 @@ pub fn theNsFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation
     try error_catalog.checkArity("the-ns", args, 1, loc);
     if (args[0].tag() == .ns) return args[0];
     if (resolveNs(env, args[0])) |ns| return Env.nsValue(ns);
-    return error_catalog.raise(.feature_not_supported, loc, .{ .name = "the-ns on a non-namespace / unknown ns" });
+    // clj distinguishes (both catchable): a SYMBOL naming no namespace →
+    // "No namespace: X" (name_error); any other type → ClassCastException.
+    if (args[0].tag() == .symbol)
+        return error_catalog.raise(.namespace_unknown, loc, .{ .ns = symbol_mod.asSymbol(args[0]).name });
+    return error_catalog.raise(.type_arg_invalid, loc, .{ .fn_name = "the-ns", .expected = "a namespace or a symbol", .actual = @tagName(args[0].tag()) });
 }
 
 /// `(ns-name ns)` — the namespace's name as a symbol. Accepts a ns or a symbol

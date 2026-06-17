@@ -1,0 +1,18 @@
+(keyword 5)
+;;=> nil
+(keyword [1 2])
+;;=> nil
+(keyword nil)
+;;=> nil
+(find-keyword 5)
+;;=> nil
+(keyword "a")
+;;=> :a
+(keyword "a" "b")
+;;=> :a/b
+(symbol "a/b")
+;;=> a/b
+(symbol :foo)
+;;=> foo
+(name :foo/bar)
+;;=> "bar"

@@ -266,6 +266,10 @@ pub const Code = enum {
     /// primitives where the expected category is "seqable" /
     /// "counted" / "collection" rather than a single concrete type.
     type_arg_invalid,
+    /// `(symbol x)` on a value that is not a symbol/string/keyword. clj throws
+    /// `IllegalArgumentException` here (NOT the `ClassCastException` of a plain
+    /// type slot) — so this is `.value_error`, distinct from `type_arg_invalid`.
+    symbol_conversion_invalid,
     value_not_callable,
 
     // --- Eval (arithmetic) ---
@@ -1333,6 +1337,11 @@ pub fn entry(comptime code: Code) Entry {
             .kind = .type_error,
             .phase = .eval,
             .template = "{[fn_name]s}: expected {[expected]s}, got {[actual]s}",
+        },
+        .symbol_conversion_invalid => .{
+            .kind = .value_error,
+            .phase = .eval,
+            .template = "Cannot convert {[actual]s} to a symbol",
         },
         .value_not_callable => .{
             .kind = .type_error,
