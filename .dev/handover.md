@@ -37,8 +37,9 @@
   **Alternative high-value front while perf is structurally blocked**: §9.0 gap
   area II (Wasm-edge-native, the stated differentiator) — pivoting is reasonable
   (clj_diff_sweep Discipline 2: don't let perf-grind displace the differentiator);
-  the user owns the `.dev/.perf_campaign_active` flag. Regenerate stale
-  `cross-lang-latest.yaml`. DEFERRED: D-446 arity residual; D-456 defprotocol (1-line).
+  the user owns the `.dev/.perf_campaign_active` flag (currently SET). Regenerate
+  stale `cross-lang-latest.yaml`. DEFERRED: D-446 arity residual; D-458 cl-format
+  V/# runtime params (cl-dir gap, small, low-priority clj-parity).
 
 - **Forbidden this session**: JIT integration (D-133 — user-fenced 2026-06-16;
   the ARM64 codegen substrate is DONE + execution-verified, but the coupled
@@ -50,17 +51,15 @@
 
 ## Last landed (git log = SSOT; all pushed)
 
-**Records arc complete** (D-086 / ADR-0154 + follow-ons): `TypedInstance` gained a
-trailing `extmap: Value` slot (the `meta`-field twin, ADR-0112) holding
-non-declared keys on a defrecord. assoc/dissoc/get/contains?/keys/vals/count/seq/
-print/`=`/hash + `map->R` (via a native `rt/__map->record` primitive — bootstrap-
-safe, NOT core.clj `reduce-kv`) all route declared-then-extmap; the partition
-lives once in `TypeDescriptor.fieldSlotByName` (DA-fork Alt 2). `conj`/`into` onto
-a record assocs into extmap (+ fixed a latent `-editable?` bug: records are `map?`
-but not IEditableCollection, so `into` wrongly took the transient path). **AD-035**
-records the lone clj divergence (record prints simple `#R{…}`, not `#user.R{…}` —
-the AD-003 simple-name policy). clj-diff verified faithful across
-assoc/dissoc/get/keys/vals/count/seq/merge/select-keys/find/update/reduce-kv.
+**cl-format COMPLETE** (D-455 DISCHARGED): the whole Common-Lisp-format surface now
+lands on cljw's minimal `cl-run` (no upstream arg-navigator/column-writer port — the
+prior "ADR-level" assessment was wrong). chunk2 ~P/~*/~T (index arg-navigator),
+chunk3 ~$/~E/~G (full CLtL Steele float, reusing `(str f)` shortest-round-trip),
+chunk4 ~[~;~] conditional (nesting-aware) + ~<~;~> justification. e2e 82 cases +
+`clj_corpus/cl_format_float.txt` 13 pins; all clj-oracle byte-matched. Documented
+divergences that RAISE cleanly: the `V`/`#` runtime-valued directive params (D-458,
+a cl-dir gap) + the ~<…~:;…~> pretty-print column mode (needs a column-tracking
+writer). Also fixed a stale phase7 case3 (D-456 defprotocol→symbol parity follow-up).
 
 ## Cold-start reading order (resume)
 
