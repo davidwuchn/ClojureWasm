@@ -95,10 +95,10 @@ const java_surfaces = [_]type{
     @import("net/URLEncoder.zig"),
     @import("security/MessageDigest.zig"),
     @import("time/Instant.zig"),
-    // LocalDateTime / Duration / ZonedDateTime backing impls under
-    // runtime/time/ are unbuilt (method_table empty) — D-105.
     @import("time/LocalDateTime.zig"),
     @import("time/Duration.zig"),
+    // ZonedDateTime backing impl under runtime/time/ is unbuilt
+    // (method_table empty) — D-105.
     @import("time/ZonedDateTime.zig"),
     @import("util/ArrayList.zig"),
     @import("util/HashMap.zig"),

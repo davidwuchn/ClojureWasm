@@ -353,6 +353,14 @@ pub const Runtime = struct {
     /// `null` until the first Duration value is built.
     duration_descriptor: ?*TypeDescriptor = null,
 
+    /// Per-Runtime `java.time.LocalDateTime` value descriptor (D-462) — a
+    /// timezone-agnostic date+time, a 2-field no-slot `.typed_instance` with
+    /// `temporal_print = .iso_local_date_time` (bare ISO-local print form).
+    /// Lazily allocated on `gc.infra` by
+    /// `runtime/time/local_date_time_value.zig::descriptorOf`, freed in
+    /// `deinit`. `null` until the first LocalDateTime value is built.
+    local_date_time_descriptor: ?*TypeDescriptor = null,
+
     /// Lazy-init access to the per-Tag default descriptor. On first
     /// call for a given tag, allocates a TypeDescriptor on
     /// `rt.gc.infra` with `fqcn = nativeFqcnFor(tag)` and empty
@@ -548,6 +556,7 @@ pub const Runtime = struct {
         @import("time/timestamp.zig").deinitDescriptor(self);
         @import("time/instant_value.zig").deinitDescriptor(self);
         @import("time/duration_value.zig").deinitDescriptor(self);
+        @import("time/local_date_time_value.zig").deinitDescriptor(self);
 
         // User-set system properties (gpa-owned key+value dupes).
         {

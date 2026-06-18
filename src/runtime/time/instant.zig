@@ -41,8 +41,9 @@ pub fn nowEpochNanos(io: std.Io) i128 {
 const MS_PER_DAY: i64 = 86_400_000;
 
 /// Days since the Unix epoch (1970-01-01) for a proleptic-Gregorian
-/// `(y, m, d)` (m,d 1-based). Hinnant `days_from_civil`.
-fn daysFromCivil(y_in: i64, m: i64, d: i64) i64 {
+/// `(y, m, d)` (m,d 1-based). Hinnant `days_from_civil`. `pub` so the
+/// LocalDateTime value layer (`local_date_time_value.zig`) reuses it.
+pub fn daysFromCivil(y_in: i64, m: i64, d: i64) i64 {
     const y = y_in - @as(i64, if (m <= 2) 1 else 0);
     const era = @divFloor(if (y >= 0) y else y - 399, 400);
     const yoe = y - era * 400; // [0, 399]
@@ -51,10 +52,11 @@ fn daysFromCivil(y_in: i64, m: i64, d: i64) i64 {
     return era * 146097 + doe - 719468;
 }
 
-const Civil = struct { y: i64, m: i64, d: i64 };
+pub const Civil = struct { y: i64, m: i64, d: i64 };
 
-/// Inverse of `daysFromCivil`. Hinnant `civil_from_days`.
-fn civilFromDays(z_in: i64) Civil {
+/// Inverse of `daysFromCivil`. Hinnant `civil_from_days`. `pub` so the
+/// LocalDateTime value layer reuses it.
+pub fn civilFromDays(z_in: i64) Civil {
     const z = z_in + 719468;
     const era = @divFloor(if (z >= 0) z else z - 146096, 146097);
     const doe = z - era * 146097; // [0, 146096]

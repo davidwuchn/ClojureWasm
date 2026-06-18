@@ -48,6 +48,9 @@ pub const TemporalPrint = enum {
     iso_instant,
     /// `java.time.Duration` — ISO-8601 duration `PT…` (2 fields: seconds + nanos).
     iso_duration,
+    /// `java.time.LocalDateTime` — bare ISO local date-time (2 fields:
+    /// epoch_day + nano_of_day), conditional seconds + variable fraction.
+    iso_local_date_time,
 };
 
 /// Descriptor for one type. Process-lifetime — allocated on

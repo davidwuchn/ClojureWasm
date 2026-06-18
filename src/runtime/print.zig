@@ -57,6 +57,7 @@ const tagged_literal_mod = @import("tagged_literal.zig");
 const td_mod = @import("type_descriptor.zig");
 const instant_mod = @import("time/instant.zig");
 const duration_value_mod = @import("time/duration_value.zig");
+const local_date_time_value_mod = @import("time/local_date_time_value.zig");
 const lazy_seq_mod = @import("lazy_seq.zig");
 const range_collection = @import("collection/range.zig");
 const env_mod = @import("env.zig");
@@ -1128,6 +1129,17 @@ fn printTypedInstance(w: *Writer, v: Value) anyerror!void {
                 const seconds = inst.fields()[0].asInteger();
                 const nanos: i32 = @intCast(inst.fields()[1].asInteger());
                 try w.writeAll(duration_value_mod.formatDuration(&buf, seconds, nanos));
+                return;
+            }
+        },
+        .iso_local_date_time => {
+            // java.time.LocalDateTime: 2 fields = epoch_day + nano_of_day →
+            // bare ISO local date-time (conditional :ss + variable fraction).
+            if (inst.field_count >= 2 and inst.fields()[0].tag() == .integer and inst.fields()[1].tag() == .integer) {
+                var buf: [40]u8 = undefined;
+                const epoch_day = inst.fields()[0].asInteger();
+                const nano_of_day = inst.fields()[1].asInteger();
+                try w.writeAll(local_date_time_value_mod.formatLocalDateTime(&buf, epoch_day, nano_of_day));
                 return;
             }
         },
