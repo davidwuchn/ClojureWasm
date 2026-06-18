@@ -352,7 +352,9 @@ tiers:
         files:
           surface: runtime/java/time/Instant.zig
           impl: runtime/time/instant.zig
-          impl_extras: [runtime/time/instant_value.zig]
+          # Value-wrap layer (F-009 wrap slot, G3-exempt): wraps instant.zig's
+          # epoch data into a .typed_instance Value.
+          wrap: runtime/time/instant_value.zig
         methods: [now, ofEpochSecond, ofEpochMilli, parse, getEpochSecond, getNano, toEpochMilli]
         clojure_peer_vars: []
         status: "WIRED (D-462) - statics now/ofEpochSecond([secs] | [secs nanos])/ofEpochMilli/parse mint a `.typed_instance` Instant VALUE (instant_value.zig, per-Runtime descriptor); instance methods getEpochSecond/getNano/toEpochMilli + value `=` + `(str i)` = ISO_INSTANT (variable fraction + Z) all reachable. pr-str divergence = AD-042 (no JVM `#object[…]` identity form). Pinned by test/e2e/phase15_java_time_instant.sh. Arithmetic methods (plusSeconds/minus*/isBefore/…) are NOT implemented (would be a follow-up unit, not listed above per anti-D-177). Sibling java.time reservations (LocalDateTime/Duration/ZonedDateTime) remain UNWIRED."
@@ -374,7 +376,9 @@ tiers:
         phase: 6
         files:
           surface: runtime/java/time/Duration.zig
-          impl_extras: [runtime/time/duration_value.zig]
+          # Value-wrap layer (F-009 wrap slot, G3-exempt): the duration span's
+          # value-mint + self-contained ISO-8601 formatter.
+          wrap: runtime/time/duration_value.zig
         methods: [ofSeconds, ofMillis, ofNanos, ofMinutes, ofHours, ofDays, getSeconds, getNano, toMillis, toMinutes]
         clojure_peer_vars: []
         status: "WIRED (D-462) - statics ofSeconds([secs] | [secs nanoAdj])/ofMillis/ofNanos/ofMinutes/ofHours/ofDays mint a NORMALIZED (nanos∈[0,1e9), seconds carries sign) `.typed_instance` Duration VALUE (duration_value.zig, per-Runtime descriptor); instance methods getSeconds/getNano/toMillis/toMinutes + value `=` + `(str d)` = ISO-8601 `PT…` (the exact JDK Duration.toString) all reachable. pr-str divergence = AD-042 (no JVM `#object[…]` identity form). Pinned by test/e2e/phase15_java_time_duration.sh. Arithmetic methods (between/plus/minus/toNanos/…) are NOT implemented (would be a follow-up unit, not listed above per anti-D-177)."

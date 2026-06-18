@@ -10,23 +10,18 @@
   `build.zig.zon` `.zwasm` is SHA-PINNED (`#412966f7…`, `lazy`). Per-commit = smoke;
   full gate batches at ceiling / boundary / pre-tag.
 
-- **First commit on resume MUST be**: **continue the clj-parity quality loop**
-  (post-M F-010/F-011), self-selecting from the options below — the single-expr
-  differential sweep has largely SATURATED (the last several fresh surfaces found 0
-  new real bugs). Disposition EVERY DIFF — bug→fix (clj-oracle-grounded, corpus +
-  e2e) OR accepted→AD-NNN (derives_from + pin) per `accepted_divergences.md`. DONE
-  this campaign (clean / fixed): arity envelopes, exception catchability + specific-
-  class, print fidelity, reader hygiene, assert message, sorted-coll equality, +
-  WHOLE-PROGRAM integration (5 mini-programs in `private/arity_sweep/mini*.clj` all
-  clj-identical modulo accepted ADs), core libs (zip/data/walk/edn/set), numeric
-  tower, macros (`when` now byte-matches clj). Highest-value remaining options, in
-  order: (1) the deferred structural debt — D-460 (sorted coll as map key, rt-free
-  keyEqValue), D-461 (eager-load require semantics — F-003 owner call), D-446
-  (multidim arrays); (2) a few
-  not-yet-swept surfaces likely thin: date/time (interop-heavy), spec, deeper
-  transducers; (3) the `clj_diff_sweep` harness gap — it CANNOT sweep top-level
-  forms (defrecord/defprotocol/deftype error inside its `(prn …)` wrapper), so use
-  the mini-program (file-diff) approach for those, as `mini*.clj` do.
+- **First commit on resume MUST be**: **continue the java.time wiring arc (D-462)** —
+  next type **java.time.LocalDateTime** (date-based: reuse instant.zig
+  `daysFromCivil`/`civilFromDays`; candidate payload `[epoch-day, nano-of-day]`;
+  needs a proper Step 0 on the representation + a clj oracle). Pattern is
+  established: temporal types are `.typed_instance` (timestamp.zig/instant_value.zig
+  model), printed via the `temporal_print` enum (type_descriptor.zig), value-`=` via
+  an equal.zig arm, value-wrap file in the compat_tiers `wrap:` slot (G3-exempt).
+  After LocalDateTime: ZonedDateTime, then LocalDate (no .zig yet). Each: clj-grounded
+  e2e → impl (fork the mechanical part once spec'd) → verify vs clj → smoke → commit.
+  When java.time is exhausted, self-select the next clj-parity unit (the single-expr
+  differential sweep has SATURATED; remaining structural debt: D-460 sorted-coll map
+  key, D-461 require-semantics F-003 owner call, D-446 multidim arrays).
 
 - **Forbidden this session**: JIT integration (D-133 — user-fenced 2026-06-16; plan
   in `private/notes/9.2.S-d133-jit-survey.md § INTEGRATION`). `git push --force*`.
@@ -37,26 +32,23 @@
 
 ## Last landed (git log = SSOT; all pushed)
 
-**clj-parity differential-fidelity campaign** (post-M F-010/F-011 quality loop, this
-session, 11 commits): D-446 arity-envelope sweep (n-ary map/mapv/mapcat/list*,
-bit-and-not, resolve 2-arg, typed array ctors 2-arg + AD-036); then a broad
-exception/print/reader fidelity arc — deref/conversion/ns arg-type errors made
-CATCHABLE (were uncatchable `feature_not_supported`); subvec/peek/pop/replace/
-requiring-resolve/io ex-info → clj's specific class (IndexOutOfBounds / IllegalState
-/ ClassCast / IllegalArgument); a bare chunked_cons now prints its elements (was
-`#<chunked_cons>`); `@x` reader NS-qualified (`rt/deref`) to fix a local-`deref`
-capture bug. Accepted divergences recorded: AD-036 (array 2-arg uniform fill),
-AD-037 (`(str lazy_seq)` → elements vs clj identity hash), AD-038 (`@` → `rt/deref`
-vs clojure.core), AD-039 (`#()` deterministic `%1` vs gensym), AD-040 (cond
-macroexpand full vs clj's recursive form). Then: assert message includes the form
-(clj parity); sorted-set/sorted-map `=` by elements across impls; `when` macroexpand
-byte-matches clj; a whole-program integration e2e (`phase14_realworld_program`).
-Value-parity verified clean (many sweeps + 5 mini-programs, 0 non-AD/non-F-005 diffs).
+**clj-parity + java.time arc** (this session): D-463 clojure.test report-format
+fidelity (`*test-out*` re-enabled, `FAIL in (test-name)` via testing-vars-str,
+`(not (= 1 2))` actual, context line, `Testing <ns>`; AD-041 for the unreproducible
+source-line/JVM-stacktrace; per-var lifecycle events = residual). Then D-462
+java.time wiring — **Instant** + **Duration** as `.typed_instance` values
+(timestamp.zig model; statics + instance methods + `(str)` = ISO_INSTANT / ISO-8601
+`PT…`; value-`=`; verified vs clj incl. gnarly negatives). Folded the print flag into
+a `temporal_print` enum. AD-042 generalized (java.time.* bare-toString vs clj
+`#object[…]` pr). compat_tiers honesty-corrected (anti-D-177); the `*_value.zig`
+files live in the `wrap:` slot (F-009 value-wrap, G3-exempt). Stale-test fix:
+phase14_format `%d` message (D-459 had changed it to "expected an integer (Long)…").
 
-**Open residuals** (`.dev/debt.yaml`): D-446 (multidim aget/aset/aset-* variadic,
-perf-vs-F-009); D-460 (sorted coll as map key / set element — rt-free keyEqValue);
-D-461 (eager-load require semantics — F-003 owner decision). (D-459 exception-CLASS
-fidelity DISCHARGED 2026-06-18 — see below.)
+**Open residuals** (`.dev/debt.yaml`): D-462 remaining java.time types
+(LocalDateTime / ZonedDateTime / LocalDate) + arithmetic methods (plus*/minus*/
+between) NOT implemented; D-463 per-var lifecycle events; D-460 (sorted coll as map
+key — rt-free keyEqValue); D-461 (require semantics — F-003 owner); D-446 (multidim
+arrays).
 
 ## Perf campaign (PAUSED behind the active flag; not the current task)
 
@@ -73,12 +65,3 @@ handover → `.dev/project_facts.md` (F-002 / F-010 / F-011) →
 discipline) → `.dev/accepted_divergences.yaml` (AD-001…039) → `.dev/debt.yaml`
 D-446 / D-460. memory `clj_diff_sweep_methodology` + `direct-explore-fork-mechanical`.
 
-## Stopped — user requested
-
-User instruction (2026-06-18): "きりの良い所で参照チェーン監査して停止してください。"
-(Finish at a clean point, run the reference-chain audit, then stop.) Done: D-459
-exception-class fidelity batch landed + pushed; reference-chain audit CLEAN
-(`arg_value_invalid` defined+used no orphan, no dangling `format_conversion_invalid`,
-`big_decimal.toFloat` 2 callers, AD-gate 39 + `check_debt_id_refs` pass, corpus +
-e2e wired). Resume: continue the clj-parity quality loop, self-selecting the next
-unit (D-460 / D-461 / D-446 or a fresh surface) per the Resume contract above.

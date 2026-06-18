@@ -87,7 +87,7 @@ assert_eq 'H_hex'      "$("$BIN" -e '(format "%H" "abc")')"             '"B3DD93
 assert_eq 'h_nil'      "$("$BIN" -e '(format "%h" nil)')"               '"null"'
 
 # errors
-assert_has 'badtype' "$("$BIN" -e '(format "%d" "x")' 2>&1)"     'expected integer'
+assert_has 'badtype' "$("$BIN" -e '(format "%d" "x")' 2>&1)"     'expected an integer'
 assert_has 'fewargs' "$("$BIN" -e '(format "%d")' 2>&1)"         'not enough arguments'
 assert_has 'badconv' "$("$BIN" -e '(format "%q" 1)' 2>&1)"       'unsupported directive'
 assert_has 'fmtstr'  "$("$BIN" -e '(format 42)' 2>&1)"           'expected string'
