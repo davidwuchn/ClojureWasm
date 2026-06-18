@@ -95,7 +95,9 @@ const java_surfaces = [_]type{
     @import("net/URLEncoder.zig"),
     @import("security/MessageDigest.zig"),
     @import("time/Instant.zig"),
+    @import("time/LocalDate.zig"),
     @import("time/LocalDateTime.zig"),
+    @import("time/LocalTime.zig"),
     @import("time/Duration.zig"),
     // ZonedDateTime backing impl under runtime/time/ is unbuilt
     // (method_table empty) — D-105.

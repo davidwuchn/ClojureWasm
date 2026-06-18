@@ -252,6 +252,109 @@ pub fn formatIsoInstant(buf: []u8, epoch_ms: i64, nanos: i32) []const u8 {
     return buf[0..len];
 }
 
+// --- LocalDate / LocalTime format + parse (D-462) ---
+//
+// The reusable halves of the LocalDateTime ISO format/parse, factored here
+// (the F-009 neutral home all temporal value files import) so LocalDate,
+// LocalTime, and LocalDateTime share one grammar SSOT. LocalDateTime's format
+// is `formatLocalDate ++ "T" ++ formatLocalTime`; its parser splits on 'T'.
+
+const NANO_PER_HOUR: i64 = 3_600_000_000_000;
+const NANO_PER_MINUTE: i64 = 60_000_000_000;
+const NANO_PER_SECOND: i64 = 1_000_000_000;
+
+/// Format `epoch_day` (signed days since 1970-01-01) as the ISO local date
+/// `yyyy-MM-dd` clj's `(str local-date)` emits (4-digit zero-padded year).
+/// `buf` must be ≥ 10 bytes; returns the written slice. Year is assumed
+/// [0, 9999]; clj `LocalDate.of(1,1,1)` → `"0001-01-01"`.
+pub fn formatLocalDate(buf: []u8, epoch_day: i64) []const u8 {
+    const c = civilFromDays(epoch_day);
+    // Zig's `{d:0>N}` zero-pad emits a `+` for SIGNED ints; cast the
+    // (always non-negative) civil fields to unsigned for a clean pad.
+    return std.fmt.bufPrint(buf, "{d:0>4}-{d:0>2}-{d:0>2}", .{
+        @as(u64, @intCast(c.y)), @as(u64, @intCast(c.m)), @as(u64, @intCast(c.d)),
+    }) catch buf[0..0];
+}
+
+/// Format `nano_of_day` (in [0, 86_400_000_000_000)) as the ISO local time
+/// clj's `(str local-time)` emits: `HH:mm`, then `:ss` appended only when the
+/// second OR nano part is non-zero, then a VARIABLE-length fraction (3 / 6 / 9
+/// digits, shortest lossless) appended only when nano is non-zero. `buf` must
+/// be ≥ 18 bytes; returns the written slice.
+pub fn formatLocalTime(buf: []u8, nano_of_day: i64) []const u8 {
+    const hour = @divTrunc(nano_of_day, NANO_PER_HOUR);
+    const minute = @rem(@divTrunc(nano_of_day, NANO_PER_MINUTE), 60);
+    const sec = @rem(@divTrunc(nano_of_day, NANO_PER_SECOND), 60);
+    const nano: i64 = @rem(nano_of_day, NANO_PER_SECOND);
+    const head = std.fmt.bufPrint(buf, "{d:0>2}:{d:0>2}", .{
+        @as(u64, @intCast(hour)), @as(u64, @intCast(minute)),
+    }) catch return buf[0..0];
+    var len = head.len;
+    if (sec != 0 or nano != 0) {
+        const ss = std.fmt.bufPrint(buf[len..], ":{d:0>2}", .{@as(u64, @intCast(sec))}) catch return buf[0..0];
+        len += ss.len;
+    }
+    if (nano != 0) {
+        const n: u32 = @intCast(nano);
+        // Pick the shortest fraction that loses no precision: ms / us / ns.
+        const frac = blk: {
+            if (@rem(n, 1_000_000) == 0) break :blk std.fmt.bufPrint(buf[len..], ".{d:0>3}", .{n / 1_000_000});
+            if (@rem(n, 1000) == 0) break :blk std.fmt.bufPrint(buf[len..], ".{d:0>6}", .{n / 1000});
+            break :blk std.fmt.bufPrint(buf[len..], ".{d:0>9}", .{n});
+        } catch return buf[0..0];
+        len += frac.len;
+    }
+    return buf[0..len];
+}
+
+/// Parse the ISO local date `yyyy-MM-dd` → `epoch_day` (signed). The year is
+/// read as a positive 4-digit field.
+pub fn parseLocalDate(s: []const u8) ParseError!i64 {
+    var i: usize = 0;
+    const y = try readN(s, &i, 4);
+    if (i >= s.len or s[i] != '-') return error.InvalidInstant;
+    i += 1;
+    const m = try readN(s, &i, 2);
+    if (i >= s.len or s[i] != '-') return error.InvalidInstant;
+    i += 1;
+    const d = try readN(s, &i, 2);
+    if (i != s.len) return error.InvalidInstant;
+    if (m < 1 or m > 12 or d < 1 or d > 31) return error.InvalidInstant;
+    return daysFromCivil(y, m, d);
+}
+
+/// Parse the ISO local time `HH:mm[:ss[.fraction]]` → `nano_of_day` (the
+/// fraction is 1-9 digits scaled to nanos). No offset / `Z`.
+pub fn parseLocalTime(s: []const u8) ParseError!i64 {
+    var i: usize = 0;
+    const h = try readN(s, &i, 2);
+    if (i >= s.len or s[i] != ':') return error.InvalidInstant;
+    i += 1;
+    const mi = try readN(s, &i, 2);
+    var sec: i64 = 0;
+    var nanos: i64 = 0;
+    if (i < s.len and s[i] == ':') {
+        i += 1;
+        sec = try readN(s, &i, 2);
+        if (i < s.len and s[i] == '.') {
+            i += 1;
+            // Fractional seconds: 1-9 digits scaled to nanos (pad / truncate to 9).
+            var digits: usize = 0;
+            var acc: i64 = 0;
+            while (i < s.len and s[i] >= '0' and s[i] <= '9') : (i += 1) {
+                if (digits < 9) acc = acc * 10 + (s[i] - '0');
+                digits += 1;
+            }
+            if (digits == 0) return error.InvalidInstant;
+            while (digits < 9) : (digits += 1) acc *= 10;
+            nanos = acc;
+        }
+    }
+    if (i != s.len) return error.InvalidInstant;
+    if (h > 23 or mi > 59 or sec > 59) return error.InvalidInstant;
+    return ((h * 60 + mi) * 60 + sec) * NANO_PER_SECOND + nanos;
+}
+
 // --- tests ---
 
 const testing = std.testing;
@@ -296,6 +399,43 @@ test "formatIsoInstant: variable-fraction + Z (clj str form)" {
     try testing.expectEqualStrings("1970-01-01T00:00:00.000123Z", formatIsoInstant(&buf, 0, 123_000));
     // sub-microsecond → 9-digit fraction.
     try testing.expectEqualStrings("1970-01-01T00:00:00.123456789Z", formatIsoInstant(&buf, 0, 123_456_789));
+}
+
+test "formatLocalDate: 4-digit zero-padded year (clj str form)" {
+    var buf: [16]u8 = undefined;
+    try testing.expectEqualStrings("2024-01-01", formatLocalDate(&buf, daysFromCivil(2024, 1, 1)));
+    try testing.expectEqualStrings("2024-12-31", formatLocalDate(&buf, daysFromCivil(2024, 12, 31)));
+    try testing.expectEqualStrings("0001-01-01", formatLocalDate(&buf, daysFromCivil(1, 1, 1)));
+}
+
+test "formatLocalTime: conditional seconds + variable fraction (clj str form)" {
+    var buf: [24]u8 = undefined;
+    // HH:mm only — sec == 0 && nano == 0
+    try testing.expectEqualStrings("12:30", formatLocalTime(&buf, (12 * 60 + 30) * 60_000_000_000));
+    // :ss appended — sec != 0
+    try testing.expectEqualStrings("12:30:45", formatLocalTime(&buf, ((12 * 60 + 30) * 60 + 45) * 1_000_000_000));
+    // :ss + 3-digit fraction — whole millisecond nano
+    try testing.expectEqualStrings("12:30:45.500", formatLocalTime(&buf, ((12 * 60 + 30) * 60 + 45) * 1_000_000_000 + 500_000_000));
+    // 9-digit fraction — sub-microsecond nano
+    try testing.expectEqualStrings("14:05:45.123456789", formatLocalTime(&buf, ((14 * 60 + 5) * 60 + 45) * 1_000_000_000 + 123_456_789));
+    // midnight — both zero, no :ss
+    try testing.expectEqualStrings("00:00", formatLocalTime(&buf, 0));
+    // nano != 0 but sec == 0 — :00 still appended (sec-or-nano gate), then fraction
+    try testing.expectEqualStrings("12:30:00.250", formatLocalTime(&buf, (12 * 60 + 30) * 60_000_000_000 + 250_000_000));
+}
+
+test "parseLocalDate / parseLocalTime round-trip + reject malformed" {
+    try testing.expectEqual(daysFromCivil(2024, 2, 29), try parseLocalDate("2024-02-29"));
+    try testing.expectEqual(@as(i64, 0), try parseLocalDate("1970-01-01"));
+    try testing.expectError(error.InvalidInstant, parseLocalDate("2024-13-01"));
+    try testing.expectError(error.InvalidInstant, parseLocalDate("not-a-date"));
+    try testing.expectError(error.InvalidInstant, parseLocalDate("2024-01-01T00:00"));
+
+    try testing.expectEqual(((6 * 60 + 7) * 60 + 8) * 1_000_000_000, try parseLocalTime("06:07:08"));
+    try testing.expectEqual((12 * 60 + 30) * 60_000_000_000, try parseLocalTime("12:30"));
+    try testing.expectEqual(((12 * 60 + 30) * 60 + 45) * 1_000_000_000 + 500_000_000, try parseLocalTime("12:30:45.5"));
+    try testing.expectError(error.InvalidInstant, parseLocalTime("25:00"));
+    try testing.expectError(error.InvalidInstant, parseLocalTime("12"));
 }
 
 test "nowEpochMillis returns a sensible 2026-era epoch ms" {

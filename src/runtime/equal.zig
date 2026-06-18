@@ -51,6 +51,8 @@ const timestamp_mod = @import("time/timestamp.zig");
 const instant_value_mod = @import("time/instant_value.zig");
 const duration_value_mod = @import("time/duration_value.zig");
 const local_date_time_value_mod = @import("time/local_date_time_value.zig");
+const local_date_value_mod = @import("time/local_date_value.zig");
+const local_time_value_mod = @import("time/local_time_value.zig");
 const dispatch_mod = @import("dispatch.zig");
 const root_set = @import("gc/root_set.zig");
 const ClojureWasmError = @import("error/info.zig").ClojureWasmError;
@@ -1100,6 +1102,17 @@ fn typedInstanceEqual(rt: *Runtime, env: *Env, a: Value, b: Value) anyerror!bool
     if (local_date_time_value_mod.isLocalDateTime(rt, a) and local_date_time_value_mod.isLocalDateTime(rt, b)) {
         return local_date_time_value_mod.epochDayOf(a) == local_date_time_value_mod.epochDayOf(b) and
             local_date_time_value_mod.nanoOfDayOf(a) == local_date_time_value_mod.nanoOfDayOf(b);
+    }
+    // LocalDate values (D-462) compare by epoch_day, else two equal-date
+    // allocations would default to identity `=`. A distinct descriptor keeps a
+    // LocalDate from being `=` a LocalDateTime/Instant/Duration/Date.
+    if (local_date_value_mod.isLocalDate(rt, a) and local_date_value_mod.isLocalDate(rt, b)) {
+        return local_date_value_mod.epochDayOf(a) == local_date_value_mod.epochDayOf(b);
+    }
+    // LocalTime values (D-462) compare by nano_of_day. A distinct descriptor
+    // keeps a LocalTime from being `=` any other temporal type.
+    if (local_time_value_mod.isLocalTime(rt, a) and local_time_value_mod.isLocalTime(rt, b)) {
+        return local_time_value_mod.nanoOfDayOf(a) == local_time_value_mod.nanoOfDayOf(b);
     }
     // D-280d1: a deftype/reify implementing Object `equals` overrides identity.
     // Consulted for the same-type case (both operands reached here past

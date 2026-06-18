@@ -169,6 +169,8 @@ test {
     _ = @import("runtime/time/instant.zig");
     _ = @import("runtime/time/instant_value.zig");
     _ = @import("runtime/time/duration_value.zig");
+    _ = @import("runtime/time/local_date_value.zig");
+    _ = @import("runtime/time/local_time_value.zig");
     _ = @import("runtime/time/timestamp.zig");
     _ = @import("runtime/bencode/bencode.zig");
 }

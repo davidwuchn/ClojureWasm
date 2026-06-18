@@ -51,6 +51,12 @@ pub const TemporalPrint = enum {
     /// `java.time.LocalDateTime` — bare ISO local date-time (2 fields:
     /// epoch_day + nano_of_day), conditional seconds + variable fraction.
     iso_local_date_time,
+    /// `java.time.LocalDate` — bare ISO local date `yyyy-MM-dd` (1 field:
+    /// epoch_day).
+    iso_local_date,
+    /// `java.time.LocalTime` — bare ISO local time `HH:mm[:ss[.fraction]]`
+    /// (1 field: nano_of_day), conditional seconds + variable fraction.
+    iso_local_time,
 };
 
 /// Descriptor for one type. Process-lifetime — allocated on

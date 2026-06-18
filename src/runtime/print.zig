@@ -1143,6 +1143,23 @@ fn printTypedInstance(w: *Writer, v: Value) anyerror!void {
                 return;
             }
         },
+        .iso_local_date => {
+            // java.time.LocalDate: 1 field = epoch_day → bare ISO `yyyy-MM-dd`.
+            if (inst.field_count >= 1 and inst.fields()[0].tag() == .integer) {
+                var buf: [16]u8 = undefined;
+                try w.writeAll(instant_mod.formatLocalDate(&buf, inst.fields()[0].asInteger()));
+                return;
+            }
+        },
+        .iso_local_time => {
+            // java.time.LocalTime: 1 field = nano_of_day → bare ISO local time
+            // (conditional :ss + variable fraction).
+            if (inst.field_count >= 1 and inst.fields()[0].tag() == .integer) {
+                var buf: [24]u8 = undefined;
+                try w.writeAll(instant_mod.formatLocalTime(&buf, inst.fields()[0].asInteger()));
+                return;
+            }
+        },
     }
     // Reader-tag host value (ADR-0079): emit `#<tag> "<iso>"`. Today only
     // `#inst` (java.util.Date) — body = the epoch-ms field 0 as the

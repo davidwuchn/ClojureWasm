@@ -29,6 +29,8 @@ const TypedInstance = td_mod.TypedInstance;
 const error_catalog = @import("../error/catalog.zig");
 const SourceLocation = @import("../error/info.zig").SourceLocation;
 const instant = @import("instant.zig");
+const local_date_value = @import("local_date_value.zig");
+const local_time_value = @import("local_time_value.zig");
 
 /// `(.getYear d)` — the proleptic year (JVM `LocalDateTime.getYear`).
 fn getYearFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
@@ -87,6 +89,22 @@ fn getNanoFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) 
     return Value.initInteger(@rem(nanoOfDayOf(args[0]), 1_000_000_000));
 }
 
+/// `(.toLocalDate d)` — the date half as a LocalDate (JVM
+/// `LocalDateTime.toLocalDate`).
+fn toLocalDateFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = env;
+    try error_catalog.checkArity("toLocalDate", args, 1, loc);
+    return local_date_value.make(rt, epochDayOf(args[0]));
+}
+
+/// `(.toLocalTime d)` — the time half as a LocalTime (JVM
+/// `LocalDateTime.toLocalTime`).
+fn toLocalTimeFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = env;
+    try error_catalog.checkArity("toLocalTime", args, 1, loc);
+    return local_time_value.make(rt, nanoOfDayOf(args[0]));
+}
+
 /// The per-Runtime canonical LocalDateTime descriptor (lazily allocated on
 /// `gc.infra`; freed in `Runtime.deinit`). `fqcn = "LocalDateTime"` so
 /// `(class …)` prints the simple name (AD-003 / no-JVM);
@@ -113,6 +131,8 @@ pub fn descriptorOf(rt: *Runtime) !*const TypeDescriptor {
         .{ "getMinute", &getMinuteFn },
         .{ "getSecond", &getSecondFn },
         .{ "getNano", &getNanoFn },
+        .{ "toLocalDate", &toLocalDateFn },
+        .{ "toLocalTime", &toLocalTimeFn },
     };
     const entries = try rt.gc.infra.alloc(TypeDescriptor.MethodEntry, specs.len);
     inline for (specs, 0..) |spec, i| {
@@ -164,41 +184,17 @@ pub fn deinitDescriptor(rt: *Runtime) void {
 
 /// Format a LocalDateTime (`epoch_day` signed + `nano_of_day` in
 /// [0, 86_400_000_000_000)) as the bare ISO local date-time string clj's
-/// `(str ldt)` emits: `yyyy-MM-ddTHH:mm`, then `:ss` appended only when the
-/// second OR nano part is non-zero, then a VARIABLE-length fraction
-/// (3 / 6 / 9 digits, shortest lossless) appended only when nano is non-zero —
-/// no trailing `Z`/offset (this is a local, zone-less value). The fraction
-/// logic mirrors `formatIsoInstant` in `instant.zig`. `buf` must be ≥ 35 bytes;
-/// returns the written slice. Year is assumed [0, 9999] (4-digit pad); years
-/// > 9999 or < 0 are not handled (the e2e only uses 2024).
+/// `(str ldt)` emits — `formatLocalDate ++ "T" ++ formatLocalTime` (the two
+/// halves it shares with LocalDate / LocalTime, both in `instant.zig` the
+/// F-009 neutral home). `buf` must be ≥ 35 bytes; returns the written slice.
+/// Year is assumed [0, 9999] (4-digit pad).
 pub fn formatLocalDateTime(buf: []u8, epoch_day: i64, nano_of_day: i64) []const u8 {
-    const c = instant.civilFromDays(epoch_day);
-    const hour = @divTrunc(nano_of_day, 3_600_000_000_000);
-    const minute = @rem(@divTrunc(nano_of_day, 60_000_000_000), 60);
-    const sec = @rem(@divTrunc(nano_of_day, 1_000_000_000), 60);
-    const nano: i64 = @rem(nano_of_day, 1_000_000_000);
-    // Zig's `{d:0>N}` zero-pad emits a `+` sign for SIGNED ints; cast the
-    // (always non-negative) civil + time fields to unsigned so the pad is clean.
-    const head = std.fmt.bufPrint(buf, "{d:0>4}-{d:0>2}-{d:0>2}T{d:0>2}:{d:0>2}", .{
-        @as(u64, @intCast(c.y)),  @as(u64, @intCast(c.m)),    @as(u64, @intCast(c.d)),
-        @as(u64, @intCast(hour)), @as(u64, @intCast(minute)),
-    }) catch return buf[0..0];
-    var len = head.len;
-    if (sec != 0 or nano != 0) {
-        const ss = std.fmt.bufPrint(buf[len..], ":{d:0>2}", .{@as(u64, @intCast(sec))}) catch return buf[0..0];
-        len += ss.len;
-    }
-    if (nano != 0) {
-        const n: u32 = @intCast(nano);
-        // Pick the shortest fraction that loses no precision: ms / us / ns.
-        const frac = blk: {
-            if (@rem(n, 1_000_000) == 0) break :blk std.fmt.bufPrint(buf[len..], ".{d:0>3}", .{n / 1_000_000});
-            if (@rem(n, 1000) == 0) break :blk std.fmt.bufPrint(buf[len..], ".{d:0>6}", .{n / 1000});
-            break :blk std.fmt.bufPrint(buf[len..], ".{d:0>9}", .{n});
-        } catch return buf[0..0];
-        len += frac.len;
-    }
-    return buf[0..len];
+    const date = instant.formatLocalDate(buf, epoch_day);
+    var len = date.len;
+    buf[len] = 'T';
+    len += 1;
+    const time = instant.formatLocalTime(buf[len..], nano_of_day);
+    return buf[0 .. len + time.len];
 }
 
 // --- tests ---
