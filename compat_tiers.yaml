@@ -352,9 +352,10 @@ tiers:
         files:
           surface: runtime/java/time/Instant.zig
           impl: runtime/time/instant.zig
-        methods: [now, toEpochMilli, getEpochSecond, getNano, parse]
+          impl_extras: [runtime/time/instant_value.zig]
+        methods: [now, ofEpochSecond, ofEpochMilli, parse, getEpochSecond, getNano, toEpochMilli]
         clojure_peer_vars: []
-        status: "UNWIRED - surface + impl exist but the method_table is empty and the class is NOT resolvable from Clojure (`(java.time.Instant/now)` -> 'No namespace', unlike java.util.UUID / Math which DO resolve); the `methods:` list is the PLAN, not yet reachable (D-462). Same unwired state as the sibling java.time reservations below; was the only one MISSING this marker (the over-claim)."
+        status: "WIRED (D-462) - statics now/ofEpochSecond([secs] | [secs nanos])/ofEpochMilli/parse mint a `.typed_instance` Instant VALUE (instant_value.zig, per-Runtime descriptor); instance methods getEpochSecond/getNano/toEpochMilli + value `=` + `(str i)` = ISO_INSTANT (variable fraction + Z) all reachable. pr-str divergence = AD-042 (no JVM `#object[…]` identity form). Pinned by test/e2e/phase15_java_time_instant.sh. Arithmetic methods (plusSeconds/minus*/isBefore/…) are NOT implemented (would be a follow-up unit, not listed above per anti-D-177). Sibling java.time reservations (LocalDateTime/Duration/ZonedDateTime) remain UNWIRED."
       - {fqn: "java.time.LocalDate", native_ns: "cljw.host.java.time.LocalDate", phase: 6}
       - fqn: java.time.LocalDateTime
         cljw_ns: cljw.java.time.LocalDateTime

@@ -213,6 +213,43 @@ pub fn formatInstantNanos(buf: []u8, epoch_ms: i64, nanos: i32) []const u8 {
     }) catch buf[0..0];
 }
 
+/// Format epoch-millis (UTC, used to the SECOND) + `nanos` → the bare
+/// `ISO_INSTANT` string clj's `(str instant)` emits — a VARIABLE-length
+/// fractional second + `Z` (NOT the `#inst` fixed-fraction + `-00:00` offset
+/// form `formatInstantNanos` writes). The fraction is omitted when `nanos == 0`,
+/// 3 digits when it is a whole millisecond, 6 when a whole microsecond, else 9.
+/// Writes into `buf` (≥ 30 bytes) and returns the written slice.
+pub fn formatIsoInstant(buf: []u8, epoch_ms: i64, nanos: i32) []const u8 {
+    const day = @divFloor(epoch_ms, MS_PER_DAY);
+    var rem = epoch_ms - day * MS_PER_DAY; // [0, MS_PER_DAY)
+    const c = civilFromDays(day);
+    rem = @divFloor(rem, 1000); // drop ms; `nanos` carries the fraction
+    const sec = @rem(rem, 60);
+    rem = @divFloor(rem, 60);
+    const min = @rem(rem, 60);
+    const hour = @divFloor(rem, 60);
+    const head = std.fmt.bufPrint(buf, "{d:0>4}-{d:0>2}-{d:0>2}T{d:0>2}:{d:0>2}:{d:0>2}", .{
+        @as(u64, @intCast(c.y)),  @as(u64, @intCast(c.m)),   @as(u64, @intCast(c.d)),
+        @as(u64, @intCast(hour)), @as(u64, @intCast(min)),   @as(u64, @intCast(sec)),
+    }) catch return buf[0..0];
+    var len = head.len;
+    const n: u32 = @intCast(nanos);
+    if (n != 0) {
+        // Pick the shortest fraction that loses no precision: ms / us / ns.
+        const frac = blk: {
+            if (@rem(n, 1_000_000) == 0) break :blk std.fmt.bufPrint(buf[len..], ".{d:0>3}", .{n / 1_000_000});
+            if (@rem(n, 1000) == 0) break :blk std.fmt.bufPrint(buf[len..], ".{d:0>6}", .{n / 1000});
+            break :blk std.fmt.bufPrint(buf[len..], ".{d:0>9}", .{n});
+        } catch return buf[0..0];
+        len += frac.len;
+    }
+    if (len < buf.len) {
+        buf[len] = 'Z';
+        len += 1;
+    }
+    return buf[0..len];
+}
+
 // --- tests ---
 
 const testing = std.testing;
@@ -245,6 +282,18 @@ test "parse rejects malformed" {
     try testing.expectError(error.InvalidInstant, parseInstantMillis("2024-13-01"));
     try testing.expectError(error.InvalidInstant, parseInstantMillis("not-a-date"));
     try testing.expectError(error.InvalidInstant, parseInstantMillis("2024-01-01T00"));
+}
+
+test "formatIsoInstant: variable-fraction + Z (clj str form)" {
+    var buf: [40]u8 = undefined;
+    // nanos == 0 → no fraction.
+    try testing.expectEqualStrings("1970-01-01T00:00:00Z", formatIsoInstant(&buf, 0, 0));
+    // whole millisecond → 3-digit fraction.
+    try testing.expectEqualStrings("2024-01-01T00:00:00.500Z", formatIsoInstant(&buf, 1_704_067_200_000, 500_000_000));
+    // whole microsecond → 6-digit fraction.
+    try testing.expectEqualStrings("1970-01-01T00:00:00.000123Z", formatIsoInstant(&buf, 0, 123_000));
+    // sub-microsecond → 9-digit fraction.
+    try testing.expectEqualStrings("1970-01-01T00:00:00.123456789Z", formatIsoInstant(&buf, 0, 123_456_789));
 }
 
 test "nowEpochMillis returns a sensible 2026-era epoch ms" {

@@ -1103,6 +1103,20 @@ fn printTypedInstance(w: *Writer, v: Value) anyerror!void {
             if (try printMapLikeTypedInstance(ctx.rt, ctx.env, w, v)) return;
         }
     }
+    // Bare ISO_INSTANT host value (D-462, java.time.Instant): emit the
+    // variable-fraction ISO string + `Z` with NO `#tag` wrapper and no quotes
+    // — clj's `(str instant)` form. Both str and pr take this path (cljw does
+    // not mirror clj's opaque `#object[…]` identity pr form — AD-042).
+    // Descriptor-driven (no rt, no surface import); checked BEFORE print_tag.
+    if (inst.descriptor.iso_instant) {
+        if (inst.field_count >= 2 and inst.fields()[0].tag() == .integer and inst.fields()[1].tag() == .integer) {
+            var buf: [48]u8 = undefined;
+            const epoch_ms = inst.fields()[0].asInteger();
+            const nanos: i32 = @intCast(inst.fields()[1].asInteger());
+            try w.writeAll(instant_mod.formatIsoInstant(&buf, epoch_ms, nanos));
+            return;
+        }
+    }
     // Reader-tag host value (ADR-0079): emit `#<tag> "<iso>"`. Today only
     // `#inst` (java.util.Date) — body = the epoch-ms field 0 as the
     // canonical ISO string. Descriptor-driven (no rt, no surface import).

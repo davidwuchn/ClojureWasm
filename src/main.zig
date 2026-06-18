@@ -167,6 +167,7 @@ test {
     _ = @import("runtime/regex/value.zig");
     _ = @import("runtime/regex/dfa.zig");
     _ = @import("runtime/time/instant.zig");
+    _ = @import("runtime/time/instant_value.zig");
     _ = @import("runtime/time/timestamp.zig");
     _ = @import("runtime/bencode/bencode.zig");
 }

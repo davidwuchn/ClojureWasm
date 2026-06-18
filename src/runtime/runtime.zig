@@ -339,6 +339,13 @@ pub const Runtime = struct {
     /// in `deinit`. `null` until the first Timestamp value is built.
     timestamp_descriptor: ?*TypeDescriptor = null,
 
+    /// Per-Runtime `java.time.Instant` value descriptor (D-462) — a
+    /// nanosecond-precision instant, a 2-field no-slot `.typed_instance` with
+    /// `iso_instant = true` (bare ISO_INSTANT print form). Lazily allocated on
+    /// `gc.infra` by `runtime/time/instant_value.zig::descriptorOf`, freed in
+    /// `deinit`. `null` until the first Instant value is built.
+    instant_descriptor: ?*TypeDescriptor = null,
+
     /// Lazy-init access to the per-Tag default descriptor. On first
     /// call for a given tag, allocates a TypeDescriptor on
     /// `rt.gc.infra` with `fqcn = nativeFqcnFor(tag)` and empty
@@ -532,6 +539,7 @@ pub const Runtime = struct {
         // Free the per-Runtime Date descriptor (gc.infra — D-200/ADR-0079).
         @import("time/date.zig").deinitDescriptor(self);
         @import("time/timestamp.zig").deinitDescriptor(self);
+        @import("time/instant_value.zig").deinitDescriptor(self);
 
         // User-set system properties (gpa-owned key+value dupes).
         {

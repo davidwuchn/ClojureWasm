@@ -48,6 +48,7 @@ const big_decimal = @import("numeric/big_decimal.zig");
 const td_mod = @import("type_descriptor.zig");
 const date_mod = @import("time/date.zig");
 const timestamp_mod = @import("time/timestamp.zig");
+const instant_value_mod = @import("time/instant_value.zig");
 const dispatch_mod = @import("dispatch.zig");
 const root_set = @import("gc/root_set.zig");
 const ClojureWasmError = @import("error/info.zig").ClojureWasmError;
@@ -1076,6 +1077,13 @@ fn typedInstanceEqual(rt: *Runtime, env: *Env, a: Value, b: Value) anyerror!bool
     if (timestamp_mod.isTimestamp(rt, a) and timestamp_mod.isTimestamp(rt, b)) {
         return timestamp_mod.epochMsOf(a) == timestamp_mod.epochMsOf(b) and
             timestamp_mod.nanosOf(a) == timestamp_mod.nanosOf(b);
+    }
+    // Instant values (D-462) compare by second-aligned epoch-ms + nanos, else
+    // two equal-instant allocations would default to identity `=`. A distinct
+    // descriptor keeps an Instant from being `=` a Date/Timestamp here.
+    if (instant_value_mod.isInstant(rt, a) and instant_value_mod.isInstant(rt, b)) {
+        return instant_value_mod.epochMsOf(a) == instant_value_mod.epochMsOf(b) and
+            instant_value_mod.nanosOf(a) == instant_value_mod.nanosOf(b);
     }
     // D-280d1: a deftype/reify implementing Object `equals` overrides identity.
     // Consulted for the same-type case (both operands reached here past

@@ -85,6 +85,13 @@ pub const TypeDescriptor = struct {
     /// "inst"`, body = the epoch-ms field formatted as the canonical
     /// `#inst` ISO string). `null` for every other type.
     print_tag: ?[]const u8 = null,
+    /// Bare ISO_INSTANT print form (D-462, `java.time.Instant`): when true, the
+    /// printer emits the variable-fraction ISO string + `Z` (e.g.
+    /// `1970-01-01T00:00:00Z`) with NO `#tag` wrapper and NO quotes — distinct
+    /// from `print_tag` (which wraps `#inst "…"` with a fixed-fraction offset
+    /// form). Set on the per-Runtime Instant value descriptor only; checked
+    /// BEFORE `print_tag` in `printTypedInstance`. `false` for every other type.
+    iso_instant: bool = false,
     /// `.host_instance` finaliser hook (ADR-0106): when this descriptor backs a
     /// host instance that owns heap state (a gpa-duped string pointer in
     /// `state[0..1]`, e.g. java.net.URI), the shared `.host_instance` tag
