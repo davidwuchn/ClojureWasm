@@ -10,16 +10,23 @@
   `build.zig.zon` `.zwasm` is SHA-PINNED (`#412966f7…`, `lazy`). Per-commit = smoke;
   full gate batches at ceiling / boundary / pre-tag.
 
-- **First commit on resume MUST be**: **continue the clj-parity differential-
-  fidelity sweep** (the post-M F-010/F-011 quality loop). Run the next fresh-surface
-  `clj_diff_sweep` (exception/ex-data + clojure.math + bit-ops + char are prepped in
-  `private/arity_sweep/exc_math_exprs.txt`), then disposition EVERY DIFF — bug→fix
-  (clj-oracle-grounded, with a corpus + e2e) OR accepted→AD-NNN (derives_from + pin)
-  per `.claude/rules/accepted_divergences.md`. Each fresh surface yields ~1 real bug
-  + a few accepted divergences. Surfaces DONE this campaign: arity envelopes,
-  exception catchability, exception specific-class, print fidelity, reader hygiene.
-  NOT-yet-swept: exception round-trip, math, bit, char, multimethod, transient,
-  sort/compare (regex has D-447 known gaps — skip).
+- **First commit on resume MUST be**: **continue the clj-parity quality loop**
+  (post-M F-010/F-011), self-selecting from the options below — the single-expr
+  differential sweep has largely SATURATED (the last several fresh surfaces found 0
+  new real bugs). Disposition EVERY DIFF — bug→fix (clj-oracle-grounded, corpus +
+  e2e) OR accepted→AD-NNN (derives_from + pin) per `accepted_divergences.md`. DONE
+  this campaign (clean / fixed): arity envelopes, exception catchability + specific-
+  class, print fidelity, reader hygiene, assert message, sorted-coll equality, +
+  WHOLE-PROGRAM integration (5 mini-programs in `private/arity_sweep/mini*.clj` all
+  clj-identical modulo accepted ADs), core libs (zip/data/walk/edn/set), numeric
+  tower, macros (`when` now byte-matches clj). Highest-value remaining options, in
+  order: (1) the deferred structural debt — D-460 (sorted coll as map key, rt-free
+  keyEqValue), D-459 (exception-class precision for seq-non-seqable), D-461 (eager-
+  load require semantics — F-003 owner call), D-446 (multidim arrays); (2) a few
+  not-yet-swept surfaces likely thin: date/time (interop-heavy), spec, deeper
+  transducers; (3) the `clj_diff_sweep` harness gap — it CANNOT sweep top-level
+  forms (defrecord/defprotocol/deftype error inside its `(prn …)` wrapper), so use
+  the mini-program (file-diff) approach for those, as `mini*.clj` do.
 
 - **Forbidden this session**: JIT integration (D-133 — user-fenced 2026-06-16; plan
   in `private/notes/9.2.S-d133-jit-survey.md § INTEGRATION`). `git push --force*`.
@@ -40,13 +47,16 @@ requiring-resolve/io ex-info → clj's specific class (IndexOutOfBounds / Illega
 `#<chunked_cons>`); `@x` reader NS-qualified (`rt/deref`) to fix a local-`deref`
 capture bug. Accepted divergences recorded: AD-036 (array 2-arg uniform fill),
 AD-037 (`(str lazy_seq)` → elements vs clj identity hash), AD-038 (`@` → `rt/deref`
-vs clojure.core), AD-039 (`#()` deterministic `%1` vs gensym). Value-parity verified
-clean (multiple sweeps, 0 non-AD diffs).
+vs clojure.core), AD-039 (`#()` deterministic `%1` vs gensym), AD-040 (cond
+macroexpand full vs clj's recursive form). Then: assert message includes the form
+(clj parity); sorted-set/sorted-map `=` by elements across impls; `when` macroexpand
+byte-matches clj; a whole-program integration e2e (`phase14_realworld_program`).
+Value-parity verified clean (many sweeps + 5 mini-programs, 0 non-AD/non-F-005 diffs).
 
-**Open residuals** (`.dev/debt.yaml`): D-446 (multidim aget/aset/aset-* variadic — a
-distinct rare feature behind a perf-vs-F-009 barrier); D-459 (exception-CLASS
-precision for seq-of-non-seqable / assoc-vec-OOB / into-bad-entry → cljw CCE where
-clj gives IAE/IndexOOB; the `seq` path has wide blast radius — not rushed).
+**Open residuals** (`.dev/debt.yaml`): D-446 (multidim aget/aset/aset-* variadic,
+perf-vs-F-009); D-459 (exception-CLASS precision for seq-of-non-seqable etc., `seq`
+blast radius); D-460 (sorted coll as map key / set element — rt-free keyEqValue);
+D-461 (eager-load require semantics — F-003 owner decision).
 
 ## Perf campaign (PAUSED behind the active flag; not the current task)
 
