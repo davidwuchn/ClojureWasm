@@ -107,6 +107,166 @@ fn negate(rt: *Runtime, v: Value) !Value {
     return make(rt, new_seconds, new_nanos);
 }
 
+const NS_PER_SEC: i128 = 1_000_000_000;
+const NS_PER_MS: i128 = 1_000_000;
+
+/// Mint a normalized Duration from a possibly-out-of-range (seconds,
+/// nano_adjustment): the nano overflow folds into the seconds field so the
+/// stored nanos stay in [0, 1e9). `@divFloor`/`@mod` keep it negative-safe.
+fn normalize(rt: *Runtime, seconds: i64, nano_adj: i128) !Value {
+    const new_seconds = @as(i128, seconds) + @divFloor(nano_adj, NS_PER_SEC);
+    const new_nanos: i32 = @intCast(@mod(nano_adj, NS_PER_SEC));
+    return make(rt, @intCast(new_seconds), new_nanos);
+}
+
+/// `(.plusSeconds d n)` — the span `n` seconds longer (JVM `Duration.plusSeconds`).
+fn plusSecondsFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = env;
+    try error_catalog.checkArity("plusSeconds", args, 2, loc);
+    if (args[1].tag() != .integer)
+        return error_catalog.raise(.type_arg_invalid, loc, .{ .fn_name = "plusSeconds", .expected = "integer", .actual = @tagName(args[1].tag()) });
+    return make(rt, secondsOf(args[0]) + args[1].asInteger(), nanosOf(args[0]));
+}
+
+/// `(.minusSeconds d n)` — the span `n` seconds shorter (JVM `Duration.minusSeconds`).
+fn minusSecondsFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = env;
+    try error_catalog.checkArity("minusSeconds", args, 2, loc);
+    if (args[1].tag() != .integer)
+        return error_catalog.raise(.type_arg_invalid, loc, .{ .fn_name = "minusSeconds", .expected = "integer", .actual = @tagName(args[1].tag()) });
+    return make(rt, secondsOf(args[0]) - args[1].asInteger(), nanosOf(args[0]));
+}
+
+/// `(.plusMinutes d n)` — the span `n` minutes longer (JVM `Duration.plusMinutes`).
+fn plusMinutesFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = env;
+    try error_catalog.checkArity("plusMinutes", args, 2, loc);
+    if (args[1].tag() != .integer)
+        return error_catalog.raise(.type_arg_invalid, loc, .{ .fn_name = "plusMinutes", .expected = "integer", .actual = @tagName(args[1].tag()) });
+    return make(rt, secondsOf(args[0]) + args[1].asInteger() * 60, nanosOf(args[0]));
+}
+
+/// `(.minusMinutes d n)` — the span `n` minutes shorter (JVM `Duration.minusMinutes`).
+fn minusMinutesFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = env;
+    try error_catalog.checkArity("minusMinutes", args, 2, loc);
+    if (args[1].tag() != .integer)
+        return error_catalog.raise(.type_arg_invalid, loc, .{ .fn_name = "minusMinutes", .expected = "integer", .actual = @tagName(args[1].tag()) });
+    return make(rt, secondsOf(args[0]) - args[1].asInteger() * 60, nanosOf(args[0]));
+}
+
+/// `(.plusHours d n)` — the span `n` hours longer (JVM `Duration.plusHours`).
+fn plusHoursFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = env;
+    try error_catalog.checkArity("plusHours", args, 2, loc);
+    if (args[1].tag() != .integer)
+        return error_catalog.raise(.type_arg_invalid, loc, .{ .fn_name = "plusHours", .expected = "integer", .actual = @tagName(args[1].tag()) });
+    return make(rt, secondsOf(args[0]) + args[1].asInteger() * 3600, nanosOf(args[0]));
+}
+
+/// `(.minusHours d n)` — the span `n` hours shorter (JVM `Duration.minusHours`).
+fn minusHoursFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = env;
+    try error_catalog.checkArity("minusHours", args, 2, loc);
+    if (args[1].tag() != .integer)
+        return error_catalog.raise(.type_arg_invalid, loc, .{ .fn_name = "minusHours", .expected = "integer", .actual = @tagName(args[1].tag()) });
+    return make(rt, secondsOf(args[0]) - args[1].asInteger() * 3600, nanosOf(args[0]));
+}
+
+/// `(.plusDays d n)` — the span `n` days longer (JVM `Duration.plusDays`).
+fn plusDaysFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = env;
+    try error_catalog.checkArity("plusDays", args, 2, loc);
+    if (args[1].tag() != .integer)
+        return error_catalog.raise(.type_arg_invalid, loc, .{ .fn_name = "plusDays", .expected = "integer", .actual = @tagName(args[1].tag()) });
+    return make(rt, secondsOf(args[0]) + args[1].asInteger() * 86400, nanosOf(args[0]));
+}
+
+/// `(.minusDays d n)` — the span `n` days shorter (JVM `Duration.minusDays`).
+fn minusDaysFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = env;
+    try error_catalog.checkArity("minusDays", args, 2, loc);
+    if (args[1].tag() != .integer)
+        return error_catalog.raise(.type_arg_invalid, loc, .{ .fn_name = "minusDays", .expected = "integer", .actual = @tagName(args[1].tag()) });
+    return make(rt, secondsOf(args[0]) - args[1].asInteger() * 86400, nanosOf(args[0]));
+}
+
+/// `(.plusMillis d n)` — the span `n` milliseconds longer (JVM `Duration.plusMillis`).
+fn plusMillisFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = env;
+    try error_catalog.checkArity("plusMillis", args, 2, loc);
+    if (args[1].tag() != .integer)
+        return error_catalog.raise(.type_arg_invalid, loc, .{ .fn_name = "plusMillis", .expected = "integer", .actual = @tagName(args[1].tag()) });
+    return normalize(rt, secondsOf(args[0]), @as(i128, nanosOf(args[0])) + @as(i128, args[1].asInteger()) * NS_PER_MS);
+}
+
+/// `(.minusMillis d n)` — the span `n` milliseconds shorter (JVM `Duration.minusMillis`).
+fn minusMillisFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = env;
+    try error_catalog.checkArity("minusMillis", args, 2, loc);
+    if (args[1].tag() != .integer)
+        return error_catalog.raise(.type_arg_invalid, loc, .{ .fn_name = "minusMillis", .expected = "integer", .actual = @tagName(args[1].tag()) });
+    return normalize(rt, secondsOf(args[0]), @as(i128, nanosOf(args[0])) - @as(i128, args[1].asInteger()) * NS_PER_MS);
+}
+
+/// `(.plusNanos d n)` — the span `n` nanoseconds longer (JVM `Duration.plusNanos`).
+fn plusNanosFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = env;
+    try error_catalog.checkArity("plusNanos", args, 2, loc);
+    if (args[1].tag() != .integer)
+        return error_catalog.raise(.type_arg_invalid, loc, .{ .fn_name = "plusNanos", .expected = "integer", .actual = @tagName(args[1].tag()) });
+    return normalize(rt, secondsOf(args[0]), @as(i128, nanosOf(args[0])) + @as(i128, args[1].asInteger()));
+}
+
+/// `(.minusNanos d n)` — the span `n` nanoseconds shorter (JVM `Duration.minusNanos`).
+fn minusNanosFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = env;
+    try error_catalog.checkArity("minusNanos", args, 2, loc);
+    if (args[1].tag() != .integer)
+        return error_catalog.raise(.type_arg_invalid, loc, .{ .fn_name = "minusNanos", .expected = "integer", .actual = @tagName(args[1].tag()) });
+    return normalize(rt, secondsOf(args[0]), @as(i128, nanosOf(args[0])) - @as(i128, args[1].asInteger()));
+}
+
+/// `(.plus d other)` — the sum of two spans (JVM `Duration.plus`).
+fn plusFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = env;
+    try error_catalog.checkArity("plus", args, 2, loc);
+    if (!isDuration(rt, args[1]))
+        return error_catalog.raise(.type_arg_invalid, loc, .{ .fn_name = ".plus", .expected = "Duration", .actual = @tagName(args[1].tag()) });
+    return normalize(rt, secondsOf(args[0]) + secondsOf(args[1]), @as(i128, nanosOf(args[0])) + @as(i128, nanosOf(args[1])));
+}
+
+/// `(.minus d other)` — the difference of two spans (JVM `Duration.minus`).
+fn minusFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = env;
+    try error_catalog.checkArity("minus", args, 2, loc);
+    if (!isDuration(rt, args[1]))
+        return error_catalog.raise(.type_arg_invalid, loc, .{ .fn_name = ".minus", .expected = "Duration", .actual = @tagName(args[1].tag()) });
+    return normalize(rt, secondsOf(args[0]) - secondsOf(args[1]), @as(i128, nanosOf(args[0])) - @as(i128, nanosOf(args[1])));
+}
+
+/// `(.multipliedBy d n)` — the span scaled by `n` (JVM `Duration.multipliedBy`).
+fn multipliedByFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = env;
+    try error_catalog.checkArity("multipliedBy", args, 2, loc);
+    if (args[1].tag() != .integer)
+        return error_catalog.raise(.type_arg_invalid, loc, .{ .fn_name = "multipliedBy", .expected = "integer", .actual = @tagName(args[1].tag()) });
+    const total = (@as(i128, secondsOf(args[0])) * NS_PER_SEC + nanosOf(args[0])) * @as(i128, args[1].asInteger());
+    return make(rt, @intCast(@divFloor(total, NS_PER_SEC)), @intCast(@mod(total, NS_PER_SEC)));
+}
+
+/// `(.dividedBy d n)` — the span divided by `n` (JVM `Duration.dividedBy`),
+/// truncated toward zero.
+fn dividedByFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = env;
+    try error_catalog.checkArity("dividedBy", args, 2, loc);
+    if (args[1].tag() != .integer)
+        return error_catalog.raise(.type_arg_invalid, loc, .{ .fn_name = "dividedBy", .expected = "integer", .actual = @tagName(args[1].tag()) });
+    const total = @as(i128, secondsOf(args[0])) * NS_PER_SEC + nanosOf(args[0]);
+    const q = @divTrunc(total, @as(i128, args[1].asInteger()));
+    return make(rt, @intCast(@divFloor(q, NS_PER_SEC)), @intCast(@mod(q, NS_PER_SEC)));
+}
+
 /// The per-Runtime canonical Duration descriptor (lazily allocated on
 /// `gc.infra`; freed in `Runtime.deinit`). `fqcn = "Duration"` so `(class …)`
 /// prints the simple name (AD-003 / no-JVM); `temporal_print = .iso_duration`
@@ -133,6 +293,22 @@ pub fn descriptorOf(rt: *Runtime) !*const TypeDescriptor {
         .{ "isNegative", &isNegativeFn },
         .{ "negated", &negatedFn },
         .{ "abs", &absFn },
+        .{ "plusSeconds", &plusSecondsFn },
+        .{ "minusSeconds", &minusSecondsFn },
+        .{ "plusMinutes", &plusMinutesFn },
+        .{ "minusMinutes", &minusMinutesFn },
+        .{ "plusHours", &plusHoursFn },
+        .{ "minusHours", &minusHoursFn },
+        .{ "plusDays", &plusDaysFn },
+        .{ "minusDays", &minusDaysFn },
+        .{ "plusMillis", &plusMillisFn },
+        .{ "minusMillis", &minusMillisFn },
+        .{ "plusNanos", &plusNanosFn },
+        .{ "minusNanos", &minusNanosFn },
+        .{ "plus", &plusFn },
+        .{ "minus", &minusFn },
+        .{ "multipliedBy", &multipliedByFn },
+        .{ "dividedBy", &dividedByFn },
     };
     const entries = try rt.gc.infra.alloc(TypeDescriptor.MethodEntry, specs.len);
     inline for (specs, 0..) |spec, i| {

@@ -355,7 +355,7 @@ tiers:
           # Value-wrap layer (F-009 wrap slot, G3-exempt): wraps instant.zig's
           # epoch data into a .typed_instance Value.
           wrap: runtime/time/instant_value.zig
-        methods: [now, ofEpochSecond, ofEpochMilli, parse, getEpochSecond, getNano, toEpochMilli, isBefore, isAfter]
+        methods: [now, ofEpochSecond, ofEpochMilli, parse, getEpochSecond, getNano, toEpochMilli, isBefore, isAfter, plusSeconds, minusSeconds, plusMillis, minusMillis, plusNanos, minusNanos]
         clojure_peer_vars: []
         status: "WIRED (D-462) - statics now/ofEpochSecond([secs] | [secs nanos])/ofEpochMilli/parse mint a `.typed_instance` Instant VALUE (instant_value.zig, per-Runtime descriptor); instance methods getEpochSecond/getNano/toEpochMilli + value `=` + `(str i)` = ISO_INSTANT (variable fraction + Z) all reachable. pr-str divergence = AD-042 (no JVM `#object[…]` identity form). Pinned by test/e2e/phase15_java_time_instant.sh. Arithmetic methods (plusSeconds/minus*/isBefore/…) are NOT implemented (would be a follow-up unit, not listed above per anti-D-177). Sibling java.time reservations (LocalDateTime/Duration/ZonedDateTime) remain UNWIRED."
       - fqn: java.time.LocalDate
@@ -381,7 +381,7 @@ tiers:
           # Value-wrap layer (F-009 wrap slot, G3-exempt): mints the
           # .typed_instance LocalTime Value (1 field [nano_of_day]).
           wrap: runtime/time/local_time_value.zig
-        methods: [of, now, parse, getHour, getMinute, getSecond, getNano, isBefore, isAfter]
+        methods: [of, now, parse, getHour, getMinute, getSecond, getNano, isBefore, isAfter, plusHours, minusHours, plusMinutes, minusMinutes, plusSeconds, minusSeconds, plusNanos, minusNanos]
         clojure_peer_vars: []
         status: "WIRED (D-462) - statics of(h mi [s [n]] arity 2-4)/now/parse mint a `.typed_instance` LocalTime VALUE (local_time_value.zig, per-Runtime descriptor) carrying [nano_of_day] (i64 in [0, 86_400_000_000_000)); instance methods getHour/getMinute/getSecond/getNano + value `=` + `(str t)` = ISO local time (conditional :ss omitted when sec=nano=0, variable fraction, e.g. \"12:30\" / \"12:30:45.500\") all reachable. The date/time format+parse halves are shared with LocalDate/LocalDateTime via instant.zig (F-009 neutral home). pr-str divergence = AD-042 (no JVM `#object[…]` identity form). Pinned by test/e2e/phase15_java_time_local_date.sh. `now` is UTC-based (cljw has no zone DB)."
       - fqn: java.time.LocalDateTime
@@ -407,7 +407,7 @@ tiers:
           # Value-wrap layer (F-009 wrap slot, G3-exempt): the duration span's
           # value-mint + self-contained ISO-8601 formatter.
           wrap: runtime/time/duration_value.zig
-        methods: [ofSeconds, ofMillis, ofNanos, ofMinutes, ofHours, ofDays, getSeconds, getNano, toMillis, toMinutes, isZero, isNegative, negated, abs]
+        methods: [ofSeconds, ofMillis, ofNanos, ofMinutes, ofHours, ofDays, getSeconds, getNano, toMillis, toMinutes, isZero, isNegative, negated, abs, plusSeconds, minusSeconds, plusMinutes, minusMinutes, plusHours, minusHours, plusDays, minusDays, plusMillis, minusMillis, plusNanos, minusNanos, plus, minus, multipliedBy, dividedBy]
         clojure_peer_vars: []
         status: "WIRED (D-462) - statics ofSeconds([secs] | [secs nanoAdj])/ofMillis/ofNanos/ofMinutes/ofHours/ofDays mint a NORMALIZED (nanos∈[0,1e9), seconds carries sign) `.typed_instance` Duration VALUE (duration_value.zig, per-Runtime descriptor); instance methods getSeconds/getNano/toMillis/toMinutes + value `=` + `(str d)` = ISO-8601 `PT…` (the exact JDK Duration.toString) all reachable. pr-str divergence = AD-042 (no JVM `#object[…]` identity form). Pinned by test/e2e/phase15_java_time_duration.sh. Arithmetic methods (between/plus/minus/toNanos/…) are NOT implemented (would be a follow-up unit, not listed above per anti-D-177)."
       - fqn: java.time.ZonedDateTime

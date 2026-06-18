@@ -76,6 +76,89 @@ fn isAfterFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) 
     return Value.initBoolean(nanoOfDayOf(args[0]) > nanoOfDayOf(args[1]));
 }
 
+const DAY_NS: i128 = 86_400_000_000_000;
+const HOUR_NS: i128 = 3_600_000_000_000;
+const MIN_NS: i128 = 60_000_000_000;
+const NS_PER_SEC: i128 = 1_000_000_000;
+
+/// Shared wrap-add helper: shift `nano_of_day` by a signed nanosecond delta,
+/// wrapping mod 24h. `@mod` against DAY_NS yields [0, DAY_NS) for both signs.
+fn addWrap(rt: *Runtime, self: Value, delta_ns: i128) !Value {
+    return make(rt, @intCast(@mod(@as(i128, nanoOfDayOf(self)) + delta_ns, DAY_NS)));
+}
+
+/// `(.plusHours t n)` — the time `n` hours later, wrapping mod 24h (JVM `LocalTime.plusHours`).
+fn plusHoursFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = env;
+    try error_catalog.checkArity("plusHours", args, 2, loc);
+    if (args[1].tag() != .integer)
+        return error_catalog.raise(.type_arg_invalid, loc, .{ .fn_name = "plusHours", .expected = "integer", .actual = @tagName(args[1].tag()) });
+    return addWrap(rt, args[0], @as(i128, args[1].asInteger()) * HOUR_NS);
+}
+
+/// `(.minusHours t n)` — the time `n` hours earlier, wrapping mod 24h (JVM `LocalTime.minusHours`).
+fn minusHoursFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = env;
+    try error_catalog.checkArity("minusHours", args, 2, loc);
+    if (args[1].tag() != .integer)
+        return error_catalog.raise(.type_arg_invalid, loc, .{ .fn_name = "minusHours", .expected = "integer", .actual = @tagName(args[1].tag()) });
+    return addWrap(rt, args[0], -@as(i128, args[1].asInteger()) * HOUR_NS);
+}
+
+/// `(.plusMinutes t n)` — the time `n` minutes later, wrapping mod 24h (JVM `LocalTime.plusMinutes`).
+fn plusMinutesFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = env;
+    try error_catalog.checkArity("plusMinutes", args, 2, loc);
+    if (args[1].tag() != .integer)
+        return error_catalog.raise(.type_arg_invalid, loc, .{ .fn_name = "plusMinutes", .expected = "integer", .actual = @tagName(args[1].tag()) });
+    return addWrap(rt, args[0], @as(i128, args[1].asInteger()) * MIN_NS);
+}
+
+/// `(.minusMinutes t n)` — the time `n` minutes earlier, wrapping mod 24h (JVM `LocalTime.minusMinutes`).
+fn minusMinutesFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = env;
+    try error_catalog.checkArity("minusMinutes", args, 2, loc);
+    if (args[1].tag() != .integer)
+        return error_catalog.raise(.type_arg_invalid, loc, .{ .fn_name = "minusMinutes", .expected = "integer", .actual = @tagName(args[1].tag()) });
+    return addWrap(rt, args[0], -@as(i128, args[1].asInteger()) * MIN_NS);
+}
+
+/// `(.plusSeconds t n)` — the time `n` seconds later, wrapping mod 24h (JVM `LocalTime.plusSeconds`).
+fn plusSecondsFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = env;
+    try error_catalog.checkArity("plusSeconds", args, 2, loc);
+    if (args[1].tag() != .integer)
+        return error_catalog.raise(.type_arg_invalid, loc, .{ .fn_name = "plusSeconds", .expected = "integer", .actual = @tagName(args[1].tag()) });
+    return addWrap(rt, args[0], @as(i128, args[1].asInteger()) * NS_PER_SEC);
+}
+
+/// `(.minusSeconds t n)` — the time `n` seconds earlier, wrapping mod 24h (JVM `LocalTime.minusSeconds`).
+fn minusSecondsFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = env;
+    try error_catalog.checkArity("minusSeconds", args, 2, loc);
+    if (args[1].tag() != .integer)
+        return error_catalog.raise(.type_arg_invalid, loc, .{ .fn_name = "minusSeconds", .expected = "integer", .actual = @tagName(args[1].tag()) });
+    return addWrap(rt, args[0], -@as(i128, args[1].asInteger()) * NS_PER_SEC);
+}
+
+/// `(.plusNanos t n)` — the time `n` nanoseconds later, wrapping mod 24h (JVM `LocalTime.plusNanos`).
+fn plusNanosFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = env;
+    try error_catalog.checkArity("plusNanos", args, 2, loc);
+    if (args[1].tag() != .integer)
+        return error_catalog.raise(.type_arg_invalid, loc, .{ .fn_name = "plusNanos", .expected = "integer", .actual = @tagName(args[1].tag()) });
+    return addWrap(rt, args[0], @as(i128, args[1].asInteger()));
+}
+
+/// `(.minusNanos t n)` — the time `n` nanoseconds earlier, wrapping mod 24h (JVM `LocalTime.minusNanos`).
+fn minusNanosFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = env;
+    try error_catalog.checkArity("minusNanos", args, 2, loc);
+    if (args[1].tag() != .integer)
+        return error_catalog.raise(.type_arg_invalid, loc, .{ .fn_name = "minusNanos", .expected = "integer", .actual = @tagName(args[1].tag()) });
+    return addWrap(rt, args[0], -@as(i128, args[1].asInteger()));
+}
+
 /// The per-Runtime canonical LocalTime descriptor (lazily allocated on
 /// `gc.infra`; freed in `Runtime.deinit`). `fqcn = "LocalTime"` so
 /// `(class …)` prints the simple name (AD-003 / no-JVM);
@@ -101,6 +184,14 @@ pub fn descriptorOf(rt: *Runtime) !*const TypeDescriptor {
         .{ "getNano", &getNanoFn },
         .{ "isBefore", &isBeforeFn },
         .{ "isAfter", &isAfterFn },
+        .{ "plusHours", &plusHoursFn },
+        .{ "minusHours", &minusHoursFn },
+        .{ "plusMinutes", &plusMinutesFn },
+        .{ "minusMinutes", &minusMinutesFn },
+        .{ "plusSeconds", &plusSecondsFn },
+        .{ "minusSeconds", &minusSecondsFn },
+        .{ "plusNanos", &plusNanosFn },
+        .{ "minusNanos", &minusNanosFn },
     };
     const entries = try rt.gc.infra.alloc(TypeDescriptor.MethodEntry, specs.len);
     inline for (specs, 0..) |spec, i| {

@@ -78,6 +78,72 @@ fn isAfterFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) 
     return Value.initBoolean(a_ms > b_ms or (a_ms == b_ms and nanosOf(args[0]) > nanosOf(args[1])));
 }
 
+const NS_PER_SEC: i128 = 1_000_000_000;
+const NS_PER_MS: i128 = 1_000_000;
+
+/// Shared add helper for `plusMillis` / `plusNanos` (and the minus* negations):
+/// fold a nanosecond delta into the fractional-second field with a second-carry.
+fn addFracNanos(rt: *Runtime, self: Value, delta_ns: i128) !Value {
+    const total = @as(i128, nanosOf(self)) + delta_ns;
+    const carry_sec = @divFloor(total, NS_PER_SEC);
+    const new_ms = epochMsOf(self) + @as(i64, @intCast(carry_sec)) * 1000;
+    return make(rt, new_ms, @intCast(@mod(total, NS_PER_SEC)));
+}
+
+/// `(.plusSeconds i n)` — the instant `n` seconds later (JVM `Instant.plusSeconds`).
+fn plusSecondsFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = env;
+    try error_catalog.checkArity("plusSeconds", args, 2, loc);
+    if (args[1].tag() != .integer)
+        return error_catalog.raise(.type_arg_invalid, loc, .{ .fn_name = "plusSeconds", .expected = "integer", .actual = @tagName(args[1].tag()) });
+    return make(rt, epochMsOf(args[0]) + args[1].asInteger() * 1000, nanosOf(args[0]));
+}
+
+/// `(.minusSeconds i n)` — the instant `n` seconds earlier (JVM `Instant.minusSeconds`).
+fn minusSecondsFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = env;
+    try error_catalog.checkArity("minusSeconds", args, 2, loc);
+    if (args[1].tag() != .integer)
+        return error_catalog.raise(.type_arg_invalid, loc, .{ .fn_name = "minusSeconds", .expected = "integer", .actual = @tagName(args[1].tag()) });
+    return make(rt, epochMsOf(args[0]) - args[1].asInteger() * 1000, nanosOf(args[0]));
+}
+
+/// `(.plusMillis i n)` — the instant `n` milliseconds later (JVM `Instant.plusMillis`).
+fn plusMillisFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = env;
+    try error_catalog.checkArity("plusMillis", args, 2, loc);
+    if (args[1].tag() != .integer)
+        return error_catalog.raise(.type_arg_invalid, loc, .{ .fn_name = "plusMillis", .expected = "integer", .actual = @tagName(args[1].tag()) });
+    return addFracNanos(rt, args[0], @as(i128, args[1].asInteger()) * NS_PER_MS);
+}
+
+/// `(.minusMillis i n)` — the instant `n` milliseconds earlier (JVM `Instant.minusMillis`).
+fn minusMillisFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = env;
+    try error_catalog.checkArity("minusMillis", args, 2, loc);
+    if (args[1].tag() != .integer)
+        return error_catalog.raise(.type_arg_invalid, loc, .{ .fn_name = "minusMillis", .expected = "integer", .actual = @tagName(args[1].tag()) });
+    return addFracNanos(rt, args[0], -@as(i128, args[1].asInteger()) * NS_PER_MS);
+}
+
+/// `(.plusNanos i n)` — the instant `n` nanoseconds later (JVM `Instant.plusNanos`).
+fn plusNanosFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = env;
+    try error_catalog.checkArity("plusNanos", args, 2, loc);
+    if (args[1].tag() != .integer)
+        return error_catalog.raise(.type_arg_invalid, loc, .{ .fn_name = "plusNanos", .expected = "integer", .actual = @tagName(args[1].tag()) });
+    return addFracNanos(rt, args[0], @as(i128, args[1].asInteger()));
+}
+
+/// `(.minusNanos i n)` — the instant `n` nanoseconds earlier (JVM `Instant.minusNanos`).
+fn minusNanosFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = env;
+    try error_catalog.checkArity("minusNanos", args, 2, loc);
+    if (args[1].tag() != .integer)
+        return error_catalog.raise(.type_arg_invalid, loc, .{ .fn_name = "minusNanos", .expected = "integer", .actual = @tagName(args[1].tag()) });
+    return addFracNanos(rt, args[0], -@as(i128, args[1].asInteger()));
+}
+
 /// The per-Runtime canonical Instant descriptor (lazily allocated on
 /// `gc.infra`; freed in `Runtime.deinit`). `fqcn = "Instant"` so `(class …)`
 /// prints the simple name (AD-003 / no-JVM); `temporal_print = .iso_instant` drives the
@@ -102,6 +168,12 @@ pub fn descriptorOf(rt: *Runtime) !*const TypeDescriptor {
         .{ "toEpochMilli", &toEpochMilliFn },
         .{ "isBefore", &isBeforeFn },
         .{ "isAfter", &isAfterFn },
+        .{ "plusSeconds", &plusSecondsFn },
+        .{ "minusSeconds", &minusSecondsFn },
+        .{ "plusMillis", &plusMillisFn },
+        .{ "minusMillis", &minusMillisFn },
+        .{ "plusNanos", &plusNanosFn },
+        .{ "minusNanos", &minusNanosFn },
     };
     const entries = try rt.gc.infra.alloc(TypeDescriptor.MethodEntry, specs.len);
     inline for (specs, 0..) |spec, i| {
