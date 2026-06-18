@@ -354,6 +354,7 @@ tiers:
           impl: runtime/time/instant.zig
         methods: [now, toEpochMilli, getEpochSecond, getNano, parse]
         clojure_peer_vars: []
+        status: "UNWIRED - surface + impl exist but the method_table is empty and the class is NOT resolvable from Clojure (`(java.time.Instant/now)` -> 'No namespace', unlike java.util.UUID / Math which DO resolve); the `methods:` list is the PLAN, not yet reachable (D-462). Same unwired state as the sibling java.time reservations below; was the only one MISSING this marker (the over-claim)."
       - {fqn: "java.time.LocalDate", native_ns: "cljw.host.java.time.LocalDate", phase: 6}
       - fqn: java.time.LocalDateTime
         cljw_ns: cljw.java.time.LocalDateTime
