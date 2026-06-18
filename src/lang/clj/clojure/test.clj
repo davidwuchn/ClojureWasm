@@ -15,9 +15,10 @@
 ;; multimethod (`=` / `thrown?` / default), a `report` multimethod keyed on
 ;; `:type`, and `*report-counters*` as a dynamic var holding an atom.
 ;;
-;; cljw adaptations (no JVM): `report` prints directly to stdout (no `*test-out*`
-;; redirect — that needs `*out*`, deferred); no stacktrace-file-and-line in
-;; do-report. Deferred: use-fixtures, with-test.
+;; cljw adaptations (no JVM): vars carry no source location, so the FAIL/ERROR
+;; line omits clj's ` (file:line)` suffix and `report :error` cannot print a JVM
+;; cause trace — both are AD-041. Deferred: per-var lifecycle events
+;; (begin/end-test-var, end-test-ns), use-fixtures, with-test.
 
 (ns clojure.test (:refer-clojure))
 
@@ -32,6 +33,11 @@
 (def ^:dynamic *testing-vars* (list))
 ;; Stack-trace depth a reporter may pass to clojure.stacktrace (nil = full).
 (def ^:dynamic *stack-trace-depth* nil)
+
+;; Where report output goes. clj binds this to the load-time *out*; `with-test-out`
+;; rebinds *out* to it so `(binding [*test-out* w] (run-tests))` redirects output.
+;; cljw's *out* works (with-out-str), so this is re-enabled (was a no-JVM deferral).
+(def ^:dynamic *test-out* *out*)
 
 ;; ns-name-symbol -> vector of test Vars (deftest appends; run-tests reads).
 (def *test-registry* (atom {}))
@@ -50,15 +56,16 @@
 ;; reporter calls; cljw's internal counter bump is `inc-report`.
 (def inc-report-counter inc-report)
 
-;; clj-compat: `with-test-out` rebinds *test-out* on the JVM; cljw prints
-;; directly to stdout (no *test-out*), so it is an identity body wrapper.
-(defmacro with-test-out [& body] (cons 'do body))
+;; clj-compat: run body with *out* bound to *test-out* (so a reporter's output
+;; is redirectable by binding *test-out*).
+(defmacro with-test-out [& body]
+  `(binding [*out* *test-out*] ~@body))
 
 ;; A string naming the test(s) currently running, for a reporter's pass/fail
-;; line. cljw has no source line on the Var, so just the qualified name(s).
+;; line: the simple test name(s) in a list, e.g. "(my-test)" (clj form, minus
+;; the ` (file:line)` suffix — cljw has no source location on Vars, AD-041).
 (defn testing-vars-str [_m]
-  (clojure.string/join "," (map #(str (:ns (meta %)) "/" (:name (meta %)))
-                                (reverse *testing-vars*))))
+  (str "(" (clojure.string/join " " (reverse (map #(:name (meta %)) *testing-vars*))) ")"))
 
 ;; A string of the active `testing` context strings (outermost first).
 (defn testing-contexts-str []
@@ -66,33 +73,41 @@
 
 (defn print-contexts []
   (when (seq *testing-contexts*)
-    (println "  context:" (vec (reverse *testing-contexts*)))))
+    (println (testing-contexts-str))))
 
-(defmethod report :pass [m] (inc-report :pass))
+(defmethod report :pass [m] (with-test-out (inc-report :pass)))
 
 (defmethod report :fail [m]
-  (inc-report :fail)
-  (println)
-  (println "FAIL in" (pr-str (:expected m)))
-  (print-contexts)
-  (when (:message m) (println (:message m)))
-  (println "expected:" (pr-str (:expected m)))
-  (println "  actual:" (pr-str (:actual m))))
+  (with-test-out
+    (inc-report :fail)
+    (println)
+    (println "FAIL in" (testing-vars-str m))
+    (print-contexts)
+    (when (:message m) (println (:message m)))
+    (println "expected:" (pr-str (:expected m)))
+    (println "  actual:" (pr-str (:actual m)))))
 
 (defmethod report :error [m]
-  (inc-report :error)
-  (println)
-  (println "ERROR in" (pr-str (:expected m)))
-  (print-contexts)
-  (when (:message m) (println (:message m)))
-  (println "expected:" (pr-str (:expected m)))
-  (println "  actual:" (pr-str (:actual m))))
+  (with-test-out
+    (inc-report :error)
+    (println)
+    (println "ERROR in" (testing-vars-str m))
+    (print-contexts)
+    (when (:message m) (println (:message m)))
+    (println "expected:" (pr-str (:expected m)))
+    (println "  actual:" (pr-str (:actual m)))))
+
+(defmethod report :begin-test-ns [m]
+  (with-test-out
+    (println)
+    (println "Testing" (:ns m))))
 
 (defmethod report :summary [m]
-  (println)
-  (println "Ran" (:test m) "tests containing"
-           (+ (:pass m) (:fail m) (:error m)) "assertions.")
-  (println (:fail m) "failures," (:error m) "errors."))
+  (with-test-out
+    (println)
+    (println "Ran" (:test m) "tests containing"
+             (+ (:pass m) (:fail m) (:error m)) "assertions.")
+    (println (:fail m) "failures," (:error m) "errors.")))
 
 (defmethod report :default [m] nil)
 
@@ -104,23 +119,43 @@
 ;; ---------------------------------------------------------------------------
 (defmulti assert-expr (fn [msg form] (if (seq? form) (first form) :default)))
 
-;; Generic: evaluate the whole form; truthy => pass, else fail with the value.
-(defmethod assert-expr :default [msg form]
-  `(let [value# ~form]
-     (if value#
-       (do-report {:type :pass :message ~msg :expected (quote ~form) :actual value#})
-       (do-report {:type :fail :message ~msg :expected (quote ~form) :actual value#}))
-     value#))
+;; clj-compat: is `x` a symbol naming a (non-macro) function? Drives the :default
+;; split below — a predicate call gets the (not …) actual treatment, anything
+;; else (a value, a macro form) just reports the evaluated value.
+(defn function? [x]
+  (and (symbol? x)
+       (when-let [v (resolve x)]
+         (and (not (:macro (meta v))) (fn? (deref v))))))
 
-;; (is (= expected actual …)) — on fail, actual shows the evaluated args so the
-;; mismatch is visible.
+;; Generic. A predicate form like (pos? -1) reports actual (not (pos? -1)) — the
+;; evaluated form wrapped in (not …) on fail, the bare form on pass (clj parity).
+;; Anything else (a bare value, a macro form) reports the evaluated value.
+(defmethod assert-expr :default [msg form]
+  (if (and (seq? form) (function? (first form)))
+    (let [pred (first form)]
+      `(let [args# (list ~@(rest form))
+             result# (apply ~pred args#)]
+         (if result#
+           (do-report {:type :pass :message ~msg :expected (quote ~form) :actual (cons (quote ~pred) args#)})
+           (do-report {:type :fail :message ~msg :expected (quote ~form) :actual (list (quote ~'not) (cons (quote ~pred) args#))}))
+         result#))
+    `(let [value# ~form]
+       (if value#
+         (do-report {:type :pass :message ~msg :expected (quote ~form) :actual value#})
+         (do-report {:type :fail :message ~msg :expected (quote ~form) :actual value#}))
+       value#)))
+
+;; (is (= expected actual …)) — on fail, actual shows the evaluated form wrapped
+;; in (not …), e.g. (not (= 1 2)); on pass, the evaluated form (= 1 1). The pred
+;; symbol is taken from the user's form so it renders bare (= …), not qualified.
 (defmethod assert-expr (quote =) [msg form]
-  `(let [args# (list ~@(rest form))
-         result# (apply = args#)]
-     (if result#
-       (do-report {:type :pass :message ~msg :expected (quote ~form) :actual (cons (quote =) args#)})
-       (do-report {:type :fail :message ~msg :expected (quote ~form) :actual (cons (quote not=) args#)}))
-     result#))
+  (let [pred (first form)]
+    `(let [args# (list ~@(rest form))
+           result# (apply = args#)]
+       (if result#
+         (do-report {:type :pass :message ~msg :expected (quote ~form) :actual (cons (quote ~pred) args#)})
+         (do-report {:type :fail :message ~msg :expected (quote ~form) :actual (list (quote ~'not) (cons (quote ~pred) args#))}))
+       result#)))
 
 ;; (is (thrown? Class body…)) — passes iff body throws an instance of Class;
 ;; returns the caught exception.
@@ -192,6 +227,7 @@
   (let [targets (if (seq ns-syms) ns-syms (list (ns-name *ns*)))]
     (binding [*report-counters* (atom *initial-report-counters*)]
       (doseq [ns-sym targets]
+        (do-report {:type :begin-test-ns :ns ns-sym})
         (doseq [v (get (deref *test-registry*) ns-sym)]
           (swap! *report-counters* update :test inc)
           (test-var v)))

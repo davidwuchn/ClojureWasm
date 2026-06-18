@@ -555,6 +555,7 @@ run_step "e2e_phase14_with_redefs"          "bash test/e2e/phase14_with_redefs.s
 run_step "e2e_phase15_namespace"            "bash test/e2e/phase15_namespace.sh"
 run_step "e2e_phase15_dynamic_var"          "bash test/e2e/phase15_dynamic_var.sh"
 run_step "e2e_phase15_clojure_test"         "bash test/e2e/phase15_clojure_test.sh"
+run_step "e2e_phase15_clojure_test_output"  "bash test/e2e/phase15_clojure_test_output.sh"
 run_step "e2e_phase15_require_fs"           "bash test/e2e/phase15_require_fs.sh"
 run_step "e2e_phase15_use_refer_all"        "bash test/e2e/phase15_use_refer_all.sh"
 run_step "e2e_phase15_use_libspec_filter"   "bash test/e2e/phase15_use_libspec_filter.sh"

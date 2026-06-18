@@ -29,12 +29,17 @@ got=$("$BIN" - <<'EOF' 2>/dev/null
 (print (with-out-str (tap/with-tap-output (t/run-tests 'user))))
 EOF
 )
-want='ok user/pass-t
+# run-tests emits :begin-test-ns (clj's tap shows it too); names render via the
+# clj testing-vars-str form `(test-name)`; `=` actual is the bare (not (= …)) form
+# (D-463). cljw omits clj's per-var lifecycle diagnostics + the ` (file:line)`
+# suffix (no source location — AD-041).
+want='# {:type :begin-test-ns, :ns user}
+ok (pass-t)
 # expected:(= 1 1)
-#   actual:(clojure.core/= 1 1)
-not ok user/fail-t
+#   actual:(= 1 1)
+not ok (fail-t)
 # expected:(= 1 2)
-#   actual:(clojure.core/not= 1 2)
+#   actual:(not (= 1 2))
 1..2'
 assert_eq 'tap_output' "$got" "$want"
 

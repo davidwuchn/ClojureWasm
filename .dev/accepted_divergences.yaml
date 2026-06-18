@@ -665,3 +665,18 @@ accepted:
       recursive-cascade cases keep cljw's full-expand shape.
     derives_from: "F-011 (behavioural equivalence is the contract; the macros run identically — only the intermediate macroexpand-1 FORM differs) + AD-011/ADR-0033 (cljw emits bare/`rt`-ns syms, not clojure.core-qualified, so a faithful recursive re-emit is impossible). Functionally-equivalent expansion form, like ClojureScript's macroexpansions vs JVM clj."
     pin: "test/e2e/phase14_when_if_not.sh — `cond_expand_full` locks (macroexpand-1 '(cond a 1 :else 2)) => (if a 1 (if :else 2 nil)) (cljw's full form), and `when_expand_multi`/`when_expand_single` lock when's byte-match with clj"
+  - id: "AD-041"
+    summary: "clojure.test's FAIL/ERROR report line omits clj's ` (file:line)` source-location suffix, and `report :error` prints the exception's value instead of clj's JVM cause trace. The test name, expected/actual, context line, and counts all match clj."
+    example: "(deftest a (is (= 1 2))) (run-tests) => cljw `FAIL in (a)` / clj `FAIL in (a) (NO_SOURCE_FILE:1)`. An erroring test: cljw `  actual: #error {…}` (the ex value) / clj a multi-line `clojure.lang.ExceptionInfo … at …` cause trace."
+    why: |-
+      cljw Vars carry no source location — `(meta #'a)` has `:name`/`:ns` but no
+      `:line`/`:file` (clj attaches both at compile time). So `testing-vars-str`
+      cannot emit the ` (file:line)` suffix clj appends, and there is no JVM
+      stack to print for an errored assertion. Everything that does NOT depend on
+      a source location — the `(test-name)` list, `expected:`/`  actual:` (incl.
+      the clj `(not (= …))` actual form), the joined `testing` context line, the
+      `Testing <ns>` begin line, and the `Ran … / failures, errors.` summary —
+      matches clj byte-for-line. Reproducing the suffix/trace would require a
+      source-location + JVM-stack model cljw does not have (ADR-0059 no-JVM).
+    derives_from: "ADR-0059 (no-JVM: no JVM stack / class-file source positions) + F-011 (behavioural equivalence — pass/fail/error outcomes + counts match; only the unreproducible location/trace text differs)."
+    pin: "test/e2e/phase15_clojure_test_output.sh — asserts the clj-matching lines (`FAIL in (eqfail)`, `  actual: (not (= 1 2))`, context, `Testing demo`, summary) are present and that `*test-out*` is re-enabled; the absent ` (file:line)` suffix is the locked divergence."
