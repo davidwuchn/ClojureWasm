@@ -57,6 +57,12 @@ pub const TemporalPrint = enum {
     /// `java.time.LocalTime` — bare ISO local time `HH:mm[:ss[.fraction]]`
     /// (1 field: nano_of_day), conditional seconds + variable fraction.
     iso_local_time,
+    /// `java.time.DayOfWeek` — bare enum NAME `MONDAY`..`SUNDAY` (1 field:
+    /// ISO value 1..7), via `day_of_week_value.nameOf`.
+    day_of_week,
+    /// `java.time.Month` — bare enum NAME `JANUARY`..`DECEMBER` (1 field:
+    /// value 1..12), via `month_value.nameOf`.
+    month,
 };
 
 /// Descriptor for one type. Process-lifetime — allocated on

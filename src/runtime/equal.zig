@@ -53,6 +53,8 @@ const duration_value_mod = @import("time/duration_value.zig");
 const local_date_time_value_mod = @import("time/local_date_time_value.zig");
 const local_date_value_mod = @import("time/local_date_value.zig");
 const local_time_value_mod = @import("time/local_time_value.zig");
+const day_of_week_value_mod = @import("time/day_of_week_value.zig");
+const month_value_mod = @import("time/month_value.zig");
 const dispatch_mod = @import("dispatch.zig");
 const root_set = @import("gc/root_set.zig");
 const ClojureWasmError = @import("error/info.zig").ClojureWasmError;
@@ -1113,6 +1115,17 @@ fn typedInstanceEqual(rt: *Runtime, env: *Env, a: Value, b: Value) anyerror!bool
     // keeps a LocalTime from being `=` any other temporal type.
     if (local_time_value_mod.isLocalTime(rt, a) and local_time_value_mod.isLocalTime(rt, b)) {
         return local_time_value_mod.nanoOfDayOf(a) == local_time_value_mod.nanoOfDayOf(b);
+    }
+    // DayOfWeek enum values (D-462) compare by the ISO value field, else two
+    // freshly-minted same-day allocations would default to identity `=`. A
+    // distinct descriptor keeps a DayOfWeek from being `=` any other type.
+    if (day_of_week_value_mod.isDayOfWeek(rt, a) and day_of_week_value_mod.isDayOfWeek(rt, b)) {
+        return day_of_week_value_mod.valueOf(a) == day_of_week_value_mod.valueOf(b);
+    }
+    // Month enum values (D-462) compare by the value field. A distinct
+    // descriptor keeps a Month from being `=` any other type.
+    if (month_value_mod.isMonth(rt, a) and month_value_mod.isMonth(rt, b)) {
+        return month_value_mod.valueOf(a) == month_value_mod.valueOf(b);
     }
     // D-280d1: a deftype/reify implementing Object `equals` overrides identity.
     // Consulted for the same-type case (both operands reached here past

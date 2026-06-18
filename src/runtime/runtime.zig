@@ -377,6 +377,21 @@ pub const Runtime = struct {
     /// `null` until the first LocalTime value is built.
     local_time_descriptor: ?*TypeDescriptor = null,
 
+    /// Per-Runtime `java.time.DayOfWeek` enum value descriptor (D-462) — a
+    /// 1-field no-slot `.typed_instance` (ISO value 1..7) with
+    /// `temporal_print = .day_of_week` (bare enum-NAME print form). Lazily
+    /// allocated on `gc.infra` by
+    /// `runtime/time/day_of_week_value.zig::descriptorOf`, freed in `deinit`.
+    /// `null` until the first DayOfWeek value is built.
+    day_of_week_descriptor: ?*TypeDescriptor = null,
+
+    /// Per-Runtime `java.time.Month` enum value descriptor (D-462) — a 1-field
+    /// no-slot `.typed_instance` (value 1..12) with `temporal_print = .month`
+    /// (bare enum-NAME print form). Lazily allocated on `gc.infra` by
+    /// `runtime/time/month_value.zig::descriptorOf`, freed in `deinit`.
+    /// `null` until the first Month value is built.
+    month_descriptor: ?*TypeDescriptor = null,
+
     /// Lazy-init access to the per-Tag default descriptor. On first
     /// call for a given tag, allocates a TypeDescriptor on
     /// `rt.gc.infra` with `fqcn = nativeFqcnFor(tag)` and empty
@@ -575,6 +590,8 @@ pub const Runtime = struct {
         @import("time/local_date_time_value.zig").deinitDescriptor(self);
         @import("time/local_date_value.zig").deinitDescriptor(self);
         @import("time/local_time_value.zig").deinitDescriptor(self);
+        @import("time/day_of_week_value.zig").deinitDescriptor(self);
+        @import("time/month_value.zig").deinitDescriptor(self);
 
         // User-set system properties (gpa-owned key+value dupes).
         {

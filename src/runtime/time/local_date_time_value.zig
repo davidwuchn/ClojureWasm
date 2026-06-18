@@ -32,6 +32,8 @@ const instant = @import("instant.zig");
 const local_date_value = @import("local_date_value.zig");
 const local_time_value = @import("local_time_value.zig");
 const duration_value = @import("duration_value.zig");
+const day_of_week_value = @import("day_of_week_value.zig");
+const month_value = @import("month_value.zig");
 
 /// `(.getYear d)` — the proleptic year (JVM `LocalDateTime.getYear`).
 fn getYearFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
@@ -55,6 +57,31 @@ fn getDayOfMonthFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLoca
     _ = env;
     try error_catalog.checkArity("getDayOfMonth", args, 1, loc);
     return Value.initInteger(instant.civilFromDays(epochDayOf(args[0])).d);
+}
+
+/// `(.getDayOfWeek d)` — the DayOfWeek enum value (JVM `LocalDateTime.getDayOfWeek`).
+/// Uses the date part (epoch_day); epoch_day 0 (1970-01-01) is a Thursday = ISO 4,
+/// so `@mod(epoch_day + 3, 7) + 1` maps to 1=MONDAY .. 7=SUNDAY.
+fn getDayOfWeekFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = env;
+    try error_catalog.checkArity("getDayOfWeek", args, 1, loc);
+    return day_of_week_value.make(rt, @mod(epochDayOf(args[0]) + 3, 7) + 1);
+}
+
+/// `(.getMonth d)` — the Month enum value (JVM `LocalDateTime.getMonth`).
+fn getMonthFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = env;
+    try error_catalog.checkArity("getMonth", args, 1, loc);
+    return month_value.make(rt, instant.civilFromDays(epochDayOf(args[0])).m);
+}
+
+/// `(.getDayOfYear d)` — the day-of-year 1..366 (JVM `LocalDateTime.getDayOfYear`).
+fn getDayOfYearFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = rt;
+    _ = env;
+    try error_catalog.checkArity("getDayOfYear", args, 1, loc);
+    const ed = epochDayOf(args[0]);
+    return Value.initInteger(ed - instant.daysFromCivil(instant.civilFromDays(ed).y, 1, 1) + 1);
 }
 
 /// `(.getHour d)` — the hour-of-day 0..23 (JVM `LocalDateTime.getHour`).
@@ -319,6 +346,9 @@ pub fn descriptorOf(rt: *Runtime) !*const TypeDescriptor {
         .{ "getYear", &getYearFn },
         .{ "getMonthValue", &getMonthValueFn },
         .{ "getDayOfMonth", &getDayOfMonthFn },
+        .{ "getDayOfWeek", &getDayOfWeekFn },
+        .{ "getMonth", &getMonthFn },
+        .{ "getDayOfYear", &getDayOfYearFn },
         .{ "getHour", &getHourFn },
         .{ "getMinute", &getMinuteFn },
         .{ "getSecond", &getSecondFn },

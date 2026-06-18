@@ -27,6 +27,8 @@ const TypedInstance = td_mod.TypedInstance;
 const error_catalog = @import("../error/catalog.zig");
 const SourceLocation = @import("../error/info.zig").SourceLocation;
 const instant = @import("instant.zig");
+const day_of_week_value = @import("day_of_week_value.zig");
+const month_value = @import("month_value.zig");
 
 /// `(.getYear d)` — the proleptic year (JVM `LocalDate.getYear`).
 fn getYearFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
@@ -50,6 +52,31 @@ fn getDayOfMonthFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLoca
     _ = env;
     try error_catalog.checkArity("getDayOfMonth", args, 1, loc);
     return Value.initInteger(instant.civilFromDays(epochDayOf(args[0])).d);
+}
+
+/// `(.getDayOfWeek d)` — the DayOfWeek enum value (JVM `LocalDate.getDayOfWeek`).
+/// epoch_day 0 (1970-01-01) is a Thursday = ISO 4; `@mod(epoch_day + 3, 7) + 1`
+/// maps to 1=MONDAY .. 7=SUNDAY (negative-safe via `@mod`).
+fn getDayOfWeekFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = env;
+    try error_catalog.checkArity("getDayOfWeek", args, 1, loc);
+    return day_of_week_value.make(rt, @mod(epochDayOf(args[0]) + 3, 7) + 1);
+}
+
+/// `(.getMonth d)` — the Month enum value (JVM `LocalDate.getMonth`).
+fn getMonthFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = env;
+    try error_catalog.checkArity("getMonth", args, 1, loc);
+    return month_value.make(rt, instant.civilFromDays(epochDayOf(args[0])).m);
+}
+
+/// `(.getDayOfYear d)` — the day-of-year 1..366 (JVM `LocalDate.getDayOfYear`).
+fn getDayOfYearFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = rt;
+    _ = env;
+    try error_catalog.checkArity("getDayOfYear", args, 1, loc);
+    const ed = epochDayOf(args[0]);
+    return Value.initInteger(ed - instant.daysFromCivil(instant.civilFromDays(ed).y, 1, 1) + 1);
 }
 
 /// `(.plusDays d n)` — the date `n` days later (JVM `LocalDate.plusDays`).
@@ -223,6 +250,9 @@ pub fn descriptorOf(rt: *Runtime) !*const TypeDescriptor {
         .{ "getYear", &getYearFn },
         .{ "getMonthValue", &getMonthValueFn },
         .{ "getDayOfMonth", &getDayOfMonthFn },
+        .{ "getDayOfWeek", &getDayOfWeekFn },
+        .{ "getMonth", &getMonthFn },
+        .{ "getDayOfYear", &getDayOfYearFn },
         .{ "plusDays", &plusDaysFn },
         .{ "minusDays", &minusDaysFn },
         .{ "plusWeeks", &plusWeeksFn },

@@ -58,6 +58,8 @@ const td_mod = @import("type_descriptor.zig");
 const instant_mod = @import("time/instant.zig");
 const duration_value_mod = @import("time/duration_value.zig");
 const local_date_time_value_mod = @import("time/local_date_time_value.zig");
+const day_of_week_value_mod = @import("time/day_of_week_value.zig");
+const month_value_mod = @import("time/month_value.zig");
 const lazy_seq_mod = @import("lazy_seq.zig");
 const range_collection = @import("collection/range.zig");
 const env_mod = @import("env.zig");
@@ -1157,6 +1159,20 @@ fn printTypedInstance(w: *Writer, v: Value) anyerror!void {
             if (inst.field_count >= 1 and inst.fields()[0].tag() == .integer) {
                 var buf: [24]u8 = undefined;
                 try w.writeAll(instant_mod.formatLocalTime(&buf, inst.fields()[0].asInteger()));
+                return;
+            }
+        },
+        .day_of_week => {
+            // java.time.DayOfWeek: 1 field = ISO value 1..7 → bare enum NAME.
+            if (inst.field_count >= 1 and inst.fields()[0].tag() == .integer) {
+                try w.writeAll(day_of_week_value_mod.nameOf(inst.fields()[0].asInteger()));
+                return;
+            }
+        },
+        .month => {
+            // java.time.Month: 1 field = value 1..12 → bare enum NAME.
+            if (inst.field_count >= 1 and inst.fields()[0].tag() == .integer) {
+                try w.writeAll(month_value_mod.nameOf(inst.fields()[0].asInteger()));
                 return;
             }
         },
