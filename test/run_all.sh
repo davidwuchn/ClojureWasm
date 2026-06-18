@@ -662,6 +662,7 @@ run_step "e2e_phase14_java_method_grouping"  "bash test/e2e/phase14_java_method_
 run_step "e2e_phase14_fn_prepost"            "bash test/e2e/phase14_fn_prepost.sh"
 run_step "e2e_phase14_deftype_ideref"        "bash test/e2e/phase14_deftype_ideref.sh"
 run_step "e2e_phase14_equality"              "bash test/e2e/phase14_equality.sh"
+run_step "e2e_phase14_realworld_program"     "bash test/e2e/phase14_realworld_program.sh"
 run_step "e2e_phase14_dedup_group"           "bash test/e2e/phase14_dedup_group.sh"
 run_step "e2e_phase14_seq_helpers2"          "bash test/e2e/phase14_seq_helpers2.sh"
 run_step "e2e_phase14_reduce_helpers"        "bash test/e2e/phase14_reduce_helpers.sh"
