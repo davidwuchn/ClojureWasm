@@ -105,6 +105,38 @@ fn toLocalTimeFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocati
     return local_time_value.make(rt, nanoOfDayOf(args[0]));
 }
 
+/// `(.isBefore a b)` — true when `a` precedes `b` (JVM `LocalDateTime.isBefore`).
+/// Compares lexicographically by (epoch-day, then nano-of-day).
+fn isBeforeFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = env;
+    try error_catalog.checkArity("isBefore", args, 2, loc);
+    if (!isLocalDateTime(rt, args[1]))
+        return error_catalog.raise(.type_arg_invalid, loc, .{ .fn_name = ".isBefore", .expected = "LocalDateTime", .actual = @tagName(args[1].tag()) });
+    const a_day = epochDayOf(args[0]);
+    const b_day = epochDayOf(args[1]);
+    return Value.initBoolean(a_day < b_day or (a_day == b_day and nanoOfDayOf(args[0]) < nanoOfDayOf(args[1])));
+}
+
+/// `(.isAfter a b)` — true when `a` follows `b` (JVM `LocalDateTime.isAfter`).
+fn isAfterFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = env;
+    try error_catalog.checkArity("isAfter", args, 2, loc);
+    if (!isLocalDateTime(rt, args[1]))
+        return error_catalog.raise(.type_arg_invalid, loc, .{ .fn_name = ".isAfter", .expected = "LocalDateTime", .actual = @tagName(args[1].tag()) });
+    const a_day = epochDayOf(args[0]);
+    const b_day = epochDayOf(args[1]);
+    return Value.initBoolean(a_day > b_day or (a_day == b_day and nanoOfDayOf(args[0]) > nanoOfDayOf(args[1])));
+}
+
+/// `(.isEqual a b)` — true when `a` equals `b` (JVM `LocalDateTime.isEqual`).
+fn isEqualFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = env;
+    try error_catalog.checkArity("isEqual", args, 2, loc);
+    if (!isLocalDateTime(rt, args[1]))
+        return error_catalog.raise(.type_arg_invalid, loc, .{ .fn_name = ".isEqual", .expected = "LocalDateTime", .actual = @tagName(args[1].tag()) });
+    return Value.initBoolean(epochDayOf(args[0]) == epochDayOf(args[1]) and nanoOfDayOf(args[0]) == nanoOfDayOf(args[1]));
+}
+
 /// The per-Runtime canonical LocalDateTime descriptor (lazily allocated on
 /// `gc.infra`; freed in `Runtime.deinit`). `fqcn = "LocalDateTime"` so
 /// `(class …)` prints the simple name (AD-003 / no-JVM);
@@ -133,6 +165,9 @@ pub fn descriptorOf(rt: *Runtime) !*const TypeDescriptor {
         .{ "getNano", &getNanoFn },
         .{ "toLocalDate", &toLocalDateFn },
         .{ "toLocalTime", &toLocalTimeFn },
+        .{ "isBefore", &isBeforeFn },
+        .{ "isAfter", &isAfterFn },
+        .{ "isEqual", &isEqualFn },
     };
     const entries = try rt.gc.infra.alloc(TypeDescriptor.MethodEntry, specs.len);
     inline for (specs, 0..) |spec, i| {

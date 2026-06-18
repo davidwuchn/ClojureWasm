@@ -64,6 +64,49 @@ fn toMinutesFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation
     return Value.initInteger(@divTrunc(secondsOf(args[0]), 60));
 }
 
+/// `(.isZero d)` — true when the span is exactly zero (JVM `Duration.isZero`).
+fn isZeroFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = rt;
+    _ = env;
+    try error_catalog.checkArity("isZero", args, 1, loc);
+    return Value.initBoolean(secondsOf(args[0]) == 0 and nanosOf(args[0]) == 0);
+}
+
+/// `(.isNegative d)` — true when the span is negative (JVM `Duration.isNegative`).
+/// The seconds field carries the sign after normalization.
+fn isNegativeFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = rt;
+    _ = env;
+    try error_catalog.checkArity("isNegative", args, 1, loc);
+    return Value.initBoolean(secondsOf(args[0]) < 0);
+}
+
+/// `(.negated d)` — the span with its sign flipped (JVM `Duration.negated`).
+/// Re-normalizes so the nanos fraction stays non-negative.
+fn negatedFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = env;
+    try error_catalog.checkArity("negated", args, 1, loc);
+    return negate(rt, args[0]);
+}
+
+/// `(.abs d)` — the magnitude of the span (JVM `Duration.abs`). Returns the
+/// receiver unchanged when non-negative; otherwise the negation.
+fn absFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = env;
+    try error_catalog.checkArity("abs", args, 1, loc);
+    if (secondsOf(args[0]) < 0) return negate(rt, args[0]);
+    return args[0];
+}
+
+/// Mint the normalized negation of a Duration value. Borrows one second when
+/// the fraction is non-zero so the resulting nanos stay in 0..999_999_999.
+fn negate(rt: *Runtime, v: Value) !Value {
+    const neg_nanos = -@as(i64, nanosOf(v));
+    const new_seconds = -secondsOf(v) + @divFloor(neg_nanos, 1_000_000_000);
+    const new_nanos: i32 = @intCast(@mod(neg_nanos, 1_000_000_000));
+    return make(rt, new_seconds, new_nanos);
+}
+
 /// The per-Runtime canonical Duration descriptor (lazily allocated on
 /// `gc.infra`; freed in `Runtime.deinit`). `fqcn = "Duration"` so `(class …)`
 /// prints the simple name (AD-003 / no-JVM); `temporal_print = .iso_duration`
@@ -86,6 +129,10 @@ pub fn descriptorOf(rt: *Runtime) !*const TypeDescriptor {
         .{ "getNano", &getNanoFn },
         .{ "toMillis", &toMillisFn },
         .{ "toMinutes", &toMinutesFn },
+        .{ "isZero", &isZeroFn },
+        .{ "isNegative", &isNegativeFn },
+        .{ "negated", &negatedFn },
+        .{ "abs", &absFn },
     };
     const entries = try rt.gc.infra.alloc(TypeDescriptor.MethodEntry, specs.len);
     inline for (specs, 0..) |spec, i| {

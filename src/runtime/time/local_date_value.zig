@@ -62,6 +62,33 @@ fn plusDaysFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation)
     return make(rt, epochDayOf(args[0]) + args[1].asInteger());
 }
 
+/// `(.isBefore a b)` — true when `a` is before `b` (JVM `LocalDate.isBefore`).
+fn isBeforeFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = env;
+    try error_catalog.checkArity("isBefore", args, 2, loc);
+    if (!isLocalDate(rt, args[1]))
+        return error_catalog.raise(.type_arg_invalid, loc, .{ .fn_name = ".isBefore", .expected = "LocalDate", .actual = @tagName(args[1].tag()) });
+    return Value.initBoolean(epochDayOf(args[0]) < epochDayOf(args[1]));
+}
+
+/// `(.isAfter a b)` — true when `a` is after `b` (JVM `LocalDate.isAfter`).
+fn isAfterFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = env;
+    try error_catalog.checkArity("isAfter", args, 2, loc);
+    if (!isLocalDate(rt, args[1]))
+        return error_catalog.raise(.type_arg_invalid, loc, .{ .fn_name = ".isAfter", .expected = "LocalDate", .actual = @tagName(args[1].tag()) });
+    return Value.initBoolean(epochDayOf(args[0]) > epochDayOf(args[1]));
+}
+
+/// `(.isEqual a b)` — true when `a` equals `b` (JVM `LocalDate.isEqual`).
+fn isEqualFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = env;
+    try error_catalog.checkArity("isEqual", args, 2, loc);
+    if (!isLocalDate(rt, args[1]))
+        return error_catalog.raise(.type_arg_invalid, loc, .{ .fn_name = ".isEqual", .expected = "LocalDate", .actual = @tagName(args[1].tag()) });
+    return Value.initBoolean(epochDayOf(args[0]) == epochDayOf(args[1]));
+}
+
 /// The per-Runtime canonical LocalDate descriptor (lazily allocated on
 /// `gc.infra`; freed in `Runtime.deinit`). `fqcn = "LocalDate"` so
 /// `(class …)` prints the simple name (AD-003 / no-JVM);
@@ -85,6 +112,9 @@ pub fn descriptorOf(rt: *Runtime) !*const TypeDescriptor {
         .{ "getMonthValue", &getMonthValueFn },
         .{ "getDayOfMonth", &getDayOfMonthFn },
         .{ "plusDays", &plusDaysFn },
+        .{ "isBefore", &isBeforeFn },
+        .{ "isAfter", &isAfterFn },
+        .{ "isEqual", &isEqualFn },
     };
     const entries = try rt.gc.infra.alloc(TypeDescriptor.MethodEntry, specs.len);
     inline for (specs, 0..) |spec, i| {

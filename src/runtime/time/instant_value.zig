@@ -55,6 +55,29 @@ fn toEpochMilliFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocat
     return Value.initInteger(secs * 1000 + @divFloor(@as(i64, nanosOf(args[0])), 1_000_000));
 }
 
+/// `(.isBefore a b)` — true when `a` precedes `b` (JVM `Instant.isBefore`).
+/// Compares by (epoch-millis, then nanos); both args must be Instants.
+fn isBeforeFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = env;
+    try error_catalog.checkArity("isBefore", args, 2, loc);
+    if (!isInstant(rt, args[1]))
+        return error_catalog.raise(.type_arg_invalid, loc, .{ .fn_name = ".isBefore", .expected = "Instant", .actual = @tagName(args[1].tag()) });
+    const a_ms = epochMsOf(args[0]);
+    const b_ms = epochMsOf(args[1]);
+    return Value.initBoolean(a_ms < b_ms or (a_ms == b_ms and nanosOf(args[0]) < nanosOf(args[1])));
+}
+
+/// `(.isAfter a b)` — true when `a` follows `b` (JVM `Instant.isAfter`).
+fn isAfterFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = env;
+    try error_catalog.checkArity("isAfter", args, 2, loc);
+    if (!isInstant(rt, args[1]))
+        return error_catalog.raise(.type_arg_invalid, loc, .{ .fn_name = ".isAfter", .expected = "Instant", .actual = @tagName(args[1].tag()) });
+    const a_ms = epochMsOf(args[0]);
+    const b_ms = epochMsOf(args[1]);
+    return Value.initBoolean(a_ms > b_ms or (a_ms == b_ms and nanosOf(args[0]) > nanosOf(args[1])));
+}
+
 /// The per-Runtime canonical Instant descriptor (lazily allocated on
 /// `gc.infra`; freed in `Runtime.deinit`). `fqcn = "Instant"` so `(class …)`
 /// prints the simple name (AD-003 / no-JVM); `temporal_print = .iso_instant` drives the
@@ -77,6 +100,8 @@ pub fn descriptorOf(rt: *Runtime) !*const TypeDescriptor {
         .{ "getEpochSecond", &getEpochSecondFn },
         .{ "getNano", &getNanoFn },
         .{ "toEpochMilli", &toEpochMilliFn },
+        .{ "isBefore", &isBeforeFn },
+        .{ "isAfter", &isAfterFn },
     };
     const entries = try rt.gc.infra.alloc(TypeDescriptor.MethodEntry, specs.len);
     inline for (specs, 0..) |spec, i| {

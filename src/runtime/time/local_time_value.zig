@@ -58,6 +58,24 @@ fn getNanoFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) 
     return Value.initInteger(@rem(nanoOfDayOf(args[0]), 1_000_000_000));
 }
 
+/// `(.isBefore a b)` — true when `a` is before `b` (JVM `LocalTime.isBefore`).
+fn isBeforeFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = env;
+    try error_catalog.checkArity("isBefore", args, 2, loc);
+    if (!isLocalTime(rt, args[1]))
+        return error_catalog.raise(.type_arg_invalid, loc, .{ .fn_name = ".isBefore", .expected = "LocalTime", .actual = @tagName(args[1].tag()) });
+    return Value.initBoolean(nanoOfDayOf(args[0]) < nanoOfDayOf(args[1]));
+}
+
+/// `(.isAfter a b)` — true when `a` is after `b` (JVM `LocalTime.isAfter`).
+fn isAfterFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = env;
+    try error_catalog.checkArity("isAfter", args, 2, loc);
+    if (!isLocalTime(rt, args[1]))
+        return error_catalog.raise(.type_arg_invalid, loc, .{ .fn_name = ".isAfter", .expected = "LocalTime", .actual = @tagName(args[1].tag()) });
+    return Value.initBoolean(nanoOfDayOf(args[0]) > nanoOfDayOf(args[1]));
+}
+
 /// The per-Runtime canonical LocalTime descriptor (lazily allocated on
 /// `gc.infra`; freed in `Runtime.deinit`). `fqcn = "LocalTime"` so
 /// `(class …)` prints the simple name (AD-003 / no-JVM);
@@ -81,6 +99,8 @@ pub fn descriptorOf(rt: *Runtime) !*const TypeDescriptor {
         .{ "getMinute", &getMinuteFn },
         .{ "getSecond", &getSecondFn },
         .{ "getNano", &getNanoFn },
+        .{ "isBefore", &isBeforeFn },
+        .{ "isAfter", &isAfterFn },
     };
     const entries = try rt.gc.infra.alloc(TypeDescriptor.MethodEntry, specs.len);
     inline for (specs, 0..) |spec, i| {
