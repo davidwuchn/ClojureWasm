@@ -62,6 +62,118 @@ fn plusDaysFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation)
     return make(rt, epochDayOf(args[0]) + args[1].asInteger());
 }
 
+/// `(.minusDays d n)` — the date `n` days earlier (JVM `LocalDate.minusDays`).
+fn minusDaysFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = env;
+    try error_catalog.checkArity("minusDays", args, 2, loc);
+    if (args[1].tag() != .integer)
+        return error_catalog.raise(.type_arg_invalid, loc, .{ .fn_name = "minusDays", .expected = "integer", .actual = @tagName(args[1].tag()) });
+    return make(rt, epochDayOf(args[0]) - args[1].asInteger());
+}
+
+/// `(.plusWeeks d n)` — the date `7*n` days later (JVM `LocalDate.plusWeeks`).
+fn plusWeeksFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = env;
+    try error_catalog.checkArity("plusWeeks", args, 2, loc);
+    if (args[1].tag() != .integer)
+        return error_catalog.raise(.type_arg_invalid, loc, .{ .fn_name = "plusWeeks", .expected = "integer", .actual = @tagName(args[1].tag()) });
+    return make(rt, epochDayOf(args[0]) + 7 * args[1].asInteger());
+}
+
+/// `(.minusWeeks d n)` — the date `7*n` days earlier (JVM `LocalDate.minusWeeks`).
+fn minusWeeksFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = env;
+    try error_catalog.checkArity("minusWeeks", args, 2, loc);
+    if (args[1].tag() != .integer)
+        return error_catalog.raise(.type_arg_invalid, loc, .{ .fn_name = "minusWeeks", .expected = "integer", .actual = @tagName(args[1].tag()) });
+    return make(rt, epochDayOf(args[0]) - 7 * args[1].asInteger());
+}
+
+/// Civil month-add with JVM day-clamping (the day clamps to the new month's
+/// length, e.g. Jan-31 +1mo → Feb-28/29). Shared by plus/minusMonths.
+fn addMonths(rt: *Runtime, self: Value, n: i64) !Value {
+    const c = instant.civilFromDays(epochDayOf(self));
+    const months_total = c.y * 12 + (c.m - 1) + n;
+    const new_y = @divFloor(months_total, 12);
+    const new_m = @mod(months_total, 12) + 1;
+    const new_d = @min(c.d, lengthOfMonth(new_y, new_m));
+    return make(rt, instant.daysFromCivil(new_y, new_m, new_d));
+}
+
+/// `(.plusMonths d n)` — civil month-add with day-clamping (JVM `LocalDate.plusMonths`).
+fn plusMonthsFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = env;
+    try error_catalog.checkArity("plusMonths", args, 2, loc);
+    if (args[1].tag() != .integer)
+        return error_catalog.raise(.type_arg_invalid, loc, .{ .fn_name = "plusMonths", .expected = "integer", .actual = @tagName(args[1].tag()) });
+    return addMonths(rt, args[0], args[1].asInteger());
+}
+
+/// `(.minusMonths d n)` — civil month-subtract with day-clamping (JVM `LocalDate.minusMonths`).
+fn minusMonthsFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = env;
+    try error_catalog.checkArity("minusMonths", args, 2, loc);
+    if (args[1].tag() != .integer)
+        return error_catalog.raise(.type_arg_invalid, loc, .{ .fn_name = "minusMonths", .expected = "integer", .actual = @tagName(args[1].tag()) });
+    return addMonths(rt, args[0], -args[1].asInteger());
+}
+
+/// Civil year-add with Feb-29 clamp (the day clamps to the target month's
+/// length in the new year). Shared by plus/minusYears.
+fn addYears(rt: *Runtime, self: Value, n: i64) !Value {
+    const c = instant.civilFromDays(epochDayOf(self));
+    const new_y = c.y + n;
+    const new_d = @min(c.d, lengthOfMonth(new_y, c.m));
+    return make(rt, instant.daysFromCivil(new_y, c.m, new_d));
+}
+
+/// `(.plusYears d n)` — civil year-add with Feb-29 clamp (JVM `LocalDate.plusYears`).
+fn plusYearsFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = env;
+    try error_catalog.checkArity("plusYears", args, 2, loc);
+    if (args[1].tag() != .integer)
+        return error_catalog.raise(.type_arg_invalid, loc, .{ .fn_name = "plusYears", .expected = "integer", .actual = @tagName(args[1].tag()) });
+    return addYears(rt, args[0], args[1].asInteger());
+}
+
+/// `(.minusYears d n)` — civil year-subtract with Feb-29 clamp (JVM `LocalDate.minusYears`).
+fn minusYearsFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = env;
+    try error_catalog.checkArity("minusYears", args, 2, loc);
+    if (args[1].tag() != .integer)
+        return error_catalog.raise(.type_arg_invalid, loc, .{ .fn_name = "minusYears", .expected = "integer", .actual = @tagName(args[1].tag()) });
+    return addYears(rt, args[0], -args[1].asInteger());
+}
+
+/// `(.isLeapYear d)` — true when the date's year is a leap year (JVM `LocalDate.isLeapYear`).
+fn isLeapYearFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = rt;
+    _ = env;
+    try error_catalog.checkArity("isLeapYear", args, 1, loc);
+    return Value.initBoolean(isLeap(instant.civilFromDays(epochDayOf(args[0])).y));
+}
+
+/// `(.lengthOfMonth d)` — the number of days in the date's month (JVM `LocalDate.lengthOfMonth`).
+fn lengthOfMonthFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = rt;
+    _ = env;
+    try error_catalog.checkArity("lengthOfMonth", args, 1, loc);
+    const c = instant.civilFromDays(epochDayOf(args[0]));
+    return Value.initInteger(lengthOfMonth(c.y, c.m));
+}
+
+/// Proleptic Gregorian leap-year test. `@mod` keeps it correct for negative years.
+fn isLeap(y: i64) bool {
+    return (@mod(y, 4) == 0 and @mod(y, 100) != 0) or @mod(y, 400) == 0;
+}
+
+/// Days in month `m` (1..12) of year `y`, accounting for February leap years.
+fn lengthOfMonth(y: i64, m: i64) i64 {
+    const dim = [_]i64{ 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31 };
+    if (m == 2 and isLeap(y)) return 29;
+    return dim[@intCast(m - 1)];
+}
+
 /// `(.isBefore a b)` — true when `a` is before `b` (JVM `LocalDate.isBefore`).
 fn isBeforeFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
     _ = env;
@@ -112,6 +224,15 @@ pub fn descriptorOf(rt: *Runtime) !*const TypeDescriptor {
         .{ "getMonthValue", &getMonthValueFn },
         .{ "getDayOfMonth", &getDayOfMonthFn },
         .{ "plusDays", &plusDaysFn },
+        .{ "minusDays", &minusDaysFn },
+        .{ "plusWeeks", &plusWeeksFn },
+        .{ "minusWeeks", &minusWeeksFn },
+        .{ "plusMonths", &plusMonthsFn },
+        .{ "minusMonths", &minusMonthsFn },
+        .{ "plusYears", &plusYearsFn },
+        .{ "minusYears", &minusYearsFn },
+        .{ "isLeapYear", &isLeapYearFn },
+        .{ "lengthOfMonth", &lengthOfMonthFn },
         .{ "isBefore", &isBeforeFn },
         .{ "isAfter", &isAfterFn },
         .{ "isEqual", &isEqualFn },
