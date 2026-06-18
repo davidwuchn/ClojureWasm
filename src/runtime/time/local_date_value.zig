@@ -119,12 +119,7 @@ fn minusWeeksFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocatio
 /// Civil month-add with JVM day-clamping (the day clamps to the new month's
 /// length, e.g. Jan-31 +1mo → Feb-28/29). Shared by plus/minusMonths.
 fn addMonths(rt: *Runtime, self: Value, n: i64) !Value {
-    const c = instant.civilFromDays(epochDayOf(self));
-    const months_total = c.y * 12 + (c.m - 1) + n;
-    const new_y = @divFloor(months_total, 12);
-    const new_m = @mod(months_total, 12) + 1;
-    const new_d = @min(c.d, lengthOfMonth(new_y, new_m));
-    return make(rt, instant.daysFromCivil(new_y, new_m, new_d));
+    return make(rt, instant.addMonthsToEpochDay(epochDayOf(self), n));
 }
 
 /// `(.plusMonths d n)` — civil month-add with day-clamping (JVM `LocalDate.plusMonths`).
@@ -148,10 +143,7 @@ fn minusMonthsFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocati
 /// Civil year-add with Feb-29 clamp (the day clamps to the target month's
 /// length in the new year). Shared by plus/minusYears.
 fn addYears(rt: *Runtime, self: Value, n: i64) !Value {
-    const c = instant.civilFromDays(epochDayOf(self));
-    const new_y = c.y + n;
-    const new_d = @min(c.d, lengthOfMonth(new_y, c.m));
-    return make(rt, instant.daysFromCivil(new_y, c.m, new_d));
+    return make(rt, instant.addYearsToEpochDay(epochDayOf(self), n));
 }
 
 /// `(.plusYears d n)` — civil year-add with Feb-29 clamp (JVM `LocalDate.plusYears`).
@@ -177,7 +169,7 @@ fn isLeapYearFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocatio
     _ = rt;
     _ = env;
     try error_catalog.checkArity("isLeapYear", args, 1, loc);
-    return Value.initBoolean(isLeap(instant.civilFromDays(epochDayOf(args[0])).y));
+    return Value.initBoolean(instant.isLeap(instant.civilFromDays(epochDayOf(args[0])).y));
 }
 
 /// `(.lengthOfMonth d)` — the number of days in the date's month (JVM `LocalDate.lengthOfMonth`).
@@ -186,19 +178,7 @@ fn lengthOfMonthFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLoca
     _ = env;
     try error_catalog.checkArity("lengthOfMonth", args, 1, loc);
     const c = instant.civilFromDays(epochDayOf(args[0]));
-    return Value.initInteger(lengthOfMonth(c.y, c.m));
-}
-
-/// Proleptic Gregorian leap-year test. `@mod` keeps it correct for negative years.
-fn isLeap(y: i64) bool {
-    return (@mod(y, 4) == 0 and @mod(y, 100) != 0) or @mod(y, 400) == 0;
-}
-
-/// Days in month `m` (1..12) of year `y`, accounting for February leap years.
-fn lengthOfMonth(y: i64, m: i64) i64 {
-    const dim = [_]i64{ 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31 };
-    if (m == 2 and isLeap(y)) return 29;
-    return dim[@intCast(m - 1)];
+    return Value.initInteger(instant.lengthOfMonth(c.y, c.m));
 }
 
 /// `(.isBefore a b)` — true when `a` is before `b` (JVM `LocalDate.isBefore`).

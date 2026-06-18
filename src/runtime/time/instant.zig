@@ -69,6 +69,44 @@ pub fn civilFromDays(z_in: i64) Civil {
     return .{ .y = y + @as(i64, if (m <= 2) 1 else 0), .m = m, .d = d };
 }
 
+// --- civil month/year arithmetic (D-462: LocalDate / LocalDateTime calendar) ---
+//
+// Calendar month/year shift with JVM day-clamping, working on `epoch_day`
+// directly. The civil home (this file) owns the math so both LocalDate and
+// LocalDateTime value layers share ONE implementation (DRY).
+
+/// Proleptic Gregorian leap-year test. `@mod` keeps it correct for negative years.
+pub fn isLeap(y: i64) bool {
+    return (@mod(y, 4) == 0 and @mod(y, 100) != 0) or @mod(y, 400) == 0;
+}
+
+/// Days in month `m` (1..12) of year `y`, accounting for February leap years.
+pub fn lengthOfMonth(y: i64, m: i64) i64 {
+    const dim = [_]i64{ 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31 };
+    if (m == 2 and isLeap(y)) return 29;
+    return dim[@intCast(m - 1)];
+}
+
+/// Shift `epoch_day` by `n` calendar months, clamping the day-of-month to the
+/// new month's length (e.g. Jan-31 +1mo → Feb-28/29). JVM `plusMonths` semantics.
+pub fn addMonthsToEpochDay(epoch_day: i64, n: i64) i64 {
+    const c = civilFromDays(epoch_day);
+    const months_total = c.y * 12 + (c.m - 1) + n;
+    const ny = @divFloor(months_total, 12);
+    const nm = @mod(months_total, 12) + 1;
+    const nd = @min(c.d, lengthOfMonth(ny, nm));
+    return daysFromCivil(ny, nm, nd);
+}
+
+/// Shift `epoch_day` by `n` calendar years, clamping the day to the target
+/// month's length in the new year (Feb-29 → Feb-28). JVM `plusYears` semantics.
+pub fn addYearsToEpochDay(epoch_day: i64, n: i64) i64 {
+    const c = civilFromDays(epoch_day);
+    const ny = c.y + n;
+    const nd = @min(c.d, lengthOfMonth(ny, c.m));
+    return daysFromCivil(ny, c.m, nd);
+}
+
 const ParseError = error{InvalidInstant};
 
 fn readN(s: []const u8, i: *usize, n: usize) ParseError!i64 {

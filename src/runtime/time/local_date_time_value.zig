@@ -295,6 +295,44 @@ fn minusNanosFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocatio
     return addNanos(rt, args[0], -args[1].asInteger());
 }
 
+/// `(.plusMonths d n)` — `n` calendar months later on the DATE part (day
+/// clamps to the new month's length), time-of-day kept (JVM `LocalDateTime.plusMonths`).
+fn plusMonthsFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = env;
+    try error_catalog.checkArity("plusMonths", args, 2, loc);
+    if (args[1].tag() != .integer)
+        return error_catalog.raise(.type_arg_invalid, loc, .{ .fn_name = "plusMonths", .expected = "integer", .actual = @tagName(args[1].tag()) });
+    return make(rt, instant.addMonthsToEpochDay(epochDayOf(args[0]), args[1].asInteger()), nanoOfDayOf(args[0]));
+}
+
+/// `(.minusMonths d n)` — `n` calendar months earlier on the DATE part (JVM `LocalDateTime.minusMonths`).
+fn minusMonthsFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = env;
+    try error_catalog.checkArity("minusMonths", args, 2, loc);
+    if (args[1].tag() != .integer)
+        return error_catalog.raise(.type_arg_invalid, loc, .{ .fn_name = "minusMonths", .expected = "integer", .actual = @tagName(args[1].tag()) });
+    return make(rt, instant.addMonthsToEpochDay(epochDayOf(args[0]), -args[1].asInteger()), nanoOfDayOf(args[0]));
+}
+
+/// `(.plusYears d n)` — `n` calendar years later on the DATE part (Feb-29 clamp),
+/// time-of-day kept (JVM `LocalDateTime.plusYears`).
+fn plusYearsFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = env;
+    try error_catalog.checkArity("plusYears", args, 2, loc);
+    if (args[1].tag() != .integer)
+        return error_catalog.raise(.type_arg_invalid, loc, .{ .fn_name = "plusYears", .expected = "integer", .actual = @tagName(args[1].tag()) });
+    return make(rt, instant.addYearsToEpochDay(epochDayOf(args[0]), args[1].asInteger()), nanoOfDayOf(args[0]));
+}
+
+/// `(.minusYears d n)` — `n` calendar years earlier on the DATE part (JVM `LocalDateTime.minusYears`).
+fn minusYearsFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = env;
+    try error_catalog.checkArity("minusYears", args, 2, loc);
+    if (args[1].tag() != .integer)
+        return error_catalog.raise(.type_arg_invalid, loc, .{ .fn_name = "minusYears", .expected = "integer", .actual = @tagName(args[1].tag()) });
+    return make(rt, instant.addYearsToEpochDay(epochDayOf(args[0]), -args[1].asInteger()), nanoOfDayOf(args[0]));
+}
+
 const NS_PER_SEC: i128 = 1_000_000_000;
 
 /// `(.plus d dur)` — the date-time shifted forward by a Duration (JVM
@@ -367,6 +405,10 @@ pub fn descriptorOf(rt: *Runtime) !*const TypeDescriptor {
         .{ "minusSeconds", &minusSecondsFn },
         .{ "plusNanos", &plusNanosFn },
         .{ "minusNanos", &minusNanosFn },
+        .{ "plusMonths", &plusMonthsFn },
+        .{ "minusMonths", &minusMonthsFn },
+        .{ "plusYears", &plusYearsFn },
+        .{ "minusYears", &minusYearsFn },
         .{ "isBefore", &isBeforeFn },
         .{ "isAfter", &isAfterFn },
         .{ "isEqual", &isEqualFn },
