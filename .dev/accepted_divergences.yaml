@@ -734,3 +734,20 @@ accepted:
       the names are NOT `instance?` targets (no `clojure.lang.*` FQCN to resolve).
     derives_from: "ADR-0059 (no JVM Class) + AD-003 (simple class name, no JVM FQCN) — extended to callables/seq-views/refs which clj backs with generated/reify classes."
     pin: "test/e2e/phase14_class_type.sh — class_fn_anon/class_fn_builtin => Fn, class_multifn => MultiFn, class_lazyseq/range/chunkseq/future/agent/atom/ref/volatile/delay/reduced/tvec, and class_fn_isa_ifn (the IFn isa? still resolves through the renamed callable classes)."
+  - id: "AD-045"
+    summary: "`send-via` / `set-agent-send-executor!` / `set-agent-send-off-executor!` RAISE (`value_error`) instead of dispatching on / configuring a user-supplied executor — cljw has no `java.util.concurrent.ExecutorService` type, so there is no executor to pass or configure. clj runs these for real against its global agent thread pools."
+    example: '(send-via my-executor a inc) / (set-agent-send-executor! my-executor) => cljw raises "ClojureWasm has no configurable executor — agents run on a per-agent worker …" / clj dispatches-via / mutates the pool.'
+    why: |-
+      cljw's agent model (ADR-0093 / D-388) is one DETACHED worker thread per
+      agent, not a shared, user-configurable `ExecutorService` pool — and cljw
+      exposes no `java.util.concurrent` executor TYPE at all, so a user has no
+      executor value to pass. The three executor-shaped functions therefore have
+      nothing real to thread or configure. Silently accepting-and-ignoring the
+      explicitly-passed executor would MASK a dropped semantic (the user thinks
+      work runs on their bounded pool) — the permanent-no-op the project forbids —
+      so the honest disposition is an explicit error (ADR-0155, DA-fork-confirmed).
+      The deprecated `agent-errors`/`clear-agent-errors` + (future) `*agent*` /
+      `release-pending-sends` are implemented for real; only the executor surface
+      diverges, because it presupposes a subsystem cljw deliberately lacks.
+    derives_from: "ADR-0093 (per-agent worker, no shared pool) + ADR-0155 (D-442 classification) + the no-`java.util.concurrent`-executor model + provisional_marker.md permanent-no-op-forbidden."
+    pin: "test/e2e/phase16_agent.sh — agent_send_via_raises / agent_set_executor_raises / agent_set_off_executor_raises (all three raise the no-configurable-executor message)."

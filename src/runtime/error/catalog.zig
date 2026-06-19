@@ -146,6 +146,7 @@ pub const Code = enum {
     locking_needs_object,
     locking_nest_overflow,
     agent_failed,
+    agent_executor_unsupported,
     catch_class_unknown,
     class_name_unknown,
     catch_binding_not_symbol,
@@ -898,6 +899,11 @@ pub fn entry(comptime code: Code) Entry {
             .kind = .value_error,
             .phase = .eval,
             .template = "agent is failed (an action threw in :fail error mode) — restart-agent it to send again",
+        },
+        .agent_executor_unsupported => .{
+            .kind = .value_error,
+            .phase = .eval,
+            .template = "ClojureWasm has no configurable executor — agents run on a per-agent worker, not a user-supplied thread pool. Use send / send-off instead",
         },
         .catch_class_unknown => .{
             .kind = .name_error,

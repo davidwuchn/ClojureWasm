@@ -192,6 +192,18 @@ pub fn awaitFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation
     return p;
 }
 
+/// `send-via` / `set-agent-send-executor!` / `set-agent-send-off-executor!`
+/// (ADR-0155 / AD-045): cljw exposes no configurable executor — agents run on a
+/// per-agent worker, not a user-supplied `ExecutorService`. Silently ignoring the
+/// user's explicit executor would mask a dropped semantic (permanent-no-op
+/// forbidden), so these raise explicitly rather than no-op or fake-accept.
+pub fn executorUnsupportedFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = rt;
+    _ = env;
+    _ = args;
+    return error_catalog.raise(.agent_executor_unsupported, loc, .{});
+}
+
 const Entry = struct {
     name: []const u8,
     f: dispatch.BuiltinFn,
@@ -208,6 +220,10 @@ const ENTRIES = [_]Entry{
     .{ .name = "set-error-handler!", .f = &setErrorHandlerFn },
     .{ .name = "error-handler", .f = &errorHandlerFn },
     .{ .name = "__agent-await", .f = &awaitFn },
+    // ADR-0155 / AD-045 — no configurable executor in cljw; these raise.
+    .{ .name = "send-via", .f = &executorUnsupportedFn },
+    .{ .name = "set-agent-send-executor!", .f = &executorUnsupportedFn },
+    .{ .name = "set-agent-send-off-executor!", .f = &executorUnsupportedFn },
 };
 
 pub fn register(env: *Env, rt_ns: *env_mod.Namespace) !void {

@@ -981,6 +981,18 @@
 (def error-mode
   (fn* [a] (if (__agent-fail-mode? a) :fail :continue)))
 
+;; `agent-errors` / `clear-agent-errors` — clj-DEPRECATED multi-error API,
+;; superseded by `agent-error` (singular) which cljw has (ADR-0155 / D-442).
+;; Defined as sugar over the live primitives: a cljw agent holds at most one
+;; error, so agent-errors returns a one-element seq (or nil), and
+;; clear-agent-errors is clj's exact `(restart-agent a @a)` (so on a NON-failed
+;; agent it inherits restart-agent's behaviour — a separate pre-existing gap:
+;; clj rejects "does not need a restart", cljw currently permits it).
+(def agent-errors
+  (fn* [a] (when-let [e (agent-error a)] (list e))))
+(def clear-agent-errors
+  (fn* [a] (restart-agent a (deref a)) nil))
+
 ;; `(io! & body)` — guard I/O against transaction retry. A `dosync` body may run
 ;; more than once, so I/O inside it would repeat; `io!` throws
 ;; IllegalStateException when a transaction is running on this thread, else runs

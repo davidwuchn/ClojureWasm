@@ -132,5 +132,27 @@ assert_eq 'agent_remove_watch' "$got" '[1 1]'
 got=$("$BIN" -e '(let [seen (atom nil) a (agent 10)] (add-watch a :k (fn [k r o n] (reset! seen (= r a)))) (send a inc) (await a) @seen)' 2>/dev/null | last_line)
 assert_eq 'agent_watch_ref_arg' "$got" 'true'
 
+# ADR-0155 / AD-045 (D-442): the executor-shaped fns RAISE — cljw has no
+# configurable executor (silently accepting the user's executor would be a lie).
+out=$("$BIN" -e '(send-via :ex (agent 0) inc)' 2>&1 || true)
+case "$out" in *"no configurable executor"*) echo "PASS agent_send_via_raises" ;; *) fail "send_via: expected executor error, got '$out'" ;; esac
+out=$("$BIN" -e '(set-agent-send-executor! :ex)' 2>&1 || true)
+case "$out" in *"no configurable executor"*) echo "PASS agent_set_executor_raises" ;; *) fail "set_executor: expected executor error, got '$out'" ;; esac
+out=$("$BIN" -e '(set-agent-send-off-executor! :ex)' 2>&1 || true)
+case "$out" in *"no configurable executor"*) echo "PASS agent_set_off_executor_raises" ;; *) fail "set_off_executor: expected executor error, got '$out'" ;; esac
+# agent-errors (clj-deprecated) over the live agent-error: nil for a non-failed agent.
+got=$("$BIN" -e '(prn (agent-errors (agent 0)))' 2>/dev/null | last_line)
+assert_eq 'agent_errors_nil' "$got" 'nil'
+# clear-agent-errors on a FAILED agent clears it (= clj restart-agent a @a).
+got=$("$BIN" - <<'EOF' 2>/dev/null | last_line
+(def a (agent 0 :error-mode :fail))
+(send a (fn [_] (throw (ex-info "boom" {}))))
+(loop [n 0] (when (and (nil? (agent-error a)) (< n 200)) (Thread/sleep 5) (recur (inc n))))
+(clear-agent-errors a)
+(prn [(agent-error a) @a])
+EOF
+)
+assert_eq 'clear_agent_errors_failed' "$got" '[nil 0]'
+
 echo
 echo "Phase B #6 agent (first slice + error modes) e2e: all green."
