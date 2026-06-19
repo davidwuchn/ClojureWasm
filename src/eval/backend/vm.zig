@@ -1403,7 +1403,12 @@ inline fn stepOnce(
                         return error_catalog.raise(.feature_not_supported, .{}, .{ .name = "method declared but not implemented" });
                     const args_slice = stack[sp - arg_count .. sp];
                     const vt = rt.vtable orelse return error.NoVTable;
-                    const result = try vt.callFn(rt, env, me.method_val, args_slice, .{});
+                    // D-326: frame the user `<protocol>/<method>` so the interop form
+                    // `(.m inst)` traces match the protocol-fn form — parity with
+                    // TreeWalk's evalInstanceMember (shared helper; host methods elide).
+                    const pushed = error_mod.pushUserMethodFrame(me.protocol_name, me.method_name, instr_loc);
+                    defer if (pushed) error_mod.popFrame();
+                    const result = try vt.callFn(rt, env, me.method_val, args_slice, instr_loc);
                     sp -= arg_count;
                     stack[sp] = result;
                     sp += 1;

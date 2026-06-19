@@ -371,6 +371,31 @@ pub fn updateTopFrame(loc: SourceLocation) void {
     }
 }
 
+/// Trace-visibility SSOT (D-332 / AD-024): a frame is user-meaningful iff its ns
+/// is neither cljw's embedded stdlib (`clojure.*`) nor its own surface (`cljw.*`).
+/// Host implementation (builtins, java.* interop) is elided uniformly. Shared by
+/// `tree_walk.isUserNs` (the IFn-path `calleeFrame`) and both backends'
+/// interop-method frame push (D-326), so the discipline has one definition.
+pub fn isUserTraceNs(ns: ?[]const u8) bool {
+    const n = ns orelse return false;
+    if (std.mem.startsWith(u8, n, "clojure.")) return false;
+    if (std.mem.startsWith(u8, n, "cljw.")) return false;
+    return true;
+}
+
+/// D-326: push a `<protocol>/<method>` trace frame for an interop method call
+/// `(.m inst)` that dispatched to a USER deftype/reify/extend method, giving it
+/// parity with the protocol-fn call form `(m inst)` (which frames via
+/// `calleeFrame`). Host interface methods (`clojure.*`/`cljw.*` protocol) and
+/// host java.* interop (which never reach a user MethodEntry) elide. Returns
+/// whether a frame was pushed (caller pops iff true). Both backends call this at
+/// their interop dispatch site, just before `vt.callFn(me.method_val, …)`.
+pub fn pushUserMethodFrame(protocol_name: []const u8, method_name: []const u8, loc: SourceLocation) bool {
+    if (!isUserTraceNs(protocol_name)) return false;
+    updateTopFrame(loc);
+    return pushFrame(.{ .fn_name = method_name, .ns = protocol_name, .file = loc.file, .line = loc.line, .column = loc.column });
+}
+
 pub fn getCallStack() []const StackFrame {
     return call_stack[0..stack_depth];
 }

@@ -756,6 +756,15 @@ fn evalInstanceMember(rt: *Runtime, env: *Env, locals: []Value, n: node_mod.Inte
         .name = "method declared but not implemented",
     });
     const vt = rt.vtable orelse return error.NoVTable;
+    // D-326: frame the user-meaningful `<protocol>/<method>` for the interop form
+    // `(.m inst)` so its trace matches the protocol-fn call form `(m inst)` (which
+    // frames via `calleeFrame`). The shared helper gates on the trace-visibility
+    // SSOT (host interface methods + host java.* interop elide); the deftype/extend
+    // body fn is framed separately by `calleeFrame` inside `vt.callFn`, so this
+    // adds only the dispatch frame (parity, not a double). The VM mirrors this at
+    // op_method_call (dual-backend parity).
+    const pushed = error_mod.pushUserMethodFrame(me.protocol_name, me.method_name, n.loc);
+    defer if (pushed) error_mod.popFrame();
     return vt.callFn(rt, env, me.method_val, args_buf, n.loc);
 }
 
@@ -1092,10 +1101,9 @@ fn evalCall(rt: *Runtime, env: *Env, locals: []Value, n: node_mod.CallNode) !Val
 /// by namespace, not by how the callable happens to be implemented. (Diverges
 /// from clj, which shows `clojure.core` frames — see AD-024.)
 fn isUserNs(ns: ?[]const u8) bool {
-    const n = ns orelse return false;
-    if (std.mem.startsWith(u8, n, "clojure.")) return false;
-    if (std.mem.startsWith(u8, n, "cljw.")) return false;
-    return true;
+    // Trace-visibility SSOT lives in error_mod (shared with the VM's interop
+    // frame push, D-326); calleeFrame's IFn-path gate delegates to it.
+    return error_mod.isUserTraceNs(ns);
 }
 
 /// Build the `Trace:` frame for a callable, or `null` to ELIDE it. Named

@@ -465,16 +465,6 @@ active:
       metadata is literal so impact is narrow; surfaced by integrant's defmulti
       `{:arglists '([k v])}`. Cross-ref D-183 (defn meta), defmulti docstring fix.
     last_reviewed: "2026-06-07"
-  - id: "D-326"
-    status: "blocked-by: ADR-0119 Stage 2 landing (2026-06-08). Interop method calls `(.m o)` (evalInstanceMember tree_walk.zig:672 / op_method_call vm.zig:838) and `(T/m x)` (evalStaticMethodCall :738 / op_static_method_call :902) are a SECOND callable family distinct from the IFn `treeWalkCall` choke point. They carry method + receiver-type names on InteropCallNode, so they CAN push `<fqcn>.<m>` trace frames — but via a separate push site. Deferred from cycle 3's IFn-path trace."
-    category: "error-system"
-    barrier: |-
-      The IFn-dispatch trace (ADR-0119 Stage 2) lands first via the single
-      treeWalkCall choke point; interop method frames are a secondary push
-      family at 4 sites (2 backends x instance/static). Resolve when interop
-      methods should appear in traces (clj shows them; v0 did not). Cross-ref
-      ADR-0119 area D, dual_backend_parity.md (4 sites, both backends).
-    last_reviewed: "2026-06-08"
   - id: "D-341"
     status: "open — security (SE-8, eval-free deploy build). `eval` (+ read-string) is public with no confinement story. read-string is ALREADY eval-free by design (ADR-0122 / AD-026 — `#=` not evaluated; the read-eval RCE footgun is closed). The residual is the `eval`/nREPL surface itself: a deployed serverless edge binary should be able to ship eval-free, author opts IN."
     category: "security"
@@ -2054,6 +2044,10 @@ standing:
     barrier: "open after the D-440 arc completes (R4 + R5 must first rewrite the bulk of 'Phase N' citations to gap-area terms). Premature adoption = ~70 dangling citations with no 1:1 redirect. Trigger: D-440 R4/R5 done + a user nod to re-architect the planning axis (it is depth-4, the project's organizing metaphor)."
     last_reviewed: "2026-06-15"
 discharged:
+  - id: "D-326"
+    status: "DISCHARGED 2026-06-20 — an interop method call `(.m inst)` that dispatches to a USER deftype/reify/extend method now frames its `<protocol>/<method>` in the trace, giving it parity with the protocol-fn call form `(m inst)` (same `P/calc` + body-fn frames; verified identical). The 'blocked-by ADR-0119 Stage 2' was stale (Stage 2 landed 2026-06-08). Root cause: the interop dispatch calls `me.method_val` directly via `vt.callFn`, which frames the body fn (calleeFrame) but NOT the protocol-dispatch frame the `.protocol_fn` callee path pushes. Fix: a shared `error_mod.pushUserMethodFrame(protocol_name, method_name, loc)` + the `isUserTraceNs` trace-visibility SSOT (info.zig), called at BOTH backends' interop sites — TreeWalk `evalInstanceMember` + VM `op_method_call` (the production path; the default backend is VM per build.zig, so the TreeWalk-only first cut was a no-op until the VM site landed — dual-backend parity per dual_backend_parity.md). `tree_walk.isUserNs` now delegates to the SSOT (one definition for calleeFrame + interop). Host java.* interop has no user MethodEntry (handled by the `orelse` fallback) and host-interface methods (clojure.*/cljw.* protocol) elide — both correctly absent per the D-332/AD-024 user-frames-only discipline. `op_static_method_call` NOT touched: user types have no static methods (all static interop is host → elided), so a push there would be dead. VM callFn loc upgraded `.{}` → instr_loc (parity + better interop error locations). e2e phase14_error_format +2 cases (13b interop user-method framed, 13c host interop elided)."
+    category: "error-system"
+    last_reviewed: "2026-06-20"
   - id: "D-327"
     status: "DISCHARGED 2026-06-20 — `(pr <builtin>)` now names builtins `#<rt/+>` instead of the nameless `#builtin`. The 'blocked-by ADR-0119 Stage 1+2' was stale (Stage 1+2 long landed); the reverse-map was just unbuilt. `Env.builtin_names` (AutoHashMapUnmanaged(usize, BuiltinIdentity{ns,name})) is built by `Env.indexBuiltinNames` at the end of `primitive.registerAll` (after every builtin is interned, before core.clj loads) by scanning each namespace's OWN mappings for builtin_fn-valued Vars; the printer reads it via a borrowed pointer (`print.setBuiltinNameMap`, mirror of the fn_name_accessor injection), cleared to null at Env.deinit so it never dangles. Home ns is TRUTHFUL (rt for the Zig primitives — matches `(resolve '+)` => `#'rt/+`; clojure.core/string/set for builtins interned there). A fn-pointer bound under several names (`inc`/`inc'`, `+`/`+'`) resolves DETERMINISTICALLY via `prefersBuiltinName` (shorter-then-lex-then-ns) — NOT hashmap iteration order, which would vary the printed name by build. clj's `#object[clojure.core$_PLUS_ 0x… …]` divergence folded into AD-025 (the callable-print envelope that always anticipated D-327). Pre-bootstrap fallback `#<builtin>`. e2e phase14_callable_print +3 cases. New `Value.builtinFnPayload()` helper."
     category: "error-system"

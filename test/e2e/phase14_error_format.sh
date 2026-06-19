@@ -161,6 +161,32 @@ else
     fail "error_trace_discipline: expected a user/ frame in the trace, got '$trace'"
 fi
 
+# --- Case 13b (D-326): a USER deftype/protocol method called via the INTEROP
+#     form `(.calc w x)` now shows its `<protocol>/<method>` frame in the trace,
+#     just like the protocol-fn form `(calc w x)` does. Before D-326 the interop
+#     path dropped the user-meaningful frame (the method vanished from the trace). ---
+out=$(printf '(defprotocol P (calc [this x]))\n(deftype Worker [] P (calc [this x] (/ x 0)))\n(defn run [w] (.calc w 1))\n(run (->Worker))\n' | "$BIN" - 2>&1 || true)
+trace=$(printf '%s' "$out" | awk '/Trace:/{f=1} f')
+case "$trace" in
+    *"Trace:"*"P/calc"*"user/run"*)
+        echo "PASS error_trace_interop_user_method -> interop call frames the user method (P/calc)" ;;
+    *)
+        fail "error_trace_interop_user_method: expected P/calc + user/run in the trace, got '$trace'" ;;
+esac
+
+# --- Case 13c (D-326 / D-332): a HOST interop method call (java.* receiver) stays
+#     ELIDED — host implementation is not user-meaningful, same as builtins. The
+#     trace shows the user caller but NO java/Integer frame. ---
+out=$(printf '(defn run2 [] (Integer/parseInt "bad"))\n(run2)\n' | "$BIN" - 2>&1 || true)
+trace=$(printf '%s' "$out" | awk '/Trace:/{f=1} f')
+if printf '%s' "$trace" | grep -qiE 'java|integer|parseint'; then
+    fail "error_trace_host_interop_elided: a host interop frame leaked: '$trace'"
+elif printf '%s' "$trace" | grep -q 'user/run2'; then
+    echo "PASS error_trace_host_interop_elided -> host interop frame elided (user/run2 only)"
+else
+    fail "error_trace_host_interop_elided: expected user/run2 in the trace, got '$trace'"
+fi
+
 # --- Case 14 (ADR-0120 Stage A): a synthesized internal exception carries its
 #     ORIGIN location across a catch -> re-throw, so it renders WHERE it came
 #     from (not "unknown"). Before ADR-0120 buildThrownInfo dropped the location
