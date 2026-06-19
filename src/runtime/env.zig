@@ -298,6 +298,12 @@ pub fn setBinding(v: *const Var, val: Value) bool {
 
 pub const NamespaceMap = std.StringHashMapUnmanaged(*Namespace);
 
+/// The home `{ns, name}` of a builtin_fn, keyed by its function-pointer address
+/// in `Env.builtin_names` (D-327). Both fields borrow namespace-owned memory
+/// (the `Namespace.name` + the `mappings` key) that lives as long as the Env, so
+/// the reverse-index stores no copies.
+pub const BuiltinIdentity = struct { ns: []const u8, name: []const u8 };
+
 /// Per-session namespace graph.
 pub const Env = struct {
     /// Process-wide handle. Multiple Envs may share one Runtime.
@@ -326,6 +332,14 @@ pub const Env = struct {
     /// `deinit`. D-255 = per-extent reclamation (a generation-handle slotmap).
     local_var_ns: ?*Namespace = null,
     local_vars: std.ArrayList(*Var) = .empty,
+
+    /// Reverse-index `builtin_fn ptr → {home ns, name}` for `(pr <builtin>)`
+    /// (D-327): a builtin is a bare fn-pointer with no name slot, so the printer
+    /// reads its qualified name (`#<rt/+>`) through this map instead of leaking
+    /// the nameless `#builtin`. Built once by `indexBuiltinNames` after
+    /// `primitive.registerAll` interns every builtin; values borrow ns-owned
+    /// memory (see `BuiltinIdentity`). The map's own buckets are freed in `deinit`.
+    builtin_names: std.AutoHashMapUnmanaged(usize, BuiltinIdentity) = .empty,
 
     /// Initialise with the three startup namespaces:
     ///   - `rt`           → kernel primitives (`+`, `=`, `count`, …)
@@ -406,6 +420,14 @@ pub const Env = struct {
         for (self.local_vars.items) |v| self.alloc.destroy(v);
         self.local_vars.deinit(self.alloc);
         if (self.local_var_ns) |ns| self.alloc.destroy(ns);
+        // D-327: clear the printer's borrowed pointer FIRST (it may point at this
+        // map), then free the reverse-index buckets. The BuiltinIdentity fields
+        // borrow ns-owned memory freed by the namespace loop below, so only the
+        // map's own storage is released here. The clear is unconditional — the
+        // fallback (`#<builtin>`) is safe, so over-clearing a still-live other Env
+        // only degrades cosmetics, never dangles.
+        @import("print.zig").setBuiltinNameMap(null);
+        self.builtin_names.deinit(self.alloc);
         var it = self.namespaces.iterator();
         while (it.next()) |entry| {
             self.alloc.free(entry.key_ptr.*);
@@ -415,6 +437,45 @@ pub const Env = struct {
         self.namespaces.deinit(self.alloc);
         self.namespaces = .empty;
         self.current_ns = null;
+    }
+
+    /// Build the `builtin_fn ptr → {ns, name}` reverse-index (D-327) by walking
+    /// every namespace's OWN mappings (refers are excluded — a builtin's home is
+    /// the ns it was interned into) and recording each builtin_fn-valued Var's
+    /// home ns + name. Run once by `primitive.registerAll` after all builtins are
+    /// interned and before `core.clj` loads (so only the bare Zig primitives are
+    /// builtin_fn; later `.clj` defns are fn_val, named via their own accessor).
+    /// One fn-pointer is often bound under several names (`inc`/`inc'`, `+`/`+'`),
+    /// so the winner is chosen by `prefersBuiltinName` (deterministically — NOT
+    /// by hashmap iteration order, which would make the printed name vary by
+    /// build): shorter name wins, then lexicographically smaller name, then ns.
+    pub fn indexBuiltinNames(self: *Env) !void {
+        var ns_it = self.namespaces.iterator();
+        while (ns_it.next()) |ns_entry| {
+            const ns = ns_entry.value_ptr.*;
+            var m_it = ns.mappings.iterator();
+            while (m_it.next()) |m_entry| {
+                const v = m_entry.value_ptr.*.root;
+                if (v.tag() != .builtin_fn) continue;
+                const cand: BuiltinIdentity = .{ .ns = ns.name, .name = m_entry.value_ptr.*.name };
+                const gop = try self.builtin_names.getOrPut(self.alloc, v.builtinFnPayload());
+                if (!gop.found_existing or prefersBuiltinName(cand, gop.value_ptr.*))
+                    gop.value_ptr.* = cand;
+            }
+        }
+    }
+
+    /// Deterministic tie-break for a builtin bound under multiple names: prefer
+    /// the shorter name (so `inc` beats `inc'`, `+` beats `+'`), then the
+    /// lexicographically smaller name, then the smaller ns. Pure ordering, so the
+    /// reverse-index is independent of hashmap iteration order.
+    fn prefersBuiltinName(cand: BuiltinIdentity, cur: BuiltinIdentity) bool {
+        if (cand.name.len != cur.name.len) return cand.name.len < cur.name.len;
+        return switch (std.mem.order(u8, cand.name, cur.name)) {
+            .lt => true,
+            .gt => false,
+            .eq => std.mem.order(u8, cand.ns, cur.ns) == .lt,
+        };
     }
 
     /// Get a namespace by name; create + register one if missing.

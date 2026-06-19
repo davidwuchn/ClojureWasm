@@ -560,6 +560,17 @@ pub fn setFnNameAccessor(f: *const fn (Value) FnIdentity) void {
     fn_name_accessor = f;
 }
 
+/// Borrowed reverse-index `builtin_fn ptr → {ns, name}` (owned by `Env`, D-327).
+/// Lets the `.builtin_fn` print arm render `#<rt/+>` instead of the nameless
+/// `#builtin`. null until `setBuiltinNameMap` installs it at bootstrap; cleared
+/// to null at `Env.deinit` (the map's storage is freed there) so it never
+/// dangles. Keyed by `Value.builtinFnPayload()`.
+var builtin_name_map: ?*const std.AutoHashMapUnmanaged(usize, env_mod.BuiltinIdentity) = null;
+
+pub fn setBuiltinNameMap(m: ?*const std.AutoHashMapUnmanaged(usize, env_mod.BuiltinIdentity)) void {
+    builtin_name_map = m;
+}
+
 /// Write a callable in the `#<ns/name>` form (AD-025): the AD-002 `#<…>` envelope
 /// filled with the qualified name instead of clj's munged `#object[class 0xHASH]`.
 /// A null `name` (truly anonymous) renders `#<fn>`; a null `ns` drops the prefix.
@@ -877,7 +888,14 @@ fn printValueNative(w: *Writer, v: Value) anyerror!void {
         .integer => try w.print("{d}", .{v.asInteger()}),
         .float => try printFloat(w, v.asFloat()),
         .char => if (print_readably) try printCharReadable(w, v.asChar()) else try printCharRaw(w, v.asChar()),
-        .builtin_fn => try w.writeAll("#builtin"),
+        // D-327 / AD-044: a builtin prints its qualified name `#<rt/+>` via the
+        // Env-owned reverse-index, falling back to `#<builtin>` only if the index
+        // is not installed (e.g. a pre-bootstrap print). clj prints
+        // `#object[clojure.core$_PLUS_ 0x… …]` — the AD-044 divergence.
+        .builtin_fn => {
+            const id: ?env_mod.BuiltinIdentity = if (builtin_name_map) |m| m.get(v.builtinFnPayload()) else null;
+            if (id) |bi| try printCallable(w, bi.ns, bi.name) else try w.writeAll("#<builtin>");
+        },
         .keyword => {
             const k = keyword.asKeyword(v);
             try w.writeByte(':');

@@ -39,6 +39,30 @@ case "$out" in
     *) fail "defmulti: expected #<area>/#<user/area>, got '$out'" ;;
 esac
 
+# --- Case builtin_named (D-327): a builtin prints its qualified name #<rt/+>,
+# not the nameless internal tag #builtin (the home ns is rt — matches
+# (resolve '+) => #'rt/+). clj prints #object[clojure.core$_PLUS_ …] = AD-025. ---
+out=$(printf '(println (pr-str +))\n' | "$BIN" - 2>&1 || true)
+case "$out" in
+    *"#builtin"*) fail "builtin_named: leaked nameless #builtin: '$out'" ;;
+    *"#<rt/+>"*) echo "PASS callable_builtin_named -> #<rt/+>" ;;
+    *) fail "builtin_named: expected #<rt/+>, got '$out'" ;;
+esac
+
+# --- Case builtin_inc: another builtin names cleanly ---
+out=$(printf '(println (pr-str inc))\n' | "$BIN" - 2>&1 || true)
+case "$out" in
+    *"#<rt/inc>"*) echo "PASS callable_builtin_inc -> #<rt/inc>" ;;
+    *) fail "builtin_inc: expected #<rt/inc>, got '$out'" ;;
+esac
+
+# --- Case builtin_str_eq_pr: (str +) and (pr-str +) render identically ---
+out=$(printf '(println (= (str +) (pr-str +)))\n' | "$BIN" - 2>&1 || true)
+case "$out" in
+    *"true"*) echo "PASS callable_builtin_str_eq_pr -> str matches pr" ;;
+    *) fail "builtin_str_eq_pr: expected true, got '$out'" ;;
+esac
+
 # --- Case str_eq_pr: (str fn) and (pr-str fn) render identically (clj agrees) ---
 out=$(printf '(defn boom [] 1)\n(println (= (str boom) (pr-str boom)))\n' | "$BIN" - 2>&1 || true)
 case "$out" in

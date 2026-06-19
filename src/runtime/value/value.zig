@@ -233,6 +233,13 @@ pub const Value = enum(u64) {
         return @ptrFromInt(raw);
     }
 
+    /// The raw builtin_fn function-pointer address as a `usize`, type-erased —
+    /// the key for the builtin name reverse-index (D-327). Caller must already
+    /// know `self.tag() == .builtin_fn`.
+    pub fn builtinFnPayload(self: Value) usize {
+        return @intCast(@intFromEnum(self) & nb.NB_PAYLOAD_MASK);
+    }
+
     pub fn isNil(self: Value) bool {
         return self == Value.nil_val;
     }

@@ -264,15 +264,6 @@ active:
       on a gate flake here, re-run (it is intermittent). No standalone-reproducible
       defect. Cross-ref D-244 / D-253 / memory gate_parallel_e2e_timeout.
     last_reviewed: "2026-06-06"
-  - id: "D-327"
-    status: "blocked-by: ADR-0119 Stage 1+2 landing (2026-06-08). Builtins are NaN-boxed immediate fn-pointers (value.zig:221) with no name slot, so `(pr +)` shows `#builtin` not `#object[clojure.core/+]`. A reverse `ptr -> ns/name` map built at `registerAll` (primitive.zig:65) into an rt-owned `AutoHashMap(usize,[]const u8)` would let `pr` name a builtin. Out of trace scope (builtins are elided from traces, ADR-0119 §6). Pure `pr`-parity nicety."
-    category: "error-system"
-    barrier: |-
-      Builtins are elided from traces (ADR-0119), so this is `pr`/metadata
-      parity only, not trace-blocking. Resolve when builtin `pr` naming is worth
-      a reverse-lookup map (cheap, but its own mini-feature). Cross-ref ADR-0119
-      area C, print.zig:601.
-    last_reviewed: "2026-06-08"
   - id: "D-338"
     status: "open — security (SE-2, wasm host-import capability allowlist). FORWARD-LOOKING: today engine.load() instantiates wasm modules with an EMPTY import object (engine.zig:92 `inst_opts`), so only zero-import modules load — safe, but by ACCIDENT. There is no default-deny allowlist; the day the first host import (defineWasi/defineFunc) is wired into load(), it would be granted to ALL modules with no per-load gate. Building the allowlist NOW gates nothing (zero import-providing code path → excessive-skeleton smell), so it is scheduled, not built."
     category: "security"
@@ -2063,6 +2054,10 @@ standing:
     barrier: "open after the D-440 arc completes (R4 + R5 must first rewrite the bulk of 'Phase N' citations to gap-area terms). Premature adoption = ~70 dangling citations with no 1:1 redirect. Trigger: D-440 R4/R5 done + a user nod to re-architect the planning axis (it is depth-4, the project's organizing metaphor)."
     last_reviewed: "2026-06-15"
 discharged:
+  - id: "D-327"
+    status: "DISCHARGED 2026-06-20 — `(pr <builtin>)` now names builtins `#<rt/+>` instead of the nameless `#builtin`. The 'blocked-by ADR-0119 Stage 1+2' was stale (Stage 1+2 long landed); the reverse-map was just unbuilt. `Env.builtin_names` (AutoHashMapUnmanaged(usize, BuiltinIdentity{ns,name})) is built by `Env.indexBuiltinNames` at the end of `primitive.registerAll` (after every builtin is interned, before core.clj loads) by scanning each namespace's OWN mappings for builtin_fn-valued Vars; the printer reads it via a borrowed pointer (`print.setBuiltinNameMap`, mirror of the fn_name_accessor injection), cleared to null at Env.deinit so it never dangles. Home ns is TRUTHFUL (rt for the Zig primitives — matches `(resolve '+)` => `#'rt/+`; clojure.core/string/set for builtins interned there). A fn-pointer bound under several names (`inc`/`inc'`, `+`/`+'`) resolves DETERMINISTICALLY via `prefersBuiltinName` (shorter-then-lex-then-ns) — NOT hashmap iteration order, which would vary the printed name by build. clj's `#object[clojure.core$_PLUS_ 0x… …]` divergence folded into AD-025 (the callable-print envelope that always anticipated D-327). Pre-bootstrap fallback `#<builtin>`. e2e phase14_callable_print +3 cases. New `Value.builtinFnPayload()` helper."
+    category: "error-system"
+    last_reviewed: "2026-06-20"
   - id: "D-337"
     status: "DISCHARGED 2026-06-19 — `(class x)`/`(type x)` no longer leaks the internal heap-tag name. The deferred TypeDescriptor decision turned out NOT to need a print-cycle co-design: a `class_name.displayClassName(tag)` SSOT maps every user-reachable non-NATIVE_ENTRIES tag (callables fn_val/builtin_fn/multi_fn/protocol_fn → Fn/MultiFn; seq views lazy_seq/range/chunked_cons → LazySeq/LongRange/ChunkedSeq; refs atom/agent/ref/volatile/future/promise/delay/reduced → clj simple names; transients; Namespace; tagged_literal) to a stable clj-faithful simple class name, consulted by `runtime.nativeFqcnFor` AFTER `fqcnForTag` (so the names are NOT instance? targets). `isCallableClassName`'s raw-tag set {fn_val,builtin_fn,multi_fn,protocol_fn} → {Fn,MultiFn} so `(isa? (class +) IFn)` still holds. The clj divergence (clj returns a generated/reify class for fns/future/promise) is recorded as AD-044 (derives_from ADR-0059/AD-003). Broader-than-named scope (the row named only callables; the same fallback leaked seq/ref tags, swept together for the 'no raw tag ever leaks' invariant). e2e phase14_class_type +15 cases (the AD-044 pin). NOTE: cljw `(cons …)`/`(seq \"str\")` realize to PersistentList (a pre-existing seq-view divergence, NOT this row); `.cons`/`.string_seq`/`.array_seq` mappings are defensive."
     category: "error-system"

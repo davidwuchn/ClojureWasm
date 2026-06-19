@@ -161,6 +161,13 @@ pub fn registerAll(env: *Env) !void {
     // refer rt into the entering ns; explicit `(require '[rt …])` is
     // not a stable surface, so `user/` retains the rt refer at boot.
     try env.referAll(rt_ns, user_ns);
+
+    // D-327: now that every builtin_fn is interned, build the `ptr → {ns,name}`
+    // reverse-index and hand the printer a borrowed pointer so `(pr +)` renders
+    // `#<rt/+>` instead of the nameless `#builtin`. Runs before `core.clj` loads,
+    // so only the bare Zig primitives are indexed (later `.clj` defns are fn_val).
+    try env.indexBuiltinNames();
+    @import("../runtime/print.zig").setBuiltinNameMap(&env.builtin_names);
 }
 
 // --- tests ---
