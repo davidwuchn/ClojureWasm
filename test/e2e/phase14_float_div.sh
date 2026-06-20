@@ -18,4 +18,13 @@ assert_eq 'mix_fi'    "$("$BIN" -e '(/ 1.0 0)')"    '##Inf'
 assert_eq 'normal'    "$("$BIN" -e '(/ 10.0 2.0)')" '5.0'
 # integer division by zero still raises (JVM ArithmeticException parity)
 assert_has 'int_zero' "$("$BIN" -e '(/ 1 0)' 2>&1)" 'Divide by zero'
-echo "OK — phase14_float_div smoke (7 cases) green"
+# AD-050: a float-zero DIVISOR yields IEEE ±Inf/NaN on EVERY path (1-arg, apply,
+# reduce), consistently. clj's compile-inlined 2-arg literal path also gives Inf,
+# but its RUNTIME Numbers.divide (1-arg / apply / reduce) THROWS "Divide by zero"
+# — a JVM inline-vs-runtime artifact cljw has no equivalent for. cljw is the more
+# consistent surface; these lock cljw's divergent (IEEE, non-throwing) form.
+assert_eq 'ad050_recip'   "$("$BIN" -e '(/ 0.0)')"                 '##Inf'
+assert_eq 'ad050_recip_n' "$("$BIN" -e '(/ -0.0)')"               '##-Inf'
+assert_eq 'ad050_apply'   "$("$BIN" -e '(apply / [1.0 0.0])')"     '##Inf'
+assert_eq 'ad050_reduce'  "$("$BIN" -e '(reduce / [1.0 2.0 0.0])')" '##Inf'
+echo "OK — phase14_float_div smoke (11 cases) green"

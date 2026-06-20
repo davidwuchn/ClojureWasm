@@ -838,3 +838,23 @@ accepted:
       without making `clojure.core` int?'s home ns, which ADR-0033 forbids.
     derives_from: "AD-011 / ADR-0033 (rt-vs-clojure.core primitive placement: core fns live in `rt`, referred into clojure.core) + AD-038 (the sibling reader-macro rt/-qualification) + F-011 (conform/valid?/explain-str/describe all match clj; only the raw captured form's ns differs). The fn-name half is clj-IDENTICAL: cljw's `fn-sym` recovers a predicate's name from its `#<ns/name>` print form, so explain/describe abbreviate to the same `int?` clj shows."
     pin: "test/e2e/phase15_spec.sh — `ad049_form` locks (s/form (s/cat :a int?)) => (clojure.spec.alpha/cat :a rt/int?) (the rt/-qualified captured form), while `explain_named`/`describe` lock the clj-IDENTICAL abbreviated surface."
+  - id: "AD-050"
+    summary: "A float-zero DIVISOR yields IEEE ±Inf/NaN on EVERY cljw `/` path; clj returns ±Inf only on its compile-inlined 2-arg literal path and THROWS `ArithmeticException: Divide by zero` on the runtime path (1-arg `(/ 0.0)`, `(apply / …)`, `(reduce / …)`). An INTEGER-zero divisor throws in BOTH (parity). VALUE-bearing common case `(/ x 0.0)` matches clj (±Inf)."
+    example: '(/ 1.0 0.0) => ##Inf in BOTH ; (/ 0.0) => cljw ##Inf / clj THROW ; (apply / [1.0 0.0]) => cljw ##Inf / clj THROW ; (reduce / [1.0 2.0 0.0]) => cljw ##Inf / clj THROW ; (/ 1 0) => THROW in both'
+    why: |-
+      clj's `clojure.lang.Numbers.divide` throws on a zero divisor of ANY type
+      (incl. 0.0), but the compiler INLINES a 2-arg `/` whose operands it can prove
+      primitive into a raw machine `ddiv` that has no zero check — so `(/ 1.0 0.0)`
+      (literal / let-bound double) returns ±Inf while `(apply / [1.0 0.0])` (forced
+      through the runtime fn) throws. clj is thus internally inconsistent: the SAME
+      operation gives ±Inf or a throw depending on whether the compiler inlined it.
+      cljw is a tree-walk / simple-VM with no such operand-type-inlining pass
+      (ADR-0059-adjacent: no JVM Compiler), so it cannot reproduce the split. It
+      picks the IEEE-consistent surface — a float-zero divisor ALWAYS gives ±Inf/NaN
+      (F-005 numeric tower = IEEE f64 semantics), which matches clj's COMMON inlined
+      `(/ x 0.0)` path and the actual hardware. An integer-zero divisor still throws
+      in both (cljw has no IEEE integer infinity; promote.zig raises divide_by_zero).
+      Matching clj's runtime-path throw would require either replicating JVM inlining
+      or throwing on `(/ 1.0 0.0)` too (breaking the common case) — both worse.
+    derives_from: "F-005 (numeric tower = IEEE f64 semantics: float-zero divisor → ±Inf/NaN, integer-zero → throw) + ADR-0059 (no JVM Compiler — cljw has no operand-type inlining pass, so it cannot reproduce clj's inline-vs-runtime split) + F-011 (the common `(/ x 0.0)` literal path matches clj's inlined ±Inf exactly; only the rare runtime-dispatched 1-arg/apply/reduce path diverges)."
+    pin: "test/e2e/phase14_float_div.sh — `ad050_recip`/`ad050_recip_n`/`ad050_apply`/`ad050_reduce` lock cljw's IEEE ±Inf form (NOT clj's throw) on the runtime paths; `pos_inf`/`int_zero` lock the clj-IDENTICAL inlined-±Inf + integer-throw surfaces."
