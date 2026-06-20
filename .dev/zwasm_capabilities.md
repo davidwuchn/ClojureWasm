@@ -20,20 +20,22 @@ Step 1a) **and every Phase boundary**, the loop MUST:
 3. Treat a capability as **adoptable only when zwasm marks it ready AND cljw bumps
    the pin** (`build.zig.zon`) — never adopt against an unpinned/moving API.
 
-This mirrors the existing **CODEV co-development protocol** (zwasm
-`private/CODEV_PROTOCOL.md` + the `from_cljw_NN`/`to_cljw_NN` mailbox); this ledger
-is its lightweight, always-on, git-tracked face on the cljw side. When cljw actually
-*needs* a not-yet-ready zwasm capability, the request goes through the mailbox
-(finished-form, request-don't-workaround), not a cljw-side shim.
+This is the cljw-side, git-tracked face of the **dogfooding handover protocol**
+(simplified, no-loop, 2-state — `dogfooding_handover/PROTOCOL.md` below). **Also at
+each unit boundary (after a commit, before the next Step 0), check the INBOX**
+(`to_cljw_*.md` with `Status: SENT`); handle it, then flip to `CONSUMED`. When cljw
+needs a not-yet-ready zwasm capability, the request goes out as a `from_cljw_NN.md`
+(finished-form, request-don't-workaround; mark the dependent cljw task PENDING), never
+a cljw-side shim.
 
 ## zwasm live status sources (read these to refresh the table)
 
-| Source                                                               | What it tells you                                         |
-|----------------------------------------------------------------------|-----------------------------------------------------------|
-| `~/Documents/MyProducts/zwasm_from_scratch/private/CODEV_STATUS.md`  | live co-dev state + mailbox + verification snapshot       |
-| `~/Documents/MyProducts/zwasm_from_scratch/.dev/ROADMAP.md`          | zwasm phase plan (p17 = JIT)                              |
-| `~/Documents/MyProducts/zwasm_from_scratch/.dev/decisions/0200_*.md` | ADR-0200 — JIT-DEFAULT engine + research-driven API      |
-| `git -C ~/Documents/MyProducts/zwasm_from_scratch log --oneline -15` | recent JIT work (zwasm#477 multi-arg invoke arm64/x86_64) |
+| Source                                                                   | What it tells you                                              |
+|--------------------------------------------------------------------------|----------------------------------------------------------------|
+| `~/Documents/MyProducts/zwasm_from_scratch/private/dogfooding_handover/` | **the mailbox** — `PROTOCOL.md` + `from_cljw_NN`/`to_cljw_NN` |
+| `~/Documents/MyProducts/zwasm_from_scratch/.dev/ROADMAP.md`              | zwasm phase plan (p17 = JIT)                                   |
+| `~/Documents/MyProducts/zwasm_from_scratch/.dev/decisions/0200_*.md`     | ADR-0200 — JIT-DEFAULT engine + research-driven API           |
+| `git -C ~/Documents/MyProducts/zwasm_from_scratch log --oneline -15`     | recent JIT work (zwasm#477 multi-arg invoke arm64/x86_64)      |
 
 ## Pin
 
@@ -52,7 +54,7 @@ is its lightweight, always-on, git-tracked face on the cljw side. When cljw actu
 |--------------------------------------|-------------------------------------------------------|----------------|------------------------------------------|-----------------|
 | Interp embedding (load/instantiate)  | ready                                                 | YES            | integrated behind `cljw.wasm/*` (-Dwasm) | F-001, D-036    |
 | `invoke` (call exported fn)          | ready (interp)                                        | YES            | integrated                               | D-036           |
-| Embedder hardening / WASI sandbox    | landed (security pass `…→6b08fe70`, 3-host green)   | mostly         | consumed `to_cljw_01`                    | CODEV           |
+| Embedder hardening / WASI sandbox    | landed (security pass `…→6b08fe70`, 3-host green)   | mostly         | consumed (old security mailbox)          | CODEV           |
 | **Multi-arg JIT invoke (≤5/7 GPR)** | **BUILDING** (zwasm#477, arm64 + x86_64 SysV thunks)  | NO (pre-JIT)   | NOT adopted                              | zwasm zwasm#477 |
 | **JIT-backed engine (JIT-DEFAULT)**  | **BUILDING / DESIGN** (ADR-0200 reverses interp-only) | NO             | NOT adopted — **the north-star adopt**  | zwasm ADR-0200  |
 | WIT component marshalling            | future                                                | NO             | NOT adopted                              | D-404           |
@@ -63,7 +65,7 @@ The north-star capability is **running Wasm components through zwasm's JIT engin
 from cljw. The trigger + shape:
 
 1. **Trigger**: zwasm cuts a commit/tag where ADR-0200's JIT engine + zwasm#477 invoke
-   are *embedder-stable* (its CODEV_STATUS says so, or a `to_cljw_NN` announces it).
+   are *embedder-stable* (a `to_cljw_NN.md` with the pin SHA announces it; from_cljw_01 sent 2026-06-20).
 2. **cljw action**: bump the `build.zig.zon` pin (user-confirmed) → open a gap-area-II
    adoption unit: thread an `:engine :jit` (or auto) option through the finished-form
    `(wasm/load path opts)` surface (D-350), keep interp as the fallback/default until
@@ -80,3 +82,8 @@ adoptable.
 
 - **2026-06-20** — ledger created (user-directed convention). Pin = pre-JIT
   `412966f7`. zwasm JIT (ADR-0200 / zwasm#477) recorded as BUILDING, not yet adoptable.
+- **2026-06-20** — handover protocol simplified (user-directed): no-loop, 2-state
+  (`SENT`/`CONSUMED`), mailbox moved to `zwasm_from_scratch/private/dogfooding_handover/`.
+  Sent `from_cljw_01.md` — JIT embedding-API consuming requirements (per-instance engine
+  selection + interp stays, for cljw's dual-engine diff oracle) + a readiness-signal
+  request (a future `to_cljw_NN` naming the pin SHA when embedder-stable).
