@@ -27,6 +27,7 @@ const vector_collection = @import("../../runtime/collection/vector.zig");
 const list_collection = @import("../../runtime/collection/list.zig");
 const map_collection = @import("../../runtime/collection/map.zig");
 const set_collection = @import("../../runtime/collection/set.zig");
+const sequence = @import("sequence.zig");
 const root_set = @import("../../runtime/gc/root_set.zig");
 
 fn callOne(rt: *Runtime, env: *Env, fn_val: Value, arg: Value, loc: SourceLocation) anyerror!Value {
@@ -50,26 +51,34 @@ fn rebuildList(
     comptime transform_child: fn (rt: *Runtime, env: *Env, ctx: anytype, child: Value, loc: SourceLocation) anyerror!Value,
     ctx: anytype,
 ) anyerror!Value {
-    const n = list_collection.countOf(form);
-    if (n == 0) return form;
+    // Iterate the seq GENERICALLY via seqFn/firstFn/nextFn, NOT a `.tag()==.list`
+    // loop. A syntax-quoted form is a `.list` head whose `rest` is a `.cons`/lazy
+    // tail (clj makes the same — `(type \`(a b))` is a Cons), so a `.list`-only
+    // walk stopped after the FIRST element and rebuilt a truncated `(head)`. That
+    // silently broke `clojure.walk` over any macro-emitted seq — surfaced by
+    // clojure.spec.alpha's s/keys, which postwalks `res` over `\`(fn* [~gx] ~e)`
+    // (the bare `(fn*)` it then fed to spec's `unfn` conj'd onto a Symbol). This
+    // also fixes walking a top-level `.cons` form (the dispatch already routes it
+    // here, but the old `countOf` returned 0 → returned it unwalked).
+    var cur = try sequence.seqFn(rt, env, &.{form}, loc);
+    if (cur.isNil()) return form;
     var buf: std.ArrayList(Value) = .empty;
     defer buf.deinit(rt.gc.infra);
-    var cur = form;
     // GC-ROOT: C6 — root the source cursor (stack) + the transformed-so-far gpa
-    // accumulator (locals = buf.items) across transform_child (D-252) [ref:
-    // .dev/gc_rooting.md §C]. buf.items is refreshed each iter (append may realloc).
+    // accumulator (locals = buf.items) across transform_child + first/next (both
+    // may re-enter the VM for a lazy tail) (D-252) [ref: .dev/gc_rooting.md §C].
     var src_root: [1]Value = .{cur};
     var src_sp: u16 = 1;
     var gc_frame: root_set.EvalFrame = .{ .stack = &src_root, .sp = &src_sp, .locals = buf.items, .parent = root_set.eval_frame_head };
     root_set.eval_frame_head = &gc_frame;
     defer root_set.eval_frame_head = gc_frame.parent;
-    while (cur.tag() == .list and list_collection.countOf(cur) > 0) {
+    while (!cur.isNil()) {
         src_root[0] = cur;
         gc_frame.locals = buf.items;
-        const child = list_collection.first(cur);
+        const child = try sequence.firstFn(rt, env, &.{cur}, loc);
         const t = try transform_child(rt, env, ctx, child, loc);
         try buf.append(rt.gc.infra, t);
-        cur = list_collection.rest(cur);
+        cur = try sequence.nextFn(rt, env, &.{cur}, loc);
     }
     var result: Value = .nil_val;
     var i: usize = buf.items.len;

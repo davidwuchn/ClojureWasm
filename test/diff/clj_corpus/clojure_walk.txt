@@ -36,3 +36,11 @@
 ;;=> {:a 1, :b 2}
 (clojure.walk/postwalk-replace {[1 2] :pair} [[1 2] [3 4]])
 ;;=> [:pair [3 4]]
+(clojure.walk/postwalk-replace {'x '%} `(fn* [x] (foo x)))
+;;=> (fn* [user/x] (user/foo user/x))
+(count (clojure.walk/postwalk identity `(a b c d)))
+;;=> 4
+(clojure.walk/postwalk (fn [n] (if (number? n) (inc n) n)) `(plus 1 2 3))
+;;=> (user/plus 2 3 4)
+(clojure.walk/prewalk-replace {'user/a :A} `(a (a b)))
+;;=> (:A (:A user/b))
