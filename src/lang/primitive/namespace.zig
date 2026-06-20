@@ -152,6 +152,19 @@ pub fn nsPublicsFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLoca
     return mapOfVars(rt, &ns.mappings, true);
 }
 
+/// `(ns-imports ns)` — clj returns `{simple-symbol Class}` of the ns's imported
+/// Java classes (every ns imports java.lang.* by default). cljw is no-JVM
+/// (ADR-0059): a namespace imports no host classes, so this is always the empty
+/// map — the honest cljw answer. Spec: clojure.core/ns-imports (used by
+/// clojure.datafy's Namespace datafy arm).
+pub fn nsImportsFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = rt;
+    try error_catalog.checkArity("ns-imports", args, 1, loc);
+    _ = resolveNs(env, args[0]) orelse
+        return error_catalog.raise(.feature_not_supported, loc, .{ .name = "ns-imports on a non-namespace" });
+    return map_collection.empty();
+}
+
 /// `(ns-map ns)` — map of EVERY var visible in the ns (interned + refers).
 /// Spec: clojure.core/ns-map.
 pub fn nsMapFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
@@ -458,6 +471,7 @@ const ENTRIES = [_]Entry{
     .{ .name = "all-ns", .f = &allNsFn },
     .{ .name = "ns-interns", .f = &nsInternsFn },
     .{ .name = "ns-publics", .f = &nsPublicsFn },
+    .{ .name = "ns-imports", .f = &nsImportsFn },
     .{ .name = "ns-map", .f = &nsMapFn },
     .{ .name = "ns-refers", .f = &nsRefersFn },
     .{ .name = "ns-resolve", .f = &nsResolveFn },

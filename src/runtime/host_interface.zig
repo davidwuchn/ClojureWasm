@@ -579,6 +579,13 @@ pub fn nativeExtendTags(name: []const u8) ?[]const []const u8 {
     if (std.mem.eql(u8, simple, "ISeq")) return interface_membership.ISEQ_NAMES;
     if (std.mem.eql(u8, simple, "Named")) return interface_membership.NAMED_NAMES;
     if (std.mem.eql(u8, simple, "IPersistentMap")) return interface_membership.MAP_NAMES;
+    // D-478: concrete host types clojure.datafy extends Datafiable to — each has a
+    // native cljw value tag, so the impl distributes over it (a namespace/ref/
+    // exception/class value dispatches the extended method).
+    if (std.mem.eql(u8, simple, "IRef")) return interface_membership.IREF_NAMES;
+    if (std.mem.eql(u8, simple, "Namespace")) return interface_membership.NS_NAMES;
+    if (std.mem.eql(u8, simple, "Throwable")) return interface_membership.THROWABLE_NAMES;
+    if (std.mem.eql(u8, simple, "Class")) return interface_membership.CLASS_NAMES;
     return null;
 }
 

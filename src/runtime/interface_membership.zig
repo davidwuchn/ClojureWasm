@@ -276,6 +276,16 @@ pub const ISEQ_NAMES = tagNames(&ISEQ_TAGS);
 pub const NAMED_NAMES = tagNames(&NAMED_TAGS);
 pub const MAP_NAMES = tagNames(&MAP_TAGS);
 pub const INDEXED_NAMES = tagNames(&INDEXED_TAGS);
+// D-478: extend-protocol TO a concrete host type — `clojure.datafy` extends
+// Datafiable over IRef / Namespace / Throwable / Class. Each has a native cljw
+// value tag, so the impl distributes over it via rt/__native-type (like ISeq etc.).
+const NS_TAGS = [_]Tag{.ns};
+const THROWABLE_TAGS = [_]Tag{.ex_info};
+const CLASS_TAGS = [_]Tag{.type_descriptor};
+pub const IREF_NAMES = tagNames(&IREF_TAGS);
+pub const NS_NAMES = tagNames(&NS_TAGS);
+pub const THROWABLE_NAMES = tagNames(&THROWABLE_TAGS);
+pub const CLASS_NAMES = tagNames(&CLASS_TAGS);
 
 // --- tests ---
 

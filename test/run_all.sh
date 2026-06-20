@@ -412,6 +412,7 @@ run_step "e2e_phase7_symbol_value"           "bash test/e2e/phase7_symbol_value.
 run_step "e2e_phase7_multimethod"            "bash test/e2e/phase7_multimethod.sh"
 run_step "e2e_phase7_protocol"               "bash test/e2e/phase7_protocol.sh"
 run_step "e2e_phase7_definterface"           "bash test/e2e/phase7_definterface.sh"
+run_step "e2e_phase7_extend_host_type"       "bash test/e2e/phase7_extend_host_type.sh"
 run_step "e2e_phase7_defrecord"              "bash test/e2e/phase7_defrecord.sh"
 run_step "e2e_phase7_record_field_scope"     "bash test/e2e/phase7_record_field_scope.sh"
 run_step "e2e_phase7_reify"                  "bash test/e2e/phase7_reify.sh"
