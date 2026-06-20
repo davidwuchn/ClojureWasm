@@ -271,15 +271,13 @@ const Fixture = struct {
     rt: Runtime,
     env: Env,
 
-    fn init() !Fixture {
-        var f: Fixture = .{
-            .threaded = std.Io.Threaded.init(testing.allocator, .{}),
-            .rt = undefined,
-            .env = undefined,
-        };
+    // D-413: init in place — env.rt / rt.io self-references require a stable
+    // address, so the fixture must be built at its final address and never
+    // moved by value (a return-by-value init leaves env.rt dangling).
+    fn init(f: *Fixture) !void {
+        f.threaded = std.Io.Threaded.init(testing.allocator, .{});
         f.rt = Runtime.init(f.threaded.io(), testing.allocator);
         f.env = try Env.init(&f.rt);
-        return f;
     }
     fn deinit(self: *Fixture) void {
         self.env.deinit();
@@ -289,7 +287,8 @@ const Fixture = struct {
 };
 
 test "re-pattern compiles a string into a .regex Value" {
-    var fx = try Fixture.init();
+    var fx: Fixture = undefined;
+    try Fixture.init(&fx);
     defer fx.deinit();
     const src = try string_collection.alloc(&fx.rt, "\\d+");
     const result = try rePattern(&fx.rt, &fx.env, &[_]Value{src}, .{});
@@ -297,7 +296,8 @@ test "re-pattern compiles a string into a .regex Value" {
 }
 
 test "re-pattern on an existing regex returns it unchanged" {
-    var fx = try Fixture.init();
+    var fx: Fixture = undefined;
+    try Fixture.init(&fx);
     defer fx.deinit();
     const re = try regex_value.alloc(&fx.rt, "a", .{});
     const result = try rePattern(&fx.rt, &fx.env, &[_]Value{re}, .{});
@@ -305,7 +305,8 @@ test "re-pattern on an existing regex returns it unchanged" {
 }
 
 test "ADR-0031 Phase 6.6 exit smoke (primitive level): re-find re \"abc123\" → \"123\"" {
-    var fx = try Fixture.init();
+    var fx: Fixture = undefined;
+    try Fixture.init(&fx);
     defer fx.deinit();
     const re = try regex_value.alloc(&fx.rt, "\\d+", .{});
     const input = try string_collection.alloc(&fx.rt, "abc123");
@@ -315,7 +316,8 @@ test "ADR-0031 Phase 6.6 exit smoke (primitive level): re-find re \"abc123\" →
 }
 
 test "re-find returns nil on no match" {
-    var fx = try Fixture.init();
+    var fx: Fixture = undefined;
+    try Fixture.init(&fx);
     defer fx.deinit();
     const re = try regex_value.alloc(&fx.rt, "z", .{});
     const input = try string_collection.alloc(&fx.rt, "abc");
@@ -324,7 +326,8 @@ test "re-find returns nil on no match" {
 }
 
 test "re-matches succeeds on exact match, nil on prefix-only" {
-    var fx = try Fixture.init();
+    var fx: Fixture = undefined;
+    try Fixture.init(&fx);
     defer fx.deinit();
     const re = try regex_value.alloc(&fx.rt, "\\d+", .{});
     const exact = try string_collection.alloc(&fx.rt, "123");
@@ -338,7 +341,8 @@ test "re-matches succeeds on exact match, nil on prefix-only" {
 }
 
 test "re-find accepts a string pattern (re-pattern coercion)" {
-    var fx = try Fixture.init();
+    var fx: Fixture = undefined;
+    try Fixture.init(&fx);
     defer fx.deinit();
     const pat = try string_collection.alloc(&fx.rt, "\\w+");
     const input = try string_collection.alloc(&fx.rt, " hello ");

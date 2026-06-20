@@ -123,14 +123,14 @@ const Fixture = struct {
     arena: std.heap.ArenaAllocator,
     table: macro_dispatch.Table,
 
-    fn init(alloc: std.mem.Allocator) !Fixture {
-        var f: Fixture = undefined;
+    // D-413: init in place — self-referential fixture (env.rt -> &rt,
+    // rt.io -> &threaded) must not be moved by value. See diff_test.zig.
+    fn init(f: *Fixture, alloc: std.mem.Allocator) !void {
         f.threaded = std.Io.Threaded.init(alloc, .{});
         f.rt = Runtime.init(f.threaded.io(), alloc);
         f.env = try Env.init(&f.rt);
         f.arena = std.heap.ArenaAllocator.init(alloc);
         f.table = macro_dispatch.Table.init(alloc);
-        return f;
     }
 
     fn deinit(self: *Fixture) void {
@@ -143,7 +143,8 @@ const Fixture = struct {
 };
 
 test "compare: integer literal" {
-    var f = try Fixture.init(testing.allocator);
+    var f: Fixture = undefined;
+    try Fixture.init(&f, testing.allocator);
     defer f.deinit();
     const r = compare(&f.rt, &f.env, &f.table, f.arena.allocator(), "42");
     try testing.expect(r.equal);
@@ -151,7 +152,8 @@ test "compare: integer literal" {
 }
 
 test "compare: if with both branches" {
-    var f = try Fixture.init(testing.allocator);
+    var f: Fixture = undefined;
+    try Fixture.init(&f, testing.allocator);
     defer f.deinit();
     const r = compare(&f.rt, &f.env, &f.table, f.arena.allocator(), "(if true 1 2)");
     try testing.expect(r.equal);
@@ -159,17 +161,20 @@ test "compare: if with both branches" {
 }
 
 test "compare: boolean and nil immediate Values" {
-    var f1 = try Fixture.init(testing.allocator);
+    var f1: Fixture = undefined;
+    try Fixture.init(&f1, testing.allocator);
     defer f1.deinit();
     const r_true = compare(&f1.rt, &f1.env, &f1.table, f1.arena.allocator(), "true");
     try testing.expect(r_true.equal);
 
-    var f2 = try Fixture.init(testing.allocator);
+    var f2: Fixture = undefined;
+    try Fixture.init(&f2, testing.allocator);
     defer f2.deinit();
     const r_nil = compare(&f2.rt, &f2.env, &f2.table, f2.arena.allocator(), "nil");
     try testing.expect(r_nil.equal);
 
-    var f3 = try Fixture.init(testing.allocator);
+    var f3: Fixture = undefined;
+    try Fixture.init(&f3, testing.allocator);
     defer f3.deinit();
     const r_false = compare(&f3.rt, &f3.env, &f3.table, f3.arena.allocator(), "false");
     try testing.expect(r_false.equal);
@@ -182,7 +187,8 @@ test "ADR-0125: a step budget kills an infinite loop under BOTH backends" {
     // dependency in the Fixture). The vm gate build covers the VM poll site;
     // the tree_walk build covers the loop* poll site — this test exercises both
     // regardless of the build's configured default.
-    var f = try Fixture.init(testing.allocator);
+    var f: Fixture = undefined;
+    try Fixture.init(&f, testing.allocator);
     defer f.deinit();
     inline for (.{ BackendChoice.tree_walk, BackendChoice.vm }) |backend| {
         f.rt.eval_budget = .{ .step_ceiling = 50_000 };

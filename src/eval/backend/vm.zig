@@ -1557,13 +1557,13 @@ const Fixture = struct {
     rt: Runtime,
     env: Env,
 
-    fn init(alloc: std.mem.Allocator) !Fixture {
-        var f: Fixture = undefined;
+    // D-413: init in place — self-referential fixture (env.rt -> &rt,
+    // rt.io -> &threaded) must not be moved by value. See diff_test.zig.
+    fn init(f: *Fixture, alloc: std.mem.Allocator) !void {
         f.threaded = std.Io.Threaded.init(alloc, .{});
         f.rt = Runtime.init(f.threaded.io(), alloc);
         f.env = try Env.init(&f.rt);
         tree_walk.installVTable(&f.rt);
-        return f;
     }
 
     fn deinit(self: *Fixture) void {
@@ -1579,7 +1579,8 @@ const Fixture = struct {
 };
 
 test "op_const then op_ret returns the constant" {
-    var f = try Fixture.init(testing.allocator);
+    var f: Fixture = undefined;
+    try Fixture.init(&f, testing.allocator);
     defer f.deinit();
 
     const instrs = [_]Instruction{
@@ -1593,7 +1594,8 @@ test "op_const then op_ret returns the constant" {
 }
 
 test "op_pop discards the top of the operand stack" {
-    var f = try Fixture.init(testing.allocator);
+    var f: Fixture = undefined;
+    try Fixture.init(&f, testing.allocator);
     defer f.deinit();
 
     const instrs = [_]Instruction{
@@ -1609,7 +1611,8 @@ test "op_pop discards the top of the operand stack" {
 }
 
 test "op_dup duplicates the top of the operand stack" {
-    var f = try Fixture.init(testing.allocator);
+    var f: Fixture = undefined;
+    try Fixture.init(&f, testing.allocator);
     defer f.deinit();
 
     const instrs = [_]Instruction{
@@ -1625,7 +1628,8 @@ test "op_dup duplicates the top of the operand stack" {
 }
 
 test "op_store_local then op_load_local round-trips a slot" {
-    var f = try Fixture.init(testing.allocator);
+    var f: Fixture = undefined;
+    try Fixture.init(&f, testing.allocator);
     defer f.deinit();
 
     const instrs = [_]Instruction{
@@ -1641,7 +1645,8 @@ test "op_store_local then op_load_local round-trips a slot" {
 }
 
 test "op_load_local out of range raises index_error" {
-    var f = try Fixture.init(testing.allocator);
+    var f: Fixture = undefined;
+    try Fixture.init(&f, testing.allocator);
     defer f.deinit();
 
     const instrs = [_]Instruction{
@@ -1655,7 +1660,8 @@ test "op_load_local out of range raises index_error" {
 }
 
 test "op_jump unconditionally skips forward" {
-    var f = try Fixture.init(testing.allocator);
+    var f: Fixture = undefined;
+    try Fixture.init(&f, testing.allocator);
     defer f.deinit();
 
     // op_jump +1 ; op_const false (skipped) ; op_const true ; op_ret
@@ -1672,7 +1678,8 @@ test "op_jump unconditionally skips forward" {
 }
 
 test "op_jump_if_false takes the jump when popped value is false" {
-    var f = try Fixture.init(testing.allocator);
+    var f: Fixture = undefined;
+    try Fixture.init(&f, testing.allocator);
     defer f.deinit();
 
     // op_const false ; op_jump_if_false +1 ; op_const true (skipped) ; op_const false ; op_ret
@@ -1690,7 +1697,8 @@ test "op_jump_if_false takes the jump when popped value is false" {
 }
 
 test "op_jump_if_false falls through when popped value is truthy" {
-    var f = try Fixture.init(testing.allocator);
+    var f: Fixture = undefined;
+    try Fixture.init(&f, testing.allocator);
     defer f.deinit();
 
     // (if true true false): push true cond ; jump_if_false +2 (no jump) ;
@@ -1710,7 +1718,8 @@ test "op_jump_if_false falls through when popped value is truthy" {
 }
 
 test "op_def interns the name into env.current_ns and pushes the Var" {
-    var f = try Fixture.init(testing.allocator);
+    var f: Fixture = undefined;
+    try Fixture.init(&f, testing.allocator);
     defer f.deinit();
 
     const name_val = try string_mod.alloc(&f.rt, "answer");
@@ -1731,7 +1740,8 @@ test "op_def interns the name into env.current_ns and pushes the Var" {
 }
 
 test "op_def stamps dynamic / macro / private flags from the operand" {
-    var f = try Fixture.init(testing.allocator);
+    var f: Fixture = undefined;
+    try Fixture.init(&f, testing.allocator);
     defer f.deinit();
 
     const name_val = try string_mod.alloc(&f.rt, "foo");
@@ -1752,7 +1762,8 @@ test "op_def stamps dynamic / macro / private flags from the operand" {
 }
 
 test "op_get_var dereferences a Var pointer from the constant pool" {
-    var f = try Fixture.init(testing.allocator);
+    var f: Fixture = undefined;
+    try Fixture.init(&f, testing.allocator);
     defer f.deinit();
 
     const ns = f.env.current_ns.?;
@@ -1770,7 +1781,8 @@ test "op_get_var dereferences a Var pointer from the constant pool" {
 }
 
 test "op_call routes through rt.vtable.callFn" {
-    var f = try Fixture.init(testing.allocator);
+    var f: Fixture = undefined;
+    try Fixture.init(&f, testing.allocator);
     defer f.deinit();
 
     const ns = f.env.current_ns.?;
@@ -1791,7 +1803,8 @@ test "op_call routes through rt.vtable.callFn" {
 }
 
 test "op_make_fn snapshots locals when template.slot_base > 0" {
-    var f = try Fixture.init(testing.allocator);
+    var f: Fixture = undefined;
+    try Fixture.init(&f, testing.allocator);
     defer f.deinit();
 
     // Build a template Function with slot_base = 1, body returns
@@ -1845,7 +1858,8 @@ test "op_make_fn snapshots locals when template.slot_base > 0" {
 }
 
 test "op_recur with insufficient stack raises internal_error" {
-    var f = try Fixture.init(testing.allocator);
+    var f: Fixture = undefined;
+    try Fixture.init(&f, testing.allocator);
     defer f.deinit();
 
     const instrs = [_]Instruction{
@@ -1858,7 +1872,8 @@ test "op_recur with insufficient stack raises internal_error" {
 }
 
 test "op_make_fn pushes the pre-allocated Function from the constants pool" {
-    var f = try Fixture.init(testing.allocator);
+    var f: Fixture = undefined;
+    try Fixture.init(&f, testing.allocator);
     defer f.deinit();
 
     const body: node_mod.Node = .{ .constant = .{ .value = Value.true_val } };
@@ -1885,7 +1900,8 @@ test "op_make_fn pushes the pre-allocated Function from the constants pool" {
 }
 
 test "op_throw sets dispatch.last_thrown_exception and returns ThrownValue" {
-    var f = try Fixture.init(testing.allocator);
+    var f: Fixture = undefined;
+    try Fixture.init(&f, testing.allocator);
     defer f.deinit();
     dispatch.last_thrown_exception = null;
 
@@ -1902,7 +1918,8 @@ test "op_throw sets dispatch.last_thrown_exception and returns ThrownValue" {
 }
 
 test "op_invoke_builtin raises unsupported_feature (4.6 placeholder)" {
-    var f = try Fixture.init(testing.allocator);
+    var f: Fixture = undefined;
+    try Fixture.init(&f, testing.allocator);
     defer f.deinit();
 
     const instrs = [_]Instruction{
@@ -1923,7 +1940,8 @@ fn testReturnFirstArg(rt: *Runtime, env: *Env, args: []const Value, loc: SourceL
 }
 
 test "op_push_handler routes thrown value into the catch arm" {
-    var f = try Fixture.init(testing.allocator);
+    var f: Fixture = undefined;
+    try Fixture.init(&f, testing.allocator);
     defer f.deinit();
     dispatch.last_thrown_exception = null;
 
@@ -1944,7 +1962,8 @@ test "op_push_handler routes thrown value into the catch arm" {
 }
 
 test "op_pop_handler removes the innermost handler so thrown propagates" {
-    var f = try Fixture.init(testing.allocator);
+    var f: Fixture = undefined;
+    try Fixture.init(&f, testing.allocator);
     defer f.deinit();
     dispatch.last_thrown_exception = null;
 
@@ -1965,7 +1984,8 @@ test "op_pop_handler removes the innermost handler so thrown propagates" {
 }
 
 test "op_match_class returns true for ExceptionInfo vs ex_info tag" {
-    var f = try Fixture.init(testing.allocator);
+    var f: Fixture = undefined;
+    try Fixture.init(&f, testing.allocator);
     defer f.deinit();
 
     const ex_val = try ex_info_mod.alloc(&f.rt, "x", Value.nil_val, Value.nil_val);
@@ -1983,7 +2003,8 @@ test "op_match_class returns true for ExceptionInfo vs ex_info tag" {
 }
 
 test "op_match_class returns false for unknown class names" {
-    var f = try Fixture.init(testing.allocator);
+    var f: Fixture = undefined;
+    try Fixture.init(&f, testing.allocator);
     defer f.deinit();
 
     const ex_val = try ex_info_mod.alloc(&f.rt, "x", Value.nil_val, Value.nil_val);
@@ -2002,7 +2023,8 @@ test "op_match_class returns false for unknown class names" {
 
 test "vm.eval back-edge poll parks a worker mid-eval during a stop-the-world (D-244 #4)" {
     const io_default = @import("../../runtime/concurrency/io_default.zig");
-    var f = try Fixture.init(testing.allocator);
+    var f: Fixture = undefined;
+    try Fixture.init(&f, testing.allocator);
     defer f.deinit();
     // Route the safepoint sync through the same threaded io as the runtime so the
     // Io.Mutex/Condition block for real across threads (restored LIFO).
