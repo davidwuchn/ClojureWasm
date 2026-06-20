@@ -10,23 +10,18 @@
   `build.zig.zon` `.zwasm` is SHA-PINNED (`#412966f7…`, `lazy`). Per-commit = smoke;
   full gate batches at ceiling / boundary / pre-tag.
 
-- **First commit on resume**: self-select. The BOUNDED high/moderate-value
-  unblocked work is drained (see Last landed — java.util container family + its full
-  Clojure-protocol surface are complete; a clj-diff sweep fixed bigint-of-float +
-  String char-array ctor). The two genuinely-valuable remaining units are
-  SUBSTANTIAL FEATURES, deferred this session with COMPLETE implementation plans in
-  their debt rows (start there): **D-467 `with-precision`** (a standard clojure.core
-  macro — needs `*math-context*` dynamic var + a sig-fig-rounded BigDecimal division
-  algorithm in big_decimal.zig + the macro; the rounded-division is the crux; a
-  fresh focused unit, NOT a context-tail add — that's why it's deferred not done);
-  **D-466 `(instance? java.util.Map hm)`** (host-supertype hierarchy — needs a
-  DEDICATED TypeDescriptor supertype field consulted only by matchUserType, NOT
-  protocol_impls, which CRASHES the AOT bootstrap; plus registering the Sorted/
-  Navigable interface class symbols). Both have full plans + clj-verified target
-  hierarchies in `.dev/debt.yaml`. Everything else is barriered (below) or near-zero
-  completionism (NavigableSet nav methods confirmed absent from the frequent-interop
-  corpus). The loop self-selects; the user may redirect to a barriered area by
-  relaxing the relevant F-NNN/pause.
+- **First commit on resume MUST be**: resume the **F-011 clj-diff probe sweep** on
+  the next un-probed common surface (the session's value engine — IO/file ops
+  (slurp/spit/with-open/line-seq) is the next untested area; then exception
+  data-shapes, var/binding deep). Probe top-level for def-forms (the harness
+  `(prn …)`-wraps → false cascades on defrecord/defprotocol; verify each DIFF
+  INDIVIDUALLY — memory `clj_diff_sweep_methodology`). Fix any real gap at the
+  finished form; classify every DIFF (bug→fix / accepted→AD / defer→debt). **clj-parity
+  is now comprehensively saturated**: 8 probe areas this session, the last 5 found
+  ZERO new fixable bugs (only documented AD-001/002/007/009/019/021 + ADR-0122/0033
+  divergences). So expect mostly accepted/low-value finds; if a surface is clean, the
+  remaining substantive work is the deep residuals (below) — all deep/low-value/
+  barriered. Don't surrender-frame the thinning; keep probing + draining residuals.
 
 - **Remaining clusters (all BARRIERED or niche — the high-value unblocked work is
   drained)**:
@@ -36,9 +31,12 @@
     Don't force (F-001/F-003).
   - **Perf (gap III, D-450, ADR-0148, PAUSED)**: only fenced levers — D-386(a)
     inline stepOnce (UAF-class), JIT D-133 user-fenced.
-  - **clj-parity residuals (niche)**: D-446 multidim aget (deep — make-array
-    multidim + Long/TYPE unsupported), D-462 ZonedDateTime (tz-DB), D-463 per-var
-    events (take-up-when-needed), D-410 java.text, D-431 Throwable.
+  - **clj-parity residuals (niche/deep)**: D-446 multidim aget (deep CHAIN —
+    needs Long/TYPE + to-array-2d + multidim make-array + variadic aget; no-JVM
+    design Qs), D-410 java.text grapheme (needs UCD GraphemeBreakProperty data-gen),
+    D-470 format `%t` date directives (~40 sub-conversions, low-value), D-462
+    ZonedDateTime (tz-DB, **user/ADR-owned — NOT autonomous**), D-463 per-var events,
+    D-431 Throwable str/pr, D-468/D-433 (closed/low). java.time arithmetic COMPLETE.
   - **Concurrency (gap I)**: D-258 agent-race flake (deep multi-thread STW race,
     D-244 #4), D-239/245/255 PARTIAL.
 
@@ -51,25 +49,25 @@
 
 ## Last landed (git log = SSOT; all pushed)
 
-**This session (~14 units, all clj-oracle-verified, full gate green throughout):**
-- **D-442 part 2 / ADR-0155**: agent surface 8/8 (`*agent*`/`release-pending-sends`/
-  `shutdown-agents`); 2nd DA fork corrected the premise → post-shutdown send DROPS,
-  not throws → new **AD-046**.
-- **D-458 / D-465**: cl-format `V`/`#` runtime params + `~F` natural precision.
-- **D-431 java.util container family — COMPLETE**: File path-normalize fix +
-  implemented **HashSet / TreeSet / TreeMap** (host_instances over cljw set/sorted-
-  set/sorted-map). Then the full **Clojure-protocol surface** on all java.util maps/
-  sets: `get`/`contains?`/`keys`/`vals`/`:kw`/`seq`/`count`/`empty` now match clj —
-  closing a `(get hm k)`→silent-nil CORRECTNESS bug + several errors (added ILookup
-  `-lookup` / Associative `-contains-key?` / IPersistentMap `-keys`/`-vals`
-  MethodEntries + a lookup.invoke keyword-arm generalization + an emptyFn host-
-  fallback). AD-032 extended to TreeMap. Side-fix: phase15_ns_import unsupported-
-  example → ArrayDeque.
-- **clj-diff sweep** (~150 exprs, F-011 quality-loop after named work drained):
-  fixed **bigint-of-float** (route through bigdec, not exact trunc) + **(String.
-  char[])** (chars' codepoints). Deferred 2 substantial features with plans (D-466
-  instance?-hierarchy, D-467 with-precision). ~15 DIFFs classified as accepted
-  divergences (AD-001/003/007/044, F-005). Note in private/notes/clj-diff-sweep-*.md.
+**This session (~10 units, all clj-oracle-verified, full gate 377/0 green throughout):**
+- **D-466 + sub**: `(instance? java.util.Map/List/Set/Collection/SortedMap/Sorted/
+  Navigable/Iterable host)` — NEW comptime-const `host_supertypes` TypeDescriptor
+  field (mirrors `static_fields`, NOT freed by deinit — the protocol_impls overload
+  crashed cache_gen) consulted by class_name.matchUserType; 4 Sorted/Navigable
+  interfaces registered (FQCN_MAP + interface_membership empty-tag entries).
+- **D-413**: diff_test `Fixture.init` returned BY VALUE after `Env.init(&f.rt)` →
+  dangling `env.rt` (non-deterministic abort on unresolved-symbol host-class lookup).
+  Fixed init-in-place (out-pointer); swept 3 sibling fixtures (vm/evaluator/regex).
+- **D-468 + AD-047**: host java.util collections print BY CONTENT (`[1 2]`/`#{1 2}`/
+  `{:a 1}`) via a `print_content` descriptor hook + print.zig deepRealize; str stays
+  Clojure-form (AD-047, not JVM Object.toString). Closes the java.util family.
+- **D-469**: extend-type/-protocol GROUPED multi-arity `(g ([x] b1) ([x y] b2))` via
+  an expandGroupedArities normalize pre-pass reusing the D-279 multi-arity-fn* path.
+- **D-462**: LocalDate.atStartOfDay/atTime (→ LocalDateTime) — a verify-sweep proved
+  the rest of java.time arithmetic was already done (stale claim). **AD-048**: record
+  str = content form. **D-470 filed**: format `%t` family (low-value, deferred).
+- **6 clj-diff probe areas** (numeric/seq/string, reader/namespace, transducers,
+  math/bit/array, edn/walk/sorted, format) — all clj-faithful modulo documented ADs.
 
 ## Perf campaign (PAUSED behind the active flag; not the current task)
 
@@ -82,7 +80,9 @@ ADR-0148 + `private/notes/9.2.S-perf-remeasure-2026-06-17.md`.
 ## Cold-start reading order (resume)
 
 handover → `.dev/project_facts.md` (F-002 / F-010 / F-011) → ROADMAP §9.0 (gap
-areas I/II/III) → `.dev/accepted_divergences.yaml` (AD-001…046) → `.dev/debt.yaml`
-(D-431 java.util family DONE; remaining residuals barriered/niche per the cluster
-list above). memory `direct-explore-fork-mechanical` + `clj_diff_sweep_methodology`.
+areas I/II/III) → `.dev/accepted_divergences.yaml` (AD-001…048) → `.dev/debt.yaml`
+(clj-parity comprehensively saturated; remaining residuals deep/barriered per the
+cluster list above). memory `clj_diff_sweep_methodology` (harness def-form trap +
+verify-each-DIFF) + `verify_actual_pattern_not_proxy` (stale debt claims: D-462/D-216
+were re-verified against the clj oracle, not trusted) + `direct-explore-fork-mechanical`.
 
