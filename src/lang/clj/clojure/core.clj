@@ -29,6 +29,13 @@
 ;; (clojure.data.avl and other libs set! it at the top of a file).
 (def ^:dynamic *unchecked-math* false)
 
+;; `*assert*` — clj's compile-time assert-elision flag. Default true (asserts
+;; check), matching clj. cljw's `assert` is a Zig macro that always emits the
+;; check, so toggling this to false does NOT elide a cljw `(assert …)` (a no-op
+;; like the flags above); but user/lib macros that READ `*assert*` — e.g.
+;; clojure.core.memoize's `(when *assert* …)` arg-validation — resolve it correctly.
+(def ^:dynamic *assert* true)
+
 ;; `*command-line-args*` — the seq of strings passed after the run-mode main
 ;; option (`cljw -M -m my.ns a b` → `("a" "b")`; nil when none). The `-M`/`-X`
 ;; run modes set its root via alter-var-root before the app forms eval (D-310,

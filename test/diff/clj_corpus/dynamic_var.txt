@@ -8,3 +8,9 @@
 ;;=> :inner
 (do (def ^:dynamic *cnt* 0) (binding [*cnt* 5] (+ *cnt* *cnt*)))
 ;;=> 10
+*assert*
+;;=> true
+(binding [*assert* false] *assert*)
+;;=> false
+(do (assert true) :ok)
+;;=> :ok
