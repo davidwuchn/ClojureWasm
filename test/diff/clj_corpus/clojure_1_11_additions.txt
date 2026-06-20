@@ -130,3 +130,11 @@
 ;;=> false
 (uri? (java.net.URI/create "https://a.b/c"))
 ;;=> true
+(seq-to-map-for-destructuring [:a 1 :b 2])
+;;=> {:a 1, :b 2}
+(seq-to-map-for-destructuring [{:a 1 :b 2}])
+;;=> {:a 1, :b 2}
+(seq-to-map-for-destructuring [])
+;;=> {}
+(seq-to-map-for-destructuring [:a 1 {:b 2}])
+;;=> {:a 1, :b 2}

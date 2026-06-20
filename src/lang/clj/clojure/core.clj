@@ -1068,6 +1068,21 @@
   (fn* [m f]
     (reduce (fn* [acc k] (assoc acc k (f (get m k)))) {} (keys m))))
 
+;; `(seq-to-map-for-destructuring s)` — clojure 1.11. Builds a map from the rest
+;; args of a `& {:keys […]}` call: kwargs pairs, a single trailing map, or a mix
+;; (kwargs + trailing map merged). See
+;; https://clojure.org/reference/special_forms#keyword-arguments
+;; `second`/`nnext`/`map?` are defined later in this file — use early primitives.
+(defn seq-to-map-for-destructuring [s]
+  (if (next s)
+    (loop [m {} s s]
+      (if (seq s)
+        (if (map? (first s))
+          (recur (conj m (first s)) (next s))
+          (recur (assoc m (first s) (first (next s))) (next (next s))))
+        m))
+    (if (seq s) (first s) {})))
+
 ;; `(iteration step & {:keys [somef vf kf initk]})` — clojure 1.11. Seed `step`
 ;; with `initk` (then `(kf ret)`), producing `(vf ret)` while `(somef ret)`; a
 ;; lazy seq. Built for consuming chunked / paginated sources (call until exhausted).
