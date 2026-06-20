@@ -1539,16 +1539,18 @@ fn threadStep(
     step: Form,
     dir: ThreadDir,
 ) macro_dispatch.ExpandError!Form {
-    // Bare-symbol / bare-keyword step: `(-> x f)` → `(f x)`,
-    // `(-> m :k)` → `(:k m)` (keyword-as-fn, D-085).
-    if (step.data == .symbol or step.data == .keyword) {
+    // Any NON-list step threads as `(step acc)` — clj's `(if (seq? form) … (list
+    // form x))`: a bare symbol fn (`(-> x f)` → `(f x)`), a keyword (`(-> m :k)`
+    // → `(:k m)`, D-085), and equally a set / map / vector / var as IFn
+    // (`(-> s name #{"a" "b"})` → `(#{"a" "b"} (name s))`, set membership — the
+    // shape clojure.core.specs.alpha relies on). clj never rejects a step at
+    // expansion (a non-callable step fails at call time, like clj).
+    if (step.data != .list) {
         const items = try arena.alloc(Form, 2);
         items[0] = step;
         items[1] = acc;
         return list(arena, items, step.location);
     }
-    if (step.data != .list)
-        return error_catalog.raise(.thread_macro_step_invalid_type, step.location, .{ .actual = step.typeName() });
 
     const orig = step.data.list;
     if (orig.len == 0)

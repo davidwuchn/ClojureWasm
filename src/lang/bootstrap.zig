@@ -113,6 +113,10 @@ pub const FILES: []const FileEntry = &.{
     // data-driven so a future eager→lazy switch (lazy-AOT, deferred) is local.
     .{ .label = "<clojure.spec.gen.alpha>", .source = @embedFile("clj/clojure/spec/gen/alpha.clj") },
     .{ .label = "<clojure.spec.alpha>", .source = @embedFile("clj/clojure/spec/alpha.clj") },
+    // clojure.core.specs.alpha — official stdlib (ships in clojure.jar); specs
+    // for clojure.core macros. Loads after spec.alpha (it `(:require …spec.alpha)`).
+    // Verbatim upstream (no adaptations). Appended last.
+    .{ .label = "<clojure.core.specs.alpha>", .source = @embedFile("clj/clojure/core/specs/alpha.clj") },
 };
 
 /// First file's source — exposed so `main.zig`'s renderer can fall
@@ -162,6 +166,7 @@ fn lookupEmbeddedFile(ns_name: []const u8) ?FileEntry {
     if (build_options.wasm and std.mem.eql(u8, ns_name, "cljw.wasm")) return FILES[23];
     if (std.mem.eql(u8, ns_name, "clojure.spec.gen.alpha")) return FILES[24];
     if (std.mem.eql(u8, ns_name, "clojure.spec.alpha")) return FILES[25];
+    if (std.mem.eql(u8, ns_name, "clojure.core.specs.alpha")) return FILES[26];
     return null;
 }
 

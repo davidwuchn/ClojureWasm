@@ -26,3 +26,13 @@
 ;;=> 16
 (->> (range 5) (map inc) (filter even?) (reduce +))
 ;;=> 6
+(-> "keys" #{"keys" "syms"})
+;;=> "keys"
+(-> "x" #{"keys" "syms"})
+;;=> nil
+(-> :a {:a 1 :b 2})
+;;=> 1
+(-> [10 20 30] (nth 1))
+;;=> 20
+(-> {:a {:b 5}} :a :b)
+;;=> 5

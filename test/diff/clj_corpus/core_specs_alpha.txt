@@ -1,0 +1,8 @@
+(clojure.spec.alpha/valid? :clojure.core.specs.alpha/binding-form (quote [a b & rest]))
+;;=> true
+(clojure.spec.alpha/conform :clojure.core.specs.alpha/binding-form (quote x))
+;;=> [:local-symbol x]
+(clojure.spec.alpha/valid? :clojure.core.specs.alpha/defn-args (quote (foo [x] x)))
+;;=> true
+(clojure.spec.alpha/valid? :clojure.core.specs.alpha/binding-form (quote {:keys [a b]}))
+;;=> true
