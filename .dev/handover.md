@@ -19,13 +19,17 @@
   `clojure.core.reducers` (ForkJoin, D-473), `clojure.core.server` (sockets). Pure
   contribs are verified (math.combinatorics + the pre-existing `verified_projects/`);
   the rest are host-coupled (core.match→`Class/forName` D-479, tools.reader→host reader,
-  rrb-vector/algo.*→ForkJoin/Future). So self-select from, in value order: (a) a
-  **core clj-diff bug sweep** (`scripts/clj_diff_sweep.sh` — the ongoing "未発見の実バグ
-  監査"; AVOID multi-line printers [exceptions w/ traces] + clj-uncompilable exprs
-  [`Math/gcd`] which break the line-diff harness; the core is mature so yield is low but
-  real), or (b) a **deferred deep item** if a clean approach emerges (D-482 seq-laziness
-  counted?, D-479 Class/forName, D-480 Serializable marker). Policy unchanged: **official
-  stdlib → eager bundle; contrib → verify (require-on-demand)**.
+  rrb-vector/algo.*→ForkJoin/Future). The **core clj-diff bug sweep is now drained**
+  (2026-06-21 session: 14 areas byte-identical to clj — metadata/privacy/destructuring/
+  namespaced-map/string/numeric/sorted/set/bit-ops/polymorphism/read-print/catch-by-class/
+  lazy-realization; 4 real bugs FIXED + AD-050/AD-007). **First commit on resume = D-485**
+  (general primitive-reentry depth guard — the highest-value finished-form item, found this
+  session): a watch/validator/comparator/reducer that re-enters the evaluator unboundedly
+  overflows the NATIVE stack → SIGSEGV (the watch case is already partial-fixed; the GENERAL
+  fix = a shared re-entry budget, cleanest as making the VM frame budget GLOBAL across the
+  vt.callFn re-entry boundary). ADR-level: needs cap measurement + a Devil's-advocate pass.
+  Then drain other deferred deep items (D-482 seq-laziness, D-479 Class/forName, D-480
+  Serializable). Policy unchanged: **official stdlib → eager bundle; contrib → verify**.
 
 - **Forbidden this session**: speculative JIT integration before zwasm's API stabilises
   (read `.dev/zwasm_capabilities.md` — JIT row BUILDING, not adoptable). `git push
@@ -36,19 +40,20 @@
 
 ## Last landed (git log = SSOT; all pushed)
 
-**The stdlib/contrib sweep campaign (2026-06-21): bundled spec.alpha/gen/core.specs.alpha
-+ datafy + test.junit; ~16 GENERIC clj-parity fixes surfaced + a GC-lifetime fix.**
-- **Bundled** (eager, ADR-0156): spec.alpha/gen.alpha (FILES[24/25]) + core.specs.alpha[26]
-  + datafy[27] + test.junit[28]. `math.combinatorics` verified.
-- **Generic fixes**: `&`-destructure seq-walk · MapEntry-as-IFn · MultiFn read-surface ·
-  `->` non-list step · **definterface** (retired the last analyzer wedge → defprotocol) ·
-  13 **instance? markers** (Counted/MapEquivalence/Comparable/IHashEq/IReduceInit/
-  ITransient* …) · **extend-protocol to host types** (Namespace/IRef/Throwable/Class,
-  D-478) · `ns-imports` · core.protocols Datafiable/Navigable defaults · clojure.test
-  `:begin/:end-test-var`+`:end-test-ns` events + `file-position` · `seq-to-map-for-
-  destructuring` (1.11) · `fn-sym` name recovery.
-- **D-481 GC fix**: `Runtime.deinit` now finalizes the GC heap BEFORE freeing descriptors
-  (host_instance finaliser reads `inst.descriptor`); unblocked datafy.
+**Differential bug-sweep (2026-06-21, post-stdlib-campaign): 14 areas confirmed
+byte-identical to clj; 4 real generic bugs FIXED + 2 divergences classified.**
+- **Fixes**: `defmacro ^:private` now sets the Var private flag (was leaking private
+  macros into ns-publics, 8b834d2e) · unary `(- 0.0)` IEEE-negates floats (was +0.0,
+  659c6f1d) · transient READS (count/nth/get/contains?) now throw on a consumed
+  transient like writes (d011849a) · self-triggering atom watch raises a graceful
+  Stack-overflow instead of SIGSEGV (b69d97a9, watch-nesting guard cap 256).
+- **Classified**: AD-050 (float-zero divisor → IEEE ±Inf on all cljw `/` paths; clj's
+  inline-vs-runtime throw is an unreproducible JVM artifact) · AD-007 extended to cover
+  `(class <caught-ex>)` exception-class mapping.
+- **D-485 filed** (open): general primitive-reentry native-stack guard — the watch fix
+  is the partial; validators/comparators/reducers still unguarded (= resume's 1st task).
+- Earlier same-day: stdlib/contrib campaign (spec.alpha/gen/core.specs.alpha + datafy +
+  test.junit bundled, ADR-0156; ~16 generic fixes + D-481 GC-lifetime fix) — see git log.
 - **ADs/debt**: AD-049 (spec `rt/` form) · D-479 (core.match Class/forName, deferred) ·
   D-482 (cljw eagerly counts cons/take outputs, deferred). builder.zig has an AOT-fail
   `<file> form #N: <msg>` diagnostic. Core clj-diff sweeps (~110 exprs) found ~1 real gap
