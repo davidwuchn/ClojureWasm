@@ -28,18 +28,33 @@ active:
     status: "open (2026-06-21, surfaced by the atom/watch differential sweep). A higher-order primitive that re-enters the evaluator via a user callback — `notifyWatches`→`invokeCallable`, a `set-validator!` validator, a `sort` comparator, a `reduce` fn — recurses in NATIVE Zig frames that the VM's per-run frame budget (vm.zig FRAMES_MAX=2048) does NOT bound (each `vt.callFn` re-entry starts a fresh VM run with frame_top=0). So an UNBOUNDED self-re-entering callback overflows the native stack → SIGSEGV (exit 134), where clj raises a catchable StackOverflowError. Repro (was SIGSEGV): `(let [a (atom 0)] (add-watch a :w (fn [k r o n] (swap! r inc))) (swap! a inc))`. PARTIAL FIX LANDED for the watch case: a threadlocal watch-nesting guard (iref.enterWatchNotify, cap 256) in BOTH the sync (atom.zig) + async (iref.zig) notify loops converts the watch runaway into a graceful stack_overflow error (e2e phase15_watch_recursion). STILL OPEN: validators / comparators / reduce-fns re-entering unboundedly are NOT yet guarded — they share the same native-reentry overflow. RELATED: cljw's stack_overflow error is NOT catchable by (catch Throwable …) (clj's StackOverflowError is) — a separate AD-007-adjacent gap. SCOPE CONFIRMED (2026-06-21 investigation): a `set-validator!` validator that re-triggers its atom AND a `reduce` fn that re-reduces BOTH still SIGSEGV (unguarded re-entry); but a comparator that recurses on ITSELF (`(sort (fn cmp [x y] (cmp x y)) …)`) is ALREADY graceful (direct VM self-call → op_call/flattenPush, FRAMES_MAX-bounded) — only PRIMITIVE→callFn re-entry is unguarded, not VM self-recursion. NAIVE FIX RULED OUT: a low nesting cap at `higher_order.invokeCallable` (the shared re-entry chokepoint) would FALSE-TRIP legit deep recursion that flows through map/reduce (those nest invokeCallable too), since clj + cljw's VM allow 2048-deep recursion. So a 256-ish invokeCallable cap breaks `(defn f [n] (when (pos? n) (reduce + (map (fn [_] (f (dec n))) [1]))))` at depth 256. CORRECT FIX = the GLOBAL-frame-budget variant (below): the re-entrant VM run CONTINUES the outer frame_top instead of resetting, so legit recursion-through-higher-order AND infinite re-entry BOTH hit the same 2048 limit that plain recursion does (2048 VM-frames of native stack is KNOWN safe — plain recursion proves it). The watch partial's cap-256 is safe ONLY because watch nesting never legitimately deep-recurses."
     category: "robustness"
     barrier: |-
-      The finished form is a SINGLE re-entry depth budget shared across every
-      primitive→callFn re-entry (the chokepoint is `higher_order.invokeCallable`
-      / `tree_walk.treeWalkCall`), so ANY unbounded callback recursion (watch /
-      validator / comparator / reducer) trips one graceful limit — NOT a per-site
-      guard like the D-485-partial watch counter. ADR-level: it adds a resource
-      limit on the hot call path, so the cap value needs measuring (native frame
-      size per re-entry level vs the 8MB stack) + a Devil's-advocate pass before
-      landing. The cleaner variant is making the VM frame budget GLOBAL across
-      re-entry (the 2048 counter continues instead of resetting per vt.callFn run),
-      so watch/validator/etc. recursion hits the same 2048 limit as plain
-      recursion. Take up as a dedicated robustness unit; the watch partial removes
-      the realistic footgun's crash in the meantime.
+      MECHANISM FULLY TRACED (2026-06-21). The VM frame budget is ALREADY global:
+      `vm.eval` (vm.zig:194) saves `frame_base = ar.frame_top` on entry and
+      CONTINUES from it (does NOT reset to 0), and the FRAMES_MAX=2048 check
+      (vm.zig:227 + flattenPush:149) sees the global depth. Plain VM recursion is
+      safe at 2048 because op_call FLATTENS in-VM (iterative — ~1 native frame per
+      VM frame). The segfault is NOT a missing global budget — it is that each
+      PRIMITIVE→callFn re-entry (callBuiltin→notifyWatches→invokeCallable→
+      treeWalkCall→callMethodImpl→eval) adds ~6-10 NATIVE Zig frames but only ~1-2
+      VM frames, so `frame_top` UNDER-COUNTS native depth and the native stack
+      overflows before frame_top reaches 2048.
+      CLEAN FIX (the dedicated unit): a threadlocal `eval_reentry_depth` counter
+      incremented at the `vm.eval` ENTRY (defer-decrement), capped, raising
+      stack_overflow — this bounds the EXPENSIVE native-eval-nesting dimension
+      uniformly for ALL primitive re-entry (watch/validator/reducer/comparator-
+      via-primitive). It is NOT the hot per-call path: op_call/flattenPush stay
+      unbounded-by-this; only nested eval-entry (per higher-order element, depth 1
+      for a flat reduce — never accumulates) is counted, so `(reduce + (range 1e6))`
+      stays at depth 1. It SUBSUMES the D-485-partial watch counter (remove it).
+      The ONE empirical unknown = the CAP value: must be safe for the worst-case
+      per-re-entry native frame size (8MB stack / ~2KB-per-level ≈ a few thousand)
+      yet as high as possible to match clj's deep-recursion-through-HOF (clj also
+      bounds it at the JVM stack — cljw will error EARLIER but gracefully, both
+      bound it). cap-256 is proven safe (the watch partial) but likely too low for
+      legit recursion-through-map/reduce. MEASURE the safe ceiling empirically.
+      ADR-level (new resource limit + behavior change + cap calibration) → draft
+      ADR + mandatory Devil's-advocate fork. Take up as a dedicated unit; the watch
+      partial removes the realistic footgun's crash meanwhile.
     last_reviewed: "2026-06-21"
   - id: "D-458"
     status: "DISCHARGED (2026-06-20). `cl-dir` now emits a `:cl-arg` sentinel for `V`/`v` and `:cl-remaining` for `#`; `cl-run` resolves both against argv BEFORE dispatch via `cl-resolve-params` (V pulls + CONSUMES the next operand, advancing pos; # = remaining-arg count, no consume), so EVERY parameterised directive gets V/# uniformly with no per-arm change. `~n[`/`~#[` clause-select added (a prefix param selects + consumes no arg). e2e phase14_cl_format: param-V-mincol/-padchar/-radix/-money/-float-w/-float-d, param-hash-mincol, param-hash-select-1/-2, param-n-select; corpus test/diff/clj_corpus/cl_format_params.txt (10 cases). KNOWN clj DIFF NOT chased: consecutive-V on a float (`~V,VF` 8 2) — clj is internally INCONSISTENT there (gives \"3.14159000\" ≠ its own `~8,2F` \"    3.14\"); cljw produces the consistent literal-equivalent value. Too niche to AD (a clj bug, not a cljw gap; promote-to-AD if a real corpus hits it). SEPARATE pre-existing gap found + filed as D-465: `~F` without a d-param defaults to 0 decimals (`~8F` → cljw \"       3\" vs clj \" 3.14159\" full-precision). ORIGINAL: open (2026-06-17, surfaced completing cl-format ~E/~G, D-455 chunk3)."
