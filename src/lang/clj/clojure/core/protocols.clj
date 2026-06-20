@@ -37,4 +37,16 @@
 (defprotocol Navigable
   (nav [coll k v] "Return the value navigated to from coll via k and v."))
 
+;; Default impls (clojure.core.protocols parity): datafy is identity on Object /
+;; nil on nil; nav returns the already-navigated value.
+(extend-protocol Datafiable
+  nil
+  (datafy [_] nil)
+  Object
+  (datafy [x] x))
+
+(extend-protocol Navigable
+  Object
+  (nav [_ _ x] x))
+
 ;; Docstrings reproduced from clojure.core.protocols; ClojureWasm changes (c) the ClojureWasm authors. EPL-2.0.

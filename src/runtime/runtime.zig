@@ -631,10 +631,20 @@ pub const Runtime = struct {
             slot.* = .nil_val;
         }
 
-        // Free per-Tag native descriptors first (their method_table
-        // slice was re-allocated on rt.gc.infra by extendTypeWithImpls
-        // calls, plus each method-name dup, plus the fqcn dup). All
-        // process-lifetime by policy; freeing here keeps testing
+        // D-481: finalise the GC heap BEFORE freeing the native/class/user
+        // TypeDescriptors below. A `.host_instance` finaliser (host_instance.zig
+        // finaliseGc) reads `inst.descriptor.host_finalise`, so the descriptor
+        // must outlive finalisation. The descriptor frees use `gc.infra` (a
+        // passed-in allocator FIELD that gc.deinit never tears down), so they are
+        // valid AFTER this; `heap_objects` (gpa) is a separate list. Surfaced by a
+        // host_instance whose descriptor was a native/class descriptor — extend a
+        // protocol to Object + a host-native tag, then deinit (clojure.datafy).
+        self.gc.deinit();
+
+        // Free per-Tag native descriptors (their method_table slice was
+        // re-allocated on rt.gc.infra by extendTypeWithImpls calls, plus each
+        // method-name dup, plus the fqcn dup). All process-lifetime by policy;
+        // freeing here keeps testing
         // allocator quiet.
         for (&self.native_descriptors) |*slot| {
             if (slot.*) |td| {
@@ -727,7 +737,7 @@ pub const Runtime = struct {
         }
         self.source_registry.deinit(self.gpa);
 
-        self.gc.deinit();
+        // (gc.deinit moved up — D-481: it must run before the descriptor frees.)
         self.symbols.deinit();
         self.keywords.deinit();
     }

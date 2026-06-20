@@ -1,0 +1,20 @@
+(clojure.datafy/datafy 5)
+;;=> 5
+(clojure.datafy/datafy nil)
+;;=> nil
+(clojure.datafy/datafy "hi")
+;;=> "hi"
+(clojure.datafy/datafy [1 2 3])
+;;=> [1 2 3]
+(clojure.datafy/datafy {:a 1})
+;;=> {:a 1}
+(clojure.datafy/datafy (atom 42))
+;;=> [42]
+(clojure.datafy/nav [10 20] 0 10)
+;;=> 10
+(clojure.datafy/nav {:a 1} :a 1)
+;;=> 1
+(:name (clojure.datafy/datafy (create-ns (quote foo.bar))))
+;;=> foo.bar
+(get (clojure.datafy/datafy (create-ns (quote foo.baz))) :name)
+;;=> foo.baz

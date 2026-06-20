@@ -117,6 +117,11 @@ pub const FILES: []const FileEntry = &.{
     // for clojure.core macros. Loads after spec.alpha (it `(:require …spec.alpha)`).
     // Verbatim upstream (no adaptations). Appended last.
     .{ .label = "<clojure.core.specs.alpha>", .source = @embedFile("clj/clojure/core/specs/alpha.clj") },
+    // clojure.datafy — official stdlib (datafy/nav over core.protocols). Loads
+    // after clojure.core.protocols (FILES[14]). One no-JVM adaptation (the
+    // warn-on-reflection set! dropped); its Datafiable extend over IRef/Namespace/
+    // Throwable/Class rides D-478. Re-landed once D-481 (gc.deinit ordering) fixed.
+    .{ .label = "<clojure.datafy>", .source = @embedFile("clj/clojure/datafy.clj") },
 };
 
 /// First file's source — exposed so `main.zig`'s renderer can fall
@@ -167,6 +172,7 @@ fn lookupEmbeddedFile(ns_name: []const u8) ?FileEntry {
     if (std.mem.eql(u8, ns_name, "clojure.spec.gen.alpha")) return FILES[24];
     if (std.mem.eql(u8, ns_name, "clojure.spec.alpha")) return FILES[25];
     if (std.mem.eql(u8, ns_name, "clojure.core.specs.alpha")) return FILES[26];
+    if (std.mem.eql(u8, ns_name, "clojure.datafy")) return FILES[27];
     return null;
 }
 
