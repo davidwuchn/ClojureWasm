@@ -47,5 +47,16 @@ assert_eq 'two_level_watch' \
 EOF
 )" '[2]'
 
+# (4) ADR-0157 2b: the watch-overflow stack_overflow is CATCHABLE (own Kind →
+# StackOverflowError ⊂ Error ⊂ Throwable), matching clj — was uncatchable
+# (resource_exhausted → null). Catchable by StackOverflowError / Error / Throwable.
+WREC='(let [a (atom 0)] (add-watch a :w (fn [k r o n] (swap! r inc))) (swap! a inc))'
+assert_eq 'catch_as_stackoverflow' "$("$BIN" -e "(try $WREC (catch StackOverflowError e :caught))")" ':caught'
+assert_eq 'catch_as_throwable'     "$("$BIN" -e "(try $WREC (catch Throwable e :caught))")" ':caught'
+# It is an Error, NOT an Exception — (catch Exception …) must NOT catch it; it
+# falls through to the (catch Throwable …) clause (clj parity).
+assert_eq 'catch_not_as_exception' \
+  "$("$BIN" -e "(try $WREC (catch Exception e :as-exc) (catch Throwable e :as-thr))")" ':as-thr'
+
 echo ""
 echo "=== phase15_watch_recursion: all assertions passed ==="

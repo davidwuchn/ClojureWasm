@@ -83,6 +83,15 @@ pub const Kind = enum {
     /// `kindToHostClass`) so untrusted code cannot swallow its own timeout via
     /// `(try … (catch Throwable …))`.
     resource_exhausted,
+    /// Call-stack depth exceeded — clj's `StackOverflowError` (ADR-0157 2b).
+    /// CATCHABLE (maps to `StackOverflowError` ⊂ `Error` ⊂ `Throwable`, so
+    /// `(catch StackOverflowError …)` / `(catch Error …)` / `(catch Throwable …)`
+    /// recover it like clj, but `(catch Exception …)` does NOT — it is an Error,
+    /// not an Exception). DISTINCT from `resource_exhausted` (the eval-budget /
+    /// heap bound), which stays UNCATCHABLE so untrusted code cannot swallow its
+    /// own sandbox limit — stack overflow and the resource budget look alike but
+    /// have OPPOSITE catchability requirements (ADR-0157 DA finding).
+    stack_overflow_error,
     /// A worker thunk hit a blocking primitive after its future was
     /// `future-cancel`led (D-442 / ADR-0153 sub-step 2). UNCATCHABLE (maps to
     /// null in `kindToHostClass`) so a `(try (Thread/sleep …) (catch Throwable …))`
@@ -213,6 +222,9 @@ fn kindToError(kind: Kind) ClojureWasmError {
         .internal_error => ClojureWasmError.InternalError,
         .out_of_memory => ClojureWasmError.OutOfMemory,
         .resource_exhausted => ClojureWasmError.ResourceExhausted,
+        // Reuse the ResourceExhausted Zig error for control flow — catchability is
+        // Kind-driven (kindToHostClass), not Zig-error-driven (ADR-0157 2b).
+        .stack_overflow_error => ClojureWasmError.ResourceExhausted,
         .cancellation_abort => ClojureWasmError.CancellationAbort,
     };
 }

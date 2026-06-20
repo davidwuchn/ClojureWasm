@@ -956,7 +956,7 @@ pub fn entry(comptime code: Code) Entry {
             .template = "fn frame ({[base]d}+{[arity]d}) exceeds the limit of {[max]d}",
         },
         .stack_overflow => .{
-            .kind = .resource_exhausted,
+            .kind = .stack_overflow_error,
             .phase = .eval,
             .template = "Stack overflow (call depth exceeded {[max]d})",
         },

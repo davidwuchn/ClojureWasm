@@ -74,6 +74,10 @@ pub const ENTRIES = [_]Entry{
     .{ .name = "OutOfMemoryError", .parent = "Error" },
     // `(assert …)` throws an AssertionError (under Error, NOT Exception) — D-192.
     .{ .name = "AssertionError", .parent = "Error" },
+    // Stack overflow: JVM StackOverflowError ⊂ VirtualMachineError ⊂ Error; cw
+    // flattens the intermediate (like ReflectiveOperationException). Under Error,
+    // so `(catch Exception …)` does NOT catch it — clj parity (ADR-0157 2b).
+    .{ .name = "StackOverflowError", .parent = "Error" },
 
     .{ .name = "Exception", .parent = "Throwable" },
     .{ .name = "IOException", .parent = "Exception" },
@@ -279,6 +283,9 @@ pub fn kindToHostClass(kind: Kind) ?[]const u8 {
         .name_error, .syntax_error, .string_error => "RuntimeException",
         .io_error => "IOException",
         .file_not_found => "FileNotFoundException",
+        // ADR-0157 2b: stack overflow is catchable (clj parity), DISTINCT from the
+        // (uncatchable) eval-budget/heap `resource_exhausted`.
+        .stack_overflow_error => "StackOverflowError",
         .not_implemented, .internal_error, .out_of_memory, .resource_exhausted, .cancellation_abort => null,
     };
 }
