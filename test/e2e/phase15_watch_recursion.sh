@@ -74,5 +74,14 @@ assert_eq 'reducer_reentry_caught' "$("$BIN" -e "(try $RREC (catch Throwable e :
 assert_eq 'legit_hof_recursion' \
   "$("$BIN" -e '((fn f [n] (if (zero? n) :done (first (map (fn [_] (f (dec n))) [1])))) 500)')" ':done'
 
+# (7) D-486: a deep DIRECT recursion overflow (FRAMES_MAX, flattened in-VM) is
+# ALSO catchable — the flatten path now routes its overflow through the shared
+# error arm instead of propagating out of eval past the handler (clj parity).
+DREC='((fn f [n] (f (inc n))) 0)'
+assert_eq 'direct_recursion_caught' "$("$BIN" -e "(try $DREC (catch StackOverflowError e :caught))")" ':caught'
+assert_eq 'direct_recursion_thr'    "$("$BIN" -e "(try $DREC (catch Throwable e :caught))")" ':caught'
+# legit bounded direct recursion is untouched (no false trip).
+assert_eq 'legit_direct_recursion'  "$("$BIN" -e '((fn f [n] (if (zero? n) :done (f (dec n)))) 500)')" ':done'
+
 echo ""
 echo "=== phase15_watch_recursion: all assertions passed ==="

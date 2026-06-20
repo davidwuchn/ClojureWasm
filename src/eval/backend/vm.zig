@@ -324,18 +324,23 @@ pub fn eval(
         }
         var flatten_req: ?FlattenReq = null;
         const step_result = stepOnce(rt, env, cur.locals, cur.chunk, &ar.stack, &ar.loc, &ar.op_top, &ip, &handlers, &handler_count, &flatten_req);
-        if (flatten_req) |fr| {
+        // D-486: a flattenPush FRAMES_MAX overflow must reach the shared error arm
+        // below (`else |err|` — unwind + synthesise the catalog error into a
+        // catchable thrown value + jump to the handler) so THIS eval's own
+        // try/catch catches a deep DIRECT recursion. A bare `try flattenPush`
+        // propagated it straight OUT of `eval`, bypassing the handler (re-entry
+        // overflows reach the arm via a stepOnce error, so they already caught).
+        const result: anyerror!?Value = if (flatten_req) |fr| res: {
             // 2b: op_call resolved a monomorphic bytecode callee — push an in-VM
-            // frame + continue this loop (no host eval re-entry). Save the
-            // caller's advanced `ip` into its frame, then re-seat `cur`/`ip` on
-            // the callee (D-386 sub-step 1).
+            // frame + continue this loop (no host eval re-entry). Save the caller's
+            // advanced `ip`, then re-seat `cur`/`ip` on the callee (D-386 sub-step 1).
             cur.ip = ip;
-            try flattenPush(rt, ar, fr);
+            flattenPush(rt, ar, fr) catch |e| break :res e;
             cur = &ar.frames[ar.frame_top - 1];
             ip = cur.ip;
             continue;
-        }
-        if (step_result) |maybe_return| {
+        } else step_result;
+        if (result) |maybe_return| {
             if (maybe_return) |v| {
                 // op_ret on `cur`. Base frame → the eval returns; a flattened
                 // frame → pop it (restore trace / gc head / local_top) and land the
