@@ -116,8 +116,24 @@ assert_eq 'just_atcol' "$(run '(prn (pp/cl-format nil "~20@:<~A~;~A~;~A~>" "foo"
 assert_eq 'just_colinc' "$(run '(prn (pp/cl-format nil "~10,10<~A~;~A~;~A~>" "foo" "bar" "baz"))')" '"foo barbaz"'
 assert_eq 'just_caret' "$(run '(prn (pp/cl-format nil "~20<~A~;~^~A~;~^~A~>" "foo" "bar"))')" '"foo              bar"'
 
-# still-unimplemented directive raises explicitly (not silent mishandle): the V/#
-# runtime-valued params (D-458) + the ~<…~:;…~> pretty-print column mode (no writer).
-assert_eq 'unsupported-raises' "$(run '(prn (try (pp/cl-format nil "~VD" 5 42) (catch Throwable e :raised)))')" ':raised'
+# D-458: V/# runtime-valued params (clj-verified). V pulls + consumes the next
+# operand as the param value; # is the count of args remaining to process.
+assert_eq 'param-V-mincol'    "$(run '(prn (pp/cl-format nil "~VD" 5 42))')"         '"   42"'
+assert_eq 'param-V-padchar'   "$(run '(prn (pp/cl-format nil "~V,'"'"'*D" 5 42))')"  '"***42"'
+assert_eq 'param-hash-mincol' "$(run '(prn (pp/cl-format nil "~#D" 42 0 0))')"       '" 42"'
+assert_eq 'param-V-radix'     "$(run '(prn (pp/cl-format nil "~VR" 16 255))')"       '"ff"'
+assert_eq 'param-V-money'     "$(run '(prn (pp/cl-format nil "~,V$" 3 12.5))')"      '"012.50"'
+# V resolves to the w/d params for floats too (explicit d — the no-d ~F full-
+# precision default is the separate pre-existing D-465 gap, not exercised here).
+assert_eq 'param-V-float-w'   "$(run '(prn (pp/cl-format nil "~8,VF" 2 3.14159))')"  '"    3.14"'
+assert_eq 'param-V-float-d'   "$(run '(prn (pp/cl-format nil "~V,2F" 8 3.14159))')"  '"    3.14"'
+# ~#[ count-select: the remaining-arg count picks the clause, consuming no arg.
+assert_eq 'param-hash-select-2' "$(run '(prn (pp/cl-format nil "~#[a~;b~;c~]" :x :y))')" '"c"'
+assert_eq 'param-hash-select-1' "$(run '(prn (pp/cl-format nil "~#[a~;b~;c~]" :x))')"     '"b"'
+# ~n[ literal-param select (also consumes no arg).
+assert_eq 'param-n-select'    "$(run '(prn (pp/cl-format nil "~1[a~;b~;c~]"))')"     '"b"'
 
-echo "OK — phase14_cl_format (82 cases) green"
+# Still raising (no silent mishandle): the ~<…~:;…~> pretty-print column mode (no writer).
+assert_eq 'unsupported-raises' "$(run '(prn (try (pp/cl-format nil "~<a~:;b~>") (catch Throwable e :raised)))')" ':raised'
+
+echo "OK — phase14_cl_format (92 cases) green"

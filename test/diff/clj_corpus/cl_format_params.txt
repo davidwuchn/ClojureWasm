@@ -1,0 +1,26 @@
+; clojure.pprint/cl-format ~V / ~# runtime-valued directive params (D-458).
+; V pulls + CONSUMES the next operand as the param value; # is the count of
+; args remaining to process (no consume). ~n[ / ~#[ select a clause by a prefix
+; param, consuming no arg. Pinned vs the clj oracle (single-V cases are
+; clj-consistent; consecutive-V-on-float is a clj internal-inconsistency bug,
+; not pinned — see D-458 discharge).
+(clojure.pprint/cl-format nil "~VD" 5 42)
+;;=> "   42"
+(clojure.pprint/cl-format nil "~V,'*D" 5 42)
+;;=> "***42"
+(clojure.pprint/cl-format nil "~#D" 42 0 0)
+;;=> " 42"
+(clojure.pprint/cl-format nil "~VR" 16 255)
+;;=> "ff"
+(clojure.pprint/cl-format nil "~,V$" 3 12.5)
+;;=> "012.50"
+(clojure.pprint/cl-format nil "~8,VF" 2 3.14159)
+;;=> "    3.14"
+(clojure.pprint/cl-format nil "~V,2F" 8 3.14159)
+;;=> "    3.14"
+(clojure.pprint/cl-format nil "~#[a~;b~;c~]" :x :y)
+;;=> "c"
+(clojure.pprint/cl-format nil "~#[a~;b~;c~]" :x)
+;;=> "b"
+(clojure.pprint/cl-format nil "~1[a~;b~;c~]")
+;;=> "b"

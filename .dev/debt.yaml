@@ -25,7 +25,7 @@
 
 active:
   - id: "D-458"
-    status: "open (2026-06-17, surfaced completing cl-format ~E/~G, D-455 chunk3). `cl-dir` (pprint.clj directive-param parser) handles numeric, negative, and `'X` char params but NOT the CL runtime-valued params `V` (take the next arg as the param value) and `#` (param = count of remaining args). A format like `~13,6,2,VE` (upstream cltl-E-scale-tests) currently treats `V` as the directive char → raises `directive ~V not supported` (honest, no silent mishandle). Cross-cutting: V/# apply to every parameterised directive, not just ~E/~G."
+    status: "DISCHARGED (2026-06-20). `cl-dir` now emits a `:cl-arg` sentinel for `V`/`v` and `:cl-remaining` for `#`; `cl-run` resolves both against argv BEFORE dispatch via `cl-resolve-params` (V pulls + CONSUMES the next operand, advancing pos; # = remaining-arg count, no consume), so EVERY parameterised directive gets V/# uniformly with no per-arm change. `~n[`/`~#[` clause-select added (a prefix param selects + consumes no arg). e2e phase14_cl_format: param-V-mincol/-padchar/-radix/-money/-float-w/-float-d, param-hash-mincol, param-hash-select-1/-2, param-n-select; corpus test/diff/clj_corpus/cl_format_params.txt (10 cases). KNOWN clj DIFF NOT chased: consecutive-V on a float (`~V,VF` 8 2) — clj is internally INCONSISTENT there (gives \"3.14159000\" ≠ its own `~8,2F` \"    3.14\"); cljw produces the consistent literal-equivalent value. Too niche to AD (a clj bug, not a cljw gap; promote-to-AD if a real corpus hits it). SEPARATE pre-existing gap found + filed as D-465: `~F` without a d-param defaults to 0 decimals (`~8F` → cljw \"       3\" vs clj \" 3.14159\" full-precision). ORIGINAL: open (2026-06-17, surfaced completing cl-format ~E/~G, D-455 chunk3)."
     category: "clj-parity"
     barrier: |-
       none — localized to cl-dir. Finished form: when cl-dir sees `V`/`v` it emits a
@@ -34,7 +34,18 @@ active:
       the param list to thread through the arg-navigator (already index-based since
       D-455 chunk2), so the plumbing exists. Small, self-contained; take up alongside
       or after D-455 chunk4. Repro: `(cl-format nil "~VD" 5 42)` → cljw raises (clj → "   42").
-    last_reviewed: "2026-06-17"
+    last_reviewed: "2026-06-20"
+  - id: "D-465"
+    status: "open (2026-06-20, found discharging D-458). `cl-format` ~F (fixed float) WITHOUT a d-param forces 0 decimals instead of CL's 'no constraint on digits after the decimal' (full precision). `(cl-format nil \"~8F\" 3.14159)` → cljw \"       3\" (= `%8.0f`) vs clj \" 3.14159\" (natural precision, right-justified to width 8). Pre-existing (D-455 ~F), orthogonal to D-458's V/# work — `~VF` correctly resolves the V param, then hits this ~F default. Likely also affects ~E/~G/~$ d-defaults; check the whole float-d-default surface when fixing."
+    category: "clj-parity"
+    barrier: |-
+      none — localized to cl-run's ~F arm (pprint.clj). Finished form: when the
+      d-param (p1) is nil, print the float's natural decimal representation (no
+      forced `%.<n>f`) then `cl-pad` to the w-param, instead of `(or p1 0)` →
+      `%w.0f`. Needs a clj-faithful float→string for the natural case (trailing-
+      zero / exponent behaviour); verify vs the clj oracle across ~F/~E/~G/~$
+      d-omitted cases (big-bang the float-d-default surface, don't drip). Small.
+    last_reviewed: "2026-06-20"
   - id: "D-453"
     status: "open (2026-06-16, ADR-0034 am5 Alt C — forward debt, deferred). Deepest conceptual finished form for class-value AOT: do NOT bake `.type_descriptor` constants at all — lower a class symbol in value position to an `op_load_class` (name as an already-serializable string/symbol constant) resolved at EXECUTION time, like `var_ref`. Removes the 0x10 wire tag from the decoder-permanence ledger entirely + unifies class-value with var-value under one 'named runtime entity, resolved at execution' model."
     category: "structure"

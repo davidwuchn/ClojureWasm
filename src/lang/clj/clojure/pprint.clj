@@ -71,27 +71,47 @@
 ;; ~[~;~] conditional (~:[bool / ~@[if-non-nil / ~:; default; nests), ~<~;~> justification
 ;; (~mincol,colinc,minpad,padchar< + : before / @ after / ~^ drop), ~~ literal ~. The
 ;; `~param,'padchar` grammar also parses negative params (~9,3,2,-2E) and char params.
-;; A nil stream returns the string; any other stream prints to *out* + returns nil. Still
-;; raising (no silent mishandle): the `V`/`#` runtime-valued params (a cl-dir gap, D-458)
-;; and the ~<…~:;…~> pretty-print column mode (needs a column-tracking writer cljw lacks).
+;; A nil stream returns the string; any other stream prints to *out* + returns nil. The
+;; `V`/`#` runtime-valued params resolve against argv (D-458: `V`→next operand consumed,
+;; `#`→remaining-arg count). Still raising (no silent mishandle): the ~<…~:;…~> pretty-
+;; print column mode (needs a column-tracking writer cljw lacks).
 (defn cl-digit? [c] (let [i (int c)] (and (>= i (int \0)) (<= i (int \9)))))
 (defn cl-int [c] (- (int c) (int \0)))
 
 ;; Parse a directive's `~[params][:][@]d` prefix from `fmt` starting at `i` (the
 ;; char just after `~`). Returns [params colon? at? directive-char next-i], where
 ;; params is a vector of (long | char | nil) — `~5,'0d` → [5 \0], `~,2f` → [nil 2].
+;; `V`/`v` → the `:cl-arg` sentinel (param value = the next operand, consumed at
+;; format time); `#` → `:cl-remaining` (param value = count of args remaining).
+;; cl-run resolves both against argv before dispatching the directive (D-458).
 (defn cl-dir [fmt i]
   (loop [j i params [] cur nil cur? false neg? false colon? false at? false]
     (let [c (nth fmt j)
-          signed (fn [v] (if neg? (- v) v))]
+          signed (fn [v] (if (and neg? (number? v)) (- v) v))]
       (cond
         (and (= c \-) (not cur?) (not neg?)) (recur (inc j) params cur cur? true colon? at?)
         (cl-digit? c) (recur (inc j) params (+ (* (or cur 0) 10) (cl-int c)) true neg? colon? at?)
         (= c \') (recur (+ j 2) params (nth fmt (inc j)) true false colon? at?)
+        (or (= c \V) (= c \v)) (recur (inc j) params :cl-arg true false colon? at?)
+        (= c \#) (recur (inc j) params :cl-remaining true false colon? at?)
         (= c \,) (recur (inc j) (conj params (if cur? (signed cur) nil)) nil false false colon? at?)
         (= c \:) (recur (inc j) params cur cur? neg? true at?)
         (= c \@) (recur (inc j) params cur cur? neg? colon? true)
         :else [(if cur? (conj params (signed cur)) params) colon? at? c (inc j)]))))
+
+;; Resolve a directive's runtime-valued params against argv (D-458): each
+;; `:cl-arg` (from `V`) pulls + CONSUMES the next operand (advancing pos); each
+;; `:cl-remaining` (from `#`) becomes the count of args still to process (no
+;; consume). Returns [resolved-params pos*] — pos* is past the V-consumed args.
+(defn cl-resolve-params [params argv pos na]
+  (loop [ps params out [] p pos]
+    (if (empty? ps)
+      [out p]
+      (let [v (first ps)]
+        (cond
+          (= v :cl-arg) (recur (rest ps) (conj out (when (< p na) (nth argv p))) (inc p))
+          (= v :cl-remaining) (recur (rest ps) (conj out (- na p)) p)
+          :else (recur (rest ps) (conj out v) p))))))
 
 ;; Left-pad `s` to `width` with `padchar` (CL-format right-justification default).
 (defn cl-pad [s width padchar]
@@ -442,7 +462,11 @@
         (let [c (nth fmt i)]
           (if (and (= c \~) (< (inc i) n))
             (let [pd (cl-dir fmt (inc i))
-                  params (nth pd 0) colon? (nth pd 1) at? (nth pd 2) d (nth pd 3) ni (nth pd 4)
+                  raw (nth pd 0) colon? (nth pd 1) at? (nth pd 2) d (nth pd 3) ni (nth pd 4)
+                  ;; D-458: resolve V (:cl-arg → next operand, consumed) / # (:cl-remaining
+                  ;; → remaining-arg count) before dispatch, advancing pos past consumed args.
+                  rp (cl-resolve-params raw argv pos na)
+                  params (nth rp 0) pos (nth rp 1)
                   p0 (first params) p1 (second params)
                   x (when (< pos na) (nth argv pos))]
               (cond
@@ -469,10 +493,11 @@
                 (= d \()
                 (let [cl (cl-close fmt ni \)) r (cl-run (nth cl 0) argv pos)]
                   (recur (nth cl 1) (nth r 1) (str acc (cl-case (nth r 0) colon? at?))))
-                ;; ~[...~;...~] — conditional. Plain: select clause by integer arg
-                ;; (~:; = default). ~:[f~;t~] boolean (nil/false→0). ~@[c~] runs c
-                ;; only if next arg non-nil (and lets c consume it). ~#[ count-select
-                ;; is deferred (D-458 `#` param). Clauses nest (cl-close-nested).
+                ;; ~[...~;...~] — conditional. Plain: select clause by a prefix-param
+                ;; (~n[ / ~#[ count-select; consumes NO arg) when present, else by the
+                ;; next integer arg (~:; = default). ~:[f~;t~] boolean (nil/false→0).
+                ;; ~@[c~] runs c only if next arg non-nil (and lets c consume it).
+                ;; Clauses nest (cl-close-nested).
                 (= d \[)
                 (let [clc (cl-close-nested fmt ni \[ \]) body (nth clc 0) after (nth clc 1)
                       cls (cl-clauses body \[ \]) clauses (nth cls 0) didx (nth cls 1)]
@@ -485,11 +510,16 @@
                                  r (cl-run (nth clauses sel) argv (inc pos))]
                              (recur after (nth r 1) (str acc (nth r 0))))
                     :else (let [normal (or didx (count clauses))
-                                chosen (cond (and (>= x 0) (< x normal)) x didx didx :else nil)]
+                                ;; ~n[ / ~#[: a prefix param selects the clause and
+                                ;; consumes NO arg; otherwise the next arg selects + is
+                                ;; consumed (D-458 # count-select).
+                                sel (if (nil? p0) x p0)
+                                consume (if (nil? p0) 1 0)
+                                chosen (cond (and (>= sel 0) (< sel normal)) sel didx didx :else nil)]
                             (if chosen
-                              (let [r (cl-run (nth clauses chosen) argv (inc pos))]
+                              (let [r (cl-run (nth clauses chosen) argv (+ pos consume))]
                                 (recur after (nth r 1) (str acc (nth r 0))))
-                              (recur after (inc pos) acc)))))
+                              (recur after (+ pos consume) acc)))))
                 ;; ~<...~;...~> — justification. Render each ~;-segment, then spread
                 ;; padding to fill the column (~mincol,colinc,minpad,padchar< grammar;
                 ;; : pads before first, @ after last). ~^ in a segment drops it + the
