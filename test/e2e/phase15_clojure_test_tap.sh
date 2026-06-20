@@ -29,17 +29,25 @@ got=$("$BIN" - <<'EOF' 2>/dev/null
 (print (with-out-str (tap/with-tap-output (t/run-tests 'user))))
 EOF
 )
-# run-tests emits :begin-test-ns (clj's tap shows it too); names render via the
-# clj testing-vars-str form `(test-name)`; `=` actual is the bare (not (= …)) form
-# (D-463). cljw omits clj's per-var lifecycle diagnostics + the ` (file:line)`
-# suffix (no source location — AD-041).
+# run-tests emits the full lifecycle event set — :begin-test-ns, :begin/:end-test-var
+# (per test), :end-test-ns — which tap's `:default` renders as `# {…}` comment
+# lines, EXACTLY as clj's tap does (clj-verified 2026-06-21). cljw omits only the
+# ` (file:line)` source suffix on ok/not-ok and the ns identity-hash in the
+# begin/end-test-ns map (no source location / JVM identity — AD-041 / AD-002);
+# every other byte matches clj. Names render via testing-vars-str `(test-name)`;
+# `=` actual is the bare (not (= …)) form (D-463).
 want='# {:type :begin-test-ns, :ns user}
+# {:type :begin-test-var, :var #'\''user/pass-t}
 ok (pass-t)
 # expected:(= 1 1)
 #   actual:(= 1 1)
+# {:type :end-test-var, :var #'\''user/pass-t}
+# {:type :begin-test-var, :var #'\''user/fail-t}
 not ok (fail-t)
 # expected:(= 1 2)
 #   actual:(not (= 1 2))
+# {:type :end-test-var, :var #'\''user/fail-t}
+# {:type :end-test-ns, :ns user}
 1..2'
 assert_eq 'tap_output' "$got" "$want"
 
