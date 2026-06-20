@@ -24,6 +24,23 @@
 # md-table-align no longer pads it to ~800 KB of whitespace.
 
 active:
+  - id: "D-485"
+    status: "open (2026-06-21, surfaced by the atom/watch differential sweep). A higher-order primitive that re-enters the evaluator via a user callback — `notifyWatches`→`invokeCallable`, a `set-validator!` validator, a `sort` comparator, a `reduce` fn — recurses in NATIVE Zig frames that the VM's per-run frame budget (vm.zig FRAMES_MAX=2048) does NOT bound (each `vt.callFn` re-entry starts a fresh VM run with frame_top=0). So an UNBOUNDED self-re-entering callback overflows the native stack → SIGSEGV (exit 134), where clj raises a catchable StackOverflowError. Repro (was SIGSEGV): `(let [a (atom 0)] (add-watch a :w (fn [k r o n] (swap! r inc))) (swap! a inc))`. PARTIAL FIX LANDED for the watch case: a threadlocal watch-nesting guard (iref.enterWatchNotify, cap 256) in BOTH the sync (atom.zig) + async (iref.zig) notify loops converts the watch runaway into a graceful stack_overflow error (e2e phase15_watch_recursion). STILL OPEN: validators / comparators / reduce-fns re-entering unboundedly are NOT yet guarded — they share the same native-reentry overflow. RELATED: cljw's stack_overflow error is NOT catchable by (catch Throwable …) (clj's StackOverflowError is) — a separate AD-007-adjacent gap."
+    category: "robustness"
+    barrier: |-
+      The finished form is a SINGLE re-entry depth budget shared across every
+      primitive→callFn re-entry (the chokepoint is `higher_order.invokeCallable`
+      / `tree_walk.treeWalkCall`), so ANY unbounded callback recursion (watch /
+      validator / comparator / reducer) trips one graceful limit — NOT a per-site
+      guard like the D-485-partial watch counter. ADR-level: it adds a resource
+      limit on the hot call path, so the cap value needs measuring (native frame
+      size per re-entry level vs the 8MB stack) + a Devil's-advocate pass before
+      landing. The cleaner variant is making the VM frame budget GLOBAL across
+      re-entry (the 2048 counter continues instead of resetting per vt.callFn run),
+      so watch/validator/etc. recursion hits the same 2048 limit as plain
+      recursion. Take up as a dedicated robustness unit; the watch partial removes
+      the realistic footgun's crash in the meantime.
+    last_reviewed: "2026-06-21"
   - id: "D-458"
     status: "DISCHARGED (2026-06-20). `cl-dir` now emits a `:cl-arg` sentinel for `V`/`v` and `:cl-remaining` for `#`; `cl-run` resolves both against argv BEFORE dispatch via `cl-resolve-params` (V pulls + CONSUMES the next operand, advancing pos; # = remaining-arg count, no consume), so EVERY parameterised directive gets V/# uniformly with no per-arm change. `~n[`/`~#[` clause-select added (a prefix param selects + consumes no arg). e2e phase14_cl_format: param-V-mincol/-padchar/-radix/-money/-float-w/-float-d, param-hash-mincol, param-hash-select-1/-2, param-n-select; corpus test/diff/clj_corpus/cl_format_params.txt (10 cases). KNOWN clj DIFF NOT chased: consecutive-V on a float (`~V,VF` 8 2) — clj is internally INCONSISTENT there (gives \"3.14159000\" ≠ its own `~8,2F` \"    3.14\"); cljw produces the consistent literal-equivalent value. Too niche to AD (a clj bug, not a cljw gap; promote-to-AD if a real corpus hits it). SEPARATE pre-existing gap found + filed as D-465: `~F` without a d-param defaults to 0 decimals (`~8F` → cljw \"       3\" vs clj \" 3.14159\" full-precision). ORIGINAL: open (2026-06-17, surfaced completing cl-format ~E/~G, D-455 chunk3)."
     category: "clj-parity"
