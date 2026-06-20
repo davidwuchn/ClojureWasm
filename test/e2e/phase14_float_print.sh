@@ -35,6 +35,12 @@ assert_eq 'str_whole'      "$("$BIN" -e '(str 5.0)')"      '"5.0"'
 assert_eq 'arith_whole'    "$("$BIN" -e '(* 2.0 3)')"      '6.0'
 assert_eq 'div_frac'       "$("$BIN" -e '(/ 1.0 4)')"      '0.25'
 assert_eq 'neg_zero'       "$("$BIN" -e '-0.0')"           '-0.0'
+# Unary (- x) is IEEE negate, not (0 - x): (- 0.0) must keep the sign bit so it
+# prints -0.0 and divides to -Inf (clj parity). (0 - 0.0) would give +0.0.
+assert_eq 'unary_neg_zero'  "$("$BIN" -e '(- 0.0)')"         '-0.0'
+assert_eq 'unary_neg_zero_div' "$("$BIN" -e '(/ 1.0 (- 0.0))')" '##-Inf'
+assert_eq 'unchecked_neg_zero' "$("$BIN" -e '(unchecked-negate 0.0)')" '-0.0'
+assert_eq 'unary_neg_nonzero'  "$("$BIN" -e '(- 2.5)')"      '-2.5'
 # Type fidelity: the printed value still reads back as a float.
 assert_eq 'still_float'    "$("$BIN" -e '(float? (* 2.0 3))')" 'true'
 

@@ -92,6 +92,10 @@ pub fn minus(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) 
     if (args.len == 0)
         return error_catalog.raise(.arity_below_min, loc, .{ .got = @as(usize, 0), .fn_name = "-", .min = @as(usize, 1) });
     if (args.len == 1) {
+        // IEEE negate for a float so `(- 0.0)` → -0.0 (sign bit flipped);
+        // `(0 - 0.0)` would yield +0.0. Other numeric types have no signed
+        // zero, so `0 - x` is equivalent for them.
+        if (args[0].isFloat()) return Value.initFloat(-args[0].asFloat());
         return promote.subPromoting(rt, Value.initInteger(0), args[0]) catch |err| switch (err) {
             error.NonTerminatingDecimal => return error_catalog.raise(.non_terminating_decimal, loc, .{}),
             else => return err,
