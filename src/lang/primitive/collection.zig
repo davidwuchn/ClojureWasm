@@ -168,10 +168,29 @@ fn recordConj(rt: *Runtime, rec: Value, x: Value, loc: SourceLocation) anyerror!
     }
 }
 
+/// `map.forEachEntry` accumulator: assoc each entry of another map into `acc`
+/// (`(conj m other-map)` merges every entry, the merged map winning on a key
+/// clash — clj's `PersistentArrayMap.cons` with an `IPersistentMap` arg).
+const MapMergeCtx = struct {
+    rt: *Runtime,
+    acc: *Value,
+    fn cb(ctx: *MapMergeCtx, k: Value, v: Value) anyerror!void {
+        ctx.acc.* = try map.assoc(ctx.rt, ctx.acc.*, k, v);
+    }
+};
+
 fn mapConj(rt: *Runtime, m: Value, entry: Value, loc: SourceLocation) anyerror!Value {
     // (conj m (first other-map)) — a MapEntry is a [k v] pair too (D-209).
     if (entry.tag() == .map_entry) {
         return try map.assoc(rt, m, map_entry.keyOf(entry), map_entry.valOf(entry));
+    }
+    // (conj m other-map) — clj merges every entry (the clojure.spec.alpha pcat*
+    // `(conj ret {k1 rp})` path; into a map a whole map is a valid cons arg).
+    if (entry.tag() == .array_map or entry.tag() == .hash_map) {
+        var acc = m;
+        var ctx = MapMergeCtx{ .rt = rt, .acc = &acc };
+        try map.forEachEntry(entry, &ctx, MapMergeCtx.cb);
+        return acc;
     }
     // (conj m [k v]) — vector pair gets destructured into assoc. A non-pair
     // entry → IllegalArgumentException in clj (PersistentArrayMap.cons), NOT
@@ -193,10 +212,29 @@ fn mapConj(rt: *Runtime, m: Value, entry: Value, loc: SourceLocation) anyerror!V
     return try map.assoc(rt, m, vector.nth(entry, 0), vector.nth(entry, 1));
 }
 
+/// `map.forEachEntry` accumulator: assoc each entry of another map into a sorted
+/// map (`(conj sorted-map other-map)` merges every entry, clj parity).
+const SortedMapMergeCtx = struct {
+    rt: *Runtime,
+    env: *Env,
+    acc: *Value,
+    loc: SourceLocation,
+    fn cb(ctx: *SortedMapMergeCtx, k: Value, v: Value) anyerror!void {
+        ctx.acc.* = try sorted.assoc(ctx.rt, ctx.env, ctx.acc.*, k, v, ctx.loc);
+    }
+};
+
 fn sortedMapConj(rt: *Runtime, env: *Env, m: Value, entry: Value, loc: SourceLocation) anyerror!Value {
     // (conj sorted-map (first other-map)) — a MapEntry is a [k v] pair (D-209).
     if (entry.tag() == .map_entry) {
         return try sorted.assoc(rt, env, m, map_entry.keyOf(entry), map_entry.valOf(entry), loc);
+    }
+    // (conj sorted-map other-map) — merge every entry (clj parity).
+    if (entry.tag() == .array_map or entry.tag() == .hash_map) {
+        var acc = m;
+        var ctx = SortedMapMergeCtx{ .rt = rt, .env = env, .acc = &acc, .loc = loc };
+        try map.forEachEntry(entry, &ctx, SortedMapMergeCtx.cb);
+        return acc;
     }
     // (conj sorted-map [k v]) — same [k v]-pair contract as hash/array map.
     if (entry.tag() != .vector or vector.count(entry) != 2) {

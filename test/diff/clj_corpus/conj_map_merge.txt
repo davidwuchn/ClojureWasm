@@ -1,0 +1,22 @@
+;; (conj map other-map) merges every entry, the merged map winning on a key clash
+;; (clj's PersistentArrayMap.cons with an IPersistentMap arg). Surfaced by
+;; clojure.spec.alpha's regex-op pcat* (conj ret {k rp}). Also the [k v]/map-entry
+;; conj contract (regression) + sorted-map merge.
+(conj {:a 1} {:b 2})
+;;=> {:a 1, :b 2}
+(conj {:a 1} {:b 2 :c 3})
+;;=> {:a 1, :b 2, :c 3}
+(conj {:a 1} {:a 9})
+;;=> {:a 9}
+(conj {:a 1} {})
+;;=> {:a 1}
+(conj {} {:a 1 :b 2})
+;;=> {:a 1, :b 2}
+(conj (sorted-map :a 1) {:c 3 :b 2})
+;;=> {:a 1, :b 2, :c 3}
+(conj {:a 1} [:x 5])
+;;=> {:a 1, :x 5}
+(conj {:a 1} (first {:b 2}))
+;;=> {:a 1, :b 2}
+(reduce conj {} [{:a 1} {:b 2} {:a 3}])
+;;=> {:a 3, :b 2}
