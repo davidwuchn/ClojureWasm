@@ -83,13 +83,16 @@ areas I/II/III) → `.dev/accepted_divergences.yaml` (AD-001…043) → `.dev/de
 
 ## Stopped — user requested
 
-User instruction (2026-06-19): 「いまのきりが良くなったら、クリアセッションから
-continue できる配線と参照チェーン監査して停止して。」 (At a clean point, ensure the
-clean-session `/continue` wiring + run the reference-chain audit, then stop.) Done:
-LocalDateTime calendar arithmetic landed at the clean point (`d1b6f7b6`); reference-
-chain audit CLEAN (check_debt_id_refs ok, AD gate 42 in-sync, feature_keyword exit 0,
-zone_check clean, handover framing clean, all 12 phase15_java_time_* e2e registered);
-full gate green (resume-readiness). Resume: self-select the next direction per the
-Resume contract above (the clj-parity/java.time campaign is comprehensively complete;
-this is a genuine reassessment, not a queue-pop).
+User instruction (2026-06-20): 「クリアセッションから続行するための配線・参照チェーン
+を監査して止めてください」 (Audit the clean-session `/continue` wiring + reference
+chain, then stop.) Done: the B/C sweep landed this session (D-337/327/326/293/464/437/
+442-part1; see Resume contract). Reference-chain audit CLEAN — handover cited IDs all
+resolve (ADR-0155 file, AD-045 in ledger, D-442 active, D-464 discharged), AD ledger
+44 all-pinned+in-sync, check_debt_id_refs ok, handover framing clean, zone_check +
+feature_keyword OK, debt.yaml valid YAML. Full gate is CODE-GREEN; the sole gate
+failure was the known load-flaky `D-258` GC-torture agent_conj race
+(`[#<fn> [#<promise>]]`), confirmed by 3× standalone re-run all PASS — NOT a
+regression from the agent-surface work. Resume: **D-442 part 2** per the Resume
+contract (3 concurrency-sensitive agent fns, design decided by ADR-0155; resume note
++ 3-item extended-challenge in `private/notes/D442-part2-resume.md`).
 
