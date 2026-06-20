@@ -12,17 +12,20 @@
 
 - **First commit on resume MUST be**: continue the **stdlib/contrib sweep campaign**
   (user directive 2026-06-20, memory `clj_stdlib_contrib_sweep_campaign` + ADR-0156).
-  Self-select the next unit (no user ask): either (a) **bundle the next official stdlib
-  ns** eagerly (FILES in `bootstrap.zig` + `lookupEmbeddedFile` + EPL header per
-  `clj_attribution.md`; AOT-rebuild — the `[AOT-FAIL] <file> form #N` builder.zig
-  diagnostic locates traps; each bundle tends to surface a GENERIC cljw bug → fix +
-  corpus it), or (b) **verify a contrib lib** under `~/Documents/OSS/` via a
-  `verified_projects/<lib>/{deps.edn,verify.clj}` (`cljw -M:verify`). Candidate stdlib
-  gaps: `clojure.datafy` (IObj/class/IRef markers), `clojure.repl` (doc/dir/apropos;
-  `source` is hard), `clojure.core.reducers` (D-473 sequential surface), `clojure.xml`.
-  Contrib clones already under `~/Documents/OSS/` (core.match, data.priority-map,
-  test.check, core.memoize, …). Policy: **official stdlib → eager bundle; contrib →
-  verify (require-on-demand)**.
+  The **clean frontier is now largely drained**: all cleanly-bundleable official stdlib
+  is bundled (spec.alpha/gen/core.specs.alpha, datafy, test.junit + the pre-existing
+  set); the remaining stdlib needs host features cljw lacks by design — `clojure.repl`
+  `source` (classpath source), `clojure.java.shell` (process exec), `clojure.xml` (SAX),
+  `clojure.core.reducers` (ForkJoin, D-473), `clojure.core.server` (sockets). Pure
+  contribs are verified (math.combinatorics + the pre-existing `verified_projects/`);
+  the rest are host-coupled (core.match→`Class/forName` D-479, tools.reader→host reader,
+  rrb-vector/algo.*→ForkJoin/Future). So self-select from, in value order: (a) a
+  **core clj-diff bug sweep** (`scripts/clj_diff_sweep.sh` — the ongoing "未発見の実バグ
+  監査"; AVOID multi-line printers [exceptions w/ traces] + clj-uncompilable exprs
+  [`Math/gcd`] which break the line-diff harness; the core is mature so yield is low but
+  real), or (b) a **deferred deep item** if a clean approach emerges (D-482 seq-laziness
+  counted?, D-479 Class/forName, D-480 Serializable marker). Policy unchanged: **official
+  stdlib → eager bundle; contrib → verify (require-on-demand)**.
 
 - **Forbidden this session**: speculative JIT integration before zwasm's API stabilises
   (read `.dev/zwasm_capabilities.md` — JIT row BUILDING, not adoptable). `git push
@@ -33,16 +36,23 @@
 
 ## Last landed (git log = SSOT; all pushed)
 
-**clojure.spec.alpha cluster COMPLETE + bundled (the campaign's first arc) + 4 GENERIC
-cljw clj-parity fixes surfaced by it:**
-- spec.alpha + spec.gen.alpha **eager-bundled** (ADR-0156, FILES[24/25]); loads no `-cp`;
-  corpus `spec.txt` (20) + e2e `phase15_spec.sh` (19) + AD-049 (the one divergence: raw
-  `s/form` shows `rt/int?`; explain/describe match clj exactly).
-- `core.specs.alpha` bundled (FILES[26]); `math.combinatorics` verified (full clj parity).
-- 4 generic fixes: `&`-destructure seq-walk · MapEntry-as-IFn · MultiFn read-surface
-  (`.dispatchFn`/`.getMethod`) · `->`/`->>` threads any non-list step (set/map as IFn).
-- `fn-sym` recovers a predicate name from its `#<ns/name>` print → spec explain/describe
-  fully clj-identical. builder.zig gained an AOT-fail file+form+message diagnostic.
+**The stdlib/contrib sweep campaign (2026-06-21): bundled spec.alpha/gen/core.specs.alpha
++ datafy + test.junit; ~16 GENERIC clj-parity fixes surfaced + a GC-lifetime fix.**
+- **Bundled** (eager, ADR-0156): spec.alpha/gen.alpha (FILES[24/25]) + core.specs.alpha[26]
+  + datafy[27] + test.junit[28]. `math.combinatorics` verified.
+- **Generic fixes**: `&`-destructure seq-walk · MapEntry-as-IFn · MultiFn read-surface ·
+  `->` non-list step · **definterface** (retired the last analyzer wedge → defprotocol) ·
+  13 **instance? markers** (Counted/MapEquivalence/Comparable/IHashEq/IReduceInit/
+  ITransient* …) · **extend-protocol to host types** (Namespace/IRef/Throwable/Class,
+  D-478) · `ns-imports` · core.protocols Datafiable/Navigable defaults · clojure.test
+  `:begin/:end-test-var`+`:end-test-ns` events + `file-position` · `seq-to-map-for-
+  destructuring` (1.11) · `fn-sym` name recovery.
+- **D-481 GC fix**: `Runtime.deinit` now finalizes the GC heap BEFORE freeing descriptors
+  (host_instance finaliser reads `inst.descriptor`); unblocked datafy.
+- **ADs/debt**: AD-049 (spec `rt/` form) · D-479 (core.match Class/forName, deferred) ·
+  D-482 (cljw eagerly counts cons/take outputs, deferred). builder.zig has an AOT-fail
+  `<file> form #N: <msg>` diagnostic. Core clj-diff sweeps (~110 exprs) found ~1 real gap
+  — cljw core is mature.
 
 ## North star (context, not the immediate task)
 
