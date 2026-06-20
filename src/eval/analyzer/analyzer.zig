@@ -1341,7 +1341,7 @@ pub fn valueToForm(
         // tail → dropped/`nil` elements (ADR-0082).
         .list, .cons, .lazy_seq, .chunked_cons, .range => try valueSeqToForm(arena, rt, env, v, call_loc),
         .vector => try valueVectorToForm(arena, rt, env, v, call_loc),
-        .array_map => try valueMapToForm(arena, rt, env, v, call_loc),
+        .array_map, .hash_map => try valueMapToForm(arena, rt, env, v, call_loc),
         .hash_set => try valueSetToForm(arena, rt, env, v, call_loc),
         else => error_catalog.raise(.macro_return_not_data, call_loc, .{ .tag = @tagName(v.tag()) }),
     };
@@ -1390,24 +1390,37 @@ fn valueVectorToForm(arena: std.mem.Allocator, rt: *Runtime, env: *Env, vec_val:
     return .{ .data = .{ .vector = items }, .location = call_loc };
 }
 
+/// `map.forEachEntry` accumulator: each entry's k/v is re-formed via valueToForm.
+const MapToFormCtx = struct {
+    arena: std.mem.Allocator,
+    rt: *Runtime,
+    env: *Env,
+    entries: []Form,
+    i: usize,
+    loc: SourceLocation,
+    fn cb(ctx: *MapToFormCtx, k: Value, val: Value) anyerror!void {
+        ctx.entries[2 * ctx.i] = try valueToForm(ctx.arena, ctx.rt, ctx.env, k, ctx.loc);
+        ctx.entries[2 * ctx.i + 1] = try valueToForm(ctx.arena, ctx.rt, ctx.env, val, ctx.loc);
+        ctx.i += 1;
+    }
+};
+
 fn valueMapToForm(arena: std.mem.Allocator, rt: *Runtime, env: *Env, map_val: Value, call_loc: SourceLocation) anyerror!Form {
-    // ArrayMap-only iteration today (D-045 still gates HamtMap path).
-    // The decode is direct because `.array_map` tag was already
-    // matched in `valueToForm`.
-    // GC-ROOT: D-253 — root `map_val` (the raw `am` pointer aliases it) across the
-    // recursive valueToForm re-entries [ref: .dev/gc_rooting.md §C].
+    // Iterate via the generic `forEachEntry` so BOTH `.array_map` and `.hash_map`
+    // are handled — a macro returning a form with a >8-key map (clojure.spec.alpha's
+    // s/keys builds a 12-key `(map-spec-impl {…})`) yields a `.hash_map`, which the
+    // old ArrayMap-only decode rejected as "cannot be re-analysed as a form".
+    // GC-ROOT: D-253 — root `map_val` across the recursive valueToForm re-entries
+    // [ref: .dev/gc_rooting.md §C].
     var mroots: [1]Value = .{map_val};
     var msp: u16 = 1;
     var mframe: root_set.EvalFrame = .{ .stack = &mroots, .sp = &msp, .locals = &.{}, .parent = root_set.eval_frame_head };
     root_set.eval_frame_head = &mframe;
     defer root_set.eval_frame_head = mframe.parent;
-    const am = map_val.decodePtr(*const map_collection.ArrayMap);
-    var entries = try arena.alloc(Form, @as(usize, am.count) * 2);
-    var i: u32 = 0;
-    while (i < am.count) : (i += 1) {
-        entries[2 * i] = try valueToForm(arena, rt, env, am.entries[2 * i], call_loc);
-        entries[2 * i + 1] = try valueToForm(arena, rt, env, am.entries[2 * i + 1], call_loc);
-    }
+    const n = map_collection.count(map_val);
+    const entries = try arena.alloc(Form, @as(usize, n) * 2);
+    var ctx = MapToFormCtx{ .arena = arena, .rt = rt, .env = env, .entries = entries, .i = 0, .loc = call_loc };
+    try map_collection.forEachEntry(map_val, &ctx, MapToFormCtx.cb);
     return .{ .data = .{ .map = entries }, .location = call_loc };
 }
 
