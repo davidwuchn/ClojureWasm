@@ -40,3 +40,8 @@
 ;;=> :d
 (contains? (java.util.TreeMap. {1 :a 2 :b}) 2)
 ;;=> true
+; .containsValue — O(n) value scan (HashMap parity, D-431).
+(.containsValue (java.util.TreeMap. {1 :a 2 :b}) :b)
+;;=> true
+(.containsValue (java.util.TreeMap. {1 :a}) :z)
+;;=> false

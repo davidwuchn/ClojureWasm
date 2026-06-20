@@ -309,7 +309,7 @@ tiers:
         phase: 14
         files:
           surface: runtime/java/util/TreeMap.zig
-        methods: [put, get, containsKey, remove, getOrDefault, putIfAbsent, size, isEmpty, clear, keySet, values, firstKey, lastKey]
+        methods: [put, get, containsKey, containsValue, remove, getOrDefault, putIfAbsent, size, isEmpty, clear, keySet, values, firstKey, lastKey]
         clojure_peer_vars: []
       - fqn: java.util.Date
         cljw_ns: cljw.java.util.Date

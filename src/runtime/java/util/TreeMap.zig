@@ -25,8 +25,8 @@
 //! + put / get / containsKey / remove / getOrDefault / putIfAbsent / size /
 //! isEmpty / clear / keySet / values / firstKey / lastKey. `keySet`/`values` are
 //! cljw seqs (no-JVM view, AD-032). The wider NavigableMap surface (floorKey/
-//! ceilingKey/headMap/tailMap/subMap/descendingMap) + `.containsValue` are a
-//! deliberate follow-up (D-431).
+//! ceilingKey/headMap/tailMap/subMap/descendingMap) is a deliberate follow-up
+//! (D-431; near-zero frequency in real clj interop).
 
 const std = @import("std");
 const host_api = @import("../_host_api.zig");
@@ -40,6 +40,7 @@ const host_instance = @import("../../host_instance.zig");
 const sorted = @import("../../collection/sorted.zig");
 const map_mod = @import("../../collection/map.zig");
 const list_mod = @import("../../collection/list.zig");
+const equal = @import("../../equal.zig");
 const root_set = @import("../../gc/root_set.zig");
 const mark_sweep = @import("../../gc/mark_sweep.zig");
 const gc_heap_mod = @import("../../gc/gc_heap.zig");
@@ -167,6 +168,21 @@ fn putIfAbsent(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation
     return Value.nil_val;
 }
 
+/// `(.containsValue tm v)` — whether any entry's value is `=` to `v` (JVM
+/// `Map.containsValue`; O(n) scan, HashMap parity). The sorted vals seq is
+/// realized, so the walk allocates nothing (no GC fabrication window).
+fn containsValue(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    try error_catalog.checkArity(".containsValue", args, 2, loc);
+    const m = mapOf(args[0]);
+    if (sorted.count(m) == 0) return Value.initBoolean(false);
+    var cur = try sorted.vals(rt, m);
+    while (!cur.isNil() and !list_mod.isEmpty(cur)) {
+        if (try equal.valueEqual(rt, env, list_mod.first(cur), args[1])) return Value.initBoolean(true);
+        cur = list_mod.rest(cur);
+    }
+    return Value.initBoolean(false);
+}
+
 /// `(.clear tm)` — drop all entries (rebind to empty), return nil.
 fn clear(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
     _ = env;
@@ -259,6 +275,7 @@ const METHODS = [_]MethodSpec{
     .{ .name = "remove", .proto = "", .f = &remove },
     .{ .name = "getOrDefault", .proto = "", .f = &getOrDefault },
     .{ .name = "putIfAbsent", .proto = "", .f = &putIfAbsent },
+    .{ .name = "containsValue", .proto = "", .f = &containsValue },
     .{ .name = "clear", .proto = "", .f = &clear },
     .{ .name = "keySet", .proto = "", .f = &keySet },
     .{ .name = "values", .proto = "", .f = &values },
