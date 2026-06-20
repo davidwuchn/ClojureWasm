@@ -299,6 +299,18 @@ tiers:
           surface: runtime/java/util/TreeSet.zig
         methods: [add, remove, contains, size, isEmpty, clear, addAll, first, last]
         clojure_peer_vars: []
+      # java.util.TreeMap — mutable SORTED key→value map (D-431, host_instance over
+      # a cljw persistent sorted-map RB-tree). Iteration is by key = clj parity. seq
+      # yields cljw MapEntry pairs (AD-032). NavigableMap (floorKey/…) is follow-up.
+      - fqn: java.util.TreeMap
+        cljw_ns: cljw.java.util.TreeMap
+        keyword: tree_map_java
+        tier: A
+        phase: 14
+        files:
+          surface: runtime/java/util/TreeMap.zig
+        methods: [put, get, containsKey, remove, getOrDefault, putIfAbsent, size, isEmpty, clear, keySet, values, firstKey, lastKey]
+        clojure_peer_vars: []
       - fqn: java.util.Date
         cljw_ns: cljw.java.util.Date
         keyword: instant

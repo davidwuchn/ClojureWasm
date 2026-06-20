@@ -106,6 +106,7 @@ const java_surfaces = [_]type{
     @import("util/HashMap.zig"),
     @import("util/HashSet.zig"),
     @import("util/TreeSet.zig"),
+    @import("util/TreeMap.zig"),
     @import("util/Date.zig"),
     @import("util/Iterator.zig"),
     @import("util/Locale.zig"),
