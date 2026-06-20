@@ -78,7 +78,7 @@ accepted:
     pin: "none — rare-edge (would be promoted to a bug if real code hits it)"
   - id: "AD-007"
     summary: "Error rendering shows cljw's catalog Kind, not the JVM exception class"
-    example: '(quot 10 0) => cljw "[arithmetic_error] ..." / clj "ArithmeticException ..." (both reject)'
+    example: '(quot 10 0) => cljw "[arithmetic_error] ..." / clj "ArithmeticException ..." (both reject). Also `(class <caught-ex>)`: cljw returns its own simple-named exception class (AD-003), Kind-derived, which APPROXIMATES but does not always match clj''s per-case JVM class — e.g. `(inc nil)`/`(+ nil 1)` => cljw ClassCastException / clj NullPointerException; `(count 5)` => cljw IllegalArgumentException / clj UnsupportedOperationException; `(inc "x")` => ClassCastException in BOTH. Both ALWAYS reject the same inputs.'
     why: |-
       cljw has no JVM exception-class hierarchy; its error catalog Kind
       (`[type_error]` / `[arithmetic_error]` / ...) is the cljw surface.
