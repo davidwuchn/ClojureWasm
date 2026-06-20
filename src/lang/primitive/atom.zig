@@ -18,7 +18,6 @@ const error_catalog = @import("../../runtime/error/catalog.zig");
 const SourceLocation = error_mod.SourceLocation;
 const dispatch = @import("../../runtime/dispatch.zig");
 const atom_mod = @import("../../runtime/atom.zig");
-const iref = @import("../../runtime/iref.zig");
 const agent_mod = @import("../../runtime/agent.zig");
 const ref_mod = @import("../../runtime/stm/ref.zig");
 const volatile_mod = @import("../../runtime/volatile.zig");
@@ -55,11 +54,6 @@ fn notifyWatches(rt: *Runtime, env: *Env, a: Value, old: Value, new: Value, loc:
     const watches = atom_mod.watchesOf(a);
     if (watches.tag() != .array_map and watches.tag() != .hash_map) return;
     if (map_mod.count(watches) == 0) return;
-    // A watch fn that re-triggers this atom recurses notify→swap!→notify in
-    // native frames the VM frame budget can't see; bound the nesting so a
-    // self-triggering watch raises stack_overflow instead of SIGSEGV (D-485).
-    try iref.enterWatchNotify(loc);
-    defer iref.exitWatchNotify();
     var cur = try map_mod.keys(rt, watches);
     // GC-ROOT: D-253(a) — the atom + watches map + key cursor live only in Zig
     // locals across invokeCallable (the watch fn re-enters the VM, e.g. a nested

@@ -106,6 +106,17 @@ const VmArena = struct {
 };
 threadlocal var vm_arena: VmArena = .{};
 
+/// ADR-0157 2a: per-thread native-stack guard state. `stack_base` anchors to the
+/// shallowest (highest-address) `eval` entry seen on THIS thread (0 = uncaptured);
+/// `eval` raises a catchable stack_overflow once `stack_base - @frameAddress()`
+/// (bytes consumed below the anchor) exceeds the budget. 6 MiB is a one-sided,
+/// over-estimable margin safely under the 8 MiB main / ~16 MiB worker stacks (the
+/// std.Thread default) — measuring REAL bytes, it is immune to the per-frame-size /
+/// optimization-level / platform variance that makes a fixed frame-COUNT cap a
+/// cross-host SIGSEGV (the DA's rejection of Alternative 1).
+threadlocal var stack_base: usize = 0;
+const STACK_BUDGET_BYTES: usize = 6 * 1024 * 1024;
+
 /// ADR-0131 2b: an in-VM call frame. A flattened `op_call` pushes one + continues
 /// the SAME eval loop (no host `eval` re-entry); `op_ret` pops it. Each carries
 /// its OWN `gc_frame`, pushed on the `eval_frame_head` chain at flatten + popped
@@ -197,6 +208,23 @@ pub fn eval(
     locals: []Value,
     chunk: *const BytecodeChunk,
 ) anyerror!Value {
+    // ADR-0157 2a: self-calibrating native-stack guard. A primitive→callFn
+    // re-entry (notify/validate/reduce-fn) adds many NATIVE frames per VM frame,
+    // which the flattened FRAMES_MAX budget does not see — unbounded re-entry
+    // overflowed the native stack → SIGSEGV. Measure the REAL bytes consumed
+    // since this thread's shallowest `eval` entry (threadlocal `stack_base`
+    // auto-anchors per thread — no spawn plumbing) and raise the catchable
+    // stack_overflow (2b) below the budget. Immune to per-frame size / opt-level /
+    // platform (the fixed-cap fragility the DA rejected). Flattened direct
+    // recursion stays bounded by FRAMES_MAX (it does not re-enter `eval`).
+    {
+        const sp = @frameAddress();
+        if (stack_base == 0 or sp > stack_base) {
+            stack_base = sp; // (re-)anchor to the shallowest (highest) entry seen
+        } else if (stack_base - sp > STACK_BUDGET_BYTES) {
+            return error_catalog.raise(.stack_overflow, .{}, .{ .max = STACK_BUDGET_BYTES });
+        }
+    }
     // ADR-0131 2a/2b: borrow this invocation's operand + locals + frame regions
     // from the per-thread arena; restore all watermarks + the eval-frame chain
     // head on exit (normal OR a thrown error propagating out — the latter pops

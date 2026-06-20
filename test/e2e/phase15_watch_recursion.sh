@@ -58,5 +58,21 @@ assert_eq 'catch_as_throwable'     "$("$BIN" -e "(try $WREC (catch Throwable e :
 assert_eq 'catch_not_as_exception' \
   "$("$BIN" -e "(try $WREC (catch Exception e :as-exc) (catch Throwable e :as-thr))")" ':as-thr'
 
+# (5) ADR-0157 2a: the self-calibrating native-stack guard generalises beyond
+# watches — a validator that re-triggers its atom AND a reduce fn that re-reduces
+# (both were SIGSEGV) now raise a graceful, catchable StackOverflowError.
+VREC='(let [a (atom 0)] (set-validator! a (fn [n] (swap! a inc) true)) (reset! a 5))'
+assert_eq 'validator_reentry_caught' "$("$BIN" -e "(try $VREC (catch StackOverflowError e :caught))")" ':caught'
+rc=$("$BIN" -e "$VREC" >/dev/null 2>&1; echo $?)
+[[ "$rc" != 139 ]] || fail "validator_reentry_segfault: exited 139 (SIGSEGV)"
+echo "PASS validator_reentry_no_segfault (exit=$rc)"
+RREC='(reduce (fn f [acc x] (reduce f acc [x])) 0 [1 2 3])'
+assert_eq 'reducer_reentry_caught' "$("$BIN" -e "(try $RREC (catch Throwable e :caught))")" ':caught'
+
+# (6) legit recursion-through-higher-order still runs (the budget is not so low it
+# breaks moderate HOF recursion): single-map-per-level recursion to depth 500.
+assert_eq 'legit_hof_recursion' \
+  "$("$BIN" -e '((fn f [n] (if (zero? n) :done (first (map (fn [_] (f (dec n))) [1])))) 500)')" ':done'
+
 echo ""
 echo "=== phase15_watch_recursion: all assertions passed ==="

@@ -18,34 +18,7 @@ const root_set = @import("gc/root_set.zig");
 const map_mod = @import("collection/map.zig");
 const list_mod = @import("collection/list.zig");
 const error_mod = @import("error/info.zig");
-const error_catalog = @import("error/catalog.zig");
 const SourceLocation = error_mod.SourceLocation;
-
-/// Watch-notification re-entry guard. A watch fn that re-triggers its own ref
-/// (`(add-watch a :w (fn [k r o n] (swap! r inc)))`) recurses through the
-/// notify → callFn → eval → swap! → notify path entirely in NATIVE Zig frames,
-/// which the VM's per-run frame budget (FRAMES_MAX) does NOT bound — so without
-/// this it overflows the native stack (SIGSEGV) instead of clj's catchable
-/// StackOverflowError. This threadlocal nesting counter converts the runaway
-/// into a graceful `stack_overflow` error. 256 is >50× any realistic watch
-/// chain yet well under the native-stack ceiling (verified: the repro errors,
-/// no segfault). Both the sync (atom.zig) and async (here) notify loops enter
-/// it. The general primitive-reentry case (validators / comparators / reducers
-/// re-entering unboundedly) is the broader gap tracked by D-485.
-pub const max_watch_nesting: u16 = 256;
-threadlocal var watch_nesting: u16 = 0;
-
-/// Increment the watch-nesting counter, raising `stack_overflow` once the cap is
-/// reached. Pair with `exitWatchNotify` via `defer`.
-pub fn enterWatchNotify(loc: SourceLocation) !void {
-    if (watch_nesting >= max_watch_nesting)
-        return error_catalog.raise(.stack_overflow, loc, .{ .max = max_watch_nesting });
-    watch_nesting += 1;
-}
-
-pub fn exitWatchNotify() void {
-    watch_nesting -= 1;
-}
 
 /// Fire every registered watch `(fn key ref old new)` for `ref_val`. `watches`
 /// is the ref's `{key -> fn}` map (nil / empty short-circuits). A watch fn may
@@ -56,8 +29,6 @@ pub fn notifyWatches(rt: *Runtime, env: *Env, ref_val: Value, watches: Value, ol
     if (watches.tag() != .array_map and watches.tag() != .hash_map) return;
     if (map_mod.count(watches) == 0) return;
     const vt = rt.vtable orelse return error.InternalError;
-    try enterWatchNotify(.{});
-    defer exitWatchNotify();
     var cur = try map_mod.keys(rt, watches);
     var gc_roots: [3]Value = .{ ref_val, watches, cur };
     var gc_sp: u16 = 3;
