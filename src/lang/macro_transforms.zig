@@ -2486,7 +2486,6 @@ fn expandExtendType(
     args: []const Form,
     loc: SourceLocation,
 ) macro_dispatch.ExpandError!Form {
-    _ = rt;
     // target + protocol minimum; zero method-impls is a MARKER protocol
     // extension (e.g. `Sequential`), recorded into `protocol_impls` by
     // `__extend-type!` (D-190 / ADR-0068).
@@ -2639,8 +2638,11 @@ fn expandExtendType(
         var name_loc = loc;
         for (method_impls) |impl| {
             if (!std.mem.eql(u8, impl.data.list[0].data.symbol.name, method_name)) continue;
-            const params_form = try stripMethodParamNs(arena, impl.data.list[1]);
-            const body = impl.data.list[2..];
+            const stripped = try stripMethodParamNs(arena, impl.data.list[1]);
+            // Lower destructured method params (clj parity) — see expandReify.
+            const lowered = try transformFnArity(arena, rt, stripped, impl.data.list[2..], impl.location);
+            const params_form = lowered.params;
+            const body = lowered.body;
             const body_form = if (body.len == 1) body[0] else blk: {
                 var do_items = try arena.alloc(Form, body.len + 1);
                 do_items[0] = sym("do", impl.location);
@@ -3370,7 +3372,6 @@ fn expandReify(
     args: []const Form,
     loc: SourceLocation,
 ) macro_dispatch.ExpandError!Form {
-    _ = rt;
     if (args.len == 0)
         return error_catalog.raise(.reify_form_incomplete, loc, .{});
 
@@ -3462,8 +3463,13 @@ fn expandReify(
             var name_loc = proto_form.location;
             for (impls) |impl| {
                 if (!std.mem.eql(u8, impl.data.list[0].data.symbol.name, method_name)) continue;
-                const params_form = try stripMethodParamNs(arena, impl.data.list[1]);
-                const body = impl.data.list[2..];
+                const stripped = try stripMethodParamNs(arena, impl.data.list[1]);
+                // Lower destructured method params (`[_ [k x]]`) the same way fn
+                // does — gensym the pattern param + wrap the body in a `let`.
+                // No-op for all-symbol params (clj parity; spec.alpha unform*).
+                const lowered = try transformFnArity(arena, rt, stripped, impl.data.list[2..], impl.location);
+                const params_form = lowered.params;
+                const body = lowered.body;
                 const body_form = if (body.len == 1) body[0] else blk: {
                     var do_items_local = try arena.alloc(Form, body.len + 1);
                     do_items_local[0] = sym("do", impl.location);
