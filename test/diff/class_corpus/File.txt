@@ -1,0 +1,52 @@
+; java.io.File — deterministic path-method surface (D-431 per-class completeness).
+; The FS-touching methods (exists/isFile/isDirectory/length/listFiles/mkdir/delete)
+; need real fixtures and are covered by test/e2e/phase16_java_io_file.sh; this corpus
+; locks the pure path methods, esp. the Java UnixFileSystem.normalize applied at
+; construction (collapse runs of `/`, strip a trailing `/` unless the path is `/`;
+; no `.`/`..` resolution). clj-oracle pinned.
+(.getName (java.io.File. "/a/b/c.txt"))
+;;=> "c.txt"
+(.getName (java.io.File. "/a/b/"))
+;;=> "b"
+(.getName (java.io.File. "c.txt"))
+;;=> "c.txt"
+(.getName (java.io.File. "/"))
+;;=> ""
+(.getName (java.io.File. "/a//b/c"))
+;;=> "c"
+(.getPath (java.io.File. "/a/b/c"))
+;;=> "/a/b/c"
+(.getPath (java.io.File. "/a//b/c"))
+;;=> "/a/b/c"
+(.getPath (java.io.File. "a/b/"))
+;;=> "a/b"
+(.getPath (java.io.File. "//a/b"))
+;;=> "/a/b"
+(.getPath (java.io.File. "a//b//c"))
+;;=> "a/b/c"
+(.getPath (java.io.File. "///"))
+;;=> "/"
+(.getPath (java.io.File. "/a/b//"))
+;;=> "/a/b"
+(.getPath (java.io.File. "/a/./b"))
+;;=> "/a/./b"
+(.getParent (java.io.File. "/a/b/c"))
+;;=> "/a/b"
+(.getParent (java.io.File. "a/b/"))
+;;=> "a"
+(.getParent (java.io.File. "c.txt"))
+;;=> nil
+(.getParent (java.io.File. "/a"))
+;;=> "/"
+(.getParent (java.io.File. "/"))
+;;=> nil
+(.isAbsolute (java.io.File. "/a"))
+;;=> true
+(.isAbsolute (java.io.File. "a/b"))
+;;=> false
+(.toString (java.io.File. "/x/y"))
+;;=> "/x/y"
+(.getPath (java.io.File. "parent" "child.txt"))
+;;=> "parent/child.txt"
+(.getName (java.io.File. (java.io.File. "/p/q") "kid.txt"))
+;;=> "kid.txt"

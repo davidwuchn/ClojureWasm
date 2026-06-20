@@ -61,6 +61,28 @@ fn allocFile(rt: *Runtime, path_val: Value) !Value {
     return host_instance.alloc(rt, td, .{ @intFromEnum(path_val), 0, 0, 0 });
 }
 
+/// Java `UnixFileSystem.normalize`, applied at construction so the STORED path
+/// (returned verbatim by `getPath`/`toString`, and the base for every other
+/// method) matches the JVM: collapse runs of `/` to a single `/`, then strip a
+/// trailing `/` unless the whole path is `/`. Does NOT resolve `.`/`..` (that is
+/// `getCanonicalPath`'s job). `(File. "/a//b/c/")` → stored "/a/b/c" (D-431).
+fn normalizePath(rt: *Runtime, raw: []const u8) !Value {
+    var buf: std.ArrayList(u8) = .empty;
+    defer buf.deinit(rt.gpa);
+    var prev_slash = false;
+    for (raw) |c| {
+        if (c == '/') {
+            if (!prev_slash) try buf.append(rt.gpa, '/');
+            prev_slash = true;
+        } else {
+            try buf.append(rt.gpa, c);
+            prev_slash = false;
+        }
+    }
+    if (buf.items.len > 1 and buf.items[buf.items.len - 1] == '/') _ = buf.pop();
+    return string_mod.alloc(rt, buf.items);
+}
+
 /// Resolve `p` under the deploy FS-jail; null when the jail is OFF (open the
 /// original `p`). Maps a jail breach to a catchable `fs_jail_escape`.
 fn jailed(rt: *Runtime, p: []const u8, fn_name: []const u8, loc: SourceLocation) anyerror!?[]u8 {
@@ -79,7 +101,7 @@ fn initFileInstance(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLoc
     if (args.len == 1) {
         if (args[0].tag() != .string)
             return error_catalog.raise(.type_arg_not_string, loc, .{ .fn_name = "java.io.File.", .actual = @tagName(args[0].tag()) });
-        return allocFile(rt, args[0]);
+        return allocFile(rt, try normalizePath(rt, string_mod.asString(args[0])));
     }
     if (args.len == 2) {
         const parent_path = if (args[0].tag() == .string)
@@ -92,7 +114,7 @@ fn initFileInstance(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLoc
             return error_catalog.raise(.type_arg_not_string, loc, .{ .fn_name = "java.io.File.", .actual = @tagName(args[1].tag()) });
         const joined = try path.join(rt.gpa, &.{ parent_path, string_mod.asString(args[1]) });
         defer rt.gpa.free(joined);
-        return allocFile(rt, try string_mod.alloc(rt, joined));
+        return allocFile(rt, try normalizePath(rt, joined));
     }
     return error_catalog.raise(.arity_not_expected, loc, .{ .got = args.len, .fn_name = "java.io.File.", .expected = 1 });
 }
