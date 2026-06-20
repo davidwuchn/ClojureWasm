@@ -32,6 +32,7 @@ const vm = @import("../eval/backend/vm.zig");
 const bootstrap = @import("../lang/bootstrap.zig");
 const require_resolver = @import("../lang/require_resolver.zig");
 const run_mode = @import("deps/run_mode.zig");
+const error_info = @import("../runtime/error/info.zig");
 
 /// Accumulates the require-closure's compiled chunks during the build-time
 /// load (ADR-0034 amendment 3 A3-D2). Installed on `rt.build_chunk_sink` so
@@ -147,7 +148,8 @@ pub fn buildBootstrapEnvelope(
             // phase on the error path so a bootstrap trap is locatable (the
             // stdlib/contrib sweep campaign relies on this).
             const node = analyzeForm(arena, rt, env, null, form, macro_table) catch |err| {
-                std.debug.print("\n[AOT-FAIL] analyze: {s} form #{d}: {s}\n", .{ file.label, form_idx, @errorName(err) });
+                const msg = if (error_info.peekLastError()) |info| info.message else "";
+                std.debug.print("\n[AOT-FAIL] analyze: {s} form #{d}: {s}: {s}\n", .{ file.label, form_idx, @errorName(err), msg });
                 return err;
             };
             const chunk = try vm_compiler.compile(rt, arena, node);

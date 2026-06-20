@@ -8,8 +8,9 @@
 ;;   this software.
 ;;
 ;;   clojure.spec.alpha — by Rich Hickey. Reproduced in ClojureWasm with no-JVM
-;;   adaptations (the `Spec` class check → protocol var; `fn-sym` → nil as cljw
-;;   fns carry no JVM class name; `RT/checkSpecAsserts` static → an atom; the
+;;   adaptations (the `Spec` class check → protocol var; `fn-sym` recovers a
+;;   predicate's name from its `#<ns/name>` print form, not the JVM class name;
+;;   `RT/checkSpecAsserts` static → an atom; the
 ;;   top-level `(set! *warn-on-reflection* true)` dropped — a no-op in cljw);
 ;;   redistributed under EPL-2.0 per EPL-1.0 §7. ClojureWasm changes (c) the
 ;;   ClojureWasm authors.
@@ -139,9 +140,20 @@
   (specize* [_] [_ form]))
 
 (defn- fn-sym [f]
-  ;; cljw: fns carry no recoverable class-name (no-JVM); anonymous-fn specs
-  ;; describe as ::unknown via the specize* Object fallback.
-  nil)
+  ;; cljw: a fn carries no JVM class name, but it prints as `#<ns/name>` (the
+  ;; printer knows the qualified name via the builtin/var reverse-index). Recover
+  ;; the symbol from that print form so a bare-predicate spec describes as
+  ;; `rt/int?` rather than ::unknown. A no-regex parse — a `#"..."` literal cannot
+  ;; ride the bootstrap reader (so clj's `(re-matches #"(.*)\$..." (.. f getClass
+  ;; getName))` could not be reproduced). Anonymous fns (`#<fn>` / `#<ns/fn__N>`)
+  ;; yield nil → ::unknown, matching clj's "skip when the name is fn".
+  ;; `and`/`or` are :refer-clojure :exclude'd in this ns (spec redefines them),
+  ;; so use the `c/` clojure.core alias — matching spec's own convention.
+  (let [s (pr-str f)]
+    (when (c/and (str/starts-with? s "#<") (str/ends-with? s ">"))
+      (let [nm (subs s 2 (dec (count s)))]
+        (when-not (c/or (= nm "fn") (str/includes? nm "fn__"))
+          (symbol nm))))))
 
 (extend-protocol Specize
   clojure.lang.Keyword

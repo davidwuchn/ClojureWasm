@@ -30,3 +30,11 @@
 ;;=> [1 2]
 (clojure.spec.alpha/valid? (clojure.spec.alpha/coll-of int? :kind vector?) [1 2 3])
 ;;=> true
+(clojure.spec.alpha/explain-str int? "x")
+;;=> "\"x\" - failed: int?\n"
+(clojure.spec.alpha/explain-str (clojure.spec.alpha/and int? pos?) -1)
+;;=> "-1 - failed: pos?\n"
+(clojure.spec.alpha/describe (clojure.spec.alpha/and int? pos?))
+;;=> (and int? pos?)
+(clojure.spec.alpha/explain-str (clojure.spec.alpha/coll-of int?) [1 :a 3])
+;;=> ":a - failed: int? in: [1]\n"
