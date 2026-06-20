@@ -14,3 +14,15 @@
 ;;=> ("p")
 (do (derive :my/wd :my/weekday) (derive :my/we :my/weekend) (defmulti mm-k2 identity) (defmethod mm-k2 :my/weekday [_] :wd) (prefer-method mm-k2 :my/weekday :my/weekend) (count (prefers mm-k2)))
 ;;=> 1
+(do (defmulti tm1 :type) ((.dispatchFn tm1) {:type :x}))
+;;=> :x
+(do (defmulti tm2 identity) (defmethod tm2 1 [_] :one) (boolean (.getMethod tm2 1)))
+;;=> true
+(do (defmulti tm3 identity) (defmethod tm3 1 [_] :one) (nil? (.getMethod tm3 999)))
+;;=> true
+(do (defmulti tm4 identity) (defmethod tm4 1 [_] :one) (count (.getMethodTable tm4)))
+;;=> 1
+(do (defmulti tm5 :type) (.getPreferTable tm5))
+;;=> {}
+(do (defmulti tm6 identity) (defmethod tm6 :default [_] :d) (boolean (.getMethod tm6 :anything)))
+;;=> true

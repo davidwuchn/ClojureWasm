@@ -25,6 +25,7 @@ const equal = @import("../../runtime/equal.zig");
 const sorted = @import("../../runtime/collection/sorted.zig");
 const map_entry_mod = @import("../../runtime/collection/map_entry.zig");
 const vector_mod = @import("../../runtime/collection/vector.zig");
+const multimethod_mod = @import("../../runtime/multimethod.zig");
 const Runtime = @import("../../runtime/runtime.zig").Runtime;
 const Env = @import("../../runtime/env.zig").Env;
 const SourceLocation = @import("../../runtime/error/info.zig").SourceLocation;
@@ -122,6 +123,22 @@ pub fn tryClojureLangMethod(
             }
             if (std.mem.eql(u8, name, "invoke"))
                 return try vt0.callFn(rt, env, receiver, args, loc);
+            // clojure.lang.MultiFn read surface — spec's `multi-spec-impl` does
+            // `(.getMethod mm ((.dispatchFn mm) %))`. `.getMethod` falls to the
+            // :default method like clj (verified), so it reuses the internal
+            // resolver whose no-match raise maps to nil.
+            if (receiver.tag() == .multi_fn) {
+                const mf = receiver.decodePtr(*multimethod_mod.MultiFn);
+                if (args.len == 0 and std.mem.eql(u8, name, "dispatchFn")) return mf.dispatch_fn;
+                if (args.len == 0 and std.mem.eql(u8, name, "getMethodTable")) return mf.method_table;
+                if (args.len == 0 and std.mem.eql(u8, name, "getPreferTable")) return mf.prefer_table;
+                if (args.len == 1 and std.mem.eql(u8, name, "getMethod")) {
+                    return multimethod_mod.getMethod(rt, mf, args[0], loc) catch |err| switch (err) {
+                        error.ValueError => Value.nil_val,
+                        else => err,
+                    };
+                }
+            }
             return null;
         },
         else => {},
