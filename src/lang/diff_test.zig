@@ -40,8 +40,16 @@ const Fixture = struct {
     arena: std.heap.ArenaAllocator,
     table: macro_dispatch.Table,
 
-    fn init(alloc: std.mem.Allocator) !Fixture {
-        var f: Fixture = undefined;
+    /// Init in place via an out-pointer. The Fixture holds self-references
+    /// (`env.rt` → `&rt`, and `rt.io` → `&threaded`), so it must be built at its
+    /// final address and never moved by value afterward. D-413: the previous
+    /// return-by-value `init` captured `&f.rt` into `env` and then relocated
+    /// `rt` on `return f`, leaving `env.rt` a dangling pointer to the pre-move
+    /// stack slot — analyzing an unresolved symbol (the only path that derefs
+    /// `env.rt`'s `types` map late enough for stack reuse to clobber it) then
+    /// crashed with a non-deterministic safety-check abort instead of raising
+    /// `symbol_unresolved`.
+    fn init(f: *Fixture, alloc: std.mem.Allocator) !void {
         f.threaded = std.Io.Threaded.init(alloc, .{});
         f.rt = Runtime.init(f.threaded.io(), alloc);
         f.env = try Env.init(&f.rt);
@@ -52,7 +60,6 @@ const Fixture = struct {
         // ADR-0130: arm the arith-intrinsic Var cache so the VM compiler emits
         // op_add — without this the oracle would silently test only op_call.
         bootstrap.cacheArithIntrinsics(&f.rt, &f.env);
-        return f;
     }
 
     fn deinit(self: *Fixture) void {
@@ -79,14 +86,30 @@ const Fixture = struct {
     }
 };
 
+test "diff: D-413 unresolved symbol → clean symbol_unresolved, not a panic" {
+    // Regression for the dangling-`env.rt` fixture bug: analyzing an unresolved
+    // symbol falls through var resolution into the host-class lookup
+    // (`resolveClassValue` → `rt.types.get`). With the old return-by-value
+    // fixture this dereferenced a dangling `env.rt` and aborted; now it must
+    // surface a clean error from both backends.
+    var f: Fixture = undefined;
+    try Fixture.init(&f, testing.allocator);
+    defer f.deinit();
+    const r = evaluator.compare(&f.rt, &f.env, &f.table, f.arena.allocator(), "(re-matcher 1)");
+    try testing.expectError(error.NameError, r.tree_walk);
+    try testing.expectError(error.NameError, r.vm);
+}
+
 test "diff: arithmetic primitive" {
-    var f = try Fixture.init(testing.allocator);
+    var f: Fixture = undefined;
+    try Fixture.init(&f, testing.allocator);
     defer f.deinit();
     try f.check("(+ 1 2 3)", 6);
 }
 
 test "diff: op_add intrinsic (ADR-0130) — VM op_add ≡ builtin + (inline results)" {
-    var f = try Fixture.init(testing.allocator);
+    var f: Fixture = undefined;
+    try Fixture.init(&f, testing.allocator);
     defer f.deinit();
     // 2-arg `(+ a b)` is op_add in the VM, the builtin in TreeWalk; r.equal +
     // the value lock the parity. (The harness bit-compares NaN-boxed Values, so
@@ -101,7 +124,8 @@ test "diff: op_add intrinsic (ADR-0130) — VM op_add ≡ builtin + (inline resu
 }
 
 test "diff: op_add deopt on alter-var-root of + (ADR-0130 F-011 hole)" {
-    var f = try Fixture.init(testing.allocator);
+    var f: Fixture = undefined;
+    try Fixture.init(&f, testing.allocator);
     defer f.deinit();
     // Redefining + via alter-var-root must make BOTH backends use the new root on
     // integers (op_add deopts via core_arith_pristine). Without the deopt, VM
@@ -112,7 +136,8 @@ test "diff: op_add deopt on alter-var-root of + (ADR-0130 F-011 hole)" {
 }
 
 test "diff: arith intrinsic family (ADR-0130 am1) — sub/mul/comparisons/= (inline)" {
-    var f = try Fixture.init(testing.allocator);
+    var f: Fixture = undefined;
+    try Fixture.init(&f, testing.allocator);
     defer f.deinit();
     try f.check("(- 5 3)", 2);
     try f.check("(- 3 10)", -7);
@@ -132,7 +157,8 @@ test "diff: arith intrinsic family (ADR-0130 am1) — sub/mul/comparisons/= (inl
 }
 
 test "diff: mod/rem/quot intrinsic (O-030) — VM op_mod/rem/quot ≡ builtin" {
-    var f = try Fixture.init(testing.allocator);
+    var f: Fixture = undefined;
+    try Fixture.init(&f, testing.allocator);
     defer f.deinit();
     // positive divisor → the fixnum fast path (VM op_mod/op_rem/op_quot); negative
     // numerator exercises the floored-vs-truncated sign difference (clj parity).
@@ -160,13 +186,15 @@ test "diff: mod/rem/quot intrinsic (O-030) — VM op_mod/rem/quot ≡ builtin" {
 // above), and the non-fixnum path defers to the same .clj `not=` on both backends.
 
 test "diff: let* binding" {
-    var f = try Fixture.init(testing.allocator);
+    var f: Fixture = undefined;
+    try Fixture.init(&f, testing.allocator);
     defer f.deinit();
     try f.check("(let* [x 5] (+ x 10))", 15);
 }
 
 test "diff: letfn* mutual + self recursion" {
-    var f = try Fixture.init(testing.allocator);
+    var f: Fixture = undefined;
+    try Fixture.init(&f, testing.allocator);
     defer f.deinit();
     // self-recursion resolves through the letfn slot (fact calls fact)
     try f.check("(letfn* [fact (fn* [n] (if (= n 0) 1 (* n (fact (- n 1)))))] (fact 5))", 120);
@@ -175,13 +203,15 @@ test "diff: letfn* mutual + self recursion" {
 }
 
 test "diff: fn* immediate invocation" {
-    var f = try Fixture.init(testing.allocator);
+    var f: Fixture = undefined;
+    try Fixture.init(&f, testing.allocator);
     defer f.deinit();
     try f.check("((fn* [x y] (+ x y)) 3 4)", 7);
 }
 
 test "diff: lazy-seq non-seq body + cons-over-lazy equality (both backends)" {
-    var f = try Fixture.init(testing.allocator);
+    var f: Fixture = undefined;
+    try Fixture.init(&f, testing.allocator);
     defer f.deinit();
     // A lazy-seq body returning a vector must seq-coerce (clj RT.seq parity);
     // a Cons over a lazy tail must compare equal to the realized list. Both go
@@ -194,7 +224,8 @@ test "diff: lazy-seq non-seq body + cons-over-lazy equality (both backends)" {
 }
 
 test "diff: fn* empty-body arity → nil (clj parity, both backends)" {
-    var f = try Fixture.init(testing.allocator);
+    var f: Fixture = undefined;
+    try Fixture.init(&f, testing.allocator);
     defer f.deinit();
     // An arity with no body form is valid → nil; analyzeBody of an empty slice
     // yields `(do)` → nil under both backends.
@@ -204,7 +235,8 @@ test "diff: fn* empty-body arity → nil (clj parity, both backends)" {
 }
 
 test "diff: no-init def is unbound, valued def is bound (op_def_unbound)" {
-    var f = try Fixture.init(testing.allocator);
+    var f: Fixture = undefined;
+    try Fixture.init(&f, testing.allocator);
     defer f.deinit();
     // `(def x)` → op_def_unbound: the Var exists but `bound?` is false.
     try f.check("(do (def dfu1) (if (bound? (var dfu1)) 1 2))", 2);
@@ -213,7 +245,8 @@ test "diff: no-init def is unbound, valued def is bound (op_def_unbound)" {
 }
 
 test "diff: variadic single seq-shaped rest arg cons-wraps (ADR-0042 am1)" {
-    var f = try Fixture.init(testing.allocator);
+    var f: Fixture = undefined;
+    try Fixture.init(&f, testing.allocator);
     defer f.deinit();
     // A NORMAL call with one list trailing arg binds `xs = ((9 9))`
     // (count 1), NOT `(9 9)` (count 2). The shape-only ADR-0042 gate
@@ -222,7 +255,8 @@ test "diff: variadic single seq-shaped rest arg cons-wraps (ADR-0042 am1)" {
 }
 
 test "diff: apply spread still binds the trailing seq directly" {
-    var f = try Fixture.init(testing.allocator);
+    var f: Fixture = undefined;
+    try Fixture.init(&f, testing.allocator);
     defer f.deinit();
     // apply's bind-direct path is preserved: xs = (2 3), count 2.
     try f.check("(count (apply (fn* [a & xs] xs) 1 (quote (2 3))))", 2);
@@ -230,7 +264,8 @@ test "diff: apply spread still binds the trailing seq directly" {
 }
 
 test "diff: data structures + keywords as IFn (D-085)" {
-    var f = try Fixture.init(testing.allocator);
+    var f: Fixture = undefined;
+    try Fixture.init(&f, testing.allocator);
     defer f.deinit();
     // The dispatch arm lives in the shared treeWalkCall (VM op_call routes
     // through rt.vtable.callFn → treeWalkCall), so both backends agree.
@@ -246,7 +281,8 @@ test "diff: data structures + keywords as IFn (D-085)" {
 }
 
 test "diff: atom — atom/deref/@/swap!/reset!/compare-and-set! (D-085 sibling)" {
-    var f = try Fixture.init(testing.allocator);
+    var f: Fixture = undefined;
+    try Fixture.init(&f, testing.allocator);
     defer f.deinit();
     // Atom is a runtime value; the ops are primitives and `@` desugars at
     // the reader → (deref x). No analyzer Node / opcode, so both backends
@@ -262,7 +298,8 @@ test "diff: atom — atom/deref/@/swap!/reset!/compare-and-set! (D-085 sibling)"
 }
 
 test "diff: vector keys by value (D-092) — keyEqValue/valueHash backend-shared" {
-    var f = try Fixture.init(testing.allocator);
+    var f: Fixture = undefined;
+    try Fixture.init(&f, testing.allocator);
     defer f.deinit();
     // map ops + equal.keyEqValue/valueHash live in runtime/ (both backends
     // share them), so a vector-keyed lookup agrees across backends.
@@ -272,7 +309,8 @@ test "diff: vector keys by value (D-092) — keyEqValue/valueHash backend-shared
 }
 
 test "diff: map/set/list keys by value (D-092) — keyEqValue/valueHash backend-shared" {
-    var f = try Fixture.init(testing.allocator);
+    var f: Fixture = undefined;
+    try Fixture.init(&f, testing.allocator);
     defer f.deinit();
     // Collection-as-key content hash + equality (equal.zig + map/set.zig)
     // are runtime/, shared by both backends, so the lookups agree.
@@ -288,7 +326,8 @@ test "diff: map/set/list keys by value (D-092) — keyEqValue/valueHash backend-
 }
 
 test "diff: ::name auto-resolved keyword (D-195) — analyzer-shared resolution" {
-    var f = try Fixture.init(testing.allocator);
+    var f: Fixture = undefined;
+    try Fixture.init(&f, testing.allocator);
     defer f.deinit();
     // `::name` resolves to the current ns (user) in the analyzer, which both
     // backends share. The Fixture's Env.init sets current_ns = user.
@@ -299,7 +338,8 @@ test "diff: ::name auto-resolved keyword (D-195) — analyzer-shared resolution"
 }
 
 test "diff: contains? on a vector tests index validity — primitive, backend-shared" {
-    var f = try Fixture.init(testing.allocator);
+    var f: Fixture = undefined;
+    try Fixture.init(&f, testing.allocator);
     defer f.deinit();
     try f.check("(if (contains? [1 2 3] 2) 1 0)", 1); // valid index
     try f.check("(if (contains? [1 2 3] 5) 1 0)", 0); // out of range
@@ -307,7 +347,8 @@ test "diff: contains? on a vector tests index validity — primitive, backend-sh
 }
 
 test "diff: runtime metadata (meta / with-meta) — backend-shared" {
-    var f = try Fixture.init(testing.allocator);
+    var f: Fixture = undefined;
+    try Fixture.init(&f, testing.allocator);
     defer f.deinit();
     // meta storage + the primitives live in runtime/; vary-meta is core.clj
     // (excluded from the Fixture). with-meta/meta agree across backends.
@@ -318,7 +359,8 @@ test "diff: runtime metadata (meta / with-meta) — backend-shared" {
 }
 
 test "diff: binding rebinds a dynamic var (both backends)" {
-    var f = try Fixture.init(testing.allocator);
+    var f: Fixture = undefined;
+    try Fixture.init(&f, testing.allocator);
     defer f.deinit();
     // No `^:dynamic` reader-metadata surface yet (D-075); mark a Var
     // dynamic directly (the env.zig unit-test pattern) so the binding
@@ -330,7 +372,8 @@ test "diff: binding rebinds a dynamic var (both backends)" {
 }
 
 test "diff: set! updates the active thread binding (both backends)" {
-    var f = try Fixture.init(testing.allocator);
+    var f: Fixture = undefined;
+    try Fixture.init(&f, testing.allocator);
     defer f.deinit();
     const user = f.env.findNs("user").?;
     const v = try f.env.intern(user, "*tv*", Value.initInteger(1), null);
@@ -340,7 +383,8 @@ test "diff: set! updates the active thread binding (both backends)" {
 }
 
 test "diff: set! on an unbound var raises, never touches root (ADR-0096, both backends)" {
-    var f = try Fixture.init(testing.allocator);
+    var f: Fixture = undefined;
+    try Fixture.init(&f, testing.allocator);
     defer f.deinit();
     const user = f.env.findNs("user").?;
     const v = try f.env.intern(user, "*tv*", Value.initInteger(1), null);
@@ -352,7 +396,8 @@ test "diff: set! on an unbound var raises, never touches root (ADR-0096, both ba
 }
 
 test "diff: binding restores the root after the dynamic extent" {
-    var f = try Fixture.init(testing.allocator);
+    var f: Fixture = undefined;
+    try Fixture.init(&f, testing.allocator);
     defer f.deinit();
     const user = f.env.findNs("user").?;
     const v = try f.env.intern(user, "*tv*", Value.initInteger(1), null);
@@ -362,7 +407,8 @@ test "diff: binding restores the root after the dynamic extent" {
 }
 
 test "diff: nested binding — innermost shadows" {
-    var f = try Fixture.init(testing.allocator);
+    var f: Fixture = undefined;
+    try Fixture.init(&f, testing.allocator);
     defer f.deinit();
     const user = f.env.findNs("user").?;
     const v = try f.env.intern(user, "*tv*", Value.initInteger(1), null);
@@ -371,7 +417,8 @@ test "diff: nested binding — innermost shadows" {
 }
 
 test "diff: thrown value escaping binding caught by outer try (ADR-0071)" {
-    var f = try Fixture.init(testing.allocator);
+    var f: Fixture = undefined;
+    try Fixture.init(&f, testing.allocator);
     defer f.deinit();
     const user = f.env.findNs("user").?;
     const v = try f.env.intern(user, "*tv*", Value.initInteger(1), null);
@@ -384,7 +431,8 @@ test "diff: thrown value escaping binding caught by outer try (ADR-0071)" {
 }
 
 test "diff: catalog error escaping binding caught by outer try (ADR-0071)" {
-    var f = try Fixture.init(testing.allocator);
+    var f: Fixture = undefined;
+    try Fixture.init(&f, testing.allocator);
     defer f.deinit();
     const user = f.env.findNs("user").?;
     const v = try f.env.intern(user, "*tv*", Value.initInteger(1), null);
@@ -397,7 +445,8 @@ test "diff: catalog error escaping binding caught by outer try (ADR-0071)" {
 }
 
 test "diff: binding frame restored after a caught throw (cleanup pops frame, ADR-0071)" {
-    var f = try Fixture.init(testing.allocator);
+    var f: Fixture = undefined;
+    try Fixture.init(&f, testing.allocator);
     defer f.deinit();
     const user = f.env.findNs("user").?;
     const v = try f.env.intern(user, "*tv*", Value.initInteger(1), null);
@@ -409,7 +458,8 @@ test "diff: binding frame restored after a caught throw (cleanup pops frame, ADR
 }
 
 test "diff: bare-try (no catch) cleanup re-raise caught by outer try (ADR-0071)" {
-    var f = try Fixture.init(testing.allocator);
+    var f: Fixture = undefined;
+    try Fixture.init(&f, testing.allocator);
     defer f.deinit();
     // The inner (try ...) has no catch clause → cleanup edge → re-raises;
     // the outer try catches. Exercises op_push_cleanup on a non-binding
@@ -418,13 +468,15 @@ test "diff: bare-try (no catch) cleanup re-raise caught by outer try (ADR-0071)"
 }
 
 test "diff: loop*/recur countdown" {
-    var f = try Fixture.init(testing.allocator);
+    var f: Fixture = undefined;
+    try Fixture.init(&f, testing.allocator);
     defer f.deinit();
     try f.check("(loop* [i 0] (if (< i 3) (recur (+ i 1)) i))", 3);
 }
 
 test "diff: loop* sequential binding (later init sees earlier binding)" {
-    var f = try Fixture.init(testing.allocator);
+    var f: Fixture = undefined;
+    try Fixture.init(&f, testing.allocator);
     defer f.deinit();
     // clj loop bindings are sequential like let*; both backends must resolve
     // `a` inside `b`'s init expr (the analyzer fix: init analysed against the
@@ -434,7 +486,8 @@ test "diff: loop* sequential binding (later init sees earlier binding)" {
 }
 
 test "diff: fn*-body recur (D-090, both backends re-enter the param frame)" {
-    var f = try Fixture.init(testing.allocator);
+    var f: Fixture = undefined;
+    try Fixture.init(&f, testing.allocator);
     defer f.deinit();
     // recur in fn tail position rebinds the param slots and re-enters —
     // both TreeWalk (callMethodImpl loop) and VM (compileFnMethodBody
@@ -443,19 +496,22 @@ test "diff: fn*-body recur (D-090, both backends re-enter the param frame)" {
 }
 
 test "diff: variadic fn*-body recur rebinds the rest param" {
-    var f = try Fixture.init(testing.allocator);
+    var f: Fixture = undefined;
+    try Fixture.init(&f, testing.allocator);
     defer f.deinit();
     try f.check("((fn* [a & r] (if (nil? (seq r)) a (recur (+ a (first r)) (rest r)))) 0 1 2 3 4)", 10);
 }
 
 test "diff: closure capture via let-then-fn" {
-    var f = try Fixture.init(testing.allocator);
+    var f: Fixture = undefined;
+    try Fixture.init(&f, testing.allocator);
     defer f.deinit();
     try f.check("((let* [x 10] (fn* [y] (+ x y))) 5)", 15);
 }
 
 test "diff: nested if branches" {
-    var f = try Fixture.init(testing.allocator);
+    var f: Fixture = undefined;
+    try Fixture.init(&f, testing.allocator);
     defer f.deinit();
     try f.check("(if (if true false true) 1 2)", 2);
 }
@@ -480,7 +536,8 @@ test "diff: nested if branches" {
 // test/diff/clj_corpus/persistent_queue.txt).
 
 test "diff: NaN is not = to itself; special-float str (both backends)" {
-    var f = try Fixture.init(testing.allocator);
+    var f: Fixture = undefined;
+    try Fixture.init(&f, testing.allocator);
     defer f.deinit();
     // `(= ##NaN ##NaN)` → false (IEEE / clj equiv) on both backends.
     try f.check("(if (= (/ 0.0 0.0) (/ 0.0 0.0)) 1 0)", 0);
@@ -490,7 +547,8 @@ test "diff: NaN is not = to itself; special-float str (both backends)" {
 }
 
 test "diff: def_node" {
-    var f = try Fixture.init(testing.allocator);
+    var f: Fixture = undefined;
+    try Fixture.init(&f, testing.allocator);
     defer f.deinit();
     // Post-ADR-0038, `(do (def x ...) x)` resolves cleanly because
     // analyzeDef pre-registers the Var in env before the body's
@@ -499,7 +557,8 @@ test "diff: def_node" {
 }
 
 test "diff: def docstring form (def name doc init) reaches Var.meta" {
-    var f = try Fixture.init(testing.allocator);
+    var f: Fixture = undefined;
+    try Fixture.init(&f, testing.allocator);
     defer f.deinit();
     // `(def name "doc" init)` — the init lands as the value, the docstring as
     // `:doc` in Var.meta; both backends share the analyzeDef path.
@@ -507,7 +566,8 @@ test "diff: def docstring form (def name doc init) reaches Var.meta" {
 }
 
 test "diff: var special form const-folds to a stable var_ref" {
-    var f = try Fixture.init(testing.allocator);
+    var f: Fixture = undefined;
+    try Fixture.init(&f, testing.allocator);
     defer f.deinit();
     // D-183(a): `(var x)` const-folds to a `.constant` var_ref Node on
     // both backends; deref recovers the Var's root. Verifies the shared
@@ -516,7 +576,8 @@ test "diff: var special form const-folds to a stable var_ref" {
 }
 
 test "diff: var-as-IFn — a var_ref callee derefs and invokes (D-231)" {
-    var f = try Fixture.init(testing.allocator);
+    var f: Fixture = undefined;
+    try Fixture.init(&f, testing.allocator);
     defer f.deinit();
     // D-231: a runtime `.var_ref` Value in call position derefs to its value
     // and re-dispatches. Both backends route runtime calls through the shared
@@ -529,7 +590,8 @@ test "diff: var-as-IFn — a var_ref callee derefs and invokes (D-231)" {
 }
 
 test "diff: ^meta on def target reaches Var.meta" {
-    var f = try Fixture.init(testing.allocator);
+    var f: Fixture = undefined;
+    try Fixture.init(&f, testing.allocator);
     defer f.deinit();
     // D-183(b)+(c): `analyzeDef` lifts a `^{...}` def-target meta into
     // `Var.meta` at analyze time (backend-shared analysis), so `(meta
@@ -538,7 +600,8 @@ test "diff: ^meta on def target reaches Var.meta" {
 }
 
 test "diff: defn attr-map reaches Var.meta" {
-    var f = try Fixture.init(testing.allocator);
+    var f: Fixture = undefined;
+    try Fixture.init(&f, testing.allocator);
     defer f.deinit();
     // D-183(d) / D-091: `expandDefn` lowers docstring + attr-map +
     // `:arglists` onto the name Form's `.meta`, so `(meta (var f))` reads
@@ -546,7 +609,8 @@ test "diff: defn attr-map reaches Var.meta" {
     try f.check("(do (defn diff-dn {:v 9} [a] a) (:v (meta (var diff-dn))))", 9);
 }
 test "diff: defmacro docstring/attr-map reaches Var.meta (D-187)" {
-    var f = try Fixture.init(testing.allocator);
+    var f: Fixture = undefined;
+    try Fixture.init(&f, testing.allocator);
     defer f.deinit();
     // `analyzeDefmacro` (shared special form) lowers the attr-map into
     // `Var.meta` at analyze time, so `(meta (var m))` agrees on both backends.
@@ -554,7 +618,8 @@ test "diff: defmacro docstring/attr-map reaches Var.meta (D-187)" {
 }
 
 test "diff: defmacro &env (ADR-0086) sees lexical locals on both backends" {
-    var f = try Fixture.init(testing.allocator);
+    var f: Fixture = undefined;
+    try Fixture.init(&f, testing.allocator);
     defer f.deinit();
     // Macro expansion is analyze-time (shared), but the expanded form is
     // compiled by each backend — confirm the &env-driven expansion agrees.
@@ -562,7 +627,8 @@ test "diff: defmacro &env (ADR-0086) sees lexical locals on both backends" {
 }
 
 test "diff: ^meta on collection literal lowers to with-meta (D-186)" {
-    var f = try Fixture.init(testing.allocator);
+    var f: Fixture = undefined;
+    try Fixture.init(&f, testing.allocator);
     defer f.deinit();
     // The analyzer rewrites `^{m} [..]` to `(with-meta [..] {m})` (shared
     // call path), so both backends attach + read the metadata identically.
@@ -570,7 +636,8 @@ test "diff: ^meta on collection literal lowers to with-meta (D-186)" {
 }
 
 test "diff: empty-list literal () self-evaluates (D-188 / D-164)" {
-    var f = try Fixture.init(testing.allocator);
+    var f: Fixture = undefined;
+    try Fixture.init(&f, testing.allocator);
     defer f.deinit();
     // `()` lowers to a `.constant` empty-list Node (D-164: distinct from
     // nil) baked once and shared by both backends. The empty list is
@@ -585,7 +652,8 @@ test "diff: empty-list literal () self-evaluates (D-188 / D-164)" {
 // (the real bootstrap runs both backends) + the phase14_transducers e2e.
 
 test "diff: def_node forward ref inside (do)" {
-    var f = try Fixture.init(testing.allocator);
+    var f: Fixture = undefined;
+    try Fixture.init(&f, testing.allocator);
     defer f.deinit();
     // ADR-0038: forward references between def forms inside a single
     // top-level (do ...) work because analyzeDef pre-registers the
@@ -594,7 +662,8 @@ test "diff: def_node forward ref inside (do)" {
 }
 
 test "diff: def_node recursive defn" {
-    var f = try Fixture.init(testing.allocator);
+    var f: Fixture = undefined;
+    try Fixture.init(&f, testing.allocator);
     defer f.deinit();
     // ADR-0038: recursive `defn` works because analyzeDef pre-registers
     // the function name before the body (which references itself) is
@@ -616,7 +685,8 @@ test "diff: def_node recursive defn" {
 // just one extend per type to avoid the bug.
 
 test "diff: row 7.7 count via IPersistentCollection -count slow-path" {
-    var f = try Fixture.init(testing.allocator);
+    var f: Fixture = undefined;
+    try Fixture.init(&f, testing.allocator);
     defer f.deinit();
     try f.check(
         \\(do
@@ -628,7 +698,8 @@ test "diff: row 7.7 count via IPersistentCollection -count slow-path" {
 }
 
 test "diff: row 7.7 seq via Seqable -seq slow-path" {
-    var f = try Fixture.init(testing.allocator);
+    var f: Fixture = undefined;
+    try Fixture.init(&f, testing.allocator);
     defer f.deinit();
     try f.check(
         \\(do
@@ -640,7 +711,8 @@ test "diff: row 7.7 seq via Seqable -seq slow-path" {
 }
 
 test "diff: row 7.7 conj via IPersistentCollection -cons slow-path" {
-    var f = try Fixture.init(testing.allocator);
+    var f: Fixture = undefined;
+    try Fixture.init(&f, testing.allocator);
     defer f.deinit();
     try f.check(
         \\(do
@@ -652,7 +724,8 @@ test "diff: row 7.7 conj via IPersistentCollection -cons slow-path" {
 }
 
 test "diff: row 7.7 reduce via IReduce -reduce fast-path" {
-    var f = try Fixture.init(testing.allocator);
+    var f: Fixture = undefined;
+    try Fixture.init(&f, testing.allocator);
     defer f.deinit();
     try f.check(
         \\(do
@@ -671,7 +744,8 @@ test "diff: row 7.7 reduce via IReduce -reduce fast-path" {
 // phase14_syntax_quote_exclude.sh on the full runtime.)
 
 test "diff: empty catch body returns nil on both backends (D-301)" {
-    var f = try Fixture.init(testing.allocator);
+    var f: Fixture = undefined;
+    try Fixture.init(&f, testing.allocator);
     defer f.deinit();
     // `(catch E e)` with no body swallows + returns nil; TryNode compiles on both
     // backends, so the empty-body do-node must agree. (1 + the swallowed result.)
@@ -679,7 +753,8 @@ test "diff: empty catch body returns nil on both backends (D-301)" {
 }
 
 test "diff: java.util.Random seeded LCG parity (ADR-0106)" {
-    var f = try Fixture.init(testing.allocator);
+    var f: Fixture = undefined;
+    try Fixture.init(&f, testing.allocator);
     defer f.deinit();
     // A host_instance constructor + instance-method dispatch + in-place seed
     // mutation must agree on TreeWalk and VM (both share constructInstance +
@@ -688,7 +763,8 @@ test "diff: java.util.Random seeded LCG parity (ADR-0106)" {
 }
 
 test "diff: Java array aset/aget + seq (ADR-0105)" {
-    var f = try Fixture.init(testing.allocator);
+    var f: Fixture = undefined;
+    try Fixture.init(&f, testing.allocator);
     defer f.deinit();
     // Arrays are plain primitives (no new Node), so both backends invoke the
     // same BuiltinFn — this case locks that aset's in-place mutation + the
@@ -701,7 +777,8 @@ test "diff: Java array aset/aget + seq (ADR-0105)" {
 }
 
 test "diff: deftype mutable field set! + live read-after-write (ADR-0104)" {
-    var f = try Fixture.init(testing.allocator);
+    var f: Fixture = undefined;
+    try Fixture.init(&f, testing.allocator);
     defer f.deinit();
     // `bump` does `(set! n (inc n)) n`: the trailing read must see the live
     // slot (read-after-write in one body), and the slot persists across the
@@ -716,44 +793,51 @@ test "diff: deftype mutable field set! + live read-after-write (ADR-0104)" {
 }
 
 test "diff: do_node sequence" {
-    var f = try Fixture.init(testing.allocator);
+    var f: Fixture = undefined;
+    try Fixture.init(&f, testing.allocator);
     defer f.deinit();
     try f.check("(do 1 2 3 4 5)", 5);
 }
 
 test "diff: quote_node" {
-    var f = try Fixture.init(testing.allocator);
+    var f: Fixture = undefined;
+    try Fixture.init(&f, testing.allocator);
     defer f.deinit();
     try f.check("(count (quote (1 2 3 4 5)))", 5);
 }
 
 test "diff: try_node — happy path" {
-    var f = try Fixture.init(testing.allocator);
+    var f: Fixture = undefined;
+    try Fixture.init(&f, testing.allocator);
     defer f.deinit();
     try f.check("(try (+ 10 20) (catch ExceptionInfo _ 0))", 30);
 }
 
 test "diff: throw_node caught by try" {
-    var f = try Fixture.init(testing.allocator);
+    var f: Fixture = undefined;
+    try Fixture.init(&f, testing.allocator);
     defer f.deinit();
     try f.check("(try (throw (ex-info \"x\" {})) (catch ExceptionInfo _ 7))", 7);
 }
 
 test "diff: catch :keyword matches on ex-info :type (D-014b VM lowering)" {
-    var f = try Fixture.init(testing.allocator);
+    var f: Fixture = undefined;
+    try Fixture.init(&f, testing.allocator);
     defer f.deinit();
     // op_match_type_keyword on the VM mirrors tree_walk.catchMatches.
     try f.check("(try (throw (ex-info \"x\" {:type :foo})) (catch :foo _ 42))", 42);
 }
 
 test "diff: catch :keyword falls through on :type mismatch (D-014b)" {
-    var f = try Fixture.init(testing.allocator);
+    var f: Fixture = undefined;
+    try Fixture.init(&f, testing.allocator);
     defer f.deinit();
     try f.check("(try (throw (ex-info \"x\" {:type :bar})) (catch :foo _ 1) (catch ExceptionInfo _ 2))", 2);
 }
 
 test "diff: .getData on a caught ex_info (D-198 Throwable native method)" {
-    var f = try Fixture.init(testing.allocator);
+    var f: Fixture = undefined;
+    try Fixture.init(&f, testing.allocator);
     defer f.deinit();
     // `.getData`/`.getMessage` resolve via the shared `.ex_info` native
     // descriptor on BOTH backends (no per-backend special-case).
@@ -761,25 +845,29 @@ test "diff: .getData on a caught ex_info (D-198 Throwable native method)" {
 }
 
 test "diff: in_ns_node switches ns" {
-    var f = try Fixture.init(testing.allocator);
+    var f: Fixture = undefined;
+    try Fixture.init(&f, testing.allocator);
     defer f.deinit();
     try f.check("(do (in-ns 'user) 11)", 11);
 }
 
 test "diff: require_node bare symbol" {
-    var f = try Fixture.init(testing.allocator);
+    var f: Fixture = undefined;
+    try Fixture.init(&f, testing.allocator);
     defer f.deinit();
     try f.check("(do (require 'clojure.core) 13)", 13);
 }
 
 test "diff: ns_node bare with refer-clojure" {
-    var f = try Fixture.init(testing.allocator);
+    var f: Fixture = undefined;
+    try Fixture.init(&f, testing.allocator);
     defer f.deinit();
     try f.check("(do (ns diff-ns-1 (:refer-clojure)) 17)", 17);
 }
 
 test "diff: ns_node :refer-clojure :only filter (D-098 VM op_ns_with_filter)" {
-    var f = try Fixture.init(testing.allocator);
+    var f: Fixture = undefined;
+    try Fixture.init(&f, testing.allocator);
     defer f.deinit();
     // The `:only [+]` whitelist refers `+` (from rt) into the new ns; the
     // subsequent `(+ 1 2)` resolves it. op_ns_with_filter on the VM mirrors
@@ -795,19 +883,22 @@ test "diff: ns_node :refer-clojure :only filter (D-098 VM op_ns_with_filter)" {
 // both backends share the same env.referAllOverriding helper at their ns ops.
 
 test "diff: vector_literal_node" {
-    var f = try Fixture.init(testing.allocator);
+    var f: Fixture = undefined;
+    try Fixture.init(&f, testing.allocator);
     defer f.deinit();
     try f.check("(count [1 2 3 4 5 6 7])", 7);
 }
 
 test "diff: map_literal_node" {
-    var f = try Fixture.init(testing.allocator);
+    var f: Fixture = undefined;
+    try Fixture.init(&f, testing.allocator);
     defer f.deinit();
     try f.check("(count {:a 1 :b 2 :c 3})", 3);
 }
 
 test "diff: set_literal_node" {
-    var f = try Fixture.init(testing.allocator);
+    var f: Fixture = undefined;
+    try Fixture.init(&f, testing.allocator);
     defer f.deinit();
     try f.check("(count #{1 2 3 4})", 4);
 }
@@ -818,7 +909,8 @@ test "diff: set_literal_node" {
 // class — both backends intern the same (ns, name) and compare via
 // pointer-eq, so `(name 'sym)` round-trip returns 3 chars.
 test "diff: symbol quote roundtrip + name" {
-    var f = try Fixture.init(testing.allocator);
+    var f: Fixture = undefined;
+    try Fixture.init(&f, testing.allocator);
     defer f.deinit();
     try f.check("(count (name 'foo))", 3);
 }
@@ -830,7 +922,8 @@ test "diff: symbol quote roundtrip + name" {
 // tail anchors the do-form's return value to an integer for the
 // comparator.
 test "diff: ns refer-clojure widening (post-T3 path)" {
-    var f = try Fixture.init(testing.allocator);
+    var f: Fixture = undefined;
+    try Fixture.init(&f, testing.allocator);
     defer f.deinit();
     try f.check("(do (ns t3-diff (:refer-clojure)) (count [10 20]))", 2);
 }
@@ -839,7 +932,8 @@ test "diff: ns refer-clojure widening (post-T3 path)" {
 // method-dispatch cluster. 4 diff cases (one per new opcode).
 
 test "diff: deftype macro + interop_call_node .constructor + .instance_member field" {
-    var f = try Fixture.init(testing.allocator);
+    var f: Fixture = undefined;
+    try Fixture.init(&f, testing.allocator);
     defer f.deinit();
     // ADR-0066: deftype is a macro lowering to rt/__deftype! (a primitive
     // call both backends execute), op_ctor_call + op_method_call's
@@ -849,7 +943,8 @@ test "diff: deftype macro + interop_call_node .constructor + .instance_member fi
 }
 
 test "diff: deftype macro binds ->Name + applies protocol body (ADR-0066/D-087)" {
-    var f = try Fixture.init(testing.allocator);
+    var f: Fixture = undefined;
+    try Fixture.init(&f, testing.allocator);
     defer f.deinit();
     // Both backends must agree that the positional ->Name constructor is
     // bound and the protocol impl runs (was silently dropped pre-ADR-0066).
@@ -857,7 +952,8 @@ test "diff: deftype macro binds ->Name + applies protocol body (ADR-0066/D-087)"
 }
 
 test "diff: interop_call_node .constructor second field" {
-    var f = try Fixture.init(testing.allocator);
+    var f: Fixture = undefined;
+    try Fixture.init(&f, testing.allocator);
     defer f.deinit();
     try f.check("(do (deftype DiffPair [a b]) (.b (DiffPair. 1 33)))", 33);
 }
@@ -867,7 +963,8 @@ test "diff: interop_call_node .constructor second field" {
 // deftype field via the `.-name` field-only form.
 
 test "diff: instance_member native String method (.toUpperCase)" {
-    var f = try Fixture.init(testing.allocator);
+    var f: Fixture = undefined;
+    try Fixture.init(&f, testing.allocator);
     defer f.deinit();
     // Native receiver: field_layout == null → straight to method_table.
     // The result is a heap String, which the Phase-4 differential harness
@@ -879,7 +976,8 @@ test "diff: instance_member native String method (.toUpperCase)" {
 }
 
 test "diff: instance_member field-only (.-name) on deftype" {
-    var f = try Fixture.init(testing.allocator);
+    var f: Fixture = undefined;
+    try Fixture.init(&f, testing.allocator);
     defer f.deinit();
     // `.-b` reads the declared field directly via the field_only path.
     try f.check("(do (deftype DiffDash [a b]) (.-b (DiffDash. 1 33)))", 33);
@@ -891,13 +989,15 @@ test "diff: instance_member field-only (.-name) on deftype" {
 // heap/non-deterministic statics like UUID/randomUUID can't be diffed).
 
 test "diff: static_method (Math/max) on both backends" {
-    var f = try Fixture.init(testing.allocator);
+    var f: Fixture = undefined;
+    try Fixture.init(&f, testing.allocator);
     defer f.deinit();
     try f.check("(Math/max 3 7)", 7);
 }
 
 test "diff: static_method (Math/abs) on both backends" {
-    var f = try Fixture.init(testing.allocator);
+    var f: Fixture = undefined;
+    try Fixture.init(&f, testing.allocator);
     defer f.deinit();
     try f.check("(Math/abs -5)", 5);
 }
@@ -907,40 +1007,46 @@ test "diff: static_method (Math/abs) on both backends" {
 // must agree. Integer result survives the bit-pattern comparator.
 
 test "diff: let sequential destructure both backends" {
-    var f = try Fixture.init(testing.allocator);
+    var f: Fixture = undefined;
+    try Fixture.init(&f, testing.allocator);
     defer f.deinit();
     try f.check("(let [[a b] [1 2]] (+ a b))", 3);
 }
 
 test "diff: let nested destructure both backends" {
-    var f = try Fixture.init(testing.allocator);
+    var f: Fixture = undefined;
+    try Fixture.init(&f, testing.allocator);
     defer f.deinit();
     try f.check("(let [[[a b] c] [[1 2] 3]] (+ a b c))", 6);
 }
 
 test "diff: let associative destructure both backends" {
-    var f = try Fixture.init(testing.allocator);
+    var f: Fixture = undefined;
+    try Fixture.init(&f, testing.allocator);
     defer f.deinit();
     // D-076 cycle 2: {:keys}/:or lower to get; both backends agree.
     try f.check("(let [{:keys [a b] :or {b 9}} {:a 1}] (+ a b))", 10);
 }
 
 test "diff: fn param destructure both backends" {
-    var f = try Fixture.init(testing.allocator);
+    var f: Fixture = undefined;
+    try Fixture.init(&f, testing.allocator);
     defer f.deinit();
     // D-076 cycle 3: pattern params → gensym + body let; both backends agree.
     try f.check("((fn [[a b] {:keys [c]}] (+ a b c)) [1 2] {:c 3})", 6);
 }
 
 test "diff: loop destructure both backends" {
-    var f = try Fixture.init(testing.allocator);
+    var f: Fixture = undefined;
+    try Fixture.init(&f, testing.allocator);
     defer f.deinit();
     // D-076 cycle 4: loop macro + destructure; recur rebinds the gensym slot.
     try f.check("(loop [[a b] [1 2]] (if (< a 3) (recur [(inc a) b]) (+ a b)))", 5);
 }
 
 test "diff: map string-key lookup both backends" {
-    var f = try Fixture.init(testing.allocator);
+    var f: Fixture = undefined;
+    try Fixture.init(&f, testing.allocator);
     defer f.deinit();
     // D-151: string keys match by value (byte-eq) on both backends.
     try f.check("(get {\"a\" 1 \"b\" 2} \"b\")", 2);
@@ -968,7 +1074,8 @@ test "diff: map string-key lookup both backends" {
 // (verified empirically before the fix landed).
 
 test "diff: row 7.10 op_method_call on defrecord (inline protocol body)" {
-    var f = try Fixture.init(testing.allocator);
+    var f: Fixture = undefined;
+    try Fixture.init(&f, testing.allocator);
     defer f.deinit();
     try f.check(
         \\(do
@@ -979,7 +1086,8 @@ test "diff: row 7.10 op_method_call on defrecord (inline protocol body)" {
 }
 
 test "diff: row 7.10 op_method_call on reify (anonymous descriptor)" {
-    var f = try Fixture.init(testing.allocator);
+    var f: Fixture = undefined;
+    try Fixture.init(&f, testing.allocator);
     defer f.deinit();
     try f.check(
         \\(do
@@ -1019,7 +1127,8 @@ fn setupDiffTargetNs(f: *Fixture) !void {
 // phase15_for_while e2e + clj-oracle cmps, not the diff oracle.
 
 test "diff: op_ctor_call name index survives >255 constants (D-233)" {
-    var f = try Fixture.init(testing.allocator);
+    var f: Fixture = undefined;
+    try Fixture.init(&f, testing.allocator);
     defer f.deinit();
     // A single top-level form whose chunk holds >255 distinct constants
     // BEFORE the ctor-name constant. The old `(name_idx << 8)` packing
@@ -1039,7 +1148,8 @@ test "diff: op_ctor_call name index survives >255 constants (D-233)" {
 }
 
 test "diff: row 7.10 op_require_with_libspec — :refer single arm" {
-    var f = try Fixture.init(testing.allocator);
+    var f: Fixture = undefined;
+    try Fixture.init(&f, testing.allocator);
     defer f.deinit();
     try setupDiffTargetNs(&f);
     // Top-level form sequence (NOT wrapped in `do`) so each form's
@@ -1055,7 +1165,8 @@ test "diff: row 7.10 op_require_with_libspec — :refer single arm" {
 }
 
 test "diff: row 7.10 op_require_with_libspec — :as alias arm" {
-    var f = try Fixture.init(testing.allocator);
+    var f: Fixture = undefined;
+    try Fixture.init(&f, testing.allocator);
     defer f.deinit();
     try setupDiffTargetNs(&f);
     try f.check(
@@ -1065,7 +1176,8 @@ test "diff: row 7.10 op_require_with_libspec — :as alias arm" {
 }
 
 test "diff: row 7.10 op_require_with_libspec — :as + :refer combined" {
-    var f = try Fixture.init(testing.allocator);
+    var f: Fixture = undefined;
+    try Fixture.init(&f, testing.allocator);
     defer f.deinit();
     try setupDiffTargetNs(&f);
     try f.check(
@@ -1075,7 +1187,8 @@ test "diff: row 7.10 op_require_with_libspec — :as + :refer combined" {
 }
 
 test "diff: libspec :only whitelist arm" {
-    var f = try Fixture.init(testing.allocator);
+    var f: Fixture = undefined;
+    try Fixture.init(&f, testing.allocator);
     defer f.deinit();
     try setupDiffTargetNs(&f);
     // `:only [marker]` ≡ `:refer [marker]` — marker resolves, marker2 stays
@@ -1087,7 +1200,8 @@ test "diff: libspec :only whitelist arm" {
 }
 
 test "diff: libspec :exclude blacklist arm (:use refer-all minus)" {
-    var f = try Fixture.init(testing.allocator);
+    var f: Fixture = undefined;
+    try Fixture.init(&f, testing.allocator);
     defer f.deinit();
     try setupDiffTargetNs(&f);
     // `:exclude [marker2]` refers all publics except marker2; marker resolves.
@@ -1106,25 +1220,29 @@ test "diff: libspec :exclude blacklist arm (:use refer-all minus)" {
 // expectation (cf. e2e for the user-facing diagnostic).
 
 test "diff: row 7.11 catch RuntimeException matches ex-info (parent walk)" {
-    var f = try Fixture.init(testing.allocator);
+    var f: Fixture = undefined;
+    try Fixture.init(&f, testing.allocator);
     defer f.deinit();
     try f.check("(try (throw (ex-info \"boom\" {})) (catch RuntimeException e 1))", 1);
 }
 
 test "diff: row 7.11 catch Throwable matches everything" {
-    var f = try Fixture.init(testing.allocator);
+    var f: Fixture = undefined;
+    try Fixture.init(&f, testing.allocator);
     defer f.deinit();
     try f.check("(try (throw (ex-info \"x\" {})) (catch Throwable e 2))", 2);
 }
 
 test "diff: row 7.11 catch Exception matches via RuntimeException" {
-    var f = try Fixture.init(testing.allocator);
+    var f: Fixture = undefined;
+    try Fixture.init(&f, testing.allocator);
     defer f.deinit();
     try f.check("(try (throw (ex-info \"x\" {})) (catch Exception e 3))", 3);
 }
 
 test "diff: row 7.11 catch sibling skipped, specific arm fires" {
-    var f = try Fixture.init(testing.allocator);
+    var f: Fixture = undefined;
+    try Fixture.init(&f, testing.allocator);
     defer f.deinit();
     try f.check(
         \\(try (throw (ex-info "x" {}))
@@ -1134,7 +1252,8 @@ test "diff: row 7.11 catch sibling skipped, specific arm fires" {
 }
 
 test "diff: row 7.11 catch FQCN java.lang.RuntimeException normalises" {
-    var f = try Fixture.init(testing.allocator);
+    var f: Fixture = undefined;
+    try Fixture.init(&f, testing.allocator);
     defer f.deinit();
     try f.check("(try (throw (ex-info \"x\" {})) (catch java.lang.RuntimeException e 5))", 5);
 }
@@ -1145,25 +1264,29 @@ test "diff: row 7.11 catch FQCN java.lang.RuntimeException normalises" {
 // loop, so the class hierarchy + no-match re-raise must agree.
 
 test "diff: ADR-0060 catch ArithmeticException on (/ 1 0)" {
-    var f = try Fixture.init(testing.allocator);
+    var f: Fixture = undefined;
+    try Fixture.init(&f, testing.allocator);
     defer f.deinit();
     try f.check("(try (/ 1 0) (catch ArithmeticException e 1))", 1);
 }
 
 test "diff: ADR-0060 catch Exception on (/ 1 0) via RuntimeException" {
-    var f = try Fixture.init(testing.allocator);
+    var f: Fixture = undefined;
+    try Fixture.init(&f, testing.allocator);
     defer f.deinit();
     try f.check("(try (/ 1 0) (catch Exception e 2))", 2);
 }
 
 test "diff: ADR-0060 catch IndexOutOfBoundsException on nth out-of-range" {
-    var f = try Fixture.init(testing.allocator);
+    var f: Fixture = undefined;
+    try Fixture.init(&f, testing.allocator);
     defer f.deinit();
     try f.check("(try (nth [1] 5) (catch IndexOutOfBoundsException e 4))", 4);
 }
 
 test "diff: ADR-0060 internal error no-match inner re-raises to outer" {
-    var f = try Fixture.init(testing.allocator);
+    var f: Fixture = undefined;
+    try Fixture.init(&f, testing.allocator);
     defer f.deinit();
     try f.check(
         \\(try (try (/ 1 0) (catch clojure.lang.ExceptionInfo e 0))
@@ -1189,25 +1312,29 @@ test "diff: ADR-0060 internal error no-match inner re-raises to outer" {
 // + one negative case (vector still spreads to the rest slot).
 
 test "diff: row 7.9 apply variadic bind-direct (list tail, no leading)" {
-    var f = try Fixture.init(testing.allocator);
+    var f: Fixture = undefined;
+    try Fixture.init(&f, testing.allocator);
     defer f.deinit();
     try f.check("(apply (fn* [& xs] (count xs)) '(1 2 3 4 5))", 5);
 }
 
 test "diff: row 7.9 apply variadic bind-direct (list tail, with leading)" {
-    var f = try Fixture.init(testing.allocator);
+    var f: Fixture = undefined;
+    try Fixture.init(&f, testing.allocator);
     defer f.deinit();
     try f.check("(apply (fn* [a b & xs] (count xs)) 10 20 '(3 4 5))", 3);
 }
 
 test "diff: row 7.9 apply variadic bind-direct (identity through rest)" {
-    var f = try Fixture.init(testing.allocator);
+    var f: Fixture = undefined;
+    try Fixture.init(&f, testing.allocator);
     defer f.deinit();
     try f.check("(apply (fn* [& xs] (first xs)) '(99 100 101))", 99);
 }
 
 test "diff: row 7.9 apply variadic with vector tail (spread still works)" {
-    var f = try Fixture.init(testing.allocator);
+    var f: Fixture = undefined;
+    try Fixture.init(&f, testing.allocator);
     defer f.deinit();
     // Vector tail hits the eager-spread fallback (vectors are NOT in
     // the bind-direct gate's seq-tag set); xs binds to (1 2 3 4 5),
@@ -1224,13 +1351,15 @@ test "diff: row 7.9 apply variadic with vector tail (spread still works)" {
 // (vector) so the GC trace path is crossed on both backends.
 
 test "diff: ref deref round-trip" {
-    var f = try Fixture.init(testing.allocator);
+    var f: Fixture = undefined;
+    try Fixture.init(&f, testing.allocator);
     defer f.deinit();
     try f.check("(deref (ref 5))", 5);
 }
 
 test "diff: ref holds heap value, deref then count" {
-    var f = try Fixture.init(testing.allocator);
+    var f: Fixture = undefined;
+    try Fixture.init(&f, testing.allocator);
     defer f.deinit();
     try f.check("(count (deref (ref [1 2 3])))", 3);
 }
@@ -1242,7 +1371,8 @@ test "diff: ref holds heap value, deref then count" {
 // its target (peephole IP-remap must re-resolve the offset).
 
 test "diff: peephole — do with pure-push non-final form" {
-    var f = try Fixture.init(testing.allocator);
+    var f: Fixture = undefined;
+    try Fixture.init(&f, testing.allocator);
     defer f.deinit();
     // (do 1 2 3) compiles to `op_const 1; op_pop; op_const 2; op_pop;
     // op_const 3; op_ret`. Peephole removes both push-pop pairs.
@@ -1250,7 +1380,8 @@ test "diff: peephole — do with pure-push non-final form" {
 }
 
 test "diff: peephole — if with pure-push elision inside both branches" {
-    var f = try Fixture.init(testing.allocator);
+    var f: Fixture = undefined;
+    try Fixture.init(&f, testing.allocator);
     defer f.deinit();
     // Both branches contain a (do …) whose non-final pure push is
     // elided; the if's op_jump must be re-resolved after compaction.
@@ -1265,7 +1396,8 @@ test "diff: peephole — if with pure-push elision inside both branches" {
 // freshly-compiled fn would mask this (it retains a real AST body), so the
 // test round-trips through the serializer to force the sentinel-body form.
 test "aot: deserialized bytecode fn dispatches via tree_walk vtable evalChunk" {
-    var f = try Fixture.init(testing.allocator);
+    var f: Fixture = undefined;
+    try Fixture.init(&f, testing.allocator);
     defer f.deinit();
     driver.installVTable(&f.rt);
 
@@ -1321,7 +1453,8 @@ fn caretColumn(f: *Fixture, source: []const u8, backend: enum { tree_walk, vm })
 }
 
 test "diff: arg-precise caret column agrees across backends (ADR-0118 cycle 2.5)" {
-    var f = try Fixture.init(testing.allocator);
+    var f: Fixture = undefined;
+    try Fixture.init(&f, testing.allocator);
     defer f.deinit();
     // (/ 2 0): caret on the zero divisor `0` at col 5 (index 1), both backends.
     try testing.expectEqual(@as(u16, 5), try caretColumn(&f, "(/ 2 0)", .tree_walk));
@@ -1365,7 +1498,8 @@ fn evalFnInfo(f: *Fixture, source: []const u8, backend: enum { tree_walk, vm }) 
 }
 
 test "naming: fn carries name+defining_ns on the value (ADR-0119 Stage 1, both backends)" {
-    var f = try Fixture.init(testing.allocator);
+    var f: Fixture = undefined;
+    try Fixture.init(&f, testing.allocator);
     defer f.deinit();
     const ns = f.env.current_ns.?.name;
 
@@ -1433,7 +1567,8 @@ fn traceOf(f: *Fixture, source: []const u8, backend: enum { tree_walk, vm }, out
 }
 
 test "trace: nested named-fn error → identical frames both backends (ADR-0119 Stage 2)" {
-    var f = try Fixture.init(testing.allocator);
+    var f: Fixture = undefined;
+    try Fixture.init(&f, testing.allocator);
     defer f.deinit();
     const src = "(do (defn tf [x] (/ x 0)) (defn tg [y] (tf y)) (tg 3))";
     var tw: [16]error_mod.StackFrame = undefined;
@@ -1450,7 +1585,8 @@ test "trace: nested named-fn error → identical frames both backends (ADR-0119 
 }
 
 test "trace: a builtin HOF is elided, the user fn it calls IS shown (ADR-0119/D-332, both backends)" {
-    var f = try Fixture.init(testing.allocator);
+    var f: Fixture = undefined;
+    try Fixture.init(&f, testing.allocator);
     defer f.deinit();
     // `reduce` is a builtin (host) → elided by the trace discipline; the user
     // fn it invokes (ns = user) is kept. So the trace is exactly ONE frame.
@@ -1464,7 +1600,8 @@ test "trace: a builtin HOF is elided, the user fn it calls IS shown (ADR-0119/D-
 }
 
 test "trace: recur loops push ONE frame, not N (ADR-0119 Stage 2, both backends)" {
-    var f = try Fixture.init(testing.allocator);
+    var f: Fixture = undefined;
+    try Fixture.init(&f, testing.allocator);
     defer f.deinit();
     // recur is a backjump (TreeWalk rebind / VM op_jump), NOT a re-call through
     // treeWalkCall — so a recursion loop pushes the fn's frame exactly ONCE.
@@ -1480,7 +1617,8 @@ test "trace: recur loops push ONE frame, not N (ADR-0119 Stage 2, both backends)
 }
 
 test "diff: op_get / op_nth collection intrinsics (O-043, both backends)" {
-    var f = try Fixture.init(testing.allocator);
+    var f: Fixture = undefined;
+    try Fixture.init(&f, testing.allocator);
     defer f.deinit();
     // op_get fires for 2-arg `(get coll k)`; fastGet handles map/nil inline,
     // defers vector/set/string/etc. Must equal the TreeWalk builtin path.
