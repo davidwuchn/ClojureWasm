@@ -22,20 +22,20 @@
   rrb-vector/algo.*→ForkJoin/Future). The **core clj-diff bug sweep is now drained**
   (2026-06-21 session: 14 areas byte-identical to clj — metadata/privacy/destructuring/
   namespaced-map/string/numeric/sorted/set/bit-ops/polymorphism/read-print/catch-by-class/
-  lazy-realization; 4 real bugs FIXED + AD-050/AD-007). **First commit on resume = D-485
-  stage 2a** (per ADR-0157, which the Devil's-advocate fork reshaped): a watch/validator/
-  reducer that re-enters the evaluator unboundedly overflows the NATIVE stack → SIGSEGV.
-  **2b LANDED** (aaf391e3: stack_overflow is now a catchable own-Kind StackOverflowError;
-  re-entry + nested-eval overflows catch — the watch case is also partial-guarded at cap
-  256). **2a = the remaining work**: a SELF-CALIBRATING native-stack guard (capture the
-  thread stack base — main at startup, workers at spawn — and at `vm.eval` entry ±
-  `invokeCallable` check `@frameAddress()` vs base − a ~64KB margin, the SpiderMonkey/
-  CPython/Go pattern), raising the (now-catchable) stack_overflow. It converts the
-  validator/reducer SIGSEGV to a graceful error, fixes the same-eval direct-recursion-at-
-  FRAMES_MAX catch edge (the guard fires before frames are exhausted, so synthesis works),
-  and SUBSUMES the watch-256 partial (remove it). The DA REJECTED a fixed cap (cross-host
-  SIGSEGV-fragile); Alt 3 (trampoline) = forward debt. Then drain D-482/D-479/D-480.
-  Policy unchanged: **official stdlib → eager bundle; contrib → verify**.
+  lazy-realization; 4 real bugs FIXED + AD-050/AD-007). The **stack-overflow robustness
+  arc is COMPLETE** (ADR-0157, reshaped by a Devil's-advocate fork): 2b (catchable own-Kind
+  StackOverflowError) + 2a (self-calibrating native-stack guard at `vm.eval` entry: threadlocal
+  stack-base anchor + 6 MiB byte-budget) + D-486 (route the flattened-recursion overflow
+  through the shared `else |err|` arm). Every overflow path — re-entry AND direct recursion —
+  now raises a graceful, CATCHABLE StackOverflowError (clj parity). D-485/D-486 discharged;
+  gate green 390/0 (through 2a). **First commit on resume = D-487** (a measured quick win:
+  `zig build test` runs Debug and its RUN dominates the smoke at ~114s warm — the F-012 diff
+  oracle on a Debug interpreter; try `-Doptimize=ReleaseSafe`, which keeps safety checks but
+  may cut the smoke ~6min→~1-2min — ADR-level, validate all tests pass first). Then self-select
+  deferred deep items (D-482 seq-laziness, D-479 Class/forName, D-480 Serializable) or resume
+  the contrib bug-audit. Open follow-up: ADR-0157 Alt 3 (trampoline) = forward debt; 2a budget
+  could read the real RLIMIT_STACK instead of a fixed 6 MiB (per-task note). Policy unchanged:
+  **official stdlib → eager bundle; contrib → verify**.
 
 - **Forbidden this session**: speculative JIT integration before zwasm's API stabilises
   (read `.dev/zwasm_capabilities.md` — JIT row BUILDING, not adoptable). `git push
@@ -43,6 +43,16 @@
   `zig_build_test_needs_dwasm`). Bare `zig build` for a probe (ADR-0133 — ReleaseSafe).
   A reader-macro / syntax-quote NS-qualification MUST stay `rt/`, not `clojure.core/`
   (AD-038/AD-049).
+
+## Stopped — user requested
+
+User instruction (2026-06-21): "きりが良くなったタイミングで、次のクリアセッションから
+continue できるように、配線・参照チェーンを監査し、停止してください。また、問題なければ、
+ローカルの `.zig-cache` と zwasm_from_scratch 側の `.zig-cache` を削除してください" (+ a
+follow-up audit of whether the smoke slowness was a Debug-build fallback → confirmed: the
+shipped/e2e binary is ReleaseSafe; the cost is the Debug `zig build test` RUN, now D-487).
+Wiring audit done (clean: all e2e registered, debt IDs resolve, ADR↔debt cross-refs intact).
+Both `.zig-cache`s deleted at the clean stop. Resume per the Resume contract above (D-487).
 
 ## Last landed (git log = SSOT; all pushed)
 

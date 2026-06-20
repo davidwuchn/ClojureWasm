@@ -7,9 +7,10 @@
   **2a LANDED** (commit 48be8e91: self-calibrating native-stack guard — threadlocal
   stack-base anchor + 6 MiB byte-budget at `vm.eval` entry; validator/reducer/watch
   re-entry SIGSEGV → graceful catchable error; watch-256 partial subsumed + removed).
-  **D-485 DISCHARGED.** Residual: the same-eval direct-recursion-at-FRAMES_MAX catch
-  edge (flattened recursion never re-enters `vm.eval`, so the entry guard does not see
-  it) is split to **D-486** — graceful (no crash), only catchability diverges.
+  **D-485 + D-486 DISCHARGED — ADR fully implemented.** D-486 (the same-eval direct-
+  recursion catch edge) was fixed by unifying the flatten path's overflow into the
+  shared `else |err|` arm in `vm.eval`. Every overflow path — re-entry AND direct
+  recursion — now raises a graceful, catchable StackOverflowError (clj parity).
 - **Deciders**: autonomous loop (differential bug-sweep finding)
 - **Supersedes / relates**: D-485 (the tracking row + full mechanism trace),
   the watch-nesting partial fix (commit b69d97a9, `iref.enterWatchNotify` cap 256

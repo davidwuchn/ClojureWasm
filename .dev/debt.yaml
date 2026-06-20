@@ -24,8 +24,27 @@
 # md-table-align no longer pads it to ~800 KB of whitespace.
 
 active:
+  - id: "D-487"
+    status: "open (2026-06-21, audited on user prompt re: smoke slowness). The per-commit smoke's dominant cost is `zig build test` ×2 (run_all.sh L313/314: `zig build test -Dwasm` [+ `-Dbackend=tree_walk`]), which default to **Debug** (no `-Doptimize`, per the build-mode policy 'unit tests = Debug for fast-compile + max diagnostics'). MEASURED 2026-06-21: a WARM `zig build test -Dwasm` (compile cached → pure RUN) = **real 114.67s / user 112.96s**; cold (after a vm.zig edit) ≈ 168s = ~114s RUN + ~54s compile. So the RUN dominates — the F-012 diff oracle + all unit tests evaluate MANY programs on the DEBUG-compiled interpreter, hitting the Debug-perf-cliff (perf_measure_release: e.g. (count (vec (range 1e6))) = Debug 121s vs ReleaseFast 0.02s). The shipped/e2e binary is correctly ReleaseSafe (verified `cljw --version`); only the unit-test build is Debug. The build-mode policy assumed COMPILE dominates for unit tests — the diff oracle makes that BACKWARDS (RUN dominates)."
+    category: "perf"
+    barrier: |-
+      Hypothesis (high-value, aligns with the throughput focus — efficient_gate_pipeline /
+      smoke_first_batch_full_gate): run `zig build test` in **ReleaseSafe** instead of Debug.
+      ReleaseSafe KEEPS all safety checks (bounds / overflow / UB panics) — it is the
+      'safe optimized' mode — so the correctness oracle stays sound, while the interpreter
+      runs ~10-100× faster, likely cutting the 114s RUN to seconds (smoke ~6min→~1-2min;
+      warm re-runs near-instant). Tradeoff: ReleaseSafe COMPILES slower than Debug (~54s →
+      maybe ~90-120s), but the RUN saving dwarfs it, and warm builds skip compile entirely.
+      ADR-level (reverses the build-mode policy table for the unit-test step). VALIDATION
+      REQUIRED before flipping: (1) `time zig build test -Dwasm -Doptimize=ReleaseSafe` —
+      confirm it is materially faster AND all tests still PASS (some may rely on Debug-only
+      undefined-value detection or exact panic text); (2) check the diff oracle doesn't
+      depend on Debug `undefined` poisoning; (3) keep Debug available via a flag for deep
+      diagnostics. The measurement command + the policy table to amend live in
+      `.claude/rules/perf_measure_release.md`. Quick win for the next session.
+    last_reviewed: "2026-06-21"
   - id: "D-486"
-    status: "open (2026-06-21, split from D-485 2a). A stack overflow raised by FLATTENED direct recursion at FRAMES_MAX=2048 (`((fn f [n] (f (inc n))) 0)` inside a `try`) is NOT caught by an enclosing `(catch StackOverflowError/Throwable …)` — it propagates uncaught + prints a trace, where clj recovers. Re-entry overflows (validator/reducer/watch, via nested vm.eval) ARE caught (ADR-0157 2a/2b). The flattened recursion stays in ONE vm.eval (op_call flattens in-VM), so the vm.eval-entry stack guard never re-fires, and the existing handler-synthesis (vm.zig:372 — convert a catalog error to a thrown value when handler_count>0) does NOT fire for the flattenPush(:149)/eval-entry(:227) FRAMES_MAX raise in the handler's OWN eval (the synthesis path is reached for nested-eval raises but apparently not this same-eval-exhausted case). LOW severity: graceful (no crash) + the common runaway-recursion case; only the catchability diverges from clj. Repro: `(try ((fn f [n] (f (inc n))) 0) (catch Throwable e :ok))` → cljw prints trace / clj → :ok."
+    status: "DISCHARGED (2026-06-21, commit completes ADR-0157). The flatten dispatch in vm.eval now unifies flattenPush's error into the SAME `else |err|` arm (via a `result` expression) instead of bare-`try`-propagating it out of eval — so a deep DIRECT recursion overflow inside a `try` is caught (catch StackOverflowError/Throwable; not Exception — clj parity), uncaught still renders gracefully, bounded recursion no false-trip. Validated by the dual-backend diff oracle + e2e phase15_watch_recursion (direct_recursion_caught/_thr/legit_direct_recursion). The full stack-overflow catchability story (re-entry AND direct recursion) is now clj-faithful. ORIGINAL: open (2026-06-21, split from D-485 2a). A stack overflow raised by FLATTENED direct recursion at FRAMES_MAX=2048 (`((fn f [n] (f (inc n))) 0)` inside a `try`) is NOT caught by an enclosing `(catch StackOverflowError/Throwable …)` — it propagates uncaught + prints a trace, where clj recovers. Re-entry overflows (validator/reducer/watch, via nested vm.eval) ARE caught (ADR-0157 2a/2b). The flattened recursion stays in ONE vm.eval (op_call flattens in-VM), so the vm.eval-entry stack guard never re-fires, and the existing handler-synthesis (vm.zig:372 — convert a catalog error to a thrown value when handler_count>0) does NOT fire for the flattenPush(:149)/eval-entry(:227) FRAMES_MAX raise in the handler's OWN eval (the synthesis path is reached for nested-eval raises but apparently not this same-eval-exhausted case). LOW severity: graceful (no crash) + the common runaway-recursion case; only the catchability diverges from clj. Repro: `(try ((fn f [n] (f (inc n))) 0) (catch Throwable e :ok))` → cljw prints trace / clj → :ok."
     category: "clj-parity"
     barrier: |-
       Localised to the VM same-eval FRAMES_MAX unwind. Finished form: the flattened
