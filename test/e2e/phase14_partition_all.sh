@@ -24,8 +24,10 @@ assert_eq 'pa_even'    "$("$BIN" -e '(mapv vec (partition-all 3 [1 2 3 4 5 6]))'
 assert_eq 'pa_count'   "$("$BIN" -e '(count (partition-all 2 [1 2 3 4 5]))')"      '3'
 assert_eq 'pa_step'    "$("$BIN" -e '(mapv vec (partition-all 2 4 [1 2 3 4 5 6 7]))')" '[[1 2] [5 6]]'
 assert_eq 'pa_empty'   "$("$BIN" -e '(count (partition-all 2 []))')"               '0'
-assert_eq 'sv_at'      "$("$BIN" -e '(splitv-at 2 [1 2 3 4 5])')"                  '[[1 2] [3 4 5]]'
-assert_eq 'sv_zero'    "$("$BIN" -e '(splitv-at 0 [1 2 3])')"                      '[[] [1 2 3]]'
-assert_eq 'sv_over'    "$("$BIN" -e '(splitv-at 9 [1 2])')"                        '[[1 2] []]'
+# splitv-at: only the FIRST part is a vector; the second is the drop SEQ (clj
+# parity — was wrongly asserting both-vectors; the real clj returns [vec, seq]).
+assert_eq 'sv_at'      "$("$BIN" -e '(splitv-at 2 [1 2 3 4 5])')"                  '[[1 2] (3 4 5)]'
+assert_eq 'sv_zero'    "$("$BIN" -e '(splitv-at 0 [1 2 3])')"                      '[[] (1 2 3)]'
+assert_eq 'sv_over'    "$("$BIN" -e '(splitv-at 9 [1 2])')"                        '[[1 2] ()]'
 
 echo "OK — phase14_partition_all smoke (8 cases) green"

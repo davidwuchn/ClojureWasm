@@ -108,3 +108,15 @@
 ;;=> []
 (take 3 (iteration (fn [k] {:v k :n (inc k)}) :somef :n :vf :v :kf :n :initk 0))
 ;;=> (0 1 2)
+(partitionv-all 2 [1 2 3])
+;;=> ([1 2] [3])
+(partitionv-all 2 1 [1 2 3])
+;;=> ([1 2] [2 3] [3])
+(partitionv-all 3 [1 2 3 4 5 6 7])
+;;=> ([1 2 3] [4 5 6] [7])
+(splitv-at 2 [1 2 3 4 5])
+;;=> [[1 2] (3 4 5)]
+(splitv-at 0 [1 2 3])
+;;=> [[] (1 2 3)]
+(splitv-at 5 [1 2 3])
+;;=> [[1 2 3] ()]

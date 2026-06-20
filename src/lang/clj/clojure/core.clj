@@ -1747,10 +1747,11 @@
             (when s
               (cons (take n s) (partition-all n step (drop step s)))))))))
 
-;; `(splitv-at n coll)` — `[(vec (take n coll)) (vec (drop n coll))]`
-;; (the vector-returning sibling of split-with; D-134).
+;; `(splitv-at n coll)` — `[(into [] (take n) coll) (drop n coll)]` (1.12). Only
+;; the FIRST part is a vector (the "v"); the second is the drop SEQ, matching clj
+;; (which returns a [PersistentVector, ChunkedSeq], not two vectors).
 (def splitv-at
-  (fn* [n coll] [(vec (take n coll)) (vec (drop n coll))]))
+  (fn* [n coll] [(vec (take n coll)) (drop n coll)]))
 
 ;; `(partitionv n [step [pad]] coll)` — like `partition` but each chunk is a
 ;; vector. Lazy. JVM parity: clojure.core/partitionv (1.12).
@@ -1774,6 +1775,13 @@
                   (cons p (partitionv n step pad (drop step s)))
                   (list (vec (take n (concat p pad))))))
               nil))))))
+
+;; `(partitionv-all n [step] coll)` — a lazy seq of vector partitions, the last
+;; possibly shorter than `n` (the vector-returning `partition-all`). JVM parity:
+;; clojure.core/partitionv-all (1.12).
+(def partitionv-all
+  (fn* ([n coll] (partitionv-all n n coll))
+       ([n step coll] (map vec (partition-all n step coll)))))
 
 ;; ----------------------------------------------------------------
 ;; Phase 7 §9.9 row 7.7 — hybrid polymorphic primitives' protocol surface.
