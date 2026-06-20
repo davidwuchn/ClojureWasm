@@ -144,6 +144,14 @@ pub const TypeDescriptor = struct {
     /// it. `null` for leaf host types (Random / URI / StringBuilder store only
     /// non-Value words). `gc` is the type-erased `*GcHeap` the tracer forwards.
     host_trace: ?*const fn (gc: *anyopaque, state: *[4]u64) void = null,
+    /// `.host_instance` print hook (D-468): a host collection (java.util.ArrayList
+    /// / HashSet / TreeSet / HashMap / TreeMap) returns the native cljw collection
+    /// Value to print INSTEAD of the opaque `#<fqcn>` form, so it renders by content
+    /// like clj (`[1 2]` / `#{1 2}` / `{:a 1}`). The print pre-pass (print.zig
+    /// `deepRealize`) calls this and recurses on the result. `null` for leaf host
+    /// types with no printable content (Random / URI). Sets/maps return `state[0]`
+    /// (already a native collection); ArrayList rebuilds a vector from its backing.
+    print_content: ?*const fn (rt: *Runtime, recv: Value) anyerror!Value = null,
 
     pub const FieldEntry = struct {
         name: []const u8,

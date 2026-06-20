@@ -37,6 +37,12 @@ const gc_heap_mod = @import("../../gc/gc_heap.zig");
 fn mapOf(recv: Value) Value {
     return @enumFromInt(host_instance.asHostInstance(recv).state[0]);
 }
+/// Print hook (D-468): a java.util.HashMap prints by content like clj (`{:a 1}`)
+/// — its backing native map IS the printable Value.
+fn printContent(rt: *Runtime, recv: Value) anyerror!Value {
+    _ = rt;
+    return mapOf(recv);
+}
 
 fn setMap(recv: Value, m: Value) void {
     host_instance.setState(recv, 0, @intFromEnum(m));
@@ -285,6 +291,7 @@ var descriptor: type_descriptor.TypeDescriptor = .{
     .method_table = &.{},
     .static_fields = &.{},
     .host_supertypes = &.{"java.util.Map"},
+    .print_content = printContent,
     .parent = null,
     .meta = .nil_val,
 };

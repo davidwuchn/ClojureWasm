@@ -67,3 +67,6 @@
 ;;=> false
 (instance? java.util.SortedMap (java.util.HashMap.))
 ;;=> false
+; D-468: prints by content like clj ({...}); str = Clojure form (AD-047).
+(doto (java.util.HashMap.) (.put :a 1))
+;;=> {:a 1}

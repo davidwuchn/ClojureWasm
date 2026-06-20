@@ -55,3 +55,6 @@
 ;;=> true
 (instance? java.lang.Iterable (java.util.TreeMap.))
 ;;=> false
+; D-468: prints by content, key-sorted ({...}).
+(doto (java.util.TreeMap.) (.put :b 2) (.put :a 1))
+;;=> {:a 1, :b 2}

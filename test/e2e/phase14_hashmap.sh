@@ -84,4 +84,10 @@ assert_eq 'values' "$("$BIN" -e '(into #{} (.values (java.util.HashMap. {:a 1 :b
 assert_eq 'keySet_count' "$("$BIN" -e '(count (.keySet (java.util.HashMap. {:a 1 :b 2 :c 3})))' 2>/dev/null | tail -1)" '3'
 assert_eq 'keySet_empty' "$("$BIN" -e '(seq (.keySet (java.util.HashMap.)))' 2>/dev/null | tail -1)" 'nil'
 
-echo "OK — phase14_hashmap (23 cases) green"
+# D-468: a host java.util.HashMap prints by CONTENT like clj ({:a 1}), not the
+# opaque #<...> form. AD-047: the pr-form matches clj exactly; the str-form
+# renders in CLOJURE form ({:a 1, :b 2}), NOT clj's JVM toString ({:b=2, :a=1}).
+assert_eq 'print_pr_content' "$("$BIN" -e '(pr-str (doto (java.util.HashMap.) (.put :a 1)))' 2>/dev/null | tail -1)" '"{:a 1}"'
+assert_eq 'str_clojure_form'  "$("$BIN" -e '(str (doto (java.util.HashMap.) (.put :a 1)))' 2>/dev/null | tail -1)" '"{:a 1}"'
+
+echo "OK — phase14_hashmap (25 cases) green"

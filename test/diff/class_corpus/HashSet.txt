@@ -45,3 +45,6 @@
 ;;=> true
 (instance? java.util.SortedSet (java.util.HashSet.))
 ;;=> false
+; D-468: prints by content like clj (#{...}).
+(doto (java.util.HashSet.) (.add 1))
+;;=> #{1}

@@ -46,6 +46,13 @@ fn listOf(recv: Value) *ValueList {
     return @ptrFromInt(host_instance.asHostInstance(recv).state[0]);
 }
 
+/// Print hook (D-468): a java.util.ArrayList prints by content like clj
+/// (`[1 2]`). The backing is a raw `*std.ArrayList(Value)`, so rebuild a native
+/// vector from its elements for the printer.
+fn printContent(rt: *Runtime, recv: Value) anyerror!Value {
+    return vector_mod.fromSlice(rt, listOf(recv).items);
+}
+
 /// `(java.util.ArrayList.)` — empty. `(ArrayList. n)` — an int initial-capacity
 /// hint (ignored; the buffer grows on demand). `(ArrayList. vec)` — seed from a
 /// vector (the common literal form). Seeding from a general seqable (list / seq)
@@ -296,6 +303,7 @@ var descriptor: type_descriptor.TypeDescriptor = .{
     .static_fields = &.{},
     // List + Collection + Iterable (Collection extends Iterable). D-466 follow-up.
     .host_supertypes = &.{ "java.util.List", "java.util.Collection", "java.lang.Iterable" },
+    .print_content = printContent,
     .parent = null,
     .meta = .nil_val,
 };

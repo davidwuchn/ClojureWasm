@@ -50,6 +50,12 @@ var tm_descriptor: ?*const type_descriptor.TypeDescriptor = null;
 fn mapOf(recv: Value) Value {
     return @enumFromInt(host_instance.asHostInstance(recv).state[0]);
 }
+/// Print hook (D-468): a java.util.TreeMap prints by content like clj (`{:a 1}`,
+/// sorted) — its backing native sorted-map IS the printable Value.
+fn printContent(rt: *Runtime, recv: Value) anyerror!Value {
+    _ = rt;
+    return mapOf(recv);
+}
 fn setMap(recv: Value, m: Value) void {
     host_instance.setState(recv, 0, @intFromEnum(m));
 }
@@ -324,6 +330,7 @@ var descriptor: type_descriptor.TypeDescriptor = .{
     // A java.util.TreeMap is a Map + SortedMap + NavigableMap (NOT Iterable — a
     // Map does not extend Collection/Iterable in the JVM). D-466 follow-up.
     .host_supertypes = &.{ "java.util.Map", "java.util.SortedMap", "java.util.NavigableMap" },
+    .print_content = printContent,
     .parent = null,
     .meta = .nil_val,
 };

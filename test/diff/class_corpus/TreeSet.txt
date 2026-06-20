@@ -39,3 +39,6 @@
 ;;=> true
 (instance? java.lang.Iterable (java.util.TreeSet. [1 2]))
 ;;=> true
+; D-468: prints by content, sorted (#{...}).
+(doto (java.util.TreeSet.) (.add 3) (.add 1) (.add 2))
+;;=> #{1 2 3}

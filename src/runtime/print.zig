@@ -233,6 +233,17 @@ fn deepRealize(rt: *Runtime, env: *env_mod.Env, v: Value) anyerror!Value {
             }
             return v;
         },
+        // A host collection (java.util.ArrayList/HashSet/TreeSet/HashMap/TreeMap)
+        // prints by content like clj (`[1 2]` / `#{1 2}` / `{:a 1}`): its
+        // descriptor's `print_content` hook returns the backing native collection,
+        // which deepRealize then walks (so nested host collections transform too).
+        // Leaf host types (Random / URI: `print_content` null) fall through to the
+        // opaque `#<fqcn>` render (AD-020). D-468.
+        .host_instance => {
+            const inst = @import("host_instance.zig").asHostInstance(v);
+            if (inst.descriptor.print_content) |pc| return deepRealize(rt, env, try pc(rt, v));
+            return v;
+        },
         .vector => {
             const n = vector_collection.count(v);
             var out = vector_collection.empty();

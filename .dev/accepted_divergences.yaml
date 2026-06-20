@@ -777,3 +777,27 @@ accepted:
       throws to the caller; the oracle shows it does not) and is corrected here.
     derives_from: "F-011 (clj-parity authoritative; the no-handler path matches exactly) + ADR-0093 (per-agent worker, no java.util.concurrent executor / no RejectedExecutionException type) + ADR-0155 (D-442 shutdown-agents classification) + provisional_marker.md permanent-no-op-forbidden (the silent drop is the clj-faithful terminal no-op, audited)."
     pin: "test/e2e/phase16_agent.sh — shutdown_agents_send_returns_agent (send returns the agent, no throw), shutdown_agents_action_dropped (state unchanged), shutdown_agents_no_handler_fire (cljw does NOT fire the :error-handler on the dropped send: log stays empty)."
+  - id: "AD-047"
+    summary: "A host java.util collection's `str`/`.toString` renders in CLOJURE content form (`[1 2]`, `{:a 1, :b 2}`, `#{1 2}`), not JVM toString form (`[1, 2]`, `{:b=2, :a=1}` with `=` pairs + JVM iteration order). The `pr`/`pr-str`/REPL form MATCHES clj exactly (`[1 2]` / `#{1 2}` / `{:a 1}`) — D-468; only the str-form (Java toString) diverges."
+    example: '(str (doto (java.util.HashMap.) (.put :a 1) (.put :b 2))) => cljw "{:a 1, :b 2}" / clj "{:b=2, :a=1}"; (str (java.util.ArrayList. [1 2])) => cljw "[1 2]" / clj "[1, 2]"'
+    why: |-
+      Before D-468 a host java.util collection (ArrayList/HashSet/TreeSet/HashMap/
+      TreeMap) printed FULLY opaquely as `#<cljw.java.util.X>` in BOTH the pr and str
+      contexts — diverging from clj in both. D-468 routes these through their backing
+      native cljw collection (a print pre-pass hook, type_descriptor.print_content),
+      so the `pr`/`pr-str` form now matches clj EXACTLY (`[1 2]` / `#{1 2}` / `{:a 1}`,
+      sorted variants sorted). That is the readable, dominant print path (prn / REPL /
+      nested rendering) and the F-011-important one.
+      Only the `str`/`.toString` form still diverges, and matching clj there is
+      undesirable: clj's `(str coll)` calls the JVM `AbstractCollection`/`AbstractMap`
+      `.toString`, which embeds JVM-implementation specifics cljw neither can nor
+      should reproduce — `key=value` pairs with `=` separators and the JVM hash-bucket
+      ITERATION ORDER (non-reproducible, same class as AD-001). cljw renders the
+      str-form via its native collection's Clojure rendering (`{:a 1, :b 2}`), which is
+      internally consistent and cleaner than mirroring JVM toString quirks. Same spirit
+      as AD-003 (cljw uses simple class names, not JVM FQCNs): cljw deliberately does
+      not reproduce JVM-implementation surface details. A program needing an exact
+      Clojure value uses `vec`/`into`/`seq` (all clj-faithful); the raw host-collection
+      str is an interop edge.
+    derives_from: "ADR-0059 (no JVM — cljw does not reproduce JVM AbstractMap/AbstractCollection toString form) + AD-001 (non-reproducible collection iteration order) + AD-003 (cljw renders host surface in cljw form, not JVM form) + F-011 (the pr/pr-str form matches clj exactly; only the JVM-toString str-form diverges) + D-468 (the content-print mechanism)."
+    pin: "test/diff/class_corpus/ArrayList.txt + test/diff/class_corpus/HashMap.txt — the D-468 print cases lock cljw's pr content-form; the str Clojure-form divergence is asserted in test/e2e/phase14_hashmap.sh (str_clojure_form + print_pr_content)."

@@ -48,6 +48,12 @@ var hs_descriptor: ?*const type_descriptor.TypeDescriptor = null;
 fn setOf(recv: Value) Value {
     return @enumFromInt(host_instance.asHostInstance(recv).state[0]);
 }
+/// Print hook (D-468): a java.util.HashSet prints by content like clj (`#{1 2}`)
+/// — its backing native set IS the printable Value.
+fn printContent(rt: *Runtime, recv: Value) anyerror!Value {
+    _ = rt;
+    return setOf(recv);
+}
 fn storeSet(recv: Value, s: Value) void {
     host_instance.setState(recv, 0, @intFromEnum(s));
 }
@@ -239,6 +245,7 @@ var descriptor: type_descriptor.TypeDescriptor = .{
     .static_fields = &.{},
     // Set + Collection + Iterable (Collection extends Iterable). D-466 follow-up.
     .host_supertypes = &.{ "java.util.Set", "java.util.Collection", "java.lang.Iterable" },
+    .print_content = printContent,
     .parent = null,
     .meta = .nil_val,
 };
