@@ -25,6 +25,7 @@ const SourceLocation = @import("../../error/info.zig").SourceLocation;
 const error_catalog = @import("../../error/catalog.zig");
 const big_decimal = @import("../../numeric/big_decimal.zig");
 const big_int = @import("../../numeric/big_int.zig");
+const print_mod = @import("../../print.zig");
 
 fn requireBd(v: Value, name: []const u8, loc: SourceLocation) !void {
     if (v.tag() != .big_decimal)
@@ -72,6 +73,35 @@ fn negateFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) a
     try m.copy(big_decimal.asUnscaled(args[0]).m.toConst());
     m.negate();
     return big_decimal.allocFromManagedScale(rt, &m, big_decimal.asScale(args[0]));
+}
+
+/// `(BigDecimal/valueOf x)` / `(BigDecimal/valueOf unscaled scale)` — the static
+/// factory. JVM `BigDecimal.valueOf`: a `double` is formatted via its canonical
+/// string (`Double.toString`) then parsed (so `5.5` → `5.5M`, not the binary
+/// approximation); a `long` becomes a scale-0 BigDecimal; the 2-arg form is
+/// `unscaled · 10^-scale`. Matches `clojure.core/bigdec` on a double — clj's
+/// bigdec of a double IS `BigDecimal/valueOf(double)`.
+fn valueOf(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = env;
+    if (args.len == 2) {
+        if (args[0].tag() != .integer or args[1].tag() != .integer)
+            return error_catalog.raise(.type_arg_not_number, loc, .{ .fn_name = "BigDecimal/valueOf", .actual = @tagName(args[0].tag()) });
+        return big_decimal.allocFromI64Scale(rt, args[0].asInteger(), @intCast(args[1].asInteger()));
+    }
+    try error_catalog.checkArity("BigDecimal/valueOf", args, 1, loc);
+    switch (args[0].tag()) {
+        .integer => return big_decimal.allocFromI64Scale(rt, args[0].asInteger(), 0),
+        .big_int => return big_decimal.allocFromManagedScale(rt, big_int.asManaged(args[0]), 0),
+        .float => {
+            var fbuf: [400]u8 = undefined;
+            var fw: std.Io.Writer = .fixed(&fbuf);
+            print_mod.printFloat(&fw, args[0].asFloat()) catch
+                return error_catalog.raise(.type_arg_not_number, loc, .{ .fn_name = "BigDecimal/valueOf", .actual = "float" });
+            return (try big_decimal.allocFromDecimalString(rt, fw.buffered())) orelse
+                error_catalog.raise(.type_arg_not_number, loc, .{ .fn_name = "BigDecimal/valueOf", .actual = "float" });
+        },
+        else => |t| return error_catalog.raise(.type_arg_not_number, loc, .{ .fn_name = "BigDecimal/valueOf", .actual = @tagName(t) }),
+    }
 }
 
 /// `(.abs bd)` — the absolute value (same scale). JVM `BigDecimal.abs()`.
@@ -250,9 +280,30 @@ pub fn installNativeMethods(rt: *Runtime) !void {
     td.method_table = entries;
 }
 
+/// Populate the static `cljw.java.math.BigDecimal` descriptor's `method_table`
+/// with the class static methods (`BigDecimal/valueOf`). Mirrors `Long.initLong`;
+/// runs once at module install (the static-field constants are comptime, but a
+/// `Value.initBuiltinFn` method entry cannot be built at module-scope comptime).
+fn initStatic(td: *type_descriptor.TypeDescriptor, gpa: std.mem.Allocator) anyerror!void {
+    if (td.method_table.len != 0) return; // idempotent re-run
+    const specs = .{
+        .{ "valueOf", &valueOf },
+    };
+    const entries = try gpa.alloc(type_descriptor.TypeDescriptor.MethodEntry, specs.len);
+    inline for (specs, 0..) |spec, i| {
+        entries[i] = .{
+            .protocol_name = "",
+            .method_name = try gpa.dupe(u8, spec[0]),
+            .method_val = Value.initBuiltinFn(spec[1]),
+        };
+    }
+    td.method_table = entries;
+}
+
 pub const ___HOST_EXTENSION: host_api.Extension = .{
     .cljw_ns = "cljw.java.math.BigDecimal",
     .descriptor = &descriptor,
+    .init = &initStatic,
 };
 
 /// The deprecated-but-still-public `BigDecimal.ROUND_*` int constants

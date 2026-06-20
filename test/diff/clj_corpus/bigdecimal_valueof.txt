@@ -1,0 +1,24 @@
+;; BigDecimal/valueOf static factory (clj parity). A double is formatted via its
+;; canonical string then parsed (5.5 -> 5.5M, not the binary approximation); a
+;; long becomes scale-0; the 2-arg form is unscaled * 10^-scale. valueOf(double)
+;; equals (bigdec double) in clj.
+(BigDecimal/valueOf 5.5)
+;;=> 5.5M
+(BigDecimal/valueOf 5)
+;;=> 5M
+(BigDecimal/valueOf 100)
+;;=> 100M
+(BigDecimal/valueOf 0.1)
+;;=> 0.1M
+(BigDecimal/valueOf -2.5)
+;;=> -2.5M
+(BigDecimal/valueOf 0)
+;;=> 0M
+(BigDecimal/valueOf 0.0)
+;;=> 0.0M
+(BigDecimal/valueOf 123 2)
+;;=> 1.23M
+(.add (BigDecimal/valueOf 1.5) (BigDecimal/valueOf 2.5))
+;;=> 4.0M
+(= (BigDecimal/valueOf 5) 5M)
+;;=> true

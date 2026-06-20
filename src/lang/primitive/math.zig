@@ -920,7 +920,7 @@ fn bigintFromFloat(rt: *Runtime, f: f64, loc: SourceLocation) anyerror!Value {
     var fw: std.Io.Writer = .fixed(&fbuf);
     print_mod.printFloat(&fw, f) catch
         return error_catalog.raise(.type_arg_invalid, loc, .{ .fn_name = "bigint", .expected = "a representable float", .actual = "unrenderable float" });
-    const bd = (try parseDecimalToBigDec(rt, fw.buffered())) orelse
+    const bd = (try big_decimal_mod.allocFromDecimalString(rt, fw.buffered())) orelse
         return error_catalog.raise(.type_arg_invalid, loc, .{ .fn_name = "bigint", .expected = "a representable float", .actual = "unparseable float" });
     return bigdecTruncToBigInt(rt, bd);
 }
@@ -1002,14 +1002,14 @@ pub fn bigdecCoerce(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLoc
             var fbuf: [400]u8 = undefined;
             var fw: std.Io.Writer = .fixed(&fbuf);
             print_mod.printFloat(&fw, v.asFloat()) catch return bigdecDeferred(loc);
-            return (try parseDecimalToBigDec(rt, fw.buffered())) orelse bigdecDeferred(loc);
+            return (try big_decimal_mod.allocFromDecimalString(rt, fw.buffered())) orelse bigdecDeferred(loc);
         },
         .string => {
             // `(bigdec "1.50")` → `1.50M` (scale from the decimal point). A
             // scientific / >i64-unscaled / malformed string is a number-format
             // error (clj NumberFormatException). Ratio stays deferred (D-191).
             const s = string_mod.asString(v);
-            return (try parseDecimalToBigDec(rt, s)) orelse
+            return (try big_decimal_mod.allocFromDecimalString(rt, s)) orelse
                 error_catalog.raise(.number_format_invalid, loc, .{ .fn_name = "bigdec", .text = s });
         },
         .ratio => return bigdecFromRatio(rt, v, loc),
@@ -1031,54 +1031,6 @@ fn bigdecDeferred(loc: SourceLocation) anyerror {
 /// integer is the mantissa with the point removed; `scale = (#frac digits) −
 /// exponent`, so `1.0E30` → unscaled 10, scale −29 — matching clj's
 /// `BigDecimal(Double.toString d)`.
-fn parseDecimalToBigDec(rt: *Runtime, s: []const u8) !?Value {
-    var t = s;
-    if (t.len == 0) return null;
-    const sign_neg = t[0] == '-';
-    if (t[0] == '-' or t[0] == '+') t = t[1..];
-    if (t.len == 0) return null;
-
-    // Split off an optional exponent.
-    var mant = t;
-    var exp: i64 = 0;
-    if (std.mem.findScalar(u8, t, 'e') orelse std.mem.findScalar(u8, t, 'E')) |epos| {
-        mant = t[0..epos];
-        const exp_str = t[epos + 1 ..];
-        if (exp_str.len == 0) return null;
-        exp = std.fmt.parseInt(i64, exp_str, 10) catch return null;
-    }
-    if (mant.len == 0) return null;
-
-    // Collect mantissa digits (drop the dot); count fractional digits.
-    var digits: [512]u8 = undefined;
-    var dlen: usize = 0;
-    var frac: i64 = 0;
-    var seen_dot = false;
-    var any_digit = false;
-    for (mant) |c| {
-        if (c == '.') {
-            if (seen_dot) return null;
-            seen_dot = true;
-            continue;
-        }
-        if (c < '0' or c > '9') return null;
-        if (dlen >= digits.len) return null; // pathologically wide — defer
-        digits[dlen] = c;
-        dlen += 1;
-        any_digit = true;
-        if (seen_dot) frac += 1;
-    }
-    if (!any_digit) return null;
-
-    const scale_i64: i64 = frac - exp;
-    if (scale_i64 > std.math.maxInt(i32) or scale_i64 < std.math.minInt(i32)) return null;
-
-    var m = big_int_mod.parseBase10(rt, digits[0..dlen]) catch return null;
-    defer m.deinit();
-    if (sign_neg) m.negate();
-    return try big_decimal_mod.allocFromManagedScale(rt, &m, @intCast(scale_i64));
-}
-
 /// `(char n)` — the character whose Unicode codepoint is the integer `n`
 /// (0..0x10FFFF), or a char passed through.
 pub fn charCoerce(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
