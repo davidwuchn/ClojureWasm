@@ -62,6 +62,20 @@ active:
       workload type-checks java.util host collections, or alongside a host-supertype
       refactor. Cross-ref class_name.zig matchUserType, ADR-0116, ADR-0102.
     last_reviewed: "2026-06-20"
+  - id: "D-467"
+    status: "open (2026-06-20, clj-diff sweep). `with-precision` is NOT implemented — `(with-precision 5 (/ 1M 3))` → cljw 'Unable to resolve symbol: with-precision' vs clj 0.33333M. clojure.core's `with-precision` is a macro that binds `*math-context*` (a java.math.MathContext: precision + RoundingMode) so BigDecimal division/ops round to that precision instead of raising the non-terminating-expansion ArithmeticException (`(/ 1M 3)` errors in BOTH cljw and clj WITHOUT a context — that part matches). Moderate value (controlled-precision decimal math, e.g. financial). A real feature, not a quick fix: needs a `*math-context*` dynamic var + the `with-precision` macro + bigdec division/scale ops consulting the context for precision + rounding mode."
+    category: "clj-parity"
+    barrier: |-
+      none external — a self-contained feature. Land when controlled-precision
+      BigDecimal math is needed: intern `clojure.core/*math-context*` (^:dynamic,
+      root nil = exact/raise), add the `with-precision` macro
+      (`(with-precision precision [:rounding mode] & body)` → binds *math-context*),
+      and make big_dec division (+ setScale/round) consult *math-context* for the
+      precision + RoundingMode when set (else the current exact/raise behaviour).
+      Verify vs the clj oracle: `(with-precision 5 (/ 1M 3))` → 0.33333M,
+      rounding-mode variants, nested with-precision. Cross-ref the numeric tower
+      (F-005), big_dec.zig.
+    last_reviewed: "2026-06-20"
   - id: "D-453"
     status: "open (2026-06-16, ADR-0034 am5 Alt C — forward debt, deferred). Deepest conceptual finished form for class-value AOT: do NOT bake `.type_descriptor` constants at all — lower a class symbol in value position to an `op_load_class` (name as an already-serializable string/symbol constant) resolved at EXECUTION time, like `var_ref`. Removes the 0x10 wire tag from the decoder-permanence ledger entirely + unifies class-value with var-value under one 'named runtime entity, resolved at execution' model."
     category: "structure"
