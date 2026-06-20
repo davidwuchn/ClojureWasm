@@ -630,6 +630,12 @@ pub fn symbolFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocatio
             const kw = keyword_mod.asKeyword(x);
             return symbol_mod.intern(rt, kw.ns, kw.name);
         }
+        // clj `(symbol var)` → the var's qualified `ns/name` symbol
+        // (clojure.spec.alpha's ->sym relies on it). Var prints as `#'ns/name`.
+        if (x.tag() == .var_ref) {
+            const var_ptr = x.decodePtr(*const env_mod.Var);
+            return symbol_mod.intern(rt, var_ptr.ns.name, var_ptr.name);
+        }
         if (x.isNil()) return .nil_val;
         // Unlike `keyword` (which returns nil), clj's `symbol` THROWS on a
         // non-convertible value — a catchable IllegalArgumentException.
