@@ -22,14 +22,20 @@
   rrb-vector/algo.*→ForkJoin/Future). The **core clj-diff bug sweep is now drained**
   (2026-06-21 session: 14 areas byte-identical to clj — metadata/privacy/destructuring/
   namespaced-map/string/numeric/sorted/set/bit-ops/polymorphism/read-print/catch-by-class/
-  lazy-realization; 4 real bugs FIXED + AD-050/AD-007). **First commit on resume = D-485**
-  (general primitive-reentry depth guard — the highest-value finished-form item, found this
-  session): a watch/validator/comparator/reducer that re-enters the evaluator unboundedly
-  overflows the NATIVE stack → SIGSEGV (the watch case is already partial-fixed; the GENERAL
-  fix = a shared re-entry budget, cleanest as making the VM frame budget GLOBAL across the
-  vt.callFn re-entry boundary). ADR-level: needs cap measurement + a Devil's-advocate pass.
-  Then drain other deferred deep items (D-482 seq-laziness, D-479 Class/forName, D-480
-  Serializable). Policy unchanged: **official stdlib → eager bundle; contrib → verify**.
+  lazy-realization; 4 real bugs FIXED + AD-050/AD-007). **First commit on resume = D-485
+  stage 2a** (per ADR-0157, which the Devil's-advocate fork reshaped): a watch/validator/
+  reducer that re-enters the evaluator unboundedly overflows the NATIVE stack → SIGSEGV.
+  **2b LANDED** (aaf391e3: stack_overflow is now a catchable own-Kind StackOverflowError;
+  re-entry + nested-eval overflows catch — the watch case is also partial-guarded at cap
+  256). **2a = the remaining work**: a SELF-CALIBRATING native-stack guard (capture the
+  thread stack base — main at startup, workers at spawn — and at `vm.eval` entry ±
+  `invokeCallable` check `@frameAddress()` vs base − a ~64KB margin, the SpiderMonkey/
+  CPython/Go pattern), raising the (now-catchable) stack_overflow. It converts the
+  validator/reducer SIGSEGV to a graceful error, fixes the same-eval direct-recursion-at-
+  FRAMES_MAX catch edge (the guard fires before frames are exhausted, so synthesis works),
+  and SUBSUMES the watch-256 partial (remove it). The DA REJECTED a fixed cap (cross-host
+  SIGSEGV-fragile); Alt 3 (trampoline) = forward debt. Then drain D-482/D-479/D-480.
+  Policy unchanged: **official stdlib → eager bundle; contrib → verify**.
 
 - **Forbidden this session**: speculative JIT integration before zwasm's API stabilises
   (read `.dev/zwasm_capabilities.md` — JIT row BUILDING, not adoptable). `git push
