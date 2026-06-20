@@ -105,9 +105,18 @@ pub fn countFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation
         .hash_set => Value.initInteger(@intCast(set.count(coll))),
         // A live transient is a first-class read target (clj parity): count
         // reads its element/entry count without realising it (D-199).
-        .transient_vector => Value.initInteger(@intCast(transient_vector.count(coll))),
-        .transient_map => Value.initInteger(@intCast(transient_array_map.count(coll))),
-        .transient_set => Value.initInteger(@intCast(transient_hash_set.count(coll))),
+        .transient_vector => blk: {
+            try transient_vector.ensureLive(coll, "count", loc);
+            break :blk Value.initInteger(@intCast(transient_vector.count(coll)));
+        },
+        .transient_map => blk: {
+            try transient_array_map.ensureLive(coll, "count", loc);
+            break :blk Value.initInteger(@intCast(transient_array_map.count(coll)));
+        },
+        .transient_set => blk: {
+            try transient_hash_set.ensureLive(coll, "count", loc);
+            break :blk Value.initInteger(@intCast(transient_hash_set.count(coll)));
+        },
         .chunked_cons => Value.initInteger(@intCast(chunked_cons.count(coll))),
         // PERF: O(1) precomputed range length, no element walk [refs: O-001]
         .range => Value.initInteger(range.countOf(coll)),

@@ -432,6 +432,7 @@ run_step "e2e_phase7_zip_cycle3"             "bash test/e2e/phase7_zip_cycle3.sh
 run_step "e2e_phase7_zip_cycle4"             "bash test/e2e/phase7_zip_cycle4.sh"
 run_step "e2e_phase7_exit_smoke"             "bash test/e2e/phase7_exit_smoke.sh"
 run_step "e2e_phase8_compare_cli"            "bash test/e2e/phase8_compare_cli.sh"
+run_step "e2e_phase8_transient_consumed_read" "bash test/e2e/phase8_transient_consumed_read.sh"
 run_step "e2e_phase8_d089_seq_extend"        "bash test/e2e/phase8_d089_seq_extend.sh"
 run_step "e2e_phase8_d089_lookup_extend"     "bash test/e2e/phase8_d089_lookup_extend.sh"
 run_step "e2e_phase8_d089_assoc_extend"      "bash test/e2e/phase8_d089_assoc_extend.sh"

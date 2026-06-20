@@ -287,6 +287,13 @@ pub fn registerGcHooks() void {
     tag_ops.registerTrace(.transient_map, &traceTransientArrayMap);
 }
 
+/// Read-op guard: a consumed transient is dead for reads too (clj parity). The
+/// primitive dispatch calls this before count/get/contains so a live transient
+/// reads normally and a spent one raises transient_used_after_persistent.
+pub fn ensureLive(val: Value, fn_name: []const u8, loc: SourceLocation) !void {
+    try ensureEditable(try expectTransient(val, fn_name, loc), fn_name, loc);
+}
+
 // --- internals ---
 
 fn expectTransient(v: Value, fn_name: []const u8, loc: SourceLocation) !*TransientArrayMap {

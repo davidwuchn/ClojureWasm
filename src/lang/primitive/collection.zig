@@ -314,9 +314,16 @@ pub fn containsQFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLoca
         },
         // A live transient mirrors its persistent peer (clj parity, D-199):
         // map/set by key/element membership; vector by index validity.
-        .transient_map => if (try transient_array_map.contains(coll, k)) .true_val else .false_val,
-        .transient_set => if (try transient_hash_set.contains(coll, k)) .true_val else .false_val,
+        .transient_map => blk: {
+            try transient_array_map.ensureLive(coll, "contains?", loc);
+            break :blk if (try transient_array_map.contains(coll, k)) .true_val else .false_val;
+        },
+        .transient_set => blk: {
+            try transient_hash_set.ensureLive(coll, "contains?", loc);
+            break :blk if (try transient_hash_set.contains(coll, k)) .true_val else .false_val;
+        },
         .transient_vector => blk: {
+            try transient_vector.ensureLive(coll, "contains?", loc);
             if (k.tag() != .integer) break :blk .false_val;
             const idx: i64 = k.asInteger();
             break :blk if (idx >= 0 and idx < @as(i64, transient_vector.count(coll))) .true_val else .false_val;
@@ -420,12 +427,14 @@ pub fn getFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) 
         // A live transient is a first-class read target (clj parity, D-199):
         // a transient map reads by key; a transient vector by index.
         .transient_map => blk: {
+            try transient_array_map.ensureLive(coll, "get", loc);
             if (try transient_array_map.contains(coll, k)) {
                 break :blk try transient_array_map.get(coll, k);
             }
             break :blk default;
         },
         .transient_vector => blk: {
+            try transient_vector.ensureLive(coll, "get", loc);
             if (k.tag() != .integer) break :blk default;
             break :blk transient_vector.nth(coll, k.asInteger(), default);
         },
@@ -519,6 +528,7 @@ pub fn nthFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) 
         // A live transient vector is Indexed (clj parity, D-199) — same
         // index discipline as a persistent vector.
         .transient_vector => blk: {
+            try transient_vector.ensureLive(coll, "nth", loc);
             if (idx < 0) {
                 if (has_default) break :blk default;
                 break :blk error_catalog.raise(.type_arg_invalid, loc, .{

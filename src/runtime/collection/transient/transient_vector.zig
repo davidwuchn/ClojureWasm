@@ -227,6 +227,14 @@ pub fn registerGcHooks() void {
     tag_ops.registerFinaliser(.transient_vector, &finaliseGc);
 }
 
+/// Read-op guard: a transient is dead after `persistent!` for reads too (clj
+/// throws on `count`/`nth`/`get` of a spent transient, not only on writes).
+/// The read fns themselves stay total (u32 / Value); the primitive dispatch
+/// calls this first so a LIVE transient reads normally and a CONSUMED one errors.
+pub fn ensureLive(val: Value, fn_name: []const u8, loc: SourceLocation) !void {
+    try ensureEditable(try expectTransient(val, fn_name, loc), fn_name, loc);
+}
+
 // --- internals ---
 
 fn expectTransient(v: Value, fn_name: []const u8, loc: SourceLocation) !*TransientVector {
