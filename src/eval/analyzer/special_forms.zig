@@ -562,11 +562,17 @@ pub fn analyzeDefmacro(
     };
     const value_node = try analyzer_mod.analyze(arena, rt, env, scope, fn_form, macro_table);
 
+    // `^:private` on the macro name must set the Var flag (mirrors analyzeDef),
+    // not just lift into Var.meta — else a private macro leaks into ns-publics.
+    // The merged reader/attr meta already lives in placeholder_var.meta above.
+    const is_private = metaFlag(rt, placeholder_var.meta, "private");
+
     const n = try arena.create(Node);
     n.* = .{ .def_node = .{
         .name = name_sym.name,
         .value_expr = value_node,
         .is_macro = true,
+        .is_private = is_private,
         .loc = form.location,
     } };
     return n;
