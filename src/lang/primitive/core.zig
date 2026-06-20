@@ -295,6 +295,19 @@ pub fn recordQ(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation
     return if (inst.descriptor.kind == .defrecord) .true_val else .false_val;
 }
 
+/// `(uri? x)` — true iff `x` is a `java.net.URI` host instance (clojure 1.12).
+/// Cannot be a core.clj defn: `java.net.URI` is a RUNTIME host surface (rt.types),
+/// not AOT-resolvable in the cache_gen bootstrap (memory
+/// `bootstrap-clj-host-class-unresolvable`, D-472). Compares the host_instance
+/// descriptor to the registered URI descriptor — no `runtime/java/**` import (R4).
+pub fn uriQ(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = env;
+    try error_catalog.checkArity("uri?", args, 1, loc);
+    if (args[0].tag() != .host_instance) return .false_val;
+    const td = rt.types.get("java.net.URI") orelse return .false_val;
+    return if (@import("../../runtime/host_instance.zig").asHostInstance(args[0]).descriptor == td) .true_val else .false_val;
+}
+
 /// `(fn? x)` — true iff `x` is callable as a function:
 /// builtin_fn (NaN-box-immediate function pointer like `+`),
 /// fn_val (user `(fn [...] ...)` closure), or multi_fn.
@@ -1707,6 +1720,7 @@ const ENTRIES = [_]Entry{
     .{ .name = "map?", .f = &mapQ },
     .{ .name = "set?", .f = &setQ },
     .{ .name = "record?", .f = &recordQ },
+    .{ .name = "uri?", .f = &uriQ },
     .{ .name = "fn?", .f = &fnQ },
     .{ .name = "boolean?", .f = &booleanQ },
     .{ .name = "char?", .f = &charQ },
