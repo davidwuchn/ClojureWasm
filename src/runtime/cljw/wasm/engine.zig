@@ -247,3 +247,67 @@ test "dual-engine: jit==interp on GPR export; SIMD (v128) is JIT-only in zwasm" 
         // handler), confirmed intentional via to_cljw_03 — the interp body traps.
     }
 }
+
+// (module
+//   (func (export "addf") (param f64 f64) (result f64) local.get 0 local.get 1 f64.add)
+//   (func (export "divmod") (param i32 i32) (result i32 i32)
+//     local.get 0 local.get 1 i32.div_s  local.get 0 local.get 1 i32.rem_s))
+// An f64 FP-bank param/result export + a multi-value (>1 scalar result) export —
+// the two invoke shapes the to_cljw_02 matrix lists as JIT-supported beyond GPR.
+// Built with `wasm-tools parse` (see test/e2e/fixtures/wasm/jit_shapes.wasm).
+const f64_multivalue_wasm = [_]u8{
+    0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00,
+    0x01, 0x0e, 0x02, 0x60, 0x02, 0x7c, 0x7c, 0x01,
+    0x7c, 0x60, 0x02, 0x7f, 0x7f, 0x02, 0x7f, 0x7f,
+    0x03, 0x03, 0x02, 0x00, 0x01, 0x07, 0x11, 0x02,
+    0x04, 0x61, 0x64, 0x64, 0x66, 0x00, 0x00, 0x06,
+    0x64, 0x69, 0x76, 0x6d, 0x6f, 0x64, 0x00, 0x01,
+    0x0a, 0x16, 0x02, 0x07, 0x00, 0x20, 0x00, 0x20,
+    0x01, 0xa0, 0x0b, 0x0c, 0x00, 0x20, 0x00, 0x20,
+    0x01, 0x6d, 0x20, 0x00, 0x20, 0x01, 0x6f, 0x0b,
+};
+
+fn invokeAddF(loaded: *Loaded, a: f64, b: f64) !f64 {
+    var in = [_]Value{ Value.fromF64Bits(@bitCast(a)), Value.fromF64Bits(@bitCast(b)) };
+    var out = [_]Value{Value.fromF64Bits(0)};
+    try loaded.invoke("addf", &in, &out);
+    return @bitCast(out[0].f64);
+}
+
+fn invokeDivmod(loaded: *Loaded, a: i32, b: i32) ![2]i32 {
+    var in = [_]Value{ Value.fromI32(a), Value.fromI32(b) };
+    var out = [_]Value{ Value.fromI32(0), Value.fromI32(0) };
+    try loaded.invoke("divmod", &in, &out);
+    return .{ out[0].i32, out[1].i32 };
+}
+
+test "dual-engine: multi-value agrees jit==interp; f64 is interp-only (JIT traps)" {
+    const alloc = std.testing.allocator;
+
+    const interp = try load(alloc, &f64_multivalue_wasm, .{ .engine = .interp });
+    defer {
+        interp.deinit();
+        alloc.destroy(interp);
+    }
+    const jit = try load(alloc, &f64_multivalue_wasm, .{ .engine = .jit });
+    defer {
+        jit.deinit();
+        alloc.destroy(jit);
+    }
+
+    // Multi-value (>1 scalar result) — (quotient, remainder), caller-pre-sized out[].
+    // Byte-identical across engines (all-i32 GPR → both interp and JIT handle it).
+    try std.testing.expectEqual([2]i32{ 3, 2 }, try invokeDivmod(interp, 17, 5));
+    try std.testing.expectEqual([2]i32{ 3, 2 }, try invokeDivmod(jit, 17, 5));
+
+    // f64 FP-bank param/result: works on interp (3.75). On the JIT it TRAPS in the
+    // pinned zwasm (@6914af3fe) despite the to_cljw_02 matrix listing f32/f64 as
+    // supported — reported upstream via from_cljw_03. Lock the gap: when zwasm fixes
+    // f64-on-JIT this flips and forces a conscious update (then assert jit==interp).
+    try std.testing.expectEqual(@as(f64, 3.75), try invokeAddF(interp, 1.5, 2.25));
+    if (invokeAddF(jit, 1.5, 2.25)) |_| {
+        return error.TestExpectedF64TrapOnJit;
+    } else |_| {
+        // Expected: f64 invoke traps on the JIT in the pinned zwasm (from_cljw_03).
+    }
+}

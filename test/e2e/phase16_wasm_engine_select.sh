@@ -39,8 +39,21 @@ $out"
 echo "$out" | grep -q "lane0-interp: TRAPPED" || fail "SIMD lane0 on :interp did not trap catchably:
 $out"
 
-# (4) no-opts default rides :interp and works (regression guard — .auto-flip reverted).
+# (4) no-opts default rides :interp and works (regression guard).
 echo "$out" | grep -q "default: 5" || fail "no-opts default wasm/call broke:
+$out"
+
+# (5) Multi-value (>1 scalar) result marshals to a cljw vector, identical jit==interp.
+echo "$out" | grep -q "divmod-jit: \[3 2\]"    || fail "multi-value divmod on :jit != [3 2]:
+$out"
+echo "$out" | grep -q "divmod-interp: \[3 2\]" || fail "multi-value divmod on :interp != [3 2]:
+$out"
+
+# (6) f64 FP-bank works on :interp; the f64 JIT invoke TRAPS in the pinned zwasm
+# (matrix lists f32/f64 supported, but it traps — from_cljw_03). Locked until fixed.
+echo "$out" | grep -q "addf-interp: 3.75" || fail "f64 addf on :interp != 3.75:
+$out"
+echo "$out" | grep -q "addf-jit: TRAPPED"  || fail "f64 addf on :jit did not trap as expected (zwasm fixed f64-on-JIT? update from_cljw_03 + flip the assertion):
 $out"
 
 echo "$out" | grep -q "^DONE$" || fail "fixture did not run to completion:
