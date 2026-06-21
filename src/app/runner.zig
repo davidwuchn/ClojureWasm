@@ -119,6 +119,10 @@ pub fn runSource(
 
     // --- Read - Analyse - Eval - Print loop ---
     var reader = Reader.init(arena, source_text);
+    // Stamp each form's `loc.file` with the script path so source-relative resolution
+    // (ADR-0135 A2 `./component.wasm`) anchors at the source dir. `<eval>`/`<repl>`
+    // labels are guarded downstream (no source dir → cwd-relative fallback).
+    reader.file_name = source_label;
     while (true) {
         const form_opt = reader.read() catch |err| {
             error_render.renderAndExit(stderr, ctx, err);

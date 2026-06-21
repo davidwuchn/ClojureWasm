@@ -47,6 +47,17 @@ done
 echo "$ns_out" | grep -q "^DONE$" || fail "ns :require fixture did not run to completion:
 $ns_out"
 
+# --- ADR-0135 A2: EXPLICIT-relative `./` resolves against the SOURCE file's dir ---
+# Run from a DIFFERENT cwd (/tmp) with an absolute script path; `./greet_component.wasm`
+# must resolve next to the .clj (source-relative), not relative to cwd. Proves the
+# deps.edn-free CLI-handy resolution.
+abs_fixture="$(pwd)/test/e2e/fixtures/wasm/ns_source_relative.clj"
+abs_bin="$(pwd)/$BIN"
+srcrel_out="$(cd /tmp && "$abs_bin" "$abs_fixture" 2>&1)" || fail "source-relative ns :require failed (cwd=/tmp):
+$srcrel_out"
+echo "$srcrel_out" | grep -q "src-rel: Hello, rel!" || fail "source-relative './' did not resolve against the source dir:
+$srcrel_out"
+
 # A non-wasm build must NOT resolve cljw.wasm (the wasm/ ns is absent) — the
 # gating is verified implicitly by the default gate (this step is -Dwasm-only).
 

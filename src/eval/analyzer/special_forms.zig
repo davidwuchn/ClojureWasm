@@ -919,19 +919,38 @@ fn appendLibspecs(
     try out.append(arena, ls);
 }
 
+/// Resolve a component libspec path (ADR-0135 Amendment 1 / A2 resolution order).
+/// An EXPLICIT-relative path (`./x.wasm` / `../x.wasm`) resolves against the
+/// directory of the executing source file (`loc.file`) — so a script's component
+/// sits next to it, deps.edn-free (the CLI-handy case). Absolute (`/…`) and bare
+/// names pass through unchanged: absolute is used as-is, and a bare name stays
+/// cwd-relative via the load-component FS jail today (the bare→classpath /
+/// `:cljw/wasm-deps` arm is a later phase). The `./`-resolution is a no-op when
+/// the source is a bundled label (`<…>`) or unknown — falls back to the raw path.
+fn resolveComponentPath(arena: std.mem.Allocator, raw: []const u8, loc: @import("../../runtime/error/info.zig").SourceLocation) AnalyzeError![]const u8 {
+    if (std.mem.startsWith(u8, raw, "./") or std.mem.startsWith(u8, raw, "../")) {
+        const src = loc.file;
+        if (src.len > 0 and src[0] != '<' and !std.mem.eql(u8, src, "unknown")) {
+            const dir = std.Io.Dir.path.dirnamePosix(src) orelse ".";
+            return std.Io.Dir.path.join(arena, &.{ dir, raw });
+        }
+    }
+    return arena.dupe(u8, raw);
+}
+
 /// Parse a STRING libspec into a `ComponentRequire` (ADR-0135 Amendment 1):
 /// `"x.wasm"` (bare) or `["x.wasm" :as g :refer [a b]]` (string head + the same
 /// `:as` / `:refer` options as a Clojure libspec). The head string is the path.
 fn parseComponentLibspec(arena: std.mem.Allocator, f: Form) AnalyzeError!ComponentRequire {
     if (f.data == .string) {
-        return .{ .path = try arena.dupe(u8, f.data.string), .loc = f.location };
+        return .{ .path = try resolveComponentPath(arena, f.data.string, f.location), .loc = f.location };
     }
     const elems: []const Form = switch (f.data) {
         .vector => |v| v,
         .list => |l| l,
         else => unreachable, // isComponentLibspec gated this
     };
-    const path = try arena.dupe(u8, elems[0].data.string);
+    const path = try resolveComponentPath(arena, elems[0].data.string, f.location);
     var alias: ?[]const u8 = null;
     var refers: []const []const u8 = &.{};
     var i: usize = 1;
