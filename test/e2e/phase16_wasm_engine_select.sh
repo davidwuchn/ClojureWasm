@@ -63,6 +63,12 @@ $out"
 echo "$out" | grep -q "mix-interp: 5.5" || fail "mixed (i32,f64)->f64 on :interp != 5.5:
 $out"
 
+# (6c) 3-arg FP via the generic buffer path (f64,f64,f64)->f64 byte-identical jit==interp.
+echo "$out" | grep -q "sum3-jit: 7"    || fail "3-arg (f64,f64,f64)->f64 on :jit != 7.0:
+$out"
+echo "$out" | grep -q "sum3-interp: 7" || fail "3-arg (f64,f64,f64)->f64 on :interp != 7.0:
+$out"
+
 # (7) Real SIMD arithmetic on the JIT: i32x4.mul → horizontal sum = 70.
 echo "$out" | grep -q "simd-dot-jit: 70" || fail "SIMD i32x4.mul kernel on :jit != 70:
 $out"
