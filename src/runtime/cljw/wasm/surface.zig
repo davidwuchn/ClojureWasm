@@ -28,14 +28,16 @@ const map_mod = @import("../../collection/map.zig");
 const keyword_mod = @import("../../keyword.zig");
 const file_io = @import("../../file_io.zig");
 
-/// `(wasm/load "path.wasm")` / `(wasm/load "path.wasm" {:fuel N :max-memory-pages M})`
-/// — read the file, compile + instantiate it via zwasm v2, and return an opaque
-/// instance handle. F-006: the engine is given `rt.gpa` (the layer-1 backing
-/// allocator), keeping zwasm's space separate from the cljw GC heap. With no opts
-/// the module runs under zwasm's FINITE default budget (fuel 1e9 / 256 MiB) so an
-/// untrusted module is bounded out of the box (SE-1 / ZE-1); an opts map overrides
-/// either axis (`:fuel` / `:max-memory-pages`), and `0` or a negative value on an
-/// axis means "unmetered" (lift the cap — trusted modules only).
+/// `(wasm/load "path.wasm")` / `(wasm/load "path.wasm" {:fuel N :max-memory-pages M
+/// :engine :jit})` — read the file, compile + instantiate it via zwasm v2, and
+/// return an opaque instance handle. F-006: the engine is given `rt.gpa` (the
+/// layer-1 backing allocator), keeping zwasm's space separate from the cljw GC heap.
+/// With no opts the module runs under zwasm's FINITE default budget (fuel 1e9 /
+/// 256 MiB) so an untrusted module is bounded out of the box (SE-1 / ZE-1); an opts
+/// map overrides either budget axis (`:fuel` / `:max-memory-pages`), where `0` or a
+/// negative value means "unmetered" (lift the cap — trusted modules only). `:engine`
+/// (ADR-0200) picks `:auto` (default — JIT-first with transparent interp fallback) /
+/// `:jit` (force JIT) / `:interp` (force the interpreter).
 pub fn wasmLoadFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
     _ = env;
     try error_catalog.checkArityRange("wasm/load", args, 1, 2, loc);
@@ -63,9 +65,10 @@ pub fn wasmLoadFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocat
     return wasm_handle.wrap(rt, loaded);
 }
 
-/// Parse a `{:fuel N :max-memory-pages M}` opts map into `engine.LoadOpts`. A
-/// missing key leaves that axis at zwasm's finite default; a non-positive value
-/// (`<= 0`) selects `.unmetered`; a positive value caps the axis.
+/// Parse a `{:fuel N :max-memory-pages M :engine :jit}` opts map into
+/// `engine.LoadOpts`. A missing budget key leaves that axis at zwasm's finite
+/// default; a non-positive value (`<= 0`) selects `.unmetered`; a positive value
+/// caps the axis. `:engine` selects `:auto` (default) / `:jit` / `:interp`.
 fn parseLoadOpts(rt: *Runtime, m: Value, loc: SourceLocation) anyerror!engine.LoadOpts {
     const tag = m.tag();
     if (tag != .array_map and tag != .hash_map)
@@ -73,7 +76,25 @@ fn parseLoadOpts(rt: *Runtime, m: Value, loc: SourceLocation) anyerror!engine.Lo
     var opts: engine.LoadOpts = .{};
     if (try axisFromMap(rt, m, "fuel", loc)) |b| opts.fuel = b;
     if (try axisFromMap(rt, m, "max-memory-pages", loc)) |b| opts.max_memory_pages = b;
+    if (try engineFromMap(rt, m, loc)) |e| opts.engine = e;
     return opts;
+}
+
+/// Read keyword `:engine` from `m` as an `engine.EngineKind` (ADR-0200). Absent
+/// / nil → null (zwasm's `.auto` default — JIT-first, transparent interp
+/// fallback). A `:auto` / `:jit` / `:interp` keyword selects the engine; any
+/// other value is a usage error.
+fn engineFromMap(rt: *Runtime, m: Value, loc: SourceLocation) anyerror!?engine.EngineKind {
+    const kw = try keyword_mod.intern(rt, null, "engine");
+    const v = map_mod.get(m, kw) catch return null;
+    if (v.isNil()) return null;
+    if (v.tag() != .keyword)
+        return error_catalog.raise(.wasm_opts_invalid, loc, .{ .detail = "the :engine option must be one of :auto, :jit, :interp" });
+    const name = keyword_mod.asKeyword(v).name;
+    if (std.mem.eql(u8, name, "auto")) return .auto;
+    if (std.mem.eql(u8, name, "jit")) return .jit;
+    if (std.mem.eql(u8, name, "interp")) return .interp;
+    return error_catalog.raise(.wasm_opts_invalid, loc, .{ .detail = "the :engine option must be one of :auto, :jit, :interp" });
 }
 
 /// Read keyword `:name` from `m` as a `Budget`: absent / nil → null (use the

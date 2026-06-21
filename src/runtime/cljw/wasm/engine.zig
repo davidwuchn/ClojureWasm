@@ -33,11 +33,33 @@ pub const ValType = zwasm.ir.zir.ValType;
 /// larger budget or `.unmetered`, never the reverse.
 pub const Budget = zwasm.Module.Budget;
 
+/// Per-instance engine selection (ADR-0200), re-exported from zwasm's
+/// `InstantiateOpts.engine` field type so cljw never names zwasm's internal
+/// `_api_instance` path. `.auto` = JIT-first with transparent interp fallback
+/// (observably identical to interp; falls back before any side effect when the
+/// JIT cannot build the module); `.jit` = force JIT (hard fail on an unsupported
+/// module, no downgrade); `.interp` = force the interpreter. SIMD (v128) bodies
+/// execute on the JIT under `.auto`/`.jit`; only v128 AT the host-call boundary
+/// is the niche gap that still routes to interp (zwasm to_cljw_02, D-477 tail).
+pub const EngineKind = @FieldType(zwasm.Module.InstantiateOpts, "engine");
+
 /// Optional load-time budget overrides; each axis defaults to zwasm's finite
-/// default when left null.
+/// default when left null. `engine` is the per-instance engine selection.
+///
+/// Explicit `:engine :jit` works end-to-end (incl. `wasm/call`, which reads
+/// `instance.exportFuncSig` — zwasm shipped the JIT arm of that accessor
+/// @5b6449779, from_cljw_02 / to_cljw_03). The finished form (ROADMAP §9.0 gap
+/// II×III) is a `.auto` default that transparently rides the JIT. cljw pins the
+/// default to `.interp` for now because zwasm REVERTED its `.auto`→JIT flip
+/// (to_cljw_03: the C-ABI invoke/export surface is not yet JIT-complete on all 3
+/// hosts), so `.auto` currently resolves to interp anyway — there is no JIT
+/// default to ride yet. Flip the default to `.auto` when D-488 closes (zwasm
+/// re-lands `.auto`→JIT after its C-surface is complete; their D-478).
 pub const LoadOpts = struct {
     fuel: ?Budget = null,
     max_memory_pages: ?Budget = null,
+    // PROVISIONAL: default .interp until zwasm re-lands .auto→JIT (C-surface complete) [refs: D-488, feature_deps.yaml#runtime/cljw/wasm/engine_default]
+    engine: EngineKind = .interp,
 };
 
 /// A loaded wasm module instance + its owning engine/module, boxed together so
@@ -153,6 +175,75 @@ pub fn load(alloc: std.mem.Allocator, bytes: []const u8, opts: LoadOpts) !*Loade
     var inst_opts: zwasm.Module.InstantiateOpts = .{};
     if (opts.fuel) |b| inst_opts.fuel = b;
     if (opts.max_memory_pages) |b| inst_opts.max_memory_pages = b;
+    inst_opts.engine = opts.engine;
     self.instance = try self.module.instantiate(inst_opts);
     return self;
+}
+
+// (module
+//   (func (export "add") (param i32 i32) (result i32) local.get 0 local.get 1 i32.add)
+//   (func (export "lane0") (result i32)
+//     (i32x4.extract_lane 0 (v128.const i32x4 42 0 0 0))))
+// A multi-arg GPR export + a SIMD-body (v128) export whose result crosses the
+// scalar boundary — the canonical "SIMD executes on the JIT" shape (zwasm
+// examples/zig_host/jit_engine.zig). Used by the dual-engine diff-oracle test.
+const dual_engine_wasm = [_]u8{
+    0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00,
+    0x01, 0x0b, 0x02, 0x60, 0x02, 0x7f, 0x7f, 0x01,
+    0x7f, 0x60, 0x00, 0x01, 0x7f, 0x03, 0x03, 0x02,
+    0x00, 0x01, 0x07, 0x0f, 0x02, 0x03, 0x61, 0x64,
+    0x64, 0x00, 0x00, 0x05, 0x6c, 0x61, 0x6e, 0x65,
+    0x30, 0x00, 0x01, 0x0a, 0x21, 0x02, 0x07, 0x00,
+    0x20, 0x00, 0x20, 0x01, 0x6a, 0x0b, 0x17, 0x00,
+    0xfd, 0x0c, 0x2a, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0xfd, 0x1b, 0x00, 0x0b,
+};
+
+fn invokeAdd(loaded: *Loaded, a: i32, b: i32) !i32 {
+    var in = [_]Value{ Value.fromI32(a), Value.fromI32(b) };
+    var out = [_]Value{Value.fromI32(0)};
+    try loaded.invoke("add", &in, &out);
+    return out[0].i32;
+}
+
+fn invokeLane0(loaded: *Loaded) !i32 {
+    var out = [_]Value{Value.fromI32(0)};
+    try loaded.invoke("lane0", &.{}, &out);
+    return out[0].i32;
+}
+
+test "dual-engine: jit==interp on GPR export; SIMD (v128) is JIT-only in zwasm" {
+    const alloc = std.testing.allocator;
+
+    const interp = try load(alloc, &dual_engine_wasm, .{ .engine = .interp });
+    defer {
+        interp.deinit();
+        alloc.destroy(interp);
+    }
+    const jit = try load(alloc, &dual_engine_wasm, .{ .engine = .jit });
+    defer {
+        jit.deinit();
+        alloc.destroy(jit);
+    }
+
+    // GPR multi-arg export: byte-identical on both engines — the F-012 differential
+    // discipline applied to engine choice (ADR-0200 adoption / north-star gap II×III).
+    try std.testing.expectEqual(@as(i32, 5), try invokeAdd(interp, 2, 3));
+    try std.testing.expectEqual(@as(i32, 5), try invokeAdd(jit, 2, 3));
+
+    // SIMD (v128) body executes JIT-compiled and crosses the scalar boundary → 42.
+    try std.testing.expectEqual(@as(i32, 42), try invokeLane0(jit));
+
+    // zwasm's interpreter has no v128 dispatch handler (interp/dispatch.zig only
+    // registers scalar opcodes), so the same SIMD body traps Unreachable on
+    // .interp — SIMD is JIT-only in the pinned zwasm. Lock the gap: if zwasm later
+    // wires interp SIMD this flips and forces a conscious update (and the dual-engine
+    // diff oracle can then cover SIMD too). Reported upstream via from_cljw_02.
+    if (invokeLane0(interp)) |_| {
+        return error.TestExpectedSimdTrapOnInterp;
+    } else |_| {
+        // Expected: SIMD is JIT-only in zwasm (interp has no v128 dispatch
+        // handler), confirmed intentional via to_cljw_03 — the interp body traps.
+    }
 }

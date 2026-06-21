@@ -98,6 +98,33 @@ entries:
       Phase-16 swap to the finished representation is a single-file change.
       Discharge = the Phase-16/F-004 entry decides the slot semantics +
       wires finalisation/rooting (D-259).
+
+  - name: runtime/cljw/wasm/engine_default
+    kind: runtime_layer
+    defined_in: src/runtime/cljw/wasm/engine.zig
+    status: provisional
+    requires_features: []
+    requires_debts: ["D-488"]
+    provisional_markers:
+      - "src/runtime/cljw/wasm/engine.zig (LoadOpts.engine default = .interp)"
+    notes: |
+      ADR-0200 JIT-engine adoption (ROADMAP §9.0 gap area II×III).
+      zwasm's readiness signal (to_cljw_02, pin via relative-path
+      experiment 2026-06-21) shipped per-instance engine selection
+      (`InstantiateOpts.engine` = .auto/.jit/.interp). Explicit `:engine
+      :jit` works end-to-end at the cljw surface: `wasm/call` reads an
+      export's runtime signature via `instance.exportFuncSig`, and zwasm
+      shipped the JIT arm of that accessor @5b6449779 (from_cljw_02 →
+      to_cljw_03), so a JIT instance now returns the sig instead of null.
+      Verified + locked by the surface e2e (phase16_wasm_engine_select.sh)
+      and the engine.zig dual-engine unit test (GPR jit==interp; SIMD-on-jit).
+      The finished form is a `.auto` default that transparently rides the
+      JIT, but zwasm REVERTED its `.auto`→JIT flip (to_cljw_03: C-ABI
+      export/invoke surface not yet JIT-complete on all 3 hosts), so `.auto`
+      currently resolves to interp — there is no JIT default to ride yet, and
+      cljw pins its default to `.interp` (zwasm-endorsed). Discharge = D-488
+      closes (zwasm re-lands `.auto`→JIT, its D-478); then flip the default
+      to `.auto` + extend the e2e to assert the no-opts default rides the JIT.
     kind: runtime_layer
     defined_in: src/eval/backend/tree_walk.zig
     status: landed
