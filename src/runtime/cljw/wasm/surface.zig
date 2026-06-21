@@ -343,4 +343,6 @@ pub fn register(env: *Env) !void {
     // own-handle) and require-a-component (one Var per export) become expressible.
     _ = try env.intern(ns, "load-component", Value.initBuiltinFn(&component.loadComponentFn), null);
     _ = try env.intern(ns, "component-call", Value.initBuiltinFn(&component.componentCallFn), null);
+    // ADR-0159: deterministic release of a component `own` resource handle.
+    _ = try env.intern(ns, "resource-drop", Value.initBuiltinFn(&component.resourceDropFn), null);
 }

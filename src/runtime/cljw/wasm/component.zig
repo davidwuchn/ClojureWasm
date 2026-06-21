@@ -31,6 +31,8 @@ const keyword_mod = @import("../../keyword.zig");
 const file_io = @import("../../file_io.zig");
 const host_instance = @import("../../host_instance.zig");
 const type_descriptor = @import("../../type_descriptor.zig");
+const mark_sweep = @import("../../gc/mark_sweep.zig");
+const gc_heap_mod = @import("../../gc/gc_heap.zig");
 
 const comp = zwasm.feature.component.host;
 const ctypes = zwasm.feature.component.types;
@@ -271,8 +273,8 @@ fn lower(rt: *Runtime, scratch: std.mem.Allocator, v: Value, ty: WitType, loc: S
             }
             return .{ .flags = .{ .bits = bits } };
         },
-        .own => return .{ .own = @intCast(v.asInteger()) },
-        .borrow => return .{ .borrow = @intCast(v.asInteger()) },
+        .own => return .{ .own = try rawResourceHandle(v, loc) },
+        .borrow => return .{ .borrow = try rawResourceHandle(v, loc) },
         .result, .variant => return error_catalog.raise(.feature_not_supported, loc, .{ .name = "wasm/component-invoke: result/variant param (rare on the input side)" }),
     }
 }
@@ -291,7 +293,12 @@ fn enumOrdinal(v: Value, labels: []const []const u8, loc: SourceLocation) anyerr
 /// Lift a `ComponentValue` tree to Clojure data per ADR-0135. With zwasm REQ-2
 /// labels the FULL mapping is value-derivable: enum→keyword, flags→set of
 /// keywords, variant→tagged map, result→value|throw, record→map, option→nil|v.
-fn lift(rt: *Runtime, cv: ComponentValue, loc: SourceLocation) anyerror!Value {
+/// `component_handle` (ADR-0159): when non-null (the cached `component-call`
+/// path), an `own` result becomes a typed GC-resource wrapper that roots that
+/// component and can be `wasm/resource-drop`'d; null (the one-shot
+/// `component-invoke` path, no persistent component to own it) keeps the bare
+/// integer. `borrow` is never owned, so it stays a bare integer in both.
+fn lift(rt: *Runtime, cv: ComponentValue, loc: SourceLocation, component_handle: ?Value) anyerror!Value {
     return switch (cv) {
         .bool => |b| Value.initBoolean(b),
         .s8 => |n| Value.initInteger(n),
@@ -308,18 +315,18 @@ fn lift(rt: *Runtime, cv: ComponentValue, loc: SourceLocation) anyerror!Value {
         .string => |s| try string_mod.alloc(rt, s),
         .list, .tuple => |items| blk: {
             var out = vector_mod.empty();
-            for (items) |item| out = try vector_mod.conj(rt, out, try lift(rt, item, loc));
+            for (items) |item| out = try vector_mod.conj(rt, out, try lift(rt, item, loc, component_handle));
             break :blk out;
         },
         .record => |fields| blk: {
             var m = map_mod.empty();
             for (fields) |f|
-                m = try map_mod.assoc(rt, m, try keyword_mod.intern(rt, null, f.name), try lift(rt, f.value, loc));
+                m = try map_mod.assoc(rt, m, try keyword_mod.intern(rt, null, f.name), try lift(rt, f.value, loc, component_handle));
             break :blk m;
         },
-        .option => |opt| if (opt) |p| try lift(rt, p.*, loc) else Value.nil_val,
+        .option => |opt| if (opt) |p| try lift(rt, p.*, loc, component_handle) else Value.nil_val,
         .result => |r| blk: {
-            if (r.is_ok) break :blk if (r.payload) |p| try lift(rt, p.*, loc) else Value.nil_val;
+            if (r.is_ok) break :blk if (r.payload) |p| try lift(rt, p.*, loc, component_handle) else Value.nil_val;
             // err arm → catchable cljw exception (ADR-0135 result→throw).
             break :blk error_catalog.raise(.wasm_trap, loc, .{});
         },
@@ -331,7 +338,7 @@ fn lift(rt: *Runtime, cv: ComponentValue, loc: SourceLocation) anyerror!Value {
             else
                 Value.initInteger(vt.case);
             m = try map_mod.assoc(rt, m, try keyword_mod.intern(rt, "wit", "case"), case_kw);
-            const payload: Value = if (vt.payload) |p| try lift(rt, p.*, loc) else Value.nil_val;
+            const payload: Value = if (vt.payload) |p| try lift(rt, p.*, loc, component_handle) else Value.nil_val;
             m = try map_mod.assoc(rt, m, try keyword_mod.intern(rt, null, "value"), payload);
             break :blk m;
         },
@@ -348,9 +355,90 @@ fn lift(rt: *Runtime, cv: ComponentValue, loc: SourceLocation) anyerror!Value {
             }
             break :blk s;
         },
-        .own => |h| Value.initInteger(h),
+        .own => |h| if (component_handle) |ch| try makeResourceHandle(rt, ch, h) else Value.initInteger(h),
         .borrow => |h| Value.initInteger(h),
     };
+}
+
+// === Component resource handle (ADR-0159, D-404 Impl E) ===
+//
+// An `own<T>` result becomes a `.host_instance` wrapper carrying its owning
+// component handle (state[0], a `.host_instance` ComponentLoaded Value), the raw
+// zwasm handle (state[1]), and a one-shot dropped flag (state[2]). `host_trace`
+// marks state[0] so a held resource ROOTS its component (the `Opened` cannot be
+// collected while a resource is reachable; java.util.Iterator cursor precedent).
+// There is deliberately NO `host_finalise`: rooting only holds while the resource
+// is reachable, so a same-cycle collection of the resource + its component gives
+// no finaliser ordering (F-006 mark-sweep) — any drop from the resource finaliser
+// could touch a freed `Opened`. Release is therefore DETERMINISTIC
+// (`wasm/resource-drop` / a `with-resource` scope, where the held wrapper proves
+// the component live); `componentFinalise`'s `Opened.deinit()` drains the whole
+// table at component teardown as the backstop. See ADR-0159 § Divergence.
+
+var resource_descriptor: type_descriptor.TypeDescriptor = .{
+    .fqcn = "cljw.wasm.Resource",
+    .kind = .native,
+    .field_layout = null,
+    .protocol_impls = &.{},
+    .method_table = &.{},
+    .parent = null,
+    .meta = Value.nil_val,
+    .host_trace = &resourceTrace,
+};
+
+/// GC-trace: mark the owning component handle Value held in state[0] (roots the
+/// `ComponentLoaded` box while this resource is reachable). GC-ROOT: §H — a moving
+/// GC must RELOCATE state[0], not just mark [ref: .dev/gc_rooting.md §H].
+fn resourceTrace(gc_ptr: *anyopaque, state: *[host_instance.STATE_WORDS]u64) void {
+    const gc: *gc_heap_mod.GcHeap = @ptrCast(@alignCast(gc_ptr));
+    const ch: Value = @enumFromInt(state[0]);
+    if (ch.heapHeader()) |hdr| mark_sweep.mark(gc, hdr);
+}
+
+/// Wrap an `own` handle as a GC-resource value rooting `component_handle`.
+fn makeResourceHandle(rt: *Runtime, component_handle: Value, handle: u32) anyerror!Value {
+    return host_instance.alloc(rt, &resource_descriptor, .{ @intFromEnum(component_handle), handle, 0, 0 });
+}
+
+/// True iff `v` is a component resource wrapper.
+fn isResourceHandle(v: Value) bool {
+    return v.tag() == .host_instance and host_instance.asHostInstance(v).descriptor == &resource_descriptor;
+}
+
+/// Extract the raw zwasm handle from `v` for a `borrow`/`own` param: a resource
+/// wrapper yields state[1] (raising if already dropped); a bare integer (the
+/// one-shot path / a hand-passed handle) yields itself.
+fn rawResourceHandle(v: Value, loc: SourceLocation) anyerror!u32 {
+    if (isResourceHandle(v)) {
+        const inst = host_instance.asHostInstance(v);
+        if (inst.state[2] != 0) return error_catalog.raise(.wasm_resource_dropped, loc, .{});
+        return @intCast(inst.state[1]);
+    }
+    return @intCast(v.asInteger());
+}
+
+/// `(wasm/resource-drop h)` — release a component `own` resource: run its guest
+/// destructor via the owning component's `Opened.dropResource`, then mark the
+/// wrapper dropped (one-shot; a second drop is a no-op, NOT a zwasm stale-handle
+/// trap). Deterministic release per ADR-0159; the held wrapper proves the
+/// component live, so the `Opened` is valid here. Returns nil.
+pub fn resourceDropFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = rt;
+    _ = env;
+    try error_catalog.checkArity("wasm/resource-drop", args, 1, loc);
+    if (!isResourceHandle(args[0]))
+        return error_catalog.raise(.wasm_opts_invalid, loc, .{ .detail = "wasm/resource-drop expects a component resource handle" });
+    const inst = host_instance.asHostInstance(args[0]);
+    if (inst.state[2] != 0) return Value.nil_val; // already dropped — idempotent.
+    const comp_handle: Value = @enumFromInt(inst.state[0]);
+    if (comp_handle.tag() != .host_instance or
+        host_instance.asHostInstance(comp_handle).descriptor != &component_descriptor)
+        return error_catalog.raise(.wasm_opts_invalid, loc, .{ .detail = "resource handle's owning component is not a loaded component" });
+    const box: *ComponentLoaded = @ptrFromInt(host_instance.asHostInstance(comp_handle).state[0]);
+    box.opened.dropResource(@intCast(inst.state[1])) catch
+        return error_catalog.raise(.wasm_trap, loc, .{});
+    host_instance.setState(args[0], 2, 1);
+    return Value.nil_val;
 }
 
 /// `(wasm/component-invoke "p.wasm" "func" & args)` — one-shot typed invoke
@@ -372,13 +460,18 @@ pub fn componentInvokeFn(rt: *Runtime, env: *Env, args: []const Value, loc: Sour
     defer host.deinit();
     defer opened.deinit();
 
-    return invokeOnOpened(rt, &opened, string_mod.asString(args[1]), args[2..], loc);
+    // One-shot: no persistent component to own an `own` result → null handle
+    // (the `own` lifts to a bare integer; resource ownership needs component-call).
+    return invokeOnOpened(rt, &opened, string_mod.asString(args[1]), args[2..], loc, null);
 }
 
 /// resolveFuncSig → lower args → invokeTyped → lift result, on an already-open
 /// `Opened`. Shared by the one-shot `component-invoke` and the handle-based
 /// `component-call` (the latter persists the Opened across calls).
-fn invokeOnOpened(rt: *Runtime, opened: *comp.Opened, fname: []const u8, call_args: []const Value, loc: SourceLocation) anyerror!Value {
+/// `component_handle` (ADR-0159): the cached component's `.host_instance` Value
+/// for `component-call`, so an `own` result wraps into a GC-resource rooting it;
+/// null for the one-shot path.
+fn invokeOnOpened(rt: *Runtime, opened: *comp.Opened, fname: []const u8, call_args: []const Value, loc: SourceLocation, component_handle: ?Value) anyerror!Value {
     var arena = std.heap.ArenaAllocator.init(rt.gpa);
     defer arena.deinit();
     const sig = (opened.resolveFuncSig(arena.allocator(), fname) catch null) orelse
@@ -393,7 +486,7 @@ fn invokeOnOpened(rt: *Runtime, opened: *comp.Opened, fname: []const u8, call_ar
         return error_catalog.raise(.wasm_trap, loc, .{});
     if (out) |o| {
         defer o.deinit(rt.gpa);
-        return try lift(rt, o, loc);
+        return try lift(rt, o, loc, component_handle);
     }
     return Value.nil_val;
 }
@@ -490,5 +583,7 @@ pub fn componentCallFn(rt: *Runtime, env: *Env, args: []const Value, loc: Source
     if (!args[1].isString())
         return error_catalog.raise(.wasm_export_name_invalid, loc, .{});
     const box: *ComponentLoaded = @ptrFromInt(host_instance.asHostInstance(args[0]).state[0]);
-    return invokeOnOpened(rt, &box.opened, string_mod.asString(args[1]), args[2..], loc);
+    // Pass the component handle so an `own` result wraps into a GC-resource that
+    // roots THIS component (ADR-0159).
+    return invokeOnOpened(rt, &box.opened, string_mod.asString(args[1]), args[2..], loc, args[0]);
 }

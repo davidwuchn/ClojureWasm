@@ -445,6 +445,9 @@ pub const Code = enum {
     wasm_load_failed,
     /// args: `.{}` — `wasm/call`'s first argument was not a loaded handle.
     wasm_handle_invalid,
+    /// args: `.{}` — a Wasm component resource handle was used after it was dropped
+    /// (`wasm/resource-drop` / a `with-resource` scope already released it).
+    wasm_resource_dropped,
     /// args: `.{}` — `wasm/call`'s export-name argument was not a string.
     wasm_export_name_invalid,
     /// args: `.{ .name = "..." }` — `wasm/call` found no export of that name.
@@ -1568,6 +1571,11 @@ pub fn entry(comptime code: Code) Entry {
             .kind = .type_error,
             .phase = .eval,
             .template = "wasm/call: the first argument must be a loaded wasm module",
+        },
+        .wasm_resource_dropped => .{
+            .kind = .value_error,
+            .phase = .eval,
+            .template = "wasm component resource handle used after it was dropped",
         },
         .wasm_export_name_invalid => .{
             .kind = .type_error,

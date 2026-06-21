@@ -59,6 +59,22 @@ $srcrel_out"
 echo "$srcrel_out" | grep -q "src-rel: Hello, rel!" || fail "source-relative './' did not resolve against the source dir:
 $srcrel_out"
 
+# --- ADR-0159 (D-404 Impl E): resource lifecycle — own-handle wrapper + drop ---
+rd_out="$("$BIN" test/e2e/fixtures/wasm_resource_drop_probe.clj 2>&1)" \
+  || fail "resource drop fixture exited non-zero:
+$rd_out"
+for marker in \
+  "PASS resource-roundtrip" \
+  "PASS resource-drop" \
+  "PASS resource-use-after-drop-traps" \
+  "PASS resource-double-drop-idempotent"; do
+  echo "$rd_out" | grep -q "$marker" || fail "missing: $marker
+$rd_out"
+done
+echo "$rd_out" | grep -q "^DONE$" || fail "resource drop fixture did not complete:
+$rd_out"
+echo "PASS resource-lifecycle -> own-handle wrapper + drop + use-after-drop trap"
+
 # --- ADR-0135 A2 (D-404 Impl E): a BARE component name resolves via the CLASSPATH ---
 # `(:require ["greet_component.wasm" :as g])` with `-cp test/e2e/fixtures/wasm` — the
 # bare name (no `./` or `/`) is searched on the classpath, like a `.clj` lib. The
