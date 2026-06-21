@@ -37,4 +37,8 @@
 (println "addf-jit:"
   (try (wasm/call sj "addf" 1.5 2.25) "RAN"
     (catch Throwable _ "TRAPPED")))
+
+;; Real SIMD arithmetic on the JIT: i32x4.mul (1,2,3,4)*(5,6,7,8) = (5,12,21,32),
+;; horizontal sum = 70 (not just a const lane extract). JIT-only (interp traps).
+(println "simd-dot-jit:" (wasm/call (wasm/load "test/e2e/fixtures/wasm/simd_dot.wasm" {:engine :jit}) "simd_dot"))
 (println "DONE")

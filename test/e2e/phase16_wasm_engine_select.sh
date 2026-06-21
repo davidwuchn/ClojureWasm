@@ -56,6 +56,10 @@ $out"
 echo "$out" | grep -q "addf-jit: TRAPPED"  || fail "f64 addf on :jit did not trap as expected (zwasm fixed f64-on-JIT? update from_cljw_03 + flip the assertion):
 $out"
 
+# (7) Real SIMD arithmetic on the JIT: i32x4.mul → horizontal sum = 70.
+echo "$out" | grep -q "simd-dot-jit: 70" || fail "SIMD i32x4.mul kernel on :jit != 70:
+$out"
+
 echo "$out" | grep -q "^DONE$" || fail "fixture did not run to completion:
 $out"
 
