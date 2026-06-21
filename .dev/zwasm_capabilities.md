@@ -83,9 +83,10 @@ from cljw. The trigger has FIRED (to_cljw_02, 2026-06-21) and adoption is in pro
    finished-form `(wasm/load path opts)` surface; interp kept as the default; landed a
    dual-engine diff oracle (unit + e2e) per the F-012 discipline. Explicit `:jit`
    `wasm/call` works end-to-end (zwasm shipped the exportFuncSig JIT arm @5b6449779).
-3. **Remaining (D-488)**: flip the default to `.auto` when zwasm re-lands its
-   `.auto`→JIT C-surface (their D-478). **Did NOT** build a cljw-side shim for the
-   exportFuncSig gap — requested it upstream instead (from_cljw_02, CODEV / F-002).
+3. **Remaining (D-488)**: the cljw side has CONVERGED (1/2-arg JIT invoke matrix complete,
+   e2e-locked). Flip the default to `.auto` when zwasm fixes **D-489** (x86_64-only JIT
+   realworld miscompile) + confirms the `.auto` 3-host verdict. **Did NOT** build any
+   cljw-side shim for the JIT gaps — requested each upstream (from_cljw_02-04, CODEV / F-002).
 
 D-036 is the master integration row; D-350 the embedding-API shape; D-488 the
 remaining `.auto`-default flip; this ledger tracks adoption status per capability.
