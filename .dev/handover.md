@@ -3,23 +3,6 @@
 > ≤ 100 lines. Driving doc; framing per
 > [`.claude/rules/handover_framing.md`](../.claude/rules/handover_framing.md).
 
-## Stopped — user requested
-
-User instruction (2026-06-21): "では、きりがよくなったときで、参照チェーンと配線を監査して
-止め、せっかくの調査がなくならないようにした上で、次のクリアセッションからcontinueできる
-状態にして止めて。" Stopped cleanly at the design-landed point (HEAD `e6a987f2`, working tree
-CLEAN — Impl A was investigated + approach-fixed but NOT yet coded, so no broken source).
-Wiring/reference audit PASSED: debt IDs resolve, all e2e registered, smoke fingerprint
-matches HEAD (green). The research is PRESERVED in git: ADR-0135 Amendment 1 + ADR-0158 +
-F-016 (the design + DA-fork alternatives + web-search sources) + the **Impl-A concrete
-approach promoted into the D-404 barrier** (git-tracked, was gitignored-only). Resume bridge:
-- **Next experiment**: implement Impl A per the D-404 barrier's "Impl-A concrete approach"
-  (desugar a string libspec into a synthesized `(cljw.wasm/require-component-libspec …)` call
-  wrapped in a `DoNode` — 2 files, NO backend require-surgery). RED is confirmed.
-- **Alt not taken**: the DA-fork's `:components`-directive alternative (recorded in ADR-0135
-  Alternatives — user chose `:require`-string overload).
-- **Blocker**: none — zwasm CM is functional + default-ON; impl is unblocked and ready.
-
 ## Resume contract
 
 - **HEAD**: `main` (`git log` = SSOT). **NO-PUSH EXPERIMENT MODE** (user-directed
@@ -33,16 +16,17 @@ approach promoted into the D-404 barrier** (git-tracked, was gitignored-only). R
 - **First commit on resume MUST be**: the **wasm-component-as-namespace epic (D-404)** —
   the new active work (ROADMAP §9.0 gap area II axis 2; design in **ADR-0135 Amendment 1**
   + **ADR-0158** + **F-016**, all landed 2026-06-21 user-directed, DA-fork incorporated).
-  Blocker DISSOLVED (zwasm CM is functional + default-ON; cljw already has
-  `require-component` + `component.zig` marshalling). Phases: **A** ns `:require`-string
-  libspec (`(:require ["x.wasm" :as x])`) → component wiring [START HERE] → **B**
-  resolution order (explicit-relative `./` / absolute / classpath+`:cljw/wasm-deps`;
-  registry deferred) → **C** type leverage (`:arglists`/`:doc`/meta + static-only
-  compile-time arity) → **D** `cljw build` single-binary component embed (ADR-0158) → **E**
-  resource ergonomics + registry. Impl A: wire the analyzer ns `:require` arm
-  (`eval/analyzer/special_forms.zig`) to route a string libspec to the existing
-  `require-component*` worker (`lang/clj/cljw/wasm.clj`); the dynamic `wasm/require-component`
-  macro becomes the REPL hatch.
+  Blocker DISSOLVED (zwasm CM is functional + default-ON). Phases: **A** ns `:require`-string
+  libspec → component wiring **[DONE — `(ns app (:require ["x.wasm" :as g]))` works; greet/
+  resource/:refer e2e green]** → **B** resolution order [START HERE] (explicit-relative `./` /
+  absolute / classpath+`:cljw/wasm-deps`; registry deferred) → **C** type leverage
+  (`:arglists`/`:doc`/meta + static-only compile-time arity) → **D** `cljw build` single-
+  binary component embed (ADR-0158) → **E** resource ergonomics + registry. Impl A landed
+  via a desugar-in-`analyzeNs` approach: a string libspec → `(do <ns_node> (require
+  'cljw.wasm) (cljw.wasm/require-component-libspec …)…)` (`special_forms.zig`), so both
+  backends run it via generic do/call eval — NO require-dispatch surgery. Impl B: thread
+  the resolution order through `lang/require_resolver.zig` + `app/deps/*` (currently the
+  path is cwd-relative; B makes `./` source-relative + classpath/`:cljw/wasm-deps`).
 - **Background watch (NOT the active task)**: the JIT adoption experiment is CONVERGED
   (1/2-arg invoke matrix complete, e2e-locked); its only open item is **D-488's `.auto`
   default flip**, blocked by **zwasm D-489** (x86_64-only JIT miscompile, non-urgent,

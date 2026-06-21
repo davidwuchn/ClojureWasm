@@ -55,3 +55,13 @@
   [path & opts]
   (let [o (apply hash-map opts)]
     `(require-component* ~path {:as '~(:as o) :refer '~(:refer o)})))
+
+(defn require-component-libspec
+  "Static `ns`-directive worker (ADR-0135 Amendment 1). The `ns` special form
+   desugars a string libspec `(:require [\"x.wasm\" :as g :refer [a b]])` into a
+   call to this fn with string args (`alias-str` = the :as name or nil;
+   `refer-strs` = the :refer name vector). Symbol-izes the opts and routes to
+   `require-component*` — the same worker the dynamic `require-component` macro uses."
+  [path alias-str refer-strs]
+  (require-component* path {:as (when alias-str (symbol alias-str))
+                            :refer (mapv symbol refer-strs)}))

@@ -808,7 +808,14 @@ pub fn analyzeRequire(
     // RequireNode per sub-spec; a plain libspec yields exactly one (D-392).
     var libspecs: std.ArrayList(node_mod.RequireNode) = .empty;
     defer libspecs.deinit(arena);
-    try appendLibspecs(arena, &libspecs, inner_form, false);
+    // A STRING libspec (Wasm component) is only the static `ns` `:require` form;
+    // the dynamic `(require …)` fn does NOT load components — direct the user to the
+    // dynamic escape hatch `(cljw.wasm/require-component "path" :as alias)`.
+    var components: std.ArrayList(ComponentRequire) = .empty;
+    defer components.deinit(arena);
+    try appendLibspecs(arena, &libspecs, &components, inner_form, false);
+    if (components.items.len > 0)
+        return error_catalog.raise(.feature_not_supported, form.location, .{ .name = "dynamic (require …) of a Wasm component — use (cljw.wasm/require-component \"path\" :as alias) or the ns :require directive" });
 
     if (libspecs.items.len == 1) {
         const n = try arena.create(Node);
@@ -861,12 +868,38 @@ fn prependPrefix(arena: std.mem.Allocator, prefix: []const u8, sub: Form) Analyz
 /// Parse one libspec form into `out`, expanding a prefix list
 /// `[prefix sub*]` into one RequireNode per sub-spec (recursively, since clj
 /// permits nested prefixes). A plain libspec appends exactly one node (D-392).
+/// A Wasm-component `:require` (ADR-0135 Amendment 1): a STRING libspec
+/// (`"x.wasm"` / `["x.wasm" :as g :refer [a b]]`). Collected by `analyzeNs`
+/// and desugared into a `(cljw.wasm/require-component-libspec …)` call.
+const ComponentRequire = struct {
+    path: []const u8,
+    alias: ?[]const u8 = null,
+    refers: []const []const u8 = &.{},
+    loc: @import("../../runtime/error/info.zig").SourceLocation,
+};
+
+/// True iff a libspec is STRING-headed (a Wasm component, ADR-0135 Amendment 1):
+/// a bare `"x.wasm"` or a `["x.wasm" …]` / `("x.wasm" …)` whose head is a string.
+fn isComponentLibspec(f: Form) bool {
+    return switch (f.data) {
+        .string => true,
+        .vector => |v| v.len >= 1 and v[0].data == .string,
+        .list => |l| l.len >= 1 and l[0].data == .string,
+        else => false,
+    };
+}
+
 fn appendLibspecs(
     arena: std.mem.Allocator,
     out: *std.ArrayList(node_mod.RequireNode),
+    components: *std.ArrayList(ComponentRequire),
     libspec_form: Form,
     default_refer_all: bool,
 ) AnalyzeError!void {
+    if (isComponentLibspec(libspec_form)) {
+        try components.append(arena, try parseComponentLibspec(arena, libspec_form));
+        return;
+    }
     if (isPrefixList(libspec_form)) {
         const vec: []const Form = switch (libspec_form.data) {
             .list => |l| l,
@@ -878,12 +911,63 @@ fn appendLibspecs(
         const prefix = vec[0].data.symbol.name;
         for (vec[1..]) |sub| {
             const expanded = try prependPrefix(arena, prefix, sub);
-            try appendLibspecs(arena, out, expanded, default_refer_all);
+            try appendLibspecs(arena, out, components, expanded, default_refer_all);
         }
         return;
     }
     const ls = try parseLibspecForm(arena, libspec_form, libspec_form.location, default_refer_all);
     try out.append(arena, ls);
+}
+
+/// Parse a STRING libspec into a `ComponentRequire` (ADR-0135 Amendment 1):
+/// `"x.wasm"` (bare) or `["x.wasm" :as g :refer [a b]]` (string head + the same
+/// `:as` / `:refer` options as a Clojure libspec). The head string is the path.
+fn parseComponentLibspec(arena: std.mem.Allocator, f: Form) AnalyzeError!ComponentRequire {
+    if (f.data == .string) {
+        return .{ .path = try arena.dupe(u8, f.data.string), .loc = f.location };
+    }
+    const elems: []const Form = switch (f.data) {
+        .vector => |v| v,
+        .list => |l| l,
+        else => unreachable, // isComponentLibspec gated this
+    };
+    const path = try arena.dupe(u8, elems[0].data.string);
+    var alias: ?[]const u8 = null;
+    var refers: []const []const u8 = &.{};
+    var i: usize = 1;
+    while (i < elems.len) {
+        if (elems[i].data != .keyword)
+            return error_catalog.raise(.feature_not_supported, elems[i].location, .{ .name = "wasm component libspec options must be keyword/value pairs" });
+        const kw = elems[i].data.keyword;
+        if (i + 1 >= elems.len)
+            return error_catalog.raise(.feature_not_supported, elems[i].location, .{ .name = "wasm component libspec keyword without value" });
+        const val = elems[i + 1];
+        if (std.mem.eql(u8, kw.name, "as")) {
+            if (val.data != .symbol or val.data.symbol.ns != null)
+                return error_catalog.raise(.feature_not_supported, val.location, .{ .name = "wasm component :as value must be an unqualified symbol" });
+            alias = try arena.dupe(u8, val.data.symbol.name);
+        } else if (std.mem.eql(u8, kw.name, "refer")) {
+            refers = try parseSymbolNameSeq(arena, val, "wasm component :refer value must be a vector of symbols");
+        } else {
+            return error_catalog.raise(.feature_not_supported, elems[i].location, .{ .name = "wasm component libspec keyword (only :as / :refer supported)" });
+        }
+        i += 2;
+    }
+    return .{ .path = path, .alias = alias, .refers = refers, .loc = f.location };
+}
+
+/// Synthesize the desugar Form for a component require (ADR-0135 Amendment 1):
+/// `(cljw.wasm/require-component-libspec "path" alias-or-nil ["refer" …])`.
+fn synthComponentRequireForm(arena: std.mem.Allocator, cr: ComponentRequire) AnalyzeError!Form {
+    const loc = cr.loc;
+    var refer_forms = try arena.alloc(Form, cr.refers.len);
+    for (cr.refers, 0..) |r, k| refer_forms[k] = .{ .data = .{ .string = r }, .location = loc };
+    const list = try arena.alloc(Form, 4);
+    list[0] = .{ .data = .{ .symbol = .{ .ns = "cljw.wasm", .name = "require-component-libspec" } }, .location = loc };
+    list[1] = .{ .data = .{ .string = cr.path }, .location = loc };
+    list[2] = if (cr.alias) |a| .{ .data = .{ .string = a }, .location = loc } else .{ .data = .nil, .location = loc };
+    list[3] = .{ .data = .{ .vector = refer_forms }, .location = loc };
+    return .{ .data = .{ .list = list }, .location = loc };
 }
 
 /// Shared libspec-vector parser. Used by `analyzeRequire` (top-level
@@ -1011,8 +1095,12 @@ fn parseSymbolNameSeq(
 /// D-112 (separate follow-up; rarely needed in Tier-A test corpora).
 pub fn analyzeNs(
     arena: std.mem.Allocator,
+    rt: *Runtime,
+    env: *Env,
+    scope: ?*const Scope,
     items: []const Form,
     form: Form,
+    macro_table: *const macro_dispatch.Table,
 ) AnalyzeError!*const Node {
     if (items.len < 2)
         return error_catalog.raise(.feature_not_supported, form.location, .{ .name = "ns requires a name" });
@@ -1033,6 +1121,10 @@ pub fn analyzeNs(
     defer libspecs.deinit(arena);
     var imports: std.ArrayList(node_mod.ImportEntry) = .empty;
     defer imports.deinit(arena);
+    // ADR-0135 Amendment 1: STRING libspecs (`["x.wasm" :as g]`) collect here and
+    // desugar (below) into `(cljw.wasm/require-component-libspec …)` calls.
+    var components: std.ArrayList(ComponentRequire) = .empty;
+    defer components.deinit(arena);
 
     var i: usize = 2;
     // Optional docstring + attr-map after the name (clj: `(ns name doc? attrs?
@@ -1058,14 +1150,14 @@ pub fn analyzeNs(
             try parseReferClojureFilters(arena, inner[1..], &refer_clojure_exclude, &refer_clojure_only, directive.location);
         } else if (std.mem.eql(u8, kw.name, "require")) {
             for (inner[1..]) |libspec_form| {
-                try appendLibspecs(arena, &libspecs, libspec_form, false);
+                try appendLibspecs(arena, &libspecs, &components, libspec_form, false);
             }
         } else if (std.mem.eql(u8, kw.name, "use")) {
             // `(:use foo)` = require foo + refer ALL its publics; `[foo :only
             // (a)]` narrows to a whitelist, `[foo :exclude (a)]` to a blacklist
             // (default_refer_all=true is the bare-`:use` shape).
             for (inner[1..]) |libspec_form| {
-                try appendLibspecs(arena, &libspecs, libspec_form, true);
+                try appendLibspecs(arena, &libspecs, &components, libspec_form, true);
             }
         } else if (std.mem.eql(u8, kw.name, "import")) {
             try parseImportForms(arena, inner[1..], &imports);
@@ -1089,7 +1181,38 @@ pub fn analyzeNs(
         .imports = try arena.dupe(node_mod.ImportEntry, imports.items),
         .loc = form.location,
     } };
-    return n;
+
+    // ADR-0135 Amendment 1: no string libspecs → just the ns_node. Otherwise wrap
+    // `(do <ns_node> (cljw.wasm/require-component-libspec …)…)` so both backends run
+    // the component requires (at ns-init time) via the generic do/call eval — no
+    // backend require-dispatch surgery. The component requires run AFTER the ns is
+    // established (so `*ns*`/`create-ns` resolve against this ns).
+    if (components.items.len == 0) return n;
+    // `(do <ns_node> (require 'cljw.wasm) <component-require-call>…)`. `cljw.wasm`
+    // is a require-on-demand bundled ns (bootstrap resolver), so the desugar must
+    // load it before the `cljw.wasm/require-component-libspec` calls resolve.
+    const forms = try arena.alloc(Node, 2 + components.items.len);
+    forms[0] = n.*;
+    forms[1] = (try analyzer_mod.analyze(arena, rt, env, scope, try synthRequireCljwWasmForm(arena, form.location), macro_table)).*;
+    for (components.items, 0..) |cr, idx| {
+        const call_form = try synthComponentRequireForm(arena, cr);
+        const call_node = try analyzer_mod.analyze(arena, rt, env, scope, call_form, macro_table);
+        forms[2 + idx] = call_node.*;
+    }
+    const do_ptr = try arena.create(Node);
+    do_ptr.* = .{ .do_node = .{ .forms = forms, .loc = form.location } };
+    return do_ptr;
+}
+
+/// Synthesize `(require (quote cljw.wasm))` (ADR-0135 Amendment 1 desugar prelude).
+fn synthRequireCljwWasmForm(arena: std.mem.Allocator, loc: @import("../../runtime/error/info.zig").SourceLocation) AnalyzeError!Form {
+    const quote_list = try arena.alloc(Form, 2);
+    quote_list[0] = .{ .data = .{ .symbol = .{ .name = "quote" } }, .location = loc };
+    quote_list[1] = .{ .data = .{ .symbol = .{ .name = "cljw.wasm" } }, .location = loc };
+    const req_list = try arena.alloc(Form, 2);
+    req_list[0] = .{ .data = .{ .symbol = .{ .name = "require" } }, .location = loc };
+    req_list[1] = .{ .data = .{ .list = quote_list }, .location = loc };
+    return .{ .data = .{ .list = req_list }, .location = loc };
 }
 
 /// Parse `(:import …)` entries into `(simple, fqcn)` pairs. Two shapes per

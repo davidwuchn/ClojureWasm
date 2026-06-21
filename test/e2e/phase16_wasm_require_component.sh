@@ -32,8 +32,23 @@ done
 echo "$out" | grep -q "^DONE$" || fail "fixture did not run to completion:
 $out"
 
+# --- ADR-0135 Amendment 1: the STATIC `ns` `:require` string-libspec form ---
+# `(ns app (:require ["x.wasm" :as g] ["y.wasm" :refer [f]]))` — desugars to the
+# require-component worker. Same component fixtures, via the new-code worldview.
+ns_out="$("$BIN" test/e2e/fixtures/wasm_ns_require_component_probe.clj 2>&1)" || fail "ns :require component fixture exited non-zero:
+$ns_out"
+for marker in \
+  "PASS ns-require-greet" \
+  "PASS ns-require-resource" \
+  "PASS ns-require-refer"; do
+  echo "$ns_out" | grep -q "$marker" || fail "missing: $marker
+$ns_out"
+done
+echo "$ns_out" | grep -q "^DONE$" || fail "ns :require fixture did not run to completion:
+$ns_out"
+
 # A non-wasm build must NOT resolve cljw.wasm (the wasm/ ns is absent) — the
 # gating is verified implicitly by the default gate (this step is -Dwasm-only).
 
 echo
-echo "Phase 16 / wasm require-a-component (W1): all green."
+echo "Phase 16 / wasm require-a-component (W1) + ns :require (ADR-0135 Am.1): all green."

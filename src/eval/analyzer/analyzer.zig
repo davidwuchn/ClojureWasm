@@ -1079,7 +1079,7 @@ fn analyzeSpecial(
                 break :blk special_forms.analyzeRequire(arena, items, form);
             break :blk analyzeCall(arena, rt, env, scope, items, form, macro_table);
         },
-        .ns_form => special_forms.analyzeNs(arena, items, form),
+        .ns_form => special_forms.analyzeNs(arena, rt, env, scope, items, form, macro_table),
         .set_bang => special_forms.analyzeSetBang(arena, rt, env, scope, items, form, macro_table),
         .dot_form => special_forms.analyzeDot(arena, rt, env, scope, items, form, macro_table),
         .new_form => special_forms.analyzeNew(arena, rt, env, scope, items, form, macro_table),
