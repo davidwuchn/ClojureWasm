@@ -59,4 +59,11 @@ assert_eq 'nsmunge_hyphen' "$("$BIN" -e '(= (namespace-munge "foo-bar.baz") "foo
 assert_eq 'nsmunge_sym'    "$("$BIN" -e '(= (namespace-munge (quote a-b-c)) "a_b_c")')"        'true'
 assert_eq 'nsmunge_noop'   "$("$BIN" -e '(= (namespace-munge "abc") "abc")')"                   'true'
 
+# --- time (D-501): evaluates expr, prints "Elapsed time: N msecs" via prn (so the
+# string is quoted, matching JVM clj), returns the expr value. The msecs number is
+# timing-dependent, so assert the prefix/suffix + the preserved return value only. ---
+assert_eq 'time_value'   "$("$BIN" -e '(let [v (atom nil)] (with-out-str (reset! v (time (+ 40 2)))) @v)')" '42'
+assert_eq 'time_prefix'  "$("$BIN" -e '(clojure.string/starts-with? (with-out-str (time 1)) "\"Elapsed time:")')" 'true'
+assert_eq 'time_msecs'   "$("$BIN" -e '(clojure.string/includes? (with-out-str (time 1)) "msecs")')" 'true'
+
 echo "ALL phase14_core_cluster PASS"

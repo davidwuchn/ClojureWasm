@@ -2381,6 +2381,14 @@
      (binding [*out* w#] ~@body)
      (rt/__writer->str w#)))
 
+(defmacro time
+  "Evaluates expr and prints the time it took. Returns the value of expr."
+  [expr]
+  `(let [start# (System/nanoTime)
+         ret# ~expr]
+     (prn (str "Elapsed time: " (/ (double (- (System/nanoTime) start#)) 1000000.0) " msecs"))
+     ret#))
+
 ;; `(with-local-vars [x init ...] body…)` — bind each name to a FRESH anonymous
 ;; dynamic Var (ADR-0097 / D-237) thread-bound to its init for the body's extent,
 ;; popped in a finally. `var-get`/`var-set`/`@` operate on them inside the body.
