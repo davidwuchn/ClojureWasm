@@ -34,7 +34,11 @@ still use what other languages have already built.
   evaluate real Clojure live.
 - **WebAssembly as an FFI** — `(wasm/load "mod.wasm")` then
   `(wasm/call m "fn" …)`: a sandboxed module from any language, called like a
-  namespace.
+  namespace. The FFI runs **JIT-compiled by default** (the embedded zwasm engine),
+  so a hot loop inside a module executes as native code.
+- **WebAssembly components as namespaces** — `(:require ["comp.wasm" :as c])`
+  pulls a WIT-typed component in like a library; its exports become ordinary Vars,
+  with arguments and results as plain Clojure data (see below).
 - **Single-binary builds** — `cljw build script.clj -o app` compiles your
   program (and the runtime) into one self-contained executable.
 
@@ -66,6 +70,35 @@ cljw nrepl --port 7888
 # Compile a program to a single self-contained native binary
 cljw build script.clj -o app
 ```
+
+## Require a Wasm component like a namespace
+
+The headline feature. A **WebAssembly component** — a `.wasm` that carries its own
+WIT type signature — can be `:require`-d like a Clojure library. Its exports become
+ordinary Vars, and because the component describes its own types, arguments and
+return values are plain Clojure data with no hand-written glue.
+
+Build a component from any language that targets the component model (here Rust,
+`cargo build --target wasm32-wasip2`), then require the `.wasm` by name:
+
+```clojure
+(ns my.app
+  (:require ["typed_payload.wasm" :as tp]))   ; required like a lib
+
+(tp/process {:xs [3 4 5] :label "data"})
+;; => {:xs [3 4 5 12], :label "data!"}
+```
+
+The WIT `record` arrived as a map, `list` as a vector, `string` as a string — and
+the parameter name survives as metadata, so the export reads like a normal fn:
+
+```clojure
+(:arglists (meta #'tp/process))   ;; => ([input])
+```
+
+JVM Clojure calls Java and ClojureScript calls JavaScript; here the host is a
+language-neutral `.wasm`, so a function from Rust, Go, or C is indistinguishable
+from a Clojure one.
 
 ## Try it live
 
