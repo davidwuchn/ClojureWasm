@@ -5,7 +5,9 @@
 # is byte-identical jit==interp (the F-012 differential discipline applied to engine
 # choice), the SIMD body runs on the JIT (end-to-end through exportFuncSig, the JIT
 # arm zwasm shipped @5b6449779 / from_cljw_02), the SIMD body traps catchably on
-# interp (SIMD is JIT-only — to_cljw_03), and the no-opts default rides interp.
+# interp (SIMD is JIT-only — to_cljw_03), and the no-opts default rides :auto = JIT
+# (D-488 flipped 2026-06-22; zwasm v2.0.0-alpha.3 re-landed .auto→JIT — a SIMD body
+# only the JIT can run returns 42 under the no-opts default).
 #
 # Like phase16_wasm_ffi.sh this is OPT-IN: it builds/uses the `-Dwasm` binary (which
 # resolves zwasm via the relative-path build.zig.zon experiment), so it is NOT in the
@@ -39,8 +41,12 @@ $out"
 echo "$out" | grep -q "lane0-interp: TRAPPED" || fail "SIMD lane0 on :interp did not trap catchably:
 $out"
 
-# (4) no-opts default rides :interp and works (regression guard).
+# (4) no-opts default rides :auto = JIT (D-488). GPR add works AND a SIMD body —
+# which only the JIT can execute — returns 42 with no :engine opt (an interp default
+# would TRAP, so default-simd: 42 is the proof the default flipped to JIT-first).
 echo "$out" | grep -q "default: 5" || fail "no-opts default wasm/call broke:
+$out"
+echo "$out" | grep -q "default-simd: 42" || fail "no-opts default did NOT ride JIT (SIMD body should run under .auto=JIT default; interp would trap):
 $out"
 
 # (5) Multi-value (>1 scalar) result marshals to a cljw vector, identical jit==interp.

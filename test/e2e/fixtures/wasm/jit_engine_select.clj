@@ -8,8 +8,10 @@
 ;; :jit → 42 (end-to-end through wasm/call, which reads exportFuncSig — the JIT arm
 ;; zwasm shipped @5b6449779 / from_cljw_02); (3) the SIMD export traps a CATCHABLE
 ;; error on :interp (SIMD is JIT-only in zwasm — confirmed intentional, to_cljw_03);
-;; (4) the no-opts default rides :interp and works (regression guard — zwasm reverted
-;; the .auto→JIT flip, so the default must not break wasm/call).
+;; (4) the no-opts default rides :auto = JIT (D-488 flipped 2026-06-22; zwasm
+;; v2.0.0-alpha.3 re-landed .auto→JIT): the default GPR add works AND a SIMD body —
+;; which ONLY the JIT can execute — returns 42 with NO :engine opt, proving the
+;; default is JIT-first (an interp default would TRAP on the SIMD body).
 (def w "test/e2e/fixtures/wasm/jit_simd.wasm")
 
 (def jit    (wasm/load w {:engine :jit}))
@@ -22,6 +24,10 @@
   (try (wasm/call interp "lane0") "RAN"
     (catch Throwable _ "TRAPPED")))
 (println "default:" (wasm/call (wasm/load w) "add" 2 3))
+;; The no-opts default now rides :auto = JIT. lane0 is a SIMD (v128) body that ONLY
+;; the JIT can execute (interp traps), so a no-opts load returning 42 proves the
+;; default flipped to JIT-first (D-488, zwasm v2.0.0-alpha.3).
+(println "default-simd:" (wasm/call (wasm/load w) "lane0"))
 
 ;; JIT invoke-shape marshalling at the surface (to_cljw_02 matrix): a multi-value
 ;; (>1 scalar) result returns a cljw vector, and a 2-arg f64 FP-bank param/result

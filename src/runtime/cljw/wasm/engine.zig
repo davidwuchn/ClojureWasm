@@ -46,20 +46,21 @@ pub const EngineKind = @FieldType(zwasm.Module.InstantiateOpts, "engine");
 /// Optional load-time budget overrides; each axis defaults to zwasm's finite
 /// default when left null. `engine` is the per-instance engine selection.
 ///
-/// Explicit `:engine :jit` works end-to-end (incl. `wasm/call`, which reads
-/// `instance.exportFuncSig` — zwasm shipped the JIT arm of that accessor
-/// @5b6449779, from_cljw_02 / to_cljw_03). The finished form (ROADMAP §9.0 gap
-/// II×III) is a `.auto` default that transparently rides the JIT. cljw pins the
-/// default to `.interp` for now because zwasm REVERTED its `.auto`→JIT flip
-/// (to_cljw_03: the C-ABI invoke/export surface is not yet JIT-complete on all 3
-/// hosts), so `.auto` currently resolves to interp anyway — there is no JIT
-/// default to ride yet. Flip the default to `.auto` when D-488 closes (zwasm
-/// re-lands `.auto`→JIT after its C-surface is complete; their D-478).
+/// The default is `.auto` — the ROADMAP §9.0 gap II×III north-star: zwasm's
+/// JIT-first engine with transparent interp fallback, so a no-opts
+/// `(wasm/load path)` rides the JIT and the user automatically gets zwasm's
+/// latest codegen. zwasm re-landed its `.auto`→JIT flip in v2.0.0-alpha.3 (its
+/// D-478): the x86_64 LSRA dual-spill miscompile (D-489/D-494) that gated it is
+/// fixed, 3-host green (to_cljw_09). Components stay interp-pinned on the zwasm
+/// side (D-500), so the `.auto` default leaves the component path on interp —
+/// no behaviour change there. Explicit `:engine :interp` / `:jit` override
+/// per-instance; the F-012 dual-backend diff oracle uses the explicit forms, so
+/// the default flip does not touch it. `.jit` hard-fails an unsupported module;
+/// `.auto` transparently downgrades it to interp instead.
 pub const LoadOpts = struct {
     fuel: ?Budget = null,
     max_memory_pages: ?Budget = null,
-    // PROVISIONAL: default .interp until zwasm re-lands .auto→JIT (C-surface complete) [refs: D-488, feature_deps.yaml#runtime/cljw/wasm/engine_default]
-    engine: EngineKind = .interp,
+    engine: EngineKind = .auto,
 };
 
 /// A loaded wasm module instance + its owning engine/module, boxed together so

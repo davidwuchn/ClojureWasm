@@ -1,14 +1,15 @@
 # zwasm capability ledger — cljw's view of the embedded Wasm runtime (F-001)
 
 > **SSOT for "what does the zwasm we embed offer, and what has cljw adopted".**
-> cljw embeds **zwasm v2** (F-001, unavoidable). The dep is normally a SHA pin, but
-> is currently a **relative-path experiment** (`.path = "../zwasm_from_scratch"`,
-> user-directed 2026-06-21, no-push — see § Pin). zwasm is itself under active
+> cljw embeds **zwasm v2** (F-001, unavoidable). The dep is a **tag pin** —
+> **v2.0.0-alpha.3** (`fc7ff0b3b`, see § Pin), pinned 2026-06-22 after the
+> relative-path JIT-adoption experiment settled. zwasm is itself under active
 > co-development (`~/Documents/MyProducts/zwasm_from_scratch`, branch
 > `zwasm-from-scratch`) and its embedding API is *growing* — notably a **JIT-backed
-> engine** (the cljw north star, ROADMAP §9.0 gap area II × III), whose adoption is
-> now IN PROGRESS. This file is the durable record so the loop never re-derives
-> "is zwasm's JIT ready yet?" from scratch.
+> engine** (the cljw north star, ROADMAP §9.0 gap area II × III). cljw has **adopted
+> the JIT as its default** (`.auto`, D-488 discharged); the remaining north-star step
+> is components-through-the-JIT (zwasm-side, D-500). This file is the durable record
+> so the loop never re-derives "is zwasm's JIT ready yet?" from scratch.
 
 ## The read-at-boundaries convention (why this file exists)
 
@@ -41,36 +42,33 @@ a cljw-side shim.
 
 ## Pin
 
-- **RELATIVE-PATH EXPERIMENT mode (user-directed 2026-06-21).** `build.zig.zon`
-  `.zwasm` is now `.path = "../zwasm_from_scratch"` (was the SHA pin
-  `412966f7…`). The JIT readiness signal arrived (`to_cljw_02`, embedder-stable
-  @ `9fcf9fb5b`+), so the JIT adoption unit is live; the user directed consuming
-  zwasm's live tree by relative path to experiment with JIT/SIMD reproducibly
-  **locally**. A `.path` dep is NOT reproducible for others, so cljw commits
-  **accumulate un-pushed** until the experiment settles and zwasm cuts a
-  pinnable SHA/tag — then this reverts to the SHA-pin form (the URL+hash live in
-  git history / the `build.zig.zon` comment).
+- **TAG PIN — v2.0.0-alpha.3 (`fc7ff0b3b`), pinned 2026-06-22.** `build.zig.zon`
+  `.zwasm` = `.url = "git+https://github.com/clojurewasm/zwasm.git#fc7ff0b3b…"` +
+  `.hash = "zwasm-2.0.0-alpha.3-…"`, resolved from GitHub. This replaced the
+  2026-06-21 relative-path JIT-adoption experiment (`.path = "../zwasm_from_scratch"`,
+  no-push) once zwasm cut the pinnable tag (3-host green) — so the no-push mode is
+  LIFTED and cljw pushes `main` again. The tag is annotated, tag-only (no GitHub
+  Release), so it is reproducible for others without disturbing the `Latest` pointer.
 - `lazy` dependency: the default build + gate never resolve it; only `-Dwasm` /
   `-Dzwasm-spike` do. So a churning dep never breaks the day-to-day gate — it
-  only gates what `cljw.wasm/*` can do. (Caveat in this mode: the wasm e2e steps
-  now require the sibling `../zwasm_from_scratch` tree again, so they won't run on
-  ubuntunote until the pin is restored — acceptable while un-pushed.)
-- Pin-bump (back to SHA): zwasm `docs/consuming_prerelease_zwasm.md`. Re-pin is
+  only gates what `cljw.wasm/*` can do.
+- Pin-bump (to a newer tag/SHA): zwasm `docs/consuming_prerelease_zwasm.md`. Re-pin is
   **user-gated** (a moving north-star API; the loop proposes, the user confirms).
 
 ## Capability table (refresh at each boundary)
 
-| Capability                           | zwasm status (as of 2026-06-21)                                                                         | in cljw's tree? | cljw adoption                                                                 | ref          |
-|--------------------------------------|---------------------------------------------------------------------------------------------------------|-----------------|-------------------------------------------------------------------------------|--------------|
-| Interp embedding (load/instantiate)  | ready                                                                                                   | YES             | integrated behind `cljw.wasm/*` (-Dwasm)                                      | F-001, D-036 |
-| `invoke` (call exported fn)          | ready (interp + JIT)                                                                                    | YES (rel-path)  | integrated; JIT `invoke` verified via unit test                               | D-036, D-488 |
-| Embedder hardening / WASI sandbox    | landed (security pass `…→6b08fe70`, 3-host green)                                                     | mostly          | consumed (old security mailbox)                                               | CODEV        |
-| **Multi-arg JIT invoke (≤5/7 GPR)** | **ready** (embedder-stable, to_cljw_02 matrix)                                                          | YES (rel-path)  | exercised by the dual-engine unit test                                        | to_cljw_02   |
-| **SIMD (v128) body on JIT**          | **ready** (JIT-only by design; interp has no v128 dispatch)                                             | YES (rel-path)  | verified (lane0→42 on .jit); interp traps catchably                          | D-488        |
-| `exportFuncSig` on JIT instance      | **ready** (JIT arm shipped @5b6449779, to_cljw_03)                                                      | YES (rel-path)  | adopted — explicit `:jit` `wasm/call` works end-to-end (e2e)                 | D-488        |
-| FP-bank scalar JIT invoke (f32/f64)  | **ready** (1/2-arg matrix COMPLETE @3cf40a573 — veneer→generic-buffer fall-through; 3-arg via buffer) | YES (rel-path)  | adopted — `:jit` covers all 1/2-arg scalar (incl. mixed) + 3-arg; e2e-locked | D-488        |
-| **JIT-backed engine (`.auto`)**      | **OFF (interp)** — blocked by zwasm D-489 (x86_64-only JIT realworld MISCOMPILE, tinygo_json)          | YES (rel-path)  | default pinned `.interp` (zwasm-endorsed); `:jit` explicit solid on arm64     | D-488        |
-| WIT component marshalling            | future                                                                                                  | NO              | NOT adopted                                                                   | D-404        |
+| Capability                           | zwasm status (as of 2026-06-22)                                                                                                  | in cljw's tree? | cljw adoption                                                                                                | ref          |
+|--------------------------------------|----------------------------------------------------------------------------------------------------------------------------------|-----------------|--------------------------------------------------------------------------------------------------------------|--------------|
+| Interp embedding (load/instantiate)  | ready                                                                                                                            | YES             | integrated behind `cljw.wasm/*` (-Dwasm)                                                                     | F-001, D-036 |
+| `invoke` (call exported fn)          | ready (interp + JIT)                                                                                                             | YES (rel-path)  | integrated; JIT `invoke` verified via unit test                                                              | D-036, D-488 |
+| Embedder hardening / WASI sandbox    | landed (security pass `…→6b08fe70`, 3-host green)                                                                              | mostly          | consumed (old security mailbox)                                                                              | CODEV        |
+| **Multi-arg JIT invoke (≤5/7 GPR)** | **ready** (embedder-stable, to_cljw_02 matrix)                                                                                   | YES (rel-path)  | exercised by the dual-engine unit test                                                                       | to_cljw_02   |
+| **SIMD (v128) body on JIT**          | **ready** (JIT-only by design; interp has no v128 dispatch)                                                                      | YES (rel-path)  | verified (lane0→42 on .jit); interp traps catchably                                                         | D-488        |
+| `exportFuncSig` on JIT instance      | **ready** (JIT arm shipped @5b6449779, to_cljw_03)                                                                               | YES (rel-path)  | adopted — explicit `:jit` `wasm/call` works end-to-end (e2e)                                                | D-488        |
+| FP-bank scalar JIT invoke (f32/f64)  | **ready** (1/2-arg matrix COMPLETE @3cf40a573 — veneer→generic-buffer fall-through; 3-arg via buffer)                          | YES (rel-path)  | adopted — `:jit` covers all 1/2-arg scalar (incl. mixed) + 3-arg; e2e-locked                                | D-488        |
+| **JIT-backed engine (`.auto`)**      | **ON (JIT-first + interp fallback)** — re-landed v2.0.0-alpha.3 (D-478); x86_64 LSRA miscompile D-489/D-494 fixed, 3-host green | YES (tag-pin)   | **ADOPTED — cljw default flipped `.interp`→`.auto` (D-488 discharged 2026-06-22); no-opts load rides JIT** | D-488        |
+| Components on JIT                    | interp-pinned (D-500, zwasm CM-API core); Win64 string-arg wrapper-thunk gap                                                     | YES (tag-pin)   | unaffected — `.auto` default leaves components on interp (zwasm-side pin)                                   | D-500, D-404 |
+| WIT component marshalling            | future                                                                                                                           | NO              | NOT adopted                                                                                                  | D-404        |
 
 ## Forward plan — the JIT adoption unit (gap area II × III) — ACTIVE
 
@@ -83,13 +81,18 @@ from cljw. The trigger has FIRED (to_cljw_02, 2026-06-21) and adoption is in pro
    finished-form `(wasm/load path opts)` surface; interp kept as the default; landed a
    dual-engine diff oracle (unit + e2e) per the F-012 discipline. Explicit `:jit`
    `wasm/call` works end-to-end (zwasm shipped the exportFuncSig JIT arm @5b6449779).
-3. **Remaining (D-488)**: the cljw side has CONVERGED (1/2-arg JIT invoke matrix complete,
-   e2e-locked). Flip the default to `.auto` when zwasm fixes **D-489** (x86_64-only JIT
-   realworld miscompile) + confirms the `.auto` 3-host verdict. **Did NOT** build any
-   cljw-side shim for the JIT gaps — requested each upstream (from_cljw_02-04, CODEV / F-002).
+3. **Default flip (DONE 2026-06-22, D-488 DISCHARGED)**: zwasm cut **v2.0.0-alpha.3**
+   (pin `fc7ff0b3b`, 3-host green) which re-lands `.auto`→JIT (its D-478) AND fixes the
+   gating x86_64 LSRA dual-spill miscompile (D-489/D-494) — to_cljw_09. cljw flipped its
+   `LoadOpts.engine` default `.interp`→`.auto`, so a no-opts `(wasm/load path)` now rides
+   zwasm's JIT-first engine (transparent interp fallback). The e2e proves it: the no-opts
+   default executes a SIMD body that ONLY the JIT can run (interp would trap). **Did NOT**
+   build any cljw-side shim for the JIT gaps — requested each upstream (from_cljw_02-04,
+   CODEV / F-002). Components stay interp-pinned on the zwasm side (D-500), so the north-star
+   "components through the JIT" awaits zwasm's component-on-JIT (Win64 wrapper-thunk gap).
 
-D-036 is the master integration row; D-350 the embedding-API shape; D-488 the
-remaining `.auto`-default flip; this ledger tracks adoption status per capability.
+D-036 is the master integration row; D-350 the embedding-API shape; D-488 (DISCHARGED)
+was the `.auto`-default flip; this ledger tracks adoption status per capability.
 
 ## Revision log
 
@@ -127,3 +130,14 @@ remaining `.auto`-default flip; this ledger tracks adoption status per capabilit
   **D-489** (x86_64-only JIT realworld miscompile, tinygo_json) — `.auto` stays OFF, cljw
   default `.interp` firmly validated. Deferred (no cljw need): wide-arity / >2-result /
   v128-boundary (zwasm D-477). `to_cljw_05` consumed; no new finding (zwasm's fix is general).
+- **2026-06-22** — **JIT DEFAULT LANDED (D-488 DISCHARGED)**. zwasm cut **v2.0.0-alpha.3**
+  (pin `fc7ff0b3b`, annotated tag-only, 3-host green: Mac aarch64 + ubuntu x86_64 + Win64)
+  which RE-LANDS `.auto`→JIT (its D-478) AND fixes the gating x86_64 LSRA dual-spill
+  miscompile (D-489/D-494) — `to_cljw_09`. cljw exited the relative-path no-push experiment
+  and pinned the tag (`build.zig.zon` `.zwasm` = tag URL + hash, `.lazy = true`), then flipped
+  `engine.LoadOpts.engine` default `.interp`→`.auto` (removed the PROVISIONAL marker + emptied
+  feature_deps#runtime/cljw/wasm/engine_default, same commit): a no-opts `(wasm/load path)` now
+  rides zwasm's JIT-first engine. e2e `phase16_wasm_engine_select.sh` extended — the no-opts
+  default executes a SIMD body only the JIT can run (`default-simd: 42`), proving the flip.
+  Components stay interp-pinned on the zwasm side (D-500), so the component path is unaffected
+  and the F-012 diff oracle (explicit `.interp`/`.jit`) is untouched. `to_cljw_09` CONSUMED.

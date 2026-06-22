@@ -10,17 +10,16 @@
         },
         // zwasm v2 embedding API (F-001 / D-037). `lazy` so the DEFAULT build +
         // gate never resolve it — only `-Dwasm` / `-Dzwasm-spike` (b.lazyDependency) do.
-        // RELATIVE-PATH EXPERIMENT mode (user 2026-06-21): the JIT-backed embedding
-        // API readiness signal arrived (zwasm `to_cljw_02`, pin SHA `9fcf9fb5b`+), so
-        // the JIT adoption unit (ROADMAP §9.0 gap area II × III) is live. The user
-        // directed switching to a `.path` dep on the local co-dev tree so cljw can
-        // pull in zwasm's JIT/SIMD freely and experiment reproducibly LOCALLY. A
-        // relative path is NOT reproducible for others, so commits accumulate
-        // un-pushed until the experiment settles and zwasm cuts a pinnable SHA/tag
-        // (then this reverts to the SHA-pin form above — keep the URL/hash in git
-        // history). lazy + flag-guard means a churning dep cannot break the default gate.
+        // PINNED to tag **v2.0.0-alpha.3** (zwasm@fc7ff0b3b, 2026-06-22, to_cljw_09): the
+        // JIT-adoption co-dev experiment settled — zwasm cut a pinnable tag (3-host green:
+        // Mac aarch64 + ubuntu x86_64 + Win64), so cljw exits the relative-path NO-PUSH
+        // mode and pins the tag. `.auto`=JIT-default (D-489/D-494 fixed) + funcref C-API
+        // (D-498) landed; cljw uses explicit `.interp`(D-488)/`.jit`, so no behaviour
+        // change. (Prior relative-path form: `.path = "../zwasm_from_scratch"`, see git
+        // history.) lazy + flag-guard means a churning dep cannot break the default gate.
         .zwasm = .{
-            .path = "../zwasm_from_scratch",
+            .url = "git+https://github.com/clojurewasm/zwasm.git#fc7ff0b3b6404e077b3c186605cf49a15e96cc0a",
+            .hash = "zwasm-2.0.0-alpha.3-FT1FvyFxiwCcp4CVyldwaUXBdxEhxM0L_GvghvGslqt8",
             .lazy = true,
         },
     },
