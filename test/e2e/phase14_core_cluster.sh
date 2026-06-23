@@ -74,4 +74,11 @@ assert_eq 'flush_out'    "$("$BIN" -e '(= "ab" (with-out-str (print "ab") (flush
 # thunk off-thread, deref caches the result ---
 assert_eq 'future_call'  "$("$BIN" -e '(deref (future-call (fn [] (+ 40 2))))')" '42'
 
+# --- load-string / memfn / xml-seq (D-504): clj.core gap-fills ---
+assert_eq 'load_string'      "$("$BIN" -e '(load-string "(def lsx 10) (+ lsx 5)")')" '15'
+assert_eq 'load_string_empty' "$("$BIN" -e '(nil? (load-string ""))')" 'true'
+assert_eq 'memfn_0arg'       "$("$BIN" -e '(= "HI" ((memfn toUpperCase) "hi"))')" 'true'
+assert_eq 'memfn_2arg'       "$("$BIN" -e '(= "el" ((memfn substring s e) "hello" 1 3))')" 'true'
+assert_eq 'xml_seq'          "$("$BIN" -e '(count (xml-seq {:tag :a :content [{:tag :b :content ["x"]} "y"]}))')" '4'
+
 echo "ALL phase14_core_cluster PASS"

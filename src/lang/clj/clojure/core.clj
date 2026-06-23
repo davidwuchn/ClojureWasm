@@ -2313,6 +2313,34 @@
   [f]
   (__future-call f))
 
+;; `(load-string s)` — sequentially read+eval every form in s, return the last
+;; value (clj 1.0). clj routes through a StringReader + load-reader; cljw has no
+;; reader streams, so it wraps the forms in a single `(do …)` and evals that —
+;; identical observable result (forms run in order; defs visible to later forms;
+;; value of the last form returned; empty string → nil).
+(defn load-string
+  "Sequentially read and evaluate the set of forms contained in the string."
+  [s]
+  (eval (read-string (str "(do " s "\n)"))))
+
+;; `(memfn name & args)` — a fn wrapping an instance method call (clj 1.0).
+;; `args` are PARAMETER names (not values): (memfn substring s e) → a 3-arg fn
+;; (fn [target s e] (. target (substring s e))). clj type-hints the target to
+;; avoid reflection; cljw needs no hint (no reflective dispatch), so it is dropped.
+(defmacro memfn
+  "Expands into a fn that takes an object plus args and calls the named instance
+  method on the object with those args."
+  [name & args]
+  (let [t (gensym "target")]
+    `(fn [~t ~@args] (. ~t (~name ~@args)))))
+
+;; `(xml-seq root)` — depth-first seq over clojure.xml-shaped element maps,
+;; descending through each element's `:content` (clj 1.0); pure over tree-seq.
+(defn xml-seq
+  "A tree seq on the xml elements as per clojure.xml/parse."
+  [root]
+  (tree-seq (complement string?) (comp seq :content) root))
+
 ;; `(pmap f coll & colls)` / `(pcalls & fns)` — PARALLEL map / parallel calls
 ;; (D-224), clj's exact impl: each element's `(f x)` runs on its own
 ;; `future` (a real OS thread); a `step`/`drop n` bounded look-ahead (n =
