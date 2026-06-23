@@ -42,3 +42,17 @@
 ;;=> "0.00000015"
 (clojure.pprint/cl-format nil "~F" -1.0e10)
 ;;=> "-10000000000.0"
+; ~mincol,colinc,minpad,padchar A/S column padding + ~mincol,padchar,commachar,
+; comma-interval :d custom group char (2026-06-23 sweep — were silently ignored).
+(clojure.pprint/cl-format nil "~10a|" "hi")
+;;=> "hi        |"
+(clojure.pprint/cl-format nil "~10@a|" "hi")
+;;=> "        hi|"
+(clojure.pprint/cl-format nil "~5a|" "longer")
+;;=> "longer|"
+(clojure.pprint/cl-format nil "~5,,2a|" "ab")
+;;=> "ab   |"
+(clojure.pprint/cl-format nil "~,,'.,3:d" 1234567)
+;;=> "1.234.567"
+(clojure.pprint/cl-format nil "~,,'.:d" 1234567)
+;;=> "1.234.567"

@@ -118,6 +118,30 @@
   (let [len (count s) w (or width 0)]
     (if (< len w) (str (apply str (repeat (- w len) padchar)) s) s)))
 
+;; ~mincol,colinc,minpad,padchar column pad for ~A/~S: lay `text` to at least
+;; `mincol` columns (grown by `colinc` until text + `minpad` fits), `padchar`
+;; fill. Default = left-justify (pad on the right); `at?` (~@a) = pad on the left.
+(defn cl-pad-col [text mincol colinc minpad padchar at?]
+  (let [mc (or mincol 0) ci (max 1 (or colinc 1)) mp (or minpad 0) pc (or padchar \space)
+        tl (count text)
+        base (+ tl mp)
+        width (if (<= base mc) mc (+ mc (* ci (quot (+ (- base mc) (dec ci)) ci))))
+        pad (max mp (- width tl))
+        ps (apply str (repeat pad pc))]
+    (if at? (str ps text) (str text ps))))
+
+;; Group a digit string with `commachar` every `interval` digits from the right
+;; (the ~:d comma grammar; `~mincol,padchar,commachar,comma-interval:d`). `digits`
+;; is the unsigned magnitude; the caller re-attaches any sign.
+(defn cl-group [digits commachar interval]
+  (let [n (count digits)
+        iv (if (and interval (pos? interval)) interval 3)
+        cc (or commachar \,)
+        head (let [r (mod n iv)] (if (zero? r) iv r))]
+    (loop [idx head out (subs digits 0 head)]
+      (if (>= idx n) out
+        (recur (+ idx iv) (str out cc (subs digits idx (+ idx iv))))))))
+
 ;; Parse a base-10 integer string (optional leading +/-). Self-contained so the
 ;; ~F natural-precision path does not depend on read-string in the bundled .clj.
 (defn cl-parse-int [s]
@@ -507,12 +531,19 @@
                   rp (cl-resolve-params raw argv pos na)
                   params (nth rp 0) pos (nth rp 1)
                   p0 (first params) p1 (second params)
+                  p2 (nth params 2 nil) p3 (nth params 3 nil)
                   x (when (< pos na) (nth argv pos))]
               (cond
-                (or (= d \a) (= d \A)) (recur ni (inc pos) (str acc (if (string? x) x (pr-str x))))
-                (or (= d \s) (= d \S)) (recur ni (inc pos) (str acc (pr-str x)))
+                (or (= d \a) (= d \A)) (recur ni (inc pos) (str acc (cl-pad-col (if (string? x) x (pr-str x)) p0 p1 p2 p3 at?)))
+                (or (= d \s) (= d \S)) (recur ni (inc pos) (str acc (cl-pad-col (pr-str x) p0 p1 p2 p3 at?)))
                 (or (= d \d) (= d \D))
-                (recur ni (inc pos) (str acc (cl-pad (if colon? (format "%,d" x) (str x)) p0 (or p1 \space))))
+                (recur ni (inc pos)
+                       (str acc (cl-pad (if colon?
+                                          (let [neg? (neg? x)
+                                                grouped (cl-group (str (if neg? (- x) x)) (or p2 \,) (or p3 3))]
+                                            (if neg? (str "-" grouped) grouped))
+                                          (str x))
+                                        p0 (or p1 \space))))
                 ;; ~w,dF — fixed float. With d given, `%[w].[d]f`. With d OMITTED,
                 ;; clj prints the natural (shortest round-trip) value in plain fixed
                 ;; notation, left-padded to w (D-465), NOT 0-decimals.
