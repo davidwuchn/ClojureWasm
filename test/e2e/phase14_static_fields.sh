@@ -57,4 +57,17 @@ set -e
 [[ "$ec" -ne 0 ]] || fail "unknown_ns_still_errors: expected non-zero exit"
 echo "PASS unknown_ns_still_errors -> non-zero exit"
 
+# --- (Class/FIELD) parenthesized = static field READ, not a call (clj parity,
+#     D-509). `(Math/PI)` / `(Integer/MAX_VALUE)` return the field, like bare. ---
+check '(= (Math/PI) Math/PI)' 'true' paren_field_pi
+check '(= (Integer/MAX_VALUE) 2147483647)' 'true' paren_field_int_max
+check '(= (Long/MAX_VALUE) 9223372036854775807)' 'true' paren_field_long_max
+check '(< 2.718 (Math/E) 2.719)' 'true' paren_field_e
+check '(= (Math/abs -5) 5)' 'true' method_with_args_ok
+set +e
+out=$("$BIN" -e '(totally.unknown.Ns/FIELD)' 2>&1); ec=$?
+set -e
+[[ "$ec" -ne 0 ]] || fail "paren_unknown_ns_errors: expected non-zero exit"
+echo "PASS paren_unknown_ns_errors -> non-zero exit"
+
 echo "ALL PASS phase14_static_fields"

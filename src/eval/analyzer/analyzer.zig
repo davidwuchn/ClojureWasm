@@ -386,6 +386,22 @@ pub fn integerLiteralToValue(rt: *Runtime, i: i64) !Value {
     return Value.initInteger(i);
 }
 
+/// Resolve a static-field descriptor to its analyze-time Value. Shared by the
+/// bare `Class/FIELD` symbol path and the parenthesized `(Class/FIELD)` call
+/// path (both are field reads — ADR-0061 + clj `(Math/PI)` parity).
+fn staticFieldValue(rt: *Runtime, sf: *const @import("../../runtime/type_descriptor.zig").TypeDescriptor.StaticField) !Value {
+    return switch (sf.value) {
+        .int => |i| try integerLiteralToValue(rt, i),
+        .float => |f| Value.initFloat(f),
+        .bool => |b| Value.initBoolean(b),
+        .singleton => |s| switch (s) {
+            .empty_queue => try @import("../../runtime/collection/persistent_queue.zig").emptyQueue(rt),
+            .locale_us => try @import("../../runtime/locale.zig").singleton(rt, .us),
+            .locale_root => try @import("../../runtime/locale.zig").singleton(rt, .root),
+        },
+    };
+}
+
 /// Used by both the atom-analyzer path and the quote-lift path.
 pub fn parseBigIntLiteral(rt: *Runtime, digits: []const u8, loc: error_mod.SourceLocation) !Value {
     var m = big_int.parseBase10(rt, digits) catch
@@ -639,20 +655,9 @@ fn analyzeSymbol(
         // IS that constant — emit it directly (no Var resolution follows).
         if (special_forms.resolveJavaSurface(env.rt, env, ns_name)) |td| {
             if (td.lookupStaticField(sym.name)) |sf| {
-                const fv: Value = switch (sf.value) {
-                    .int => |i| try integerLiteralToValue(env.rt, i),
-                    .float => |f| Value.initFloat(f),
-                    .bool => |b| Value.initBoolean(b),
-                    // ADR-0087: a heap-singleton static field (e.g.
-                    // PersistentQueue/EMPTY) resolves to the live per-Runtime
-                    // value at analyze time.
-                    .singleton => |s| switch (s) {
-                        .empty_queue => try @import("../../runtime/collection/persistent_queue.zig").emptyQueue(env.rt),
-                        .locale_us => try @import("../../runtime/locale.zig").singleton(env.rt, .us),
-                        .locale_root => try @import("../../runtime/locale.zig").singleton(env.rt, .root),
-                    },
-                };
-                return try makeConstant(arena, fv, form);
+                // ADR-0087: a heap-singleton static field resolves to the live
+                // per-Runtime value at analyze time (handled inside the helper).
+                return try makeConstant(arena, try staticFieldValue(env.rt, sf), form);
             }
         }
         // ADR-0113: an unresolved `clojure.lang.*` / `clojure.asm.*` qualified
@@ -798,6 +803,16 @@ fn analyzeList(
                         form,
                         macro_table,
                     );
+                }
+                // clj parity: `(Class/FIELD)` with NO args is a static field READ,
+                // not a call — `(Math/PI)` / `(Integer/MAX_VALUE)` return the field
+                // value (same as the bare `Class/FIELD` symbol path). Only when the
+                // name is not a method AND there are no args; with args it falls
+                // through to analyzeCall (a genuine arity/method error).
+                if (items.len == 1) {
+                    if (td.lookupStaticField(head.name)) |sf| {
+                        return try makeConstant(arena, try staticFieldValue(rt, sf), form);
+                    }
                 }
             }
         }
