@@ -1,0 +1,28 @@
+(Double/hashCode 1.0)
+;;=> 1072693248
+(Double/hashCode 0.5)
+;;=> 1071644672
+(Double/hashCode 0.0)
+;;=> 0
+(Double/doubleToLongBits 1.0)
+;;=> 4607182418800017408
+(Double/doubleToLongBits 0.0)
+;;=> 0
+(Double/doubleToLongBits -0.0)
+;;=> -9223372036854775808
+(Double/doubleToLongBits 1.5)
+;;=> 4609434218613702656
+(Double/doubleToRawLongBits 1.5)
+;;=> 4609434218613702656
+(Double/longBitsToDouble 4607182418800017408)
+;;=> 1.0
+(Double/longBitsToDouble 4609434218613702656)
+;;=> 1.5
+(Double/longBitsToDouble 0)
+;;=> 0.0
+(Double/doubleToLongBits Double/POSITIVE_INFINITY)
+;;=> 9218868437227405312
+(Double/doubleToLongBits (/ 0.0 0.0))
+;;=> 9221120237041090560
+(Double/hashCode (/ 0.0 0.0))
+;;=> 2146959360

@@ -22,6 +22,7 @@ const Env = @import("../../env.zig").Env;
 const SourceLocation = @import("../../error/info.zig").SourceLocation;
 const error_catalog = @import("../../error/catalog.zig");
 const parse = @import("../../numeric/parse.zig");
+const promote = @import("../../numeric/promote.zig");
 const string_mod = @import("../../collection/string.zig");
 const print_mod = @import("../../print.zig");
 
@@ -132,6 +133,49 @@ fn FBinOp2(comptime op: FBinop, comptime name: []const u8) type {
     };
 }
 
+/// `(Double/doubleToLongBits d)` — the IEEE-754 bit pattern as a long, with
+/// every NaN collapsed to the canonical `0x7ff8000000000000` (Java total
+/// order). The bit pattern exceeds the i48 NaN-box payload, so it boxes as a
+/// BigInt (D-165) — exact value. JVM reference: java.lang.Double#doubleToLongBits.
+fn doubleToLongBitsFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = env;
+    try error_catalog.checkArity("Double/doubleToLongBits", args, 1, loc);
+    const x = try error_catalog.expectNumber(args[0], "Double/doubleToLongBits", loc);
+    return promote.wrapI64(rt, doubleToLongBits(x));
+}
+
+/// `(Double/doubleToRawLongBits d)` — the RAW IEEE-754 bit pattern as a long,
+/// preserving a non-canonical NaN's bits (unlike doubleToLongBits). JVM
+/// reference: java.lang.Double#doubleToRawLongBits.
+fn doubleToRawLongBitsFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = env;
+    try error_catalog.checkArity("Double/doubleToRawLongBits", args, 1, loc);
+    const x = try error_catalog.expectNumber(args[0], "Double/doubleToRawLongBits", loc);
+    return promote.wrapI64(rt, @bitCast(x));
+}
+
+/// `(Double/longBitsToDouble bits)` — the double with the given IEEE-754 bit
+/// pattern. JVM reference: java.lang.Double#longBitsToDouble.
+fn longBitsToDouble(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = rt;
+    _ = env;
+    try error_catalog.checkArity("Double/longBitsToDouble", args, 1, loc);
+    const bits = try error_catalog.expectI64(args[0], "Double/longBitsToDouble", loc);
+    return Value.initFloat(@bitCast(bits));
+}
+
+/// `(Double/hashCode d)` — Java's `(int)(bits ^ (bits >>> 32))` over the
+/// canonical `doubleToLongBits`. JVM reference: java.lang.Double#hashCode.
+fn hashCode(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = rt;
+    _ = env;
+    try error_catalog.checkArity("Double/hashCode", args, 1, loc);
+    const x = try error_catalog.expectNumber(args[0], "Double/hashCode", loc);
+    const bits: u64 = @bitCast(doubleToLongBits(x));
+    const h: i32 = @bitCast(@as(u32, @truncate(bits ^ (bits >> 32))));
+    return Value.initInteger(@as(i64, h));
+}
+
 fn initDouble(td: *type_descriptor.TypeDescriptor, gpa: std.mem.Allocator) anyerror!void {
     if (td.method_table.len != 0) return; // idempotent re-run
     const specs = .{
@@ -145,6 +189,10 @@ fn initDouble(td: *type_descriptor.TypeDescriptor, gpa: std.mem.Allocator) anyer
         .{ "max", &FBinOp2(.max, "max").call },
         .{ "min", &FBinOp2(.min, "min").call },
         .{ "sum", &FBinOp2(.sum, "sum").call },
+        .{ "doubleToLongBits", &doubleToLongBitsFn },
+        .{ "doubleToRawLongBits", &doubleToRawLongBitsFn },
+        .{ "longBitsToDouble", &longBitsToDouble },
+        .{ "hashCode", &hashCode },
     };
     const entries = try gpa.alloc(type_descriptor.TypeDescriptor.MethodEntry, specs.len);
     inline for (specs, 0..) |spec, i| {

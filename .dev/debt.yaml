@@ -111,6 +111,13 @@ active:
       test/diff/clj_corpus/char_codepoint_bool_statics.txt (27 golden pairs).
       DEFERRED (Unicode-DB-heavy, low ROI): Character/{getType,isDefined,
       isMirrored,isJavaIdentifierStart,…} need the full Unicode database.
+      DRAIN 4 (2026-06-25): Double IEEE-754 bit conversion. Added Double/
+      {doubleToLongBits,doubleToRawLongBits,longBitsToDouble,hashCode} (reuses
+      the existing private doubleToLongBits NaN-canonicalizer; bits box as BigInt
+      per D-165, exact). NaN canonical 0x7ff8…/raw split matches clj. Corpus:
+      test/diff/clj_corpus/double_bit_conversion.txt (14 golden pairs). NEXT:
+      java.util.Objects/* is a whole new surface (separate unit); the i48→u64
+      bitcast widening repeats across surfaces (a simplify candidate).
     category: "interop"
     quality_floor: "public-ization: java-interop static-member gaps (ADR-0166)"
     barrier: |-
