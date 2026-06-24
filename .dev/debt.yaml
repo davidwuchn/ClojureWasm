@@ -62,7 +62,7 @@ active:
       DISCHARGED — `.until` complete for LocalDate / LocalDateTime / Instant.
     last_reviewed: "2026-06-24"
   - id: "D-511"
-    status: "OPEN (2026-06-24). BigDecimal/MathContext surface near-complete: remainder/divideToIntegralValue, MathContext core + DECIMAL* constants, and the 1-arg `(BigDecimal. str|int)` constructor all LANDED. Only the 2-arg `(BigDecimal. x mc)` round-on-construct + the exact-binary `(BigDecimal. double)` ctor remain — both low priority."
+    status: "OPEN-LOW (2026-06-24). 2-arg `(BigDecimal. x mc)` round-on-construct LANDED (8db6d82f; parse x then allocRoundPrecision, pin/unpin GC-rooting; 6 clj-verified e2e in phase14_bigdecimal_setscale). REMAINING (low priority, deferred): only the exact-binary `(BigDecimal. double)` ctor — clj 0.1 → 0.1000…0625 full binary expansion (a clj footgun, differs from bigdec shortest-round-trip; high impl cost via mantissa·2^exp decimal expansion, low value). Re-file/implement only if a real consumer needs it."
     category: "clj-parity"
     barrier: |-
       Two ctor remnants, low priority: (1) `(BigDecimal. x mc)` round-on-construct —
