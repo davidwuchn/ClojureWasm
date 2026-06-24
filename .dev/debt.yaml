@@ -46,6 +46,18 @@ active:
       29 docs/*.md were written against an older code state. Audit each against
       what the code actually does; fix / SIMPLIFY / delete no-longer-meaningful;
       ARCHIVE (docs/ja/archive) the historically-meaningful-but-dead.
+      DRAIN 1 (2026-06-25): audited 5 user-facing docs, ALL had real stale claims
+      (the docs DID drift) — clojure_vs_clojurewasm.md (concurrency tail listed
+      await-for/shutdown-agents/agent-error-handlers + validators as deferred when
+      landed; *out*/*err* redirection works; corrected over-claim: validators are
+      atom+agent only, not ref/var → D-533), landscape.md (binary size ~2→~3 MB,
+      matched RELEASE_METRICS), error_format.md (:kind 12→19, :phase 5→4 — :tokenize
+      does not exist; all re-verified against the live enums + EDN render),
+      ladder.md (data.generators "FULLY FUNCTIONAL" was core-gens only; the full
+      suite needed the D-528 UUID/BigInteger/BigDecimal fixes), works/README.md
+      (deps.edn resolution landed — the doc still described the manual `-cp` era).
+      Each fix re-verified against the ReleaseSafe binary. REMAINING docs (lower
+      traffic): works/demos.md, docs/ja/README.md (dormant-cadence README).
     category: "docs"
     quality_floor: "public-ization: doc audit vs code-truth (ADR-0166)"
     barrier: |-
