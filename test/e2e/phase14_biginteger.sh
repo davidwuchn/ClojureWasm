@@ -34,4 +34,19 @@ assert_eq 'biginteger_large_prints_N' \
 # Truncates toward zero like bigint (float / ratio), still printing `N`.
 assert_eq 'biginteger_truncates_float' "$("$BIN" -e '(biginteger 3.9)' 2>/dev/null | tail -1)" '3N'
 
-echo "OK — phase14_biginteger (4 cases) green"
+# --- BigInteger instance methods (D-514): abs/negate/signum/gcd/pow/mod/sqrt.
+# clj-grounded; results stay BigInteger (cljw prints `…N`).
+bm() { "$BIN" -e "$1" 2>&1 | tail -1; }
+assert_eq 'bi_abs'    "$(bm '(.abs (biginteger -7))')"                  '7N'
+assert_eq 'bi_negate' "$(bm '(.negate (biginteger 7))')"               '-7N'
+assert_eq 'bi_signum' "$(bm '(.signum (biginteger -3))')"              '-1'
+assert_eq 'bi_gcd'    "$(bm '(.gcd (biginteger 12) (biginteger 8))')"  '4N'
+assert_eq 'bi_pow'    "$(bm '(.pow (biginteger 2) 10)')"               '1024N'
+assert_eq 'bi_mod'    "$(bm '(.mod (biginteger 17) (biginteger 5))')"  '2N'
+assert_eq 'bi_mod_neg' "$(bm '(.mod (biginteger -17) (biginteger 5))')" '3N'
+assert_eq 'bi_sqrt'   "$(bm '(.sqrt (biginteger 17))')"                '4N'
+# a negative sqrt raises (JVM ArithmeticException)
+if "$BIN" -e '(.sqrt (biginteger -1))' >/dev/null 2>&1; then fail "bi_sqrt_neg: expected raise"; fi
+echo "PASS bi_sqrt_neg -> raised"
+
+echo "OK — phase14_biginteger (13 cases) green"

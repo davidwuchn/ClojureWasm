@@ -148,6 +148,9 @@ pub fn registerAll(env: *Env) !void {
     // D-420: `.numerator`/`.denominator` interop on the `.ratio` value
     // (clojure.lang.Ratio) — math.numeric-tower's floor/ceil/round/sqrt on ratios.
     try @import("../runtime/ratio_methods.zig").installNativeMethods(env.rt);
+    // java.math.BigInteger instance methods (abs/negate/signum/gcd/pow/mod/sqrt)
+    // on the `.big_int` value — number-theory / crypto dot-form interop (D-514).
+    try @import("../runtime/bigint_methods.zig").installNativeMethods(env.rt);
     // `(.matcher re s)` on the `.regex` value (java.util.regex.Pattern) —
     // clojure.core/re-matcher's body; instaparse's re-match-at-front.
     try @import("../runtime/java/util/regex/Pattern.zig").installNativeMethods(env.rt);
