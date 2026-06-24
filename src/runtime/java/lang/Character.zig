@@ -187,6 +187,116 @@ fn toStringChar(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocatio
     return string_collection.alloc(rt, buf[0..n]);
 }
 
+// Surrogate / control range predicates over a UTF-16 code unit. cljw chars
+// ARE codepoints, so a surrogate value (0xD800..0xDFFF) is held numerically
+// even though it is not a standalone Unicode scalar — the range tests still
+// hold. These functions take a char OR an int (argCodepoint).
+fn isSurrogateCp(cp: u21) bool {
+    return cp >= 0xD800 and cp <= 0xDFFF;
+}
+fn isHighSurrogateCp(cp: u21) bool {
+    return cp >= 0xD800 and cp <= 0xDBFF;
+}
+fn isLowSurrogateCp(cp: u21) bool {
+    return cp >= 0xDC00 and cp <= 0xDFFF;
+}
+fn isISOControlCp(cp: u21) bool {
+    return cp <= 0x1F or (cp >= 0x7F and cp <= 0x9F);
+}
+
+/// `Character/isSurrogate` / `isHighSurrogate` / `isLowSurrogate` /
+/// `isISOControl` — boolean range tests over a char-or-int codepoint.
+fn CpPred(comptime name: []const u8, comptime f: fn (u21) bool) type {
+    return struct {
+        fn call(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+            _ = rt;
+            _ = env;
+            try error_catalog.checkArity("Character/" ++ name, args, 1, loc);
+            const cp = try argCodepoint(args[0], "Character/" ++ name, loc);
+            return if (f(cp)) .true_val else .false_val;
+        }
+    };
+}
+
+// Codepoint validity predicates over a raw `int` (any value, so an
+// out-of-codepoint-range int is simply `false` rather than a range error —
+// `argCodepoint` would reject it). JVM reference: java.lang.Character.
+fn isBmpCp(cp: i64) bool {
+    return cp >= 0 and cp <= 0xFFFF;
+}
+fn isValidCp(cp: i64) bool {
+    return cp >= 0 and cp <= 0x10FFFF;
+}
+fn isSupplementaryCp(cp: i64) bool {
+    return cp >= 0x10000 and cp <= 0x10FFFF;
+}
+
+/// `Character/isBmpCodePoint` / `isValidCodePoint` / `isSupplementaryCodePoint`
+/// — boolean tests over a raw `int` codepoint (no range error).
+fn IntCpPred(comptime name: []const u8, comptime f: fn (i64) bool) type {
+    return struct {
+        fn call(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+            _ = rt;
+            _ = env;
+            try error_catalog.checkArity("Character/" ++ name, args, 1, loc);
+            const cp = try error_catalog.expectInteger(args[0], "Character/" ++ name, loc);
+            return if (f(cp)) .true_val else .false_val;
+        }
+    };
+}
+
+/// `(Character/charCount cp)` — UTF-16 code units for `cp`: 2 for a
+/// supplementary codepoint (≥ 0x10000), else 1. JVM ref: Character#charCount.
+fn charCount(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = rt;
+    _ = env;
+    try error_catalog.checkArity("Character/charCount", args, 1, loc);
+    const cp = try error_catalog.expectInteger(args[0], "Character/charCount", loc);
+    return Value.initInteger(if (cp >= 0x10000) 2 else 1);
+}
+
+/// `(Character/highSurrogate cp)` / `lowSurrogate cp` — the high / low UTF-16
+/// surrogate char for a supplementary codepoint, via Java's bit formulas
+/// (`(cp >>> 10) + 0xD7C0` and `(cp & 0x3FF) + 0xDC00`). JVM reference:
+/// java.lang.Character#highSurrogate / #lowSurrogate.
+fn highSurrogate(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = rt;
+    _ = env;
+    try error_catalog.checkArity("Character/highSurrogate", args, 1, loc);
+    const cp: u64 = @bitCast(@as(i64, try error_catalog.expectInteger(args[0], "Character/highSurrogate", loc)));
+    return Value.initChar(@as(u16, @truncate((cp >> 10) + 0xD7C0)));
+}
+fn lowSurrogate(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = rt;
+    _ = env;
+    try error_catalog.checkArity("Character/lowSurrogate", args, 1, loc);
+    const cp: u64 = @bitCast(@as(i64, try error_catalog.expectInteger(args[0], "Character/lowSurrogate", loc)));
+    return Value.initChar(@as(u16, @truncate((cp & 0x3FF) + 0xDC00)));
+}
+
+/// `(Character/toCodePoint high low)` — combine a high + low surrogate char
+/// pair into the supplementary codepoint. JVM ref: Character#toCodePoint.
+fn toCodePoint(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = rt;
+    _ = env;
+    try error_catalog.checkArity("Character/toCodePoint", args, 2, loc);
+    const high = try argCodepoint(args[0], "Character/toCodePoint", loc);
+    const low = try argCodepoint(args[1], "Character/toCodePoint", loc);
+    const cp: i64 = 0x10000 + (@as(i64, high) - 0xD800) * 1024 + (@as(i64, low) - 0xDC00);
+    return Value.initInteger(cp);
+}
+
+/// `(Character/isSurrogatePair high low)` — `high` is a high surrogate AND
+/// `low` is a low surrogate. JVM reference: Character#isSurrogatePair.
+fn isSurrogatePair(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = rt;
+    _ = env;
+    try error_catalog.checkArity("Character/isSurrogatePair", args, 2, loc);
+    const high = try argCodepoint(args[0], "Character/isSurrogatePair", loc);
+    const low = try argCodepoint(args[1], "Character/isSurrogatePair", loc);
+    return if (isHighSurrogateCp(high) and isLowSurrogateCp(low)) .true_val else .false_val;
+}
+
 fn initCharacter(td: *type_descriptor.TypeDescriptor, gpa: std.mem.Allocator) anyerror!void {
     if (td.method_table.len != 0) return; // idempotent re-run
     const specs = .{
@@ -205,6 +315,18 @@ fn initCharacter(td: *type_descriptor.TypeDescriptor, gpa: std.mem.Allocator) an
         .{ "toChars", &toChars },
         .{ "isAlphabetic", &isAlphabetic },
         .{ "toString", &toStringChar },
+        .{ "charCount", &charCount },
+        .{ "isSurrogate", &CpPred("isSurrogate", isSurrogateCp).call },
+        .{ "isHighSurrogate", &CpPred("isHighSurrogate", isHighSurrogateCp).call },
+        .{ "isLowSurrogate", &CpPred("isLowSurrogate", isLowSurrogateCp).call },
+        .{ "isISOControl", &CpPred("isISOControl", isISOControlCp).call },
+        .{ "isBmpCodePoint", &IntCpPred("isBmpCodePoint", isBmpCp).call },
+        .{ "isValidCodePoint", &IntCpPred("isValidCodePoint", isValidCp).call },
+        .{ "isSupplementaryCodePoint", &IntCpPred("isSupplementaryCodePoint", isSupplementaryCp).call },
+        .{ "highSurrogate", &highSurrogate },
+        .{ "lowSurrogate", &lowSurrogate },
+        .{ "toCodePoint", &toCodePoint },
+        .{ "isSurrogatePair", &isSurrogatePair },
     };
     const entries = try gpa.alloc(type_descriptor.TypeDescriptor.MethodEntry, specs.len);
     inline for (specs, 0..) |spec, i| {

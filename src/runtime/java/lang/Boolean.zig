@@ -92,6 +92,27 @@ fn Logical(comptime op: LogicalKind, comptime name: []const u8) type {
     };
 }
 
+/// `(Boolean/compare a b)` — `(a == b) ? 0 : (a ? 1 : -1)`, so `false` sorts
+/// before `true`. JVM reference: java.lang.Boolean#compare.
+fn compare(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = rt;
+    _ = env;
+    try error_catalog.checkArity("Boolean/compare", args, 2, loc);
+    const a = try argBool(args[0], "Boolean/compare", loc);
+    const b = try argBool(args[1], "Boolean/compare", loc);
+    return Value.initInteger(if (a == b) 0 else if (a) 1 else -1);
+}
+
+/// `(Boolean/hashCode b)` — Java's specified constants: `true` → 1231,
+/// `false` → 1237. JVM reference: java.lang.Boolean#hashCode.
+fn hashCode(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = rt;
+    _ = env;
+    try error_catalog.checkArity("Boolean/hashCode", args, 1, loc);
+    const b = try argBool(args[0], "Boolean/hashCode", loc);
+    return Value.initInteger(if (b) 1231 else 1237);
+}
+
 fn initBoolean(td: *type_descriptor.TypeDescriptor, gpa: std.mem.Allocator) anyerror!void {
     if (td.method_table.len != 0) return; // idempotent re-run
     const specs = .{
@@ -101,6 +122,8 @@ fn initBoolean(td: *type_descriptor.TypeDescriptor, gpa: std.mem.Allocator) anye
         .{ "logicalAnd", &Logical(.land, "logicalAnd").call },
         .{ "logicalOr", &Logical(.lor, "logicalOr").call },
         .{ "logicalXor", &Logical(.lxor, "logicalXor").call },
+        .{ "compare", &compare },
+        .{ "hashCode", &hashCode },
     };
     const entries = try gpa.alloc(type_descriptor.TypeDescriptor.MethodEntry, specs.len);
     inline for (specs, 0..) |spec, i| {

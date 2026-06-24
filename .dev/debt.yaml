@@ -102,6 +102,15 @@ active:
       parseUnsigned leaf). All happy + error paths match clj (ArithmeticException
       / IllegalArgumentException / NumberFormatException classes align). Corpus:
       test/diff/clj_corpus/unsigned_int_statics.txt (24 golden pairs).
+      DRAIN 3 (2026-06-25): the Character surrogate/codePoint cluster + Boolean.
+      Added Character/{charCount,isSurrogate,isHighSurrogate,isLowSurrogate,
+      isSurrogatePair,highSurrogate,lowSurrogate,toCodePoint,isBmpCodePoint,
+      isValidCodePoint,isSupplementaryCodePoint,isISOControl} (pure Unicode-spec
+      arithmetic, no Unicode-DB lookup) + Boolean/{compare,hashCode}. cljw chars
+      ARE codepoints so surrogate values hold numerically (matches clj). Corpus:
+      test/diff/clj_corpus/char_codepoint_bool_statics.txt (27 golden pairs).
+      DEFERRED (Unicode-DB-heavy, low ROI): Character/{getType,isDefined,
+      isMirrored,isJavaIdentifierStart,…} need the full Unicode database.
     category: "interop"
     quality_floor: "public-ization: java-interop static-member gaps (ADR-0166)"
     barrier: |-

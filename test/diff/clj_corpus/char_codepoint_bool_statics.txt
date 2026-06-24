@@ -1,0 +1,54 @@
+(Character/charCount 65)
+;;=> 1
+(Character/charCount 128512)
+;;=> 2
+(Character/isSurrogate (char 0xD800))
+;;=> true
+(Character/isSurrogate \a)
+;;=> false
+(Character/isHighSurrogate (char 0xD800))
+;;=> true
+(Character/isHighSurrogate (char 0xDC00))
+;;=> false
+(Character/isLowSurrogate (char 0xDC00))
+;;=> true
+(Character/isSurrogatePair (char 0xD83D) (char 0xDE00))
+;;=> true
+(Character/isSurrogatePair (char 0xD83D) \a)
+;;=> false
+(int (Character/highSurrogate 128512))
+;;=> 55357
+(int (Character/lowSurrogate 128512))
+;;=> 56832
+(Character/toCodePoint (char 0xD83D) (char 0xDE00))
+;;=> 128512
+(Character/isBmpCodePoint 65)
+;;=> true
+(Character/isBmpCodePoint 128512)
+;;=> false
+(Character/isValidCodePoint 65)
+;;=> true
+(Character/isValidCodePoint 1114112)
+;;=> false
+(Character/isValidCodePoint -1)
+;;=> false
+(Character/isSupplementaryCodePoint 128512)
+;;=> true
+(Character/isSupplementaryCodePoint 65)
+;;=> false
+(Character/isISOControl (char 9))
+;;=> true
+(Character/isISOControl \a)
+;;=> false
+(Character/isISOControl (char 0x85))
+;;=> true
+(Boolean/compare true false)
+;;=> 1
+(Boolean/compare false true)
+;;=> -1
+(Boolean/compare true true)
+;;=> 0
+(Boolean/hashCode true)
+;;=> 1231
+(Boolean/hashCode false)
+;;=> 1237
