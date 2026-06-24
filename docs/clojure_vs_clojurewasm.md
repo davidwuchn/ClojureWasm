@@ -142,14 +142,16 @@ The concurrency surface is complete (`future` / `promise` / `delay`, full STM
 with error modes — `agent-error` / `restart-agent` / `set-error-handler!` /
 `agent-errors` / `clear-agent-errors` — reference **watches** — `add-watch` /
 `remove-watch` fire uniformly across atoms, agents, refs and vars —
-**validators** — `set-validator!` / `get-validator` on atoms, agents, refs and
-vars — `await` / `await-for`, `shutdown-agents`, `locking`, `volatile`, real
-threads, `Thread/sleep`). The one lower-frequency gap:
+`await` / `await-for`, `shutdown-agents`, `locking`, `volatile`, real threads,
+`Thread/sleep`). The lower-frequency tail:
 
-- the **reference-constructor option map** — `(ref v :validator f)` /
-  `:min-history` / `:max-history` (clj's `ref` accepts these; cljw's `ref` ctor
-  does not yet — use `(doto (ref v) (set-validator! f))` instead). `(atom v
-  :validator f)` / `(agent v :validator f)` already work.
+- **validators** are wired on **atoms and agents** (`set-validator!` /
+  `get-validator`, and the `(atom v :validator f)` / `(agent v :validator f)`
+  ctor option); `ref` and `var` validators are not yet wired (`set-validator!`
+  on a ref/var errors "expected atom or agent")
+- the **`ref` constructor option map** — `(ref v :validator f)` /
+  `:min-history` / `:max-history` — is not accepted (clj's `ref` does); pair it
+  with the validator-on-refs gap above
 
 ### JVM-only surface (deferred or permanently out of scope)
 
