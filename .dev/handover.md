@@ -9,20 +9,22 @@
   **and** push (CLAUDE.md § atomic Step 6). `build.zig.zon` `.zwasm` = tag pin
   `v2.0.0-alpha.3`.
 - **First commit on resume MUST be**: **RE-MEASURE the cross-lang benches on a QUIET Mac**
-  (`bash bench/compare_langs.sh --yaml=bench/cross-lang-latest.yaml` + regen README) — the
-  cold-start arc just cut the floor **9.4→4.3ms** (ADR-0162), which should sharply improve
-  every cold bench, especially **sieve** (the floor-sensitive top gap) + the cheap benches.
-  The D-450 gap list is now STALE; re-rank from the fresh numbers. The cold-start arc is
-  DONE: D-140 footer-seek (74970240) + **D-516 lazy-namespace bytecode (0f159228, ADR-0163)** —
-  eager = clj's no-`require` set (SSOT `bootstrap.EAGER_NS`), rest lazy via region replay =
-  strict clj-parity; floor 9.4→4.3ms. **OPTIONAL next levers** after the re-measure: D-517
-  zero-copy in-place deserialize (now LOWER value — lazy cut the bulk; the eager set's
-  deserialize is only ~0.8ms; the region blob is already D-517-ready) · D-518 heap-snapshot
-  (DEFERRED to the moving-GC unit) · the residual D-450 compute gaps (gc_alloc_rate/string_ops/
-  etc. — re-confirm on the quiet re-measure). **GUARDRAIL**: never Zig-ify the .clj bootstrap
-  (cljw-v0 rut). Plan: `private/notes/9.2.S-coldstart-architecture-20260624.md` +
-  `private/notes/D516-lazy-ns-survey.md`; decisions ADR-0162 / ADR-0163 (DA folded). D-515
-  binary-size axis (standing).
+  (`bash bench/compare_langs.sh --yaml=bench/cross-lang-latest.yaml` + regen README) to make
+  the new rankings authoritative — THEN attack the surviving gap. The cold-start arc
+  (D-140 footer-seek 74970240 + **D-516 lazy-namespace bytecode 0f159228+4b4f20c9, ADR-0162/
+  0163**) cut the floor **9.4→4.3ms** and a focused re-check (load ~9, RELATIVE valid) shows
+  it CLOSED **7 of the 9 D-450 gaps** — cljw now FASTEST on sieve/nested_update/
+  map_filter_reduce/gc_large_heap/string_ops/destructure/bigint_factorial; json_parse
+  borderline (~1.07× py). **ONLY `gc_alloc_rate` remains a clear gap** (cljw 45.3 / bb 39.9 =
+  1.14×, GC-bound not floor-bound). fastest-script ~19/30→~27/30. **Next lever = gc_alloc_rate**,
+  SURVEYED (note §"gc_alloc_rate lever survey"): smallest-lever = single-threaded alloc
+  fast-path — elide the per-alloc `gc_mutex` when no worker is registered
+  (`root_set.is_registered_worker`) + a size-class free-list vs the FreePoolKey hashmap; NOT
+  the generational rewrite (gc_large_heap already closed). Correctness-sensitive GC change →
+  fresh unit + measure on a quiet Mac (1.14× may differ). D-517 zero-copy = LOW value now
+  (lazy cut the bulk). D-518 heap-snapshot DEFERRED to the moving-GC unit. **GUARDRAIL**:
+  never Zig-ify the .clj bootstrap. Plans: `private/notes/9.2.S-coldstart-architecture-20260624.md`
+  + `D516-lazy-ns-survey.md`. D-515 binary-size axis (standing).
 - **Forbidden this session**: bare `zig build test` WITHOUT `-Dwasm` (false fails —
   `zig_build_test_needs_dwasm`); bare `zig build` for a probe (ADR-0133 — ReleaseSafe).
 
