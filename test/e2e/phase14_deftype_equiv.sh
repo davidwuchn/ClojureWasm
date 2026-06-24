@@ -65,5 +65,17 @@ EOF
 )
 assert_eq 'deftype_mapequivalence_symmetric' "$got" '[true true false true true false]'
 
+# `(set? x)` is `(instance? clojure.lang.IPersistentSet x)`, so a deftype
+# implementing IPersistentSet (e.g. an ordered set) answers true — the
+# parallel of the map?/sorted? deftype-recognition fixes. Native sets stay
+# true; a map / vector stay false.
+got=$("$BIN" - <<'EOF' 2>/dev/null
+(deftype DSet [s]
+  clojure.lang.IPersistentSet (seq [_] (seq s)) (contains [_ k] (contains? s k)))
+(prn [(set? (->DSet #{1})) (set? #{1 2}) (set? (sorted-set 1)) (set? {:a 1}) (set? [1 2])])
+EOF
+)
+assert_eq 'deftype_set_pred' "$got" '[true true true false false]'
+
 echo
 echo "Cross-type deftype equiv (D-377 = facet) e2e: all green."

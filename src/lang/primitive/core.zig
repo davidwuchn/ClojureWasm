@@ -282,7 +282,13 @@ pub fn setQ(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) a
     _ = env;
     try error_catalog.checkArity("set?", args, 1, loc);
     const t = args[0].tag();
-    return if (t == .hash_set or t == .sorted_set) .true_val else .false_val;
+    if (t == .hash_set or t == .sorted_set) return .true_val;
+    // A deftype/reify implementing clojure.lang.IPersistentSet is a set in clj
+    // ((set? x) == (instance? clojure.lang.IPersistentSet x)) — e.g. an ordered
+    // set. Mirrors the map?/sorted? deftype-membership fixes.
+    if ((t == .typed_instance or t == .reified_instance) and
+        class_name.isInstance(args[0], "clojure.lang.IPersistentSet")) return .true_val;
+    return .false_val;
 }
 
 /// Implements clojure.core/record?.
