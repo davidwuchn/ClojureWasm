@@ -1,9 +1,11 @@
 ;; cljw.json — handy JSON, require-able under the cljw.* namespace (ADR-0126
 ;; Cycle 7, user-requested). A THIN wrapper over clojure.data.json (the neutral
 ;; parse/emit impl lives in lang/primitive/json.zig per F-009 — this never
-;; forks it) plus map<->JSON convenience. Eager-loaded after clojure.data.json +
-;; clojure.walk.
-(ns cljw.json)
+;; forks it) plus map<->JSON convenience. Requires clojure.data.json +
+;; clojure.walk (declared below).
+(ns cljw.json
+  (:require [clojure.data.json]
+            [clojure.walk]))
 
 ;; Re-exports (so `(require '[cljw.json :as json])` gives the data.json surface).
 (def write-str clojure.data.json/write-str)

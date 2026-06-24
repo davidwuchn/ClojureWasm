@@ -4,7 +4,8 @@
 ;; runtime/file_io.zig + runtime/java/io/File.zig per F-009 — this never forks
 ;; it). Predicates/ops take a path String or a java.io.File. FS-jail aware (the
 ;; underlying File methods route through the deploy jail).
-(ns cljw.fs)
+(ns cljw.fs
+  (:require [clojure.java.io]))
 
 (defn file
   "A java.io.File from one or more path segments (parent + children)."

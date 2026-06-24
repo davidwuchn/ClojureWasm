@@ -16,7 +16,9 @@
 ;; Pattern A (`(def name (fn* ...))`); `diff` is forward-declared two-step so
 ;; the helpers' mutual recursion through it resolves (cw v1 has no `declare`).
 
-(ns clojure.data (:refer-clojure))
+(ns clojure.data
+  (:refer-clojure)
+  (:require [clojure.set]))
 
 ;; forward declaration — diff-associative-key recurses through diff.
 (def diff nil)

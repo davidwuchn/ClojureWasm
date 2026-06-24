@@ -20,7 +20,10 @@
 ;; cause trace — both are AD-041. Deferred: per-var lifecycle events
 ;; (begin/end-test-var, end-test-ns), use-fixtures, with-test.
 
-(ns clojure.test (:refer-clojure))
+(ns clojure.test
+  (:refer-clojure)
+  (:require [clojure.string]
+            [clojure.walk]))
 
 ;; ---------------------------------------------------------------------------
 ;; State: report counters (dynamic, an atom) + the per-ns registry.

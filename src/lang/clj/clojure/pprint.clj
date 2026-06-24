@@ -17,7 +17,8 @@
 ;; deferred — they require a non-trivial formatting DSL impl that
 ;; lands when needed.
 (ns clojure.pprint
-  (:refer-clojure))
+  (:refer-clojure)
+  (:require [clojure.string]))
 
 ;; Dispatch surface (D-402). cljw has no width-aware indenter / code-specific
 ;; formatter, so both dispatches are the SAME pr-readable single-line printer (a
