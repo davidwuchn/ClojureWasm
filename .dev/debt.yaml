@@ -172,7 +172,11 @@ active:
       CLEAN (matches clj). So 3/5 yielded contained fixes (all landed + corpus),
       2/5 clean; the deep/fuzzy residue is D-530/D-531/D-532. Repeatable: pick
       another lib next /continue (a self-contained-test lib avoids transitive deps
-      — data.zip's XML test needed the un-cloned data.xml).
+      — data.zip's XML test needed the un-cloned data.xml). 6th attempt: tools.reader
+      does NOT load — `reader_types.clj` needs `clojure.lang.LineNumberingPushbackReader`,
+      a JVM stateful reader class cljw has no surface for (cljw's reader is native,
+      not PushbackReader-based). Supporting JVM-reader-class-coupled libs is a meaty
+      distal interop unit, not a contained fix; deprioritized (cljw is not the JVM).
     category: "clj-parity"
     quality_floor: "public-ization: real-library deps.edn usage (ADR-0166)"
     barrier: |-
