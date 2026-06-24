@@ -117,6 +117,10 @@ pub const Stats = struct {
     collect_count: u64 = 0,
     sweep_count: u64 = 0,
     last_live_bytes: usize = 0,
+    /// Diagnostic (gc_alloc_rate lever, D-450): allocs served by reusing a freed
+    /// block from the free pool (vs a fresh `rawAlloc`/malloc). pool_hits/alloc_count
+    /// = the reuse rate — a low rate means same-size churn is re-malloc'ing.
+    pool_hits: u64 = 0,
 };
 
 /// Per-allocation record on the GcHeap live list. Stores the type-
@@ -212,6 +216,18 @@ pub const GcHeap = struct {
     }
 
     pub fn deinit(self: *GcHeap) void {
+        // Diagnostic (gc_alloc_rate lever, D-450): CLJW_GC_STATS=1 prints the
+        // alloc/reuse/collect tallies to stderr at teardown — load-INDEPENDENT
+        // (counts, not timing), so the free-pool reuse rate is measurable even
+        // under host load. Off by default = one null-check.
+        if (@import("../process_env.zig").get("CLJW_GC_STATS") != null) {
+            const s = self.stats;
+            std.debug.print("[gc-stats] allocs={d} pool_hits={d} mallocs={d} reuse={d}% collects={d} sweeps={d} bytes_alloc={d}\n", .{
+                s.alloc_count, s.pool_hits, s.alloc_count - s.pool_hits,
+                if (s.alloc_count > 0) s.pool_hits * 100 / s.alloc_count else 0,
+                s.collect_count, s.sweep_count, s.bytes_allocated,
+            });
+        }
         // Drain every live allocation back to infra. Calls the per-tag
         // finaliser before rawFree so types that own non-GC resources
         // (String.bytes / BigInt limbs / wasm_module references) get
@@ -383,7 +399,10 @@ pub const GcHeap = struct {
 
         const key = free_pool_mod.FreePoolKey{ .size = effective_size, .alignment = align_t };
 
-        const raw: [*]u8 = self.free_pools.pop(key) orelse blk: {
+        const raw: [*]u8 = if (self.free_pools.pop(key)) |reused| reuse: {
+            self.stats.pool_hits += 1; // diagnostic: served from the free pool (no malloc)
+            break :reuse reused;
+        } else blk: {
             const fresh = self.infra.rawAlloc(effective_size, align_t, @returnAddress()) orelse
                 return error.OutOfMemory;
             break :blk fresh;
