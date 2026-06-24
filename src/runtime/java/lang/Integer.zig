@@ -206,10 +206,108 @@ fn BinOp2(comptime op: Binop, comptime name: []const u8) type {
     };
 }
 
+/// `(Integer/parseUnsignedInt s)` / `(… s radix)` — parse the FULL unsigned
+/// 32-bit range, so `"4294967295"` (u32 max) yields the int `-1` (its
+/// two's-complement bit pattern, matching JVM). Malformed / out-of-range ⇒
+/// NumberFormatException. Radix defaults to 10, must be 2..36.
+fn parseUnsignedInt(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = rt;
+    _ = env;
+    if (args.len < 1 or args.len > 2)
+        return error_catalog.raise(.arity_out_of_range, loc, .{ .fn_name = "Integer/parseUnsignedInt", .got = args.len, .min = 1, .max = 2 });
+    if (args[0].tag() != .string)
+        return error_catalog.raise(.type_arg_not_string, loc, .{ .fn_name = "Integer/parseUnsignedInt", .actual = @tagName(args[0].tag()) });
+    const s = string_mod.asString(args[0]);
+    var radix: u8 = 10;
+    if (args.len == 2) {
+        const r = try error_catalog.expectInteger(args[1], "Integer/parseUnsignedInt", loc);
+        if (r < 2 or r > 36)
+            return error_catalog.raise(.number_format_invalid, loc, .{ .fn_name = "Integer/parseUnsignedInt", .text = s });
+        radix = @intCast(r);
+    }
+    const u = parse.parseUnsigned(u32, s, radix) catch
+        return error_catalog.raise(.number_format_invalid, loc, .{ .fn_name = "Integer/parseUnsignedInt", .text = s });
+    return Value.initInteger(@as(i64, @as(i32, @bitCast(u))));
+}
+
+/// `(Integer/sum a b)` — `a + b` at `int` width, WRAPPING on overflow (two's
+/// complement), unlike cljw's `+` (F-005). JVM reference: java.lang.Integer#sum.
+fn sum(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = rt;
+    _ = env;
+    try error_catalog.checkArity("Integer/sum", args, 2, loc);
+    const a: i32 = @truncate(try error_catalog.expectInteger(args[0], "Integer/sum", loc));
+    const b: i32 = @truncate(try error_catalog.expectInteger(args[1], "Integer/sum", loc));
+    return Value.initInteger(@as(i64, a +% b));
+}
+
+/// `Integer/divideUnsigned` / `remainderUnsigned` — both operands viewed as
+/// unsigned 32-bit; divide-by-zero throws. JVM ref: java.lang.Integer.
+fn UnsignedDiv(comptime is_rem: bool, comptime name: []const u8) type {
+    return struct {
+        fn call(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+            _ = rt;
+            _ = env;
+            try error_catalog.checkArity("Integer/" ++ name, args, 2, loc);
+            const a: u32 = @truncate(@as(u64, @bitCast(@as(i64, try error_catalog.expectInteger(args[0], "Integer/" ++ name, loc)))));
+            const b: u32 = @truncate(@as(u64, @bitCast(@as(i64, try error_catalog.expectInteger(args[1], "Integer/" ++ name, loc)))));
+            if (b == 0) return error_catalog.raise(.divide_by_zero, loc, .{});
+            const r = if (is_rem) a % b else a / b;
+            return Value.initInteger(@as(i64, @as(i32, @bitCast(r))));
+        }
+    };
+}
+
+/// `(Integer/compareUnsigned a b)` — the sign of an UNSIGNED 32-bit comparison
+/// (-1/0/1). JVM reference: java.lang.Integer#compareUnsigned.
+fn compareUnsigned(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = rt;
+    _ = env;
+    try error_catalog.checkArity("Integer/compareUnsigned", args, 2, loc);
+    const a: u32 = @truncate(@as(u64, @bitCast(@as(i64, try error_catalog.expectInteger(args[0], "Integer/compareUnsigned", loc)))));
+    const b: u32 = @truncate(@as(u64, @bitCast(@as(i64, try error_catalog.expectInteger(args[1], "Integer/compareUnsigned", loc)))));
+    return Value.initInteger(if (a < b) -1 else if (a > b) 1 else 0);
+}
+
+/// `(Integer/toUnsignedLong n)` — the int's low 32 bits as an UNSIGNED `long`,
+/// so `(Integer/toUnsignedLong -1)` is 4294967295. JVM ref: java.lang.Integer.
+fn toUnsignedLong(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = rt;
+    _ = env;
+    try error_catalog.checkArity("Integer/toUnsignedLong", args, 1, loc);
+    const u: u32 = @truncate(@as(u64, @bitCast(@as(i64, try error_catalog.expectInteger(args[0], "Integer/toUnsignedLong", loc)))));
+    return Value.initInteger(@as(i64, u));
+}
+
+/// `(Integer/toUnsignedString n)` / `(… n radix)` — render the int's low 32
+/// bits as an UNSIGNED integer in `radix` (default 10; a radix outside 2..36
+/// falls back to 10). JVM reference: java.lang.Integer#toUnsignedString.
+fn toUnsignedString(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = env;
+    if (args.len < 1 or args.len > 2)
+        return error_catalog.raise(.arity_out_of_range, loc, .{ .fn_name = "Integer/toUnsignedString", .got = args.len, .min = 1, .max = 2 });
+    const u: u32 = @truncate(@as(u64, @bitCast(@as(i64, try error_catalog.expectInteger(args[0], "Integer/toUnsignedString", loc)))));
+    var radix: u8 = 10;
+    if (args.len == 2) {
+        const r = try error_catalog.expectInteger(args[1], "Integer/toUnsignedString", loc);
+        if (r >= 2 and r <= 36) radix = @intCast(r);
+    }
+    var buf: [40]u8 = undefined;
+    const len = std.fmt.printInt(&buf, u, radix, .lower, .{});
+    return string_mod.alloc(rt, buf[0..len]);
+}
+
 fn initInteger(td: *type_descriptor.TypeDescriptor, gpa: std.mem.Allocator) anyerror!void {
     if (td.method_table.len != 0) return; // idempotent re-run
     const specs = .{
         .{ "parseInt", &parseInt },
+        .{ "parseUnsignedInt", &parseUnsignedInt },
+        .{ "sum", &sum },
+        .{ "divideUnsigned", &UnsignedDiv(false, "divideUnsigned").call },
+        .{ "remainderUnsigned", &UnsignedDiv(true, "remainderUnsigned").call },
+        .{ "compareUnsigned", &compareUnsigned },
+        .{ "toUnsignedLong", &toUnsignedLong },
+        .{ "toUnsignedString", &toUnsignedString },
         .{ "compare", &BinOp2(.compare, "compare").call },
         .{ "max", &BinOp2(.max, "max").call },
         .{ "min", &BinOp2(.min, "min").call },

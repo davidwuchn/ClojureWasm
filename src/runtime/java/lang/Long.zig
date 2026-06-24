@@ -199,10 +199,98 @@ fn BinOp2(comptime op: Binop, comptime name: []const u8) type {
     };
 }
 
+/// `(Long/parseUnsignedLong s)` / `(… s radix)` — parse the FULL unsigned
+/// 64-bit range, so `"18446744073709551615"` (u64 max) yields the long `-1`
+/// (its two's-complement bit pattern, matching JVM). Malformed / out-of-range
+/// ⇒ NumberFormatException. Radix defaults to 10, must be 2..36.
+fn parseUnsignedLong(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = env;
+    if (args.len < 1 or args.len > 2)
+        return error_catalog.raise(.arity_out_of_range, loc, .{ .fn_name = "Long/parseUnsignedLong", .got = args.len, .min = 1, .max = 2 });
+    if (args[0].tag() != .string)
+        return error_catalog.raise(.type_arg_not_string, loc, .{ .fn_name = "Long/parseUnsignedLong", .actual = @tagName(args[0].tag()) });
+    const s = string_mod.asString(args[0]);
+    var radix: u8 = 10;
+    if (args.len == 2) {
+        const r = try error_catalog.expectInteger(args[1], "Long/parseUnsignedLong", loc);
+        if (r < 2 or r > 36)
+            return error_catalog.raise(.number_format_invalid, loc, .{ .fn_name = "Long/parseUnsignedLong", .text = s });
+        radix = @intCast(r);
+    }
+    const u = parse.parseUnsigned(u64, s, radix) catch
+        return error_catalog.raise(.number_format_invalid, loc, .{ .fn_name = "Long/parseUnsignedLong", .text = s });
+    return promote.wrapI64(rt, @bitCast(u));
+}
+
+/// `(Long/sum a b)` — `a + b` at `long` width, WRAPPING on overflow (two's
+/// complement), unlike cljw's `+` which auto-promotes (F-005). JVM's
+/// `Long.sum` is a plain primitive add. JVM reference: java.lang.Long#sum.
+fn sum(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = env;
+    try error_catalog.checkArity("Long/sum", args, 2, loc);
+    const a = try error_catalog.expectI64(args[0], "Long/sum", loc);
+    const b = try error_catalog.expectI64(args[1], "Long/sum", loc);
+    return promote.wrapI64(rt, a +% b);
+}
+
+/// `Long/divideUnsigned` / `remainderUnsigned` — both operands viewed as
+/// unsigned 64-bit; divide-by-zero throws (ArithmeticException). JVM ref:
+/// java.lang.Long#divideUnsigned / #remainderUnsigned.
+fn UnsignedDiv(comptime is_rem: bool, comptime name: []const u8) type {
+    return struct {
+        fn call(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+            _ = env;
+            try error_catalog.checkArity("Long/" ++ name, args, 2, loc);
+            const a: u64 = @bitCast(try error_catalog.expectI64(args[0], "Long/" ++ name, loc));
+            const b: u64 = @bitCast(try error_catalog.expectI64(args[1], "Long/" ++ name, loc));
+            if (b == 0) return error_catalog.raise(.divide_by_zero, loc, .{});
+            const r = if (is_rem) a % b else a / b;
+            return promote.wrapI64(rt, @bitCast(r));
+        }
+    };
+}
+
+/// `(Long/compareUnsigned a b)` — the sign of an UNSIGNED 64-bit comparison
+/// (-1/0/1), so `(Long/compareUnsigned -1 1)` is 1 (u64 max > 1). JVM ref:
+/// java.lang.Long#compareUnsigned.
+fn compareUnsigned(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = rt;
+    _ = env;
+    try error_catalog.checkArity("Long/compareUnsigned", args, 2, loc);
+    const a: u64 = @bitCast(try error_catalog.expectI64(args[0], "Long/compareUnsigned", loc));
+    const b: u64 = @bitCast(try error_catalog.expectI64(args[1], "Long/compareUnsigned", loc));
+    return Value.initInteger(if (a < b) -1 else if (a > b) 1 else 0);
+}
+
+/// `(Long/toUnsignedString n)` / `(… n radix)` — render the value's full 64
+/// bits as an UNSIGNED integer in `radix` (default 10; a radix outside 2..36
+/// falls back to 10 per Java). So `(Long/toUnsignedString -1)` is
+/// `"18446744073709551615"`. JVM reference: java.lang.Long#toUnsignedString.
+fn toUnsignedString(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = env;
+    if (args.len < 1 or args.len > 2)
+        return error_catalog.raise(.arity_out_of_range, loc, .{ .fn_name = "Long/toUnsignedString", .got = args.len, .min = 1, .max = 2 });
+    const u: u64 = @bitCast(try error_catalog.expectI64(args[0], "Long/toUnsignedString", loc));
+    var radix: u8 = 10;
+    if (args.len == 2) {
+        const r = try error_catalog.expectInteger(args[1], "Long/toUnsignedString", loc);
+        if (r >= 2 and r <= 36) radix = @intCast(r);
+    }
+    var buf: [70]u8 = undefined;
+    const len = std.fmt.printInt(&buf, u, radix, .lower, .{});
+    return string_mod.alloc(rt, buf[0..len]);
+}
+
 fn initLong(td: *type_descriptor.TypeDescriptor, gpa: std.mem.Allocator) anyerror!void {
     if (td.method_table.len != 0) return; // idempotent re-run
     const specs = .{
         .{ "parseLong", &parseLong },
+        .{ "parseUnsignedLong", &parseUnsignedLong },
+        .{ "sum", &sum },
+        .{ "divideUnsigned", &UnsignedDiv(false, "divideUnsigned").call },
+        .{ "remainderUnsigned", &UnsignedDiv(true, "remainderUnsigned").call },
+        .{ "compareUnsigned", &compareUnsigned },
+        .{ "toUnsignedString", &toUnsignedString },
         .{ "compare", &BinOp2(.compare, "compare").call },
         .{ "max", &BinOp2(.max, "max").call },
         .{ "min", &BinOp2(.min, "min").call },

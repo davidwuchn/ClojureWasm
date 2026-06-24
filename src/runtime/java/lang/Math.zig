@@ -459,6 +459,51 @@ fn toIntExact(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation)
     return promote.wrapI64(rt, a);
 }
 
+/// `Math/absExact a` — `|a|` with i64 overflow detection: `Long.MIN_VALUE`
+/// has no positive i64 counterpart and throws ArithmeticException (catalog
+/// `integer_overflow`). JVM reference: java.lang.Math#absExact (JDK15).
+fn absExact(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = env;
+    try error_catalog.checkArity("Math/absExact", args, 1, loc);
+    const a = try exactArg(args[0], "absExact", loc);
+    if (a == std.math.minInt(i64)) return error_catalog.raise(.integer_overflow, loc, .{});
+    return promote.wrapI64(rt, if (a < 0) -a else a);
+}
+
+/// `(Math/multiplyHigh a b)` — the high 64 bits of the full 128-bit signed
+/// product `a × b`. JVM reference: java.lang.Math#multiplyHigh (JDK9).
+fn multiplyHigh(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = env;
+    try error_catalog.checkArity("Math/multiplyHigh", args, 2, loc);
+    const a = try exactArg(args[0], "multiplyHigh", loc);
+    const b = try exactArg(args[1], "multiplyHigh", loc);
+    const prod: i128 = @as(i128, a) * @as(i128, b);
+    return promote.wrapI64(rt, @truncate(prod >> 64));
+}
+
+/// `(Math/clamp value min max)` — clamp `value` into `[min, max]`: `min` when
+/// `value < min`, `max` when `value > max`, else `value`. Long form when all
+/// three are integers, double form when any is a float (the int args widen),
+/// matching JDK21's overload set. `min > max` throws IllegalArgumentException.
+/// JVM reference: java.lang.Math#clamp.
+fn clamp(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = env;
+    try error_catalog.checkArity("Math/clamp", args, 3, loc);
+    const any_float = args[0].tag() == .float or args[1].tag() == .float or args[2].tag() == .float;
+    if (any_float) {
+        const v = try error_catalog.expectNumber(args[0], "Math/clamp", loc);
+        const lo = try error_catalog.expectNumber(args[1], "Math/clamp", loc);
+        const hi = try error_catalog.expectNumber(args[2], "Math/clamp", loc);
+        if (lo > hi) return error_catalog.raise(.arg_value_invalid, loc, .{ .fn_name = "Math/clamp", .expected = "min <= max", .actual = "min > max" });
+        return Value.initFloat(if (v < lo) lo else if (v > hi) hi else v);
+    }
+    const v = try exactArg(args[0], "clamp", loc);
+    const lo = try exactArg(args[1], "clamp", loc);
+    const hi = try exactArg(args[2], "clamp", loc);
+    if (lo > hi) return error_catalog.raise(.arg_value_invalid, loc, .{ .fn_name = "Math/clamp", .expected = "min <= max", .actual = "min > max" });
+    return promote.wrapI64(rt, if (v < lo) lo else if (v > hi) hi else v);
+}
+
 fn initMath(td: *type_descriptor.TypeDescriptor, gpa: std.mem.Allocator) anyerror!void {
     if (td.method_table.len != 0) return; // idempotent re-run
     const specs = .{
@@ -482,7 +527,8 @@ fn initMath(td: *type_descriptor.TypeDescriptor, gpa: std.mem.Allocator) anyerro
         // *Exact family: i64 arithmetic that throws on overflow (§A26 / D-172)
         .{ "addExact", &ExactBin(.add, "addExact").call }, .{ "subtractExact", &ExactBin(.sub, "subtractExact").call }, .{ "multiplyExact", &ExactBin(.mul, "multiplyExact").call },
         .{ "negateExact", &negateExact },                  .{ "incrementExact", &incrementExact },                      .{ "decrementExact", &decrementExact },
-        .{ "toIntExact", &toIntExact },
+        .{ "toIntExact", &toIntExact },                    .{ "absExact", &absExact },                                  .{ "multiplyHigh", &multiplyHigh },
+        .{ "clamp", &clamp },
         // no-arg PRNG double in [0,1) — shares the process PRNG with core `rand`.
         .{ "random", &random },
     };

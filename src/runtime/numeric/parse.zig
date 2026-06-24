@@ -29,6 +29,16 @@ pub fn parseSigned(comptime T: type, s: []const u8, radix: u8) ParseError!T {
     return std.fmt.parseInt(T, s, radix) catch error.InvalidNumberFormat;
 }
 
+/// Parse an UNSIGNED integer of type `T` from `s` in `radix`, matching Java's
+/// `Integer.parseUnsignedInt` / `Long.parseUnsignedLong`: the full unsigned
+/// range parses (so `"18446744073709551615"` is a valid `u64`), and the
+/// surface bitcasts the result to the signed width before boxing. Underscores
+/// are rejected as for `parseSigned`.
+pub fn parseUnsigned(comptime T: type, s: []const u8, radix: u8) ParseError!T {
+    if (std.mem.findScalar(u8, s, '_') != null) return error.InvalidNumberFormat;
+    return std.fmt.parseUnsigned(T, s, radix) catch error.InvalidNumberFormat;
+}
+
 /// Parse an f64 from `s`, matching Java/Clojure `Double.parseDouble` /
 /// `parse-double`. Unlike integer parsing, Java's `Double.parseDouble`
 /// TRIMS surrounding whitespace (via `String.trim`), so `(parse-double
@@ -67,6 +77,15 @@ test "parseSigned i32 range models Java int overflow" {
     // 9999999999 fits i64 but not i32 — real clj (Integer/parseInt) throws.
     try testing.expectError(error.InvalidNumberFormat, parseSigned(i32, "9999999999", 10));
     try testing.expectEqual(@as(i64, 9999999999), try parseSigned(i64, "9999999999", 10));
+}
+
+test "parseUnsigned covers the full unsigned range + honours radix" {
+    try testing.expectEqual(@as(u64, std.math.maxInt(u64)), try parseUnsigned(u64, "18446744073709551615", 10));
+    try testing.expectEqual(@as(u32, std.math.maxInt(u32)), try parseUnsigned(u32, "4294967295", 10));
+    try testing.expectEqual(@as(u64, 255), try parseUnsigned(u64, "ff", 16));
+    // A leading '-' is not an unsigned number; underscore still rejected.
+    try testing.expectError(error.InvalidNumberFormat, parseUnsigned(u64, "-1", 10));
+    try testing.expectError(error.InvalidNumberFormat, parseUnsigned(u32, "1_0", 10));
 }
 
 test "parseFloat trims whitespace + rejects underscore, accepts specials" {

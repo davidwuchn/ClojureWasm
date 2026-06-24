@@ -1,0 +1,48 @@
+(Long/parseUnsignedLong "18446744073709551615")
+;;=> -1
+(Long/parseUnsignedLong "ff" 16)
+;;=> 255
+(Long/sum 2 3)
+;;=> 5
+(Long/divideUnsigned -2 3)
+;;=> 6148914691236517204
+(Long/remainderUnsigned -2 3)
+;;=> 2
+(Long/compareUnsigned -1 1)
+;;=> 1
+(Long/toUnsignedString -1)
+;;=> "18446744073709551615"
+(Long/toUnsignedString 255 16)
+;;=> "ff"
+(Integer/parseUnsignedInt "4294967295")
+;;=> -1
+(Integer/parseUnsignedInt "ff" 16)
+;;=> 255
+(Integer/sum 2 3)
+;;=> 5
+(Integer/divideUnsigned -2 3)
+;;=> 1431655764
+(Integer/remainderUnsigned -2 3)
+;;=> 2
+(Integer/compareUnsigned -1 1)
+;;=> 1
+(Integer/toUnsignedString -1)
+;;=> "4294967295"
+(Integer/toUnsignedString 255 16)
+;;=> "ff"
+(Integer/toUnsignedLong -1)
+;;=> 4294967295
+(Math/absExact -5)
+;;=> 5
+(Math/multiplyHigh 1000000000000 1000000000000)
+;;=> 54210
+(Math/clamp 5 0 3)
+;;=> 3
+(Math/clamp 2 0 3)
+;;=> 2
+(Math/clamp -1 0 3)
+;;=> 0
+(Math/clamp 5.0 0.0 3.0)
+;;=> 3.0
+(Math/clamp 2.5 0.0 3.0)
+;;=> 2.5

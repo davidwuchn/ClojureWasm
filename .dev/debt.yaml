@@ -94,6 +94,14 @@ active:
       no in-loop GC alloc); non-string element raises a ClassCastException-class
       error like JVM; nil/empty → "". Corpus: test/diff/clj_corpus/string_join_static.txt
       (7 golden pairs). The 3+-arg varargs form is rejected like JVM Clojure.
+      DRAIN 2 (2026-06-25): the unsigned-arithmetic + JDK-exact static cluster.
+      Added Long/{parseUnsignedLong,sum,divideUnsigned,remainderUnsigned,
+      compareUnsigned,toUnsignedString}, Integer/{parseUnsignedInt,sum,
+      divideUnsigned,remainderUnsigned,compareUnsigned,toUnsignedLong,
+      toUnsignedString}, Math/{absExact,multiplyHigh,clamp} (+ parse.zig
+      parseUnsigned leaf). All happy + error paths match clj (ArithmeticException
+      / IllegalArgumentException / NumberFormatException classes align). Corpus:
+      test/diff/clj_corpus/unsigned_int_statics.txt (24 golden pairs).
     category: "interop"
     quality_floor: "public-ization: java-interop static-member gaps (ADR-0166)"
     barrier: |-
