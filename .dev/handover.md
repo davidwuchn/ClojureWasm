@@ -8,12 +8,16 @@
 - **HEAD**: `main` (`git log` = SSOT; ≈ `368c9851`). Per-commit = smoke; commit
   **and** push (CLAUDE.md § atomic Step 6). `build.zig.zon` `.zwasm` = tag pin
   `v2.0.0-alpha.3`.
-- **First commit on resume MUST be**: **§9.2.S L4 — right-size small-map allocation
-  (gc_large_heap)**, starting with its Step 0 survey (it is invasive — see below)
-  (**ADR-0165 Amendment 1** / **D-520**). L3 keyword-map-get LANDED as **O-051** (see Last landed).
-  The clean collection get/dispatch levers are now MINED — post-O-051 decomposition (hyperfine -N,
-  20 runs, load ~3) shows the remaining 9-bench gaps need invasive layout (L4) or the VM frontier
-  (D-386, a SEPARATE gap-III unit per ADR-0165 — not collection-perf):
+- **First commit on resume MUST be**: **D-386 VM frontier** (the campaign's explicitly-named next
+  front — dispatch → superinstructions → JIT) targeting **destructure 1.16×** (the biggest
+  remaining 9-bench loss), starting with its Step 0 (read `private/notes/9.2.S-flat-frame-survey.md`
+  + ADR-0148). The collection-perf sub-strategy (ADR-0165) has DELIVERED its clean lever (O-051);
+  its remaining gaps are NOT cheap constant-factors. **L4 was Step-0'd and DEFERRED**: `traceArrayMap`
+  is already count-bounded (not 16-wide), so L4's only gain is the 256B→~64B alloc, and `GcHeap.alloc`
+  is fixed-size-only (no variable-length object support) — so L4 = introducing variable-length GC
+  objects (F-006 GC-arch change) for a 1.12× single bench. Poor ROI; defer to a future GC-arch unit.
+  L3 keyword-map-get LANDED as **O-051** (see Last landed). Post-O-051 decomposition (hyperfine -N,
+  20 runs, load ~3) of the remaining 9-bench gaps:
   - **gc_large_heap 1.12×** → **L4 small-map alloc/GC**. Decomposed: walk+reduce TIES (glh_A 0.99),
     map-alloc+into WINS (glh_B 0.88), but reduce over a vec holding 100K live array-maps LOSES
     (glh_D maps=1.03 tie vs glh_E ints=0.64 win — the only diff is maps-vs-ints in the live vec).
