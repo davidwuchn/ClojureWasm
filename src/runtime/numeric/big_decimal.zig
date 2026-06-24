@@ -714,6 +714,59 @@ pub fn allocPow(rt: *Runtime, v: Value, n: i64) !Value {
     return allocFromManagedScale(rt, &result, scale);
 }
 
+/// `out = in · 10^k` (k ≥ 0). `ten` is caller-owned. Used to lift two unscaled
+/// values to a common scale without intermediate Values.
+fn scaleUp(infra: std.mem.Allocator, out: *std.math.big.int.Managed, in: *const std.math.big.int.Managed, ten: *const std.math.big.int.Managed, k: u32) !void {
+    if (k == 0) return out.copy(in.toConst());
+    var p = try std.math.big.int.Managed.init(infra);
+    defer p.deinit();
+    try p.pow(ten, k);
+    try out.mul(in, &p);
+}
+
+/// `a` remainder `b` (JVM `BigDecimal.remainder` = `a − divideToIntegralValue(a,b)·b`),
+/// scale = max(a.scale, b.scale); the sign follows the dividend (trunc division).
+/// Computed in aligned-integer space — no intermediate Values, so GC-safe.
+/// `error.DivideByZero` if b = 0.
+pub fn allocRemainder(rt: *Runtime, a: Value, b: Value) !Value {
+    const Managed = std.math.big.int.Managed;
+    const infra = rt.gc.infra;
+    const ad = a.decodePtr(*const BigDecimal);
+    const bd = b.decodePtr(*const BigDecimal);
+    if (bd.unscaled.m.eqlZero()) return error.DivideByZero;
+
+    var na = try ad.unscaled.m.clone();
+    defer na.deinit();
+    var nb = try bd.unscaled.m.clone();
+    defer nb.deinit();
+    var ten = try Managed.initSet(infra, 10);
+    defer ten.deinit();
+
+    // q = trunc(a/b) = trunc(na · 10^(sb−sa) / nb) — divTrunc handles the signs.
+    var q = try Managed.init(infra);
+    defer q.deinit();
+    var rdummy = try Managed.init(infra);
+    defer rdummy.deinit();
+    try shiftedDivTrunc(infra, &q, &rdummy, &na, &nb, &ten, @as(i64, bd.scale) - @as(i64, ad.scale));
+
+    // remainder = a − q·b, both lifted to M = max(sa,sb):
+    //   na·10^(M−sa) − (q·nb)·10^(M−sb).
+    const m_scale: i32 = @max(ad.scale, bd.scale);
+    var a_term = try Managed.init(infra);
+    defer a_term.deinit();
+    try scaleUp(infra, &a_term, &na, &ten, @intCast(@as(i64, m_scale) - @as(i64, ad.scale)));
+    var qb = try Managed.init(infra);
+    defer qb.deinit();
+    try qb.mul(&q, &nb);
+    var qb_term = try Managed.init(infra);
+    defer qb_term.deinit();
+    try scaleUp(infra, &qb_term, &qb, &ten, @intCast(@as(i64, m_scale) - @as(i64, bd.scale)));
+    var rem = try Managed.init(infra);
+    defer rem.deinit();
+    try rem.sub(&a_term, &qb_term);
+    return allocFromManagedScale(rt, &rem, m_scale);
+}
+
 const AddOrSub = enum { add, sub };
 
 fn alignedCombine(rt: *Runtime, a: Value, b: Value, op: AddOrSub) !Value {

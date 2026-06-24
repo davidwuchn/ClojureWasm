@@ -108,6 +108,12 @@ assert_eq 'div_mode'       "$(sm '(str (.divide (bigdec "10") (bigdec "4") java.
 assert_eq 'div_mode_int'   "$(sm '(str (.divide (bigdec "10") (bigdec "3") 2 BigDecimal/ROUND_HALF_UP))')"       '"3.33"'
 assert_eq 'bd_pow'         "$(sm '(str (.pow (bigdec "2") 10))')"                       '"1024"'
 assert_eq 'bd_pow0'        "$(sm '(str (.pow (bigdec "5") 0))')"                        '"1"'
+assert_eq 'bd_remainder'   "$(sm '(str (.remainder (bigdec "10") (bigdec "3")))')"      '"1"'
+assert_eq 'bd_rem_scale'   "$(sm '(str (.remainder (bigdec "10.5") (bigdec "3")))')"    '"1.5"'
+assert_eq 'bd_rem_neg'     "$(sm '(str (.remainder (bigdec "-10") (bigdec "3")))')"     '"-1"'
+assert_eq 'bd_rem_zero'    "$(sm '(str (.remainder (bigdec "7.5") (bigdec "2.5")))')"   '"0.0"'
+assert_eq 'bd_divint'      "$(sm '(str (.divideToIntegralValue (bigdec "10") (bigdec "3")))')"   '"3"'
+assert_eq 'bd_divint_sc'   "$(sm '(str (.divideToIntegralValue (bigdec "10.5") (bigdec "3")))')" '"3.0"'
 assert_eq 'bd_max'         "$(sm '(str (.max (bigdec "1") (bigdec "2")))')"             '"2"'
 assert_eq 'bd_min'         "$(sm '(str (.min (bigdec "1") (bigdec "2")))')"             '"1"'
 assert_eq 'bd_compareto_eq' "$(sm '(.compareTo (bigdec "1.0") (bigdec "1.00"))')"       '0'
@@ -121,4 +127,4 @@ assert_eq 'bd_intvalue'    "$(sm '(.intValue (bigdec "42.9"))')"                
 assert_eq 'bd_longvalue'   "$(sm '(.longValue (bigdec "42.9"))')"                       '42'
 assert_eq 'bd_doublevalue' "$(sm '(.doubleValue (bigdec "1.5"))')"                      '1.5'
 
-echo "OK — phase14_bigdecimal_setscale (67 cases) green"
+echo "OK — phase14_bigdecimal_setscale (73 cases) green"

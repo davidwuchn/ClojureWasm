@@ -222,6 +222,32 @@ fn divideFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) a
     }
 }
 
+/// `(.remainder a b)` — `a − divideToIntegralValue(a,b)·b` (JVM
+/// `BigDecimal.remainder`); sign follows the dividend.
+fn remainderFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = env;
+    try error_catalog.checkArity("remainder", args, 2, loc);
+    try requireBd(args[0], "remainder", loc);
+    try requireBd(args[1], "remainder", loc);
+    return big_decimal.allocRemainder(rt, args[0], args[1]) catch |e| switch (e) {
+        error.DivideByZero => error_catalog.raise(.divide_by_zero, loc, .{}),
+        else => e,
+    };
+}
+
+/// `(.divideToIntegralValue a b)` — integral quotient truncated toward zero
+/// (JVM `BigDecimal.divideToIntegralValue`); the shared `allocQuotient`.
+fn divideToIntegralValueFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = env;
+    try error_catalog.checkArity("divideToIntegralValue", args, 2, loc);
+    try requireBd(args[0], "divideToIntegralValue", loc);
+    try requireBd(args[1], "divideToIntegralValue", loc);
+    return big_decimal.allocQuotient(rt, args[0], args[1]) catch |e| switch (e) {
+        error.DivideByZero => error_catalog.raise(.divide_by_zero, loc, .{}),
+        else => e,
+    };
+}
+
 /// `(.pow bd n)` — `bd^n` exact, n≥0 (JVM `BigDecimal.pow(int)`).
 fn powFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
     _ = env;
@@ -402,6 +428,8 @@ pub fn installNativeMethods(rt: *Runtime) !void {
         .{ "movePointLeft", &movePointLeftFn },
         .{ "movePointRight", &movePointRightFn },
         .{ "pow", &powFn },
+        .{ "remainder", &remainderFn },
+        .{ "divideToIntegralValue", &divideToIntegralValueFn },
         .{ "max", &maxFn },
         .{ "min", &minFn },
         .{ "compareTo", &compareToFn },
