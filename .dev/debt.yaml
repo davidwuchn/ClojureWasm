@@ -1320,6 +1320,18 @@ active:
 # Trackers + the user-directed indefinitely-deferred future bucket (broad JIT / CLJS->JS / C-FFI /
 # generational-GC / virtual-threads / out-of-process isolation / wasm structural-future). 2026-06-15.
 standing:
+  - id: "D-520"
+    status: "Collection-perf campaign (§9.2.S collection sub-strategy; ADR-0165, 2026-06-24). cljw LOSES bb 1.02-1.16x on collection-heavy benches (sieve/destructure/gc_*/bigint) but WINS pure-compute 2x + ratio_sum — the gap is the COLLECTION/LIBRARY layer, not the VM engine (bb=SCI tree-walk+clojure.lang, no JIT; cljw's VM beats SCI on compute). Strategy: keep best-of-breed ALGORITHMS (cljw already has real CHAMP+@popCount, radix+tail, array-map, std.math.big — no rewrite; RRB REJECTED), win on Zig-native LAYOUT (no headers + cache layout + GC-backed sharing, no Arc). ROI-ordered levers: L1 transients(owner-token)+bulk build [HIGHEST, first], L2 chunked-seq WALK path (sieve), L3 keyword-map get fast-path+@Vector scan (destructure), L4 variable vector tail+size-class free-list, L5 big.int.Mutable in-place (factorial, low), L6 CHAMP delete-canonicalization for fast =. Per-lever: branch develop/collection-<lever>, experiment-and-revert/commit-no-push, FULL diff oracle (global change, not smoke) + interleaved cljw-vs-bb A/B. The JIT (D-386) is the SEPARATE bigger compute frontier (bb can't follow). PAUSED-toggle = .dev/.perf_campaign_active."
+    category: "perf"
+    barrier: |-
+      Campaign-paced (repeatable, refactor-gated; ROADMAP §9.2.S). Loop drains levers
+      highest-ROI-first (L1 transients first) when the perf campaign is active. Full
+      detail + survey sources + experimentation/regression protocol: ADR-0165 +
+      private/notes/collection-perf-proposal-20260624.md (the 3-survey synthesis:
+      clojure.lang internals / Zig stdlib / industry CHAMP-RRB-Immer) +
+      private/notes/9.2.S-clean-peer-rerank-20260624.md (the measured standing) +
+      private/notes/cljw_collection_codetruth.md (where cljw is naive).
+    last_reviewed: "2026-06-24"
   - id: "D-518"
     status: "DEFERRED forward debt (ADR-0162 step 4) — build-time HEAP SNAPSHOT (SBCL save-lisp-and-die / Emacs pdumper / V8 / GraalVM image-heap tier): dump the post-bootstrap GC heap as a relocatable image embedded in the binary; startup = mmap + relocation instead of bytecode replay. Eliminates the whole ~4.6ms replay. NOT pursued now: the DA red-team (ADR-0162 Alternatives) showed B buys only core's ~1ms replay share behind a ~3.4ms un-addressable exec/page-fault wall, at the cost of (1) a SECOND per-tag relocate-slot reflection surface the GC trace table does NOT provide, (2) Var/namespace-metadata + builtin_fn(0xFFFF linker-set native) pointers needing a V8-style external-ref table, (3) a single-missed-pointer=silent-heap-corruption surface, (4) a cache_gen(host)<->runtime(target) layout-skew build-matrix lock. After ADR-0162 steps 1-3 the floor is already ~3.5-3.8ms (sub-4ms) with none of that risk."
     category: "perf"

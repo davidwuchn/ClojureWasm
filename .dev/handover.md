@@ -8,21 +8,22 @@
 - **HEAD**: `main` (`git log` = SSOT; ≈ `368c9851`). Per-commit = smoke; commit
   **and** push (CLAUDE.md § atomic Step 6). `build.zig.zon` `.zwasm` = tag pin
   `v2.0.0-alpha.3`.
-- **First commit on resume MUST be**: **confirm the clean peer re-rank at load <2** + measure
-  the 2 un-measured py-benches (json_parse, nested_update vs py) to complete it. CORRECTION
-  THIS SESSION (note `9.2.S-clean-peer-rerank-20260624.md`): the handover's old "7/9 won,
-  fastest-script ~27/30" was a **load-~9 artifact**. A load-robust **interleaved cljw-vs-bb
-  A/B** (load 3, tight σ both) + the load-4 compare_langs BOTH show cljw **LOSING** all 6 bb-
-  benches (gc_alloc_rate/gc_large_heap/destructure/string_ops/bigint_factorial/sieve) by
-  1.02–1.16×. **The gap is REAL + load-independent**: cljw's User (CPU) time is **1.6–2.7×
-  bb's** — bb (GraalVM AOT-native) out-COMPUTES cljw's bytecode interpreter; the cold-start arc
-  maxed the STARTUP axis but not COMPUTE. EXCEPTION: **ratio_sum WON** (cljw 23.5 vs bb 33.4 =
-  1.42× ahead; D-519+O-050+cold-start closed the old 3.15×). **Implication**: per-bench micro-
-  tuning will NOT close a 1.6–2.7× interpreter-vs-AOT gap — the real lever is **COMPUTE =
-  D-386 dispatch→superinstructions→JIT** (north-star = embedded zwasm JIT, ADR-0200). Confirm
-  marginals (string_ops 1.03×, bigint_factorial 1.02×) at load <2 — they may flip; the
-  compute-bound ones are real bb wins. **GUARDRAIL**: never Zig-ify the .clj bootstrap.
-  D-517/D-518 DEFERRED; D-515 binary-size (standing).
+- **First commit on resume MUST be**: **§9.2.S collection-perf L1 — transients** (**ADR-0165**
+  / **D-520**). The 2026-06-24 investigation (3 surveys + cljw code-truth) REFINED the direction:
+  cljw's VM WINS pure-compute 2× (fib_loop/tak) + ratio_sum 1.42×; it LOSES bb 1.02–1.16× ONLY
+  on COLLECTION-heavy benches (sieve/destructure/gc_*/bigint) because clojure.lang's mature data
+  structures beat cljw's younger ones — NOT an interpreter gap (bb = SCI tree-walk + clojure.lang,
+  NO JIT; cljw's bytecode VM beats SCI). So the immediate lever is **COLLECTIONS, not the JIT**
+  (the JIT = the SEPARATE bigger compute frontier, D-386, that bb structurally cannot follow).
+  cljw already has best-of-breed ALGORITHMS (real CHAMP+@popCount, radix+tail, array-map,
+  std.math.big — NO rewrite; RRB rejected); the win is Zig-native LAYOUT. Drain ROI-ordered
+  (ADR-0165 levers): **L1 transients (owner-token; a STUB today) FIRST** → L2 chunked-seq WALK
+  path (sieve) → L3 keyword-map get fast-path+@Vector (destructure) → L4 variable vector tail →
+  L5/L6. Per lever: branch `develop/collection-<lever>`, experiment-and-revert / commit-no-push,
+  **FULL diff oracle (global change, NOT smoke)** + interleaved cljw-vs-bb A/B (quiet-ish Mac).
+  Optional baseline-lock first: confirm the peer re-rank + the 2 py-benches (json_parse,
+  nested_update) at load <2. **GUARDRAIL**: never Zig-ify the .clj bootstrap. D-517/D-518
+  DEFERRED; D-515 binary-size (standing).
 - **Forbidden this session**: bare `zig build test` WITHOUT `-Dwasm` (false fails —
   `zig_build_test_needs_dwasm`); bare `zig build` for a probe (ADR-0133 — ReleaseSafe).
 
@@ -50,10 +51,10 @@ locality). Correctness: diff oracle green; 15/305 mid-eval collects yet sums exa
   `:doc` metadata absent — `(:doc (meta #'reduce))` → nil; wiring docstrings
   through every bootstrap defn/def + primitive var registration is a large,
   separate unit and the real prerequisite for a useful `clojure.repl`.
-- **gap-III perf campaign** (ROADMAP §9.2.S, D-450) — the fastest-script goal
-  (ADR-0148): cljw FASTEST among cljw/Python/Ruby/Node/Babashka cold-start. The
-  ACTIVE front (see Resume contract for the re-measured 2026-06-24 gaps + lever
-  order). Then D-386 dispatch→superinstructions→JIT.
+- **gap-III perf campaign** (ROADMAP §9.2.S) — fastest-script goal (ADR-0148). ACTIVE
+  sub-strategy = **collection-perf (ADR-0165 / D-520)**: keep best-of-breed algorithms,
+  win on Zig-native layout, transients-first (see Resume contract). Startup axis is won
+  (cold-start arc); the SEPARATE compute frontier beyond bb = D-386 JIT.
 
 ## North star (ACTIVE)
 
@@ -64,10 +65,11 @@ Live ledger: `.dev/zwasm_capabilities.md`.
 
 ## Reading order (resume)
 
-handover → **ADR-0148** (the fastest-script 9-bench campaign + gaps) → **ADR-0164** (eval
-auto-collect = D-519, LANDED + GO result table) → `.dev/debt.yaml` **D-450** (the 9 gaps;
-the absolute peer standing needs a quiet-Mac re-measure) + **D-519** (discharged). Prior arc:
-ADR-0162/0163 + `private/notes/9.2.S-coldstart-architecture-20260624.md`. Tools:
+handover → **ADR-0165** (collection-perf strategy + ROI levers + experiment/regression protocol;
+the NEXT direction) → **D-520** (the draining campaign row) → `private/notes/`
+**collection-perf-proposal-20260624.md** (3-survey synthesis) + **9.2.S-clean-peer-rerank-20260624.md**
+(measured standing) + **cljw_collection_codetruth.md** (where cljw is naive). Background:
+**ADR-0148** (fastest-script campaign) → **ADR-0164** (D-519 auto-collect, LANDED). Tools:
 `CLJW_GC_STATS=1` (alloc/reuse%/collects) / `CLJW_GC_THRESHOLD_MB` (auto-collect floor knob,
 also the OFF-vs-ON A/B lever) / `CLJW_PROFILE_STARTUP=1`. Measurement discipline: ms-margin
 peer benches need a QUIET Mac (load <~2); the load-robust signal is the interleaved OFF-vs-ON
@@ -76,14 +78,16 @@ knob A/B. Memories: `verify_against_releasesafe_binary` / `smoke_first_batch_ful
 
 ## Stopped — user requested
 
-User instruction (2026-06-24): 「よし、最適化キャンペーン全体について、きりの良いところで
-停止して」(stop the whole optimization campaign at a clean point). Honored the designed
-campaign-pause switch: **`.dev/.perf_campaign_active` removed** (gitignored), so the campaign
-fast-mode injection is now silent — re-`touch` it to re-open §9.2.S. Clean state: tree clean,
-HEAD pushed (`755a64c1`), smoke green (stamp `6e34be03`). This session: D-519 eval auto-collect
-LANDED + GO-passed (1.1–1.65× faster, memory bug fixed) + the clean peer re-rank CORRECTION
-(cljw LOSES the bb-benches on a real compute gap; ratio_sum the one win; lever = JIT, not
-per-bench). If resumed: the campaign is PAUSED — do not auto-resume per-bench tuning; the
-First-commit-on-resume above (confirm re-rank at load <2 + the JIT framing) applies only when
-the user re-opens the campaign. Extended-challenge 3-items: `private/notes/
-9.2.S-clean-peer-rerank-20260624.md`.
+User instruction (2026-06-24): 「この調査は貴重なので、しっかりコミット領域に永続化し、どこ
+かから参照させ、その上で、クリアセッションからでもcontinueで自律継続できるように、配線・参照
+チェーン監査をして停止してください」(persist the collection-perf investigation into the tracked
+area, reference it, and wire/audit the chain so a clean session can `/continue` autonomously,
+then stop). Done: the investigation is persisted as **ADR-0165** (collection-perf strategy) +
+**D-520** (the draining campaign row) + 3 `private/notes/` survey records; referenced from the
+Resume contract, the gap-III standing bullet, the Reading order, and ROADMAP §9.2.S. The perf
+campaign is **RE-OPENED into the collection-perf phase** (`.dev/.perf_campaign_active`
+re-touched); First-commit-on-resume = collection-perf **L1 transients** (above). Earlier "lever
+= JIT" framing CORRECTED by this investigation: the immediate lever is COLLECTIONS (the JIT is
+the separate bigger frontier). Clean state: tree clean, HEAD pushed, full gate green (the D-519
+arc; collection work has not started — only docs/wiring landed since). Resume chain audited:
+handover → ADR-0165 → D-520 → the 3 notes, then start L1.

@@ -1187,6 +1187,14 @@ chapter cadence). Full grounding: `private/notes/recut-goal-synthesis.md`.
 
 ### 9.2.S Performance tuning campaign (PARKED into Phase B; ADR-0063, 2026-05-31; re-cut ADR-0089 2026-06-04)
 
+> **ACTIVE sub-strategy (2026-06-24): collection-perf — [ADR-0165](decisions/0165_collection_perf_strategy.md) / D-520.**
+> The fastest-script campaign (ADR-0148) won the STARTUP axis (cold-start arc) and ratio_sum;
+> cljw's VM beats babashka's SCI on pure compute (fib_loop/tak 2×). The remaining losses
+> (sieve/destructure/gc_*/bigint, 1.02–1.16×) are the COLLECTION/library layer. Strategy: keep
+> best-of-breed algorithms (cljw already has CHAMP/radix+tail/array-map/std.math.big; RRB
+> rejected), win on Zig-native LAYOUT, **transients-first**. The JIT (D-386) is the separate
+> bigger compute frontier. Full plan + experiment/regression protocol: ADR-0165.
+
 > **Re-cut (ADR-0089, 2026-06-04)**: the "resume here" marker is stale — the
 > session ran the F-010 quality loop, not this perf campaign. Under the
 > A→B→C re-cut, perf (D-163 lazy-chain reduce, D-140 startup cache) folds into
