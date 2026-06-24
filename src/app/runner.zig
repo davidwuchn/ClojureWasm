@@ -28,6 +28,7 @@ const gc_torture = @import("../runtime/gc/gc_torture.zig");
 const eval_budget = @import("../runtime/concurrency/eval_budget.zig");
 const error_print = @import("../runtime/error/print.zig");
 const print = @import("../runtime/print.zig");
+const startup_profile = @import("../runtime/startup_profile.zig");
 
 const error_render = @import("error_render.zig");
 
@@ -56,6 +57,8 @@ pub fn runSource(
 ) !void {
     const ctx = error_print.SourceContext{ .file = source_label, .text = source_text };
 
+    var prof = startup_profile.Profiler.start(io);
+
     // --- Runtime + Env + backend setup ---
     var rt = Runtime.init(io, gpa);
     defer rt.deinit();
@@ -67,6 +70,7 @@ pub fn runSource(
     defer env.deinit();
 
     driver.installVTable(&rt);
+    prof.mark("rt+env+vtable");
 
     // Bootstrap macros: intern `let` / `when` / `cond` /
     // `->` / `->>` / `and` / `or` / `if-let` / `when-let` as macro
@@ -93,6 +97,7 @@ pub fn runSource(
     bootstrap.setupCoreAot(arena, &rt, &env, &macro_table, @import("bootstrap_cache").data) catch |err| {
         error_render.renderAndExitRegistry(stderr, &rt, bootstrap_ctx, err);
     };
+    prof.mark("setupCoreAot");
 
     // ADR-0084: enable filesystem `require` for user libs. setupCore* installs
     // the embedded-only resolver; swap to the embedded-FIRST chain + the

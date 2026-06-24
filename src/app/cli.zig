@@ -34,6 +34,7 @@ const deps_resolve = @import("deps/resolve.zig");
 const deps_run_mode = @import("deps/run_mode.zig");
 const error_print = @import("../runtime/error/print.zig");
 const build_options = @import("build_options");
+const startup_profile = @import("../runtime/startup_profile.zig");
 
 /// Top-level CLI dispatcher. Called from `src/main.zig::main` with
 /// the Juicy-Main `std.process.Init` bundle. Parses argv, decides
@@ -101,7 +102,9 @@ pub fn dispatch(init: std.process.Init) !void {
         _ = ait.skip(); // argv[0]
         while (ait.next()) |a| try embedded_args.append(arena, a);
     }
+    var cli_prof = startup_profile.Profiler.start(io);
     if (try builder.tryRunEmbedded(io, gpa, arena, stdout, embedded_args.items)) return;
+    cli_prof.mark("tryRunEmbedded(self-exe read)");
 
     var args = init.minimal.args.iterate();
     _ = args.skip(); // argv[0]

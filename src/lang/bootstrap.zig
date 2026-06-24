@@ -43,6 +43,7 @@ const print_mod = @import("../runtime/print.zig");
 const writer_value = @import("../runtime/writer_value.zig");
 const uuid_prim = @import("primitive/uuid.zig");
 const inst_prim = @import("primitive/inst.zig");
+const startup_profile = @import("../runtime/startup_profile.zig");
 
 /// One entry in the bootstrap file table. `label` is the synthetic
 /// source label the renderer attributes to errors raised while
@@ -499,11 +500,15 @@ pub fn setupCoreAot(
     macro_table: *macro_dispatch.Table,
     bootstrap_blob: []const u8,
 ) !void {
+    var prof = startup_profile.Profiler.start(rt.io);
     try setupCorePrefix(rt, env, macro_table);
+    prof.mark("  prefix(registerAll)");
     try loadCoreAot(arena, rt, env, bootstrap_blob);
+    prof.mark("  loadCoreAot(envelope)");
     try installPrintMethod(rt, env);
     try error_context.register(env);
     try installBaselineBindings(arena, env);
+    prof.mark("  print+errctx+baseline");
 }
 
 /// The AOT analog of `loadCore` (no prefix, no error_context — same scope
@@ -524,9 +529,13 @@ pub fn loadCoreAot(
     // SourceContext (the bytecode carries none) — cheap (@embedFile slices into
     // a hashmap, no parse). `macro_table` is no longer needed: the blob is
     // post-macro bytecode, replayed by the VM without expansion.
+    var prof = startup_profile.Profiler.start(rt.io);
     for (FILES) |file| try rt.registerSource(file.label, file.source);
+    prof.mark("    registerSource");
     try driver.runEnvelope(rt, env, arena, bootstrap_blob);
+    prof.mark("    runEnvelope");
     try finalizeUserNs(rt, env);
+    prof.mark("    finalizeUserNs");
 }
 
 // --- tests ---
