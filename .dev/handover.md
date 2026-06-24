@@ -8,15 +8,19 @@
 - **HEAD**: `main` (`git log` = SSOT; ≈ `368c9851`). Per-commit = smoke; commit
   **and** push (CLAUDE.md § atomic Step 6). `build.zig.zon` `.zwasm` = tag pin
   `v2.0.0-alpha.3`.
-- **First commit on resume MUST be**: **D-386 VM frontier** (the campaign's explicitly-named next
-  front — dispatch → superinstructions → JIT) targeting **destructure 1.16×** (the biggest
-  remaining 9-bench loss), starting with its Step 0 (read `private/notes/9.2.S-flat-frame-survey.md`
-  + ADR-0148). The collection-perf sub-strategy (ADR-0165) has DELIVERED its clean lever (O-051);
-  its remaining gaps are NOT cheap constant-factors. **L4 was Step-0'd and DEFERRED**: `traceArrayMap`
-  is already count-bounded (not 16-wide), so L4's only gain is the 256B→~64B alloc, and `GcHeap.alloc`
-  is fixed-size-only (no variable-length object support) — so L4 = introducing variable-length GC
-  objects (F-006 GC-arch change) for a 1.12× single bench. Poor ROI; defer to a future GC-arch unit.
-  L3 keyword-map-get LANDED as **O-051** (see Last landed). Post-O-051 decomposition (hyperfine -N,
+- **First commit on resume MUST be**: the loop SELF-SELECTS here — the perf campaign's ACCESSIBLE
+  levers are now exhausted (O-051 was the last clean one), so the remaining 9-bench gaps are all
+  big/risky/fenced. Pick highest-value per CLAUDE.md (a correctness/clj-parity floor outranks new
+  coverage; Step 0.5 quality-loop-floor drain first). The perf options, all characterized:
+  **(L4 small-map)** Step-0'd + DEFERRED — `traceArrayMap` is already count-bounded (not 16-wide) so
+  L4's only gain is the 256B→~64B alloc, and `GcHeap.alloc` is fixed-size-only (no variable-length
+  objects), so L4 = introducing variable-length GC objects (F-006 GC-arch) for a 1.12× bench. Poor
+  ROI. **(D-386 dispatch, destructure 1.16×)** the destructure residual is per-op dispatch + binding
+  lowering = D-386(a) inline-stepOnce — but its own row marks (a) "risky UAF-class, not to be
+  rushed" + PREREQUISITE D-244 #4 gc_self_guard hoist; (b) DEAD (empirically refuted); (c) JIT
+  user-fenced (ADR-0151). So D-386 is NOT a quick win — only attempt (a) WITH the D-244 #4
+  prerequisite + alloc-torture validation, deliberately. The collection-perf sub-strategy (ADR-0165)
+  has DELIVERED its clean lever (**O-051**, see Last landed). Post-O-051 decomposition (hyperfine -N,
   20 runs, load ~3) of the remaining 9-bench gaps:
   - **gc_large_heap 1.12×** → **L4 small-map alloc/GC**. Decomposed: walk+reduce TIES (glh_A 0.99),
     map-alloc+into WINS (glh_B 0.88), but reduce over a vec holding 100K live array-maps LOSES
