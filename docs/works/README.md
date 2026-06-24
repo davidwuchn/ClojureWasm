@@ -39,28 +39,29 @@ higher (harder) degree.
 
 ## How a library is loaded today (and the limitation)
 
-cljw has **no `deps.edn` / Maven resolution yet** — that is Campaign
-Stage 1.2 (`deps.zig`). Until then, libraries are loaded by putting their
-`.clj` / `.cljc` source on the classpath manually:
+`deps.edn` resolution **landed** (Campaign Stage 1.2): a `./deps.edn` with
+`:paths` / `:deps {lib {:local/root "…"}}` / `:git/url`+`:git/sha` / `:aliases`
+contributes its source roots to the front of the `require` classpath, so a
+library is loaded by pointing a small consumer `deps.edn` at it:
 
 ```sh
-# Lay out the source so the namespace path matches the file path:
-#   medley.core           -> <root>/medley/core.cljc
-#   clojure.tools.cli     -> <root>/clojure/tools/cli.cljc
-# then point -cp at the root:
-zig-out/bin/cljw -cp <root> -e '(require (quote medley.core)) (medley.core/find-first even? [1 3 4])'
+# A consumer project whose deps.edn names the library by :local/root:
+#   {:deps {org.clojure/data.priority-map {:local/root "/path/to/clone"}}}
+cd consumer-proj && cljw -e '(require (quote clojure.data.priority-map))'
 ```
 
-`-cp` (alias `--classpath`) is colon-separated; cljw's `require` resolver
-searches each root for `<ns-path>.clj` then `.cljc` (ADR-0084). `$CLJW_PATH`
-is the fallback when `-cp` is absent.
+The older manual classpath still works: `-cp <root>` (alias `--classpath`,
+colon-separated) makes `require` search each root for `<ns-path>.clj` then
+`.cljc` (ADR-0084); `$CLJW_PATH` is the fallback when `-cp` is absent.
 
-**Limitation / blocker for the ladder as a whole:** every transitive
-dependency must be fetched and laid out by hand, because there is no
-dependency resolver. This makes deep dependency trees impractical to verify
-until Stage 1.2 lands. Libraries that are blocked *only* by this (not by a
-real cljw feature gap) are marked `blocked: no deps.edn yet` in the status
-column — they are not cljw failures, they are not-yet-loadable.
+**The residual limitation is Maven, not deps.edn:** a `:mvn/version` coord is
+**skipped** (ADR-0101 am.1), not fetched — cljw has no artifact downloader — so
+a transitive **Maven** dependency must still be cloned and supplied as an
+explicit `:local/root` / `:git` coord by hand. A library blocked *only* by an
+un-cloned transitive dep (not a real cljw feature gap) is marked
+`blocked: no deps.edn yet` historically; the accurate phrasing is "blocked on an
+un-fetched Maven/transitive dep" — they are not cljw failures, just
+not-yet-loadable without laying the dep out.
 
 `.cljc` reader conditionals resolve to the `:clj` branch on cljw (cljw is a
 Clojure runtime, not ClojureScript), so `#?(:clj ... :cljs ...)` picks the
@@ -87,6 +88,8 @@ JVM-shaped branch — which is exactly where the Java interop blockers live.
 - **loads** — `require` succeeds and exercised functions return correct values.
 - **partial** — loads but some functions hit a gap; the gap is named.
 - **fails** — `require` itself fails on a real cljw gap (named).
-- **blocked: no deps.edn yet** — not a cljw gap; blocked only on manual
-  dependency layout / the absent resolver (Stage 1.2).
+- **blocked: no deps.edn yet** (historical label) — not a cljw gap; blocked
+  only on an un-fetched transitive **Maven** dep that must be cloned + supplied
+  as a `:local/root` / `:git` coord by hand (the `:paths`/`:local/root`/`:git`
+  resolver itself landed, Stage 1.2).
 - **not-probed** — seeded by static source inspection only; not yet loaded.
