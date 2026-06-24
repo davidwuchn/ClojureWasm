@@ -144,6 +144,18 @@ const Cursor = union(enum) {
         };
     }
 
+    /// The cursor's current live seq node for a lazy/list walk (the value that
+    /// ADVANCES to a freshly-realized, not-yet-otherwise-rooted tail). nil for
+    /// the index-walked cursors (vec/range/ment/q), whose base value is the
+    /// original operand and stays rooted via it. Used by `seqEqualWalk` to root
+    /// the advancing head across the OTHER cursor's allocating advance.
+    fn lazyHead(self: *const Cursor) Value {
+        return switch (self.*) {
+            .lst, .lzy => |node| node,
+            else => Value.nil_val,
+        };
+    }
+
     fn next(self: *Cursor, rt: *Runtime, env: *Env) anyerror!?Value {
         switch (self.*) {
             .vec => |*s| {
@@ -363,9 +375,27 @@ fn seqEqualWalk(rt: *Runtime, env: *Env, a: Value, b: Value) anyerror!bool {
     if (isCountable(a) and isCountable(b) and seqLen(a) != seqLen(b)) return false;
     var ca = Cursor.init(a);
     var cb = Cursor.init(b);
+    // GC-root the operands, the advancing lazy cursor heads, and the per-step
+    // elements. `ca.next` / `cb.next` realize lazy tails (allocating), and so can
+    // `valueEqual` on the elements — a collect mid-walk would otherwise free the
+    // OTHER cursor's freshly-realized (unrooted) head or a just-pulled element,
+    // corrupting the comparison (observed as a wrong result / `nth: nil` / an
+    // out-of-bounds panic under alloc-torture). Mirrors `seqEqualInstance`'s frame
+    // for the native-seq path that previously walked frame-free.
+    var roots = [_]Value{ a, b, .nil_val, .nil_val, .nil_val, .nil_val };
+    var sp: u16 = roots.len;
+    var gc_frame: root_set.EvalFrame = .{ .stack = &roots, .sp = &sp, .locals = &.{}, .parent = root_set.eval_frame_head };
+    root_set.eval_frame_head = &gc_frame;
+    defer root_set.eval_frame_head = gc_frame.parent;
     while (true) {
+        roots[2] = ca.lazyHead();
+        roots[3] = cb.lazyHead();
         const ea = try ca.next(rt, env);
+        roots[2] = ca.lazyHead();
+        roots[4] = ea orelse Value.nil_val;
         const eb = try cb.next(rt, env);
+        roots[3] = cb.lazyHead();
+        roots[5] = eb orelse Value.nil_val;
         if (ea == null and eb == null) return true;
         if (ea == null or eb == null) return false;
         if (!try valueEqual(rt, env, ea.?, eb.?)) return false;

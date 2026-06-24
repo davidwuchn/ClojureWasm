@@ -215,5 +215,11 @@ assert_alloc '4b_take_range'      '(reduce + 0 (take 5 (range 20)))'            
 assert_alloc '4b_into_vec_lazy'   '(count (into [] (map inc (range 40))))'             '40'
 assert_alloc '4b_multichunk'      '(count (into {} (map (fn [i] [i i]) (range 50))))'  '50'
 assert_alloc '4b_take_multichunk' '(reduce + 0 (take 40 (range 100)))'                 '780'
+# Interleaved lazy-seq `=` walk: comparing two lazy seqs realizes both tails
+# alternately, so each cursor head + the pulled elements must be rooted across
+# the OTHER cursor's allocating advance — else a mid-walk collect corrupts the
+# comparison (was `false` / `nth: nil` / out-of-bounds before seqEqualWalk's
+# root frame). Surfaced by math.combinatorics' partitions test (D-528).
+assert_alloc 'lazy_eq_interleave' '(= (map inc (range 50)) (filter pos? (map inc (range 50))))' 'true'
 
 echo "ALL phase16_gc_torture PASS"
