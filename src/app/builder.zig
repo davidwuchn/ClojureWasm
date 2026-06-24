@@ -377,11 +377,18 @@ pub fn buildMainFile(io: std.Io, gpa: std.mem.Allocator, arena: std.mem.Allocato
 /// payload's own `(println …)` etc. write straight to process stdout via
 /// `rt.io`, so no writer is threaded here.
 pub fn tryRunEmbedded(io: std.Io, gpa: std.mem.Allocator, arena: std.mem.Allocator, stdout: *std.Io.Writer, main_args: []const []const u8) !bool {
-    // D-140: reads the whole self-exe to check the tail; a footer-only seek
-    // would avoid the full read on every normal startup.
-    const self_bytes = try readSelfExe(io, gpa);
-    defer gpa.free(self_bytes);
-    const payload = serialize.extractPayload(self_bytes) orelse return false;
+    // D-140 (ADR-0162 step 1): footer-seek — open the self-exe and read ONLY the
+    // 12-byte trailer. A bare runtime (the common `cljw -e` / REPL case) returns
+    // after those 12 bytes instead of reading the whole multi-MB binary; only a
+    // genuine artifact positioned-reads its payload region. `payload` is gpa-owned
+    // (was a view into the full self_bytes) and outlives the embedded run below,
+    // which completes before this fn returns (readComponentTable slices into it).
+    const exe_path = try std.process.executablePathAlloc(io, gpa);
+    defer gpa.free(exe_path);
+    const exe_file = try std.Io.Dir.cwd().openFile(io, exe_path, .{});
+    defer exe_file.close(io);
+    const payload = (try serialize.readEmbeddedPayload(io, gpa, exe_file)) orelse return false;
+    defer gpa.free(payload);
 
     var rt = Runtime.init(io, gpa);
     defer rt.deinit();

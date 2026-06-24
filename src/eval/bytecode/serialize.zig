@@ -1076,6 +1076,33 @@ pub fn extractPayload(bytes: []const u8) ?[]const u8 {
     return bytes[end - payload_len .. end];
 }
 
+/// Footer-seek variant of `extractPayload` for an already-open self-exe `file`
+/// (D-140, ADR-0162 step 1). `stat`s the size and reads ONLY the 12-byte footer;
+/// when the magic does not match (the common `cljw -e` case = a bare runtime with
+/// no embedded trailer) it returns null after reading just those 12 bytes — never
+/// the whole multi-MB binary. On a magic match it positioned-reads only the
+/// `[size-12-payload_len .. size-12]` payload region. Returns an owned slice the
+/// caller frees (distinct from `extractPayload`, which returns a view into bytes
+/// already in hand — kept for callers with the full bytes, e.g. the build
+/// round-trip tests). `io` drives the stat/seek/read.
+pub fn readEmbeddedPayload(io: std.Io, gpa: std.mem.Allocator, file: std.Io.File) !?[]u8 {
+    const size = (try file.stat(io)).size;
+    if (size < ARTIFACT_FOOTER_LEN) return null;
+    var buf: [256]u8 = undefined;
+    var r = file.reader(io, &buf);
+    try r.seekTo(size - ARTIFACT_FOOTER_LEN);
+    var footer: [ARTIFACT_FOOTER_LEN]u8 = undefined;
+    try r.interface.readSliceAll(&footer);
+    if (!std.mem.eql(u8, footer[8..12], &ARTIFACT_MAGIC)) return null;
+    const payload_len: usize = @intCast(std.mem.readInt(u64, footer[0..8], .little));
+    if (payload_len + ARTIFACT_FOOTER_LEN > size) return null;
+    const payload = try gpa.alloc(u8, payload_len);
+    errdefer gpa.free(payload);
+    try r.seekTo(size - ARTIFACT_FOOTER_LEN - payload_len);
+    try r.interface.readSliceAll(payload);
+    return payload;
+}
+
 // --- tests ---
 
 const testing = std.testing;
@@ -1501,6 +1528,66 @@ test "artifact trailer frames and extracts the payload" {
     const empty_art = try frameArtifact(testing.allocator, runtime, "");
     defer testing.allocator.free(empty_art);
     try testing.expectEqual(@as(usize, 0), (extractPayload(empty_art) orelse return error.NoTrailer).len);
+}
+
+test "readEmbeddedPayload: footer-seek round-trips the payload; bare runtime + short file → null (D-140)" {
+    const io = testing.io;
+    var tmp = testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const runtime = "RUNTIME_BINARY_BYTES_LONG_ENOUGH_TO_MATTER";
+    const payload = "PAYLOAD_ENVELOPE_BYTES";
+
+    const writeFile = struct {
+        fn go(d: std.Io.Dir, i: std.Io, name: []const u8, bytes: []const u8) !void {
+            const f = try d.createFile(i, name, .{ .truncate = true });
+            defer f.close(i);
+            var wbuf: [256]u8 = undefined;
+            var w = f.writer(i, &wbuf);
+            try w.interface.writeAll(bytes);
+            try w.interface.flush();
+        }
+    }.go;
+
+    // A real artifact: footer-seek recovers exactly the payload.
+    const art = try frameArtifact(testing.allocator, runtime, payload);
+    defer testing.allocator.free(art);
+    try writeFile(tmp.dir, io, "art.bin", art);
+    {
+        const f = try tmp.dir.openFile(io, "art.bin", .{});
+        defer f.close(io);
+        const got = (try readEmbeddedPayload(io, testing.allocator, f)) orelse return error.NoTrailer;
+        defer testing.allocator.free(got);
+        try testing.expectEqualStrings(payload, got);
+    }
+
+    // A bare runtime (no footer) → null, without reading it as an artifact.
+    try writeFile(tmp.dir, io, "bare.bin", runtime);
+    {
+        const f = try tmp.dir.openFile(io, "bare.bin", .{});
+        defer f.close(io);
+        try testing.expect((try readEmbeddedPayload(io, testing.allocator, f)) == null);
+    }
+
+    // A file shorter than the 12-byte footer → null (no underflow).
+    try writeFile(tmp.dir, io, "tiny.bin", "ab");
+    {
+        const f = try tmp.dir.openFile(io, "tiny.bin", .{});
+        defer f.close(io);
+        try testing.expect((try readEmbeddedPayload(io, testing.allocator, f)) == null);
+    }
+
+    // An empty payload still frames + footer-seeks cleanly (zero-length result).
+    const empty_art = try frameArtifact(testing.allocator, runtime, "");
+    defer testing.allocator.free(empty_art);
+    try writeFile(tmp.dir, io, "empty.bin", empty_art);
+    {
+        const f = try tmp.dir.openFile(io, "empty.bin", .{});
+        defer f.close(io);
+        const got = (try readEmbeddedPayload(io, testing.allocator, f)) orelse return error.NoTrailer;
+        defer testing.allocator.free(got);
+        try testing.expectEqual(@as(usize, 0), got.len);
+    }
 }
 
 test "header magic + version round-trips on empty chunk" {
