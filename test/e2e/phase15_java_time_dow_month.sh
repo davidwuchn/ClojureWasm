@@ -58,4 +58,26 @@ EOF
 )
 eq 'chrono-unit' "$E" 'Days DAYS HalfDays MILLENNIA true false'
 
+# --- LocalDate.until(d2, ChronoUnit) — date-unit diffs; day-of-month boundary
+F=$(out <<'EOF' 2>&1
+(let [a (java.time.LocalDate/of 2020 1 1) b (java.time.LocalDate/of 2021 3 15)]
+  (println (.until a b java.time.temporal.ChronoUnit/DAYS)
+           (.until a b java.time.temporal.ChronoUnit/WEEKS)
+           (.until a b java.time.temporal.ChronoUnit/MONTHS)
+           (.until a b java.time.temporal.ChronoUnit/YEARS)
+           ; Jan31->Mar1 is NOT a full 2 months (day-of-month boundary)
+           (.until (java.time.LocalDate/of 2020 1 31) (java.time.LocalDate/of 2020 3 1) java.time.temporal.ChronoUnit/MONTHS)
+           ; negative direction
+           (.until (java.time.LocalDate/of 2020 3 1) (java.time.LocalDate/of 2020 1 1) java.time.temporal.ChronoUnit/DAYS)))
+EOF
+)
+eq 'until' "$F" '439 62 14 1 1 -60'
+
+# --- a time-based unit on a LocalDate raises (JVM UnsupportedTemporalTypeException)
+G=$("$BIN" -e '(.until (java.time.LocalDate/of 2020 1 1) (java.time.LocalDate/of 2020 1 2) java.time.temporal.ChronoUnit/HOURS)' 2>&1 || true)
+case "$G" in
+    *"date-based"*|*"ChronoUnit"*) echo "PASS until-unsupported -> raised" ;;
+    *) fail "until-unsupported: expected a date-based-unit error, got '$G'" ;;
+esac
+
 echo "OK — phase15_java_time_dow_month (D-462) green"

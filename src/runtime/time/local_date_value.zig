@@ -30,6 +30,8 @@ const instant = @import("instant.zig");
 const day_of_week_value = @import("day_of_week_value.zig");
 const month_value = @import("month_value.zig");
 const local_date_time_value = @import("local_date_time_value.zig");
+const host_instance = @import("../host_instance.zig");
+const chrono_unit = @import("../chrono_unit.zig");
 
 /// `(.getYear d)` — the proleptic year (JVM `LocalDate.getYear`).
 fn getYearFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
@@ -209,6 +211,40 @@ fn isEqualFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) 
     return Value.initBoolean(epochDayOf(args[0]) == epochDayOf(args[1]));
 }
 
+/// `(.until d1 d2 unit)` — the whole count of `unit` from `d1` to `d2` (JVM
+/// `LocalDate.until(end, ChronoUnit)`). Date-based units only (DAYS..MILLENNIA);
+/// a time-based unit (HOURS etc.) or ERAS/FOREVER raises (JVM throws
+/// UnsupportedTemporalTypeException). The MONTHS count uses the
+/// proleptic-month*32 + day-of-month packing so day-of-month boundaries round
+/// toward zero exactly as the JVM does (Jan31→Mar1 = 1 month, not 2).
+fn untilFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = env;
+    try error_catalog.checkArity("until", args, 3, loc);
+    if (!isLocalDate(rt, args[1]))
+        return error_catalog.raise(.type_arg_invalid, loc, .{ .fn_name = ".until", .expected = "LocalDate", .actual = @tagName(args[1].tag()) });
+    if (args[2].tag() != .host_instance)
+        return error_catalog.raise(.type_arg_invalid, loc, .{ .fn_name = ".until", .expected = "a ChronoUnit", .actual = @tagName(args[2].tag()) });
+    const ord: u8 = @intCast(host_instance.asHostInstance(args[2]).state[0]);
+    const ed1 = epochDayOf(args[0]);
+    const ed2 = epochDayOf(args[1]);
+    const c1 = instant.civilFromDays(ed1);
+    const c2 = instant.civilFromDays(ed2);
+    const packed1: i64 = (c1.y * 12 + c1.m - 1) * 32 + c1.d;
+    const packed2: i64 = (c2.y * 12 + c2.m - 1) * 32 + c2.d;
+    const months: i64 = @divTrunc(packed2 - packed1, 32);
+    const result: i64 = switch (ord) {
+        7 => ed2 - ed1, // DAYS
+        8 => @divTrunc(ed2 - ed1, 7), // WEEKS
+        9 => months, // MONTHS
+        10 => @divTrunc(months, 12), // YEARS
+        11 => @divTrunc(months, 120), // DECADES
+        12 => @divTrunc(months, 1200), // CENTURIES
+        13 => @divTrunc(months, 12000), // MILLENNIA
+        else => return error_catalog.raise(.type_arg_invalid, loc, .{ .fn_name = ".until", .expected = "a date-based ChronoUnit (DAYS/WEEKS/MONTHS/YEARS/DECADES/CENTURIES/MILLENNIA)", .actual = chrono_unit.name(ord) }),
+    };
+    return Value.initInteger(result);
+}
+
 /// `(.atStartOfDay d)` — the `LocalDateTime` at the start of this day (midnight),
 /// the no-zone JVM `LocalDate.atStartOfDay()` overload. `nano_of_day = 0`.
 fn atStartOfDayFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
@@ -277,6 +313,7 @@ pub fn descriptorOf(rt: *Runtime) !*const TypeDescriptor {
         .{ "isBefore", &isBeforeFn },
         .{ "isAfter", &isAfterFn },
         .{ "isEqual", &isEqualFn },
+        .{ "until", &untilFn },
         .{ "atStartOfDay", &atStartOfDayFn },
         .{ "atTime", &atTimeFn },
     };
