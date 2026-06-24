@@ -152,4 +152,12 @@ assert_eq 'ctor_int'  "$(sm '(str (java.math.BigDecimal. 5))')"        '"5"'
 # the ctor result is a real BigDecimal (scale-bearing, usable in .setScale)
 assert_eq 'ctor_use'  "$(sm '(str (.setScale (java.math.BigDecimal. "2.5") 0 java.math.RoundingMode/HALF_UP))')" '"3"'
 
-echo "OK — phase14_bigdecimal_setscale (91 cases) green"
+# 2-arg round-on-construct (BigDecimal. x mc) — D-511. clj-grounded (= (.round (bigdec x) mc)).
+assert_eq 'ctor_mc'       "$(sm '(str (java.math.BigDecimal. "3.14159" (java.math.MathContext. 3)))')"                       '"3.14"'
+assert_eq 'ctor_mc_id'    "$(sm '(str (java.math.BigDecimal. "3.14159" java.math.MathContext/DECIMAL32))')"                  '"3.14159"'
+assert_eq 'ctor_mc_int'   "$(sm '(str (java.math.BigDecimal. 12345 (java.math.MathContext. 3)))')"                          '"1.23E+4"'
+assert_eq 'ctor_mc_carry' "$(sm '(str (java.math.BigDecimal. "9.95" (java.math.MathContext. 2)))')"                         '"10"'
+assert_eq 'ctor_mc_mode'  "$(sm '(str (java.math.BigDecimal. "123.456" (java.math.MathContext. 4 java.math.RoundingMode/FLOOR)))')" '"123.4"'
+assert_eq 'ctor_mc_unlim' "$(sm '(str (java.math.BigDecimal. "3.14159" java.math.MathContext/UNLIMITED))')"                 '"3.14159"'
+
+echo "OK — phase14_bigdecimal_setscale (97 cases) green"

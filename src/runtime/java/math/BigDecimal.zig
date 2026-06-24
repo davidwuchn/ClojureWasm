@@ -489,18 +489,38 @@ pub fn installNativeMethods(rt: *Runtime) !void {
 /// runs once at module install (the static-field constants are comptime, but a
 /// `Value.initBuiltinFn` method entry cannot be built at module-scope comptime).
 /// `(BigDecimal. x)` — construct from a decimal STRING (parsed, like `bigdec`) or
-/// an integer (scale 0). JVM `BigDecimal(String)` / `BigDecimal(long)`. The
-/// `(BigDecimal. x mc)` round-on-construct + the exact-binary `double` ctor are
-/// D-511 (the 2-arg form needs a combined parse-then-round to stay GC-safe).
+/// an integer (scale 0). JVM `BigDecimal(String)` / `BigDecimal(long)`.
+/// `(BigDecimal. x mc)` — same parse, then round to the MathContext precision (=
+/// `(.round (bigdec x) mc)`; UNLIMITED/precision-0 = exact). The exact-binary
+/// `(BigDecimal. double)` ctor is still deferred (D-511; a clj footgun).
 fn initBigDecimal(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
     _ = env;
-    try error_catalog.checkArity("BigDecimal", args, 1, loc);
-    switch (args[0].tag()) {
-        .string => return (try big_decimal.allocFromDecimalString(rt, string_collection.asString(args[0]))) orelse
+    try error_catalog.checkArityRange("BigDecimal", args, 1, 2, loc);
+    const parsed = try parseBigDecimalArg(rt, args[0], loc);
+    if (args.len == 1) return parsed;
+    // 2-arg: round to the MathContext. `parsed` is a fresh GC-heap value held only
+    // in this Zig local — pin it across `allocRoundPrecision` (which allocates and
+    // can park at a safepoint where the root walk would not see it). D-511.
+    const mc = mathContextOf(args[1]) orelse
+        return error_catalog.raise(.type_arg_invalid, loc, .{ .fn_name = "BigDecimal", .expected = "a MathContext", .actual = @tagName(args[1].tag()) });
+    try rt.gc.pin(parsed);
+    defer _ = rt.gc.unpin(parsed);
+    return big_decimal.allocRoundPrecision(rt, parsed, mc.precision, mc.mode) catch |e| switch (e) {
+        error.RoundingNecessary => error_catalog.raise(.rounding_necessary, loc, .{}),
+        error.InvalidRoundingMode => error_catalog.raise(.type_arg_invalid, loc, .{ .fn_name = "BigDecimal", .expected = "a ROUND_* mode (0-7)", .actual = "an unknown rounding mode" }),
+        else => e,
+    };
+}
+
+/// Parse the `(BigDecimal. x …)` first arg: a decimal STRING (like `bigdec`) or an
+/// integer (scale 0). Shared by the 1-arg and 2-arg ctor forms.
+fn parseBigDecimalArg(rt: *Runtime, x: Value, loc: SourceLocation) anyerror!Value {
+    switch (x.tag()) {
+        .string => return (try big_decimal.allocFromDecimalString(rt, string_collection.asString(x))) orelse
             error_catalog.raise(.type_arg_not_number, loc, .{ .fn_name = "BigDecimal", .actual = "an unparseable decimal string" }),
         else => {
-            if (args[0].isInt()) return big_decimal.allocFromI64Scale(rt, args[0].asInteger(), 0);
-            return error_catalog.raise(.type_arg_not_number, loc, .{ .fn_name = "BigDecimal", .actual = @tagName(args[0].tag()) });
+            if (x.isInt()) return big_decimal.allocFromI64Scale(rt, x.asInteger(), 0);
+            return error_catalog.raise(.type_arg_not_number, loc, .{ .fn_name = "BigDecimal", .actual = @tagName(x.tag()) });
         },
     }
 }
