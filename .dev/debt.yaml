@@ -24,6 +24,27 @@
 # md-table-align no longer pads it to ~800 KB of whitespace.
 
 active:
+  - id: "D-511"
+    status: "OPEN (2026-06-24). Remaining java.math.BigDecimal instance-method gaps after the ADR-0160-follow-up sweep (compareTo/max/min/equals/pow/intValue/longValue/doubleValue/divide-with-mode landed)."
+    category: "clj-parity"
+    barrier: |-
+      Two clusters left on the BigDecimal instance-method surface:
+      (a) `.remainder(divisor)` — deferred this cycle because the natural impl
+          (a - divideToIntegralValue(divisor)*divisor) holds 2-3 intermediate
+          Values across allocMul/allocSub, a GC-root hazard (.dev/gc_rooting.md);
+          do it Managed-only (aligned-int remainder) like allocDivScale, OR add a
+          rooted-temp scope. Also `.divideToIntegralValue` (the public name for the
+          existing allocQuotient) + `.divideAndRemainder`.
+      (b) MathContext-taking forms: `(java.math.MathContext. precision mode)` host
+          class + `.round(mc)` + `.divide(divisor, mc)` + `(BigDecimal. … mc)`.
+          MathContext is the real `with-precision :rounding` consumer (D-467) and the
+          first beneficiary of RoundingMode's TYPED enum arg (ADR-0160 DA-fork). It
+          is its OWN host class (distinct from D-510's host-enum mechanism). cljw's
+          *math-context* is currently a bootstrap-internal var, not a constructible
+          object. Wire it as a host class carrying (precision, RoundingMode-ordinal).
+      Both are quick clj-parity wins; (b) unblocks precision-math libs. Verify each
+      vs the clj oracle + add e2e cases to phase14_bigdecimal_setscale.sh.
+    last_reviewed: "2026-06-24"
   - id: "D-510"
     status: "OPEN (2026-06-24). Deferred structural plan from ADR-0160's DA-fork (Alt 3). RoundingMode landed as a one-off host-enum singleton (ADR-0160 Alt 2); the GENERAL host-enum mechanism is owed."
     category: "host-surface"

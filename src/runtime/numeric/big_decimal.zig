@@ -609,36 +609,109 @@ pub fn setScale(rt: *Runtime, v: Value, new_scale: i32, mode: i64) !Value {
     var r = try Managed.init(infra);
     defer r.deinit();
     try q.divTrunc(&r, &unscaled, &divisor); // q toward zero; sign(r) = sign(unscaled)
-
-    if (r.toConst().orderAgainstScalar(0) != .eq) {
-        const r_neg = r.toConst().orderAgainstScalar(0) == .lt;
-        // 2·|r| vs |divisor| decides the HALF_* tie; divisor is always positive.
-        var abs_r = try r.clone();
-        defer abs_r.deinit();
-        abs_r.abs();
-        var two_abs = try Managed.init(infra);
-        defer two_abs.deinit();
-        try two_abs.add(&abs_r, &abs_r);
-        const half = two_abs.order(divisor); // .lt below half / .eq exactly half / .gt above
-
-        const round_away = switch (mode) {
-            0 => true, // UP — always away from zero
-            1 => false, // DOWN — always toward zero (truncate)
-            2 => !r_neg, // CEILING — toward +inf
-            3 => r_neg, // FLOOR — toward -inf
-            4 => half != .lt, // HALF_UP — tie rounds away
-            5 => half == .gt, // HALF_DOWN — tie rounds toward zero
-            6 => half == .gt or (half == .eq and (q.toConst().limbs[0] & 1) == 1), // HALF_EVEN
-            7 => return error.RoundingNecessary, // UNNECESSARY with a remainder
-            else => return error.InvalidRoundingMode,
-        };
-        if (round_away) {
-            var one = try Managed.initSet(infra, 1);
-            defer one.deinit();
-            if (r_neg) try q.sub(&q, &one) else try q.add(&q, &one);
-        }
-    }
+    try applyRounding(infra, &q, &r, &divisor, mode);
     return allocFromManagedScale(rt, &q, new_scale);
+}
+
+/// Adjust the truncated quotient `q` (toward zero) by one ULP per `mode`, given
+/// the truncation remainder `r` (sign = sign of the dividend) and the POSITIVE
+/// `divisor` of the truncating division. `mode` is the JVM `ROUND_*` ordinal
+/// (0-7). Shared by `setScale` and `allocDivScale` (the rounding rule is one
+/// place — both the scale-change and the rounding-division round identically).
+fn applyRounding(infra: std.mem.Allocator, q: *std.math.big.int.Managed, r: *std.math.big.int.Managed, divisor: *const std.math.big.int.Managed, mode: i64) !void {
+    if (r.toConst().orderAgainstScalar(0) == .eq) return;
+    const r_neg = r.toConst().orderAgainstScalar(0) == .lt;
+    // 2·|r| vs |divisor| decides the HALF_* tie; divisor is always positive.
+    var abs_r = try r.clone();
+    defer abs_r.deinit();
+    abs_r.abs();
+    var two_abs = try std.math.big.int.Managed.init(infra);
+    defer two_abs.deinit();
+    try two_abs.add(&abs_r, &abs_r);
+    const half = two_abs.order(divisor.*); // .lt below half / .eq exactly half / .gt above
+
+    const round_away = switch (mode) {
+        0 => true, // UP — always away from zero
+        1 => false, // DOWN — always toward zero (truncate)
+        2 => !r_neg, // CEILING — toward +inf
+        3 => r_neg, // FLOOR — toward -inf
+        4 => half != .lt, // HALF_UP — tie rounds away
+        5 => half == .gt, // HALF_DOWN — tie rounds toward zero
+        6 => half == .gt or (half == .eq and (q.toConst().limbs[0] & 1) == 1), // HALF_EVEN
+        7 => return error.RoundingNecessary, // UNNECESSARY with a remainder
+        else => return error.InvalidRoundingMode,
+    };
+    if (round_away) {
+        var one = try std.math.big.int.Managed.initSet(infra, 1);
+        defer one.deinit();
+        if (r_neg) try q.sub(q, &one) else try q.add(q, &one);
+    }
+}
+
+/// `a ÷ b` rounded to exactly `scale` decimal places per `mode` (JVM
+/// `BigDecimal.divide(divisor, scale, RoundingMode)`; the 3-arg `(divisor,
+/// RoundingMode)` form passes `scale = a.scale`). `error.DivideByZero` if b=0.
+pub fn allocDivScale(rt: *Runtime, a: Value, b: Value, scale: i32, mode: i64) !Value {
+    const Managed = std.math.big.int.Managed;
+    const infra = rt.gc.infra;
+    const ad = a.decodePtr(*const BigDecimal);
+    const bd = b.decodePtr(*const BigDecimal);
+    if (bd.unscaled.m.eqlZero()) return error.DivideByZero;
+
+    // Fold the divisor's sign into the dividend so the divisor is positive — then
+    // the truncation remainder's sign == the true quotient's sign, which is
+    // exactly applyRounding's contract (shared with setScale).
+    var n = try ad.unscaled.m.clone();
+    defer n.deinit();
+    var d = try bd.unscaled.m.clone();
+    defer d.deinit();
+    if (d.toConst().orderAgainstScalar(0) == .lt) {
+        d.negate();
+        n.negate();
+    }
+
+    // a/b = n·10^(scale - a.scale + b.scale) / d, evaluated to scale `scale`.
+    const s: i64 = @as(i64, scale) - @as(i64, ad.scale) + @as(i64, bd.scale);
+    var ten = try Managed.initSet(infra, 10);
+    defer ten.deinit();
+    var pow10 = try Managed.init(infra);
+    defer pow10.deinit();
+    try pow10.pow(&ten, @intCast(@abs(s)));
+
+    var num = try Managed.init(infra);
+    defer num.deinit();
+    var den = try Managed.init(infra);
+    defer den.deinit();
+    if (s >= 0) {
+        try num.mul(&n, &pow10);
+        try den.copy(d.toConst());
+    } else {
+        try num.copy(n.toConst());
+        try den.mul(&d, &pow10);
+    }
+
+    var q = try Managed.init(infra);
+    defer q.deinit();
+    var r = try Managed.init(infra);
+    defer r.deinit();
+    try q.divTrunc(&r, &num, &den); // den is positive
+    try applyRounding(infra, &q, &r, &den, mode);
+    return allocFromManagedScale(rt, &q, scale);
+}
+
+/// `v^n` exact, scale = n·v.scale (JVM `BigDecimal.pow(int)`, n≥0; n=0 → `1`).
+/// Computed on the unscaled BigInt (no intermediate Values → no GC-root subtlety).
+pub fn allocPow(rt: *Runtime, v: Value, n: i64) !Value {
+    if (n < 0) return error.NegativeExponent;
+    const Managed = std.math.big.int.Managed;
+    const vd = v.decodePtr(*const BigDecimal);
+    var base = try vd.unscaled.m.clone();
+    defer base.deinit();
+    var result = try Managed.init(rt.gc.infra);
+    defer result.deinit();
+    try result.pow(&base, @intCast(n));
+    const scale: i32 = @intCast(@as(i64, vd.scale) * n);
+    return allocFromManagedScale(rt, &result, scale);
 }
 
 const AddOrSub = enum { add, sub };

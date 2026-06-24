@@ -99,4 +99,26 @@ assert_eq 'rm_ceiling'   "$(rm 2.5 0 CEILING)"     '"3"'
 assert_eq 'rm_half_even' "$(rm 2.5 0 HALF_EVEN)"   '"2"'
 assert_eq 'rm_up_neg'    "$(rm -2.5 0 UP)"         '"-3"'
 
-echo "OK — phase14_bigdecimal_setscale (52 cases) green"
+# BigDecimal method-surface gap-fill (ADR-0160 follow-up). clj-oracle-grounded.
+# divide(divisor, scale, RoundingMode) + divide(divisor, RoundingMode) = the
+# clj-modern rounding-division API; the no-mode (.divide a b) stays exact.
+sm() { "$BIN" -e "$1" 2>&1 | awk 'END{print}'; }
+assert_eq 'div_scale_mode' "$(sm '(str (.divide (bigdec "10") (bigdec "3") 2 java.math.RoundingMode/HALF_UP))')" '"3.33"'
+assert_eq 'div_mode'       "$(sm '(str (.divide (bigdec "10") (bigdec "4") java.math.RoundingMode/HALF_UP))')"   '"3"'
+assert_eq 'div_mode_int'   "$(sm '(str (.divide (bigdec "10") (bigdec "3") 2 BigDecimal/ROUND_HALF_UP))')"       '"3.33"'
+assert_eq 'bd_pow'         "$(sm '(str (.pow (bigdec "2") 10))')"                       '"1024"'
+assert_eq 'bd_pow0'        "$(sm '(str (.pow (bigdec "5") 0))')"                        '"1"'
+assert_eq 'bd_max'         "$(sm '(str (.max (bigdec "1") (bigdec "2")))')"             '"2"'
+assert_eq 'bd_min'         "$(sm '(str (.min (bigdec "1") (bigdec "2")))')"             '"1"'
+assert_eq 'bd_compareto_eq' "$(sm '(.compareTo (bigdec "1.0") (bigdec "1.00"))')"       '0'
+assert_eq 'bd_compareto_gt' "$(sm '(.compareTo (bigdec "2") (bigdec "1"))')"            '1'
+assert_eq 'bd_compareto_lt' "$(sm '(.compareTo (bigdec "1") (bigdec "2"))')"            '-1'
+# .equals is scale-SENSITIVE (JVM BigDecimal.equals): 1.0 != 1.00 (differ in scale),
+# even though they are `=` by value and compareTo 0. This is the clj-parity fix.
+assert_eq 'bd_equals_scale' "$(sm '(.equals (bigdec "1.0") (bigdec "1.00"))')"          'false'
+assert_eq 'bd_equals_same'  "$(sm '(.equals (bigdec "1.0") (bigdec "1.0"))')"           'true'
+assert_eq 'bd_intvalue'    "$(sm '(.intValue (bigdec "42.9"))')"                        '42'
+assert_eq 'bd_longvalue'   "$(sm '(.longValue (bigdec "42.9"))')"                       '42'
+assert_eq 'bd_doublevalue' "$(sm '(.doubleValue (bigdec "1.5"))')"                      '1.5'
+
+echo "OK — phase14_bigdecimal_setscale (67 cases) green"

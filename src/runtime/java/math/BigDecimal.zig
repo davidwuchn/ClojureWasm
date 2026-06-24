@@ -28,6 +28,7 @@ const big_int = @import("../../numeric/big_int.zig");
 const print_mod = @import("../../print.zig");
 const host_instance = @import("../../host_instance.zig");
 const rounding_mode = @import("../../rounding_mode.zig");
+const nb = @import("../../value/nan_box.zig");
 
 fn requireBd(v: Value, name: []const u8, loc: SourceLocation) !void {
     if (v.tag() != .big_decimal)
@@ -171,19 +172,153 @@ fn multiplyFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation)
     return big_decimal.allocMul(rt, args[0], args[1]);
 }
 
-/// `(.divide a b)` — exact BigDecimal quotient (JVM `BigDecimal.divide(BigDecimal)`,
-/// the no-MathContext form): throws on a non-terminating expansion or zero divisor,
-/// matching clj `(/ aM bM)` (the shared `allocDiv`).
+/// A rounding-mode argument: a `java.math.RoundingMode` enum constant (a
+/// host_instance carrying its ordinal in state[0]) OR a deprecated `ROUND_*`
+/// int — both decode to 0-7. Shared by `setScale` and `divide`.
+fn decodeMode(v: Value, fn_name: []const u8, loc: SourceLocation) !i64 {
+    if (v.tag() == .host_instance) {
+        const hi = host_instance.asHostInstance(v);
+        if (hi.descriptor.fqcn) |fqcn| {
+            if (std.mem.eql(u8, fqcn, "java.math.RoundingMode")) return @intCast(hi.state[0]);
+        }
+    }
+    if (!v.isInt())
+        return error_catalog.raise(.type_arg_not_number, loc, .{ .fn_name = fn_name, .actual = "non-integer scale/mode" });
+    return v.asInteger();
+}
+
+/// `(.divide a b)` — exact quotient (throws on non-terminating / zero divisor,
+/// matching clj `(/ aM bM)`). `(.divide a b mode)` — rounds to a's scale per the
+/// RoundingMode (or `ROUND_*` int). `(.divide a b scale mode)` — rounds to the
+/// given scale. JVM `BigDecimal.divide` overloads (the MathContext forms are D-511).
 fn divideFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
     _ = env;
-    try error_catalog.checkArity("divide", args, 2, loc);
+    try error_catalog.checkArityRange("divide", args, 2, 4, loc);
     try requireBd(args[0], "divide", loc);
     try requireBd(args[1], "divide", loc);
-    return big_decimal.allocDiv(rt, args[0], args[1]) catch |e| switch (e) {
-        error.DivideByZero => error_catalog.raise(.divide_by_zero, loc, .{}),
-        error.NonTerminatingDecimal => error_catalog.raise(.non_terminating_decimal, loc, .{}),
+    const divErr = struct {
+        fn map(e: anyerror, l: SourceLocation) anyerror!Value {
+            return switch (e) {
+                error.DivideByZero => error_catalog.raise(.divide_by_zero, l, .{}),
+                error.NonTerminatingDecimal => error_catalog.raise(.non_terminating_decimal, l, .{}),
+                error.RoundingNecessary => error_catalog.raise(.rounding_necessary, l, .{}),
+                error.InvalidRoundingMode => error_catalog.raise(.type_arg_invalid, l, .{ .fn_name = "divide", .expected = "a ROUND_* mode (0-7)", .actual = "an unknown rounding mode" }),
+                else => e,
+            };
+        }
+    };
+    switch (args.len) {
+        2 => return big_decimal.allocDiv(rt, args[0], args[1]) catch |e| return divErr.map(e, loc),
+        3 => {
+            const mode = try decodeMode(args[2], "divide", loc);
+            return big_decimal.allocDivScale(rt, args[0], args[1], big_decimal.asScale(args[0]), mode) catch |e| return divErr.map(e, loc);
+        },
+        else => { // 4 — (divisor, scale, mode)
+            if (!args[2].isInt())
+                return error_catalog.raise(.type_arg_not_number, loc, .{ .fn_name = "divide", .actual = "non-integer scale/mode" });
+            const mode = try decodeMode(args[3], "divide", loc);
+            return big_decimal.allocDivScale(rt, args[0], args[1], @intCast(args[2].asInteger()), mode) catch |e| return divErr.map(e, loc);
+        },
+    }
+}
+
+/// `(.pow bd n)` — `bd^n` exact, n≥0 (JVM `BigDecimal.pow(int)`).
+fn powFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = env;
+    try error_catalog.checkArity("pow", args, 2, loc);
+    try requireBd(args[0], "pow", loc);
+    if (!args[1].isInt())
+        return error_catalog.raise(.type_arg_not_number, loc, .{ .fn_name = "pow", .actual = "non-integer exponent" });
+    return big_decimal.allocPow(rt, args[0], args[1].asInteger()) catch |e| switch (e) {
+        error.NegativeExponent => error_catalog.raise(.type_arg_invalid, loc, .{ .fn_name = "pow", .expected = "a non-negative exponent", .actual = "a negative exponent" }),
         else => e,
     };
+}
+
+/// `(.max a b)` / `(.min a b)` — the larger / smaller by value (JVM compareTo;
+/// ties return `a`, the receiver).
+fn maxFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = env;
+    try error_catalog.checkArity("max", args, 2, loc);
+    try requireBd(args[0], "max", loc);
+    try requireBd(args[1], "max", loc);
+    return if ((try big_decimal.compareValue(rt, args[0], args[1])) == .lt) args[1] else args[0];
+}
+
+fn minFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = env;
+    try error_catalog.checkArity("min", args, 2, loc);
+    try requireBd(args[0], "min", loc);
+    try requireBd(args[1], "min", loc);
+    return if ((try big_decimal.compareValue(rt, args[0], args[1])) == .gt) args[1] else args[0];
+}
+
+/// `(.compareTo a b)` — value comparison sign -1/0/1 (JVM `BigDecimal.compareTo`;
+/// scale-INsensitive, so `1.0` compareTo `1.00` is 0 even though `.equals` is false).
+fn compareToFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = env;
+    try error_catalog.checkArity("compareTo", args, 2, loc);
+    try requireBd(args[0], "compareTo", loc);
+    try requireBd(args[1], "compareTo", loc);
+    return Value.initInteger(switch (try big_decimal.compareValue(rt, args[0], args[1])) {
+        .lt => -1,
+        .eq => 0,
+        .gt => 1,
+    });
+}
+
+/// `(.equals a b)` — JVM `BigDecimal.equals`: equal iff both BigDecimal AND same
+/// unscaled value AND same scale (`1.0` ≠ `1.00`). Distinct from `=`/compareTo,
+/// which are value-only (scale-insensitive).
+fn equalsFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = env;
+    try error_catalog.checkArity("equals", args, 2, loc);
+    try requireBd(args[0], "equals", loc);
+    if (args[1].tag() != .big_decimal) return Value.initBoolean(false);
+    // Same scale AND same value. With equal scales, value-equality (compareValue)
+    // == unscaled-equality, so the scale guard + a value compare is exact.
+    if (big_decimal.asScale(args[0]) != big_decimal.asScale(args[1])) return Value.initBoolean(false);
+    return Value.initBoolean((try big_decimal.compareValue(rt, args[0], args[1])) == .eq);
+}
+
+/// Truncate `bd` toward zero to an integer Value (fixnum when it fits the i48
+/// window, else a promoted Long). Shared by intValue/longValue.
+fn truncatedInteger(rt: *Runtime, bd: Value, narrow_i32: bool) !Value {
+    const truncated = try big_decimal.setScale(rt, bd, 0, 1); // DOWN — toward zero
+    const c = big_decimal.asUnscaled(truncated).m.toConst();
+    const full: i64 = c.toInt(i64) catch blk: {
+        // Magnitude beyond i64: JVM narrowing takes the low bits (exotic for a bigdec).
+        const lo: u64 = if (c.limbs.len > 0) c.limbs[0] else 0;
+        const signed: i64 = @bitCast(lo);
+        break :blk if (c.positive) signed else -%signed;
+    };
+    const narrowed: i64 = if (narrow_i32) @as(i32, @truncate(full)) else full;
+    if (narrowed >= nb.NB_I48_MIN and narrowed <= nb.NB_I48_MAX) return Value.initInteger(narrowed);
+    return big_int.allocFromI64(rt, narrowed, .long);
+}
+
+/// `(.intValue bd)` / `(.longValue bd)` — truncate toward zero then narrow (JVM).
+fn intValueFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = env;
+    try error_catalog.checkArity("intValue", args, 1, loc);
+    try requireBd(args[0], "intValue", loc);
+    return truncatedInteger(rt, args[0], true);
+}
+
+fn longValueFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = env;
+    try error_catalog.checkArity("longValue", args, 1, loc);
+    try requireBd(args[0], "longValue", loc);
+    return truncatedInteger(rt, args[0], false);
+}
+
+/// `(.doubleValue bd)` — nearest f64 (JVM `BigDecimal.doubleValue`).
+fn doubleValueFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = env;
+    _ = rt;
+    try error_catalog.checkArity("doubleValue", args, 1, loc);
+    try requireBd(args[0], "doubleValue", loc);
+    return Value.initFloat(big_decimal.toFloat(args[0]));
 }
 
 /// `(.movePointLeft bd n)` — `bd ÷ 10ⁿ` (scale +n; JVM `BigDecimal.movePointLeft`).
@@ -230,21 +365,8 @@ fn setScale(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) a
     try error_catalog.checkArityRange("setScale", args, 2, 3, loc);
     if (args[0].tag() != .big_decimal)
         return error_catalog.raise(.type_arg_not_number, loc, .{ .fn_name = "setScale", .actual = @tagName(args[0].tag()) });
-    // ROUND_UNNECESSARY (7) for the no-mode form (JVM setScale(int)). The mode
-    // arg is either a deprecated `ROUND_*` int OR a `RoundingMode` enum constant
-    // (a host_instance carrying its ordinal in state[0]) — both decode to 0-7.
-    const mode: i64 = if (args.len == 3) blk: {
-        if (args[2].tag() == .host_instance) {
-            const hi = host_instance.asHostInstance(args[2]);
-            if (hi.descriptor.fqcn) |fqcn| {
-                if (std.mem.eql(u8, fqcn, "java.math.RoundingMode"))
-                    break :blk @intCast(hi.state[0]);
-            }
-        }
-        if (!args[2].isInt())
-            return error_catalog.raise(.type_arg_not_number, loc, .{ .fn_name = "setScale", .actual = "non-integer scale/mode" });
-        break :blk args[2].asInteger();
-    } else 7;
+    // ROUND_UNNECESSARY (7) for the no-mode form (JVM setScale(int)).
+    const mode: i64 = if (args.len == 3) try decodeMode(args[2], "setScale", loc) else 7;
     if (!args[1].isInt())
         return error_catalog.raise(.type_arg_not_number, loc, .{ .fn_name = "setScale", .actual = "non-integer scale/mode" });
     return big_decimal.setScale(rt, args[0], @intCast(args[1].asInteger()), mode) catch |e| switch (e) {
@@ -279,6 +401,14 @@ pub fn installNativeMethods(rt: *Runtime) !void {
         .{ "divide", &divideFn },
         .{ "movePointLeft", &movePointLeftFn },
         .{ "movePointRight", &movePointRightFn },
+        .{ "pow", &powFn },
+        .{ "max", &maxFn },
+        .{ "min", &minFn },
+        .{ "compareTo", &compareToFn },
+        .{ "equals", &equalsFn },
+        .{ "intValue", &intValueFn },
+        .{ "longValue", &longValueFn },
+        .{ "doubleValue", &doubleValueFn },
     };
     const entries = try gpa.alloc(type_descriptor.TypeDescriptor.MethodEntry, specs.len);
     inline for (specs, 0..) |spec, i| {
