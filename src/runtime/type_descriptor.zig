@@ -217,6 +217,9 @@ pub const TypeDescriptor = struct {
         /// A `java.time.temporal.ChronoUnit` enum constant (ordinal 0-15) →
         /// `chrono_unit.zig::singleton`. The 2nd host-enum (D-510 folds both).
         chrono_unit: u8,
+        /// A `java.math.MathContext` standard constant (0-3 = DECIMAL32/64/128/
+        /// UNLIMITED) → `math_context.zig::singleton` (D-511).
+        math_context: u8,
     };
 
     /// Find a static field by name (ADR-0061). Linear — field tables are

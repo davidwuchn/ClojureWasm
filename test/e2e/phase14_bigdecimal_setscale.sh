@@ -137,5 +137,12 @@ assert_eq 'mc_precision'  "$(sm '(.getPrecision (java.math.MathContext. 7))')"  
 assert_eq 'mc_mode'       "$(sm '(str (.getRoundingMode (java.math.MathContext. 7)))')"                                       '"HALF_UP"'
 assert_eq 'mc_tostr'      "$(sm '(str (java.math.MathContext. 4))')"                                                          '"precision=4 roundingMode=HALF_UP"'
 assert_eq 'mc_tostr_mode' "$(sm '(str (java.math.MathContext. 4 java.math.RoundingMode/FLOOR))')"                            '"precision=4 roundingMode=FLOOR"'
+# DECIMAL32/64/128/UNLIMITED standard constants (D-511) — clj-grounded.
+assert_eq 'mc_decimal64'  "$(sm '(str java.math.MathContext/DECIMAL64)')"                                                     '"precision=16 roundingMode=HALF_EVEN"'
+assert_eq 'mc_decimal32'  "$(sm '(.getPrecision java.math.MathContext/DECIMAL32)')"                                           '7'
+assert_eq 'mc_decimal128' "$(sm '(.getPrecision java.math.MathContext/DECIMAL128)')"                                          '34'
+assert_eq 'mc_unlimited'  "$(sm '(str java.math.MathContext/UNLIMITED)')"                                                     '"precision=0 roundingMode=HALF_UP"'
+# DECIMAL64 used in a real round (16 sig figs, HALF_EVEN)
+assert_eq 'mc_dec_round'  "$(sm '(str (.divide (bigdec "1") (bigdec "3") java.math.MathContext/DECIMAL32))')"                 '"0.3333333"'
 
-echo "OK — phase14_bigdecimal_setscale (82 cases) green"
+echo "OK — phase14_bigdecimal_setscale (87 cases) green"

@@ -401,6 +401,7 @@ fn staticFieldValue(rt: *Runtime, sf: *const @import("../../runtime/type_descrip
         },
         .rounding_mode => |ord| try @import("../../runtime/rounding_mode.zig").singleton(rt, ord),
         .chrono_unit => |ord| try @import("../../runtime/chrono_unit.zig").singleton(rt, ord),
+        .math_context => |which| try @import("../../runtime/math_context.zig").singleton(rt, which),
     };
 }
 

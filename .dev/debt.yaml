@@ -42,19 +42,11 @@ active:
       0→3661s → SECONDS 3661 / MINUTES 61; 0→200000s → DAYS 2.
     last_reviewed: "2026-06-24"
   - id: "D-511"
-    status: "OPEN (2026-06-24). Two small BigDecimal remainders left. Part (a) remainder/divideToIntegralValue LANDED 2026-06-24. Part (b) MathContext CORE LANDED 2026-06-24: `(MathContext. precision [mode])` host class + getPrecision/getRoundingMode/toString + BigDecimal `.round(mc)` / `.divide(divisor, mc)`; allocDivPrecision generalised to an arbitrary RoundingMode + allocRoundPrecision added (e2e mc_*). Only the static constants + the BigDecimal(…,mc) constructor remain."
+    status: "OPEN (2026-06-24). MathContext surface essentially complete. Part (a) remainder/divideToIntegralValue LANDED. Part (b) MathContext CORE LANDED ((MathContext. p [mode]) + getPrecision/getRoundingMode/toString + .round(mc) + .divide(d,mc) + generalised allocDivPrecision/allocRoundPrecision). DECIMAL32/64/128/UNLIMITED static constants LANDED 2026-06-24 (math_context.zig singleton, `.math_context` StaticFieldValue arm; e2e mc_decimal*). Only the BigDecimal(…,mc) constructor remains."
     category: "clj-parity"
     barrier: |-
-      Remaining MathContext surface (low priority — the constructor + .round/.divide
-      cover the functionality):
-      (1) `MathContext/DECIMAL32|DECIMAL64|DECIMAL128|UNLIMITED` static-constant
-          singletons — need the per-Runtime singleton machinery (the `.rounding_mode`
-          StaticFieldValue-arm pattern + a neutral runtime/math_context.zig, mirroring
-          rounding_mode.zig). DECIMAL32=(7,HALF_EVEN), DECIMAL64=(16,HALF_EVEN),
-          DECIMAL128=(34,HALF_EVEN), UNLIMITED=(0,HALF_UP).
-      (2) `(BigDecimal. <num> mc)` constructor form (round-on-construct).
-      Both verify vs clj + add e2e to phase14_bigdecimal_setscale.sh. D-510's general
-      host-enum mechanism could absorb (1) if it lands first.
+      Only `(BigDecimal. <num> mc)` (round-on-construct) remains — low priority, the
+      explicit `.round(mc)` covers the functionality. Verify vs clj + e2e when landed.
     last_reviewed: "2026-06-24"
   - id: "D-510"
     status: "OPEN (2026-06-24). General host-enum mechanism (ADR-0160 DA Alt 3). NOW JUSTIFIED: there are TWO parallel one-off host-enum singletons — RoundingMode (`.rounding_mode: u8` arm + rounding_mode.zig) AND ChronoUnit (`.chrono_unit: u8` arm + chrono_unit.zig, 2026-06-24). The barrier (2nd enum appears) has dissolved — unify into one StaticFieldValue arm + registry, folding both + the ad-hoc DayOfWeek/Month TemporalPrint arms. Note per-enum toString differs (RoundingMode str=enum-name 'HALF_UP'; ChronoUnit str=display-name 'Days'), so the mechanism needs a per-enum name fn. SCOPE FINDING (2026-06-24): the four host enums use TWO different value representations — RoundingMode/ChronoUnit are `.host_instance` (state[0]=ordinal) + a toString METHOD; DayOfWeek/Month are `.typed_instance` + the `TemporalPrint` enum-name print arm + getValue. A true unification must reconcile both representations (pick one home + one print path), so it is a larger structural refactor than a pure StaticFieldValue-arm merge — schedule as a focused unit, not a tail-of-session add."

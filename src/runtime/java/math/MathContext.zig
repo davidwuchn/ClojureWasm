@@ -8,12 +8,13 @@
 //! (D-467) — this surface is the explicit object form.
 //!
 //! Backend: impl-only
-//! Impl deps: rounding_mode, big_decimal
+//! Impl deps: rounding_mode, big_decimal, math_context
 //! Clojure peer: none.
 //!
 //! `<init>` + the instance methods are registered on the rt.types descriptor in
 //! `initMathContext`; dispatch reads the descriptor off the instance (ADR-0106).
-//! The DECIMAL32/64/128/UNLIMITED static-constant singletons are deferred (D-511).
+//! The DECIMAL32/64/128/UNLIMITED static constants resolve to per-Runtime cached
+//! singletons via the neutral `math_context.zig` (D-511).
 
 const std = @import("std");
 const host_api = @import("../_host_api.zig");
@@ -84,6 +85,15 @@ fn toStringFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation)
     return string_collection.alloc(rt, s);
 }
 
+/// The 4 IEEE-754 standard contexts; each resolves to its cached singleton
+/// (precision + RoundingMode pair) via `math_context.zig` (D-511).
+const static_fields = [_]type_descriptor.TypeDescriptor.StaticField{
+    .{ .name = "DECIMAL32", .value = .{ .math_context = 0 } },
+    .{ .name = "DECIMAL64", .value = .{ .math_context = 1 } },
+    .{ .name = "DECIMAL128", .value = .{ .math_context = 2 } },
+    .{ .name = "UNLIMITED", .value = .{ .math_context = 3 } },
+};
+
 const METHODS = [_]struct { name: []const u8, f: *const fn (*Runtime, *Env, []const Value, SourceLocation) anyerror!Value }{
     .{ .name = "<init>", .f = &initMathContextInstance },
     .{ .name = "getPrecision", .f = &getPrecisionFn },
@@ -113,7 +123,7 @@ var descriptor: type_descriptor.TypeDescriptor = .{
     .field_layout = null,
     .protocol_impls = &.{},
     .method_table = &.{},
-    .static_fields = &.{},
+    .static_fields = &static_fields,
     .parent = null,
     .meta = .nil_val,
 };

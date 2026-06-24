@@ -270,6 +270,10 @@ pub const Runtime = struct {
     /// filled by `chrono_unit.zig::singleton`; freed in `deinit`. The 2nd
     /// host-enum after `rounding_modes` (D-510 folds both eventually).
     chrono_units: [16]@import("value/value.zig").Value = @splat(.nil_val),
+    /// The 4 `java.math.MathContext` standard constants (DECIMAL32/64/128/
+    /// UNLIMITED), gc.infra-allocated host_instances lazily filled by
+    /// `math_context.zig::singleton`; freed in `deinit`.
+    math_contexts: [4]@import("value/value.zig").Value = @splat(.nil_val),
 
     /// User-set Java system properties (`(System/setProperty k v)`). Keys +
     /// values are `gpa`-owned dupes; consulted by `getProperty` BEFORE the
@@ -643,6 +647,7 @@ pub const Runtime = struct {
         @import("locale.zig").deinitSingletons(self);
         @import("rounding_mode.zig").deinitSingletons(self);
         @import("chrono_unit.zig").deinitSingletons(self);
+        @import("math_context.zig").deinitSingletons(self);
         // Free the per-Runtime Date descriptor (gc.infra — D-200/ADR-0079).
         @import("time/date.zig").deinitDescriptor(self);
         @import("time/timestamp.zig").deinitDescriptor(self);
