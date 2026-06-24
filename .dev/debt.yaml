@@ -87,13 +87,20 @@ active:
       Some static members are missing. If not mechanically enumerable, FIRST
       catalogue them (extend compat_tiers.yaml / a coverage doc), then fill the
       "あと少し欠落" tail.
+      DRAIN 1 (2026-06-25): a 63-expr clj-diff sweep over Math/Long/Integer/
+      Character/Double/String statics found the surface near-complete — only
+      `java.lang.String/join` (delim + Iterable form) was missing. Filled it in
+      String.zig (realizes the seqable via clojure.core/vec, then index-walks —
+      no in-loop GC alloc); non-string element raises a ClassCastException-class
+      error like JVM; nil/empty → "". Corpus: test/diff/clj_corpus/string_join_static.txt
+      (7 golden pairs). The 3+-arg varargs form is rejected like JVM Clojure.
     category: "interop"
     quality_floor: "public-ization: java-interop static-member gaps (ADR-0166)"
     barrier: |-
       Repeatable drain (ADR-0166). Code-touching → diff oracle + corpus apply.
       Per /continue: catalog or fill one interop surface's missing statics.
       SSOT: ADR-0166 row 5.
-    last_reviewed: "2026-06-24"
+    last_reviewed: "2026-06-25"
   - id: "D-527"
     status: |-
       open (2026-06-24, user-directed; ADR-0166). clj-parity alignment with

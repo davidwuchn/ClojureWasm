@@ -1,0 +1,14 @@
+(String/join "," ["a" "b" "c"])
+;;=> "a,b,c"
+(String/join "," [])
+;;=> ""
+(String/join "," ["a"])
+;;=> "a"
+(String/join "-" (list "p" "q"))
+;;=> "p-q"
+(String/join "," (map str [1 2 3]))
+;;=> "1,2,3"
+(String/join "," #{"z"})
+;;=> "z"
+(String/join ", " ["x" "y" "z"])
+;;=> "x, y, z"

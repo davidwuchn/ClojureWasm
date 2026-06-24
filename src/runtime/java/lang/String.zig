@@ -602,6 +602,44 @@ fn valueOf(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) an
     return string_collection.alloc(rt, aw.writer.buffered());
 }
 
+/// `(String/join delim coll)` — Java `String.join(CharSequence, Iterable)`: the
+/// elements of `coll` concatenated with `delim` between adjacent pairs. Each
+/// element must be a string; JVM requires `CharSequence` and throws
+/// `ClassCastException` on anything else, so a non-string element raises a cljw
+/// type error here (the error Kind differs from the JVM exception class — an
+/// accepted divergence). `nil` or an empty coll yields "" (JVM's reflective
+/// 2-overload call is ambiguous on `nil`; "" = "join nothing").
+///
+/// The 3-args-or-more varargs form `(String/join d "a" "b")` is rejected by
+/// JVM Clojure's reflective compiler ("No matching method ... taking 3 args"),
+/// so cljw mirrors that by accepting exactly the 2-arg delimiter+collection form.
+fn join(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    try error_catalog.checkArity("String/join", args, 2, loc);
+    if (args[0].tag() != .string)
+        return error_catalog.raise(.type_arg_invalid, loc, .{ .fn_name = "String/join", .expected = "string", .actual = @tagName(args[0].tag()) });
+    const delim = string_collection.asString(args[0]);
+    // Realize any seqable (vector / list / lazy seq / set) to a vector via
+    // clojure.core/vec, then walk it by index — no GC allocation happens inside
+    // the loop (each element's bytes are copied straight into the gpa-backed
+    // writer), so the realized vector held in a local stays valid throughout.
+    const core = env.findNs("clojure.core") orelse return error.NoVTable;
+    const vec_var = core.resolve("vec") orelse return error.NoVTable;
+    const vt = rt.vtable orelse return error.NoVTable;
+    const elems = try vt.callFn(rt, env, vec_var.deref(), &.{args[1]}, loc);
+    var aw: std.Io.Writer.Allocating = .init(rt.gpa);
+    defer aw.deinit();
+    const n = vector_collection.count(elems);
+    var i: u32 = 0;
+    while (i < n) : (i += 1) {
+        const e = vector_collection.nth(elems, i);
+        if (e.tag() != .string)
+            return error_catalog.raise(.type_arg_invalid, loc, .{ .fn_name = "String/join", .expected = "string", .actual = @tagName(e.tag()) });
+        if (i != 0) try aw.writer.writeAll(delim);
+        try aw.writer.writeAll(string_collection.asString(e));
+    }
+    return string_collection.alloc(rt, aw.writer.buffered());
+}
+
 /// `(String.)` → "". `(String. s)` → a copy of the string `s`. `(String. bytes
 /// [charset])` → the UTF-8 string of a cljw byte array (the `.getBytes` inverse;
 /// each element's low 8 bits form a byte, so a signed -61 and unsigned 195 both
@@ -647,9 +685,10 @@ fn stringCtor(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation)
 
 fn initStringStatics(td: *type_descriptor.TypeDescriptor, gpa: std.mem.Allocator) anyerror!void {
     if (td.method_table.len != 0) return; // idempotent
-    const entries = try gpa.alloc(type_descriptor.TypeDescriptor.MethodEntry, 2);
+    const entries = try gpa.alloc(type_descriptor.TypeDescriptor.MethodEntry, 3);
     entries[0] = .{ .protocol_name = "", .method_name = try gpa.dupe(u8, "valueOf"), .method_val = Value.initBuiltinFn(&valueOf) };
     entries[1] = .{ .protocol_name = "", .method_name = try gpa.dupe(u8, "<init>"), .method_val = Value.initBuiltinFn(&stringCtor) };
+    entries[2] = .{ .protocol_name = "", .method_name = try gpa.dupe(u8, "join"), .method_val = Value.initBuiltinFn(&join) };
     td.method_table = entries;
 }
 
