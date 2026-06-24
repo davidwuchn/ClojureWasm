@@ -165,6 +165,17 @@ forward probe method = a mini deps.edn project with `:git/url`+`:git/sha`**
   structural-op meta threading (`(meta (assoc (with-meta r m) …))` → m) landed in
   the same ADR-0112 commit (**D-313**, per the DA's divergence-suppression call).
 
+- **data.generators re-probe (2026-06-25, D-528)** — the rung-5 "FULLY
+  FUNCTIONAL" above was for the *core* generators (the seeded long/boolean/double
+  example, still byte-identical to clj). Running the library's full
+  `clojure.test` suite this session surfaced a chain its earlier probe missed:
+  `(java.util.UUID. msb lsb)`, the whole `java.math.BigInteger` Java surface, and
+  `(BigDecimal. <BigInteger> scale)` were all unwired — now FIXED (commits
+  0a5c65c4 / 33739d68 / 8400646a, each corpus-backed). One residue: a
+  non-standalone-reproducible "Invalid float literal" from some generated double
+  (D-532, fuzzy). Lesson re-confirmed: a happy-path example is not the full test
+  suite; run the suite.
+
 ## NEEDS-ROW gap summary (for the main loop)
 
 These are candidate `debt.yaml` rows — the FIRST real blocker each library
