@@ -281,6 +281,17 @@ fn toUnsignedString(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLoc
     return string_mod.alloc(rt, buf[0..len]);
 }
 
+/// `(Long/hashCode v)` — Java's `(int)(v ^ (v >>> 32))`. JVM ref:
+/// java.lang.Long#hashCode.
+fn hashCode(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = rt;
+    _ = env;
+    try error_catalog.checkArity("Long/hashCode", args, 1, loc);
+    const v: u64 = @bitCast(try error_catalog.expectI64(args[0], "Long/hashCode", loc));
+    const h: i32 = @bitCast(@as(u32, @truncate(v ^ (v >> 32))));
+    return Value.initInteger(@as(i64, h));
+}
+
 fn initLong(td: *type_descriptor.TypeDescriptor, gpa: std.mem.Allocator) anyerror!void {
     if (td.method_table.len != 0) return; // idempotent re-run
     const specs = .{
@@ -291,6 +302,7 @@ fn initLong(td: *type_descriptor.TypeDescriptor, gpa: std.mem.Allocator) anyerro
         .{ "remainderUnsigned", &UnsignedDiv(true, "remainderUnsigned").call },
         .{ "compareUnsigned", &compareUnsigned },
         .{ "toUnsignedString", &toUnsignedString },
+        .{ "hashCode", &hashCode },
         .{ "compare", &BinOp2(.compare, "compare").call },
         .{ "max", &BinOp2(.max, "max").call },
         .{ "min", &BinOp2(.min, "min").call },

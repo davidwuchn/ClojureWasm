@@ -297,6 +297,16 @@ fn isSurrogatePair(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLoca
     return if (isHighSurrogateCp(high) and isLowSurrogateCp(low)) .true_val else .false_val;
 }
 
+/// `(Character/hashCode c)` — Java returns the char's codepoint as an int.
+/// JVM reference: java.lang.Character#hashCode.
+fn hashCode(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = rt;
+    _ = env;
+    try error_catalog.checkArity("Character/hashCode", args, 1, loc);
+    const cp = try argChar(args[0], "Character/hashCode", loc);
+    return Value.initInteger(@as(i64, cp));
+}
+
 fn initCharacter(td: *type_descriptor.TypeDescriptor, gpa: std.mem.Allocator) anyerror!void {
     if (td.method_table.len != 0) return; // idempotent re-run
     const specs = .{
@@ -327,6 +337,7 @@ fn initCharacter(td: *type_descriptor.TypeDescriptor, gpa: std.mem.Allocator) an
         .{ "lowSurrogate", &lowSurrogate },
         .{ "toCodePoint", &toCodePoint },
         .{ "isSurrogatePair", &isSurrogatePair },
+        .{ "hashCode", &hashCode },
     };
     const entries = try gpa.alloc(type_descriptor.TypeDescriptor.MethodEntry, specs.len);
     inline for (specs, 0..) |spec, i| {

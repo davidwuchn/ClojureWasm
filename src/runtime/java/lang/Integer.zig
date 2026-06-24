@@ -297,6 +297,16 @@ fn toUnsignedString(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLoc
     return string_mod.alloc(rt, buf[0..len]);
 }
 
+/// `(Integer/hashCode v)` — Java returns the int value itself. JVM ref:
+/// java.lang.Integer#hashCode.
+fn hashCode(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = rt;
+    _ = env;
+    try error_catalog.checkArity("Integer/hashCode", args, 1, loc);
+    const v: i32 = @truncate(try error_catalog.expectInteger(args[0], "Integer/hashCode", loc));
+    return Value.initInteger(@as(i64, v));
+}
+
 fn initInteger(td: *type_descriptor.TypeDescriptor, gpa: std.mem.Allocator) anyerror!void {
     if (td.method_table.len != 0) return; // idempotent re-run
     const specs = .{
@@ -308,6 +318,7 @@ fn initInteger(td: *type_descriptor.TypeDescriptor, gpa: std.mem.Allocator) anye
         .{ "compareUnsigned", &compareUnsigned },
         .{ "toUnsignedLong", &toUnsignedLong },
         .{ "toUnsignedString", &toUnsignedString },
+        .{ "hashCode", &hashCode },
         .{ "compare", &BinOp2(.compare, "compare").call },
         .{ "max", &BinOp2(.max, "max").call },
         .{ "min", &BinOp2(.min, "min").call },

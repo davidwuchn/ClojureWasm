@@ -125,6 +125,15 @@ active:
       deferred (Java-hashCode ≠ cljw value hash). Corpus: objects_static.txt
       (22 golden, incl. catch-by-NullPointerException error cases). REMAINING
       simplify candidate: the i48→u64 bitcast widening repeated across surfaces.
+      DRAIN 6 (2026-06-25): CLOSE-OUT of the java.lang scalar static surface
+      (Discipline 2 drive-to-zero). Long/Integer/Character hashCode (Java's
+      bit formulas) + Math/{ceilDiv,ceilMod,divideExact,floorDivExact,fma}.
+      Long/Integer divideExact were NOT added (they don't exist in Java — clj
+      compile-errors them, so not a gap). Corpus: scalar_static_close.txt (18
+      golden). The java.lang scalar static surface (Long/Integer/Double/Boolean/
+      Character/Math) is now clj-parity COMPLETE for the common surface; the
+      remaining interop gaps are other packages (java.util.Arrays/Collections,
+      String static char[] forms) — separate units, lower value.
     category: "interop"
     quality_floor: "public-ization: java-interop static-member gaps (ADR-0166)"
     barrier: |-

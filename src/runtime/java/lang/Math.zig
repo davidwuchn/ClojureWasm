@@ -504,6 +504,64 @@ fn clamp(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anye
     return promote.wrapI64(rt, if (v < lo) lo else if (v > hi) hi else v);
 }
 
+/// `(Math/ceilDiv a b)` — `a / b` rounded toward +∞ (Java's
+/// `q + ((a^b)>0 && q*b!=a ? 1 : 0)`). Divide-by-zero throws; the lone
+/// MIN/-1 overflow wraps to MIN like `floorDiv`. JVM ref: Math#ceilDiv.
+fn ceilDiv(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = env;
+    try error_catalog.checkArity("Math/ceilDiv", args, 2, loc);
+    const a = try exactArg(args[0], "ceilDiv", loc);
+    const b = try exactArg(args[1], "ceilDiv", loc);
+    if (b == 0) return error_catalog.raise(.divide_by_zero, loc, .{});
+    if (a == std.math.minInt(i64) and b == -1) return promote.wrapI64(rt, std.math.minInt(i64));
+    const q = @divTrunc(a, b);
+    const adjust = (a ^ b) > 0 and (q *% b != a);
+    return promote.wrapI64(rt, if (adjust) q + 1 else q);
+}
+
+/// `(Math/ceilMod a b)` — `a - ceilDiv(a,b) * b`; the result takes the sign
+/// opposite the divisor. Divide-by-zero throws. JVM reference: Math#ceilMod.
+fn ceilMod(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = env;
+    try error_catalog.checkArity("Math/ceilMod", args, 2, loc);
+    const a = try exactArg(args[0], "ceilMod", loc);
+    const b = try exactArg(args[1], "ceilMod", loc);
+    if (b == 0) return error_catalog.raise(.divide_by_zero, loc, .{});
+    if (b == -1) return promote.wrapI64(rt, 0); // `x ceilMod -1` is always 0
+    const q = @divTrunc(a, b);
+    const cd = if ((a ^ b) > 0 and (q *% b != a)) q + 1 else q;
+    return promote.wrapI64(rt, a -% cd *% b);
+}
+
+/// `Math/divideExact` / `floorDivExact` — `a / b` (truncating / flooring) that
+/// THROWS ArithmeticException on the MIN/-1 overflow rather than wrapping (the
+/// `…Exact` contract); divide-by-zero throws too. JVM ref: java.lang.Math.
+fn DivExact(comptime is_floor: bool, comptime name: []const u8) type {
+    return struct {
+        fn call(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+            _ = env;
+            try error_catalog.checkArity("Math/" ++ name, args, 2, loc);
+            const a = try exactArg(args[0], name, loc);
+            const b = try exactArg(args[1], name, loc);
+            if (b == 0) return error_catalog.raise(.divide_by_zero, loc, .{});
+            if (a == std.math.minInt(i64) and b == -1) return error_catalog.raise(.integer_overflow, loc, .{});
+            return promote.wrapI64(rt, if (is_floor) @divFloor(a, b) else @divTrunc(a, b));
+        }
+    };
+}
+
+/// `(Math/fma a b c)` — the fused multiply-add `a*b + c` computed with a
+/// single rounding. JVM reference: java.lang.Math#fma.
+fn fma(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = rt;
+    _ = env;
+    try error_catalog.checkArity("Math/fma", args, 3, loc);
+    const a = try error_catalog.expectNumber(args[0], "Math/fma", loc);
+    const b = try error_catalog.expectNumber(args[1], "Math/fma", loc);
+    const c = try error_catalog.expectNumber(args[2], "Math/fma", loc);
+    return Value.initFloat(@mulAdd(f64, a, b, c));
+}
+
 fn initMath(td: *type_descriptor.TypeDescriptor, gpa: std.mem.Allocator) anyerror!void {
     if (td.method_table.len != 0) return; // idempotent re-run
     const specs = .{
@@ -528,7 +586,8 @@ fn initMath(td: *type_descriptor.TypeDescriptor, gpa: std.mem.Allocator) anyerro
         .{ "addExact", &ExactBin(.add, "addExact").call }, .{ "subtractExact", &ExactBin(.sub, "subtractExact").call }, .{ "multiplyExact", &ExactBin(.mul, "multiplyExact").call },
         .{ "negateExact", &negateExact },                  .{ "incrementExact", &incrementExact },                      .{ "decrementExact", &decrementExact },
         .{ "toIntExact", &toIntExact },                    .{ "absExact", &absExact },                                  .{ "multiplyHigh", &multiplyHigh },
-        .{ "clamp", &clamp },
+        .{ "clamp", &clamp },                              .{ "ceilDiv", &ceilDiv },                                    .{ "ceilMod", &ceilMod },
+        .{ "divideExact", &DivExact(false, "divideExact").call }, .{ "floorDivExact", &DivExact(true, "floorDivExact").call }, .{ "fma", &fma },
         // no-arg PRNG double in [0,1) — shares the process PRNG with core `rand`.
         .{ "random", &random },
     };

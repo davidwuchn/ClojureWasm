@@ -1,0 +1,36 @@
+(Long/hashCode 5)
+;;=> 5
+(Long/hashCode -1)
+;;=> 0
+(Long/hashCode 4294967296)
+;;=> 1
+(Integer/hashCode 5)
+;;=> 5
+(Integer/hashCode -1)
+;;=> -1
+(Character/hashCode \a)
+;;=> 97
+(Character/hashCode \A)
+;;=> 65
+(Math/ceilDiv 7 2)
+;;=> 4
+(Math/ceilDiv -7 2)
+;;=> -3
+(Math/ceilDiv 6 2)
+;;=> 3
+(Math/ceilMod 7 3)
+;;=> -2
+(Math/ceilMod -7 3)
+;;=> -1
+(Math/divideExact 7 2)
+;;=> 3
+(Math/divideExact 6 2)
+;;=> 3
+(Math/floorDivExact 7 2)
+;;=> 3
+(Math/floorDivExact -7 2)
+;;=> -4
+(Math/fma 2.0 3.0 4.0)
+;;=> 10.0
+(Math/fma 0.5 0.5 1.0)
+;;=> 1.25
