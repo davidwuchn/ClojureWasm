@@ -180,6 +180,29 @@ active:
       against its SSOT (optimizations.md / feature_deps.yaml / gc_rooting.md);
       retire stale, condense. SSOT: ADR-0166 row 8.
     last_reviewed: "2026-06-24"
+  - id: "D-530"
+    status: |-
+      open (2026-06-25, D-528 data.priority-map real-library finding). TWO
+      deftype-Sorted gaps surfaced by running the library's own test suite
+      (13 errors remain after the map?/= equality fix in commit ceb2c460):
+      (1) `(. inst seq true)` on a deftype implementing BOTH clojure.lang.Seqable
+      (seq[this]) AND clojure.lang.Sorted (seq[this ascending]) fails "Wrong number
+      of args (2) passed to fn, expected 1" — cljw's `.method`-with-arg dispatch
+      does not resolve the 2-arity same-NAMED deftype method (overloaded method
+      name by arity). `.seqFrom`/`.comparator` (unique names) work fine. This
+      breaks data.priority-map's own subseq/rsubseq.
+      (2) `(sorted? x)` is false for a deftype implementing clojure.lang.Sorted
+      (clj returns true) — sorted? (sorted.zig sortedQFn) only checks native
+      sorted tags; same gap class as the now-fixed map?/IPersistentMap recognition.
+    category: "interop"
+    barrier: |-
+      (2) is a contained predicate fix (sortedQFn consults clojure.lang.Sorted
+      membership, mirroring the D-528 map? fix). (1) is deeper: the deftype method
+      table appears keyed by name only, so an overloaded same-name/different-arity
+      method (seq/1 Seqable vs seq/2 Sorted) collides. Drain when a consumer needs
+      deftype Sorted dispatch. Repro: load data.priority-map via deps.edn
+      :local/root, run test_priority_map.clj (subseq/rsubseq errors).
+    last_reviewed: "2026-06-25"
   - id: "D-521"
     status: |-
       open (2026-06-24, user-directed) — TWO destructure-lowering systems can DRIFT.
