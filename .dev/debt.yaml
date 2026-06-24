@@ -172,6 +172,31 @@ active:
       surface OR check an upstream addition; fix meaningful DIFFs. SSOT: ADR-0166
       row 6; cross-ref D-175.
     last_reviewed: "2026-06-24"
+  - id: "D-534"
+    status: |-
+      open (2026-06-25, algo.monads real-library finding, post-Compiler/specials).
+      `clojure.lang.APersistentSet` and `clojure.lang.IPersistentList` are not
+      recognised as extend-type / extend-protocol TARGET markers that distribute
+      to the native set / list tags. `host_interface.zig::nativeExtendTags`
+      recognises IPersistentVector→vector, ISeq→seq, IPersistentSet (protocol_remap)
+      etc., but NOT APersistentSet (the abstract base, distinct from the
+      IPersistentSet interface) nor IPersistentList. So
+      `(extend-protocol P clojure.lang.APersistentSet (m [c] …))` →
+      "Unable to resolve symbol: clojure.lang.APersistentSet". Surfaced loading
+      clojure.algo.monads (monads.clj:481-493 extends a writer-monad protocol onto
+      IPersistentVector [OK] / IPersistentList / APersistentSet / String): it now
+      loads PAST the tools.macro barrier (Compiler/specials, 8c12a5d6) and stops
+      here. Fix: add APersistentSet→set + IPersistentList→list to the native-tag
+      distribution recognition (mirror the IPersistentVector entry). LOW-frequency
+      (these abstract bases as extend targets are rare); cross-ref the
+      nativeExtendTags table + the D-286/D-317 host-supertype family.
+    category: "interop"
+    barrier: |-
+      Add `clojure.lang.APersistentSet` (→ native set tag) + `clojure.lang.IPersistentList`
+      (→ native list tag) to `host_interface.zig`'s native-distribution recognition,
+      mirroring IPersistentVector. Repro: `(extend-protocol P clojure.lang.APersistentSet
+      (m [c] c))`, or load clojure.algo.monads with tools.macro on the deps.
+    last_reviewed: "2026-06-25"
   - id: "D-533"
     status: |-
       open (2026-06-25, D-523 doc-audit finding). VALIDATORS on `ref` and `var`
