@@ -169,8 +169,10 @@ active:
       FIXED UUID 2-long ctor + java.math.BigInteger surface + BigDecimal(BigInteger,
       scale) ctor (0a5c65c4/33739d68/8400646a); fuzzy float + speculative
       arithmetic → D-532. core.unify → CLEAN (12 tests pass). data.zip core →
-      CLEAN (matches clj). So 3/5 yielded contained fixes (all landed + corpus),
-      2/5 clean; the deep/fuzzy residue is D-530/D-531/D-532. Repeatable: pick
+      CLEAN (matches clj; was already a D-313 verified_project). data.codec base64
+      → CLEAN (encode/decode + RFC-4648 padding match clj; exercised directly since
+      its test needs the un-cloned test.check). So 3/6 yielded contained fixes (all
+      landed + corpus), 3/6 CLEAN; the deep/fuzzy residue is D-530/D-531/D-532. Pick
       another lib next /continue (a self-contained-test lib avoids transitive deps
       — data.zip's XML test needed the un-cloned data.xml). 6th attempt: tools.reader
       does NOT load — `reader_types.clj` needs `clojure.lang.LineNumberingPushbackReader`,
