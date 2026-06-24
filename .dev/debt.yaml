@@ -24,6 +24,115 @@
 # md-table-align no longer pads it to ~800 KB of whitespace.
 
 active:
+  - id: "D-522"
+    status: |-
+      open (2026-06-24, user-directed; ADR-0166 public-ization sweep). Comment
+      de-pointering + condensation: src/**/*.zig carries 1409 `ADR-NNN` + 1528
+      `D-NNN` POINTER comment lines (a reader without the ledger can't follow).
+      Replace pointers with SELF-CONTAINED explanation; condense over-verbose
+      comments. ADR documents STAY; only in-code pointers-to-them become prose.
+      Largest category — GRADUAL, a little each /continue. Keep Why-non-obvious
+      comments (CLAUDE.md comment rule).
+    category: "docs"
+    quality_floor: "public-ization: comment de-pointer + condense (ADR-0166)"
+    barrier: |-
+      Repeatable polish drain (ADR-0166). No behaviour change (comments only).
+      Per /continue: pick a high-pointer-density file, rewrite its ADR/D-NNN
+      pointers into standalone prose + condense. SSOT detail: ADR-0166 row 1.
+    last_reviewed: "2026-06-24"
+  - id: "D-523"
+    status: |-
+      open (2026-06-24, user-directed; ADR-0166). Doc audit vs CODE-TRUTH: the
+      29 docs/*.md were written against an older code state. Audit each against
+      what the code actually does; fix / SIMPLIFY / delete no-longer-meaningful;
+      ARCHIVE (docs/ja/archive) the historically-meaningful-but-dead.
+    category: "docs"
+    quality_floor: "public-ization: doc audit vs code-truth (ADR-0166)"
+    barrier: |-
+      Repeatable polish drain (ADR-0166). Per /continue: take one doc, diff its
+      claims against the code, fix/simplify/prune/archive. SSOT: ADR-0166 row 2.
+    last_reviewed: "2026-06-24"
+  - id: "D-524"
+    status: |-
+      open (2026-06-24, user-directed; ADR-0166). private/ decoupling + per-task
+      note abolition: private/ is gitignored + assumes the user's machine, yet
+      the loop's Step 7 writes a per-task note every cycle (853 accumulated).
+      For a PUBLIC artifact this must not be load-bearing. Decouple CLAUDE.md /
+      the continue + code_learning_doc skills from private/notes/; retire the
+      mandatory per-task note (or make it opt-in).
+    category: "process"
+    quality_floor: "public-ization: private/ decouple + per-task-note retire (ADR-0166)"
+    barrier: |-
+      Repeatable polish drain (ADR-0166). Touches CLAUDE.md + continue/
+      code_learning_doc skills + the gate hooks that reference private/. SSOT:
+      ADR-0166 row 3. (User-owned wording changes — surface CLAUDE.md edits.)
+    last_reviewed: "2026-06-24"
+  - id: "D-525"
+    status: |-
+      open (2026-06-24, user-directed; ADR-0166). Rules + skills public-ization
+      review: 31 .claude/rules/*.md (3736 lines) auto-load every turn. Review
+      for an outside contributor — prune/merge stale or redundant rules so each
+      earns its context cost; de-private-ize wording; same for the skill set.
+    category: "process"
+    quality_floor: "public-ization: rules + skills review (ADR-0166)"
+    barrier: |-
+      Repeatable polish drain (ADR-0166). Per /continue: audit a rule/skill for
+      redundancy + public-readability; merge/prune. SSOT: ADR-0166 row 4.
+      (.claude/ edits may hit the self-modification block — surface to user.)
+    last_reviewed: "2026-06-24"
+  - id: "D-526"
+    status: |-
+      open (2026-06-24, user-directed; ADR-0166). Java-interop static-member gap
+      catalog + fill: 49 runtime/java/**/*.zig surfaces / 92 compat_tiers fqn.
+      Some static members are missing. If not mechanically enumerable, FIRST
+      catalogue them (extend compat_tiers.yaml / a coverage doc), then fill the
+      "あと少し欠落" tail.
+    category: "interop"
+    quality_floor: "public-ization: java-interop static-member gaps (ADR-0166)"
+    barrier: |-
+      Repeatable drain (ADR-0166). Code-touching → diff oracle + corpus apply.
+      Per /continue: catalog or fill one interop surface's missing statics.
+      SSOT: ADR-0166 row 5.
+    last_reviewed: "2026-06-24"
+  - id: "D-527"
+    status: |-
+      open (2026-06-24, user-directed; ADR-0166). clj-parity alignment with
+      UPSTREAM progress: Clojure itself has advanced; align with new upstream
+      behaviour WHERE MEANINGFUL. Folds into the standing D-175 quality-loop
+      floor (a clj-diff sweep surfaces new DIFFs to classify bug→fix / accept→AD).
+    category: "clj-parity"
+    quality_floor: "public-ization: clj-parity upstream alignment (ADR-0166)"
+    barrier: |-
+      Repeatable drain (ADR-0166). Per /continue: clj-diff sweep an un-covered
+      surface OR check an upstream addition; fix meaningful DIFFs. SSOT: ADR-0166
+      row 6; cross-ref D-175.
+    last_reviewed: "2026-06-24"
+  - id: "D-528"
+    status: |-
+      open (2026-06-24, user-directed; ADR-0166). Real deps.edn famous-library
+      usage: load popular Clojure libraries via their actual deps.edn and run
+      them — surface bugs / unimplemented surfaces from real-world use, not
+      synthetic tests. Each finding → a fix (diff oracle) or a tracked gap.
+    category: "clj-parity"
+    quality_floor: "public-ization: real-library deps.edn usage (ADR-0166)"
+    barrier: |-
+      Repeatable drain (ADR-0166). Per /continue: pick a real lib, load via
+      deps.edn, exercise it, triage findings. SSOT: ADR-0166 row 7. (clj-parity
+      findings fold into the D-175 floor.)
+    last_reviewed: "2026-06-24"
+  - id: "D-529"
+    status: |-
+      open (2026-06-24, user-directed; ADR-0166). Marker-comment inventory +
+      validity: 110 markers (PROVISIONAL 4 / PERF 65 / GC-ROOT 41 / VM-DEFER 0).
+      Walk each; validate it is still accurate + earning its keep; retire stale;
+      keep the meaningful.
+    category: "docs"
+    quality_floor: "public-ization: marker-comment inventory (ADR-0166)"
+    barrier: |-
+      Repeatable polish drain (ADR-0166). Per /continue: audit a marker class
+      against its SSOT (optimizations.md / feature_deps.yaml / gc_rooting.md);
+      retire stale, condense. SSOT: ADR-0166 row 8.
+    last_reviewed: "2026-06-24"
   - id: "D-521"
     status: |-
       open (2026-06-24, user-directed) — TWO destructure-lowering systems can DRIFT.

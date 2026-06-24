@@ -1243,6 +1243,21 @@ renumber it (F-003: §9.2.R's ordering is intact; this is a pulled-forward
 overlay). Granularity (whether D-163/D-140 become numbered phases) defers
 to their entry per F-003.
 
+### 9.2.T Public-ization polish sweep (post-perf operating mode; ADR-0166, 2026-06-24)
+
+**User-directed.** After §9.2.S's perf campaign reached the boundary of its cheap
+levers (O-051 the last clean one; the rest GC-arch / JIT-fenced — ADR-0165
+Amendment 1 / D-520), the standing `/continue` mode shifts to **polishing the
+project as a public artifact** (anyone clones it into their own environment).
+Repeatable like the F-010 quality-loop floor — each `/continue` self-selects ONE
+category and drains it highest-value-first (Step 0.5 `quality_floor:` drain). SSOT
+= **ADR-0166**; drain rows **D-522…D-529** (comment de-pointering + condensation /
+doc audit vs code-truth / `private/` decouple + per-task-note retire / rules +
+skills review / java-interop static-member gaps / clj-parity upstream alignment /
+real-`deps.edn` library usage / marker-comment inventory). Mostly no behaviour
+change; code-touching rows (interop / parity / lib bugs) take the diff-oracle gate.
+The §9.2.S perf levers stay in standing debt for a future deliberate decision.
+
 ### 9.2.P clj-parity root-cause campaign (largely worked; folded into gap-area-I hardening per ADR-0142; ADR-0076, 2026-06-02)
 
 **User-directed.** A periodic audit surfaced the user's concern that small

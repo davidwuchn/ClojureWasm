@@ -5,93 +5,80 @@
 
 ## Resume contract
 
-- **HEAD**: `main` (`git log` = SSOT; ≈ `368c9851`). Per-commit = smoke; commit
-  **and** push (CLAUDE.md § atomic Step 6). `build.zig.zon` `.zwasm` = tag pin
-  `v2.0.0-alpha.3`.
-- **First commit on resume MUST be**: the loop SELF-SELECTS here — the perf campaign's ACCESSIBLE
-  levers are now exhausted (O-051 was the last clean one), so the remaining 9-bench gaps are all
-  big/risky/fenced. Pick highest-value per CLAUDE.md (a correctness/clj-parity floor outranks new
-  coverage; Step 0.5 quality-loop-floor drain first). The perf options, all characterized:
-  **(L4 small-map)** Step-0'd + DEFERRED — `traceArrayMap` is already count-bounded (not 16-wide) so
-  L4's only gain is the 256B→~64B alloc, and `GcHeap.alloc` is fixed-size-only (no variable-length
-  objects), so L4 = introducing variable-length GC objects (F-006 GC-arch) for a 1.12× bench. Poor
-  ROI. **(D-386 dispatch, destructure 1.16×)** the destructure residual is per-op dispatch + binding
-  lowering = D-386(a) inline-stepOnce — but its own row marks (a) "risky UAF-class, not to be
-  rushed" + PREREQUISITE D-244 #4 gc_self_guard hoist; (b) DEAD (empirically refuted); (c) JIT
-  user-fenced (ADR-0151). So D-386 is NOT a quick win — only attempt (a) WITH the D-244 #4
-  prerequisite + alloc-torture validation, deliberately. The collection-perf sub-strategy (ADR-0165)
-  has DELIVERED its clean lever (**O-051**, see Last landed). Post-O-051 decomposition (hyperfine -N,
-  20 runs, load ~3) of the remaining 9-bench gaps:
-  - **gc_large_heap 1.12×** → **L4 small-map alloc/GC**. Decomposed: walk+reduce TIES (glh_A 0.99),
-    map-alloc+into WINS (glh_B 0.88), but reduce over a vec holding 100K live array-maps LOSES
-    (glh_D maps=1.03 tie vs glh_E ints=0.64 win — the only diff is maps-vs-ints in the live vec).
-    So the loss is ALLOCATION + GC-tracing of 100K live `[16]Value` (256B) array-maps holding 2
-    entries — NOT the get (O-051 done) nor the walk. Lever = right-size ArrayMap (256B→~64B) /
-    reduce GC trace cost. **Invasive** (ArrayMap is a fixed `extern struct` — variable-length
-    trailing array touches every site + GC trace + assoc growth) → its own Step 0 survey + DA.
-  - **destructure 1.16×** → **D-386 (VM frontier)**. O-051 cut the get path; the residual is the
-    binding-lowering EXECUTION (mapd−getonly ≈10ms cljw vs ≈3ms bb — clj-identical expanded code,
-    so it's VM local-slot/seq?-coercion execution, not a collection lever). DA classified the clean
-    attack (destructure inline-cache) as D-386 territory.
-  - **sieve 1.13×** / **gc_alloc_rate 1.05×** → hard / near-noise. sieve's source is a `cons`-list
-    (non-chunked in clj AND cljw — filter/map already chunk CHUNKED sources via O-032; a list
-    can't); the residual is per-element `force` (VM thunk call). gc_alloc_rate is L4 (TailNode
-    `[32]Value` over-alloc for 4-elem vectors, partly O-040'd) but ~noise.
-  Other classes WIN big (map_filter_reduce 1.65× / vector_ops 2.39× / map_ops 3.48× / nested_update
-  1.39× / ratio_sum / pure-compute 2×). So the campaign's next real front = **L4 (invasive, dedicated
-  cycle) OR D-386 (the separate VM frontier)** — NOT another cheap collection constant-factor.
-  Per lever: branch `develop/collection-<lever>`, experiment-and-revert / commit-no-push, **FULL
-  diff oracle (global change, NOT smoke)** + clean old-vs-new-binary A/B (load-robust; the channel
-  degrades at load ≥3 — use file-sentinels). **GUARDRAIL**: never Zig-ify the .clj bootstrap.
-  D-517/D-518 DEFERRED; D-515 binary-size (standing).
-- **Forbidden this session**: bare `zig build test` WITHOUT `-Dwasm` (false fails —
-  `zig_build_test_needs_dwasm`); bare `zig build` for a probe (ADR-0133 — ReleaseSafe).
+- **HEAD**: `main` (`git log` = SSOT). Per-commit = smoke; commit **and** push
+  (CLAUDE.md § atomic Step 6 — the perf-campaign no-push mode is LIFTED; push normally).
+  `build.zig.zon` `.zwasm` = tag pin `v2.0.0-alpha.3`.
+- **First commit on resume MUST be**: **self-select one §9.2.T public-ization
+  polish-sweep category and drain it** (**ADR-0166**; Step 0.5 reads the
+  `quality_floor: "public-ization: …"` rows **D-522…D-529** and drains
+  highest-value-first). This is the standing `/continue` mode now (repeatable,
+  like the F-010 quality-loop floor) — the perf campaign is PAUSED (its cheap
+  levers are exhausted; see Standing units). The categories: **D-522** comment
+  de-pointering + condensation (≈1409 ADR + 1528 D-NNN pointer lines → self-contained
+  prose; ADR docs stay; GRADUAL, largest) · **D-523** doc audit vs code-truth (29
+  docs; fix/simplify/prune/archive) · **D-524** `private/` decouple + per-task-note
+  retire (853 notes; the loop must not depend on a gitignored dev-env dir) · **D-525**
+  rules + skills public-ization review (31 rules / 3736 lines auto-load) · **D-526**
+  java-interop static-member gap catalog + fill (49 surfaces / 92 fqn) · **D-527**
+  clj-parity upstream alignment (folds into D-175) · **D-528** real-`deps.edn`
+  famous-library usage (surface bugs) · **D-529** marker-comment inventory (110
+  markers). A correctness/clj-parity floor still outranks pure polish. Code-touching
+  rows (D-526/527/528) take the diff-oracle gate; the rest are no-behaviour-change.
+- **Forbidden this session**: bare `zig build test` WITHOUT `-Dwasm` (false fails);
+  bare `zig build` for a probe (ADR-0133 — use ReleaseSafe). Note: `.claude/**` edits
+  (D-524/525) may hit the auto-mode self-modification block — surface those to the user.
 
 ## Last landed (git log = SSOT)
 
-**L3 keyword-map-get fast path LANDED as O-051 (ADR-0165 Amendment 1).** `array_map`
-`get`/`contains` compare keyword keys by raw NaN-box payload bits (keywords are interned ⟹
-`=` is bit-identity) via the new `arrayMapKeywordSlot` helper, skipping the per-entry
-`keyEq`→`eqConsult`→`keyEqValue` error-union chain; non-keyword keys keep the general path;
-the `>8`-entry hash_map path is unchanged. Clean old-vs-new ReleaseSafe binary A/B (hyperfine
--N, 30 runs): destructure −6.6%, gc_large_heap −4.5%, 300k-get −11.0%, map-destructure −6.3%.
-diff oracle (`zig build test -Dwasm` ×2) green + new map.zig unit test (keyword hit/miss +
-mixed keyword/int/string keys) + lint clean. Amendment 1 also corrected ADR-0165's two false
-premises (transients-are-a-stub; L1-first) and the stale peer standing. Prior: D-519 eval
-auto-collect (ADR-0164, memory bounded + faster) + the cold-start arc (ADR-0162/0163).
+This session closed the perf campaign's cheap-lever phase + recorded the milestone:
+**O-051** keyword-map-get fast path (ADR-0165 Amendment 1; destructure −6.6% /
+gc_large_heap −4.5% / 300k-get −11.0%) · **kwarg destructure fix** (clj-1.11
+trailing-map kwargs; D-521 records the two-destructure-paths drift audit) ·
+**json read-str GC-rooting fix** (D-519 exposed a latent fabrication gap →
+json_parse 19000→20000; fabrication-region bracket + alloc-torture regression
+guard) · **full cross-lang bench re-run → `bench/README.md`** (2026-06-24;
+json_parse now cljw 35.4ms < Python 36.2ms). All diff-oracle + lint green.
 
 ## Standing units (tracked in .dev/debt.yaml)
 
-- **D-511** — 2-arg `(BigDecimal. x mc)` ctor LANDED (8db6d82f); only the
-  exact-binary `(BigDecimal. double)` footgun remains (OPEN-LOW, deferred).
-- **D-513** — three linked clj-parity gaps, all foundational (NOT clean drop-ins):
-  (1) `clojure.core.reducers` (needs reduce→CollReduce wiring OR a cljw-native
-  reducers impl; transducers supersede it, moderate-low value); (2) `clojure.repl`
-  (dir/apropos implementable, but doc/find-doc/source blocked by (3)); (3) var
-  `:doc` metadata absent — `(:doc (meta #'reduce))` → nil; wiring docstrings
-  through every bootstrap defn/def + primitive var registration is a large,
-  separate unit and the real prerequisite for a useful `clojure.repl`.
-- **gap-III perf campaign** (ROADMAP §9.2.S) — fastest-script goal (ADR-0148). ACTIVE
-  sub-strategy = **collection-perf (ADR-0165 / D-520)**: keep best-of-breed algorithms,
-  win on Zig-native layout, transients-first (see Resume contract). Startup axis is won
-  (cold-start arc); the SEPARATE compute frontier beyond bb = D-386 JIT.
+- **Perf campaign (§9.2.S) — PAUSED.** Cheap levers exhausted (O-051 last clean
+  one). Remaining in standing debt for a future deliberate decision: **D-520**
+  collection-perf (L4 small-map = a GC-arch variable-length-object change, poor ROI
+  for 1.05–1.16×) · **D-386** VM dispatch ((a) inline-stepOnce risky/UAF + D-244 #4
+  prereq; (b) DEAD; (c) JIT user-fenced ADR-0151) · **D-005/006** broad JIT (future).
+  `.dev/.perf_campaign_active` REMOVED (re-`touch` to re-open).
+- **D-513** — three linked clj-parity gaps (clojure.core.reducers / clojure.repl /
+  var `:doc` metadata) — foundational, not clean drop-ins; a D-527 sweep may reach them.
+- **D-511** — only the exact-binary `(BigDecimal. double)` footgun remains (OPEN-LOW).
 
-## North star (ACTIVE)
+## North star (ACTIVE, distal)
 
 cljw's differentiator = **Wasm/edge-native (gap II) × VM-perf fusion→JIT (gap III)**.
 The embedded **zwasm** JIT engine (ADR-0200) is the cljw DEFAULT (`.auto`); the
-remaining north-star step is **components-through-the-JIT** (zwasm-side, D-500).
-Live ledger: `.dev/zwasm_capabilities.md`.
+remaining step is **components-through-the-JIT** (zwasm-side, D-500). Distal — needs
+a user nod; the public-ization sweep (§9.2.T) is the active near-term mode.
 
 ## Reading order (resume)
 
-handover → **ADR-0165** (collection-perf strategy + ROI levers + experiment/regression protocol;
-the NEXT direction) → **D-520** (the draining campaign row) → `private/notes/`
-**collection-perf-proposal-20260624.md** (3-survey synthesis) + **9.2.S-clean-peer-rerank-20260624.md**
-(measured standing) + **cljw_collection_codetruth.md** (where cljw is naive). Background:
-**ADR-0148** (fastest-script campaign) → **ADR-0164** (D-519 auto-collect, LANDED). Tools:
-`CLJW_GC_STATS=1` (alloc/reuse%/collects) / `CLJW_GC_THRESHOLD_MB` (auto-collect floor knob,
-also the OFF-vs-ON A/B lever) / `CLJW_PROFILE_STARTUP=1`. Measurement discipline: ms-margin
-peer benches need a QUIET Mac (load <~2); the load-robust signal is the interleaved OFF-vs-ON
-knob A/B. Memories: `verify_against_releasesafe_binary` / `smoke_first_batch_full_gate` /
-`perf_campaign_roadmap_9_2_s`. Campaign fast-mode injected by `scripts/perf_campaign_remind.sh`.
+handover → **ADR-0166** (public-ization polish-sweep mode — the active direction) →
+the **D-522…D-529** rows in `.dev/debt.yaml` (the drain menu) → **ROADMAP §9.2.T**.
+Background: **ADR-0165** + Amendment 1 (perf levers exhausted) → **D-520** (paused
+perf). Bench: `bash bench/compare_langs.sh --skip-build --yaml=bench/cross-lang-latest.yaml`
+then `yq -o=json … | python3 bench/gen_cross_table.py` → splice into `bench/README.md`.
+Memories: `verify_against_releasesafe_binary` / `smoke_first_batch_full_gate`.
+
+## Stopped — user requested
+
+User instruction (2026-06-24, paraphrase): after this perf milestone, the standing
+`/continue` mode is the **(b) sweep** — the finite quality work previously deferred
+as low-ROI: java-interop missing statics (catalog first if not mechanically
+knowable), "あと少し欠落" near-complete gaps, clj-parity alignment with upstream,
+real-`deps.edn` library usage to surface bugs, doc audit against code-truth
+(prune/simplify/archive), abolish the per-session `private/notes` dependence
+(public artifact — anyone develops in their own env), skill/rules review, replace
+ADR/debt **pointer** comments with self-contained explanation (ADR docs stay) +
+condense verbose comments (huge, gradual), marker-comment inventory. The user asked
+to lightly pre-investigate, record perf, push, then **wire + audit the reference
+chain so a clear session's `/continue` fires these going forward**, and stop. Done:
+**ADR-0166** + **§9.2.T** + **D-522…D-529** + this resume contract wire it; the perf
+campaign is paused. Resume = self-select a §9.2.T category and drain it.
