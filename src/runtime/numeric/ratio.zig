@@ -179,6 +179,35 @@ pub fn allocFromManagedPair(
     try r_num.divTrunc(&rem_scratch, num, &gcd_m);
     try r_den.divTrunc(&rem_scratch, den, &gcd_m);
 
+    return finishReducedPair(rt, &r_num, &r_den);
+}
+
+/// Build a Ratio Value from an ALREADY-REDUCED (coprime) `num`/`den` pair —
+/// sign-normalise (den > 0), collapse `den == 1` to `null` (the caller emits the
+/// integer), and emit the small-i64 tier when both fit, else the big tier. This
+/// is `allocFromManagedPair`'s post-gcd tail, factored so a caller that already
+/// produced a reduced pair (the Knuth gcd-first ratio add, O-050) can skip the
+/// redundant final gcd. Mutates `num`/`den` (negate). `den != 0` required.
+pub fn allocFromReducedManagedPair(
+    rt: *Runtime,
+    num: *std.math.big.int.Managed,
+    den: *std.math.big.int.Managed,
+) RatioError!?Value {
+    if (den.eqlZero()) return error.DivideByZero;
+    return finishReducedPair(rt, num, den);
+}
+
+fn finishReducedPair(
+    rt: *Runtime,
+    r_num: *std.math.big.int.Managed,
+    r_den: *std.math.big.int.Managed,
+) RatioError!?Value {
+    // A zero numerator is the integer 0, never a ratio (0/k is not coprime for
+    // k > 1). The full-gcd `allocFromManagedPair` collapses this via gcd(0,den)=den;
+    // the reduced-pair caller (Knuth add) can reach 0/k directly (acc + −acc), so
+    // guard it here. `null` → the caller emits the integer 0.
+    if (r_num.eqlZero()) return null;
+
     if (!r_den.isPositive()) {
         r_num.negate();
         r_den.negate();
@@ -199,8 +228,8 @@ pub fn allocFromManagedPair(
 
     // big tier: Ratio numerator/denominator are internal BigInts (never printed
     // standalone); `.bigint` origin is the harmless fixed choice (D-165).
-    const numer_val = try big_int_mod.allocFromManaged(rt, &r_num, .bigint);
-    const denom_val = try big_int_mod.allocFromManaged(rt, &r_den, .bigint);
+    const numer_val = try big_int_mod.allocFromManaged(rt, r_num, .bigint);
+    const denom_val = try big_int_mod.allocFromManaged(rt, r_den, .bigint);
 
     const r = try rt.gc.alloc(Ratio);
     r.* = .{

@@ -331,19 +331,54 @@ fn ratioArith(rt: *Runtime, a: Value, b: Value, op: RatioOp) !Value {
             try rd.mul(ap.den, bp.num);
         },
         .add, .sub => {
-            // (an*bd ± bn*ad) / (ad*bd)
+            // PERF (O-050): Knuth TAOCP 4.5.1 gcd-first rational add. Inputs are
+            // reduced (cljw stores lowest terms), so dividing by g = gcd(ad, bd)
+            // FIRST keeps the gcd small (g divides the smaller denominator — for
+            // the harmonic-sum hot path the added term's denom is ≤ 50) and SKIPS
+            // the final ~80-bit gcd entirely when the denominators are coprime.
+            // The result is coprime → `allocFromReducedManagedPair` below (no
+            // redundant final gcd). A zero numerator is collapsed there to int 0.
+            var g = try Managed.init(sa);
+            try g.gcd(ap.den, bp.den);
             var lhs = try Managed.init(sa);
             var rhs = try Managed.init(sa);
-            try lhs.mul(ap.num, bp.den);
-            try rhs.mul(bp.num, ap.den);
-            if (op == .add) try rn.add(&lhs, &rhs) else try rn.sub(&lhs, &rhs);
-            try rd.mul(ap.den, bp.den);
+            if (g.toConst().orderAgainstScalar(1) == .eq) {
+                // coprime denominators: (an*bd ± bn*ad) / (ad*bd) is already reduced.
+                try lhs.mul(ap.num, bp.den);
+                try rhs.mul(bp.num, ap.den);
+                if (op == .add) try rn.add(&lhs, &rhs) else try rn.sub(&lhs, &rhs);
+                try rd.mul(ap.den, bp.den);
+            } else {
+                // q'=ad/g, b'=bd/g; t = an*b' ± bn*q'; g2 = gcd(t, g);
+                // rn = t/g2; rd = (q'*bd)/g2  (= lcm/g2, exact since g2 | g | lcm).
+                var qp = try Managed.init(sa);
+                var bpr = try Managed.init(sa);
+                var rem = try Managed.init(sa);
+                try qp.divTrunc(&rem, ap.den, &g);
+                try bpr.divTrunc(&rem, bp.den, &g);
+                try lhs.mul(ap.num, &bpr);
+                try rhs.mul(bp.num, &qp);
+                var t = try Managed.init(sa);
+                if (op == .add) try t.add(&lhs, &rhs) else try t.sub(&lhs, &rhs);
+                var g2 = try Managed.init(sa);
+                try g2.gcd(&t, &g);
+                try rn.divTrunc(&rem, &t, &g2);
+                var lcm = try Managed.init(sa);
+                try lcm.mul(&qp, bp.den);
+                try rd.divTrunc(&rem, &lcm, &g2);
+            }
         },
     }
 
     if (rd.eqlZero()) return error.DivideByZero;
 
-    if (try ratio_mod.allocFromManagedPair(rt, &rn, &rd)) |r| return r;
+    // add/sub produce an already-reduced (coprime) pair via the Knuth path above,
+    // so they skip the redundant final gcd; mul/div still need the full reduce.
+    const reduced = if (op == .add or op == .sub)
+        try ratio_mod.allocFromReducedManagedPair(rt, &rn, &rd)
+    else
+        try ratio_mod.allocFromManagedPair(rt, &rn, &rd);
+    if (reduced) |r| return r;
 
     // Denominator collapsed to 1: the quotient is exact. A ratio operation
     // that reduces to a whole number yields a BigInt in clj (`(* 1/2 4)`→2N,
