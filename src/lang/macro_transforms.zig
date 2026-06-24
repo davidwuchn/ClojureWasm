@@ -431,13 +431,26 @@ fn associativeDestructure(
     try out.append(arena, value_form);
     // Map-destructuring of a SEQ operand (the kwargs idiom `& {:keys [...]}`,
     // where the rest args arrive as a seq) coerces it to a map so the
-    // `(get g key)` lookups hit — mirrors Clojure's
-    // `(if (seq? g) (apply hash-map g) g)`. value_form is evaluated once
-    // (bound above); rebinding g in the same let* shadows the raw value.
+    // `(get g key)` lookups hit. Mirrors Clojure 1.11's `destructure` pmap
+    // coercion VERBATIM (the same shape cljw's own `clojure.core/destructure`
+    // uses): a single trailing element (`(next g)` nil) is taken DIRECTLY as
+    // the map, so `((fn [& {:keys [a]}]) {:a 1})` works (the 1.11 trailing-map
+    // kwargs call); `>1` elements go through `(apply hash-map …)`; an empty
+    // rest yields `{}`. value_form is evaluated once (bound above); rebinding
+    // g in the same let* shadows the raw value.
+    //   (if (seq? g) (if (next g) (apply hash-map g) (if (seq g) (first g) {})) g)
     try out.append(arena, g);
     try out.append(arena, try makeCall(arena, "if", &.{
         try makeCall(arena, "seq?", &.{g}, loc),
-        try makeCall(arena, "apply", &.{ sym("hash-map", loc), g }, loc),
+        try makeCall(arena, "if", &.{
+            try makeCall(arena, "next", &.{g}, loc),
+            try makeCall(arena, "apply", &.{ sym("hash-map", loc), g }, loc),
+            try makeCall(arena, "if", &.{
+                try makeCall(arena, "seq", &.{g}, loc),
+                try makeCall(arena, "first", &.{g}, loc),
+                try makeCall(arena, "hash-map", &.{}, loc),
+            }, loc),
+        }, loc),
         g,
     }, loc));
 

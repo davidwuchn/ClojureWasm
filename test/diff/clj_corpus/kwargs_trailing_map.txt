@@ -1,0 +1,20 @@
+((fn [& {:keys [a b] :or {a 99 b 88}}] [a b]) :a 5 :b 6)
+;;=> [5 6]
+((fn [& {:keys [a b] :or {a 99 b 88}}] [a b]) {:a 5 :b 6})
+;;=> [5 6]
+((fn [& {:keys [a b] :or {a 99 b 88}}] [a b]))
+;;=> [99 88]
+((fn [& {:keys [a b] :or {a 99 b 88}}] [a b]) :a 0)
+;;=> [0 88]
+((fn [& {:keys [a b]}] [a b]) {})
+;;=> [nil nil]
+((fn [& {:keys [x] :or {x 1}}] x) {:x 7})
+;;=> 7
+(take 3 (iteration inc :initk 0))
+;;=> (1 2 3)
+(into [] (iteration (fn [k] (when (nil? k) 0)) :initk nil))
+;;=> [0]
+(let [{:keys [a b] :or {a 1}} {:b 2}] [a b])
+;;=> [1 2]
+(apply (fn [& {:keys [a b]}] [a b]) [:a 5 :b 6])
+;;=> [5 6]

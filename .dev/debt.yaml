@@ -24,6 +24,58 @@
 # md-table-align no longer pads it to ~800 KB of whitespace.
 
 active:
+  - id: "D-521"
+    status: |-
+      open (2026-06-24, user-directed) — TWO destructure-lowering systems can DRIFT.
+      cljw lowers destructuring in TWO independent code paths: (1) the Zig
+      `src/lang/macro_transforms.zig` (`sequentialDestructure` / `associativeDestructure`,
+      used for fn-params via `transformFnArity` and for `let`/`loop` bindings), and
+      (2) the Clojure `clojure.core/destructure` fn (`src/lang/clj/clojure/core.clj`,
+      clj's algorithm verbatim — the public macro authors call, e.g. kezban's `letm`).
+      These re-implement the SAME spec, so they can silently diverge — and they DID:
+      the Zig path shipped the pre-1.11 kwargs seq-coercion `(if (seq? g) (apply hash-map g) g)`
+      while the clj fn already had clj-1.11's `(if (seq? g) (if (next g) (apply hash-map g)
+      (if (seq g) (first g) {})) g)`. Result: `((fn [& {:keys [a]}]) {:a 1})` (the 1.11
+      trailing-map kwargs call) ERRORED on the Zig path but worked through the clj fn.
+      FIXED THIS CYCLE (the Zig coercion now matches clj 1.11 verbatim; surfaced by a
+      clj-diff sweep, repro `((fn [& {:keys [a b] :or {a 99 b 88}}] [a b]) {:a 5 :b 6})`
+      → was error, now `[5 6]` = clj). This row tracks the STANDING divergence RISK + a
+      future audit, not the (now-closed) single bug.
+    category: "clj-parity"
+    quality_floor: "clj-parity (two destructure paths can drift; future divergence audit + should-be-single-path design)"
+    barrier: |-
+      Standing risk — does not close as a one-shot. Two open threads:
+
+      (A) DIVERGENCE AUDIT (future, highest-value when next touching destructure):
+        enumerate the WHOLE destructure surface (`:keys`/`:strs`/`:syms`/`:as`/`:or`,
+        nested map+vec, `& rest` seq-walk, the kwargs trailing-map coercion just fixed)
+        and diff the Zig `macro_transforms.zig` lowering against clj's `destructure` fn
+        EXPR-BY-EXPR through the clj oracle (the harness `scripts/clj_diff_sweep.sh`).
+        Drive any further drift to zero in one focused push (big-bang, not drip-feed —
+        `clj_diff_sweep.md` Discipline 2) and leave a corpus behind. The kwargs fix is
+        the first such drift caught; assume others exist until the surface is swept.
+
+      (B) SHOULD-BE design — why are there TWO paths at all, and is that the finished form?
+        The Zig path exists for an OPTIMIZATION/bootstrap reason (macro_transforms.zig
+        header: patterns lower to plain-symbol bindings IN ZIG so `let`/`loop`/fn-params
+        do NOT depend on the clj `destructure` fn being loaded — "a `.clj` destructure
+        would hit bootstrap-order fragility", since `let`/`fn` must work before core.clj's
+        `destructure` is defined). So the duplication is not accidental — it buys
+        bootstrap-order independence + (likely) avoids a macroexpansion round-trip on the
+        hottest binding forms. The finished-form question: (i) keep two paths but add a
+        MECHANICAL parity gate (a test that feeds the same binding forms through both and
+        asserts identical lowering, so drift fails the gate — the cheapest fix to the
+        drift class); OR (ii) collapse to one path once bootstrap-order allows (e.g. the
+        Zig path emits a call to the clj `destructure` fn after it is loaded, Zig-only for
+        the pre-core bootstrap window); OR (iii) generate the Zig lowering FROM clj's
+        algorithm so there is a single source of truth. (i) is the pragmatic
+        drift-killer; (iii) is the cleanest SSOT. Decide when the audit (A) runs — do NOT
+        seize the structural decision here (F-003). Note the optimization tension: a
+        single clj-fn path would re-introduce the bootstrap-order + per-binding-macroexpand
+        cost the Zig path was built to avoid, so (i)/(iii) are favoured over a naive (ii).
+      Cross-ref: `clj_diff_sweep.md` (sweep harness + Disciplines), the clj `destructure`
+      fn (core.clj), macro_transforms.zig `associativeDestructure`/`sequentialDestructure`.
+    last_reviewed: "2026-06-24"
   - id: "D-516"
     status: "DISCHARGED 2026-06-24 (0f159228, ADR-0163). Lazy-namespace bytecode loading COMPLETE (commits 1 missing-:require, 2 loaded_libs guard+pre-register, 3a+3b region blob, 3c the flip). Eager = clj no-require set (SSOT bootstrap.EAGER_NS: core+string/walk/edn/java.io/core.protocols/uuid/instant/spec.alpha + cljw.wasm); rest lazy via loadOrFindNs region replay = STRICT clj-parity. Cold floor 9.4->4.3ms. Bugs fixed: require 4-path mappings.count short-circuit unified to loadOrFindNs; mylib inline-ns last-resort; cljw.wasm analyze-time eager; check_corpus_regression auto-require. Blast-radius: 27 e2e + cw_ported.clj missing-require added (zero real bugs). The region blob is D-517-ready."
     category: "perf"
