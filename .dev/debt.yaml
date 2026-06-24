@@ -260,6 +260,19 @@ active:
       a JVM feature (proxy / reader classes) or an un-cloned transitive dep, so the
       cheap real-library yield is spent; the next /continue should NOT re-hunt these
       blocked libs (clone their transitive deps first, or pick a fresh pure-clj lib).
+      DRAIN 2 (2026-06-25, post-Compiler/specials + D-530): cloned tools.macro
+      (unblocked by Compiler/specials, 8c12a5d6) → **algo.monads now fully loads +
+      runs** (after D-534 APersistentSet/IPersistentList markers). Re-probed the
+      remaining cloned libs — ALL Tier-D-blocked (the library exercise is now
+      DEFINITIVELY tapped): core.match (`clojure.lang.Compiler/LOOP_LOCALS` +
+      `Compiler$LocalBinding` — deep JVM compiler internals), core.logic
+      (`definterface` clojure.core.logic.protocols.IConstraintId), data.avl
+      (`gen-interface`), tools.reader (LineNumberingPushbackReader), test.check
+      (`proxy`). The remaining accessible-lib surface needs Tier-D JVM features
+      (definterface/gen-interface/proxy/Compiler-internals/reader-classes) — out of
+      scope (ADR-0013); do NOT re-probe these. Net library tally: priority-map /
+      math.combinatorics / data.generators / algo.monads → contained fixes;
+      core.unify / data.zip / data.codec / medley / tools.cli / … → clean.
     category: "clj-parity"
     quality_floor: "public-ization: real-library deps.edn usage (ADR-0166)"
     barrier: |-
