@@ -80,4 +80,17 @@ case "$G" in
     *) fail "until-unsupported: expected a date-based-unit error, got '$G'" ;;
 esac
 
+# --- LocalDateTime.until — date units (time-of-day adjusted) + time units (D-512)
+H=$(out <<'EOF' 2>&1
+(let [a (java.time.LocalDateTime/of 2020 1 1 0 0 0) b (java.time.LocalDateTime/of 2021 3 2 6 30 15)]
+  (println (.until a b java.time.temporal.ChronoUnit/DAYS)
+           (.until a b java.time.temporal.ChronoUnit/HOURS)
+           (.until a b java.time.temporal.ChronoUnit/MINUTES)
+           (.until a b java.time.temporal.ChronoUnit/SECONDS)
+           (.until a b java.time.temporal.ChronoUnit/MONTHS)
+           (.until a b java.time.temporal.ChronoUnit/YEARS)))
+EOF
+)
+eq 'ldt-until' "$H" '426 10230 613830 36829815 14 1'
+
 echo "OK — phase15_java_time_dow_month (D-462) green"

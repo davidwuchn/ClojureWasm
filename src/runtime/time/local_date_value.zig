@@ -225,23 +225,8 @@ fn untilFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) an
     if (args[2].tag() != .host_instance)
         return error_catalog.raise(.type_arg_invalid, loc, .{ .fn_name = ".until", .expected = "a ChronoUnit", .actual = @tagName(args[2].tag()) });
     const ord: u8 = @intCast(host_instance.asHostInstance(args[2]).state[0]);
-    const ed1 = epochDayOf(args[0]);
-    const ed2 = epochDayOf(args[1]);
-    const c1 = instant.civilFromDays(ed1);
-    const c2 = instant.civilFromDays(ed2);
-    const packed1: i64 = (c1.y * 12 + c1.m - 1) * 32 + c1.d;
-    const packed2: i64 = (c2.y * 12 + c2.m - 1) * 32 + c2.d;
-    const months: i64 = @divTrunc(packed2 - packed1, 32);
-    const result: i64 = switch (ord) {
-        7 => ed2 - ed1, // DAYS
-        8 => @divTrunc(ed2 - ed1, 7), // WEEKS
-        9 => months, // MONTHS
-        10 => @divTrunc(months, 12), // YEARS
-        11 => @divTrunc(months, 120), // DECADES
-        12 => @divTrunc(months, 1200), // CENTURIES
-        13 => @divTrunc(months, 12000), // MILLENNIA
-        else => return error_catalog.raise(.type_arg_invalid, loc, .{ .fn_name = ".until", .expected = "a date-based ChronoUnit (DAYS/WEEKS/MONTHS/YEARS/DECADES/CENTURIES/MILLENNIA)", .actual = chrono_unit.name(ord) }),
-    };
+    const result = instant.dateUntil(epochDayOf(args[0]), epochDayOf(args[1]), ord) orelse
+        return error_catalog.raise(.type_arg_invalid, loc, .{ .fn_name = ".until", .expected = "a date-based ChronoUnit (DAYS/WEEKS/MONTHS/YEARS/DECADES/CENTURIES/MILLENNIA)", .actual = chrono_unit.name(ord) });
     return Value.initInteger(result);
 }
 

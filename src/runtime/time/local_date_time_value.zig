@@ -34,6 +34,10 @@ const local_time_value = @import("local_time_value.zig");
 const duration_value = @import("duration_value.zig");
 const day_of_week_value = @import("day_of_week_value.zig");
 const month_value = @import("month_value.zig");
+const host_instance = @import("../host_instance.zig");
+const chrono_unit = @import("../chrono_unit.zig");
+const big_int = @import("../numeric/big_int.zig");
+const nb = @import("../value/nan_box.zig");
 
 /// `(.getYear d)` — the proleptic year (JVM `LocalDateTime.getYear`).
 fn getYearFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
@@ -169,6 +173,84 @@ const DAY_NS: i64 = 86_400_000_000_000;
 const HOUR_NS: i64 = 3_600_000_000_000;
 const MIN_NS: i64 = 60_000_000_000;
 const SEC_NS: i64 = 1_000_000_000;
+
+/// An integer count Value: a fixnum when it fits the i48 window, else a promoted
+/// Long. `.until` in NANOS/MICROS/MILLIS can exceed i48 over a multi-day span.
+fn makeLong(rt: *Runtime, v: i64) !Value {
+    if (v >= nb.NB_I48_MIN and v <= nb.NB_I48_MAX) return Value.initInteger(v);
+    return big_int.allocFromI64(rt, v, .long);
+}
+
+/// `(.until d1 d2 unit)` — whole count of ChronoUnit `unit` from d1 to d2 (JVM
+/// `LocalDateTime.until`). Date units (DAYS..MILLENNIA) adjust the end date ±1 by
+/// the time-of-day comparison then reuse `instant.dateUntil`; time units
+/// (NANOS..HALF_DAYS) use the JVM piecewise day-split (so SECONDS+ never overflow
+/// across realistic spans; a NANOS span beyond ±292 years overflows → raise, as
+/// JVM's Math.multiplyExact throws). ERAS/FOREVER raise.
+fn untilFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = env;
+    try error_catalog.checkArity("until", args, 3, loc);
+    if (!isLocalDateTime(rt, args[1]))
+        return error_catalog.raise(.type_arg_invalid, loc, .{ .fn_name = ".until", .expected = "LocalDateTime", .actual = @tagName(args[1].tag()) });
+    if (args[2].tag() != .host_instance)
+        return error_catalog.raise(.type_arg_invalid, loc, .{ .fn_name = ".until", .expected = "a ChronoUnit", .actual = @tagName(args[2].tag()) });
+    const ord: u8 = @intCast(host_instance.asHostInstance(args[2]).state[0]);
+    const ed1 = epochDayOf(args[0]);
+    const ed2 = epochDayOf(args[1]);
+    const nod1 = nanoOfDayOf(args[0]);
+    const nod2 = nanoOfDayOf(args[1]);
+
+    if (ord >= 7 and ord <= 13) { // date-based: adjust the end date by the time-of-day
+        var ed2_adj = ed2;
+        if (ed2 > ed1 and nod2 < nod1) {
+            ed2_adj -= 1;
+        } else if (ed2 < ed1 and nod2 > nod1) {
+            ed2_adj += 1;
+        }
+        return makeLong(rt, instant.dateUntil(ed1, ed2_adj, ord).?);
+    }
+    if (ord > 6) // ERAS (14) / FOREVER (15)
+        return error_catalog.raise(.type_arg_invalid, loc, .{ .fn_name = ".until", .expected = "a supported ChronoUnit", .actual = chrono_unit.name(ord) });
+
+    // Time-based (0-6): JVM piecewise day-split to keep SECONDS+ in range.
+    const per_day: i64 = switch (ord) {
+        0 => DAY_NS, // NANOS
+        1 => 86_400_000_000, // MICROS
+        2 => 86_400_000, // MILLIS
+        3 => 86_400, // SECONDS
+        4 => 1_440, // MINUTES
+        5 => 24, // HOURS
+        6 => 2, // HALF_DAYS
+        else => unreachable,
+    };
+    const per_unit: i64 = switch (ord) {
+        0 => 1,
+        1 => 1_000,
+        2 => 1_000_000,
+        3 => SEC_NS,
+        4 => MIN_NS,
+        5 => HOUR_NS,
+        6 => HOUR_NS * 12,
+        else => unreachable,
+    };
+    var days = ed2 - ed1;
+    var time_part = nod2 - nod1;
+    if (days == 0) return makeLong(rt, @divTrunc(time_part, per_unit));
+    if (days > 0) {
+        days -= 1;
+        time_part += DAY_NS;
+    } else {
+        days += 1;
+        time_part -= DAY_NS;
+    }
+    const amount = @mulWithOverflow(days, per_day);
+    if (amount[1] != 0)
+        return error_catalog.raise(.type_arg_invalid, loc, .{ .fn_name = ".until", .expected = "a span representable in the requested unit", .actual = "an out-of-range NANOS/MICROS span" });
+    const total = @addWithOverflow(amount[0], @divTrunc(time_part, per_unit));
+    if (total[1] != 0)
+        return error_catalog.raise(.type_arg_invalid, loc, .{ .fn_name = ".until", .expected = "a span representable in the requested unit", .actual = "an out-of-range NANOS/MICROS span" });
+    return makeLong(rt, total[0]);
+}
 
 /// Shift the date-time by whole days (epoch-day field only; time-of-day kept).
 /// Shared by plus/minusDays + plus/minusWeeks.
@@ -412,6 +494,7 @@ pub fn descriptorOf(rt: *Runtime) !*const TypeDescriptor {
         .{ "isBefore", &isBeforeFn },
         .{ "isAfter", &isAfterFn },
         .{ "isEqual", &isEqualFn },
+        .{ "until", &untilFn },
         .{ "plus", &plusFn },
         .{ "minus", &minusFn },
     };

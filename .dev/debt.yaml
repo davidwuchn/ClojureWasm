@@ -25,21 +25,15 @@
 
 active:
   - id: "D-512"
-    status: "OPEN (2026-06-24). `.until(d2, ChronoUnit)` landed for LocalDate (6d8af75c); LocalDateTime + Instant `.until` remain."
+    status: "OPEN (2026-06-24). `.until(d2, ChronoUnit)` landed for LocalDate (6d8af75c) + LocalDateTime (date units via instant.dateUntil + time-of-day adjust; time units via the JVM piecewise day-split, overflow→raise; makeLong promote). Only Instant.until remains."
     category: "clj-parity"
     barrier: |-
-      Extend `.until` to LocalDateTime + Instant (currently LocalDate-only).
-      LocalDateTime (stored [epoch_day, nano_of_day]): date units adjust endDate ±1
-      by the time-of-day comparison then reuse `instant.dateUntil` (extract the
-      date-based switch from local_date_value.untilFn into a shared neutral helper);
-      time units = total nanos `(ed2-ed1)*86_400e9 + (nod2-nod1)` divided by the
-      per-unit nanos. Use i128 for the nanos total to avoid the multiply overflow,
-      and promote the result (i48 fixnum / i64 Long / bigint) — the NANOS-over-a-
-      huge-span result can exceed i64 (the fiddly edge that deferred it). Instant:
-      fixed-duration units (NANOS..DAYS); MONTHS/YEARS/etc throw (no civil date).
-      clj-verified targets: LDT a=2020-01-01T00:00→b=2021-03-02T06:30:15 → DAYS 426 /
-      HOURS 10230 / MINUTES 613830 / SECONDS 36829815 / MONTHS 14 / YEARS 1; Instant
-      0→3661s → SECONDS 3661 / MINUTES 61; 0→200000s → DAYS 2.
+      Extend `.until` to Instant (LocalDate + LocalDateTime done). Instant supports
+      only fixed-duration units (NANOS..DAYS, DAYS=86_400s); MONTHS/YEARS/etc throw
+      (no civil date). Storage differs from LDT (epoch_second + nano, not epoch_day +
+      nano_of_day) — compute total nanos between the two instants, divide by the
+      per-unit nanos (reuse the LDT time-unit table). clj-verified: 0→3661s →
+      SECONDS 3661 / MINUTES 61; 0→200000s → DAYS 2.
     last_reviewed: "2026-06-24"
   - id: "D-511"
     status: "OPEN (2026-06-24). MathContext surface essentially complete. Part (a) remainder/divideToIntegralValue LANDED. Part (b) MathContext CORE LANDED ((MathContext. p [mode]) + getPrecision/getRoundingMode/toString + .round(mc) + .divide(d,mc) + generalised allocDivPrecision/allocRoundPrecision). DECIMAL32/64/128/UNLIMITED static constants LANDED 2026-06-24 (math_context.zig singleton, `.math_context` StaticFieldValue arm; e2e mc_decimal*). Only the BigDecimal(…,mc) constructor remains."

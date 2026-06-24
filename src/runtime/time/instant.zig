@@ -107,6 +107,29 @@ pub fn addYearsToEpochDay(epoch_day: i64, n: i64) i64 {
     return daysFromCivil(ny, c.m, nd);
 }
 
+/// Whole count of date-based `ChronoUnit` `ord` from epoch-day `ed1` to `ed2`
+/// (JVM `LocalDate.until(end, unit)`). Returns null for a non-date unit (time
+/// units / ERAS / FOREVER). MONTHS uses proleptic-month*32 + day-of-month
+/// packing so day-of-month boundaries round toward zero exactly as the JVM does
+/// (Jan31→Mar1 = 1 month). Shared by LocalDate + LocalDateTime `.until`.
+pub fn dateUntil(ed1: i64, ed2: i64, ord: u8) ?i64 {
+    const c1 = civilFromDays(ed1);
+    const c2 = civilFromDays(ed2);
+    const packed1: i64 = (c1.y * 12 + c1.m - 1) * 32 + c1.d;
+    const packed2: i64 = (c2.y * 12 + c2.m - 1) * 32 + c2.d;
+    const months: i64 = @divTrunc(packed2 - packed1, 32);
+    return switch (ord) {
+        7 => ed2 - ed1, // DAYS
+        8 => @divTrunc(ed2 - ed1, 7), // WEEKS
+        9 => months, // MONTHS
+        10 => @divTrunc(months, 12), // YEARS
+        11 => @divTrunc(months, 120), // DECADES
+        12 => @divTrunc(months, 1200), // CENTURIES
+        13 => @divTrunc(months, 12000), // MILLENNIA
+        else => null,
+    };
+}
+
 const ParseError = error{InvalidInstant};
 
 fn readN(s: []const u8, i: *usize, n: usize) ParseError!i64 {
