@@ -267,15 +267,24 @@ active:
       exist under runtime/java/math/); compat_tiers lists java.math.BigInteger as a
       host_class 1-liner (phase 5) with no surface. data.generators uses
       `(BigInteger. ^bytes (byte-array b))` AND `(BigDecimal. (.toBigInteger
-      (bigint)) …)` — so fully unblocking it also needs `.toBigInteger` + a
-      BigDecimal 2-arg ctor. The UUID 2-long ctor it also needed is FIXED (0a5c65c4).
+      (bigint)) …)`. LARGELY RESOLVED 2026-06-25: the UUID 2-long ctor (0a5c65c4),
+      the BigInteger construction surface (33739d68 — runtime/java/math/BigInteger.zig
+      `<init>` String/byte[] + valueOf, + `.toBigInteger` on big_int), AND the
+      BigDecimal (BigInteger unscaledVal, int scale) ctor (8400646a) all landed +
+      corpus. REMAINING (low-value / fuzzy, NOT blocking a real consumer): (a) a
+      data.generators-test "Invalid float literal '…E-117'" that is NOT reproducible
+      standalone — the exact 88-digit AND a 200-digit mantissa parse fine via the
+      literal reader AND read-string (clj-match), so it is a context-specific
+      generated-double pr-str round-trip edge, fuzzy; (b) BigInteger
+      `.add`/`.subtract`/`.multiply`/`.divide` instance methods — SPECULATIVE (cljw
+      code + data.generators use the core `+`/`*`; `.divide` is truncate-toward-zero,
+      not the available floor `allocDivFloorManaged`), add only when a consumer needs.
     category: "interop"
     barrier: |-
-      Add `runtime/java/math/BigInteger.zig` (mirror BigDecimal.zig) — a thin
-      surface over the native `.big_int`: ctor (String, byte[] two's-complement),
-      `valueOf`, `.toBigInteger` (identity), and the common methods (modPow/gcd/
-      arithmetic) over the existing big_int ops. A whole surface = focused unit;
-      drain when a consumer needs it. Repro: (java.math.BigInteger. "123").
+      Construction surface DONE. Remaining are low-value: the fuzzy float round-trip
+      (needs the exact failing generated double — re-run data.generators-test and
+      capture the value) + the speculative BigInteger arithmetic instance methods
+      (defer; `.divide` needs a truncating divide, not the floor one).
     last_reviewed: "2026-06-25"
   - id: "D-521"
     status: |-
