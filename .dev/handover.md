@@ -8,19 +8,33 @@
 - **HEAD**: `main` (`git log` = SSOT; ≈ `368c9851`). Per-commit = smoke; commit
   **and** push (CLAUDE.md § atomic Step 6). `build.zig.zon` `.zwasm` = tag pin
   `v2.0.0-alpha.3`.
-- **First commit on resume MUST be**: **§9.2.S collection-perf L2 — chunked lazy-seq WALK path
-  (sieve)** (**ADR-0165 Amendment 1** / **D-520**). L3 keyword-map-get LANDED as **O-051** (see
-  Last landed). The 2026-06-24 implementation Step 0.6 re-laying CORRECTED ADR-0165's premises
-  (Amendment 1): transients are NOT a stub (flat-buffer impl works; `into`/`vec` already use it),
-  no losing bench is gated on transient build, so **L1 is demoted from "first"** — the lever order
-  is now MEASURED-loss-led. Corrected peer standing (ReleaseSafe, hyperfine, load ~3): cljw LOSES
-  gc_large_heap 1.19× / destructure 1.18× / sieve 1.14× / gc_alloc_rate 1.06×; **WINS nested_update
-  1.39×** (was listed as a loss — stale) + bigint tie + pure-compute 2×. Remaining lever order:
-  **L2 chunked-seq WALK (sieve)** → L4 right-size small-collection alloc (gc_alloc_rate/gc_large_heap
-  TailNode `[32]Value` / ArrayMap `[16]Value` over-alloc) → L1 transients (only for `(into big few)`;
-  not bench-moving) → L5/L6. Per lever: branch `develop/collection-<lever>`, experiment-and-revert /
-  commit-no-push, **FULL diff oracle (global change, NOT smoke)** + clean old-vs-new-binary A/B
-  (load-robust) ± interleaved cljw-vs-bb. **GUARDRAIL**: never Zig-ify the .clj bootstrap.
+- **First commit on resume MUST be**: **§9.2.S L4 — right-size small-map allocation
+  (gc_large_heap)**, starting with its Step 0 survey (it is invasive — see below)
+  (**ADR-0165 Amendment 1** / **D-520**). L3 keyword-map-get LANDED as **O-051** (see Last landed).
+  The clean collection get/dispatch levers are now MINED — post-O-051 decomposition (hyperfine -N,
+  20 runs, load ~3) shows the remaining 9-bench gaps need invasive layout (L4) or the VM frontier
+  (D-386, a SEPARATE gap-III unit per ADR-0165 — not collection-perf):
+  - **gc_large_heap 1.12×** → **L4 small-map alloc/GC**. Decomposed: walk+reduce TIES (glh_A 0.99),
+    map-alloc+into WINS (glh_B 0.88), but reduce over a vec holding 100K live array-maps LOSES
+    (glh_D maps=1.03 tie vs glh_E ints=0.64 win — the only diff is maps-vs-ints in the live vec).
+    So the loss is ALLOCATION + GC-tracing of 100K live `[16]Value` (256B) array-maps holding 2
+    entries — NOT the get (O-051 done) nor the walk. Lever = right-size ArrayMap (256B→~64B) /
+    reduce GC trace cost. **Invasive** (ArrayMap is a fixed `extern struct` — variable-length
+    trailing array touches every site + GC trace + assoc growth) → its own Step 0 survey + DA.
+  - **destructure 1.16×** → **D-386 (VM frontier)**. O-051 cut the get path; the residual is the
+    binding-lowering EXECUTION (mapd−getonly ≈10ms cljw vs ≈3ms bb — clj-identical expanded code,
+    so it's VM local-slot/seq?-coercion execution, not a collection lever). DA classified the clean
+    attack (destructure inline-cache) as D-386 territory.
+  - **sieve 1.13×** / **gc_alloc_rate 1.05×** → hard / near-noise. sieve's source is a `cons`-list
+    (non-chunked in clj AND cljw — filter/map already chunk CHUNKED sources via O-032; a list
+    can't); the residual is per-element `force` (VM thunk call). gc_alloc_rate is L4 (TailNode
+    `[32]Value` over-alloc for 4-elem vectors, partly O-040'd) but ~noise.
+  Other classes WIN big (map_filter_reduce 1.65× / vector_ops 2.39× / map_ops 3.48× / nested_update
+  1.39× / ratio_sum / pure-compute 2×). So the campaign's next real front = **L4 (invasive, dedicated
+  cycle) OR D-386 (the separate VM frontier)** — NOT another cheap collection constant-factor.
+  Per lever: branch `develop/collection-<lever>`, experiment-and-revert / commit-no-push, **FULL
+  diff oracle (global change, NOT smoke)** + clean old-vs-new-binary A/B (load-robust; the channel
+  degrades at load ≥3 — use file-sentinels). **GUARDRAIL**: never Zig-ify the .clj bootstrap.
   D-517/D-518 DEFERRED; D-515 binary-size (standing).
 - **Forbidden this session**: bare `zig build test` WITHOUT `-Dwasm` (false fails —
   `zig_build_test_needs_dwasm`); bare `zig build` for a probe (ADR-0133 — ReleaseSafe).
