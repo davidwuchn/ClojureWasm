@@ -5,44 +5,56 @@
 
 ## Resume contract
 
-- **HEAD**: `main` (`git log` = SSOT; ≈ `e1940e50`). Per-commit = smoke; commit
+- **HEAD**: `main` (`git log` = SSOT; ≈ `888d7573`). Per-commit = smoke; commit
   **and** push (CLAUDE.md § atomic Step 6). `build.zig.zon` `.zwasm` = tag pin
   `v2.0.0-alpha.3`.
-- **First commit on resume MUST be**: open **D-510 — the general host-enum /
-  singleton unification** (the big-design unit the user reserved for a clear
-  context). It is depth-2 structural → draft **ADR-016x + a Devil's-advocate fork**
-  (CLAUDE.md § ADR-level inline). The design question: the 4 host enums use TWO
-  representations — RoundingMode/ChronoUnit/MathContext-DECIMAL* are `.host_instance`
-  (state[0]=ordinal) + a toString method; DayOfWeek/Month are `.typed_instance` +
-  the `TemporalPrint` enum-name arm + getValue. Unify into ONE mechanism (one
-  `StaticFieldValue.host_enum` arm + a registry/per-enum name fn), reconciling the
-  representations. Foundation is READY (3 host-singleton consumers live; the
-  `.rounding_mode`/`.chrono_unit`/`.math_context` arm + `runtime/{…}.zig` +
-  rt-slot-cache pattern is proven). Full detail + the scope finding: `.dev/debt.yaml`
-  D-510. Start: oracle DayOfWeek/Month behaviour, then ADR+DA.
+- **First commit on resume MUST be**: open **D-511 — the two BigDecimal
+  constructor remnants** (the easiest remaining active clj-parity quick-win, per
+  the standing "active easiest-first / quick-wins→perf" work-order). Measure both
+  vs clj first: (1) `(BigDecimal. x mc)` 2-arg round-on-construct = `(.round
+  (bigdec x) mc)` — needs a combined parse-then-round at the Managed level (avoid
+  holding an intermediate Value across the round alloc, GC-rooting); (2)
+  `(BigDecimal. double)` exact-binary expansion (a clj footgun — differs from
+  bigdec's shortest-round-trip; LOW value, defer unless a consumer needs it).
+  Land (1) with an e2e + clj-verify; re-file (2) as low-priority if deferred.
+  After D-511, the next active quick-win drains are exhausted (D-513 is
+  foundational — see Standing units), so the loop pivots to the **gap-III perf
+  campaign** (ROADMAP §9.2.S / D-180 / D-450, fastest-script goal; measure-first).
 - **Forbidden this session**: bare `zig build test` WITHOUT `-Dwasm` (false fails —
   `zig_build_test_needs_dwasm`); bare `zig build` for a probe (ADR-0133 — ReleaseSafe).
-  Reader-macro / syntax-quote NS-qualification stays `rt/` (AD-038/049).
 
 ## Last landed (git log = SSOT)
 
-**clj-parity sweep arc, 2026-06-24 — full gate GREEN (392/0).** Complete BigDecimal
-numeric surface (RoundingMode enum [ADR-0160] + compareTo/max/min/equals/pow/
-remainder/divideToIntegralValue/intValue/longValue/doubleValue/divide-with-mode,
-MathContext [+DECIMAL*], `(BigDecimal. str|int)` ctor); `java.time` ChronoUnit enum
-+ `.until` across LocalDate/LocalDateTime/Instant; `java.math.BigInteger` instance
-methods (abs/negate/signum/gcd/pow/mod/sqrt/modPow/bitLength/isProbablePrime);
-`ns-unalias`. A session code-review (JVM-oracle-verified) found the new numeric/time
-code correct. `.zig-cache` cleanup: ~39G local + 126G ubuntunote freed (user-asked).
-The common clj-parity surface is mature (extensively probed: core/string/set/data/
-walk/math/format/zip/edn/pprint/spec/test/contrib/transducers/destructuring/
-protocols/state/reader all clean). Remaining gaps tracked: D-510/D-513.
+**D-510 — general host-enum mechanism, ADR-0161, 2 cycles, smoke 5/5 green.** Unified
+all four JVM host enums (RoundingMode/ChronoUnit/DayOfWeek/Month) onto ONE comptime
+registry `runtime/host_enum.zig` + ONE flat `rt.host_enum_consts[43]` cache with a
+single interning entry point (DA-fork Alt-3). Cycle 1 migrated Group A
+(RoundingMode/ChronoUnit) behaviour-preserving + folded/deleted
+rounding_mode.zig/chrono_unit.zig. Cycle 2 folded Group B (DayOfWeek/Month) from
+`.typed_instance` getter-mint to `.host_instance` singletons (new surfaces
+DayOfWeek.zig/Month.zig), removed the typed_instance equal/compare/print arms +
+day_of_week_value.zig/month_value.zig. **Parity wins**: `DayOfWeek/MONDAY`..`Month/
+DECEMBER` static fields now resolve; `(identical? (.getDayOfWeek monday)
+DayOfWeek/MONDAY)` => true; all four enums JVM-Comparable (sign-based, AD-043
+extended). `TypeDescriptor.host_enum_idx` drives unified pr-print + compare-by-ordinal.
+MathContext stays a consumer (not a member). compat_tiers 4 entries → keyword
+host_enum (G3 green).
 
 ## Standing units (tracked in .dev/debt.yaml)
 
-- **D-510** — general host-enum/singleton unification (the next big-design unit; see
-  Resume contract). **D-513** — clojure.core.reducers (needs cljw-native impl over
-  the primitive reduce) / clojure.repl (blocked by) / the var `:doc`-metadata gap.
+- **D-511** — two BigDecimal ctor remnants (the next unit; see Resume contract).
+- **D-513** — three linked clj-parity gaps, all foundational (NOT clean drop-ins):
+  (1) `clojure.core.reducers` (needs reduce→CollReduce wiring OR a cljw-native
+  reducers impl; transducers supersede it, moderate-low value); (2) `clojure.repl`
+  (dir/apropos implementable, but doc/find-doc/source blocked by (3)); (3) var
+  `:doc` metadata absent — `(:doc (meta #'reduce))` → nil; wiring docstrings
+  through every bootstrap defn/def + primitive var registration is a large,
+  separate unit and the real prerequisite for a useful `clojure.repl`.
+- **gap-III perf campaign** (ROADMAP §9.2.S, D-180/D-450) — the fastest-script goal
+  (ADR-0148): cljw FASTEST among cljw/Python/Ruby/Node/Babashka cold-start on the
+  top-gap benches. Resume at D-180 (bulk `persistent!`/`vector.fromSlice`, the
+  into/vec 121s bottleneck). Measure-first (`bench/compare_langs.sh`). The
+  high-value standing directive once the active quick-wins drain.
 
 ## North star (ACTIVE)
 
@@ -53,17 +65,9 @@ Live ledger: `.dev/zwasm_capabilities.md`.
 
 ## Cold-start reading order (resume)
 
-handover → `.dev/debt.yaml` D-510 (the next unit's full scope) → memory
-`clj_stdlib_contrib_sweep_campaign` + `.claude/rules/clj_diff_sweep.md` →
-`private/notes/sweep-*.md` (this arc). memories `char_literal_e2e_oracle`,
-`verify_actual_pattern_not_proxy`, `smoke_first_batch_full_gate`.
-
-## Stopped — user requested
-
-User instruction (2026-06-24): "D-514がniche も含め終わったら、クリアコンテキストで
-始めたいため、明示的に配線・参照チェーンを監査し、大きな設計の要るやつを自律的に進め
-られるような状態にし、ストップしてください". D-514 is DISCHARGED (BigInteger complete);
-the session's new wiring/reference chains were audited clean (3 host-singleton
-modules: singleton↔analyzer-resolver↔runtime-deinit + rt-slots + java_surfaces +
-primitive.zig all matched; full gate 392/0 validated test-reach/zone). Resume by
-opening D-510 per the Resume contract.
+handover → `.dev/debt.yaml` D-511 (next unit) + D-513 (foundational) → memory
+`clj_diff_sweep_methodology` + `.claude/rules/clj_diff_sweep.md` → for the perf
+pivot: `.dev/perf_v0_baseline.md` + memories `perf_campaign_roadmap_9_2_s` /
+`perf_beat_python_every_bench`. memories `char_literal_e2e_oracle`,
+`verify_actual_pattern_not_proxy`, `smoke_first_batch_full_gate`,
+`verify_against_releasesafe_binary`.
