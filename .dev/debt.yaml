@@ -56,8 +56,14 @@ active:
       ladder.md (data.generators "FULLY FUNCTIONAL" was core-gens only; the full
       suite needed the D-528 UUID/BigInteger/BigDecimal fixes), works/README.md
       (deps.edn resolution landed — the doc still described the manual `-cp` era).
-      Each fix re-verified against the ReleaseSafe binary. REMAINING docs (lower
-      traffic): works/demos.md, docs/ja/README.md (dormant-cadence README).
+      Each fix re-verified against the ReleaseSafe binary. ALL 7 top-level
+      user-facing docs/ now audited: + works/demos.md (CLEAN — 5 runnable language
+      demos match the build, "<4 MB" consistent with RELEASE_METRICS) +
+      docs/ja/README.md (fixed: the "chapter-cadence resumes at Phase 4/5" framing
+      was overtaken — the project reached v1.0.0-alpha with dormancy persisting).
+      So 6/7 had real stale claims, 1/7 clean. The docs/ tree pass is DONE; a future
+      drain can sweep docs/ja/archive (read-only historical) or the .dev/*.md
+      scaffolding if a public-ization need arises.
     category: "docs"
     quality_floor: "public-ization: doc audit vs code-truth (ADR-0166)"
     barrier: |-
