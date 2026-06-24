@@ -245,10 +245,10 @@ fn untilFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) an
     }
     const amount = @mulWithOverflow(days, per_day);
     if (amount[1] != 0)
-        return error_catalog.raise(.type_arg_invalid, loc, .{ .fn_name = ".until", .expected = "a span representable in the requested unit", .actual = "an out-of-range NANOS/MICROS span" });
+        return error_catalog.raise(.type_arg_invalid, loc, .{ .fn_name = ".until", .expected = "a span representable in the requested unit", .actual = "a span too large for the requested unit" });
     const total = @addWithOverflow(amount[0], @divTrunc(time_part, per_unit));
     if (total[1] != 0)
-        return error_catalog.raise(.type_arg_invalid, loc, .{ .fn_name = ".until", .expected = "a span representable in the requested unit", .actual = "an out-of-range NANOS/MICROS span" });
+        return error_catalog.raise(.type_arg_invalid, loc, .{ .fn_name = ".until", .expected = "a span representable in the requested unit", .actual = "a span too large for the requested unit" });
     return makeLong(rt, total[0]);
 }
 
