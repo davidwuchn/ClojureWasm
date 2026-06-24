@@ -209,6 +209,22 @@ active:
     last_reviewed: "2026-06-25"
   - id: "D-533"
     status: |-
+      DISCHARGED 2026-06-25 (80d9395b). `set-validator!`/`get-validator` + the
+      `:validator` ctor option now work on REFS and VARS (mirrors the atom/agent
+      surface, ADR-0081/D-223/D-441): requireValidatable + the iref* dispatch
+      extend to `.ref`/`.var_ref`; a Layer-0 `iref.validateOrThrow` is shared. VAR:
+      a `validator` field on Var (GC-traced via a new ns_vars `pending_validator`
+      stage) validated in `alter-var-root` before setRoot. REF: a `validator` field
+      on Ref (traceGc-marked) validated at COMMIT in `lock_tx.commit` (all-or-
+      nothing pre-pass, clj `Ref.validate`); `(ref v :validator f)` parses kwargs
+      like atomFn (validates initial value, throws on bad-init) + `:min/max-history`
+      wire the real ring bounds. clj-verified all 4 ref types; GC-torture-rooted;
+      e2e phase14_ref_var_validator (16 cases). Also discharges the **D-239 ref-meta
+      deferral** (a real Ref `:meta` field + meta/reset-meta! dispatch, observable
+      not silently dropped). RESIDUAL (narrow, low-value): `set!` on a `binding`-
+      shadowed dynamic var does not route through a validatable store, so a validator
+      is not consulted on that path (clj's `Var.set` does validate); deferred — a
+      rare edge, not worth a new row unless a consumer needs it. ORIGINAL:
       open (2026-06-25, D-523 doc-audit finding). VALIDATORS on `ref` and `var`
       are not wired: `set-validator!` / `get-validator` (atom.zig `requireValidatable`)
       accept ONLY `.atom` / `.agent` — a ref/var arg errors "expected atom or
