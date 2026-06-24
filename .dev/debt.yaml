@@ -256,6 +256,27 @@ active:
       no stack trace via Debug — an lldb attach on the ReleaseSafe panic (or a GC
       write-barrier/poison instrument) is the way in.
     last_reviewed: "2026-06-25"
+  - id: "D-532"
+    status: |-
+      open (2026-06-25, D-528 data.generators finding). java.math.BigInteger has
+      NO Java-surface: `(java.math.BigInteger. "123")` / `(... byte[])` ctor,
+      `BigInteger/valueOf`, instance `.toBigInteger`/`.modPow`/`.gcd`/… all
+      "Unable to resolve" / Name error. cljw HAS the native `.big_int` value + the
+      core `bigint`/`biginteger` fns + bignum arithmetic, but no
+      `runtime/java/math/BigInteger.zig` (only BigDecimal/MathContext/RoundingMode
+      exist under runtime/java/math/); compat_tiers lists java.math.BigInteger as a
+      host_class 1-liner (phase 5) with no surface. data.generators uses
+      `(BigInteger. ^bytes (byte-array b))` AND `(BigDecimal. (.toBigInteger
+      (bigint)) …)` — so fully unblocking it also needs `.toBigInteger` + a
+      BigDecimal 2-arg ctor. The UUID 2-long ctor it also needed is FIXED (0a5c65c4).
+    category: "interop"
+    barrier: |-
+      Add `runtime/java/math/BigInteger.zig` (mirror BigDecimal.zig) — a thin
+      surface over the native `.big_int`: ctor (String, byte[] two's-complement),
+      `valueOf`, `.toBigInteger` (identity), and the common methods (modPow/gcd/
+      arithmetic) over the existing big_int ops. A whole surface = focused unit;
+      drain when a consumer needs it. Repro: (java.math.BigInteger. "123").
+    last_reviewed: "2026-06-25"
   - id: "D-521"
     status: |-
       open (2026-06-24, user-directed) — TWO destructure-lowering systems can DRIFT.
