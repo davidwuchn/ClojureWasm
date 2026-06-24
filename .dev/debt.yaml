@@ -24,6 +24,30 @@
 # md-table-align no longer pads it to ~800 KB of whitespace.
 
 active:
+  - id: "D-513"
+    status: "OPEN (2026-06-24). Missing stdlib/contrib namespaces + the var-docstring gap, found in the 2026-06-24 deeper-namespace sweep. Lower priority — each needs foundation/scope work, not a clean drop-in."
+    category: "clj-parity"
+    barrier: |-
+      Three linked findings from the deeper-namespace sweep (the common surface —
+      core/string/set/data/walk/math/format/zip/edn/pprint/spec/test/contrib — is
+      mature):
+      (1) `clojure.core.reducers` not bundled. NOT a clean port: reducers.clj is built
+          on CollReduce/coll-reduce, but cljw's `reduce` is a Zig PRIMITIVE that does
+          NOT dispatch through CollReduce (protocols.clj note). Needs either a
+          reduce→CollReduce wiring (foundational) OR a cljw-native reducers impl over
+          the primitive reduce (r/map/filter/mapcat/take/… as reducible transformers,
+          r/fold = sequential reduce — cljw is not fork-join). Moderate-low value
+          (transducers supersede it).
+      (2) `clojure.repl` not bundled. dir/apropos/demunge are implementable (ns-publics
+          works, demunge is pure), but `doc`/`find-doc`/`source` are not useful because
+          cljw vars carry NO `:doc` metadata (finding 3) and no per-var source text.
+          A partial clojure.repl without `doc` is low value.
+      (3) var `:doc` metadata absent — `(:doc (meta (var reduce)))` → nil. defn
+          docstrings are not attached to the Var's meta. Wiring docstrings through is a
+          broad change (every defn/def in bootstrap + the primitive var registration);
+          it unblocks `doc`/`find-doc` and is the real prerequisite for a useful
+          clojure.repl. Large, separate unit.
+    last_reviewed: "2026-06-24"
   - id: "D-512"
     status: "DISCHARGED (2026-06-24). `.until(d2, ChronoUnit)` now complete across all three temporal types: LocalDate (6d8af75c), LocalDateTime (7c6e0872; date units via instant.dateUntil + time-of-day adjust, time units via JVM piecewise day-split, makeLong promote), Instant (this commit; fixed-duration NANOS..DAYS via i128 total nanos, WEEKS+ raise). clj-verified throughout. e2e: phase15_java_time_dow_month (until/ldt-until) + phase15_java_time_instant (instant-until)."
     category: "clj-parity"
