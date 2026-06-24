@@ -8,16 +8,21 @@
 - **HEAD**: `main` (`git log` = SSOT; ≈ `368c9851`). Per-commit = smoke; commit
   **and** push (CLAUDE.md § atomic Step 6). `build.zig.zon` `.zwasm` = tag pin
   `v2.0.0-alpha.3`.
-- **First commit on resume MUST be**: the **quiet-Mac absolute peer re-rank** (deferred from
-  D-519's GO) — `bash bench/compare_langs.sh --skip-build --lang=cw,py,rb,js,bb --yaml=…` at
-  load <~2 + regen README, to settle the campaign's true standing on the ADR-0148 9. A
-  load-~4 cross-run peer measure this session was contamination-noisy (cljw appeared to lose
-  benches it "won" at load ~9; bb swung uniformly) — the absolute "cljw vs bb" standing is
-  UNCERTAIN until measured quiet. **THEN attack the next gap = `ratio_sum`** (ADR-0148: 3.15×,
-  numeric-tower per-op BigInt+GCD alloc; compute-bound, untouched by the cold-start arc/GC —
-  fused rational accumulator, mine JVM `clojure.lang.Ratio`/`BigInteger`). **GUARDRAIL**:
-  never Zig-ify the .clj bootstrap. D-517 zero-copy = LOW value; D-518 heap-snapshot DEFERRED
-  (moving-GC unit). D-515 binary-size axis (standing).
+- **First commit on resume MUST be**: **confirm the clean peer re-rank at load <2** + measure
+  the 2 un-measured py-benches (json_parse, nested_update vs py) to complete it. CORRECTION
+  THIS SESSION (note `9.2.S-clean-peer-rerank-20260624.md`): the handover's old "7/9 won,
+  fastest-script ~27/30" was a **load-~9 artifact**. A load-robust **interleaved cljw-vs-bb
+  A/B** (load 3, tight σ both) + the load-4 compare_langs BOTH show cljw **LOSING** all 6 bb-
+  benches (gc_alloc_rate/gc_large_heap/destructure/string_ops/bigint_factorial/sieve) by
+  1.02–1.16×. **The gap is REAL + load-independent**: cljw's User (CPU) time is **1.6–2.7×
+  bb's** — bb (GraalVM AOT-native) out-COMPUTES cljw's bytecode interpreter; the cold-start arc
+  maxed the STARTUP axis but not COMPUTE. EXCEPTION: **ratio_sum WON** (cljw 23.5 vs bb 33.4 =
+  1.42× ahead; D-519+O-050+cold-start closed the old 3.15×). **Implication**: per-bench micro-
+  tuning will NOT close a 1.6–2.7× interpreter-vs-AOT gap — the real lever is **COMPUTE =
+  D-386 dispatch→superinstructions→JIT** (north-star = embedded zwasm JIT, ADR-0200). Confirm
+  marginals (string_ops 1.03×, bigint_factorial 1.02×) at load <2 — they may flip; the
+  compute-bound ones are real bb wins. **GUARDRAIL**: never Zig-ify the .clj bootstrap.
+  D-517/D-518 DEFERRED; D-515 binary-size (standing).
 - **Forbidden this session**: bare `zig build test` WITHOUT `-Dwasm` (false fails —
   `zig_build_test_needs_dwasm`); bare `zig build` for a probe (ADR-0133 — ReleaseSafe).
 
