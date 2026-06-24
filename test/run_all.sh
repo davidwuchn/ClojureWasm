@@ -450,6 +450,7 @@ run_step "e2e_phase8_exit_smoke"             "bash test/e2e/phase8_exit_smoke.sh
 run_step "e2e_phase9_edn_read_string"        "bash test/e2e/phase9_edn_read_string.sh"
 run_step "e2e_phase9_json"                   "bash test/e2e/phase9_json.sh"
 run_step "e2e_phase14_json_options"          "bash test/e2e/phase14_json_options.sh"
+run_step "e2e_phase14_require_idempotent"    "bash test/e2e/phase14_require_idempotent.sh"
 run_step "e2e_phase9_csv"                    "bash test/e2e/phase9_csv.sh"
 run_step "e2e_phase9_cli"                    "bash test/e2e/phase9_cli.sh"
 run_step "e2e_phase9_exit_smoke"             "bash test/e2e/phase9_exit_smoke.sh"

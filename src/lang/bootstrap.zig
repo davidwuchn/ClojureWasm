@@ -216,6 +216,10 @@ pub fn loadCore(
     env: *Env,
     macro_table: *const macro_dispatch.Table,
 ) !void {
+    // ADR-0163: pre-register before the source files eval so each file's
+    // intra-bootstrap `(:require other-bootstrap-lib)` is a loaded_libs no-op
+    // (mirrors the AOT path; without it the new loadOrFindNs guard re-parses).
+    try markFilesLoaded(rt, FILES);
     try loadCoreFiles(arena, rt, env, macro_table, FILES);
     try finalizeUserNs(rt, env);
 }
@@ -532,10 +536,44 @@ pub fn loadCoreAot(
     var prof = startup_profile.Profiler.start(rt.io);
     for (FILES) |file| try rt.registerSource(file.label, file.source);
     prof.mark("    registerSource");
+    // ADR-0163: pre-register every eager ns as loaded BEFORE the monolith replays.
+    // The envelope contains the libs' own `(:require …)` forms (e.g. clojure.data
+    // requires clojure.set); they execute during `runEnvelope` and hit
+    // `loadOrFindNs`'s loaded_libs-keyed guard. Pre-marking makes those
+    // intra-bootstrap requires no-ops (the required ns's def chunks already ran —
+    // FILES is dependency-ordered), exactly as the old mappings-count guard did.
+    // Without this, an intra-bootstrap require would re-parse the embedded source.
+    try markFilesLoaded(rt, FILES);
     try driver.runEnvelope(rt, env, arena, bootstrap_blob);
     prof.mark("    runEnvelope");
     try finalizeUserNs(rt, env);
     prof.mark("    finalizeUserNs");
+}
+
+/// Mark every namespace in `files` as loaded in `rt.loaded_libs` (ADR-0163).
+/// The eager bootstrap paths (AOT `runEnvelope`, source `loadCoreFiles`, and the
+/// build-time `buildBootstrapEnvelope`) bypass `loader.loadNamespace`, so their
+/// namespaces are not otherwise recorded. Called BEFORE the files run so each
+/// file's intra-bootstrap `(:require other-bootstrap-lib)` is a no-op. Keys are
+/// gpa-owned (freed at `rt.deinit`), mirroring `loader.loadNamespace`. Takes a
+/// slice so the lazy split (ADR-0163 commit 3) can pass only the trimmed eager set.
+pub fn markFilesLoaded(rt: *Runtime, files: []const FileEntry) !void {
+    for (files) |file| {
+        const ns_name = nsNameFromLabel(file.label);
+        if (rt.loaded_libs.contains(ns_name)) continue;
+        const key = try rt.gpa.dupe(u8, ns_name);
+        errdefer rt.gpa.free(key);
+        try rt.loaded_libs.put(rt.gpa, key, {});
+    }
+}
+
+/// FileEntry labels are `<ns-name>` except core's, which is `<bootstrap>`. Map a
+/// label to the namespace name used as the `require` / `loaded_libs` key.
+fn nsNameFromLabel(label: []const u8) []const u8 {
+    if (std.mem.eql(u8, label, "<bootstrap>")) return "clojure.core";
+    if (label.len >= 2 and label[0] == '<' and label[label.len - 1] == '>')
+        return label[1 .. label.len - 1];
+    return label;
 }
 
 // --- tests ---

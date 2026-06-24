@@ -201,6 +201,10 @@ pub fn buildBootstrapEnvelope(
     var chunks: std.ArrayList(BytecodeChunk) = .empty;
     defer chunks.deinit(allocator);
     var locals: [driver.MAX_LOCALS]Value = [_]Value{.nil_val} ** driver.MAX_LOCALS;
+    // ADR-0163: pre-register so a lib's build-time `(:require other-bootstrap-lib)`
+    // is a loaded_libs no-op (the dep's chunks already eval'd earlier in this loop),
+    // matching the runtime AOT path under the new loadOrFindNs guard.
+    try bootstrap.markFilesLoaded(rt, files);
     for (files) |file| {
         // Register the file's bytes so a build-time error frame keeps its
         // per-file SourceContext (mirror of loadCoreFiles; idempotent).

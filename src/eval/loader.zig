@@ -101,13 +101,18 @@ fn loadTopLevelForm(
     }
 }
 
-/// Return the named namespace, loading it from disk via the require resolver
-/// if it is not already present (with mappings). Shared by the `require`
-/// special form and the runtime `use` fn (ADR-0085 / F-011) so both reach a
-/// lib the same way. Raises `lib_not_found` when no resolver / source.
+/// Return the named namespace, loading it via the require resolver if it has
+/// not been loaded yet. "Loaded" is keyed off `rt.loaded_libs` (ADR-0163), NOT
+/// `mappings.count() > 0`: a ns can EXIST with interned vars yet have an
+/// un-run `.clj` body (e.g. `cljw.error`, whose `*error-context*` var is
+/// Zig-interned by `error_context.register` before its macro file loads; or
+/// any `(intern 'foo 'x 1)` then `(require 'foo)`). The old mappings-count
+/// proxy wrongly treated those as loaded and skipped the body. Shared by the
+/// `require` special form and the runtime `use` fn (ADR-0085 / F-011). Raises
+/// `lib_not_found` when no resolver / source.
 pub fn loadOrFindNs(rt: *Runtime, env: *Env, name: []const u8, loc: SourceLocation) !*env_mod.Namespace {
-    if (env.findNs(name)) |existing| {
-        if (existing.mappings.count() > 0) return existing;
+    if (rt.loaded_libs.contains(name)) {
+        if (env.findNs(name)) |existing| return existing;
     }
     const resolver = rt.require_resolver orelse
         return error_catalog.raise(.lib_not_found, loc, .{ .ns = name });
