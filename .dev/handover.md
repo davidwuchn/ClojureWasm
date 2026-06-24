@@ -16,20 +16,22 @@
   it CLOSED **7 of the 9 D-450 gaps** — cljw now FASTEST on sieve/nested_update/
   map_filter_reduce/gc_large_heap/string_ops/destructure/bigint_factorial; json_parse
   borderline (~1.07× py). **ONLY `gc_alloc_rate` remains a clear gap** (cljw 45.3 / bb 39.9 =
-  1.14×, GC-bound not floor-bound). fastest-script ~19/30→~27/30. **Next lever = gc_alloc_rate**,
-  ROOT-CAUSED load-independently via `CLJW_GC_STATS=1` (committed): the bench shows
-  **reuse=0%, collects=0** — cljw does **NO threshold-driven auto-collect during eval**, so a
-  tight allocating loop mallocs unboundedly (1.28GB for 4M vectors), never reusing; bb wins via
-  TLAB-bump + young-gen collect-reuse. (My earlier mutex/free-list survey guesses are RULED
-  OUT.) **LEVER = alloc-driven auto-collect** — at the alloc boundary, when `bytes_since_last_gc
-  > threshold_bytes` + `fabrication_depth==0` + live `active_env`, run `collectStopTheWorld` =
-  the proven `CLJW_GC_TORTURE_ALLOC` path threshold-gated (PRECISE draft in the note). Also
-  fixes a latent unbounded-alloc MEMORY bug. DA-gated (global GC-timing change → re-run ALL
-  benches for no-regression). Validate load-independently (diff oracle + GC_TORTURE + GC_STATS:
-  collects>0/reuse>0/bytes bounded); wall-clock win needs a quiet Mac. D-517 zero-copy = LOW
-  value now. D-518 heap-snapshot DEFERRED to the moving-GC unit. **GUARDRAIL**: never Zig-ify
-  the .clj bootstrap. Plans: `private/notes/9.2.S-coldstart-architecture-20260624.md`
-  + `D516-lazy-ns-survey.md`. D-515 binary-size axis (standing).
+  1.14×, GC-bound not floor-bound). fastest-script ~19/30→~27/30. THEN attack the surviving
+  gap = **D-519 auto-collect (ADR-0164, design ACCEPTED + DA-vetted)**: root-caused via
+  `CLJW_GC_STATS=1` (committed 07176327) — reuse=0%/collects=0 = cljw does NO threshold-driven
+  auto-collect during eval → unbounded malloc (perf gap + latent OS-OOM memory bug). ADR-0164
+  decides **BOTH sites** — alloc-boundary (gc_heap.alloc, bulk-primitive completeness, beside
+  heap_ceiling) + VM back-edge poll (vm.zig:305, cheap tight-loop) — threshold-gated on the
+  proven CLJW_GC_TORTURE_ALLOC path; raise default threshold 1MB→4MB + a knob; keep torture in
+  the gate. **QUIET-Mac-GATED (DA #1 mistake-warning)**: correctness is load-independent (diff
+  oracle + GC_TORTURE + GC_STATS: collects>0/reuse>0/bytes bounded), but the KEEP/REVERT
+  decision needs a wall-clock all-bench re-run (string_ops is the regression CANARY; a count
+  proxy is INSUFFICIENT) — DO NOT commit the impl under load. Precise BOTH-sites code in the
+  note. Honest framing: fixes the memory bug decisively, PARTIAL gc_alloc_rate win (full
+  closure = the deferred bump-nursery, F-006-out-of-scope). D-517 zero-copy = LOW value now.
+  D-518 heap-snapshot DEFERRED to the moving-GC unit. **GUARDRAIL**: never Zig-ify the .clj
+  bootstrap. Plans: `private/notes/9.2.S-coldstart-architecture-20260624.md` +
+  `D516-lazy-ns-survey.md`; decisions ADR-0162/0163/0164. D-515 binary-size axis (standing).
 - **Forbidden this session**: bare `zig build test` WITHOUT `-Dwasm` (false fails —
   `zig_build_test_needs_dwasm`); bare `zig build` for a probe (ADR-0133 — ReleaseSafe).
 
@@ -81,5 +83,25 @@ lazy-ns Step-0 prep + D-140 record; gitignored, on local disk) → `.dev/debt.ya
 memories `perf_campaign_roadmap_9_2_s` / `perf_beat_python_every_bench` /
 `verify_actual_pattern_not_proxy` / `verify_against_releasesafe_binary` /
 `smoke_first_batch_full_gate`. Profiler: `CLJW_PROFILE_STARTUP=1 cljw -e 1` (stderr phase
-deltas). The campaign fast-mode is injected by `scripts/perf_campaign_remind.sh`
-(`.dev/.perf_campaign_active` set).
+deltas). GC diag: `CLJW_GC_STATS=1 cljw <prog>` (alloc/pool_hits/reuse%/collects at exit).
+Decisions: **ADR-0162** (cold-start arch) / **ADR-0163** (lazy-ns) / **ADR-0164** (eval
+auto-collect = D-519, the next unit). The campaign fast-mode is injected by
+`scripts/perf_campaign_remind.sh` (`.dev/.perf_campaign_active` set).
+
+## Stopped — user requested
+
+User instruction (2026-06-24): 「すみません、コンテキストウィンドウがせまってきたので、
+きりのよいところまで進め、クリアセッションからcontinueだけで自律できる配線・参照チェーン
+を監査して止めてください。」(context window tightening — reach a clean point, audit the
+wiring/reference chain so a fresh session resumes on `/continue` alone, then stop.)
+
+Clean state: tree clean, HEAD pushed (≈ `51fb60af`), full gate green (394/0, stamp
+`8adc3dcf` — the D-516 arc; the post-arc commits are docs + the env-gated GC_STATS counter,
+diff-oracle-green). The cold-start arc (ADR-0162/0163) is DONE — floor 9.4→4.3ms, 7/9 D-450
+gaps closed (cljw fastest-script ~27/30). The surviving gap gc_alloc_rate is root-caused +
+its fix DESIGNED (ADR-0164, DA-vetted) but unimplemented = **D-519** (the First-task-on-resume
+target above). **First action on `/continue`**: re-measure the cross-lang benches on a QUIET
+Mac to confirm gc_alloc_rate is still the gap + the 7 wins hold, then implement D-519
+auto-collect (ADR-0164 BOTH sites) — its KEEP/REVERT GO needs the quiet-Mac wall-clock
+all-bench re-run (string_ops canary; not under load). Per-task note + precise BOTH-sites code:
+`private/notes/9.2.S-coldstart-architecture-20260624.md`.
