@@ -8,36 +8,40 @@
 - **HEAD**: `main` (`git log` = SSOT). Per-commit = smoke; commit **and** push
   (CLAUDE.md § atomic Step 6 — the perf-campaign no-push mode is LIFTED; push normally).
   `build.zig.zon` `.zwasm` = tag pin `v2.0.0-alpha.3`.
-- **First commit on resume MUST be**: **self-select one §9.2.T public-ization
-  polish-sweep category and drain it** (**ADR-0166**; Step 0.5 reads the
-  `quality_floor: "public-ization: …"` rows **D-522…D-529** and drains
-  highest-value-first). This is the standing `/continue` mode now (repeatable,
-  like the F-010 quality-loop floor) — the perf campaign is PAUSED (its cheap
-  levers are exhausted; see Standing units). The categories: **D-522** comment
-  de-pointering + condensation (≈1409 ADR + 1528 D-NNN pointer lines → self-contained
-  prose; ADR docs stay; GRADUAL, largest) · **D-523** doc audit vs code-truth (29
-  docs; fix/simplify/prune/archive) · **D-524** `private/` decouple + per-task-note
-  retire (853 notes; the loop must not depend on a gitignored dev-env dir) · **D-525**
-  rules + skills public-ization review (31 rules / 3736 lines auto-load) · **D-526**
-  java-interop static-member gap catalog + fill (49 surfaces / 92 fqn) · **D-527**
-  clj-parity upstream alignment (folds into D-175) · **D-528** real-`deps.edn`
-  famous-library usage (surface bugs) · **D-529** marker-comment inventory (110
-  markers). A correctness/clj-parity floor still outranks pure polish. Code-touching
-  rows (D-526/527/528) take the diff-oracle gate; the rest are no-behaviour-change.
+- **First commit on resume MUST be**: self-select the highest-value §9.2.T unit
+  (**ADR-0166** standing mode; Step 0.5 reads the `quality_floor:` rows). The
+  **contained correctness floor is now drained** — so the highest-value remaining
+  is the two deep real-library bugs: **D-530** (deftype overloaded same-name-method
+  arity dispatch — the top *code-tractable* target: investigate the `expandDeftype`
+  lowering + `lookupMethod` name-only keying; fully unblocks data.priority-map's
+  subseq; warrants a DA fork as a dispatch-design change) and **D-531** (partitions-M
+  UAF — needs a GC-poison instrument or faster torture-under-lldb first; see its
+  debt row's tooling diagnostics). Lower-value standing fallbacks: **D-528** more
+  real-library loads (3 done: priority-map/math.combinatorics buggy, core.unify
+  clean), then the pure-polish rows **D-522** (de-pointer — note: few BARE pointers
+  exist; most refs are anchors within explanatory prose, keep those) · **D-523**
+  doc audit · **D-524** `private/` decouple · **D-525** rules/skills review ·
+  **D-529** marker inventory (the PERF/optimizations.md cross-check is clean bar
+  ISO-8601 regex noise). **D-526 is COMPLETE** (java.lang scalar statics + Objects).
+  A correctness/clj-parity floor outranks pure polish.
 - **Forbidden this session**: bare `zig build test` WITHOUT `-Dwasm` (false fails);
   bare `zig build` for a probe (ADR-0133 — use ReleaseSafe). Note: `.claude/**` edits
   (D-524/525) may hit the auto-mode self-modification block — surface those to the user.
 
 ## Last landed (git log = SSOT)
 
-This session closed the perf campaign's cheap-lever phase + recorded the milestone:
-**O-051** keyword-map-get fast path (ADR-0165 Amendment 1; destructure −6.6% /
-gc_large_heap −4.5% / 300k-get −11.0%) · **kwarg destructure fix** (clj-1.11
-trailing-map kwargs; D-521 records the two-destructure-paths drift audit) ·
-**json read-str GC-rooting fix** (D-519 exposed a latent fabrication gap →
-json_parse 19000→20000; fabrication-region bracket + alloc-torture regression
-guard) · **full cross-lang bench re-run → `bench/README.md`** (2026-06-24;
-json_parse now cljw 35.4ms < Python 36.2ms). All diff-oracle + lint green.
+§9.2.T correctness-floor session (D-526/527/528). **D-526 java.lang scalar static
+surface COMPLETE** (Long/Integer/Double/Boolean/Character/Math; String/join,
+unsigned-arithmetic cluster, Character surrogate/codePoint, Double bit-conversion,
+hashCode + Math ceilDiv family — 6 corpus files) + **new java.util.Objects surface**.
+**D-527**: clj-parity sweeps found no real bugs (solid); fixed clj_diff_sweep.sh to
+auto-require qualified ns on the cljw side. **D-528 real-library load found + fixed
+4 bugs**: deftype-as-map `=` symmetry (MapEquivalence gate), map?/sorted?/set?
+deftype recognition, and a **core lazy-`=` GC-rooting bug** (seqEqualWalk root frame;
+minimal torture repro). Deep bugs recorded with full diagnostics: **D-530** (deftype
+overloaded same-name-method arity dispatch — blocks data.priority-map subseq),
+**D-531** (partitions-M lazy-realization UAF — ReleaseSafe-only, lldb/Debug both
+tooling-blocked). All gates green.
 
 ## Standing units (tracked in .dev/debt.yaml)
 
