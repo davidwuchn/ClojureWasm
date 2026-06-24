@@ -27,10 +27,11 @@ Phase 4 が dual backend (TreeWalk + VM) を導入し、 Phase 1-3 期の
 
 ### 再開はいつか
 
-再開条件は ADR-0025 §3 参照。 候補は Phase 4 closure
-(4.13-4.26.f 完了) または Phase 5 entry (mark-sweep GC +
-TypeDescriptor activation) です。 再開時は新章サイクルが `0001`
-から再スタートします。
+再開条件は ADR-0025 §3 参照。 当初の候補だった Phase 4 closure /
+Phase 5 entry は既に通過しました — プロジェクトはその後 Phase 9-14
+を完了し、 v1.0.0-alpha・gap-area モデルの near-complete 段階まで
+進みましたが、 章カデンスは依然 **休眠のまま** で、 専用の再開 ADR は
+まだ出ていません。 再開時は新章サイクルが `0001` から再スタートします。
 
 ## 言語ポリシー
 
