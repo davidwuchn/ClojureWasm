@@ -174,7 +174,17 @@ active:
     last_reviewed: "2026-06-24"
   - id: "D-534"
     status: |-
-      open (2026-06-25, algo.monads real-library finding, post-Compiler/specials).
+      DISCHARGED 2026-06-25 (6bcbd3b4). Added `APersistentSet`→SET_NAMES +
+      `IPersistentList`→IPLIST_NAMES to `host_interface.zig::nativeExtendTags`
+      (the SET_TAGS {hash_set,sorted_set} + IPLIST_TAGS {list,cons,queue} lists
+      already existed, so just 2 `*_NAMES` exports + 2 dispatch lines). A protocol
+      extended onto these abstract bases now distributes over the native set/list
+      tags (mirrors IPersistentVector→INDEXED). clj-verified (set print order is
+      AD-001, values `=`); regression-clean on the extend-type/protocol e2e.
+      **algo.monads now fully loads + runs clj-faithfully** (maybe-m → 3,
+      sequence-m → (11 21 12 22)) — completing the Compiler/specials → tools.macro
+      → APersistentSet → algo.monads chain. e2e phase14_extend_abstract_base.
+      ORIGINAL: open (2026-06-25, algo.monads real-library finding, post-Compiler/specials).
       `clojure.lang.APersistentSet` and `clojure.lang.IPersistentList` are not
       recognised as extend-type / extend-protocol TARGET markers that distribute
       to the native set / list tags. `host_interface.zig::nativeExtendTags`
