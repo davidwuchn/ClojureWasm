@@ -67,4 +67,22 @@ true
 1'
 assert_eq 'native_comparator_dotcall' "$got" "$want"
 
-echo "OK — phase14_deftype_sorted (2 cases) green"
+# `(sorted? x)` is `(instance? clojure.lang.Sorted x)` in clj, so a deftype
+# implementing clojure.lang.Sorted (e.g. data.priority-map) answers true; a
+# non-Sorted deftype + a hash-map answer false (native sorted colls stay true).
+got=$("$BIN" - <<'EOF' 2>/dev/null
+(deftype SortedT [m] clojure.lang.Sorted
+  (comparator [_] (.comparator m)) (entryKey [_ e] (key e))
+  (seq [_ a] (seq m)) (seqFrom [_ k a] (subseq m >= k)))
+(deftype Plain [m])
+(prn [(sorted? (->SortedT (sorted-map 1 :a)))
+      (sorted? (->Plain {}))
+      (sorted? (sorted-map 1 :a))
+      (sorted? (sorted-set 1))
+      (sorted? {:a 1})
+      (sorted? [1 2])])
+EOF
+) || true
+assert_eq 'sorted_pred_deftype' "$got" '[true false true true false false]'
+
+echo "OK — phase14_deftype_sorted (3 cases) green"

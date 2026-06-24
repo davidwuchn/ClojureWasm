@@ -16,6 +16,7 @@ const SourceLocation = error_mod.SourceLocation;
 const dispatch = @import("../../runtime/dispatch.zig");
 const sorted = @import("../../runtime/collection/sorted.zig");
 const lazy_seq = @import("../../runtime/lazy_seq.zig");
+const class_name = @import("../../runtime/class_name.zig");
 const list_mod = @import("../../runtime/collection/list.zig");
 const root_set = @import("../../runtime/gc/root_set.zig");
 
@@ -219,7 +220,12 @@ pub fn sortedQFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocati
     _ = env;
     try error_catalog.checkArity("sorted?", args, 1, loc);
     const t = args[0].tag();
-    return if (t == .sorted_map or t == .sorted_set) Value.true_val else Value.false_val;
+    if (t == .sorted_map or t == .sorted_set) return Value.true_val;
+    // A deftype/reify implementing clojure.lang.Sorted is sorted? in clj
+    // ((sorted? x) == (instance? clojure.lang.Sorted x)) — e.g. data.priority-map.
+    if ((t == .typed_instance or t == .reified_instance) and
+        class_name.isInstance(args[0], "clojure.lang.Sorted")) return Value.true_val;
+    return Value.false_val;
 }
 
 // --- registration ---
