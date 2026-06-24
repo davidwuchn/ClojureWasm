@@ -26,6 +26,10 @@ const TypedInstance = td_mod.TypedInstance;
 const error_catalog = @import("../error/catalog.zig");
 const SourceLocation = @import("../error/info.zig").SourceLocation;
 const duration_value = @import("duration_value.zig");
+const host_instance = @import("../host_instance.zig");
+const chrono_unit = @import("../chrono_unit.zig");
+const big_int = @import("../numeric/big_int.zig");
+const nb = @import("../value/nan_box.zig");
 
 /// `(.getEpochSecond i)` — the whole seconds since the epoch (JVM
 /// `Instant.getEpochSecond`). `epoch_ms` is second-aligned, but `@divFloor`
@@ -81,6 +85,44 @@ fn isAfterFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) 
 
 const NS_PER_SEC: i128 = 1_000_000_000;
 const NS_PER_MS: i128 = 1_000_000;
+
+/// An integer count Value: fixnum in the i48 window, else a promoted Long.
+fn makeLong(rt: *Runtime, v: i64) !Value {
+    if (v >= nb.NB_I48_MIN and v <= nb.NB_I48_MAX) return Value.initInteger(v);
+    return big_int.allocFromI64(rt, v, .long);
+}
+
+/// `(.until a b unit)` — whole count of ChronoUnit `unit` between two instants
+/// (JVM `Instant.until`). Instant has no civil date, so only the fixed-duration
+/// units NANOS..DAYS (DAYS = 86_400 s) are supported; WEEKS and up raise
+/// (UnsupportedTemporalTypeException). The total nanos uses i128 to avoid overflow.
+fn untilFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = env;
+    try error_catalog.checkArity("until", args, 3, loc);
+    if (!isInstant(rt, args[1]))
+        return error_catalog.raise(.type_arg_invalid, loc, .{ .fn_name = ".until", .expected = "an Instant", .actual = @tagName(args[1].tag()) });
+    if (args[2].tag() != .host_instance)
+        return error_catalog.raise(.type_arg_invalid, loc, .{ .fn_name = ".until", .expected = "a ChronoUnit", .actual = @tagName(args[2].tag()) });
+    const ord: u8 = @intCast(host_instance.asHostInstance(args[2]).state[0]);
+    const per_unit: i128 = switch (ord) {
+        0 => 1, // NANOS
+        1 => 1_000, // MICROS
+        2 => 1_000_000, // MILLIS
+        3 => NS_PER_SEC, // SECONDS
+        4 => 60 * NS_PER_SEC, // MINUTES
+        5 => 3_600 * NS_PER_SEC, // HOURS
+        6 => 43_200 * NS_PER_SEC, // HALF_DAYS
+        7 => 86_400 * NS_PER_SEC, // DAYS (fixed 86_400 s, no civil date)
+        else => return error_catalog.raise(.type_arg_invalid, loc, .{ .fn_name = ".until", .expected = "a time-based ChronoUnit (NANOS..DAYS)", .actual = chrono_unit.name(ord) }),
+    };
+    const s1 = @divFloor(epochMsOf(args[0]), 1000);
+    const s2 = @divFloor(epochMsOf(args[1]), 1000);
+    const total_ns: i128 = (@as(i128, s2) - @as(i128, s1)) * NS_PER_SEC + (@as(i128, nanosOf(args[1])) - @as(i128, nanosOf(args[0])));
+    const result: i128 = @divTrunc(total_ns, per_unit);
+    if (result < std.math.minInt(i64) or result > std.math.maxInt(i64))
+        return error_catalog.raise(.type_arg_invalid, loc, .{ .fn_name = ".until", .expected = "a span representable in the requested unit", .actual = "an out-of-range NANOS span" });
+    return makeLong(rt, @intCast(result));
+}
 
 /// Shared add helper for `plusMillis` / `plusNanos` (and the minus* negations):
 /// fold a nanosecond delta into the fractional-second field with a second-carry.
@@ -196,6 +238,7 @@ pub fn descriptorOf(rt: *Runtime) !*const TypeDescriptor {
         .{ "toEpochMilli", &toEpochMilliFn },
         .{ "isBefore", &isBeforeFn },
         .{ "isAfter", &isAfterFn },
+        .{ "until", &untilFn },
         .{ "plusSeconds", &plusSecondsFn },
         .{ "minusSeconds", &minusSecondsFn },
         .{ "plusMillis", &plusMillisFn },

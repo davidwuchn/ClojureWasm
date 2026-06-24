@@ -25,15 +25,10 @@
 
 active:
   - id: "D-512"
-    status: "OPEN (2026-06-24). `.until(d2, ChronoUnit)` landed for LocalDate (6d8af75c) + LocalDateTime (date units via instant.dateUntil + time-of-day adjust; time units via the JVM piecewise day-split, overflow→raise; makeLong promote). Only Instant.until remains."
+    status: "DISCHARGED (2026-06-24). `.until(d2, ChronoUnit)` now complete across all three temporal types: LocalDate (6d8af75c), LocalDateTime (7c6e0872; date units via instant.dateUntil + time-of-day adjust, time units via JVM piecewise day-split, makeLong promote), Instant (this commit; fixed-duration NANOS..DAYS via i128 total nanos, WEEKS+ raise). clj-verified throughout. e2e: phase15_java_time_dow_month (until/ldt-until) + phase15_java_time_instant (instant-until)."
     category: "clj-parity"
     barrier: |-
-      Extend `.until` to Instant (LocalDate + LocalDateTime done). Instant supports
-      only fixed-duration units (NANOS..DAYS, DAYS=86_400s); MONTHS/YEARS/etc throw
-      (no civil date). Storage differs from LDT (epoch_second + nano, not epoch_day +
-      nano_of_day) — compute total nanos between the two instants, divide by the
-      per-unit nanos (reuse the LDT time-unit table). clj-verified: 0→3661s →
-      SECONDS 3661 / MINUTES 61; 0→200000s → DAYS 2.
+      DISCHARGED — `.until` complete for LocalDate / LocalDateTime / Instant.
     last_reviewed: "2026-06-24"
   - id: "D-511"
     status: "OPEN (2026-06-24). MathContext surface essentially complete. Part (a) remainder/divideToIntegralValue LANDED. Part (b) MathContext CORE LANDED ((MathContext. p [mode]) + getPrecision/getRoundingMode/toString + .round(mc) + .divide(d,mc) + generalised allocDivPrecision/allocRoundPrecision). DECIMAL32/64/128/UNLIMITED static constants LANDED 2026-06-24 (math_context.zig singleton, `.math_context` StaticFieldValue arm; e2e mc_decimal*). Only the BigDecimal(…,mc) constructor remains."

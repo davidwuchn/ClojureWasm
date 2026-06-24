@@ -58,4 +58,21 @@ EOF
 )
 eq 'value-eq' "$E" $'true\nfalse'
 
+# --- Instant.until — fixed-duration units NANOS..DAYS (D-512)
+F=$(out <<'EOF' 2>&1
+(let [a (java.time.Instant/ofEpochSecond 0) b (java.time.Instant/ofEpochSecond 3661)]
+  (println (.until a b java.time.temporal.ChronoUnit/SECONDS)
+           (.until a b java.time.temporal.ChronoUnit/MINUTES)
+           (.until a b java.time.temporal.ChronoUnit/HOURS)
+           (.until (java.time.Instant/ofEpochSecond 0) (java.time.Instant/ofEpochSecond 200000) java.time.temporal.ChronoUnit/DAYS)))
+EOF
+)
+eq 'instant-until' "$F" '3661 61 1 2'
+# a date-based unit (WEEKS) on an Instant raises (JVM UnsupportedTemporalTypeException)
+G=$("$BIN" -e '(.until (java.time.Instant/ofEpochSecond 0) (java.time.Instant/ofEpochSecond 1) java.time.temporal.ChronoUnit/WEEKS)' 2>&1 || true)
+case "$G" in
+    *"time-based"*|*"ChronoUnit"*) echo "PASS instant-until-unsupported -> raised" ;;
+    *) fail "instant-until-unsupported: expected a time-based-unit error, got '$G'" ;;
+esac
+
 echo "OK — phase15_java_time_instant (D-462) green"
