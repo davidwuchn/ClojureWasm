@@ -357,9 +357,10 @@ fn shiftedDivTrunc(infra: std.mem.Allocator, q: *std.math.big.int.Managed, r: *s
     }
 }
 
-/// `a ÷ b` rounded to `precision` significant figures, HALF_UP — clj's
-/// `with-precision` default (BigDecimal.divide with a MathContext). D-467.
-pub fn allocDivPrecision(rt: *Runtime, a: Value, b: Value, precision: u32) !Value {
+/// `a ÷ b` rounded to `precision` significant figures per `mode` (the JVM
+/// `ROUND_*` ordinal 0-7) — clj's `with-precision` (HALF_UP) + the explicit
+/// `(.divide a b (MathContext. p mode))` form (D-467 / D-511).
+pub fn allocDivPrecision(rt: *Runtime, a: Value, b: Value, precision: u32, mode: i64) !Value {
     const infra = rt.gc.infra;
     // clj's MathContext divide treats `precision` as a MAXIMUM: an exact quotient
     // that terminates within `precision` significant figures keeps its natural
@@ -430,7 +431,22 @@ pub fn allocDivPrecision(rt: *Runtime, a: Value, b: Value, precision: u32) !Valu
     var two = try std.math.big.int.Managed.initSet(infra, 2);
     defer two.deinit();
     try r2.mul(&r, &two);
-    if (r2.toConst().order(eff_d.toConst()) != .lt) {
+    // Mode-aware round decision (q,r are non-negative — |n|/|d| — and `result_neg`
+    // is the true sign). half = order(2r, eff_d): below / exactly / above halfway.
+    const r_nonzero = !r.eqlZero();
+    const half = r2.toConst().order(eff_d.toConst());
+    const round_away = switch (mode) {
+        0 => r_nonzero, // UP
+        1 => false, // DOWN
+        2 => r_nonzero and !result_neg, // CEILING
+        3 => r_nonzero and result_neg, // FLOOR
+        4 => half != .lt, // HALF_UP
+        5 => half == .gt, // HALF_DOWN
+        6 => half == .gt or (half == .eq and (q.toConst().limbs[0] & 1) == 1), // HALF_EVEN
+        7 => if (r_nonzero) return error.RoundingNecessary else false, // UNNECESSARY
+        else => return error.InvalidRoundingMode,
+    };
+    if (round_away) {
         var one = try std.math.big.int.Managed.initSet(infra, 1);
         defer one.deinit();
         try q.add(&q, &one);
@@ -765,6 +781,44 @@ pub fn allocRemainder(rt: *Runtime, a: Value, b: Value) !Value {
     defer rem.deinit();
     try rem.sub(&a_term, &qb_term);
     return allocFromManagedScale(rt, &rem, m_scale);
+}
+
+/// Round `v` to `precision` significant figures per `mode` (JVM
+/// `BigDecimal.round(MathContext)`). `precision == 0` is `MathContext.UNLIMITED`
+/// → exact (no rounding). Managed-only (reuses `applyRounding`) → GC-safe.
+pub fn allocRoundPrecision(rt: *Runtime, v: Value, precision: u32, mode: i64) !Value {
+    if (precision == 0) return v; // UNLIMITED
+    const Managed = std.math.big.int.Managed;
+    const infra = rt.gc.infra;
+    const vd = v.decodePtr(*const BigDecimal);
+    const dn = try digitCount(infra, vd.unscaled.m);
+    if (dn <= precision) return v; // already within precision — no rounding
+
+    const drop: u32 = @intCast(dn - precision);
+    var unscaled = try vd.unscaled.m.clone();
+    defer unscaled.deinit();
+    var ten = try Managed.initSet(infra, 10);
+    defer ten.deinit();
+    var divisor = try Managed.init(infra);
+    defer divisor.deinit();
+    try divisor.pow(&ten, drop);
+    var q = try Managed.init(infra);
+    defer q.deinit();
+    var r = try Managed.init(infra);
+    defer r.deinit();
+    try q.divTrunc(&r, &unscaled, &divisor);
+    try applyRounding(infra, &q, &r, &divisor, mode);
+    // A carry can grow q past `precision` (9.95→10.0): drop the extra digit.
+    if ((try digitCount(infra, &q)) > precision) {
+        var qd = try Managed.init(infra);
+        defer qd.deinit();
+        var rr = try Managed.init(infra);
+        defer rr.deinit();
+        try qd.divTrunc(&rr, &q, &ten);
+        q.swap(&qd);
+        return allocFromManagedScale(rt, &q, vd.scale - @as(i32, @intCast(drop)) - 1);
+    }
+    return allocFromManagedScale(rt, &q, vd.scale - @as(i32, @intCast(drop)));
 }
 
 const AddOrSub = enum { add, sub };

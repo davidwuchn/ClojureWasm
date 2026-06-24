@@ -548,6 +548,19 @@ tiers:
           impl: runtime/rounding_mode.zig
         methods: [toString]
         clojure_peer_vars: []
+      # java.math.MathContext — precision+RoundingMode host object (D-511). The
+      # explicit object form of with-precision (D-467); consumed by BigDecimal
+      # .round(mc) / .divide(divisor, mc). DECIMAL32/64/128/UNLIMITED constants
+      # are deferred (D-511). Precision-round impl lives in big_decimal.zig.
+      - fqn: java.math.MathContext
+        cljw_ns: cljw.java.math.MathContext
+        keyword: math_context
+        tier: A
+        phase: 14
+        files:
+          surface: runtime/java/math/MathContext.zig
+        methods: ["<init>", getPrecision, getRoundingMode, toString]
+        clojure_peer_vars: []
       # java.security
       - fqn: java.security.MessageDigest
         cljw_ns: cljw.java.security.MessageDigest

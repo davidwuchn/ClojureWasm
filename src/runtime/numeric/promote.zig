@@ -540,7 +540,7 @@ pub fn divPromoting(rt: *Runtime, a: Value, b: Value) !Value {
         // A `with-precision` binding rounds the quotient to that many significant
         // figures (HALF_UP); else exact (raises on a non-terminating expansion). D-467.
         if (mathContextPrecision(rt)) |p|
-            return try big_decimal_mod.allocDivPrecision(rt, ba, bb, p);
+            return try big_decimal_mod.allocDivPrecision(rt, ba, bb, p, 4); // HALF_UP
         return try big_decimal_mod.allocDiv(rt, ba, bb);
     }
 

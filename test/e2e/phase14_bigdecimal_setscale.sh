@@ -127,4 +127,15 @@ assert_eq 'bd_intvalue'    "$(sm '(.intValue (bigdec "42.9"))')"                
 assert_eq 'bd_longvalue'   "$(sm '(.longValue (bigdec "42.9"))')"                       '42'
 assert_eq 'bd_doublevalue' "$(sm '(.doubleValue (bigdec "1.5"))')"                      '1.5'
 
-echo "OK — phase14_bigdecimal_setscale (73 cases) green"
+# java.math.MathContext (D-511) — precision+rounding host object. clj-grounded.
+assert_eq 'mc_round'      "$(sm '(str (.round (bigdec "123.456") (java.math.MathContext. 4)))')"                              '"123.5"'
+assert_eq 'mc_round_mode' "$(sm '(str (.round (bigdec "123.456") (java.math.MathContext. 4 java.math.RoundingMode/FLOOR)))')" '"123.4"'
+assert_eq 'mc_round_carry' "$(sm '(str (.round (bigdec "9.95") (java.math.MathContext. 2)))')"                               '"10"'
+assert_eq 'mc_divide'     "$(sm '(str (.divide (bigdec "1") (bigdec "3") (java.math.MathContext. 5)))')"                      '"0.33333"'
+assert_eq 'mc_div_mode'   "$(sm '(str (.divide (bigdec "10") (bigdec "3") (java.math.MathContext. 2 java.math.RoundingMode/FLOOR)))')" '"3.3"'
+assert_eq 'mc_precision'  "$(sm '(.getPrecision (java.math.MathContext. 7))')"                                                '7'
+assert_eq 'mc_mode'       "$(sm '(str (.getRoundingMode (java.math.MathContext. 7)))')"                                       '"HALF_UP"'
+assert_eq 'mc_tostr'      "$(sm '(str (java.math.MathContext. 4))')"                                                          '"precision=4 roundingMode=HALF_UP"'
+assert_eq 'mc_tostr_mode' "$(sm '(str (java.math.MathContext. 4 java.math.RoundingMode/FLOOR))')"                            '"precision=4 roundingMode=FLOOR"'
+
+echo "OK — phase14_bigdecimal_setscale (82 cases) green"

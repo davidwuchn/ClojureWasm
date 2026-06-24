@@ -87,6 +87,7 @@ const java_surfaces = [_]type{
     @import("lang/RuntimeException.zig"),
     @import("math/BigDecimal.zig"),
     @import("math/RoundingMode.zig"), // ADR-0160 — enum-constant host singletons
+    @import("math/MathContext.zig"), // D-511 — precision+rounding host object
     // Socket / MessageDigest backing impls under runtime/net/ +
     // runtime/crypto/ are unbuilt (method_table empty) — D-106.
     @import("net/Socket.zig"),

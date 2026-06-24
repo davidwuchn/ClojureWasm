@@ -187,10 +187,22 @@ fn decodeMode(v: Value, fn_name: []const u8, loc: SourceLocation) !i64 {
     return v.asInteger();
 }
 
+/// A `java.math.MathContext` argument, decoded to (precision, ROUND_* mode).
+/// Returns null if `v` is not a MathContext host instance.
+const MathContextArgs = struct { precision: u32, mode: i64 };
+fn mathContextOf(v: Value) ?MathContextArgs {
+    if (v.tag() != .host_instance) return null;
+    const hi = host_instance.asHostInstance(v);
+    const fqcn = hi.descriptor.fqcn orelse return null;
+    if (!std.mem.eql(u8, fqcn, "java.math.MathContext")) return null;
+    return .{ .precision = @intCast(hi.state[0]), .mode = @intCast(hi.state[1]) };
+}
+
 /// `(.divide a b)` — exact quotient (throws on non-terminating / zero divisor,
 /// matching clj `(/ aM bM)`). `(.divide a b mode)` — rounds to a's scale per the
-/// RoundingMode (or `ROUND_*` int). `(.divide a b scale mode)` — rounds to the
-/// given scale. JVM `BigDecimal.divide` overloads (the MathContext forms are D-511).
+/// RoundingMode (or `ROUND_*` int). `(.divide a b mc)` — rounds to the MathContext
+/// precision. `(.divide a b scale mode)` — rounds to the given scale. JVM
+/// `BigDecimal.divide` overloads.
 fn divideFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
     _ = env;
     try error_catalog.checkArityRange("divide", args, 2, 4, loc);
@@ -210,6 +222,11 @@ fn divideFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) a
     switch (args.len) {
         2 => return big_decimal.allocDiv(rt, args[0], args[1]) catch |e| return divErr.map(e, loc),
         3 => {
+            // (divisor, MathContext) → precision-divide; else (divisor, RoundingMode|int).
+            if (mathContextOf(args[2])) |mc| {
+                if (mc.precision == 0) return big_decimal.allocDiv(rt, args[0], args[1]) catch |e| return divErr.map(e, loc); // UNLIMITED
+                return big_decimal.allocDivPrecision(rt, args[0], args[1], mc.precision, mc.mode) catch |e| return divErr.map(e, loc);
+            }
             const mode = try decodeMode(args[2], "divide", loc);
             return big_decimal.allocDivScale(rt, args[0], args[1], big_decimal.asScale(args[0]), mode) catch |e| return divErr.map(e, loc);
         },
@@ -244,6 +261,22 @@ fn divideToIntegralValueFn(rt: *Runtime, env: *Env, args: []const Value, loc: So
     try requireBd(args[1], "divideToIntegralValue", loc);
     return big_decimal.allocQuotient(rt, args[0], args[1]) catch |e| switch (e) {
         error.DivideByZero => error_catalog.raise(.divide_by_zero, loc, .{}),
+        else => e,
+    };
+}
+
+/// `(.round bd mc)` — round to `mc` precision significant figures per its
+/// RoundingMode (JVM `BigDecimal.round(MathContext)`); UNLIMITED (precision 0)
+/// is exact.
+fn roundFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = env;
+    try error_catalog.checkArity("round", args, 2, loc);
+    try requireBd(args[0], "round", loc);
+    const mc = mathContextOf(args[1]) orelse
+        return error_catalog.raise(.type_arg_invalid, loc, .{ .fn_name = "round", .expected = "a MathContext", .actual = @tagName(args[1].tag()) });
+    return big_decimal.allocRoundPrecision(rt, args[0], mc.precision, mc.mode) catch |e| switch (e) {
+        error.RoundingNecessary => error_catalog.raise(.rounding_necessary, loc, .{}),
+        error.InvalidRoundingMode => error_catalog.raise(.type_arg_invalid, loc, .{ .fn_name = "round", .expected = "a ROUND_* mode (0-7)", .actual = "an unknown rounding mode" }),
         else => e,
     };
 }
@@ -428,6 +461,7 @@ pub fn installNativeMethods(rt: *Runtime) !void {
         .{ "movePointLeft", &movePointLeftFn },
         .{ "movePointRight", &movePointRightFn },
         .{ "pow", &powFn },
+        .{ "round", &roundFn },
         .{ "remainder", &remainderFn },
         .{ "divideToIntegralValue", &divideToIntegralValueFn },
         .{ "max", &maxFn },
