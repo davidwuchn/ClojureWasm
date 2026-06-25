@@ -858,3 +858,28 @@ accepted:
       or throwing on `(/ 1.0 0.0)` too (breaking the common case) — both worse.
     derives_from: "F-005 (numeric tower = IEEE f64 semantics: float-zero divisor → ±Inf/NaN, integer-zero → throw) + ADR-0059 (no JVM Compiler — cljw has no operand-type inlining pass, so it cannot reproduce clj's inline-vs-runtime split) + F-011 (the common `(/ x 0.0)` literal path matches clj's inlined ±Inf exactly; only the rare runtime-dispatched 1-arg/apply/reduce path diverges)."
     pin: "test/e2e/phase14_float_div.sh — `ad050_recip`/`ad050_recip_n`/`ad050_apply`/`ad050_reduce` lock cljw's IEEE ±Inf form (NOT clj's throw) on the runtime paths; `pos_inf`/`int_zero` lock the clj-IDENTICAL inlined-±Inf + integer-throw surfaces."
+  - id: "AD-051"
+    summary: "`(bytes? x)` is true for ANY cljw array, where clj's `bytes?` is true only for a `byte[]`. cljw arrays are type-erased (AD-019) — `byte-array`/`int-array`/`object-array`/`make-array` share one runtime shape — so a byte-array is runtime-indistinguishable from any other array. The common positive guard `(bytes? (byte-array n))` matches clj (true); non-byte arrays diverge (clj false, cljw true)."
+    example: '(bytes? (byte-array 3)) => true in BOTH ; (bytes? (int-array 3)) => cljw true / clj false ; (bytes? (object-array 0)) => cljw true / clj false ; (bytes? "x") / (bytes? nil) / (bytes? [1 2]) => false in both'
+    why: |-
+      clj's `bytes?` is `(-> x class .getComponentType (= Byte/TYPE))` — it keys on
+      the JVM array's runtime component type. cljw deletes that component type:
+      every array (`byte-array`, `int-array`, `object-array`, `make-array`) is the
+      same type-erased `[]Value` (AD-019, derived from F-004 uniform 8-byte Value +
+      F-005 no primitive specialization). So cljw genuinely cannot tell a byte-array
+      from an int-array at runtime — the only signal available is `array?`. The
+      over-broad `(defn bytes? [x] (array? x))` is NOT a silent positive lie: in
+      cljw a byte-array IS usable as bytes (`(String. (byte-array [104 105]))` =>
+      "hi", matching clj) AND, because all arrays share one representation, an
+      int/object array routed into byte-handling behaves identically to a byte-array
+      — there is no distinct byte-path to corrupt. The alternatives are worse: an
+      always-`false` `bytes?` would deny the predicate's DEFINING case
+      (`(bytes? (byte-array n))` => false), a negative lie on a capability cljw
+      demonstrably has; an element-inspection heuristic (`every? byte-range?`) dresses
+      an unknowable distinction as knowable (an int-array of 0-255 ints reads true)
+      and is the 個別最適化 F-013 closes. A Devil's-advocate fork (2026-06-25)
+      recommended always-`false` on a "positive answers can't be honored" premise;
+      the main loop overrode it because a probe falsified that premise (byte-arrays
+      ARE byte-usable in cljw). Record: `private/notes/2026-06-25-D472-bytes-da-fork.md`.
+    derives_from: "AD-019 (type-erased arrays — no per-array component type, so byte-array is runtime-indistinguishable from any other array) + F-004 (uniform 8-byte Value) + F-005 (no primitive specialization) + F-011 (the common positive guard `(bytes? (byte-array n))` matches clj true exactly; only non-byte arrays diverge) + F-013 (no bespoke per-array type-tag mechanism added to fake a distinction the representation does not carry)."
+    pin: "test/e2e/phase14_arity_parity.sh — `AD-051 (bytes? byte-array)`/`AD-051 (bytes? int-array)`/`AD-051 (bytes? object-array)` lock cljw's over-broad `true` (incl. the int/object-array cases where clj returns false). The clj-IDENTICAL cases (byte-array→true, string/nil/vector→false) are corpus-pinned in test/diff/clj_corpus/clojure_1_11_additions.txt."

@@ -130,6 +130,14 @@
 ;;=> false
 (uri? (java.net.URI/create "https://a.b/c"))
 ;;=> true
+(bytes? (byte-array 3))
+;;=> true
+(bytes? "x")
+;;=> false
+(bytes? nil)
+;;=> false
+(bytes? [1 2])
+;;=> false
 (seq-to-map-for-destructuring [:a 1 :b 2])
 ;;=> {:a 1, :b 2}
 (seq-to-map-for-destructuring [{:a 1 :b 2}])

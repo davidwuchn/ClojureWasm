@@ -2557,6 +2557,17 @@
   "coll → an array of its elements (clj returns Object[])."
   [coll] (-array-from (vec coll) nil identity))
 
+(defn bytes?
+  "Returns true if x is a cljw array. JVM Clojure's `bytes?` is true only for a
+  `byte[]`, but cljw arrays are type-erased (AD-019): `byte-array`/`int-array`/
+  `object-array` share one runtime shape, so a byte-array is indistinguishable
+  from any other array. cljw therefore answers true for any array (AD-051) — the
+  common positive guard `(bytes? (byte-array n))` matches clj; non-byte arrays
+  diverge (clj false, cljw true). A byte-array IS usable as bytes in cljw
+  (`(String. (byte-array ...))` works), so the over-broad positive is consistent
+  with cljw's uniform-array model rather than a silent lie."
+  [x] (rt/array? x))
+
 (defn into-array
   "coll → array; the optional leading `type` is accepted and ignored."
   ([coll] (to-array coll))

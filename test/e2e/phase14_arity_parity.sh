@@ -83,5 +83,13 @@ check "(char-array n ch)" '(int (aget (char-array 3 (char 120)) 1))'     '120'
 check "AD-036 (byte-array n num)" '(vec (byte-array 3 65))'              '[65 65 65]'
 check "AD-036 (char-array n int)" '(int (aget (char-array 3 65) 0))'    '65'
 
+# AD-051 pin: `bytes?` is true for ANY cljw array — arrays are type-erased
+# (AD-019), so a byte-array is runtime-indistinguishable from an int/object
+# array. The common positive guard matches clj; non-byte arrays diverge (clj
+# false, cljw true).
+check "AD-051 (bytes? byte-array)"   '(bytes? (byte-array 3))'    'true'
+check "AD-051 (bytes? int-array)"    '(bytes? (int-array 3))'     'true'
+check "AD-051 (bytes? object-array)" '(bytes? (object-array 0))'  'true'
+
 echo "pass=$pass fail=$fail"
 if [[ $fail -gt 0 ]]; then exit 1; fi
