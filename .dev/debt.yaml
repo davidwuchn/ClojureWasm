@@ -290,36 +290,6 @@ active:
       no stack trace via Debug — an lldb attach on the ReleaseSafe panic (or a GC
       write-barrier/poison instrument) is the way in.
     last_reviewed: "2026-06-25"
-  - id: "D-532"
-    status: |-
-      open (2026-06-25, D-528 data.generators finding). java.math.BigInteger has
-      NO Java-surface: `(java.math.BigInteger. "123")` / `(... byte[])` ctor,
-      `BigInteger/valueOf`, instance `.toBigInteger`/`.modPow`/`.gcd`/… all
-      "Unable to resolve" / Name error. cljw HAS the native `.big_int` value + the
-      core `bigint`/`biginteger` fns + bignum arithmetic, but no
-      `runtime/java/math/BigInteger.zig` (only BigDecimal/MathContext/RoundingMode
-      exist under runtime/java/math/); compat_tiers lists java.math.BigInteger as a
-      host_class 1-liner (phase 5) with no surface. data.generators uses
-      `(BigInteger. ^bytes (byte-array b))` AND `(BigDecimal. (.toBigInteger
-      (bigint)) …)`. LARGELY RESOLVED 2026-06-25: the UUID 2-long ctor (0a5c65c4),
-      the BigInteger construction surface (33739d68 — runtime/java/math/BigInteger.zig
-      `<init>` String/byte[] + valueOf, + `.toBigInteger` on big_int), AND the
-      BigDecimal (BigInteger unscaledVal, int scale) ctor (8400646a) all landed +
-      corpus. REMAINING (low-value / fuzzy, NOT blocking a real consumer): (a) a
-      data.generators-test "Invalid float literal '…E-117'" that is NOT reproducible
-      standalone — the exact 88-digit AND a 200-digit mantissa parse fine via the
-      literal reader AND read-string (clj-match), so it is a context-specific
-      generated-double pr-str round-trip edge, fuzzy; (b) BigInteger
-      `.add`/`.subtract`/`.multiply`/`.divide` instance methods — SPECULATIVE (cljw
-      code + data.generators use the core `+`/`*`; `.divide` is truncate-toward-zero,
-      not the available floor `allocDivFloorManaged`), add only when a consumer needs.
-    category: "interop"
-    barrier: |-
-      Construction surface DONE. Remaining are low-value: the fuzzy float round-trip
-      (needs the exact failing generated double — re-run data.generators-test and
-      capture the value) + the speculative BigInteger arithmetic instance methods
-      (defer; `.divide` needs a truncating divide, not the floor one).
-    last_reviewed: "2026-06-25"
   - id: "D-521"
     status: |-
       open (2026-06-24, user-directed) — TWO destructure-lowering systems can DRIFT.
@@ -6382,6 +6352,11 @@ discharged:
     status: "DISCHARGED 2026-06-25 — `Serializable` (java.io.Serializable) added to interface_membership.TABLE, the LAST deferred marker (the prior 13 landed 2026-06-21). clj-oracle-verified across EVERY Value.Tag (the over/under-claim risk the row flagged): near-universal TRUE — all colls/seqs (incl. cons/chunked_cons/string_seq/array_seq, which clj's Cons/StringSeq ARE Serializable, unlike the Counted divergence) + the full scalar set + the AFunction fns (fn_val/builtin_fn/protocol_fn) + Var + Namespace + regex/uuid/Throwable(ex_info)/Class(type_descriptor) + Java arrays. FALSE — mutable refs (atom/agent/ref/volatile), pending/deref boxes (future/promise/delay/reduced), transients, AND `multi_fn`: clj's MultiFn extends AFn NOT the Serializable AFunction, so a defmulti is NOT Serializable (oracle-caught, parity-verified `(instance? Serializable <defmulti-body>)` => false in both). deftype/reify + host descriptors decided by matchUserType/host_supertypes, not this static table. Unit test + corpus instance_interfaces.txt (9 cases). Full clj-parity, no AD needed."
     category: "interop"
     barrier: "none — landed. All recognized instance? markers now resolve; corpus instance_interfaces.txt locks them."
+    last_reviewed: "2026-06-25"
+  - id: "D-532"
+    status: "DISCHARGED 2026-06-25 — java.math.BigInteger surface complete. Construction (UUID 2-long ctor / BigInteger <init> String+byte[] + valueOf + .toBigInteger / BigDecimal (BigInteger,int) ctor) landed earlier this session; THIS cycle added the (b) instance arithmetic .add/.subtract/.multiply/.divide (bigint_methods.zig delegating to big_int allocAddManaged/SubManaged/MulManaged + a NEW allocDivTruncManaged — `.divide` truncates toward ZERO (-7/2=-3), distinct from the floor allocDivFloorManaged (-4); divide-by-zero raises). clj-verified (13N/7N/30N/3N/-3N + 10^24 exact); e2e phase14_biginteger bi_add/subtract/multiply/divide(_neg/_zero) (35 cases). Residual (a) — a data.generators 'Invalid float literal …E-117' edge — is NON-REPRODUCIBLE standalone (the exact 88/200-digit mantissa parses clj-match), so it is not actionable from active; a future data.generators sweep that reproduces it opens a fresh row with the concrete failing double."
+    category: "interop"
+    barrier: "none — surface complete. The non-reproducible (a) float round-trip re-files only on a concrete repro."
     last_reviewed: "2026-06-25"
 # === STANDING (epics / campaigns / capstones / deferred-future bucket) ===
 # Not drained as single units by the autonomous loop (CLAUDE.md self-select reads active: only).

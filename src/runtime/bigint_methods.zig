@@ -264,6 +264,42 @@ fn bitLengthFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation
 
 /// Populate the per-Runtime `.big_int` native descriptor's method table.
 /// Idempotent. Called at runtime init alongside the other native installers.
+/// `(.add a b)` — `a + b` (JVM `BigInteger.add`).
+fn addFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = env;
+    try error_catalog.checkArity("add", args, 2, loc);
+    try requireBigInt(args[1], "add", loc);
+    return big_int.allocAddManaged(rt, big_int.asManaged(args[0]), big_int.asManaged(args[1]), .bigint);
+}
+
+/// `(.subtract a b)` — `a - b` (JVM `BigInteger.subtract`).
+fn subtractFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = env;
+    try error_catalog.checkArity("subtract", args, 2, loc);
+    try requireBigInt(args[1], "subtract", loc);
+    return big_int.allocSubManaged(rt, big_int.asManaged(args[0]), big_int.asManaged(args[1]), .bigint);
+}
+
+/// `(.multiply a b)` — `a * b` (JVM `BigInteger.multiply`).
+fn multiplyFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = env;
+    try error_catalog.checkArity("multiply", args, 2, loc);
+    try requireBigInt(args[1], "multiply", loc);
+    return big_int.allocMulManaged(rt, big_int.asManaged(args[0]), big_int.asManaged(args[1]), .bigint);
+}
+
+/// `(.divide a b)` — `a / b` truncated toward zero (JVM `BigInteger.divide`,
+/// distinct from `mod`/floor: `-7/2` = `-3`). Divide-by-zero raises.
+fn divideFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = env;
+    try error_catalog.checkArity("divide", args, 2, loc);
+    try requireBigInt(args[1], "divide", loc);
+    return big_int.allocDivTruncManaged(rt, big_int.asManaged(args[0]), big_int.asManaged(args[1]), .bigint) catch |e| switch (e) {
+        error.DivideByZero => error_catalog.raise(.divide_by_zero, loc, .{}),
+        else => e,
+    };
+}
+
 pub fn installNativeMethods(rt: *Runtime) !void {
     const td = try rt.nativeDescriptor(.big_int);
     if (td.method_table.len != 0) return; // idempotent re-run
@@ -280,6 +316,10 @@ pub fn installNativeMethods(rt: *Runtime) !void {
         .{ "modPow", &modPowFn },
         .{ "bitLength", &bitLengthFn },
         .{ "isProbablePrime", &isProbablePrimeFn },
+        .{ "add", &addFn },
+        .{ "subtract", &subtractFn },
+        .{ "multiply", &multiplyFn },
+        .{ "divide", &divideFn },
     };
     const entries = try gpa.alloc(type_descriptor.TypeDescriptor.MethodEntry, specs.len);
     inline for (specs, 0..) |spec, i| {

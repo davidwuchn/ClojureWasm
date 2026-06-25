@@ -45,6 +45,16 @@ assert_eq 'bi_pow'    "$(bm '(.pow (biginteger 2) 10)')"               '1024N'
 assert_eq 'bi_mod'    "$(bm '(.mod (biginteger 17) (biginteger 5))')"  '2N'
 assert_eq 'bi_mod_neg' "$(bm '(.mod (biginteger -17) (biginteger 5))')" '3N'
 assert_eq 'bi_sqrt'   "$(bm '(.sqrt (biginteger 17))')"                '4N'
+# D-532: add/subtract/multiply/divide instance methods. `.divide` truncates
+# toward zero (-7/2 = -3, NOT floor's -4). cljw biginteger prints with N (AD-016).
+assert_eq 'bi_add'      "$(bm '(.add (biginteger 10) (biginteger 3))')"        '13N'
+assert_eq 'bi_subtract' "$(bm '(.subtract (biginteger 10) (biginteger 3))')"   '7N'
+assert_eq 'bi_multiply' "$(bm '(.multiply (biginteger 10) (biginteger 3))')"   '30N'
+assert_eq 'bi_divide'   "$(bm '(.divide (biginteger 7) (biginteger 2))')"      '3N'
+assert_eq 'bi_divide_neg' "$(bm '(.divide (biginteger -7) (biginteger 2))')"   '-3N'
+# divide-by-zero raises (JVM ArithmeticException)
+if "$BIN" -e '(.divide (biginteger 1) (biginteger 0))' >/dev/null 2>&1; then fail "bi_divide_zero: expected raise"; fi
+echo "PASS bi_divide_zero -> raised"
 # a negative sqrt raises (JVM ArithmeticException)
 if "$BIN" -e '(.sqrt (biginteger -1))' >/dev/null 2>&1; then fail "bi_sqrt_neg: expected raise"; fi
 echo "PASS bi_sqrt_neg -> raised"
@@ -67,4 +77,4 @@ assert_eq 'bi_prime_1m3'  "$(bm '(.isProbablePrime (biginteger 1000003) 20)')" '
 assert_eq 'bi_prime_1m4'  "$(bm '(.isProbablePrime (biginteger 1000004) 20)')" 'false'
 assert_eq 'bi_prime_0'    "$(bm '(.isProbablePrime (biginteger 0) 20)')"     'false'
 
-echo "OK — phase14_biginteger (29 cases) green"
+echo "OK — phase14_biginteger (35 cases) green"

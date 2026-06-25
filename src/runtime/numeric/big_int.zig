@@ -266,6 +266,26 @@ pub fn allocDivFloorManaged(
     return wrapManaged(rt, m_ptr, origin);
 }
 
+/// Truncate-divide `a / b` (integer quotient toward zero — JVM `BigInteger.divide`,
+/// distinct from `allocDivFloorManaged`: `-7/2` = `-3` here, `-4` there). Raises
+/// `error.DivideByZero` on `b == 0`.
+pub fn allocDivTruncManaged(
+    rt: *Runtime,
+    a: *const std.math.big.int.Managed,
+    b: *const std.math.big.int.Managed,
+    origin: IntOrigin,
+) !Value {
+    if (b.eqlZero()) return error.DivideByZero;
+    const m_ptr = try rt.gc.infra.create(std.math.big.int.Managed);
+    errdefer rt.gc.infra.destroy(m_ptr);
+    m_ptr.* = try std.math.big.int.Managed.init(rt.gc.infra);
+    errdefer m_ptr.deinit();
+    var rem = try std.math.big.int.Managed.init(rt.gc.infra);
+    defer rem.deinit();
+    try m_ptr.divTrunc(&rem, a, b);
+    return wrapManaged(rt, m_ptr, origin);
+}
+
 // --- tests ---
 
 const testing = std.testing;
