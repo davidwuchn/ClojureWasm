@@ -169,4 +169,15 @@ assert_eq 'ctor_mc_carry' "$(sm '(str (java.math.BigDecimal. "9.95" (java.math.M
 assert_eq 'ctor_mc_mode'  "$(sm '(str (java.math.BigDecimal. "123.456" (java.math.MathContext. 4 java.math.RoundingMode/FLOOR)))')" '"123.4"'
 assert_eq 'ctor_mc_unlim' "$(sm '(str (java.math.BigDecimal. "3.14159" java.math.MathContext/UNLIMITED))')"                 '"3.14159"'
 
-echo "OK — phase14_bigdecimal_setscale (105 cases) green"
+# D-511: (BigDecimal. double) = the EXACT binary value (JVM footgun; differs from
+# bigdec shortest round-trip). clj-grounded. NaN/Inf throw (NumberFormatException).
+assert_eq 'bd_dbl_tenth'  "$(sm '(str (java.math.BigDecimal. 0.1))')"   '"0.1000000000000000055511151231257827021181583404541015625"'
+assert_eq 'bd_dbl_neg'    "$(sm '(str (java.math.BigDecimal. -0.1))')"  '"-0.1000000000000000055511151231257827021181583404541015625"'
+assert_eq 'bd_dbl_half'   "$(sm '(str (java.math.BigDecimal. 0.5))')"   '"0.5"'
+assert_eq 'bd_dbl_two'    "$(sm '(str (java.math.BigDecimal. 2.0))')"   '"2"'
+assert_eq 'bd_dbl_hundred' "$(sm '(str (java.math.BigDecimal. 100.0))')" '"100"'
+assert_eq 'bd_dbl_zero'   "$(sm '(str (java.math.BigDecimal. 0.0))')"   '"0"'
+assert_eq 'bd_dbl_scale'  "$(sm '(.scale (java.math.BigDecimal. 0.1))')" '55'
+assert_eq 'bd_dbl_inf'    "$(sm '(try (java.math.BigDecimal. (/ 1.0 0.0)) (catch Throwable e :threw))')" ':threw'
+
+echo "OK — phase14_bigdecimal_setscale (113 cases) green"

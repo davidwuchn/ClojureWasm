@@ -254,6 +254,49 @@ pub fn allocFromRatioParts(
     return allocFromManagedScale(rt, &unscaled, scale);
 }
 
+/// `(BigDecimal. <double>)` — the EXACT binary value of the f64 (JVM
+/// `BigDecimal(double)`, a known footgun: `(BigDecimal. 0.1)` =>
+/// 0.1000000000000000055511151231257827021181583404541015625, NOT bigdec's
+/// shortest round-trip). Decomposes the IEEE-754 bits into significand·2^exp2,
+/// then `allocFromRatioParts` gcd-reduces to the exact minimal-scale decimal (a
+/// 2^k denominator always terminates, so the scale is k minus the significand's
+/// trailing-zero bits — JDK's normalisation, here a free consequence of the gcd
+/// reduction). NaN / ±Inf → `error.NotFinite` (JVM NumberFormatException). This
+/// is the CTOR path only; `valueOf(double)` keeps the shortest-round-trip form.
+pub fn allocFromDoubleExact(rt: *Runtime, d: f64) !Value {
+    if (std.math.isNan(d) or std.math.isInf(d)) return error.NotFinite;
+    if (d == 0) return allocFromI64Scale(rt, 0, 0); // +0.0 and -0.0 both => "0"
+    const infra = rt.gc.infra;
+    const bits: u64 = @bitCast(d);
+    const negative = (bits >> 63) != 0;
+    const raw_exp: u32 = @intCast((bits >> 52) & 0x7ff);
+    const raw_frac: u64 = bits & 0xfffffffffffff;
+    // Normal: implicit leading 1 + biased exponent. Subnormal (raw_exp==0): no
+    // implicit bit, fixed exponent -1074. value = significand · 2^exp2.
+    const significand: u64 = if (raw_exp == 0) raw_frac else raw_frac | (@as(u64, 1) << 52);
+    const exp2: i32 = if (raw_exp == 0) -1074 else @as(i32, @intCast(raw_exp)) - 1075;
+
+    var numer = try std.math.big.int.Managed.initSet(infra, significand);
+    defer numer.deinit();
+    if (negative) numer.negate();
+    var denom = try std.math.big.int.Managed.initSet(infra, 1);
+    defer denom.deinit();
+    var two = try std.math.big.int.Managed.initSet(infra, 2);
+    defer two.deinit();
+    if (exp2 >= 0) {
+        var p = try std.math.big.int.Managed.init(infra);
+        defer p.deinit();
+        try p.pow(&two, @intCast(exp2));
+        var prod = try std.math.big.int.Managed.init(infra);
+        defer prod.deinit();
+        try prod.mul(&numer, &p);
+        numer.swap(&prod);
+    } else {
+        try denom.pow(&two, @intCast(-exp2));
+    }
+    return allocFromRatioParts(rt, &numer, &denom);
+}
+
 /// The two BigDecimals `a, b` as an exact rational `n/d` with the decimal
 /// points cleared: `a/b = (ua·10^−sa)/(ub·10^−sb) = (ua·10^max(0,sb−sa)) /
 /// (ub·10^max(0,sa−sb))`. Caller owns and must `deinit` both Manageds.

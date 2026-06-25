@@ -583,6 +583,12 @@ fn parseBigDecimalArg(rt: *Runtime, x: Value, loc: SourceLocation) anyerror!Valu
     switch (x.tag()) {
         .string => return (try big_decimal.allocFromDecimalString(rt, string_collection.asString(x))) orelse
             error_catalog.raise(.type_arg_not_number, loc, .{ .fn_name = "BigDecimal", .actual = "an unparseable decimal string" }),
+        // `(BigDecimal. <double>)` is the EXACT binary value (a JVM footgun, distinct
+        // from `bigdec`'s shortest round-trip); NaN/±Inf → NumberFormatException.
+        .float => return big_decimal.allocFromDoubleExact(rt, x.asFloat()) catch |e| switch (e) {
+            error.NotFinite => error_catalog.raise(.number_format_invalid, loc, .{ .fn_name = "BigDecimal", .text = "a non-finite double" }),
+            else => e,
+        },
         else => {
             if (x.isInt()) return big_decimal.allocFromI64Scale(rt, x.asInteger(), 0);
             return error_catalog.raise(.type_arg_not_number, loc, .{ .fn_name = "BigDecimal", .actual = @tagName(x.tag()) });
