@@ -1250,7 +1250,9 @@ levers (O-051 the last clean one; the rest GC-arch / JIT-fenced — ADR-0165
 Amendment 1 / D-520), the standing `/continue` mode shifts to **polishing the
 project as a public artifact** (anyone clones it into their own environment).
 Repeatable like the F-010 quality-loop floor — each `/continue` self-selects ONE
-category and drains it highest-value-first (Step 0.5 `quality_floor:` drain). SSOT
+category and drains it **EASIEST-FIRST** (by tractability, not value — 2026-06-25
+user decision; drain the whole list, niche/deferred included, to clear 残件; Step
+0.5 `quality_floor:` drain). SSOT
 = **ADR-0166**; drain rows **D-522…D-529** (comment de-pointering + condensation /
 doc audit vs code-truth / `private/` decouple + per-task-note retire / rules +
 skills review / java-interop static-member gaps / clj-parity upstream alignment /

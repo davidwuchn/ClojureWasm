@@ -61,9 +61,10 @@ give the F-010 loop a step that drains it by category each pass.
    standing correctness/coverage debt the F-010 loop must drain.
 2. **Loop wiring** (CLAUDE.md + handover): the quality-elevation loop's
    operating procedure gains an explicit step — *"before picking the
-   next sweep target, read all `quality-loop floor` rows; drain by
-   category, highest value first."* This makes the loop **debt-driven**,
-   not ad-hoc, so nothing in the floor is forgotten.
+   next sweep target, read all `quality-loop floor` rows; drain
+   EASIEST-FIRST (by tractability, not value — 2026-06-25 user decision;
+   the whole list incl. niche/deferred, to clear 残件)."* This makes the
+   loop **debt-driven**, not ad-hoc, so nothing in the floor is forgotten.
 3. **Re-anchor** the M2/M3 correctness rows onto the matching floor
    category (one-time Phase barriers → standing floor).
 4. **Mechanical backstop** — `scripts/check_debt_id_refs.sh` (new): every
@@ -200,4 +201,4 @@ category). Full per-row proposals in `audit-lensC-barrier-quality.md`.
    quality-loop step.
 4. Each verified correctness row (D-168 range, D-169/170 numeric, D-171
    json, D-174 rest-string) then becomes a normal quality-loop TDD unit,
-   drained highest-value-first.
+   drained easiest-first (by tractability, not value — 2026-06-25).

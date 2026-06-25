@@ -205,11 +205,11 @@ its debt is anchored on a standing **`quality-loop floor: <category>`**
 Barrier instead of a one-time Phase entry (see
 `.dev/tech_debt_consolidation.md`). When self-selecting the next
 quality-loop unit (per § The only stop's next-task rule), **first read
-every open `quality-loop floor:` row and drain it highest-value-first,
-by category, before opening a fresh sweep category** — this makes the
-loop debt-driven so floor items cannot silently rot (the failure mode
-the 2026-05-31 audit found). A correctness floor row outranks new
-coverage. Re-run the 5-lens consolidation audit (D-175) at each Phase
+every open `quality-loop floor:` row and drain it EASIEST-FIRST (by
+tractability, not value — 2026-06-25 decision), before opening a fresh
+sweep category** — this makes the loop debt-driven so floor items cannot
+silently rot (the failure mode the 2026-05-31 audit found). A correctness
+floor row still preempts; otherwise drain the whole list, niche included. Re-run the 5-lens consolidation audit (D-175) at each Phase
 boundary so new orphans are caught within one Phase.
 
 **Step 0.6 — Re-laying against finished-form (main agent)**
@@ -382,13 +382,28 @@ never asks the user — see § The only stop's next-task rule):
 
 1. Check `.dev/handover.md` "First task on resume" — if it names a
    concrete next unit, take it.
-2. Otherwise self-select from the live **gap areas** (ROADMAP §9.0) +
-   their draining `.dev/debt.yaml` rows (the Step 0.5 sweep surfaces
-   them), **highest-value first** per F-002 / F-015. A correctness /
-   clj-parity floor outranks new coverage.
+2. Otherwise self-select from the live `.dev/debt.yaml` `active:` rows
+   (the Step 0.5 sweep surfaces them), **EASIEST-FIRST — by tractability,
+   NOT by value** (user decision 2026-06-25; the standing snapshot +
+   easiest→hardest drain order is `private/notes/2026-06-25-debt-drain-order.md`,
+   refreshed from the live ledger). **Drain the WHOLE active list, niche /
+   deferred / "low-value" rows INCLUDED — the goal is to eliminate 残件, so
+   do NOT perpetually defer a row as "take-up-on-consumer".** A correctness /
+   clj-parity floor still PREEMPTS (do it first if one is open), but otherwise
+   ease — not value — sets the order. (F-002 finished-form still governs HOW
+   each task is done — quality per task — but no longer the ORDER between tasks.)
+   The genuinely-blocked Tier-4 rows (Tier-D needing a MAJOR/user nod, security
+   forward-looking design, the paused perf campaign, recall/load-sensitive races,
+   `.claude/`-edit-blocked) are the non-autonomous remainder — skip until their
+   gate changes; everything else drains.
 3. Size the unit at one-to-three TDD cycles; run the per-task loop
-   (Step 0 → 7). Gap areas are **drained, not opened** — there is no
-   "open Phase N+1 task list" commit any more.
+   (Step 0 → 7). **Update the ledger RELIABLY in the SAME cycle the work
+   lands**: when a row's work completes, prepend a `DISCHARGED <date>` note to
+   its status AND MOVE it from `active:` to `discharged:` (data-preserving text
+   move — insert the block just before the trailing `conventions:` key, NOT at
+   EOF; recipe in the 2026-06-25 audit commit); when you merely TOUCH a row whose
+   status is partly stale, re-narrow it against code-truth. The ledger is the
+   live SSOT — never let a done row rot in `active:`.
 
 The genuinely-future bucket (ClojureScript→JS / C-FFI / broad-JIT,
 §9.0) is distal and **not** self-selected absent a user nod. The
@@ -417,10 +432,12 @@ That is it. There are no other stop conditions. Specifically:
   Auto-compaction is transparent; size is never the reason.
 - **Next-task / direction ambiguity — does not stop, and is NEVER
   resolved by asking the user.** When the clean/obvious work runs
-  low, the loop SELF-SELECTS the next unit (finished-form first per
-  F-002) and keeps raising precision: coverage while it lasts, then
-  quality work — tests, robustness, error-path fidelity, refactors,
-  moderate features, audits. Using `AskUserQuestion` (or any
+  low, the loop SELF-SELECTS the next unit (**EASIEST-FIRST debt drain,
+  not value-first** — 2026-06-25 decision; drain the whole `active:` list
+  including niche/deferred to eliminate 残件, updating the ledger reliably
+  each cycle — see § next-task rule + `private/notes/2026-06-25-debt-drain-order.md`)
+  and keeps raising precision: tests, robustness, error-path fidelity,
+  refactors, moderate features, audits. Using `AskUserQuestion` (or any
   "which should I do next / A vs B vs wind-down?" prompt) to choose
   the next task or the next direction is the **Direction-ask smell**
   and is forbidden — the AI decides and proceeds; the user interjects
