@@ -30,6 +30,7 @@ const host_instance = @import("../../host_instance.zig");
 const host_enum = @import("../../host_enum.zig");
 const nb = @import("../../value/nan_box.zig");
 const string_collection = @import("../../collection/string.zig");
+const java_array = @import("../../collection/java_array.zig");
 
 fn requireBd(v: Value, name: []const u8, loc: SourceLocation) !void {
     if (v.tag() != .big_decimal)
@@ -266,6 +267,51 @@ fn divideToIntegralValueFn(rt: *Runtime, env: *Env, args: []const Value, loc: So
     };
 }
 
+/// `(.scaleByPowerOfTen bd n)` — `bd · 10ⁿ` via a pure scale shift (scale −n,
+/// negative scale KEPT, unlike movePointRight; JVM `BigDecimal.scaleByPowerOfTen`).
+fn scaleByPowerOfTenFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = env;
+    try error_catalog.checkArity("scaleByPowerOfTen", args, 2, loc);
+    try requireBd(args[0], "scaleByPowerOfTen", loc);
+    if (!args[1].isInt())
+        return error_catalog.raise(.type_arg_not_number, loc, .{ .fn_name = "scaleByPowerOfTen", .actual = @tagName(args[1].tag()) });
+    return big_decimal.allocScaleByPowerOfTen(rt, args[0], args[1].asInteger()) catch |e| switch (e) {
+        error.ScaleOverflow => error_catalog.raise(.integer_overflow, loc, .{}),
+        else => e,
+    };
+}
+
+/// `(.ulp bd)` — the unit in the last place: unscaled 1 at `bd`'s scale
+/// (JVM `BigDecimal.ulp`).
+fn ulpFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = env;
+    try error_catalog.checkArity("ulp", args, 1, loc);
+    try requireBd(args[0], "ulp", loc);
+    return big_decimal.allocUlp(rt, args[0]);
+}
+
+/// `(.divideAndRemainder a b)` — a 2-element array `[divideToIntegralValue,
+/// remainder]` (JVM `BigDecimal.divideAndRemainder`). The two results are
+/// fabricated under a no-collect region so the first survives the second's
+/// allocation (GC-rooting: bare Zig locals are not roots).
+fn divideAndRemainderFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = env;
+    try error_catalog.checkArity("divideAndRemainder", args, 2, loc);
+    try requireBd(args[0], "divideAndRemainder", loc);
+    try requireBd(args[1], "divideAndRemainder", loc);
+    rt.gc.enterFabrication();
+    defer rt.gc.exitFabrication();
+    const q = big_decimal.allocQuotient(rt, args[0], args[1]) catch |e| switch (e) {
+        error.DivideByZero => return error_catalog.raise(.divide_by_zero, loc, .{}),
+        else => return e,
+    };
+    const r = big_decimal.allocRemainder(rt, args[0], args[1]) catch |e| switch (e) {
+        error.DivideByZero => return error_catalog.raise(.divide_by_zero, loc, .{}),
+        else => return e,
+    };
+    return java_array.fromSlice(rt, &.{ q, r });
+}
+
 /// `(.round bd mc)` — round to `mc` precision significant figures per its
 /// RoundingMode (JVM `BigDecimal.round(MathContext)`); UNLIMITED (precision 0)
 /// is exact.
@@ -465,6 +511,9 @@ pub fn installNativeMethods(rt: *Runtime) !void {
         .{ "round", &roundFn },
         .{ "remainder", &remainderFn },
         .{ "divideToIntegralValue", &divideToIntegralValueFn },
+        .{ "scaleByPowerOfTen", &scaleByPowerOfTenFn },
+        .{ "ulp", &ulpFn },
+        .{ "divideAndRemainder", &divideAndRemainderFn },
         .{ "max", &maxFn },
         .{ "min", &minFn },
         .{ "compareTo", &compareToFn },

@@ -568,6 +568,24 @@ pub fn allocMovePoint(rt: *Runtime, v: Value, delta: i64) !Value {
     return allocFromManagedScale(rt, &prod, 0);
 }
 
+/// `scaleByPowerOfTen(n)` — `v · 10ⁿ` by a PURE scale shift: unscaled digits
+/// UNCHANGED, scale = scale − n. Unlike `movePointRight`, a negative resulting
+/// scale is NOT normalised (JVM `BigDecimal.scaleByPowerOfTen` keeps it, which
+/// prints in scientific form, e.g. `12M·10³` → `1.2E+4`). `error.ScaleOverflow`
+/// when the new scale leaves the i32 window (clj's ArithmeticException Underflow).
+pub fn allocScaleByPowerOfTen(rt: *Runtime, v: Value, n: i64) !Value {
+    const new_scale: i64 = @as(i64, asScale(v)) - n;
+    if (new_scale > std.math.maxInt(i32) or new_scale < std.math.minInt(i32))
+        return error.ScaleOverflow;
+    return allocFromManagedScale(rt, asUnscaled(v).m, @intCast(new_scale));
+}
+
+/// `ulp()` — the unit in the last place: unscaled = 1 at `v`'s scale
+/// (JVM `BigDecimal.ulp`, e.g. `1.23M` → `0.01M`, `100M` → `1M`).
+pub fn allocUlp(rt: *Runtime, v: Value) !Value {
+    return allocFromI64Scale(rt, 1, asScale(v));
+}
+
 /// `a * b` — unscaled values multiply, scales add.
 pub fn allocMul(rt: *Runtime, a: Value, b: Value) !Value {
     std.debug.assert(a.tag() == .big_decimal and b.tag() == .big_decimal);

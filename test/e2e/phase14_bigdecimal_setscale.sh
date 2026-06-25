@@ -114,6 +114,15 @@ assert_eq 'bd_rem_neg'     "$(sm '(str (.remainder (bigdec "-10") (bigdec "3")))
 assert_eq 'bd_rem_zero'    "$(sm '(str (.remainder (bigdec "7.5") (bigdec "2.5")))')"   '"0.0"'
 assert_eq 'bd_divint'      "$(sm '(str (.divideToIntegralValue (bigdec "10") (bigdec "3")))')"   '"3"'
 assert_eq 'bd_divint_sc'   "$(sm '(str (.divideToIntegralValue (bigdec "10.5") (bigdec "3")))')" '"3.0"'
+# D-439: scaleByPowerOfTen (pure scale shift, negative scale kept) / ulp / divideAndRemainder. clj-grounded.
+assert_eq 'bd_sbpt'        "$(sm '(str (.scaleByPowerOfTen (bigdec "1.23") 2))')"      '"123"'
+assert_eq 'bd_sbpt_neg'    "$(sm '(str (.scaleByPowerOfTen (bigdec "1.23") -1))')"     '"0.123"'
+assert_eq 'bd_sbpt_sci'    "$(sm '(str (.scaleByPowerOfTen (bigdec "12") 3))')"        '"1.2E+4"'
+assert_eq 'bd_ulp'         "$(sm '(str (.ulp (bigdec "1.23")))')"                      '"0.01"'
+assert_eq 'bd_ulp_int'     "$(sm '(str (.ulp (bigdec "100")))')"                       '"1"'
+assert_eq 'bd_ulp_one'     "$(sm '(str (.ulp (bigdec "12.0")))')"                      '"0.1"'
+assert_eq 'bd_divrem'      "$(sm '(str (vec (.divideAndRemainder (bigdec "17") (bigdec "5"))))')"     '"[3M 2M]"'
+assert_eq 'bd_divrem_sc'   "$(sm '(str (vec (.divideAndRemainder (bigdec "17.5") (bigdec "4.2"))))')" '"[4M 0.7M]"'
 assert_eq 'bd_max'         "$(sm '(str (.max (bigdec "1") (bigdec "2")))')"             '"2"'
 assert_eq 'bd_min'         "$(sm '(str (.min (bigdec "1") (bigdec "2")))')"             '"1"'
 assert_eq 'bd_compareto_eq' "$(sm '(.compareTo (bigdec "1.0") (bigdec "1.00"))')"       '0'
@@ -160,4 +169,4 @@ assert_eq 'ctor_mc_carry' "$(sm '(str (java.math.BigDecimal. "9.95" (java.math.M
 assert_eq 'ctor_mc_mode'  "$(sm '(str (java.math.BigDecimal. "123.456" (java.math.MathContext. 4 java.math.RoundingMode/FLOOR)))')" '"123.4"'
 assert_eq 'ctor_mc_unlim' "$(sm '(str (java.math.BigDecimal. "3.14159" java.math.MathContext/UNLIMITED))')"                 '"3.14159"'
 
-echo "OK — phase14_bigdecimal_setscale (97 cases) green"
+echo "OK — phase14_bigdecimal_setscale (105 cases) green"
