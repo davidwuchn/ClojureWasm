@@ -8,18 +8,19 @@
 - **HEAD**: `main` (`git log` = SSOT). Per-commit = smoke; commit **and** push
   (CLAUDE.md § atomic Step 6 — the perf-campaign no-push mode is LIFTED; push normally).
   `build.zig.zon` `.zwasm` = tag pin `v2.0.0-alpha.3`.
-- **First commit on resume MUST be**: self-select the highest-value remaining unit
-  — **D-530 (deftype/reify cross-section overload), Compiler/specials (tools.macro
-  unblock), and D-534 (APersistentSet/IPersistentList extend markers) are all DONE**
-  this arc (the satisfying chain: Compiler/specials → tools.macro → algo.monads now
-  fully loads). The remaining menu is lower-value, so re-raise precision: a
-  **tools.macro-dependent library re-probe** (proven bug-finder — D-530/D-534 came
-  from real libs; with tools.macro now loading, retry libs that rode it) is the
-  highest-yield; then **D-533** (ref/var validators + ref ctor option — moderate
-  STM/Var-GC, low-freq), **D-531** (partitions-M UAF — GC-poison instrument first),
-  **D-532** (fuzzy float round-trip only), then pure-polish **D-522** (de-pointer —
-  few BARE pointers) · **D-524/525** (`.claude/`-blocked, surface to user) · **D-529**
-  marker inventory. A correctness/clj-parity floor outranks pure polish.
+- **First commit on resume MUST be**: drain `.dev/debt.yaml` `active:`
+  **EASIEST-FIRST** (NEW work-order, 2026-06-25 user decision — by tractability NOT
+  value; CLAUDE.md § next-task rule). Read **`private/notes/2026-06-25-debt-drain-order.md`**
+  (the snapshot + easiest→hardest order) and take **Tier 1** first — the partial-
+  residual + niche contained quick-wins: start **D-472** (`bytes?` predicate) →
+  D-480 (`Serializable` marker) → D-526 (Arrays/Collections statics) → D-446
+  (multidim `aset`) → D-439 (BigDecimal sqrt/scaleByPowerOfTen/ulp/divideAndRemainder)
+  → … Drain the WHOLE list incl. niche/deferred to clear 残件; do NOT defer a row as
+  "take-up-on-consumer". **Update the ledger reliably each cycle**: discharge + MOVE
+  the finished row active→discharged (insert before the trailing `conventions:` key)
+  in the same cycle. Tier 4 (Tier-D / security-forward / perf-campaign / recall /
+  `.claude/`-blocked) stays until its gate changes. The D-530/Compiler-specials/
+  D-534/D-533 arc + the full debt audit (active 111→87) are DONE.
 - **Forbidden this session**: bare `zig build test` WITHOUT `-Dwasm` (false fails);
   bare `zig build` for a probe (ADR-0133 — use ReleaseSafe). Note: `.claude/**` edits
   (D-524/525) may hit the auto-mode self-modification block — surface those to the user.
@@ -69,16 +70,16 @@ Memories: `verify_against_releasesafe_binary` / `smoke_first_batch_full_gate`.
 
 ## Stopped — user requested
 
-User instruction (2026-06-24, paraphrase): after this perf milestone, the standing
-`/continue` mode is the **(b) sweep** — the finite quality work previously deferred
-as low-ROI: java-interop missing statics (catalog first if not mechanically
-knowable), "あと少し欠落" near-complete gaps, clj-parity alignment with upstream,
-real-`deps.edn` library usage to surface bugs, doc audit against code-truth
-(prune/simplify/archive), abolish the per-session `private/notes` dependence
-(public artifact — anyone develops in their own env), skill/rules review, replace
-ADR/debt **pointer** comments with self-contained explanation (ADR docs stay) +
-condense verbose comments (huge, gradual), marker-comment inventory. The user asked
-to lightly pre-investigate, record perf, push, then **wire + audit the reference
-chain so a clear session's `/continue` fires these going forward**, and stop. Done:
-**ADR-0166** + **§9.2.T** + **D-522…D-529** + this resume contract wire it; the perf
-campaign is paused. Resume = self-select a §9.2.T category and drain it.
+User instruction (2026-06-25, paraphrase): "this debt re-categorization feels like
+something I keep making you redo — persist it (dated, in private), then from next
+time sweep NOT by value but **easiest-first (取り組みやすい順)**, and **update debt
+reliably** as you go; **review niche/deferred too and eliminate the 残件** (don't
+perpetually defer 'low-value'). Audit the wiring / reference chain so this fires
+going forward, then **stop**." DONE this session: (1) full code-truth debt audit
+(active 111→87 — 24 done rows refiled, D-239/D-439 re-narrowed, 87 verified
+genuinely-open); (2) snapshot + easiest→hardest drain order persisted to
+`private/notes/2026-06-25-debt-drain-order.md`; (3) re-wired the work-order to
+EASIEST-FIRST drain-ALL + reliable-per-cycle-update across CLAUDE.md (3 next-task
+spots) + ROADMAP §9.2.T + tech_debt_consolidation + the `debt-ledger-audit-decisions`
+memory (Refinement 2026-06-25). **Resume = drain `active:` Tier 1 first (D-472,
+D-480, D-526, D-446, D-439…), reliably moving each finished row to `discharged:`.**
