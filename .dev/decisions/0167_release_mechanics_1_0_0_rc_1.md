@@ -58,8 +58,10 @@ S0-S3 + attribution + CHANGELOG):
 - **D-539 (=S3) — CI wiring ★headline.** `.github/workflows/ci.yml`
   (push `main` + PR; macOS + Ubuntu matrix) driven by a single
   `scripts/ci_gate.sh` SSOT so **CI can never verify less than the per-host
-  gate**; `.github/dependabot.yml` (weekly actions); a gitleaks config (reuse the
-  existing `.gitleaksignore`); Zig 0.16.0 pin mirrored for CI.
+  gate**; `.github/dependabot.yml` (weekly actions); a gitleaks config that scans
+  the working tree (the lone historical false-positive `.gitleaksignore` was
+  removed 2026-07-01 in the top-level tidy — current tree is clean, so no
+  allowlist is needed); Zig 0.16.0 pin mirrored for CI.
   **CWFS-specific**: the full gate MUST run `--serial-e2e` (D-418 load-race) and
   probe a ReleaseSafe binary (ADR-0132).
 - **D-540 (=CHANGELOG + attribution + formatting).** `CHANGELOG.md`
