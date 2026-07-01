@@ -43,9 +43,9 @@ Before staging a tracked file for commit:
 3. **ADR reference**: the change either implements an existing
    ADR row or carries its own ADR / amendment per ROADMAP §17.
 4. **handover.md updated**: current state reflects the landing.
-5. **Doc paired (if source-only commit)**: a chapter under
-   `docs/ja/learn_clojurewasm/` lands within the chapter cadence
-   per `code_learning_doc` skill.
+5. **Doc paired** — DORMANT per ADR-0025: the per-concept chapter
+   cadence is suspended (its pre-commit pairing gate is a no-op); only
+   the per-task note in `private/notes/` is required.
 
 If any of the five fails, the change is still exploration.
 

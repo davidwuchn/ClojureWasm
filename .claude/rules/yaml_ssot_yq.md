@@ -222,18 +222,14 @@ dedicated dup/quote recipes, not just a well-formedness check.
   rules. `data/placement.yaml` automation lives in
   `scripts/check_placement_status.sh`; `data/feature_deps.yaml` in
   `scripts/check_provisional_sync.sh` + `audit_scaffolding/CHECKS.md`.
-- `bench/history` schema (ADR-0044) is queried in
-  `scripts/check_bench_regression.sh` — mirror the `strenv()` idiom there for
-  any var-parameterised query.
 
 ## Scope (forward-looking — like `orphan_prevention.md` / `zig_tips.md`)
 
 This is a **reference** rule: it guides *future* yq usage, it does not gate
 or mandate a one-shot retrofit. Existing scripts that still use the fragile
 string-splice form work today because their interpolated values are
-controlled (no metachars): `scripts/check_bench_regression.sh:55,85`
-(`'"$MACHINE_ID"'` / `'"$LOCK_ID"'` splices) and
-`scripts/check_placement_status.sh:63,68` (`\"$status\"`). Harden these to
+controlled (no metachars): `scripts/check_placement_status.sh:63,68`
+(`\"$status\"`). Harden it to
 `strenv()` **opportunistically** when next touching those files — not as a
 standalone churn. (The two `env(ID)` reads in
 `scripts/check_accepted_divergences.sh:50,56` compare against an `id` token

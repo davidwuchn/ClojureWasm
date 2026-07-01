@@ -162,9 +162,9 @@ repair before proceeding.
 - **Active task** — §9.<N>.<M> identifier + 1-2 sentence
   description + retrievable identifiers (ADR refs, file paths,
   test name).
-- **Next phase queue** — only when the current phase is within a
-  task or two of closing AND the next phase's entry items are not
-  already in §9.<N+1> placeholder.
+- **Next unit pointer** — a concrete "First task on resume" naming the
+  next gap-area unit / debt row. (The phase-queue / §9.<N+1>-placeholder
+  model is retired per ADR-0142; the loop self-selects from live debt.)
 - **Open questions / blockers** — testable external dependencies
   only; otherwise the row belongs in `.dev/debt.yaml`.
 

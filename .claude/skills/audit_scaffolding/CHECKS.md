@@ -74,7 +74,7 @@ landed` count > 1, or any forbidden structural pattern.
 ```sh
 # Extract every backticked path / link target; verify each with `test -e`
 grep -hoE '`[^`]+\.(md|zig|sh|yaml|json|nix)`' \
-  CLAUDE.md README.md .dev/ROADMAP.md .claude/skills/*/SKILL.md \
+  .claude/CLAUDE.md README.md .dev/ROADMAP.md .claude/skills/*/SKILL.md \
   | sort -u | while read p; do
       f=$(echo "$p" | tr -d '`')
       test -e "$f" || echo "DEAD: $p"
@@ -88,12 +88,12 @@ Severity: **block** for any DEAD.
 ### B1. File line count vs soft limit
 
 ```sh
-wc -l CLAUDE.md README.md .dev/ROADMAP.md .dev/README.md \
+wc -l .claude/CLAUDE.md README.md .dev/ROADMAP.md .dev/README.md \
       .claude/skills/*/SKILL.md .claude/rules/*.md
 ```
 
 Soft limits (rule of thumb):
-- `CLAUDE.md`: ~100 lines (always loaded; bigger = context cost)
+- `.claude/CLAUDE.md`: ~100 lines (always loaded; bigger = context cost)
 - `.dev/handover.md`: **hard 100-line limit** per
   [`handover_framing.md`](../../rules/handover_framing.md)
 - `.claude/rules/*.md`: ~200 lines each
@@ -107,13 +107,13 @@ Severity: **watch** at 80% of limit, **soon** above.
 
 ```sh
 # Same fact in 3+ files = drift candidate. Examples to grep for:
-grep -lF 'source-bearing' CLAUDE.md .dev/ROADMAP.md .claude/skills/*/SKILL.md
-grep -lF 'commit pairing'  CLAUDE.md .dev/ROADMAP.md .claude/skills/*/SKILL.md
-grep -lF 'Rule 1' .claude/skills/*/SKILL.md scripts/check_learning_doc.sh CLAUDE.md
+grep -lF 'source-bearing' .claude/CLAUDE.md .dev/ROADMAP.md .claude/skills/*/SKILL.md
+grep -lF 'commit pairing'  .claude/CLAUDE.md .dev/ROADMAP.md .claude/skills/*/SKILL.md
+grep -lF 'Rule 1' .claude/skills/*/SKILL.md scripts/check_learning_doc.sh .claude/CLAUDE.md
 ```
 
 Severity: **soon** if any rule/term lives canonically in 2+ places (not
-counting a 1-line pointer in CLAUDE.md / ROADMAP back to the canonical
+counting a 1-line pointer in .claude/CLAUDE.md / ROADMAP back to the canonical
 source). Designate ONE canonical and replace others with pointers.
 
 ## C. Lies — does the doc make absolute claims that reality contradicts?
@@ -129,7 +129,7 @@ source). Designate ONE canonical and replace others with pointers.
 
 Severity: **block** if Active claim is unwired.
 
-### C2. CLAUDE.md "Read-only reference clones" actually exist
+### C2. .claude/CLAUDE.md "Read-only reference clones" actually exist
 
 ```sh
 # Synced with .dev/reference_clones.md + .claude/settings.json
@@ -427,7 +427,7 @@ deferred set so the loop doesn't forget about it.
 The audit only checks scratch volume and audit-report cadence — it
 does **not** scan `private/` for "unadopted" proposals (anything
 load-bearing must already live in ROADMAP / ADR / `docs/ja/` /
-handover, per CLAUDE.md "Working agreement").
+handover, per .claude/CLAUDE.md "Working agreement").
 
 ### F1. Per-task notes hygiene
 

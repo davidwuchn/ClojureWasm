@@ -347,8 +347,9 @@ Then:
    ```
    `Smell-audited:` is **mandatory** on every commit that stages
    source-bearing files (`src/**/*.zig`, `build.zig`,
-   `build.zig.zon`, `.dev/decisions/NNNN_*.md`). Pre-commit gate
-   auto-aligns Markdown tables; only genuine syntax errors block.
+   `build.zig.zon`, `.dev/decisions/NNNN_*.md`). The Markdown-table
+   pre-commit hook is advisory (2026-06-11) — it flags unaligned staged
+   tables but does not auto-align, re-stage, or block.
 5. `git push origin main` runs immediately on the
    commit's success. **The `scripts/check_smell_audit.sh` PreToolUse
    hook physically blocks pushes that include any source-bearing
