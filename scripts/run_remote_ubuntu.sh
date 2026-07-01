@@ -30,7 +30,11 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-REMOTE_DIR="Documents/MyProducts/ClojureWasmFromScratch"
+# Maintainer-configurable via env (defaults reproduce the primary maintainer's
+# setup). A different maintainer points HOST at their own SSH alias and
+# REMOTE_DIR at their clone path; external clones use CI for multi-OS coverage.
+HOST="${CLJW_UBUNTU_HOST:-ubuntunote}"
+REMOTE_DIR="${CLJW_REMOTE_DIR:-Documents/MyProducts/ClojureWasmFromScratch}"
 REMOTE_BRANCH="main"
 if [ "${1:-}" = "--branch" ]; then
     if [ -z "${2:-}" ]; then
@@ -51,7 +55,7 @@ die_step() {
 #    `nix` resolves from a non-interactive SSH session without
 #    relying on the user's .bashrc.
 echo "[run_remote_ubuntu] preflight (clone + nix reachable) ..."
-ssh ubuntunote bash -lc "'
+ssh "$HOST" bash -lc "'
     test -d $REMOTE_DIR || exit 11
     command -v nix >/dev/null 2>&1 || exit 12
 '" || {
@@ -65,8 +69,8 @@ ssh ubuntunote bash -lc "'
 
 # 2. Sync — fetch + reset + echo the landed SHA so logs record
 #    exactly what was tested.
-echo "[run_remote_ubuntu] sync ubuntunote:~/$REMOTE_DIR to origin/$REMOTE_BRANCH ..."
-remote_sha="$(ssh ubuntunote bash -lc "'
+echo "[run_remote_ubuntu] sync $HOST:~/$REMOTE_DIR to origin/$REMOTE_BRANCH ..."
+remote_sha="$(ssh "$HOST" bash -lc "'
     cd $REMOTE_DIR || exit 21
     git fetch origin $REMOTE_BRANCH >&2 || exit 22
     git checkout $REMOTE_BRANCH >&2 || exit 23
@@ -88,7 +92,7 @@ echo "[run_remote_ubuntu] remote HEAD: $remote_sha"
 #    entry-point is `bash test/run_all.sh` (not `zig build test`):
 #    the script orchestrates unit + e2e + bench + scan layers.
 echo "[run_remote_ubuntu] nix develop --command bash test/run_all.sh ..."
-ssh ubuntunote bash -lc "'
+ssh "$HOST" bash -lc "'
     cd $REMOTE_DIR && nix develop --command bash test/run_all.sh
 '" || die_step "gate — test/run_all.sh failed on ubuntunote (HEAD=$remote_sha)"
 

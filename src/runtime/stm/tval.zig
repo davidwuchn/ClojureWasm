@@ -13,8 +13,8 @@
 //! The ring is **doubly-linked with self-loop termination** per JVM
 //! `Ref.java`. A single-node ring satisfies `prior == self ==
 //! next`; subsequent commits splice a new TVal between `head` and
-//! `head.next` exactly per `clojure.lang.Ref.TVal` ctor at
-//! `~/Documents/OSS/clojure/src/jvm/clojure/lang/Ref.java:64-69`.
+//! `head.next` exactly per the `clojure.lang.Ref.TVal` ctor in
+//! Clojure's `Ref.java`.
 //!
 //! D-102 landed the data structure + GC integration; transaction
 //! control flow (`doSet` / `doCommute` / `doEnsure` / commit /

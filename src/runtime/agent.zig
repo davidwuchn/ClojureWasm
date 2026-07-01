@@ -210,7 +210,7 @@ const PendingSend = struct { agent: Value, action: Action };
 /// nested `(send a …)` races a concurrently-enqueued `(await a)` barrier: the
 /// barrier is queued before the nested send (clj-faithful → state-at-await) only
 /// if the nested send is deferred. cljw enqueued nested sends immediately, so the
-/// await ordering was timing-dependent (Mac vs ubuntunote) — D-388. Held Values
+/// await ordering was timing-dependent (host- and scheduler-dependent) — D-388. Held Values
 /// are `gc.pin`'d: the list is off-heap (gpa), invisible to the mark phase.
 threadlocal var nested_pending: ?std.ArrayList(PendingSend) = null;
 
