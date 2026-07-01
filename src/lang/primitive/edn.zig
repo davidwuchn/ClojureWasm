@@ -12,15 +12,12 @@
 //! are implemented (D-200).
 //!
 //! **Location note (D-095)**: this Zig primitive lives under
-//! `src/lang/primitive/` (mirroring `string.zig` / `walk.zig`)
-//! rather than `modules/edn/` because Zig 0.16's `@import` +
-//! `@embedFile` reject cross-module-path access. The matching
-//! `.clj` source sits at `src/lang/clj/clojure/edn.clj` (also
-//! mirroring `clojure.string` / `clojure.set` precedent). The
-//! top-level `modules/` reservation is documented at
-//! `modules/_README.md` + tracked for future build.zig migration
-//! (= declare `modules/` as a separate Zig module with
-//! `addImport`) via D-095.
+//! `src/lang/primitive/` (mirroring `string.zig` / `walk.zig`); the
+//! matching `.clj` source sits at `src/lang/clj/clojure/edn.clj`
+//! (mirroring `clojure.string` / `clojure.set` precedent). The former
+//! top-level `modules/` reservation for a co-located `modules/edn/`
+//! layout was retired 2026-07-01 (D-095 discharged opportunistic —
+//! the migration was never warranted; primitives stay in `src/lang/`).
 
 const std = @import("std");
 const Value = @import("../../runtime/value/value.zig").Value;

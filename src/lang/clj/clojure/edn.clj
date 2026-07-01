@@ -9,7 +9,7 @@
 ;; syntax — Clojure source IS EDN with a quote-form interpretation.
 ;; This namespace exposes JVM-parity surface: `read-string` returns a
 ;; data Value (does NOT evaluate the form). The Layer-2 primitive is
-;; interned by `modules/edn/edn.zig::register`; this `.clj` file's
+;; interned by `src/lang/primitive/edn.zig::register`; this `.clj` file's
 ;; only job is to (a) open the `clojure.edn` namespace, (b) optionally
 ;; re-export the var with metadata, (c) leave room for the
 ;; Pattern-A `read` / `parse` follow-up defns.

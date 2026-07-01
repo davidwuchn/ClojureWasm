@@ -32,7 +32,6 @@
 >   - `analyzer/` split exact file names (D-030 picks the
 >     decomposition).
 >   - `app/` internal organisation (D-031 picks file boundaries).
->   - `modules/` internal layout (D-034 picks per-module split).
 >   - These entries are tagged **★new** / **★split** + a
 >     (D-NNN) debt pointer.
 >
@@ -105,11 +104,6 @@ ClojureWasm/
 ├─ docs/ja/
 │  ├─ README.md                    (dormant marker)
 │  └─ archive/                     learn_clojurewasm_v1_phase1to3 / learn_zig_v1
-├─ modules/                                         ★new top-level (Phase 9 entry, D-034)
-│  ├─ json/                        clojure.data.json
-│  ├─ csv/                         clojure.data.csv
-│  ├─ edn/                         clojure.edn
-│  └─ cli/                         clojure.tools.cli
 └─ src/
    ├─ main.zig                     Layer 3 entry (shrinks in Phase 8 ★split)
    ├─ app/                                         ★new (Phase 8 entry, D-031)
