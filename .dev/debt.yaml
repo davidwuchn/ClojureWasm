@@ -73,6 +73,14 @@ active:
       comments. ADR documents STAY; only in-code pointers-to-them become prose.
       Largest category — GRADUAL, a little each /continue. Keep Why-non-obvious
       comments (CLAUDE.md comment rule).
+      DRAIN 1 (2026-07-01): worst-offender `src/runtime/interface_membership.zig`
+      (the inventory's "embedded changelog") — removed all 14 date-stamps
+      (`clj-oracle 2026-06-DD`, `ACTIVATED/joined 2026-…`, `closed 2026-…`) and
+      reframed the ACTIVATED/joined process-narration to present-tense, KEEPING the
+      technical content + ADR/D anchors (rationale) + pullers-why. Confirms the
+      de-pointering method: strip changelog/date narration, keep the design doc.
+      Smoke 6/6. Method note: much of this file is GENUINE technical doc — do NOT
+      blindly strip ADR/D refs; only the date-stamp/process narration is noise.
     category: "docs"
     quality_floor: "public-ization: comment de-pointer + condense (ADR-0166)"
     barrier: |-

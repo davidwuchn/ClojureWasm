@@ -31,7 +31,7 @@
 //! cljw's `.range`/`.chunked_cons` substrate has no meta slot (D-271), so
 //! claiming the membership would break F-011. The full oracle-verified sets are
 //! recorded so the closed set is exhaustively complete (F-013 cl.4) — only activation
-//! waits. clj-verified (`clj` oracle, 2026-06-08):
+//! waits. Oracle-verified against JVM Clojure:
 //!   IObj  = promise, future + most collections/seqs (vector, list, set,
 //!           sorted_map, sorted_set, persistent_queue, cons, lazy_seq, range,
 //!           chunked_cons, array_map, hash_map, string_seq, array_seq) + symbol
@@ -57,7 +57,7 @@ const ASSOC_TAGS = [_]Tag{ .vector, .map_entry, .array_map, .hash_map, .sorted_m
 /// Indexed / IPersistentVector — vector + map_entry (a MapEntry is a [k v]
 /// IPersistentVector). Both the instance? membership AND the extend-protocol-TARGET
 /// set (host_interface.nativeExtendTags via INDEXED_NAMES) now derive from this one
-/// list (D-317 closed 2026-06-15): clj distributes an IPV-extended protocol to
+/// list (D-317): clj distributes an IPV-extended protocol to
 /// MapEntry, so the two sets are unified here. ADR-0116 Decision C.
 const INDEXED_TAGS = [_]Tag{ .vector, .map_entry };
 /// ISeq — the seq views + list (a PersistentList is a seq); NOT vector/maps/sets.
@@ -96,11 +96,11 @@ const JCOLLECTION_TAGS = [_]Tag{ .list, .cons, .lazy_seq, .chunked_cons, .vector
 const COUNTED_TAGS = [_]Tag{ .list, .cons, .chunked_cons, .vector, .array_map, .hash_map, .sorted_map, .hash_set, .sorted_set, .persistent_queue, .range, .string_seq, .array_seq, .map_entry };
 /// MapEquivalence — the map marker used by `=`-on-maps (clj: only the maps).
 const MAPEQUIV_TAGS = [_]Tag{ .array_map, .hash_map, .sorted_map };
-/// IKVReduce — `reduce-kv`-able: maps + vector (clj-oracle 2026-06-21).
+/// IKVReduce — `reduce-kv`-able: maps + vector.
 const IKVREDUCE_TAGS = [_]Tag{ .array_map, .hash_map, .sorted_map, .vector };
 /// CharSequence — strings only (cljw has no StringBuilder/CharBuffer native tag).
 const CHARSEQ_TAGS = [_]Tag{.string};
-/// Comparable (clj-oracle 2026-06-21): ordered scalars + vector/map_entry. NOTE
+/// Comparable: ordered scalars + vector/map_entry. NOTE
 /// clj's `BigInt` is NOT Comparable (only Integer/Ratio/BigDecimal/Double are) —
 /// `.big_int` is deliberately absent; `.char`/`.boolean` ARE Comparable.
 const COMPARABLE_TAGS = [_]Tag{ .integer, .float, .ratio, .big_decimal, .string, .keyword, .symbol, .char, .boolean, .vector, .map_entry };
@@ -109,7 +109,7 @@ const COMPARABLE_TAGS = [_]Tag{ .integer, .float, .ratio, .big_decimal, .string,
 /// Comparable — the inverse of the other numbers; plain Long/Double are neither).
 const IHASHEQ_TAGS = [_]Tag{ .list, .cons, .lazy_seq, .chunked_cons, .vector, .array_map, .hash_map, .sorted_map, .hash_set, .sorted_set, .persistent_queue, .range, .string_seq, .array_seq, .map_entry, .keyword, .symbol, .big_int };
 /// IReduceInit — directly reducible (NOT via seq): vector / list / range. A bare
-/// Cons / LazySeq is an ASeq and is NOT IReduceInit (clj-oracle 2026-06-21).
+/// Cons / LazySeq is an ASeq and is NOT IReduceInit.
 const IREDUCEINIT_TAGS = [_]Tag{ .vector, .list, .range };
 /// ITransientCollection / its sub-interfaces — the transient value tags.
 const TRANSIENT_COLL_TAGS = [_]Tag{ .transient_vector, .transient_map, .transient_set };
@@ -118,7 +118,7 @@ const TVEC_TAGS = [_]Tag{.transient_vector};
 const TMAP_TAGS = [_]Tag{.transient_map};
 const TSET_TAGS = [_]Tag{.transient_set};
 
-/// Serializable (java.io.Serializable) — clj-oracle 2026-06-25. A near-universal
+/// Serializable (java.io.Serializable) — a near-universal
 /// marker: clj makes nearly every value Serializable. The clj-verified TRUE set
 /// is every collection + seq + the full scalar set + the AFunction-backed fns +
 /// Var + Namespace + Class + Throwable + regex/uuid + Java arrays. The notable
@@ -147,7 +147,7 @@ const SERIALIZABLE_TAGS = [_]Tag{
     .regex,     .uuid,       .ex_info,          .type_descriptor, .array,
 };
 
-// --- deref / pending / ref family (ADR-0116; clj-oracle 2026-06-08) ---
+// --- deref / pending / ref family (ADR-0116) ---
 
 /// IDeref — every deref-able value.
 const IDEREF_TAGS = [_]Tag{ .atom, .agent, .ref, .@"volatile", .future, .promise, .reduced, .delay, .var_ref };
@@ -160,16 +160,16 @@ const IPENDING_TAGS = [_]Tag{ .delay, .future, .promise, .lazy_seq };
 /// IBlockingDeref — a blocking deref (with timeout): future + promise.
 const IBLOCKING_TAGS = [_]Tag{ .future, .promise };
 
-/// IObj — ACTIVATED 2026-06-13 (ADR-0134 value-driven slice; pullers:
-/// instaparse's safe-with-meta + clojure.datafy's guard). Limited to the
+/// IObj — active (ADR-0134; needed by instaparse's safe-with-meta +
+/// clojure.datafy's guard). Limited to the
 /// tags where `(with-meta x m)` WORKS today (measured live), preserving
 /// clj's `(instance? IObj x)` ⟹ with-meta-works invariant — the
 /// not-yet-metable clj-IObj tags (range, chunked_cons, sorted colls,
 /// queue, string_seq/array_seq, promise/future, fns) answer false until
 /// their meta slots land (the remaining ADR-0134 substrates). A deftype
 /// DECLARING clojure.lang.IObj answers true via matchUserType regardless.
-/// `.reified_instance` joined 2026-06-20 (ADR-0134 reify slice, puller
-/// clojure.spec.alpha): clj reify ALWAYS implements IObj + carries a meta slot,
+/// `.reified_instance` is included (ADR-0134; needed by clojure.spec.alpha):
+/// clj reify ALWAYS implements IObj + carries a meta slot,
 /// so EVERY reify is metable (plain deftype = `.typed_instance`, NOT here).
 const IOBJ_TAGS = [_]Tag{ .vector, .list, .lazy_seq, .hash_set, .array_map, .hash_map, .symbol, .reified_instance };
 /// IMeta — meta-READABLE: the metable IObj set ∪ the reference family.
@@ -228,7 +228,7 @@ pub const TABLE = [_]Entry{
     .{ .name = "IBlockingDeref", .tags = &IBLOCKING_TAGS },
     // Recognised-as-deftype-target markers that were missing from the instance?
     // table (D-480): `(instance? clojure.lang.Counted x)` etc. raised "Unable to
-    // resolve symbol" though host_interfaces.yaml recognised them. clj-oracle 2026-06-21.
+    // resolve symbol" though host_interfaces.yaml recognised them.
     .{ .name = "Counted", .tags = &COUNTED_TAGS },
     .{ .name = "MapEquivalence", .tags = &MAPEQUIV_TAGS },
     .{ .name = "IKVReduce", .tags = &IKVREDUCE_TAGS },
@@ -236,7 +236,7 @@ pub const TABLE = [_]Entry{
     // Closeable — no native cljw implementor (host resources only), like SortedMap;
     // resolves as an instance? class arg, matches only host descriptors.
     .{ .name = "Closeable", .tags = &NO_NATIVE_TAGS },
-    // D-480 completion (clj-oracle 2026-06-21): the remaining recognized markers.
+    // D-480 completion: the remaining recognized markers.
     // Serializable (near-everything but fns-yes / refs-no / transients-no) is
     // deferred — broad + low-value.
     .{ .name = "Comparable", .tags = &COMPARABLE_TAGS },
@@ -247,7 +247,7 @@ pub const TABLE = [_]Entry{
     .{ .name = "ITransientVector", .tags = &TVEC_TAGS },
     .{ .name = "ITransientMap", .tags = &TMAP_TAGS },
     .{ .name = "ITransientSet", .tags = &TSET_TAGS },
-    // Serializable (D-480 completion, clj-oracle 2026-06-25) — the last deferred
+    // Serializable (D-480 completion) — the last deferred
     // marker. Near-universal; the SERIALIZABLE_TAGS doc records the clj-verified
     // inclusions + the deliberate exclusions (refs/pending/transients/multi_fn).
     .{ .name = "Serializable", .tags = &SERIALIZABLE_TAGS },
@@ -304,7 +304,7 @@ fn tagNames(comptime tags: []const Tag) []const []const u8 {
 /// extend-target now = its instance? membership {vector, map_entry} (INDEXED_TAGS):
 /// clj distributes an IPersistentVector-extended protocol to MapEntry too (a
 /// MapEntry IS-A IPersistentVector — clj-verified), so the prior {vector}-only set
-/// was a parity gap (ADR-0116 Decision C; D-317 residual closed 2026-06-15).
+/// was a parity gap (ADR-0116 Decision C; D-317 residual).
 pub const ISEQ_NAMES = tagNames(&ISEQ_TAGS);
 pub const NAMED_NAMES = tagNames(&NAMED_TAGS);
 pub const MAP_NAMES = tagNames(&MAP_TAGS);
@@ -385,7 +385,7 @@ test "isInterface bounds the recognised set" {
     try testing.expect(!isInterface("NotARealInterface"));
 }
 
-test "Serializable membership (clj-oracle 2026-06-25): near-universal but NOT refs/pending/transients/multi_fn" {
+test "Serializable membership: near-universal but NOT refs/pending/transients/multi_fn" {
     // TRUE: collections, seqs, scalars, plain fns, Var, Namespace, regex/uuid,
     // Throwable, Class, Java arrays.
     inline for (.{ .vector, .list, .lazy_seq, .map_entry, .sorted_map, .integer, .big_int, .ratio, .keyword, .char, .boolean, .fn_val, .builtin_fn, .protocol_fn, .var_ref, .ns, .regex, .uuid, .ex_info, .type_descriptor, .array }) |t| {
