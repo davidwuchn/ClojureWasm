@@ -8,7 +8,7 @@
 #   - clojure.data.json/{read-str,write-str} round-trip (row 9.3)
 #   - clojure.data.csv/{read-csv,write-csv} round-trip (row 9.4)
 #   - clojure.tools.cli/parse-opts smoke (row 9.5)
-#   - zone_check.sh --gate (modules/ dependency direction)
+#   - zone_check.sh --gate
 #   - D-007 self-host viability (cw bootstraps all 9 embedded
 #     namespaces every cljw invocation; if that crashed, no test
 #     in the gate would run — this row pins the property).
@@ -70,7 +70,7 @@ EOF
 ) || fail "(4): non-zero exit"
 assert_eq 'cli_parse_opts_smoke' "$(last_line "$got")" '{:port "8080"}'
 
-# --- (5) modules/ zone-check gate ---
+# --- (5) zone-check gate ---
 bash scripts/zone_check.sh --gate >/dev/null 2>&1 || fail "(5): zone_check.sh --gate failed"
 echo "PASS modules_zone_check_gate"
 

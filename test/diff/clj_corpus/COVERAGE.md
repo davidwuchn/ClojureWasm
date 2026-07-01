@@ -341,9 +341,9 @@ confirmed exprs into a `*.txt` corpus here via `--corpus`.
 
 ## Acceptable divergences (NOT bugs — do not "fix")
 
-> **SSOT = [`.dev/accepted_divergences.yaml`](../../.dev/accepted_divergences.yaml)**
+> **SSOT = [`.dev/accepted_divergences.yaml`](../../../.dev/accepted_divergences.yaml)**
 > (AD-001 … AD-007), enforced by `scripts/check_accepted_divergences.sh` and
-> governed by [`.claude/rules/accepted_divergences.md`](../../.claude/rules/accepted_divergences.md).
+> governed by [`.claude/rules/accepted_divergences.md`](../../../.claude/rules/accepted_divergences.md).
 > Each entry cites its deriving invariant (F-NNN / ADR) and a pinning test.
 > Do not duplicate the list here — edit the SSOT. Summary for orientation:
 > AD-001 set/map print order · AD-002 opaque-ref `#<tag>` print · AD-003

@@ -13,7 +13,7 @@ ClojureWasm targets behavioural equivalence with JVM Clojure on the
 user-observable surface. If you find an expression that behaves differently:
 
 1. Check whether it is already a known, intentional difference in
-   [`docs/clojure_vs_clojurewasm.md`](./docs/clojure_vs_clojurewasm.md).
+   [`docs/clojure_vs_clojurewasm.md`](../docs/clojure_vs_clojurewasm.md).
 2. If not, start a
    [Discussion](https://github.com/clojurewasm/ClojureWasm/discussions) with the
    expression, what `cljw` prints, and what a JVM Clojure REPL prints.
@@ -31,9 +31,9 @@ serial mode (`bash test/run_all.sh --serial-e2e`) is authoritative.
 
 The project follows a TDD loop (red → green → refactor) and keeps tests green on
 every commit. The development workflow, design principles, and the amendment
-process for the roadmap are documented in [`CLAUDE.md`](./CLAUDE.md) and
-[`.dev/`](./.dev/) (ROADMAP, decision records, principles). Load-bearing
-decisions are recorded as ADRs under [`.dev/decisions/`](./.dev/decisions/).
+process for the roadmap are documented in [`CLAUDE.md`](../.claude/CLAUDE.md) and
+[`.dev/`](../.dev/) (ROADMAP, decision records, principles). Load-bearing
+decisions are recorded as ADRs under [`.dev/decisions/`](../.dev/decisions/).
 
 A note on provenance: much of this codebase is written by an autonomous
 development loop under written guardrails and ADR discipline. Human review and
@@ -53,4 +53,4 @@ Security problems should **not** be reported publicly — see
 ## License
 
 By contributing, you agree that your contributions are licensed under the
-Eclipse Public License 2.0 (see [LICENSE](./LICENSE)).
+Eclipse Public License 2.0 (see [LICENSE](../LICENSE)).

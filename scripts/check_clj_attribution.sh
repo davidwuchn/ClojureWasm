@@ -11,7 +11,7 @@
 #
 # Scope: src/lang/clj/clojure/ only. The `src/lang/clj/cljw/` namespaces
 # are ClojureWasm-original and intentionally out of scope (no upstream
-# lineage). `.zig` is clean-room; the import-relationship NOTICE covers
+# lineage). `.zig` is clean-room; the import-relationship legal/NOTICE covers
 # the tree-level attribution.
 #
 # Why a working-tree (not staged-diff) check: a new clojure ns can be

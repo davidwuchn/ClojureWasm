@@ -9,7 +9,7 @@
             .hash = "zlinter-0.0.1-OjQ08c7oCwDIwhlde7eDKMACNTsqAhGXy5vB7GdfGobG",
         },
         // zwasm v2 embedding API (F-001 / D-037). `lazy` so the DEFAULT build +
-        // gate never resolve it — only `-Dwasm` / `-Dzwasm-spike` (b.lazyDependency) do.
+        // gate never resolve it — only `-Dwasm` (b.lazyDependency) does.
         // PINNED to tag **v2.0.0-alpha.3** (zwasm@fc7ff0b3b, 2026-06-22, to_cljw_09): the
         // JIT-adoption co-dev experiment settled — zwasm cut a pinnable tag (3-host green:
         // Mac aarch64 + ubuntu x86_64 + Win64), so cljw exits the relative-path NO-PUSH

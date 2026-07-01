@@ -2,8 +2,8 @@
 # Zone dependency checker.
 #
 # Enforces the layering rules in .claude/rules/zone_deps.md:
-#   Layer 0 (runtime/) must NOT import from Layer 1+ (eval/, lang/, modules/, app/)
-#   Layer 1 (eval/)    must NOT import from Layer 2+ (lang/, modules/, app/)
+#   Layer 0 (runtime/) must NOT import from Layer 1+ (eval/, lang/, app/)
+#   Layer 1 (eval/)    must NOT import from Layer 2+ (lang/, app/)
 #   Layer 2 (lang/)    must NOT import from Layer 3 (app/)
 #
 # Plus the ADR-0029 D2 surface rule (G1):
@@ -36,7 +36,6 @@ zone_of() {
         src/eval/*)               ZONE=1 ;;
         src/lang/*)               ZONE=2 ;;
         src/app/*|src/main.zig)   ZONE=3 ;;
-        modules/*)                ZONE=2 ;;
         *)                        ZONE="x" ;;
     esac
 }
@@ -119,21 +118,6 @@ for file in $files; do
                     case "$rel" in
                         src/runtime/java/*|src/runtime/cljw/*|src/runtime/clojure/*)
                             echo "$file:$lineno: G1/ADR-0029 D2/F-009: lang/primitive imports surface ($import_path)" \
-                                >> "$violations_file"
-                            ;;
-                    esac
-                    ;;
-            esac
-
-            # §9.11 row 9.1: modules/ MUST NOT import lang/ or app/
-            # (zone_deps.md rule + ROADMAP §A1). Layer-number arithmetic
-            # alone treats modules and lang as peers at layer 2; the
-            # explicit forbid lives here.
-            case "$file" in
-                modules/*)
-                    case "$rel" in
-                        src/lang/*|src/app/*|src/main.zig)
-                            echo "$file:$lineno: zone_deps.md: modules/ imports forbidden zone ($import_path)" \
                                 >> "$violations_file"
                             ;;
                     esac
