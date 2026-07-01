@@ -8,6 +8,14 @@
   <em>A JVM-free Clojure runtime in Zig, with a WebAssembly FFI.</em>
 </p>
 
+<p align="center">
+  <a href="https://github.com/clojurewasm/ClojureWasm/actions/workflows/ci.yml"><img src="https://github.com/clojurewasm/ClojureWasm/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
+  <a href="https://ziglang.org/"><img src="https://img.shields.io/badge/Zig-0.16.0-f7a41d?logo=zig&logoColor=white" alt="Zig 0.16.0" /></a>
+  <a href="https://clojure.org/"><img src="https://img.shields.io/badge/Clojure-runtime-5881d8?logo=clojure&logoColor=white" alt="Clojure runtime" /></a>
+  <a href="./LICENSE"><img src="https://img.shields.io/badge/License-EPL_2.0-blue.svg" alt="License: EPL 2.0" /></a>
+  <a href="https://github.com/sponsors/chaploud"><img src="https://img.shields.io/github/sponsors/chaploud?logo=githubsponsors&logoColor=white&color=ea4aaa" alt="GitHub Sponsors" /></a>
+</p>
+
 > [!NOTE]
 > ClojureWasm is **not yet stable** and is built by a very small team with
 > limited resources. To keep that focus, **Issues and Pull Requests are not
@@ -122,3 +130,7 @@ from a Clojure one.
 ## License
 
 Eclipse Public License 2.0 — see [LICENSE](./LICENSE) and [NOTICE](./NOTICE).
+
+---
+
+Developed in spare time alongside a day job. Sponsorship via [GitHub Sponsors](https://github.com/sponsors/chaploud) is welcome and helps keep work going.
