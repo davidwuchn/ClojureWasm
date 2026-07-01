@@ -107,12 +107,12 @@ The loop self-selects the next item by the order — **no user touchpoint**.
    ranking; each new lib's first blocker spawns a fix (folds into the relevant
    item below). This is the campaign's *coverage engine* — it surfaces the
    highest-value missing pieces empirically, not by guessing.
-   **Committed-artifact form (2026-06-07): `verified_projects/<lib>/`** — each
+   **Committed-artifact form (2026-06-07): `test/conformance/verified_projects/<lib>/`** — each
    proven lib lands as a tracked `deps.edn` (`:git/url`+`:git/sha`) + `verify.clj`
    exercise instead of a throwaway `-cp` probe, so (a) the dir list shows
    at-a-glance which libs load, and (b) `scripts/verify_projects.sh` re-runs them
    as a real-world-lib **regression sweep** (network; Phase-boundary / on-demand,
-   not per-commit). Method + how-to-add: `verified_projects/README.md`; the
+   not per-commit). Method + how-to-add: `test/conformance/verified_projects/README.md`; the
    PATTERNS / gap-taxonomy / coverage-raising know-how:
    **`.dev/library_incorporation_playbook.md`** (read before a re-expansion). Grow
    it one lib at a time; reconcile with `docs/works/ladder.md` (ladder = ranked
@@ -136,7 +136,7 @@ The loop self-selects the next item by the order — **no user touchpoint**.
      functional `to-uri`/`url-encode`). A java.net surface (runtime/java/net/URI.zig)
      OR — since it is a real, implementable Java class (NOT a `clojure.lang.*`
      internal, so ADR-0113 does NOT defer it) — a minimal URI value + the
-     ToString/url-encode path. Probe `verified_projects/hiccup` for the exact chain.
+     ToString/url-encode path. Probe `test/conformance/verified_projects/hiccup` for the exact chain.
    - **honeysql** → (a) **java.util.Locale** US/ROOT static fields + a Locale-arg
      `String.toUpperCase`/`toLowerCase` overload (D-315; a host_instance surface was
      designed+reverted 2026-06-07 — re-land with a GC-safe per-Runtime singleton:

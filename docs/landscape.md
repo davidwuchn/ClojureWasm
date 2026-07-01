@@ -54,4 +54,4 @@ is exploring one more corner — not competing for the others' ground.
   (reproduce with `bash bench/release_metrics.sh`).
 - ClojureWasm compatibility detail:
   [`docs/clojure_vs_clojurewasm.md`](./clojure_vs_clojurewasm.md) and
-  [`compat_tiers.yaml`](../compat_tiers.yaml).
+  [`data/compat_tiers.yaml`](../data/compat_tiers.yaml).

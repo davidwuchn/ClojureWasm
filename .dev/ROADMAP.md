@@ -823,14 +823,14 @@ campaign's classifications).
   abstraction clojure.core itself dispatches on (deftype/reify/extend
   supertype position, or the class facet: `instance?` / `isa?` /
   `extend-protocol` / `print-method`). Coverage is definition-wide
-  (F-013); closed set = [`host_interfaces.yaml`](../host_interfaces.yaml)
+  (F-013); closed set = [`host_interfaces.yaml`](../data/host_interfaces.yaml)
   (G4).
 - **R3 — Value-semantics test → language feature.** The observable
   behaviour is a pure function of Clojure values (`Util/equiv`, `Murmur3`,
   boxed-number statics, `StringBuilder`/`StringWriter`,
   `Pattern`/`Matcher`, `UUID`, `Date`/`Instant`, java.util collection-VIEW
   methods). Thin surface over a neutral impl (F-009); closed set =
-  [`compat_tiers.yaml`](../compat_tiers.yaml) (G2/G3). Tiebreak: a name
+  [`compat_tiers.yaml`](../data/compat_tiers.yaml) (G2/G3). Tiebreak: a name
   both value-semantic and arguably JVM-internal goes R3 iff its behaviour
   is clj-oracle-checkable (F-011), else R4.
 - **R4 — Implementation-leak default → Tier D.** Everything else

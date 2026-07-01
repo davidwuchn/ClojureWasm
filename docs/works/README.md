@@ -81,7 +81,7 @@ JVM-shaped branch — which is exactly where the Java interop blockers live.
    resolver), record it in the row as `NEEDS-ROW: <gap>`. Do **not** edit
    `.dev/debt.yaml` from here — the main loop reads the `NEEDS-ROW:` markers
    and creates the debt rows, cross-referenced against the Java-tier SSOT
-   (`compat_tiers.yaml`, Campaign Stage 0.3).
+   (`data/compat_tiers.yaml`, Campaign Stage 0.3).
 
 ## Status vocabulary
 

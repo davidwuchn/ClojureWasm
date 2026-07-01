@@ -77,7 +77,10 @@ Built 2026-05-24 from:
 ClojureWasm/
 ├─ build.zig
 ├─ build.zig.zon
-├─ CLAUDE.md
+├─ data/                           compat_tiers / placement / host_interfaces / feature_deps .yaml (SSOTs)
+├─ legal/                          NOTICE, THIRD_PARTY.md          (LICENSE stays at root)
+├─ .claude/
+│  └─ CLAUDE.md                    (project memory; moved off root 2026-07-01)
 ├─ .dev/
 │  ├─ ROADMAP.md
 │  ├─ handover.md

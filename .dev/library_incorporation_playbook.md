@@ -1,12 +1,12 @@
 # Library-incorporation playbook — how cljw absorbs real-world Clojure libs
 
-> A standing reference for the `verified_projects/` coverage engine (F-010 /
+> A standing reference for the `test/conformance/verified_projects/` coverage engine (F-010 /
 > F-013, convergence_campaign Stage 1.3). Written 2026-06-07 after landing 11
 > libraries (medley → … → hiccup → honeysql). The campaign is on **STAY** (user
 > directive 2026-06-07); this doc exists so a future re-expansion resumes with
 > the accumulated know-how instead of re-deriving it.
 >
-> SSOT for the *method* lives in `verified_projects/README.md`; this doc is the
+> SSOT for the *method* lives in `test/conformance/verified_projects/README.md`; this doc is the
 > SSOT for the *patterns, taxonomy, and coverage strategy* behind it.
 
 ## 1. The core mental model
@@ -30,14 +30,14 @@ first error.
 ## 2. The probe loop (the engine)
 
 ```
-1. mkdir verified_projects/<lib>; write deps.edn (:git/url + :git/sha) + verify.clj
+1. mkdir test/conformance/verified_projects/<lib>; write deps.edn (:git/url + :git/sha) + verify.clj
    (require the lib's CORE ns + assert REAL outputs, not just `require`).
 2. bash scripts/verify_projects.sh <lib>   → read the FIRST blocker (file:line + Kind).
 3. Classify the blocker (§4 taxonomy) → find its fix site (§4 "fixed in").
 4. Fix the ROOT CAUSE (F-013: definition-derived, never a per-lib patch). Probe a
    minimal repro with `cljw -e` to confirm the fix in isolation.
 5. Re-probe (step 2). New blocker → repeat. Green → run the FULL sweep
-   (verified_projects.sh, no filter) to confirm no regression, then the gate, then commit.
+   (scripts/verify_projects.sh, no filter) to confirm no regression, then the gate, then commit.
 ```
 
 **Why `verify.clj` must assert real outputs**: a bare `(require …)` passes when a
@@ -100,7 +100,7 @@ and warrants an ADR.
 - **Probe-derived, not guess-derived.** The chain is discovered empirically by
   re-probing, not by reading the lib's source up front and guessing. The probe is
   cheaper and never wrong about what actually blocks.
-- **Reuse `verified_projects/<lib>` as a regression net.** Each landed lib stays
+- **Reuse `test/conformance/verified_projects/<lib>` as a regression net.** Each landed lib stays
   as a committed proof; `scripts/verify_projects.sh` re-runs all of them, so a
   later change that breaks an earlier lib is caught (run the full sweep before
   every honeysql/hiccup-class commit).
@@ -121,7 +121,7 @@ and warrants an ADR.
   fork challenges the design from fresh context; its output goes verbatim into
   "Alternatives considered" (see ADR-0114/0115).
 - **Never trust a "covered" claim without a corpus/verify proof** (anti-D-177):
-  the `verified_projects/<lib>` dir + its assertions ARE the proof.
+  the `test/conformance/verified_projects/<lib>` dir + its assertions ARE the proof.
 
 ## 7. Where to look next (when re-expanding)
 
@@ -137,7 +137,7 @@ and warrants an ADR.
 
 ## Cross-references
 
-- `verified_projects/README.md` — the mechanical how-to-add (the method).
+- `test/conformance/verified_projects/README.md` — the mechanical how-to-add (the method).
 - `.dev/convergence_campaign.md` Stage 1.3 — the campaign driver this doc serves.
 - `docs/works/ladder.md` — the candidate ladder + per-lib first blocker.
 - ADR-0113 (deferred host refs) / ADR-0114 (hiccup) / ADR-0115 (honeysql) — the

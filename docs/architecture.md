@@ -71,7 +71,7 @@ Clojure compatibility is graded:
   `compile`, deep proxy, deep bean, `java.awt.*`, `javax.swing.*`,
   `java.applet.*`, deep `java.lang.reflect.*`) per ADR-0013.
 
-`compat_tiers.yaml` (repo root) is the authoritative classification
+`data/compat_tiers.yaml` (repo root) is the authoritative classification
 data, read by the Tier A PASS gate and the per-form `tier_d_<form>`
 catalog Codes (ADR-0018 amendment 2).
 
@@ -118,7 +118,7 @@ the live tracker.
 | What load-bearing decision was made?       | `.dev/decisions/NNNN_*.md`                               |
 | What is the current state?                 | `.dev/handover.md`                                       |
 | What debt is tracked?                      | `.dev/debt.yaml`                                         |
-| What namespace is at what tier?            | `compat_tiers.yaml`                                      |
+| What namespace is at what tier?            | `data/compat_tiers.yaml`                                 |
 | What does a term mean?                     | `.dev/ROADMAP.md` §16 (glossary)                        |
 | What testing layer is what?                | `.dev/decisions/0021_test_taxonomy.md`, `test/README.md` |
 | What rules apply to a `.zig` file edit?    | `.claude/rules/*.md` (auto-loaded per path)              |

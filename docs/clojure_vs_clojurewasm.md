@@ -163,7 +163,7 @@ bridge to the JVM are not part of the runtime (Tier C/D):
 - reflection over, and `import` of, arbitrary Java classes
 
 cljw provides its own host-class surface (a curated set, see
-[`compat_tiers.yaml`](../compat_tiers.yaml)) rather than open JVM interop.
+[`data/compat_tiers.yaml`](../data/compat_tiers.yaml)) rather than open JVM interop.
 Note that Java *arrays* are implemented (type-erased — see AD-019), as is
 `with-local-vars` (AD-015); they are no longer in this list.
 

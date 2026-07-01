@@ -43,7 +43,7 @@ WebAssembly FFI as its headline capability. Earlier pre-releases were tagged
   surfaces.
 - **Java-interop surface** — a curated, definition-derived subset of common
   `java.*` classes (String / Math / java.time / BigInteger / BigDecimal /
-  Character / …) reimplemented natively; see `compat_tiers.yaml`.
+  Character / …) reimplemented natively; see `data/compat_tiers.yaml`.
 
 ### Notes
 

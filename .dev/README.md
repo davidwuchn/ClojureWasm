@@ -18,9 +18,9 @@ Project-level design and operational metadata. Tracked in git. English.
   v0's gaps into cw v1 (redesigned, not copied; per-gap ordering +
   ROADMAP-amendment hooks). Consulted when opening Phase 15+ / minting
   quality-loop rows (ROADMAP §A26). F-003 foresight.
-- [`orbstack_setup.md`](./orbstack_setup.md) — one-time VM setup,
-  iteration loop, and gate integration for the 🔒 OrbStack x86_64
-  cross-platform gate (ROADMAP §11.5).
+- [`orbstack_setup.md`](./orbstack_setup.md) — **retired** OrbStack x86_64
+  gate setup (ADR-0049; kept for history). The live Linux gate is
+  [`ubuntunote_setup.md`](./ubuntunote_setup.md) + `scripts/run_remote_ubuntu.sh`.
 - [`decisions/`](./decisions/) — Architectural Decision Records.
   - `README.md` — convention.
   - `0000_template.md` — copy this when adding a new ADR.
@@ -33,6 +33,6 @@ templates in **ROADMAP §15.2**:
 
 - `debt.yaml` — row-level debt ledger (ADR-0072; replaced the planned
   `known_issues.md`). The live SSOT for technical debt.
-- `compat_tiers.yaml` — per-namespace/class Clojure tier table (repo root; exists).
-- `placement.yaml` — Clojure-ns var placement SSOT (ADR-0033; covers the planned
+- `data/compat_tiers.yaml` — per-namespace/class Clojure tier table.
+- `data/placement.yaml` — Clojure-ns var placement SSOT (ADR-0033; covers the planned
   `status/vars.yaml` var tracking, which was not built).
