@@ -15,7 +15,7 @@
 #                                                          #   regenerate COVERAGE.md
 #
 # Library context resolution (the classpath SSOT — no coordinate duplication):
-#   - verified_projects/<lib>/ exists  → cd there for BOTH cljw and clj; each
+#   - test/conformance/verified_projects/<lib>/ exists  → cd there for BOTH cljw and clj; each
 #     reads the same deps.edn (cljw: src/app/cli.zig auto-load; clj: cwd file).
 #   - test/conformance/deps/<lib>.edn exists → the lib is BUNDLED in cljw
 #     (data.json/data.csv/tools.cli): cljw runs from the repo root, clj gets
@@ -64,7 +64,7 @@ DIR="test/conformance"
 
 # ---------- lib context ----------
 # Sets: CTX_DIR (cwd for cljw), CLJ_DIR (cwd for clj) and SDEPS_ARGS.
-# cljw: verified_projects/<lib>/ when present (its deps.edn auto-loads), else
+# cljw: test/conformance/verified_projects/<lib>/ when present (its deps.edn auto-loads), else
 # the repo root (bundled ns). clj: the same deps.edn read from the same cwd —
 # UNLESS test/conformance/deps/<lib>.edn exists, which then supplies the whole
 # clj-side -Sdeps map (run from the repo root so no cwd deps.edn interferes).
@@ -78,13 +78,13 @@ resolve_ctx() {
     local lib="$1"
     SDEPS_ARGS=()
     CTX_DIR="$ROOT"
-    [ -d "verified_projects/$lib" ] && CTX_DIR="$ROOT/verified_projects/$lib"
+    [ -d "test/conformance/verified_projects/$lib" ] && CTX_DIR="$ROOT/test/conformance/verified_projects/$lib"
     CLJ_DIR="$CTX_DIR"
     if [ -f "$DIR/deps/$lib.edn" ]; then
         CLJ_DIR="$ROOT"
         SDEPS_ARGS=(-Sdeps "$(cat "$DIR/deps/$lib.edn")")
     elif [ "$CTX_DIR" = "$ROOT" ]; then
-        echo "unknown lib '$lib': no verified_projects/$lib/ and no $DIR/deps/$lib.edn" >&2
+        echo "unknown lib '$lib': no test/conformance/verified_projects/$lib/ and no $DIR/deps/$lib.edn" >&2
         return 2
     fi
 }
@@ -277,7 +277,7 @@ all_libs() {
         echo "> ROADMAP §1.5 track 1). Corpus format + methodology: the script header."
         echo "> Known-DIFF lines carry D-NNN / AD-NNN tags per"
         echo "> \`.claude/rules/accepted_divergences.md\`; load-only status lives in"
-        echo "> \`docs/works/ladder.md\`, load-proof projects in \`verified_projects/\`."
+        echo "> \`docs/works/ladder.md\`, load-proof projects in \`test/conformance/verified_projects/\`."
         echo
         echo "| lib | golden ok | known-DIFF | coverage |"
         echo "|-----|-----------|------------|----------|"

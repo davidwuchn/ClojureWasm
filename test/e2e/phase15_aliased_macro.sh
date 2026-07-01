@@ -7,7 +7,7 @@
 # qualified head with a bare `env.findNs(ns)` that does NOT translate require
 # aliases, so `m/pick` fell through to a plain function call and its raw
 # argument was analyzed as an ordinary symbol → "Unable to resolve symbol".
-# Found via verified_projects/qbits.ex (`ex/try+ … (catch-data …)`). The
+# Found via test/conformance/verified_projects/qbits.ex (`ex/try+ … (catch-data …)`). The
 # fix mirrors `analyzeSymbol`: alias-translate, then own-interns-only (D-261).
 # Layer 2 (e2e CLI).
 set -euo pipefail

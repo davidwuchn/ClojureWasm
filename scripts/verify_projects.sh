@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # scripts/verify_projects.sh — real-world library regression sweep.
 #
-# Runs every verified_projects/<lib>/ through `cljw -M:verify` — the project's
+# Runs every test/conformance/verified_projects/<lib>/ through `cljw -M:verify` — the project's
 # own deps.edn resolves the lib (git coordinates), and its `:verify` alias's
 # `:main-opts ["-m" "verify"]` runs `verify/-main` (D-309 run mode). The
 # PRESENCE of a
-# verified_projects/<lib>/ dir is the committed claim "this library loads +
+# test/conformance/verified_projects/<lib>/ dir is the committed claim "this library loads +
 # works on cljw"; this script re-checks that claim, so a later change that
 # breaks a previously-working lib is caught (the F-010 regression-detection
 # role the convergence campaign Stage 1.3 / F-013 ladder feeds).
@@ -14,7 +14,7 @@
 # NOT part of the per-commit gate (test/run_all.sh). Run it on demand and at
 # Phase boundaries (where network is available). The per-commit deps.edn
 # mechanism test stays hermetic in test/e2e/phase14_deps_edn.sh (local bare
-# repo). See verified_projects/README.md for the convention.
+# repo). See test/conformance/verified_projects/README.md for the convention.
 #
 # Usage:  bash scripts/verify_projects.sh            # all projects
 #         bash scripts/verify_projects.sh medley     # one project (by dir name)
@@ -29,7 +29,7 @@ fi
 CACHE="${CLJW_HOME:-$HOME/.cljw}"
 filter="${1:-}"
 fails=0; n=0
-for dir in verified_projects/*/; do
+for dir in test/conformance/verified_projects/*/; do
     name="$(basename "$dir")"
     [ -f "$dir/deps.edn" ] && [ -f "$dir/verify.clj" ] || continue
     [ -z "$filter" ] || [ "$filter" = "$name" ] || continue

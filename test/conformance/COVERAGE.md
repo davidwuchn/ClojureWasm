@@ -5,7 +5,7 @@
 > ROADMAP §1.5 track 1). Corpus format + methodology: the script header.
 > Known-DIFF lines carry D-NNN / AD-NNN tags per
 > `.claude/rules/accepted_divergences.md`; load-only status lives in
-> `docs/works/ladder.md`, load-proof projects in `verified_projects/`.
+> `docs/works/ladder.md`, load-proof projects in `test/conformance/verified_projects/`.
 
 | lib                | golden ok | known-DIFF | coverage |
 |--------------------|-----------|------------|----------|

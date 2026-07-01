@@ -8,7 +8,7 @@
 # Asserts the clj-VALID subset (list/vector on the LEFT — clj walks via the
 # native operand's equiv even when the deftype omits equiv; identity; the
 # Sequential gate). Instance-on-LEFT symmetry (which needs the deftype's own
-# equiv) is proven against the real lib by verified_projects/data.finger-tree.
+# equiv) is proven against the real lib by test/conformance/verified_projects/data.finger-tree.
 # Oracle-confirmed: true/true/true/false/false/false.
 set -euo pipefail
 cd "$(dirname "$0")/../.."
