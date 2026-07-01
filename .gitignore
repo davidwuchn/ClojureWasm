@@ -32,10 +32,11 @@ private/
 .dev/.gate_pass
 .dev/.smoke_pass
 .dev/.gate_cadence
-
-# clojure-lsp / clj-kondo caches (appear when LSP analyses verified_projects/*.clj)
-.clj-kondo/
-.lsp/
 .dev/.gate_ledger
 .dev/.perf_campaign_active
-verified_projects/*/.cpcache/
+
+# clojure-lsp / clj-kondo caches + deps.edn classpath cache (appear when the LSP
+# or a lib check analyses test/conformance/verified_projects/**/*.clj)
+.clj-kondo/
+.lsp/
+test/conformance/verified_projects/*/.cpcache/

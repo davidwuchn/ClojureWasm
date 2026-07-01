@@ -1,8 +1,0 @@
-use flake
-
-# Local secrets — copy this file to `.envrc` (gitignored) and fill in real
-# values. NEVER commit `.envrc`. After editing, run `direnv allow`.
-#
-# Fly.io deploy token (scoped to the `clojurewasm` org):
-#   fly tokens create org clojurewasm --expiry 2160h
-# export FLY_API_TOKEN="FlyV1 fm2_..."

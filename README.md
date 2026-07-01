@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/clojurewasm_logo.png" alt="ClojureWasm" width="180" />
+  <img src="docs/assets/clojurewasm_logo.png" alt="ClojureWasm" width="180" />
 </p>
 
 <h1 align="center">ClojureWasm</h1>
