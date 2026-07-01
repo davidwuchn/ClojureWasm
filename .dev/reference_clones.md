@@ -10,8 +10,6 @@ Never edit or commit from them. Code reading only.
   live path: `git worktree add ../cw-v0 v0.5.0`, or `git show v0.5.0:<path>`.
   - Use: feature contrast, interop boundary inspection, audit reference for known pain points
   - NOT to copy verbatim (per `.claude/rules/no_copy_from_v1.md`)
-- `~/Documents/MyProducts/ClojureWasmFromScratch_v1_ref/` — **Phase 1+2 reference**
-  - Use: previous re-design attempt; diff against current cw v1
 
 ## Upstream sources (semantics ground truth)
 

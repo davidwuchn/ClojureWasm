@@ -4,9 +4,9 @@ paths:
   - ".claude/skills/**/SKILL.md"
   - "scripts/check_*.sh"
   - ".claude/settings.json"
-  - "feature_deps.yaml"
-  - "placement.yaml"
-  - "compat_tiers.yaml"
+  - "data/feature_deps.yaml"
+  - "data/placement.yaml"
+  - "data/compat_tiers.yaml"
 ---
 
 # Framework completion
@@ -25,8 +25,8 @@ A cycle that does any of:
 
 - adds a new `.claude/rules/<name>.md` (especially with a `paths:`
   frontmatter that targets pre-existing source)
-- introduces a new SSOT yaml (`feature_deps.yaml`,
-  `placement.yaml`, ...)
+- introduces a new SSOT yaml (`data/feature_deps.yaml`,
+  `data/placement.yaml`, ...)
 - lands a new PreToolUse hook script (`scripts/check_*.sh`)
 - amends an existing rule in a way that broadens its scope
 - adds a new Bad Smell entry to `principle.md`
@@ -77,7 +77,7 @@ A discovery criterion is a deterministic recipe. Examples:
 |----------------------------------|--------------------------------------------------------------------------------------------------------------------|
 | `provisional_marker.md`          | `rg --no-heading -nl '(stands in for\|for now\|until Phase \d+\|temporarily)' src/ test/e2e/`                      |
 | `module_docstring.md` (Phase 5+) | `find src -name '*.zig' -newer <ref> \| xargs -I{} head -2 {} \| ...` (first 2 lines start `// SPDX:` + `//! ...`) |
-| `feature_name_consistency.md` G3 | `yq '.host_classes[].keyword' compat_tiers.yaml \| xargs -I{} rg -l '{}' src/`                                     |
+| `feature_name_consistency.md` G3 | `yq '.host_classes[].keyword' data/compat_tiers.yaml \| xargs -I{} rg -l '{}' src/`                                     |
 | `error_catalog_only.md`          | `rg --no-heading -n 'setErrorFmt\(' src/ \| grep -v 'runtime/error/catalog.zig'`                                   |
 | `handover_framing.md`            | grep recipe at L189-194 of the rule itself                                                                         |
 

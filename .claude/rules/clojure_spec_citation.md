@@ -33,7 +33,7 @@ pub fn primConj(rt: *Runtime, ...) !Value { ... }
 - Anchors implementation to a stable reference (JVM Clojure source line)
   rather than tribal memory.
 - Tier classification is recorded next to the implementation, not only
-  in `compat_tiers.yaml`.
+  in `data/compat_tiers.yaml`.
 
 ## How to apply
 

@@ -2,7 +2,7 @@
 paths:
   - src/runtime/**
   - src/lang/primitive/**
-  - compat_tiers.yaml
+  - data/compat_tiers.yaml
 ---
 
 # Feature-name consistency + Java/cljw surface layout
@@ -33,7 +33,7 @@ path so `rg <keyword> src/` returns 100% of the relevant files.
 
 A keyword is a short lower-snake-case identifier (e.g., `uuid`,
 `file_io`, `clock`, `regex`, `digest`) declared once in
-`compat_tiers.yaml`:
+`data/compat_tiers.yaml`:
 
 ```yaml
 - fqn: java.util.UUID
@@ -74,7 +74,7 @@ must open with:
 
 - `Backend:` documents what category of impl this surface calls.
 - `Impl deps:` lists feature keywords (matching
-  `compat_tiers.yaml`) that this surface depends on.
+  `data/compat_tiers.yaml`) that this surface depends on.
 - `Clojure peer:` names the Clojure-ns Var(s) that share the
   same neutral impl, or `none`.
 
@@ -94,7 +94,7 @@ Exceptions:
   + marker discipline, fan-out becomes "where is the UUID code?"
   navigation pain, and the loop drifts toward inlining impl into
   the surface to make navigation easier (= smallest-diff bias).
-- **Index integrity.** `compat_tiers.yaml` `files:` is the
+- **Index integrity.** `data/compat_tiers.yaml` `files:` is the
   authoritative cross-reference; G3 ensures it stays honest.
 
 ## How to apply (when adding a new feature)
@@ -102,7 +102,7 @@ Exceptions:
 1. Pick a short, distinctive keyword (e.g., `digest` for
    `java.security.MessageDigest`).
 2. Verify no existing entry already claims that keyword
-   (`rg "keyword: <kw>" compat_tiers.yaml`).
+   (`rg "keyword: <kw>" data/compat_tiers.yaml`).
 3. Write the neutral impl file with the keyword in its path
    (`runtime/crypto/message_digest.zig` — keyword `digest`
    appears as `message_digest`).
@@ -111,7 +111,7 @@ Exceptions:
 5. Add the surface file's Backend marker docstring.
 6. If there is a Clojure peer, add `lang/primitive/digest.zig`
    (keyword `digest` in filename).
-7. Add the `compat_tiers.yaml` entry with `keyword: digest` +
+7. Add the `data/compat_tiers.yaml` entry with `keyword: digest` +
    `files:` map listing all the above paths.
 8. Run `bash test/run_all.sh`. G2 (`check_surface_marker.sh`)
    and G3 (`check_feature_keyword.sh`) must pass.
@@ -151,8 +151,7 @@ User code reaches Java entries as `(:require [cljw.java.util :refer
 [UUID]])` — `cljw.host.*` is retired per ADR-0029. cljw-original
 surfaces ship Zig extensions (Wasm component invoke / edge runtime /
 build command / pod invocation); anything that is a Clojure library
-belongs in `lang/clj/` (in-source) or `modules/` (peer to src/,
-Phase 9+).
+belongs in `lang/clj/` (in-source).
 
 ### R4. Dependency direction (ADR-0029 D2, gate G1)
 
@@ -199,4 +198,4 @@ ADR-0029 D4) gates these constraints in CI.
 - `scripts/zone_check.sh` (G1).
 - `scripts/check_surface_marker.sh` (G2).
 - `scripts/check_feature_keyword.sh` (G3).
-- `compat_tiers.yaml` — extended schema per ADR-0029 D5.
+- `data/compat_tiers.yaml` — extended schema per ADR-0029 D5.

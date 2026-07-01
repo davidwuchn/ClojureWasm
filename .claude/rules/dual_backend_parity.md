@@ -84,7 +84,7 @@ The marker mirrors `// PROVISIONAL:` shape from
 [`provisional_marker.md`](provisional_marker.md):
 
 - **Single line**. Multi-line rationale belongs in the
-  `feature_deps.yaml` entry body or the `.dev/debt.yaml` row.
+  `data/feature_deps.yaml` entry body or the `.dev/debt.yaml` row.
 - **`[refs:` block mandatory**. At least one `D-NNN` (debt row)
   AND at least one `feature_deps.yaml#<key>` (entry name).
   Multiple refs comma-separated.
@@ -122,7 +122,7 @@ The discharging commit's diff shows:
 - Marker line removed from the source arm.
 - The arm body now lowers the construct for real (or, for a
   field-drop, now consumes the field).
-- The matching `feature_deps.yaml` entry's `status:` flips from
+- The matching `data/feature_deps.yaml` entry's `status:` flips from
   `provisional` to `landed`, and `provisional_markers:` list is
   emptied.
 - The matching `.dev/debt.yaml` entry's barrier predicate flips to
@@ -131,7 +131,7 @@ The discharging commit's diff shows:
   arm (per contract point 4).
 
 The hook (`scripts/check_dual_backend_parity.sh`) verifies the
-marker form + body-discipline layer; the `feature_deps.yaml` +
+marker form + body-discipline layer; the `data/feature_deps.yaml` +
 `.dev/debt.yaml` discharge sync is verified by the existing
 `scripts/check_provisional_sync.sh` (the shape is identical).
 
@@ -141,12 +141,12 @@ marker form + body-discipline layer; the `feature_deps.yaml` +
 |----------------------|---------------------------------------------------------------------|-------------------------------------------------------------------------------------------------------------------|
 | Shape                | Intermediate semantics that ride a chicken-and-egg layer dependency | Backend asymmetry where TreeWalk has real semantics and VM is stubbed/field-dropped pending a future Phase choice |
 | Close-out trigger    | Upstream layer feature lands                                        | Future Phase row decides the bytecode shape                                                                       |
-| Source SSOT          | `feature_deps.yaml` entry's `provisional_markers:` list             | `feature_deps.yaml` entry's `provisional_markers:` list (same shape — re-used for parity tracking)               |
+| Source SSOT          | `data/feature_deps.yaml` entry's `provisional_markers:` list             | `data/feature_deps.yaml` entry's `provisional_markers:` list (same shape — re-used for parity tracking)               |
 | Hook                 | `scripts/check_provisional_sync.sh`                                 | `scripts/check_dual_backend_parity.sh`                                                                            |
 | Bad Smell preventing | Silent default-shift                                                | Dual-backend drift                                                                                                |
 
 The two markers coexist; nothing prevents a single
-`feature_deps.yaml` entry from carrying both a PROVISIONAL marker
+`data/feature_deps.yaml` entry from carrying both a PROVISIONAL marker
 (for the layer dependency aspect) and a VM-DEFER marker (for the
 backend parity aspect). Today no entry does — but the shape is
 deliberately compatible.

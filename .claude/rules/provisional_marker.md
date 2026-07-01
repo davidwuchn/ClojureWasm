@@ -5,7 +5,7 @@ paths:
   - "build.zig"
   - "build.zig.zon"
   - "test/e2e/**/*.sh"
-  - "feature_deps.yaml"
+  - "data/feature_deps.yaml"
   - ".dev/debt.yaml"
 ---
 
@@ -16,7 +16,7 @@ Auto-loaded when editing any source file. Codifies the
 intermediate states that exist because "the other side is not
 yet ready" (language-implementation chicken-and-egg). Marker
 comments are the in-code anchor of the lifecycle; the SSOT is
-[`feature_deps.yaml`](../../feature_deps.yaml) + a
+[`data/feature_deps.yaml`](../../data/feature_deps.yaml) + a
 [`.dev/debt.yaml`](../../.dev/debt.yaml) row.
 
 ## Why this rule exists
@@ -35,18 +35,18 @@ calcifies into 「とりあえず動く」 forever because nothing in
 the code points at "this is temporary; here is the close-out".
 
 The marker comment is the in-code anchor. Combined with
-`feature_deps.yaml` and `.dev/debt.yaml`, the lifecycle is
+`data/feature_deps.yaml` and `.dev/debt.yaml`, the lifecycle is
 mechanically auditable:
 
 1. **Introduce** provisional behaviour ⇒ add marker + open
-   `feature_deps.yaml` entry + open `.dev/debt.yaml` row (one
+   `data/feature_deps.yaml` entry + open `.dev/debt.yaml` row (one
    commit; hook enforces sync).
 2. **Stay aware** while it persists ⇒ `audit_scaffolding`
    reports marker count + 14-day-stale markers per Phase
    boundary; per-task notes include a `## 暫定ログ` section
    recording introduction / discharge / surprise this cycle.
 3. **Discharge** when the upstream feature lands ⇒ remove
-   marker + close `feature_deps.yaml` entry's
+   marker + close `data/feature_deps.yaml` entry's
    `provisional_markers` list + close `.dev/debt.yaml` row
    (same commit; hook enforces sync).
 
@@ -63,7 +63,7 @@ mechanically auditable:
 Rules:
 
 - **Single line**. Multi-line rationale belongs in the
-  `feature_deps.yaml` entry's body or the `.dev/debt.yaml` row.
+  `data/feature_deps.yaml` entry's body or the `.dev/debt.yaml` row.
 - **`refs:` block is mandatory** and lists at least one
   `D-NNN` (debt row) AND at least one
   `feature_deps.yaml#<key>` (entry name). Multiple refs
@@ -116,7 +116,7 @@ re-classification precedent (spike 2.3, 2026-05-26).
 
 The discharging commit's diff shows:
 - Marker line removed from source.
-- `feature_deps.yaml` entry's `provisional_markers:` list
+- `data/feature_deps.yaml` entry's `provisional_markers:` list
   emptied (or the whole entry's `status:` flipped from
   `provisional` to `landed`).
 - `.dev/debt.yaml` entry moved from the `active:` list to the
@@ -128,7 +128,7 @@ three edits ride the same commit.
 ## Distinguishing PROVISIONAL from FIXME / TODO / XXX
 
 - **`PROVISIONAL:`** — intentional intermediate state with a
-  named close-out plan in `feature_deps.yaml` + `.dev/debt.yaml`.
+  named close-out plan in `data/feature_deps.yaml` + `.dev/debt.yaml`.
   Lifecycle is mechanised.
 - **`TODO:`** — forbidden in this project (TODO smell per
   `.dev/principle.md`). Use `PROVISIONAL:` if there is a real
@@ -262,7 +262,7 @@ Configuration files, documentation, and generated artefacts
   Smell catalogue this rule operationalises (Silent
   default-shift, Smallest-diff bias, Reservation-as-bias,
   Progress-pressure).
-- [`feature_deps.yaml`](../../feature_deps.yaml) — the SSOT
+- [`data/feature_deps.yaml`](../../data/feature_deps.yaml) — the SSOT
   for provisional entries (`status: provisional` + the
   `provisional_markers` list).
 - [`.dev/debt.yaml`](../../.dev/debt.yaml) — the SSOT for the

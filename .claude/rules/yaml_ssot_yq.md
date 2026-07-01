@@ -1,15 +1,15 @@
 ---
 paths:
   - .dev/debt.yaml
-  - compat_tiers.yaml
-  - placement.yaml
-  - feature_deps.yaml
+  - data/compat_tiers.yaml
+  - data/placement.yaml
+  - data/feature_deps.yaml
 ---
 
 # Querying the YAML SSOTs with `yq` (shell-escaping + cookbook)
 
 Auto-loaded when editing a structured YAML SSOT (`.dev/debt.yaml`,
-`compat_tiers.yaml`, `placement.yaml`, `feature_deps.yaml`). Codifies the
+`data/compat_tiers.yaml`, `data/placement.yaml`, `data/feature_deps.yaml`). Codifies the
 `yq` query + shell-escaping idioms so no session re-derives them. The SSOT
 for the *content* of each file is the file; this rule is the SSOT for *how
 to read/edit it from a shell*.
@@ -198,8 +198,8 @@ quote-style-agnostic per Golden-rule #4; a grep fallback must use `id: "?D-`.)
 
 ```sh
 # (1) Well-formedness — every SSOT must parse:
-for f in .dev/debt.yaml .dev/accepted_divergences.yaml compat_tiers.yaml \
-         placement.yaml feature_deps.yaml host_interfaces.yaml; do
+for f in .dev/debt.yaml .dev/accepted_divergences.yaml data/compat_tiers.yaml \
+         data/placement.yaml data/feature_deps.yaml data/host_interfaces.yaml; do
   yq -e '.' "$f" >/dev/null 2>&1 && echo "OK   $f" || echo "FAIL $f"; done
 
 # (2) Duplicate ids (a stray body-less `- id: "D-NNN"` from a botched edit parses
@@ -218,9 +218,9 @@ dedicated dup/quote recipes, not just a well-formedness check.
 
 ## Other SSOTs (same idioms)
 
-- `compat_tiers.yaml` / `placement.yaml`: same single-quote + `strenv()`
-  rules. `placement.yaml` automation lives in
-  `scripts/check_placement_status.sh`; `feature_deps.yaml` in
+- `data/compat_tiers.yaml` / `data/placement.yaml`: same single-quote + `strenv()`
+  rules. `data/placement.yaml` automation lives in
+  `scripts/check_placement_status.sh`; `data/feature_deps.yaml` in
   `scripts/check_provisional_sync.sh` + `audit_scaffolding/CHECKS.md`.
 - `bench/history` schema (ADR-0044) is queried in
   `scripts/check_bench_regression.sh` — mirror the `strenv()` idiom there for

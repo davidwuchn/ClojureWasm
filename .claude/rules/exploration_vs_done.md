@@ -14,7 +14,7 @@ cw v1 has two modes of work:
   `.clj` files. The only rule is "don't break the working tree".
 - **Done**: tracked. A change lands in `src/` / `.dev/` /
   `.claude/` / `scripts/` / `test/` / `bench/` / `docs/ja/` /
-  `ARCHITECTURE.md` / `CLAUDE.md` / `compat_tiers.yaml`. Done
+  `docs/architecture.md` / `CLAUDE.md` / `data/compat_tiers.yaml`. Done
   requires the gate.
 
 The transition from exploration to Done has explicit checkpoints.

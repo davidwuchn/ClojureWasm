@@ -86,7 +86,7 @@ the next task. Five minutes. Capture:
 
 - Files touched, one-line summary
 - The 1–3 *things you almost forgot* / decided non-obviously
-- Pointers to v1 / v1_ref / Clojure JVM / Babashka / mattpocock_skills
+- Pointers to cw v0 / Clojure JVM / Babashka / mattpocock_skills
   that informed the implementation
 - "When the chapter is written, the must-explain points are: ..."
 
@@ -138,7 +138,7 @@ date: YYYY-MM-DD
 ## (必要に応じて概念を追加)
 ## N. 設計判断と却下した代替   (表)
 ## N+1. 確認 (Try it)         (実行可能スニペット)
-## N+2. 教科書との対比         (v1 / v1_ref / Clojure JVM / Babashka)
+## N+2. 教科書との対比         (cw v0 / Clojure JVM / Babashka)
 ## この章で学んだこと          (1〜3 行 / 1〜3 個の箇条書きで凝縮)
 ## 次へ → NN+1
 ```

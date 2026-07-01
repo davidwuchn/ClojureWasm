@@ -1,7 +1,6 @@
 ---
 paths:
   - "src/**/*.zig"
-  - "modules/**/*.zig"
   - "build.zig"
 ---
 
@@ -21,18 +20,18 @@ Layer 1: src/eval/                 -- Reader, Analyzer, Compiler, VM, TreeWalk
                                        imports runtime/ only
 Layer 0: src/runtime/              -- Value, Collections, GC, Env, Dispatch
                                        imports nothing above
-
-modules/                           -- imports runtime/ + eval/ only
-                                       must NOT import lang/ or app/
 ```
+
+External Clojure libraries ship in-source under `src/lang/clj/clojure/`
+alongside `clojure.core` (the top-level `modules/` reservation was retired
+2026-07-01, D-095 — the co-located-module migration was never warranted).
 
 ## NEVER: upward imports
 
 ```
-runtime/  must NOT import from eval/, lang/, modules/, or app/
-eval/     must NOT import from lang/, modules/, or app/
+runtime/  must NOT import from eval/, lang/, or app/
+eval/     must NOT import from lang/ or app/
 lang/     must NOT import from app/
-modules/  must NOT import from lang/ or app/
 ```
 
 ## When a lower zone needs to call a higher zone
@@ -57,12 +56,6 @@ runtime.vtable = .{
 
 This inverts the *compile-time* dependency direction while preserving the
 logical call flow.
-
-## Module isolation
-
-`modules/` registers external modules through `runtime/module.zig`'s
-`ExternalModule` interface. Core code (`runtime/`, `eval/`, `lang/`) never
-imports `modules/`.
 
 ## Enforcement
 

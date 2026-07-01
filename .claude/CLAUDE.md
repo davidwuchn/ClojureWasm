@@ -79,13 +79,12 @@ preserved), and `main` is the working branch:
 
 ### Read-only reference points (do not edit, do not commit from)
 
-| Reference                                               | What it is                                                                                                                                                                                                                              |
-|---------------------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| cw v0 — git tag `v0.5.0`                               | ClojureWasm v0 (89K LOC), the pre-redesign design reference. Its source is NOT in `main`'s tree (the `-s ours` merge kept the redesign tree), so reach it through git: `git worktree add ../cw-v0 v0.5.0`, or `git show v0.5.0:<path>`. |
-| `~/Documents/MyProducts/ClojureWasmFromScratch_v1_ref/` | Previous redesign attempt (Phase 1+2), if present locally.                                                                                                                                                                              |
-| `~/Documents/OSS/clojure/`                              | Upstream Clojure JVM source                                                                                                                                                                                                             |
-| `~/Documents/OSS/babashka/`                             | Babashka (SCI-based)                                                                                                                                                                                                                    |
-| `~/Documents/OSS/zig/`                                  | Zig stdlib source                                                                                                                                                                                                                       |
+| Reference                   | What it is                                                                                                                                                                                                                              |
+|-----------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| cw v0 — git tag `v0.5.0`   | ClojureWasm v0 (89K LOC), the pre-redesign design reference. Its source is NOT in `main`'s tree (the `-s ours` merge kept the redesign tree), so reach it through git: `git worktree add ../cw-v0 v0.5.0`, or `git show v0.5.0:<path>`. |
+| `~/Documents/OSS/clojure/`  | Upstream Clojure JVM source                                                                                                                                                                                                             |
+| `~/Documents/OSS/babashka/` | Babashka (SCI-based)                                                                                                                                                                                                                    |
+| `~/Documents/OSS/zig/`      | Zig stdlib source                                                                                                                                                                                                                       |
 
 ## Language policy
 
@@ -111,7 +110,7 @@ turn 1 must be Japanese.
 
 - TDD: red → green → refactor.
 - **Step 0 (Survey) before each task**: a `general-purpose` subagent
-  surveys the textbook codebases (v1, v1_ref, Clojure JVM, Babashka,
+  surveys the textbook codebases (cw v0, Clojure JVM, Babashka,
   Zig stdlib) and lands a 200–400 line note in `private/notes/`.
   `general-purpose` (not the read-only `Explore`) is required so the
   subagent can write the survey note itself. See
