@@ -27,9 +27,16 @@ active:
   - id: "D-536"
     status: |-
       open (2026-07-01, user-directed; ADR-0167 S0). Debt-ledger code-truth
-      reconciliation ahead of the 1.0.0-rc.1 public cutover: independently
-      re-check the ~84 active: rows against code truth; delete/narrow stale +
-      false-positive rows (the zwasm S0 pattern). No source touched.
+      reconciliation ahead of the 1.0.0-rc.1 public cutover: re-check rows against
+      code truth; delete/narrow stale + false-positive rows (zwasm S0 pattern).
+      DOWN-PAYMENT 2026-07-01: refreshed the retired `| Phase N entry` trigger
+      tails on the 3 active rows carrying them (D-042 CLAUDE/ROADMAP size, D-043
+      NaN-box slot reserves, D-044 lazy SubVector) per D-440's phase→gap-area
+      redirect (phase-queue retired, ADR-0142). REMAINING (larger body): ~57
+      `| Phase N` trigger tails in the `standing:` section still to redirect, AND
+      the probe-backed false-claim pass across the active rows (the high-value
+      part — verify EXACT claimed behaviour, cf. memory verify_actual_pattern_not_proxy;
+      needs cljw probes, do OUTSIDE a running gate). GRADUAL, drained per /continue.
     category: "docs"
     quality_floor: "release-mechanics: debt code-truth reconcile (ADR-0167)"
     barrier: |-
@@ -551,7 +558,7 @@ active:
     status: "open, low-priority (re-barriered 2026-06-17 audit) — CLAUDE.md 613 + ROADMAP 2133 lines (grew from the audit's cited 511/1957; both past their soft caps). The 'Phase 5 entry' trigger passed unactioned (phase-queue retired, ADR-0142); no functional impact, only per-session context cost. Trim opportunistically in a scaffolding-audit cycle."
     category: "structure"
     barrier: |-
-      CLAUDE.md size growth (511 lines vs ~100 soft cap; per-session context cost). Identified by Phase 4 boundary audit_scaffolding (private/audit-2026-05-24.md). Trim narrative duplicates with `.dev/principle.md` / continue skill / rules; § Autonomous Workflow's prose duplicates the per-turn system prompt. ROADMAP.md size (1957 vs 1500 cap) is a sibling concern; queue both for Phase 5 entry pre-work. Acceptable risk to defer (no functional impact, only cost). | Phase 5 entry
+      CLAUDE.md size growth (511 lines vs ~100 soft cap; per-session context cost). Identified by Phase 4 boundary audit_scaffolding (private/audit-2026-05-24.md). Trim narrative duplicates with `.dev/principle.md` / continue skill / rules; § Autonomous Workflow's prose duplicates the per-turn system prompt. ROADMAP.md size (1957 vs 1500 cap) is a sibling concern; both trimmed opportunistically in a scaffolding-audit cycle (phase-queue retired, ADR-0142). Acceptable risk to defer (no functional impact, only cost).
     last_reviewed: "2026-05-24"
   - id: "D-222"
     status: "now (PARTIAL: *print-length*/*print-level*/*print-namespace-maps*/*print-readably*/*print-meta* landed bindable via ADR-0088 2026-06-04; infinite-seq+*print-length* now TERMINATES; residual = readably true-shadow-around-print edge + *print-dup*/*flush-on-newline*)"
@@ -747,7 +754,7 @@ active:
     status: "Standing reserve (Phase 7 passed; B15/C11/D11-D15 kept per F-002 memo)"
     category: "structure"
     barrier: |-
-      Anonymous NaN-box slot reservations to revisit. ADR-0027 §2 leaves Group D slots D11 / D12 / D13 + Group B slot B15 declared but unnamed (2 reserves — count updated post-ADR-0027-amendment-5 which named D13 = hamt_map_node + D14 = hash_collision_map_node for PersistentHashMap internals at §9.7 row 5.5.a; remaining B15 + D15 stay anonymous). Per F-002 + Devil's-advocate "reservations are memos, not contracts" verdict: name a Phase-5-to-15 horizon use case for each, OR shrink the slot count by re-drawing F-004's 4 × 16 group boundaries (depth-4 surgery) per measured dispatch frequency. Also tracks the Phase 7+ immediate-band candidate ADR (Devil's-advocate Wildcard Alt 3 on ADR-0027: inline 15-bit-id interned keyword / symbol at a new immediate band like `int_53` at `NB_INT_TAG`) — if adopted, B15 / C11 / D11-D15 may be reclaimed entirely. Phase 7 entry owner picks: name, shrink, or both. | Phase 7 entry
+      Anonymous NaN-box slot reservations to revisit. ADR-0027 §2 leaves Group D slots D11 / D12 / D13 + Group B slot B15 declared but unnamed (2 reserves — count updated post-ADR-0027-amendment-5 which named D13 = hamt_map_node + D14 = hash_collision_map_node for PersistentHashMap internals at §9.7 row 5.5.a; remaining B15 + D15 stay anonymous). Per F-002 + Devil's-advocate "reservations are memos, not contracts" verdict: name a Phase-5-to-15 horizon use case for each, OR shrink the slot count by re-drawing F-004's 4 × 16 group boundaries (depth-4 surgery) per measured dispatch frequency. Also tracks the Phase 7+ immediate-band candidate ADR (Devil's-advocate Wildcard Alt 3 on ADR-0027: inline 15-bit-id interned keyword / symbol at a new immediate band like `int_53` at `NB_INT_TAG`) — if adopted, B15 / C11 / D11-D15 may be reclaimed entirely. Phase 7 has passed (phase-queue retired, ADR-0142); the reserve decision now sits with the finished-form / F-004 owner (reservations are memos, not contracts — F-002): name, shrink, or both — revisit if a slot is actually needed.
     last_reviewed: "2026-05-28"
   - id: "D-239"
     status: "now (PARTIAL: var + atom + AGENT + REF landed — agent meta via D-441 (agent.zig:110 + metadata.zig dispatch); REF meta via D-533 (2026-06-25: Ref.meta field + `(ref v :meta m)` ctor kwarg + meta/reset-meta! dispatch; `with-meta` on a ref correctly THROWS — clj's Ref is not IObj, so that is clj-parity, not a gap). Only NS meta still deferred. Corrected 2026-06-17 audit (agent) + 2026-06-25 audit (ref).)"
@@ -1018,7 +1025,7 @@ active:
     status: "Phase 7+ target"
     category: "perf"
     barrier: |-
-      Lazy SubVector wrapper for `subvec` per clojure JVM's structural-sharing pattern. Current 5.4.d implementation is eager copy (O(n)); a lazy wrapper holding `parent: *Vector + start: u32 + end: u32` would be O(1) view + share root + tail with the parent. Requires a new SubVector Tag slot (D13 / D14 / D15 from D-043 reserves) + polymorphic op dispatch (`.vector` vs `.subvec` arms in nth / count / conj / pop / assoc) + trace fn that walks the parent pointer. Land when transducer / seq-on-vector ops (Phase 7) make the structural-sharing benefit measurable. | Phase 7+ measurement-driven
+      Lazy SubVector wrapper for `subvec` per clojure JVM's structural-sharing pattern. Current 5.4.d implementation is eager copy (O(n)); a lazy wrapper holding `parent: *Vector + start: u32 + end: u32` would be O(1) view + share root + tail with the parent. Requires a new SubVector Tag slot (D13 / D14 / D15 from D-043 reserves) + polymorphic op dispatch (`.vector` vs `.subvec` arms in nth / count / conj / pop / assoc) + trace fn that walks the parent pointer. Land when the structural-sharing benefit is measurable (perf campaign §9.2.S; Phase 7 passed — phase-queue retired, ADR-0142 — and the benefit is still un-measured).
     last_reviewed: "2026-05-24"
   - id: "D-266"
     status: "open (found 2026-06-06; PREMISE CORRECTED 2026-06-16 during the sweep). Per-element cost of realizing `(repeat …)` is high (~0.4ms/elem) — the lazy-seq thunk+cons+closure overhead per `rest`. PREMISE FIX: 'chunk repeat like range' is the WRONG fix — clj's `repeat` is NOT a chunked-seq (`(chunked-seq? (seq (repeat 3 :x)))` → FALSE in clj, FALSE in cljw today); clj uses a lightweight native `Repeat` type optimized via `IReduce`/`internal-reduce`, keeping chunked-seq? false. Chunking cljw's repeat would FLIP chunked-seq? to true = a NEW divergence (verified vs clj 2026-06-16). The clj-faithful fix is a native lightweight `Repeat` seq type in Zig (O(1) `next()` like `LongRange`, + an internal-reduce fast path), NOT a `.clj` chunk-buffer producer. Substantial (a new native seq type w/ GC + seq-protocol + reduce integration) — fresh-context unit."

@@ -17,7 +17,9 @@
   - [x] **D-539 ★** CI wiring *DISCHARGED 2026-07-01* — ci.yml (push/PR, macOS+Ubuntu)
     via `scripts/ci_gate.sh` SSOT + versions.lock + dependabot; repo made zig-fmt-clean.
     First GitHub run verified post-push. Follow-ups (non-blocking): gitleaks job, API canary.
-  - [ ] **D-536** debt-ledger code-truth reconcile (zwasm S0 pattern).
+  - [~] **D-536** debt code-truth reconcile — down-payment DONE (3 active phase-tail
+    rows D-042/043/044 refreshed); REMAINING = ~57 `| Phase N` tails in `standing:`
+    + the probe-backed false-claim pass (high-value; run OUTSIDE a gate). GRADUAL.
   - [~] **D-538** personal-env decoupling — SSH host+dir→env default + 2 src leaks
     *DONE 2026-07-01*; **settings.json `additionalDirectories` move = USER action**
     (`.claude/`-edit-blocked, non-autonomous; surfaced — not a loop blocker).
