@@ -93,9 +93,8 @@ pub const EvalError = error_mod.ClojureWasmError;
 //     the matching `evalTry`'s catch handler.
 //
 // Buffer is fixed-size (matches `MAX_LOCALS`) so recur cannot allocate
-// during the unwind. Survey: `private/notes/phase3-3.11-survey.md`
-// concluded this matches v1_ref's `error.RecurSignaled` idiom and
-// satisfies ROADMAP P10 (Zig 0.16 idioms) without diverging.
+// during the unwind. This uses the `error.RecurSignaled` idiom and
+// satisfies ROADMAP P10 (Zig 0.16 idioms).
 threadlocal var pending_recur_buf: [MAX_LOCALS]Value = [_]Value{.nil_val} ** MAX_LOCALS;
 threadlocal var pending_recur_len: u16 = 0;
 

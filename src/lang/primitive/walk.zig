@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: EPL-2.0
 //! `clojure.walk/` namespace surface.
 //!
-//! Per the survey at `private/notes/phase6-6.11-survey.md`,
 //! cw v1 adopts DIVERGENCE D1: the `walk` spine lives in this Zig
 //! file and dispatches over `Value.Tag` directly, calling user fns
 //! via `rt.vtable.callFn` (the pattern proven in

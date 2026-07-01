@@ -21,8 +21,7 @@
 //! - **Multi-catch**: stored as a flat `[]const CatchClause` in a single
 //!   `try_node`, not as nested `try_node`s the way v1 builds them. This
 //!   keeps the AST shape readable and matches the way Clojure JVM stores
-//!   `catchExprs` as a `PersistentVector`. See ADR / survey
-//!   `private/notes/phase3-3.9-survey.md` for the rationale.
+//!   `catchExprs` as a `PersistentVector`.
 //! - **`recur_target_depth: u32` on Scope** (in `analyzer.zig`) tracks
 //!   the nesting depth of the nearest `loop*` / `fn*`. Dispatch only
 //!   uses "≠ 0" (target present), but the depth is preserved so future

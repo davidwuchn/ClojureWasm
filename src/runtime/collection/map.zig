@@ -15,8 +15,7 @@
 //!     wraps a CHAMP-style HAMT (each node = 32-bit bitmap + slots
 //!     array). Day-1 layout uses a single `[64]Value` slots region
 //!     (front-loaded KV pairs + back-loaded child pointers, gated by
-//!     two bitmaps) per the 5.5 survey recommendation
-//!     (`private/notes/phase5-5.5-survey.md`).
+//!     two bitmaps).
 //!
 //! ## Operations
 //!

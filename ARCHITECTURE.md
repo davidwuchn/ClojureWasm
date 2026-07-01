@@ -144,10 +144,10 @@ batches rather than running per commit). Performance is **not** a gate
 step — it is measured on demand via `bench/compare_langs.sh` /
 `bench/run_bench.sh` (bench was retired from the gate 2026-06-11).
 
-Cross-platform gate (manual / phase boundary, ADR-0049): the
-`ubuntunote` SSH host (native x86_64 Linux). Setup in
-[`.dev/ubuntunote_setup.md`](.dev/ubuntunote_setup.md); run with
-`bash scripts/run_remote_ubuntu.sh`.
+Cross-platform coverage: CI runs the gate on macOS (arm64) and Linux
+(x86_64) on every push and pull request. A maintainer can also drive a
+native-Linux gate over SSH with `bash scripts/run_remote_ubuntu.sh`
+(host + path are configurable via `CLJW_UBUNTU_HOST` / `CLJW_REMOTE_DIR`).
 
 ## Contributing
 

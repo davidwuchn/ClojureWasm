@@ -21,7 +21,7 @@
 #        every `status: wired` method names a `wires_to` (no floating wire).
 #
 # `derives_from` materializes the "is this a language-defined supertype"
-# judgement ONCE, in-repo (with ~/Documents/OSS/clojure as evidence), so the gate
+# judgement ONCE, in-repo (with the Clojure JVM source as evidence), so the gate
 # is reproducible and never re-derives from the mutable pinned clone. The closed
 # set is enumerated up-front (網羅, F-013); impl is wired incrementally — a row
 # with `recognised: false` is the planned closed set, not yet in code.

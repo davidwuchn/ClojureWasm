@@ -30,7 +30,7 @@
 //! gated on D-271: clj guarantees `(instance? IObj x)` ⟹ `(with-meta x m)`, but
 //! cljw's `.range`/`.chunked_cons` substrate has no meta slot (D-271), so
 //! claiming the membership would break F-011. The full oracle-verified sets are
-//! recorded so the closed set is 網羅-complete (F-013 cl.4) — only activation
+//! recorded so the closed set is exhaustively complete (F-013 cl.4) — only activation
 //! waits. clj-verified (`clj` oracle, 2026-06-08):
 //!   IObj  = promise, future + most collections/seqs (vector, list, set,
 //!           sorted_map, sorted_set, persistent_queue, cons, lazy_seq, range,

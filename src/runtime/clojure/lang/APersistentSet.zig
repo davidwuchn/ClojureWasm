@@ -7,7 +7,7 @@
 //!
 //! JVM `APersistentSet` exposes exactly ONE pure static — `setEquals`
 //! (hashCode/hasheq are instance methods, so there is no `setHash` static; cljw
-//! does NOT invent one — that would be the F-013 個別最適化 trap). data.avl calls
+//! does NOT invent one — that would be the F-013 ad-hoc special-casing trap). data.avl calls
 //! `(APersistentSet/setEquals this other)` from its deftype `equals` body.
 
 const std = @import("std");

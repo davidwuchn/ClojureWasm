@@ -17,9 +17,8 @@ dep is now SKIPPED (not rejected) — nearly every lib's own deps.edn declares
 resolution. Satisfaction is decided at `require` time by namespace availability;
 `org.clojure/clojure` is silently provided, other skipped coords get a one-line
 stderr warning. A dep deps.edn with no `:paths` defaults to `src/`. **Going-
-forward probe method = a mini deps.edn project with `:git/url`+`:git/sha`**
-(`private/deps_experiments/<lib>/deps.edn`), replacing corpus copies + hand-laid
-`-cp`. Verified end-to-end: **medley** loads via git coords (`find-first`/
+forward probe method = a mini deps.edn project with `:git/url`+`:git/sha`**,
+replacing corpus copies + hand-laid `-cp`. Verified end-to-end: **medley** loads via git coords (`find-first`/
 `index-by` correct); priority-map (zero-mvn) already did.
 
 | rank | lib                        | version       | pure-degree | status     | first-blocking-gap                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
@@ -135,7 +134,7 @@ forward probe method = a mini deps.edn project with `:git/url`+`:git/sha`**
   sizeable fresh unit; the next clean vein is the D-075 metadata layer or a
   clojure.lang.RT host surface.
 
-- **Broad re-probe (2026-06-07)** after the D-287..D-299 arc found 7 libs now LOAD: clojure.data.csv, clojure.data.codec.base64 (over D-287 byte-arrays), clojure.core.unify, potpuri.core (deep-merge bit-identical to clj), bouncer.core, qbits.ex, and **clojure.data.zip** (D-299 ns-form leniency). Deferred/parked: symbol metadata = D-075 (interned symbols, structural); test.check = D-298 (proxy/Tier-D); tools.macro = clojure.lang.Compiler (Tier-D). Full table: private/notes/stage13-broad-reprobe.md.
+- **Broad re-probe (2026-06-07)** after the D-287..D-299 arc found 7 libs now LOAD: clojure.data.csv, clojure.data.codec.base64 (over D-287 byte-arrays), clojure.core.unify, potpuri.core (deep-merge bit-identical to clj), bouncer.core, qbits.ex, and **clojure.data.zip** (D-299 ns-form leniency). Deferred/parked: symbol metadata = D-075 (interned symbols, structural); test.check = D-298 (proxy/Tier-D); tools.macro = clojure.lang.Compiler (Tier-D).
 
 - **Symbol-metadata layer LANDED (2026-06-07, D-304 / ADR-0110)** — `with-meta`/`meta` on a symbol now work (fresh non-interned gc.alloc'd symbol; ns+name-structural identity, meta-ignored; `.symbol` GC-membrane flip + trace). This was the blocker the frontier listed as "D-075 symbol-metadata layer" for **core.cache** + **algo.generic.math-functions**. Var/atom/ns/ref metadata is the remaining sibling (D-239).
 

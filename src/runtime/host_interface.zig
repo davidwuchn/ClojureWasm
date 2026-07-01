@@ -6,7 +6,7 @@
 //! host supertype marker, and how does it route". The macro lowering
 //! (`isHostMarker`) and the `__reify!`/`__extend-type!` primitives consult it
 //! instead of hand-coding `std.mem.eql(name, "Object")` at scattered sites — the
-//! scatter is the 個別最適化 entry F-013 clause 3 forbids.
+//! scatter is the ad-hoc special-casing entry F-013 clause 3 forbids.
 //!
 //! SSOT-of-record is `host_interfaces.yaml` (the reviewable closed set with
 //! `derives_from` notes); `scripts/check_host_interface.sh` gates that the names

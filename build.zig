@@ -150,9 +150,9 @@ pub fn build(b: *std.Build) void {
     }
 
     // `zig build lint` — zlinter rule chain (ADR-0003).
-    // Mac-host gate (zlinter requires `zig fetch` against GitHub;
-    // OrbStack runs without network reach by design). Run with
-    // `--max-warnings 0` for strict CI semantics.
+    // Runs where zlinter can be fetched from GitHub; the gate skips it on
+    // hosts without network reach. Run with `--max-warnings 0` for strict
+    // CI semantics.
     const lint_step = b.step("lint", "Lint source code (zlinter).");
     lint_step.dependOn(blk: {
         var builder = zlinter.builder(b, .{});

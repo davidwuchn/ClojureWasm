@@ -5,7 +5,7 @@
 ;; yields `[passes fails]`. (Pre-D-227 this used explicit `defn` + a fn-list
 ;; `run-tests`; the real `deftest`/`run-tests` now exist.)
 ;;
-;; Sources: ~/Documents/OSS/clojure/test/clojure/test_clojure/*.clj
+;; Sources: the Clojure JVM test suite (test/clojure/test_clojure/*.clj)
 ;; (semantic ports, NOT verbatim copies — each test is rewritten in
 ;; cw v1's Pattern A surface). Each test has a `;; CLJW:` tier
 ;; marker comment naming the tier classification (all A for cycle 1).

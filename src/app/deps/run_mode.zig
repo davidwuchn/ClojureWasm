@@ -16,9 +16,8 @@
 //! (the cw v0 shape). The run is synthesized into a Clojure source string and
 //! handed to `runner.runSource` with `print_results=false` — `clojure.main`
 //! never prints a `-main` / `:exec-fn` result (only `-e` prints, handled by the
-//! standalone-`-e` branch). See `private/notes/stage14-deps-run-mode-survey.md`
-//! for the grammar + the three v0 gaps this module fixes (args reach `-main`;
-//! append semantics; EDN value coercion).
+//! standalone-`-e` branch). This module fixes three earlier gaps: args reach
+//! `-main`; append semantics; EDN value coercion.
 
 const std = @import("std");
 const parse = @import("parse.zig");

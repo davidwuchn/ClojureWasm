@@ -1065,9 +1065,9 @@ fn expandWhenFirst(arena: std.mem.Allocator, rt: *Runtime, args: []const Form, l
 // `loop`/`recur` over each binding pair, with :let / :when / :while injected
 // as let / if / when. Always returns nil. A port of the JVM
 // clojure.core/doseq `step` closure, dropping the chunked fast path (cw v1
-// has no chunked-seq; the first/next slow path is semantically identical —
-// see private/notes/phaseA26-doseq-for-survey.md §5.1). Binds go through the
-// `let` macro so destructuring rides the existing let lowering.
+// has no chunked-seq; the first/next slow path is semantically identical).
+// Binds go through the `let` macro so destructuring rides the existing let
+// lowering.
 
 const DoseqStep = struct { needrec: bool, form: Form };
 

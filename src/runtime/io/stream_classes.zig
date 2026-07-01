@@ -44,7 +44,7 @@ pub const OUTPUT_CHAIN = [_][]const u8{ "java.io.BufferedOutputStream", "java.io
 /// The OTHER concrete/abstract java.io stream classes cljw never produces —
 /// KNOWN (so `(instance? java.io.FileReader rdr)` is a clj-faithful false, not
 /// class_name_unknown) but matched by no chain. This is the COMPREHENSIVE
-/// java.io stream surface (F-013 clause 4: 網羅 the recognition table — cheap
+/// java.io stream surface (F-013 clause 4: exhaustively cover the recognition table — cheap
 /// rows, no impl), derived from the java.io package definition (every public
 /// Reader/Writer/InputStream/OutputStream subtype), NOT a per-library allowlist.
 /// A name outside chain∪sibling still raises class_name_unknown — cljw has no

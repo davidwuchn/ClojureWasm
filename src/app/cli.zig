@@ -2,7 +2,7 @@
 //! CLI argv-dispatcher for `cljw`. Parses flags + positional args
 //! into a `source_text` + `source_label` pair, then hands off to
 //! `app/runner.zig::runSource`. Surface:
-//!   - With no arguments, starts the REPL (clj-本家 alignment).
+//!   - With no arguments, starts the REPL (upstream Clojure alignment).
 //!   - `-e <expr>` / `--eval <expr>`: in-line source string.
 //!   - `<file.clj>` (positional): file's contents.
 //!   - `-` (positional): stdin (heredoc-friendly).
@@ -257,7 +257,7 @@ pub fn dispatch(init: std.process.Init) !void {
         return;
     }
 
-    // No argv at all → start a classpath-aware REPL (clj-本家 alignment,
+    // No argv at all → start a classpath-aware REPL (upstream Clojure alignment,
     // ADR-0117 D-322): honour $CLJW_PATH (else cwd) + ./deps.edn so a REPL
     // `(require '[my.lib])` resolves user libs off disk. `repl.run` reads stdin
     // via takeDelimiter until EOF, so a piped/closed stdin exits cleanly; an
@@ -285,7 +285,7 @@ fn dispatchArgsRest(
 ) !void {
     var source_text: ?[]const u8 = null;
     var source_label: []const u8 = "<-e>";
-    // clj-本家 alignment (ADR-0117): only `-e` echoes each top-level result;
+    // upstream Clojure alignment (ADR-0117): only `-e` echoes each top-level result;
     // a bare `<file.clj>` AND stdin (`-`) run as scripts, printing only what
     // the program prints. Set false in the file-open + stdin branches below.
     var print_results: bool = true;

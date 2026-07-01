@@ -41,10 +41,8 @@
 //! Single-threaded today; the JVM `AtomicReference<Thread>`
 //! ownership-thread check is omitted because cw v1 has no threading
 //! model yet. The same observable semantics result on a single-
-//! threaded runtime — see survey
-//! `private/notes/phase8-8.5-survey.md` § "Provisional behaviour
-//! candidates" PC2 for the rationale. Phase B (concurrency) revisits
-//! the ownership-thread check when a threading model lands.
+//! threaded runtime. Phase B (concurrency) revisits the
+//! ownership-thread check when a threading model lands.
 
 const std = @import("std");
 const value_mod = @import("../../value/value.zig");

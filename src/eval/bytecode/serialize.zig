@@ -1473,7 +1473,7 @@ test "chunk completeness gate: every side-table + entry field round-trips (D-365
     // A new field on any of these structs makes the switch non-exhaustive → a
     // compile error → the author MUST classify it (serialized-and-asserted
     // below, or documented exempt). This is the mechanical close of the user's
-    // "構造的に直し忘れ" concern. The `classified` bool only gives each switch a
+    // "structural drift" concern (a forget-to-update hazard). The `classified` bool only gives each switch a
     // result (so the prong bodies are non-empty); the exhaustiveness IS the gate.
     inline for (std.meta.fields(BytecodeChunk)) |f| {
         const classified: bool = switch (@field(std.meta.FieldEnum(BytecodeChunk), f.name)) {

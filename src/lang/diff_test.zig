@@ -517,8 +517,7 @@ test "diff: nested if branches" {
 }
 
 // ADR-0036 T1 retrofit: 11 cases covering the previously-untested
-// non-deferred Node variants enumerated in
-// private/notes/phase7-T1-survey.md §2.3. The deftype, interop_call
+// non-deferred Node variants. The deftype, interop_call
 // (.constructor / field access), require-libspec, and ns
 // refer-clojure-filter arms landed their own diff cases below
 // (see L613-L926) once those VM arms shipped.

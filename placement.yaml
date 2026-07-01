@@ -28,7 +28,7 @@
 #       composition_deps: [<fqn-or-short> ...]   # 他の user-callable Clojure var 依存
 #       target_loc: src/lang/clj/clojure/<ns>.clj  # .clj 着地先 (Pattern A/B2/C-thin の場合)
 #       leaf_loc: src/lang/primitive/<file>.zig    # Zig leaf 着地先 (Pattern B*/C-zig の場合)
-#       upstream_ref: ~/Documents/OSS/clojure/src/clj/clojure/<ns>.clj#L<n>
+#       upstream_ref: src/clj/clojure/<ns>.clj#L<n>   # path within the Clojure JVM repo
 #       recall_trigger: "<phase or cycle 完了> trigger"
 #       notes: "free-form"
 #
@@ -59,7 +59,7 @@ vars:
     composition_deps: []
     target_loc: src/lang/clj/clojure/string.clj
     leaf_loc: src/lang/primitive/string.zig
-    upstream_ref: ~/Documents/OSS/clojure/src/clj/clojure/string.clj
+    upstream_ref: src/clj/clojure/string.clj
     recall_trigger: "Phase 6.16.d cycle 着手"
 
   clojure.string/lower-case:
@@ -69,7 +69,7 @@ vars:
     composition_deps: []
     target_loc: src/lang/clj/clojure/string.clj
     leaf_loc: src/lang/primitive/string.zig
-    upstream_ref: ~/Documents/OSS/clojure/src/clj/clojure/string.clj
+    upstream_ref: src/clj/clojure/string.clj
     recall_trigger: "Phase 6.16.d cycle 着手"
 
   clojure.string/trim:
@@ -187,7 +187,7 @@ vars:
     leaf_deps: []
     composition_deps: [count, subs, str, upper-case, lower-case]
     target_loc: src/lang/clj/clojure/string.clj
-    upstream_ref: ~/Documents/OSS/clojure/src/clj/clojure/string.clj
+    upstream_ref: src/clj/clojure/string.clj
     recall_trigger: "Phase 6.16.e cycle 着手 (Pattern A 着地)"
 
   clojure.string/replace:
@@ -215,7 +215,7 @@ vars:
     leaf_deps: []
     composition_deps: [reduce, str, loop, recur, get]
     target_loc: src/lang/clj/clojure/string.clj
-    upstream_ref: ~/Documents/OSS/clojure/src/clj/clojure/string.clj
+    upstream_ref: src/clj/clojure/string.clj
     recall_trigger: "Phase 6.16.e cycle (D-059 map literal analyzer gap 解消 + Pattern A 着地)"
 
   clojure.string/split:
@@ -254,7 +254,7 @@ vars:
     leaf_deps: []
     composition_deps: [reduce, conj, count, <]
     target_loc: src/lang/clj/clojure/set.clj
-    upstream_ref: ~/Documents/OSS/clojure/src/clj/clojure/set.clj
+    upstream_ref: src/clj/clojure/set.clj
     recall_trigger: "Phase 6.16.b cycle 着手"
 
   clojure.set/intersection:
@@ -354,7 +354,7 @@ vars:
     composition_deps: []
     target_loc: src/lang/clj/clojure/walk.clj
     leaf_loc: src/lang/primitive/walk.zig
-    upstream_ref: ~/Documents/OSS/clojure/src/clj/clojure/walk.clj
+    upstream_ref: src/clj/clojure/walk.clj
     recall_trigger: "Phase 6.16.c cycle (leaf rename + shim)"
 
   clojure.walk/prewalk:
