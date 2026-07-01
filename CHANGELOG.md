@@ -39,8 +39,7 @@ WebAssembly FFI as its headline capability. Earlier pre-releases were tagged
 - **CIDER-compatible nREPL** — `cljw nrepl` for live editor-connected eval.
 - **Single-binary builds** — `cljw build script.clj -o app` compiles a program
   and the runtime into one self-contained native executable (arm64 / amd64).
-- **Concurrency** — atoms, refs (STM), agents, promises, futures, `core.async`
-  surfaces.
+- **Concurrency** — atoms, refs (STM), agents, promises, futures.
 - **Java-interop surface** — a curated, definition-derived subset of common
   `java.*` classes (String / Math / java.time / BigInteger / BigDecimal /
   Character / …) reimplemented natively; see `data/compat_tiers.yaml`.

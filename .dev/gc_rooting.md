@@ -156,7 +156,7 @@ object for the `locking` body).
 
 ## F. Per-tag traces + leaf cross-check
 
-~37 `registerTrace` + 13 `registerFinaliser`, all from `registerGcHooks()`
+49 `registerTrace` + 22 `registerFinaliser`, all from `registerGcHooks()`
 (aggregated in `Runtime.init`). Trace body walks GC fields via
 `field.heapHeader()` (the membrane, G) + `mark(gc, child)`. Full per-tag table:
 see `private/notes/gc-rooting-ssot-sweep.md` §F (the raw sweep). GC-managed LEAF
@@ -232,7 +232,7 @@ instead of per-hook (DA Alt B-finished-form-clean; debt **D-318**).
 - Reentrant accumulators: 3 rooted (`reduceFn`, `equal.seqEqualInstance`, `equal.seqEqualWalk`) + 9 UNROOTED-CANDIDATE (C1-C9, D-252).
 - Permanent/pinned: 3 `pin` callers + 6 `trackHeap`/`persistent_marks` callers.
 - In-txn/concurrency: self-tx + worker-tx + `ThreadGcContext` (2 registrants) + safepoint (STW rendezvous + blocking-safepoint).
-- Per-tag traces: ~37 `registerTrace` + 13 `registerFinaliser`; 4 non-GC tags + 2 GC-leaf tags.
+- Per-tag traces: 49 `registerTrace` + 22 `registerFinaliser`; 4 non-GC tags + 2 GC-leaf tags.
 - Membrane: 1 decode + 1 classifier + 1 guard; ~40 downstream callers.
 
 ## Cross-references

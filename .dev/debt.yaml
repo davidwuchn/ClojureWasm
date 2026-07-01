@@ -24,6 +24,37 @@
 # md-table-align no longer pads it to ~800 KB of whitespace.
 
 active:
+  - id: "D-547"
+    status: |-
+      open (2026-07-01). Enforcement-honesty sweep — surfaced by the round-3
+      completeness-critic (multi-agent, adversarially verified). The scaffolding
+      advertises enforcement it does not have:
+      (1) `scripts/check_adr_history.sh` is described in ROADMAP §16/§17.4 as an
+      ACTIVE pre-commit gate but is wired NOWHERE (not in run_all.sh / run_gate.sh /
+      .githooks / settings.json) AND fails on ~100/169 ADRs (missing `## Revision
+      history`). Decide: backfill the 100 ADRs + wire it as a real gate, OR correct
+      ROADMAP to call it an on-demand audit tool. Also drop the retired "Phase 5
+      promotion" language (ADR-0142) on check_compat_tiers_sync / check_no_op_stub /
+      check_tier_d_error_msg / file_size_check (they are permanent on-demand scans).
+      (2) `.claude/rules/clojure_spec_citation.md` declares a MANDATORY spec-citation
+      discipline over pre-existing src/ but ships no discovery recipe + no script
+      (violates framework_completion.md) — add a discovery recipe (grep primitives
+      lacking the spec line) + optional checker, OR downgrade to reviewer-only
+      convention like module_docstring.md.
+      (3) `.dev/gc_rooting.md` census had a dead refresh trigger ("re-run at each
+      Phase boundary" — retired) — re-anchor to a live event (gap-area-unit start)
+      or add a check_gc_rooting_census.sh that diffs live registerTrace/
+      registerFinaliser/GC-ROOT counts vs the doc and fails on drift (counts already
+      refreshed 37/13 -> 49/22 this cycle). Same fail-loud class as D-546.
+      Also: ROADMAP §2 inviolable P3 Effect still cites the retired `modules/`
+      ("Extensions go to modules/ or pods") — a P3 truth-fix (like the ADR-0168 P1
+      rescope) is a user-owned principle edit; surface, do not self-amend.
+    category: "tooling"
+    barrier: |-
+      tractable now (no external block) EXCEPT the P3 principle edit (user-owned).
+      Drain on a /continue quality-loop cycle; the check_adr_history backfill-vs-
+      downgrade is the one real decision.
+    last_reviewed: "2026-07-01"
   - id: "D-546"
     status: |-
       open (2026-07-01). audit_scaffolding `CHECKS.md` E2.2/E2.4/E2.5 recipes read the
