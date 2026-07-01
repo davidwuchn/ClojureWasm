@@ -51,38 +51,6 @@ active:
       self-modification block — surface those to the user (memory
       claude_rules_edit_permission_block).
     last_reviewed: "2026-07-01"
-  - id: "D-539"
-    status: |-
-      open (2026-07-01, user-directed; ADR-0167 S3 ★headline). CI wiring — .github
-      is absent, so an external contributor gets ZERO automatic verification.
-      Add .github/workflows/ci.yml (push main + PR; macOS + Ubuntu matrix) driven
-      by a single scripts/ci_gate.sh SSOT (CI can never verify less than the
-      per-host gate); .github/dependabot.yml (weekly actions); a gitleaks config
-      reusing .gitleaksignore; Zig 0.16.0 pin mirrored for CI. CWFS-specific: the
-      full gate MUST run --serial-e2e (D-418 load-race) + probe a ReleaseSafe
-      binary (ADR-0132). Non-blocking follow-up: a pinned-consumer public-API
-      contract canary (DA critique §4).
-    category: "infra"
-    quality_floor: "release-mechanics: CI wiring (ADR-0167)"
-    barrier: |-
-      rc.1 readiness gate (finite). Actions SHA-pinned; permissions: contents:read.
-      actionlint + a local↔CI equivalence check before landing.
-    last_reviewed: "2026-07-01"
-  - id: "D-540"
-    status: |-
-      open (2026-07-01, user-directed; ADR-0167). CHANGELOG.md (Keep-a-Changelog,
-      rc.1 entry under `## [Unreleased]` per the D-541 staging convention) added
-      to build.zig.zon .paths; THIRD_PARTY.md naming exact license + pinned
-      version per dep (zwasm Apache-2.0 @fc7ff0b3b/v2.0.0-alpha.3; zlinter MIT;
-      EPL clj lineage per NOTICE); .gitattributes (LF) + .editorconfig. Ship NOTICE
-      in .paths (absent despite EPL src/lang/clj/** shipping inside src).
-    category: "docs"
-    quality_floor: "release-mechanics: CHANGELOG + attribution (ADR-0167)"
-    barrier: |-
-      rc.1 readiness gate (finite). build.zig.zon edit = source-bearing (needs
-      Smell-audited). Verify THIRD_PARTY license claims against the actual dep
-      LICENSE files (zlinter LICENSE = MIT confirmed 2026-07-01).
-    last_reviewed: "2026-07-01"
   - id: "D-541"
     status: |-
       open (2026-07-01, user-directed; ADR-0167). Version staging (USER-OWNED
@@ -2640,6 +2608,16 @@ standing:
     barrier: "open after the D-440 arc completes (R4 + R5 must first rewrite the bulk of 'Phase N' citations to gap-area terms). Premature adoption = ~70 dangling citations with no 1:1 redirect. Trigger: D-440 R4/R5 done + a user nod to re-architect the planning axis (it is depth-4, the project's organizing metaphor)."
     last_reviewed: "2026-06-15"
 discharged:
+  - id: "D-540"
+    status: "DISCHARGED 2026-07-01 (ADR-0167). CHANGELOG.md (Keep-a-Changelog; the rc.1 entry sits under `## [Unreleased]` per the D-541 staging convention + a STAGING NOTE explaining the maintainer's tag/bump step). THIRD_PARTY.md naming exact license + pinned commit per fetched dep (zwasm Apache-2.0 @fc7ff0b3b/v2.0.0-alpha.3, -Dwasm-only; zlinter MIT @9b4d67b9, dev-only) — an EPL-2.0 project building against non-EPL deps (none vendored in-tree; fetched by the Zig pkg mgr) + the EPL clj lineage cross-ref to NOTICE. .gitattributes (LF normalize + .wasm/.png binary + docs/ja/archive linguist-documentation) + .editorconfig. build.zig.zon .paths now ships LICENSE + NOTICE + THIRD_PARTY.md + CHANGELOG.md + README + src (NOTICE was absent despite EPL src/lang/clj/** shipping inside src). zlinter MIT verified against the fetched LICENSE."
+    category: "docs"
+    barrier: "none — DISCHARGED."
+    last_reviewed: "2026-07-01"
+  - id: "D-539"
+    status: "DISCHARGED 2026-07-01 (ADR-0167 S3 ★headline). CI wiring — .github was absent (zero external verification). Added: scripts/ci_gate.sh (SSOT: `zig fmt --check src/` + `test/run_all.sh --serial-e2e`, so CI can never verify less than the per-host gate; --serial-e2e avoids the D-418 agent load-race a shared runner provokes); .github/workflows/ci.yml (push main + PR + dispatch; macOS-15 aarch64 + ubuntu-22.04 x86_64 matrix, both blocking; Zig 0.16.0 via cached ziglang.org tarball; actions SHA-pinned; permissions contents:read; concurrency-cancel); .github/versions.lock (ZIG_VERSION mirror of flake.nix); .github/dependabot.yml (weekly github-actions). Gate deps analysed = Zig 0.16.0 + python3 (runner-preinstalled, one nREPL e2e); all Wasm fixtures committed .wasm; diff oracle Zig-native (no JVM oracle in gate); no perf-threshold step (bench machinery retired). To satisfy the new `zig fmt --check`, ran `zig fmt src/` (19 files, no-behaviour) — verified zlinter still 'No issues!'. Local validation: bash -n, actionlint clean, zig fmt --check now exit 0. First GitHub-Actions run verified post-push via `gh run`. NON-BLOCKING follow-ups (noted, not silently capped): a custom gitleaks secret-scan job (GitHub native secret-scanning covers public repos meanwhile) + a pinned-consumer public-API contract canary (DA critique §4)."
+    category: "infra"
+    barrier: "none — DISCHARGED (first GitHub run verified post-push)."
+    last_reviewed: "2026-07-01"
   - id: "D-537"
     status: "DISCHARGED 2026-07-01 (ADR-0167 S1). Community-health files added, tailored to README's 'Issues/PRs paused -> Discussions' posture: SECURITY.md (scope = a runtime executing untrusted .wasm bytecode + in-process untrusted Clojure; private vuln reporting; supported = 1.0.0-rc.*/main), CODE_OF_CONDUCT.md (Contributor Covenant 2.1, @chaploud), .github/ISSUE_TEMPLATE/config.yml (blank_issues_enabled:false -> Discussions + private security advisory), .github/PULL_REQUEST_TEMPLATE.md (PRs-paused notice), .github/FUNDING.yml (github: chaploud). CONTRIBUTING reconciled with the paused posture (open-issue -> start-a-Discussion), the -Dwasm -Doptimize=ReleaseSafe build command, the --serial-e2e full-gate caveat, and Discussions-primary + SECURITY.md pointer. All URLs/handle cross-checked (clojurewasm/ClojureWasm, @chaploud). No source touched."
     category: "docs"

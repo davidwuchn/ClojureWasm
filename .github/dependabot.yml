@@ -1,0 +1,10 @@
+# Keep the CI workflow's action SHA pins fresh. Zig / zwasm / zlinter pins live
+# in flake.nix + build.zig.zon and are bumped deliberately (not by dependabot).
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: ci

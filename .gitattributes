@@ -1,0 +1,10 @@
+# Normalize text files to LF in the repository and on checkout, so a clone on
+# any platform sees the same bytes the gate and `zig fmt` expect.
+* text=auto eol=lf
+
+# Committed binary fixtures — never touch line endings.
+*.wasm binary
+*.png binary
+
+# Keep read-only historical / generated content out of GitHub's language stats.
+docs/ja/archive/** linguist-documentation

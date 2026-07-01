@@ -12,10 +12,10 @@ reports seriously.
 ClojureWasm is currently **pre-1.0** (`1.0.0-rc.*` / `1.0.0-alpha.*`). Security
 fixes land on the `main` branch and the newest pre-release tag.
 
-| Version                     | Supported |
-|-----------------------------|-----------|
-| `1.0.0-rc.*` / `main`       | ✅        |
-| earlier `1.0.0-alpha.*`     | ❌        |
+| Version                 | Supported |
+|-------------------------|-----------|
+| `1.0.0-rc.*` / `main`   | ✅        |
+| earlier `1.0.0-alpha.*` | ❌        |
 
 ## Reporting a vulnerability
 

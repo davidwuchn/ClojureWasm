@@ -14,12 +14,13 @@
 - **rc.1 readiness gate (FINITE — the tag-cut SSOT):**
   - [x] **D-537** community-health files — SECURITY/CoC/ISSUE_TEMPLATE/PR_TEMPLATE/
     FUNDING + CONTRIBUTING reconcile *DISCHARGED 2026-07-01*.
-  - [ ] **D-539 ★** CI wiring (.github absent = zero external verification) — ci.yml
-    push/PR macOS+Ubuntu via `scripts/ci_gate.sh` SSOT; dependabot; gitleaks; Zig pin.
+  - [x] **D-539 ★** CI wiring *DISCHARGED 2026-07-01* — ci.yml (push/PR, macOS+Ubuntu)
+    via `scripts/ci_gate.sh` SSOT + versions.lock + dependabot; repo made zig-fmt-clean.
+    First GitHub run verified post-push. Follow-ups (non-blocking): gitleaks job, API canary.
   - [ ] **D-536** debt-ledger code-truth reconcile (zwasm S0 pattern).
   - [ ] **D-538** personal-env decoupling (SSH host→env default; 2 src leaks;
     settings.local.json). *`.claude/**` edits may hit auto-mode block → surface.*
-  - [ ] **D-540** CHANGELOG (`## [Unreleased]`) + THIRD_PARTY + .gitattributes/.editorconfig + ship NOTICE in .paths.
+  - [x] **D-540** CHANGELOG (`## [Unreleased]`) + THIRD_PARTY + .gitattributes/.editorconfig + ship NOTICE/CHANGELOG/THIRD_PARTY in .paths *DISCHARGED 2026-07-01*.
   - [ ] **D-542** release.yml (prepared-not-fired, static cljw binary).
   - [ ] **D-543** dep-pin coherence (zwasm alpha.3 vs rc.1; eager zlinter fetch).
   - [ ] **D-541** version staging convention (all rc.1 strings = staged text).

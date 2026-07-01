@@ -1,0 +1,76 @@
+# CI — the host-local gate on the supported OSes (macOS arm64 + Linux x86_64),
+# mirroring the local gate. Each matrix leg runs `scripts/ci_gate.sh`, so CI
+# verifies exactly what the maintainer runs per host (single source of truth).
+#
+# Triggers: pull_request (any target) + push to `main` + manual dispatch.
+# The gate has no external runtime dependency beyond Zig 0.16.0 and python3
+# (preinstalled on GitHub runners); `zig build -Dwasm` fetches the embedded
+# zwasm engine + the zlinter dev-dep from git over the network.
+
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  gate:
+    name: gate (${{ matrix.name }})
+    runs-on: ${{ matrix.runs-on }}
+    timeout-minutes: 75
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: aarch64-macos
+            runs-on: macos-15
+            zig-dir: zig-aarch64-macos-0.16.0
+          - name: x86_64-linux
+            runs-on: ubuntu-22.04
+            zig-dir: zig-x86_64-linux-0.16.0
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          ref: ${{ github.sha }}
+
+      - name: Cache Zig 0.16.0
+        id: cache-zig
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ~/.local/zig-0.16.0
+          key: zig-0.16.0-${{ matrix.name }}
+
+      - name: Install Zig 0.16.0
+        if: steps.cache-zig.outputs.cache-hit != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          source .github/versions.lock
+          mkdir -p ~/.local
+          curl -fsSL "https://ziglang.org/download/${ZIG_VERSION}/${{ matrix.zig-dir }}.tar.xz" -o /tmp/zig.tar.xz
+          tar -xJf /tmp/zig.tar.xz -C ~/.local
+          mv "$HOME/.local/${{ matrix.zig-dir }}" "$HOME/.local/zig-0.16.0"
+
+      - name: Add Zig to PATH
+        shell: bash
+        run: echo "$HOME/.local/zig-0.16.0" >> "$GITHUB_PATH"
+
+      - name: Verify toolchain
+        shell: bash
+        run: |
+          zig version
+          python3 --version
+
+      - name: ci_gate.sh
+        shell: bash
+        run: bash scripts/ci_gate.sh

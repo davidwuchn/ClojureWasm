@@ -1,0 +1,18 @@
+# versions.lock — mirror of the pinned tool versions used by ClojureWasm CI.
+#
+# Source of truth: flake.nix (local dev via the nix devshell + direnv). This
+# file mirrors the same pins for environments that cannot use Nix — primarily
+# the GitHub-hosted CI runners, which need a version string before nix is
+# available. Sourced as a bash file (`source .github/versions.lock`) by
+# workflow steps.
+#
+# IMPORTANT: do NOT add inline comments after a value — keep comments on their
+# own line above each entry (a plain split('=', 1) reader would pull a trailing
+# comment into the value).
+#
+# Update process:
+#   1. Bump the value below.
+#   2. Update flake.nix's Zig pin to match (zig-overlay "0.16.0").
+#   3. Run `bash scripts/ci_gate.sh` locally, then let CI confirm on both OSes.
+
+ZIG_VERSION=0.16.0

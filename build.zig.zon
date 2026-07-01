@@ -28,6 +28,9 @@
         "build.zig.zon",
         "src",
         "LICENSE",
+        "NOTICE",
+        "THIRD_PARTY.md",
+        "CHANGELOG.md",
         "README.md",
     },
 }
