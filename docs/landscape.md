@@ -30,7 +30,7 @@ Two things, which are easy to conflate:
    sandboxed module compiled from Rust, Go, Zig, or C and call it like a
    namespace. WebAssembly becomes an FFI: other languages' libraries become
    callable from Clojure, in-process and sandboxed. (See
-   [`examples/wasm/`](../examples/wasm/).)
+   [`docs/examples/wasm/`](../docs/examples/wasm/).)
 
 That second point is the part that does not have an obvious equivalent in the
 other runtimes, and it is the angle ClojureWasm is exploring.

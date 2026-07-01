@@ -5,7 +5,7 @@
 ;; stays exit-0. A couple of cases pin the SPECIFIC host class so the Kind
 ;; mapping (value_error→IllegalArgumentException, type_error→ClassCastException,
 ;; arity_error→ArityException) is locked, not just "some Throwable".
-(def m (wasm/load "examples/wasm/add.wasm"))
+(def m (wasm/load "docs/examples/wasm/add.wasm"))
 
 (println "out-of-range:"
   (try (wasm/call m "add" 5000000000 0) "NOT-CAUGHT"
@@ -23,13 +23,13 @@
   (try (wasm/call m "add" 1) "NOT-CAUGHT"
     (catch ArityException _ "CAUGHT")))
 (println "bad-opts:"
-  (try (wasm/load "examples/wasm/add.wasm" {:fuel "x"}) "NOT-CAUGHT"
+  (try (wasm/load "docs/examples/wasm/add.wasm" {:fuel "x"}) "NOT-CAUGHT"
     (catch Throwable _ "CAUGHT")))
 (println "bad-path:"
   (try (wasm/load 42) "NOT-CAUGHT"
     (catch ClassCastException _ "CAUGHT")))
 
-(def t (wasm/load "examples/wasm/trap.wasm"))
+(def t (wasm/load "docs/examples/wasm/trap.wasm"))
 (println "trap:"
   (try (wasm/call t "boom") "NOT-CAUGHT"
     (catch Throwable _ "CAUGHT")))

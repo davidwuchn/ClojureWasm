@@ -96,9 +96,9 @@ namespace absent (F-001 preserved).**
    `cljw add.clj` demo is short-lived; auto-collect is off); D-259 owns
    finalisation/rooting.
 5. **Verification (F-001-honest)**: the demo is verified by `zig build -Dwasm`
-   + `cljw examples/wasm/add.clj` → `42`, run on demand (and at the Phase-16
+   + `cljw docs/examples/wasm/add.clj` → `42`, run on demand (and at the Phase-16
    gate / pre-tag), **NOT** in the default per-commit gate — the default gate
-   must never resolve zwasm. `examples/wasm/` carries the prebuilt `add.wasm`,
+   must never resolve zwasm. `docs/examples/wasm/` carries the prebuilt `add.wasm`,
    its WAT source, and the repro command (PRIORITY.md P1).
 
 ## Alternatives considered
@@ -187,7 +187,7 @@ off-trajectory for the single-runtime finished form.
   module/instance/fn split + funcref/externref first-classing). The demo leaks
   the external `*Loaded` (acceptable: short-lived process, auto-collect off).
   The `-Dwasm` demo is not in the default gate (F-001 mandate) — it is an
-  on-demand / Phase-16 / pre-tag check; `examples/wasm/README.md` carries the
+  on-demand / Phase-16 / pre-tag check; `docs/examples/wasm/README.md` carries the
   repro so it is not silently un-exercised.
 - **F-001 finding-handling**: any zwasm-side bug/gap surfaced while wiring this
   is RECORDED + FED BACK via `private/notes/zwasm_v2_feedback.md` (no cljw-side
@@ -201,5 +201,5 @@ off-trajectory for the single-runtime finished form.
 - `src/runtime/cljw/wasm/{engine,marshal,surface,wasm_handle}.zig` — new
   (flag-guarded).
 - `src/runtime/cljw/_host_api.zig` — one `if (build_options.wasm)` register line.
-- `examples/wasm/{add.wasm,add.wat,add.clj,README.md}` — the demo + repro.
+- `docs/examples/wasm/{add.wasm,add.wat,add.clj,README.md}` — the demo + repro.
 - `.dev/debt.yaml` (D-259) + `feature_deps.yaml` — the provisional triad.

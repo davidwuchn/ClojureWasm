@@ -27,7 +27,7 @@ against the real `clj`.
 Build with the FFI: `zig build -Dwasm`. `add.wasm` exports `(add i32 i32) -> i32`:
 
 ```clojure
-cljw -e '(wasm/call (wasm/load "examples/wasm/add.wasm") "add" 2 40)'   ;=> 42
+cljw -e '(wasm/call (wasm/load "docs/examples/wasm/add.wasm") "add" 2 40)'   ;=> 42
 ```
 
 A Wasm-side trap surfaces as a clean Clojure exception (catchable with `try`).

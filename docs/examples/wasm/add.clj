@@ -7,7 +7,7 @@
 ;;
 ;; Run (needs the wasm-enabled build — the default cljw does not embed zwasm):
 ;;   zig build -Dwasm
-;;   ./zig-out/bin/cljw examples/wasm/add.clj
+;;   ./zig-out/bin/cljw docs/examples/wasm/add.clj
 ;; Expected output: 42
 
-(wasm/call (wasm/load "examples/wasm/add.wasm") "add" 2 40)
+(wasm/call (wasm/load "docs/examples/wasm/add.wasm") "add" 2 40)

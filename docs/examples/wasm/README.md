@@ -6,7 +6,7 @@ namespaces. This is the "WebAssembly as an FFI" idea: a Clojure REPL loads a
 sandboxed `.wasm` and invokes its exports.
 
 ```clojure
-(def m (wasm/load "examples/wasm/add.wasm"))
+(def m (wasm/load "docs/examples/wasm/add.wasm"))
 (wasm/call m "add" 2 40)   ;=> 42
 ```
 
@@ -21,7 +21,7 @@ does not embed zwasm — the polyglot build is opt-in:
 
 ```sh
 zig build -Dwasm
-./zig-out/bin/cljw examples/wasm/add.clj
+./zig-out/bin/cljw docs/examples/wasm/add.clj
 # 42
 ```
 
@@ -53,9 +53,9 @@ divides by zero:
 
 ```clojure
 (try
-  (wasm/call (wasm/load "examples/wasm/trap.wasm") "boom")
+  (wasm/call (wasm/load "docs/examples/wasm/trap.wasm") "boom")
   (catch Throwable e (println "caught trap:" (.getMessage e))))
 ;; caught trap: WebAssembly module trapped (e.g. divide-by-zero, out-of-bounds, …)
 ```
 
-Run it: `zig build -Dwasm && ./zig-out/bin/cljw examples/wasm/trap.clj`.
+Run it: `zig build -Dwasm && ./zig-out/bin/cljw docs/examples/wasm/trap.clj`.

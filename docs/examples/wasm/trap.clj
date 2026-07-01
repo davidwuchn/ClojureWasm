@@ -3,10 +3,10 @@
 ;; wasm sandbox; ClojureWasm catches the trap and raises an ordinary Clojure
 ;; exception (try/catch works) — the host never crashes.
 ;;
-;; Run:  zig build -Dwasm && ./zig-out/bin/cljw examples/wasm/trap.clj
+;; Run:  zig build -Dwasm && ./zig-out/bin/cljw docs/examples/wasm/trap.clj
 ;; Expected output: a line starting "caught trap: ..."
 
-(def m (wasm/load "examples/wasm/trap.wasm"))
+(def m (wasm/load "docs/examples/wasm/trap.wasm"))
 
 (try
   (wasm/call m "boom")
