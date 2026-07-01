@@ -6,6 +6,15 @@
 # The gate has no external runtime dependency beyond Zig 0.16.0 and python3
 # (preinstalled on GitHub runners); `zig build -Dwasm` fetches the embedded
 # zwasm engine + the zlinter dev-dep from git over the network.
+#
+# Two-tier, matching the local ADR-0107 (smoke per commit, full batched) +
+# ADR-0049 (the Linux full gate is batched, not per-commit) disciplines so CI is
+# not wasteful:
+#   push to main / PR → fast CORE (units + F-012 diff oracle, no e2e shell suite).
+#   nightly schedule / manual dispatch → FULL gate (+ every e2e step).
+# The Zig toolchain, the fetched deps (zwasm/zlinter), and the build cache are
+# all preserved across runs (actions/cache), so a warm run rebuilds only what
+# changed instead of three cold ReleaseSafe builds — the dominant cost.
 
 name: ci
 
@@ -14,6 +23,10 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+  schedule:
+    # Nightly full gate (03:17 UTC) — the batched Linux full-e2e coverage that
+    # ADR-0049 keeps off the per-commit path.
+    - cron: '17 3 * * *'
 
 permissions:
   contents: read
@@ -65,12 +78,51 @@ jobs:
         shell: bash
         run: echo "$HOME/.local/zig-0.16.0" >> "$GITHUB_PATH"
 
+      - name: Pin Zig global cache dir
+        shell: bash
+        run: echo "ZIG_GLOBAL_CACHE_DIR=$HOME/.cache/zig" >> "$GITHUB_ENV"
+
+      # Cache the fetched deps (zwasm git dep + zlinter, under the global cache's
+      # p/) AND the build artifacts (global cache + the repo-local .zig-cache),
+      # keyed on the manifests. A same-manifest run restores everything; a
+      # manifest change falls back via restore-keys to the newest prior cache and
+      # rebuilds incrementally (Zig's cache is content-addressed, so a stale
+      # restore is safe — it only ever causes a rebuild, never a wrong build).
+      - name: Cache Zig deps + build
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: |
+            ~/.cache/zig
+            .zig-cache
+          key: ${{ matrix.name }}-zigbuild-${{ hashFiles('build.zig.zon', 'build.zig') }}
+          restore-keys: |
+            ${{ matrix.name }}-zigbuild-
+
+      # ripgrep is the one gate-script tool not universally preinstalled
+      # (check_debt_id_refs.sh). Install only if absent (fast no-op when the
+      # runner image already ships it). The other former gaps are removed at the
+      # source: check_test_reach uses a portable read loop (not bash-4 mapfile),
+      # and check_corpus_regression falls back timeout→gtimeout→unbounded.
+      - name: Install ripgrep if missing (gate dep)
+        shell: bash
+        run: |
+          command -v rg >/dev/null 2>&1 && exit 0
+          if [ "$RUNNER_OS" = "Linux" ]; then
+            sudo apt-get update -qq && sudo apt-get install -y -qq ripgrep
+          else
+            brew install ripgrep
+          fi
+
       - name: Verify toolchain
         shell: bash
         run: |
           zig version
           python3 --version
+          rg --version | head -1
 
       - name: ci_gate.sh
         shell: bash
+        env:
+          # nightly schedule + manual dispatch → full gate; push/PR → fast core.
+          CLJW_CI_FULL: ${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && '1' || '0' }}
         run: bash scripts/ci_gate.sh

@@ -11,24 +11,11 @@
   (ADR-0167).** Full-scope A+B, fully autonomous. Drive the finite Track-A gate
   below + the parallel Track-B (ADR-0166 D-522…D-529) quality drain. The final
   version bump + `git tag` is **USER-OWNED** (build.zig.zon SSOT; loop never tags).
-- **rc.1 readiness gate (FINITE — the tag-cut SSOT):**
-  - [x] **D-537** community-health files — SECURITY/CoC/ISSUE_TEMPLATE/PR_TEMPLATE/
-    FUNDING + CONTRIBUTING reconcile *DISCHARGED 2026-07-01*.
-  - [x] **D-539 ★** CI wiring *DISCHARGED 2026-07-01* — ci.yml (push/PR, macOS+Ubuntu)
-    via `scripts/ci_gate.sh` SSOT + versions.lock + dependabot; repo made zig-fmt-clean.
-    First GitHub run verified post-push. Follow-ups (non-blocking): gitleaks job, API canary.
-  - [~] **D-536** debt code-truth reconcile — down-payment DONE (3 active phase-tail
-    rows D-042/043/044 refreshed); REMAINING = ~57 `| Phase N` tails in `standing:`
-    + the probe-backed false-claim pass (high-value; run OUTSIDE a gate). GRADUAL.
-  - [~] **D-538** personal-env decoupling — SSH host+dir→env default + 2 src leaks
-    *DONE 2026-07-01*; **settings.json `additionalDirectories` move = USER action**
-    (`.claude/`-edit-blocked, non-autonomous; surfaced — not a loop blocker).
-  - [x] **D-540** CHANGELOG (`## [Unreleased]`) + THIRD_PARTY + .gitattributes/.editorconfig + ship NOTICE/CHANGELOG/THIRD_PARTY in .paths *DISCHARGED 2026-07-01*.
-  - [x] **D-542** release.yml (prepared-not-fired, native matrix, cljw tar.gz+sha) *DONE 2026-07-01; fires on user tag*.
-  - [x] **D-543** dep-pin coherence *DONE 2026-07-01 (loop part)* — pins in THIRD_PARTY;
-    eager zlinter fetch confirmed structural (build.zig:5 top-level @import) → documented
-    pre-1.0 wart; **zwasm-pin bump = user-owned CODEV** (needs a zwasm release).
-  - [x] **D-541** version staging convention (rc.1 strings staged; .version stays alpha.1) *DONE 2026-07-01*.
+- **rc.1 readiness gate (FINITE — the tag-cut SSOT):** D-537/539/540/541/542/543
+  DONE (see `discharged:`); **D-544** (CI reproducibility+efficiency) = the one
+  OPEN loop item — needs green CI re-verify. USER-OWNED residuals: settings.json
+  `additionalDirectories` move (`.claude/`-blocked), zwasm-pin bump (CODEV), and
+  the final `.version` bump + `git tag` (loop NEVER tags).
 - **Track B (parallel, non-blocking for the tag):** the easiest-first `active:`
   drain continues — D-522 de-pointer / D-523 doc-audit / D-526 interop / D-527
   parity / D-528 real-deps.edn / D-529 / D-305 / D-470 / D-222 / D-460 / D-439 sqrt.
@@ -75,11 +62,33 @@ handover → **`private/notes/2026-06-25-debt-drain-order.md`** (easiest-first s
 §9.2.T. Memories: `verify_against_releasesafe_binary` / `smoke_first_batch_full_gate` /
 `gate_parallel_e2e_timeout`.
 
-## This session (2026-07-01) — rc.1 campaign kickoff
+## This session (2026-07-01) — rc.1 publicization campaign
 
-User directive: not the usual loop — plan + execute the 1.0.0-rc.1 publicization,
-using the zwasm v2 S0…S7 release series as the template (studied its actual
-diffs). Scope = full A+B, fully autonomous. Landed: **ADR-0167** (release
-mechanics, DA-forked → Alt 2 finite readiness gate) + debt rows **D-536…D-543** +
-ROADMAP §9.2.T amendment. D-537 health files (SECURITY/CoC/.github templates/
-CONTRIBUTING reconcile) drafted. Next: commit the doc set, then D-539 CI (headline).
+Not the usual loop — plan + execute the 1.0.0-rc.1 publicization (zwasm v2 S0…S7
+as template). Full scope, fully autonomous. LANDED + PUSHED: **ADR-0167** +
+debt **D-536…D-543** + ROADMAP §9.2.T; **D-537** health files; **D-539** CI
+wiring + repo `zig fmt`-clean; **D-540** CHANGELOG/THIRD_PARTY/attrs; **D-541**
+version staging; **D-542** release.yml; **D-543** dep-pin; **D-538** env
+decoupling (loop part); **D-536** down-payment. Local full gate 398/0.
+
+**In-flight (uncommitted at note time — batch after smoke `bbqs1koyi`):** a big
+publicization pass answering the user's 2nd directive:
+- **README badges + subtle sponsor** (zwasm taste: CI/Zig/Clojure/EPL/Sponsors +
+  bottom sponsor line). Issues/PRs **stay paused** (did NOT mirror zwasm's reopen).
+- **CI reproducibility + efficiency (D-544, NEW)**: the D-539 CI's first run
+  FAILED on runner tool-gaps (rg/mapfile/GNU-timeout) — a reproducibility gap,
+  not a code bug (D-539 discharge note CORRECTED — the "verified" was premature).
+  Fixed: mapfile→read loop, timeout→`run_bounded` fallback, ripgrep install-if-
+  missing + added to flake.nix (+coreutils); + actions/cache of Zig deps/build +
+  two-tier gate (push/PR=core, nightly/dispatch=full). **Pending green re-verify.**
+- **大整理**: shipped host-name refs (ARCHITECTURE ubuntunote, build.zig OrbStack),
+  8 src `private/` de-pointered, 6 mixed-JP src comments → English, provenance
+  `~/Documents/OSS` paths → repo-relative (placement.yaml/host_interfaces/cw_ported),
+  2 docs/works/ladder.md private/ refs. Inventory: `private/notes/2026-07-01-
+  publicization-cleanup-inventory.md`. **Cat5 ~2962-line comment de-pointering
+  (D-522) is the GRADUAL long tail — not one-shot.**
+
+**First task on resume:** confirm the CI run on the pushed tip is GREEN on both
+legs (D-544 barrier); iterate if a further runner gap surfaces. Then continue
+Track B (D-522 de-pointer / D-523 doc audit vs code-truth / D-526/527/528).
+zwasm reflection done: badges + CI-efficiency pattern adopted; Issues/PRs paused.

@@ -25,6 +25,16 @@ cd "$(dirname "$0")/.."
 BIN="zig-out/bin/cljw"
 [ -x "$BIN" ] || { echo "building cljw…" >&2; zig build -Dwasm -Doptimize="${CLJW_OPT:-ReleaseSafe}" >/dev/null; }
 
+# Portable bounded run: GNU `timeout`, else macOS coreutils `gtimeout`, else
+# unbounded. The corpus exprs are all finite, so the fallback is safe — the
+# bound only defends against an accidental infinite-seq regression. (Written as
+# a function, not an array, to stay bash-3.2-safe under `set -u`.)
+run_bounded() {
+    if command -v timeout >/dev/null 2>&1; then timeout 20 "$@"
+    elif command -v gtimeout >/dev/null 2>&1; then gtimeout 20 "$@"
+    else "$@"; fi
+}
+
 # Both the general behaviour corpus and the per-class Java-completeness
 # corpus (F-014/ADR-0136) are gated. A given stem is looked up in both dirs.
 dirs=("test/diff/clj_corpus" "test/diff/class_corpus")
@@ -69,7 +79,7 @@ for f in "${files[@]}"; do
                     # value, so a prepended `(require …)` would print `nil` as the first line
                     # and `head -1` would grab it instead of the prn output. Stdin prints only
                     # explicit output (the prn). (memory: cljw_e_prints_each_form.)
-                    got="$(printf '%s(prn %s)' "$reqs" "$expr" | timeout 20 "$BIN" - 2>&1 | head -1)"
+                    got="$(printf '%s(prn %s)' "$reqs" "$expr" | run_bounded "$BIN" - 2>&1 | head -1)"
                     total=$((total + 1))
                     if [ "$got" != "$want" ]; then
                         printf 'DRIFT [%s] %s\n   want=[%s]\n    got=[%s]\n' "$(basename "$f" .txt)" "$expr" "$want" "$got"

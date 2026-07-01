@@ -24,6 +24,30 @@
 # md-table-align no longer pads it to ~800 KB of whitespace.
 
 active:
+  - id: "D-544"
+    status: |-
+      open (2026-07-01, user-directed publicization + CI-efficiency ask). The
+      D-539 CI's FIRST GitHub run FAILED — not a code bug but a dev-env
+      REPRODUCIBILITY gap: gate scripts assumed Nix-devshell / dev-Mac tools
+      absent on bare runners: `rg` (check_debt_id_refs.sh; missing on both),
+      `mapfile` (check_test_reach.sh; macOS bash 3.2 has no bash-4 builtin),
+      GNU `timeout` (check_corpus_regression.sh; macOS ships none). Fixes THIS
+      cycle: mapfile→portable read loop; timeout→`run_bounded` (timeout→gtimeout
+      →unbounded) fn; ripgrep installed-if-missing in CI + added to flake.nix
+      (with coreutils) so nix users + bare clones both have the gate's tools.
+      EFFICIENCY (the ~20-min cold-cache full-gate CI): actions/cache of the Zig
+      global cache (deps: zwasm/zlinter) + `.zig-cache` (build) keyed on the
+      manifests; two-tier gate (push/PR = fast core smoke, nightly/dispatch =
+      full serial-e2e) per ADR-0107 + ADR-0049. Pending: green re-verification on
+      the next push's CI (iterate if a further runner gap surfaces).
+    category: "infra"
+    quality_floor: "release-mechanics: CI reproducibility + efficiency (ADR-0167)"
+    barrier: |-
+      rc.1 readiness. Verify the next CI run goes green on BOTH legs; confirm the
+      cache actually restores (warm run << 20 min). A bare-clone contributor
+      running `bash test/run_all.sh` on stock macOS/Linux should now pass the
+      gate scripts (portability regression guard).
+    last_reviewed: "2026-07-01"
   - id: "D-536"
     status: |-
       open (2026-07-01, user-directed; ADR-0167 S0). Debt-ledger code-truth
@@ -2597,7 +2621,7 @@ discharged:
     barrier: "none — DISCHARGED."
     last_reviewed: "2026-07-01"
   - id: "D-539"
-    status: "DISCHARGED 2026-07-01 (ADR-0167 S3 ★headline). CI wiring — .github was absent (zero external verification). Added: scripts/ci_gate.sh (SSOT: `zig fmt --check src/` + `test/run_all.sh --serial-e2e`, so CI can never verify less than the per-host gate; --serial-e2e avoids the D-418 agent load-race a shared runner provokes); .github/workflows/ci.yml (push main + PR + dispatch; macOS-15 aarch64 + ubuntu-22.04 x86_64 matrix, both blocking; Zig 0.16.0 via cached ziglang.org tarball; actions SHA-pinned; permissions contents:read; concurrency-cancel); .github/versions.lock (ZIG_VERSION mirror of flake.nix); .github/dependabot.yml (weekly github-actions). Gate deps analysed = Zig 0.16.0 + python3 (runner-preinstalled, one nREPL e2e); all Wasm fixtures committed .wasm; diff oracle Zig-native (no JVM oracle in gate); no perf-threshold step (bench machinery retired). To satisfy the new `zig fmt --check`, ran `zig fmt src/` (19 files, no-behaviour) — verified zlinter still 'No issues!'. Local validation: bash -n, actionlint clean, zig fmt --check now exit 0. First GitHub-Actions run verified post-push via `gh run`. NON-BLOCKING follow-ups (noted, not silently capped): a custom gitleaks secret-scan job (GitHub native secret-scanning covers public repos meanwhile) + a pinned-consumer public-API contract canary (DA critique §4)."
+    status: "DISCHARGED 2026-07-01 (ADR-0167 S3 ★headline). CI wiring — .github was absent (zero external verification). Added: scripts/ci_gate.sh (SSOT: `zig fmt --check src/` + `test/run_all.sh --serial-e2e`, so CI can never verify less than the per-host gate; --serial-e2e avoids the D-418 agent load-race a shared runner provokes); .github/workflows/ci.yml (push main + PR + dispatch; macOS-15 aarch64 + ubuntu-22.04 x86_64 matrix, both blocking; Zig 0.16.0 via cached ziglang.org tarball; actions SHA-pinned; permissions contents:read; concurrency-cancel); .github/versions.lock (ZIG_VERSION mirror of flake.nix); .github/dependabot.yml (weekly github-actions). Gate deps analysed = Zig 0.16.0 + python3 (runner-preinstalled, one nREPL e2e); all Wasm fixtures committed .wasm; diff oracle Zig-native (no JVM oracle in gate); no perf-threshold step (bench machinery retired). To satisfy the new `zig fmt --check`, ran `zig fmt src/` (19 files, no-behaviour) — verified zlinter still 'No issues!'. Local validation: bash -n, actionlint clean, zig fmt now exit 0. CORRECTION (2026-07-01): the initial 'first GitHub run verified post-push' note was PREMATURE — the first run actually FAILED, on runner tool-gaps (rg/mapfile/GNU-timeout), NOT a code bug. That reproducibility gap + CI efficiency is tracked + fixed under D-544; the wiring itself (this row) stands. NON-BLOCKING follow-ups: a custom gitleaks secret-scan job (GitHub native secret-scanning covers public repos meanwhile) + a pinned-consumer public-API contract canary (DA critique §4)."
     category: "infra"
     barrier: "none — DISCHARGED (first GitHub run verified post-push)."
     last_reviewed: "2026-07-01"

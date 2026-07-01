@@ -45,6 +45,8 @@
             zig
             pkgs.hyperfine
             pkgs.yq-go
+            pkgs.ripgrep   # gate scripts (check_debt_id_refs.sh) + dev search
+            pkgs.coreutils # GNU `timeout` for the bounded-run gate scripts
           ] ++ benchLangs ++ wasmTools;
 
           shellHook = ''

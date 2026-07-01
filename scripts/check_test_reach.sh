@@ -71,7 +71,11 @@ fi
 # Collect all .zig files under src/ that contain at least one
 # `^test ` block (line starts with "test " — covers both
 # `test "name"` and `test {` anonymous forms).
-mapfile -t test_files < <(grep -rl '^test ' src/ --include='*.zig' | sort -u)
+# (portable read loop rather than `mapfile` — the latter is a bash 4+ builtin
+# absent from macOS's system bash 3.2, so a bare-clone gate would fail there.)
+test_files=()
+while IFS= read -r _tf; do test_files+=("$_tf"); done \
+    < <(grep -rl '^test ' src/ --include='*.zig' | sort -u)
 
 # BFS the union of @import-reachable files from every configured
 # test root. `reachable` records absolute paths so duplicate-path
