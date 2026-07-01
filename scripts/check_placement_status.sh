@@ -37,7 +37,7 @@ set -o pipefail
 
 cd "${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
 
-YAML="placement.yaml"
+YAML="data/placement.yaml"
 MODE="audit"
 
 case "${1:-}" in
@@ -47,7 +47,7 @@ case "${1:-}" in
 esac
 
 if [[ ! -f "$YAML" ]]; then
-  echo "✗ placement.yaml not found at repo root" >&2
+  echo "✗ data/placement.yaml not found" >&2
   exit 1
 fi
 

@@ -34,7 +34,7 @@ set -euo pipefail
 MODE="${1:-info}"
 cd "$(dirname "$0")/.."
 
-YAML=host_interfaces.yaml
+YAML=data/host_interfaces.yaml
 ZIG=src/runtime/host_interface.zig
 
 fail=0

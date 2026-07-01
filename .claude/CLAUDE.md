@@ -584,18 +584,18 @@ zig fmt src/           # format
 
 ## Data sources
 
-- [`compat_tiers.yaml`](../compat_tiers.yaml) — authoritative Tier A / B /
+- [`compat_tiers.yaml`](../data/compat_tiers.yaml) — authoritative Tier A / B /
   C / D classification per var, special form, and host class. Read by
   test runner, REPL error message, and future `cljw --list-vars`. See
   ADR-0013 for the Tier D rationale.
-- [`placement.yaml`](../placement.yaml) — Clojure-ns var placement SSOT
+- [`placement.yaml`](../data/placement.yaml) — Clojure-ns var placement SSOT
   (Pattern A/B + transient_zig migration status + dependencies). Read
   by `scripts/check_placement_status.sh` (audit + status flip), future
   `cljw --list-vars` (alongside compat_tiers.yaml), and ADR-0033
   amendment history. Role split: compat_tiers.yaml = Java/cljw surface
   (Class-level), placement.yaml = Clojure-ns vars (var-level). Per
   `private/notes/clj_vs_zig_split_proposal_v5.md` §15.
-- [`host_interfaces.yaml`](../host_interfaces.yaml) — closed-set SSOT for the
+- [`host_interfaces.yaml`](../data/host_interfaces.yaml) — closed-set SSOT for the
   deftype/reify/extend-type host-supertype markers (`Object`, `clojure.lang.*`).
   Single in-code read point: `src/runtime/host_interface.zig`. Gated by
   `scripts/check_host_interface.sh` (G4: recognised-set ⊆ rows, no over-claim).

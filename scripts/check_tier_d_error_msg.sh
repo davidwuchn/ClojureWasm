@@ -11,7 +11,7 @@
 set -euo pipefail
 
 REPO_ROOT="${REPO_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
-YAML="$REPO_ROOT/compat_tiers.yaml"
+YAML="$REPO_ROOT/data/compat_tiers.yaml"
 
 # Expected format: each Tier D Code in error_catalog.zig carries a
 # multi-sentence hand-written template (ADR-0018 amendment 2). A full

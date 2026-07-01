@@ -12,7 +12,7 @@
 set -euo pipefail
 
 REPO_ROOT="${REPO_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
-YAML="$REPO_ROOT/compat_tiers.yaml"
+YAML="$REPO_ROOT/data/compat_tiers.yaml"
 
 if [[ ! -f "$YAML" ]]; then
     echo "[check_compat_tiers_sync] compat_tiers.yaml not found; skipping"

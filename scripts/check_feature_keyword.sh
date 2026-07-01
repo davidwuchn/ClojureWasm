@@ -31,7 +31,7 @@ MODE="${1:-info}"
 
 cd "$(dirname "$0")/.."
 
-YAML=compat_tiers.yaml
+YAML=data/compat_tiers.yaml
 
 if [ ! -f "$YAML" ]; then
     echo "compat_tiers.yaml not found; nothing to check." >&2
