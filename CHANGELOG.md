@@ -51,4 +51,4 @@ WebAssembly FFI as its headline capability. Earlier pre-releases were tagged
   surface; intentional divergences are catalogued in
   [`docs/clojure_vs_clojurewasm.md`](docs/clojure_vs_clojurewasm.md).
 - Licensed under EPL-2.0; third-party components in
-  [`THIRD_PARTY.md`](THIRD_PARTY.md).
+  [`legal/THIRD_PARTY.md`](legal/THIRD_PARTY.md).

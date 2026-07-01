@@ -129,7 +129,7 @@ from a Clojure one.
 
 ## License
 
-Eclipse Public License 2.0 — see [LICENSE](./LICENSE) and [NOTICE](./NOTICE).
+Eclipse Public License 2.0 — see [LICENSE](./LICENSE) and [NOTICE](./legal/NOTICE).
 
 ---
 
