@@ -24,37 +24,6 @@
 # md-table-align no longer pads it to ~800 KB of whitespace.
 
 active:
-  - id: "D-544"
-    status: |-
-      open (2026-07-01, user-directed publicization + CI-efficiency ask). The
-      D-539 CI's FIRST GitHub run FAILED — not a code bug but a dev-env
-      REPRODUCIBILITY gap: gate scripts assumed Nix-devshell / dev-Mac tools
-      absent on bare runners: `rg` (check_debt_id_refs.sh; missing on both),
-      `mapfile` (check_test_reach.sh; macOS bash 3.2 has no bash-4 builtin),
-      GNU `timeout` (check_corpus_regression.sh; macOS ships none). Fixes THIS
-      cycle: mapfile→portable read loop; timeout→`run_bounded` (timeout→gtimeout
-      →unbounded) fn; ripgrep installed-if-missing in CI + added to flake.nix
-      (with coreutils) so nix users + bare clones both have the gate's tools.
-      2ND ITER (2026-07-01): Linux leg went GREEN, but macOS FAILED — the initial
-      portability sweep was INCOMPLETE (framework_completion). A full sweep of the
-      8 gate check_*.sh confirmed only check_lazy_ns_replay.sh (SMOKE_CORE) still
-      used bare `timeout` (macOS has none → exit 127 for every ns); fixed it with
-      the same run_bounded fallback. Verified locally 29/29 clean. That was the
-      last gate-script tool-gap (corpus/test_reach fixed prior; debt_id_refs uses
-      the CI-installed rg; the other 5 are tool-clean).
-      EFFICIENCY (the ~20-min cold-cache full-gate CI): actions/cache of the Zig
-      global cache (deps: zwasm/zlinter) + `.zig-cache` (build) keyed on the
-      manifests; two-tier gate (push/PR = fast core smoke, nightly/dispatch =
-      full serial-e2e) per ADR-0107 + ADR-0049. Pending: green re-verification on
-      the next push's CI (iterate if a further runner gap surfaces).
-    category: "infra"
-    quality_floor: "release-mechanics: CI reproducibility + efficiency (ADR-0167)"
-    barrier: |-
-      rc.1 readiness. Verify the next CI run goes green on BOTH legs; confirm the
-      cache actually restores (warm run << 20 min). A bare-clone contributor
-      running `bash test/run_all.sh` on stock macOS/Linux should now pass the
-      gate scripts (portability regression guard).
-    last_reviewed: "2026-07-01"
   - id: "D-536"
     status: |-
       open (2026-07-01, user-directed; ADR-0167 S0). Debt-ledger code-truth
@@ -2607,6 +2576,11 @@ standing:
     barrier: "open after the D-440 arc completes (R4 + R5 must first rewrite the bulk of 'Phase N' citations to gap-area terms). Premature adoption = ~70 dangling citations with no 1:1 redirect. Trigger: D-440 R4/R5 done + a user nod to re-architect the planning axis (it is depth-4, the project's organizing metaphor)."
     last_reviewed: "2026-06-15"
 discharged:
+  - id: "D-544"
+    status: "DISCHARGED 2026-07-01 (ADR-0167; CI green both legs). The D-539 CI's first runs FAILED — a dev-env REPRODUCIBILITY gap, not a code bug: gate scripts assumed Nix-devshell/dev-Mac tools absent on bare runners. FIXED across 2 iters: check_test_reach mapfile→portable read loop (bash 3.2); check_corpus_regression + check_lazy_ns_replay `timeout`→`run_bounded` (timeout→gtimeout→unbounded); ripgrep install-if-missing in CI + ripgrep/coreutils added to flake.nix (nix users + bare clones both covered). A full sweep of the 8 gate check_*.sh confirmed those were the only tool-gaps. EFFICIENCY: actions/cache of the Zig global cache (deps zwasm/zlinter — HIT confirmed) + `.zig-cache`; two-tier gate (push/PR = fast core smoke, nightly cron + dispatch = full serial-e2e) per ADR-0107 + ADR-0049 — so routine pushes skip the 398-step e2e. VERIFIED: run 28506339320 GREEN on x86_64-linux + aarch64-macos. HONEST residual: a warm run is still ~15 min because the 3 core ReleaseSafe builds (test-vm + test-tree_walk + build_cljw of cljw+zwasm) dominate — the cache saves the dep FETCH, not the compile; Zig's cross-run build-cache reuse via a copied .zig-cache is limited. Further cut would need fewer core builds (a separate lever, not opened). Bare-clone contributors on stock macOS/Linux now pass the gate scripts (portability guard)."
+    category: "infra"
+    barrier: "none — DISCHARGED (CI green both legs; residual compile-time is inherent, noted)."
+    last_reviewed: "2026-07-01"
   - id: "D-543"
     status: "DISCHARGED 2026-07-01 (ADR-0167; loop-ownable part). (a) Dep pins recorded exactly in THIRD_PARTY.md (zwasm Apache-2.0 @fc7ff0b3b/v2.0.0-alpha.3, -Dwasm-only; zlinter MIT @9b4d67b9). Resolving the '1.0.0-rc.1 embeds zwasm v2.0.0-alpha.3' stability story by BUMPING the pin to a coherent zwasm release is USER-OWNED CODEV (needs zwasm to cut one — tracked via handover north-star + .dev/zwasm_capabilities.md), not a loop task. (b) Confirmed the eager zlinter fetch is STRUCTURAL: build.zig:5 has a top-level comptime `@import(\"zlinter\")`, which the Zig build graph resolves eagerly (matches zwasm's ratified D-274 — lazy needs an upstream b.lazyDependency-able builder). Recorded as a NAMED pre-1.0 limitation in THIRD_PARTY.md (accepted development-time fetch, not a runtime dep). Both parts resolved to the loop's extent; the zwasm-bump residual is user/upstream-gated."
     category: "infra"

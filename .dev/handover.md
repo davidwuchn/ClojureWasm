@@ -11,11 +11,11 @@
   (ADR-0167).** Full-scope A+B, fully autonomous. Drive the finite Track-A gate
   below + the parallel Track-B (ADR-0166 D-522…D-529) quality drain. The final
   version bump + `git tag` is **USER-OWNED** (build.zig.zon SSOT; loop never tags).
-- **rc.1 readiness gate (FINITE — the tag-cut SSOT):** D-537/539/540/541/542/543
-  DONE (see `discharged:`); **D-544** (CI reproducibility+efficiency) = the one
-  OPEN loop item — needs green CI re-verify. USER-OWNED residuals: settings.json
-  `additionalDirectories` move (`.claude/`-blocked), zwasm-pin bump (CODEV), and
-  the final `.version` bump + `git tag` (loop NEVER tags).
+- **rc.1 readiness gate (FINITE — the tag-cut SSOT): ALL loop items DONE** —
+  D-537/539/540/541/542/543/544 discharged (CI GREEN both legs, run 28506339320).
+  USER-OWNED residuals only: settings.json `additionalDirectories` move
+  (`.claude/`-blocked), zwasm-pin bump (CODEV), and the final `.version` bump +
+  `git tag` (loop NEVER tags). The tag is cuttable whenever the user decides.
 - **Track B (parallel, non-blocking for the tag):** the easiest-first `active:`
   drain continues — D-522 de-pointer / D-523 doc-audit / D-526 interop / D-527
   parity / D-528 real-deps.edn / D-529 / D-305 / D-470 / D-222 / D-460 / D-439 sqrt.
@@ -71,24 +71,21 @@ wiring + repo `zig fmt`-clean; **D-540** CHANGELOG/THIRD_PARTY/attrs; **D-541**
 version staging; **D-542** release.yml; **D-543** dep-pin; **D-538** env
 decoupling (loop part); **D-536** down-payment. Local full gate 398/0.
 
-**In-flight (uncommitted at note time — batch after smoke `bbqs1koyi`):** a big
-publicization pass answering the user's 2nd directive:
+Publicization pass (user's 2nd directive) — ALL committed + pushed + CI GREEN:
 - **README badges + subtle sponsor** (zwasm taste: CI/Zig/Clojure/EPL/Sponsors +
   bottom sponsor line). Issues/PRs **stay paused** (did NOT mirror zwasm's reopen).
-- **CI reproducibility + efficiency (D-544, NEW)**: the D-539 CI's first run
-  FAILED on runner tool-gaps (rg/mapfile/GNU-timeout) — a reproducibility gap,
-  not a code bug (D-539 discharge note CORRECTED — the "verified" was premature).
-  Fixed: mapfile→read loop, timeout→`run_bounded` fallback, ripgrep install-if-
-  missing + added to flake.nix (+coreutils); + actions/cache of Zig deps/build +
-  two-tier gate (push/PR=core, nightly/dispatch=full). **Pending green re-verify.**
-- **大整理**: shipped host-name refs (ARCHITECTURE ubuntunote, build.zig OrbStack),
-  8 src `private/` de-pointered, 6 mixed-JP src comments → English, provenance
-  `~/Documents/OSS` paths → repo-relative (placement.yaml/host_interfaces/cw_ported),
-  2 docs/works/ladder.md private/ refs. Inventory: `private/notes/2026-07-01-
-  publicization-cleanup-inventory.md`. **Cat5 ~2962-line comment de-pointering
-  (D-522) is the GRADUAL long tail — not one-shot.**
+- **CI reproducibility + efficiency (D-544, discharged)**: gate-script tool-gaps
+  (rg/mapfile/GNU-timeout, a bare-runner reproducibility gap) fixed → mapfile→read,
+  timeout→`run_bounded`, ripgrep install + flake ripgrep/coreutils; actions/cache
+  of Zig deps + two-tier gate (push/PR=core, nightly/dispatch=full). Residual ~15-min
+  warm CI = inherent 3× ReleaseSafe compile (cache saves deps, not compile).
+- **大整理**: shipped host-names, 8 src `private/` de-pointered, 6 mixed-JP comments
+  → English, provenance `~/Documents/OSS`→repo-relative, ladder.md. Inventory:
+  `private/notes/2026-07-01-publicization-cleanup-inventory.md`.
 
-**First task on resume:** confirm the CI run on the pushed tip is GREEN on both
-legs (D-544 barrier); iterate if a further runner gap surfaces. Then continue
-Track B (D-522 de-pointer / D-523 doc audit vs code-truth / D-526/527/528).
-zwasm reflection done: badges + CI-efficiency pattern adopted; Issues/PRs paused.
+**First task on resume:** continue **Track B** (parallel, non-blocking for the tag):
+**D-522** = the GRADUAL ~2962-line AI-narration/pointer de-pointering (worst-offender
+`src/runtime/interface_membership.zig` — but note MUCH of it is genuine technical doc;
+only date-stamps like `clj-oracle 2026-06-21` + ADR/D pointers are the noise — do NOT
+blindly strip provenance; careful, code-truth, multi-agent-with-verify OK). Then
+D-523 doc-audit / D-460 sorted-coll-as-key correctness / D-526/527/528.
