@@ -2,8 +2,8 @@
 
 > **SSOT for "what does the zwasm we embed offer, and what has cljw adopted".**
 > cljw embeds **zwasm v2** (F-001, unavoidable). The dep is a **tag pin** —
-> **v2.0.0-alpha.3** (`fc7ff0b3b`, see § Pin), pinned 2026-06-22 after the
-> relative-path JIT-adoption experiment settled. zwasm is itself under active
+> **v2.0.0** (`0853f3c1`, see § Pin), pinned 2026-07-01 — the stable release cljw
+> 1.0.0 ships on (bumped from alpha.3 for the D-501 no-max-table grow fix). zwasm is itself under active
 > co-development (`~/Documents/MyProducts/zwasm_from_scratch`, branch
 > `zwasm-from-scratch`) and its embedding API is *growing* — notably a **JIT-backed
 > engine** (the cljw north star, ROADMAP §9.0 gap area II × III). cljw has **adopted
@@ -42,13 +42,14 @@ a cljw-side shim.
 
 ## Pin
 
-- **TAG PIN — v2.0.0-alpha.3 (`fc7ff0b3b`), pinned 2026-06-22.** `build.zig.zon`
-  `.zwasm` = `.url = "git+https://github.com/clojurewasm/zwasm.git#fc7ff0b3b…"` +
-  `.hash = "zwasm-2.0.0-alpha.3-…"`, resolved from GitHub. This replaced the
+- **TAG PIN — STABLE v2.0.0 (`0853f3c1`), pinned 2026-07-01.** `build.zig.zon`
+  `.zwasm` = `.url = "git+…/zwasm.git#v2.0.0"` + `.hash = "zwasm-2.0.0-FT1Fvyv…"`,
+  resolved from GitHub. Bumped from v2.0.0-alpha.3 for the coherent cljw 1.0.0 release
+  (picks up the no-max-table `table.grow` JIT fix, zwasm D-501 tier-1). This replaced the
   2026-06-21 relative-path JIT-adoption experiment (`.path = "../zwasm_from_scratch"`,
   no-push) once zwasm cut the pinnable tag (3-host green) — so the no-push mode is
-  LIFTED and cljw pushes `main` again. The tag is annotated, tag-only (no GitHub
-  Release), so it is reproducible for others without disturbing the `Latest` pointer.
+  LIFTED and cljw pushes `main` again. v2.0.0 is a full stable GitHub Release
+  (published 2026-07-01), the coherent engine cljw 1.0.0 ships on.
 - `lazy` dependency: resolved only under `-Dwasm`. So a churning dep never
   breaks the day-to-day gate when the flag is off — it
   only gates what `cljw.wasm/*` can do.
@@ -69,6 +70,7 @@ a cljw-side shim.
 | **JIT-backed engine (`.auto`)**      | **ON (JIT-first + interp fallback)** — re-landed v2.0.0-alpha.3 (D-478); x86_64 LSRA miscompile D-489/D-494 fixed, 3-host green | YES (tag-pin)   | **ADOPTED — cljw default flipped `.interp`→`.auto` (D-488 discharged 2026-06-22); no-opts load rides JIT** | D-488        |
 | Components on JIT                    | interp-pinned (D-500, zwasm CM-API core); Win64 string-arg wrapper-thunk gap                                                     | YES (tag-pin)   | unaffected — `.auto` default leaves components on interp (zwasm-side pin)                                   | D-500, D-404 |
 | WIT component marshalling            | future                                                                                                                           | NO              | NOT adopted                                                                                                  | D-404        |
+| no-max table `table.grow` (JIT)      | tier-1 FIXED in v2.0.0 (D-501) — grows to a synth cap `max(min*2, 1024)`; unbounded no-max grow still interp-only               | YES (pin)       | unaffected (no `table.grow` / table decl in cljw host or FFI fixtures); available if a guest needs it        | D-501        |
 
 ## Forward plan — the JIT adoption unit (gap area II × III) — ACTIVE
 
@@ -141,3 +143,11 @@ was the `.auto`-default flip; this ledger tracks adoption status per capability.
   default executes a SIMD body only the JIT can run (`default-simd: 42`), proving the flip.
   Components stay interp-pinned on the zwasm side (D-500), so the component path is unaffected
   and the F-012 diff oracle (explicit `.interp`/`.jit`) is untouched. `to_cljw_09` CONSUMED.
+- **2026-07-01** — **PIN BUMP v2.0.0-alpha.3 → STABLE v2.0.0 (`0853f3c1`)** for the cljw
+  1.0.0 release. zwasm cut + published a stable `v2.0.0` GitHub Release (after one failed
+  release build + a tag re-cut); it picks up zwasm D-501 tier-1 (no-max table `table.grow`
+  under JIT grows to `max(min*2, 1024)`; PR #115) + a test-infra guest-stdout fd guard.
+  cljw is behaviorally unaffected (no `table.grow` usage); the full `--serial-e2e` gate
+  confirmed the embedding API (`Engine.init` / `runWasmCapturedFull` / `wasi.host.Host` /
+  `Module.InstantiateOpts`) is signature-stable. Resolves the D-543 "1.0.0 embeds a
+  pre-1.0 zwasm" incoherent-pin story — cljw 1.0.0 now ships on a coherent stable zwasm v2.0.0.

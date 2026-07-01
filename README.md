@@ -17,8 +17,8 @@
 </p>
 
 > [!NOTE]
-> ClojureWasm is **not yet stable** and is built by a very small team with
-> limited resources. To keep that focus, **Issues and Pull Requests are not
+> ClojureWasm has reached its first stable release (**1.0.0**), but it is built by
+> a very small team with limited resources. To keep that focus, **Issues and Pull Requests are not
 > being accepted** right now. You are very welcome to read along, try it, and
 > say hello in [GitHub Discussions](https://github.com/clojurewasm/ClojureWasm/discussions).
 

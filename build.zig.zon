@@ -1,6 +1,6 @@
 .{
     .name = .cljw,
-    .version = "1.0.0-alpha.1",
+    .version = "1.0.0",
     .fingerprint = 0x1869d207073beffa,
     .minimum_zig_version = "0.16.0",
     .dependencies = .{
@@ -10,16 +10,16 @@
         },
         // zwasm v2 embedding API (F-001 / D-037). `lazy` so the DEFAULT build +
         // gate never resolve it — only `-Dwasm` (b.lazyDependency) does.
-        // PINNED to tag **v2.0.0-alpha.3** (zwasm@fc7ff0b3b, 2026-06-22, to_cljw_09): the
-        // JIT-adoption co-dev experiment settled — zwasm cut a pinnable tag (3-host green:
-        // Mac aarch64 + ubuntu x86_64 + Win64), so cljw exits the relative-path NO-PUSH
-        // mode and pins the tag. `.auto`=JIT-default (D-489/D-494 fixed) + funcref C-API
-        // (D-498) landed; cljw uses explicit `.interp`(D-488)/`.jit`, so no behaviour
-        // change. (Prior relative-path form: `.path = "../zwasm_from_scratch"`, see git
-        // history.) lazy + flag-guard means a churning dep cannot break the default gate.
+        // PINNED to STABLE tag **v2.0.0** (zwasm@0853f3c1, 2026-07-01): the coherent
+        // release cljw 1.0.0 ships on. Bumped from v2.0.0-alpha.3 to pick up the
+        // no-max-table `table.grow` JIT fix (zwasm D-501 tier-1, PR #115: grows to a
+        // `max(min*2, 1024)` cap). `.auto`=JIT-default; cljw uses explicit `.interp`/`.jit`
+        // and is behaviorally unaffected (no `table.grow` usage). (Prior relative-path
+        // form: `.path = "../zwasm_from_scratch"`, see git history.) lazy + flag-guard
+        // means a churning dep cannot break the default gate.
         .zwasm = .{
-            .url = "git+https://github.com/clojurewasm/zwasm.git#fc7ff0b3b6404e077b3c186605cf49a15e96cc0a",
-            .hash = "zwasm-2.0.0-alpha.3-FT1FvyFxiwCcp4CVyldwaUXBdxEhxM0L_GvghvGslqt8",
+            .url = "git+https://github.com/clojurewasm/zwasm.git#v2.0.0",
+            .hash = "zwasm-2.0.0-FT1FvyvVigD7I5-Bcc0cT3L_Z2BjgVTl6sjuGLdOHOrc",
             .lazy = true,
         },
     },

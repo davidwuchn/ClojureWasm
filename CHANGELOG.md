@@ -5,20 +5,13 @@ All notable changes to ClojureWasm are documented here. The format follows
 [SemVer](https://semver.org/). SemVer compatibility guarantees start at the
 first stable `1.0.0` tag; pre-1.0 `alpha` / `rc` tags may still change surfaces.
 
-<!--
-  STAGING NOTE (ADR-0167): the release-candidate entry below sits under
-  [Unreleased] because build.zig.zon .version is still an alpha until the
-  maintainer cuts the tag. Cutting `1.0.0-rc.1` = bump .version + rename this
-  heading to `## [1.0.0-rc.1] - <date>` + `git tag`. The autonomous loop never
-  tags; the version is the maintainer's to own.
--->
+## [1.0.0] - 2026-07-01
 
-## [Unreleased]
-
-The first **release candidate** for `1.0.0`. ClojureWasm is a JVM-free Clojure
-runtime written in Zig, feature-complete for everyday Clojure with a
-WebAssembly FFI as its headline capability. Earlier pre-releases were tagged
-`1.0.0-alpha.*`.
+The first **stable** release. ClojureWasm is a JVM-free Clojure runtime written
+in Zig, feature-complete for everyday Clojure with a WebAssembly FFI as its
+headline capability. The WebAssembly FFI runs on the embedded **zwasm v2.0.0**
+engine. Earlier pre-releases were tagged `1.0.0-alpha.*`. SemVer compatibility
+guarantees start here.
 
 ### Added
 
@@ -32,7 +25,7 @@ WebAssembly FFI as its headline capability. Earlier pre-releases were tagged
 - **WebAssembly FFI** — `(wasm/load "mod.wasm")` then `(wasm/call m "fn" …)`:
   load a sandboxed module compiled from any language (Rust, Go, Zig, C) and
   call it like an ordinary function. The FFI is **JIT-compiled by default** via
-  the embedded zwasm engine, so a hot loop inside a module runs as native code.
+  the embedded **zwasm v2.0.0** engine, so a hot loop inside a module runs as native code.
 - **WebAssembly components as namespaces** — `(:require ["comp.wasm" :as c])`
   pulls a WIT-typed component in like a library; its exports become ordinary
   Vars, with arguments and results as plain Clojure data.

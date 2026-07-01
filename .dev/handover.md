@@ -6,7 +6,7 @@
 ## Resume contract
 
 - **HEAD**: `main` (`git log` = SSOT; tip `ac1b883c`). Per-commit = smoke; commit
-  **and** push (atomic Step 6). `build.zig.zon` `.zwasm` = tag pin `v2.0.0-alpha.3`.
+  **and** push (atomic Step 6). `build.zig.zon` `.zwasm` = stable tag pin `v2.0.0` (cljw 1.0.0).
 - **ACTIVE CAMPAIGN (2026-07-01, user-directed): 1.0.0-rc.1 release readiness
   (ADR-0167).** Full-scope A+B, fully autonomous. Drive the finite Track-A gate
   below + the parallel Track-B (ADR-0166 D-522…D-529) quality drain. The final

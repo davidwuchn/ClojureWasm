@@ -13,8 +13,8 @@ language lineage separately.
 ## Build / runtime dependencies (fetched, pinned in build.zig.zon)
 
 - **zwasm** — the embedded WebAssembly engine that powers the Wasm FFI.
-  Apache-2.0. Pinned to commit `fc7ff0b3b6404e077b3c186605cf49a15e96cc0a`
-  (`v2.0.0-alpha.3`). Resolved only for the Wasm-enabled build (`-Dwasm`); the
+  Apache-2.0. Pinned to the stable tag `v2.0.0` (commit `0853f3c1`). Resolved
+  only for the Wasm-enabled build (`-Dwasm`); the
   default build does not fetch it.
   Source: <https://github.com/clojurewasm/zwasm>.
 - **zlinter** — a development-time Zig linter used by `zig build lint`. MIT.
