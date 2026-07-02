@@ -3,7 +3,8 @@
 # Heuristic lint for forbidden no-op stub patterns in src/.
 # Per Shota's directive: "if implemented, must be real; no-op redirect forbidden".
 #
-# Active phase: 6. Activation as hard gate deferred — the heuristic
+# On-demand audit (D-547 relabel; the phase model is retired, ADR-0142).
+# Activation as hard gate deferred — the heuristic
 # at L113 of `.claude/rules/no_op_stub_forbidden.md` needs concrete
 # bash/grep recipes before the gate becomes block-grade. Informational
 # is the current correct shape (no new debt row needed).
@@ -12,7 +13,7 @@ set -euo pipefail
 
 REPO_ROOT="${REPO_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
 
-# Patterns considered no-op stubs (Phase 5+ activation):
+# Patterns considered no-op stubs:
 #   1. fn body that immediately returns the only argument unchanged
 #   2. fn body that wraps the body argument in a no-op block
 #   3. comment "no-op" or "stub" near impl without explicit ADR reference

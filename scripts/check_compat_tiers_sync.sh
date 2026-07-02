@@ -3,7 +3,8 @@
 # Verifies compat_tiers.yaml entries match actual implementation in
 # src/lang/primitive/ and src/runtime/{java,cljw}/.
 #
-# Active phase: 6. Directory layout shipped at Phase 5 entry (ADR-0029,
+# On-demand audit (D-547 relabel; the phase model is retired, ADR-0142).
+# Directory layout shipped at Phase 5 entry (ADR-0029,
 # supersedes ADR-0011); host_classes entries are landing through Phase
 # 6+. Sync check remains informational pending a real-cycle promotion;
 # refresh when the first cycle actually treats this gate as block-grade

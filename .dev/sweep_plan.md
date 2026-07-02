@@ -1,5 +1,11 @@
 # Sweep plan — confirmed order (2026-06-14, user-directed)
 
+> **CLOSED (2026-07-02).** Historical planning document — the sweep phase it
+> ordered is complete and the "/continue reads this after handover.md" claim is
+> RETIRED (next-unit selection = `.dev/debt.yaml` easiest-first per CLAUDE.md;
+> the "commit LOCALLY" instruction predates atomic commit+push). Kept for
+> inbound references; do not drive work from it.
+
 > The SSOT for the current **sweep + wasm-north-star phase**. `/continue` reads
 > this after `handover.md` to pick the next unit autonomously. Order is
 > top-to-bottom; finish a unit, commit LOCALLY, move to the next.

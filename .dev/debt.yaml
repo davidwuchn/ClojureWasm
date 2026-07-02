@@ -1404,6 +1404,19 @@ active:
     barrier: |-
       tractable now; M-sized survey-first. Value rises with D-528 (real deps.edn corpus).
     last_reviewed: "2026-07-02"
+  - id: "D-553"
+    status: |-
+      open (2026-07-02, lifted from D-196's discharged tail — a follow-up living only
+      inside a discharged row is invisible to the active drain). Repurpose
+      scripts/check_vm_parity.sh to run the e2e suite on the NON-default backend
+      (tree_walk, the F-012 differential oracle) so an oracle-only e2e/rendering
+      regression cannot hide behind the vm-default gate. On-demand / Phase-boundary
+      cadence per ADR-0049 (never per-commit). The script's BLOCKERS list stays the
+      re-add point for future VM-only regressions.
+    category: "tooling"
+    barrier: |-
+      tractable now; S-M (swap -Dbackend + drive run_all's e2e list through it).
+    last_reviewed: "2026-07-02"
 standing:
   - id: "D-549"
     status: |-

@@ -1,5 +1,8 @@
 # v0 → v1 feature parity
 
+> **CLOSED (2026-07-02).** Historical generated snapshot (2026-06-06). Kept
+> for inbound references; do not drive work from it.
+
 Convergence Campaign Stage 0.2 deliverable. Enumerates every v0 (ClojureWasm
 v0.5.0, the read-only reference clone) bundled namespace + app feature and maps
 each to its v1 (`main`) status, with the owning debt row (or

@@ -37,6 +37,10 @@ case "$CMD" in
     # `timeout NNN bash …` wrapper) — the former bare `*run_all.sh*`
     # substring fired on every grep/sed/cat that merely MENTIONED the
     # path (7 false injections in one audited session, 2026-07-02).
+    # --list / reap are introspection, not a gate launch.
+    *"--list"*|*"run_gate.sh reap"*)
+        exit 0
+        ;;
     *"bash test/run_all.sh"*|*"bash scripts/run_gate.sh"*|*"bash scripts/run_remote_ubuntu.sh"*)
         ;;
     *)

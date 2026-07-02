@@ -1,5 +1,9 @@
 # clojure.core coverage gap map (corpus-driven, D-158 tier 1)
 
+> **CLOSED (2026-07-02).** Historical work queue (D-158 era). Any residual
+> coverage gap lives as a `.dev/debt.yaml` row, not here. Kept for inbound
+> references; do not drive work from it.
+
 Unbiased functional-completeness work queue: the real `clojure.core`
 public var list (babashka `ns-publics`, ~647) diffed against cljw's var
 set. Replaces AI-probed guessing. Companion to D-158 (the later

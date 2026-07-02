@@ -1,5 +1,8 @@
 # Convergence Campaign — drive cw v1 to feature-convergence (autonomous)
 
+> **CLOSED (2026-07-02).** Historical campaign record (2026-06-06); stages
+> complete. Kept for inbound references; do not drive work from it.
+
 > **Status**: opened 2026-06-06; **Stage 0 DONE 2026-06-06** (5 SSOTs rebuilt:
 > `core_coverage_gaps.md` re-run, NEW `v0_v1_feature_parity.md` + D-273 umbrella,
 > `compat_tiers.yaml` Java scope +31A/+3C reservations, debt de-staled −5,

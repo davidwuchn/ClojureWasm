@@ -40,16 +40,13 @@ spec is not duplicated here — CLAUDE.md is the single source.
    (anticipated directory tree Phase 5-20). When a task touches
    any topic these files cover, treat them as fact above
    ROADMAP / ADR text.
-3. Read `.dev/ROADMAP.md`:
-   - Find the IN-PROGRESS phase in §9. If none, take the first
-     PENDING.
-   - In that phase's expanded §9.<N> task list, find the first
-     `[ ]` task. If §9.<N> is missing/empty, the phase has not
-     been opened yet — load the §9.<N> placeholder including
-     its **Entry ADRs / Entry debts / Reference / Skeletons /
-     Deliverables / Final activation step** lines. The Entry
-     debts list points at `.dev/debt.yaml` rows the Phase owner
-     must resolve.
+3. Read `.dev/ROADMAP.md` **§9.0** (the gap-area model — the
+   phase-queue/§9.<N>-placeholder model is RETIRED per ADR-0142):
+   the three gap areas' BUILT status + named gaps + draining
+   `D-NNN` rows. Next-unit selection is `handover.md`'s "First
+   task on resume" if concrete, else the `.dev/debt.yaml`
+   `active:` list EASIEST-FIRST (CLAUDE.md § When the active
+   work unit completes).
 4. (Dormant cadence per ADR-0025: skip the
    `docs/ja/learn_clojurewasm/` chapter check. `private/notes/`
    per-task notes continue.)
@@ -75,12 +72,13 @@ spec is not duplicated here — CLAUDE.md is the single source.
    § Autonomous Workflow.** Do not wait for "go" — `/continue`
    itself is the go signal.
 
-## Phase boundary review chain (auto-runs at phase close)
+## Boundary review chain (auto-runs when a gap-area unit arc closes)
 
-A Phase closes when the chapter commit's `commits:` list includes
-the SHA that flipped the last `[ ]` to `[x]` in §9.<N>. Run this
-chain in parallel where possible, **continue into §9.<N+1>
-without asking**:
+The phase-queue is RETIRED (ADR-0142); the boundary is now a
+major work-arc close (a gap-area unit family drained, a release
+cut, or ~a full gate-ceiling cycle of related units). Run this
+chain in parallel where possible, **continue into the next
+self-selected unit without asking**:
 
 1. Run `audit_scaffolding`. Findings of any severity feed the
    loop's next interrupt (block-severity ones become an immediate
@@ -101,10 +99,9 @@ without asking**:
    `bench/quick_baseline.txt` auto-baseline was removed from the gate,
    so no dangling samples accumulate. Perf is measured on demand via
    `bench/compare_langs.sh` / `bench/run_bench.sh`.)
-5. Open §9.<N+1>: flip the §9 phase tracker; expand §9.<N+1>
-   inline (mirror §9.<N>'s structure); update `handover.md` to
-   point at §9.<N+1>'s first task.
-6. Proceed to Step 0 of §9.<N+1>.1. Auto-compaction handles context
+5. Update `handover.md` to point at the next self-selected unit
+   (debt.yaml easiest-first).
+6. Proceed to that unit's Step 0. Auto-compaction handles context
    size transparently — no agent action needed.
 
 ## Subagent delegation cheatsheet

@@ -3,7 +3,8 @@
 # Verifies Tier D forms / fns produce structured error messages
 # referencing the rationale ADR.
 #
-# Active phase: 6. Tier D error messages are landed inline at each
+# On-demand audit (D-547 relabel; the phase model is retired, ADR-0142).
+# Tier D error messages are landed inline at each
 # `tier_d_*` Code in src/runtime/error/catalog.zig per ADR-0018
 # amendment 2. Promotion to gate deferred until a real drift surfaces;
 # script stays informational meanwhile.

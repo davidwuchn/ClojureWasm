@@ -1,5 +1,8 @@
 # cw v0 parity snapshot + gap-incorporation plan
 
+> **CLOSED (2026-07-02).** Historical snapshot (2026-05-29) from the
+> phase-queue era. Kept for inbound references; do not drive work from it.
+
 > **Purpose** (user directive, 2026-05-29): persist the cw-v0-vs-cw-v1
 > coverage/parity analysis as a reference, and prepare — with **ROADMAP
 > amendment in scope** — how the loop will incorporate the missing
