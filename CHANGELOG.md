@@ -5,6 +5,38 @@ All notable changes to ClojureWasm are documented here. The format follows
 [SemVer](https://semver.org/). SemVer compatibility guarantees start at the
 first stable `1.0.0` tag; pre-1.0 `alpha` / `rc` tags may still change surfaces.
 
+## [1.0.1] - 2026-07-02
+
+Patch release: memory-safety fixes found by a post-release audit. No API
+changes. Users on 1.0.0 should upgrade — the first item is reachable from
+ordinary code.
+
+### Fixed
+
+- **Stack overflow on deep lazy chains** — realizing or counting a lazy
+  sequence / cons chain longer than ~400k elements (e.g.
+  `(count (repeat 1000000 1))`) crashed the process: the GC mark phase
+  descended the object graph recursively on the native stack. Marking now
+  uses an explicit gray worklist (O(1) stack for any depth).
+- **Use-after-free family during analysis/compilation** — GC values created
+  while a form is analyzed, compiled, or AOT-deserialized (literal strings,
+  quoted data, chunk constants, macro-expansion intermediates) were not GC
+  roots until execution, so a collection mid-analysis (large file loads,
+  user-macro expansion) could recycle them — surfacing as per-run-varying
+  `Unable to resolve symbol: '<garbage>'` errors, index-out-of-bounds
+  panics, or spurious "host-marker method not yet wired" errors when
+  loading bigger libraries (instaparse, math.combinatorics). A per-thread
+  analysis-roots frame now keeps them alive; `deftype` / `reify` method
+  tables are also traced (their method functions could be collected out
+  from under a live type).
+- **Namespace reflection errors are now catchable** — `ns-resolve`,
+  `ns-map`, `ns-name`, `intern`, `create-ns`, `alias`, `find-var` and
+  friends raised an uncatchable "not supported" error on a missing
+  namespace or wrong-typed argument; Clojure raises a plain catchable
+  exception there, and libraries rely on that for capability probes
+  (`(try (ns-resolve …) (catch Exception e nil))`). They now match
+  Clojure's exception classes.
+
 ## [1.0.0] - 2026-07-01
 
 The first **stable** release. ClojureWasm is a JVM-free Clojure runtime written
