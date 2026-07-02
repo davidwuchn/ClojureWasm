@@ -9,8 +9,9 @@
 # Linux x86_64 gate moved to manual / Phase-boundary via the
 # `ubuntunote` SSH host:
 #
-#   bash test/run_all.sh                  # Mac per-commit
-#   bash scripts/run_remote_ubuntu.sh     # Linux at Phase boundary
+#   bash test/run_all.sh --smoke <step>   # Mac per-commit (ADR-0107)
+#   bash test/run_all.sh                   # full gate (batched: ceiling/boundary/pre-tag)
+#   bash scripts/run_remote_ubuntu.sh      # Linux at Phase boundary
 #
 # Setup: .dev/ubuntunote_setup.md (Linux SSH host) +
 # .dev/orbstack_setup.md (retained dev-convenience host).
@@ -43,7 +44,7 @@ E2E_JOBS="${E2E_JOBS:-8}"
 # core (zig build test ×2 = the FULL dual-backend diff oracle + all unit, + lint
 # + build_cljw + corpus_regression) plus any changed/new e2e step(s) named after
 # the flag, then stamps .dev/.smoke_pass. This is the per-commit check; the slow
-# 248-step e2e SHELL suite + perf run only in the full (no-flag) gate, batched +
+# full e2e SHELL suite (hundreds of steps) + perf run only in the full (no-flag) gate, batched +
 # run-alone. The single .dev/.gate_cadence ceiling (full gate resets it) bounds
 # how many smoke-only commits ride before a full gate is forced.
 SMOKE_MODE=0
@@ -99,7 +100,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 # ADR-0107: in --smoke mode, restrict to the correctness core + the named e2e
-# step(s). Everything else (the 248-step e2e shell suite + perf) is skipped; it
+# step(s). Everything else (the full e2e shell suite + perf) is skipped; it
 # runs only in the full gate. Implemented by funneling through the existing
 # ONLY_STEPS machinery so run_step's selection logic is reused unchanged.
 if (( SMOKE_MODE )); then
@@ -775,7 +776,8 @@ run_step "e2e_phase14_exit_smoke"            "bash test/e2e/phase14_exit_smoke.s
 run_step "e2e_phase14_text_writer"           "bash test/e2e/phase14_text_writer.sh"
 run_step "e2e_phase14_text_reader"           "bash test/e2e/phase14_text_reader.sh"
 
-# Informational scans (ADR-0024). Phase 5+ they become blocking.
+# Informational scans (ADR-0024) — on-demand/optional; promotion to blocking
+# is an explicit future decision (the phase-queue model is retired, ADR-0142).
 run_step "scan_catalog_only"   "bash scripts/scan_catalog_only.sh" optional
 run_step "scan_panic_audit"    "bash scripts/scan_panic_audit.sh"  optional
 
@@ -784,11 +786,6 @@ run_step "scan_panic_audit"    "bash scripts/scan_panic_audit.sh"  optional
 # served its role and is retired. Perf is now measured on demand via
 # `bench/compare_langs.sh` (cross-language) + `bench/run_bench.sh` (cljw-only),
 # never inside the gate. (Retired: bench_quick, bench_regression.)
-
-# Future suites (uncomment as their phase lands):
-#   run_step "diff_runner"  "zig build test -Dtest-filter='differential cases'"
-#   run_step "test_clj"     "bash scripts/run_clj_tests.sh"  # Phase 11
-#   run_step "tier_check"   "bash scripts/tier_check.sh"     # Phase 14
 
 # --- Summary ---
 

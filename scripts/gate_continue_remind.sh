@@ -33,7 +33,11 @@ case "$CMD" in
     *"git commit"*)
         exit 0
         ;;
-    *run_all.sh*|*run_remote_ubuntu.sh*)
+    # Match only an actual gate INVOCATION ("bash <gate-script>", incl. a
+    # `timeout NNN bash …` wrapper) — the former bare `*run_all.sh*`
+    # substring fired on every grep/sed/cat that merely MENTIONED the
+    # path (7 false injections in one audited session, 2026-07-02).
+    *"bash test/run_all.sh"*|*"bash scripts/run_gate.sh"*|*"bash scripts/run_remote_ubuntu.sh"*)
         ;;
     *)
         exit 0

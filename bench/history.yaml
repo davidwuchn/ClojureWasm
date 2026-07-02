@@ -4,19 +4,18 @@
 # (originally drafted at slot 0027 at row 8.2; renumbered to 0044
 # at the Phase 8 → 9 audit to resolve a collision with the NaN-box
 # ADR).
-# Row 8.3's 1.2x regression gate consumes only `lock: true` entries
-# matching (machine.id, backend); CI's `bench/quick.sh` appends raw
-# samples to `quick_baseline.txt`, NOT here.
-#
-# Curated via `bench/record.sh --id=<id> --reason=<reason>`
-# (helper lands at row 8.3 cycle 1). Manual edits OK while the
-# helper is pending — keep entries sorted by date.
+# Historical lock-points. The quick.sh auto-baseline + the record.sh
+# helper were RETIRED (2026-06-11 gate change; record.sh removed
+# 2026-07-02 — it depended on the retired quick.sh/quick_baseline.txt
+# and could no longer run). Perf is measured on demand via
+# bench/compare_langs.sh / bench/run_bench.sh; append entries manually
+# if a new lock-point is worth recording — keep entries sorted by date.
 
 schema_version: 1
 env:
   cpu_arch: aarch64 # primary dev host narrow info
   os: Darwin
-  tool: bash + EPOCHREALTIME # quick.sh micro-timer
+  tool: bash + EPOCHREALTIME # micro-timer (was quick.sh's)
 entries:
   - id: "8A.0"
     date: "2026-05-27"

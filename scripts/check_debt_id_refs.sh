@@ -44,7 +44,7 @@ search_paths=(src .dev .claude scripts test data/feature_deps.yaml data/placemen
 # ID in immutable history to resolve to a live row fights that immutability,
 # and ADRs do not drive the Step-0.5 trigger system (debt.yaml rows do). The
 # check guards LIVE trigger sites (src + live docs), not history.
-exclude='\.dev/debt\.ya?ml|\.dev/decisions/|tech_debt_consolidation\.md|audit-lens|check_debt_id_refs\.sh|migrate_debt_to_yaml'
+exclude='\.dev/debt\.ya?ml|\.dev/decisions/|tech_debt_consolidation\.md|audit-lens|check_debt_id_refs\.sh'
 
 # 1. Phantom placeholder IDs — never a real row.
 phantom=$(rg -n --no-heading 'D-NEW[A-Z0-9-]*' "${search_paths[@]}" 2>/dev/null \
