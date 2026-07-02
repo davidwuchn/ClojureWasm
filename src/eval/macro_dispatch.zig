@@ -23,6 +23,7 @@
 //! the user-fn invocation site.
 
 const std = @import("std");
+const root_set = @import("../runtime/gc/root_set.zig");
 const Form = @import("form.zig").Form;
 const Value = @import("../runtime/value/value.zig").Value;
 const Runtime = @import("../runtime/runtime.zig").Runtime;
@@ -121,9 +122,16 @@ pub fn expandIfMacro(
     // synthesized from the call site (cljw Forms are metadata-less per
     // ADR-0037, so the meta is attached to the list Value here).
     const amp_form = try buildAmpForm(arena, rt, env, call_form, loc);
+    // D-430: these intermediates live in Zig locals / an arena slice while
+    // later formToValue calls (and the macro body itself) allocate — publish
+    // each on the analysis-roots frame so an interleaved collect cannot
+    // sweep them. (The former write-less `macro_root_slot` was retired in
+    // favour of this frame — same declared purpose, finally wired.)
+    try root_set.pushAnalysisRoot(amp_form);
     // `&env` = a map of the in-scope local symbols (key = value = symbol;
     // no LocalBinding class per ADR-0059); `{}` at top level.
     const amp_env = try buildAmpEnv(arena, rt, env, scope, loc);
+    try root_set.pushAnalysisRoot(amp_env);
     // [&form &env & user-args]. The analyzer's per-call arena owns the
     // slice; the Values themselves live on rt's GC heap.
     var value_args = try arena.alloc(Value, args.len + 2);
@@ -131,6 +139,7 @@ pub fn expandIfMacro(
     value_args[1] = amp_env;
     for (args, 0..) |arg, i| {
         value_args[i + 2] = try analyzer_mod.formToValue(rt, env, arg);
+        try root_set.pushAnalysisRoot(value_args[i + 2]);
     }
     const vtable = rt.vtable orelse
         return error_catalog.raiseInternal(loc, "expandIfMacro: rt.vtable not installed");
@@ -140,6 +149,9 @@ pub fn expandIfMacro(
     // attribution.
     const result_val = vtable.callFn(rt, env, macro_fn, value_args, loc) catch |e|
         return narrowCallFnError(e, loc);
+    // D-430: the expansion result is a runtime Value crossing back into
+    // analysis — root it until the owning bracket closes.
+    try root_set.pushAnalysisRoot(result_val);
     return analyzer_mod.valueToForm(arena, rt, env, result_val, loc) catch |e| return narrowCallFnError(e, loc);
 }
 

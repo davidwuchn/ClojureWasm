@@ -45,6 +45,7 @@ const Writer = std.Io.Writer;
 const bencode = @import("../runtime/bencode/bencode.zig");
 const Reader = @import("../eval/reader.zig").Reader;
 const analyzeForm = @import("../eval/analyzer/analyzer.zig").analyze;
+const root_set = @import("../runtime/gc/root_set.zig");
 const macro_dispatch = @import("../eval/macro_dispatch.zig");
 const driver = @import("../eval/driver.zig");
 const Runtime = @import("../runtime/runtime.zig").Runtime;
@@ -303,6 +304,12 @@ fn replyEval(
         };
         const form = form_opt orelse break;
 
+        // D-430: per-form analysis bracket (roots literals through eval).
+        // Declared before the catch-continue arms so the defer unwinds on
+        // every exit of this loop iteration.
+        var af: root_set.AnalysisFrame = undefined;
+        root_set.beginAnalysis(&af, rt.gc.infra);
+        defer root_set.endAnalysis(&af);
         const node = analyzeForm(arena, rt, env, null, form, macro_table) catch |err| {
             try replyError(arena, w, @errorName(err), session_id, id_val);
             continue;

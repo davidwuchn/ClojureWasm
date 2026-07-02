@@ -25,6 +25,7 @@ const vm = @import("backend/vm.zig");
 const vm_compiler = @import("backend/vm/compiler.zig");
 const serialize = @import("bytecode/serialize.zig");
 const analyzer = @import("analyzer/analyzer.zig");
+const root_set = @import("../runtime/gc/root_set.zig");
 const macro_dispatch = @import("macro_dispatch.zig");
 const Form = @import("form.zig").Form;
 const error_catalog = @import("../runtime/error/catalog.zig");
@@ -58,6 +59,13 @@ pub fn runEnvelope(rt: *Runtime, env: *Env, arena: std.mem.Allocator, payload: [
     dispatch.current_env = env;
     defer dispatch.current_env = saved_consult_env;
     while (try it.next()) |chunk_bytes| {
+        // D-430: per-chunk analysis bracket — roots the deserialized
+        // constants from `deserializeChunk` through this chunk's eval
+        // (per-chunk grain keeps the high-water mark at one form's
+        // constants, not the whole envelope's).
+        var af: root_set.AnalysisFrame = undefined;
+        root_set.beginAnalysis(&af, rt.gc.infra);
+        defer root_set.endAnalysis(&af);
         var chunk = try serialize.deserializeChunk(arena, rt, env, chunk_bytes);
         _ = try vm.eval(rt, env, &locals, &chunk);
     }
@@ -127,6 +135,12 @@ pub fn evalTopLevelForm(
         for (children) |child| result = try evalTopLevelForm(rt, env, locals, arena, child, table);
         return result;
     }
+    // D-430: analysis bracket — roots every literal/quoted/compile-time
+    // Value this form produces, from analysis THROUGH its evaluation (also
+    // covers tree_walk Node constants, which have no EvalFrame pool).
+    var af: root_set.AnalysisFrame = undefined;
+    root_set.beginAnalysis(&af, rt.gc.infra);
+    defer root_set.endAnalysis(&af);
     const node = try analyzer.analyze(arena, rt, env, null, form, table);
     return evalForm(rt, env, locals, arena, node);
 }

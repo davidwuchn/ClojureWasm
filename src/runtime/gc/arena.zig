@@ -7,7 +7,7 @@
 //! Auxiliary provisions:
 //!   - `suppress_count`: nestable GC suppression counter. Note the
 //!     mark-sweep path does NOT use it for macro expansion — cw v1
-//!     pins the in-flight Value in `root_set.macro_root_slot` instead
+//!     pins the in-flight Value on the analysis-roots frame instead
 //!     (see root_set.zig). The counter is unused by the GC path today.
 //!   - `gc_stress`: comptime flag for a collect-on-every-alloc stress
 //!     mode. Currently a compile-time `false`; wiring it to a build
@@ -38,7 +38,7 @@ pub const ArenaGc = struct {
 
     /// Nestable GC suppression counter. While > 0, collection is skipped.
     /// Unused by the mark-sweep path: macro expansion keeps intermediate
-    /// values alive via `root_set.macro_root_slot`, not this counter.
+    /// values alive via the analysis-roots frame, not this counter.
     suppress_count: u32 = 0,
 
     /// Allocation statistics for profiling.

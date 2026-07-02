@@ -31,6 +31,7 @@
 //! pass may tighten this to the analyser-known frame size.
 
 const std = @import("std");
+const root_set = @import("../../runtime/gc/root_set.zig");
 const Value = @import("../../runtime/value/value.zig").Value;
 const HeapHeader = @import("../../runtime/value/value.zig").HeapHeader;
 const Runtime = @import("../../runtime/runtime.zig").Runtime;
@@ -1474,6 +1475,11 @@ const TestFixture = struct {
     }
 
     fn evalStr(self: *TestFixture, source: []const u8) !Value {
+        // ADR-0169: tests own the analysis bracket like every seam does
+        // (kept open through the eval, mirroring the production seams).
+        var af: root_set.AnalysisFrame = undefined;
+        root_set.beginAnalysis(&af, self.rt.gc.infra);
+        defer root_set.endAnalysis(&af);
         var reader = Reader.init(self.arena.allocator(), source);
         const form = (try reader.read()) orelse return error.ReadEmpty;
         const node = try analyze(self.arena.allocator(), &self.rt, &self.env, null, form, &self.macro_table);

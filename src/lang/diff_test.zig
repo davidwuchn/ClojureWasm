@@ -13,6 +13,7 @@
 //! backend-touching cycle lands ≥1 case here in the same commit.
 
 const std = @import("std");
+const root_set = @import("../runtime/gc/root_set.zig");
 const evaluator = @import("../eval/evaluator.zig");
 const macro_dispatch = @import("../eval/macro_dispatch.zig");
 const Runtime = @import("../runtime/runtime.zig").Runtime;
@@ -1426,6 +1427,9 @@ test "aot: deserialized bytecode fn dispatches via tree_walk vtable evalChunk" {
     const arena = f.arena.allocator();
     var reader = Reader.init(arena, "(fn* [x] (+ x 1))");
     const form = (try reader.read()).?;
+    var af: root_set.AnalysisFrame = undefined;
+    root_set.beginAnalysis(&af, f.rt.gc.infra);
+    defer root_set.endAnalysis(&af);
     const node = try analyze(arena, &f.rt, &f.env, null, form, &f.table);
     const chunk = try vm_compiler.compile(&f.rt, arena, node);
 
@@ -1455,6 +1459,9 @@ fn caretColumn(f: *Fixture, source: []const u8, backend: enum { tree_walk, vm })
     const arena = f.arena.allocator();
     var reader = Reader.init(arena, source);
     const form = (try reader.read()).?;
+    var af: root_set.AnalysisFrame = undefined;
+    root_set.beginAnalysis(&af, f.rt.gc.infra);
+    defer root_set.endAnalysis(&af);
     const node = try analyze(arena, &f.rt, &f.env, null, form, &f.table);
     var locals: [256]Value = [_]Value{.nil_val} ** 256;
     error_mod.clearLastError();
@@ -1501,6 +1508,9 @@ fn evalFnInfo(f: *Fixture, source: []const u8, backend: enum { tree_walk, vm }) 
     const arena = f.arena.allocator();
     var reader = Reader.init(arena, source);
     const form = (try reader.read()).?;
+    var af: root_set.AnalysisFrame = undefined;
+    root_set.beginAnalysis(&af, f.rt.gc.infra);
+    defer root_set.endAnalysis(&af);
     const node = try analyze(arena, &f.rt, &f.env, null, form, &f.table);
     var locals: [256]Value = [_]Value{.nil_val} ** 256;
     const result = switch (backend) {
@@ -1565,6 +1575,9 @@ fn traceOf(f: *Fixture, source: []const u8, backend: enum { tree_walk, vm }, out
     const arena = f.arena.allocator();
     var reader = Reader.init(arena, source);
     const form = (try reader.read()).?;
+    var af: root_set.AnalysisFrame = undefined;
+    root_set.beginAnalysis(&af, f.rt.gc.infra);
+    defer root_set.endAnalysis(&af);
     const node = try analyze(arena, &f.rt, &f.env, null, form, &f.table);
     var locals: [256]Value = [_]Value{.nil_val} ** 256;
     error_mod.clearLastError();

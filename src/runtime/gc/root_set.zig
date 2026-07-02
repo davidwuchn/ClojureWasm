@@ -11,16 +11,18 @@
 //!   2. **thread_roots**  — per-thread execution roots, walked for the
 //!                        collecting thread + every registered worker
 //!                        `ThreadGcContext`: its dynamic-binding frame
-//!                        chain (`env.zig current_frame`), its macro
-//!                        slot (`macro_root_slot`, refusing cw v0's
-//!                        `suppressCollection` escape hatch per F-002 +
-//!                        F-006), its VM operand-stack frame chain
-//!                        (`vm.eval` `stack[0..sp]` + `locals`), and its
-//!                        in-flight fabrication self-guard
-//!                        (`gc_self_guard`). Layer 0 owns the threadlocal
-//!                        slots; Layer 1 (vm / analyzer) writes them via
-//!                        downward import. Subsumes the former
-//!                        `current_frame` (#2) + `macro_root_slot` (#7).
+//!                        chain (`env.zig current_frame`), its VM
+//!                        operand-stack frame chain (`vm.eval`
+//!                        `stack[0..sp]` + `locals`), its in-flight
+//!                        fabrication self-guard (`gc_self_guard`), and
+//!                        its analysis-frame chain (`analysis_frame_head`,
+//!                        D-430 — refusing cw v0's `suppressCollection`
+//!                        escape hatch per F-002 + F-006). Layer 0 owns
+//!                        the threadlocal slots; Layer 1 (vm / analyzer)
+//!                        writes them via downward import. Subsumes the
+//!                        former `current_frame` (#2) + `macro_root_slot`
+//!                        (#7, retired — the analysis frame carries the
+//!                        macro-expansion intermediates).
 //!  10. **permanent_roots** — embedder-pinned Values on the GcHeap.
 //!
 //! Sources 3 / 4 / 8 are per-tag trace entries (registered into
@@ -65,11 +67,11 @@ const GcHeap = gc_heap_mod.GcHeap;
 /// `refer_borrows` / `callsite_methods`).
 pub const RootSource = enum {
     ns_vars,
-    /// Per-thread execution roots: binding-frame chain + macro slot +
-    /// VM operand-stack frame chain + in-flight fabrication self-guard,
-    /// for the collecting thread (self TLS) + every registered worker
-    /// `ThreadGcContext`. Subsumes the former `current_frame` (#2) +
-    /// `macro_root_slot` (#7).
+    /// Per-thread execution roots: binding-frame chain + VM operand-stack
+    /// frame chain + in-flight fabrication self-guard + analysis-frame
+    /// chain (D-430), for the collecting thread (self TLS) + every
+    /// registered worker `ThreadGcContext`. Subsumes the former
+    /// `current_frame` (#2) + `macro_root_slot` (#7, retired).
     thread_roots,
     fn_closures, // tag-trace entry — see tag_ops.tag_trace_table[.fn_val]
     lazy_seqs, // tag-trace entry — see 5.7 registration
@@ -80,19 +82,10 @@ pub const RootSource = enum {
     permanent_roots,
 };
 
-/// Analyser-scoped root slot for macro-expansion intermediate Values.
-/// Per ADR-0028 §5 row 7 + the `phase5-5.1-survey.md` DIVERGENCE: cw
-/// v0 used `suppressCollection()` to bracket macro expansion; cw v1
-/// refuses the escape hatch and instead pins the in-flight Value
-/// here. Set on entry to `expandIfMacro`, cleared on exit. Read by
-/// the root walker.
-///
-/// Threadlocal because Phase B (concurrency) STM activation may run
-/// macro expansion concurrently per the `current_frame` precedent in
-/// env.zig:142. cw v1 is single-threaded today so a single thread
-/// reads + writes the slot; the threadlocal qualifier costs nothing
-/// now and avoids a Phase B surface change.
-pub threadlocal var macro_root_slot: ?Value = null;
+/// (The former `macro_root_slot` — ADR-0028 §5 row 7 — was retired with the
+/// D-430 analysis-roots frame: it never gained a production writer, and the
+/// frame subsumes its declared purpose — `expandIfMacro` now pushes the
+/// macro-expansion intermediates + result into the current AnalysisFrame.)
 
 /// One operand-stack-resident root scope, published on the thread's
 /// eval-frame chain so a GC `collect()` walks live operand Values
@@ -132,6 +125,70 @@ pub const EvalFrame = struct {
 /// a `ThreadGcContext.eval_frame_slot` pointer (union walk).
 pub threadlocal var eval_frame_head: ?*EvalFrame = null;
 
+/// Analysis-roots frame (D-430 root cause; EvalFrame's analysis-side
+/// sibling): GC Values produced BEFORE any frame executes — literal strings /
+/// quoted data (`analyzer.makeConstant` / `analyzeQuote`), compiler-alloc'd
+/// name strings (`Compiler.addConstant`), deserialized AOT constants
+/// (`serialize.deserializeChunk`), and the macro-expansion result Value —
+/// live only in arena `Node`s / arena constant slices, none of which is a GC
+/// object, so they were on NO root until execution (`EvalFrame.constants`
+/// roots a chunk's pool only WHILE IT RUNS). A collect in the window — a
+/// user-macro expansion mid-analysis (arbitrary eval reentry), or the D-519
+/// alloc-boundary auto-collect crossing the threshold mid-analysis of a large
+/// in-eval load — swept the literal; the cell got recycled and the form later
+/// read another value's bytes (instaparse's per-run garbage-symbol NameError;
+/// the deftype "host-marker method not yet wired" raise on a wired method).
+///
+/// Discipline: every analyze/compile/deserialize→eval bracket owns a frame
+/// on its C stack (`beginAnalysis`/`defer endAnalysis`); producers push into
+/// the HEAD frame and ASSERT a frame exists (safe builds) — a producer
+/// running outside any bracket is a caught bug, not a silent unrooted
+/// window. Nesting (load-within-load, macro-triggered analysis, the
+/// top-level `do` unroll) is the parent chain; error unwind is the `defer`.
+/// A frame's roots stay published through the form's EVALUATION too (the
+/// bracket closes after eval), which also covers tree_walk Node constants
+/// (no EvalFrame constants slice on that backend).
+pub const AnalysisFrame = struct {
+    roots: std.ArrayList(Value) = .empty,
+    /// Allocator the frame's root list grows on (the process-lifetime
+    /// `gc.infra`), captured at `beginAnalysis` so producers push with no
+    /// allocator/rt threading (`makeConstant`'s ~20 call sites unchanged).
+    alloc: std.mem.Allocator,
+    parent: ?*AnalysisFrame = null,
+};
+
+/// Head of the current thread's analysis-frame chain. Null only while no
+/// analyze/compile/deserialize bracket is on the C stack.
+pub threadlocal var analysis_frame_head: ?*AnalysisFrame = null;
+
+/// Open an analysis bracket: chain `frame` (caller stack memory) as the new
+/// head. `alloc` = the process-lifetime `gc.infra`. Pair with
+/// `defer endAnalysis(&frame)`.
+pub fn beginAnalysis(frame: *AnalysisFrame, alloc: std.mem.Allocator) void {
+    frame.* = .{ .roots = .empty, .alloc = alloc, .parent = analysis_frame_head };
+    analysis_frame_head = frame;
+}
+
+/// Close an analysis bracket: unchain + free the frame's root list. Frames
+/// close LIFO (the C stack guarantees it; asserted in safe builds).
+pub fn endAnalysis(frame: *AnalysisFrame) void {
+    std.debug.assert(analysis_frame_head == frame);
+    analysis_frame_head = frame.parent;
+    frame.roots.deinit(frame.alloc);
+}
+
+/// Root a Value produced during analysis/compile/deserialize until the
+/// owning bracket closes. Immediates / infra-lifetime values (var_ref, ns)
+/// are filtered here so the registry holds only real heap objects.
+pub fn pushAnalysisRoot(v: Value) !void {
+    if (v.heapHeader() == null) return;
+    // Safe-build tripwire: a constant producer outside any bracket is an
+    // unrooted-window bug at the NEXT collect — fail loud at the source.
+    std.debug.assert(analysis_frame_head != null);
+    const f = analysis_frame_head orelse return;
+    try f.roots.append(f.alloc, v);
+}
+
 /// In-flight fabrication self-guard (ADR-0090 "D-244 decision" Alt B,
 /// #3b-step2b). A bytecode op that assembles a collection from already-
 /// computed operand-stack values (`op_vector_literal` / `op_map_literal`
@@ -145,7 +202,7 @@ pub threadlocal var eval_frame_head: ?*EvalFrame = null;
 /// after the result lands on the stack. A SINGLE slot (not a stack)
 /// suffices: the Q1 ops assemble values already on `stack[0..sp]`, with
 /// no nested `eval`/fabrication inside the assembly loop — mirroring
-/// `macro_root_slot`. Walked per-thread (self + every registered worker:
+/// analysis frames. Walked per-thread (self + every registered worker:
 /// a parked worker mid-fabrication holds its partial here too, so it is
 /// NOT "collecting-thread only" despite the D-244 name). This slot
 /// publishes a precise root for a partial *Value* across an eval-reentrant
@@ -174,7 +231,7 @@ pub threadlocal var active_env: ?*Env = null;
 //
 // A Phase-B `future`/`pmap`/`agent` WORKER thread registers a
 // `ThreadGcContext` pointing at its own `env.current_frame` +
-// `macro_root_slot` threadlocal slots (and, at #3b, its VM operand-stack
+// analysis-frame threadlocal slots (and, at #3b, its VM operand-stack
 // frame chain), so a `collect()` running on ANOTHER thread can walk the
 // UNION of every live thread's roots — not just the collecting thread's.
 // The collecting/main thread reads its own TLS directly (see
@@ -182,7 +239,7 @@ pub threadlocal var active_env: ?*Env = null;
 // no double-walk. Runtime-inert until real threads land (#4): with an
 // empty registry the walk is byte-identical to today's single-thread
 // behaviour. The registry lives HERE (not a separate `concurrency/
-// gc_thread.zig`) because it must reference `macro_root_slot`, which this
+// gc_thread.zig`) because it must reference the TLS root slots, which this
 // module owns — a separate module would import root_set while root_set
 // imports it (cycle). A fixed array (not an ArrayList) keeps it
 // allocator-free and immune to resize-during-walk.
@@ -196,7 +253,7 @@ const safepoint = @import("../concurrency/safepoint.zig");
 pub const MAX_GC_THREADS = 64;
 
 /// One worker thread's published GC roots. The four slots point at that
-/// thread's `env.current_frame` / `macro_root_slot` / `eval_frame_head` /
+/// thread's `env.current_frame` / `analysis_frame_head` / `eval_frame_head` /
 /// `gc_self_guard` TLS so the collector reads each worker's CURRENT roots
 /// through the pointers (ADR-0091 — `eval_frame_slot` is the VM operand-
 /// stack chain head added at #3b-step1; `self_guard_slot` is the in-flight
@@ -205,12 +262,18 @@ pub const MAX_GC_THREADS = 64;
 /// existing 4-slot construction sites need no change (only the `future`/`agent`
 /// workers, which CAN run a `dosync`, point `tx_slot` at their `lock_tx.current_tx`).
 var no_tx: ?*anyopaque = null;
+/// Default `analysis_frame_slot` target for a worker that never analyzes code.
+var no_analysis_frame: ?*AnalysisFrame = null;
 
 pub const ThreadGcContext = struct {
     frame_slot: *const ?*env_mod.BindingFrame,
-    macro_slot: *const ?Value,
     eval_frame_slot: *const ?*EvalFrame,
     self_guard_slot: *const ?Value,
+    /// The worker's `analysis_frame_head` TLS chain (D-430). Defaults to a
+    /// static null so the existing construction sites need no change — only
+    /// a worker that ANALYZES code (eval/load-string on a future/agent
+    /// thread) points it at its own `root_set.analysis_frame_head`.
+    analysis_frame_slot: *const ?*AnalysisFrame = &no_analysis_frame,
     /// OPAQUE pointer to the worker's `lock_tx.current_tx` (#4a' in-txn-map
     /// rooting). Opaque so root_set does NOT import lock_tx (cycle: lock_tx →
     /// safepoint → root_set); `mark_sweep` (which MAY import lock_tx) casts it.
@@ -324,27 +387,27 @@ pub fn markRegisteredTxs(context: *anyopaque, markTxFn: *const fn (*anyopaque, ?
 // register/unregister during collect.
 const ThreadRoots = struct {
     frame_head: ?*env_mod.BindingFrame,
-    macro: ?Value,
     eval_head: ?*EvalFrame,
     self_guard: ?Value,
+    analysis_head: ?*AnalysisFrame,
 };
 const ThreadSource = union(enum) { roots: ThreadRoots, end: void };
 fn threadContextAt(idx: usize) ThreadSource {
     if (idx == 0) return .{ .roots = .{
         .frame_head = env_mod.current_frame,
-        .macro = macro_root_slot,
         .eval_head = eval_frame_head,
         .self_guard = gc_self_guard,
+        .analysis_head = analysis_frame_head,
     } };
     const ri = idx - 1;
     if (ri >= MAX_GC_THREADS) return .end;
     if (thread_registry[ri]) |ctx| return .{ .roots = .{
         .frame_head = ctx.frame_slot.*,
-        .macro = ctx.macro_slot.*,
         .eval_head = ctx.eval_frame_slot.*,
         .self_guard = ctx.self_guard_slot.*,
+        .analysis_head = ctx.analysis_frame_slot.*,
     } };
-    return .{ .roots = .{ .frame_head = null, .macro = null, .eval_head = null, .self_guard = null } };
+    return .{ .roots = .{ .frame_head = null, .eval_head = null, .self_guard = null, .analysis_head = null } };
 }
 
 /// Explicit context passed to `enumerate()`. The walker discovers
@@ -397,7 +460,7 @@ pub const RootIterator = struct {
     /// drains that thread's binding-frame chain, then its macro slot,
     /// then its eval-frame (operand-stack) chain, then its in-flight
     /// fabrication self-guard, then advances to the next thread. One
-    /// cursor subsumes #3a's separate `current_frame` + `macro_root_slot`
+    /// cursor subsumes #3a's separate `current_frame` + macro-slot
     /// cursors and adds the operand-stack (#3b-step1) + self-guard
     /// (#3b-step2b) sub-walks.
     pub const ThreadRootsCursor = struct {
@@ -413,12 +476,14 @@ pub const RootIterator = struct {
         bindings_it: ?env_mod.BindingMap.ValueIterator = null,
         // eval-phase state:
         eval_frame: ?*EvalFrame = null,
+        // analysis-phase state:
+        analysis_frame: ?*AnalysisFrame = null,
         slot_idx: usize = 0,
         /// Which sub-array of the current eval frame is being drained:
         /// `stack[0..sp]` → `locals` → `constants` (D-251), then the parent.
         eval_part: EvalPart = .stack,
 
-        pub const Phase = enum { binding, macro, eval, self_guard };
+        pub const Phase = enum { binding, eval, self_guard, analysis };
         pub const EvalPart = enum { stack, locals, constants };
     };
 
@@ -541,19 +606,13 @@ pub const RootIterator = struct {
                         c.frame = f.parent;
                         continue;
                     }
-                    // Binding chain exhausted → macro phase.
-                    c.phase = .macro;
-                },
-                .macro => {
-                    // Macro yields at most once; transition + prime the eval
-                    // sub-walk BEFORE yielding so a resume lands in `.eval`.
+                    // Binding chain exhausted → prime + enter the eval
+                    // sub-walk. (The former `.macro` phase was retired with
+                    // `macro_root_slot` — the analysis frame subsumes it.)
                     c.phase = .eval;
                     c.eval_frame = c.roots.eval_head;
                     c.slot_idx = 0;
                     c.eval_part = .stack;
-                    if (c.roots.macro) |mv| {
-                        if (mv.heapHeader()) |hdr| return hdr;
-                    }
                 },
                 .eval => {
                     if (c.eval_frame) |ef| {
@@ -598,14 +657,33 @@ pub const RootIterator = struct {
                 },
                 .self_guard => {
                     // Yield this thread's in-flight fabrication partial (at most
-                    // one heap yield), then advance to the next thread. The
-                    // advance is set BEFORE the yield so a resume lands on the
-                    // next thread's load (mirrors the macro phase).
-                    c.thread_idx += 1;
-                    c.loaded = false;
+                    // one heap yield), then move to the analysis-frame drain.
+                    // The transition is set BEFORE the yield so a resume lands
+                    // in `.analysis` (mirrors the macro phase).
+                    c.phase = .analysis;
+                    c.analysis_frame = c.roots.analysis_head;
+                    c.slot_idx = 0;
                     if (c.roots.self_guard) |sv| {
                         if (sv.heapHeader()) |hdr| return hdr;
                     }
+                },
+                .analysis => {
+                    // Drain the thread's analysis-frame chain (D-430): literal
+                    // / quoted / compile-time / deserialized Values not yet
+                    // reachable through any executing frame. Then advance to
+                    // the next thread.
+                    if (c.analysis_frame) |af| {
+                        while (c.slot_idx < af.roots.items.len) {
+                            const v = af.roots.items[c.slot_idx];
+                            c.slot_idx += 1;
+                            if (v.heapHeader()) |hdr| return hdr;
+                        }
+                        c.analysis_frame = af.parent;
+                        c.slot_idx = 0;
+                        continue;
+                    }
+                    c.thread_idx += 1;
+                    c.loaded = false;
                 },
             }
         }
@@ -692,7 +770,7 @@ test "permanent_roots walker yields each pinned heap Value (skipping immediates)
     try testing.expect(found_b);
 }
 
-test "macro_root_slot walker yields the slot when set; nothing when null" {
+test "analysis-frame walker yields pushed roots; nothing outside a bracket" {
     var fix = RuntimeFixture.init();
     defer fix.deinit();
     var gc = GcHeap.init(testing.allocator);
@@ -701,20 +779,43 @@ test "macro_root_slot walker yields the slot when set; nothing when null" {
     const cell = try gc.alloc(Cell);
     cell.* = .{ .header = HeapHeader.init(.list) };
 
-    // Initially null → walker yields nothing.
+    // No bracket open → walker yields nothing.
     {
         var it = enumerate(.{ .envs = &.{}, .gc = &gc });
         try testing.expect(it.next() == null);
     }
-    // Set → walker yields the cell's header.
-    macro_root_slot = Value.encodeHeapPtr(.list, cell);
-    defer macro_root_slot = null;
+    // Open a bracket, push → walker yields the cell's header; a nested
+    // (parent-chained) frame's roots are yielded too; endAnalysis unchains.
+    var af: AnalysisFrame = undefined;
+    beginAnalysis(&af, testing.allocator);
+    try pushAnalysisRoot(Value.encodeHeapPtr(.list, cell));
+    try pushAnalysisRoot(Value.nil_val); // immediate — filtered, not stored
+    try testing.expectEqual(@as(usize, 1), af.roots.items.len);
     {
         var it = enumerate(.{ .envs = &.{}, .gc = &gc });
-        const hdr = it.next() orelse return error.MacroRootMissed;
+        const hdr = it.next() orelse return error.AnalysisRootMissed;
         try testing.expectEqual(@as(*HeapHeader, @ptrCast(cell)), hdr);
         try testing.expect(it.next() == null);
     }
+    const cell2 = try gc.alloc(Cell);
+    cell2.* = .{ .header = HeapHeader.init(.vector) };
+    var inner: AnalysisFrame = undefined;
+    beginAnalysis(&inner, testing.allocator);
+    try pushAnalysisRoot(Value.encodeHeapPtr(.vector, cell2));
+    {
+        var found_outer = false;
+        var found_inner = false;
+        var it = enumerate(.{ .envs = &.{}, .gc = &gc });
+        while (it.next()) |hdr| {
+            if (hdr == @as(*HeapHeader, @ptrCast(cell))) found_outer = true;
+            if (hdr == @as(*HeapHeader, @ptrCast(cell2))) found_inner = true;
+        }
+        try testing.expect(found_outer);
+        try testing.expect(found_inner);
+    }
+    endAnalysis(&inner);
+    endAnalysis(&af);
+    try testing.expect(analysis_frame_head == null);
 }
 
 test "ns_vars walker yields Var.root across two Envs sharing a Runtime" {
@@ -800,8 +901,8 @@ test "thread GC registry: register / count / unregister / no-op-absent (D-244 #3
     // Two contexts pointing at this thread's TLS slots (the values are
     // irrelevant here — #3a's cursor fold consumes them; this asserts the
     // registry lifecycle). Ends at count 0 so it does not pollute other tests.
-    var ctx_a: ThreadGcContext = .{ .frame_slot = &env_mod.current_frame, .macro_slot = &macro_root_slot, .eval_frame_slot = &eval_frame_head, .self_guard_slot = &gc_self_guard };
-    var ctx_b: ThreadGcContext = .{ .frame_slot = &env_mod.current_frame, .macro_slot = &macro_root_slot, .eval_frame_slot = &eval_frame_head, .self_guard_slot = &gc_self_guard };
+    var ctx_a: ThreadGcContext = .{ .frame_slot = &env_mod.current_frame, .eval_frame_slot = &eval_frame_head, .self_guard_slot = &gc_self_guard };
+    var ctx_b: ThreadGcContext = .{ .frame_slot = &env_mod.current_frame, .eval_frame_slot = &eval_frame_head, .self_guard_slot = &gc_self_guard };
 
     try testing.expectEqual(@as(usize, 0), registeredThreadCount());
     try registerThread(&ctx_a);
@@ -838,17 +939,17 @@ test "union walk: a registered worker's frame + macro + operand stack are walked
     const cell_guard = try gc.alloc(Cell);
     cell_guard.* = .{ .header = HeapHeader.init(.list) };
 
-    // A "worker" thread's published roots — a binding-frame chain + macro slot +
-    // an operand-stack EvalFrame + an in-flight fabrication self-guard — all held
-    // in locals (simulating another thread's TLS), NOT on this thread's
-    // current_frame/macro_root_slot/eval_frame_head/gc_self_guard. They appear
-    // ONLY if the registry union walk reaches thread index >= 1.
+    // A "worker" thread's published roots — a binding-frame chain + an
+    // operand-stack EvalFrame + an in-flight fabrication self-guard + an
+    // analysis frame — all held in locals (simulating another thread's TLS),
+    // NOT on this thread's current_frame/eval_frame_head/gc_self_guard/
+    // analysis_frame_head. They appear ONLY if the registry union walk
+    // reaches thread index >= 1.
     var worker_bindings: env_mod.BindingMap = .empty;
     defer worker_bindings.deinit(env.alloc);
     try worker_bindings.put(env.alloc, var_w, Value.encodeHeapPtr(.string, cell_frame));
     var worker_frame: env_mod.BindingFrame = .{ .bindings = worker_bindings };
     var worker_current: ?*env_mod.BindingFrame = &worker_frame;
-    var worker_macro: ?Value = Value.encodeHeapPtr(.vector, cell_macro);
 
     var worker_stack = [_]Value{ Value.encodeHeapPtr(.string, cell_stack), Value.nil_val };
     var worker_sp: u16 = 1; // only stack[0] is live
@@ -857,7 +958,12 @@ test "union walk: a registered worker's frame + macro + operand stack are walked
     var worker_eval_head: ?*EvalFrame = &worker_eval;
     var worker_self_guard: ?Value = Value.encodeHeapPtr(.list, cell_guard);
 
-    var ctx: ThreadGcContext = .{ .frame_slot = &worker_current, .macro_slot = &worker_macro, .eval_frame_slot = &worker_eval_head, .self_guard_slot = &worker_self_guard };
+    var worker_af: AnalysisFrame = .{ .roots = .empty, .alloc = testing.allocator };
+    defer worker_af.roots.deinit(testing.allocator);
+    try worker_af.roots.append(testing.allocator, Value.encodeHeapPtr(.vector, cell_macro));
+    var worker_af_head: ?*AnalysisFrame = &worker_af;
+
+    var ctx: ThreadGcContext = .{ .frame_slot = &worker_current, .eval_frame_slot = &worker_eval_head, .self_guard_slot = &worker_self_guard, .analysis_frame_slot = &worker_af_head };
     try registerThread(&ctx);
     defer unregisterThread(&ctx);
 
@@ -875,7 +981,7 @@ test "union walk: a registered worker's frame + macro + operand stack are walked
         if (hdr == @as(*HeapHeader, @ptrCast(cell_guard))) found_guard = true;
     }
     try testing.expect(found_frame); // worker's binding-frame value (union thread 1)
-    try testing.expect(found_macro); // worker's macro slot (union thread 1)
+    try testing.expect(found_macro); // worker's analysis-frame root (union thread 1)
     try testing.expect(found_stack); // worker's operand stack[0] (union thread 1)
     try testing.expect(found_local); // worker's locals[0] (union thread 1)
     try testing.expect(found_guard); // worker's in-flight self-guard (union thread 1)
@@ -1027,7 +1133,7 @@ test "registry: concurrent register/unregister churn is race-free (D-244 #3a rob
         fn run() void {
             // Each thread owns one context pointing at its own TLS; register +
             // immediately unregister in a tight loop (≤4 concurrent < cap 64).
-            var ctx: ThreadGcContext = .{ .frame_slot = &env_mod.current_frame, .macro_slot = &macro_root_slot, .eval_frame_slot = &eval_frame_head, .self_guard_slot = &gc_self_guard };
+            var ctx: ThreadGcContext = .{ .frame_slot = &env_mod.current_frame, .eval_frame_slot = &eval_frame_head, .self_guard_slot = &gc_self_guard };
             var i: usize = 0;
             while (i < 200) : (i += 1) {
                 registerThread(&ctx) catch return;

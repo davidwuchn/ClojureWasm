@@ -19,6 +19,7 @@
 //! check would widen the comparison; the gate uses bit-equality today.
 
 const std = @import("std");
+const root_set = @import("../runtime/gc/root_set.zig");
 const Reader = @import("reader.zig").Reader;
 const analyzer = @import("analyzer/analyzer.zig");
 const macro_dispatch = @import("macro_dispatch.zig");
@@ -98,6 +99,11 @@ fn evalTopLevelInBackend(
         for (children) |child| result = try evalTopLevelInBackend(rt, env, table, arena, child, backend);
         return result;
     }
+    // D-430: analysis bracket (roots literals through eval) — the oracle
+    // twin of driver.evalTopLevelForm's bracket.
+    var af: root_set.AnalysisFrame = undefined;
+    root_set.beginAnalysis(&af, rt.gc.infra);
+    defer root_set.endAnalysis(&af);
     const node = try analyzer.analyze(arena, rt, env, null, form, table);
     var locals: [256]Value = [_]Value{.nil_val} ** 256;
     return switch (backend) {

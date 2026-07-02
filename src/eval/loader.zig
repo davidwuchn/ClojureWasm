@@ -11,6 +11,7 @@
 
 const Runtime = @import("../runtime/runtime.zig").Runtime;
 const ResolvedSource = @import("../runtime/runtime.zig").ResolvedSource;
+const root_set = @import("../runtime/gc/root_set.zig");
 const env_mod = @import("../runtime/env.zig");
 const Env = env_mod.Env;
 const Value = @import("../runtime/value/value.zig").Value;
@@ -91,6 +92,11 @@ fn loadTopLevelForm(
             try loadTopLevelForm(rt, env, arena, macro_table, child, from_filesystem);
         return;
     }
+    // D-430 / ADR-0169: per-form analysis bracket — the require/load twin of
+    // driver.evalTopLevelForm's (kept open through eval + the sink recompile).
+    var af: root_set.AnalysisFrame = undefined;
+    root_set.beginAnalysis(&af, rt.gc.infra);
+    defer root_set.endAnalysis(&af);
     const node = try analyzeForm(arena, rt, env, null, form, macro_table);
     var locals: [driver.MAX_LOCALS]Value = [_]Value{.nil_val} ** driver.MAX_LOCALS;
     _ = try driver.evalForm(rt, env, &locals, arena, node);

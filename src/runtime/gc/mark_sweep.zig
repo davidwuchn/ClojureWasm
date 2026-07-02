@@ -426,7 +426,7 @@ test "collect: a registered worker's transaction roots survive (#4a' worker-tx)"
     var worker_current_tx: ?*lock_tx_mod.LockingTransaction = &worker_tx;
     var ctx: root_set_test.ThreadGcContext = .{
         .frame_slot = &env_mod_test.current_frame,
-        .macro_slot = &root_set_test.macro_root_slot,
+        .analysis_frame_slot = &root_set_test.analysis_frame_head,
         .eval_frame_slot = &root_set_test.eval_frame_head,
         .self_guard_slot = &root_set_test.gc_self_guard,
         .tx_slot = @ptrCast(&worker_current_tx),

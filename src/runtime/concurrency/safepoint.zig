@@ -205,7 +205,7 @@ test "safepoint: stopWorld rendezvous parks all workers, resumeWorld releases th
             // does not walk roots here).
             var ctx: root_set.ThreadGcContext = .{
                 .frame_slot = &env_mod.current_frame,
-                .macro_slot = &root_set.macro_root_slot,
+                .analysis_frame_slot = &root_set.analysis_frame_head,
                 .eval_frame_slot = &root_set.eval_frame_head,
                 .self_guard_slot = &root_set.gc_self_guard,
             };
@@ -280,7 +280,7 @@ test "safepoint: a parked worker's published EvalFrame survives a real collect d
             var eval_head: ?*root_set.EvalFrame = &frame;
             var ctx: root_set.ThreadGcContext = .{
                 .frame_slot = &env_mod.current_frame,
-                .macro_slot = &root_set.macro_root_slot,
+                .analysis_frame_slot = &root_set.analysis_frame_head,
                 .eval_frame_slot = &eval_head,
                 .self_guard_slot = &root_set.gc_self_guard,
             };
@@ -347,7 +347,7 @@ test "collectStopTheWorld parks real workers allocating through gc.alloc, then r
         fn worker() void {
             var ctx: root_set.ThreadGcContext = .{
                 .frame_slot = &env_mod.current_frame,
-                .macro_slot = &root_set.macro_root_slot,
+                .analysis_frame_slot = &root_set.analysis_frame_head,
                 .eval_frame_slot = &root_set.eval_frame_head,
                 .self_guard_slot = &root_set.gc_self_guard,
             };

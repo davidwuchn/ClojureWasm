@@ -33,6 +33,7 @@ const bindings = @import("bindings.zig");
 const map_collection = @import("../../runtime/collection/map.zig");
 const keyword_mod = @import("../../runtime/keyword.zig");
 const host_instance = @import("../../runtime/host_instance.zig");
+const root_set = @import("../../runtime/gc/root_set.zig");
 const text_io = @import("../../runtime/io/text_io.zig");
 const array_list = @import("../../runtime/java/util/ArrayList.zig");
 
@@ -730,6 +731,9 @@ pub fn analyzeQuote(
     if (items.len != 2)
         return error_catalog.raise(.quote_arity_invalid, form.location, .{ .got = items.len - 1 });
     const v = try analyzer_mod.formToValue(rt, env, items[1]);
+    // D-430: the quoted structure lives only in this arena Node until
+    // execution — rooting the ROOT value suffices (mark traces children).
+    try root_set.pushAnalysisRoot(v);
     const n = try arena.create(Node);
     n.* = .{ .quote_node = .{ .quoted = v, .loc = form.location } };
     return n;

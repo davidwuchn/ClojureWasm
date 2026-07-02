@@ -50,6 +50,7 @@
 //! nil-substitution like v0's `else => write nil`).
 
 const std = @import("std");
+const root_set = @import("../../runtime/gc/root_set.zig");
 const opcode_mod = @import("../backend/vm/opcode.zig");
 const Instruction = opcode_mod.Instruction;
 const Opcode = opcode_mod.Opcode;
@@ -651,7 +652,14 @@ pub fn deserializeChunk(allocator: std.mem.Allocator, rt: *Runtime, env: *@impor
     const constants = try allocator.alloc(Value, constants_count);
     errdefer allocator.free(constants);
     i = 0;
-    while (i < constants_count) : (i += 1) constants[i] = try readValue(allocator, &r, rt, env);
+    while (i < constants_count) : (i += 1) {
+        constants[i] = try readValue(allocator, &r, rt, env);
+        // D-430: `constants` is an arena slice, not a GC object — root each
+        // deserialized constant on the analysis frame until the owning
+        // bracket closes (constant N+1's alloc can auto-collect and would
+        // otherwise sweep constant N before the chunk's EvalFrame exists).
+        try root_set.pushAnalysisRoot(constants[i]);
+    }
 
     const cs_count = try r.readU32();
     const call_sites = try allocator.alloc(CallSiteEntry, cs_count);
@@ -1187,6 +1195,9 @@ test "payload envelope round-trips two chunks in order" {
     const bytes = try serializeEnvelope(testing.allocator, &.{ chunk_a, chunk_b }, null, &.{});
     defer testing.allocator.free(bytes);
 
+    var af_1198: root_set.AnalysisFrame = undefined;
+    root_set.beginAnalysis(&af_1198, testing.allocator);
+    defer root_set.endAnalysis(&af_1198);
     const out = try deserializeEnvelope(testing.allocator, &rt, &env, bytes);
     defer freeEnvelope(testing.allocator, out);
 
@@ -1226,6 +1237,9 @@ test "region blob: findRegion returns each ns's envelope; absent / non-region ->
     // Each region's sub-slice equals its source envelope and deserializes to its chunk.
     const got_a = findRegion(blob, "clojure.core") orelse return error.NoRegion;
     try testing.expectEqualSlices(u8, env_a, got_a);
+    var af_1237: root_set.AnalysisFrame = undefined;
+    root_set.beginAnalysis(&af_1237, testing.allocator);
+    defer root_set.endAnalysis(&af_1237);
     const chunks_a = try deserializeEnvelope(testing.allocator, &rt, &env, got_a);
     defer freeEnvelope(testing.allocator, chunks_a);
     try testing.expectEqual(@as(i64, 7), chunks_a[0].constants[0].asInteger());
@@ -1265,6 +1279,9 @@ test "envelope entry manifest round-trips; chunk readers skip it (ADR-0034 am4)"
     try testing.expectEqualStrings("8080", entry.args[0]);
     try testing.expectEqualStrings("foo", entry.args[1]);
 
+    var af_1276: root_set.AnalysisFrame = undefined;
+    root_set.beginAnalysis(&af_1276, testing.allocator);
+    defer root_set.endAnalysis(&af_1276);
     const out = try deserializeEnvelope(testing.allocator, &rt, &env, bytes);
     defer freeEnvelope(testing.allocator, out);
     try testing.expectEqual(@as(usize, 1), out.len);
@@ -1316,6 +1333,9 @@ test "embedded component table round-trips; chunk + entry readers skip it (ADR-0
 
     // The chunk readers (deserializeEnvelope / EnvelopeIterator) skip both the
     // table and the manifest and still see the one chunk.
+    var af_1327: root_set.AnalysisFrame = undefined;
+    root_set.beginAnalysis(&af_1327, testing.allocator);
+    defer root_set.endAnalysis(&af_1327);
     const out = try deserializeEnvelope(testing.allocator, &rt, &env, bytes);
     defer freeEnvelope(testing.allocator, out);
     try testing.expectEqual(@as(usize, 1), out.len);
@@ -1422,6 +1442,9 @@ test "type_descriptor constant round-trips by name (ADR-0034 am5; D-452)" {
     const bytes = try serializeChunk(testing.allocator, chunk);
     defer testing.allocator.free(bytes);
 
+    var af_1433: root_set.AnalysisFrame = undefined;
+    root_set.beginAnalysis(&af_1433, testing.allocator);
+    defer root_set.endAnalysis(&af_1433);
     const out = try deserializeChunk(testing.allocator, &rt, &env, bytes);
     defer freeChunk(testing.allocator, out);
     try testing.expectEqual(@as(usize, 2), out.constants.len);
@@ -1440,6 +1463,9 @@ test "type_descriptor constant round-trips by name (ADR-0034 am5; D-452)" {
     defer rt2.deinit();
     var env2 = try @import("../../runtime/env.zig").Env.init(&rt2);
     defer env2.deinit();
+    var af_1451: root_set.AnalysisFrame = undefined;
+    root_set.beginAnalysis(&af_1451, testing.allocator);
+    defer root_set.endAnalysis(&af_1451);
     try testing.expectError(DeserializeError.TypeDescriptorUnresolved, deserializeChunk(testing.allocator, &rt2, &env2, bogus));
 }
 
@@ -1567,6 +1593,9 @@ test "chunk completeness gate: every side-table + entry field round-trips (D-365
 
     const bytes = try serializeChunk(testing.allocator, chunk);
     defer testing.allocator.free(bytes);
+    var af_1578: root_set.AnalysisFrame = undefined;
+    root_set.beginAnalysis(&af_1578, testing.allocator);
+    defer root_set.endAnalysis(&af_1578);
     const round = try deserializeChunk(testing.allocator, &rt, &env, bytes);
     defer freeChunk(testing.allocator, round);
 
@@ -1704,6 +1733,9 @@ test "header magic + version round-trips on empty chunk" {
     defer testing.allocator.free(bytes);
     try testing.expectEqualSlices(u8, &MAGIC, bytes[0..4]);
     try testing.expectEqual(@as(u16, VERSION), std.mem.readInt(u16, bytes[4..6], .little));
+    var af_1715: root_set.AnalysisFrame = undefined;
+    root_set.beginAnalysis(&af_1715, testing.allocator);
+    defer root_set.endAnalysis(&af_1715);
     const round = try deserializeChunk(testing.allocator, &rt, &env, bytes);
     defer freeChunk(testing.allocator, round);
     try testing.expectEqual(@as(usize, 0), round.instructions.len);
@@ -1732,6 +1764,9 @@ test "round-trips ns_filters side-table (ADR-0034 am3 — require-closure embedd
 
     const bytes = try serializeChunk(testing.allocator, chunk);
     defer testing.allocator.free(bytes);
+    var af_1743: root_set.AnalysisFrame = undefined;
+    root_set.beginAnalysis(&af_1743, testing.allocator);
+    defer root_set.endAnalysis(&af_1743);
     const round = try deserializeChunk(testing.allocator, &rt, &env, bytes);
     defer freeChunk(testing.allocator, round);
 
@@ -1754,6 +1789,9 @@ test "round-trips ns_filters with no :only (null) — bare (ns x (:require …))
     const chunk: BytecodeChunk = .{ .instructions = &.{}, .constants = &.{}, .ns_filters = &filters };
     const bytes = try serializeChunk(testing.allocator, chunk);
     defer testing.allocator.free(bytes);
+    var af_1765: root_set.AnalysisFrame = undefined;
+    root_set.beginAnalysis(&af_1765, testing.allocator);
+    defer root_set.endAnalysis(&af_1765);
     const round = try deserializeChunk(testing.allocator, &rt, &env, bytes);
     defer freeChunk(testing.allocator, round);
     try testing.expectEqual(@as(usize, 1), round.ns_filters.len);
@@ -1776,6 +1814,9 @@ test "round-trips instructions" {
     const chunk: BytecodeChunk = .{ .instructions = &instrs, .constants = &.{} };
     const bytes = try serializeChunk(testing.allocator, chunk);
     defer testing.allocator.free(bytes);
+    var af_1787: root_set.AnalysisFrame = undefined;
+    root_set.beginAnalysis(&af_1787, testing.allocator);
+    defer root_set.endAnalysis(&af_1787);
     const round = try deserializeChunk(testing.allocator, &rt, &env, bytes);
     defer freeChunk(testing.allocator, round);
     try testing.expectEqual(@as(usize, 2), round.instructions.len);
@@ -1801,6 +1842,9 @@ test "round-trips immediate constants (nil / bool / int / float / char)" {
     const chunk: BytecodeChunk = .{ .instructions = &.{}, .constants = &consts };
     const bytes = try serializeChunk(testing.allocator, chunk);
     defer testing.allocator.free(bytes);
+    var af_1812: root_set.AnalysisFrame = undefined;
+    root_set.beginAnalysis(&af_1812, testing.allocator);
+    defer root_set.endAnalysis(&af_1812);
     const round = try deserializeChunk(testing.allocator, &rt, &env, bytes);
     defer freeChunk(testing.allocator, round);
     try testing.expectEqual(@as(usize, 6), round.constants.len);
@@ -1824,6 +1868,9 @@ test "round-trips a string constant" {
     const chunk: BytecodeChunk = .{ .instructions = &.{}, .constants = &consts };
     const bytes = try serializeChunk(testing.allocator, chunk);
     defer testing.allocator.free(bytes);
+    var af_1835: root_set.AnalysisFrame = undefined;
+    root_set.beginAnalysis(&af_1835, testing.allocator);
+    defer root_set.endAnalysis(&af_1835);
     const round = try deserializeChunk(testing.allocator, &rt, &env, bytes);
     defer freeChunk(testing.allocator, round);
     try testing.expectEqualStrings("hello", string_collection.asString(round.constants[0]));
@@ -1843,6 +1890,9 @@ test "round-trips keyword + symbol with and without ns" {
     const chunk: BytecodeChunk = .{ .instructions = &.{}, .constants = &consts };
     const bytes = try serializeChunk(testing.allocator, chunk);
     defer testing.allocator.free(bytes);
+    var af_1854: root_set.AnalysisFrame = undefined;
+    root_set.beginAnalysis(&af_1854, testing.allocator);
+    defer root_set.endAnalysis(&af_1854);
     const round = try deserializeChunk(testing.allocator, &rt, &env, bytes);
     defer freeChunk(testing.allocator, round);
     try testing.expectEqualStrings("k", keyword_mod.asKeyword(round.constants[0]).name);
@@ -1871,6 +1921,9 @@ test "round-trips vector + list constants" {
     const chunk: BytecodeChunk = .{ .instructions = &.{}, .constants = &consts };
     const bytes = try serializeChunk(testing.allocator, chunk);
     defer testing.allocator.free(bytes);
+    var af_1882: root_set.AnalysisFrame = undefined;
+    root_set.beginAnalysis(&af_1882, testing.allocator);
+    defer root_set.endAnalysis(&af_1882);
     const round = try deserializeChunk(testing.allocator, &rt, &env, bytes);
     defer freeChunk(testing.allocator, round);
     try testing.expectEqual(@as(u32, 3), vector_mod.count(round.constants[0]));
@@ -1894,6 +1947,9 @@ test "round-trips call_sites side-table" {
     const chunk: BytecodeChunk = .{ .instructions = &.{}, .constants = &.{}, .call_sites = @constCast(&cs) };
     const bytes = try serializeChunk(testing.allocator, chunk);
     defer testing.allocator.free(bytes);
+    var af_1905: root_set.AnalysisFrame = undefined;
+    root_set.beginAnalysis(&af_1905, testing.allocator);
+    defer root_set.endAnalysis(&af_1905);
     const round = try deserializeChunk(testing.allocator, &rt, &env, bytes);
     defer freeChunk(testing.allocator, round);
     try testing.expectEqual(@as(usize, 2), round.call_sites.len);
@@ -1917,6 +1973,9 @@ test "round-trips libspecs side-table with alias and refers" {
     const chunk: BytecodeChunk = .{ .instructions = &.{}, .constants = &.{}, .libspecs = @constCast(&ls) };
     const bytes = try serializeChunk(testing.allocator, chunk);
     defer testing.allocator.free(bytes);
+    var af_1928: root_set.AnalysisFrame = undefined;
+    root_set.beginAnalysis(&af_1928, testing.allocator);
+    defer root_set.endAnalysis(&af_1928);
     const round = try deserializeChunk(testing.allocator, &rt, &env, bytes);
     defer freeChunk(testing.allocator, round);
     try testing.expectEqual(@as(usize, 2), round.libspecs.len);
@@ -1935,6 +1994,9 @@ test "bad magic rejected with BadMagic" {
     var env = try @import("../../runtime/env.zig").Env.init(&rt);
     defer env.deinit();
     const bytes = [_]u8{ 'X', 'X', 'X', 'X', 2, 0, 0, 0, 0, 0 };
+    var af_1946: root_set.AnalysisFrame = undefined;
+    root_set.beginAnalysis(&af_1946, testing.allocator);
+    defer root_set.endAnalysis(&af_1946);
     try testing.expectError(DeserializeError.BadMagic, deserializeChunk(testing.allocator, &rt, &env, &bytes));
 }
 
@@ -1946,5 +2008,8 @@ test "unsupported version rejected with UnsupportedVersion" {
     var env = try @import("../../runtime/env.zig").Env.init(&rt);
     defer env.deinit();
     const bytes = [_]u8{ 'C', 'L', 'J', 'W', 99, 0, 0, 0, 0, 0 };
+    var af_1957: root_set.AnalysisFrame = undefined;
+    root_set.beginAnalysis(&af_1957, testing.allocator);
+    defer root_set.endAnalysis(&af_1957);
     try testing.expectError(DeserializeError.UnsupportedVersion, deserializeChunk(testing.allocator, &rt, &env, &bytes));
 }

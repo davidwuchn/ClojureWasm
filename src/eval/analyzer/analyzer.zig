@@ -531,6 +531,11 @@ pub fn parseRegexLiteral(rt: *Runtime, body: []const u8, loc: error_mod.SourceLo
 }
 
 pub fn makeConstant(arena: std.mem.Allocator, v: Value, form: Form) !*const Node {
+    // D-430: the constant lives only in this arena Node until execution —
+    // publish it on the analysis-roots frame so a collect during the rest
+    // of analysis (macro-expansion eval reentry, D-519 alloc-boundary
+    // auto-collect) cannot sweep it.
+    try root_set.pushAnalysisRoot(v);
     const n = try arena.create(Node);
     n.* = .{ .constant = .{ .value = v, .loc = form.location } };
     return n;
@@ -1192,7 +1197,16 @@ pub fn formToValue(rt: *Runtime, env: *Env, form: Form) AnalyzeError!Value {
     // Non-IObj values (numbers, keywords, strings, …) cannot carry metadata in
     // cljw — matching JVM — so the meta is dropped there rather than erroring.
     if (form.meta) |meta_form| {
+        // GC-ROOT: C — `base` lives in a Zig local across the meta lift's
+        // allocs (a big literal's meta map can trigger a collect that would
+        // sweep the freshly-built base). [ref: .dev/gc_rooting.md §C]
+        var roots = [_]Value{ base, .nil_val };
+        var sp: u16 = 2;
+        var frame: root_set.EvalFrame = .{ .stack = &roots, .sp = &sp, .locals = &.{}, .parent = root_set.eval_frame_head };
+        root_set.eval_frame_head = &frame;
+        defer root_set.eval_frame_head = frame.parent;
         const m = try formToValue(rt, env, meta_form.*);
+        roots[1] = m;
         return switch (base.tag()) {
             .vector => try vector_collection.withMeta(rt, base, m),
             .array_map, .hash_map => try map_collection.withMeta(rt, base, m),
@@ -1210,9 +1224,22 @@ pub fn formToValue(rt: *Runtime, env: *Env, form: Form) AnalyzeError!Value {
 /// + JVM-parity `(quote [1 2 3])` round-trip.
 fn vectorFormToValue(rt: *Runtime, env: *Env, items: []const Form) AnalyzeError!Value {
     var out = vector_collection.empty();
+    // GC-ROOT: C — `out` + the current element live in Zig locals across the
+    // per-element formToValue/conj allocs (each can auto-collect / alloc-
+    // torture-collect; a swept `out` tail gets recycled → "@memcpy arguments
+    // alias" panic, the ADR-0169 verification's residual finding). The
+    // formToValue builders mirror valueToForm's D-253 frames — this is the
+    // Form→Value direction of the same asymmetry. [ref: .dev/gc_rooting.md §C]
+    var roots = [_]Value{ .nil_val, .nil_val };
+    var sp: u16 = 2;
+    var frame: root_set.EvalFrame = .{ .stack = &roots, .sp = &sp, .locals = &.{}, .parent = root_set.eval_frame_head };
+    root_set.eval_frame_head = &frame;
+    defer root_set.eval_frame_head = frame.parent;
     for (items) |item| {
         const v = try formToValue(rt, env, item);
+        roots[1] = v;
         out = try vector_collection.conj(rt, out, v);
+        roots[0] = out;
     }
     return out;
 }
@@ -1268,10 +1295,19 @@ fn mapFormToValue(rt: *Runtime, env: *Env, entries: []const Form, loc: SourceLoc
         return error_catalog.raise(.map_literal_arity_odd, loc, .{});
     }
     var out = map_collection.empty();
+    // GC-ROOT: C — `out` + the in-flight key/value across per-entry allocs
+    // (see vectorFormToValue's note). [ref: .dev/gc_rooting.md §C]
+    var roots = [_]Value{ .nil_val, .nil_val, .nil_val };
+    var sp: u16 = 3;
+    var frame: root_set.EvalFrame = .{ .stack = &roots, .sp = &sp, .locals = &.{}, .parent = root_set.eval_frame_head };
+    root_set.eval_frame_head = &frame;
+    defer root_set.eval_frame_head = frame.parent;
     var i: usize = 0;
     while (i < entries.len) : (i += 2) {
         const k = try formToValue(rt, env, entries[i]);
+        roots[1] = k;
         const val = try formToValue(rt, env, entries[i + 1]);
+        roots[2] = val;
         out = map_collection.assoc(rt, out, k, val) catch |err| switch (err) {
             // Astronomically rare: two literal keys share a full 32-bit
             // hash (collision-bucket handling is unimplemented). Convert
@@ -1282,6 +1318,7 @@ fn mapFormToValue(rt: *Runtime, env: *Env, entries: []const Form, loc: SourceLoc
             error.AssocOnNonMap => unreachable, // out always starts at .array_map
             else => |e| return e,
         };
+        roots[0] = out;
     }
     return out;
 }
@@ -1289,8 +1326,16 @@ fn mapFormToValue(rt: *Runtime, env: *Env, entries: []const Form, loc: SourceLoc
 /// Build a persistent set Value by recursively lifting elements.
 fn setFormToValue(rt: *Runtime, env: *Env, items: []const Form) AnalyzeError!Value {
     var out = set_collection.empty();
+    // GC-ROOT: C — `out` + the current element across per-element allocs
+    // (see vectorFormToValue's note). [ref: .dev/gc_rooting.md §C]
+    var roots = [_]Value{ .nil_val, .nil_val };
+    var sp: u16 = 2;
+    var frame: root_set.EvalFrame = .{ .stack = &roots, .sp = &sp, .locals = &.{}, .parent = root_set.eval_frame_head };
+    root_set.eval_frame_head = &frame;
+    defer root_set.eval_frame_head = frame.parent;
     for (items) |item| {
         const v = try formToValue(rt, env, item);
+        roots[1] = v;
         out = set_collection.conj(rt, out, v) catch |err| switch (err) {
             error.HashCollision => return error_catalog.raise(.feature_not_supported, .{}, .{
                 .name = "a set with hash-colliding elements",
@@ -1298,6 +1343,7 @@ fn setFormToValue(rt: *Runtime, env: *Env, items: []const Form) AnalyzeError!Val
             error.AssocOnNonMap => unreachable, // out always starts at .hash_set
             else => |e| return e,
         };
+        roots[0] = out;
     }
     return out;
 }
@@ -1310,10 +1356,21 @@ fn listFormToValue(rt: *Runtime, env: *Env, items: []const Form) AnalyzeError!Va
     if (items.len == 0) return try list_collection.emptyList(rt);
     var i = items.len;
     var acc: Value = .nil_val;
+    // GC-ROOT: C — `acc` + the current head across per-element allocs.
+    // consHeap's own fabrication region only brackets each single cell; the
+    // partial chain between iterations lives in a Zig local (see
+    // vectorFormToValue's note). [ref: .dev/gc_rooting.md §C]
+    var roots = [_]Value{ .nil_val, .nil_val };
+    var sp: u16 = 2;
+    var frame: root_set.EvalFrame = .{ .stack = &roots, .sp = &sp, .locals = &.{}, .parent = root_set.eval_frame_head };
+    root_set.eval_frame_head = &frame;
+    defer root_set.eval_frame_head = frame.parent;
     while (i > 0) {
         i -= 1;
         const head = try formToValue(rt, env, items[i]);
+        roots[1] = head;
         acc = try list_collection.consHeap(rt, head, acc);
+        roots[0] = acc;
     }
     return acc;
 }
@@ -1508,6 +1565,11 @@ const TestFixture = struct {
     }
 
     fn analyzeStr(self: *TestFixture, source: []const u8) !*const Node {
+        // ADR-0169: tests own the analysis bracket like every seam does.
+        // No collect runs here, so closing at return is safe.
+        var af: root_set.AnalysisFrame = undefined;
+        root_set.beginAnalysis(&af, self.rt.gc.infra);
+        defer root_set.endAnalysis(&af);
         var reader = Reader.init(self.arena.allocator(), source);
         const form_opt = try reader.read();
         const form = form_opt orelse return AnalyzeError.SyntaxError;

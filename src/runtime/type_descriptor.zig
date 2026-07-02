@@ -540,13 +540,43 @@ pub fn reifiedInstWithMeta(rt: *Runtime, v: Value, meta: Value) !Value {
     return Value.encodeHeapPtr(.reified_instance, inst);
 }
 
-/// Trace fn for `.reified_instance`. Marks the metadata slot (ADR-0134) —
-/// the descriptor lives on `rt.gpa` (never traced). A missed mark here is a
-/// use-after-free of the meta map (the GC hazard ADR-0134 step 2 flags).
+/// Mark every GC Value a descriptor (+ its defrecord parent chain) holds:
+/// `method_table[].method_val` (deftype/reify method Functions — often
+/// reachable ONLY through the descriptor) and `meta`. The descriptor struct
+/// itself lives on `rt.gpa` and is never swept; its VALUES are ordinary GC
+/// objects. Before this walk existed, a deftype method fn whose sole
+/// reference was the descriptor was swept once the heap crossed the collect
+/// threshold — its chunk constants then dangled (instaparse AutoFlattenSeq's
+/// `cached-seq` field-name string read as garbage; the gc_rooting §C C8
+/// KNOWN-OPEN class).
+fn markDescriptorValues(gc: *gc_heap_mod.GcHeap, td_start: *const TypeDescriptor) void {
+    var td: ?*const TypeDescriptor = td_start;
+    while (td) |d| : (td = d.parent) {
+        for (d.method_table) |me| {
+            if (me.method_val.heapHeader()) |hdr| mark_sweep.mark(gc, hdr);
+        }
+        if (d.meta.heapHeader()) |hdr| mark_sweep.mark(gc, hdr);
+    }
+}
+
+/// Trace fn for `.type_descriptor` (the boxed ref `makeTypeDescriptorRef`
+/// mints; a `trackHeap` persistent mark-waypoint). Walks the descriptor's
+/// GC Values — see `markDescriptorValues`.
+pub fn traceTypeDescriptorRef(gc_ptr: *anyopaque, header: *HeapHeader) void {
+    const gc: *gc_heap_mod.GcHeap = @ptrCast(@alignCast(gc_ptr));
+    const ref: *const TypeDescriptorRef = @ptrCast(@alignCast(header));
+    markDescriptorValues(gc, ref.td_ptr);
+}
+
+/// Trace fn for `.reified_instance`. Marks the metadata slot (ADR-0134) AND
+/// the per-instance descriptor's method closures — a reify's method fns
+/// (closures over the reify site's locals) are reachable ONLY through its
+/// descriptor, so skipping them was the same C8 sweep as the deftype case.
 pub fn traceReifiedInstance(gc_ptr: *anyopaque, header: *HeapHeader) void {
     const gc: *gc_heap_mod.GcHeap = @ptrCast(@alignCast(gc_ptr));
     const inst: *ReifiedInstance = @ptrCast(@alignCast(header));
     if (inst.meta.heapHeader()) |hdr| mark_sweep.mark(gc, hdr);
+    markDescriptorValues(gc, inst.descriptor);
 }
 
 /// Finaliser for `.reified_instance`. No-op — no `gc.infra`-owned
@@ -696,6 +726,9 @@ pub fn traceTypedInstance(gc_ptr: *anyopaque, header: *HeapHeader) void {
     }
     // D-312: the instance metadata map is a GC child (no-op when nil).
     if (inst.meta.heapHeader()) |hdr| mark_sweep.mark(gc, hdr);
+    // C8: the descriptor's method Functions + meta are GC children too
+    // (the descriptor struct itself is gpa-owned, never swept).
+    markDescriptorValues(gc, inst.descriptor);
     // D-086: the extmap (non-declared keys) is a GC child (no-op when nil).
     if (inst.extmap.heapHeader()) |hdr| mark_sweep.mark(gc, hdr);
 }
@@ -710,6 +743,7 @@ pub fn finaliseTypedInstance(gc_ptr: *anyopaque, header: *HeapHeader) void {
 
 pub fn registerGcHooks() void {
     tag_ops.registerTrace(.typed_instance, &traceTypedInstance);
+    tag_ops.registerTrace(.type_descriptor, &traceTypeDescriptorRef);
     tag_ops.registerFinaliser(.typed_instance, &finaliseTypedInstance);
     tag_ops.registerTrace(.reified_instance, &traceReifiedInstance);
     tag_ops.registerFinaliser(.reified_instance, &finaliseReifiedInstance);

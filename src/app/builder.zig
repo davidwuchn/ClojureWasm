@@ -23,6 +23,7 @@ const EmbeddedComponent = @import("../runtime/runtime.zig").EmbeddedComponent;
 const Env = @import("../runtime/env.zig").Env;
 const Reader = @import("../eval/reader.zig").Reader;
 const analyzeForm = @import("../eval/analyzer/analyzer.zig").analyze;
+const root_set = @import("../runtime/gc/root_set.zig");
 const macro_dispatch = @import("../eval/macro_dispatch.zig");
 const vm_compiler = @import("../eval/backend/vm/compiler.zig");
 const serialize = @import("../eval/bytecode/serialize.zig");
@@ -152,6 +153,10 @@ pub fn buildEnvelope(
     reader.file_name = source_label;
     while (true) {
         const form = (try reader.read()) orelse break;
+        // D-430: per-form analysis bracket (roots literals through eval).
+        var af: root_set.AnalysisFrame = undefined;
+        root_set.beginAnalysis(&af, rt.gc.infra);
+        defer root_set.endAnalysis(&af);
         const node = try analyzeForm(arena, rt, env, null, form, macro_table);
         const chunk = try vm_compiler.compile(rt, arena, node);
         try entry_chunks.append(allocator, chunk);
@@ -226,6 +231,10 @@ pub fn buildBootstrapEnvelope(
             // a bundled lib gives no location. Report file label + form index +
             // phase on the error path so a bootstrap trap is locatable (the
             // stdlib/contrib sweep campaign relies on this).
+            // D-430: per-form analysis bracket (roots literals through eval).
+            var af: root_set.AnalysisFrame = undefined;
+            root_set.beginAnalysis(&af, rt.gc.infra);
+            defer root_set.endAnalysis(&af);
             const node = analyzeForm(arena, rt, env, null, form, macro_table) catch |err| {
                 const msg = if (error_info.peekLastError()) |info| info.message else "";
                 std.debug.print("\n[AOT-FAIL] analyze: {s} form #{d}: {s}: {s}\n", .{ file.label, form_idx, @errorName(err), msg });
@@ -288,6 +297,10 @@ pub fn buildMainEnvelope(
     var locals: [driver.MAX_LOCALS]Value = [_]Value{.nil_val} ** driver.MAX_LOCALS;
     var reader = Reader.init(arena, req_src);
     const form = (try reader.read()) orelse return error.EmptyRequireForm;
+    // D-430: analysis bracket (roots literals through eval).
+    var af: root_set.AnalysisFrame = undefined;
+    root_set.beginAnalysis(&af, rt.gc.infra);
+    defer root_set.endAnalysis(&af);
     const node = try analyzeForm(arena, rt, env, null, form, macro_table);
     _ = try driver.evalForm(rt, env, &locals, arena, node);
 
@@ -442,6 +455,10 @@ pub fn tryRunEmbedded(io: std.Io, gpa: std.mem.Allocator, arena: std.mem.Allocat
         var reader = Reader.init(arena, src);
         var locals: [driver.MAX_LOCALS]Value = [_]Value{.nil_val} ** driver.MAX_LOCALS;
         while (try reader.read()) |form| {
+            // D-430: per-form analysis bracket (roots literals through eval).
+            var af: root_set.AnalysisFrame = undefined;
+            root_set.beginAnalysis(&af, rt.gc.infra);
+            defer root_set.endAnalysis(&af);
             const node = try analyzeForm(arena, &rt, &env, null, form, &macro_table);
             _ = try driver.evalForm(&rt, &env, &locals, arena, node);
         }
@@ -476,6 +493,9 @@ test "buildEnvelope compiles two forms into a two-chunk envelope" {
     const bytes = try buildEnvelope(testing.allocator, &rt, &env, &macro_table, arena, "(+ 1 2) (* 3 4)", "<test>");
     defer testing.allocator.free(bytes);
 
+    var af_de: root_set.AnalysisFrame = undefined;
+    root_set.beginAnalysis(&af_de, rt.gc.infra);
+    defer root_set.endAnalysis(&af_de);
     const chunks = try serialize.deserializeEnvelope(testing.allocator, &rt, &env, bytes);
     defer serialize.freeEnvelope(testing.allocator, chunks);
 
@@ -513,6 +533,9 @@ test "buildEnvelope evaluates each form so later forms see earlier env (ADR-0034
     const bytes = try buildEnvelope(testing.allocator, &rt, &env, &macro_table, arena, "(require '[clojure.set :as s]) (s/union #{1} #{2})", "<test>");
     defer testing.allocator.free(bytes);
 
+    var af_de: root_set.AnalysisFrame = undefined;
+    root_set.beginAnalysis(&af_de, rt.gc.infra);
+    defer root_set.endAnalysis(&af_de);
     const chunks = try serialize.deserializeEnvelope(testing.allocator, &rt, &env, bytes);
     defer serialize.freeEnvelope(testing.allocator, chunks);
 
@@ -569,6 +592,9 @@ test "aot: core.clj round-trips — build envelope, restore into a fresh env, ru
     //     and dispatches through the tree_walk vtable's evalChunk (Cycle 0).
     var reader = Reader.init(arena, "((comp inc inc inc) 0)");
     const form = (try reader.read()).?;
+    var af: root_set.AnalysisFrame = undefined;
+    root_set.beginAnalysis(&af, rt.gc.infra);
+    defer root_set.endAnalysis(&af);
     const node = try analyzeForm(arena, &rt, &env, null, form, &table);
     var locals: [driver.MAX_LOCALS]Value = [_]Value{.nil_val} ** driver.MAX_LOCALS;
     const result = try driver.evalForm(&rt, &env, &locals, arena, node);
@@ -626,6 +652,9 @@ test "aot: full bootstrap round-trips — a NON-core lib restores from bytecode 
     // non-core AOT chunks ran. Call it to prove the restored fn dispatches.
     var reader = Reader.init(arena, "(clojure.string/upper-case \"hi\")");
     const form = (try reader.read()).?;
+    var af: root_set.AnalysisFrame = undefined;
+    root_set.beginAnalysis(&af, rt.gc.infra);
+    defer root_set.endAnalysis(&af);
     const node = try analyzeForm(arena, &rt, &env, null, form, &table);
     var locals: [driver.MAX_LOCALS]Value = [_]Value{.nil_val} ** driver.MAX_LOCALS;
     const result = try driver.evalForm(&rt, &env, &locals, arena, node);
@@ -656,6 +685,9 @@ test "fn_val constant round-trips through serialize (ADR-0034 am2)" {
     const bytes = try buildEnvelope(testing.allocator, &rt, &env, &macro_table, arena, "(def add2 (fn* [x] (+ x 2)))", "<test>");
     defer testing.allocator.free(bytes);
 
+    var af_de: root_set.AnalysisFrame = undefined;
+    root_set.beginAnalysis(&af_de, rt.gc.infra);
+    defer root_set.endAnalysis(&af_de);
     const chunks = try serialize.deserializeEnvelope(testing.allocator, &rt, &env, bytes);
     defer serialize.freeEnvelope(testing.allocator, chunks);
 
@@ -723,6 +755,9 @@ test "deserialized fn_val executes through the VM (ADR-0034 am2)" {
     var locals: [driver.MAX_LOCALS]Value = [_]Value{.nil_val} ** driver.MAX_LOCALS;
     var last: Value = .nil_val;
     while (try it.next()) |chunk_bytes| {
+        var af2: root_set.AnalysisFrame = undefined;
+        root_set.beginAnalysis(&af2, rt2.gc.infra);
+        defer root_set.endAnalysis(&af2);
         var chunk = try serialize.deserializeChunk(run_arena, &rt2, &env2, chunk_bytes);
         last = try vm.eval(&rt2, &env2, &locals, &chunk);
     }

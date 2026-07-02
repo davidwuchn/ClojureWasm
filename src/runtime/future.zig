@@ -138,7 +138,7 @@ fn worker(f: *Future) void {
     const fut_val = Value.encodeHeapPtr(.future, f);
     var ctx: root_set.ThreadGcContext = .{
         .frame_slot = &env_mod.current_frame,
-        .macro_slot = &root_set.macro_root_slot,
+        .analysis_frame_slot = &root_set.analysis_frame_head,
         .eval_frame_slot = &root_set.eval_frame_head,
         .self_guard_slot = &root_set.gc_self_guard,
         // Publish this worker's STM transaction so a `dosync` in the thunk is

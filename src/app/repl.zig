@@ -30,6 +30,7 @@ const Writer = std.Io.Writer;
 
 const Reader = @import("../eval/reader.zig").Reader;
 const analyzeForm = @import("../eval/analyzer/analyzer.zig").analyze;
+const root_set = @import("../runtime/gc/root_set.zig");
 const macro_dispatch = @import("../eval/macro_dispatch.zig");
 const driver = @import("../eval/driver.zig");
 const Runtime = @import("../runtime/runtime.zig").Runtime;
@@ -219,6 +220,10 @@ fn evalOneLine(
     while (true) {
         const form_opt = try reader.read();
         const form = form_opt orelse return;
+        // D-430: per-form analysis bracket (roots literals through eval).
+        var af: root_set.AnalysisFrame = undefined;
+        root_set.beginAnalysis(&af, rt.gc.infra);
+        defer root_set.endAnalysis(&af);
         const node = try analyzeForm(arena, rt, env, null, form, macro_table);
         var locals: [driver.MAX_LOCALS]Value = [_]Value{.nil_val} ** driver.MAX_LOCALS;
         const result = try driver.evalForm(rt, env, &locals, arena, node);

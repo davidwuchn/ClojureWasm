@@ -16,6 +16,7 @@
 //! matching compile arm at build time.
 
 const std = @import("std");
+const root_set = @import("../../../runtime/gc/root_set.zig");
 const node_mod = @import("../../node.zig");
 const intrinsic = @import("../intrinsic.zig");
 const opcode_mod = @import("opcode.zig");
@@ -909,6 +910,11 @@ const Compiler = struct {
 
     fn addConstant(self: *Compiler, v: Value) Error!u16 {
         if (self.constants.items.len > std.math.maxInt(u16)) return error.TooManyConstants;
+        // D-430: `self.constants` is an arena list, not a GC object — publish
+        // the value on the analysis-roots frame so a collect between now and
+        // the chunk's execution (whose EvalFrame then roots the pool) cannot
+        // sweep it.
+        try root_set.pushAnalysisRoot(v);
         const idx: u16 = @intCast(self.constants.items.len);
         try self.constants.append(self.arena, v);
         return idx;
@@ -968,6 +974,12 @@ const Fixture = struct {
     }
 
     fn compile(self: *Fixture, node: *const Node) Error!BytecodeChunk {
+        // ADR-0169: addConstant pushes to the analysis frame — tests own the
+        // bracket like every analyze/compile seam does. No collect runs in
+        // these tests, so closing at return (before any eval) is safe.
+        var af: root_set.AnalysisFrame = undefined;
+        root_set.beginAnalysis(&af, self.rt.gc.infra);
+        defer root_set.endAnalysis(&af);
         return @import("compiler.zig").compile(&self.rt, self.arena.allocator(), node);
     }
 };
