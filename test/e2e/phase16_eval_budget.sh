@@ -11,6 +11,16 @@ BIN="zig-out/bin/cljw"
 [ -n "${CLJW_SKIP_BUILD:-}" ] || zig build -Dwasm -Doptimize="${CLJW_OPT:-ReleaseSafe}" >/dev/null
 fail() { echo "FAIL $1" >&2; exit 1; }
 
+# Portable bounded run: GNU `timeout`, else coreutils `gtimeout`, else
+# unbounded (hosted mac runners ship neither; same pattern as
+# scripts/check_corpus_regression.sh).
+run_bounded() {
+    local secs="$1"; shift
+    if command -v timeout >/dev/null 2>&1; then timeout "$secs" "$@"
+    elif command -v gtimeout >/dev/null 2>&1; then gtimeout "$secs" "$@"
+    else "$@"; fi
+}
+
 # 1. A step budget kills an infinite loop (exit 1 + the budget message).
 out="$(CLJW_EVAL_MAX_STEPS=100000 "$BIN" -e '(loop [] (recur))' 2>&1)" && fail "step budget: expected non-zero exit, got 0:
 $out"
@@ -29,7 +39,7 @@ echo "PASS eval-budget-uncatchable"
 # 3. A wall-clock deadline kills an infinite loop within a GENEROUS ceiling
 #    (the deadline firing time is load-dependent; we only assert it DOES fire,
 #    not when — DP3). 200ms budget; 20s outer timeout proves termination.
-out="$(CLJW_EVAL_DEADLINE_MS=200 timeout 20 "$BIN" -e '(loop [] (recur))' 2>&1)" && fail "deadline: expected non-zero exit:
+out="$(CLJW_EVAL_DEADLINE_MS=200 run_bounded 20 "$BIN" -e '(loop [] (recur))' 2>&1)" && fail "deadline: expected non-zero exit:
 $out"
 echo "$out" | grep -qi "time budget" || fail "deadline message missing:
 $out"
@@ -54,14 +64,14 @@ echo "PASS eval-budget-unmetered-default"
 #    (124 = timeout → the cap-trip was too slow; 137 = SIGKILL → OS OOM, i.e. the
 #    cap was bypassed). 30s headroom for a slower CI box's cap-trip.
 set +e  # a failing command-substitution must not trip `set -e` before we read $?
-out="$(CLJW_EVAL_MAX_HEAP_MB=16 timeout 30 "$BIN" -e '(vec (range 100000000))' 2>&1)"; ec=$?
+out="$(CLJW_EVAL_MAX_HEAP_MB=16 run_bounded 30 "$BIN" -e '(vec (range 100000000))' 2>&1)"; ec=$?
 set -e
 [[ "$ec" -ne 0 ]] || fail "heap budget: expected non-zero exit (got 0): $out"
 echo "$out" | grep -qi "heap budget" || fail "heap budget message missing (exit=$ec): $out"
 echo "PASS eval-budget-heap-refuses-runaway"
 
 # 7. The heap cap is UNCATCHABLE too (a catch-all must NOT swallow it).
-out="$(CLJW_EVAL_MAX_HEAP_MB=16 timeout 20 "$BIN" -e '(try (vec (range 100000000)) (catch Throwable _ :swallowed))' 2>&1)" && fail "heap uncatchable: expected non-zero exit:
+out="$(CLJW_EVAL_MAX_HEAP_MB=16 run_bounded 20 "$BIN" -e '(try (vec (range 100000000)) (catch Throwable _ :swallowed))' 2>&1)" && fail "heap uncatchable: expected non-zero exit:
 $out"
 echo "$out" | grep -q ":swallowed" && fail "heap uncatchable: a (catch …) swallowed the heap-budget error:
 $out"
@@ -86,7 +96,7 @@ echo "PASS with-budget-success"
 for probe in \
   ':max-steps 100000} (fn [] (loop [] (recur)))' \
   ':max-heap-mb 16} (fn [] (vec (range 100000000)))'; do
-  out="$(timeout 20 "$BIN" -e "(let [r (cljw.eval/with-budget {$probe)] (println :exhausted (:cljw.eval/exhausted r) :alive (+ 40 2)))" 2>&1)" \
+  out="$(run_bounded 20 "$BIN" -e "(let [r (cljw.eval/with-budget {$probe)] (println :exhausted (:cljw.eval/exhausted r) :alive (+ 40 2)))" 2>&1)" \
     || fail "with-budget recovery: process did NOT survive (non-zero exit):
 $out"
   echo "$out" | grep -q ":alive 42" || fail "with-budget recovery: server did not continue after breach:

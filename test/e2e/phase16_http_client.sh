@@ -9,10 +9,20 @@ cd "$(dirname "$0")/../.."
 BIN="zig-out/bin/cljw"
 [ -n "${CLJW_SKIP_BUILD:-}" ] || zig build -Dwasm -Doptimize="${CLJW_OPT:-ReleaseSafe}" >/dev/null
 fail() { echo "FAIL $1" >&2; exit 1; }
+
+# Portable bounded run: GNU `timeout`, else coreutils `gtimeout`, else
+# unbounded (hosted mac runners ship neither; same pattern as
+# scripts/check_corpus_regression.sh).
+run_bounded() {
+    local secs="$1"; shift
+    if command -v timeout >/dev/null 2>&1; then timeout "$secs" "$@"
+    elif command -v gtimeout >/dev/null 2>&1; then gtimeout "$secs" "$@"
+    else "$@"; fi
+}
 command -v curl >/dev/null 2>&1 || { echo "SKIP phase16_http_client (curl unavailable for readiness poll)"; exit 0; }
 
 PORT=8157
-timeout 25 "$BIN" test/e2e/fixtures/http_server_demo.clj >/dev/null 2>&1 &
+run_bounded 25 "$BIN" test/e2e/fixtures/http_server_demo.clj >/dev/null 2>&1 &
 SRV=$!
 trap 'kill "$SRV" 2>/dev/null || true; pkill -f http_server_demo.clj 2>/dev/null || true' EXIT
 

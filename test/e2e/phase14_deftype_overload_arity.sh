@@ -16,6 +16,16 @@ BIN="zig-out/bin/cljw"
 [ -n "${CLJW_SKIP_BUILD:-}" ] || zig build -Dwasm -Doptimize="${CLJW_OPT:-ReleaseSafe}" >/dev/null
 
 fail() { echo "FAIL $1" >&2; exit 1; }
+
+# Portable bounded run: GNU `timeout`, else coreutils `gtimeout`, else
+# unbounded (hosted mac runners ship neither; same pattern as
+# scripts/check_corpus_regression.sh).
+run_bounded() {
+    local secs="$1"; shift
+    if command -v timeout >/dev/null 2>&1; then timeout "$secs" "$@"
+    elif command -v gtimeout >/dev/null 2>&1; then gtimeout "$secs" "$@"
+    else "$@"; fi
+}
 assert_eq() { local n="$1" g="$2" w="$3"; [[ "$g" == "$w" ]] || fail "$n: got '$g' want '$w'"; echo "PASS $n -> $w"; }
 
 # 1. The core case — Seqable seq[this] + Sorted seq[this asc] on one deftype.
@@ -87,7 +97,7 @@ PM="$HOME/Documents/OSS/data.priority-map"
 if [ -d "$PM" ]; then
   PROJ="$(mktemp -d)"
   printf '{:deps {org.clojure/data.priority-map {:local/root "%s"}}}\n' "$PM" > "$PROJ/deps.edn"
-  got=$(cd "$PROJ" && timeout 40 "$OLDPWD/$BIN" - <<'EOF' 2>/dev/null
+  got=$(cd "$PROJ" && run_bounded 40 "$OLDPWD/$BIN" - <<'EOF' 2>/dev/null
 (require '[clojure.data.priority-map :as pm])
 (def p (pm/priority-map :a 3 :b 1 :c 2 :d 4))
 (print [(subseq p < 3) (rsubseq p > 1)])
