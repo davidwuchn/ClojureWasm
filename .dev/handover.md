@@ -5,7 +5,7 @@
 
 ## Resume contract
 
-- **HEAD**: `main` (`git log` = SSOT; tip `ac1b883c`). Per-commit = smoke; commit
+- **HEAD**: `main` (`git log` = SSOT; tip ≈ `4a51ed2c`). Per-commit = smoke; commit
   **and** push (atomic Step 6). `build.zig.zon` `.zwasm` = stable tag pin `v2.0.0` (cljw 1.0.0).
 - **1.0.0 RELEASED (2026-07-01).** cljw `v1.0.0` tagged + pushed (commit a6db5dd6);
   release.yml published the GitHub Release (macos-aarch64 + linux-x86_64 binaries +
@@ -23,18 +23,23 @@
   parallel default flakes the **D-418/D-258 agent load-race** (`agent_conj` →
   `[#<promise> 2]`; green isolated/serial, NOT a regression). **Never run a concurrent
   build during a gate** (host contention → false timeout). `.claude/**` edits may hit
-  the auto-mode self-modification block — surface those to the user.
+  the auto-mode self-modification block — surface those to the user. **D-549
+  distribution cluster (brew/Docker/signing) is user-LOCKED** — never self-select.
 
 ## Last landed (git log = SSOT)
 
-2026-07-01 session (user-directed hygiene): **top-level reorg** (yaml→`data/`,
-examples→`docs/`, verified_projects→`test/conformance/`, NOTICE/THIRD_PARTY→`legal/`,
-CLAUDE.md→`.claude/`, cljw-formats→`docs/spec/`; modules/spike/.gitleaksignore/
-.editorconfig/.envrc.example removed; root 11 dirs/18 files → 7/7). **2-round
-multi-agent quality audit** (find→adversarial-verify→synthesize): repaired reorg-stale
-refs + a silently-false-passing audit gate (**D-546** filed for fail-loud hardening).
-**ADR-0168** reconciled ROADMAP §0/§2/§12.4/§16 with the autonomous loop + rescoped
-inviolable **P1** (interactive → continuous autonomous). Full gate green throughout.
+2026-07-02 session (user-directed comprehensive audit → immediate fixes): 4-way
+audit (debt-vs-code / scaffolding / OSS refresh / unfiled ideas → 4 notes in
+`private/notes/2026-07-02-*`), then the GC-safety arc it uncovered: **ADR-0028
+am3** gray-worklist mark (deep-chain SIGSEGV); **ADR-0169** AnalysisFrame — 3
+sibling unrooted classes closed (analysis/compile/deserialize constants;
+formToValue accumulators; TypeDescriptor method-table trace = gc_rooting C8);
+ns-reflection misuse now CATCHABLE (clj-parity, corpus `ns_reflection`).
+instaparse is byte-deterministic; **D-531 discharged**. Ledger reconciliation
+(5 discharges, 8 re-narrows, D-549…D-553 filed incl. user 2026-07-02
+decisions) + scaffolding quick wins (2 orphan scripts deleted, hook
+false-positive matchers fixed, phase-era wording swept, 5 historical docs
+CLOSED-bannered). Full gate green (23:34).
 
 ## Standing units (tracked in .dev/debt.yaml)
 
@@ -43,6 +48,8 @@ inviolable **P1** (interactive → continuous autonomous). Full gate green throu
   (correct rounding ×8 modes + JDK preferred output scale; base = the native Managed.sqrt).
 - **D-513** — clojure.core.reducers / clojure.repl / var :doc (foundational).
 - **D-418/D-258** — agent send/await + GC load-race (open, recall-trigger; re-gate serial).
+- **D-430** — instaparse frontier is now DETERMINISTIC (core.cljc:361 `#'gll/TRACE`
+  family) after the GC arc; re-derivable without the corruption noise.
 
 ## North star (ACTIVE, distal)
 
@@ -79,7 +86,8 @@ Publicization pass (user's 2nd directive) — ALL committed + pushed + CI GREEN:
   → English, provenance `~/Documents/OSS`→repo-relative, ladder.md. Inventory:
   `private/notes/2026-07-01-publicization-cleanup-inventory.md`.
 
-**First task on resume:** continue **Track B** (parallel, non-blocking for the tag):
+**First task on resume:** continue **Track B** (easiest-first drain; note
+2026-07-02 order changes: D-517 UNBLOCKED, D-473 folded into D-513):
 **D-522** = the GRADUAL ~2962-line AI-narration/pointer de-pointering (worst-offender
 `src/runtime/interface_membership.zig` — but note MUCH of it is genuine technical doc;
 only date-stamps like `clj-oracle 2026-06-21` + ADR/D pointers are the noise — do NOT
