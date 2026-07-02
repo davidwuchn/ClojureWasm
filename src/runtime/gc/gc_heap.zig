@@ -183,6 +183,14 @@ pub const GcHeap = struct {
     /// here (intrusive FreeNode at offset 8); `alloc` pops them as its
     /// fast path before falling back to `infra`.
     free_pools: FreePoolMap = .empty,
+    /// Gray worklist for the mark phase (ADR-0028 amendment 3): `mark()`
+    /// pushes newly-bitted non-leaf headers here instead of descending
+    /// recursively, so an arbitrarily deep object graph (a 1M-long cons
+    /// chain) marks with O(1) native stack. `collect()` reserves capacity
+    /// up front (bit-set-at-push ⇒ each object enters at most once) and
+    /// `mark_sweep.drainGray` empties it. Capacity is retained across
+    /// collects; STW-only state — a future parallel marker replaces it.
+    mark_worklist: std.ArrayList(*HeapHeader) = .empty,
     /// Allocation + collection counters.
     stats: Stats = .{},
     /// Adaptive GC trigger threshold (bytes since last collect).
@@ -264,6 +272,7 @@ pub const GcHeap = struct {
         self.permanent_roots.deinit(self.infra);
         self.persistent_marks.deinit(self.infra);
         self.free_pools.deinit(self.infra);
+        self.mark_worklist.deinit(self.infra);
     }
 
     /// Register a process-lifetime mark-waypoint header (D-251). Called by

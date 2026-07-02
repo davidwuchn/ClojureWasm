@@ -231,4 +231,11 @@ assert_alloc '4b_take_multichunk' '(reduce + 0 (take 40 (range 100)))'          
 # root frame). Surfaced by math.combinatorics' partitions test (D-528).
 assert_alloc 'lazy_eq_interleave' '(= (map inc (range 50)) (filter pos? (map inc (range 50))))' 'true'
 
+# ADR-0028 amendment 3 — gray-worklist mark: a ≥~400k-deep cons chain used to
+# SIGSEGV (exit 134) when the adaptive-threshold collect fired mid-walk and the
+# recursive mark descended the whole chain on the native stack. Runs WITHOUT
+# torture: the trigger is the NORMAL threshold collect, and per-back-edge
+# collects would make 1M realizations quadratic.
+assert_eq 'deep_chain_mark' "$(env -u CLJW_GC_TORTURE "$BIN" -e '(count (repeat 1000000 1))')" '1000000'
+
 echo "ALL phase16_gc_torture PASS"

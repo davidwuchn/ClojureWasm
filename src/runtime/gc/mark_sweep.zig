@@ -2,11 +2,14 @@
 //! Mark + sweep phases for cw v1 mark-sweep GC per ADR-0028 §1 + §4 + §5.
 //!
 //! Two stop-the-world phases plus the `collect()` orchestrator:
-//!   - `mark(gc, header)` — visits a root, recursively traces through
-//!     GC-managed pointers via `tag_ops.tag_trace_table`, sets
-//!     `HeapHeader.gc_and_lock.gc_mark` (bit 0) on every reached
-//!     object. Mark recursion checks the bit before descending —
+//!   - `mark(gc, header)` — shades an object gray: sets
+//!     `HeapHeader.gc_and_lock.gc_mark` (bit 0) and pushes non-leaf
+//!     headers onto `gc.mark_worklist` (ADR-0028 amendment 3 — the
+//!     prior recursive descent overflowed the native stack on deep
+//!     cons chains). The bit doubles as the visited flag —
 //!     cycle-mark invariant per ADR-0028 §5.
+//!   - `drainGray(gc)` — blackens the worklist: pops headers and runs
+//!     their per-tag trace fn (`tag_ops.tag_trace_table`) until empty.
 //!   - `sweep(gc)` — walks the live list. For every object with
 //!     `mark == 0`: call per-tag finaliser via
 //!     `tag_ops.tag_finaliser_table` (no-alloc invariant per ADR-0028
@@ -14,8 +17,8 @@
 //!     swap-remove from the live list. For every object with
 //!     `mark == 1`: clear the bit and keep.
 //!   - `collect(gc, ctx)` — enumerates roots via `root_set.enumerate`,
-//!     marks each transitively, sweeps, then recomputes the adaptive
-//!     `threshold_bytes` per ADR-0028 §1.
+//!     shades each gray, drains the worklist (blacken), sweeps, then
+//!     recomputes the adaptive `threshold_bytes` per ADR-0028 §1.
 //!
 //! `clearMarks(gc)` resets every live object's mark bit (used by tests
 //! and reserved for an explicit clear pass). All four are landed.
@@ -52,9 +55,12 @@ fn markWorkerTx(ctx: *anyopaque, tx_opaque: ?*anyopaque) void {
 const GcHeap = gc_heap_mod.GcHeap;
 const HeapHeader = heap_header.HeapHeader;
 
-/// Visit a heap object + recursively trace through its GC-managed
-/// pointers. Sets `header.gc_and_lock.gc_mark` bit 0 on every reached
-/// object.
+/// Shade a heap object gray: set `header.gc_and_lock.gc_mark` bit 0 and
+/// push the header onto `gc.mark_worklist` for `drainGray` to blacken.
+/// Recursive per-child descent was retired by ADR-0028 amendment 3 — a
+/// deep object graph (a ≥400k-long cons chain from
+/// `(count (repeat 1000000 1))`) overflowed the native stack during a
+/// mid-walk collect; the explicit worklist keeps mark depth O(1).
 ///
 /// Cycle invariant (per ADR-0028 §5 Mark cycle invariant): if the
 /// header's mark bit is already set, return immediately — the bit
@@ -62,16 +68,41 @@ const HeapHeader = heap_header.HeapHeader;
 /// (e.g. `LazySeq` whose `thunk` captures another `LazySeq` whose
 /// `seq_cache` points back) terminate at the second visit.
 ///
+/// LOAD-BEARING ordering: the bit is set BEFORE the push. Push-before-bit
+/// would let a failed push leave a marked-looking-but-untraced object,
+/// so a live child could be swept (UAF). Bit-before-push also bounds the
+/// worklist: each object enters at most once, so `collect()` can reserve
+/// `allocations + persistent_marks` capacity up front and the in-collect
+/// append never allocates.
+///
 /// Per-tag trace dispatch: `tag_ops.tag_trace_table[hdr.tag]` returns
 /// the type-specific outgoing-pointer walker, registered per-tag via
 /// `tag_ops.registerTrace`. A `null` entry means a genuine leaf node
-/// (e.g. `string`, `big_int` limb data) — mark sets the bit and
-/// returns without descending.
+/// (e.g. `string`, `big_int` limb data) — mark sets the bit and never
+/// pushes it.
 pub fn mark(gc: *GcHeap, header: *HeapHeader) void {
     if (header.gc_and_lock.gc_mark & 1 == 1) return; // cycle invariant
     header.gc_and_lock.gc_mark |= 1;
-    if (tag_ops.tag_trace_table[header.tag]) |trace_fn| {
-        trace_fn(@ptrCast(gc), header);
+    if (tag_ops.tag_trace_table[header.tag] == null) return; // leaf
+    // In-collect this never allocates (capacity reserved up front); a
+    // direct `mark` caller outside collect (unit tests) may grow the
+    // worklist on `gc.infra`. True infra OOM here is unrecoverable —
+    // continuing would strand unmarked live children and sweep them.
+    gc.mark_worklist.append(gc.infra, header) catch
+        @panic("GC mark: gray worklist allocation failed");
+}
+
+/// Blacken the gray worklist: pop headers and run their per-tag trace
+/// fn (which shades children gray via `mark`) until the worklist is
+/// empty. The explicit drain is a named phase of `collect()` — publish
+/// roots (gray) → drainGray (blacken) → sweep — the textbook tri-color
+/// structure a future incremental / parallel marker inherits. Direct
+/// `mark()` callers outside collect (unit tests) must call this to get
+/// transitive marking.
+pub fn drainGray(gc: *GcHeap) void {
+    while (gc.mark_worklist.pop()) |header| {
+        // Only non-leaf headers are ever pushed, so the table entry is set.
+        tag_ops.tag_trace_table[header.tag].?(@ptrCast(gc), header);
     }
 }
 
@@ -145,9 +176,22 @@ pub fn sweep(gc: *GcHeap) void {
 pub fn collect(gc: *GcHeap, ctx: root_set_mod.WalkContext) void {
     // Whole collection runs under the global heap lock (ADR-0090 §2): no
     // mutator can allocate while mark+sweep run. Not reentrant — mark/sweep
-    // never allocate, so they do not re-take `gc_mutex`.
+    // never allocate THROUGH `gc.alloc` (so no torture re-entry and no
+    // `gc_mutex` re-take); the gray worklist's capacity is reserved here on
+    // `gc.infra`, before any mark bit is set, so the mark phase itself
+    // performs no allocation at all.
     io_default.lockMutex(&gc.gc_mutex);
     defer io_default.unlockMutex(&gc.gc_mutex);
+    // Bit-set-at-push ⇒ each object enters the gray worklist at most once,
+    // so `allocations + persistent_marks` bounds it (infra-lifetime
+    // singletons like the interned empty list add a handful; the fallible
+    // append in `mark` absorbs them). A failed reserve aborts this collect
+    // BEFORE any bit is set — a safe degradation (heap intact; the pressure
+    // resurfaces as OOM at the next `gc.alloc`), unlike a mid-mark OOM.
+    gc.mark_worklist.ensureTotalCapacity(
+        gc.infra,
+        gc.allocations.items.len + gc.persistent_marks.items.len,
+    ) catch return;
     // D-251: clear the mark bit on process-lifetime trackHeap'd waypoints
     // (Functions etc.) so each is re-traced this cycle. They are never swept
     // (not in `allocations`), so sweep never clears their bit; an un-cleared
@@ -167,6 +211,8 @@ pub fn collect(gc: *GcHeap, ctx: root_set_mod.WalkContext) void {
     // ...and every registered WORKER thread's transaction (parked at a safepoint
     // during STW, so its tx is quiescent). Empty registry in single-thread → no-op.
     root_set_mod.markRegisteredTxs(@ptrCast(gc), &markWorkerTx);
+    // All roots are shaded gray; blacken transitively (ADR-0028 amendment 3).
+    drainGray(gc);
     sweep(gc);
     // D-519 (ADR-0164): the floor is the per-heap `threshold_floor_bytes` (default
     // = the module const, overridable by CLJW_GC_THRESHOLD_MB) so the knob survives
@@ -436,4 +482,35 @@ test "sweep iterating backward keeps swap-remove indices valid" {
     sweep(&gc);
     try testing.expectEqual(@as(usize, 1), gc.allocations.items.len);
     try testing.expectEqual(survivor_addr, gc.allocations.items[0].header);
+}
+
+test "mark bounds native stack on a deep cons chain (explicit worklist)" {
+    // A ~1M-deep cons chain: per-child recursive descent would need ~1M
+    // native frames and SIGSEGVs (the `(count (repeat 1000000 1))` crash);
+    // the explicit worklist keeps mark's stack depth O(1).
+    var gc = GcHeap.init(testing.allocator);
+    defer gc.deinit();
+    const list_mod = @import("../collection/list.zig");
+    const value_mod = @import("../value/value.zig");
+    const Value = value_mod.Value;
+    list_mod.registerGcHooks();
+
+    var tail: Value = .nil_val;
+    var i: u32 = 0;
+    while (i < 1_000_000) : (i += 1) {
+        const cell = try gc.alloc(list_mod.Cons);
+        cell.* = .{
+            .header = HeapHeader.init(.list),
+            .first = .nil_val,
+            .rest = tail,
+            .meta = .nil_val,
+            .count = i + 1,
+        };
+        tail = Value.encodeHeapPtr(.list, cell);
+    }
+
+    mark(&gc, tail.heapHeader().?);
+    drainGray(&gc);
+    // The deep end (first-allocated cell) must have been reached.
+    try testing.expectEqual(@as(u30, 1), gc.allocations.items[0].header.gc_and_lock.gc_mark & 1);
 }

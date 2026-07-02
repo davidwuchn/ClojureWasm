@@ -126,9 +126,11 @@ test "self-loop ring mark-trace terminates (cycle detection works)" {
     a.prior = c;
     // Clear marks defensively.
     mark_sweep.clearMarks(&rt.gc);
-    // Start mark from `a`. The trace must walk to b and c without
-    // re-entering a infinitely.
+    // Start mark from `a` and drain (ADR-0028 amendment 3: `mark` is
+    // push-only). The trace must walk to b and c without re-entering a
+    // infinitely.
     mark_sweep.mark(&rt.gc, &a.header);
+    mark_sweep.drainGray(&rt.gc);
     try testing.expect((a.header.gc_and_lock.gc_mark & 1) == 1);
     try testing.expect((b.header.gc_and_lock.gc_mark & 1) == 1);
     try testing.expect((c.header.gc_and_lock.gc_mark & 1) == 1);
