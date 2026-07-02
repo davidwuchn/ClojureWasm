@@ -24,6 +24,12 @@ bash bench/compare_langs.sh --yaml=bench/cross-lang-latest.yaml
 
 # Regenerate the Markdown table from the YAML
 yq -o=json bench/cross-lang-latest.yaml | python3 bench/gen_cross_table.py
+
+# Occasional-use tools (on demand)
+bash bench/build_bench.sh               # `cljw build` artifact: build time / size / startup
+clojure -M bench/clj_warm_bench.clj bench/benchmarks/01_fib_recursive/bench.clj
+                                        # warm-JVM comparison for one workload
+bash bench/release_metrics.sh           # binary-size + startup metrics (RELEASE_METRICS.md)
 ```
 
 The cross-language harness compiles each language on the fly and auto-skips any

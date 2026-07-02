@@ -130,6 +130,14 @@ sweep. The "discovery recipe" is the classifier in
 
 ## Stale-ness
 
+## Conformance cadence (outside the gate)
+
+`bash scripts/lib_conformance.sh --all` (regenerates
+`test/conformance/COVERAGE.md`) and `bash scripts/verify_projects.sh`
+run OUTSIDE both gate tiers. Fixed cadence so they cannot silently rot
+(2026-07-02): **before any release tag** and **at each boundary review
+chain** — plus on demand after a compat-surface campaign lands.
+
 Stale if: the smoke stops being ≤ ~60s or the full gate's e2e-vs-unit
 cost asymmetry changes (re-measure); a new shared-risk surface the smoke
 core does NOT cover appears (the miss-window grows beyond CLI/REPL/

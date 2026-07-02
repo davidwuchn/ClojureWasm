@@ -16,8 +16,8 @@ Project-level design and operational metadata. Tracked in git. English.
 - [`cw_v0_parity_and_gap_plan.md`](./cw_v0_parity_and_gap_plan.md) — the
   2026-05-29 cw-v0-vs-cw-v1 parity snapshot + the plan for incorporating
   v0's gaps into cw v1 (redesigned, not copied; per-gap ordering +
-  ROADMAP-amendment hooks). Consulted when opening Phase 15+ / minting
-  quality-loop rows (ROADMAP §A26). F-003 foresight.
+  ROADMAP-amendment hooks). CLOSED 2026-07-02 (banner in the file; the
+  phase model is retired, ADR-0142). Historical reference only.
 - [`orbstack_setup.md`](./orbstack_setup.md) — **retired** OrbStack x86_64
   gate setup (ADR-0049; kept for history). The live Linux gate is
   [`ubuntunote_setup.md`](./ubuntunote_setup.md) + `scripts/run_remote_ubuntu.sh`.
