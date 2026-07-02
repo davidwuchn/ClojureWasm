@@ -67,20 +67,25 @@ mutable local handed to the collector by address — migration-clean.
 
 ## B. Threadlocal root slots
 
-| Slot                            | Declared       | Written                                                                           | Walked                               |
-|---------------------------------|----------------|-----------------------------------------------------------------------------------|--------------------------------------|
-| `eval_frame_head`               | `root_set.zig` | A1/A2 (set head / defer-restore)                                                  | yes                                  |
-| `macro_root_slot`               | `root_set.zig` | **NO production writer** (test-only; Phase-B-deferred infra)                      | yes                                  |
-| `gc_self_guard`                 | `root_set.zig` | **NO production writer** (test-only; #4-deferred infra)                           | yes                                  |
-| `current_frame` (binding stack) | `env.zig`      | `pushFrame`/`popFrame` (dynamic binding / `let`-dynamic / `push-thread-bindings`) | yes (drains each frame's `bindings`) |
+| Slot                             | Declared       | Written                                                                                                                                                                                                                                                                   | Walked                               |
+|----------------------------------|----------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|--------------------------------------|
+| `eval_frame_head`                | `root_set.zig` | A1/A2 (set head / defer-restore)                                                                                                                                                                                                                                          | yes                                  |
+| `analysis_frame_head` (ADR-0169) | `root_set.zig` | `beginAnalysis`/`endAnalysis` at every analyze/compile/deserialize→eval bracket (driver ×2, repl, nrepl, builder ×5, evaluator oracle); producers push via `pushAnalysisRoot` (`makeConstant` / `analyzeQuote` / `addConstant` / `deserializeChunk` / `expandIfMacro`) | yes (drains each frame's `roots`)    |
+| `gc_self_guard`                  | `root_set.zig` | **NO production writer** (test-only; #4-deferred infra)                                                                                                                                                                                                                   | yes                                  |
+| `current_frame` (binding stack)  | `env.zig`      | `pushFrame`/`popFrame` (dynamic binding / `let`-dynamic / `push-thread-bindings`)                                                                                                                                                                                         | yes (drains each frame's `bindings`) |
 
-**Key:** `macro_root_slot` + `gc_self_guard` are declared + walked + tested but
-never written by production — inert until Phase-B / #4 wiring. Torture cannot
-exercise them today. **Migration-impact:** single addressable `?Value` /
-chain-head slots — the collector writes through them; migration-clean once the
-walk is "yield slot to forward" not "yield header to mark". `current_frame`'s
-`BindingMap.valueIterator()` is **by-value** — a moving GC needs `getPtr`
-iteration to rewrite relocated binding values.
+**Key:** `gc_self_guard` is declared + walked + tested but never written by
+production — inert until #4 wiring; torture cannot exercise it today. (The
+former `macro_root_slot` — the other inert slot — was RETIRED by ADR-0169:
+the analysis frame carries the macro-expansion intermediates, finally wired.)
+`pushAnalysisRoot` ASSERTS an open bracket in safe builds — an unbracketed
+producer fails loud at the source instead of opening a silent unrooted
+window. **Migration-impact:** chain-head slots — the collector writes through
+them; migration-clean once the walk is "yield slot to forward" not "yield
+header to mark". An `AnalysisFrame.roots` is an off-heap rewritable array
+(checklist item 5 shape). `current_frame`'s `BindingMap.valueIterator()` is
+**by-value** — a moving GC needs `getPtr` iteration to rewrite relocated
+binding values.
 
 ## C. Reentrant primitives holding GC accumulators across eval (the bug class)
 
@@ -94,7 +99,12 @@ torture round can hit.
 `equal.zig` `seqEqualInstance` (realizes a Sequential-instance operand via the
 ISeq `-next` protocol) and `seqEqualWalk` (walks two native seqs via lazy
 cursors — its frame roots the operands, the advancing cursor heads, AND the
-per-step elements). `seqEqualWalk` was an UNLISTED unrooted candidate until
+per-step elements). And (2026-07-02, ADR-0169 residual): the five
+`analyzer.zig` **formToValue builders** (`vectorFormToValue` /
+`mapFormToValue` / `setFormToValue` / `listFormToValue` / the `form.meta`
+branch) — the Form→Value twins of the D-253 valueToForm frames; their
+accumulators were UNLISTED members of this class until the alloc-torture
+"@memcpy arguments alias" panic exposed them. `seqEqualWalk` was an UNLISTED unrooted candidate until
 2026-06-25: comparing two lazy seqs interleaves their realization, and a collect
 mid-walk corrupted the comparison (a math.combinatorics partitions test failed
 intermittently; minimal repro `(= (map inc (range 50)) (filter pos? (map inc
@@ -103,17 +113,17 @@ intermittently; minimal repro `(= (map inc (range 50)) (filter pos? (map inc
 
 **UNROOTED-CANDIDATE (tracked D-252):**
 
-| #  | Site                                                                    | Held accumulator                                                            | Reentrant call                                                      | Severity                                                                                       |
-|----|-------------------------------------------------------------------------|-----------------------------------------------------------------------------|---------------------------------------------------------------------|------------------------------------------------------------------------------------------------|
-| C1 | `higher_order.zig` `applyFn`                                            | `collected: ArrayList(Value)` on `rt.gpa` (off-heap, off-stack)             | `seqFn`/`firstFn`/`nextFn` per spread element                       | HIGH (apply-over-lazy; N-wide off-heap list)                                                   |
-| C2 | `higher_order.zig` `everyQFn`                                           | `cur` seq cursor                                                            | `seqFn`/`firstFn`/`invokeCallable`/`nextFn`                         | med                                                                                            |
-| C3 | `higher_order.zig` `someFn`                                             | `cur`, `r`                                                                  | same as C2                                                          | med                                                                                            |
-| C4 | `collection/sorted.zig` `insert` (recursion)                            | half-built RB-subtrees                                                      | `compareKeys → vt.callFn` (custom `sorted-map-by` comparator only) | HIGH on `-by` path                                                                             |
-| C5 | `collection/sorted.zig` `deleteNode`                                    | rebalanced nodes                                                            | custom comparator `vt.callFn`                                       | HIGH on `-by` path                                                                             |
-| C6 | `lang/primitive/walk.zig` `walkFn`/`applyInner`                         | partially-rebuilt nested collection                                         | `vt.callFn` per node                                                | med                                                                                            |
-| C7 | `runtime/multimethod.zig` `callMultiFn`                                 | `dispatch_val` between the 2 reentrant evals                                | `vt.callFn` dispatch then method                                    | low-med                                                                                        |
-| C8 | defprotocol/defrecord path (`protocol.zig`/`type_descriptor.zig` reify) | a protocol-path Value swept to nil                                          | reentrant eval during protocol bootstrap                            | KNOWN-OPEN (torture)                                                                           |
-| C9 | filter/keep/remove chunk-builder (`.clj` + `chunked_cons.zig`)          | partial chunk over a chunked source, consumed by a lazy op / CLI auto-print | lazy thunk machinery                                                | KNOWN-OPEN (torture); suspected membrane/lazy-realisation interaction, NOT a missing Zig frame |
+| #  | Site                                                                               | Held accumulator                                                                                                                                                                                                                                                                                                                                                                                                 | Reentrant call                                                      | Severity                                                                                       |
+|----|------------------------------------------------------------------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|---------------------------------------------------------------------|------------------------------------------------------------------------------------------------|
+| C1 | `higher_order.zig` `applyFn`                                                       | `collected: ArrayList(Value)` on `rt.gpa` (off-heap, off-stack)                                                                                                                                                                                                                                                                                                                                                  | `seqFn`/`firstFn`/`nextFn` per spread element                       | HIGH (apply-over-lazy; N-wide off-heap list)                                                   |
+| C2 | `higher_order.zig` `everyQFn`                                                      | `cur` seq cursor                                                                                                                                                                                                                                                                                                                                                                                                 | `seqFn`/`firstFn`/`invokeCallable`/`nextFn`                         | med                                                                                            |
+| C3 | `higher_order.zig` `someFn`                                                        | `cur`, `r`                                                                                                                                                                                                                                                                                                                                                                                                       | same as C2                                                          | med                                                                                            |
+| C4 | `collection/sorted.zig` `insert` (recursion)                                       | half-built RB-subtrees                                                                                                                                                                                                                                                                                                                                                                                           | `compareKeys → vt.callFn` (custom `sorted-map-by` comparator only) | HIGH on `-by` path                                                                             |
+| C5 | `collection/sorted.zig` `deleteNode`                                               | rebalanced nodes                                                                                                                                                                                                                                                                                                                                                                                                 | custom comparator `vt.callFn`                                       | HIGH on `-by` path                                                                             |
+| C6 | `lang/primitive/walk.zig` `walkFn`/`applyInner`                                    | partially-rebuilt nested collection                                                                                                                                                                                                                                                                                                                                                                              | `vt.callFn` per node                                                | med                                                                                            |
+| C7 | `runtime/multimethod.zig` `callMultiFn`                                            | `dispatch_val` between the 2 reentrant evals                                                                                                                                                                                                                                                                                                                                                                     | `vt.callFn` dispatch then method                                    | low-med                                                                                        |
+| C8 | ~~defprotocol/defrecord path~~ **DISCHARGED 2026-07-02** (ADR-0169 follow-through) | root causes found: (1) analysis/compile-time constants unrooted (the AnalysisFrame closes it); (2) `TypeDescriptor.method_table[].method_val` + `meta` had NO GC trace — a deftype/reify method Function reachable only through its gpa-owned descriptor was swept past the 4MB threshold (instaparse `cached-seq` garbage; `.type_descriptor` trace + `markDescriptorValues` on both instance traces close it) | —                                                                  | fixed; e2e `analysis_const_root` + instaparse load deterministic                               |
+| C9 | filter/keep/remove chunk-builder (`.clj` + `chunked_cons.zig`)                     | partial chunk over a chunked source, consumed by a lazy op / CLI auto-print                                                                                                                                                                                                                                                                                                                                      | lazy thunk machinery                                                | KNOWN-OPEN (torture); suspected membrane/lazy-realisation interaction, NOT a missing Zig frame |
 
 **Migration-impact:** all of C need the SAME fix the moving GC needs — publish
 the accumulator as a mutable, collector-addressable root (an `EvalFrame` slot
@@ -144,7 +154,7 @@ A moving GC must keep `trackHeap`'d objects pinned (non-moving region) OR upgrad
 |----|----------------------------------------------------------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | E1 | `lock_tx.current_tx` + `markRoots` (self, `mark_sweep.collect`)                        | in-txn `vals` cache + pending `commutes` Values (#4a')                                                                                                                                                                                                                                                                                                                          |
 | E2 | `markRegisteredTxs` → worker `tx_slot`                                                | each parked worker's `current_tx` (future/agent point `tx_slot` at theirs)                                                                                                                                                                                                                                                                                                      |
-| E3 | `ThreadGcContext` registry (`registerThread`/`unregisterThread`, fixed `[64]`)         | union of every live worker's `current_frame`+`macro_root_slot`+`eval_frame_head`+`gc_self_guard`+`tx_slot` (registrants: future.worker, agent.drainer)                                                                                                                                                                                                                          |
+| E3 | `ThreadGcContext` registry (`registerThread`/`unregisterThread`, fixed `[64]`)         | union of every live worker's `current_frame`+`eval_frame_head`+`gc_self_guard`+`analysis_frame_head`+`tx_slot` (registrants: future.worker, agent.drainer)                                                                                                                                                                                                                      |
 | E4 | safepoint STW (`gc_requested`/`park`/`stopWorld`, target recomputed each wake)         | mechanism (not a source) ensuring workers quiescent during collect; `stopWorld` recomputes the park target from the lock-free `registered_count` each wake + a leaving worker calls `noteWorkerLeft`, so a tiny-action drainer that unregisters before it ever parks cannot hang the collector (D-244 #4)                                                                       |
 | E5 | `object_monitor` `held[]`                                                              | **NOT a GC root** (locked object already rooted via the operand-stack walk; held-set only counts re-entries)                                                                                                                                                                                                                                                                    |
 | E6 | safepoint blocking-safepoint (`enterBlocked`/`exitBlocked` via `lockMutexAtSafepoint`) | mechanism (not a source): a registered WORKER blocking on a lock held ACROSS a collect counts as parked so the STW rendezvous proceeds; its published EvalFrame is walked while it blocks. Applied at the `delay` once-lock — the only site that runs arbitrary eval (the thunk) under a lock, so the COLLECTING main holds it across a collect (D-244 #4 delay-once deadlock) |
@@ -218,22 +228,22 @@ instead of per-hook (DA Alt B-finished-form-clean; debt **D-318**).
 1. **Membrane (`heapHeader`, G) becomes forwarding-aware** — the linchpin; do first.
 2. **Every trace fn → mark+rewrite (F, ~37 sites)** — centralise via `markSlot(gc, *Value)`.
 3. **`persistent_marks` (D4) — highest-risk** — pin `trackHeap`'d objects in a non-moving region OR forwardable handles.
-4. **EvalFrame slot views become mutable (A)** — `stack`/`locals`/`constants` writable; arena constant pool writable or literal-copy-to-heap.
+4. **EvalFrame slot views become mutable (A)** — `stack`/`locals`/`constants` writable; arena constant pool writable or literal-copy-to-heap (= ADR-0169's Alt C lazy-materialization — eliminates analysis-time GC Values entirely; the noted option for this item).
 5. **Off-heap root containers as rewritable arrays (C1, D1-D3, E1-E2)** — `getPtr`/index iteration, write forwarded pointers.
 6. **Close UNROOTED-CANDIDATE C1-C9 with the EvalFrame pattern FIRST** — torture-green now == moving-GC prep. Priority: C1, C4/C5, C8, C9.
 7. **Map / set iteration becomes slot-mutable (B `current_frame`, E1 `tx.vals`, F map traces)** — `getPtr` or post-move rehash.
 8. **Monitor / lock (E5, G)** — pin monitored objects for the `locking` body, or rekey on relocation.
-9. **`macro_root_slot` / `gc_self_guard` (B)** — inert today; wire (Phase-B) then migrate (trivial single slots).
+9. **`gc_self_guard` (B)** — inert today; wire (#4) then migrate (a trivial single slot). (`macro_root_slot` retired by ADR-0169.)
 10. **`ThreadGcContext` (E3)** — already migration-clean (forwards through slot pointers).
 
 ## Site census (grep target)
 
 - EvalFrame producers: 6 production (vm, reduceFn, iref.notifyWatches, lock_tx.fireWatches, equal.seqEqualInstance, equal.seqEqualWalk) + 1 test.
-- Threadlocal root slots: 4 (2 inert).
-- Reentrant accumulators: 3 rooted (`reduceFn`, `equal.seqEqualInstance`, `equal.seqEqualWalk`) + 9 UNROOTED-CANDIDATE (C1-C9, D-252).
+- Threadlocal root slots: 4 (1 inert; `analysis_frame_head` bracketed at 9 production seams).
+- Reentrant accumulators: 8 rooted (`reduceFn`, `equal.seqEqualInstance`, `equal.seqEqualWalk`, + the 5 formToValue builders) + 8 UNROOTED-CANDIDATE (C1-C7, C9 — C8 discharged 2026-07-02, D-252).
 - Permanent/pinned: 3 `pin` callers + 6 `trackHeap`/`persistent_marks` callers.
 - In-txn/concurrency: self-tx + worker-tx + `ThreadGcContext` (2 registrants) + safepoint (STW rendezvous + blocking-safepoint).
-- Per-tag traces: 49 `registerTrace` + 22 `registerFinaliser`; 4 non-GC tags + 2 GC-leaf tags.
+- Per-tag traces: 50 `registerTrace` (+ `.type_descriptor`, 2026-07-02) + 22 `registerFinaliser`; 4 non-GC tags + 2 GC-leaf tags.
 - Membrane: 1 decode + 1 classifier + 1 guard; ~40 downstream callers.
 
 ## Cross-references
