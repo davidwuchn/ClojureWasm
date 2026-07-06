@@ -67,4 +67,15 @@ assert_eq 'cls_iae'  "$("$BIN" -e '(str (class (IllegalArgumentException. "x")))
 # instance? rides the hierarchy: an IllegalArgumentException IS a RuntimeException.
 assert_eq 'inst_iae_rte' "$("$BIN" -e '(instance? RuntimeException (IllegalArgumentException. "x"))')" 'true'
 
+# str vs pr-str of an exception (D-433): `(str ex)` / `(.toString ex)` = the
+# readable Throwable.toString one-liner `<class>: <message>` (AD-003 simple
+# name — clj prints the FQCN); a real ex-info appends the data map (clj
+# ExceptionInfo.toString). `pr-str` keeps the `#error{…}` data literal.
+assert_eq 'str_exc'       "$("$BIN" -e '(str (Exception. "boom"))')"              '"Exception: boom"'
+assert_eq 'tostr_exc'     "$("$BIN" -e '(.toString (Exception. "boom"))')"        '"Exception: boom"'
+assert_eq 'str_iae'       "$("$BIN" -e '(str (IllegalArgumentException. "x"))')"  '"IllegalArgumentException: x"'
+assert_eq 'str_exinfo'    "$("$BIN" -e '(str (ex-info "boom" {:a 1}))')"          '"ExceptionInfo: boom {:a 1}"'
+assert_eq 'prstr_exinfo'  "$("$BIN" -e '(pr-str (ex-info "boom" {:a 1}))')"       '"#error{:message \"boom\" :data {:a 1}}"'
+assert_eq 'prstr_exc'     "$("$BIN" -e '(pr-str (Exception. "boom"))')"           '"#error{:message \"boom\" :data nil}"'
+
 echo "ALL phase14_exception_ctor PASS"

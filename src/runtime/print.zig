@@ -136,6 +136,24 @@ pub fn writeStrValue(rt: *Runtime, env: *env_mod.Env, w: *Writer, v: Value) anye
         // `(str *ns*)` → bare "user" (clj Namespace.toString = the name), not the
         // readable `#object[Namespace …]` form pr/prn use.
         .ns => try w.writeAll(v.decodePtr(*const env_mod.Namespace).name),
+        // `str`/`.toString` of an exception = the readable Throwable.toString
+        // one-liner `<class>: <message>` (AD-003 simple name; clj prints the
+        // FQCN); a real ex-info appends the data map, matching clj
+        // ExceptionInfo.toString's trailing ` data`. The `#error{…}` data
+        // literal stays the pr/prn form (D-433 str↔pr split).
+        .ex_info => {
+            const cls = ex_info_collection.className(v);
+            try w.writeAll(cls orelse "ExceptionInfo");
+            const msg = ex_info_collection.message(v);
+            if (msg.len > 0) {
+                try w.writeAll(": ");
+                try w.writeAll(msg);
+            }
+            if (cls == null) {
+                try w.writeByte(' ');
+                try printValue(w, ex_info_collection.data(v));
+            }
+        },
         // `str`/`.toString` of a BigInt/BigDecimal drops the `N`/`M` reader
         // suffix that `pr`/`prn` keep — JVM `BigInteger`/`BigDecimal.toString`
         // emit plain digits (D-212). Ratio's `1/2` form is already suffix-free.
