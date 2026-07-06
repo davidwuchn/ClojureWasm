@@ -96,5 +96,10 @@ cat > "$TMP/blankseq.clj" <<EOF
 EOF
 assert_eq 'line_seq_blank' "$("$BIN" "$TMP/blankseq.clj" 2>&1 | tail -n 1)" '3'
 
+# D-471: slurp/spit accept open streams (the IOFactory arms clj routes
+# through io/reader / io/writer). slurp drains the UNREAD remainder.
+assert_eq 'slurp_reader_rest' "$("$BIN" -e '(do (spit "/tmp/cljw_e2e_471.txt" "l1\nl2") (with-open [r (clojure.java.io/reader "/tmp/cljw_e2e_471.txt")] (.readLine r) (slurp r)))' 2>&1 | tail -n 1)" '"l2"'
+assert_eq 'spit_writer' "$("$BIN" -e '(do (with-open [w (clojure.java.io/writer "/tmp/cljw_e2e_471b.txt")] (spit w "via-writer")) (slurp "/tmp/cljw_e2e_471b.txt"))' 2>&1 | tail -n 1)" '"via-writer"'
+
 rm -rf "$TMP"
 echo "ALL PASS phase16_clojure_java_io_streams"

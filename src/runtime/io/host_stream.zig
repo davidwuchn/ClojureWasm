@@ -254,6 +254,41 @@ fn isStream(v: Value) bool {
     return isStreamFqcn(host_instance.asHostInstance(v).descriptor.fqcn);
 }
 
+/// D-471 IOFactory arms for `slurp`: when `v` is an open reader/input-stream
+/// host_stream, return the UNREAD remainder of its buffer and advance the
+/// cursor to the end (what draining the JVM Reader does). Null when `v` is
+/// not a readable stream — the caller falls through to its path handling.
+pub fn drainRemaining(v: Value) ?[]const u8 {
+    if (!isStream(v)) return null;
+    const st = stateOf(v);
+    switch (st.kind) {
+        .reader, .input => {},
+        else => return null,
+    }
+    const rest_bytes = st.data.items[st.pos..];
+    st.pos = st.data.items.len;
+    return rest_bytes;
+}
+
+/// D-471 IOFactory arms for `spit`: when `v` is an open writer/output-stream
+/// host_stream, append `bytes` and flush-to-dest (clj's spit closes the
+/// writer it opened; for a caller-owned writer this durable-writes without
+/// invalidating it). Returns false when `v` is not a writable stream.
+pub fn appendAndFlush(rt: *Runtime, v: Value, bytes: []const u8, loc: SourceLocation) anyerror!bool {
+    if (!isStream(v)) return false;
+    const st = stateOf(v);
+    switch (st.kind) {
+        .writer, .output => {},
+        else => return false,
+    }
+    try st.data.appendSlice(rt.gc.infra, bytes);
+    if (st.dest) |dest| {
+        file_io.writeAll(rt.io, dest, st.data.items) catch |e|
+            return error_catalog.raise(.file_io_error, loc, .{ .op = "spit", .path = dest, .detail = @errorName(e) });
+    }
+    return true;
+}
+
 fn isStreamFqcn(fqcn: ?[]const u8) bool {
     const n = fqcn orelse return false;
     // A live stream value's descriptor fqcn is its concrete class (BufferedReader …).

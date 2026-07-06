@@ -20,6 +20,7 @@ const std = @import("std");
 const keyword_mod = @import("../../runtime/keyword.zig");
 const print_mod = @import("../../runtime/print.zig");
 const host_instance = @import("../../runtime/host_instance.zig");
+const host_stream = @import("../../runtime/io/host_stream.zig");
 
 /// Coerce the file arg of `slurp`/`spit` to a path string: a `.string` directly,
 /// or a `java.io.File` host instance (its path lives in `state[0]`, ADR-0126) —
@@ -55,6 +56,10 @@ fn raiseFileIoError(op: []const u8, path: []const u8, e: anyerror, loc: SourceLo
 pub fn slurp(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
     _ = env;
     try error_catalog.checkArity("slurp", args, 1, loc);
+    // D-471 IOFactory arm: an open Reader/InputStream drains its remainder
+    // (clj's slurp routes any IOFactory-coercible arg through io/reader).
+    if (host_stream.drainRemaining(args[0])) |rest_bytes|
+        return try string_collection.alloc(rt, rest_bytes);
     const path = coerceToPath(rt, args[0]) orelse
         return error_catalog.raise(.type_arg_not_string, loc, .{ .fn_name = "slurp", .actual = @tagName(args[0].tag()) });
     // SE-6: confine to the deploy FS jail (CLJW_FS_ROOT) and open the RESOLVED
@@ -83,8 +88,6 @@ pub fn spit(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) a
     // options are keyword/value pairs; cljw honours `:append` (truthy → append)
     // and accepts `:encoding` (UTF-8 always, a no-op) plus any further keys.
     try error_catalog.checkArityMin("spit", args, 2, loc);
-    const path = coerceToPath(rt, args[0]) orelse
-        return error_catalog.raise(.type_arg_not_string, loc, .{ .fn_name = "spit", .actual = @tagName(args[0].tag()) });
     var append_mode = false;
     var i: usize = 2;
     while (i + 1 < args.len) : (i += 2) {
@@ -101,6 +104,12 @@ pub fn spit(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) a
     };
     defer if (content_owned) |c| rt.gpa.free(c);
     const content = content_owned orelse string_collection.asString(args[1]);
+    // D-471 IOFactory arm: an open Writer/OutputStream appends + durable-flushes
+    // (clj's spit routes the arg through io/writer; a buffered writer is always
+    // append-positioned, so :append is inherent here).
+    if (try host_stream.appendAndFlush(rt, args[0], content, loc)) return Value.nil_val;
+    const path = coerceToPath(rt, args[0]) orelse
+        return error_catalog.raise(.type_arg_not_string, loc, .{ .fn_name = "spit", .actual = @tagName(args[0].tag()) });
     // SE-6: confine to the deploy FS jail (CLJW_FS_ROOT) and write the RESOLVED path.
     const jailed = file_io.jailResolve(rt.gpa, rt.fs_jail_root, path) catch |e| switch (e) {
         error.OutOfMemory => return e,
