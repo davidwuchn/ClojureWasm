@@ -28,3 +28,7 @@
 ;;=> [0 1 2 3]
 (realized? (lazy-seq [1]))
 ;;=> false
+(loop [acc [] xs [1 2 3 4]] (if (empty? xs) acc (recur (into acc (for [y [1 2] :when (odd? y)] [y (first xs)])) (rest xs))))
+;;=> [[1 1] [1 2] [1 3] [1 4]]
+(loop [front (list [:s []]) back () n 0] (if (or (> n 20) (nil? (first front))) n (let [[st p] (first front) nexts (for [d [1 2] :when (= d 1)] [d (conj p st)])] (recur (rest front) (into back nexts) (inc n)))))
+;;=> 1

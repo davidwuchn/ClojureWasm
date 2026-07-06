@@ -440,15 +440,15 @@ pub fn allocFunctionFromSerialized(
 
 // --- Top-level eval ---
 
-/// ADR-0157 2a (tree_walk arm): per-thread native-stack guard state, the
-/// sibling of vm.zig's. The tree-walk evaluator recurses NATIVE frames per
-/// Node, so a deep user recursion (or a self-triggering watch's
-/// notify→swap!→notify chain) overflows the native stack → SIGSEGV where
-/// the VM raises the catchable stack_overflow. Anchor to the shallowest
-/// `eval` entry seen on this thread and raise once the REAL bytes consumed
-/// exceed the same 6 MiB budget. Per-node cost is a threadlocal read + two
-/// compares — negligible even for the oracle backend.
-threadlocal var stack_base: usize = 0;
+/// ADR-0157 2a (tree_walk arm): per-thread native-stack guard, the sibling of
+/// vm.zig's. The tree-walk evaluator recurses NATIVE frames per Node, so a
+/// deep user recursion (or a self-triggering watch's notify→swap!→notify
+/// chain) overflows the native stack → SIGSEGV where the VM raises the
+/// catchable stack_overflow. Anchor to the shallowest `eval` entry seen on
+/// this thread and raise once the REAL bytes consumed exceed the same 6 MiB
+/// budget. The anchor LIVES in root_set (`conservative_stack_top`) — it
+/// doubles as the D-556 conservative-scan upper bound, one anchor for both
+/// concerns. Per-node cost is a threadlocal read + two compares.
 const STACK_BUDGET_BYTES: usize = 6 * 1024 * 1024;
 
 /// Evaluate one Node into a Value. `locals` is the slot array owned
@@ -461,9 +461,9 @@ pub fn eval(
 ) anyerror!Value {
     {
         const sp = @frameAddress();
-        if (stack_base == 0 or sp > stack_base) {
-            stack_base = sp; // (re-)anchor to the shallowest (highest) entry seen
-        } else if (stack_base - sp > STACK_BUDGET_BYTES) {
+        if (root_set.conservative_stack_top == 0 or sp > root_set.conservative_stack_top) {
+            root_set.conservative_stack_top = sp; // (re-)anchor to the shallowest (highest) entry seen
+        } else if (root_set.conservative_stack_top - sp > STACK_BUDGET_BYTES) {
             return error_catalog.raise(.stack_overflow, .{}, .{ .max = STACK_BUDGET_BYTES });
         }
     }
@@ -1030,21 +1030,28 @@ fn evalRecur(rt: *Runtime, env: *Env, locals: []Value, n: node_mod.RecurNode) an
         return error_catalog.raise(.recur_args_exceed_buffer, n.loc, .{ .got = n.args.len, .max = pending_recur_buf.len });
     // Evaluate **all** args before mutating any slot — otherwise a
     // recur arg that referenced an earlier binding would see the
-    // partially-rewritten frame. Stash them in the threadlocal scratch
-    // so the matching loop frame can drain them once the unwind
-    // returns control.
+    // partially-rewritten frame.
+    //
+    // D-557 REENTRANCY: evaluate into a LOCAL buffer, not the threadlocal
+    // scratch — an arg's eval can force a lazy seq whose iterator loop
+    // recurs (the `for` lowering's `:when`-miss arm), and that INNER recur
+    // writes the same threadlocal, clobbering the outer recur's
+    // already-evaluated args (the two-list-BFS `-nth on Long` corruption;
+    // vm is immune — its recur args ride the operand stack). The
+    // threadlocal is only written in the no-eval window between here and
+    // the matching loop frame's drain, where no nested recur can fire.
+    //
     // GC-ROOT: A6b — already-evaluated recur values are reachable only
-    // through the scratch while a LATER arg's eval allocates (D-556; the
-    // hottest case: a BFS loop/recur carrying fresh vectors/maps). The
-    // RecurSignaled unwind + slot writeback allocate nothing, so the frame
-    // popping at return is safe.
+    // through this buffer while a LATER arg's eval allocates (D-556).
+    var local_buf: [MAX_LOCALS]Value = undefined;
     var af: ArgsFrame = undefined;
-    af.push(&pending_recur_buf);
+    af.push(&local_buf);
     defer af.pop();
     for (n.args, 0..) |*a, i| {
-        pending_recur_buf[i] = try eval(rt, env, locals, a);
+        local_buf[i] = try eval(rt, env, locals, a);
         af.publish(i + 1);
     }
+    @memcpy(pending_recur_buf[0..n.args.len], local_buf[0..n.args.len]);
     pending_recur_len = @intCast(n.args.len);
     return error.RecurSignaled;
 }
