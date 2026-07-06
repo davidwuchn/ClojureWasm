@@ -24,27 +24,6 @@
 # md-table-align no longer pads it to ~800 KB of whitespace.
 
 active:
-  - id: "D-547"
-    status: |-
-      open (2026-07-01, NARROWED same day). Enforcement-honesty sweep — surfaced by the
-      round-3 completeness-critic. LANDED this cycle (user-directed): (1) ROADMAP corrected
-      — check_adr_history relabelled on-demand audit (not a wired gate) in §16/§17.4, and
-      the retired "Phase 5 promotion" language dropped on check_compat_tiers_sync /
-      check_no_op_stub / check_tier_d_error_msg / file_size_check (ADR-0142); (2)
-      clojure_spec_citation.md downgraded to reviewer-convention + a discovery recipe added
-      (framework_completion-clean); (3) gc_rooting.md census trigger re-anchored to
-      gap-area-unit start + counts refreshed 37/13 -> 49/22; and the P3 principle truth-fix
-      landed (Effect `modules/` -> `src/lang/clj/`, user-authorized, ADR-0168 amended).
-      REMAINING (optional — no false claim remains): the check_adr_history BACKFILL decision
-      (~100 ADRs lack `## Revision history` — backfill + wire as a real gate, OR leave
-      on-demand as now labelled) + optional check_spec_citation.sh / check_gc_rooting_census.sh
-      fail-loud scripts.
-    category: "tooling"
-    barrier: |-
-      tractable now (no external block) EXCEPT the P3 principle edit (user-owned).
-      Drain on a /continue quality-loop cycle; the check_adr_history backfill-vs-
-      downgrade is the one real decision.
-    last_reviewed: "2026-07-01"
   - id: "D-536"
     status: |-
       RE-SCOPED 2026-07-02 (audit): the "~57 remaining in standing:" estimate was ~8x inflated — standing: holds 7 rows; ~53 were discharged-history lines. Remaining work ~ 7 standing tails. ORIGINAL:
@@ -6447,6 +6426,12 @@ discharged:
     status: "DISCHARGED 2026-07-07. Marker inventory walked to closure across two audits. AUDIT 1 (2026-06-25): counts PERF 61 / GC-ROOT 38 / PROVISIONAL 3+1 / VM-DEFER 0; VM-DEFER 0 healthy; no bare pointer comments. AUDIT 2 / final (2026-07-07): (a) PROVISIONAL 4 -> 1 — nrepl auto_port FIXED for real (Zig 0.16 Socket.address carries the bound ephemeral port; --port 0 live-verified), the two catch_class_host_instance_arm markers retired as UNREACHABLE (host exceptions are ex_info carriers; the analyzer rejects non-exception catch classes — false is the finished form), D-259 wasm handle stays legitimately provisional; two retired markers had DANGLING debt refs (D-117/D-048 rows deleted in some past cleanup — lesson: grep 'refs: D-NNN' in source before deleting a row). (b) The ~30 PERF markers without an O-NNN ref are formalized under the new O-051 umbrella row (.dev/optimizations.md): self-documenting micro fast-paths whose marker text states its own naive form — a per-site row would duplicate the comment. GC-ROOT markers are anchored by .dev/gc_rooting.md (their own SSOT) and were exercised end-to-end by the D-555/556 arc this same week."
     category: "docs"
     barrier: "DISCHARGED (was: 110-marker validity walk)."
+    last_reviewed: "2026-07-07"
+
+  - id: "D-547"
+    status: "DISCHARGED 2026-07-07 — the one remaining decision is made: check_adr_history stays an ON-DEMAND audit (as relabelled in the introducing cycle), NOT a backfill+gate. Rationale: ~100 ADRs lack a `## Revision history` because they were never amended — mechanically appending an empty section to each is ceremony that adds noise, not honesty; the section is added WHEN an amendment first lands (the existing §17 flow), and the on-demand audit catches an amendment that forgot it. The optional fail-loud scripts (check_spec_citation.sh / check_gc_rooting_census.sh) are declined for the same reason — both rules honestly label themselves reviewer-conventions with a written discovery recipe (framework_completion-clean), which is the agreed enforcement tier for them. PRIOR WORK (landed in the introducing cycle): ROADMAP corrected (check_adr_history relabelled; markers_sync / check_no_op_stub / check_tier_d_error_msg / file_size_check per ADR-0142); clojure_spec_citation.md downgraded to reviewer-convention + discovery recipe; gc_rooting.md census trigger re-anchored (counts 37/13 -> 49/22); the P3 principle truth-fix (user-authorized, ADR-0168 amended). No false enforcement claim remains."
+    category: "docs"
+    barrier: "DISCHARGED (was: one backfill-vs-on-demand decision)."
     last_reviewed: "2026-07-07"
 
 conventions: |-
