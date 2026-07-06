@@ -86,9 +86,19 @@ assert_eq 'h_hex'      "$("$BIN" -e '(format "%h" "abc")')"             '"b3dd93
 assert_eq 'H_hex'      "$("$BIN" -e '(format "%H" "abc")')"             '"B3DD93FA"'
 assert_eq 'h_nil'      "$("$BIN" -e '(format "%h" nil)')"               '"null"'
 
+# %t date/time family (D-470). AD-052 pins: UTC + English names + "+0000"
+# zone (cljw ships no tz/locale database; matches a TZ=UTC/en JVM exactly).
+assert_eq 't_F_T'   "$("$BIN" -e '(format "%tF %tT" 1234567890123 1234567890123)')" '"2009-02-13 23:31:30"'
+assert_eq 't_epoch0' "$("$BIN" -e '(format "%tY/%tm/%td %tH:%tM:%tS.%tL" 0 0 0 0 0 0 0)')" '"1970/01/01 00:00:00.000"'
+assert_eq 't_names' "$("$BIN" -e '(format "%ta %tA %tb %tB %tp %tz %tZ" 0 0 0 0 0 0 0)')" '"Thu Thursday Jan January am +0000 UTC"'
+assert_eq 't_comp'  "$("$BIN" -e '(format "%tD|%tr|%tj|%ts|%tQ" 1234567890123 1234567890123 1234567890123 1234567890123 1234567890123)')" '"02/13/09|11:31:30 PM|044|1234567890|1234567890123"'
+assert_eq 't_date'  "$("$BIN" -e '(format "%tF" (java.util.Date. 86400000))')" '"1970-01-02"'
+assert_eq 'T_upper' "$("$BIN" -e '(format "%TA" 0)')" '"THURSDAY"'
+assert_has 't_badsub' "$("$BIN" -e '(format "%tq" 0)' 2>&1)" 'unsupported directive'
+
 # errors
 assert_has 'badtype' "$("$BIN" -e '(format "%d" "x")' 2>&1)"     'expected an integer'
 assert_has 'fewargs' "$("$BIN" -e '(format "%d")' 2>&1)"         'not enough arguments'
 assert_has 'badconv' "$("$BIN" -e '(format "%q" 1)' 2>&1)"       'unsupported directive'
 assert_has 'fmtstr'  "$("$BIN" -e '(format 42)' 2>&1)"           'expected string'
-echo "OK — phase14_format smoke (41 cases) green"
+echo "OK — phase14_format smoke (48 cases) green"

@@ -1148,7 +1148,7 @@ pub fn entry(comptime code: Code) Entry {
         .format_spec_invalid => .{
             .kind = .type_error,
             .phase = .eval,
-            .template = "format: unsupported directive '{[spec]s}' (supported: %s %d %f %.Nf %x %% %n; no width/flags yet)",
+            .template = "format: unsupported directive '{[spec]s}'",
         },
         .format_args_insufficient => .{
             .kind = .type_error,

@@ -883,3 +883,19 @@ accepted:
       ARE byte-usable in cljw). Record: `private/notes/2026-06-25-D472-bytes-da-fork.md`.
     derives_from: "AD-019 (type-erased arrays — no per-array component type, so byte-array is runtime-indistinguishable from any other array) + F-004 (uniform 8-byte Value) + F-005 (no primitive specialization) + F-011 (the common positive guard `(bytes? (byte-array n))` matches clj true exactly; only non-byte arrays diverge) + F-013 (no bespoke per-array type-tag mechanism added to fake a distinction the representation does not carry)."
     pin: "test/e2e/phase14_arity_parity.sh — `AD-051 (bytes? byte-array)`/`AD-051 (bytes? int-array)`/`AD-051 (bytes? object-array)` lock cljw's over-broad `true` (incl. the int/object-array cases where clj returns false). The clj-IDENTICAL cases (byte-array→true, string/nil/vector→false) are corpus-pinned in test/diff/clj_corpus/clojure_1_11_additions.txt."
+  - id: "AD-052"
+    summary: "format's `%t` date/time conversions render in UTC with fixed English names (month/day/am-pm) and a fixed `+0000`/`UTC` zone; the JVM renders in the process's default TIME ZONE and LOCALE (a JST/ja machine shows shifted hours and 金曜日/2月/午後)."
+    example: '(format "%tH" 0) => cljw "00" (UTC) / clj-on-JST "09" ; (format "%ta" 1234567890123) => cljw "Fri" / clj-on-ja "金"'
+    why: |-
+      cljw ships no tz database and no locale data (edge/wasm target — D-462
+      recorded tz-DB as out of scope). Java's Formatter %t uses the JVM default
+      TimeZone + Locale, both host-environment-dependent, so the JVM's own
+      output is not even stable across machines. cljw picks the one rendering
+      that IS deterministic everywhere: UTC + English (= the JVM's behaviour
+      under TZ=UTC LANG=en, the CI-conventional environment). Numeric
+      conversions (%tY %tm %td %tH %tM %tS %tL %tj %ts %tQ %tD %tF %tT %tR
+      %tr) match a TZ=UTC JVM byte-for-byte — verified against `TZ=UTC clj`
+      2026-07-07. Name conversions (%ta %tA %tb %tB %tp) match an
+      English-locale JVM.
+    derives_from: "ADR-0059 no-JVM (no host tz/locale database dependency) + F-011 (the deterministic-environment rendering matches TZ=UTC/en JVM exactly; only the host-env-dependent rendering diverges) + D-462 (tz database out of scope for the edge/wasm target)."
+    pin: "test/e2e/phase14_format.sh — the `%t` cases pin the UTC/English renderings (epoch-0 hour 00, Fri/Feb names, +0000 zone)."

@@ -13,6 +13,8 @@ const env_mod = @import("../../runtime/env.zig");
 const iref = @import("../../runtime/iref.zig");
 const higher_order = @import("higher_order.zig");
 const tagged_literal_mod = @import("../../runtime/tagged_literal.zig");
+const date_mod = @import("../../runtime/time/date.zig");
+const instant_mod = @import("../../runtime/time/instant.zig");
 const Env = env_mod.Env;
 const error_mod = @import("../../runtime/error/info.zig");
 const error_catalog = @import("../../runtime/error/catalog.zig");
@@ -946,6 +948,109 @@ fn formatFloatArg(val: Value, loc: SourceLocation) error_mod.ClojureWasmError!f6
     };
 }
 
+const month_names = [_][]const u8{ "January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December" };
+const day_names = [_][]const u8{ "Thursday", "Friday", "Saturday", "Sunday", "Monday", "Tuesday", "Wednesday" }; // epoch day 0 = Thu
+
+/// One `%t<sub>` date/time sub-conversion over UTC-decomposed epoch millis
+/// (Java Formatter's date/time suffix table). Composites (R T r D F c) are
+/// built from the primitives recursively.
+/// Zero-padded decimal print of a possibly-negative i64 — Zig's `{d:0>N}`
+/// prints an explicit `+` for signed types, which Java's Formatter never does.
+fn padNum(tw: *std.Io.Writer, v: i64, comptime width: u8) anyerror!void {
+    var x = v;
+    if (x < 0) {
+        try tw.writeByte('-');
+        x = -x;
+    }
+    try tw.print(std.fmt.comptimePrint("{{d:0>{d}}}", .{width}), .{@as(u64, @intCast(x))});
+}
+
+fn formatTimeSub(tw: *std.Io.Writer, sub: u8, ms: i64, loc: SourceLocation) anyerror!void {
+    const days = @divFloor(ms, 86_400_000);
+    const civ = instant_mod.civilFromDays(days);
+    const ms_of_day = @mod(ms, 86_400_000);
+    const h24: u32 = @intCast(@divFloor(ms_of_day, 3_600_000));
+    const minute: u32 = @intCast(@mod(@divFloor(ms_of_day, 60_000), 60));
+    const second: u32 = @intCast(@mod(@divFloor(ms_of_day, 1000), 60));
+    const milli: u32 = @intCast(@mod(ms_of_day, 1000));
+    const h12: u32 = if (@mod(h24, 12) == 0) 12 else @mod(h24, 12);
+    switch (sub) {
+        'H' => try padNum(tw, h24, 2),
+        'k' => try padNum(tw, h24, 1),
+        'I' => try padNum(tw, h12, 2),
+        'l' => try padNum(tw, h12, 1),
+        'M' => try padNum(tw, minute, 2),
+        'S' => try padNum(tw, second, 2),
+        'L' => try padNum(tw, milli, 3),
+        'N' => try padNum(tw, @as(i64, milli) * 1_000_000, 9),
+        'p' => try tw.writeAll(if (h24 < 12) "am" else "pm"),
+        'z' => try tw.writeAll("+0000"), // UTC (no tz database; see the %t arm note)
+        'Z' => try tw.writeAll("UTC"),
+        's' => try padNum(tw, @divFloor(ms, 1000), 1),
+        'Q' => try padNum(tw, ms, 1),
+        'Y' => try padNum(tw, civ.y, 4),
+        'y' => try padNum(tw, @mod(civ.y, 100), 2),
+        'C' => try padNum(tw, @divFloor(civ.y, 100), 2),
+        'm' => try padNum(tw, civ.m, 2),
+        'd' => try padNum(tw, civ.d, 2),
+        'e' => try padNum(tw, civ.d, 1),
+        'j' => try padNum(tw, days - instant_mod.daysFromCivil(civ.y, 1, 1) + 1, 3),
+        'B' => try tw.writeAll(month_names[@intCast(civ.m - 1)]),
+        'b', 'h' => try tw.writeAll(month_names[@intCast(civ.m - 1)][0..3]),
+        'A' => try tw.writeAll(day_names[@intCast(@mod(days, 7))]),
+        'a' => try tw.writeAll(day_names[@intCast(@mod(days, 7))][0..3]),
+        'R' => {
+            try formatTimeSub(tw, 'H', ms, loc);
+            try tw.writeByte(':');
+            try formatTimeSub(tw, 'M', ms, loc);
+        },
+        'T' => {
+            try formatTimeSub(tw, 'R', ms, loc);
+            try tw.writeByte(':');
+            try formatTimeSub(tw, 'S', ms, loc);
+        },
+        'r' => {
+            try formatTimeSub(tw, 'I', ms, loc);
+            try tw.writeByte(':');
+            try formatTimeSub(tw, 'M', ms, loc);
+            try tw.writeByte(':');
+            try formatTimeSub(tw, 'S', ms, loc);
+            try tw.writeByte(' ');
+            try tw.writeAll(if (@divFloor(ms_of_day, 3_600_000) < 12) "AM" else "PM");
+        },
+        'D' => {
+            try formatTimeSub(tw, 'm', ms, loc);
+            try tw.writeByte('/');
+            try formatTimeSub(tw, 'd', ms, loc);
+            try tw.writeByte('/');
+            try formatTimeSub(tw, 'y', ms, loc);
+        },
+        'F' => {
+            try formatTimeSub(tw, 'Y', ms, loc);
+            try tw.writeByte('-');
+            try formatTimeSub(tw, 'm', ms, loc);
+            try tw.writeByte('-');
+            try formatTimeSub(tw, 'd', ms, loc);
+        },
+        'c' => {
+            // "Sat Nov 04 12:02:33 UTC 1999" (Java %tc shape, UTC).
+            try formatTimeSub(tw, 'a', ms, loc);
+            try tw.writeByte(' ');
+            try formatTimeSub(tw, 'b', ms, loc);
+            try tw.writeByte(' ');
+            try formatTimeSub(tw, 'd', ms, loc);
+            try tw.writeByte(' ');
+            try formatTimeSub(tw, 'T', ms, loc);
+            try tw.writeAll(" UTC ");
+            try formatTimeSub(tw, 'Y', ms, loc);
+        },
+        else => {
+            const sb = [_]u8{ '%', 't', sub };
+            return error_catalog.raise(.format_spec_invalid, loc, .{ .spec = sb[0..] });
+        },
+    }
+}
+
 pub fn formatFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
     if (args.len == 0 or args[0].tag() != .string)
         return error_catalog.raise(.type_arg_not_string, loc, .{ .fn_name = "format", .actual = if (args.len == 0) "nil" else @tagName(args[0].tag()) });
@@ -1130,6 +1235,32 @@ pub fn formatFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocatio
                 var cbuf: [4]u8 = undefined;
                 const cn = std.unicode.utf8Encode(args[src].asChar(), &cbuf) catch 0;
                 try tw.writeAll(cbuf[0..cn]);
+            },
+            // `%t<X>`/`%T<X>` date/time conversions (D-470). Arg = a
+            // java.util.Date or a Long (epoch millis, Java semantics).
+            // Rendered in UTC: cljw ships no tz database (edge/wasm target),
+            // so the JVM's default-locale-TZ rendering is an accepted
+            // divergence (AD — corpus-unfixable, e2e pins the UTC values).
+            't', 'T' => {
+                if (i >= fmt.len) return error_catalog.raise(.format_spec_invalid, loc, .{ .spec = "%t" });
+                const sub = fmt[i];
+                i += 1;
+                const ms: i64 = if (date_mod.isDate(rt, args[src]))
+                    date_mod.epochMsOf(args[src])
+                else if (args[src].tag() == .integer)
+                    args[src].asInteger()
+                else
+                    return error_catalog.raise(.arg_value_invalid, loc, .{ .fn_name = "format", .expected = "Date or Long (epoch ms) for %t", .actual = @tagName(args[src].tag()) });
+                try formatTimeSub(tw, sub, ms, loc);
+                if (conv == 'T') {
+                    // %T upper-cases the whole rendering (Java Formatter).
+                    const lower = tmp.writer.buffered();
+                    const upper = try rt.gpa.alloc(u8, lower.len);
+                    defer rt.gpa.free(upper);
+                    for (lower, 0..) |ch, k| upper[k] = std.ascii.toUpper(ch);
+                    tmp.clearRetainingCapacity();
+                    try tw.writeAll(upper);
+                }
             },
             else => {
                 const sb = [_]u8{ '%', conv };
