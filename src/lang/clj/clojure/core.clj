@@ -2222,45 +2222,10 @@
 ;; lives in core (always referred); the `clojure.repl` home is a later
 ;; structural refinement. `print-doc` formats off `(meta var-ref)`; the
 ;; qualified name comes from `(str var-ref)` (`#'ns/name`) minus the `#'`.
-(def print-doc
-  (fn* [v]
-    (let [m (meta v)]
-      (println "-------------------------")
-      (println (subs (str v) 2))
-      (when (:arglists m) (println (:arglists m)))
-      (when (:doc m) (println (str "  " (:doc m)))))))
-
-(defmacro doc [sym]
-  (list (quote print-doc) (list (quote var) sym)))
-
-;; `dir-fn` / `dir` / `apropos` — clojure.repl's REPL-discovery helpers. cljw
-;; carries them in core (alongside `doc`); upstream clojure.repl is host-coupled
-;; (source/pst/demunge → JVM stack/Compiler), so only this no-JVM-feasible subset
-;; is provided. `find-doc` is omitted: cljw vars carry no `:doc` metadata (AD-041).
-(defn dir-fn
-  "Returns a sorted seq of symbols naming the public vars in a namespace (or ns alias)."
-  [ns]
-  (sort (map first (ns-publics (the-ns ns)))))
-
-(defmacro dir
-  "Prints a sorted directory of the public vars in a namespace."
-  [nsname]
-  `(doseq [v# (dir-fn '~nsname)] (println v#)))
-
-(defn apropos
-  "Given a string or regex, returns a sorted seq of the fully-qualified symbols of
-  all public definitions in all currently-loaded namespaces whose name matches."
-  [str-or-pattern]
-  ;; `.contains` (String host method), not clojure.string/includes? — the latter's
-  ;; ns loads AFTER core.clj, so it is unresolvable at this bootstrap position.
-  (let [matches? (if (string? str-or-pattern)
-                   (fn [s] (.contains (str s) str-or-pattern))
-                   (fn [s] (re-find str-or-pattern (str s))))]
-    (sort (mapcat (fn [ns]
-                    (let [nm (str (ns-name ns))]
-                      (map (fn [s] (symbol nm (str s)))
-                           (filter matches? (keys (ns-publics ns))))))
-                  (all-ns)))))
+;; doc / dir / apropos / find-doc live in the bundled `clojure.repl` (their
+;; clj home) — the interactive REPL refers them into `user` (clojure.main
+;; parity); scripts require clojure.repl explicitly. The early in-core copies
+;; (pre-D-305, when vars carried no :doc) were removed with D-513.
 
 ;; `tap>` / `add-tap` / `remove-tap` — clj 1.10 debugging fan-out (D-502).
 ;; clj uses a daemon thread + a bounded ArrayBlockingQueue; cljw has no

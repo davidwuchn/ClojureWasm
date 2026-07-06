@@ -19,4 +19,9 @@ assert_eq 'demunge'  "$("$BIN" -e '(require (quote clojure.repl)) (clojure.repl/
 assert_has 'find_doc' "$("$BIN" -e '(require (quote clojure.repl)) (clojure.repl/find-doc "separated by sep")' 2>&1)" 'clojure.core/interpose'
 assert_has 'source_throws' "$("$BIN" -e '(require (quote clojure.repl)) (try (clojure.repl/source-fn (quote map)) (catch Throwable e (ex-message e)))' 2>&1 | tail -1)" 'not available'
 
-echo "OK — phase16_clojure_repl (8 cases) green"
+# The interactive REPL refers doc/dir/apropos into user (clj clojure.main
+# parity) — bare (doc x) works at the prompt; script runs deliberately don't.
+assert_has 'repl_bare_doc' "$(echo '(doc interpose)' | "$BIN" repl 2>/dev/null)" 'clojure.core/interpose'
+assert_has 'script_no_doc' "$("$BIN" -e '(doc interpose)' 2>&1)" 'doc'
+
+echo "OK — phase16_clojure_repl (10 cases) green"

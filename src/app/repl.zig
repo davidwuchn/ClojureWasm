@@ -94,6 +94,12 @@ pub fn run(
     rt.fs_jail_root = fs_jail_root;
     require_resolver.installChained(&rt);
 
+    // clj parity (D-513): clojure.main's interactive REPL refers the
+    // clojure.repl utilities into `user`, so bare `(doc x)` / `(dir ns)` /
+    // `(apropos "s")` work at the prompt. Script runs deliberately do NOT
+    // (matching `clj -M script.clj` + keeping script cold-start lean).
+    referReplUtilities(&rt, &env, &macro_table, arena);
+
     try stdout.writeAll("ClojureWasm REPL — :exit / Ctrl-D quits.\n");
 
     // An interactive TTY gets the raw-mode line editor (history + cursor
@@ -202,6 +208,21 @@ fn runPiped(
             try stderr.flush();
         };
     }
+}
+
+/// Evaluate the clojure.repl require+refer silently (no result print) so the
+/// interactive prompt has bare doc/dir/apropos — best-effort: a failure only
+/// costs the refer, never the REPL (hence the swallowed error).
+fn referReplUtilities(rt: *Runtime, env: *Env, macro_table: *const macro_dispatch.Table, arena: std.mem.Allocator) void {
+    const src_code = "(require '[clojure.repl :refer [doc find-doc apropos dir dir-fn source source-fn demunge root-cause]])";
+    var reader = Reader.init(arena, src_code);
+    const form = (reader.read() catch return) orelse return;
+    var af: root_set.AnalysisFrame = undefined;
+    root_set.beginAnalysis(&af, rt.gc.infra);
+    defer root_set.endAnalysisPersist(&af, &rt.gc);
+    const node = analyzeForm(arena, rt, env, null, form, macro_table) catch return;
+    var locals: [driver.MAX_LOCALS]Value = [_]Value{.nil_val} ** driver.MAX_LOCALS;
+    _ = driver.evalForm(rt, env, &locals, arena, node) catch return;
 }
 
 fn evalOneLine(
