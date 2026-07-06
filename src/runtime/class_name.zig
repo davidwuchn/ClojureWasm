@@ -310,7 +310,10 @@ pub fn isInstance(v: Value, class_name: []const u8) bool {
 fn isThrowableTag(t: Tag) bool {
     return switch (t) {
         .ex_info => true,
-        // PROVISIONAL: host_instance receiver arm pending D-048 host_class wire-up [refs: D-048, feature_deps.yaml#runtime/error/catch_class_host_instance_arm]
+        // host_instance is deliberately NOT throwable: cljw's host exception
+        // classes construct ex_info carriers (the allocException path), and
+        // the analyzer rejects a non-exception catch class, so no
+        // host_instance reaches a throwable check. `false` is the finished form.
         else => false,
     };
 }

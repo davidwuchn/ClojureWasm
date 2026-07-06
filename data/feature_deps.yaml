@@ -415,15 +415,17 @@ entries:
   - name: runtime/error/catch_class_host_instance_arm
     kind: runtime_layer
     defined_in: src/runtime/error/host_class.zig
-    status: provisional
+    status: landed
     requires_features: []
-    requires_debts:
-      - D-048
-    provisional_markers:
-      - src/runtime/error/host_class.zig (matches — host_instance arm returns false)
-      - src/runtime/class_name.zig (isThrowableTag — host_instance not yet in throwable set)
+    requires_debts: []
+    provisional_markers: []
     notes: |
-      Two related sites both wait on D-048 host-class wire-up.
+      RESOLVED 2026-07-07 (D-529 audit): the arm is UNREACHABLE — cljw's
+      host exception classes construct ex_info carriers (allocException)
+      and the analyzer rejects a non-exception catch class, so no
+      host_instance ever reaches these checks; `false` IS the finished
+      form. D-048 itself no longer exists in the ledger (dangling ref).
+      ORIGINAL: Two related sites both wait on D-048 host-class wire-up.
       `host_class.matches` (cycle 7.11) returns false defensively
       when `thrown.tag() == .host_instance`. `class_name.isThrowableTag`
       (cycle 7.12) gates the `instance?` Throwable arm so the
@@ -439,14 +441,17 @@ entries:
   - name: runtime/nrepl/auto_port
     kind: runtime_layer
     defined_in: src/app/nrepl.zig
-    status: provisional
+    status: landed
     requires_features: []
-    requires_debts:
-      - D-117
-    provisional_markers:
-      - src/app/nrepl.zig (run — --port 0 auto-assign records the requested port not the bound port; getsockname surface needed)
+    requires_debts: []
+    provisional_markers: []
     notes: |
-      Row 14.10 (2026-05-28) landed `cljw nrepl --port <N>` (default
+      RESOLVED 2026-07-07 (D-529 audit): Zig 0.16's listen() resolves the
+      ephemeral port into `Socket.address` — `.nrepl-port` + the banner now
+      report `server.socket.address.getPort()` (the BOUND port), so
+      `--port 0` auto-assign works with CIDER discovery. D-117 itself no
+      longer exists in the ledger (dangling ref).
+      ORIGINAL: Row 14.10 (2026-05-28) landed `cljw nrepl --port <N>` (default
       7888). When the user requests `--port 0` for OS-auto-assign,
       cw v1 writes the requested 0 to `.nrepl-port` instead of the
       bound port, breaking CIDER auto-discovery for that case.

@@ -73,14 +73,14 @@ pub fn run(
     var server = try std.Io.net.IpAddress.listen(&addr, io, .{});
     defer server.deinit(io);
 
-    // Write `.nrepl-port` in CWD for CIDER auto-discovery. Zig 0.16's
-    // Server doesn't expose the bound address after listen() — when
-    // the user requests `port = 0` (auto-assign), we'd need a getsockname
-    // surface; today we just record the requested port. PROVISIONAL: --port 0 auto-assign needs getsockname surface [refs: D-117, feature_deps.yaml#runtime/nrepl/auto_port]
-    try writeNreplPortFile(io, arena, port);
+    // Write `.nrepl-port` in CWD for CIDER auto-discovery. The BOUND port,
+    // not the requested one: `--port 0` asks the OS to auto-assign, and Zig
+    // 0.16's listen() resolves the ephemeral port into `socket.address`.
+    const bound_port = server.socket.address.getPort();
+    try writeNreplPortFile(io, arena, bound_port);
     defer cleanupNreplPortFile(io);
 
-    try stdout.print("nREPL server started on port {d} on host 127.0.0.1 - nrepl://127.0.0.1:{d}\n", .{ port, port });
+    try stdout.print("nREPL server started on port {d} on host 127.0.0.1 - nrepl://127.0.0.1:{d}\n", .{ bound_port, bound_port });
     try stdout.flush();
 
     // Set up the Runtime once; sessions share it for now (single-

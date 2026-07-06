@@ -216,7 +216,7 @@ active:
     last_reviewed: "2026-06-24"
   - id: "D-529"
     status: |-
-      open (2026-06-24, user-directed; ADR-0166). Marker-comment inventory +
+      AUDIT 2 / DRAIN (2026-07-07): all 4 PROVISIONAL markers resolved to ZERO. (1) nrepl auto_port [was refs: D-117 — a DANGLING row, removed from the ledger at some cleanup]: FIXED for real — Zig 0.16's listen() resolves the ephemeral port into Socket.address, so .nrepl-port + the banner now report server.socket.address.getPort(); live-verified (--port 0 wrote 58852). (2)+(3) catch_class_host_instance_arm x2 [was refs: D-048 — also dangling]: the arm is UNREACHABLE — host exception classes construct ex_info carriers (allocException) and the analyzer rejects a non-exception catch class, so 'false' IS the finished form; markers retired, feature_deps entries flipped to landed with the reasoning. (4) wasm_handle [D-259]: still legitimately provisional (its row is live). PROVISIONAL census: 4 -> 1. LESSON recorded: two markers pointed at debt rows that no longer exist — a future ledger cleanup should grep 'refs: D-NNN' in source before deleting a row. REMAINING for this row: the ~10 PERF markers lacking an O-NNN ref. open (2026-06-24, user-directed; ADR-0166). Marker-comment inventory +
       validity: 110 markers (PROVISIONAL 4 / PERF 65 / GC-ROOT 41 / VM-DEFER 0).
       Walk each; validate it is still accurate + earning its keep; retire stale;
       keep the meaningful.
@@ -6464,13 +6464,11 @@ discharged:
     category: "runtime"
     barrier: "DISCHARGED (was: bundled-file-size AOT corruption)."
     last_reviewed: "2026-07-07"
-
   - id: "D-305"
     status: "DISCHARGED 2026-07-07 (Stage 1.4 var-metadata Slice 3 — the campaign's last slice). Builtin + plain-def clojure.core vars now carry :arglists/:doc: scripts/extract_core_meta.sh extracts both from the JVM oracle (ns-publics 'clojure.core), filters to the vars cljw interns, and generates src/lang/clj/clojure/core_meta.clj (241 vars, ~62KB, EPL variant-1 header — docstring text is reproduced upstream text) as alter-meta! fill forms ((resolve 'sym) not (var sym) — a Var VALUE in the literal pool is not bytecode-serializable; existing keys win, so a defn-attached :arglists is never clobbered). Wired as an EAGER bundled ns (bootstrap.zig FILES + EAGER_NS). Landing it exposed + fixed D-558 (the build-tool persist gap). e2e phase14_metadata +3 (core_arglists byte-matches clj's 5 map arities / core_doc / defn_meta_wins). Unblocks full cider eldoc/info on builtins. Slice 2 (:ns opaque rendering) = AD-021, unchanged."
     category: "clj-parity"
     barrier: "DISCHARGED (was: blocked by D-558; both landed together)."
     last_reviewed: "2026-07-07"
-
 conventions: |-
   - Structure: two top-level lists — `active:` and `discharged:`. Active entries carry id / status / category / barrier (+ optional quality_floor / last_reviewed); discharged entries carry id / discharged_at / resolution. Edit as YAML (no Markdown table to align).
   - New debt: grep `.dev/debt.yaml` for class-overlap before adding (per `.claude/rules/debt_dedup.md`).
