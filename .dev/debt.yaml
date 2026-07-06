@@ -238,7 +238,7 @@ active:
       over-invest in a format it would replace.
     last_reviewed: "2026-07-02"
   - id: "D-513"
-    status: "OPEN (2026-06-24). Missing stdlib/contrib namespaces + the var-docstring gap, found in the 2026-06-24 deeper-namespace sweep. Lower priority — each needs foundation/scope work, not a clean drop-in."
+    status: "DRAIN 2026-07-07 (finding 2 CLOSED): clojure.repl is now BUNDLED (src/lang/clj/clojure/repl.clj, require-on-demand, variant-2 attribution) — doc (clj-identical print shape) / find-doc / apropos / dir + dir-fn / demunge / root-cause, all riding the D-305 :doc/:arglists metadata that unblocked this; source/source-fn THROW with a clear explanation (per-var source text is not retained under the AOT bytecode bootstrap — an honest not-available, not a silent nil). e2e phase16_clojure_repl (8 cases, registered in run_all). REMAINING: finding 1 (core.reducers — needs reduce->CollReduce wiring or a native impl; low value, transducers supersede) + finding 3's non-core scope (stdlib/contrib ns docstrings beyond clojure.core — extract_core_meta.sh currently covers core only; extendable the same way if demanded). OPEN (2026-06-24). Missing stdlib/contrib namespaces + the var-docstring gap, found in the 2026-06-24 deeper-namespace sweep. Lower priority — each needs foundation/scope work, not a clean drop-in."
     category: "clj-parity"
     barrier: |-
       Three linked findings from the deeper-namespace sweep (the common surface —
@@ -6427,7 +6427,6 @@ discharged:
     category: "clj-parity"
     barrier: "DISCHARGED (was: slurp/spit string-path-only)."
     last_reviewed: "2026-07-07"
-
 conventions: |-
   - Structure: two top-level lists — `active:` and `discharged:`. Active entries carry id / status / category / barrier (+ optional quality_floor / last_reviewed); discharged entries carry id / discharged_at / resolution. Edit as YAML (no Markdown table to align).
   - New debt: grep `.dev/debt.yaml` for class-overlap before adding (per `.claude/rules/debt_dedup.md`).

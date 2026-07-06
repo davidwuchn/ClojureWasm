@@ -155,6 +155,9 @@ pub const FILES: []const FileEntry = &.{
     // clojure.test (FILES[10]). Verbatim upstream. Appended last.
     .{ .label = "<clojure.test.junit>", .source = @embedFile("clj/clojure/test/junit.clj") },
     .{ .label = "<clojure.core-meta>", .source = @embedFile("clj/clojure/core_meta.clj") },
+    // clojure.repl (D-513) — doc/dir/apropos/find-doc/demunge over the D-305
+    // :doc/:arglists metadata; require-on-demand (NOT eager). Appended last.
+    .{ .label = "<clojure.repl>", .source = @embedFile("clj/clojure/repl.clj") },
 };
 
 /// First file's source — exposed so `main.zig`'s renderer can fall
