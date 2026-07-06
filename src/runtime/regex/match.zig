@@ -322,6 +322,38 @@ fn addThread(
                 try addThread(list, alloc, program, pc + 1, pos, input, next_caps);
             }
         },
+        .look_behind => |lb| {
+            // Zero-width backward assertion: does the sub match ENDING exactly
+            // at `pos`? The sub carries a `.line_end` anchor before its
+            // `.match`, so on the truncated `input[0..pos]` only an
+            // exactly-at-pos end survives. Scan starts backward from pos
+            // (real-world lookbehinds are short, so the nearest j wins fast);
+            // any j gives the same boolean, so order is correctness-neutral.
+            const sub_prog = compile.Program{ .insts = lb.sub, .capture_count = 0, .flags = program.flags };
+            var sub_current = try ThreadList.init(alloc, sub_prog.insts.len);
+            defer sub_current.deinit(alloc);
+            var sub_next = try ThreadList.init(alloc, sub_prog.insts.len);
+            defer sub_next.deinit(alloc);
+            var found: ?MatchResult = null;
+            var j: u32 = pos;
+            while (true) {
+                if (try tryMatchAt(&sub_current, &sub_next, alloc, &sub_prog, input[0..pos], j)) |m| {
+                    found = m;
+                    break;
+                }
+                if (j == 0) break;
+                j -= 1;
+            }
+            if ((found != null) != lb.negate) {
+                var next_caps = caps;
+                if (found) |res| if (!lb.negate) {
+                    for (res.captures.slots, 0..) |sv, i| {
+                        if (sv != -1) next_caps[i] = sv;
+                    }
+                };
+                try addThread(list, alloc, program, pc + 1, pos, input, next_caps);
+            }
+        },
         else => try list.threads.append(alloc, .{ .pc = pc, .caps = caps }),
     }
 }

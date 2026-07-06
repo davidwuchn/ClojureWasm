@@ -149,7 +149,7 @@ active:
     last_reviewed: "2026-06-24"
   - id: "D-527"
     status: |-
-      USER RECONFIRMED 2026-07-02: direction stands — Clojure stdlib near-total equivalence is the goal; NOT a priority raise (easiest-first order unchanged).
+      DRAIN 2026-07-07: Clojure 1.12.4-oracle sweep of the 1.11/1.12 addition surface (partitionv / partitionv-all / splitv-at / abs / update-keys / update-vals / parse-long / parse-double / parse-boolean / parse-uuid / NaN? / infinite?) — ALL matched; the only DIFF was random-uuid's random value (non-deterministic, not a gap). The 1.12 remainder (method values, Class/new syntax, FI adapters, clojure.java.process, add-libs) is JVM-interop/dynamic-deps machinery outside cljw's envelope — not meaningful alignment targets. USER RECONFIRMED 2026-07-02: direction stands — Clojure stdlib near-total equivalence is the goal; NOT a priority raise (easiest-first order unchanged).
       open (2026-06-24, user-directed; ADR-0166). clj-parity alignment with
       UPSTREAM progress: Clojure itself has advanced; align with new upstream
       behaviour WHERE MEANINGFUL. Folds into the standing D-175 quality-loop
@@ -163,7 +163,7 @@ active:
     last_reviewed: "2026-06-24"
   - id: "D-528"
     status: |-
-      USER RECONFIRMED 2026-07-02: direction stands — keep exercising famous 3rd-party libs to surface cljw gaps/bugs; NOT a priority raise. See also new D-550 (Clojars source-jar) + D-551 (git-deps vs tools.gitlibs).
+      DRAIN 2026-07-07 (HoneySQL): loaded seancorfield/honeysql (~/Documents/OSS/honeysql, pure-cljc SQL DSL) via -cp. First run FAILED at sql.cljc:510 — the regex engine lacked LOOKBEHIND ((?<=e)/(?<!e)), and the error mis-blamed 'regex literal … cycle 1'. FIXED: full lookbehind support in the regex engine (Node/Inst look_behind; the child sub-Program gets a .line_end anchor spliced before its .match, so running it on input[0..pos] accepts only matches ending exactly at pos — correct even for alternations like (?<=a|ab)c where leftmost-first would hide the longer branch; match.zig scans start positions backward from pos). ALSO fixed en route: java.util.regex.Pattern gained the .split instance method (1+limit arg, delegating to the shared splitToVector neutral leaf the F-009 comment already promised). VERIFIED: HoneySQL SELECT/INSERT/UPDATE/GROUP-BY+HAVING format all byte-match clj; corpus regex_lookaround (12 goldens incl. lookbehind re-find/re-seq/split + limit shapes). USER RECONFIRMED 2026-07-02: direction stands — keep exercising famous 3rd-party libs to surface cljw gaps/bugs; NOT a priority raise. See also new D-550 (Clojars source-jar) + D-551 (git-deps vs tools.gitlibs).
       open (2026-06-24, user-directed; ADR-0166). Real deps.edn famous-library
       usage: load popular Clojure libraries via their actual deps.edn and run
       them — surface bugs / unimplemented surfaces from real-world use, not
@@ -6444,37 +6444,31 @@ discharged:
     category: "runtime"
     barrier: "DISCHARGED (was: pending_recur_buf reentrancy)."
     last_reviewed: "2026-07-07"
-
   - id: "D-555"
     status: "DISCHARGED 2026-07-07 — the check_vm_parity sweep is CLEAN (0 failing: corpus 3903/3903 + every e2e on -Dbackend=tree_walk). Finding disposition: (1) watch_recursion SEGFAULT -> ADR-0157 guard ported to tree_walk; (2) gc_torture + (3) symbol_metadata + (4) interleave_large -> the D-556 persist-analysis-roots root fix (+ conservative stack scan backstop); (5) dynamic_var guard + (6) require_fs missing/cycle -> the vm LOST SourceLocation on op_push_binding_frame / op_require raises (bare .{}) — wired instr_loc (the per-instruction line/col the chunk already carries) so the caret renders; e2e expectations updated to print.zig'''s intended form (message + caret = 2 occurrences). CADENCE mechanized: ci_gate.sh's FULL tier (nightly schedule + manual dispatch) now runs the sweep as step 3/3 — an oracle-only regression is caught within a day, no human in the loop. ORIGINAL: six findings from the sweep'''s first run (D-553)."
     category: "runtime"
     barrier: "DISCHARGED (was: 6 tree_walk-only e2e failures)."
     last_reviewed: "2026-07-07"
-
   - id: "D-556"
     status: "DISCHARGED 2026-07-07 — confirmed by the CLEAN check_vm_parity sweep (0 failing) + the original rush-hour repro passing at default AND 1MB thresholds on tree_walk. Root cause + fix narrative preserved in this row'''s history and private/notes/D556-gc-persist-roots.md: fn-body Node literals (heap-lifetime analyzer arena) lost their AnalysisFrame roots at form end -> endAnalysisPersist (gc.persisted_analysis_roots, walked after permanent_roots) at every production seam; PLUS the conservative C-stack scan + setjmp register spill (Boehm idiom) as the structural backstop for tree_walk C-stack intermediates; PLUS 7 explicit A6/A6b brackets. The user-filed integer-overflow panic was this class (a swept string'''s corrupted len overflowing Writer.drain arithmetic). RESIDUAL (recorded, not blocking): registered-WORKER-thread stacks are not conservatively scanned (the agent+tree_walk area, D-418-adjacent)."
     category: "runtime"
     barrier: "DISCHARGED (was: transient overflow panic, repro lost-then-found)."
     last_reviewed: "2026-07-07"
-
   - id: "D-526"
     status: "DISCHARGED 2026-07-07 — the Java-interop static-member catalog+fill campaign is COMPLETE across 9 drains. DRAIN 9 (final): String char[] forms — `String/valueOf` gained the char[] and char[]/offset/count overloads (was falling into the generic \"#<array>\" render — a real bug), `String/copyValueOf` (1+3 arg, the JVM alias) registered, `(String. (char-array …))` verified already working (the campaign's stale REMAINING note). Corpus string_join_static +5 clj-byte-matched goldens. FULL CAMPAIGN LEDGER: D1 java.lang scalar sweep (String/join was the only gap — filled); D2 unsigned-arithmetic + JDK-edge Long/Integer statics; D3-D4 (see history); D5 java.util.Objects (new surface); D6 java.lang scalar close-out (hashCode formulas + Math ceilDiv family); D7 java.util.Arrays (new surface: asList/toString/copyOf/sort/equals/fill); D8 java.util.Collections (new surface: emptyList/singletonList/sort/reverse/max/min); D9 String char[] forms. Deliberate omissions (all doc'd at their surfaces, dead-interop lesson): Arrays binarySearch/hashCode/typed-primitive overloads; Collections unmodifiable*/shuffle/synchronized*; Objects hash/hashCode (Java hashCode contract ≠ cljw value hash). Any future static gap is a NEW discovery against a then-current consumer, not this row."
     category: "interop"
     barrier: "DISCHARGED (was: static-member gap catalog+fill, ADR-0166 row 5)."
     last_reviewed: "2026-07-07"
-
   - id: "D-554"
     status: "DISCHARGED 2026-07-07. The `(ns ^{…} name {:attr …})` ATTR-MAP and name-symbol reader meta now MERGE into the ns meta (attr wins over name-meta; an explicit docstring wins over an attr :doc — clj ns-macro merge order). The design barrier dissolved with D-556: the attr map is lifted at analysis via formToValue + pushAnalysisRoot, and production seams persist their AnalysisFrame roots (persisted_analysis_roots) for the arena's lifetime — so embedding the Value in NsNode is GC-safe with NO new rooting machinery. Both backends per ADR-0036: tree_walk evalNs -> meta.mergeNsMeta (new; over the new map.mergeInto); the VM rides the chunk literal pool (NsFilterEntry.attr_const u32 index, NO_ATTR sentinel; bytecode v5 with coverage-guard + round-trip asserts). e2e phase15_ns_docstring (7 cases incl. ns-attr-meta / ns-name-sym-meta); diff case diff-ns-attr; clj-oracle-verified ({:doc :author :added} + ^{:k 1} -> :k 1). ORIGINAL: split from D-239's discharge as the needs-a-Value-in-node residual."
     category: "clj-parity"
     barrier: "DISCHARGED (was: ns attr-map skipped at analysis)."
     last_reviewed: "2026-07-07"
-
   - id: "D-470"
     status: "DISCHARGED 2026-07-07. `format` gained the full `%t`/`%T` date/time conversion family (formatTimeSub in primitive/core.zig): time H k I l M S L N p z Z s Q / date Y y C m d e j B b h A a / composites R T r D F c — args accept java.util.Date or Long epoch-ms (Java semantics). RENDERING IS UTC + ENGLISH + `+0000` (AD-052): cljw ships no tz/locale database (edge/wasm target, D-462), and the JVM's own %t output is host-env-dependent — cljw picks the TZ=UTC/en JVM rendering, verified byte-for-byte against `TZ=UTC clj` for every numeric conversion (2009-02-13 23:31:30 / 02/13/09|11:31:30 PM|044|… / epoch-0 row). Zig gotcha fixed en route: signed `{d:0>N}` prints an explicit `+` — padNum() renders sign manually. %T upper-cases the whole rendering. e2e phase14_format +7 cases (48 total; the AD-052 pin); the stale `no width/flags yet` error template was corrected. Corpus intentionally NOT used (host clj is JST/ja — the sweep would record locale-dependent goldens)."
     category: "clj-parity"
     barrier: "DISCHARGED (was: format %t family unimplemented)."
     last_reviewed: "2026-07-07"
-
 conventions: |-
   - Structure: two top-level lists — `active:` and `discharged:`. Active entries carry id / status / category / barrier (+ optional quality_floor / last_reviewed); discharged entries carry id / discharged_at / resolution. Edit as YAML (no Markdown table to align).
   - New debt: grep `.dev/debt.yaml` for class-overlap before adding (per `.claude/rules/debt_dedup.md`).

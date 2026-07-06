@@ -1,0 +1,24 @@
+(re-find #"(?<!q)a" "ba")
+;;=> "a"
+(re-find #"(?<=q)a" "qa")
+;;=> "a"
+(re-find #"(?<=q)a" "ba")
+;;=> nil
+(re-seq #"(?<=[0-9])px" "5px 6em 7px")
+;;=> ("px" "px")
+(re-find #"(?<=a|ab)c" "abc")
+;;=> "c"
+(re-find #"(?<=ab)c" "abc")
+;;=> "c"
+(re-find #"(?<!ab)c" "abc")
+;;=> nil
+(re-seq #"(?<=^)a" "aa")
+;;=> ("a")
+(vec (.split #"(?<=,)" "a,b,c"))
+;;=> ["a," "b," "c"]
+(vec (.split #"," "a,b,,," 2))
+;;=> ["a" "b,,,"]
+(vec (.split #"," "a,b,,," -1))
+;;=> ["a" "b" "" "" ""]
+(vec (.split #"," "abc"))
+;;=> ["abc"]

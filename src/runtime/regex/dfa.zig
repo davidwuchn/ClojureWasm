@@ -49,7 +49,7 @@ const State = struct {
 pub fn eligible(program: *const Program) bool {
     for (program.insts) |inst| {
         switch (inst) {
-            .anchor, .look => return false,
+            .anchor, .look, .look_behind => return false,
             else => {},
         }
     }
@@ -213,7 +213,7 @@ pub const LazyDfa = struct {
             // Consuming insts + `.match` are the state's members. `.anchor`/`.look`
             // never reach here (eligible() excludes them); treat as a dead end.
             .char, .range, .class, .match => try self.scratch.append(self.alloc, pc),
-            .anchor, .look => {},
+            .anchor, .look, .look_behind => {},
         }
     }
 

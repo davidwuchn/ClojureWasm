@@ -98,6 +98,9 @@ pub const Node = union(enum) {
     /// child is matched anchored at the current position and consumes nothing; a
     /// POSITIVE lookahead's inner captures thread through (JVM parity, ADR-0115).
     look: struct { child: *Node, negate: bool },
+    /// Zero-width lookbehind `(?<=e)` (negate=false) / `(?<!e)` (negate=true):
+    /// asserts a match of `e` ENDING exactly at the current position.
+    look_behind: struct { child: *Node, negate: bool },
 };
 
 /// A `*` / `+` / `?` quantifier's operand + greediness. `greedy=true` is the
@@ -150,6 +153,10 @@ pub const Inst = union(enum) {
     /// iff a match exists XOR `negate`. A positive lookahead merges `sub`'s
     /// captures into the continuing thread (ADR-0115); a negative one exports none.
     look: struct { sub: []const Inst, negate: bool },
+    /// Zero-width lookbehind: `sub` is the child Program with a `.line_end`
+    /// anchor before its `.match`, so running it on `input[0..pos]` from any
+    /// start j succeeds only for a match ending exactly at pos.
+    look_behind: struct { sub: []const Inst, negate: bool },
 };
 
 /// Compiled program — the IR boundary between parser/optimiser
@@ -170,8 +177,9 @@ pub const Program = struct {
         // A `look` inst owns a nested sub-Program's IR slice (lookahead); free it
         // before the top-level slice (recursive for nested lookaheads).
         for (self.insts) |inst| {
-            if (inst == .look) {
-                var sub = Program{ .insts = inst.look.sub, .capture_count = 0, .flags = self.flags };
+            if (inst == .look or inst == .look_behind) {
+                const sub_insts = if (inst == .look) inst.look.sub else inst.look_behind.sub;
+                var sub = Program{ .insts = sub_insts, .capture_count = 0, .flags = self.flags };
                 sub.deinit(alloc);
             }
         }
@@ -408,6 +416,7 @@ fn foldCase(arena: std.mem.Allocator, node: *Node, unicode: bool) CompileError!v
         .group => |g| try foldCase(arena, @constCast(g.child), unicode),
         .repeat => |r| try foldCase(arena, @constCast(r.child), unicode),
         .look => |lk| try foldCase(arena, @constCast(lk.child), unicode),
+        .look_behind => |lb| try foldCase(arena, @constCast(lb.child), unicode),
     }
 }
 
@@ -712,6 +721,18 @@ const Parser = struct {
                     const look_child = try self.parseAlt();
                     if (self.advance() != @as(?u8, ')')) return CompileError.UnclosedGroup;
                     node.* = .{ .look = .{ .child = look_child, .negate = negate } };
+                    return node;
+                }
+                // Lookbehind `(?<=e)` / `(?<!e)`. `(?<name>e)` named groups
+                // (next char alphabetic) stay NotImplemented.
+                if (self.peek() == @as(?u8, '<')) {
+                    _ = self.advance(); // consume '<'
+                    const nx = self.peek() orelse return CompileError.NotImplemented;
+                    if (nx != '=' and nx != '!') return CompileError.NotImplemented;
+                    const negate = self.advance().? == '!';
+                    const lb_child = try self.parseAlt();
+                    if (self.advance() != @as(?u8, ')')) return CompileError.UnclosedGroup;
+                    node.* = .{ .look_behind = .{ .child = lb_child, .negate = negate } };
                     return node;
                 }
                 if (self.peek() == @as(?u8, ':')) {
@@ -1311,8 +1332,9 @@ fn emit(alloc: std.mem.Allocator, node: *const Node, flags: Flags, capture_count
         // child was emitted), free the already-emitted `.look` sub-programs too —
         // `list.deinit` only frees the list's own backing, not the nested slices.
         for (list.items) |inst| {
-            if (inst == .look) {
-                var sub = Program{ .insts = inst.look.sub, .capture_count = 0, .flags = flags };
+            if (inst == .look or inst == .look_behind) {
+                const sub_insts = if (inst == .look) inst.look.sub else inst.look_behind.sub;
+                var sub = Program{ .insts = sub_insts, .capture_count = 0, .flags = flags };
                 sub.deinit(alloc);
             }
         }
@@ -1379,7 +1401,7 @@ fn computeLeading(alloc: std.mem.Allocator, insts: []const Inst) std.mem.Allocat
             // `.match` via epsilon ⇒ empty match can start anywhere; `.look` ⇒
             // the first byte is constrained by a sub-program we don't unfold.
             // Either way, disable the prefilter (correctness over tightness).
-            .match, .look => return null,
+            .match, .look, .look_behind => return null,
         }
     }
     var count: u16 = 0;
@@ -1421,6 +1443,20 @@ fn emitNode(list: *std.ArrayList(Inst), alloc: std.mem.Allocator, node: *const N
         .look => |lk| {
             const sub = try emit(alloc, lk.child, .{}, 0, budget);
             try list.append(alloc, .{ .look = .{ .sub = sub.insts, .negate = lk.negate } });
+        },
+        // Lookbehind: the child's sub-Program gets a `.line_end` anchor spliced
+        // before its terminating `.match` — run on `input[0..pos]` it accepts
+        // only matches ending exactly at pos (the backward assertion).
+        .look_behind => |lb| {
+            const sub = try emit(alloc, lb.child, .{}, 0, budget);
+            var anchored: std.ArrayList(Inst) = .empty;
+            errdefer anchored.deinit(alloc);
+            for (sub.insts) |si| {
+                if (si == .match) try anchored.append(alloc, .{ .anchor = .line_end });
+                try anchored.append(alloc, si);
+            }
+            alloc.free(sub.insts);
+            try list.append(alloc, .{ .look_behind = .{ .sub = try anchored.toOwnedSlice(alloc), .negate = lb.negate } });
         },
         // `{n,m}` → n mandatory copies, then (m-n) greedy-optional copies; a
         // `{n,}` (max == REPEAT_INF) appends `*` after the n mandatory copies.
@@ -1487,7 +1523,7 @@ fn emitAlt(list: *std.ArrayList(Inst), alloc: std.mem.Allocator, children: []con
 fn nullable(node: *const Node) bool {
     return switch (node.*) {
         .lit, .class => false,
-        .anchor, .look => true, // zero-width
+        .anchor, .look, .look_behind => true, // zero-width
         .star, .quest => true,
         .plus => |q| nullable(q.child),
         .repeat => |r| r.min == 0 or nullable(r.child),
@@ -1516,6 +1552,7 @@ fn containsCapture(node: *const Node) bool {
         .repeat => |r| containsCapture(r.child),
         .non_capture => |c| containsCapture(c),
         .look => |lk| containsCapture(lk.child),
+        .look_behind => |lb| containsCapture(lb.child),
         .concat, .alt => |children| {
             for (children) |*ch| if (containsCapture(ch)) return true;
             return false;

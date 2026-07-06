@@ -31,6 +31,7 @@ const error_catalog = @import("../../../error/catalog.zig");
 const string_collection = @import("../../../collection/string.zig");
 const matcher_mod = @import("Matcher.zig");
 const regex_value = @import("../../../regex/value.zig");
+const regex_replace = @import("../../../regex/replace.zig");
 const regex_match = @import("../../../regex/match.zig");
 const compile_mod = @import("../../../regex/compile.zig");
 
@@ -135,6 +136,27 @@ fn patternMethod(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocati
     return string_collection.alloc(rt, regex_value.asRegex(args[0]).source());
 }
 
+/// Implements `(.split re s)` / `(.split re s limit)` — Java
+/// `Pattern.split(CharSequence[, int])`. Delegates to the shared neutral
+/// split leaf (the same one behind `clojure.string/split`, F-009), which
+/// already carries the JVM limit semantics (0 strips trailing empties).
+/// JVM reference: java.util.regex.Pattern#split. cw v1 tier: A.
+fn splitMethod(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = env;
+    if (args.len < 2 or args.len > 3)
+        return error_catalog.raise(.arity_out_of_range, loc, .{ .fn_name = "split", .got = args.len, .min = 2, .max = 3 });
+    if (args[0].tag() != .regex)
+        return error_catalog.raise(.type_arg_invalid, loc, .{ .fn_name = "split", .expected = "regex", .actual = @tagName(args[0].tag()) });
+    if (args[1].tag() != .string)
+        return error_catalog.raise(.type_arg_not_string, loc, .{ .fn_name = "split", .actual = @tagName(args[1].tag()) });
+    const limit: i64 = if (args.len == 3) blk: {
+        if (args[2].tag() != .integer)
+            return error_catalog.raise(.type_arg_invalid, loc, .{ .fn_name = "split", .expected = "integer limit", .actual = @tagName(args[2].tag()) });
+        break :blk args[2].asInteger();
+    } else 0;
+    return regex_replace.splitToVector(rt, regex_value.asRegex(args[0]).program, string_collection.asString(args[1]), limit);
+}
+
 /// Install the `.regex`-tag native instance methods (`(.matcher re s)`).
 /// Called at runtime init alongside `String.installNativeMethods` (ADR-0050
 /// am1 caveat 3) — a native-tag receiver dispatches via `rt.nativeDescriptor`,
@@ -146,6 +168,7 @@ pub fn installNativeMethods(rt: *Runtime) !void {
     const specs = .{
         .{ "matcher", &matcherMethod },
         .{ "pattern", &patternMethod },
+        .{ "split", &splitMethod },
     };
     const entries = try gpa.alloc(type_descriptor.TypeDescriptor.MethodEntry, specs.len);
     inline for (specs, 0..) |spec, i| {

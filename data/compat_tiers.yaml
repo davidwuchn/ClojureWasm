@@ -404,7 +404,7 @@ tiers:
           impl: runtime/regex/compile.zig
           impl_extras: [runtime/regex/match.zig]
           clojure_peer: lang/primitive/regex.zig
-        methods: [compile, matcher, pattern, quote]
+        methods: [compile, matcher, pattern, quote, split, matches]
         clojure_peer_vars: [clojure.core/re-pattern, clojure.core/re-find, clojure.core/re-matches, clojure.core/re-seq, clojure.core/re-groups, clojure.string/replace, clojure.string/split]
       - fqn: java.util.regex.Matcher
         cljw_ns: cljw.java.util.regex.Matcher
