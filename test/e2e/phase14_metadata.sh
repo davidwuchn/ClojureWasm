@@ -33,4 +33,10 @@ assert_has 'err_notmap' "$("$BIN" -e '(with-meta [1] 5)' 2>&1)"            'meta
 # clojure.set/project + rename now preserve the source rel's meta (D-075 wrap restored)
 assert_eq 'set_project' "$("$BIN" -e '(do (require (quote [clojure.set])) (meta (clojure.set/project (with-meta #{{:a 1}} {:r 1}) [:a])))')" '{:r 1}'
 assert_eq 'set_rename'  "$("$BIN" -e '(do (require (quote [clojure.set])) (meta (clojure.set/rename (with-meta #{{:a 1}} {:r 1}) {:a :b})))')" '{:r 1}'
-echo "OK — phase14_metadata smoke (17 cases) green"
+# D-305: builtin/plain-def core vars carry :arglists/:doc (the generated
+# clojure/core_meta.clj fills them at bootstrap; regenerate with
+# scripts/extract_core_meta.sh). Full cider eldoc/info on builtins.
+assert_eq 'core_arglists' "$("$BIN" -e '(:arglists (meta (var map)))')" '([f] [f coll] [f c1 c2] [f c1 c2 c3] [f c1 c2 c3 & colls])'
+assert_eq 'core_doc'      "$("$BIN" -e '(boolean (:doc (meta (var interpose))))')" 'true'
+assert_eq 'defn_meta_wins' "$("$BIN" -e '(do (defn md "mine" [q] q) [(:doc (meta (var md))) (:arglists (meta (var md)))])')" '["mine" ([q])]'
+echo "OK — phase14_metadata smoke (20 cases) green"

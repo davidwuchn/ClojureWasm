@@ -24,11 +24,6 @@
 # md-table-align no longer pads it to ~800 KB of whitespace.
 
 active:
-  - id: "D-558"
-    status: "open (2026-07-07, found while landing D-305's core_meta.clj). ADDING A NEW ~60KB BUNDLED .clj (243 forms: ns + def + 241 alter-meta! forms) BREAKS THE AOT BOOTSTRAP with a memory-corruption signature. Repro: generate clojure/core_meta.clj (scripts preserved in the session scratchpad: extract_core_meta.sh + core_meta_gen_final.clj), register in bootstrap.zig FILES + EAGER_NS, build -> startup fails `<bootstrap>: error: UnknownValueTag`. INVESTIGATION LOG (all verified): (1) the cache_gen BLOB IS CORRECT — hand-decoded: region 'clojure.core-meta' chunk1 = [op_ns_with_refer_clojure, op_ret] with the name string constant, chunk2 = def fill, chunk3 = the first alter-meta!; (2) replay is sequential (chunk1 deser+eval, chunk2, then FAILS at chunk3's constants read: `fill` var_ref -> env.findNs('clojure.core-meta') == null); (3) the ns REGISTRY at that moment holds a GARBLED key (ReleaseSafe: 17 bytes of garbage where 'clojure.core-meta' should be; Debug build: the key is ABSENT entirely) — findOrCreateNs DUPES its key, so the GC String holding the ns name was ALREADY corrupted when chunk1's op_ns_with_refer_clojure eval'd it; (4) GC-INDEPENDENT: fails identically with CLJW_GC_THRESHOLD_MB=100000 (threshold read at GcHeap.init, before bootstrap — verified); Debug build raises NO DebugAllocator UAF -> the corruption is INSIDE the GC pool (infra allocator clean); (5) SIZE-DEPENDENT: 225 alter-meta! rows OK, 230 NG, every SUBRANGE (0-120/120-180/180-210/210-225/225-241) individually OK -> cumulative-volume trigger, not a specific form. HYPOTHESES REMAINING: string interning table rehash/free with shared buffers; free-pool reuse without collect; a deserialize-side buffer aliasing the region blob. NEXT: instrument string_collection.alloc for 'clojure.core-meta'-content writes; check the intern table's ownership on rehash; try the same 243-form payload as a LAZY (non-eager) region."
-    category: "runtime"
-    barrier: "correctness floor — PREEMPTS (memory corruption in the AOT bootstrap path; currently latent because no bundled file is that large, but any future bundled-lib growth trips it)."
-    last_reviewed: "2026-07-07"
   - id: "D-547"
     status: |-
       open (2026-07-01, NARROWED same day). Enforcement-honesty sweep — surfaced by the
@@ -1029,16 +1024,6 @@ active:
       - small, lets the ns load. ADR-level (which path). Cross-ref ladder
       rung 6, D-281/ADR-0103 (host_inert supertype precedent for inert-accept).
     last_reviewed: "2026-07-02"
-  - id: "D-305"
-    status: "BLOCKED by D-558 (2026-07-07): the implementation is DONE and preserved (scratchpad extract_core_meta.sh generates clojure/core_meta.clj — 241 vars' :arglists/:doc from the JVM oracle, resolve-based alter-meta! forms, EPL variant-1 header; bootstrap wiring = FILES + EAGER_NS entries), but registering the ~60KB file trips D-558's AOT-bootstrap memory corruption. Land after D-558. now (2026-06-07) — Stage 1.4 var-metadata Slice 3. Slice 1 LANDED (mechanical keys :name/:ns/:macro/:dynamic/:private synthesized on read in metaFn's .var_ref arm; :ns opaque = AD-021). Slice 3 = builtin :arglists/:doc: Zig-builtin primitives (map/filter/reduce/…) + plain-`def` core vars have NO :arglists/:doc on `(meta #'x)` (clj has both). defn-defined vars already get :arglists (the defn macro attaches it). Unblocks full cider eldoc/info on builtins (campaign Stage 1.4)."
-    category: "runtime"
-    barrier: |-
-      `(:arglists (meta #'map))` / `(:doc (meta #'map))` → nil for Zig-builtin
-      primitives + plain-`def` core vars (clj has both). Barrier dissolves when a
-      definition-derived arglists/doc SSOT (F-013) — a build-time/comptime table
-      extracted from JVM core.clj, NOT compat_tiers.yaml (no arglists/doc fields)
-      and NOT inline-per-builtin (F-013 ad-hoc smell) — is projected by
-      synthVarMeta. Cross-ref private/notes/stage14-var-metadata-survey.md, F-013.
   - id: "D-339"
     status: "open — security (SE-3, HTTP server slowloris). The cljw.http.server accept loop is serial + blocking with NO socket read/idle/header deadline (server.zig:63-71); one client that opens a connection and never completes the request head wedges the WHOLE server (binds 0.0.0.0, internet-facing in a container). The 8 MB body cap guards volume, not time. High severity (one packet DoSes a public deploy)."
     category: "security"
@@ -6474,6 +6459,18 @@ discharged:
     category: "clj-parity"
     barrier: "DISCHARGED (was: format %t family unimplemented)."
     last_reviewed: "2026-07-07"
+  - id: "D-558"
+    status: "DISCHARGED 2026-07-07 (same session as filed — root cause found via targeted probes). The corruption was NOT at runtime: `[str] alloc` + `[op_ns]` probes showed the garbled ns name was READ FROM THE BLOB itself — cache_gen had baked swept bytes into bootstrap_core.cljc. ROOT CAUSE = the D-556 class in the BUILD tool: builder.zig's AOT loops used the DROP bracket (endAnalysis) while the compiled chunks' constants are serialized AFTER the loop ends — a build-time collect past the 4MB threshold swept the constant Strings and serializeChunk wrote the garbage (size-dependent: ~225 forms was where cache_gen's heap crossed the threshold; every SUBRANGE passed because smaller inputs never collected). My earlier hand-decode 'verified' a STALE blob from a prior partial build — lesson: verify the artifact the failing binary actually embeds. FIX: builder.zig's four production seams (buildEnvelope, buildBootstrapEnvelope, buildMainEnvelope's require closure, tryRunEmbedded's -e tail) now endAnalysisPersist, completing the D-556 seam sweep (driver/loader/repl/nrepl/evaluator landed then; builder was missed). VERIFIED: the 62KB core_meta.clj (the trigger) loads clean; (meta #'map) full."
+    category: "runtime"
+    barrier: "DISCHARGED (was: bundled-file-size AOT corruption)."
+    last_reviewed: "2026-07-07"
+
+  - id: "D-305"
+    status: "DISCHARGED 2026-07-07 (Stage 1.4 var-metadata Slice 3 — the campaign's last slice). Builtin + plain-def clojure.core vars now carry :arglists/:doc: scripts/extract_core_meta.sh extracts both from the JVM oracle (ns-publics 'clojure.core), filters to the vars cljw interns, and generates src/lang/clj/clojure/core_meta.clj (241 vars, ~62KB, EPL variant-1 header — docstring text is reproduced upstream text) as alter-meta! fill forms ((resolve 'sym) not (var sym) — a Var VALUE in the literal pool is not bytecode-serializable; existing keys win, so a defn-attached :arglists is never clobbered). Wired as an EAGER bundled ns (bootstrap.zig FILES + EAGER_NS). Landing it exposed + fixed D-558 (the build-tool persist gap). e2e phase14_metadata +3 (core_arglists byte-matches clj's 5 map arities / core_doc / defn_meta_wins). Unblocks full cider eldoc/info on builtins. Slice 2 (:ns opaque rendering) = AD-021, unchanged."
+    category: "clj-parity"
+    barrier: "DISCHARGED (was: blocked by D-558; both landed together)."
+    last_reviewed: "2026-07-07"
+
 conventions: |-
   - Structure: two top-level lists — `active:` and `discharged:`. Active entries carry id / status / category / barrier (+ optional quality_floor / last_reviewed); discharged entries carry id / discharged_at / resolution. Edit as YAML (no Markdown table to align).
   - New debt: grep `.dev/debt.yaml` for class-overlap before adding (per `.claude/rules/debt_dedup.md`).

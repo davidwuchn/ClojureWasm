@@ -68,9 +68,10 @@ pub const FileEntry = struct {
 /// either). `clojure.spec.alpha`'s own deps (spec.gen.alpha / core.specs.alpha) load
 /// transitively when its eager region's `(:require …)` runs. Run in FILES order.
 pub const EAGER_NS = std.StaticStringMap(void).initComptime(.{
-    .{"clojure.core"}, .{"clojure.string"},  .{"clojure.walk"},
-    .{"clojure.edn"},  .{"clojure.java.io"}, .{"clojure.core.protocols"},
-    .{"clojure.uuid"}, .{"clojure.instant"}, .{"clojure.spec.alpha"},
+    .{"clojure.core"},      .{"clojure.string"},  .{"clojure.walk"},
+    .{"clojure.edn"},       .{"clojure.java.io"}, .{"clojure.core.protocols"},
+    .{"clojure.uuid"},      .{"clojure.instant"}, .{"clojure.spec.alpha"},
+    .{"clojure.core-meta"},
     // cljw-SPECIFIC (not in clj's auto-set): the Wasm-component `:require` desugar
     // (ADR-0135 am1) emits `(cljw.wasm/require-component-libspec …)` which is resolved
     // at ANALYZE time — before its own `(require 'cljw.wasm)` prelude EVALs — so the
@@ -153,6 +154,7 @@ pub const FILES: []const FileEntry = &.{
     // clojure.test's `report` multimethod, like clojure.test.tap). Loads after
     // clojure.test (FILES[10]). Verbatim upstream. Appended last.
     .{ .label = "<clojure.test.junit>", .source = @embedFile("clj/clojure/test/junit.clj") },
+    .{ .label = "<clojure.core-meta>", .source = @embedFile("clj/clojure/core_meta.clj") },
 };
 
 /// First file's source — exposed so `main.zig`'s renderer can fall
