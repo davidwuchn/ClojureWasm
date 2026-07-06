@@ -124,6 +124,19 @@ pub const EvalFrame = struct {
 /// a `ThreadGcContext.eval_frame_slot` pointer (union walk).
 pub threadlocal var eval_frame_head: ?*EvalFrame = null;
 
+/// D-556: conservative C-stack scan anchor for the tree_walk backend. The
+/// tree-walk evaluator holds evaluation intermediates in NATIVE stack slots
+/// (locals arrays, argument buffers, accumulator temporaries) — the explicit
+/// EvalFrame brackets cover the known hot sites, but per-site bracketing is
+/// not exhaustively provable, so the collector ALSO conservatively scans the
+/// native stack from this anchor (the shallowest tree_walk `eval` entry —
+/// the same value as its ADR-0157 budget anchor) down to the collector's own
+/// frame, pinning any word that decodes to a live heap Value. Sound under
+/// the non-moving mark-sweep (a false positive only delays one free). Zero
+/// (the default) = no tree_walk eval on this thread → scan skipped; the vm
+/// backend never sets it (its operand stack is the A1 root).
+pub threadlocal var conservative_stack_top: usize = 0;
+
 /// Analysis-roots frame (D-430 root cause; EvalFrame's analysis-side
 /// sibling): GC Values produced BEFORE any frame executes — literal strings /
 /// quoted data (`analyzer.makeConstant` / `analyzeQuote`), compiler-alloc'd
@@ -173,6 +186,26 @@ pub fn beginAnalysis(frame: *AnalysisFrame, alloc: std.mem.Allocator) void {
 pub fn endAnalysis(frame: *AnalysisFrame) void {
     std.debug.assert(analysis_frame_head == frame);
     analysis_frame_head = frame.parent;
+    frame.roots.deinit(frame.alloc);
+}
+
+/// D-556: close an analysis bracket by PERSISTING its roots into the heap's
+/// `persisted_analysis_roots` (walked right after `permanent_roots`) instead
+/// of dropping them. The analyzer arena — and every `*Node` it holds,
+/// including fn bodies that survive the defining form via `Function.body` —
+/// lives as long as the heap, so the GC Values embedded in those Nodes
+/// (`.constant` literals, name strings, quoted collections) must stay rooted
+/// for the same lifetime. `endAnalysis`'s drop-on-close is correct only for
+/// Nodes that die with their form (test fixtures); a `(defn f …)` body Node
+/// survives, and its literals were swept at the first post-definition
+/// collect — the tree_walk bootstrap-string corruption class (the vm masks
+/// the EXECUTING chunk via the A1 pool root, but a not-yet-executed fn's
+/// pool had the same hole). An append failure leaks the frame's list in
+/// place — still reachable beats swept.
+pub fn endAnalysisPersist(frame: *AnalysisFrame, gc: *GcHeap) void {
+    std.debug.assert(analysis_frame_head == frame);
+    analysis_frame_head = frame.parent;
+    gc.persisted_analysis_roots.appendSlice(gc.infra, frame.roots.items) catch return;
     frame.roots.deinit(frame.alloc);
 }
 
@@ -488,6 +521,9 @@ pub const RootIterator = struct {
 
     pub const PermanentRootsCursor = struct {
         idx: usize = 0,
+        /// D-556: cursor into `persisted_analysis_roots` (walked after the
+        /// gc's own permanent_roots).
+        persisted_idx: usize = 0,
     };
 
     pub fn next(self: *RootIterator) ?*HeapHeader {
@@ -696,6 +732,13 @@ pub const RootIterator = struct {
         while (c.idx < self.ctx.gc.permanent_roots.items.len) {
             const v = self.ctx.gc.permanent_roots.items[c.idx];
             c.idx += 1;
+            if (v.heapHeader()) |hdr| return hdr;
+        }
+        // D-556: then the persisted analysis roots (fn-body literals whose
+        // Nodes live in the heap-lifetime analyzer arena).
+        while (c.persisted_idx < self.ctx.gc.persisted_analysis_roots.items.len) {
+            const v = self.ctx.gc.persisted_analysis_roots.items[c.persisted_idx];
+            c.persisted_idx += 1;
             if (v.heapHeader()) |hdr| return hdr;
         }
         return null;

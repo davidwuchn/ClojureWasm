@@ -309,7 +309,7 @@ fn replyEval(
         // every exit of this loop iteration.
         var af: root_set.AnalysisFrame = undefined;
         root_set.beginAnalysis(&af, rt.gc.infra);
-        defer root_set.endAnalysis(&af);
+        defer root_set.endAnalysisPersist(&af, &rt.gc);
         const node = analyzeForm(arena, rt, env, null, form, macro_table) catch |err| {
             try replyError(arena, w, @errorName(err), session_id, id_val);
             continue;

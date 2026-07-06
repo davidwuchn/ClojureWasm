@@ -103,7 +103,7 @@ fn evalTopLevelInBackend(
     // twin of driver.evalTopLevelForm's bracket.
     var af: root_set.AnalysisFrame = undefined;
     root_set.beginAnalysis(&af, rt.gc.infra);
-    defer root_set.endAnalysis(&af);
+    defer root_set.endAnalysisPersist(&af, &rt.gc);
     const node = try analyzer.analyze(arena, rt, env, null, form, table);
     var locals: [256]Value = [_]Value{.nil_val} ** 256;
     return switch (backend) {

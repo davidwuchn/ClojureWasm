@@ -170,6 +170,13 @@ pub const GcHeap = struct {
     /// first match. The root walker yields each entry's
     /// `Value.heapHeader()` (skipping immediates).
     permanent_roots: std.ArrayList(Value) = .empty,
+    /// D-556: analysis-produced Values persisted past their bracket — the
+    /// literal pool of every analyzed form whose Nodes outlive the form (fn
+    /// bodies held by `Function.body` in the heap-lifetime analyzer arena).
+    /// Appended by `root_set.endAnalysisPersist`; walked right after
+    /// `permanent_roots`. Grows with the arena — the same lifetime the
+    /// Nodes themselves already have.
+    persisted_analysis_roots: std.ArrayList(Value) = .empty,
     /// Process-lifetime mark-waypoints (D-251): headers of `trackHeap`'d
     /// objects (`Function` / `ProtocolDescriptor` / `TypeDescriptorRef`) that
     /// are NOT in `allocations` and so are never swept. The mark bit doubles as
@@ -270,6 +277,7 @@ pub const GcHeap = struct {
         }
         self.allocations.deinit(self.infra);
         self.permanent_roots.deinit(self.infra);
+        self.persisted_analysis_roots.deinit(self.infra);
         self.persistent_marks.deinit(self.infra);
         self.free_pools.deinit(self.infra);
         self.mark_worklist.deinit(self.infra);

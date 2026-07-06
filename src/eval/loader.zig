@@ -96,7 +96,7 @@ fn loadTopLevelForm(
     // driver.evalTopLevelForm's (kept open through eval + the sink recompile).
     var af: root_set.AnalysisFrame = undefined;
     root_set.beginAnalysis(&af, rt.gc.infra);
-    defer root_set.endAnalysis(&af);
+    defer root_set.endAnalysisPersist(&af, &rt.gc);
     const node = try analyzeForm(arena, rt, env, null, form, macro_table);
     var locals: [driver.MAX_LOCALS]Value = [_]Value{.nil_val} ** driver.MAX_LOCALS;
     _ = try driver.evalForm(rt, env, &locals, arena, node);
