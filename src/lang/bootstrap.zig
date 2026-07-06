@@ -522,6 +522,9 @@ fn installBaselineBindings(arena: std.mem.Allocator, env: *Env) !void {
         "*print-level*",        "*print-namespace-maps*",
         "*data-readers*",       "*default-data-reader-fn*",
         "*print-dup*",          "*flush-on-newline*",
+        // D-241: clojure.main's with-bindings set also thread-binds these,
+        // so top-level `(set! *assert* false)` works like the JVM REPL.
+        "*assert*",             "*math-context*",
     };
     const frame = try arena.create(env_mod.BindingFrame);
     frame.* = .{};

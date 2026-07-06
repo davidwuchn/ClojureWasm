@@ -342,32 +342,6 @@ active:
       land. LOW priority + working fallback → deferred. recall trigger: a future
       diff case genuinely needs a `Class/FIELD` static field, OR the eval_budget
       interaction surfaces elsewhere.
-  - id: "D-241"
-    status: "RE-NARROWED 2026-07-02 (audit): *assert* (core.clj:37) and *math-context* (bootstrap.zig:392, D-467) are LANDED — the un-landed list below overstates; the real gap is installBaselineBindings coverage + the stale bootstrap.zig:499 comment. ORIGINAL: SUBSTANCE LANDED via ADR-0096 (2026-06-05); residual is feature-gated only (re-laid 2026-06-15). The clojure.main-baseline frame (8 standard dynamic vars) IS pushed at bootstrap; bound-fn capture/replay verified clj-correct BOTH ways (corpus thread_bindings: outside-binding replays baseline → no truncation, shadowing the call site; inside-binding captures the binding). The original headline divergence is FIXED."
-    category: "runtime"
-    barrier: |-
-      Feature-gated residual only — NOT an active code drain (sweep skips until a
-      named standard-var feature lands). ADR-0096's baseline frame
-      (`bootstrap.zig::installBaselineBindings`) thread-binds the 8 standard dynamic
-      vars cljw HAS (`*warn-on-reflection*`/`*unchecked-math*`/`*print-meta|length|
-      level|namespace-maps*`/`*data-readers*`/`*default-data-reader-fn*`); bound-fn
-      + get-thread-bindings match clj for those. The remaining `clojure.main` vars
-      are deliberately NOT fabricated (a no-op binding = permanent-no-op /
-      Silent-default-shift smell): each lands WITH its feature — `*assert*` /
-      `*read-eval*` / `*math-context*` / `*compile-path*` / `*1 *2 *3 *e` (REPL;
-      nREPL already has its own per-connection frame, nrepl.zig). Two findings
-      (2026-06-15 Step 0.6 + DA survey `gapI-D241-baseline-binding-frame-survey.md`):
-      (1) `*command-line-args*` CANNOT join this frame — cljw sets it via
-      `alter-var-root` (D-310 run_mode), so a baseline thread-binding captured at
-      bootstrap would SHADOW the later `alter-var-root` and break D-310 arg
-      visibility (clj thread-binds it, so no conflict). Its VALUE already matches
-      clj (nil with no args); only get-thread-bindings membership differs (LOW).
-      (2) `*print-readably*` can join only via an ADR-0088-snapshot amendment
-      distinguishing baseline-bound-to-default from user-bound (else print/println
-      would always quote strings — the `findBinding`-read exclusion is load-bearing);
-      that is a separate ADR-level unit, not this row. Cross-ref ADR-0096 / ADR-0088
-      / D-310 / F-011. recall trigger: a standard-var FEATURE lands → add its var
-      here; or the `*print-readably*` ADR-0088-snapshot unit is opened.
   - id: "D-246"
     status: "PARTIAL (re-laid 2026-06-15 with an explicit do/don't per the user's anti-defer-residue directive). (a) atom watches/validator/meta = DONE (atomic acquire/release, matching the `current` idiom + clj's synchronized Atom state). (b) Var root + (c) ns intern = explicitly DEFERRED with reasons (see barrier) — not a vague workload-gate. The HIGH-frequency value-reads were already atomic (atom current/swap!/CAS, volatile current, ref doGet)."
     category: "concurrency"
@@ -6379,6 +6353,12 @@ discharged:
     status: "DISCHARGED 2026-07-07 — the standing audit ran and the drift-detection net is PERMANENT. AUDIT: a 24-expr sweep across the full destructure surface (sequential incl. nested/&-rest/:as/string-seq; associative incl. :keys/:strs/:syms/:or/:as/namespaced+keyword keys/nested-map/map-in-seq; fn-params incl. the clj-1.11 trailing-map kwargs shapes that caused the original bug; loop; for) — 24/24 clj-matched, zero drift between the Zig lowering (macro_transforms) and the clj destructure fn. NET: corpus test/diff/clj_corpus/destructure_surface.txt (24 goldens) — re-verified against BOTH backends every gate (corpus_regression) and against clj byte-for-byte on every corpus re-run, so a future divergence in EITHER lowering system surfaces mechanically. The original single bug (pre-1.11 kwargs coercion on the Zig path) was fixed in the introducing cycle."
     category: "runtime"
     barrier: "DISCHARGED (was: two-lowering drift risk — now corpus-netted)."
+    last_reviewed: "2026-07-07"
+
+  - id: "D-241"
+    status: "DISCHARGED 2026-07-07. The last coverage gap closed: installBaselineBindings now thread-binds 12 standard dynamic vars — the original 10 plus *assert* and *math-context* (both had dynamic roots but were missing from the baseline frame, so top-level `(set! *assert* false)` raised where the JVM REPL accepts it; clojure.main's with-bindings set binds both). Verified live ([false 7]) + corpus thread_bindings +2 clj-matched goldens (set! and binding forms). HISTORY: the ADR-0096 substance (baseline frame + bound-fn capture/replay both ways) landed 2026-06-05; *assert*/*math-context* roots landed by 2026-07-02; this cycle completed the frame membership. The remaining clj baseline names (*compile-path*, *command-line-args*, *1/*2/*3/*e) are features cljw does not carry as settable state — out of scope, not residual."
+    category: "clj-parity"
+    barrier: "DISCHARGED (was: baseline-frame coverage)."
     last_reviewed: "2026-07-07"
 
 conventions: |-
