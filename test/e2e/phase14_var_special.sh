@@ -44,6 +44,15 @@ assert_last 'var_ifn_resolve'  '((resolve (quote inc)) 5)'           '6'
 assert_last 'var_ifn_apply'    '(apply (var +) [1 2 3])'             '6'
 assert_last 'var_ifn_hof'      '((resolve (quote map)) inc [1 2 3])' '(2 3 4)'
 
+# --- (var alias/x): the ns part consults the current ns's alias table
+#     first (ADR-0035 D3, same precedence as symbol resolution) — D-430.
+#     clj: (var al/x) through a :as alias resolves and prints the REAL ns. ---
+assert_last 'var_alias'       '(ns a) (def x 1) (ns b (:require [a :as al])) (var al/x)'   "#'a/x"
+assert_last 'var_alias_reader' '(ns a) (def x 1) (ns b (:require [a :as al])) #'"'"'al/x'    "#'a/x"
+assert_last 'var_alias_deref' '(ns a) (def x 1) (ns b (:require [a :as al])) (deref (var al/x))' '1'
+# FQN through the same path still resolves (alias precedence must not break it).
+assert_last 'var_fqn'         '(ns a) (def x 1) (ns b) (var a/x)'                          "#'a/x"
+
 # `@x` reader is NS-qualified so a local `deref` binding cannot capture it
 # (reader hygiene). cljw qualifies to the `rt` primitive ns (AD-038; clj uses
 # clojure.core/deref — same hygiene, cljw's canonical core ns is `rt`).

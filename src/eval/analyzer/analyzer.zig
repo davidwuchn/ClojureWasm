@@ -680,15 +680,12 @@ fn analyzeSymbol(
             }
         }
     }
-    // Global Var resolution. Qualified symbols `s/name` first
-    // consult the current ns's alias table (ADR-0035 D3) — alias
-    // names take precedence over real ns names (= JVM semantics:
-    // `(alias 'str 'clojure.string)` shadows any literal `str` ns).
+    // Global Var resolution. Qualified symbols `s/name` resolve via
+    // alias-then-real-ns (ADR-0035 D3 — alias names take precedence over
+    // real ns names, = JVM semantics: `(alias 'str 'clojure.string)`
+    // shadows any literal `str` ns).
     const ns = if (sym.ns) |ns_name| ns_blk: {
-        if (env.current_ns) |here| {
-            if (here.aliases.get(ns_name)) |aliased| break :ns_blk aliased;
-        }
-        if (env.findNs(ns_name)) |found| break :ns_blk found;
+        if (env.findNsOrAlias(ns_name)) |found| break :ns_blk found;
         // ADR-0061: bare `Class/FIELD` static field read (no parens). The
         // ns head is not a Clojure ns/alias; resolve it as a Java surface
         // (same `resolveJavaSurface` the static-METHOD path uses) and, if
@@ -923,12 +920,7 @@ fn resolveMaybe(env: *Env, sym: SymbolRef) ?*Var {
     // to a plain call and its raw args were analyzed as symbols — found via
     // verified_projects/qbits.ex's `ex/try+`.)
     if (sym.ns) |ns_name| {
-        const ns = ns_blk: {
-            if (env.current_ns) |here| {
-                if (here.aliases.get(ns_name)) |aliased| break :ns_blk aliased;
-            }
-            break :ns_blk env.findNs(ns_name) orelse return null;
-        };
+        const ns = env.findNsOrAlias(ns_name) orelse return null;
         return ns.resolveQualified(sym.name);
     }
     const ns = env.current_ns orelse return null;

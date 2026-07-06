@@ -381,8 +381,7 @@ pub fn analyzeBinding(
         // findNs, else current ns), mirroring analyzeSymbol's global path.
         // `binding` rebinds an existing Var; it never declares a slot.
         const target_ns = if (name_sym.ns) |ns_name|
-            (if (env.current_ns) |here| here.aliases.get(ns_name) else null) orelse
-                env.findNs(ns_name) orelse
+            env.findNsOrAlias(ns_name) orelse
                 return error_catalog.raise(.namespace_unknown, binding_forms[fi].location, .{ .ns = ns_name })
         else
             env.current_ns orelse

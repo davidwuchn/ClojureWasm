@@ -522,6 +522,19 @@ pub const Env = struct {
         return self.namespaces.get(name);
     }
 
+    /// Resolve a qualified symbol's ns part: the current ns's alias table
+    /// first, then real ns names (ADR-0035 D3 — alias-over-real-ns
+    /// precedence, matching JVM symbol resolution). The shared helper for
+    /// every analysis site that resolves `s/name`-shaped prefixes (symbol /
+    /// var / binding / set!); callers layer their own fallback (Java
+    /// surface, error) on a null return.
+    pub fn findNsOrAlias(self: *Env, name: []const u8) ?*Namespace {
+        if (self.current_ns) |here| {
+            if (here.aliases.get(name)) |aliased| return aliased;
+        }
+        return self.namespaces.get(name);
+    }
+
     /// Copy every **non-private** mapping in `from` into `to.refers`.
     /// Idempotent — duplicate names are silently skipped. ADR-0035 D4:
     /// `^:private` Vars are silently filtered (JVM `:refer :all`

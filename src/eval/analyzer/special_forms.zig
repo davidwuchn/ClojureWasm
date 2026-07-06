@@ -760,8 +760,10 @@ pub fn analyzeVar(
     if (target.data != .symbol)
         return error_catalog.raise(.var_arg_not_symbol, form.location, .{ .actual = target.typeName() });
     const sym = target.data.symbol;
+    // Qualified `(var s/name)` resolves via alias-then-real-ns (ADR-0035 D3
+    // precedence, same as symbol resolution) — D-430.
     const ns: *env_mod.Namespace = if (sym.ns) |ns_name|
-        (env.findNs(ns_name) orelse return error_catalog.raise(.var_unresolved, form.location, .{ .sym = sym.name }))
+        (env.findNsOrAlias(ns_name) orelse return error_catalog.raise(.var_unresolved, form.location, .{ .sym = sym.name }))
     else
         (env.current_ns orelse return error_catalog.raise(.var_unresolved, form.location, .{ .sym = sym.name }));
     const var_ptr = ns.resolve(sym.name) orelse
@@ -1396,8 +1398,7 @@ pub fn analyzeSetBang(
     // Resolve the target Var exactly as `binding` does (qualified → alias
     // then findNs, else current ns). `set!` mutates an existing Var.
     const target_ns = if (name_sym.ns) |ns_name|
-        (if (env.current_ns) |here| here.aliases.get(ns_name) else null) orelse
-            env.findNs(ns_name) orelse
+        env.findNsOrAlias(ns_name) orelse
             return error_catalog.raise(.namespace_unknown, items[1].location, .{ .ns = ns_name })
     else
         env.current_ns orelse
