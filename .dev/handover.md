@@ -14,13 +14,15 @@
   (release.yml/CLAUDE.md "loop never tags" is otherwise intact). Demo repos
   cw-serverless-demo + cw-playground redeployed to fly.io on v1.0.0 and live-verified
   (books+cover-colours / eval+wasm-FFI). ADR-0167 rc.1-readiness campaign CLOSED — 1.0.0 shipped.
-- **First commit on resume MUST be: the easiest-first drain head** —
-  D-555/556/557 all DISCHARGED 2026-07-07 (GC persist-roots root fix +
-  conservative stack scan + evalRecur reentrancy + vm loc fidelity; the
-  check_vm_parity tree_walk sweep is CLEAN and runs in ci_gate.sh's
-  nightly FULL tier). Resume the drain: D-526 interop statics / D-527
-  parity / D-528 real-deps / D-305 builtin :arglists/:doc / D-470 format
-  %t / D-554 ns attr-map. A correctness floor still PREEMPTS.
+- **First task on resume MUST be: D-558** (correctness floor) — adding a
+  ~60KB bundled .clj corrupts the AOT bootstrap (garbled ns-registry key;
+  GC-independent; size-triggered at ~225-230 forms). Full investigation
+  log + repro generator preserved in the D-558 row + the prior session's
+  scratchpad. It blocks D-305 (impl DONE, wiring preserved). After D-558:
+  easiest-first drain resumes. DONE 2026-07-07: D-526 (9 drains,
+  discharged) / D-554 ns attr-map / D-470 format %t / D-555+556+557 GC
+  arc / regex lookbehind + Pattern.split (HoneySQL green, D-528 drain) /
+  1.12-sweep (D-527 drain).
 - **Forbidden this session**: bare `zig build test` WITHOUT `-Dwasm`; bare `zig build`
   for a probe (use ReleaseSafe). **The FULL gate MUST run `--serial-e2e`** — the `-P8`
   parallel default flakes the **D-418/D-258 agent load-race** (`agent_conj` →
