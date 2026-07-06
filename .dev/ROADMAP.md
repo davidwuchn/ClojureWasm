@@ -2017,7 +2017,6 @@ ADR-0033) + `compat_tiers.yaml` (var/class tier). The originally-planned
 | Path                                                               | Purpose                                                                                                                             |
 |--------------------------------------------------------------------|-------------------------------------------------------------------------------------------------------------------------------------|
 | cw v0 — git tag `v0.5.0`                                          | ClojureWasm v0 (89K LOC). Design reference; NOT in `main`'s tree (`-s ours` merge) — reach via `git worktree add ../cw-v0 v0.5.0`. |
-| `~/Documents/MyProducts/ClojureWasmFromScratch_v1_ref/`            | Previous redesign attempt (Phase 1+2). Implementation reference for Runtime handle, NaN boxing, Reader.                             |
 | `~/Documents/OSS/clojure/`                                         | Upstream Clojure JVM. core.clj / LispReader.java / Numbers.java.                                                                    |
 | `~/Documents/OSS/babashka/`                                        | Babashka (SCI-based). Pod / native / compatibility precedent.                                                                       |
 | `~/Documents/OSS/spec.alpha/`                                      | clojure.spec.alpha source.                                                                                                          |
