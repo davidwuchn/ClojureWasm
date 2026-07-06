@@ -14,10 +14,20 @@
   (release.yml/CLAUDE.md "loop never tags" is otherwise intact). Demo repos
   cw-serverless-demo + cw-playground redeployed to fly.io on v1.0.0 and live-verified
   (books+cover-colours / eval+wasm-FFI). ADR-0167 rc.1-readiness campaign CLOSED — 1.0.0 shipped.
-- **Stopped — user requested (2026-07-07).** The stop landed right after
-  the 5-commit-ceiling FULL gate launched; its result is in the session
-  scratchpad fullgate7.log (if red, fixing it is the first task on
-  resume; every commit is already pushed, tree clean at `6099ab4e7`).
+- **Stopped — user requested (2026-07-07).** Tree clean + pushed at
+  `bff6d5eb0`. The ceiling FULL gate ran: ONE red (`dir_fn_set` — an e2e
+  still calling the in-core dir-fn removed with D-513) — FIXED + re-smoked
+  same session (the non-code-check exception; no full-gate re-run needed).
+- **User bug report VERIFIED FIXED** (`private/notes/
+  2026-07-07-cljw-bfs-queue-corruption-vm-backend.md` — vm-backend BFS
+  queue corruption, same solve2 shape as D-557 but on vm): the minimal
+  repro runs 3/3 GREEN on HEAD at default AND CLJW_GC_THRESHOLD_MB=1
+  (`WON path= [3 3 …]`, clj-identical). Root cause was the D-556 class —
+  the vm's not-yet-executed fn literal pool had the same unrooted hole the
+  persist fix closed (+ D-558 hardened the blob side). NEXT (the サクッと
+  task): (1) land the note's solve2 as a corpus/e2e case pinning both
+  backends, (2) re-run cw-arcade rush-hour.generator's 32-test suite on a
+  HEAD build and lift the README known-limitation note.
 - **First commit on resume: the easiest-first drain head** — no floor
   open. DONE 2026-07-07 (**18 discharges**): D-555+556+557+558 GC/AOT
   arc (root fixes: persist-analysis-roots incl. builder.zig, conservative
