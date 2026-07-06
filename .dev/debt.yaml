@@ -649,15 +649,6 @@ active:
       allow/deny set consulted at the single var-resolution site. Lower priority
       than D-351/D-352.
     last_reviewed: "2026-06-09"
-  - id: "D-376"
-    status: "open (2026-06-10, ADR-0108 am1 out-of-scope). `clojure.lang.Murmur3/hashUnencodedChars` (2 sites, data.xml only) hashes a CharSequence's UTF-16 code units. cljw's hashString deliberately hashes UTF-8 bytes (hash.zig — a WASM/edge-native choice, F-011 internals are impl-specific), so there is no UTF-16-codeunit hasher to delegate to. Deferred from the D-375 closed set. Revisit if data.xml is promoted to a verified lib: add a hashUnencodedChars hashing UTF-8 (accept the AD-009 value divergence) or build a real UTF-16 path then."
-    category: "interop"
-    barrier: |-
-      `Murmur3/hashUnencodedChars` hashes UTF-16 code units; cljw hashes UTF-8
-      (no UTF-16 hasher exists). Low value (data.xml only, 2 sites). Revisit when a
-      verified lib needs it; then hash UTF-8 (AD-009) or add a UTF-16 path. Cross-ref
-      ADR-0108 am1, AD-009.
-    last_reviewed: "2026-06-10"
   - id: "D-033"
     status: "DUE — trigger fired (corrected 2026-06-17 audit). primitive/ files long past the ~500 trigger: core.zig 1837 / math.zig 1444 / collection.zig 1190; core + math also breach the ROADMAP A6 ≤1000-line cap. Split never done. Next: confirm A6 still applies, then split (primitive/core|sequence|…) or amend the cap with an ADR."
     category: "structure"
@@ -6535,6 +6526,12 @@ discharged:
     status: "DISCHARGED 2026-07-06 — ALL residuals closed (the ADR-0088 bindable-print-vars arc complete). (a) readably-shadow-around-print FIXED: print/println's internal readably choice is now INNERMOST via a print_readably_surface_owned threadlocal consulted by snapshotPrintLimits (clj models print as `(binding [*print-readably* nil] (pr …))` — a user's outer `(binding [*print-readably* true] (print [nested-str]))` is shadowed to raw, matching clj; pr still respects the user binding both directions; zero per-print frame alloc). (b) infinite-seq + *print-length* termination landed 2026-06-04. (c) *print-dup* interned root false — a TRUE binding FAIL-LOUDS (print_dup_not_supported: clj emits JVM #=(class/create …) ctor forms cljw cannot represent, ADR-0059; never a silent normal-form print); *flush-on-newline* interned root true — text_io flushes per call so the true contract always holds and a false binding permits (not requires) buffering (no Zig consumer BY DESIGN, documented at the intern site — not a no-op lie). Both in the ADR-0096 baseline frame (top-level set! works). e2e phase14_print_control (14 cases incl. print_shadows_readably + dup_true_raises); corpus print_control +4 clj-byte-matched goldens. Bindable landed earlier: *print-length*/*print-level*/*print-namespace-maps*/*print-readably*/*print-meta* (ADR-0088 2026-06-04). ADR-0088's PrintCtx-revisit note (concurrent/eval-during printing) stays with ADR-0088."
     category: "runtime"
     barrier: "DISCHARGED (was: print-control dynamic vars)."
+    last_reviewed: "2026-07-06"
+
+  - id: "D-376"
+    status: "DISCHARGED 2026-07-06 (easiest-first drain). `clojure.lang.Murmur3/hashUnencodedChars` landed as a REAL UTF-16 code-unit Murmur3 (hash.zig hashUnencodedChars: UTF-8 -> UTF-16 units streaming, surrogate pairs for astral codepoints, 2 units/block, fmix over 2*unit-count — the exact JVM algorithm), registered on the existing cljw.clojure.lang.Murmur3 surface. UNLIKE the AD-009 collection hashes this is JVM BIT-PARITY (input is pure code units, no cljw-native value hash) — unit test pins 6 clj-oracle values incl. a surrogate-pair case (𠮷野家 -> -383720716); corpus clojure_lang_util +5 clj-byte-matched goldens. The 2026-06-10 either/or (hash UTF-8 accepting AD-009 divergence, OR build a real UTF-16 path) resolved to the REAL path — it costs ~30 lines and removes the divergence entirely. String-arg only (a CharSequence deftype arg raises type_arg_invalid; extend on a real consumer). data.xml (the 2 call sites) has no local clone — take its full-lib run up under D-528 when cloned."
+    category: "interop"
+    barrier: "DISCHARGED (was: no UTF-16 hasher)."
     last_reviewed: "2026-07-06"
 
 conventions: |-

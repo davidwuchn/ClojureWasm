@@ -22,6 +22,7 @@ const Env = @import("../../env.zig").Env;
 const SourceLocation = @import("../../error/info.zig").SourceLocation;
 const error_catalog = @import("../../error/catalog.zig");
 const hash = @import("../../hash.zig");
+const string_mod = @import("../../collection/string.zig");
 
 /// Resolve `clojure.core/<name>` and call it through the backend vtable.
 fn callCore(rt: *Runtime, env: *Env, name: []const u8, args: []const Value, loc: SourceLocation) !Value {
@@ -57,12 +58,27 @@ fn mixCollHash(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation
     return Value.initInteger(@as(i32, @bitCast(mixed)));
 }
 
+/// `(clojure.lang.Murmur3/hashUnencodedChars s)` — Murmur3 over the string's
+/// UTF-16 code units. Unlike the AD-009 collection hashes this is JVM
+/// BIT-PARITY (the input is pure code units — no cljw-native value hash is
+/// involved), so clj and cljw agree on the value (D-376; data.xml's 2 sites).
+fn hashUnencodedChars(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = rt;
+    _ = env;
+    try error_catalog.checkArity("clojure.lang.Murmur3/hashUnencodedChars", args, 1, loc);
+    if (args[0].tag() != .string)
+        return error_catalog.raise(.type_arg_invalid, loc, .{ .fn_name = "clojure.lang.Murmur3/hashUnencodedChars", .expected = "string", .actual = @tagName(args[0].tag()) });
+    const h = hash.hashUnencodedChars(string_mod.asString(args[0]));
+    return Value.initInteger(@as(i32, @bitCast(h)));
+}
+
 fn initMurmur3(td: *type_descriptor.TypeDescriptor, gpa: std.mem.Allocator) anyerror!void {
     if (td.method_table.len != 0) return; // idempotent re-run
     const specs = .{
         .{ "hashOrdered", &hashOrdered },
         .{ "hashUnordered", &hashUnordered },
         .{ "mixCollHash", &mixCollHash },
+        .{ "hashUnencodedChars", &hashUnencodedChars },
     };
     const entries = try gpa.alloc(type_descriptor.TypeDescriptor.MethodEntry, specs.len);
     inline for (specs, 0..) |spec, i| {

@@ -90,6 +90,40 @@ pub fn hashString(input: []const u8) u32 {
     return fmix(h1, @truncate(input.len));
 }
 
+/// JVM `clojure.lang.Murmur3.hashUnencodedChars` bit-parity: Murmur3 over
+/// the string's UTF-16 CODE UNITS (surrogate pairs for astral codepoints),
+/// two units per 32-bit block, `fmix` over `2 * unit-count` bytes. Distinct
+/// from `hashString` (cljw-native UTF-8 bytes, AD-009) — this serves the
+/// `Murmur3/hashUnencodedChars` static (data.xml), where JVM value-parity is
+/// achievable because the input is pure code units, not value identity (D-376).
+pub fn hashUnencodedChars(utf8: []const u8) u32 {
+    var h1: u32 = SEED;
+    var unit_count: u32 = 0;
+    var pending: ?u32 = null;
+    var it = std.unicode.Utf8View.initUnchecked(utf8).iterator();
+    while (it.nextCodepoint()) |cp| {
+        var units: [2]u32 = .{ @as(u32, cp), 0 };
+        var n: usize = 1;
+        if (cp >= 0x10000) {
+            const v: u32 = @as(u32, cp) - 0x10000;
+            units[0] = 0xD800 + (v >> 10);
+            units[1] = 0xDC00 + (v & 0x3FF);
+            n = 2;
+        }
+        for (units[0..n]) |u| {
+            unit_count += 1;
+            if (pending) |lo| {
+                h1 = mixH1(h1, mixK1(lo | (u << 16)));
+                pending = null;
+            } else {
+                pending = u;
+            }
+        }
+    }
+    if (pending) |lo| h1 ^= mixK1(lo);
+    return fmix(h1, 2 *% unit_count);
+}
+
 /// Mix a precomputed collection hash with its element count.
 pub fn mixCollHash(hash_val: u32, count: u32) u32 {
     var h1 = SEED;
@@ -176,4 +210,16 @@ test "hashUnordered is order-independent" {
     const a = [_]u32{ hashInt(1), hashInt(2), hashInt(3) };
     const b = [_]u32{ hashInt(3), hashInt(1), hashInt(2) };
     try testing.expectEqual(hashUnordered(&a), hashUnordered(&b));
+}
+
+test "hashUnencodedChars matches JVM Murmur3 (clj oracle 2026-07-06)" {
+    // clj: (clojure.lang.Murmur3/hashUnencodedChars s) — UTF-16 code-unit
+    // hash, JVM bit-parity (D-376). Values incl. a surrogate-pair case (𠮷 =
+    // U+20BB7 → 2 UTF-16 units).
+    try testing.expectEqual(@as(i32, 1118836419), @as(i32, @bitCast(hashUnencodedChars("abc"))));
+    try testing.expectEqual(@as(i32, 1867108634), @as(i32, @bitCast(hashUnencodedChars("a"))));
+    try testing.expectEqual(@as(i32, 0), @as(i32, @bitCast(hashUnencodedChars(""))));
+    try testing.expectEqual(@as(i32, 1689409188), @as(i32, @bitCast(hashUnencodedChars("hello world"))));
+    try testing.expectEqual(@as(i32, 1524218000), @as(i32, @bitCast(hashUnencodedChars("あいう"))));
+    try testing.expectEqual(@as(i32, -383720716), @as(i32, @bitCast(hashUnencodedChars("𠮷野家"))));
 }

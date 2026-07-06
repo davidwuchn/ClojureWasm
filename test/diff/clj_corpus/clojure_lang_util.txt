@@ -22,3 +22,13 @@
 ;;=> true
 (clojure.lang.Util/hashCombine 7 13)
 ;;=> -1640531072
+(clojure.lang.Murmur3/hashUnencodedChars "abc")
+;;=> 1118836419
+(clojure.lang.Murmur3/hashUnencodedChars "")
+;;=> 0
+(clojure.lang.Murmur3/hashUnencodedChars "hello world")
+;;=> 1689409188
+(clojure.lang.Murmur3/hashUnencodedChars "あいう")
+;;=> 1524218000
+(clojure.lang.Murmur3/hashUnencodedChars "𠮷野家")
+;;=> -383720716
