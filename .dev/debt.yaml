@@ -214,8 +214,16 @@ active:
       `compare`, stable) / equals (element value equality, nil-safe) / fill.
       binarySearch / hashCode / typed-primitive overloads omitted until a real
       consumer (dead-interop lesson). Corpus: objects_static.txt +9 goldens
-      (clj-byte-matched). REMAINING: java.util.Collections statics + String
-      static char[] forms — next drains of this row.
+      (clj-byte-matched).
+      DRAIN 8 (2026-07-07): NEW surface java.util.Collections (runtime/java/
+      util/Collections.zig, keyword `collections_util`). emptyList /
+      singletonList (fresh MUTABLE ArrayList hosts — no unmodifiable wrapper
+      in cljw; faking the mutation-throw would lie, noted in the surface doc) /
+      sort + reverse (in-place on an ArrayList via the new pub
+      ArrayList.isArrayList/itemsOf accessors) / max + min (natural compare
+      over vector/array/ArrayList). unmodifiable*/shuffle/synchronized*
+      omitted until a real consumer. Corpus: objects_static.txt +6 goldens.
+      REMAINING: String static char[] forms — the last drain of this row.
     category: "interop"
     quality_floor: "public-ization: java-interop static-member gaps (ADR-0166)"
     barrier: |-

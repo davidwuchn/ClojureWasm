@@ -285,6 +285,19 @@ tiers:
           surface: runtime/java/util/Arrays.zig
         methods: [asList, toString, copyOf, sort, equals, fill]
         clojure_peer_vars: []
+      # java.util.Collections — common statics (D-526). emptyList/singletonList
+      # return MUTABLE ArrayList hosts (no unmodifiable wrapper in cljw —
+      # faking immutability would lie); sort/reverse are in-place on an
+      # ArrayList; max/min take vector/array/ArrayList.
+      - fqn: java.util.Collections
+        cljw_ns: cljw.java.util.Collections
+        keyword: collections_util
+        tier: A
+        phase: 14
+        files:
+          surface: runtime/java/util/Collections.zig
+        methods: [emptyList, singletonList, sort, reverse, max, min]
+        clojure_peer_vars: []
       # java.util.HashMap — mutable key→value map (D-425, host_instance backing a
       # cljw map Value; one map Value GC-traced via host_trace, reuses cljw
       # hashing/equality). seq yields cljw MapEntry pairs (AD-032).

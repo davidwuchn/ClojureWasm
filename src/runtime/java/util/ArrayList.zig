@@ -46,6 +46,20 @@ fn listOf(recv: Value) *ValueList {
     return @ptrFromInt(host_instance.asHostInstance(recv).state[0]);
 }
 
+/// Descriptor-identity check for a java.util.ArrayList host instance
+/// (the uriQ pattern — no cross-surface import needed by callers).
+pub fn isArrayList(v: Value) bool {
+    return v.tag() == .host_instance and al_descriptor != null and
+        host_instance.asHostInstance(v).descriptor == al_descriptor.?;
+}
+
+/// The mutable element slice of an ArrayList host instance — the
+/// java.util.Collections statics (sort/reverse, D-526) mutate through
+/// this. Caller must have verified `isArrayList`.
+pub fn itemsOf(recv: Value) []Value {
+    return listOf(recv).items;
+}
+
 /// Print hook (D-468): a java.util.ArrayList prints by content like clj
 /// (`[1 2]`). The backing is a raw `*std.ArrayList(Value)`, so rebuild a native
 /// vector from its elements for the printer.

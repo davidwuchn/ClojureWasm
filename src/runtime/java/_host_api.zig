@@ -120,6 +120,7 @@ const java_surfaces = [_]type{
     @import("util/UUID.zig"),
     @import("util/Objects.zig"),
     @import("util/Arrays.zig"),
+    @import("util/Collections.zig"),
     // Matcher's backing impl is shipped by Pattern's regex/match.zig.
     @import("util/regex/Matcher.zig"),
     @import("util/regex/Pattern.zig"),

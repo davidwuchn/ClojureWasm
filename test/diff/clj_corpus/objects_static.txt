@@ -60,3 +60,15 @@
 ;;=> false
 (let [a (to-array [1 2 3])] (java.util.Arrays/fill a :x) (vec a))
 ;;=> [:x :x :x]
+(vec (java.util.Collections/emptyList))
+;;=> []
+(vec (java.util.Collections/singletonList :x))
+;;=> [:x]
+(let [l (java.util.ArrayList. [3 1 2])] (java.util.Collections/sort l) (vec l))
+;;=> [1 2 3]
+(let [l (java.util.ArrayList. [1 2 3])] (java.util.Collections/reverse l) (vec l))
+;;=> [3 2 1]
+(java.util.Collections/max [3 1 2])
+;;=> 3
+(java.util.Collections/min ["b" "a" "c"])
+;;=> "a"
