@@ -47,4 +47,15 @@ EOF
 ) || true
 assert_eq 'character_codepoint_statics' "$got" '[98 [\a] 12356]'
 
-echo "OK — phase14_instaparse_substrate (3 cases) green"
+# count on a CharSequence deftype (instaparse's Segment; D-430): clj
+# RT.countFrom falls back to `instanceof CharSequence -> .length()` for a
+# non-collection CharSequence — cljw dispatches the CharSequence remap's
+# -cs-length. counted? stays false (Counted only), matching clj.
+got=$("$BIN" - <<'EOF' 2>/dev/null
+(deftype Seg [s] CharSequence (length [this] (count s)) (charAt [this i] (.charAt s i)) (subSequence [this a b] (subs s a b)))
+(prn [(count (Seg. "abc")) (counted? (Seg. "abc"))])
+EOF
+) || true
+assert_eq 'charsequence_count' "$got" '[3 false]'
+
+echo "OK — phase14_instaparse_substrate (4 cases) green"

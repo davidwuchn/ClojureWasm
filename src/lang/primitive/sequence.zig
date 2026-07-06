@@ -146,6 +146,15 @@ pub fn countFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation
                 // declared Counted but no -count body resolved → fall through to walk.
             }
             if (desc.isPersistentCollection()) break :blk try countBySeqWalk(rt, env, coll, loc);
+            // clj RT.countFrom: a non-collection CharSequence counts by
+            // .length() — instaparse's Segment deftype (D-430). The
+            // CharSequence remap registers `length` as -cs-length
+            // (host_interface.zig CHAR_SEQUENCE), so a null here means the
+            // type is not a CharSequence (or declared it method-less).
+            {
+                var cs: dispatch.CallSite = .{};
+                if (try dispatch.dispatchOrNull(rt, env, &cs, coll, "CharSequence", "-cs-length", args, loc)) |v| break :blk v;
+            }
             return error_catalog.raise(.protocol_no_satisfies, loc, .{
                 .protocol = IPC_FQCN,
                 .method = "-count",
