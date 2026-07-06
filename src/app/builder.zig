@@ -153,10 +153,13 @@ pub fn buildEnvelope(
     reader.file_name = source_label;
     while (true) {
         const form = (try reader.read()) orelse break;
-        // D-430: per-form analysis bracket (roots literals through eval).
+        // D-430/D-558: per-form analysis bracket. PERSIST (not drop): the
+        // compiled chunk's constants are serialized AFTER this loop ends, so
+        // a drop bracket left them unrooted and a build-time collect baked
+        // swept bytes into the blob (the D-558 corruption).
         var af: root_set.AnalysisFrame = undefined;
         root_set.beginAnalysis(&af, rt.gc.infra);
-        defer root_set.endAnalysis(&af);
+        defer root_set.endAnalysisPersist(&af, &rt.gc);
         const node = try analyzeForm(arena, rt, env, null, form, macro_table);
         const chunk = try vm_compiler.compile(rt, arena, node);
         try entry_chunks.append(allocator, chunk);
@@ -231,10 +234,11 @@ pub fn buildBootstrapEnvelope(
             // a bundled lib gives no location. Report file label + form index +
             // phase on the error path so a bootstrap trap is locatable (the
             // stdlib/contrib sweep campaign relies on this).
-            // D-430: per-form analysis bracket (roots literals through eval).
+            // D-430/D-558: per-form analysis bracket. PERSIST (not drop): the
+            // chunks serialize after the loop — see buildEnvelope's note.
             var af: root_set.AnalysisFrame = undefined;
             root_set.beginAnalysis(&af, rt.gc.infra);
-            defer root_set.endAnalysis(&af);
+            defer root_set.endAnalysisPersist(&af, &rt.gc);
             const node = analyzeForm(arena, rt, env, null, form, macro_table) catch |err| {
                 const msg = if (error_info.peekLastError()) |info| info.message else "";
                 std.debug.print("\n[AOT-FAIL] analyze: {s} form #{d}: {s}: {s}\n", .{ file.label, form_idx, @errorName(err), msg });
@@ -300,7 +304,7 @@ pub fn buildMainEnvelope(
     // D-430: analysis bracket (roots literals through eval).
     var af: root_set.AnalysisFrame = undefined;
     root_set.beginAnalysis(&af, rt.gc.infra);
-    defer root_set.endAnalysis(&af);
+    defer root_set.endAnalysisPersist(&af, &rt.gc);
     const node = try analyzeForm(arena, rt, env, null, form, macro_table);
     _ = try driver.evalForm(rt, env, &locals, arena, node);
 
@@ -458,7 +462,7 @@ pub fn tryRunEmbedded(io: std.Io, gpa: std.mem.Allocator, arena: std.mem.Allocat
             // D-430: per-form analysis bracket (roots literals through eval).
             var af: root_set.AnalysisFrame = undefined;
             root_set.beginAnalysis(&af, rt.gc.infra);
-            defer root_set.endAnalysis(&af);
+            defer root_set.endAnalysisPersist(&af, &rt.gc);
             const node = try analyzeForm(arena, &rt, &env, null, form, &macro_table);
             _ = try driver.evalForm(&rt, &env, &locals, arena, node);
         }
