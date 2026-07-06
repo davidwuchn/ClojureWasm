@@ -10,3 +10,5 @@
 ;;=> "\"abc\""
 (binding [*print-readably* false] (pr-str {:a "v"}))
 ;;=> "{:a v}"
+(binding [*print-readably* true] (with-out-str (print ["s"])))
+;;=> "[s]"

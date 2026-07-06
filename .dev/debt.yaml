@@ -520,47 +520,6 @@ active:
     barrier: |-
       CLAUDE.md size growth (511 lines vs ~100 soft cap; per-session context cost). Identified by Phase 4 boundary audit_scaffolding (private/audit-2026-05-24.md). Trim narrative duplicates with `.dev/principle.md` / continue skill / rules; § Autonomous Workflow's prose duplicates the per-turn system prompt. ROADMAP.md size (1957 vs 1500 cap) is a sibling concern; both trimmed opportunistically in a scaffolding-audit cycle (phase-queue retired, ADR-0142). Acceptable risk to defer (no functional impact, only cost).
     last_reviewed: "2026-05-24"
-  - id: "D-222"
-    status: "now (PARTIAL: *print-length*/*print-level*/*print-namespace-maps*/*print-readably*/*print-meta* landed bindable via ADR-0088 2026-06-04; infinite-seq+*print-length* now TERMINATES; residual = readably true-shadow-around-print edge + *print-dup*/*flush-on-newline*)"
-    category: "runtime"
-    barrier: |-
-      **cljw's print flags were Zig threadlocals, not bindable `^:dynamic`
-      Clojure vars.** ADR-0088 (2026-06-04) proved the missing infra — the print
-      surface derefs a cached `*const Var` (the user's current binding) once at
-      entry and snapshots it into the render threadlocal — and used it to land
-      `*print-length*` + `*print-level*` as real bindable `^:dynamic` vars (def
-      nil = unlimited; truncation + `#`/`...` markers per clj). Residual:
-      (a) **`*print-namespace-maps*` (D-219) AND `*print-readably*` (D-185) landed
-      bindable 2026-06-04.** nsmaps via an always-on snapshot; readably via an
-      OVERRIDE-IF-THREAD-BOUND snapshot (the pr/print surface still owns it by
-      default, but an explicit `(binding [*print-readably* …] …)` wins) — corpus
-      print_readably / print_control. Narrow residual: clj models `print` as
-      `(binding [*print-readably* nil] (pr …))`, so a user `(binding
-      [*print-readably* true] (print [nested-str]))` is SHADOWED by print to raw in
-      clj, whereas cljw's override respects the user's true → quoted. cljw does not
-      push a print-mode nil-frame (that is hot-path rework for a pathological case
-      — binding readably true around print is pointless). Discharge: rewrite the
-      pr/print surface to push a real `*print-readably*` frame. LOW value.
-      (b) **infinite-lazy-seq + `*print-length*` — FIXED 2026-06-04**:
-      `realizeSeqWalk` now bounds realization to `*print-length*`+1 items, so
-      `(binding [*print-length* 3] (prn (iterate inc 0)))` → "(0 1 2 ...)" and
-      RETURNS (corpus print_length_lazy, 10 — incl. iterate/repeat/range/cycle/
-      map-over-range + nested `[(range) (range)]`). NOT a residual: `*print-level*`
-      ALONE on a FLAT infinite seq (no `*print-length*`) still does not terminate,
-      but clj-VERIFIED this is PARITY — clj also hangs (`(binding [*print-level* 2]
-      (prn (iterate inc 0)))` prints "(0 1 2 3 …" forever in both), because a flat
-      seq's scalar elements never hit the level limit. Only infinite-DEPTH (a
-      self-nesting collection) would let level bound it — pathological / not
-      constructible from a literal, so out of scope. (c) sibling vars `*print-dup*` (no cljw
-      print-dup path — moot) / `*flush-on-newline*` unimplemented (`*print-meta*`
-      LANDED 2026-06-04). A no-op var is the silent-default-shift
-      smell (forbidden), so unimplemented ones stay unresolved, not stubbed.
-      ADR-0088 also recorded a `PrintCtx`-revisit note: if Phase 15 introduces
-      concurrent or eval-during printing, revisit the value-threaded ctx the DA
-      fork recommended. clj-grounded; LOW-MEDIUM value. Cross-ref ADR-0088 / D-185
-      / D-219 / D-164 / F-011. recall trigger: when print-control binding / the
-      lazy-seq-length hang is taken up.
-    last_reviewed: "2026-06-04"
   - id: "D-240"
     status: "investigated 2026-06-15 (Step 0); fix DIRECTION confirmed, deferred on an eval_budget interaction + LOW value (working fallback). Only blocks static-field DIFF cases — the analyze/CLI/e2e/corpus paths already cover them."
     category: "tests"
@@ -6570,6 +6529,12 @@ discharged:
     status: "DISCHARGED 2026-07-06 (easiest-first drain; the 2026-06-25 no-perpetual-defer decision overrides the old take-up-on-consumer barrier). The str-vs-pr split for exceptions landed: writeStrValue gained an .ex_info arm — `(str ex)` / `(.toString ex)` render the readable Throwable.toString one-liner `<class>: <message>` (AD-003 simple name; clj prints the FQCN), and a REAL ex-info appends the data map matching clj ExceptionInfo.toString (`ExceptionInfo: boom {:a 1}`); empty message omits the colon. pr/pr-str/prn AND print/println keep the `#error{…}` data literal — clj-verified that println/print of a Throwable emit the data form too (print-method Throwable), so print/println were deliberately NOT rerouted (writeArgsSpaced's printValue path untouched; no new divergence). e2e phase14_exception_ctor str_exc/tostr_exc/str_iae/str_exinfo/prstr_exinfo/prstr_exc. Corpus infeasible (the one-liner's class prefix is the AD-003 simple-name divergence). The data-shape-key layer (Throwable->map :cause/:via/:trace) remains OUT of this row's scope — file a new row if a lib consumer surfaces."
     category: "clj-parity"
     barrier: "DISCHARGED (was: str/pr conflation for error values)."
+    last_reviewed: "2026-07-06"
+
+  - id: "D-222"
+    status: "DISCHARGED 2026-07-06 — ALL residuals closed (the ADR-0088 bindable-print-vars arc complete). (a) readably-shadow-around-print FIXED: print/println's internal readably choice is now INNERMOST via a print_readably_surface_owned threadlocal consulted by snapshotPrintLimits (clj models print as `(binding [*print-readably* nil] (pr …))` — a user's outer `(binding [*print-readably* true] (print [nested-str]))` is shadowed to raw, matching clj; pr still respects the user binding both directions; zero per-print frame alloc). (b) infinite-seq + *print-length* termination landed 2026-06-04. (c) *print-dup* interned root false — a TRUE binding FAIL-LOUDS (print_dup_not_supported: clj emits JVM #=(class/create …) ctor forms cljw cannot represent, ADR-0059; never a silent normal-form print); *flush-on-newline* interned root true — text_io flushes per call so the true contract always holds and a false binding permits (not requires) buffering (no Zig consumer BY DESIGN, documented at the intern site — not a no-op lie). Both in the ADR-0096 baseline frame (top-level set! works). e2e phase14_print_control (14 cases incl. print_shadows_readably + dup_true_raises); corpus print_control +4 clj-byte-matched goldens. Bindable landed earlier: *print-length*/*print-level*/*print-namespace-maps*/*print-readably*/*print-meta* (ADR-0088 2026-06-04). ADR-0088's PrintCtx-revisit note (concurrent/eval-during printing) stays with ADR-0088."
+    category: "runtime"
+    barrier: "DISCHARGED (was: print-control dynamic vars)."
     last_reviewed: "2026-07-06"
 
 conventions: |-

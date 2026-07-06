@@ -48,4 +48,11 @@ case "$dup_true_out" in
   *) fail "dup_true_raises: got '$dup_true_out'" ;;
 esac
 
-echo "OK — phase14_print_control smoke (12 cases) green"
+# print's internal readably=nil binding is INNERMOST, so it shadows a user's
+# outer `(binding [*print-readably* true] …)` — clj models print as
+# `(binding [*print-readably* nil] (pr …))` (D-222 residual a). pr (no
+# internal binding) still respects the user's binding in both directions.
+assert_eq 'print_shadows_readably' "$("$BIN" -e '(binding [*print-readably* true] (with-out-str (print ["s"])))')" '"[s]"'
+assert_eq 'pr_respects_readably'   "$("$BIN" -e '(binding [*print-readably* false] (pr-str ["s"]))')" '"[s]"'
+
+echo "OK — phase14_print_control smoke (14 cases) green"

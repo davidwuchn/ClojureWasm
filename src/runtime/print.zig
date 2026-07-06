@@ -571,6 +571,14 @@ pub fn printCharReadable(w: *Writer, cp: u21) anyerror!void {
 /// `str`-collections keep the default.
 pub threadlocal var print_readably: bool = true;
 
+/// While `print`/`println` render, their internal readably choice is
+/// INNERMOST (clj: print = `(binding [*print-readably* nil] (pr …))`), so
+/// `snapshotPrintLimits` must NOT let a user's outer thread binding override
+/// it (D-222 residual a). Set/restored by `writeArgsSpaced` alongside
+/// `print_readably`; false (default) keeps the user-binding override live
+/// for pr/prn/result prints.
+pub threadlocal var print_readably_surface_owned: bool = false;
+
 /// A callable value's qualified identity for printing (ADR-0121 / D-328). Both
 /// fields are borrowed (analyzer-arena / interned), read only for immediate
 /// formatting — no lifetime crosses the accessor boundary.
@@ -805,9 +813,15 @@ fn snapshotPrintLimits() void {
     // *print-readably* (D-222 a): override the surface-set flag ONLY when the
     // user explicitly thread-bound the var (findBinding non-null) — otherwise the
     // pr/print surface owns it. nil/false → raw (un-readable) rendering.
-    if (print_readably_var) |v| {
-        if (env_mod.findBinding(v)) |bv| {
-            print_readably = !(bv.isNil() or (bv.tag() == .boolean and !bv.asBoolean()));
+    // EXCEPT while `print`/`println` render: clj models print as
+    // `(binding [*print-readably* nil] (pr …))`, so print's internal binding
+    // is INNERMOST and shadows any outer user binding — the surface-owned
+    // flag reproduces that precedence without a per-print frame push.
+    if (!print_readably_surface_owned) {
+        if (print_readably_var) |v| {
+            if (env_mod.findBinding(v)) |bv| {
+                print_readably = !(bv.isNil() or (bv.tag() == .boolean and !bv.asBoolean()));
+            }
         }
     }
     // *print-meta* (default false): truthy → prefix metadata-bearing values.

@@ -722,6 +722,11 @@ fn writeArgsSpaced(rt: *Runtime, env: *Env, w: *std.Io.Writer, args: []const Val
     const saved_readably = print_mod.print_readably;
     print_mod.print_readably = readable;
     defer print_mod.print_readably = saved_readably;
+    // print/println's readably choice is innermost (shadows a user binding —
+    // D-222 a); pr keeps the user-binding override live.
+    const saved_owned = print_mod.print_readably_surface_owned;
+    print_mod.print_readably_surface_owned = !readable;
+    defer print_mod.print_readably_surface_owned = saved_owned;
     for (args, 0..) |arg, i| {
         if (i > 0) try w.writeByte(' ');
         if (!readable and arg.tag() == .string) {
