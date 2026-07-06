@@ -1125,7 +1125,9 @@ inline fn stepOnce(
                     rt.gpa.destroy(frame);
                     var name_buf: [512]u8 = undefined;
                     const qualified = std.fmt.bufPrint(&name_buf, "{s}/{s}", .{ var_ptr.ns.name, var_ptr.name }) catch var_ptr.name;
-                    return error_catalog.raise(.binding_target_not_dynamic, .{}, .{ .@"var" = qualified });
+                    // D-555: carry the instruction's compiled loc so the caret
+                    // renderer fires (tree_walk parity; was a bare `.{}`).
+                    return error_catalog.raise(.binding_target_not_dynamic, instr_loc, .{ .@"var" = qualified });
                 }
                 frame.bindings.put(rt.gpa, var_ptr, val) catch {
                     frame.bindings.deinit(rt.gpa);
@@ -1256,7 +1258,8 @@ inline fn stepOnce(
             const ns_name = string_mod.asString(name_val);
             // ADR-0163 D-516: one load path (loaded_libs-keyed + bytecode-region
             // lazy load), not the mappings.count proxy + source-only inline copy.
-            _ = try loader.loadOrFindNs(rt, env, ns_name, .{});
+            // D-555: instr_loc so a lib_not_found renders the caret (tree_walk parity).
+            _ = try loader.loadOrFindNs(rt, env, ns_name, instr_loc);
             if (sp >= stack.len)
                 return raiseInternal("vm: operand stack overflow");
             stack[sp] = Value.nil_val;
@@ -1273,7 +1276,8 @@ inline fn stepOnce(
             const spec = chunk.libspecs[instr.operand];
             // ADR-0163 D-516: one load path (loaded_libs-keyed + bytecode-region
             // lazy load), not the mappings.count proxy + source-only inline copy.
-            const target_ns = try loader.loadOrFindNs(rt, env, spec.ns_name, .{});
+            // D-555: instr_loc so a lib_not_found renders the caret (tree_walk parity).
+            const target_ns = try loader.loadOrFindNs(rt, env, spec.ns_name, instr_loc);
             const here = env.current_ns orelse
                 return error_catalog.raise(.current_namespace_missing, .{}, .{ .sym = spec.ns_name });
             if (spec.alias) |alias_name| {

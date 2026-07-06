@@ -38,8 +38,15 @@ echo "[ci_gate] (1/2) zig fmt --check src/"
 zig fmt --check src/
 
 if [ "${CLJW_CI_FULL:-0}" = "1" ]; then
-    echo "[ci_gate] (2/2) FULL gate: test/run_all.sh --serial-e2e"
+    echo "[ci_gate] (2/3) FULL gate: test/run_all.sh --serial-e2e"
     bash test/run_all.sh --serial-e2e
+    # D-555: the NON-default-backend sweep — corpus + every e2e on the
+    # tree_walk (F-012 oracle) build, so an oracle-only regression (GC
+    # rooting, backend-divergent eval defects) cannot hide behind the
+    # vm-default gate. Nightly/dispatch-only: it rebuilds the binary twice
+    # (tree_walk, then the default restore) — too heavy per-push.
+    echo "[ci_gate] (3/3) non-default-backend sweep: scripts/check_vm_parity.sh"
+    bash scripts/check_vm_parity.sh
 else
     echo "[ci_gate] (2/2) fast CORE: test/run_all.sh --smoke"
     bash test/run_all.sh --smoke

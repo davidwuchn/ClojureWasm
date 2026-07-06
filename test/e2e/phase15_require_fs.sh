@@ -19,7 +19,9 @@ assert_eq 'env-path' "$(CLJW_PATH="$CP" "$BIN" -e '(require (quote [demo.math :a
 # capstone: a disk test-ns (requires clojure.test + demo.math) + run its suite
 assert_eq 'run-suite' "$("$BIN" -cp "$CP" -e '(require (quote demo.math-test)) (let [s (clojure.test/run-tests (quote demo.math-test))] [(:pass s) (:fail s)])' 2>&1 | tail -1)" '[4 0]'
 # missing lib -> lib_not_found
-assert_eq 'missing'  "$("$BIN" -cp "$CP" -e '(require (quote no.such.lib))' 2>&1 | grep -c 'Could not locate')" '1'
+# 2 occurrences: message line + the source-window caret (print.zig's
+# intended form; D-555 restored the vm's loc fidelity on op_require).
+assert_eq 'missing'  "$("$BIN" -cp "$CP" -e '(require (quote no.such.lib))' 2>&1 | grep -c 'Could not locate')" '2'
 # embedded clojure.string NOT shadowed by a stray on-disk file
 SHADOW="$(mktemp -d)"; mkdir -p "$SHADOW/clojure"; printf '(ns clojure.string) (def upper-case :HIJACKED)\n' > "$SHADOW/clojure/string.clj"
 assert_eq 'no-shadow' "$("$BIN" -cp "$SHADOW" -e '(clojure.string/upper-case "hi")' 2>&1 | tail -1)" '"HI"'
@@ -28,7 +30,8 @@ rm -rf "$SHADOW"
 CYC="$(mktemp -d)"; mkdir -p "$CYC/cyc"
 printf '(ns cyc.a (:require [cyc.b]))\n' > "$CYC/cyc/a.clj"
 printf '(ns cyc.b (:require [cyc.a]))\n' > "$CYC/cyc/b.clj"
-assert_eq 'cycle' "$("$BIN" -cp "$CYC" -e '(require (quote cyc.a))' 2>&1 | grep -c 'Cyclic load dependency')" '1'
+# 2 occurrences: message + caret (same D-555 loc-fidelity form as 'missing').
+assert_eq 'cycle' "$("$BIN" -cp "$CYC" -e '(require (quote cyc.a))' 2>&1 | grep -c 'Cyclic load dependency')" '2'
 rm -rf "$CYC"
 
 echo "OK — phase15_require_fs (6 cases) green"

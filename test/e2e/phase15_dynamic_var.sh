@@ -14,8 +14,10 @@ assert_eq 'bind'    "$("$BIN" -e '(do (def ^:dynamic *x* 1) (binding [*x* 2] *x*
 assert_eq 'restore' "$("$BIN" -e '(do (def ^:dynamic *x* 1) [(binding [*x* 2] *x*) *x*])' 2>&1 | tail -1)" '[2 1]'
 assert_eq 'nested'  "$("$BIN" -e '(do (def ^:dynamic *y* 10) (binding [*y* 20] (binding [*y* 30] *y*)))' 2>&1 | tail -1)" '30'
 assert_eq 'fn-sees' "$("$BIN" -e '(do (def ^:dynamic *a* :root) (defn pa [] *a*) [(binding [*a* :inner] (pa)) (pa)])' 2>&1 | tail -1)" '[:inner :root]'
-# non-dynamic var still rejects binding (the guard still fires)
-assert_eq 'guard'   "$("$BIN" -e '(do (def plain 1) (binding [plain 2] plain))' 2>&1 | grep -c 'non-dynamic')" '1'
+# non-dynamic var still rejects binding (the guard still fires). Expect 2
+# occurrences: the message line + the source-window caret repeats it
+# (print.zig's intended form; D-555 restored the vm's loc fidelity here).
+assert_eq 'guard'   "$("$BIN" -e '(do (def plain 1) (binding [plain 2] plain))' 2>&1 | grep -c 'non-dynamic')" '2'
 
 # --- standard core version / flag vars (cljw targets the 1.12 surface) ---
 assert_eq 'cv_minor'  "$("$BIN" -e '(:minor *clojure-version*)' 2>&1 | tail -1)"      '12'
