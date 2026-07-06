@@ -648,13 +648,152 @@ pub fn keysSubsetOf(a: Value, b: Value) bool {
 // marks hash-buckets holding a KV pair, `node_map` marks buckets holding
 // a child — they are disjoint, so 2*popcount(data_map)+popcount(node_map)
 // <= 64 always. shift advances 5 bits/level (0,5,…,30). A full 32-bit
-// hash collision (depth exhausted past shift 30) raises
-// `error.HashCollision` (a transient stub; cycle C lands a collision
-// bucket — D-155). keys/vals/seq/dissoc on `.hash_map` still raise
-// (cycle B).
+// hash collision (depth exhausted past shift 30) lands in a
+// `.hash_collision_map_node` linear bucket (cycle C, D-155 — see the
+// collision-bucket section below).
 
 const HAMT_SHIFT_STEP: u32 = 5;
 const HAMT_MAX_SHIFT: u32 = 30;
+
+// --- collision bucket (D-155 cycle C) ---
+//
+// Two distinct keys sharing one full 32-bit `equal.valueHash` exhaust the
+// trie depth (shift > 30) and land in a `.hash_collision_map_node` bucket —
+// clj's HashCollisionNode. The bucket REUSES the HamtMapNode struct with a
+// layout the generic walkers already understand: pairs front-loaded at
+// slots[2i], 2i+1 with `data_map = (1 << n) - 1` (a low-bits mask, so
+// popcount = pair count), and — when more than BUCKET_MAX_PAIRS keys share
+// one hash — `node_map = 1` with slots[63] chaining to an overflow bucket.
+// keys/vals/seq/foldHash/subset/forEachEntry/trace therefore walk buckets
+// with NO collision-specific code; only get/contains/assoc/dissoc branch on
+// the child slot's tag (a bucket linear-scans by keyEq instead of
+// bit-descending). Invariant: a bucket only ever appears as a child at
+// shift 35 (createTwoNode is its sole creator), and every key that descends
+// to it shares its full 32-bit hash, so bucket ops never re-derive hashes.
+const BUCKET_MAX_PAIRS: u32 = 31;
+
+/// Encode a trie node preserving its own heap tag (`.hamt_map_node` or
+/// `.hash_collision_map_node`) — the child re-encode sites cannot hardcode
+/// the tag once buckets exist.
+fn nodeValue(n: *HamtMapNode) Value {
+    return Value.encodeHeapPtr(@enumFromInt(n.header.tag), n);
+}
+
+/// Fresh 2-pair collision bucket (the shift-exhaustion replacement for
+/// `error.HashCollision`).
+fn createCollisionNode(rt: *Runtime, k1: Value, v1: Value, k2: Value, v2: Value) !*HamtMapNode {
+    const node = try rt.gc.alloc(HamtMapNode);
+    node.* = .{
+        .header = HeapHeader.init(.hash_collision_map_node),
+        .data_map = 0b11,
+        .node_map = 0,
+        .slots = @splat(Value.nil_val),
+    };
+    node.slots[0] = k1;
+    node.slots[1] = v1;
+    node.slots[2] = k2;
+    node.slots[3] = v2;
+    return node;
+}
+
+fn bucketGet(node: *const HamtMapNode, key: Value) !Value {
+    const n: u32 = @popCount(node.data_map);
+    var i: u32 = 0;
+    while (i < n) : (i += 1) {
+        if (try keyEq(node.slots[2 * i], key)) return node.slots[2 * i + 1];
+    }
+    if (node.node_map != 0) return bucketGet(node.slots[63].decodePtr(*const HamtMapNode), key);
+    return Value.nil_val;
+}
+
+fn bucketContains(node: *const HamtMapNode, key: Value) !bool {
+    const n: u32 = @popCount(node.data_map);
+    var i: u32 = 0;
+    while (i < n) : (i += 1) {
+        if (try keyEq(node.slots[2 * i], key)) return true;
+    }
+    if (node.node_map != 0) return bucketContains(node.slots[63].decodePtr(*const HamtMapNode), key);
+    return false;
+}
+
+fn bucketAssoc(rt: *Runtime, node: *const HamtMapNode, key: Value, val: Value) !HamtAssocResult {
+    const n: u32 = @popCount(node.data_map);
+    var i: u32 = 0;
+    while (i < n) : (i += 1) {
+        if (try keyEq(node.slots[2 * i], key)) {
+            const new = try copyHamtNode(rt, node);
+            new.slots[2 * i + 1] = val;
+            return .{ .node = new, .added = false };
+        }
+    }
+    if (node.node_map != 0) {
+        // own pairs are full (that is the only way a chain exists) — the
+        // new/replaced pair lives somewhere down the chain.
+        const res = try bucketAssoc(rt, node.slots[63].decodePtr(*const HamtMapNode), key, val);
+        const new = try copyHamtNode(rt, node);
+        new.slots[63] = nodeValue(res.node);
+        return .{ .node = new, .added = res.added };
+    }
+    if (n < BUCKET_MAX_PAIRS) {
+        const new = try copyHamtNode(rt, node);
+        new.data_map = (node.data_map << 1) | 1; // (1 << (n+1)) - 1
+        new.slots[2 * n] = key;
+        new.slots[2 * n + 1] = val;
+        return .{ .node = new, .added = true };
+    }
+    // 31 own pairs and no chain yet — start the overflow chain.
+    const chain = try rt.gc.alloc(HamtMapNode);
+    chain.* = .{
+        .header = HeapHeader.init(.hash_collision_map_node),
+        .data_map = 0b1,
+        .node_map = 0,
+        .slots = @splat(Value.nil_val),
+    };
+    chain.slots[0] = key;
+    chain.slots[1] = val;
+    const new = try copyHamtNode(rt, node);
+    new.node_map = 1;
+    new.slots[63] = Value.encodeHeapPtr(.hash_collision_map_node, chain);
+    return .{ .node = new, .added = true };
+}
+
+fn bucketDissoc(rt: *Runtime, node: *const HamtMapNode, key: Value) !HamtDissocResult {
+    const n: u32 = @popCount(node.data_map);
+    var i: u32 = 0;
+    while (i < n) : (i += 1) {
+        if (try keyEq(node.slots[2 * i], key)) {
+            if (n == 1) {
+                // last own pair going away: the chain (if any) IS the bucket
+                // now (shared substructure — persistent, no copy needed).
+                if (node.node_map != 0) return .{ .node = node.slots[63].decodePtr(*HamtMapNode), .found = true };
+                return .{ .node = null, .found = true };
+            }
+            const new = try copyHamtNode(rt, node);
+            new.data_map = node.data_map >> 1; // one fewer low bit
+            var j = i;
+            while (j + 1 < n) : (j += 1) {
+                new.slots[2 * j] = node.slots[2 * (j + 1)];
+                new.slots[2 * j + 1] = node.slots[2 * (j + 1) + 1];
+            }
+            new.slots[2 * (n - 1)] = Value.nil_val;
+            new.slots[2 * (n - 1) + 1] = Value.nil_val;
+            return .{ .node = new, .found = true };
+        }
+    }
+    if (node.node_map != 0) {
+        const res = try bucketDissoc(rt, node.slots[63].decodePtr(*const HamtMapNode), key);
+        if (!res.found) return .{ .node = null, .found = false };
+        const new = try copyHamtNode(rt, node);
+        if (res.node) |nc| {
+            new.slots[63] = nodeValue(nc);
+        } else {
+            new.node_map = 0;
+            new.slots[63] = Value.nil_val;
+        }
+        return .{ .node = new, .found = true };
+    }
+    return .{ .node = null, .found = false };
+}
 
 inline fn hamtBit(hash_val: u32, shift: u32) u32 {
     const idx: u5 = @intCast((hash_val >> @intCast(shift)) & 0x1F);
@@ -670,7 +809,8 @@ inline fn sparseIndex(bitmap: u32, bit: u32) u32 {
 fn copyHamtNode(rt: *Runtime, node: *const HamtMapNode) !*HamtMapNode {
     const new = try rt.gc.alloc(HamtMapNode);
     new.* = .{
-        .header = HeapHeader.init(.hamt_map_node),
+        // Preserve the source tag — a collision bucket copy stays a bucket.
+        .header = HeapHeader.init(@enumFromInt(node.header.tag)),
         .data_map = node.data_map,
         .node_map = node.node_map,
         .slots = node.slots,
@@ -679,8 +819,8 @@ fn copyHamtNode(rt: *Runtime, node: *const HamtMapNode) !*HamtMapNode {
 }
 
 /// Build a node holding two distinct keys (assoc push-down + promotion
-/// when two keys share a bucket). Raises `error.HashCollision` on a full
-/// 32-bit hash match (cycle C replaces with a collision bucket).
+/// when two keys share a bucket). A full 32-bit hash match becomes a
+/// collision bucket (D-155 cycle C).
 fn createTwoNode(
     rt: *Runtime,
     k1: Value,
@@ -691,7 +831,9 @@ fn createTwoNode(
     h2: u32,
     shift: u32,
 ) !*HamtMapNode {
-    if (shift > HAMT_MAX_SHIFT) return error.HashCollision;
+    // Full 32-bit hash match (h1 == h2 past the last 5-bit level): the keys
+    // are distinct-but-colliding — bucket them (D-155 cycle C).
+    if (shift > HAMT_MAX_SHIFT) return createCollisionNode(rt, k1, v1, k2, v2);
     const bit1 = hamtBit(h1, shift);
     const bit2 = hamtBit(h2, shift);
     const node = try rt.gc.alloc(HamtMapNode);
@@ -704,7 +846,7 @@ fn createTwoNode(
             .node_map = bit1,
             .slots = @splat(Value.nil_val),
         };
-        node.slots[63] = Value.encodeHeapPtr(.hamt_map_node, sub);
+        node.slots[63] = nodeValue(sub);
     } else {
         node.* = .{
             .header = HeapHeader.init(.hamt_map_node),
@@ -731,8 +873,10 @@ fn hamtGet(node: *const HamtMapNode, key: Value, hash_val: u32, shift: u32) !Val
     }
     if (node.node_map & bit != 0) {
         const ni = sparseIndex(node.node_map, bit);
-        const child = node.slots[63 - ni].decodePtr(*const HamtMapNode);
-        return hamtGet(child, key, hash_val, shift + HAMT_SHIFT_STEP);
+        const child_slot = node.slots[63 - ni];
+        if (child_slot.tag() == .hash_collision_map_node)
+            return bucketGet(child_slot.decodePtr(*const HamtMapNode), key);
+        return hamtGet(child_slot.decodePtr(*const HamtMapNode), key, hash_val, shift + HAMT_SHIFT_STEP);
     }
     return Value.nil_val;
 }
@@ -745,8 +889,10 @@ fn hamtContains(node: *const HamtMapNode, key: Value, hash_val: u32, shift: u32)
     }
     if (node.node_map & bit != 0) {
         const ni = sparseIndex(node.node_map, bit);
-        const child = node.slots[63 - ni].decodePtr(*const HamtMapNode);
-        return hamtContains(child, key, hash_val, shift + HAMT_SHIFT_STEP);
+        const child_slot = node.slots[63 - ni];
+        if (child_slot.tag() == .hash_collision_map_node)
+            return bucketContains(child_slot.decodePtr(*const HamtMapNode), key);
+        return hamtContains(child_slot.decodePtr(*const HamtMapNode), key, hash_val, shift + HAMT_SHIFT_STEP);
     }
     return false;
 }
@@ -778,10 +924,14 @@ fn hamtAssoc(
     }
     if (node.node_map & bit != 0) {
         const ni = sparseIndex(node.node_map, bit);
-        const child = node.slots[63 - ni].decodePtr(*const HamtMapNode);
-        const res = try hamtAssoc(rt, child, key, val, hash_val, shift + HAMT_SHIFT_STEP);
+        const child_slot = node.slots[63 - ni];
+        const child = child_slot.decodePtr(*const HamtMapNode);
+        const res = if (child_slot.tag() == .hash_collision_map_node)
+            try bucketAssoc(rt, child, key, val)
+        else
+            try hamtAssoc(rt, child, key, val, hash_val, shift + HAMT_SHIFT_STEP);
         const new = try copyHamtNode(rt, node);
-        new.slots[63 - ni] = Value.encodeHeapPtr(.hamt_map_node, res.node);
+        new.slots[63 - ni] = nodeValue(res.node);
         return .{ .node = new, .added = res.added };
     }
     // empty bucket — insert a fresh data entry, shifting later pairs right
@@ -834,7 +984,7 @@ fn pushDownDataToNode(rt: *Runtime, node: *const HamtMapNode, bit: u32, di: u32,
     while (j < ni) : (j += 1) {
         new.slots[63 - j] = node.slots[63 - j];
     }
-    new.slots[63 - ni] = Value.encodeHeapPtr(.hamt_map_node, sub);
+    new.slots[63 - ni] = nodeValue(sub);
     j = ni;
     while (j < old_n) : (j += 1) {
         new.slots[63 - (j + 1)] = node.slots[63 - j];
@@ -955,12 +1105,16 @@ fn hamtDissoc(rt: *Runtime, node: *const HamtMapNode, key: Value, hash_val: u32,
     }
     if (node.node_map & bit != 0) {
         const ni = sparseIndex(node.node_map, bit);
-        const child = node.slots[63 - ni].decodePtr(*const HamtMapNode);
-        const res = try hamtDissoc(rt, child, key, hash_val, shift + HAMT_SHIFT_STEP);
+        const child_slot = node.slots[63 - ni];
+        const child = child_slot.decodePtr(*const HamtMapNode);
+        const res = if (child_slot.tag() == .hash_collision_map_node)
+            try bucketDissoc(rt, child, key)
+        else
+            try hamtDissoc(rt, child, key, hash_val, shift + HAMT_SHIFT_STEP);
         if (!res.found) return .{ .node = null, .found = false };
         if (res.node) |new_child| {
             const new = try copyHamtNode(rt, node);
-            new.slots[63 - ni] = Value.encodeHeapPtr(.hamt_map_node, new_child);
+            new.slots[63 - ni] = nodeValue(new_child);
             return .{ .node = new, .found = true };
         }
         // child emptied — drop the node entry
@@ -1435,4 +1589,109 @@ test "HAMT dissoc: remove half of 60 keys, survivors intact, count tracks (no le
     try testing.expectEqual(@as(u32, N / 2), list_mod.countOf(try keys(&fix.rt, m)));
     try testing.expectEqual(@as(u32, N / 2), list_mod.countOf(try vals(&fix.rt, m)));
     try testing.expectEqual(@as(u32, N / 2), list_mod.countOf(try seq(&fix.rt, m)));
+}
+
+// hashLong-colliding i48 pairs, brute-forced 2026-07-06 (D-155). Each pair is
+// two DISTINCT integers with one 32-bit valueHash — the tests assert the
+// collision still holds so a future hashLong change re-derives new pairs
+// instead of silently testing the non-collision path.
+const COLLIDE_A1: i48 = 99387577075583;
+const COLLIDE_B1: i48 = 133060659732565;
+const COLLIDE_A2: i48 = -27661886147831;
+const COLLIDE_B2: i48 = 123535269098939;
+
+test "HAMT full-hash collision: colliding keys coexist, replace, dissoc (D-155 bucket)" {
+    var fix = RuntimeFixture.init();
+    defer fix.deinit();
+
+    const ka = Value.initInteger(COLLIDE_A1);
+    const kb = Value.initInteger(COLLIDE_B1);
+    try testing.expect(equal.valueHash(ka) == equal.valueHash(kb));
+    try testing.expect(!try keyEq(ka, kb));
+
+    // 9 filler keys promote to .hash_map, then both colliding keys go in.
+    var m = empty();
+    var i: i48 = 0;
+    while (i < 9) : (i += 1) m = try assoc(&fix.rt, m, Value.initInteger(i), Value.initInteger(i));
+    m = try assoc(&fix.rt, m, ka, Value.initInteger(-100));
+    m = try assoc(&fix.rt, m, kb, Value.initInteger(-200));
+    try testing.expectEqual(@as(u32, 11), count(m));
+    try testing.expectEqual(@as(i48, -100), (try get(m, ka)).asInteger());
+    try testing.expectEqual(@as(i48, -200), (try get(m, kb)).asInteger());
+    try testing.expect(try contains(m, ka));
+    try testing.expect(try contains(m, kb));
+
+    // replace inside the bucket — count unchanged
+    m = try assoc(&fix.rt, m, ka, Value.initInteger(-101));
+    try testing.expectEqual(@as(u32, 11), count(m));
+    try testing.expectEqual(@as(i48, -101), (try get(m, ka)).asInteger());
+    try testing.expectEqual(@as(i48, -200), (try get(m, kb)).asInteger());
+
+    // walkers see both colliding entries
+    try testing.expectEqual(@as(u32, 11), list_mod.countOf(try keys(&fix.rt, m)));
+    try testing.expectEqual(@as(u32, 11), list_mod.countOf(try seq(&fix.rt, m)));
+
+    // dissoc one of the pair — the other survives; then the second goes too
+    m = try dissoc(&fix.rt, m, ka);
+    try testing.expectEqual(@as(u32, 10), count(m));
+    try testing.expect((try get(m, ka)).tag() == .nil);
+    try testing.expectEqual(@as(i48, -200), (try get(m, kb)).asInteger());
+    m = try dissoc(&fix.rt, m, kb);
+    try testing.expectEqual(@as(u32, 9), count(m));
+    try testing.expect((try get(m, kb)).tag() == .nil);
+
+    // a SECOND independent colliding pair in the same map also coexists
+    const kc = Value.initInteger(COLLIDE_A2);
+    const kd = Value.initInteger(COLLIDE_B2);
+    try testing.expect(equal.valueHash(kc) == equal.valueHash(kd));
+    m = try assoc(&fix.rt, m, kc, Value.initInteger(1));
+    m = try assoc(&fix.rt, m, kd, Value.initInteger(2));
+    try testing.expectEqual(@as(u32, 11), count(m));
+    try testing.expectEqual(@as(i48, 1), (try get(m, kc)).asInteger());
+    try testing.expectEqual(@as(i48, 2), (try get(m, kd)).asInteger());
+}
+
+test "HAMT collision bucket: overflow chains past 31 same-hash pairs (fabricated hashes)" {
+    var fix = RuntimeFixture.init();
+    defer fix.deinit();
+
+    // Drive the INTERNAL trie fns with one fabricated hash for 40 distinct
+    // keys — deeper than any real hashLong collision can go — so the bucket's
+    // overflow chain (pairs 32+) is exercised without a brute-forced 32-way
+    // real collision. All callers pass the same H, matching the trie
+    // invariant (every key reaching a bucket shares its full 32-bit hash).
+    const H: u32 = 0xDEADBEEF;
+    const N: i48 = 40;
+    var root = try createTwoNode(&fix.rt, Value.initInteger(0), Value.initInteger(1000), H, Value.initInteger(1), Value.initInteger(1001), H, 0);
+    var i: i48 = 2;
+    while (i < N) : (i += 1) {
+        const res = try hamtAssoc(&fix.rt, root, Value.initInteger(i), Value.initInteger(i + 1000), H, 0);
+        try testing.expect(res.added);
+        root = res.node;
+    }
+    i = 0;
+    while (i < N) : (i += 1) {
+        try testing.expectEqual(@as(i48, i + 1000), (try hamtGet(root, Value.initInteger(i), H, 0)).asInteger());
+    }
+    // replace deep in the chain — not added
+    const rep = try hamtAssoc(&fix.rt, root, Value.initInteger(35), Value.initInteger(-1), H, 0);
+    try testing.expect(!rep.added);
+    root = rep.node;
+    try testing.expectEqual(@as(i48, -1), (try hamtGet(root, Value.initInteger(35), H, 0)).asInteger());
+    // dissoc every even key — odd survivors intact across the chain
+    i = 0;
+    while (i < N) : (i += 2) {
+        const res = try hamtDissoc(&fix.rt, root, Value.initInteger(i), H, 0);
+        try testing.expect(res.found);
+        root = res.node.?;
+    }
+    i = 1;
+    while (i < N) : (i += 2) {
+        if (i == 35) continue;
+        try testing.expectEqual(@as(i48, i + 1000), (try hamtGet(root, Value.initInteger(i), H, 0)).asInteger());
+    }
+    try testing.expect((try hamtGet(root, Value.initInteger(2), H, 0)).tag() == .nil);
+    // dissoc an absent same-hash key: not found
+    const miss = try hamtDissoc(&fix.rt, root, Value.initInteger(999), H, 0);
+    try testing.expect(!miss.found);
 }

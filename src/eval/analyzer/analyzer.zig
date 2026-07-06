@@ -425,11 +425,11 @@ fn buildCompilerSpecials(rt: *Runtime) AnalyzeError!Value {
     var m = map_collection.empty();
     for (SPECIAL_FORMS.keys()) |name| {
         const sym = try symbol_mod.intern(rt, null, name);
-        // `assoc`'s `HashCollision` / `AssocOnNonMap` cannot fire here (interned
-        // symbol keys, `m` is always a map) — collapse them into the AnalyzeError
-        // set as InternalError so the resolver's error set stays unchanged.
+        // `assoc`'s `AssocOnNonMap` cannot fire here (`m` is always a map) —
+        // collapse it into the AnalyzeError set as InternalError so the
+        // resolver's error set stays unchanged.
         m = map_collection.assoc(rt, m, sym, .nil_val) catch |e| switch (e) {
-            error.HashCollision, error.AssocOnNonMap => return error.InternalError,
+            error.AssocOnNonMap => return error.InternalError,
             else => |other| return other,
         };
     }
@@ -1301,12 +1301,8 @@ fn mapFormToValue(rt: *Runtime, env: *Env, entries: []const Form, loc: SourceLoc
         const val = try formToValue(rt, env, entries[i + 1]);
         roots[2] = val;
         out = map_collection.assoc(rt, out, k, val) catch |err| switch (err) {
-            // Astronomically rare: two literal keys share a full 32-bit
-            // hash (collision-bucket handling is unimplemented). Convert
-            // the internal error so the AnalyzeError envelope holds.
-            error.HashCollision => return error_catalog.raise(.feature_not_supported, loc, .{
-                .name = "a map with hash-colliding keys",
-            }),
+            // Hash-colliding literal keys land in the D-155 collision bucket
+            // inside assoc — no analyzer-level error remains.
             error.AssocOnNonMap => unreachable, // out always starts at .array_map
             else => |e| return e,
         };
@@ -1329,9 +1325,7 @@ fn setFormToValue(rt: *Runtime, env: *Env, items: []const Form) AnalyzeError!Val
         const v = try formToValue(rt, env, item);
         roots[1] = v;
         out = set_collection.conj(rt, out, v) catch |err| switch (err) {
-            error.HashCollision => return error_catalog.raise(.feature_not_supported, .{}, .{
-                .name = "a set with hash-colliding elements",
-            }),
+            // Hash-colliding elements land in the D-155 collision bucket.
             error.AssocOnNonMap => unreachable, // out always starts at .hash_set
             else => |e| return e,
         };
