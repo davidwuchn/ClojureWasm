@@ -652,9 +652,19 @@ fn evalRequire(rt: *Runtime, env: *Env, n: node_mod.RequireNode) !Value {
 /// backed Value.
 fn evalVectorLiteral(rt: *Runtime, env: *Env, locals: []Value, n: node_mod.VectorLiteralNode) !Value {
     var v = vector_collection.empty();
+    // GC-ROOT: A6b — the building accumulator is reachable only here while a
+    // LATER element's eval allocates (D-556; the analyzer's formToValue twin
+    // is the §C bracket). conj stores each element immediately, so only the
+    // accumulator slot needs refreshing.
+    var gc_roots: [1]Value = .{v};
+    var gc_sp: u16 = 1;
+    var gc_frame: root_set.EvalFrame = .{ .stack = &gc_roots, .sp = &gc_sp, .locals = &.{}, .parent = root_set.eval_frame_head };
+    root_set.eval_frame_head = &gc_frame;
+    defer root_set.eval_frame_head = gc_frame.parent;
     for (n.elements) |*elt| {
         const elt_val = try eval(rt, env, locals, elt);
         v = try vector_collection.conj(rt, v, elt_val);
+        gc_roots[0] = v;
     }
     return v;
 }
@@ -664,11 +674,21 @@ fn evalVectorLiteral(rt: *Runtime, env: *Env, locals: []Value, n: node_mod.Vecto
 /// (reader guarantees even count).
 fn evalMapLiteral(rt: *Runtime, env: *Env, locals: []Value, n: node_mod.MapLiteralNode) !Value {
     var m = map_collection.empty();
+    // GC-ROOT: A6b — accumulator + the evaluated KEY across the VALUE's eval
+    // (D-556; see evalVectorLiteral).
+    var gc_roots: [2]Value = .{ m, .nil_val };
+    var gc_sp: u16 = 2;
+    var gc_frame: root_set.EvalFrame = .{ .stack = &gc_roots, .sp = &gc_sp, .locals = &.{}, .parent = root_set.eval_frame_head };
+    root_set.eval_frame_head = &gc_frame;
+    defer root_set.eval_frame_head = gc_frame.parent;
     var i: usize = 0;
     while (i < n.elements.len) : (i += 2) {
         const k = try eval(rt, env, locals, &n.elements[i]);
+        gc_roots[1] = k;
         const v = try eval(rt, env, locals, &n.elements[i + 1]);
         m = try map_collection.assoc(rt, m, k, v);
+        gc_roots[0] = m;
+        gc_roots[1] = .nil_val;
     }
     return m;
 }
@@ -677,9 +697,16 @@ fn evalMapLiteral(rt: *Runtime, env: *Env, locals: []Value, n: node_mod.MapLiter
 /// Duplicates collapse via set semantics.
 fn evalSetLiteral(rt: *Runtime, env: *Env, locals: []Value, n: node_mod.SetLiteralNode) !Value {
     var s = set_collection.empty();
+    // GC-ROOT: A6b — the building accumulator (D-556; see evalVectorLiteral).
+    var gc_roots: [1]Value = .{s};
+    var gc_sp: u16 = 1;
+    var gc_frame: root_set.EvalFrame = .{ .stack = &gc_roots, .sp = &gc_sp, .locals = &.{}, .parent = root_set.eval_frame_head };
+    root_set.eval_frame_head = &gc_frame;
+    defer root_set.eval_frame_head = gc_frame.parent;
     for (n.elements) |*elt| {
         const elt_val = try eval(rt, env, locals, elt);
         s = try set_collection.conj(rt, s, elt_val);
+        gc_roots[0] = s;
     }
     return s;
 }
@@ -706,8 +733,13 @@ fn evalConstructorCall(rt: *Runtime, env: *Env, locals: []Value, n: node_mod.Int
     var buf: [MAX_LOCALS]Value = undefined;
     if (n.args.len > MAX_LOCALS)
         return error_catalog.raise(.call_args_exceed_max_locals, n.loc, .{ .got = n.args.len, .max = MAX_LOCALS });
+    // GC-ROOT: A6b — progressive arg publication (see ArgsFrame).
+    var af: ArgsFrame = undefined;
+    af.push(&buf);
+    defer af.pop();
     for (n.args, 0..) |arg_node, i| {
         buf[i] = try eval(rt, env, locals, &arg_node);
+        af.publish(i + 1);
     }
     return special_forms.constructInstance(rt, env, n.type_name, buf[0..n.args.len], n.loc);
 }
@@ -752,8 +784,15 @@ fn evalInstanceMember(rt: *Runtime, env: *Env, locals: []Value, n: node_mod.Inte
     const args_buf = try rt.gpa.alloc(Value, total);
     defer rt.gpa.free(args_buf);
     args_buf[0] = receiver;
+    // GC-ROOT: A6b — progressive receiver+arg publication (see ArgsFrame; the
+    // gpa buffer is NOT otherwise visible to the collector).
+    var af: ArgsFrame = undefined;
+    af.push(args_buf.ptr);
+    defer af.pop();
+    af.publish(1);
     for (n.args, 0..) |*a, i| {
         args_buf[1 + i] = try eval(rt, env, locals, a);
+        af.publish(2 + i);
     }
 
     const me = td.lookupMethod(null, n.name) orelse {
@@ -818,8 +857,13 @@ fn evalStaticMethodCall(rt: *Runtime, env: *Env, locals: []Value, n: node_mod.In
     });
     const buf = try rt.gpa.alloc(Value, n.args.len);
     defer rt.gpa.free(buf);
+    // GC-ROOT: A6b — progressive arg publication (see ArgsFrame).
+    var af: ArgsFrame = undefined;
+    af.push(buf.ptr);
+    defer af.pop();
     for (n.args, 0..) |*a, i| {
         buf[i] = try eval(rt, env, locals, a);
+        af.publish(i + 1);
     }
     const vt = rt.vtable orelse return error.NoVTable;
     return vt.callFn(rt, env, me.method_val, buf, n.loc);
@@ -921,9 +965,18 @@ fn evalBinding(rt: *Runtime, env: *Env, locals: []Value, n: node_mod.BindingNode
     defer frame.bindings.deinit(rt.gpa);
     // Pass 1: eval inits in the outer scope (side effects happen here,
     // before any validation — matches JVM hash-map construction order).
-    for (n.pairs) |pair| {
-        const val = try eval(rt, env, locals, pair.value_expr);
-        try frame.bindings.put(rt.gpa, pair.var_ptr, val);
+    // GC-ROOT: A6b — the frame's bindings map is OUTSIDE the walked
+    // current_frame chain until pushFrame below, so already-evaluated init
+    // values must root progressively while later inits allocate (D-556).
+    const init_vals = try rt.gpa.alloc(Value, n.pairs.len);
+    defer rt.gpa.free(init_vals);
+    var af: ArgsFrame = undefined;
+    af.push(init_vals.ptr);
+    defer af.pop();
+    for (n.pairs, 0..) |pair, i| {
+        init_vals[i] = try eval(rt, env, locals, pair.value_expr);
+        af.publish(i + 1);
+        try frame.bindings.put(rt.gpa, pair.var_ptr, init_vals[i]);
     }
     // Pass 2: validate dynamic-ness before installing the frame.
     for (n.pairs) |pair| {
@@ -980,8 +1033,17 @@ fn evalRecur(rt: *Runtime, env: *Env, locals: []Value, n: node_mod.RecurNode) an
     // partially-rewritten frame. Stash them in the threadlocal scratch
     // so the matching loop frame can drain them once the unwind
     // returns control.
+    // GC-ROOT: A6b — already-evaluated recur values are reachable only
+    // through the scratch while a LATER arg's eval allocates (D-556; the
+    // hottest case: a BFS loop/recur carrying fresh vectors/maps). The
+    // RecurSignaled unwind + slot writeback allocate nothing, so the frame
+    // popping at return is safe.
+    var af: ArgsFrame = undefined;
+    af.push(&pending_recur_buf);
+    defer af.pop();
     for (n.args, 0..) |*a, i| {
         pending_recur_buf[i] = try eval(rt, env, locals, a);
+        af.publish(i + 1);
     }
     pending_recur_len = @intCast(n.args.len);
     return error.RecurSignaled;
@@ -1083,17 +1145,49 @@ fn catchMatches(rt: *Runtime, target: node_mod.TryNode.CatchTarget, thrown: Valu
     };
 }
 
+/// GC-ROOT: A6b — a progressive argument-evaluation root frame (D-555/D-556).
+/// The vm's operand stack (A1) roots partially-evaluated call arguments; the
+/// tree_walk twin is this frame over the caller's stack buffer. `publish`
+/// after each evaluated slot, so a mid-eval collect during a LATER argument's
+/// evaluation marks every earlier result (and the callee/receiver in slot 0).
+/// Without it, a fresh heap value (e.g. a `(str …)` result) held only in the
+/// args buffer is swept and its cell recycled — the corrupted-string
+/// integer-overflow panic class. [ref: .dev/gc_rooting.md §A]
+const ArgsFrame = struct {
+    sp: u16,
+    frame: root_set.EvalFrame,
+
+    fn push(self: *ArgsFrame, buf: [*]const Value) void {
+        self.sp = 0;
+        self.frame = .{ .stack = buf, .sp = &self.sp, .locals = &.{}, .parent = root_set.eval_frame_head };
+        root_set.eval_frame_head = &self.frame;
+    }
+    fn publish(self: *ArgsFrame, filled: usize) void {
+        self.sp = @intCast(filled);
+    }
+    fn pop(self: *ArgsFrame) void {
+        root_set.eval_frame_head = self.frame.parent;
+    }
+};
+
 fn evalCall(rt: *Runtime, env: *Env, locals: []Value, n: node_mod.CallNode) !Value {
     const callee = try eval(rt, env, locals, n.callee);
-    var args_buf: [MAX_LOCALS]Value = undefined;
+    // Slot 0 carries the callee; args fill 1..; the frame publishes each.
+    var args_buf: [MAX_LOCALS + 1]Value = undefined;
     if (n.args.len > MAX_LOCALS)
         return error_catalog.raise(.call_args_exceed_max_locals, n.loc, .{ .got = n.args.len, .max = MAX_LOCALS });
+    args_buf[0] = callee;
+    var af: ArgsFrame = undefined;
+    af.push(&args_buf);
+    defer af.pop();
+    af.publish(1);
     var arg_locs: [MAX_LOCALS]SourceLocation = undefined;
     for (n.args, 0..) |*a, i| {
-        args_buf[i] = try eval(rt, env, locals, a);
+        args_buf[1 + i] = try eval(rt, env, locals, a);
+        af.publish(2 + i);
         arg_locs[i] = a.loc();
     }
-    const args = args_buf[0..n.args.len];
+    const args = args_buf[1 .. 1 + n.args.len];
     if (rt.vtable) |vt| {
         // ADR-0118 cycle 2.5: publish per-arg locs so a failing primitive can
         // resolve an arg-precise caret; restore the parent's on return.
@@ -1347,6 +1441,21 @@ fn callMethodImpl(rt: *Runtime, env: *Env, f: *Function, args: []const Value, lo
 
     var locals: [MAX_LOCALS]Value = undefined;
     const fs = try bindCallFrame(rt, f, m, args, &locals, rest_mode, loc);
+    // GC-ROOT: A6 — tree_walk fn activation roots its live slot window for
+    // the call's whole extent (D-555; the sibling of vm.eval's A1 frame).
+    // Without this, a mid-eval auto-collect (ADR-0164) sweeps any heap value
+    // reachable ONLY through a local slot — the sym-meta / gc_torture
+    // tree_walk-only corruption class. [ref: .dev/gc_rooting.md §A]
+    var gc_stack: [1]Value = .{.nil_val};
+    var gc_sp: u16 = 0;
+    var gc_frame: root_set.EvalFrame = .{
+        .stack = &gc_stack,
+        .sp = &gc_sp,
+        .locals = locals[0..fs],
+        .parent = root_set.eval_frame_head,
+    };
+    root_set.eval_frame_head = &gc_frame;
+    defer root_set.eval_frame_head = gc_frame.parent;
     // VM backend hook: when this method carries compiled bytecode and
     // the vtable has the `evalChunk` slot wired (vm.installVTable), run
     // the chunk instead of walking the Node body. The TreeWalk backend

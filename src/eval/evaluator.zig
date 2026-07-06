@@ -107,7 +107,20 @@ fn evalTopLevelInBackend(
     const node = try analyzer.analyze(arena, rt, env, null, form, table);
     var locals: [256]Value = [_]Value{.nil_val} ** 256;
     return switch (backend) {
-        .tree_walk => tree_walk.eval(rt, env, &locals, node),
+        .tree_walk => blk: {
+            // GC-ROOT: A6 — top-level locals window (the driver.evalForm twin).
+            var gc_stack: [1]Value = .{.nil_val};
+            var gc_sp: u16 = 0;
+            var gc_frame: root_set.EvalFrame = .{
+                .stack = &gc_stack,
+                .sp = &gc_sp,
+                .locals = &locals,
+                .parent = root_set.eval_frame_head,
+            };
+            root_set.eval_frame_head = &gc_frame;
+            defer root_set.eval_frame_head = gc_frame.parent;
+            break :blk tree_walk.eval(rt, env, &locals, node);
+        },
         .vm => blk: {
             const chunk = try vm_compiler.compile(rt, arena, node);
             break :blk vm.eval(rt, env, &locals, &chunk);
