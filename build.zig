@@ -51,10 +51,11 @@ pub fn build(b: *std.Build) void {
     // ROADMAP §9.6 / 4.8 / §349 — backend gate (ADR-0005 / ADR-0070 / F-012).
     // `vm` is the PRODUCTION DEFAULT (flipped 2026-06-02 once every D-196
     // parity blocker closed: check_vm_parity = 0 fails, corpus 375/375 + all
-    // e2e green on vm). `tree-walk` is retained as the differential oracle /
-    // reference implementation, selectable via `-Dbackend=tree-walk`.
+    // e2e green on vm). `tree_walk` is retained as the differential oracle /
+    // reference implementation, selectable via `-Dbackend=tree_walk` (the
+    // enum FIELD spelling — `-Dbackend=tree-walk` is rejected by zig build).
     const Backend = enum { tree_walk, vm };
-    const backend = b.option(Backend, "backend", "Evaluation backend (vm default — production; tree-walk = differential oracle)") orelse .vm;
+    const backend = b.option(Backend, "backend", "Evaluation backend (vm default — production; tree_walk = differential oracle)") orelse .vm;
     build_options.addOption(Backend, "backend", backend);
 
     // `-Dwasm` — the minimal polyglot Wasm FFI surface (ADR-0099 / CFP P1).

@@ -24,6 +24,11 @@
 # md-table-align no longer pads it to ~800 KB of whitespace.
 
 active:
+  - id: "D-555"
+    status: "open (2026-07-06, found by D-553's first tree_walk full-e2e sweep — the repurposed check_vm_parity.sh doing exactly its job). SIX e2e steps FAIL on -Dbackend=tree_walk while green on the vm default (corpus 3901/3901 green on both): (1) phase15_watch_recursion — SEGFAULT (memory safety; HIGHEST priority); (2) phase16_gc_torture — dies (empty failure output; GC-related); (3) phase14_symbol_metadata sym_meta_gc_survives — got nil want 1 (symbol meta lost under GC — tree-walk rooting gap?); (4) phase14_seq_helpers2 interleave_large — got '' want 100000 (large-input crash/depth?); (5) phase15_dynamic_var guard — got 2 want 1; (6) phase15_require_fs missing — got 2 want 1 (exit-code shaped). The F-012 diff oracle (zig build test, both backends) is GREEN — these live in territory the oracle does not cover (GC trigger timing, deep recursion, watches, require-fs paths, e2e exit codes). Each is triage: a REAL tree-walk-backend bug (fix; the oracle backend must stay healthy) vs a vm-default assumption baked into the e2e (then SKIPS-list it in check_vm_parity.sh with the reason). Repro: bash scripts/check_vm_parity.sh (~8 min) or per-step: zig build -Dwasm -Doptimize=ReleaseSafe -Dbackend=tree_walk && CLJW_SKIP_BUILD=1 bash test/e2e/<step>.sh."
+    category: "runtime"
+    barrier: "none — deterministic repros in hand. Start with the phase15_watch_recursion SEGFAULT (memory safety) and the two GC-related fails (torture + symbol-meta) — likely a tree-walk-only rooting gap; the exit-code pair last (may be harness-shaped)."
+    last_reviewed: "2026-07-06"
   - id: "D-554"
     status: "open (2026-07-06, split from D-239's discharge). The `(ns name {:attr-map} …)` ATTR-MAP and `(ns ^{:m 1} name)` name-symbol meta are still SKIPPED at analysis (special_forms.zig analyzeNs) — only the docstring lands as {:doc} ns meta. clj merges name-sym meta + attr-map + docstring into the ns meta. Rare vs the docstring (libs mostly use :author/:added attr-maps); needs a Form->Value map conversion at analysis + ADR-0169-style rooting OR an arena-thread of the literal into both backends (the doc rode NsFilterEntry as a plain string; a map needs a Value). Mechanise via phase15_ns_docstring e2e when landed."
     category: "clj-parity"
@@ -1331,19 +1336,6 @@ active:
     category: "ecosystem"
     barrier: |-
       tractable now; M-sized survey-first. Value rises with D-528 (real deps.edn corpus).
-    last_reviewed: "2026-07-02"
-  - id: "D-553"
-    status: |-
-      open (2026-07-02, lifted from D-196's discharged tail — a follow-up living only
-      inside a discharged row is invisible to the active drain). Repurpose
-      scripts/check_vm_parity.sh to run the e2e suite on the NON-default backend
-      (tree_walk, the F-012 differential oracle) so an oracle-only e2e/rendering
-      regression cannot hide behind the vm-default gate. On-demand / Phase-boundary
-      cadence per ADR-0049 (never per-commit). The script's BLOCKERS list stays the
-      re-add point for future VM-only regressions.
-    category: "tooling"
-    barrier: |-
-      tractable now; S-M (swap -Dbackend + drive run_all's e2e list through it).
     last_reviewed: "2026-07-02"
 standing:
   - id: "D-549"
@@ -6526,6 +6518,12 @@ discharged:
     status: "DISCHARGED 2026-07-06 — the LAST remainder (namespace meta) landed; alter-meta!/reset-meta!/meta now cover Var + atom + agent + ref + NAMESPACE. Namespace gained a meta slot (env.zig; GC-rooted in root_set's ns_vars walk as the walk enters each ns); reset-meta!'s .ns arm + metaOf's .ns arm; the stale 'var or atom' catalog template updated. SIBLING also landed same cycle: the `(ns name \"docstring\")` docstring — previously silently SKIPPED — now lands as {:doc …} ns meta in BOTH backends (NsNode.doc; tree_walk evalNs + VM op_ns_with_filter via NsFilterEntry.doc/refer_clojure + bytecode v4 serialization; shared meta.setNsDoc helper so semantics cannot drift; diff case per the ADR-0036 contract). e2e phase15_ns_docstring (5 cases incl. ns-doc-meta/ns-alter-meta); clj-oracle-verified ({:doc \"my doc\", :k 1} after alter-meta!). The ns ATTR-MAP + name-symbol meta remain skipped -> split to D-554 (needs a Value-in-node + rooting design). HISTORY: var (D-183) + atom + agent (D-441) + ref (D-533) landed earlier."
     category: "runtime"
     barrier: "DISCHARGED (was: ns meta slot missing)."
+    last_reviewed: "2026-07-06"
+
+  - id: "D-553"
+    status: "DISCHARGED 2026-07-06 — check_vm_parity.sh repurposed to the NON-default-backend full-e2e sweep: builds -Dbackend=tree_walk (enum-field spelling; build.zig comments corrected from the misleading tree-walk) and drives the corpus + ALL test/e2e/*.sh against it, with an empirically-populated SKIPS list (currently EMPTY — the suite is backend-neutral so far) whose entries require a reason. On-demand / Phase-boundary cadence per ADR-0049 (never per-commit). The FIRST run immediately paid off: corpus 3901/3901 green but SIX e2e fail on tree_walk (a SEGFAULT + two GC-related among them) — filed as D-555. ORIGINAL: lifted from D-196's discharged tail; the idle corpus-only probe risked oracle-backend rot hiding behind the vm-default gate."
+    category: "tooling"
+    barrier: "DISCHARGED (was: repurpose the idle probe)."
     last_reviewed: "2026-07-06"
 
 conventions: |-

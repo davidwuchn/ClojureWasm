@@ -1,22 +1,24 @@
 #!/usr/bin/env bash
-# scripts/check_vm_parity.sh — VM-backend parity probe (ADR-0070 / D-196).
+# scripts/check_vm_parity.sh — NON-DEFAULT-backend e2e sweep (D-553; was the
+# ADR-0070 / D-196 VM-parity probe).
 #
-# Builds cljw with `-Dbackend=vm` (ReleaseSafe) and runs the clj-grounded
-# corpus + the (now-empty) D-196 VM-parity-blocker e2e list against it.
+# Builds cljw with `-Dbackend=tree_walk` (the F-012 differential-oracle
+# backend; `vm` is the production default since ADR-0070 step 4) and runs the
+# corpus + the FULL test/e2e suite against it — so an oracle-only e2e /
+# rendering regression cannot hide behind the vm-default gate.
 #
-# HISTORY: this probe existed to stop VM gaps being MASKED by the (then)
-# tree_walk default — the per-commit gate ran e2e on tree_walk only. ALL 5
-# D-196 blockers closed 2026-06-02, and **build.zig's default flipped to `vm`**
-# (ADR-0070 step 4 / F-012). Post-flip the per-commit gate runs e2e on vm (the
-# production default), so the masking concern this probe guarded is resolved.
+# Cadence: on-demand / Phase boundaries (ADR-0049 per-commit-cost concern),
+# NEVER per-commit. Runtime ≈ one serial e2e pass (~5 min).
 #
-# CURRENT ROLE (on-demand): a `-Dbackend=vm` ReleaseSafe + corpus smoke. The
-# BLOCKERS list is empty (kept as the re-add point should a future VM-only
-# regression need tracking). FOLLOW-UP (tracked): repurpose to exercise the
-# e2e suite on the NON-default backend (`tree-walk`, the differential oracle)
-# so an oracle-only e2e/rendering regression can't hide behind the vm-default
-# gate — run on-demand / at Phase boundaries per ADR-0049's per-commit-cost
-# concern, not as a per-commit gate.
+# SKIPS lists e2e steps that intrinsically exercise the DEFAULT backend
+# (AOT bytecode / build pipeline) and are meaningless or false-failing on
+# tree-walk; each entry carries its reason. A newly-failing step NOT in
+# SKIPS is a genuine tree-walk regression — fix it, don't add it here
+# without a reason.
+#
+# HISTORY: the D-196 blocker era (VM gaps masked by the then-tree_walk
+# default) closed 2026-06-02; build.zig's default flipped to vm. This script
+# then idled as a corpus-only probe until the D-553 repurpose (2026-07-06).
 #
 # Restores the DEFAULT (vm ReleaseSafe wasm — the unified gate config)
 # binary on exit.
@@ -25,53 +27,46 @@
 set -uo pipefail
 cd "$(dirname "$0")/.."
 
-# D-196 blocker e2e (basename under test/e2e/, minus .sh). Prune as gaps close.
-BLOCKERS=(
-    # ALL D-196 blockers CLOSED 2026-06-02 — the list is empty; the probe now
-    # verifies the corpus + (the absence of) regressions on -Dbackend=vm. Per
-    # ADR-0070 step 4 the next cycle flips build.zig default to vm and promotes
-    # this probe to a hard per-commit gate.
-    # phase14_ns_directive CLOSED 2026-06-02 (D-098): op_ns_with_filter +
-    # ns_filters side-table + emitLibspec loop. Pruned.
-    # phase14_java_static_dispatch CLOSED 2026-06-02 (D-196 blocker 3): the
-    # java-surface ctor `(java.io.File. …)` now resolves on the VM via the
-    # shared special_forms.constructInstance (was deftype-only). Pruned.
-    # phase14_catch_keyword CLOSED 2026-06-02 (D-014b VM lowering):
-    # op_match_type_keyword parallels op_match_class. Pruned.
-    # phase14_with_context + phase14_user_throw CLOSED 2026-06-02 (ADR-0071):
-    # the cleanup-handler kind (op_push_cleanup / op_reraise) preserves the
-    # dynamic error-context + catalog Kind through a binding / bare-try
-    # unwind, matching TreeWalk's `defer`. Pruned from the blocker list.
-    # NOTE: phase14_eval is NOT a VM blocker — `eval` is unimplemented on BOTH
-    # backends (name_error), tracked separately as D-197. Do not add here.
+# e2e basenames (minus .sh) that are DEFAULT-BACKEND-specific by design.
+SKIPS=(
+    # (populated empirically; empty = the whole suite is backend-neutral)
 )
 
 restore() { zig build -Dwasm -Doptimize=ReleaseSafe >/dev/null 2>&1 || true; }
 trap restore EXIT
 
-echo "check_vm_parity: building -Dbackend=vm -Doptimize=ReleaseSafe…"
-if ! zig build -Dwasm -Doptimize=ReleaseSafe -Dbackend=vm >/tmp/vmp_build.txt 2>&1; then
-    echo "check_vm_parity: VM BUILD FAILED (see /tmp/vmp_build.txt)"; exit 1
+echo "check_vm_parity: building -Dbackend=tree_walk -Doptimize=ReleaseSafe…"
+if ! zig build -Dwasm -Doptimize=ReleaseSafe -Dbackend=tree_walk >/tmp/vmp_build.txt 2>&1; then
+    echo "check_vm_parity: tree-walk BUILD FAILED (see /tmp/vmp_build.txt)"; exit 1
 fi
 export CLJW_SKIP_BUILD=1
 
 fails=0
 if bash scripts/check_corpus_regression.sh >/tmp/vmp_corpus.txt 2>&1; then
-    echo "  corpus       : ok  ($(tail -1 /tmp/vmp_corpus.txt))"
+    echo "  corpus                    : ok  ($(tail -1 /tmp/vmp_corpus.txt))"
 else
-    echo "  corpus       : FAIL ($(tail -1 /tmp/vmp_corpus.txt))"; fails=$((fails + 1))
+    echo "  corpus                    : FAIL ($(tail -1 /tmp/vmp_corpus.txt))"; fails=$((fails + 1))
 fi
 
-for name in "${BLOCKERS[@]}"; do
-    t="test/e2e/$name.sh"
-    [ -f "$t" ] || { echo "  MISSING      : $name"; continue; }
-    if timeout 120 bash "$t" >/tmp/vmp_e2e.txt 2>&1; then
-        echo "  CLOSED       : $name  (passes on VM — prune from BLOCKERS)"
+is_skipped() {
+    local n="$1"
+    for s in "${SKIPS[@]:-}"; do [ "$s" = "$n" ] && return 0; done
+    return 1
+}
+
+for t in test/e2e/*.sh; do
+    name="$(basename "$t" .sh)"
+    if is_skipped "$name"; then
+        echo "  SKIP (default-backend)    : $name"
+        continue
+    fi
+    if timeout 180 bash "$t" >/tmp/vmp_e2e.txt 2>&1; then
+        : # green — stay quiet (the suite is ~250 steps)
     else
-        echo "  blocker      : $name  ($(grep -iE 'FAIL|NotImplemented' /tmp/vmp_e2e.txt | head -1 | cut -c1-80))"
+        echo "  FAIL on tree-walk         : $name  ($(grep -iE 'FAIL|error' /tmp/vmp_e2e.txt | head -1 | cut -c1-100))"
         fails=$((fails + 1))
     fi
 done
 
-echo "check_vm_parity: $fails failing group(s) over corpus + ${#BLOCKERS[@]} D-196 blockers on -Dbackend=vm"
+echo "check_vm_parity: $fails failing group(s) (corpus + full e2e) on -Dbackend=tree_walk"
 exit "$fails"
