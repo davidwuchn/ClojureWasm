@@ -12,3 +12,13 @@
 ;;=> "z"
 (String/join ", " ["x" "y" "z"])
 ;;=> "x, y, z"
+(String/valueOf (char-array [\a \b \c]))
+;;=> "abc"
+(String/valueOf (char-array [\a \b \c]) 1 2)
+;;=> "bc"
+(String/copyValueOf (char-array [\x \y]))
+;;=> "xy"
+(String/copyValueOf (char-array [\p \q \r]) 0 2)
+;;=> "pq"
+(String. (char-array [\a \b]))
+;;=> "ab"

@@ -152,85 +152,6 @@ active:
       redundancy + public-readability; merge/prune. SSOT: ADR-0166 row 4.
       (.claude/ edits may hit the self-modification block — surface to user.)
     last_reviewed: "2026-06-24"
-  - id: "D-526"
-    status: |-
-      open (2026-06-24, user-directed; ADR-0166). Java-interop static-member gap
-      catalog + fill: 49 runtime/java/**/*.zig surfaces / 92 compat_tiers fqn.
-      Some static members are missing. If not mechanically enumerable, FIRST
-      catalogue them (extend compat_tiers.yaml / a coverage doc), then fill the
-      "あと少し欠落" tail.
-      DRAIN 1 (2026-06-25): a 63-expr clj-diff sweep over Math/Long/Integer/
-      Character/Double/String statics found the surface near-complete — only
-      `java.lang.String/join` (delim + Iterable form) was missing. Filled it in
-      String.zig (realizes the seqable via clojure.core/vec, then index-walks —
-      no in-loop GC alloc); non-string element raises a ClassCastException-class
-      error like JVM; nil/empty → "". Corpus: test/diff/clj_corpus/string_join_static.txt
-      (7 golden pairs). The 3+-arg varargs form is rejected like JVM Clojure.
-      DRAIN 2 (2026-06-25): the unsigned-arithmetic + JDK-exact static cluster.
-      Added Long/{parseUnsignedLong,sum,divideUnsigned,remainderUnsigned,
-      compareUnsigned,toUnsignedString}, Integer/{parseUnsignedInt,sum,
-      divideUnsigned,remainderUnsigned,compareUnsigned,toUnsignedLong,
-      toUnsignedString}, Math/{absExact,multiplyHigh,clamp} (+ parse.zig
-      parseUnsigned leaf). All happy + error paths match clj (ArithmeticException
-      / IllegalArgumentException / NumberFormatException classes align). Corpus:
-      test/diff/clj_corpus/unsigned_int_statics.txt (24 golden pairs).
-      DRAIN 3 (2026-06-25): the Character surrogate/codePoint cluster + Boolean.
-      Added Character/{charCount,isSurrogate,isHighSurrogate,isLowSurrogate,
-      isSurrogatePair,highSurrogate,lowSurrogate,toCodePoint,isBmpCodePoint,
-      isValidCodePoint,isSupplementaryCodePoint,isISOControl} (pure Unicode-spec
-      arithmetic, no Unicode-DB lookup) + Boolean/{compare,hashCode}. cljw chars
-      ARE codepoints so surrogate values hold numerically (matches clj). Corpus:
-      test/diff/clj_corpus/char_codepoint_bool_statics.txt (27 golden pairs).
-      DEFERRED (Unicode-DB-heavy, low ROI): Character/{getType,isDefined,
-      isMirrored,isJavaIdentifierStart,…} need the full Unicode database.
-      DRAIN 4 (2026-06-25): Double IEEE-754 bit conversion. Added Double/
-      {doubleToLongBits,doubleToRawLongBits,longBitsToDouble,hashCode} (reuses
-      the existing private doubleToLongBits NaN-canonicalizer; bits box as BigInt
-      per D-165, exact). NaN canonical 0x7ff8…/raw split matches clj. Corpus:
-      test/diff/clj_corpus/double_bit_conversion.txt (14 golden pairs). NEXT:
-      java.util.Objects/* is a whole new surface (separate unit); the i48→u64
-      bitcast widening repeats across surfaces (a simplify candidate).
-      DRAIN 5 (2026-06-25): NEW surface java.util.Objects (runtime/java/util/
-      Objects.zig + _host_api + compat_tiers). isNull/nonNull/equals (valueEqual)/
-      requireNonNull (1+2 arg, throws a REAL NullPointerException via the ex_info
-      host-throw path)/requireNonNullElse/toString (1+2 arg). hash/hashCode
-      deferred (Java-hashCode ≠ cljw value hash). Corpus: objects_static.txt
-      (22 golden, incl. catch-by-NullPointerException error cases). REMAINING
-      simplify candidate: the i48→u64 bitcast widening repeated across surfaces.
-      DRAIN 6 (2026-06-25): CLOSE-OUT of the java.lang scalar static surface
-      (Discipline 2 drive-to-zero). Long/Integer/Character hashCode (Java's
-      bit formulas) + Math/{ceilDiv,ceilMod,divideExact,floorDivExact,fma}.
-      Long/Integer divideExact were NOT added (they don't exist in Java — clj
-      compile-errors them, so not a gap). Corpus: scalar_static_close.txt (18
-      golden). The java.lang scalar static surface (Long/Integer/Double/Boolean/
-      Character/Math) is now clj-parity COMPLETE for the common surface; the
-      remaining interop gaps are other packages (java.util.Arrays/Collections,
-      String static char[] forms) — separate units, lower value.
-      DRAIN 7 (2026-07-07): NEW surface java.util.Arrays (runtime/java/util/
-      Arrays.zig + _host_api + compat_tiers keyword `arrays`). asList (returns
-      the D-294 ArrayList host surface — the JVM fixed-size-VIEW aliasing is
-      deliberately not mirrored) / toString ("[e1, e2, …]"; nil arg -> "null") /
-      copyOf (nil-padded like Java's null pad) / sort (in-place natural
-      `compare`, stable) / equals (element value equality, nil-safe) / fill.
-      binarySearch / hashCode / typed-primitive overloads omitted until a real
-      consumer (dead-interop lesson). Corpus: objects_static.txt +9 goldens
-      (clj-byte-matched).
-      DRAIN 8 (2026-07-07): NEW surface java.util.Collections (runtime/java/
-      util/Collections.zig, keyword `collections_util`). emptyList /
-      singletonList (fresh MUTABLE ArrayList hosts — no unmodifiable wrapper
-      in cljw; faking the mutation-throw would lie, noted in the surface doc) /
-      sort + reverse (in-place on an ArrayList via the new pub
-      ArrayList.isArrayList/itemsOf accessors) / max + min (natural compare
-      over vector/array/ArrayList). unmodifiable*/shuffle/synchronized*
-      omitted until a real consumer. Corpus: objects_static.txt +6 goldens.
-      REMAINING: String static char[] forms — the last drain of this row.
-    category: "interop"
-    quality_floor: "public-ization: java-interop static-member gaps (ADR-0166)"
-    barrier: |-
-      Repeatable drain (ADR-0166). Code-touching → diff oracle + corpus apply.
-      Per /continue: catalog or fill one interop surface's missing statics.
-      SSOT: ADR-0166 row 5.
-    last_reviewed: "2026-06-25"
   - id: "D-527"
     status: |-
       USER RECONFIRMED 2026-07-02: direction stands — Clojure stdlib near-total equivalence is the goal; NOT a priority raise (easiest-first order unchanged).
@@ -6544,6 +6465,12 @@ discharged:
     status: "DISCHARGED 2026-07-07 — confirmed by the CLEAN check_vm_parity sweep (0 failing) + the original rush-hour repro passing at default AND 1MB thresholds on tree_walk. Root cause + fix narrative preserved in this row'''s history and private/notes/D556-gc-persist-roots.md: fn-body Node literals (heap-lifetime analyzer arena) lost their AnalysisFrame roots at form end -> endAnalysisPersist (gc.persisted_analysis_roots, walked after permanent_roots) at every production seam; PLUS the conservative C-stack scan + setjmp register spill (Boehm idiom) as the structural backstop for tree_walk C-stack intermediates; PLUS 7 explicit A6/A6b brackets. The user-filed integer-overflow panic was this class (a swept string'''s corrupted len overflowing Writer.drain arithmetic). RESIDUAL (recorded, not blocking): registered-WORKER-thread stacks are not conservatively scanned (the agent+tree_walk area, D-418-adjacent)."
     category: "runtime"
     barrier: "DISCHARGED (was: transient overflow panic, repro lost-then-found)."
+    last_reviewed: "2026-07-07"
+
+  - id: "D-526"
+    status: "DISCHARGED 2026-07-07 — the Java-interop static-member catalog+fill campaign is COMPLETE across 9 drains. DRAIN 9 (final): String char[] forms — `String/valueOf` gained the char[] and char[]/offset/count overloads (was falling into the generic \"#<array>\" render — a real bug), `String/copyValueOf` (1+3 arg, the JVM alias) registered, `(String. (char-array …))` verified already working (the campaign's stale REMAINING note). Corpus string_join_static +5 clj-byte-matched goldens. FULL CAMPAIGN LEDGER: D1 java.lang scalar sweep (String/join was the only gap — filled); D2 unsigned-arithmetic + JDK-edge Long/Integer statics; D3-D4 (see history); D5 java.util.Objects (new surface); D6 java.lang scalar close-out (hashCode formulas + Math ceilDiv family); D7 java.util.Arrays (new surface: asList/toString/copyOf/sort/equals/fill); D8 java.util.Collections (new surface: emptyList/singletonList/sort/reverse/max/min); D9 String char[] forms. Deliberate omissions (all doc'd at their surfaces, dead-interop lesson): Arrays binarySearch/hashCode/typed-primitive overloads; Collections unmodifiable*/shuffle/synchronized*; Objects hash/hashCode (Java hashCode contract ≠ cljw value hash). Any future static gap is a NEW discovery against a then-current consumer, not this row."
+    category: "interop"
+    barrier: "DISCHARGED (was: static-member gap catalog+fill, ADR-0166 row 5)."
     last_reviewed: "2026-07-07"
 
 conventions: |-

@@ -209,7 +209,8 @@ tiers:
         clojure_peer_vars: []
       # java.lang.StringBuilder — mutable growable buffer (ADR-0114, host_instance).
       # hiccup's compiler builds HTML with it. java.lang.String also has the
-      # static surface `valueOf` + `join` (delim+Iterable) in String.zig
+      # static surface `valueOf` (incl. the char[] + char[]/offset/count
+      # overloads) + `copyValueOf` + `join` (delim+Iterable) in String.zig
       # (instances stay installNativeMethods).
       - fqn: java.lang.StringBuilder
         cljw_ns: cljw.java.lang.StringBuilder

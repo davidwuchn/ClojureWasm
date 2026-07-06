@@ -594,12 +594,57 @@ const print_mod = @import("../../print.zig");
 /// `(String/valueOf x)` — Java `String.valueOf(Object)`: the str-rendering of
 /// `x`, with `nil` → `"null"` (JVM valueOf(null) is the literal "null").
 fn valueOf(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
-    try error_catalog.checkArity("String/valueOf", args, 1, loc);
+    if (args.len != 1 and args.len != 3)
+        return error_catalog.raise(.arity_not_expected, loc, .{ .fn_name = "String/valueOf", .expected = 1, .got = args.len });
     if (args[0].tag() == .nil) return string_collection.alloc(rt, "null");
+    // Java String.valueOf(char[]) / (char[], offset, count) — the char-array
+    // overloads build the string FROM the characters, not a render of the
+    // array object (D-526; was falling into the generic "#<array>" arm).
+    if (java_array.isArray(args[0])) return charsToString(rt, args, "String/valueOf", loc);
+    try error_catalog.checkArity("String/valueOf", args, 1, loc);
     var aw: std.Io.Writer.Allocating = .init(rt.gpa);
     defer aw.deinit();
     try print_mod.writeStrValue(rt, env, &aw.writer, args[0]);
     return string_collection.alloc(rt, aw.writer.buffered());
+}
+
+/// Shared body of the char-array string builders: `(f arr)` uses the whole
+/// array, `(f arr offset count)` a validated window (JVM
+/// StringIndexOutOfBounds → cljw bounds error). Non-char elements raise a
+/// type error (a Java char[] cannot hold anything else).
+fn charsToString(rt: *Runtime, args: []const Value, comptime fn_name: []const u8, loc: SourceLocation) anyerror!Value {
+    const items = java_array.asArray(args[0]).items();
+    var start: usize = 0;
+    var count: usize = items.len;
+    if (args.len == 3) {
+        const off = try error_catalog.expectInteger(args[1], fn_name, loc);
+        const cnt = try error_catalog.expectInteger(args[2], fn_name, loc);
+        if (off < 0 or cnt < 0 or off + cnt > items.len)
+            return error_catalog.raise(.index_out_of_range, loc, .{ .fn_name = fn_name });
+        start = @intCast(off);
+        count = @intCast(cnt);
+    }
+    var aw: std.Io.Writer.Allocating = .init(rt.gpa);
+    defer aw.deinit();
+    for (items[start .. start + count]) |e| {
+        if (e.tag() != .char)
+            return error_catalog.raise(.type_arg_invalid, loc, .{ .fn_name = fn_name, .expected = "a char array", .actual = @tagName(e.tag()) });
+        var buf: [4]u8 = undefined;
+        const n = std.unicode.utf8Encode(e.asChar(), &buf) catch 0;
+        try aw.writer.writeAll(buf[0..n]);
+    }
+    return string_collection.alloc(rt, aw.writer.buffered());
+}
+
+/// `(String/copyValueOf chars)` / `(String/copyValueOf chars offset count)` —
+/// JVM aliases of the char-array valueOf overloads.
+fn copyValueOf(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = env;
+    if (args.len != 1 and args.len != 3)
+        return error_catalog.raise(.arity_not_expected, loc, .{ .fn_name = "String/copyValueOf", .expected = 1, .got = args.len });
+    if (!java_array.isArray(args[0]))
+        return error_catalog.raise(.type_arg_invalid, loc, .{ .fn_name = "String/copyValueOf", .expected = "a char array", .actual = @tagName(args[0].tag()) });
+    return charsToString(rt, args, "String/copyValueOf", loc);
 }
 
 /// `(String/join delim coll)` — Java `String.join(CharSequence, Iterable)`: the
@@ -685,10 +730,11 @@ fn stringCtor(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation)
 
 fn initStringStatics(td: *type_descriptor.TypeDescriptor, gpa: std.mem.Allocator) anyerror!void {
     if (td.method_table.len != 0) return; // idempotent
-    const entries = try gpa.alloc(type_descriptor.TypeDescriptor.MethodEntry, 3);
+    const entries = try gpa.alloc(type_descriptor.TypeDescriptor.MethodEntry, 4);
     entries[0] = .{ .protocol_name = "", .method_name = try gpa.dupe(u8, "valueOf"), .method_val = Value.initBuiltinFn(&valueOf) };
     entries[1] = .{ .protocol_name = "", .method_name = try gpa.dupe(u8, "<init>"), .method_val = Value.initBuiltinFn(&stringCtor) };
     entries[2] = .{ .protocol_name = "", .method_name = try gpa.dupe(u8, "join"), .method_val = Value.initBuiltinFn(&join) };
+    entries[3] = .{ .protocol_name = "", .method_name = try gpa.dupe(u8, "copyValueOf"), .method_val = Value.initBuiltinFn(&copyValueOf) };
     td.method_table = entries;
 }
 
