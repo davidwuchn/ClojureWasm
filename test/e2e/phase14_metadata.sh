@@ -39,4 +39,5 @@ assert_eq 'set_rename'  "$("$BIN" -e '(do (require (quote [clojure.set])) (meta 
 assert_eq 'core_arglists' "$("$BIN" -e '(:arglists (meta (var map)))')" '([f] [f coll] [f c1 c2] [f c1 c2 c3] [f c1 c2 c3 & colls])'
 assert_eq 'core_doc'      "$("$BIN" -e '(boolean (:doc (meta (var interpose))))')" 'true'
 assert_eq 'defn_meta_wins' "$("$BIN" -e '(do (defn md "mine" [q] q) [(:doc (meta (var md))) (:arglists (meta (var md)))])')" '["mine" ([q])]'
-echo "OK — phase14_metadata smoke (20 cases) green"
+assert_eq 'stdlib_arglists' "$("$BIN" -e '(:arglists (meta (var clojure.string/join)))')" '([coll] [separator coll])'
+echo "OK — phase14_metadata smoke (21 cases) green"

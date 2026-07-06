@@ -8,15 +8,21 @@ cd "$(dirname "$0")/.."
 TMP=$(mktemp -d)
 trap 'rm -rf "$TMP"' EXIT
 
-# 1. JVM oracle: every public clojure.core var's [sym arglists doc].
+# 1. JVM oracle: every public var's [qualified-sym arglists doc] across the
+# EAGER-bundled namespaces (a lazy ns's vars are not interned when the eager
+# core_meta.clj runs, so its rows would be dead weight — extend alongside a
+# lazy-region post-load hook if that lands).
 timeout 60 clj -J-Xmx2g -M -e '
-(doseq [[sym v] (sort-by key (ns-publics (quote clojure.core)))]
-  (let [m (meta v)]
-    (when (or (:arglists m) (:doc m))
-      (prn [sym (:arglists m) (:doc m)]))))' > "$TMP/raw.edn"
+(doseq [ns-sym (quote [clojure.core clojure.string clojure.walk clojure.edn
+                       clojure.core.protocols clojure.java.io])]
+  (require ns-sym)
+  (doseq [[sym v] (sort-by key (ns-publics ns-sym))]
+    (let [m (meta v)]
+      (when (or (:arglists m) (:doc m))
+        (prn [(symbol (name ns-sym) (name sym)) (:arglists m) (:doc m)])))))' > "$TMP/raw.edn"
 
 # 2. cljw truth: the interned public core vars.
-./zig-out/bin/cljw -e '(doseq [[s _] (ns-publics (quote clojure.core))] (println (name s)))' > "$TMP/cljw_vars.txt"
+./zig-out/bin/cljw -e '(do (require (quote clojure.string) (quote clojure.walk) (quote clojure.edn) (quote clojure.core.protocols) (quote clojure.java.io)) (doseq [n [(quote clojure.core) (quote clojure.string) (quote clojure.walk) (quote clojure.edn) (quote clojure.core.protocols) (quote clojure.java.io)] [s _] (ns-publics n)] (println (str n "/" (name s)))))' > "$TMP/cljw_vars.txt"
 
 # 3. Intersect + emit.
 timeout 60 clj -J-Xmx2g -M -e "
@@ -24,7 +30,7 @@ timeout 60 clj -J-Xmx2g -M -e "
 (let [cljw-vars (-> (slurp \"$TMP/cljw_vars.txt\") str/split-lines set)
       rows (->> (line-seq (io/reader \"$TMP/raw.edn\"))
                 (map edn/read-string)
-                (filter (fn [[s _ _]] (contains? cljw-vars (name s)))))]
+                (filter (fn [[s _ _]] (contains? cljw-vars (str s)))))]
   (println \";; SPDX-License-Identifier: EPL-2.0\")
   (println \";;\")
   (println \";;   Copyright (c) Rich Hickey. All rights reserved.\")
@@ -52,7 +58,8 @@ timeout 60 clj -J-Xmx2g -M -e "
                doc (assoc :doc doc))]
       ;; (resolve 'sym), NOT (var sym): a Var VALUE in the literal pool is
       ;; not bytecode-serializable (AOT cache_gen), a quoted symbol is.
-      (prn (list 'alter-meta! (list 'resolve (list 'quote (symbol \"clojure.core\" (name s)))) 'fill mm))))
+      ;; when-let guards a var a build variant might not intern.
+      (prn (list 'when-let ['v (list 'resolve (list 'quote s))] (list 'alter-meta! 'v 'fill mm)))))
   (println)
   (println \";; generated:\" (count rows) \"vars\"))" > src/lang/clj/clojure/core_meta.clj
 tail -1 src/lang/clj/clojure/core_meta.clj
