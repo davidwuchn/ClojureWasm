@@ -173,58 +173,6 @@ active:
       deps.edn, exercise it, triage findings. SSOT: ADR-0166 row 7. (clj-parity
       findings fold into the D-175 floor.)
     last_reviewed: "2026-06-24"
-  - id: "D-521"
-    status: |-
-      open (2026-06-24, user-directed) — TWO destructure-lowering systems can DRIFT.
-      cljw lowers destructuring in TWO independent code paths: (1) the Zig
-      `src/lang/macro_transforms.zig` (`sequentialDestructure` / `associativeDestructure`,
-      used for fn-params via `transformFnArity` and for `let`/`loop` bindings), and
-      (2) the Clojure `clojure.core/destructure` fn (`src/lang/clj/clojure/core.clj`,
-      clj's algorithm verbatim — the public macro authors call, e.g. kezban's `letm`).
-      These re-implement the SAME spec, so they can silently diverge — and they DID:
-      the Zig path shipped the pre-1.11 kwargs seq-coercion `(if (seq? g) (apply hash-map g) g)`
-      while the clj fn already had clj-1.11's `(if (seq? g) (if (next g) (apply hash-map g)
-      (if (seq g) (first g) {})) g)`. Result: `((fn [& {:keys [a]}]) {:a 1})` (the 1.11
-      trailing-map kwargs call) ERRORED on the Zig path but worked through the clj fn.
-      FIXED THIS CYCLE (the Zig coercion now matches clj 1.11 verbatim; surfaced by a
-      clj-diff sweep, repro `((fn [& {:keys [a b] :or {a 99 b 88}}] [a b]) {:a 5 :b 6})`
-      → was error, now `[5 6]` = clj). This row tracks the STANDING divergence RISK + a
-      future audit, not the (now-closed) single bug.
-    category: "clj-parity"
-    quality_floor: "clj-parity (two destructure paths can drift; future divergence audit + should-be-single-path design)"
-    barrier: |-
-      Standing risk — does not close as a one-shot. Two open threads:
-
-      (A) DIVERGENCE AUDIT (future, highest-value when next touching destructure):
-        enumerate the WHOLE destructure surface (`:keys`/`:strs`/`:syms`/`:as`/`:or`,
-        nested map+vec, `& rest` seq-walk, the kwargs trailing-map coercion just fixed)
-        and diff the Zig `macro_transforms.zig` lowering against clj's `destructure` fn
-        EXPR-BY-EXPR through the clj oracle (the harness `scripts/clj_diff_sweep.sh`).
-        Drive any further drift to zero in one focused push (big-bang, not drip-feed —
-        `clj_diff_sweep.md` Discipline 2) and leave a corpus behind. The kwargs fix is
-        the first such drift caught; assume others exist until the surface is swept.
-
-      (B) SHOULD-BE design — why are there TWO paths at all, and is that the finished form?
-        The Zig path exists for an OPTIMIZATION/bootstrap reason (macro_transforms.zig
-        header: patterns lower to plain-symbol bindings IN ZIG so `let`/`loop`/fn-params
-        do NOT depend on the clj `destructure` fn being loaded — "a `.clj` destructure
-        would hit bootstrap-order fragility", since `let`/`fn` must work before core.clj's
-        `destructure` is defined). So the duplication is not accidental — it buys
-        bootstrap-order independence + (likely) avoids a macroexpansion round-trip on the
-        hottest binding forms. The finished-form question: (i) keep two paths but add a
-        MECHANICAL parity gate (a test that feeds the same binding forms through both and
-        asserts identical lowering, so drift fails the gate — the cheapest fix to the
-        drift class); OR (ii) collapse to one path once bootstrap-order allows (e.g. the
-        Zig path emits a call to the clj `destructure` fn after it is loaded, Zig-only for
-        the pre-core bootstrap window); OR (iii) generate the Zig lowering FROM clj's
-        algorithm so there is a single source of truth. (i) is the pragmatic
-        drift-killer; (iii) is the cleanest SSOT. Decide when the audit (A) runs — do NOT
-        seize the structural decision here (F-003). Note the optimization tension: a
-        single clj-fn path would re-introduce the bootstrap-order + per-binding-macroexpand
-        cost the Zig path was built to avoid, so (i)/(iii) are favoured over a naive (ii).
-      Cross-ref: `clj_diff_sweep.md` (sweep harness + Disciplines), the clj `destructure`
-      fn (core.clj), macro_transforms.zig `associativeDestructure`/`sequentialDestructure`.
-    last_reviewed: "2026-06-24"
   - id: "D-517"
     status: "UNBLOCKED 2026-07-02 (audit): the sequenced AFTER D-516 barrier is SATISFIED (D-516 discharged) — this row is now actionable; re-rank in the easiest-first order accordingly. ORIGINAL: open (ADR-0162 step 3; D-450 startup-floor lever). ZERO-COPY in-place bytecode deserialize: redesign the envelope/chunk format so chunks are position-independent and the VM reads bytecode arrays + constant pools straight from the @embedFile'd .rodata with NO per-chunk alloc/copy. Attacks the ~2.1ms deserialize half of runEnvelope (the other ~2.5ms vm.eval legitimately runs). ZERO pointer-relocation risk (rodata read-only; VM builds heap objects normally so pointers are born absolute-correct via the existing codec) — most F-NNN-safe option, no F-004/F-006 surface touched. Applied to core's eager chunks AND reused by D-516's lazy non-core chunks. Floor -> ~3.5-3.8ms (sub-4ms)."
     category: "perf"
@@ -6427,6 +6375,12 @@ discharged:
     category: "clj-parity"
     barrier: "DISCHARGED (was: slurp/spit string-path-only)."
     last_reviewed: "2026-07-07"
+  - id: "D-521"
+    status: "DISCHARGED 2026-07-07 — the standing audit ran and the drift-detection net is PERMANENT. AUDIT: a 24-expr sweep across the full destructure surface (sequential incl. nested/&-rest/:as/string-seq; associative incl. :keys/:strs/:syms/:or/:as/namespaced+keyword keys/nested-map/map-in-seq; fn-params incl. the clj-1.11 trailing-map kwargs shapes that caused the original bug; loop; for) — 24/24 clj-matched, zero drift between the Zig lowering (macro_transforms) and the clj destructure fn. NET: corpus test/diff/clj_corpus/destructure_surface.txt (24 goldens) — re-verified against BOTH backends every gate (corpus_regression) and against clj byte-for-byte on every corpus re-run, so a future divergence in EITHER lowering system surfaces mechanically. The original single bug (pre-1.11 kwargs coercion on the Zig path) was fixed in the introducing cycle."
+    category: "runtime"
+    barrier: "DISCHARGED (was: two-lowering drift risk — now corpus-netted)."
+    last_reviewed: "2026-07-07"
+
 conventions: |-
   - Structure: two top-level lists — `active:` and `discharged:`. Active entries carry id / status / category / barrier (+ optional quality_floor / last_reviewed); discharged entries carry id / discharged_at / resolution. Edit as YAML (no Markdown table to align).
   - New debt: grep `.dev/debt.yaml` for class-overlap before adding (per `.claude/rules/debt_dedup.md`).

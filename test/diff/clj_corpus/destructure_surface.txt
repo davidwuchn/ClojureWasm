@@ -1,0 +1,48 @@
+(let [[a b] [1 2]] [a b])
+;;=> [1 2]
+(let [[a b & r] [1 2 3 4]] [a b r])
+;;=> [1 2 (3 4)]
+(let [[a [b c]] [1 [2 3]]] [a b c])
+;;=> [1 2 3]
+(let [[a b :as all] [1 2]] [a b all])
+;;=> [1 2 [1 2]]
+(let [{:keys [x y]} {:x 1 :y 2}] [x y])
+;;=> [1 2]
+(let [{:keys [x] :or {x 9}} {}] x)
+;;=> 9
+(let [{:strs [s]} {"s" 5}] s)
+;;=> 5
+(let [{:syms [q]} {'q 7}] q)
+;;=> 7
+(let [{a :alpha :as m} {:alpha 3}] [a m])
+;;=> [3 {:alpha 3}]
+(let [{:keys [a/b]} {:a/b 4}] b)
+;;=> 4
+(let [{:keys [:c]} {:c 8}] c)
+;;=> 8
+(let [{[i j] :pair} {:pair [1 2]}] [i j])
+;;=> [1 2]
+((fn [[a b]] [b a]) [1 2])
+;;=> [2 1]
+((fn [& {:keys [a b] :or {a 99 b 88}}] [a b]) :a 5)
+;;=> [5 88]
+((fn [& {:keys [a b] :or {a 99 b 88}}] [a b]) {:a 5 :b 6})
+;;=> [5 6]
+((fn [& {:keys [a]}] a) {:a 1})
+;;=> 1
+((fn [x & {:keys [k]}] [x k]) 0 :k 2)
+;;=> [0 2]
+(loop [[h & t] [1 2 3] acc []] (if h (recur t (conj acc h)) acc))
+;;=> [1 2 3]
+(let [[a & [b c]] [1 2 3]] [a b c])
+;;=> [1 2 3]
+(let [{{:keys [deep]} :outer} {:outer {:deep 42}}] deep)
+;;=> 42
+((fn [{:keys [p] :or {p 1} :as opts}] [p opts]) {:q 2})
+;;=> [1 {:q 2}]
+(let [[x y z] "ab"] [x y z])
+;;=> [\a \b nil]
+(for [{:keys [n]} [{:n 1} {:n 2}]] n)
+;;=> (1 2)
+(let [{:keys [a b] :or {b a}} {:a 3}] [a b])
+;;=> [3 3]
