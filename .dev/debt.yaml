@@ -206,6 +206,16 @@ active:
       Character/Math) is now clj-parity COMPLETE for the common surface; the
       remaining interop gaps are other packages (java.util.Arrays/Collections,
       String static char[] forms) — separate units, lower value.
+      DRAIN 7 (2026-07-07): NEW surface java.util.Arrays (runtime/java/util/
+      Arrays.zig + _host_api + compat_tiers keyword `arrays`). asList (returns
+      the D-294 ArrayList host surface — the JVM fixed-size-VIEW aliasing is
+      deliberately not mirrored) / toString ("[e1, e2, …]"; nil arg -> "null") /
+      copyOf (nil-padded like Java's null pad) / sort (in-place natural
+      `compare`, stable) / equals (element value equality, nil-safe) / fill.
+      binarySearch / hashCode / typed-primitive overloads omitted until a real
+      consumer (dead-interop lesson). Corpus: objects_static.txt +9 goldens
+      (clj-byte-matched). REMAINING: java.util.Collections statics + String
+      static char[] forms — next drains of this row.
     category: "interop"
     quality_floor: "public-ization: java-interop static-member gaps (ADR-0166)"
     barrier: |-

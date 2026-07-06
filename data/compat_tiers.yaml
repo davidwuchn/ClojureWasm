@@ -273,6 +273,18 @@ tiers:
           surface: runtime/java/util/Objects.zig
         methods: [isNull, nonNull, equals, requireNonNull, requireNonNullElse, toString]
         clojure_peer_vars: []
+      # java.util.Arrays — common statics over the .array tag (D-526). asList
+      # returns the ArrayList host surface; sort is in-place natural compare;
+      # copyOf nil-pads; typed-primitive overloads omitted until a consumer.
+      - fqn: java.util.Arrays
+        cljw_ns: cljw.java.util.Arrays
+        keyword: arrays
+        tier: A
+        phase: 14
+        files:
+          surface: runtime/java/util/Arrays.zig
+        methods: [asList, toString, copyOf, sort, equals, fill]
+        clojure_peer_vars: []
       # java.util.HashMap — mutable key→value map (D-425, host_instance backing a
       # cljw map Value; one map Value GC-traced via host_trace, reuses cljw
       # hashing/equality). seq yields cljw MapEntry pairs (AD-032).
