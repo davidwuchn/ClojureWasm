@@ -50,10 +50,11 @@
 ;; capture are plain `(binding [*out* (rt/__string-writer)] …)` rebinds.
 (def ^:dynamic *out* (rt/__stdout-writer))
 (def ^:dynamic *err* (rt/__stderr-writer))
-;; `*in*` — the bindable input reader var (D-414). ROOT is nil (no process-stdin
-;; reader yet); `with-in-str` / `(binding [*in* rdr] …)` set it to a host reader
-;; (e.g. `(rt/__string-reader s)`). `read-line` derefs it.
-(def ^:dynamic *in* nil)
+;; `*in*` — the bindable input reader var (D-414). ROOT is a process-stdin
+;; reader (demand-filled, blocking — clj `System.in` parity), so `(read-line)`
+;; works on piped/redirected/interactive stdin; `with-in-str` /
+;; `(binding [*in* rdr] …)` rebind it to a string reader.
+(def ^:dynamic *in* (rt/__stdin-reader))
 ;; `*print-length*` / `*print-level*` (ADR-0088) are interned in Zig
 ;; (`bootstrap.registerPrintLimitVars`) alongside the other cached-pointer
 ;; dynamic vars (*ns*, *data-readers*) so the renderer reads them via a cached
@@ -912,9 +913,9 @@
         nil
         (cons line (lazy-seq (line-seq rdr)))))))
 
-;; `(read-line)` — read the next line from `*in*` (a host reader), or nil at EOF
-;; / when `*in*` is unbound (D-414; cljw has no process-stdin reader yet, so the
-;; root nil yields nil rather than blocking). Bind `*in*` via `with-in-str`.
+;; `(read-line)` — read the next line from `*in*` (a host reader), or nil at
+;; EOF. The root is a process-stdin reader (blocking, clj parity); a nil-bound
+;; `*in*` still yields nil rather than raising.
 (def read-line
   (fn* [] (when (some? *in*) (.readLine *in*))))
 

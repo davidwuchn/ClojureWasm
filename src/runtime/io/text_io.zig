@@ -160,7 +160,52 @@ const ReaderState = struct {
     pos: usize,
     /// 1-slot codepoint pushback (`.unread`); consulted first by `.read`/`.peek`.
     pushback: ?u21,
+    /// stdin mode (the `*in*` root reader): `data` is a demand-filled buffer
+    /// pulled from process stdin (blocking, matching clj's `System.in`) rather
+    /// than a fixed string. False for `with-in-str` string readers.
+    stdin: bool = false,
+    /// stdin mode: a zero-byte read happened — no more fills.
+    stdin_eof: bool = false,
 };
+
+/// stdin mode: pull one chunk from process stdin into `data`. Returns false
+/// when EOF (or a read error, treated as EOF) ends the stream. Blocking on a
+/// TTY is the correct clj-parity behaviour (read-line waits for input).
+fn fillFromStdin(rt: *Runtime, st: *ReaderState) bool {
+    if (st.stdin_eof) return false;
+    var chunk: [4096]u8 = undefined;
+    const n = std.posix.read(std.Io.File.stdin().handle, &chunk) catch {
+        st.stdin_eof = true;
+        return false;
+    };
+    if (n == 0) {
+        st.stdin_eof = true;
+        return false;
+    }
+    st.data.appendSlice(rt.gc.infra, chunk[0..n]) catch {
+        st.stdin_eof = true;
+        return false;
+    };
+    return true;
+}
+
+/// stdin mode: buffer until a full line (`\n` past `pos`) or EOF is present,
+/// so the readLine slice logic sees the same world a string reader does.
+fn ensureLineBuffered(rt: *Runtime, st: *ReaderState) void {
+    if (!st.stdin) return;
+    while (std.mem.findScalarPos(u8, st.data.items, st.pos, '\n') == null and !st.stdin_eof) {
+        if (!fillFromStdin(rt, st)) break;
+    }
+}
+
+/// stdin mode: buffer at least one full codepoint (≤ 4 bytes) past `pos` or
+/// EOF, so `decodeAt` never mistakes a chunk-boundary split for invalid UTF-8.
+fn ensureCodepointBuffered(rt: *Runtime, st: *ReaderState) void {
+    if (!st.stdin) return;
+    while (st.data.items.len < st.pos + 4 and !st.stdin_eof) {
+        if (!fillFromStdin(rt, st)) break;
+    }
+}
 
 fn readerStateOf(recv: Value) *ReaderState {
     return @ptrFromInt(host_instance.asHostInstance(recv).state[0]);
@@ -196,7 +241,6 @@ fn decodeAt(st: *ReaderState) ?Decoded {
 /// `(.read r)` — next codepoint as an int (JVM Reader.read), -1 at EOF. Honors a
 /// pending `.unread` first.
 fn readCharMethod(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
-    _ = rt;
     _ = env;
     try error_catalog.checkArity("read", args, 1, loc);
     const st = readerStateOf(args[0]);
@@ -204,6 +248,7 @@ fn readCharMethod(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocat
         st.pushback = null;
         return Value.initInteger(@intCast(cp));
     }
+    ensureCodepointBuffered(rt, st);
     const d = decodeAt(st) orelse return Value.initInteger(-1);
     st.pos += d.len;
     return Value.initInteger(@intCast(d.cp));
@@ -211,11 +256,11 @@ fn readCharMethod(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocat
 
 /// `(.peek r)` — next codepoint as an int WITHOUT advancing; -1 at EOF.
 fn peekCharMethod(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
-    _ = rt;
     _ = env;
     try error_catalog.checkArity("peek", args, 1, loc);
     const st = readerStateOf(args[0]);
     if (st.pushback) |cp| return Value.initInteger(@intCast(cp));
+    ensureCodepointBuffered(rt, st);
     const d = decodeAt(st) orelse return Value.initInteger(-1);
     return Value.initInteger(@intCast(d.cp));
 }
@@ -241,6 +286,9 @@ fn readLineMethod(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocat
     _ = env;
     try error_catalog.checkArity("readLine", args, 1, loc);
     const st = readerStateOf(args[0]);
+    // stdin mode: buffer the full line first so both branches below see the
+    // same world a string reader does (D-414 stdin root).
+    ensureLineBuffered(rt, st);
     // Fast path: no pushback → return a slice of the source (cf. host_stream).
     if (st.pushback == null) {
         const items = st.data.items;
@@ -434,6 +482,18 @@ fn inReaderFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation)
     return mintReader(rt, string_mod.asString(args[0]));
 }
 
+/// `(rt/__stdin-reader)` — a text_io Reader over PROCESS stdin (demand-filled,
+/// blocking; clj `System.in` parity). The `*in*` ROOT (core.clj) — so
+/// `(read-line)` works on piped/redirected/interactive stdin, not just under
+/// `with-in-str` (the 2026-07-06 non-TTY read-line-nil bug).
+fn stdinReaderFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = env;
+    try error_catalog.checkArity("__stdin-reader", args, 0, loc);
+    const st = try rt.gc.infra.create(ReaderState);
+    st.* = .{ .data = .empty, .pos = 0, .pushback = null, .stdin = true };
+    return host_instance.alloc(rt, &reader_descriptor, .{ @intFromPtr(st), 0, 0, 0 });
+}
+
 /// `(rt/__writer->str w)` — the accumulated string of a writer (`.string`
 /// mode; process modes own no buffer so return ""). Backs `with-out-str`.
 fn writerToStrFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
@@ -451,6 +511,7 @@ const PRIMS = [_]Prim{
     .{ .name = "__string-writer", .f = &stringWriterFn },
     .{ .name = "__writer->str", .f = &writerToStrFn },
     .{ .name = "__in-reader", .f = &inReaderFn },
+    .{ .name = "__stdin-reader", .f = &stdinReaderFn },
 };
 
 /// Register the text_io `rt/__*` writer primitives. Called from
