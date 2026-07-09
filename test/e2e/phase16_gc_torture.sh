@@ -224,6 +224,22 @@ assert_alloc '4b_take_range'      '(reduce + 0 (take 5 (range 20)))'            
 assert_alloc '4b_into_vec_lazy'   '(count (into [] (map inc (range 40))))'             '40'
 assert_alloc '4b_multichunk'      '(count (into {} (map (fn [i] [i i]) (range 50))))'  '50'
 assert_alloc '4b_take_multichunk' '(reduce + 0 (take 40 (range 100)))'                 '780'
+# chunked_cons.rest self-alloc window (2026-07-09, the cw-arcade rush-hour
+# solver corruption): `rest` on a chunked cursor allocates the offset+1
+# ChunkedCons while the INPUT cursor (often a fresh unrooted `range.seqChunk`
+# result, or a Zig-local walk cursor) is on no root — an alloc-boundary
+# collect inside that alloc swept the shared ChunkBuffer, so the new cell's
+# `chunk` dangled and `first` read recycled memory (nil / a string where a
+# number belonged). Fixed by bracketing the alloc in `chunked_cons.rest`
+# with the ADR-0150 fabrication no-collect region. These pin the whole
+# ladder: bare rest-of-range, the lazy-seq cons walk over range (the `for`
+# macro's expansion shape = the rush-hour BFS trigger), and a map-valued
+# variant matching the original report's corruption site.
+assert_alloc 'rest_range'        '(first (rest (range 2)))'                             '1'
+assert_alloc 'rest_rest_range'   '(first (rest (rest (range 40))))'                     '2'
+assert_alloc 'lazywalk_range'    '(do (defn g [s] (lazy-seq (when (seq s) (cons (+ 1 (first s)) (g (rest s)))))) (pr-str (doall (g (range 3)))))' '"(1 2 3)"'
+assert_alloc 'for_range'         '(pr-str (doall (for [i (range 2)] (+ 1 i))))'          '"(1 2)"'
+
 # Interleaved lazy-seq `=` walk: comparing two lazy seqs realizes both tails
 # alternately, so each cursor head + the pulled elements must be rooted across
 # the OTHER cursor's allocating advance — else a mid-walk collect corrupts the

@@ -130,6 +130,22 @@ the accumulator as a mutable, collector-addressable root (an `EvalFrame` slot
 like A2). Fixing C1-C9 now (for torture-green) doubles as moving-GC prep. C1's
 gpa `ArrayList` is hardest (a moving GC walks + rewrites every element).
 
+**C10 — self-alloc advance window (`chunked_cons.rest`) — DISCHARGED
+2026-07-09.** Sibling of C without eval reentry: a pure-Zig seq ADVANCE
+allocates its result cell while its INPUT cursor is a Zig local on no root.
+`chunked_cons.rest`'s offset+1 alloc could trigger an alloc-boundary collect
+(D-519 auto-collect past the threshold, or alloc-torture) that swept the
+shared ChunkBuffer + input cell — the input is routinely a fresh unrooted
+`range.seqChunk` result (`(rest (range n))`) or a walk-loop cursor — so the
+new cell's raw `chunk` pointer read recycled memory. Surfaced as the
+cw-arcade rush-hour BFS corruption (2026-07-09 user report follow-up:
+`[state path]` queue pairs decayed to raw numbers/strings mid-solve);
+minimal repro `(first (rest (range 2)))` → nil under `CLJW_GC_TORTURE_ALLOC`.
+Fixed by bracketing the alloc in the ADR-0150 fabrication no-collect region
+(pure Zig, single bounded alloc, no eval reentry — the same envelope as
+`range.seqChunk`). e2e guards: `phase16_gc_torture` `rest_range` /
+`rest_rest_range` / `lazywalk_range` / `for_range` + `phase16_bfs_queue_gc`.
+
 ## D. Permanent / pinned roots
 
 | #  | Mechanism                                                                                                | Roots                                                                                                                                                                                                             |
@@ -240,7 +256,7 @@ instead of per-hook (DA Alt B-finished-form-clean; debt **D-318**).
 
 - EvalFrame producers: 6 production (vm, reduceFn, iref.notifyWatches, lock_tx.fireWatches, equal.seqEqualInstance, equal.seqEqualWalk) + 1 test.
 - Threadlocal root slots: 4 (1 inert; `analysis_frame_head` bracketed at 9 production seams).
-- Reentrant accumulators: 8 rooted (`reduceFn`, `equal.seqEqualInstance`, `equal.seqEqualWalk`, + the 5 formToValue builders) + 8 UNROOTED-CANDIDATE (C1-C7, C9 — C8 discharged 2026-07-02, D-252).
+- Reentrant accumulators: 8 rooted (`reduceFn`, `equal.seqEqualInstance`, `equal.seqEqualWalk`, + the 5 formToValue builders) + 8 UNROOTED-CANDIDATE (C1-C7, C9 — C8 discharged 2026-07-02, D-252; C10 `chunked_cons.rest` self-alloc window discharged 2026-07-09 via fabrication bracket).
 - Permanent/pinned: 3 `pin` callers + 6 `trackHeap`/`persistent_marks` callers.
 - In-txn/concurrency: self-tx + worker-tx + `ThreadGcContext` (2 registrants) + safepoint (STW rendezvous + blocking-safepoint).
 - Per-tag traces: 50 `registerTrace` (+ `.type_descriptor`, 2026-07-02) + 22 `registerFinaliser`; 4 non-GC tags + 2 GC-leaf tags.

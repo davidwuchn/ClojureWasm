@@ -14,20 +14,24 @@
   (release.yml/CLAUDE.md "loop never tags" is otherwise intact). Demo repos
   cw-serverless-demo + cw-playground redeployed to fly.io on v1.0.0 and live-verified
   (books+cover-colours / eval+wasm-FFI). ADR-0167 rc.1-readiness campaign CLOSED — 1.0.0 shipped.
-- **Stopped — user requested (2026-07-07).** Tree clean + pushed at
+- 2026-07-07 session closed clean at
   `bff6d5eb0`. The ceiling FULL gate ran: ONE red (`dir_fn_set` — an e2e
   still calling the in-core dir-fn removed with D-513) — FIXED + re-smoked
   same session (the non-code-check exception; no full-gate re-run needed).
-- **User bug report VERIFIED FIXED** (`private/notes/
-  2026-07-07-cljw-bfs-queue-corruption-vm-backend.md` — vm-backend BFS
-  queue corruption, same solve2 shape as D-557 but on vm): the minimal
-  repro runs 3/3 GREEN on HEAD at default AND CLJW_GC_THRESHOLD_MB=1
-  (`WON path= [3 3 …]`, clj-identical). Root cause was the D-556 class —
-  the vm's not-yet-executed fn literal pool had the same unrooted hole the
-  persist fix closed (+ D-558 hardened the blob side). NEXT (the サクッと
-  task): (1) land the note's solve2 as a corpus/e2e case pinning both
-  backends, (2) re-run cw-arcade rush-hour.generator's 32-test suite on a
-  HEAD build and lift the README known-limitation note.
+- **User BFS bug: BOTH layers now fixed (2026-07-09).** The 2026-07-07
+  "VERIFIED FIXED" covered only the integer-state minimal repro (D-556
+  class); the cw-arcade rush-hour suite STILL corrupted on HEAD. The
+  residual root cause was **C10** (`.dev/gc_rooting.md`):
+  `chunked_cons.rest`'s offset+1 alloc could collect while the input
+  cursor (a fresh `range.seqChunk` result / a walk-loop Zig local) was
+  on no root → ChunkBuffer UAF (`(first (rest (range 2)))` → nil under
+  CLJW_GC_TORTURE_ALLOC). Fixed with the ADR-0150 fabrication bracket
+  inside `chunked_cons.rest`; guards = gc_torture rest_range ladder +
+  phase16_bfs_queue_gc + corpus bfs_queue. rush-hour verified green
+  piecewise on HEAD (28 fast tests + generator tests; all 18
+  difficulty-ordering samples byte-identical to clj). Perf datum:
+  generator on cljw = seconds-to-minutes (interp; 4MB GC floor thrashes
+  ~5x on live-heap-growing BFS — see the 2026-07-09 per-task note).
 - **First commit on resume: the easiest-first drain head** — no floor
   open. DONE 2026-07-07 (**18 discharges**): D-555+556+557+558 GC/AOT
   arc (root fixes: persist-analysis-roots incl. builder.zig, conservative
@@ -51,18 +55,9 @@
 
 ## Last landed (git log = SSOT)
 
-2026-07-02 session (user-directed comprehensive audit → immediate fixes): 4-way
-audit (debt-vs-code / scaffolding / OSS refresh / unfiled ideas → 4 notes in
-`private/notes/2026-07-02-*`), then the GC-safety arc it uncovered: **ADR-0028
-am3** gray-worklist mark (deep-chain SIGSEGV); **ADR-0169** AnalysisFrame — 3
-sibling unrooted classes closed (analysis/compile/deserialize constants;
-formToValue accumulators; TypeDescriptor method-table trace = gc_rooting C8);
-ns-reflection misuse now CATCHABLE (clj-parity, corpus `ns_reflection`).
-instaparse is byte-deterministic; **D-531 discharged**. Ledger reconciliation
-(5 discharges, 8 re-narrows, D-549…D-553 filed incl. user 2026-07-02
-decisions) + scaffolding quick wins (2 orphan scripts deleted, hook
-false-positive matchers fixed, phase-era wording swept, 5 historical docs
-CLOSED-bannered). Full gate green (23:34).
+2026-07-09 session: BFS pin (e2e phase16_bfs_queue_gc + corpus bfs_queue) +
+the C10 `chunked_cons.rest` UAF fix (gc_torture rest_range ladder). zwasm
+tag watch active (10-min cron; pin bump on a >v2.1.0 tag).
 
 ## Standing units (tracked in .dev/debt.yaml)
 
@@ -88,38 +83,14 @@ handover → **`private/notes/2026-06-25-debt-drain-order.md`** (easiest-first s
 §9.2.T. Memories: `verify_against_releasesafe_binary` / `smoke_first_batch_full_gate` /
 `gate_parallel_e2e_timeout`.
 
-## This session (2026-07-01) — rc.1 publicization campaign
+## First task on resume
 
-Not the usual loop — plan + execute the 1.0.0-rc.1 publicization (zwasm v2 S0…S7
-as template). Full scope, fully autonomous. LANDED + PUSHED: **ADR-0167** +
-debt **D-536…D-543** + ROADMAP §9.2.T; **D-537** health files; **D-539** CI
-wiring + repo `zig fmt`-clean; **D-540** CHANGELOG/THIRD_PARTY/attrs; **D-541**
-version staging; **D-542** release.yml; **D-543** dep-pin; **D-538** env
-decoupling (loop part); **D-536** down-payment. Local full gate 398/0.
-
-Publicization pass (user's 2nd directive) — ALL committed + pushed + CI GREEN:
-- **README badges + subtle sponsor** (zwasm taste: CI/Zig/Clojure/EPL/Sponsors +
-  bottom sponsor line). Issues/PRs **stay paused** (did NOT mirror zwasm's reopen).
-- **CI reproducibility + efficiency (D-544, discharged)**: gate-script tool-gaps
-  (rg/mapfile/GNU-timeout, a bare-runner reproducibility gap) fixed → mapfile→read,
-  timeout→`run_bounded`, ripgrep install + flake ripgrep/coreutils; actions/cache
-  of Zig deps + two-tier gate (push/PR=core, nightly/dispatch=full). Residual ~15-min
-  warm CI = inherent 3× ReleaseSafe compile (cache saves deps, not compile).
-- **大整理**: shipped host-names, 8 src `private/` de-pointered, 6 mixed-JP comments
-  → English, provenance `~/Documents/OSS`→repo-relative, ladder.md. Inventory:
-  `private/notes/2026-07-01-publicization-cleanup-inventory.md`.
-
-## Stopped — user requested
-
-User instruction (2026-07-02): 「そろそろきりがよいですか？であれば、このへんで
-区切りたいです。」 Session closed at a clean boundary (full gate green 23:34, all
-pushed). Resume at D-430's narrowed frontier: the `var` special form does not
-resolve NS ALIASES (minimal repro + fix site in the D-430 row; S-sized).
-
-**First task on resume:** continue **Track B** (easiest-first drain; note
-2026-07-02 order changes: D-517 UNBLOCKED, D-473 folded into D-513):
-**D-522** = the GRADUAL ~2962-line AI-narration/pointer de-pointering (worst-offender
-`src/runtime/interface_membership.zig` — but note MUCH of it is genuine technical doc;
-only date-stamps like `clj-oracle 2026-06-21` + ADR/D pointers are the noise — do NOT
-blindly strip provenance; careful, code-truth, multi-agent-with-verify OK). Then
-D-523 doc-audit / D-460 sorted-coll-as-key correctness / D-526/527/528.
+Continue **Track B** (easiest-first drain; 2026-07-02 order changes: D-517
+UNBLOCKED, D-473 folded into D-513): **D-522** = the GRADUAL ~2962-line
+AI-narration/pointer de-pointering (worst-offender
+`src/runtime/interface_membership.zig` — but MUCH of it is genuine technical
+doc; only date-stamps like `clj-oracle 2026-06-21` + ADR/D pointers are the
+noise — do NOT blindly strip provenance; careful, code-truth,
+multi-agent-with-verify OK). Then D-523 doc-audit / D-460
+sorted-coll-as-key correctness / D-527/528. (D-430's narrowed frontier —
+`var` special form does not resolve NS ALIASES, S-sized — is also open.)
