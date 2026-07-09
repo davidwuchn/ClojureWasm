@@ -83,14 +83,14 @@ handover → **`private/notes/2026-06-25-debt-drain-order.md`** (easiest-first s
 §9.2.T. Memories: `verify_against_releasesafe_binary` / `smoke_first_batch_full_gate` /
 `gate_parallel_e2e_timeout`.
 
-## First task on resume
+## Stopped — user requested
 
-Continue **Track B** (easiest-first drain; 2026-07-02 order changes: D-517
-UNBLOCKED, D-473 folded into D-513): **D-522** = the GRADUAL ~2962-line
-AI-narration/pointer de-pointering (worst-offender
-`src/runtime/interface_membership.zig` — but MUCH of it is genuine technical
-doc; only date-stamps like `clj-oracle 2026-06-21` + ADR/D pointers are the
-noise — do NOT blindly strip provenance; careful, code-truth,
-multi-agent-with-verify OK). Then D-523 doc-audit / D-460
-sorted-coll-as-key correctness / D-527/528. (D-430's narrowed frontier —
-`var` special form does not resolve NS ALIASES, S-sized — is also open.)
+User instruction (2026-07-09): 「これおわったら今日のサマリーを表示して停止して。」
+Summary shown; the zwasm tag-watch cron stays armed per the same day's
+directive (pin bump on a >v2.1.0 tag). A batched full gate (--serial-e2e,
+ceiling look-ahead) was in flight at stop; HEAD's 4 commits are each
+smoke-green + pushed. Resume at **D-523's residual**: `docs/architecture.md`
++ `docs/examples/wasm/README.md` were NOT in drain 1's "7/7 audited" set —
+audit both vs code-truth (recipe in
+`private/notes/2026-07-09-d460-sorted-as-key.md` § Extended challenge),
+then D-522 pointer-condensation / D-527/528 / D-430 var-alias (S-sized).
