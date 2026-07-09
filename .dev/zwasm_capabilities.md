@@ -34,8 +34,8 @@ a cljw-side shim.
 
 ## zwasm live status sources (read these to refresh the table)
 
-| Source                                                                   | What it tells you                                              |
-|--------------------------------------------------------------------------|----------------------------------------------------------------|
+| Source                                                      | What it tells you                                              |
+|-------------------------------------------------------------|----------------------------------------------------------------|
 | `~/Documents/MyProducts/zwasm/private/dogfooding_handover/` | **the mailbox** — `PROTOCOL.md` + `from_cljw_NN`/`to_cljw_NN` |
 | `~/Documents/MyProducts/zwasm/.dev/ROADMAP.md`              | zwasm phase plan (p17 = JIT)                                   |
 | `~/Documents/MyProducts/zwasm/.dev/decisions/0200_*.md`     | ADR-0200 — JIT-DEFAULT engine + research-driven API           |
