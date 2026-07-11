@@ -29,14 +29,24 @@ BIN="zig-out/bin/cljw"
 fail() { echo "FAIL $1" >&2; exit 1; }
 assert_eq() { local n="$1" g="$2" w="$3"; [[ "$g" == "$w" ]] || fail "$n: got '$g' want '$w'"; echo "PASS $n -> $w"; }
 
+# Portable bounded run: GNU `timeout`, else coreutils `gtimeout`, else
+# unbounded (hosted mac runners ship neither; same pattern as
+# scripts/check_corpus_regression.sh).
+run_bounded() {
+    local secs="$1"; shift
+    if command -v timeout >/dev/null 2>&1; then timeout "$secs" "$@"
+    elif command -v gtimeout >/dev/null 2>&1; then gtimeout "$secs" "$@"
+    else "$@"; fi
+}
+
 FIXTURE="test/e2e/fixtures/bfs_queue_gc.clj"
 WANT='WON path= [3 3 3 3 3 3 3 3 3 3]'
 
 # (1) default GC threshold — the shape the user's original report hit.
-assert_eq 'bfs_queue_default' "$(timeout 120 "$BIN" "$FIXTURE")" "$WANT"
+assert_eq 'bfs_queue_default' "$(run_bounded 120 "$BIN" "$FIXTURE")" "$WANT"
 
 # (2) 1 MB threshold — frequent collects; a resurfacing rooting hole in the
 # queue / visited-set / fn-literal-pool path corrupts deterministically here.
-assert_eq 'bfs_queue_thr1mb' "$(CLJW_GC_THRESHOLD_MB=1 timeout 120 "$BIN" "$FIXTURE")" "$WANT"
+assert_eq 'bfs_queue_thr1mb' "$(CLJW_GC_THRESHOLD_MB=1 run_bounded 120 "$BIN" "$FIXTURE")" "$WANT"
 
 echo "ALL phase16_bfs_queue_gc PASS"

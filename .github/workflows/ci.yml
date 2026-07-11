@@ -37,6 +37,15 @@ on:
 permissions:
   contents: read
 
+env:
+  # Homebrew 6.0 (2026-05-30) enforces tap-trust: the macos-15 image ships a
+  # pre-tapped third-party `aws/tap`, so every `brew` invocation (auto-update
+  # included) spews a "not trusted / ignoring formulae" block and any future
+  # third-party formula install would be rejected outright. Our own installs
+  # are homebrew/core (official) so they still work, but this keeps the log
+  # clean and future-proofs a third-party dep. Harmless on Linux (no brew).
+  HOMEBREW_NO_REQUIRE_TAP_TRUST: 1
+
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
