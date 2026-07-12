@@ -5,15 +5,17 @@
 
 ## Resume contract
 
-- **HEAD**: `main` (`git log` = SSOT; tip ≈ `40ccdc77`). Per-commit = smoke; commit
-  **and** push (atomic Step 6). `build.zig.zon` `.zwasm` = tag pin `v2.1.0` (table64-JIT; bumped from v2.0.0).
-- **1.0.0 RELEASED (2026-07-01).** cljw `v1.0.0` tagged + pushed (commit a6db5dd6);
-  release.yml published the GitHub Release (macos-aarch64 + linux-x86_64 binaries +
-  sha256). Pins the coherent stable **zwasm v2.0.0** (D-543 resolved; the D-501 no-max
-  table grow fix is in). The user authorized the one-time loop-tag override for this cut
-  (release.yml/CLAUDE.md "loop never tags" is otherwise intact). Demo repos
-  cw-serverless-demo + cw-playground redeployed to fly.io on v1.0.0 and live-verified
-  (books+cover-colours / eval+wasm-FFI). ADR-0167 rc.1-readiness campaign CLOSED — 1.0.0 shipped.
+- **HEAD**: `main` (`git log` = SSOT). Per-commit = smoke; commit
+  **and** push (atomic Step 6). `build.zig.zon` `.zwasm` = tag pin `v2.2.0` (AOT-full-fidelity; from v2.1.0).
+- **1.1.0 RELEASED (2026-07-12).** cljw `v1.1.0` tagged + pushed (user-authorized);
+  release.yml published macos-aarch64 + linux-x86_64 binaries + sha256. Pins **zwasm
+  v2.2.0**. Contents = 56 commits past v1.0.1: clojure.repl bundle + :arglists/:doc meta
+  + regex lookbehind + %t format + interop statics + the D-555…558/C10 GC-correctness
+  batch. **Homebrew tap LIVE**: `clojurewasm/homebrew-tap` (own tap, holds many
+  formulae), `brew install clojurewasm/tap/cljw` verified on Apple Silicon (unsigned,
+  ad-hoc/linker sig, no quarantine xattr; eval+wasm-FFI+clojure.repl all work). Signing
+  = unsigned + README xattr fallback note (user call). D-549 residual (Docker/ghcr +
+  Developer-ID notarization) stays user-LOCKED.
 - 2026-07-07 session closed clean at
   `bff6d5eb0`. The ceiling FULL gate ran: ONE red (`dir_fn_set` — an e2e
   still calling the in-core dir-fn removed with D-513) — FIXED + re-smoked

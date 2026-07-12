@@ -50,6 +50,26 @@ still use what other languages have already built.
 - **Single-binary builds** — `cljw build script.clj -o app` compiles your
   program (and the runtime) into one self-contained executable.
 
+## Install
+
+**Homebrew** (macOS arm64 / Linux x86_64):
+
+```sh
+brew install clojurewasm/tap/cljw
+```
+
+The `cljw` binary is not code-signed. Homebrew installs it without a Gatekeeper
+prompt on most setups; if macOS still blocks it as coming from an unidentified
+developer, clear the quarantine flag once:
+
+```sh
+xattr -d com.apple.quarantine "$(which cljw)"
+```
+
+Or grab a binary straight from the
+[Releases](https://github.com/clojurewasm/ClojureWasm/releases) page. Building
+from source is in [Quickstart](#quickstart) below.
+
 ## Quickstart
 
 Build the optimized, Wasm-enabled binary (needs Zig 0.16 — `direnv allow` loads

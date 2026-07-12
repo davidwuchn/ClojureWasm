@@ -1092,19 +1092,26 @@ active:
 standing:
   - id: "D-549"
     status: |-
-      DEFERRED-BY-USER 2026-07-02: the DISTRIBUTION cluster — Homebrew tap, Docker/ghcr
-      image, and macOS code signing (ad-hoc codesign in CI and/or Developer ID +
-      notarization; the Gatekeeper quarantine story incl. the README `xattr -d
-      com.apple.quarantine` workaround note) — is NOT to be started until the user has
-      solid confidence in the release shape ("brew/dockerはまだしっかり確証が取れるまで
-      やりません（日付と記録を）"). Surfaced by the 2026-07-02 unfiled-ideas audit
-      (A-1/A-2/A-3/A-5 cluster). The zero-infra doc slice (README Install section) rides
-      the same deferral pending an explicit user go.
+      HOMEBREW SLICE SHIPPED 2026-07-12 (user re-authorized the brew part in chat):
+      `clojurewasm/homebrew-tap` created (public, one tap holds many formulae — cljw
+      today, future zwasm etc.), `Formula/cljw.rb` pins the v1.1.0 release tarballs
+      (macos-aarch64 + linux-x86_64) by url+sha256. `brew install clojurewasm/tap/cljw`
+      VERIFIED on Apple Silicon: Homebrew 6.0.9 auto-trusts the formula (no tap-trust
+      prompt), the unsigned binary runs (Zig ad-hoc/linker signature; NO quarantine
+      xattr on a formula install, so the `xattr -d com.apple.quarantine` step is a
+      README safety fallback, not required), eval + wasm FFI + clojure.repl all work.
+      README Install section landed the same cycle. Signing decision = ship UNSIGNED +
+      cljstyle-style xattr note (user call 2026-07-12).
+      STILL DEFERRED-BY-USER (the rest of the 2026-07-02 cluster): Docker/ghcr image +
+      macOS Developer-ID notarization. Original hold: "brew/dockerはまだしっかり確証が
+      取れるまでやりません（日付と記録を）" — the brew confidence is now established;
+      Docker + notarization remain user-locked until an explicit go.
     category: "distribution"
     barrier: |-
-      blocked-by: explicit user re-authorization of the distribution cluster. The loop
-      does NOT self-select this row.
-    last_reviewed: "2026-07-02"
+      blocked-by: explicit user re-authorization. The brew slice is DONE (2026-07-12);
+      the residual (Docker/ghcr image + Developer-ID notarization) stays user-locked —
+      the loop does NOT self-select it.
+    last_reviewed: "2026-07-12"
   - id: "D-552"
     status: |-
       RESEARCH-FIRST (2026-07-02, user-directed framing). cljw-self-as-Wasm (running the
