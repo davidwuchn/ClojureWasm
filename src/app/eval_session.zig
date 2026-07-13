@@ -29,6 +29,9 @@ const print = @import("../runtime/print.zig");
 const text_io = @import("../runtime/io/text_io.zig");
 const dispatch = @import("../runtime/dispatch.zig");
 const error_render = @import("error_render.zig");
+const error_mod = @import("../runtime/error/info.zig");
+const host_class = @import("../runtime/error/host_class.zig");
+const ex_info_mod = @import("../runtime/collection/ex_info.zig");
 
 /// REPL history state (`*1` `*2` `*3` `*e`) with the GC pin
 /// discipline built in.
@@ -147,7 +150,7 @@ pub fn evalSource(
     while (true) {
         const form_opt = reader.read() catch |err| {
             try flushCaptured(out_var, err_var, sink);
-            try renderAndEmit(scratch, opts, err, sink);
+            try handleEvalError(rt, opts, ve, err, scratch, sink);
             ok = false;
             break;
         };
@@ -160,14 +163,14 @@ pub fn evalSource(
 
         const node = analyzeForm(arena, rt, env, null, form, macro_table) catch |err| {
             try flushCaptured(out_var, err_var, sink);
-            try handleEvalError(opts, ve, err, scratch, sink);
+            try handleEvalError(rt, opts, ve, err, scratch, sink);
             ok = false;
             break;
         };
         var locals: [driver.MAX_LOCALS]Value = [_]Value{.nil_val} ** driver.MAX_LOCALS;
         const result = driver.evalForm(rt, env, &locals, arena, node) catch |err| {
             try flushCaptured(out_var, err_var, sink);
-            try handleEvalError(opts, ve, err, scratch, sink);
+            try handleEvalError(rt, opts, ve, err, scratch, sink);
             ok = false;
             break;
         };
@@ -225,6 +228,7 @@ fn rearmCapture(rt: *Runtime, out_var: ?*env_mod.Var, err_var: ?*env_mod.Var) !v
 }
 
 fn handleEvalError(
+    rt: *Runtime,
     opts: Options,
     ve: ?*env_mod.Var,
     err: anyerror,
@@ -239,12 +243,30 @@ fn handleEvalError(
             try stars.setE(t);
             if (ve) |v| _ = env_mod.setBinding(v, t);
         }
+    } else if (opts.stars != null) {
+        // JVM parity (ADR-0170 am1): clojure.main's REPL sets `*e` for
+        // EVERY caught error, compiler errors included — materialize
+        // the catalog Info into a GC-owned exception Value (the same
+        // shape the VM's catch path synthesizes), stamped with the
+        // phase so the nREPL stacktrace op can route compile-phase
+        // errors JVM-style. An uncatchable Kind still materializes for
+        // display ("Error"); an alloc failure leaves `*e` unset — the
+        // stacktrace op then reports no-error, an honest degradation.
+        if (error_mod.peekLastError()) |info| {
+            const class = host_class.kindToHostClass(info.kind) orelse "Error";
+            if (ex_info_mod.allocExceptionLoc(rt, info.message, class, info.location, info.trace)) |synth| {
+                ex_info_mod.setPhase(synth, info.phase);
+                if (opts.stars) |stars| {
+                    try stars.setE(synth);
+                    if (ve) |v| _ = env_mod.setBinding(v, synth);
+                }
+            } else |_| {
+                // OOM-class alloc failure: *e stays unset — the
+                // stacktrace op reports no-error, an honest degradation.
+            }
+        }
     }
     try renderAndEmitThrown(scratch, opts, err, thrown, sink);
-}
-
-fn renderAndEmit(scratch: std.mem.Allocator, opts: Options, err: anyerror, sink: anytype) !void {
-    try renderAndEmitThrown(scratch, opts, err, null, sink);
 }
 
 fn renderAndEmitThrown(scratch: std.mem.Allocator, opts: Options, err: anyerror, thrown: ?Value, sink: anytype) !void {

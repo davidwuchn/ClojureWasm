@@ -235,6 +235,86 @@ binding maps — the F-011 oracle; bb's global `set!` across id-tags is
 bb's simplification and would let tooling-session evals rotate the
 user's `*1`).
 
+## Amendment 1 — `cider/analyze-last-stacktrace` (the `*cider-error*` buffer)
+
+**Context** (user field report, 2026-07-14): CIDER's `*cider-error*`
+buffer renders "at [no stack trace available]" against cljw. CIDER's
+error handler is a 3-way decision (cider-compilation.el
+`cider-default-err-handler`): the op `cider/analyze-last-stacktrace`
+when advertised → the rich numbered-causes buffer with Show/Hide frame
+filters; else a `clojure.stacktrace` eval; else the bare print
+fallback cljw currently hits. The op's wire contract (cider-nrepl
+middleware/stacktrace.clj + orchard/stacktrace.clj + the
+cider-stacktrace.el renderer's `nrepl-dbind-response` bindings):
+
+- One response dict per CAUSE: `class` (string), `message`, optional
+  `phase` (clojure.error phase name), optional `data` (printed
+  ex-data), `stacktrace` = list of frame dicts; then `{status [done]}`.
+  No last error → `{status [no-error]}` then `{status [done]}`.
+- Frame keys the renderer binds: `name` `ns` `fn` `file` `file-url`
+  `line` `class` `method` `var` `flags`; `flags` (strings) drive the
+  Show/Hide filters (`clj` / `java` / `repl` / `tooling` / `project` /
+  `dup`).
+
+**Decision (DA Alt 2 — `*e` is the single channel).** cljw implements
+the op natively (no cider-nrepl), and the op **analyzes the session's
+`*e` on demand** — cider-nrepl's own model (`(@session #'*e)`) — rather
+than keeping a parallel capture channel:
+
+- **`*e` is set for EVERY caught REPL error, catalog errors included**
+  — closing a real F-011 gap: JVM `clojure.main/repl` sets `*e` for
+  compiler errors too, while cljw only did for thrown Values. The
+  engine materializes the peeked catalog Info (the existing
+  `peekLastError()` — the VM catch path's `allocExceptionLoc` shape)
+  into a GC-owned exception Value stamped with the error `phase`
+  (a new byte on `ExInfo`), and `stars.setE`s it. Covers the reader-
+  error branch too. Alloc failure leaves `*e` unset (honest
+  no-error degradation). `(ex-message *e)` after `hoge` now works in
+  BOTH REPLs (e2e-pinned).
+- **`throw` stamps the live call stack** onto a trace-less exception
+  (`ex_info.stampTraceIfAbsent`, both backends symmetric) so a user
+  `(throw (ex-info …))` carries frames exactly like a catalog raise.
+- The op walks `*e`'s `ex-cause` chain: one response dict per cause —
+  `class` (the stored host-class name, e.g. "RuntimeException" for a
+  name error — exactly what the JVM shows for unresolved symbols),
+  `message`, `phase` (mapped: `parse`→`read-source`,
+  `analysis`→`compile-syntax-check`, `macroexpand`→`macroexpansion`,
+  `eval`→`execution` — drives CIDER's buffer-vs-overlay routing),
+  `data` (printed at op time), `stacktrace` frames innermost-first.
+- Flags, cljw's take: every frame `clj` (there is no Java); `repl`
+  for `<…>`-labelled sources; `project` + `file-url` for on-disk
+  paths (navigable); `dup` per orchard's rule (same fn, or same
+  REAL file+line). `java` / `tooling` never fire — the filter
+  buttons degrade gracefully in CIDER.
+- The bare `analyze-last-stacktrace` alias is advertised too.
+- `inspect-last-exception` (the inspector) stays out of scope — and
+  the `*e`-Value model (vs string snapshots) deliberately keeps that
+  door open.
+- **Fixed en route**: the re-architecture's `evalImpl` fed the
+  SCRATCH-owned request `code` into evals whose products (defn'd
+  fns, forms) borrow source slices and outlive the message — a
+  use-after-free surfacing as garbage strings under scratch-reuse
+  pressure. The source is now duped onto the persistent arena
+  (mirroring the CLI REPL's per-line dupe).
+
+**Amendment alternatives considered** (fresh-context DA fork,
+2026-07-14): *Alt 1 smallest-diff* — sink-side gpa string-snapshot
+capture into `session.last_error`; rejected: fossilizes the `*e`
+F-011 divergence behind a second truth channel, forecloses the
+inspector, adds a free-on-close lifecycle and a two-channels-drift
+class. *Alt 2 (adopted)* — as above; the DA's factual corrections
+(peekLastError already existed; the reader branch bypassed
+handleEvalError; frame `name` is display-inert but `file-url`/`var`
+drive navigation; `phase` is routing, not decoration; the no-error
+shape is CIDER-safe byte-parity) are folded in. *Alt 3 wildcard* —
+implement the analysis in bootstrap `.clj` over `*e` + small
+primitives; right eventual direction (the ADR's existing lookup-op
+forward note), premature while the Value→bencode walker doesn't
+exist.
+
 ## Revision history
 
 - 2026-07-13: Proposed.
+- 2026-07-14: Amendment 1 — `cider/analyze-last-stacktrace` op +
+  per-session structured last-error capture (the `*cider-error*`
+  buffer); DA-fork alternatives reflected below.

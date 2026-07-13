@@ -349,6 +349,14 @@ pub fn clearLastError() void {
 
 // --- Call stack API ---
 
+/// The live call stack at this instant (outermost-first). Borrowed view
+/// into the threadlocal — copy before the stack unwinds (ADR-0170 am1:
+/// `throw` stamps it onto a trace-less exception Value so a user
+/// `(throw (ex-info …))` carries frames like a catalog raise does).
+pub fn currentStack() []const StackFrame {
+    return call_stack[0..stack_depth];
+}
+
 /// Push a frame; returns `true` if it was recorded, `false` if the 64-frame
 /// cap was hit (the frame is dropped — best-effort trace). The caller pops
 /// only when this returned `true`, keeping push/pop balanced past the cap

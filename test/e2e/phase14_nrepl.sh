@@ -419,6 +419,56 @@ hval = next(s_of(r, "value") for r in h if isinstance(r, dict) and "value" in r)
 assert hval == "42", f"*1 must hold the previous value: {hval}"
 print("PASS nrepl_star_history")
 
+# 4j. cider/analyze-last-stacktrace (ADR-0170 am1 — the *cider-error*
+# buffer). A thrown ex-info with a cause chain → one response dict per
+# cause (class/message/data/stacktrace frames with flags), then done;
+# a catalog error → class = the Kind name; a fresh session → no-error.
+# a dedicated session: main_s moved to a bare ns in 4h (no core refers).
+stc = rt({"op": "clone", "id": "stc"})
+st_s = next(s_of(r, "new-session") for r in stc if isinstance(r, dict) and "new-session" in r)
+rt({"op": "eval", "session": st_s, "id": "st0",
+    "code": "(defn boom [] (throw (ex-info \"outer-msg\" {:k 1} (ex-info \"inner-msg\" {:j 2})))) (defn mid [] (boom))"})
+rt({"op": "eval", "session": st_s, "code": "(mid)", "id": "st1"})
+st = rt({"op": "cider/analyze-last-stacktrace", "session": st_s, "id": "st2"})
+causes = [r for r in st if isinstance(r, dict) and "class" in r]
+assert len(causes) == 2, f"expected 2 causes (outer + inner): {st}"
+assert "outer-msg" in s_of(causes[0], "message"), f"outer cause message: {causes[0]}"
+assert "inner-msg" in s_of(causes[1], "message"), f"inner cause message: {causes[1]}"
+assert ":k 1" in (s_of(causes[0], "data") or ""), f"outer ex-data printed: {causes[0]}"
+frames = causes[0].get("stacktrace", [])
+fnames = {s_of(f, "name") for f in frames if isinstance(f, dict)}
+assert any("boom" in (n or "") for n in fnames), f"boom frame missing: {fnames}"
+assert any("mid" in (n or "") for n in fnames), f"mid frame missing: {fnames}"
+fr = next(f for f in frames if isinstance(f, dict) and "boom" in s_of(f, "name"))
+assert b"clj" in fr.get("flags", []), f"frame flags must include clj: {fr}"
+assert "file" in fr and "line" in fr, f"frame needs file+line: {fr}"
+print(f"PASS nrepl_stacktrace_exinfo_chain -> {len(causes)} causes, {len(frames)} frames")
+
+# catalog error (no thrown Value) must ALSO be captured — JVM parity:
+# *e is set for EVERY caught REPL error, and an unresolved symbol maps
+# to RuntimeException with a compile phase (rendered as an inline
+# overlay by CIDER, exactly like the JVM).
+rt({"op": "eval", "session": st_s, "code": "hoge", "id": "st3"})
+st2 = rt({"op": "cider/analyze-last-stacktrace", "session": st_s, "id": "st4"})
+cause2 = next(r for r in st2 if isinstance(r, dict) and "class" in r)
+assert s_of(cause2, "class") == "RuntimeException", f"catalog class: {cause2}"
+assert "Unable to resolve" in s_of(cause2, "message"), f"catalog message: {cause2}"
+assert s_of(cause2, "phase") == "compile-syntax-check", f"catalog phase: {cause2}"
+# reader (syntax) errors are analyzable too, with the read phase.
+rt({"op": "eval", "session": st_s, "code": "(unclosed", "id": "st3b"})
+st2b = rt({"op": "cider/analyze-last-stacktrace", "session": st_s, "id": "st4b"})
+cause2b = next(r for r in st2b if isinstance(r, dict) and "class" in r)
+assert s_of(cause2b, "phase") == "read-source", f"reader phase: {cause2b}"
+print("PASS nrepl_stacktrace_catalog_and_reader")
+
+# fresh session → no-error status.
+fresh = rt({"op": "clone", "id": "st5"})
+fresh_s = next(s_of(r, "new-session") for r in fresh if isinstance(r, dict) and "new-session" in r)
+ne = rt({"op": "cider/analyze-last-stacktrace", "session": fresh_s, "id": "st6"})
+assert any(b"no-error" in r.get("status", []) for r in ne if isinstance(r, dict)), f"missing no-error: {ne}"
+assert not any(isinstance(r, dict) and "class" in r for r in ne), f"fresh session must have no causes: {ne}"
+print("PASS nrepl_stacktrace_no_error")
+
 s.close()
 PY
 

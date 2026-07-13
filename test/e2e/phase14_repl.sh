@@ -69,5 +69,16 @@ case "$out" in
         fail "repl_star_history: expected 42,43,42 sequence, got '$out'" ;;
 esac
 
+# --- Case 7: *e is set for EVERY caught REPL error, catalog errors
+# included (ADR-0170 am1, JVM clojure.main parity — an unresolved
+# symbol leaves an exception object in *e; (ex-message *e) reads it). ---
+out=$(printf 'hoge\n(ex-message *e)\n' | "$BIN" repl 2>/dev/null | strip_prompts | grep -vE '^(ClojureWasm|$)')
+case "$out" in
+    *"Unable to resolve symbol: 'hoge'"*)
+        echo "PASS repl_star_e_catalog -> (ex-message *e) after a catalog error" ;;
+    *)
+        fail "repl_star_e_catalog: expected the NameError message via *e, got '$out'" ;;
+esac
+
 echo
 echo "Phase 14 row 14.9 REPL minimal e2e: all green."

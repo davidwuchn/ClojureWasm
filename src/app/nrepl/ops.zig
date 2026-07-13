@@ -26,6 +26,7 @@ const Runtime = @import("../../runtime/runtime.zig").Runtime;
 const Env = @import("../../runtime/env.zig").Env;
 const env_mod = @import("../../runtime/env.zig");
 const print = @import("../../runtime/print.zig");
+const ex_info_mod = @import("../../runtime/collection/ex_info.zig");
 
 /// Everything a handler needs for one request.
 pub const Ctx = struct {
@@ -75,6 +76,8 @@ const op_table = [_]OpEntry{
     .{ .name = "lookup", .handler = opLookup },
     .{ .name = "info", .handler = opLookup },
     .{ .name = "eldoc", .handler = opLookup },
+    .{ .name = "cider/analyze-last-stacktrace", .handler = opAnalyzeLastStacktrace },
+    .{ .name = "analyze-last-stacktrace", .handler = opAnalyzeLastStacktrace },
 };
 
 const op_map = blk: {
@@ -197,10 +200,18 @@ const BencodeSink = struct {
 const Value = @import("../../runtime/value/value.zig").Value;
 
 fn evalImpl(ctx: *Ctx, code_key: []const u8, emit_each: bool) anyerror!void {
-    const code = ctx.str(code_key) orelse {
+    const code_scratch = ctx.str(code_key) orelse {
         try ctx.respondStatus(&.{ "error", "no-code", "done" });
         return;
     };
+    // The decoded request lives on the per-message SCRATCH arena, but
+    // eval products (defn'd Functions, forms, analysis nodes) borrow
+    // slices of the source text and outlive the message — dupe the
+    // source onto the persistent arena (exactly like the CLI REPL's
+    // per-line dupe). Without this, the next message's scratch reset
+    // leaves every borrowed slice dangling (caught as garbage frame
+    // strings in stamped traces under GC/scratch-reuse pressure).
+    const code = try ctx.persist.dupe(u8, code_scratch);
     const sess = try ctx.registry.getOrDefault(ctx.str("session"));
 
     // ns honoring: an explicit request `ns` must exist (spec:
@@ -357,6 +368,124 @@ fn opLookup(ctx: *Ctx) anyerror!void {
         try body.append(ctx.scratch, .{ .key = "status", .value = try transport.statusValue(ctx.scratch, &.{"done"}) });
         try ctx.respond(body.items);
     }
+}
+
+// --- cider/analyze-last-stacktrace (ADR-0170 am1: the *cider-error* buffer) ---
+
+/// Analyze the session's `*e` on demand (the cider-nrepl model: the op
+/// reads the session's last exception, it does not keep a parallel
+/// error channel). One response dict per cause in the `ex-cause`
+/// chain, then `done`; no `*e` → `no-error` + `done`.
+fn opAnalyzeLastStacktrace(ctx: *Ctx) anyerror!void {
+    const sess = try ctx.registry.getOrDefault(ctx.str("session"));
+    const e = sess.stars.values[eval_session.StarState.idx_e];
+    if (e.isNil()) {
+        try ctx.respondStatus(&.{"no-error"});
+        try ctx.respondStatus(&.{"done"});
+        return;
+    }
+    var cur = e;
+    while (!cur.isNil()) {
+        try emitCause(ctx, cur);
+        cur = if (cur.tag() == .ex_info) ex_info_mod.cause(cur) else Value.nil_val;
+    }
+    try ctx.respondStatus(&.{"done"});
+}
+
+/// clojure.error phase vocabulary for a stamped cljw phase (drives
+/// CIDER's buffer-vs-overlay routing: compile phases render as an
+/// inline overlay, JVM style).
+fn phaseName(p: @import("../../runtime/error/info.zig").Phase) []const u8 {
+    return switch (p) {
+        .parse => "read-source",
+        .analysis => "compile-syntax-check",
+        .macroexpand => "macroexpansion",
+        .eval => "execution",
+    };
+}
+
+fn emitCause(ctx: *Ctx, v: Value) !void {
+    var entries: std.ArrayList(bencode.Decoded.Entry) = .empty;
+    if (v.tag() == .ex_info) {
+        const class = ex_info_mod.className(v) orelse "ExceptionInfo";
+        try entries.append(ctx.scratch, .{ .key = "class", .value = .{ .str = class } });
+        try entries.append(ctx.scratch, .{ .key = "message", .value = .{ .str = ex_info_mod.message(v) } });
+        if (ex_info_mod.phaseOf(v)) |p| {
+            try entries.append(ctx.scratch, .{ .key = "phase", .value = .{ .str = phaseName(p) } });
+        }
+        const d = ex_info_mod.data(v);
+        if (!d.isNil()) {
+            var aw: Writer.Allocating = .init(ctx.scratch);
+            if (print.printResult(ctx.rt, ctx.env, &aw.writer, d)) {
+                try entries.append(ctx.scratch, .{ .key = "data", .value = .{ .str = aw.written() } });
+            } else |_| {
+                // Unprintable ex-data: omit the key; the cause still renders.
+            }
+        }
+        try entries.append(ctx.scratch, .{ .key = "stacktrace", .value = try emitFrames(ctx, ex_info_mod.originTrace(v)) });
+    } else {
+        // A raw thrown Value (`(throw 42)`): render it as the message.
+        var aw: Writer.Allocating = .init(ctx.scratch);
+        print.printResult(ctx.rt, ctx.env, &aw.writer, v) catch {};
+        try entries.append(ctx.scratch, .{ .key = "class", .value = .{ .str = "Throwable" } });
+        try entries.append(ctx.scratch, .{ .key = "message", .value = .{ .str = aw.written() } });
+        try entries.append(ctx.scratch, .{ .key = "stacktrace", .value = .{ .list = &.{} } });
+    }
+    try ctx.respond(entries.items);
+}
+
+/// Emit the trace as CIDER frame dicts, innermost-FIRST (JVM
+/// getStackTrace order; cljw's trace is push-order = outermost-first,
+/// so iterate reversed). Flags, cljw's take: every frame `clj` (there
+/// is no Java); `repl` for REPL-ish sources (`<repl:N>` / `<nrepl>` /
+/// `<stdin>` / `<-e>`); `project` for on-disk paths; `dup` when a
+/// frame repeats its list predecessor's fn or file+line (orchard's
+/// rule). `file-url` (absolute path) makes the frame navigable.
+fn emitFrames(ctx: *Ctx, trace: ?[]const @import("../../runtime/error/info.zig").StackFrame) !bencode.Decoded {
+    const t = trace orelse return .{ .list = &.{} };
+    var items: std.ArrayList(bencode.Decoded) = .empty;
+    var prev_fn: ?[]const u8 = null;
+    var prev_file: ?[]const u8 = null;
+    var prev_line: u32 = 0;
+    var i: usize = t.len;
+    while (i > 0) {
+        i -= 1;
+        const fr = t[i];
+        const fn_name = fr.fn_name orelse "unknown";
+        const file = fr.file orelse "unknown";
+        const name = if (fr.ns) |ns|
+            try std.fmt.allocPrint(ctx.scratch, "{s}/{s}", .{ ns, fn_name })
+        else
+            fn_name;
+
+        var flags: std.ArrayList(bencode.Decoded) = .empty;
+        try flags.append(ctx.scratch, .{ .str = "clj" });
+        const replish = file.len > 0 and file[0] == '<';
+        const on_disk = file.len > 0 and file[0] == '/';
+        if (replish) try flags.append(ctx.scratch, .{ .str = "repl" });
+        if (on_disk) try flags.append(ctx.scratch, .{ .str = "project" });
+        // file+line dup only for REAL locations — "unknown"-file frames
+        // at the same line are distinct calls, not duplicates.
+        const dup = (prev_fn != null and std.mem.eql(u8, prev_fn.?, fn_name)) or
+            (on_disk and prev_file != null and std.mem.eql(u8, prev_file.?, file) and prev_line == fr.line and fr.line != 0);
+        if (dup) try flags.append(ctx.scratch, .{ .str = "dup" });
+        prev_fn = fn_name;
+        prev_file = file;
+        prev_line = fr.line;
+
+        var fe: std.ArrayList(bencode.Decoded.Entry) = .empty;
+        try fe.append(ctx.scratch, .{ .key = "name", .value = .{ .str = name } });
+        try fe.append(ctx.scratch, .{ .key = "fn", .value = .{ .str = fn_name } });
+        if (fr.ns) |ns| try fe.append(ctx.scratch, .{ .key = "ns", .value = .{ .str = ns } });
+        try fe.append(ctx.scratch, .{ .key = "var", .value = .{ .str = name } });
+        try fe.append(ctx.scratch, .{ .key = "file", .value = .{ .str = file } });
+        if (on_disk) try fe.append(ctx.scratch, .{ .key = "file-url", .value = .{ .str = file } });
+        try fe.append(ctx.scratch, .{ .key = "line", .value = .{ .int = fr.line } });
+        try fe.append(ctx.scratch, .{ .key = "flags", .value = .{ .list = flags.items } });
+        try fe.append(ctx.scratch, .{ .key = "type", .value = .{ .str = "clj" } });
+        try items.append(ctx.scratch, .{ .dict = fe.items });
+    }
+    return .{ .list = items.items };
 }
 
 fn lookupMiss(ctx: *Ctx, is_eldoc: bool) !void {

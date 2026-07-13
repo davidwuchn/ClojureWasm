@@ -979,6 +979,10 @@ inline fn stepOnce(
             if (sp == 0) return raiseInternal("vm: op_throw on empty stack");
             sp -= 1;
             dispatch.last_thrown_exception = stack[sp];
+            // Stamp the live call stack onto a trace-less exception so
+            // the throw carries frames like a catalog raise (ADR-0170
+            // am1) — symmetric with TreeWalk's evalThrow.
+            ex_info_mod.stampTraceIfAbsent(rt, stack[sp], error_mod.currentStack());
             // Snapshot *error-context* while the binding frame is
             // live (ADR-0055 am2 / D-144) — symmetric with TreeWalk's
             // evalThrow so the two backends agree at the throw edge.

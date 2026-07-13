@@ -1061,6 +1061,9 @@ fn evalRecur(rt: *Runtime, env: *Env, locals: []Value, n: node_mod.RecurNode) an
 fn evalThrow(rt: *Runtime, env: *Env, locals: []Value, n: node_mod.ThrowNode) anyerror!Value {
     const v = try eval(rt, env, locals, n.expr);
     dispatch.last_thrown_exception = v;
+    // Stamp the live call stack onto a trace-less exception so the
+    // throw carries frames like a catalog raise (ADR-0170 am1).
+    ex_info_collection.stampTraceIfAbsent(rt, v, error_mod.currentStack());
     // Snapshot *error-context* now — the `binding` frame is still live
     // here, but is popped by `defer popFrame` as this error unwinds, so
     // the renderer cannot deref it later (ADR-0055 am2 / D-144).

@@ -48,7 +48,13 @@ const StackFrame = @import("../error/info.zig").StackFrame;
 /// method for slice recovery.
 pub const ExInfo = extern struct {
     header: HeapHeader,
-    _pad: [6]u8 = .{ 0, 0, 0, 0, 0, 0 },
+    /// Error phase of a materialized catalog error (ADR-0170 am1 — the
+    /// nREPL stacktrace op maps it to the clojure.error vocabulary so
+    /// CIDER routes compile-phase errors to the inline overlay, JVM
+    /// style). Index into `error/info.zig` `Phase`; 255 = none (a plain
+    /// user `(ex-info …)`).
+    phase: u8 = 255,
+    _pad: [5]u8 = .{ 0, 0, 0, 0, 0 },
     message_ptr: [*]const u8,
     message_len: usize,
     data: Value,
@@ -253,6 +259,11 @@ pub fn asExInfo(val: Value) *const ExInfo {
     return val.decodePtr(*const ExInfo);
 }
 
+fn asExInfoMut(val: Value) *ExInfo {
+    std.debug.assert(val.tag() == .ex_info);
+    return val.decodePtr(*ExInfo);
+}
+
 /// Convenience: pull the message slice without exposing the struct.
 pub fn message(val: Value) []const u8 {
     return asExInfo(val).message();
@@ -290,6 +301,33 @@ pub fn originLoc(val: Value) SourceLocation {
 pub fn originTrace(val: Value) ?[]const StackFrame {
     const ex = asExInfo(val);
     return if (ex.trace_ptr) |p| p[0..ex.trace_len] else null;
+}
+
+/// Stamp the error phase on a materialized catalog error (ADR-0170 am1).
+pub fn setPhase(val: Value, phase: @import("../error/info.zig").Phase) void {
+    asExInfoMut(val).phase = @intFromEnum(phase);
+}
+
+/// Stamp the LIVE call stack onto a trace-less exception at throw time
+/// (ADR-0170 am1): a user `(throw (ex-info …))` then carries frames
+/// exactly like a catalog raise, so the REPL `Trace:` section and the
+/// nREPL stacktrace op render WHERE the throw happened. No-op for
+/// non-`ex_info` Values, already-traced ones (a re-throw keeps its
+/// original origin), and an empty stack; best-effort on OOM.
+pub fn stampTraceIfAbsent(rt: *Runtime, val: Value, frames: []const StackFrame) void {
+    if (val.tag() != .ex_info) return;
+    const ex = asExInfoMut(val);
+    if (ex.trace_ptr != null or frames.len == 0) return;
+    const owned = dupeTrace(rt.gc.infra, frames) catch return;
+    ex.trace_ptr = owned.ptr;
+    ex.trace_len = owned.len;
+}
+
+/// The stamped phase, or null (a plain user `(ex-info …)` / pre-stamp Value).
+pub fn phaseOf(val: Value) ?@import("../error/info.zig").Phase {
+    const raw = asExInfo(val).phase;
+    if (raw == 255) return null;
+    return @enumFromInt(raw);
 }
 
 // --- tests ---
