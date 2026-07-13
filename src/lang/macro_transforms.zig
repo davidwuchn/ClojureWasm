@@ -54,11 +54,11 @@ pub fn registerInto(env: *Env, table: *macro_dispatch.Table) !void {
         try ensureRegistered(table, entry.name, entry.expand);
     }
 
-    // ADR-0035 D9 (sub-cycle d): boot-time rt → user macro refer
-    // mirrors the primitive-Var path so macros (`let`, `cond`, `->`,
-    // ...) resolve unqualified at the REPL prompt. Per ADR-0035 the
-    // `(ns ...)` macro does NOT auto-refer rt; macros stay rt-owned
-    // and the user-ns convenience refer happens here at boot.
+    // Boot-time rt → user macro refer mirrors the primitive-Var path
+    // so macros (`let`, `cond`, `->`, ...) resolve unqualified at the
+    // REPL prompt. The `(ns ...)` macro deliberately does NOT
+    // auto-refer rt (ADR-0035); macros stay rt-owned and the user-ns
+    // convenience refer happens here at boot.
     try env.referAll(rt_ns, user_ns);
 }
 
@@ -166,7 +166,7 @@ fn importStarCall(arena: std.mem.Allocator, fqcn: []const u8, loc: SourceLocatio
 /// `(import & specs)` → `(do (import* "pkg.Class") …)`. Each spec is a
 /// (optionally quoted) class symbol `pkg.Class` or a prefix list
 /// `(pkg Class1 Class2 …)`. Mirrors clj's import → `clojure.core/import*`
-/// expansion; the import* fn registers the simple-name → FQCN map (D-235).
+/// expansion; the import* fn registers the simple-name → FQCN map.
 fn expandImport(
     arena: std.mem.Allocator,
     rt: *Runtime,
@@ -257,14 +257,14 @@ fn expandDeclare(
     return list(arena, items, loc);
 }
 
-// --- let — `let*` rename + destructuring lowering (D-076) ---
+// --- let — `let*` rename + destructuring lowering ---
 //
 // Clojure's `let` adds destructuring on top of `let*`. Per the JVM
 // `clojure.core/destructure` shape, patterns lower to plain-symbol
 // `let*` bindings + `nth`/`nthnext` calls — but as a Layer-1 Form
 // transform here (NOT a `.clj` macro: `let`/`fn` are already Zig macros,
 // so a `.clj` destructure would hit bootstrap-order fragility).
-// D-076: SEQUENTIAL vector patterns (`[a b]`, `[a b & rest]`,
+// SEQUENTIAL vector patterns (`[a b]`, `[a b & rest]`,
 // `[a b :as all]`, nested), associative `{:keys ...}` (see
 // `associativeDestructure`), fn-param (`transformFnArity`), and
 // `loop*` (`expandLoop`) destructuring are all supported.
@@ -417,7 +417,7 @@ fn sequentialDestructure(
 /// `(get g <key> <default>)`. `:keys`→keyword key, `:strs`→string key,
 /// `:syms`→quoted-symbol key; bare `{local kexpr}`→`(get g kexpr)` with
 /// `local` recursable (nested); `:or` supplies the 3rd `get` arg keyed
-/// by binding-symbol name; `:as`→the gensym. D-076 cycle 2.
+/// by binding-symbol name; `:as`→the gensym.
 fn associativeDestructure(
     out: *std.ArrayList(Form),
     arena: std.mem.Allocator,
@@ -586,7 +586,7 @@ fn makeCall(
     return list(arena, items, loc);
 }
 
-// --- loop — `loop*` rename + destructuring (D-076 cycle 4) ---
+// --- loop — `loop*` rename + destructuring ---
 //
 // `(loop [bindings] body...)` → `(loop* [slots] (let [patterns] body))`.
 // Each binding pair becomes exactly ONE loop* slot, so `recur` arity =
@@ -764,7 +764,7 @@ fn expandDotDot(arena: std.mem.Allocator, rt: *Runtime, args: []const Form, loc:
     return acc;
 }
 
-// --- as-> / cond-> / cond->> / some-> / some->> (D-134 threading family) ---
+// --- as-> / cond-> / cond->> / some-> / some->> (threading family) ---
 
 /// `(let* [binds…] body)` from a flat binding slice + a body form.
 fn buildLetStarBody(arena: std.mem.Allocator, binds: []const Form, body: Form, loc: SourceLocation) macro_dispatch.ExpandError!Form {
@@ -861,7 +861,7 @@ fn expandSomeThreadLast(arena: std.mem.Allocator, rt: *Runtime, args: []const Fo
     return someThread(arena, rt, args, loc, .last);
 }
 
-// --- if-some / when-some / doto (D-134 conditional family) ---
+// --- if-some / when-some / doto (conditional family) ---
 
 /// `(do body…)` from a body slice, folded to the single form when len == 1.
 fn foldBody(arena: std.mem.Allocator, body: []const Form, loc: SourceLocation) macro_dispatch.ExpandError!Form {
@@ -954,7 +954,7 @@ fn expandDoto(arena: std.mem.Allocator, rt: *Runtime, args: []const Form, loc: S
     return buildLetStarBody(arena, binding, try list(arena, do_items, loc), loc);
 }
 
-// --- dotimes / while / when-first (D-134 iteration/binding family) ---
+// --- dotimes / while / when-first (iteration/binding family) ---
 
 /// `(dotimes [i n] body…)` →
 /// `(let* [ng n] (loop [i 0] (when (< i ng) body… (recur (inc i)))))`.
@@ -1059,7 +1059,7 @@ fn expandWhenFirst(arena: std.mem.Allocator, rt: *Runtime, args: []const Form, l
     return list(arena, wl_items, loc);
 }
 
-// --- doseq (D-134 / phaseA26) ---
+// --- doseq ---
 //
 // `(doseq [bind coll | :let v | :when t | :while t …] body…)` → nested
 // `loop`/`recur` over each binding pair, with :let / :when / :while injected
@@ -1172,7 +1172,7 @@ fn expandDoseq(arena: std.mem.Allocator, rt: *Runtime, args: []const Form, loc: 
     return result.form;
 }
 
-// --- for (D-134 / D-234) - lazy list comprehension ---
+// --- for — lazy list comprehension ---
 //
 // `(for [bind coll | :let v | :when t | :while t ...] expr)` -> a `letfn` +
 // `lazy-seq` step chain, a port of clojure.core/for's `emit-bind` (dropping
@@ -1188,9 +1188,9 @@ fn expandDoseq(arena: std.mem.Allocator, rt: *Runtime, args: []const Form, loc: 
 // This gives clj's exact sequential semantics - crucially `:while` is
 // evaluated AFTER `:when` per element, so `(for [a (range 5) :when (> a 0)
 // :while (odd? a)] a)` -> `(1)` (a=0 is `:when`-skipped, never reaching
-// `:while`). Replaces the old mapcat-of-singletons lowering (D-234), which
+// `:while`). Replaces an earlier mapcat-of-singletons lowering, which
 // could not express that post-filter short-circuit. `let` (not `let*`)
-// carries destructuring binds. Survey: phaseA26-doseq-for-survey.md.
+// carries destructuring binds.
 //
 // `outer_cont` / `outer_recform` are the enclosing binding's lazy
 // self-continuation `(giter (rest gxs))` and skip form `(recur (rest gxs))`;
@@ -1319,7 +1319,7 @@ fn expandFor(arena: std.mem.Allocator, rt: *Runtime, args: []const Form, loc: So
     return forStep(arena, rt, null, null, args[0].data.vector, try foldBody(arena, args[1..], loc), loc);
 }
 
-// --- case (D-134) ---
+// --- case ---
 
 /// `(= g (quote const))` — value-equality against an unevaluated constant.
 fn caseConstEq(arena: std.mem.Allocator, g: Form, const_form: Form, loc: SourceLocation) macro_dispatch.ExpandError!Form {
@@ -1333,7 +1333,7 @@ fn caseConstEq(arena: std.mem.Allocator, g: Form, const_form: Form, loc: SourceL
 /// otherwise, in a namespace that shadows `or` (clojure.spec.alpha excludes +
 /// redefines it), the generated test would resolve to the user's `or` macro
 /// (macro hygiene: a macro-expansion must not capture a user redefinition of a
-/// core name it emits). D-476.
+/// core name it emits).
 fn caseTest(arena: std.mem.Allocator, g: Form, test_const: Form, loc: SourceLocation) macro_dispatch.ExpandError!Form {
     if (test_const.data == .list) {
         const elems = test_const.data.list;
@@ -1388,7 +1388,7 @@ fn expandCase(arena: std.mem.Allocator, rt: *Runtime, args: []const Form, loc: S
     return buildLetStarBody(arena, binding, acc, loc);
 }
 
-// --- condp (D-134) ---
+// --- condp ---
 
 /// `(head call_args…)` from an arbitrary head Form (vs makeCall's name string).
 fn callForm(arena: std.mem.Allocator, head: Form, call_args: []const Form, loc: SourceLocation) macro_dispatch.ExpandError!Form {
@@ -1458,7 +1458,7 @@ fn expandCondp(arena: std.mem.Allocator, rt: *Runtime, args: []const Form, loc: 
     return buildLetStarBody(arena, binds, body, loc);
 }
 
-// --- when-not / if-not / comment (D-134 trivial control macros) ---
+// --- when-not / if-not / comment (trivial control macros) ---
 
 /// `(if-not test then else?)` → `(if test else then)` (branches swapped;
 /// avoids a `not` call). `else` defaults to nil.
@@ -1494,7 +1494,7 @@ fn expandComment(arena: std.mem.Allocator, rt: *Runtime, args: []const Form, loc
 /// FORM (clj parity): `(str "Assert failed: " (pr-str 'expr))` for 1-arg, and
 /// `(str "Assert failed: " msg "\n" (pr-str 'expr))` for 2-arg — built lazily
 /// in the failure branch only. A failed assert throws an `AssertionError`
-/// (D-192) — catchable as `AssertionError`/`Error`/`Throwable` but NOT
+/// — catchable as `AssertionError`/`Error`/`Throwable` but NOT
 /// `Exception`, and with no ex-data, matching JVM `assert`.
 fn expandAssert(arena: std.mem.Allocator, rt: *Runtime, args: []const Form, loc: SourceLocation) macro_dispatch.ExpandError!Form {
     _ = rt;
@@ -1555,7 +1555,7 @@ fn threadStep(
 ) macro_dispatch.ExpandError!Form {
     // Any NON-list step threads as `(step acc)` — clj's `(if (seq? form) … (list
     // form x))`: a bare symbol fn (`(-> x f)` → `(f x)`), a keyword (`(-> m :k)`
-    // → `(:k m)`, D-085), and equally a set / map / vector / var as IFn
+    // → `(:k m)`), and equally a set / map / vector / var as IFn
     // (`(-> s name #{"a" "b"})` → `(#{"a" "b"} (name s))`, set membership — the
     // shape clojure.core.specs.alpha relies on). clj never rejects a step at
     // expansion (a non-callable step fails at call time, like clj).
@@ -1710,7 +1710,7 @@ fn expandIfLet(
 // `(defn name [params...] body...)` →
 //   `(def name (fn* [params...] (do body...)))`
 //
-// Row 7.8 cycle 3 (ADR-0041) added multi-arity:
+// Multi-arity:
 // `(defn name ([params...] body...) ([params...] body...) ...)` →
 //   `(def name (fn* ([params...] (do body...)) ([params...] (do body...)) ...))`
 //
@@ -1730,9 +1730,8 @@ fn expandDefn(
     // JVM defn: `(defn name doc-string? attr-map? [params] body)` (and the
     // multi-arity equivalent). A leading docstring (string) + attr-map (map)
     // immediately after the name are captured into the Var metadata below
-    // (D-183 part d, closes D-091); they no longer drop. A string AFTER the
-    // params is the body, not a docstring — this scan only fires at the
-    // name+1 position.
+    // (they used to be silently dropped). A string AFTER the params is the
+    // body, not a docstring — this scan only fires at the name+1 position.
     var head: usize = 1;
     var doc_form: ?Form = null;
     var attr_form: ?Form = null;
@@ -1756,7 +1755,7 @@ fn expandDefn(
             if (body_forms.len < 1)
                 return error_catalog.raise(.defn_form_incomplete, loc, .{});
             const body_form = try wrapBodyInDo(arena, try lowerPrePost(arena, body_forms[1..], loc), loc);
-            // D-076 cycle 3: lower destructured params (gensym + body let).
+            // Lower destructured params (gensym + body let).
             const r = try transformFnArity(arena, rt, body_forms[0], &.{body_form}, loc);
             var fn_items = try arena.alloc(Form, 2 + r.body.len);
             fn_items[0] = sym("fn*", loc);
@@ -1786,12 +1785,12 @@ fn expandDefn(
         break :blk try list(arena, fn_items, loc);
     };
 
-    // D-183 part (d): build the defn metadata map and park it on the name
-    // Form's `.meta` side-channel so `analyzeDef` lifts it into `Var.meta`
-    // (closes D-091's silent docstring/attr-map drop). Always carries
-    // `:arglists` (the original param vectors); `:doc` when a docstring is
-    // present; merges any explicit attr-map. Reader meta already on the
-    // name (`(defn ^:private f ...)`) is preserved and merged first.
+    // Build the defn metadata map and park it on the name Form's `.meta`
+    // side-channel so `analyzeDef` lifts it into `Var.meta` (the docstring /
+    // attr-map used to be silently dropped). Always carries `:arglists`
+    // (the original param vectors); `:doc` when a docstring is present;
+    // merges any explicit attr-map. Reader meta already on the name
+    // (`(defn ^:private f ...)`) is preserved and merged first.
     name_form.meta = try buildDefnMeta(arena, name_form.meta, doc_form, attr_form, body_forms, loc);
 
     // (def name (fn* ...))
@@ -1804,7 +1803,7 @@ fn expandDefn(
 
 /// `(defn- name …)` = `defn` whose Var is `^:private`. Inject `:private true`
 /// into the name's reader-meta (merging any existing name meta), then delegate
-/// to `expandDefn` — `buildDefnMeta` carries it onto the Var (D-232).
+/// to `expandDefn` — `buildDefnMeta` carries it onto the Var.
 fn expandDefnPrivate(
     arena: std.mem.Allocator,
     rt: *Runtime,
@@ -1824,7 +1823,7 @@ fn expandDefnPrivate(
     return expandDefn(arena, rt, new_args, loc);
 }
 
-/// Build the `^meta` map Form for a `defn` target (D-183 part d). Merges,
+/// Build the `^meta` map Form for a `defn` target. Merges,
 /// in precedence order (last wins at `mapFormToValue`): existing reader
 /// meta on the name → explicit attr-map → `:doc` (docstring) → `:arglists`
 /// (the original param vectors, always added — single-arity `([params])`,
@@ -1861,10 +1860,10 @@ fn buildDefnMeta(
     return mp;
 }
 
-/// One arity's param-destructuring lowering (D-076 cycle 3, shared by
-/// `fn` and `defn`). Pattern params (`[..]` / `{..}`) are replaced by a
+/// One arity's param-destructuring lowering (shared by `fn` and
+/// `defn`). Pattern params (`[..]` / `{..}`) are replaced by a
 /// gensym and the body is wrapped in `(let [pattern gensym ...] body)`,
-/// reusing the `let` destructure (cycle 1+2) via recursive macroexpansion
+/// reusing the `let` destructure via recursive macroexpansion
 /// — the JVM `fn` shape. Plain-symbol params (incl. `&`) pass through;
 /// if no pattern is present the params + body are returned unchanged
 /// (zero regression). Caller guarantees `params_vec.data == .vector`.
@@ -1904,11 +1903,11 @@ fn transformFnArity(
     return .{ .params = new_params_vec, .body = wrapped };
 }
 
-/// `fn` macro: `fn` → `fn*` + param destructuring (D-076 cycle 3). A
-/// self-name `(fn name [p] body)` needs an fn* self-name slot (D-147) —
-/// raised as a clear transient error, NOT silently dropped. Multi-arity
-/// / `& rest` / closures ride fn* (ADR-0041); each arity's pattern params
-/// lower via `transformFnArity`.
+/// `fn` macro: `fn` → `fn*` + param destructuring. A self-name
+/// `(fn name [p] body)` binds the name through `letfn*` so the body can
+/// self-recurse (fn* has no self-name slot). Multi-arity / `& rest` /
+/// closures ride fn*; each arity's pattern params lower via
+/// `transformFnArity`.
 fn expandFn(
     arena: std.mem.Allocator,
     rt: *Runtime,
@@ -2022,15 +2021,15 @@ fn lowerPrePost(arena: std.mem.Allocator, body: []const Form, loc: SourceLocatio
     return out.items;
 }
 
-// --- defmulti — multimethod definition (ADR-0008 Phase 7.2 amendment, Alt 1) ---
+// --- defmulti — multimethod definition ---
 //
 // `(defmulti name dispatch-fn)` →
 //   `(def name (rt/__make-multifn (quote name) dispatch-fn :default -global-hierarchy))`
 //
 // JVM Clojure's `defmulti` macro has additional re-eval-no-op
 // semantics (preserves method_table across REPL reloads). cw v1
-// omits this; re-eval clobbers. Restoring the no-op requires
-// `resolved?` + `multi-fn?` predicates (D-184).
+// omits this; re-eval clobbers. Restoring the no-op needs
+// `resolved?` + `multi-fn?` predicates, which don't exist yet.
 fn expandDefmulti(
     arena: std.mem.Allocator,
     rt: *Runtime,
@@ -2109,7 +2108,7 @@ fn expandDefmulti(
     // (rt/__make-multifn (quote name) dispatch-fn <default> <hierarchy>)
     // The bare `-global-hierarchy` symbol resolves to the public atom in the
     // calling ns (referred from clojure.core at boot) so dispatch consults the
-    // live, mutable hierarchy — `derive` after `defmulti` is seen (D-161).
+    // live, mutable hierarchy — `derive` after `defmulti` is seen.
     var call_items = try arena.alloc(Form, 5);
     call_items[0] = .{ .data = .{ .symbol = .{ .ns = "rt", .name = "__make-multifn" } }, .location = loc };
     call_items[1] = quoted_name;
@@ -2177,7 +2176,7 @@ fn expandDefmethod(
 }
 
 // (prefer-method was a needless macro — it auto-quoted nothing, just forwarded to
-// `rt/__prefer-method!`. D-373 made it a clj-faithful FN in core.clj so it is
+// `rt/__prefer-method!`. It is now a clj-faithful FN in core.clj so it is
 // passable in higher-order position, matching clj. The macro is retired.)
 
 // --- defprotocol — declare a protocol name + its method dispatch fns ---
@@ -2190,9 +2189,9 @@ fn expandDefmethod(
 //
 // Each method-sig is `(method-name [params...])` — arity defaults
 // to 1 inside `__make-protocol!`; the param vector is consumed for
-// shape-validation only. ADR-0038 (analyzer pre-registers Var at
-// analyze time) lets the second-and-subsequent `def` forms
-// reference `P` cleanly.
+// shape-validation only. The analyzer pre-registers the Var at
+// analyze time (ADR-0038), letting the second-and-subsequent `def`
+// forms reference `P` cleanly.
 fn expandDefprotocol(
     arena: std.mem.Allocator,
     rt: *Runtime,
@@ -2203,7 +2202,7 @@ fn expandDefprotocol(
     // A name suffices; method signatures are optional so a zero-method
     // marker protocol — `(defprotocol Sequential)` — is definable, matching
     // JVM (`(defprotocol Marker)` → `(satisfies? Marker x)` true). The empty
-    // `method_sigs` expands to `(rt/__make-protocol! 'name [])` (D-190/ADR-0068).
+    // `method_sigs` expands to `(rt/__make-protocol! 'name [])`.
     if (args.len < 1)
         return error_catalog.raise(.defprotocol_form_incomplete, loc, .{});
     if (args[0].data != .symbol or args[0].data.symbol.ns != null)
@@ -2215,7 +2214,7 @@ fn expandDefprotocol(
     // …)`. Method sigs are lists, options are keywords, so skip a leading string
     // then consume keyword/value pairs before reading sigs. `:extend-via-metadata
     // true` is captured and threaded to the descriptor so receiver-metadata
-    // dispatch is honored (ADR-0144 / D-314); other options are parsed-to-load.
+    // dispatch is honored (ADR-0144); other options are parsed-to-load.
     var sig_start: usize = 1;
     if (sig_start < args.len and args[sig_start].data == .string) sig_start += 1;
     var extend_via_metadata = false;
@@ -2237,9 +2236,8 @@ fn expandDefprotocol(
     }
 
     // Build `['m1 'm2 ...]` — each entry is (quote method-name) so
-    // it evaluates to a Symbol Value at runtime (the cycle 6
-    // `__make-protocol!` primitive iterates a Vector of method-name
-    // Symbols).
+    // it evaluates to a Symbol Value at runtime (`__make-protocol!`
+    // iterates a Vector of method-name Symbols).
     const quoted_methods = try arena.alloc(Form, method_names.len);
     for (method_names, 0..) |m, i| {
         var q = try arena.alloc(Form, 2);
@@ -2257,7 +2255,7 @@ fn expandDefprotocol(
 
     // (rt/__make-protocol! 'name [method-quotes] <extend-via-metadata?>) — the
     // 3rd arg is emitted only when the flag is set; the primitive defaults it to
-    // false for the 2-arg bootstrap forms (ADR-0144 / D-314).
+    // false for the 2-arg bootstrap forms.
     const make_proto_len: usize = if (extend_via_metadata) 4 else 3;
     var make_proto_items = try arena.alloc(Form, make_proto_len);
     make_proto_items[0] = .{ .data = .{ .symbol = .{ .ns = "rt", .name = "__make-protocol!" } }, .location = loc };
@@ -2290,7 +2288,7 @@ fn expandDefprotocol(
     }
 
     // (do def-proto def-method-1 def-method-2 ... 'Name) — clj's defprotocol
-    // RETURNS the protocol-name symbol (D-456), so the do's trailing form is
+    // RETURNS the protocol-name symbol, so the do's trailing form is
     // `(quote Name)`. Without it the do returned the last method's `def` (a
     // var, `#'ns/m`); the return value is rarely consumed but this is clj parity.
     var do_items = try arena.alloc(Form, 3 + method_defs.len);
@@ -2310,15 +2308,14 @@ fn expandDefprotocol(
 /// marker). `expandDefprotocol` reads only method NAMES (the param vectors — and
 /// the implicit-`this` difference between an interface sig `(m [x])` and a
 /// protocol sig `(m [this x])` — are ignored), so a verbatim delegate is faithful:
-/// a 0-method `(definterface Marker)` → a marker protocol (ADR-0068), a method
+/// a 0-method `(definterface Marker)` → a marker protocol, a method
 /// interface → a protocol whose methods reach a deftype impl. The lone divergence
 /// is that the method names also become protocol-fn vars (clj's are interop-only);
 /// harmless absent a name clash. One leniency: `(satisfies? <definterface> x)`
 /// returns true in cljw (it IS a protocol) where clj THROWS an NPE (a definterface
 /// is a bare interface, not a protocol) — cljw is strictly more permissive; the
 /// clj-faithful membership test is `(instance? <definterface> x)`, identical in
-/// both. Retires the last analyzer wedge form (the defrecord/reify row-7.4/7.5
-/// retirement precedent). Surfaced by core.match's `(definterface IExistentialPattern)`.
+/// both. Surfaced by core.match's `(definterface IExistentialPattern)`.
 fn expandDefinterface(
     arena: std.mem.Allocator,
     rt: *Runtime,
@@ -2335,7 +2332,7 @@ fn expandDefinterface(
 //
 // Each method-impl is `(method-name [params...] body...)` — same
 // shape as defmethod's clauses.
-/// Rewrite a `protocol_remap` interface section (D-280) into bare cljw-protocol
+/// Rewrite a `protocol_remap` interface section into bare cljw-protocol
 /// section(s). Each declared clj method is translated to its (cljw-protocol,
 /// cljw-method) target and the impls are regrouped by target protocol — clj
 /// groups methods by interface, but cljw dispatch matches (protocol, method)
@@ -2355,8 +2352,8 @@ fn rewriteProtocolRemap(
     // Zero impls = a marker-style "implements X" under the declared name
     // (a recognised MARKERS key by construction; `hi.canonical` may be a
     // bare spelling that is NOT a key, e.g. Counted). Quote-wrapped like the
-    // D-275 marker path — a bare symbol would Var-resolve to the interface's
-    // CLASS value and fail __extend-type!'s "expected protocol" check.
+    // host-supertype marker path — a bare symbol would Var-resolve to the
+    // interface's CLASS value and fail __extend-type!'s "expected protocol" check.
     if (impls.len == 0) {
         var ext_items = try arena.alloc(Form, 3);
         ext_items[0] = sym("extend-type", loc);
@@ -2378,10 +2375,10 @@ fn rewriteProtocolRemap(
         }
         const clj_m = impl.data.list[0].data.symbol.name;
         const r = hi.remapMethod(clj_m) orelse {
-            // A java.util.Map/Iterable method grouped under this clojure.lang section
-            // (D-372): cljw has no java dispatch, so accept-and-DROP it (load-level,
-            // the ADR-0103 host_inert principle applied to the grouped-method case)
-            // instead of feature_not_supported. ordered.map groups iterator/entrySet
+            // A java.util.Map/Iterable method grouped under this clojure.lang section:
+            // cljw has no java dispatch, so accept-and-DROP it at load (the host_inert
+            // principle applied to the grouped-method case) instead of
+            // feature_not_supported. ordered.map groups iterator/entrySet
             // under IPersistentMap. A genuinely-unwired clojure.lang method still raises.
             if (host_interface.isJavaUtilMethod(clj_m)) continue;
             return error_catalog.raise(.feature_not_supported, impl.location, .{ .name = "deftype/reify clojure.lang.* method not yet wired" });
@@ -2426,7 +2423,7 @@ fn rewriteProtocolRemap(
             @memcpy(timpl_items, impl.data.list);
             timpl_items[0] = sym(r.method, impl.location);
             try sec.append(arena, try list(arena, timpl_items, impl.location));
-            // D-283: when the clj name was translated (assoc→-assoc), ALSO register
+            // When the clj name was translated (assoc→-assoc), ALSO register
             // the impl under the ORIGINAL clj name so a `.cljname` dot-call resolves
             // it — `(.member recv)` looks up by BARE name (lookupMethod(null, name)),
             // and a deftype's own body calls `.assoc`/`.valAt` on itself (priority-map
@@ -2479,7 +2476,7 @@ fn stripMethodParamNs(arena: std.mem.Allocator, params_form: Form) macro_dispatc
 /// Whether a `protocol_remap` section is a FIRST pass (declared clj methods that
 /// still need translation) vs the SECOND pass over a SELF-targeting section the
 /// rewrite already emitted. Routing the second pass back through the rewrite would
-/// loop forever: the rewrite translates `disjoin`→`-disjoin` AND (D-283) dual-emits
+/// loop forever: the rewrite translates `disjoin`→`-disjoin` AND dual-emits
 /// the original `disjoin` for `.dot` calls, so a self-targeting section
 /// (IPersistentSet/ITransient*) comes back carrying BOTH `-disjoin` (identity) and
 /// `disjoin` (re-translatable) → infinite recursion / stack-overflow segfault.
@@ -2487,7 +2484,7 @@ fn stripMethodParamNs(arena: std.mem.Allocator, params_form: Form) macro_dispatc
 /// rewrite's own output → do NOT re-route; the bare-protocol-Var arm registers both
 /// spellings directly. Only an all-clj-names section (no identity) is a first pass.
 /// An unknown method (no remap entry) routes so `rewriteProtocolRemap` raises the
-/// precise `feature_not_supported`. (D-286b)
+/// precise `feature_not_supported`.
 fn sectionNeedsRemap(hi: host_interface.HostInterface, impls: []const Form) bool {
     // A ZERO-method section must route: the rewrite emits the quote-wrapped
     // marker registration (a bare protocol_remap symbol would Var-resolve to
@@ -2500,13 +2497,13 @@ fn sectionNeedsRemap(hi: host_interface.HostInterface, impls: []const Form) bool
         // A cljw-direct method spelling (`-seq`, `-cons`, `-peek`) is cljw core's
         // own protocol-Var impl declared under a bare name that ALSO carries a
         // protocol_remap row (Seqable / IPersistentCollection / IPersistentStack /
-        // … — the D-416 bare aliases). The remap table only keys clj names
+        // … — the bare-name aliases). The remap table only keys clj names
         // (`seq`/`cons`/`peek`), so a `-`-prefixed method is already in target
         // form ⇒ do NOT route; fall through to the bare protocol-Var arm exactly
         // as before the aliases existed. clj/Java interface method names never
         // start with `-`, so the prefix is an unambiguous clj-vs-cljw signal. This
         // is what lets core's `(extend-type X Seqable (-seq …))` and a lib's
-        // `(deftype Y … Seqable (seq …))` share the one bare `Seqable`. (D-286b)
+        // `(deftype Y … Seqable (seq …))` share the one bare `Seqable`.
         if (m.len > 0 and m[0] == '-') return false;
         const r = hi.remapMethod(m) orelse return true;
         // Identity = unchanged method name AND already under the interface's OWN
@@ -2533,8 +2530,8 @@ fn isGroupedArity(impl: Form) bool {
 /// clj's `extend-type`/`extend-protocol` accept a GROUPED multi-arity method
 /// spelling — `(g ([x] b1) ([x y] b2))` — in addition to the repeated single-arity
 /// `(g [x] b1) (g [x y] b2)`. Expand each grouped impl into one repeated impl per
-/// arity-clause so `expandExtendType`'s multi-arity-`fn*` grouping (D-279) folds
-/// both spellings identically (D-469). Non-grouped impls pass through untouched.
+/// arity-clause so `expandExtendType`'s multi-arity-`fn*` grouping folds
+/// both spellings identically. Non-grouped impls pass through untouched.
 fn expandGroupedArities(arena: std.mem.Allocator, impls: []const Form) macro_dispatch.ExpandError![]const Form {
     var any = false;
     for (impls) |impl| {
@@ -2570,7 +2567,7 @@ fn expandExtendType(
 ) macro_dispatch.ExpandError!Form {
     // target + protocol minimum; zero method-impls is a MARKER protocol
     // extension (e.g. `Sequential`), recorded into `protocol_impls` by
-    // `__extend-type!` (D-190 / ADR-0068).
+    // `__extend-type!`.
     if (args.len < 2)
         return error_catalog.raise(.extend_type_form_incomplete, loc, .{});
 
@@ -2614,7 +2611,7 @@ fn expandExtendType(
         }
     }
 
-    // D-292: multiple protocol sections in ONE extend-type
+    // Multiple protocol sections in ONE extend-type
     // (`(extend-type T P1 (m..) P2 (m..))`, as clj allows + tools.reader uses).
     // Split into per-protocol `(extend-type T Pi impls...)` forms under a `do`;
     // each re-expands through this fn as a single-protocol section (deftype
@@ -2649,7 +2646,7 @@ fn expandExtendType(
         }
     }
 
-    // protocol_remap (D-280): a `clojure.lang.*` interface whose methods route to
+    // protocol_remap: a `clojure.lang.*` interface whose methods route to
     // cljw protocols (e.g. ILookup `valAt` → ILookup/`-lookup`; clj groups methods
     // by interface but cljw splits them across protocols). Rewrite the section into
     // bare cljw-protocol section(s): translate each clj method to its (protocol,
@@ -2661,7 +2658,7 @@ fn expandExtendType(
         // Only rewrite when a method actually translates (clj-name → a DIFFERENT
         // cljw -method). When every impl is ALREADY in cljw target form, this is the
         // SECOND pass over a section the rewrite itself emitted for a SELF-targeting
-        // interface (D-286b: IPersistentSet's `disjoin` → IPersistentSet/`-disjoin`,
+        // interface (IPersistentSet's `disjoin` → IPersistentSet/`-disjoin`,
         // ITransientSet's `disjoin` → ITransientSet/`-disjoin!`). The interface's bare
         // name is in the remap table (so the deftype-supertype position routes here),
         // so without this guard the emitted `(extend-type Name IPersistentSet
@@ -2673,22 +2670,22 @@ fn expandExtendType(
         }
     }
 
-    // A host-supertype marker (`Object`, D-275) is quote-wrapped so the analyzer
-    // never Var-resolves it (Path A, the `instance?` / `reify` precedent). This
+    // A host-supertype marker (`Object`) is quote-wrapped so the analyzer
+    // never Var-resolves it (the `instance?` / `reify` precedent). This
     // arm also covers the `deftype`/`defrecord` paths, whose protocol sections
     // re-expand through `expandExtendType`. A cljw protocol name stays bare.
     const protocol_form = if (args[1].data == .symbol and host_interface.isMarker(args[1].data.symbol.name))
         try quoteWrap(arena, args[1])
     else
         args[1];
-    // D-469: normalise the grouped multi-arity spelling `(g ([x] b1) ([x y] b2))`
+    // Normalise the grouped multi-arity spelling `(g ([x] b1) ([x y] b2))`
     // into repeated single-arity impls before validation, so the multi-arity-fn*
     // grouping below folds both spellings identically.
     const method_impls = try expandGroupedArities(arena, args[2..]);
 
     // Validate every impl + collect distinct method names in first-seen order.
     // A clj interface section may declare ONE method at multiple arities
-    // (e.g. ILookup `(valAt [this k]) (valAt [this k nf])`, D-279); these are
+    // (e.g. ILookup `(valAt [this k]) (valAt [this k nf])`); these are
     // grouped into a single multi-arity `fn*` below so they coexist under one
     // (protocol, method) method_table entry and dispatch by arg count.
     var names: std.ArrayList([]const u8) = .empty;
@@ -2748,7 +2745,7 @@ fn expandExtendType(
             fn_items[2] = cl[1];
             break :blk try list(arena, fn_items, name_loc);
         } else blk: {
-            // (fn* ([p1] b1) ([p2] b2) ...) — multi-arity (D-279)
+            // (fn* ([p1] b1) ([p2] b2) ...) — multi-arity
             var fn_items = try arena.alloc(Form, 1 + clauses.items.len);
             fn_items[0] = sym("fn*", name_loc);
             @memcpy(fn_items[1..], clauses.items);
@@ -2879,7 +2876,7 @@ fn expandWhenLet(
 //   (def ->Name (fn* [f1 f2 ...] (Name. f1 f2 ...)))   ; positional factory
 //   (def map->Name (fn* [m] (Name. (get m :f1) ...)))  ; map factory
 //   <extend-type sections for each protocol's method bodies>
-// Per ADR-0066 `deftype` is a sibling macro (`expandDeftype`) sharing
+// `deftype` is a sibling macro (`expandDeftype`) sharing
 // `lowerDefType`; its `rt/__deftype!` primitive shares `registerType`
 // (kind = .deftype). Record IPersistentMap arms live in
 // `lang/primitive/collection.zig`.
@@ -2892,11 +2889,11 @@ fn expandDefrecord(
     return lowerDefType(arena, rt, args, loc, "__defrecord!");
 }
 
-/// `(deftype Name [fields] Proto (m [..] ..)...)` — ADR-0066. deftype and
+/// `(deftype Name [fields] Proto (m [..] ..)...)`. deftype and
 /// defrecord lower identically (same Name + ->Name + extend-type sections);
 /// they differ only in the registration primitive (`__deftype!` registers
 /// `.kind = .deftype`, so no implicit IPersistentMap semantics). Shares
-/// `lowerDefType` (F-011 commonization). Retires the former special form.
+/// `lowerDefType` so the two cannot drift.
 fn expandDeftype(
     arena: std.mem.Allocator,
     rt: *Runtime,
@@ -2907,11 +2904,11 @@ fn expandDeftype(
 }
 
 /// True iff a deftype/defrecord field symbol carries `^:unsynchronized-mutable`
-/// or `^:volatile-mutable` reader metadata. The two keywords are unified into a
-/// single "assignable" flag while the runtime is single-threaded (ADR-0104,
-/// AD-018); the cross-thread visibility distinction is dormant until Phase 15+.
-/// A `^long`/primitive type hint alongside (`^:unsynchronized-mutable ^long
-/// s-pos`) is ignored (AD-017; NaN-box uniform Value slot).
+/// or `^:volatile-mutable` reader metadata — either one makes the field
+/// assignable via `set!` (`fieldIsVolatile` separately narrows the subset
+/// needing atomic access). A `^long`/primitive type hint alongside
+/// (`^:unsynchronized-mutable ^long s-pos`) is ignored (every field is a
+/// uniform NaN-boxed Value slot — a recorded accepted divergence).
 fn fieldIsMutable(field_form: Form) bool {
     const m = field_form.meta orelse return false;
     if (m.data != .map) return false;
@@ -2930,9 +2927,9 @@ fn fieldIsMutable(field_form: Form) bool {
     return false;
 }
 
-/// True iff a deftype field symbol carries `^:volatile-mutable` (D-444 /
-/// ADR-0152) — the subset of `fieldIsMutable` that needs atomic acquire/release
-/// field access for cross-thread happens-before. `^:unsynchronized-mutable`
+/// True iff a deftype field symbol carries `^:volatile-mutable` — the subset
+/// of `fieldIsMutable` that needs atomic acquire/release field access for
+/// cross-thread happens-before. `^:unsynchronized-mutable`
 /// returns false (a plain slot, JVM-faithful: a plain field shared across
 /// threads is a data race on the JVM too).
 fn fieldIsVolatile(field_form: Form) bool {
@@ -2951,7 +2948,7 @@ fn fieldIsVolatile(field_form: Form) bool {
 }
 
 /// Bring a defrecord/deftype's declared fields into scope as implicit locals
-/// inside a protocol method body (D-202 gap 1), matching Clojure: a method
+/// inside a protocol method body, matching Clojure: a method
 /// `(m [this] (* v 2))` sees the bare field `v` without an explicit
 /// `(:v this)` / `(.v this)`. Wraps the body in
 /// `(let* [<field> (.<field> <instance>) ...] <body>)` over the dot-field
@@ -2987,7 +2984,7 @@ fn wrapMethodBodyWithFields(
     else
         params[0];
 
-    // ADR-0104: immutable fields ride a `let*` value-copy (a snapshot is correct
+    // Immutable fields ride a `let*` value-copy (a snapshot is correct
     // — they never change); MUTABLE fields must read the live slot, so they are
     // NOT bound here. Instead the body is wrapped in `(__mut-fields* instance
     // [mfield…] …)` whose analyzer handler resolves bare mutable-field reads to
@@ -3082,8 +3079,8 @@ fn lowerDefType(
 
     const fields_in = args[1].data.vector;
     const quoted_fields = try arena.alloc(Form, fields_in.len);
-    // D-444 / ADR-0152: collect the `^:volatile-mutable` field names so the
-    // registration primitive can flag them for atomic acquire/release access.
+    // Collect the `^:volatile-mutable` field names so the registration
+    // primitive can flag them for atomic acquire/release access.
     // defrecord forbids mutable fields (below), so this stays empty there.
     const quoted_volatile = try arena.alloc(Form, fields_in.len);
     var n_volatile: usize = 0;
@@ -3117,7 +3114,7 @@ fn lowerDefType(
     const quoted_name = try list(arena, quoted_name_items, loc);
 
     // (rt/<ctor_prim> 'Name ['f1 'f2 ...] ['vol-field ...])  — arg 3 = the
-    // `^:volatile-mutable` field names (D-444; empty for defrecord / no-volatile).
+    // `^:volatile-mutable` field names (empty for defrecord / no-volatile).
     var call_items = try arena.alloc(Form, 4);
     call_items[0] = .{ .data = .{ .symbol = .{ .ns = "rt", .name = ctor_prim } }, .location = loc };
     call_items[1] = quoted_name;
@@ -3171,13 +3168,13 @@ fn lowerDefType(
     const def_arrow = try list(arena, def_arrow_items, loc);
 
     // (def map->Name (fn* [m] (rt/__map->record Name m))) — the map factory clj
-    // generates for every DEFRECORD (not deftype). `rt/__map->record` (D-086 /
-    // ADR-0154) pulls each declared field from `m` by keyword (nil if absent)
+    // generates for every DEFRECORD (not deftype). `rt/__map->record`
+    // pulls each declared field from `m` by keyword (nil if absent)
     // and holds the remaining keys in the record's extmap (clj's `__extmap`).
     // It is a PRIMITIVE (not core.clj `reduce-kv`/`assoc`) so the generated
-    // factory stays bootstrap-safe — analyzable in a core-less environment (the
-    // F-012 diff fixture), exactly as the prior `(get …)`-only body was. Gated
-    // on the record ctor_prim (comptime).
+    // factory stays bootstrap-safe — analyzable in a core-less environment
+    // (the dual-backend diff fixture), exactly as the prior `(get …)`-only
+    // body was. Gated on the record ctor_prim (comptime).
     const is_record = comptime std.mem.eql(u8, ctor_prim, "__defrecord!");
     const def_map_arrow: ?Form = if (is_record) blk: {
         const map_arrow_name = mblk: {
@@ -3210,18 +3207,18 @@ fn lowerDefType(
     // method-impl lists belonging to it; each section lowers to
     // `(extend-type Name Proto impl1 impl2 ...)`.
     //
-    // D-530 (cross-section same-name-arity merge): clj lets a deftype implement
+    // Cross-section same-name-arity merge: clj lets a deftype implement
     // the same method NAME at different arities across DIFFERENT protocol
     // sections (`clojure.lang.Seqable` `seq[this]` + `clojure.lang.Sorted`
     // `seq[this asc]`; data.priority-map's `subseq` needs it). expandExtendType
     // already merges same-name arities WITHIN one section into a multi-arity
-    // `fn*` (D-279) — but two sections never meet there, so each would emit its
+    // `fn*` — but two sections never meet there, so each would emit its
     // own single-arity entry and `(. inst seq true)` resolves the arity-1 row
     // ("Wrong number of args (2)…expected 1"). The fix gathers every section's
     // impls of a shared name and emits the FULL clause set under EACH
     // contributing protocol, so expandExtendType builds the complete multi-arity
     // fn for both — `lookupMethod`/`MethodEntry`/the dispatch path stay unchanged
-    // (`selectMethod` picks the body by arg count). Survey: 9.2.T-D530.
+    // (`selectMethod` picks the body by arg count).
     const FieldImpl = struct { wrapped: []const Form, proto: Form };
     var parsed: std.ArrayList(FieldImpl) = .empty;
     defer parsed.deinit(arena);
@@ -3243,11 +3240,11 @@ fn lowerDefType(
         const impls_start = i;
         while (i < args.len and args[i].data == .list) : (i += 1) {}
         const impls = args[impls_start..i];
-        // Each method body gets the record fields as implicit locals (D-202
-        // gap 1); a malformed impl passes through untouched (expandExtendType
+        // Each method body gets the record fields as implicit locals;
+        // a malformed impl passes through untouched (expandExtendType
         // raises the precise error). A zero-impl section is a MARKER protocol
         // (e.g. `Sequential`) → `(extend-type Name Marker)`, recorded into
-        // `protocol_impls` (D-190/ADR-0068).
+        // `protocol_impls`.
         const wrapped = try arena.alloc(Form, impls.len);
         for (impls, 0..) |impl, k| {
             wrapped[k] = try wrapMethodBodyWithFields(arena, impl, fields_in, loc);
@@ -3325,12 +3322,12 @@ fn lowerDefType(
 // `extend-type`'s target argument). Method bodies become `fn*`
 // expressions so the existing closure-capture machinery snapshots
 // outer locals into the resulting Function Value automatically
-// (survey §4 Option A — closure capture is free; no
-// `closure_bindings_ptr` on ReifiedInstance).
+// (closure capture is free; no `closure_bindings_ptr` on
+// ReifiedInstance).
 //
 // --- delay — `(delay expr...)` → `(__delay-create (fn* [] expr...))` ---
 //
-// Row 14.8 (D-098 follow-up). Wraps the body in a zero-arity thunk
+// Wraps the body in a zero-arity thunk
 // that the `__delay-create` primitive (lang/primitive/stm.zig)
 // stashes in a Delay heap struct. `(deref d)` invokes the thunk on
 // first call and caches the result. Mirrors JVM `clojure.core/delay`
@@ -3349,11 +3346,9 @@ fn expandDelay(
 
 // --- future — `(future expr...)` → `(__future-call (fn* [] expr...))` ---
 //
-// Row 14.8 (D-098 follow-up). On the single-thread runtime,
-// `__future-call` evaluates the thunk eagerly at construction time
-// and caches the result; the cached value is returned by `(deref
-// f)`. Phase B swaps the primitive's body for real async execution
-// — the macro surface is unchanged.
+// Wraps the body in a zero-arity thunk. `__future-call` spawns a real
+// OS thread that runs the thunk and caches the result; `(deref f)`
+// blocks until the worker completes (see runtime/future.zig).
 fn expandFuture(
     arena: std.mem.Allocator,
     rt: *Runtime,
@@ -3364,7 +3359,7 @@ fn expandFuture(
     return expandThunkWrapper(arena, "__future-call", args, loc);
 }
 
-/// `(dosync body...)` → `(__run-in-transaction (fn* [] body...))` (Phase B #5).
+/// `(dosync body...)` → `(__run-in-transaction (fn* [] body...))`.
 /// Same thunk-wrap as future/delay; the body runs in an STM transaction on the
 /// calling thread (NOT a spawned worker).
 fn expandDosync(
@@ -3377,9 +3372,9 @@ fn expandDosync(
     return expandThunkWrapper(arena, "__run-in-transaction", args, loc);
 }
 
-/// `(locking obj body...)` → `(__locking obj (fn* [] body...))` (Phase B #6).
-/// obj is evaluated once; its heap-value monitor (ADR-0009 lock_state bits, NOT
-/// a JVM monitor) is held while the body thunk runs on the calling thread.
+/// `(locking obj body...)` → `(__locking obj (fn* [] body...))`.
+/// obj is evaluated once; its heap-value monitor (the heap header's lock_state
+/// bits, NOT a JVM monitor) is held while the body thunk runs on the calling thread.
 /// Reentrant; released on normal or error exit (defer in the primitive).
 fn expandLocking(
     arena: std.mem.Allocator,
@@ -3406,7 +3401,7 @@ fn expandLocking(
 
 // --- lazy-seq — `(lazy-seq body...)` → `(__lazy-seq-create (fn* [] body...))` ---
 //
-// ADR-0054 cycle 1. Wraps the body in a zero-arity thunk that the
+// Wraps the body in a zero-arity thunk that the
 // `__lazy-seq-create` primitive (lang/primitive/sequence.zig) stashes
 // in a LazySeq heap struct; the thunk is forced on first access via
 // the seq protocol (`first`/`rest`/`seq` route `.lazy_seq` through
@@ -3446,15 +3441,15 @@ fn expandThunkWrapper(
     return list(arena, call_items, loc);
 }
 
-// --- letfn — mutually-recursive local fns (D-201) ---
+// --- letfn — mutually-recursive local fns ---
 //
 // `(letfn [(f [..] ..) (g [..] ..)] body...)` →
 //   `(letfn* [f (fn [..] ..) g (fn [..] ..)] body...)`
 //
 // Each fn-spec `(name params... body...)` becomes a `name (fn params...
-// body...)` pair. The self-name is dropped (cljw `fn` rejects a named
-// fn, D-147) — recursion resolves through the `letfn*` slot, not an fn
-// self-name. `fn` (not `fn*`) so the fn bodies get param destructuring.
+// body...)` pair. The self-name is dropped — recursion resolves through
+// the `letfn*` slot, not an fn self-name. `fn` (not `fn*`) so the fn
+// bodies get param destructuring.
 fn expandLetfn(
     arena: std.mem.Allocator,
     rt: *Runtime,
@@ -3521,7 +3516,7 @@ fn expandReify(
     if (args[0].data != .symbol)
         return error_catalog.raise(.reify_section_invalid, args[0].location, .{});
 
-    // D-530 (reify cross-section same-name-arity merge): same gap + fix as
+    // Reify cross-section same-name-arity merge: same gap + fix as
     // `lowerDefType` — a method NAME at different arities across DIFFERENT
     // protocol sections (Seqable `seq[this]` + Sorted `seq[this asc]`) must merge
     // into one multi-arity fn (clj allows it on reify too). The per-section
@@ -3565,13 +3560,13 @@ fn expandReify(
     while (i < args.len) {
         if (args[i].data != .symbol)
             return error_catalog.raise(.reify_section_invalid, args[i].location, .{});
-        // A host-supertype marker (`Object`, D-275) is quote-wrapped so the
-        // analyzer never Var-resolves it (Path A, the `instance?` precedent);
+        // A host-supertype marker (`Object`) is quote-wrapped so the
+        // analyzer never Var-resolves it (the `instance?` precedent);
         // the primitive recognises the Symbol Value. A protocol name stays bare
         // (resolves to its protocol Var, the existing path).
         const sec_name = args[i].data.symbol.name;
-        // Host-supertype markers (`Object`, D-275) AND protocol_remap interfaces
-        // (`clojure.lang.*`, D-423) go into the interfaces vector quote-wrapped, so
+        // Host-supertype markers (`Object`) AND protocol_remap interfaces
+        // (`clojure.lang.*`) go into the interfaces vector quote-wrapped, so
         // `__reify!` records the NAME as a `protocol_impls` marker. A BARE
         // protocol_remap name (`ILookup`) would also resolve to its cljw protocol
         // Var, but a QUALIFIED one (`clojure.lang.ILookup`) resolves to a class
@@ -3595,7 +3590,7 @@ fn expandReify(
 
         // A protocol_remap interface (clojure.lang.*) routes its clj method names
         // to cljw (protocol, method) targets — the SAME translation deftype /
-        // extend-type get via rewriteProtocolRemap (D-280/286/417/419). reify
+        // extend-type get via rewriteProtocolRemap. reify
         // formerly skipped this entirely: a method written under a foreign interface
         // header (e.g. `valAt` under `Associative`, which clj allows since Associative
         // extends ILookup) registered verbatim under (Associative, valAt) and
@@ -3610,7 +3605,7 @@ fn expandReify(
         };
 
         // Validate + collect distinct method names (first-seen order); one method
-        // may appear at multiple arities (D-279), grouped into a multi-arity fn*.
+        // may appear at multiple arities, grouped into a multi-arity fn*.
         var section_names: std.ArrayList([]const u8) = .empty;
         defer section_names.deinit(arena);
         for (impls) |impl| {
@@ -3636,7 +3631,7 @@ fn expandReify(
             var clauses: std.ArrayList(Form) = .empty;
             defer clauses.deinit(arena);
             var name_loc = proto_form.location;
-            // D-530: a cross-section overload (same name in >1 section) gathers its
+            // A cross-section overload (same name in >1 section) gathers its
             // clauses from EVERY section's impls (the full arity set), so the
             // multi-arity fn under THIS protocol carries all arities; a plain
             // single-section name gathers only this section's impls (unchanged).
@@ -3683,23 +3678,23 @@ fn expandReify(
             if (remap_hi) |hi| {
                 const r = hi.remapMethod(method_name) orelse {
                     // A java.util method grouped under a clojure.lang remap section:
-                    // cljw has no java dispatch → accept-and-drop (D-372). A genuinely
+                    // cljw has no java dispatch → accept-and-drop. A genuinely
                     // unwired clojure.lang method is an explicit error, never silent.
                     if (host_interface.isJavaUtilMethod(method_name)) continue;
                     return error_catalog.raise(.feature_not_supported, name_loc, .{ .name = "deftype/reify clojure.lang.* method not yet wired" });
                 };
                 // A remap target that is a host-supertype MARKER (`equiv`/`hashCode`/
                 // `equals` → Object/…, the method_family) must be quote-wrapped, like
-                // the interfaces-vector path (D-423): a bare `Object` symbol resolves
+                // the interfaces-vector path: a bare `Object` symbol resolves
                 // to the Object CLASS VALUE which __reify! rejects ("expected protocol,
                 // got type_descriptor"). A real cljw protocol target (ILookup, …) stays
-                // bare → its protocol Var. D-426(A).
+                // bare → its protocol Var.
                 const proto_sym = if (host_interface.isMarker(r.protocol))
                     try quoteWrap(arena, sym(r.protocol, name_loc))
                 else
                     sym(r.protocol, name_loc);
                 try method_rows.append(arena, try reifyMethodRow(arena, r.method, proto_sym, fn_form, name_loc));
-                // D-283: also register the original clj name under the same protocol
+                // Also register the original clj name under the same protocol
                 // so a `.cljname` dot-call on the reified instance resolves.
                 if (!std.mem.eql(u8, method_name, r.method))
                     try method_rows.append(arena, try reifyMethodRow(arena, method_name, proto_sym, fn_form, name_loc));
@@ -3721,7 +3716,7 @@ fn expandReify(
     return list(arena, call_items, loc);
 }
 
-// `instance?` is no longer a macro — ADR-0128 made it a real fn over a class
+// `instance?` is no longer a macro — it is a real fn over a class
 // VALUE (`(def instance? (fn* [c x] (rt/-instance-of? c x)))` in core.clj), so it
 // is passable higher-order (condp / map / partial). The old `expandInstanceQ`
 // (auto-quote the class symbol → `(__instance? (quote Class) x)`) is retired.
@@ -3919,7 +3914,7 @@ test "expandOr handles 10000 args without StackOverflow (4.3 regression)" {
     try testing.expectEqualStrings("let*", expanded.data.list[0].data.symbol.name);
 }
 
-// --- row 7.3 cycle 7 macro tests ---
+// --- protocol macro tests ---
 
 fn expectSymbolEq(form: Form, expected: []const u8) !void {
     try testing.expect(form.data == .symbol);
@@ -3944,7 +3939,7 @@ test "expandDefprotocol lowers to (do (def P ...) (def m1 ...))" {
     const out = try expandDefprotocol(arena, &fix.rt, &args, .{});
     try testing.expect(out.data == .list);
     try expectSymbolEq(out.data.list[0], "do");
-    try testing.expectEqual(@as(usize, 4), out.data.list.len); // (do def-proto def-m1 'P) — D-456 return symbol
+    try testing.expectEqual(@as(usize, 4), out.data.list.len); // (do def-proto def-m1 'P) — trailing return symbol
     // Trailing form is `(quote P)` — defprotocol returns the protocol name symbol.
     const ret_form = out.data.list[3];
     try testing.expect(ret_form.data == .list);
@@ -3969,7 +3964,8 @@ test "expandDefprotocol lowers to (do (def P ...) (def m1 ...))" {
     try testing.expect(make_fn_call.data == .list);
     try testing.expectEqualStrings("__make-protocol-fn!", make_fn_call.data.list[0].data.symbol.name);
     // Second arg is the protocol-Var symbol (bare, resolves to the
-    // just-interned P at runtime via ADR-0038's analyze-time intern).
+    // just-interned P at runtime via the analyzer's analyze-time intern,
+    // ADR-0038).
     try expectSymbolEq(make_fn_call.data.list[1], "P");
     // Third arg is the method name as a string literal.
     try testing.expect(make_fn_call.data.list[2].data == .string);
@@ -3984,7 +3980,7 @@ test "expandDefprotocol accepts a 0-method MARKER protocol (D-190/ADR-0068)" {
     const arena = fix.arena.allocator();
     // `(defprotocol P)` — name only — is a marker; expands to
     // `(do (def P (rt/__make-protocol! 'P [])) 'P)`, no method defs (the
-    // trailing `'P` is the D-456 return-symbol).
+    // trailing `'P` is the return-symbol).
     const args = [_]Form{sym("P", .{})};
     const out = try expandDefprotocol(arena, &fix.rt, &args, .{});
     try testing.expect(out.data == .list);
@@ -4085,7 +4081,7 @@ test "expandExtendProtocol single section drops the (do ...) wrapper" {
     try expectSymbolEq(out.data.list[0], "extend-type");
 }
 
-// --- row 7.4 cycle 1 — `expandDefrecord` ---
+// --- `expandDefrecord` ---
 
 test "expandDefrecord lowers (defrecord Name [f1 f2]) to (do (def Name __defrecord!) (def ->Name fn*))" {
     var fix: TestFixture = undefined;
@@ -4104,7 +4100,7 @@ test "expandDefrecord lowers (defrecord Name [f1 f2]) to (do (def Name __defreco
     try testing.expect(out.data == .list);
     try expectSymbolEq(out.data.list[0], "do");
     // (do (def Foo (rt/__defrecord! ...)) (def ->Foo (fn* [x y] (Foo. x y)))
-    //     (def map->Foo (fn* [m] (Foo. (get m :x) (get m :y))))) — D-232 map factory.
+    //     (def map->Foo (fn* [m] (rt/__map->record Foo m)))) — the map factory.
     try testing.expectEqual(@as(usize, 4), out.data.list.len);
     const def_map_arrow = out.data.list[3];
     try testing.expect(def_map_arrow.data == .list);

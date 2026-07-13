@@ -71,6 +71,15 @@ active:
       (pointers whose surrounding prose is NOT self-contained) — a different,
       judgement-heavier pass; the mechanical stamp category no longer recurs
       (this drain is the sweep-then-close of it).
+      DRAIN 3 (2026-07-14): the worst pointer-density file
+      src/lang/macro_transforms.zig 101→7 ref lines (subagent pass, method
+      per drains 1-2): cycle/row/part bookkeeping dropped, section banners
+      de-numbered, bug narratives kept as self-contained prose, 6 genuine
+      design-citation anchors kept (ADR-0035/0037/0038/0144/0103/0059);
+      4 STALE comments fixed to code-truth en route (fn/letfn named-fn
+      lowering, future's real-OS-thread reality ×2 incl. stm.zig's
+      futureCallFn docstring, a map->record test comment). Next candidates
+      by density: diff_test.zig 95, vm.zig 89, print.zig 88.
     category: "docs"
     quality_floor: "public-ization: comment de-pointer + condense (ADR-0166)"
     barrier: |-

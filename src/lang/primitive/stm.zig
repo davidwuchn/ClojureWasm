@@ -185,9 +185,8 @@ pub fn delayCreateFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLo
 
 /// `__future-call` — internal primitive called by the `future` Zig
 /// macro transform. Receives a zero-arity fn and constructs a
-/// Future that has already eagerly evaluated the body (the
-/// pre-Phase-B single-thread stand-in; real off-thread execution
-/// arrives with Phase B concurrency).
+/// Future whose body runs on a real OS thread (`runtime/future.zig`
+/// spawns it; `deref` blocks until the thread completes).
 pub fn futureCallFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
     try error_catalog.checkArity("__future-call", args, 1, loc);
     return try future_mod.alloc(rt, env, args[0], loc);
