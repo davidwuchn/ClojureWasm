@@ -214,9 +214,13 @@ pub fn collect(gc: *GcHeap, ctx: root_set_mod.WalkContext) void {
     // D-556: conservative native-stack scan (tree_walk backend only — the vm's
     // operand stack is the A1 root). Pins every stack word that decodes to a
     // live heap Value, covering evaluation intermediates the explicit brackets
-    // miss. Runs on the COLLECTING thread's stack (workers are parked at their
-    // alloc-prologue, where their intermediates are bracket-covered or a known
-    // D-556 residual).
+    // miss. Runs on the COLLECTING thread's stack only. Parked workers are safe
+    // WITHOUT a scan because a park can no longer fire inside a fabrication
+    // bracket (D-559 / ADR-0150 am1 — the alloc-prologue park honors
+    // `fabrication_depth`), so a parked worker's builder intermediates are never
+    // exposed; its Values are published (eval frames / bindings / operand
+    // stack). Residual: tree_walk eval RUNNING ON A WORKER holds C-stack Value
+    // intermediates this main-only scan does not cover (the D-556 residual).
     conservativeStackScan(gc);
     // All roots are shaded gray; blacken transitively (ADR-0028 amendment 3).
     drainGray(gc);

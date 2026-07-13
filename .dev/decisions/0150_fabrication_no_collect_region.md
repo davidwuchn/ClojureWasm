@@ -207,8 +207,85 @@ window (lazy-realization/reduce) is the genuinely-different D-244 #4b scope.
 - `.dev/debt.yaml` — D-244 #4 discharged (synchronous builders) + the D-244 #4b
   (reentrant realization) follow-on + the forward (moving-GC) row.
 
+## Amendment 1 (2026-07-13, D-559) — the region also defers the safepoint PARK
+
+**Problem.** This ADR's contract says "a mid-builder stop-the-world collect is
+DEFERRED", but the implementation deferred only the SAME-thread torture / future
+auto-collect. The alloc-prologue safepoint park (`gc_heap.alloc`, ADR-0090) ran
+BEFORE the `fabrication_depth` gate, so a PEER's `stopWorld` parked a worker
+mid-bracket — its in-progress builder nodes (raw `*TailNode`/`*HamtNode`/`*Cons`
+in unrooted Zig locals) were invisible to the collect and got swept; the resumed
+builder then read recycled memory. Surfaced as D-559: a nested-cross-agent send
+(`add-watch` on agent A sending to agent B) crashing `@memcpy arguments alias`
+(exit 134, ~3-7% under `CLJW_GC_TORTURE_ALLOC=1` with the D-418 window-collect
+injection; the same signature this ADR's Context recorded for the original
+unbracketed `conj`). `mark_sweep.zig`'s "workers are parked at their
+alloc-prologue, where their intermediates are bracket-covered" comment was
+false — D-559 is its disproof.
+
+**Decision.** The alloc-prologue park HONORS the region: skip the park while
+`fabrication_depth > 0`; the thread parks at its next safepoint OUTSIDE any
+bracket (VM back-edge poll, non-bracket alloc, blocking-lock safepoint, or
+unregister). This is the JVM-GCLocker shape (JNI critical regions delay GC;
+threads in a region run to completion; the collector waits). No deadlock: a
+waiting `stopWorld` holds no lock a bracket needs (brackets are bounded pure
+builders — no eval, no locks; their allocs take only `gc_mutex`, which the
+collector takes only AFTER the rendezvous).
+
+- **No park at bracket ENTRY or EXIT** — both are unsound: at exit the just-built
+  result is an unpublished Zig local; at entry a fold's partial accumulator
+  (`acc = consHeap(rt, x, acc)`) is an unpublished raw node between brackets.
+  There is NO safe bracket-boundary park without new rooting machinery; do not
+  "optimize" one in.
+- **Enforcement**: `fabrication_depth` moved to `root_set.zig` (the shared lower
+  layer); `safepoint.park` AND `safepoint.enterBlocked` now
+  `assert(fabrication_depth == 0)` — the chokepoint guarding every other park
+  site (back-edge, lazy_seq, lock_tx, monitor) and the enterBlocked side door
+  against a future bracket that reaches one.
+- **Accepted cost (observable)**: the rendezvous delay is **unbounded in
+  fold-chain length** — back-to-back brackets with no poll between (a large
+  `into`'s per-element builders) defer the park until the fold ends. Tracked as
+  **D-560** with the publish-roots redesign (DA Alt 3 below) as the named
+  discharge shape; `safepoint.max_stopworld_wait_ns` records the worst wait so
+  the cliff is observable, not anecdotal.
+- **Scope**: this does NOT close the D-556 residual (tree_walk eval ON A WORKER
+  holds C-stack Value intermediates; the conservative scan remains
+  collecting-thread-only). At the sanctioned park sites a VM worker's live
+  values are published (operand stack / eval frames / bindings); the same claim
+  for tree_walk-on-worker is NOT made.
+
+**Alternatives considered (Devil's-advocate fork, fresh context — summary;
+full text `private/notes/D559-da-critique.md`):**
+
+- **Alt 1 (smallest-diff, taken)**: the park-deferral + asserts + honest wording
+  + wait stat. DA verdict: sound (a registered in-bracket worker never counts as
+  parked, so `collect` can never overlap a bracket); inherits the structural
+  smell that the fabrication region now couples into the safepoint protocol.
+- **Alt 2 (Boehm per-parked-worker conservative stack scan)**: closes D-559 AND
+  the D-556 residual in one mechanism, no latency cliff. Rejected as
+  finished-form-HOSTILE on this project's horizon: wasm value stacks are
+  unscannable, so gap area II (Wasm-edge-native) cannot port it, and it deepens
+  platform coupling.
+- **Alt 3 (wildcard, DA-recommended per F-002)**: flip brackets from
+  suppress-collect to PUBLISH-ROOTS — `gc.alloc` auto-appends in-bracket
+  allocations to a threadlocal scratch root array the collector marks; parks
+  become safe anywhere, no rendezvous delay, no fabrication knowledge in the
+  safepoint layer, torture gates deletable, wasm-portable. Costs: per-in-bracket-
+  alloc append, a new clear-point invariant, an ADR-0150 supersede (depth 3).
+  **Main-loop ruling**: this ADR's accepted premise (F-006 non-moving → the
+  no-collect region IS the finished form; publish-roots was Fork 2's rejected
+  gold-plating) still stands — D-559 was an implementation gap in the region's
+  contract, not evidence the regime is wrong. Alt 3 becomes the named discharge
+  shape of D-560, triggered by MEASURED pause-time harm (or an F-006 amendment,
+  user-owned), not pre-emptively.
+
 ## Revision history
 
+- 2026-07-13 **Amendment 1** (D-559): the region also defers the alloc-prologue
+  safepoint park (a peer-STW mid-bracket park corrupted worker builders);
+  `fabrication_depth` moved to `root_set.zig`; park/enterBlocked asserts; the
+  fold-chain rendezvous-delay cost recorded as D-560 with the publish-roots
+  redesign (DA Alt 3) as its discharge shape.
 - 2026-06-16 issued + **REJECTED same day**, then **REVERSED to ACCEPTED same day**.
   The design (Alt A no-collect region) was DA-forked (Fork 1, recommended Alt A). It
   was then rejected on the belief that Alt A contradicts ADR-0090's "never suppress,

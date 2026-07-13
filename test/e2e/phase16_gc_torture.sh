@@ -261,12 +261,15 @@ agent_alloc 'send'    '(let [a (agent 0)] (send a inc) (await a) @a)'           
 agent_alloc 'conj'    '(let [a (agent [])] (send a conj 1) (send a conj 2) (await a) @a)'      '[1 2]'
 agent_alloc 'drain'   '(let [a (agent 0)] (dotimes [_ 20] (send a inc)) (await a) @a)'         '20'
 agent_alloc 'sendoff' '(let [a (agent 0)] (send-off a + 5) (await a) @a)'                      '5'
-# NOTE: the nested-cross-agent-send case (a watch on agent A that `send`s to agent
-# B, then await both) is NOT yet a clean guard — it exposes a SECOND, distinct
-# corruption (`@memcpy arguments alias`, exit 134, ~1/10 under alloc-torture) in
-# the two-drainer + nested_pending path, tracked as D-559. It is deliberately left
-# out here until D-559 is fixed (adding a flaky case would defeat the determinism
-# this block exists to provide).
+# D-559 guard — nested CROSS-agent send (a watch on agent A sending to agent B,
+# then await both): before ADR-0150 am1 the alloc-prologue safepoint park fired
+# INSIDE a fabrication bracket, so the log-drainer parked mid-conj-builder and the
+# main-thread window collect swept its in-progress tail node (`@memcpy arguments
+# alias`, exit 134, ~3-7%). The park now honors `fabrication_depth` (skips
+# mid-bracket; parks at the next non-bracket safepoint). clj-faithful [1 2 2]:
+# the two state-change watches log 1 then 2, and `await`'s no-op barrier action
+# fires the watch once more (old==new==2 → conj 2 again). Verified 50/50 post-fix.
+agent_alloc 'nested_xagent' '(let [log (agent []) a (agent 0)] (add-watch a :k (fn [k r o n] (send log conj n))) (send a inc) (send a inc) (await a) (await log) @log)' '[1 2 2]'
 
 # Interleaved lazy-seq `=` walk: comparing two lazy seqs realizes both tails
 # alternately, so each cursor head + the pulled elements must be rooted across

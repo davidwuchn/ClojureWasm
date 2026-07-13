@@ -40,6 +40,7 @@ const free_pool_mod = @import("free_pool.zig");
 const value_mod = @import("../value/value.zig");
 const io_default = @import("../concurrency/io_default.zig");
 const safepoint = @import("../concurrency/safepoint.zig");
+const root_set_mod = @import("root_set.zig");
 
 /// Reentrancy guard for the alloc-driven GC torture (D-386): a torture collect
 /// must not re-enter itself if the collector's own bookkeeping reaches `alloc`.
@@ -47,24 +48,12 @@ const safepoint = @import("../concurrency/safepoint.zig");
 /// unless `CLJW_GC_TORTURE_ALLOC` is armed.
 threadlocal var in_alloc_torture: bool = false;
 
-/// Fabrication no-collect region depth (D-244 #4, ADR-0150). A multi-alloc
-/// collection BUILDER (`vector.conj`/`fromSlice`, `map.assoc`, `set.conj`, the
-/// transient ops, …) holds an intermediate NODE — a `*TailNode`/`*HamtNode`,
-/// NOT a `Value` — in an unrooted Zig local across its NEXT `alloc`. A mid-alloc
-/// collect (the torture, or a future ADR-0028 alloc-driven auto-collect) would
-/// sweep it. Each builder brackets its body with `enterFabrication`/
-/// `exitFabrication`; an in-`alloc` collect is DEFERRED while `depth > 0`.
-///
-/// Correct under F-006 (non-moving mark-sweep): a collect deferred across a
-/// BOUNDED pure-Zig builder runs harmlessly just after — nothing relocates, the
-/// result is rooted on the operand stack by then. This is NOT cw v0's un-scoped
-/// `suppressCollection` hatch: the region wraps only pure-Zig builders (no user
-/// code, no eval-reentry), so it never blinds a safepoint / back-edge collect
-/// (`depth` is 0 there). The alloc-torture is the completeness guard — a builder
-/// that forgets the bracket trips it. A future RELOCATING/concurrent GC
-/// (ROADMAP §89.2) must replace this with published precise roots (D-244 #4
-/// forward row). Threadlocal: each builder runs on its own thread.
-threadlocal var fabrication_depth: u32 = 0;
+// Fabrication no-collect region depth (D-244 #4, ADR-0150): the canonical
+// docs + the variable itself live in `root_set.zig` (`fabrication_depth`,
+// moved there at ADR-0150 am1 so `safepoint.park`/`enterBlocked` can assert
+// against it directly). This file's consumers: `enterFabrication`/
+// `exitFabrication` (the bracket API), the alloc-prologue park gate (D-559),
+// the alloc-torture gate, and `maybeAutoCollect`.
 
 const HeapHeader = heap_header.HeapHeader;
 const FreePoolMap = free_pool_mod.FreePoolMap;
@@ -351,12 +340,12 @@ pub const GcHeap = struct {
     /// Nests: a builder calling a wrapped builder balances. Cheap (one
     /// threadlocal increment, no lock).
     pub fn enterFabrication(_: *GcHeap) void {
-        fabrication_depth += 1;
+        root_set_mod.fabrication_depth += 1;
     }
 
     /// Leave a fabrication no-collect region (pairs with `enterFabrication`).
     pub fn exitFabrication(_: *GcHeap) void {
-        fabrication_depth -= 1;
+        root_set_mod.fabrication_depth -= 1;
     }
 
     /// Allocate a typed heap object on the GC heap: free-pool fast path
@@ -388,7 +377,22 @@ pub const GcHeap = struct {
         // gc_self_guard) and the about-to-be-allocated obj does not exist yet, so
         // the collection sees this thread's roots quiescent. Runtime-inert until
         // a collector arms `gc_requested` (#4 wires the VM-safe-point trigger).
-        if (safepoint.gc_requested.load(.acquire)) safepoint.park();
+        //
+        // D-559 (ADR-0150 amendment 1): the park HONORS the fabrication region.
+        // Mid-bracket, this thread's in-progress builder NODES (*TailNode/
+        // *HamtNode/*Cons — raw pointers, not Values) live in unrooted Zig
+        // locals, so parking here would hand the peer's collect a stack it
+        // cannot see → the intermediate is swept → the resumed builder reads
+        // recycled memory (the D-559 `@memcpy arguments alias` crash). ADR-0150's
+        // contract ("a mid-builder STW collect is DEFERRED") previously covered
+        // only the SAME-thread torture/auto collect; this extends it to a peer's
+        // stopWorld, JVM-GCLocker-style: the bracket completes, and the thread
+        // parks at its next safepoint outside (back-edge poll / non-bracket
+        // alloc / blocking-lock / unregister — all published-roots sites). The
+        // collector just waits: no deadlock, because brackets are bounded pure
+        // builders (no eval, no locks) and their allocs only need `gc_mutex`,
+        // which `stopWorld` does not hold while it waits.
+        if (root_set_mod.fabrication_depth == 0 and safepoint.gc_requested.load(.acquire)) safepoint.park();
         // D-386 alloc-driven GC torture (validation only; inert unless
         // CLJW_GC_TORTURE_ALLOC is armed → `alloc_period != 0`, one global load +
         // predicted-not-taken branch otherwise). Force a STW collect HERE — at the
@@ -405,7 +409,7 @@ pub const GcHeap = struct {
             // intermediate node is live-but-unrooted, so defer the collect to
             // just after the builder. The same gate guards a future ADR-0028
             // alloc-driven auto-collect (it would land right here).
-            if (fabrication_depth > 0) break :torture;
+            if (root_set_mod.fabrication_depth > 0) break :torture;
             const root_set = @import("root_set.zig");
             if (root_set.is_registered_worker or in_alloc_torture) break :torture;
             const e = root_set.active_env orelse break :torture;
@@ -480,7 +484,7 @@ pub const GcHeap = struct {
         if (self.bytes_since_last_gc <= self.threshold_bytes) return;
         // A multi-alloc builder's intermediate node is live-but-unrooted here; defer
         // the collect to just after the builder (the gate the torture path uses).
-        if (fabrication_depth > 0) return;
+        if (root_set_mod.fabrication_depth > 0) return;
         const root_set = @import("root_set.zig");
         if (root_set.is_registered_worker or in_alloc_torture) return;
         const e = root_set.active_env orelse return;

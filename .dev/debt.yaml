@@ -24,36 +24,26 @@
 # md-table-align no longer pads it to ~800 KB of whitespace.
 
 active:
-  - id: "D-559"
+  - id: "D-560"
     status: |-
-      open (2026-07-13, surfaced while building the D-418 deterministic guard). A
-      NESTED CROSS-AGENT send corrupts under alloc-torture: a watch on agent A that
-      `(send B …)`s, then `(await A) (await B)`, panics `@memcpy arguments alias`
-      (exit 134, ~1/10 under CLJW_GC_TORTURE_ALLOC=1). Repro:
-      `CLJW_GC_TORTURE_ALLOC=1 cljw -e '(let [log (agent []) a (agent 0)] (add-watch a :k (fn [k r o n] (send log conj n))) (send a inc) (send a inc) (await a) (await log) @log)'`
-      (clj-correct value is [1 2 2] — the await barrier's no-op watch fires once more).
-      DISTINCT from D-418 (that was the send/await fabrication window, now fixed +
-      the 4 single-agent cases are 10/10 clean): this is the TWO-DRAINER +
-      nested_pending path — a nested send built/held on drainer A while it runs, and
-      the log agent's own `conj` builder, interact with the main-thread window collect.
-      `@memcpy arguments alias` = a vector op memcpy'd overlapping regions → a
-      swept/recycled tail buffer aliasing. ROOT CAUSE CONFIRMED (code read
-      2026-07-13) = the D-556 DISCHARGE RESIDUAL, verbatim: "registered-WORKER-thread
-      stacks are not conservatively scanned". mark_sweep.conservativeStackScan runs
-      on the COLLECTING (main) thread's stack ONLY (`@frameAddress()` → the collector
-      frame up to `conservative_stack_top`). When MAIN triggers an STW collect (here
-      the D-418 window injection; under real load a main threshold-collect) while the
-      log-agent DRAINER is parked mid-`conj` builder, that drainer's in-progress tail
-      node is (a) NOT bracket-covered — the ADR-0150 fabrication no-collect region
-      only DEFERS the worker's OWN torture collect, not a main-triggered STW that
-      parks it at the alloc prologue (gc_heap.zig:391 parks BEFORE the fabrication_depth
-      check at :408) — and (b) NOT conservatively scanned (the scan skips parked
-      workers). So the intermediate is swept → the resumed builder's memcpy aliases.
-      This is a general worker-builder hazard (agents/futures/pmap), exposed by the
-      two-agent nested case because it maximises "a worker is mid-builder while main
-      collects".
+      open (2026-07-13, ADR-0150 am1 accepted-cost row). The D-559 fix (the
+      alloc-prologue safepoint park honors the fabrication region) makes the
+      stopWorld rendezvous delay UNBOUNDED IN FOLD-CHAIN LENGTH: a worker running
+      back-to-back fabrication brackets with no poll between (e.g. a large `into`'s
+      per-element builders — ADR-0150 guarantees "no alloc between builder calls",
+      so no park can fire until the whole fold ends) defers the collector's
+      rendezvous for the fold's full duration. Not a correctness bug (no deadlock:
+      the waiting collector holds no lock a bracket needs); a pause-time cliff.
+      Observable via `safepoint.max_stopworld_wait_ns` (monotonic max, added am1).
+      DISCHARGE SHAPE (named per the DA fork, private/notes/D559-da-critique.md
+      Alt 3): flip brackets from suppress-collect to PUBLISH-ROOTS — `gc.alloc`
+      auto-appends in-bracket allocations to a threadlocal scratch root array the
+      collector marks (raw header addresses); parks become safe anywhere, the
+      fabrication knowledge leaves the safepoint layer, the same-thread torture
+      gates become deletable, wasm-portable. Requires an ADR-0150 supersede
+      (depth 3).
     category: "concurrency"
-    barrier: "STRUCTURAL (GC collector core) — the fix is to cover a PARKED worker's native stack: either conservatively scan each parked worker's stack (the setjmp register-spill must run ON the worker before it parks, so it needs a per-worker spill buffer captured at the park point + the worker's stack bounds), OR make the ADR-0150 fabrication region hold off the STW park until the builder completes (deadlock-risk: the collector waits for the worker — needs a bounded 'finish builder then park' handshake). Deterministically reproducible (~1/10 under alloc-torture; the D-418 window-collect injection surfaces it). NOT ncpu-gated away (per user: a wrong-result/crash race is a bug, not an accepted flake). Cross-ref: D-556 discharge residual, D-418 (sibling, DISCHARGED)."
+    barrier: "blocked-by: MEASURED pause-time harm (a real workload where max_stopworld_wait_ns shows the fold-chain cliff hurting), OR an F-006 amendment (user-owned). ADR-0150 am1's ruling: under F-006 non-moving the suppress-region remains the finished form; the publish-roots flip is not taken pre-emptively. Do NOT drain this row on ease — it re-opens a settled ADR premise without its trigger."
     last_reviewed: "2026-07-13"
   - id: "D-522"
     status: |-
@@ -2334,6 +2324,11 @@ standing:
     barrier: "open after the D-440 arc completes (R4 + R5 must first rewrite the bulk of 'Phase N' citations to gap-area terms). Premature adoption = ~70 dangling citations with no 1:1 redirect. Trigger: D-440 R4/R5 done + a user nod to re-architect the planning axis (it is depth-4, the project's organizing metaphor)."
     last_reviewed: "2026-06-15"
 discharged:
+  - id: "D-559"
+    status: "DISCHARGED 2026-07-13 (ADR-0150 amendment 1). The nested-cross-agent `@memcpy arguments alias` corruption (exit 134, ~3-7% under alloc-torture + the D-418 window injection). ROOT CAUSE = the D-556 residual, precisely: the alloc-prologue safepoint park (gc_heap.alloc) fired BEFORE the `fabrication_depth` gate, so a peer's stopWorld parked a worker MID-BRACKET — its in-progress builder nodes (raw *TailNode/*HamtNode/*Cons in unrooted Zig locals) were invisible to the collect and swept; the resumed builder's memcpy aliased recycled memory. FIX (JVM-GCLocker shape; web-grounded vs Boehm per-thread-scan, rejected as wasm-unportable — DA fork in private/notes/D559-da-critique.md): the park HONORS the fabrication region (skip while depth>0; park at the next NON-bracket safepoint — bracket-boundary parks are unsound at both entry and exit, see ADR-0150 am1). HARDENING (DA Alt-1 items, all landed): `fabrication_depth` moved to root_set.zig; `safepoint.park` + `enterBlocked` assert depth==0 (chokepoint for all 6 park sites + the enterBlocked side door); `safepoint.max_stopworld_wait_ns` makes the fold-chain rendezvous delay observable; mark_sweep's false 'bracket-covered' comment rewritten. Accepted cost = D-560 (rendezvous delay unbounded in fold-chain length; discharge shape = the publish-roots flip, trigger-gated). VERIFIED: pre-fix ~3-7% crash → post-fix 100/100 clean (50 orig + 50 heavy); gc_torture 81/81 incl. the new deterministic `alloc-agent/nested_xagent` guard; clj oracle confirms [1 2 2]."
+    category: "concurrency"
+    barrier: "none — DISCHARGED. Guard: phase16_gc_torture.sh alloc-agent/nested_xagent."
+    last_reviewed: "2026-07-13"
   - id: "D-418"
     status: "DISCHARGED 2026-07-13 (user-directed — 'race だから失敗して良い性質ではない'). The send/await FABRICATION-WINDOW race — `agent_conj` intermittently returned `[2 nil]` / `[#<promise> 2]` / `[#<fn> [#<promise>]]` (the leaked object varied) under low-core / parallel-gate scheduling. ROOT CAUSE (confirmed by the Agent.java survey, private/notes/D418-agent-race-survey.md): on the JVM a constructed Action is automatically GC-reachable, so there is NO enqueue window; cljw's manual mark-sweep had one — `sendFn` built the `[f & args]` action vector (and `awaitFn` the completion promise) as a Zig LOCAL that was unrooted until `enqueueDirect` appended it to the off-heap queue (its traceGc root). A collect in that window swept the freshly-built vector, so the drainer read recycled memory. FIX (primitive/agent.zig): sendFn + awaitFn now publish the action / promise on an EvalFrame across the whole enqueue [.dev/gc_rooting.md §C]. REPRODUCER (the 'def→cgc→use' fault-injection idiom, USENIX Sec'21 use-after-compacting-GC): agent.zig `tortureCollectInWindow` injects a STW collect into the exact enqueue window under CLJW_GC_TORTURE_ALLOC — so the cross-thread race is now a SINGLE-THREAD DETERMINISTIC UAF (pre-fix `agent_conj` HUNG on a swept promise, exit 124; post-fix 10/10 [1 2]). Mechanised guard: e2e phase16_gc_torture.sh agent block — the ncpu>=4 gate is REMOVED (workaround retired), + a new deterministic alloc-torture agent block (send/conj/drain/sendoff). The nested-CROSS-agent-send case surfaced a SECOND, distinct corruption (`@memcpy arguments alias`, exit 134) → new row D-559. Serialization itself (single-drainer + `draining` flag) was NEVER the bug — the survey confirms it is the correct design for a manual-GC runtime."
     category: "concurrency"

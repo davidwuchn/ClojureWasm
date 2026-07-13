@@ -137,6 +137,20 @@ pub threadlocal var eval_frame_head: ?*EvalFrame = null;
 /// backend never sets it (its operand stack is the A1 root).
 pub threadlocal var conservative_stack_top: usize = 0;
 
+/// Fabrication no-collect region depth (D-244 #4, ADR-0150; moved here from
+/// gc_heap.zig at ADR-0150 am1 so the safepoint layer can assert against it
+/// without an import cycle — root_set is the shared lower layer). While
+/// `> 0`, THIS thread is inside a multi-alloc collection BUILDER whose
+/// in-progress intermediates (*TailNode/*HamtNode/*Cons — raw node pointers,
+/// NOT Values) live in unrooted Zig locals. Three consumers gate on it:
+/// the same-thread torture/auto collect (gc_heap), the alloc-prologue
+/// safepoint park (gc_heap — a mid-bracket park would expose the
+/// intermediates to a peer's collect, D-559), and the `safepoint.park` /
+/// `enterBlocked` asserts (a bracket must never reach a park/blocking
+/// safepoint by any other path). Written only via `GcHeap.enterFabrication`
+/// / `exitFabrication`.
+pub threadlocal var fabrication_depth: u32 = 0;
+
 /// Analysis-roots frame (D-430 root cause; EvalFrame's analysis-side
 /// sibling): GC Values produced BEFORE any frame executes — literal strings /
 /// quoted data (`analyzer.makeConstant` / `analyzeQuote`), compiler-alloc'd

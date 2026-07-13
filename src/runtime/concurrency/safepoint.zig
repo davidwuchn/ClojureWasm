@@ -28,6 +28,16 @@
 const std = @import("std");
 const io_default = @import("io_default.zig");
 const root_set = @import("../gc/root_set.zig");
+const clock = @import("../clock.zig");
+
+/// Diagnostic (ADR-0150 am1 / D-560): the longest single `stopWorld` rendezvous
+/// wait observed this process, in ns. The am1 park-deferral makes the wait
+/// unbounded in fold-chain length (a worker running back-to-back fabrication
+/// brackets parks only at its next non-bracket safepoint), so the delay must be
+/// OBSERVABLE — if this grows into real pause-time trouble, D-560 names the
+/// publish-roots redesign that removes the cliff. Monotonic max; read on demand
+/// (no print path wired — a probe reads it via a debugger / future stats dump).
+pub var max_stopworld_wait_ns: std.atomic.Value(i64) = .init(0);
 
 /// Armed by a collecting thread (`stopWorld`); read by the VM back-edge poll +
 /// the `alloc`-boundary check. A worker that observes this set at a safe point
@@ -53,6 +63,14 @@ var resume_cond: std.Io.Condition = .init;
 /// count before this thread parks. The resume guard tests the FLAG, not the
 /// count, so a spurious `Condition` wakeup re-parks correctly.
 pub fn park() void {
+    // ADR-0150 am1 / D-559: a thread must NEVER park inside a fabrication
+    // no-collect region — its in-progress builder nodes are unrooted Zig
+    // locals the collector cannot see, so a park here hands the peer's
+    // collect a stack it will corrupt. The alloc-prologue gate (gc_heap)
+    // skips the park mid-bracket; this assert is the chokepoint guarding
+    // every OTHER park site (back-edge poll, lazy_seq, lock_tx, monitor)
+    // against a future bracket that reaches one of them.
+    std.debug.assert(root_set.fabrication_depth == 0);
     io_default.lockMutex(&sp_mutex);
     defer io_default.unlockMutex(&sp_mutex);
     parked_count += 1;
@@ -72,6 +90,12 @@ pub fn park() void {
 /// from the registry BEFORE arming so a worker arriving late still parks (the
 /// flag is armed first); a parked-count overshoot only relaxes the `<` wait.
 pub fn stopWorld(self_registered: bool) void {
+    const t0 = clock.nanoTime(io_default.get());
+    defer {
+        const waited = clock.nanoTime(io_default.get()) - t0;
+        if (waited > max_stopworld_wait_ns.load(.monotonic))
+            max_stopworld_wait_ns.store(waited, .monotonic);
+    }
     gc_requested.store(true, .release);
     io_default.lockMutex(&sp_mutex);
     defer io_default.unlockMutex(&sp_mutex);
@@ -109,6 +133,12 @@ pub fn noteWorkerLeft() void {
 /// torture deadlock: `force` runs the thunk under the once-lock, so the COLLECTING
 /// main thread holds it across a collect while a worker blocks on it).
 pub fn enterBlocked() void {
+    // ADR-0150 am1 / D-559: same invariant as `park` — counting a mid-bracket
+    // thread as parked would let the collector proceed over its unrooted
+    // builder intermediates (the side door the alloc-prologue gate does not
+    // cover). Brackets are pure builders that take no locks, so this cannot
+    // fire today; it guards the invariant against future bracket bodies.
+    std.debug.assert(root_set.fabrication_depth == 0);
     io_default.lockMutex(&sp_mutex);
     defer io_default.unlockMutex(&sp_mutex);
     parked_count += 1;
