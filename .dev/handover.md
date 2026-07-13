@@ -16,50 +16,45 @@
   ad-hoc/linker sig, no quarantine xattr; eval+wasm-FFI+clojure.repl all work). Signing
   = unsigned + README xattr fallback note (user call). D-549 residual (Docker/ghcr +
   Developer-ID notarization) stays user-LOCKED.
-- 2026-07-07 session closed clean at
-  `bff6d5eb0`. The ceiling FULL gate ran: ONE red (`dir_fn_set` — an e2e
-  still calling the in-core dir-fn removed with D-513) — FIXED + re-smoked
-  same session (the non-code-check exception; no full-gate re-run needed).
-- **User BFS bug: BOTH layers now fixed (2026-07-09).** The 2026-07-07
-  "VERIFIED FIXED" covered only the integer-state minimal repro (D-556
-  class); the cw-arcade rush-hour suite STILL corrupted on HEAD. The
-  residual root cause was **C10** (`.dev/gc_rooting.md`):
-  `chunked_cons.rest`'s offset+1 alloc could collect while the input
-  cursor (a fresh `range.seqChunk` result / a walk-loop Zig local) was
-  on no root → ChunkBuffer UAF (`(first (rest (range 2)))` → nil under
-  CLJW_GC_TORTURE_ALLOC). Fixed with the ADR-0150 fabrication bracket
-  inside `chunked_cons.rest`; guards = gc_torture rest_range ladder +
-  phase16_bfs_queue_gc + corpus bfs_queue. rush-hour verified green
-  piecewise on HEAD (28 fast tests + generator tests; all 18
-  difficulty-ordering samples byte-identical to clj). Perf datum:
-  generator on cljw = seconds-to-minutes (interp; 4MB GC floor thrashes
-  ~5x on live-heap-growing BFS — see the 2026-07-09 per-task note).
-- **First commit on resume: the easiest-first drain head** — no floor
-  open. DONE 2026-07-07 (**18 discharges**): D-555+556+557+558 GC/AOT
-  arc (root fixes: persist-analysis-roots incl. builder.zig, conservative
-  stack scan, evalRecur reentrancy, vm loc fidelity) / D-526 (9 interop
-  drains) / D-554 ns attr-map / D-470 format %t / D-305+D-513-drains
-  :arglists/:doc (291 vars, scripts/extract_core_meta.sh) + clojure.repl
-  bundled (bare (doc x) at the REPL; core's pre-D-305 copies removed) /
-  D-471 stream slurp/spit / D-521 destructure corpus net / D-529 markers
-  / D-536+D-547 ledger honesty / D-241 baseline set! / D-466 stale row.
-  Plus regex lookbehind + Pattern.split (HoneySQL green) + nREPL --port 0.
-  Next candidates: D-513 lazy-ns docstrings (alt: bake per-ns meta chunks
-  into lazy regions at cache_gen — see the per-task note), D-517
-  zero-copy deserialize (M-L), D-522/523/524/525 public-ization sweeps.
+- **CI is FULLY GREEN (2026-07-13, dispatch runs 29216662670 / 29219521822 /
+  29223367467, both legs).** The week-long nightly red was 3 layers: (1)
+  `check_surface_marker` `printf|grep -q` SIGPIPE/pipefail false positive
+  (here-string fix, swept 3 scripts; memory `pipefail_grep_q_broken_pipe`);
+  (2) `check_vm_parity` raw `timeout` → exit 127 on hosted macOS (no GNU
+  timeout/gtimeout — ported to `run_bounded`, the last raw caller after
+  264804b7); (3) the agent race below.
+- **D-418 + D-559 agent/GC races DISCHARGED (2026-07-13).** D-418 = the
+  send/await FABRICATION-WINDOW race (action vector / await promise unrooted
+  across the enqueue) — EvalFrame-rooted in primitive/agent.zig; made
+  deterministic via `tortureCollectInWindow` (collect injected into the exact
+  window under CLJW_GC_TORTURE_ALLOC); the gc_torture agent block's ncpu>=4
+  gate is REMOVED and green on the 3-vCPU macOS runner. D-559 = the peer-STW
+  park firing INSIDE a fabrication bracket (worker builder nodes swept →
+  `@memcpy arguments alias`) — **ADR-0150 amendment 1**: the alloc-prologue
+  park honors `fabrication_depth` (JVM-GCLocker shape); park/enterBlocked
+  asserts; `safepoint.max_stopworld_wait_ns`; guard `alloc-agent/nested_xagent`.
+  Accepted cost = **D-560** (fold-chain rendezvous delay; publish-roots flip is
+  its trigger-gated discharge shape — do NOT self-select).
+- **First commit on resume MUST be: D-523's residual** — audit
+  `docs/architecture.md` + `docs/examples/wasm/README.md` vs code-truth
+  (recipe in `private/notes/2026-07-09-d460-sorted-as-key.md` § Extended
+  challenge), then D-522 pointer-condensation / D-527/528 / D-430 var-alias
+  (S-sized), per the easiest-first drain.
 - **Forbidden this session**: bare `zig build test` WITHOUT `-Dwasm`; bare `zig build`
-  for a probe (use ReleaseSafe). **The FULL gate MUST run `--serial-e2e`** — the `-P8`
-  parallel default flakes the **D-418/D-258 agent load-race** (`agent_conj` →
-  `[#<promise> 2]`; green isolated/serial, NOT a regression). **Never run a concurrent
+  for a probe (use ReleaseSafe). **The FULL gate MUST run `--serial-e2e`** — canonical
+  mode; the residual D-548 (a) future/promise SIGABRT + (b) pmap wall-clock remain
+  load-sensitive (the D-418 agent_conj arm is FIXED). **Never run a concurrent
   build during a gate** (host contention → false timeout). `.claude/**` edits may hit
   the auto-mode self-modification block — surface those to the user. **D-549
   distribution cluster (brew/Docker/signing) is user-LOCKED** — never self-select.
+  **D-560 is trigger-gated** (measured pause-time harm or F-006 amendment) — not
+  an ease-drain row.
 
 ## Last landed (git log = SSOT)
 
-2026-07-09 session: BFS pin (e2e phase16_bfs_queue_gc + corpus bfs_queue) +
-the C10 `chunked_cons.rest` UAF fix (gc_torture rest_range ladder). zwasm
-tag watch active (10-min cron; pin bump on a >v2.1.0 tag).
+2026-07-13 session: CI 3-layer root-cause fix (surface_marker pipefail +
+vm_parity portable timeout) + D-418 fabrication-window fix + D-559 / ADR-0150
+am1 park-honors-fabrication + D-560 opened. All CI-verified on both legs.
 
 ## Standing units (tracked in .dev/debt.yaml)
 
@@ -67,7 +62,8 @@ tag watch active (10-min cron; pin bump on a >v2.1.0 tag).
 - **D-439 sqrt(MathContext)** — the one BigDecimal remnant; a focused numeric cycle
   (correct rounding ×8 modes + JDK preferred output scale; base = the native Managed.sqrt).
 - **D-513** — clojure.core.reducers / clojure.repl / var :doc (foundational).
-- **D-418/D-258** — agent send/await + GC load-race (open, recall-trigger; re-gate serial).
+- **D-548** — residual low-core exposures (a) future/promise SIGABRT (b) pmap wall-clock;
+  the (c) agent_conj arm is DISCHARGED via D-418. D-560 — trigger-gated (see above).
 - **D-430** — instaparse frontier is now DETERMINISTIC (core.cljc:361 `#'gll/TRACE`
   family) after the GC arc; re-derivable without the corruption noise.
 
@@ -85,14 +81,3 @@ handover → **`private/notes/2026-06-25-debt-drain-order.md`** (easiest-first s
 §9.2.T. Memories: `verify_against_releasesafe_binary` / `smoke_first_batch_full_gate` /
 `gate_parallel_e2e_timeout`.
 
-## Stopped — user requested
-
-User instruction (2026-07-09): 「これおわったら今日のサマリーを表示して停止して。」
-Summary shown; the zwasm tag-watch cron stays armed per the same day's
-directive (pin bump on a >v2.1.0 tag). A batched full gate (--serial-e2e,
-ceiling look-ahead) was in flight at stop; HEAD's 4 commits are each
-smoke-green + pushed. Resume at **D-523's residual**: `docs/architecture.md`
-+ `docs/examples/wasm/README.md` were NOT in drain 1's "7/7 audited" set —
-audit both vs code-truth (recipe in
-`private/notes/2026-07-09-d460-sorted-as-key.md` § Extended challenge),
-then D-522 pointer-condensation / D-527/528 / D-430 var-alias (S-sized).
