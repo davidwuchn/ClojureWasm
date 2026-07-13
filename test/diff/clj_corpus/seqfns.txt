@@ -1,0 +1,4 @@
+(let [n (atom 0) v (into [] (map (fn [_] (swap! n inc)) [:a :b]))] [v (deref n)])
+;;=> [[1 2] 2]
+(let [n (atom 0) v (reduce (fn [acc x] (conj acc x)) [] (map (fn [_] (swap! n inc)) (list :c :d)))] [v (deref n)])
+;;=> [[1 2] 2]

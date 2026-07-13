@@ -36,6 +36,7 @@ const SourceLocation = @import("../../runtime/error/info.zig").SourceLocation;
 /// interface definitions, not from any one library's usage.
 const METHOD_MAP = std.StaticStringMap([]const u8).initComptime(.{
     .{ "valAt", "get" }, // ILookup
+    .{ "asTransient", "transient" }, // IEditableCollection (a deftype's transient wraps a native editable — flatland's transient-ordered-map)
     .{ "cons", "conj" }, // IPersistentCollection
     .{ "count", "count" }, // Counted
     .{ "assoc", "assoc" }, // Associative
@@ -70,6 +71,36 @@ const METHOD_MAP = std.StaticStringMap([]const u8).initComptime(.{
     .{ "entrySet", "seq" }, // java.util.Map/entrySet → seq of entries
     .{ "entryAt", "find" }, // clojure.lang.Associative/entryAt → find (a MapEntry)
 });
+
+/// clojure.lang ITransient* method → its `clojure.core` bang-fn equivalent,
+/// consulted when the receiver is a NATIVE transient (D-369: a user deftype's
+/// transient wraps native transients and drives them via interop method
+/// calls — flatland's TransientOrderedSet does `.valAt`/`.assoc`/`.without`/
+/// `.persistent` on its backing transient map). Derived from the
+/// ITransientCollection/Associative/Map/Set/Vector definitions, not from any
+/// one library's usage. The read methods (valAt/count/nth) reuse the plain
+/// core fns, which already accept transients (clj ATransientMap implements
+/// ILookup/Counted).
+const TRANSIENT_METHOD_MAP = std.StaticStringMap([]const u8).initComptime(.{
+    .{ "valAt", "get" }, // ILookup (ATransientMap)
+    .{ "count", "count" }, // Counted
+    .{ "nth", "nth" }, // ITransientVector
+    .{ "conj", "conj!" }, // ITransientCollection
+    .{ "persistent", "persistent!" }, // ITransientCollection
+    .{ "assoc", "assoc!" }, // ITransientAssociative
+    .{ "assocN", "assoc!" }, // ITransientVector
+    .{ "without", "dissoc!" }, // ITransientMap
+    .{ "disjoin", "disj!" }, // ITransientSet
+    .{ "pop", "pop!" }, // ITransientVector
+    .{ "get", "get" }, // ITransientSet/get
+});
+
+fn isNativeTransient(tag: Value.Tag) bool {
+    return switch (tag) {
+        .transient_vector, .transient_map, .transient_set => true,
+        else => false,
+    };
+}
 
 /// True when `tag` is a native collection clojure.lang methods legitimately apply
 /// to — guards the fallback so a `.member` miss on a NON-collection (e.g. a number)
@@ -143,6 +174,10 @@ pub fn tryClojureLangMethod(
         },
         else => {},
     }
+    if (isNativeTransient(receiver.tag())) {
+        const bang_fn = TRANSIENT_METHOD_MAP.get(name) orelse return null;
+        return try delegateToCore(rt, env, receiver, bang_fn, args, loc);
+    }
     if (!isNativeCollection(receiver.tag())) return null;
     // java.util.List value-search trio — no clojure.core equivalent fn exists
     // (clj `.contains` is VALUE membership; core contains? is KEY membership),
@@ -196,11 +231,22 @@ pub fn tryClojureLangMethod(
         return Value.initBoolean(try equal.seqIndexOf(rt, env, receiver, args[0], false) >= 0);
     }
     const core_fn = METHOD_MAP.get(name) orelse return null;
+    return try delegateToCore(rt, env, receiver, core_fn, args, loc);
+}
+
+/// Build (receiver, ...args) and call the named core fn — its dispatch handles
+/// every collection type, so the native-method polymorphism has ONE source.
+fn delegateToCore(
+    rt: *Runtime,
+    env: *Env,
+    receiver: Value,
+    core_fn: []const u8,
+    args: []const Value,
+    loc: SourceLocation,
+) !?Value {
     const core_ns = env.findNs("clojure.core") orelse return null;
     const fn_var = core_ns.resolve(core_fn) orelse return null;
     const vt = rt.vtable orelse return null;
-    // Build (receiver, ...args) and call the core fn — its dispatch handles every
-    // collection type, so the native-method polymorphism has ONE source.
     const call_args = try rt.gpa.alloc(Value, 1 + args.len);
     defer rt.gpa.free(call_args);
     call_args[0] = receiver;

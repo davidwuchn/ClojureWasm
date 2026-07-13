@@ -8,6 +8,13 @@
 //! `dissoc!`, backed by TransientVector / TransientArrayMap /
 //! TransientHashSet.
 //!
+//! D-369: a `.typed_instance` receiver dispatches to the user
+//! deftype's ITransient* protocol methods (host_interfaces.yaml
+//! wires `asTransient`→`-as-transient`, `conj`→`-conj!`, … at
+//! deftype load) — JVM parity: `(into (ordered-set) xs)` rides the
+//! deftype's own transient machinery exactly as
+//! IEditableCollection.asTransient does on the JVM.
+//!
 //! ## Backend: impl-only (no surface delegation)
 //! Impl deps: vector, transient_vector, transient_array_map, transient_hash_set
 //! Clojure peer: none (Pattern B1 direct intern, public surface)
@@ -33,7 +40,6 @@ const transient_hash_set = @import("../../runtime/collection/transient/transient
 /// JVM reference: clojure.core/transient → IEditableCollection.asTransient
 /// cw v1 tier: A (Phase 8.5 cycle 1)
 pub fn transientFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
-    _ = env;
     try error_catalog.checkArity("transient", args, 1, loc);
     const coll = args[0];
     return switch (coll.tag()) {
@@ -46,12 +52,39 @@ pub fn transientFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLoca
         .hash_map => try transient_array_map.fromMap(rt, coll),
         .hash_set => try transient_hash_set.fromSet(rt, coll),
         .nil => try transient_vector.fromVector(rt, coll),
+        // D-369: a user IEditableCollection deftype supplies its own
+        // transient via asTransient (wired to -as-transient at load).
+        .typed_instance => try dispatchBang(rt, env, coll, "IEditableCollection", "-as-transient", args, loc, "transient", "vector, array_map, or hash_map"),
         else => error_catalog.raise(.transient_kind_mismatch, loc, .{
             .fn_name = "transient",
             .expected = "vector, array_map, or hash_map",
             .actual = @tagName(coll.tag()),
         }),
     };
+}
+
+/// D-369 shared arm: dispatch a transient-family op to a user
+/// deftype's ITransient*/IEditableCollection protocol method; a
+/// deftype that never declared the interface falls to the same
+/// `transient_kind_mismatch` the native arms raise.
+fn dispatchBang(
+    rt: *Runtime,
+    env: *Env,
+    receiver: Value,
+    protocol_name: []const u8,
+    method_name: []const u8,
+    args: []const Value,
+    loc: SourceLocation,
+    fn_name: []const u8,
+    expected: []const u8,
+) anyerror!Value {
+    var cs: dispatch.CallSite = .{};
+    if (try dispatch.dispatchOrNull(rt, env, &cs, receiver, protocol_name, method_name, args, loc)) |v| return v;
+    return error_catalog.raise(.transient_kind_mismatch, loc, .{
+        .fn_name = fn_name,
+        .expected = expected,
+        .actual = @tagName(receiver.tag()),
+    });
 }
 
 /// Implements clojure.core/persistent!.
@@ -61,13 +94,13 @@ pub fn transientFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLoca
 /// JVM reference: clojure.core/persistent! → ITransientCollection.persistent
 /// cw v1 tier: A (Phase 8.5 cycle 1)
 pub fn persistentBangFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
-    _ = env;
     try error_catalog.checkArity("persistent!", args, 1, loc);
     const tcoll = args[0];
     return switch (tcoll.tag()) {
         .transient_vector => try transient_vector.toPersistent(rt, tcoll, loc),
         .transient_map => try transient_array_map.toPersistent(rt, tcoll, loc),
         .transient_set => try transient_hash_set.toPersistent(rt, tcoll, loc),
+        .typed_instance => try dispatchBang(rt, env, tcoll, "ITransientCollection", "-persistent!", args, loc, "persistent!", "transient"),
         else => error_catalog.raise(.transient_kind_mismatch, loc, .{
             .fn_name = "persistent!",
             .expected = "transient",
@@ -84,7 +117,6 @@ pub fn persistentBangFn(rt: *Runtime, env: *Env, args: []const Value, loc: Sourc
 /// JVM reference: clojure.core/conj! → ITransientCollection.conj
 /// cw v1 tier: A (Phase 8.5 cycle 1)
 pub fn conjBangFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
-    _ = env;
     // clj conj! (D-446): `(conj!)` → (transient []), `(conj! coll)` → coll,
     // `(conj! coll x)` → in-place add. The 0/1 arities are the transducer
     // identity/completion arities (clojure.core 1.7+).
@@ -97,6 +129,7 @@ pub fn conjBangFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocat
         .transient_vector => try transient_vector.conj(rt, tcoll, x, loc),
         .transient_map => try transient_array_map.conjEntry(rt, tcoll, x, loc),
         .transient_set => try transient_hash_set.conj(rt, tcoll, x, loc),
+        .typed_instance => try dispatchBang(rt, env, tcoll, "ITransientCollection", "-conj!", args, loc, "conj!", "transient"),
         else => error_catalog.raise(.transient_kind_mismatch, loc, .{
             .fn_name = "conj!",
             .expected = "transient",
@@ -110,11 +143,11 @@ pub fn conjBangFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocat
 /// JVM reference: clojure.core/disj! → ITransientSet.disjoin
 /// cw v1 tier: A (Phase 8.5 cycle 3)
 pub fn disjBangFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
-    _ = env;
     try error_catalog.checkArity("disj!", args, 2, loc);
     const tcoll = args[0];
     return switch (tcoll.tag()) {
         .transient_set => try transient_hash_set.disj(rt, tcoll, args[1], loc),
+        .typed_instance => try dispatchBang(rt, env, tcoll, "ITransientSet", "-disjoin!", args, loc, "disj!", "transient_set"),
         else => error_catalog.raise(.transient_kind_mismatch, loc, .{
             .fn_name = "disj!",
             .expected = "transient_set",
@@ -129,7 +162,6 @@ pub fn disjBangFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocat
 /// JVM reference: clojure.core/assoc! → ITransientAssociative.assoc
 /// cw v1 tier: A (Phase 8.5 cycle 2)
 pub fn assocBangFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
-    _ = env;
     // `(assoc! tmap k v)` + `(assoc! tmap k1 v1 k2 v2 …)` — odd arg count ≥ 3
     // (clj's `[coll key val & kvs]`). Even = a key without a value.
     if (args.len % 2 == 0)
@@ -157,6 +189,12 @@ pub fn assocBangFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLoca
                 tcoll = try transient_vector.assoc(rt, tcoll, k.asInteger(), args[i + 1], loc);
             }
         },
+        .typed_instance => {
+            var i: usize = 1;
+            while (i < args.len) : (i += 2) {
+                tcoll = try dispatchBang(rt, env, tcoll, "ITransientAssociative", "-assoc!", &.{ tcoll, args[i], args[i + 1] }, loc, "assoc!", "transient_map or transient_vector");
+            }
+        },
         else => return error_catalog.raise(.transient_kind_mismatch, loc, .{
             .fn_name = "assoc!",
             .expected = "transient_map or transient_vector",
@@ -171,11 +209,11 @@ pub fn assocBangFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLoca
 /// JVM reference: clojure.core/dissoc! → ITransientMap.without
 /// cw v1 tier: A (Phase 8.5 cycle 2)
 pub fn dissocBangFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
-    _ = env;
     try error_catalog.checkArity("dissoc!", args, 2, loc);
     const tcoll = args[0];
     return switch (tcoll.tag()) {
         .transient_map => try transient_array_map.dissoc(rt, tcoll, args[1], loc),
+        .typed_instance => try dispatchBang(rt, env, tcoll, "ITransientMap", "-without!", args, loc, "dissoc!", "transient_map"),
         else => error_catalog.raise(.transient_kind_mismatch, loc, .{
             .fn_name = "dissoc!",
             .expected = "transient_map",
@@ -190,12 +228,11 @@ pub fn dissocBangFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLoc
 /// JVM reference: clojure.core/pop! → ITransientVector.pop
 /// cw v1 tier: A (Phase 8.5 cycle 1)
 pub fn popBangFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
-    _ = rt;
-    _ = env;
     try error_catalog.checkArity("pop!", args, 1, loc);
     const tcoll = args[0];
     return switch (tcoll.tag()) {
         .transient_vector => try transient_vector.pop(tcoll, loc),
+        .typed_instance => try dispatchBang(rt, env, tcoll, "ITransientVector", "-pop!", args, loc, "pop!", "transient vector"),
         else => error_catalog.raise(.transient_kind_mismatch, loc, .{
             .fn_name = "pop!",
             .expected = "transient vector",

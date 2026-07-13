@@ -103,6 +103,30 @@ pub fn applyFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation
     return try invokeCallable(rt, env, f, collected.items, loc);
 }
 
+/// O-045: classify a fuse chain's terminal source WITHOUT realizing any
+/// element (mirrors `-fused-reduce`'s descriptor walk). `.chunked` /
+/// `.unchunked` are proven by the base tag; `.unknown` (an opaque lazy
+/// base) must take the generic walk — fusing it would need a head force,
+/// whose realization the fused pass discards (observable double
+/// side-effect for stateful mapped fns).
+const FuseBaseKind = enum { chunked, unchunked, unknown };
+
+fn fuseBaseKind(coll: Value) FuseBaseKind {
+    var cur = coll;
+    var hops: usize = 0;
+    while (hops < 64) : (hops += 1) {
+        if (cur.tag() != .lazy_seq) break;
+        const fuse = lazy_seq_mod.fuseOf(cur);
+        if (fuse.isNil()) return .unknown; // opaque lazy base
+        cur = vector_mod.nth(fuse, 1); // fuse = [xform source]
+    }
+    return switch (cur.tag()) {
+        .range, .vector, .chunked_cons => .chunked,
+        .list, .cons, .nil => .unchunked,
+        else => .unknown,
+    };
+}
+
 fn canBindDirect(f: Value, leading_count: usize, trailing: Value) bool {
     if (f.tag() != .fn_val) return false;
     const fn_ptr = f.decodePtr(*const tree_walk.Function);
@@ -261,13 +285,17 @@ pub fn reduceFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocatio
         // walk's in-Zig chunk drain (`-chunk-map-step`, O-032, + the chunked arm
         // below) is ~2.5× FASTER than the `.clj`-transducer-per-element fused path
         // (measured: `(into [] (map f (range 100k)))` 39→16 ms; gc_large_heap
-        // 59→35 ms). So fire fusion ONLY when the realized head is non-chunked; a
-        // chunked head falls through to the generic walk. The `seq` force is
-        // memoized — the generic walk re-seqs the same node. [refs: O-045, O-023, O-032]
-        gc_roots[1] = args[1];
-        gc_roots[2] = coll;
-        const head = try sequence.seqFn(rt, env, &.{coll}, loc);
-        if (head.tag() != .chunked_cons) {
+        // 59→35 ms). So fire fusion ONLY for a known-non-chunked source.
+        //
+        // O-045 amendment (2026-07-13): chunked-ness is decided from the fuse
+        // chain's BASE TAG, never by realizing the head — the earlier `seqFn`
+        // probe ran the mapped fn once (memoized into `coll`) and the fused
+        // transduce then re-ran it from the base: an observable double
+        // side-effect + one dropped draw for stateful fns (the
+        // data.generators seeded-`*rnd*` regression). An opaque base (a
+        // lazy seq with no fuse descriptor) is UNKNOWN → generic walk, which
+        // is always correct.
+        if (fuseBaseKind(coll) == .unchunked) {
             // Delegate to the `.clj` `-fused-reduce`: it walks the `[xform coll]`
             // fuse chain (composing transducers inner-first, reaching the base)
             // and runs ONE `(transduce composed (completing f) init base)` pass.

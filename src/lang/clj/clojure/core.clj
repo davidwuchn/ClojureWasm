@@ -324,19 +324,17 @@
           (rf (unreduced ret))))))
 
 ;; `-editable?` — can `coll` be built via `transient` + `persistent!`?
-;; Mirrors JVM IEditableCollection: hash-based vectors, maps, sets. A
-;; nil or list target is excluded — `(into nil xs)` / `(into () xs)`
-;; build a list by prepend, which the transient path would not reproduce.
-;; Sorted maps/sets are also excluded: they have no transient (and JVM's
-;; sorted collections are not IEditableCollection either), so they keep
-;; the persistent-conj path. A defrecord is `map?` but is NOT
-;; IEditableCollection (no transient), so `(into rec …)` must use the
-;; persistent-conj path too (D-086 — conj onto a record assocs into its extmap).
+;; The JVM-exact gate (D-369): `instance?` on IEditableCollection is true
+;; for hash-based vectors/maps/sets AND for a user deftype that declares
+;; the interface (whose asTransient the transient primitive dispatches,
+;; e.g. flatland.ordered), and false for nil / lists / sorted colls /
+;; records — the earlier native-tag approximation (set?/map?/vector?
+;; minus sorted/record) mis-sent interface-recognised deftype sets down
+;; the transient path with no dispatch behind it.
+;; (rt/-instance-of? directly: `instance?` itself defs later in this file.)
 (def -editable?
   (fn* [coll]
-    (if (or (sorted? coll) (record? coll))
-      false
-      (or (vector? coll) (map? coll) (set? coll)))))
+    (rt/-instance-of? clojure.lang.IEditableCollection coll)))
 
 ;; `(into to from)` conj every item of `from` onto `to`; `(into to xform
 ;; from)` does so through the transducer `xform`. Defined here (Layer 2)
