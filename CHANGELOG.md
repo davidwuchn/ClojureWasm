@@ -5,6 +5,35 @@ All notable changes to ClojureWasm are documented here. The format follows
 [SemVer](https://semver.org/). SemVer compatibility guarantees start at the
 first stable `1.0.0` tag; pre-1.0 `alpha` / `rc` tags may still change surfaces.
 
+## [1.2.1] - 2026-07-14
+
+Patch release: the `*cider-error*` buffer works — CIDER renders numbered
+causes with stack frames, phase-aware routing, and Show/Hide frame filters
+against cljw, instead of "[no stack trace available]".
+
+### Added
+
+- **nREPL `cider/analyze-last-stacktrace` op** (+ the bare alias) — analyzes
+  the session's `*e` on demand: one cause per `ex-cause` chain link with
+  class / message / printed ex-data / error phase / stack frames
+  (innermost-first, with `clj` / `repl` / `project` / `dup` flags and
+  navigable `file-url` for on-disk frames). CIDER's rich error buffer and
+  its compile-phase inline overlays activate automatically.
+
+### Fixed
+
+- **`*e` is now set for every caught REPL error** — Clojure parity:
+  compiler-class errors (an unresolved symbol, a syntax error) previously
+  left `*e` untouched; now `(ex-message *e)` works after any error, in both
+  the CLI REPL and nREPL sessions.
+- **`(throw (ex-info …))` carries a stack trace** — the live call stack is
+  stamped on the thrown value, so user throws render frames like runtime
+  errors (both backends).
+- **nREPL use-after-free** — the 1.2.0 re-architecture fed the per-message
+  scratch-owned request source into evals whose products outlive the
+  message; long editor sessions could see corrupted strings. The source is
+  now copied to the persistent arena.
+
 ## [1.2.0] - 2026-07-13
 
 Minor release: the nREPL server is rebuilt to full base-protocol fidelity —

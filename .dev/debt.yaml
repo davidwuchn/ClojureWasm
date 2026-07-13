@@ -1069,7 +1069,13 @@ active:
     last_reviewed: "2026-06-25"
   - id: "D-548"
     status: |-
-      open (2026-07-02). Low-core concurrency exposure, surfaced by the first nightly
+      open (2026-07-02). RECURRED 2026-07-14 during the v1.2.1 pre-tag full gates
+      (Mac local, serial-e2e, TWICE in a row): (a) future_promise_delay exit 134;
+      20× standalone all PASS; the A/B check vs the ledger's own pre-am1 baseline —
+      8× parallel stress — reproduced 1/8 exit 134 vs the recorded 3/8, so the
+      ADR-0170 am1 throw-path change did NOT worsen it (rate at/below baseline;
+      the race predates am1 by 3 weeks and ships in released 1.1.0/1.2.0).
+      Low-core concurrency exposure, surfaced by the first nightly
       FULL gate on the hosted 3-vCPU macos-15 runner (runs 28571235224 + 28574985879):
       (a) e2e_phase14_future_promise_delay — a ROAMING case SIGABRTs the ReleaseSafe
       binary (exit 134): run 28574985879 aborted delay_once_under_concurrency; run
