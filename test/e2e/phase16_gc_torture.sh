@@ -21,6 +21,13 @@ BIN="zig-out/bin/cljw"
 fail() { echo "FAIL $1" >&2; exit 1; }
 assert_eq() { local n="$1" g="$2" w="$3"; [[ "$g" == "$w" ]] || fail "$n: got '$g' want '$w'"; echo "PASS $n -> $w"; }
 
+# Portable bounded run (agent cases spawn a drainer thread; a rooting regression
+# would HANG await rather than mismatch, so bound them). timeout → gtimeout →
+# unbounded (hosted macOS runners ship neither GNU timeout nor coreutils gtimeout).
+run_bounded() { local s="$1"; shift; if command -v timeout >/dev/null 2>&1; then timeout "$s" "$@"; elif command -v gtimeout >/dev/null 2>&1; then gtimeout "$s" "$@"; else "$@"; fi; }
+# assert a cljw expr's stdout under the CURRENTLY-EXPORTED torture env, bounded.
+assert_agent() { local n="$1" g; g="$(run_bounded 60 "$BIN" -e "$2" 2>&1)"; [[ "$g" == "$3" ]] || fail "$n: got '$g' want '$3'"; echo "PASS $n -> $3"; }
+
 # Every program runs with a collect forced at every back-edge poll.
 export CLJW_GC_TORTURE=1
 
@@ -139,19 +146,20 @@ assert_eq 'pmap_torture' "$("$BIN" -e '(pmap inc (range 1 8))')"                
 # before it ever parks, so stopWorld's once-snapshotted target was never reached
 # and the MAIN-thread torture collect hung (124). stopWorld now recomputes the
 # target each wake + the leaving worker wakes it (root_set.noteWorkerLeft).
-# The agent block is ncpu>=4-gated: on the 3-vCPU hosted mac runner the OPEN
-# D-418/D-258 send/await race flakes under low-core scheduling (observed:
-# agent_conj returned '[#<fn> [#<promise>]]', run 28575901987) — tracked with
-# the other low-core exposures as D-548; un-gate when discharged.
-ncpu=$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 8)
-if [ "$ncpu" -ge 4 ]; then
-  assert_eq 'agent_send'   "$("$BIN" -e '(let [a (agent 0)] (send a inc) (await a) @a)')"               '1'
-  assert_eq 'agent_drain'  "$("$BIN" -e '(let [a (agent 0)] (dotimes [_ 20] (send a inc)) (await a) @a)')" '20'
-  assert_eq 'agent_conj'   "$("$BIN" -e '(let [a (agent [])] (send a conj 1) (send a conj 2) (await a) @a)')" '[1 2]'
-  assert_eq 'agent_sendoff' "$("$BIN" -e '(let [a (agent 0)] (send-off a + 5) (await a) @a)')"          '5'
-else
-  echo "SKIP agent_send/agent_drain/agent_conj/agent_sendoff (ncpu=$ncpu < 4 — D-418/D-258 low-core flake, D-548)"
-fi
+# D-418/D-258/D-548 — the send/await FABRICATION-WINDOW race, now FIXED and
+# UN-GATED (was ncpu>=4-gated as a workaround). Root cause: `send`/`await` built
+# the action vector / completion promise as a Zig local that was unrooted until it
+# was appended to the off-heap queue (its traceGc root); a collect in that enqueue
+# window swept it, so the drainer read recycled memory ([2 nil] / a leaked
+# #<promise> / a hang) — surfacing only under low-core scheduling, hence the
+# earlier 3-vCPU-runner flake. sendFn/awaitFn now publish the action + promise on
+# an EvalFrame across the enqueue (primitive/agent.zig). These back-edge-torture
+# cases exercise the real multi-thread drainer path; the DETERMINISTIC guard (a
+# collect injected into the exact window) is the alloc-torture block below.
+assert_agent 'agent_send'    '(let [a (agent 0)] (send a inc) (await a) @a)'                          '1'
+assert_agent 'agent_drain'   '(let [a (agent 0)] (dotimes [_ 20] (send a inc)) (await a) @a)'         '20'
+assert_agent 'agent_conj'    '(let [a (agent [])] (send a conj 1) (send a conj 2) (await a) @a)'      '[1 2]'
+assert_agent 'agent_sendoff' '(let [a (agent 0)] (send-off a + 5) (await a) @a)'                      '5'
 # D-244 #4 blocking-safepoint — `delay.force` runs the thunk (arbitrary eval)
 # under the once-lock, so the COLLECTING main thread holds the lock across a
 # torture collect while a future worker blocks on it. A plain block leaves the
@@ -239,6 +247,26 @@ assert_alloc 'rest_range'        '(first (rest (range 2)))'                     
 assert_alloc 'rest_rest_range'   '(first (rest (rest (range 40))))'                     '2'
 assert_alloc 'lazywalk_range'    '(do (defn g [s] (lazy-seq (when (seq s) (cons (+ 1 (first s)) (g (rest s)))))) (pr-str (doall (g (range 3)))))' '"(1 2 3)"'
 assert_alloc 'for_range'         '(pr-str (doall (for [i (range 2)] (+ 1 i))))'          '"(1 2)"'
+
+# D-418 fabrication-window guard (DETERMINISTIC — the discharge proof). The agent
+# enqueue path injects a STW collect into the exact send/await window under
+# alloc-torture (agent.zig `tortureCollectInWindow`), so an unrooted action vector
+# / completion promise is a deterministic hang-or-garbage HERE — no ncpu>=4
+# real-core flake needed (the load-flaky D-418/D-258/D-548 agent_conj corruption is
+# now single-thread reproducible: pre-fix `agent_conj` HUNG on a swept promise,
+# `exit 124`). Roots live in primitive/agent.zig sendFn/awaitFn. This is the
+# "def→cgc→use" fault-injection idiom (force the collect at the def→use window).
+agent_alloc() { local n="$1" g; g="$(CLJW_GC_TORTURE=0 CLJW_GC_TORTURE_ALLOC=1 run_bounded 60 "$BIN" -e "$2" 2>&1)"; [[ "$g" == "$3" ]] || fail "alloc-agent/$n: got '$g' want '$3'"; echo "PASS alloc-agent/$n -> $3"; }
+agent_alloc 'send'    '(let [a (agent 0)] (send a inc) (await a) @a)'                          '1'
+agent_alloc 'conj'    '(let [a (agent [])] (send a conj 1) (send a conj 2) (await a) @a)'      '[1 2]'
+agent_alloc 'drain'   '(let [a (agent 0)] (dotimes [_ 20] (send a inc)) (await a) @a)'         '20'
+agent_alloc 'sendoff' '(let [a (agent 0)] (send-off a + 5) (await a) @a)'                      '5'
+# NOTE: the nested-cross-agent-send case (a watch on agent A that `send`s to agent
+# B, then await both) is NOT yet a clean guard — it exposes a SECOND, distinct
+# corruption (`@memcpy arguments alias`, exit 134, ~1/10 under alloc-torture) in
+# the two-drainer + nested_pending path, tracked as D-559. It is deliberately left
+# out here until D-559 is fixed (adding a flaky case would defeat the determinism
+# this block exists to provide).
 
 # Interleaved lazy-seq `=` walk: comparing two lazy seqs realizes both tails
 # alternately, so each cursor head + the pulled elements must be rooted across

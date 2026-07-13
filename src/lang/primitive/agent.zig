@@ -18,6 +18,7 @@ const error_catalog = @import("../../runtime/error/catalog.zig");
 const SourceLocation = error_mod.SourceLocation;
 const dispatch = @import("../../runtime/dispatch.zig");
 const agent_mod = @import("../../runtime/agent.zig");
+const root_set = @import("../../runtime/gc/root_set.zig");
 const vector = @import("../../runtime/collection/vector.zig");
 const promise_mod = @import("../../runtime/promise.zig");
 const keyword_mod = @import("../../runtime/keyword.zig");
@@ -108,6 +109,19 @@ pub fn sendFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation)
     try items.appendSlice(rt.gpa, args[2..]); // & args
     const action = try vector.fromSlice(rt, items.items);
 
+    // GC-ROOT (D-418): `action` is live only as a Zig local until `agent.send`
+    // appends it to the off-heap queue (its traceGc root). On the JVM a constructed
+    // Action is automatically GC-reachable, so there is no such window; cljw's manual
+    // mark-sweep has one — a collect in the enqueue window (a concurrent worker's
+    // threshold collect) would sweep the freshly-built vector, so the drainer reads
+    // recycled memory (the [2 nil] / leaked #<promise> corruption). Publish it on an
+    // EvalFrame across the whole enqueue [ref: .dev/gc_rooting.md §C].
+    var gc_roots = [_]Value{action};
+    var gc_sp: u16 = 1;
+    var gc_frame: root_set.EvalFrame = .{ .stack = &gc_roots, .sp = &gc_sp, .locals = &.{}, .parent = root_set.eval_frame_head };
+    root_set.eval_frame_head = &gc_frame;
+    defer root_set.eval_frame_head = gc_frame.parent;
+
     agent_mod.send(rt, args[0], action) catch |e| switch (e) {
         error.AgentFailed => return error_catalog.raise(.agent_failed, loc, .{}),
         else => return e,
@@ -185,6 +199,16 @@ pub fn awaitFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation
     try error_catalog.checkArity("await", args, 1, loc);
     try requireAgent("await", args[0], loc);
     const p = try promise_mod.alloc(rt);
+    // GC-ROOT (D-418): same enqueue-window race as `send` — `p` is live only as a
+    // Zig local until the barrier action carrying it is queued (traceGc walks
+    // `action.completion`). A collect in that window sweeps the promise, so `await`
+    // blocks on freed memory (hang / a leaked object). Root it across the enqueue.
+    var gc_roots = [_]Value{p};
+    var gc_sp: u16 = 1;
+    var gc_frame: root_set.EvalFrame = .{ .stack = &gc_roots, .sp = &gc_sp, .locals = &.{}, .parent = root_set.eval_frame_head };
+    root_set.eval_frame_head = &gc_frame;
+    defer root_set.eval_frame_head = gc_frame.parent;
+
     agent_mod.sendAwait(rt, args[0], p) catch |e| switch (e) {
         error.AgentFailed => return error_catalog.raise(.agent_failed, loc, .{}),
         else => return e,

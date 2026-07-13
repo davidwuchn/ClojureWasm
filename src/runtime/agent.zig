@@ -58,6 +58,7 @@ const lock_tx = @import("concurrency/lock_tx.zig");
 const worker_error = @import("concurrency/worker_error.zig");
 const promise_mod = @import("promise.zig");
 const ex_info = @import("collection/ex_info.zig");
+const gc_torture = @import("gc/gc_torture.zig");
 
 /// A queued unit of agent work: an action body + an optional completion promise.
 /// `body` is the `[f & args]` action vector, or nil for a pure barrier (no state
@@ -289,6 +290,24 @@ pub fn shutdownAgents() void {
     agents_shut_down.store(true, .release);
 }
 
+/// Reentrancy guard for the fabrication-window fault injection: the forced
+/// collect's own bookkeeping must not re-enter this path (mirrors gc_heap's
+/// `in_alloc_torture`). Threadlocal — only the dispatcher thread injects.
+threadlocal var in_window_torture: bool = false;
+
+/// D-418 fault injection: under alloc-torture, force one STW collect in the
+/// enqueue window so an unrooted action vector surfaces as a deterministic UAF
+/// (see `enqueueDirect`'s call-site comment). Inert unless `CLJW_GC_TORTURE_ALLOC`
+/// is armed. Skipped on registered workers + when already collecting.
+fn tortureCollectInWindow(rt: *Runtime) void {
+    if (gc_torture.alloc_period == 0) return;
+    if (root_set.is_registered_worker or in_window_torture) return;
+    const e = root_set.active_env orelse return;
+    in_window_torture = true;
+    defer in_window_torture = false;
+    mark_sweep.collectStopTheWorld(&rt.gc, .{ .envs = &.{e}, .gc = &rt.gc }, false);
+}
+
 /// Enqueue an action under `cell.mutex` (leaf lock — gpa push only) and, if no
 /// drainer is live, spawn one. The mutex is never held across `callFn` / a park.
 fn enqueueDirect(rt: *Runtime, agent_val: Value, action: Action) !void {
@@ -302,6 +321,17 @@ fn enqueueDirect(rt: *Runtime, agent_val: Value, action: Action) !void {
     // RejectedExecutionException to synthesize, so it just drops (AD-046).
     if (agents_shut_down.load(.acquire)) return;
     const a = agent_val.decodePtr(*Agent);
+    // D-418 fault injection (deterministic reproducer): force a STW collect in the
+    // ENQUEUE WINDOW — the point where `action` is live only via the caller's root,
+    // not yet the traceGc root it becomes on the append below. On the JVM a
+    // constructed Action is automatically GC-reachable so this window is benign;
+    // in cljw's manual mark-sweep a caller that failed to root its freshly-built
+    // action vector has it swept HERE → recycled memory → the [2 nil]/#<promise>
+    // leak. Injecting the collect makes that cross-thread race a single-thread,
+    // deterministic UAF under alloc-torture (the "def→cgc→use" fault-injection
+    // idiom). Inert unless CLJW_GC_TORTURE_ALLOC is armed; skipped on registered
+    // workers (a nested send from a drainer) — only the main dispatcher injects.
+    tortureCollectInWindow(rt);
     io_default.lockMutex(&a.cell.mutex);
     if (!a.error_val.isNil()) {
         // Agent is in the failed state (`:fail` mode) — reject until restarted.
