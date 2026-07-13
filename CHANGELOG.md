@@ -5,6 +5,49 @@ All notable changes to ClojureWasm are documented here. The format follows
 [SemVer](https://semver.org/). SemVer compatibility guarantees start at the
 first stable `1.0.0` tag; pre-1.0 `alpha` / `rc` tags may still change surfaces.
 
+## [1.2.0] - 2026-07-13
+
+Minor release: the nREPL server is rebuilt to full base-protocol fidelity —
+CIDER (and any nREPL editor client) now works end-to-end. Backward-compatible
+with 1.1.x.
+
+### Added
+
+- **nREPL `completions` / `complete` ops** — editor completion (CIDER
+  company/capf) over the live image: vars, macros, namespaces, aliases,
+  `ns/var` qualified prefixes, with type annotations.
+- **nREPL `lookup` / `info` / `eldoc` ops** — arglists + docstrings from var
+  metadata; CIDER eldoc and `C-c C-d` documentation work.
+- **`*1` / `*2` / `*3` / `*e` REPL history** — interned in `clojure.core`
+  (upstream shape) and rotated by both the CLI REPL and every nREPL session
+  (per-session isolation: tooling-session evals cannot touch your `*1`).
+- **nREPL `ns` request handling** — evals honor the request namespace
+  (`namespace-not-found` per spec); each session keeps its own current
+  namespace, so an `in-ns` in one session never leaks into another.
+
+### Fixed
+
+- **CIDER REPL buffer was unusable** — the read loop blocked with complete
+  requests already buffered, stranding pipelined messages off-by-one; the
+  REPL prompt never rendered and RET did nothing. The transport now drains
+  every buffered message before blocking.
+- **Messages over 4 KiB reset the connection** — `C-c C-k` (load-file) on any
+  real file killed the session. The receive buffer now grows (16 MiB frame
+  cap).
+- **Session identity** — every `clone` returned the same id and replies
+  ignored the request's `session`; CIDER's two-session model (main + tooling)
+  depends on both. Sessions are now distinct UUIDs and every reply echoes the
+  request's `session` + `id`.
+- **Error replies** — errors now carry the same caret-rendered text the CLI
+  prints (was: a bare Zig error name like `NameError`), as the babashka-style
+  three-message protocol (`err` → `ex`/`root-ex` + `eval-error` → `done`;
+  was: bundled in one dict, which nREPL clients mis-route, plus a double
+  `done`). Evaluation stops at the first failing form (JVM parity).
+- **`*err*` output** is captured and streamed to the client alongside `*out*`.
+- **`describe`** now derives its ops list from the dispatch table (they can
+  no longer drift) and reports the real version (was: a stale hardcoded
+  `0.1.0-pre`).
+
 ## [1.1.0] - 2026-07-12
 
 Minor release: new REPL / tooling surface and Java-interop additions, a batch
