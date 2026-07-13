@@ -37,11 +37,23 @@ active:
       nested_pending path — a nested send built/held on drainer A while it runs, and
       the log agent's own `conj` builder, interact with the main-thread window collect.
       `@memcpy arguments alias` = a vector op memcpy'd overlapping regions → a
-      swept/recycled tail buffer aliasing. Suspect: the nested_pending held action
-      (pinned) vs the drainer's conj intermediate rooting across the injected collect,
-      or a two-agent drain ordering that lets a collect see an unrooted builder node.
+      swept/recycled tail buffer aliasing. ROOT CAUSE CONFIRMED (code read
+      2026-07-13) = the D-556 DISCHARGE RESIDUAL, verbatim: "registered-WORKER-thread
+      stacks are not conservatively scanned". mark_sweep.conservativeStackScan runs
+      on the COLLECTING (main) thread's stack ONLY (`@frameAddress()` → the collector
+      frame up to `conservative_stack_top`). When MAIN triggers an STW collect (here
+      the D-418 window injection; under real load a main threshold-collect) while the
+      log-agent DRAINER is parked mid-`conj` builder, that drainer's in-progress tail
+      node is (a) NOT bracket-covered — the ADR-0150 fabrication no-collect region
+      only DEFERS the worker's OWN torture collect, not a main-triggered STW that
+      parks it at the alloc prologue (gc_heap.zig:391 parks BEFORE the fabrication_depth
+      check at :408) — and (b) NOT conservatively scanned (the scan skips parked
+      workers). So the intermediate is swept → the resumed builder's memcpy aliases.
+      This is a general worker-builder hazard (agents/futures/pmap), exposed by the
+      two-agent nested case because it maximises "a worker is mid-builder while main
+      collects".
     category: "concurrency"
-    barrier: "none — deterministically reproducible (~1/10 under alloc-torture, the D-418 window-collect injection makes it surface). Needs a focused trace of the nested_pending handoff + the log-agent conj builder rooting under a concurrent collect; next unit after the D-418 discharge. NOT ncpu-gated away (per user: a wrong-result race is a bug, not an accepted flake)."
+    barrier: "STRUCTURAL (GC collector core) — the fix is to cover a PARKED worker's native stack: either conservatively scan each parked worker's stack (the setjmp register-spill must run ON the worker before it parks, so it needs a per-worker spill buffer captured at the park point + the worker's stack bounds), OR make the ADR-0150 fabrication region hold off the STW park until the builder completes (deadlock-risk: the collector waits for the worker — needs a bounded 'finish builder then park' handshake). Deterministically reproducible (~1/10 under alloc-torture; the D-418 window-collect injection surfaces it). NOT ncpu-gated away (per user: a wrong-result/crash race is a bug, not an accepted flake). Cross-ref: D-556 discharge residual, D-418 (sibling, DISCHARGED)."
     last_reviewed: "2026-07-13"
   - id: "D-522"
     status: |-
