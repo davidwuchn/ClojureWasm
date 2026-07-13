@@ -7,60 +7,37 @@
 
 - **HEAD**: `main` (`git log` = SSOT). Per-commit = smoke; commit
   **and** push (atomic Step 6). `build.zig.zon` `.zwasm` = tag pin `v2.2.0` (AOT-full-fidelity; from v2.1.0).
-- **1.2.0 RELEASED (2026-07-14 JST, tag v1.2.0, user-authorized).**
-  Contents: **ADR-0170 nREPL re-architecture** (fa0917b5) — the CIDER
-  field report (REPL RET dead / no completion / bare `NameError`)
-  root-caused empirically to 6 defect classes and rebuilt as
-  `src/app/nrepl/` (transport drain-all framing + >4KiB frames /
-  distinct sessions + per-session `*1..*e`+ns / comptime op table with
-  derived describe / completions+complete+lookup+info+eldoc) + shared
-  `app/eval_session.zig` (CLI REPL gained `*1`/`*2`/`*3`/`*e` same
-  cycle) + `runtime/introspect.zig` (line-editor TAB + nREPL share) +
-  bencode readString arena-dupe. Verified vs the REAL nrepl/nrepl 1.3.1
-  Java client. PLUS **D-369 discharged** (d1310fe9): the pre-tag
-  conformance sweep caught flatland.ordered 17→8 + data.generators
-  20→19 — both present in released 1.1.0 (NOT ADR-0170 regressions);
-  fixed at the root: -editable? = instance? IEditableCollection,
-  transient family dispatches .typed_instance to ITransient*, native
-  transients answer interop method calls (TRANSIENT_METHOD_MAP), and
-  the O-045 reduce-fusion gate no longer realizes the head to decide
-  chunked-ness (double side-effect; data.generators seeded *rnd*).
-  Pre-tag record: full gate 402/0 + conformance 17 libs 0 DRIFT +
-  verify_projects 19/19 + CI green (29261004785). D-117/D-118
-  re-narrowed by code-truth; D-560 unchanged.
-- **1.1.0 RELEASED (2026-07-12).** cljw `v1.1.0` tagged + pushed (user-authorized);
-  release.yml published macos-aarch64 + linux-x86_64 binaries + sha256. Pins **zwasm
-  v2.2.0**. Contents = 56 commits past v1.0.1: clojure.repl bundle + :arglists/:doc meta
-  + regex lookbehind + %t format + interop statics + the D-555…558/C10 GC-correctness
-  batch. **Homebrew tap LIVE**: `clojurewasm/homebrew-tap` (own tap, holds many
-  formulae), `brew install clojurewasm/tap/cljw` verified on Apple Silicon (unsigned,
-  ad-hoc/linker sig, no quarantine xattr; eval+wasm-FFI+clojure.repl all work). Signing
-  = unsigned + README xattr fallback note (user call). D-549 residual (Docker/ghcr +
-  Developer-ID notarization) stays user-LOCKED.
-- **CI is FULLY GREEN (2026-07-13, dispatch runs 29216662670 / 29219521822 /
-  29223367467, both legs).** The week-long nightly red was 3 layers: (1)
-  `check_surface_marker` `printf|grep -q` SIGPIPE/pipefail false positive
-  (here-string fix, swept 3 scripts; memory `pipefail_grep_q_broken_pipe`);
-  (2) `check_vm_parity` raw `timeout` → exit 127 on hosted macOS (no GNU
-  timeout/gtimeout — ported to `run_bounded`, the last raw caller after
-  264804b7); (3) the agent race below.
-- **D-418 + D-559 agent/GC races DISCHARGED (2026-07-13).** D-418 = the
-  send/await FABRICATION-WINDOW race (action vector / await promise unrooted
-  across the enqueue) — EvalFrame-rooted in primitive/agent.zig; made
-  deterministic via `tortureCollectInWindow` (collect injected into the exact
-  window under CLJW_GC_TORTURE_ALLOC); the gc_torture agent block's ncpu>=4
-  gate is REMOVED and green on the 3-vCPU macOS runner. D-559 = the peer-STW
-  park firing INSIDE a fabrication bracket (worker builder nodes swept →
-  `@memcpy arguments alias`) — **ADR-0150 amendment 1**: the alloc-prologue
-  park honors `fabrication_depth` (JVM-GCLocker shape); park/enterBlocked
-  asserts; `safepoint.max_stopworld_wait_ns`; guard `alloc-agent/nested_xagent`.
-  Accepted cost = **D-560** (fold-chain rendezvous delay; publish-roots flip is
-  its trigger-gated discharge shape — do NOT self-select).
-- **First commit on resume MUST be: D-523's residual** — audit
-  `docs/architecture.md` + `docs/examples/wasm/README.md` vs code-truth
-  (recipe in `private/notes/2026-07-09-d460-sorted-as-key.md` § Extended
-  challenge), then D-522 pointer-condensation / D-527/528 / D-430 var-alias
-  (S-sized), per the easiest-first drain.
+- **1.2.1 RELEASED (2026-07-14 JST, tag v1.2.1, user-authorized patch).**
+  **ADR-0170 am1**: `cider/analyze-last-stacktrace` — the `*cider-error*`
+  buffer works (numbered causes, frames innermost-first with
+  clj/repl/project/dup flags + file-url, phase-routed overlays). DA Alt 2
+  adopted: `*e` is the SINGLE error channel — set for EVERY caught REPL
+  error (JVM parity; catalog errors materialize via allocExceptionLoc +
+  new ExInfo.phase byte, reader branch included); `throw` stamps the live
+  call stack (both backends). FIXED en route: a 1.2.0 nREPL
+  use-after-free (evalImpl fed scratch-owned code into persist-lifetime
+  evals — now persist-duped). Pre-tag: smoke green / conformance 0 DRIFT /
+  verify_projects 19/19 / CI green (the user-named tag criterion). The
+  local full gate failed 3× ONLY on D-548(a)'s ledger-recorded roaming
+  SIGABRT sites (20/20 standalone, 8×-stress 1/8 vs the pre-change 3/8
+  baseline, CI passes the same step) — recorded in D-548, NOT an am1
+  regression.
+- **1.2.0 RELEASED (2026-07-14 JST)** — the ADR-0170 nREPL re-architecture
+  (CIDER end-to-end: sessions/completions/lookup/eldoc/errors; shared
+  eval engine gave the CLI REPL `*1..*e`) + D-369 discharged (deftype
+  editable/transient dispatch; O-045 fusion double-realization fixed).
+  Details: CHANGELOG + the ADR.
+- **1.1.0 RELEASED (2026-07-12)**; Homebrew tap LIVE
+  (`brew install clojurewasm/tap/cljw`); D-549 residual (Docker/ghcr +
+  notarization) stays user-LOCKED.
+- **D-418 + D-559 agent/GC races DISCHARGED (2026-07-13)** — ADR-0150 am1;
+  accepted cost = **D-560** (trigger-gated — do NOT self-select).
+- **First task on resume**: self-select from the live `active:` list,
+  easiest-first (D-523's architecture/wasm-demo residual + D-522 drain 3
+  landed 2026-07-14; D-430 is DISCHARGED — the prior pointer here was
+  stale). Next D-522 candidates by density: diff_test.zig 95 / vm.zig 89 /
+  print.zig 88. Emacs 実機 *cider-error* 確認 is a nice-to-have probe
+  (per-task note Extended challenge).
 - **Forbidden this session**: bare `zig build test` WITHOUT `-Dwasm`; bare `zig build`
   for a probe (use ReleaseSafe). **The FULL gate MUST run `--serial-e2e`** — canonical
   mode; the residual D-548 (a) future/promise SIGABRT + (b) pmap wall-clock remain
@@ -73,9 +50,9 @@
 
 ## Last landed (git log = SSOT)
 
-2026-07-13 session: CI 3-layer root-cause fix (surface_marker pipefail +
-vm_parity portable timeout) + D-418 fabrication-window fix + D-559 / ADR-0150
-am1 park-honors-fabrication + D-560 opened. All CI-verified on both legs.
+2026-07-13/14 session: v1.2.0 (ADR-0170 nREPL re-architecture + D-369) and
+v1.2.1 (ADR-0170 am1 *cider-error* + *e parity + UAF fix) released; D-522
+drain 3; D-523 residual audit. All CI-verified.
 
 ## Standing units (tracked in .dev/debt.yaml)
 
@@ -85,8 +62,17 @@ am1 park-honors-fabrication + D-560 opened. All CI-verified on both legs.
 - **D-513** — clojure.core.reducers / clojure.repl / var :doc (foundational).
 - **D-548** — residual low-core exposures (a) future/promise SIGABRT (b) pmap wall-clock;
   the (c) agent_conj arm is DISCHARGED via D-418. D-560 — trigger-gated (see above).
-- **D-430** — instaparse frontier is now DETERMINISTIC (core.cljc:361 `#'gll/TRACE`
-  family) after the GC arc; re-derivable without the corruption noise.
+- (D-430 instaparse was DISCHARGED 2026-07-06 — end-to-end, 4 grammar
+  classes == clj.)
+
+## Stopped — user requested
+
+User instruction (2026-07-14): 「今の対処などできりの良いところだと思ったら、
+cronは停止してCI通ったところで停止してください。つぎの発火が来てもなにもしない」
+→ その後「(cider-errorバッファ改善を) 次の課題として取り組み…mainのCIがグリーンに
+なったところでパッチtagをきってリリースして止めてください。あとは任せます。寝ます」。
+v1.2.1 tagged + released on CI green per the directive; session crons = none;
+loop stopped. Resume: self-select from the live `active:` list (see First task).
 
 ## North star (ACTIVE, distal)
 
