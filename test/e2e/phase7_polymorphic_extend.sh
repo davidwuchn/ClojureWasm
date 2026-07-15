@@ -74,7 +74,7 @@ assert_eq 'defrecord_count_field_count_preserved' "$(last_line "$got")" '2'
 # on the per-Tag descriptor for .integer (row 7.3). The outer else of
 # count routes through dispatch(…IPC, -count) and reaches the override.
 got=$("$BIN" - <<'EOF' 2>/dev/null
-(def Long (rt/__native-type :integer))
+(def Long (cljw.internal/__native-type :integer))
 (extend-type Long IPersistentCollection (-count [n] 5))
 (prn (count 42))
 EOF
@@ -106,7 +106,7 @@ assert_eq 'defrecord_seq_via_extend_type' "$(last_line "$got")" '(1 2)'
 
 # --- Case 6 (cycle 2): native Tag (Long) reaches seq via outer-else slow-path ---
 got=$("$BIN" - <<'EOF' 2>/dev/null
-(def Long (rt/__native-type :integer))
+(def Long (cljw.internal/__native-type :integer))
 (extend-type Long Seqable (-seq [_] '(:a :b)))
 (prn (seq 42))
 EOF

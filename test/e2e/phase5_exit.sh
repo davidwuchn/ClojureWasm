@@ -14,7 +14,7 @@
 #   equivalent reachable in Phase 5 is the `9223372036854775807N`
 #   BigInt-literal form (per 5.10.d).
 # - Since ADR-0066 `deftype` is a macro (not a special form): it lowers
-#   to `(do (def Name (rt/__deftype! ...)) (def ->Name ...))`, so the form
+#   to `(do (def Name (cljw.internal/__deftype! ...)) (def ->Name ...))`, so the form
 #   returns the last def's var (`#'user/->Point`), matching defrecord —
 #   not the old special-form `nil`.
 

@@ -291,8 +291,9 @@ fn loadCoreFiles(
 fn finalizeUserNs(rt: *Runtime, env: *Env) !void {
     if (env.findNs("clojure.core")) |clojure_core_ns| {
         if (env.findNs("user")) |target| {
-            // ADR-0035 D9 revision: clojure.core overrides the boot-time rt
-            // refer on collision (the public layer wins).
+            // Refresh user's refers after core.clj finished loading (the
+            // boot-time refer ran before the .clj defs existed; overriding
+            // keeps any collision pointing at the final Var).
             try env.referAllOverriding(clojure_core_ns, target, &.{}, null);
         }
     }
@@ -442,14 +443,9 @@ pub fn setupCorePrefix(rt: *Runtime, env: *Env, macro_table: *macro_dispatch.Tab
 pub fn cacheArithIntrinsics(rt: *Runtime, env: *Env) void {
     const intrinsic = @import("../eval/backend/intrinsic.zig");
     const core = env.findNs("clojure.core");
-    const rt_ns = env.findNs("rt");
     inline for (std.meta.tags(intrinsic.ArithOp)) |op| {
         const name = intrinsic.coreName(op);
-        const v: ?*env_mod.Var = blk: {
-            if (core) |c| if (c.resolve(name)) |p| break :blk p;
-            if (rt_ns) |r| if (r.resolve(name)) |p| break :blk p;
-            break :blk null;
-        };
+        const v: ?*env_mod.Var = if (core) |c| c.resolve(name) else null;
         if (v) |p| rt.arith_vars[@intFromEnum(op)] = p;
     }
     rt.core_arith_pristine = true;
@@ -457,11 +453,7 @@ pub fn cacheArithIntrinsics(rt: *Runtime, env: *Env) void {
     // Collection-accessor intrinsics (op_get / op_nth; ADR-0130 extended, O-043).
     inline for (std.meta.tags(intrinsic.CollOp)) |op| {
         const name = intrinsic.collCoreName(op);
-        const v: ?*env_mod.Var = blk: {
-            if (core) |c| if (c.resolve(name)) |p| break :blk p;
-            if (rt_ns) |r| if (r.resolve(name)) |p| break :blk p;
-            break :blk null;
-        };
+        const v: ?*env_mod.Var = if (core) |c| c.resolve(name) else null;
         if (v) |p| rt.coll_vars[@intFromEnum(op)] = p;
     }
     rt.core_coll_pristine = true;

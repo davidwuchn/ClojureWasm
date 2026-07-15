@@ -143,7 +143,7 @@
   ;; cljw: a fn carries no JVM class name, but it prints as `#<ns/name>` (the
   ;; printer knows the qualified name via the builtin/var reverse-index). Recover
   ;; the symbol from that print form so a bare-predicate spec describes as
-  ;; `rt/int?` rather than ::unknown. A no-regex parse — a `#"..."` literal cannot
+  ;; `clojure.core/int?` rather than ::unknown. A no-regex parse — a `#"..."` literal cannot
   ;; ride the bootstrap reader (so clj's `(re-matches #"(.*)\$..." (.. f getClass
   ;; getName))` could not be reproduced). Anonymous fns (`#<fn>` / `#<ns/fn__N>`)
   ;; yield nil → ::unknown, matching clj's "skip when the name is fn".

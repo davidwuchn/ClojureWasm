@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # test/e2e/phase14_extend_fn.sh — the base `clojure.core/extend` fn (D-393).
-# extend-type / extend-protocol are macros that lower to `(rt/__extend-type! …)`;
+# extend-type / extend-protocol are macros that lower to `(cljw.internal/__extend-type! …)`;
 # `extend` is the runtime fn they are sugar over: `(extend atype & proto+mmaps)`
 # where each mmap is a {:method-kw fn} map. Used directly by libs that build
 # impl maps at runtime (clojure.tools.reader reader_types.clj:190). Layer 2.

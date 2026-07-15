@@ -4,7 +4,7 @@
 # D-478: extend-protocol/extend-type TO a concrete host type whose cljw value
 # has a native tag — clojure.lang.Namespace (.ns), clojure.lang.IRef (atom/
 # agent/ref/var), java.lang.Throwable (.ex_info), java.lang.Class
-# (.type_descriptor). The impl distributes over the tag via rt/__native-type
+# (.type_descriptor). The impl distributes over the tag via cljw.internal/__native-type
 # (the same mechanism as IPersistentVector/ISeq/Named), so a namespace / ref /
 # exception / class VALUE dispatches the extended method. Surfaced by clojure.datafy
 # (Datafiable over IRef/Namespace/Throwable/Class) — datafy's own bundling is

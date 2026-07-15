@@ -30,7 +30,7 @@ last_line() {
 
 # --- Case 1: native Tag (Long) -assoc via outer-else slow-path ---
 got=$("$BIN" - <<'EOF' 2>/dev/null
-(def Long (rt/__native-type :integer))
+(def Long (cljw.internal/__native-type :integer))
 (extend-type Long Associative (-assoc [n k v] :assoc-on-int))
 (prn (assoc 42 :a 1))
 EOF
@@ -39,7 +39,7 @@ assert_eq 'long_assoc_via_extend_type' "$(last_line "$got")" ':assoc-on-int'
 
 # --- Case 2: native Tag (Long) -without via outer-else slow-path ---
 got=$("$BIN" - <<'EOF' 2>/dev/null
-(def Long (rt/__native-type :integer))
+(def Long (cljw.internal/__native-type :integer))
 (extend-type Long IPersistentMap (-without [n k] :without-on-int))
 (prn (dissoc 42 :a))
 EOF
@@ -48,7 +48,7 @@ assert_eq 'long_dissoc_via_extend_type' "$(last_line "$got")" ':without-on-int'
 
 # --- Case 3: native Tag (Long) -keys via outer-else slow-path ---
 got=$("$BIN" - <<'EOF' 2>/dev/null
-(def Long (rt/__native-type :integer))
+(def Long (cljw.internal/__native-type :integer))
 (extend-type Long IPersistentMap (-keys [n] '(:a :b)))
 (prn (keys 42))
 EOF
@@ -57,7 +57,7 @@ assert_eq 'long_keys_via_extend_type' "$(last_line "$got")" '(:a :b)'
 
 # --- Case 4: native Tag (Long) -vals via outer-else slow-path ---
 got=$("$BIN" - <<'EOF' 2>/dev/null
-(def Long (rt/__native-type :integer))
+(def Long (cljw.internal/__native-type :integer))
 (extend-type Long IPersistentMap (-vals [n] '(1 2)))
 (prn (vals 42))
 EOF
@@ -66,7 +66,7 @@ assert_eq 'long_vals_via_extend_type' "$(last_line "$got")" '(1 2)'
 
 # --- Case 5: native Tag (Long) -contains-key? via outer-else slow-path ---
 got=$("$BIN" - <<'EOF' 2>/dev/null
-(def Long (rt/__native-type :integer))
+(def Long (cljw.internal/__native-type :integer))
 (extend-type Long Associative (-contains-key? [n k] true))
 (prn (contains? 42 :anything))
 EOF

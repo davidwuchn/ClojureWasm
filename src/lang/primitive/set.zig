@@ -77,9 +77,9 @@ const RT_ENTRIES = [_]Entry{
 /// The Group A + B vars themselves are registered by evaluating
 /// `src/lang/clj/clojure/set.clj` at bootstrap.
 pub fn register(env: *Env) !void {
-    const rt_ns = env.findNs("rt") orelse return error.RtNamespaceMissing;
+    const core_ns = env.findNs("clojure.core") orelse return error.ClojureCoreNamespaceMissing;
     for (RT_ENTRIES) |it| {
-        _ = try env.intern(rt_ns, it.name, Value.initBuiltinFn(it.f), null);
+        _ = try env.intern(core_ns, it.name, Value.initBuiltinFn(it.f), null);
     }
     _ = try env.findOrCreateNs("clojure.set");
 }

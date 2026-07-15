@@ -75,7 +75,7 @@ const tree_walk = @import("../backend/tree_walk.zig");
 const Function = tree_walk.Function;
 
 pub const MAGIC: [4]u8 = .{ 'C', 'L', 'J', 'W' };
-pub const VERSION: u16 = 5; // v5: NsFilterEntry attr_const (D-554); v4: doc + refer_clojure
+pub const VERSION: u16 = 6; // v6: rt ns merged into clojure.core (ADR-0171) — pre-v6 archives bake "rt" var_refs that no longer resolve; v5: NsFilterEntry attr_const (D-554)
 
 pub const SerializeError = error{
     OutOfMemory,

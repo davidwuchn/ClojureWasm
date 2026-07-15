@@ -610,7 +610,7 @@ pub const Reader = struct {
         return Form{ .data = .{ .list = items }, .location = loc };
     }
 
-    /// `@x` reader macro → `(rt/deref x)` (mirrors `readQuote`). The `deref`
+    /// `@x` reader macro → `(clojure.core/deref x)` (mirrors `readQuote`). The `deref`
     /// symbol is NS-QUALIFIED so a local `deref` binding cannot capture it:
     /// `(let [deref f] @a)` derefs `a`, not calls `f` (clj hygiene, which uses
     /// `clojure.core/deref`). cljw qualifies to the `rt` primitive ns — the
@@ -627,7 +627,7 @@ pub const Reader = struct {
             return error_catalog.raise(.eof_unexpected, loc, .{});
 
         const items = self.allocator.alloc(Form, 2) catch return error.OutOfMemory;
-        items[0] = Form{ .data = .{ .symbol = .{ .ns = "rt", .name = "deref" } }, .location = loc };
+        items[0] = Form{ .data = .{ .symbol = .{ .ns = "clojure.core", .name = "deref" } }, .location = loc };
         items[1] = inner;
         return Form{ .data = .{ .list = items }, .location = loc };
     }

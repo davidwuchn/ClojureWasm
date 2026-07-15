@@ -37,29 +37,28 @@ const host_interface = @import("../runtime/host_interface.zig");
 const SourceLocation = error_mod.SourceLocation;
 
 pub const RegisterError = error{
-    RtNamespaceMissing,
+    ClojureCoreNamespaceMissing,
     UserNamespaceMissing,
     OutOfMemory,
 };
 
-/// Intern macro Vars in `rt`, refer into `user`, populate `table`
-/// with the Zig transforms. Idempotent.
+/// Intern macro Vars in `clojure.core` (ADR-0171 — home ns matches
+/// mainline: `(resolve 'when)` is `#'clojure.core/when`), refer into
+/// `user`, populate `table` with the Zig transforms. Idempotent.
 pub fn registerInto(env: *Env, table: *macro_dispatch.Table) !void {
-    const rt_ns = env.findNs("rt") orelse return RegisterError.RtNamespaceMissing;
+    const core_ns = env.findNs("clojure.core") orelse return RegisterError.ClojureCoreNamespaceMissing;
     const user_ns = env.findNs("user") orelse return RegisterError.UserNamespaceMissing;
 
     inline for (BOOTSTRAP) |entry| {
-        const v = try env.intern(rt_ns, entry.name, .nil_val, null);
+        const v = try env.intern(core_ns, entry.name, .nil_val, null);
         v.flags.macro_ = true;
         try ensureRegistered(table, entry.name, entry.expand);
     }
 
-    // Boot-time rt → user macro refer mirrors the primitive-Var path
+    // Boot-time core → user macro refer mirrors the primitive-Var path
     // so macros (`let`, `cond`, `->`, ...) resolve unqualified at the
-    // REPL prompt. The `(ns ...)` macro deliberately does NOT
-    // auto-refer rt (ADR-0035); macros stay rt-owned and the user-ns
-    // convenience refer happens here at boot.
-    try env.referAll(rt_ns, user_ns);
+    // REPL prompt before `core.clj` finishes loading.
+    try env.referAll(core_ns, user_ns);
 }
 
 /// `register` asserts uniqueness; this wraps it so re-running
@@ -1328,8 +1327,8 @@ fn caseConstEq(arena: std.mem.Allocator, g: Form, const_form: Form, loc: SourceL
 }
 
 /// Test for one clause's test-constant: a list `(c1 c2 …)` →
-/// `(rt/or (= g 'c1) (= g 'c2) …)`; a single constant → `(= g 'const)`.
-/// The emitted `or` is the QUALIFIED builtin (`rt/or`), not a bare `or` —
+/// `(clojure.core/or (= g 'c1) (= g 'c2) …)`; a single constant → `(= g 'const)`.
+/// The emitted `or` is the QUALIFIED builtin (`clojure.core/or`), not a bare `or` —
 /// otherwise, in a namespace that shadows `or` (clojure.spec.alpha excludes +
 /// redefines it), the generated test would resolve to the user's `or` macro
 /// (macro hygiene: a macro-expansion must not capture a user redefinition of a
@@ -1338,7 +1337,7 @@ fn caseTest(arena: std.mem.Allocator, g: Form, test_const: Form, loc: SourceLoca
     if (test_const.data == .list) {
         const elems = test_const.data.list;
         const or_items = try arena.alloc(Form, 1 + elems.len);
-        or_items[0] = .{ .data = .{ .symbol = .{ .ns = "rt", .name = "or" } }, .location = loc };
+        or_items[0] = .{ .data = .{ .symbol = .{ .ns = "clojure.core", .name = "or" } }, .location = loc };
         for (elems, 0..) |el, i| or_items[1 + i] = try caseConstEq(arena, g, el, loc);
         return list(arena, or_items, loc);
     }
@@ -1509,7 +1508,11 @@ fn expandAssert(arena: std.mem.Allocator, rt: *Runtime, args: []const Form, loc:
         const nl: Form = .{ .data = .{ .string = "\n" }, .location = loc };
         break :blk try makeCall(arena, "str", &.{ prefix, args[1], nl, pr_form }, loc);
     } else try makeCall(arena, "str", &.{ prefix, pr_form }, loc);
-    const ae = try makeCall(arena, "__assertion-error", &.{msg}, loc);
+    const ae_sym: Form = .{ .data = .{ .symbol = .{ .ns = "cljw.internal", .name = "__assertion-error" } }, .location = loc };
+    var ae_items = try arena.alloc(Form, 2);
+    ae_items[0] = ae_sym;
+    ae_items[1] = msg;
+    const ae = try list(arena, ae_items, loc);
     const throw_form = try makeCall(arena, "throw", &.{ae}, loc);
     return makeIf(arena, expr, nilForm(loc), throw_form, loc);
 }
@@ -2024,7 +2027,7 @@ fn lowerPrePost(arena: std.mem.Allocator, body: []const Form, loc: SourceLocatio
 // --- defmulti — multimethod definition ---
 //
 // `(defmulti name dispatch-fn)` →
-//   `(def name (rt/__make-multifn (quote name) dispatch-fn :default -global-hierarchy))`
+//   `(def name (cljw.internal/__make-multifn (quote name) dispatch-fn :default -global-hierarchy))`
 //
 // JVM Clojure's `defmulti` macro has additional re-eval-no-op
 // semantics (preserves method_table across REPL reloads). cw v1
@@ -2105,12 +2108,12 @@ fn expandDefmulti(
     quote_items[1] = name_form;
     const quoted_name = try list(arena, quote_items, loc);
 
-    // (rt/__make-multifn (quote name) dispatch-fn <default> <hierarchy>)
+    // (cljw.internal/__make-multifn (quote name) dispatch-fn <default> <hierarchy>)
     // The bare `-global-hierarchy` symbol resolves to the public atom in the
     // calling ns (referred from clojure.core at boot) so dispatch consults the
     // live, mutable hierarchy — `derive` after `defmulti` is seen.
     var call_items = try arena.alloc(Form, 5);
-    call_items[0] = .{ .data = .{ .symbol = .{ .ns = "rt", .name = "__make-multifn" } }, .location = loc };
+    call_items[0] = .{ .data = .{ .symbol = .{ .ns = "cljw.internal", .name = "__make-multifn" } }, .location = loc };
     call_items[1] = quoted_name;
     call_items[2] = dispatch_fn_form;
     call_items[3] = default_form;
@@ -2128,7 +2131,7 @@ fn expandDefmulti(
 // --- defmethod — register a method on a multimethod ---
 //
 // `(defmethod multifn dispatch-val [params...] body...)` →
-//   `(rt/__add-method! multifn dispatch-val (fn* [params...] body...))`
+//   `(cljw.internal/__add-method! multifn dispatch-val (fn* [params...] body...))`
 //
 // Multi-form body wraps in `(do ...)` per the defn pattern.
 fn expandDefmethod(
@@ -2166,9 +2169,9 @@ fn expandDefmethod(
     fn_items[2] = body_form;
     const fn_form = try list(arena, fn_items, loc);
 
-    // (rt/__add-method! multi dispatch-val fn_form)
+    // (cljw.internal/__add-method! multi dispatch-val fn_form)
     var call_items = try arena.alloc(Form, 4);
-    call_items[0] = .{ .data = .{ .symbol = .{ .ns = "rt", .name = "__add-method!" } }, .location = loc };
+    call_items[0] = .{ .data = .{ .symbol = .{ .ns = "cljw.internal", .name = "__add-method!" } }, .location = loc };
     call_items[1] = multi_form;
     call_items[2] = dispatch_val_form;
     call_items[3] = fn_form;
@@ -2176,16 +2179,16 @@ fn expandDefmethod(
 }
 
 // (prefer-method was a needless macro — it auto-quoted nothing, just forwarded to
-// `rt/__prefer-method!`. It is now a clj-faithful FN in core.clj so it is
+// `cljw.internal/__prefer-method!`. It is now a clj-faithful FN in core.clj so it is
 // passable in higher-order position, matching clj. The macro is retired.)
 
 // --- defprotocol — declare a protocol name + its method dispatch fns ---
 //
 // `(defprotocol P (m1 [x]) (m2 [x y]))` lowers to:
 //   (do
-//     (def P (rt/__make-protocol! 'P ['m1 'm2]))
-//     (def m1 (rt/__make-protocol-fn! P "m1"))
-//     (def m2 (rt/__make-protocol-fn! P "m2")))
+//     (def P (cljw.internal/__make-protocol! 'P ['m1 'm2]))
+//     (def m1 (cljw.internal/__make-protocol-fn! P "m1"))
+//     (def m2 (cljw.internal/__make-protocol-fn! P "m2")))
 //
 // Each method-sig is `(method-name [params...])` — arity defaults
 // to 1 inside `__make-protocol!`; the param vector is consumed for
@@ -2202,7 +2205,7 @@ fn expandDefprotocol(
     // A name suffices; method signatures are optional so a zero-method
     // marker protocol — `(defprotocol Sequential)` — is definable, matching
     // JVM (`(defprotocol Marker)` → `(satisfies? Marker x)` true). The empty
-    // `method_sigs` expands to `(rt/__make-protocol! 'name [])`.
+    // `method_sigs` expands to `(cljw.internal/__make-protocol! 'name [])`.
     if (args.len < 1)
         return error_catalog.raise(.defprotocol_form_incomplete, loc, .{});
     if (args[0].data != .symbol or args[0].data.symbol.ns != null)
@@ -2253,29 +2256,29 @@ fn expandDefprotocol(
     quoted_name_items[1] = name_form;
     const quoted_name = try list(arena, quoted_name_items, loc);
 
-    // (rt/__make-protocol! 'name [method-quotes] <extend-via-metadata?>) — the
+    // (cljw.internal/__make-protocol! 'name [method-quotes] <extend-via-metadata?>) — the
     // 3rd arg is emitted only when the flag is set; the primitive defaults it to
     // false for the 2-arg bootstrap forms.
     const make_proto_len: usize = if (extend_via_metadata) 4 else 3;
     var make_proto_items = try arena.alloc(Form, make_proto_len);
-    make_proto_items[0] = .{ .data = .{ .symbol = .{ .ns = "rt", .name = "__make-protocol!" } }, .location = loc };
+    make_proto_items[0] = .{ .data = .{ .symbol = .{ .ns = "cljw.internal", .name = "__make-protocol!" } }, .location = loc };
     make_proto_items[1] = quoted_name;
     make_proto_items[2] = methods_vec;
     if (extend_via_metadata) make_proto_items[3] = .{ .data = .{ .boolean = true }, .location = loc };
     const make_proto_call = try list(arena, make_proto_items, loc);
 
-    // (def name (rt/__make-protocol! ...))
+    // (def name (cljw.internal/__make-protocol! ...))
     var def_proto_items = try arena.alloc(Form, 3);
     def_proto_items[0] = sym("def", loc);
     def_proto_items[1] = name_form;
     def_proto_items[2] = make_proto_call;
     const def_proto = try list(arena, def_proto_items, loc);
 
-    // For each method: (def m-name (rt/__make-protocol-fn! name "m-name"))
+    // For each method: (def m-name (cljw.internal/__make-protocol-fn! name "m-name"))
     const method_defs = try arena.alloc(Form, method_names.len);
     for (method_names, 0..) |m, i| {
         var make_fn_items = try arena.alloc(Form, 3);
-        make_fn_items[0] = .{ .data = .{ .symbol = .{ .ns = "rt", .name = "__make-protocol-fn!" } }, .location = loc };
+        make_fn_items[0] = .{ .data = .{ .symbol = .{ .ns = "cljw.internal", .name = "__make-protocol-fn!" } }, .location = loc };
         make_fn_items[1] = name_form;
         make_fn_items[2] = .{ .data = .{ .string = m.data.symbol.name }, .location = loc };
         const make_fn_call = try list(arena, make_fn_items, loc);
@@ -2328,7 +2331,7 @@ fn expandDefinterface(
 // --- extend-type — install one or more method impls on a TypeDescriptor ---
 //
 // `(extend-type Foo P (m1 [x] body1) (m2 [x] body2))` lowers to:
-//   (rt/__extend-type! Foo P [["m1" (fn* [x] body1)] ["m2" (fn* [x] body2)]])
+//   (cljw.internal/__extend-type! Foo P [["m1" (fn* [x] body1)] ["m2" (fn* [x] body2)]])
 //
 // Each method-impl is `(method-name [params...] body...)` — same
 // shape as defmethod's clauses.
@@ -2587,7 +2590,7 @@ fn expandExtendType(
     // A clj interface whose cljw implementors are NATIVE values
     // (`clojure.lang.IPersistentVector` → vector, `ISeq` → the seq family,
     // `Named` → keyword/symbol) distributes the impl over each native tag's
-    // descriptor via `rt/__native-type`, so a cljw vector/seq/named value
+    // descriptor via `cljw.internal/__native-type`, so a cljw vector/seq/named value
     // dispatches the protocol (the core hiccup `(html [:p …])` path). Only a
     // single-protocol section reaches here (the multi-section split is below and
     // requires a symbol target), so `args[1..]` is `proto impls…`.
@@ -2597,7 +2600,7 @@ fn expandExtendType(
             sections[0] = sym("do", loc);
             for (tags, 0..) |tag, ti| {
                 var nt_items = try arena.alloc(Form, 2);
-                nt_items[0] = .{ .data = .{ .symbol = .{ .ns = "rt", .name = "__native-type" } }, .location = loc };
+                nt_items[0] = .{ .data = .{ .symbol = .{ .ns = "cljw.internal", .name = "__native-type" } }, .location = loc };
                 nt_items[1] = .{ .data = .{ .keyword = .{ .name = tag } }, .location = loc };
                 const nt = try list(arena, nt_items, loc);
                 var ext_items = try arena.alloc(Form, 3 + (args.len - 2));
@@ -2760,9 +2763,9 @@ fn expandExtendType(
     }
     const impls_vec = try vec(arena, impl_pairs, loc);
 
-    // (rt/__extend-type! target protocol impls_vec)
+    // (cljw.internal/__extend-type! target protocol impls_vec)
     var call_items = try arena.alloc(Form, 4);
-    call_items[0] = .{ .data = .{ .symbol = .{ .ns = "rt", .name = "__extend-type!" } }, .location = loc };
+    call_items[0] = .{ .data = .{ .symbol = .{ .ns = "cljw.internal", .name = "__extend-type!" } }, .location = loc };
     call_items[1] = target_form;
     call_items[2] = protocol_form;
     call_items[3] = impls_vec;
@@ -2872,12 +2875,12 @@ fn expandWhenLet(
 //
 // `(defrecord Name [f1 f2 ...] Proto (m [this] body) ...)` lowers via
 // `lowerDefType` to a `(do ...)` of:
-//   (def Name (rt/__defrecord! 'Name ['f1 'f2 ...]))   ; .kind = .defrecord
+//   (def Name (cljw.internal/__defrecord! 'Name ['f1 'f2 ...]))   ; .kind = .defrecord
 //   (def ->Name (fn* [f1 f2 ...] (Name. f1 f2 ...)))   ; positional factory
 //   (def map->Name (fn* [m] (Name. (get m :f1) ...)))  ; map factory
 //   <extend-type sections for each protocol's method bodies>
 // `deftype` is a sibling macro (`expandDeftype`) sharing
-// `lowerDefType`; its `rt/__deftype!` primitive shares `registerType`
+// `lowerDefType`; its `cljw.internal/__deftype!` primitive shares `registerType`
 // (kind = .deftype). Record IPersistentMap arms live in
 // `lang/primitive/collection.zig`.
 fn expandDefrecord(
@@ -3060,7 +3063,7 @@ fn wrapMethodBodyWithFields(
 
 /// Shared `defrecord`/`deftype` lowering. `ctor_prim` is the `rt/`-namespaced
 /// registration primitive (`__defrecord!` | `__deftype!`). Emits
-/// `(do (def Name (rt/<ctor_prim> 'Name ['fields])) (def ->Name (fn* [..]
+/// `(do (def Name (cljw.internal/<ctor_prim> 'Name ['fields])) (def ->Name (fn* [..]
 /// (Name. ..))) extend-type-sections...)`.
 fn lowerDefType(
     arena: std.mem.Allocator,
@@ -3113,16 +3116,16 @@ fn lowerDefType(
     quoted_name_items[1] = args[0];
     const quoted_name = try list(arena, quoted_name_items, loc);
 
-    // (rt/<ctor_prim> 'Name ['f1 'f2 ...] ['vol-field ...])  — arg 3 = the
+    // (cljw.internal/<ctor_prim> 'Name ['f1 'f2 ...] ['vol-field ...])  — arg 3 = the
     // `^:volatile-mutable` field names (empty for defrecord / no-volatile).
     var call_items = try arena.alloc(Form, 4);
-    call_items[0] = .{ .data = .{ .symbol = .{ .ns = "rt", .name = ctor_prim } }, .location = loc };
+    call_items[0] = .{ .data = .{ .symbol = .{ .ns = "cljw.internal", .name = ctor_prim } }, .location = loc };
     call_items[1] = quoted_name;
     call_items[2] = fields_vec_form;
     call_items[3] = volatile_vec_form;
     const defrecord_call = try list(arena, call_items, loc);
 
-    // (def Name (rt/__defrecord! ...)) — binds Name to a
+    // (def Name (cljw.internal/__defrecord! ...)) — binds Name to a
     // TypeDescriptorRef Value so downstream `extend-type Name P ...`
     // forms (in this defrecord's body OR in user code following the
     // form) resolve Name as a usable target.
@@ -3167,8 +3170,8 @@ fn lowerDefType(
     def_arrow_items[2] = factory_fn;
     const def_arrow = try list(arena, def_arrow_items, loc);
 
-    // (def map->Name (fn* [m] (rt/__map->record Name m))) — the map factory clj
-    // generates for every DEFRECORD (not deftype). `rt/__map->record`
+    // (def map->Name (fn* [m] (cljw.internal/__map->record Name m))) — the map factory clj
+    // generates for every DEFRECORD (not deftype). `cljw.internal/__map->record`
     // pulls each declared field from `m` by keyword (nil if absent)
     // and holds the remaining keys in the record's extmap (clj's `__extmap`).
     // It is a PRIMITIVE (not core.clj `reduce-kv`/`assoc`) so the generated
@@ -3186,9 +3189,9 @@ fn lowerDefType(
         };
         const m_param = sym("m", loc);
         const m_params_vec = Form{ .data = .{ .vector = try arena.dupe(Form, &[_]Form{m_param}) }, .location = loc };
-        // (rt/__map->record Name m)
+        // (cljw.internal/__map->record Name m)
         const body_args = try arena.alloc(Form, 3);
-        body_args[0] = .{ .data = .{ .symbol = .{ .ns = "rt", .name = "__map->record" } }, .location = loc };
+        body_args[0] = .{ .data = .{ .symbol = .{ .ns = "cljw.internal", .name = "__map->record" } }, .location = loc };
         body_args[1] = args[0];
         body_args[2] = m_param;
         var map_fn_items = try arena.alloc(Form, 3);
@@ -3291,7 +3294,7 @@ fn lowerDefType(
         try sections.append(arena, try list(arena, ext_items, section.proto.location));
     }
 
-    // (do (def Name (rt/__defrecord! ...)) (def ->Name ...) extend-type-sections...)
+    // (do (def Name (cljw.internal/__defrecord! ...)) (def ->Name ...) extend-type-sections...)
     const extra: usize = if (def_map_arrow != null) 1 else 0;
     var do_items = try arena.alloc(Form, 3 + extra + sections.items.len);
     do_items[0] = sym("do", loc);
@@ -3311,7 +3314,7 @@ fn lowerDefType(
 // `(reify Proto1 (m1 [this] body) (m2 [this] body) Proto2 (m3 [this]
 // body))` lowers to:
 //
-//   (rt/__reify!
+//   (cljw.internal/__reify!
 //     ['Proto1 'Proto2]
 //     [["m1" Proto1 (fn* [this] body)]
 //      ["m2" Proto1 (fn* [this] body)]
@@ -3393,7 +3396,7 @@ fn expandLocking(
     @memcpy(fn_items[2..], args[1..]);
     const fn_form: Form = .{ .data = .{ .list = fn_items }, .location = loc };
     var call_items = try arena.alloc(Form, 3);
-    call_items[0] = sym("__locking", loc);
+    call_items[0] = .{ .data = .{ .symbol = .{ .ns = "cljw.internal", .name = "__locking" } }, .location = loc };
     call_items[1] = args[0];
     call_items[2] = fn_form;
     return list(arena, call_items, loc);
@@ -3436,7 +3439,7 @@ fn expandThunkWrapper(
     @memcpy(fn_items[2..], args);
     const fn_form: Form = .{ .data = .{ .list = fn_items }, .location = loc };
     var call_items = try arena.alloc(Form, 2);
-    call_items[0] = sym(primitive_name, loc);
+    call_items[0] = .{ .data = .{ .symbol = .{ .ns = "cljw.internal", .name = primitive_name } }, .location = loc };
     call_items[1] = fn_form;
     return list(arena, call_items, loc);
 }
@@ -3708,16 +3711,16 @@ fn expandReify(
     const interfaces_vec = try vec(arena, interfaces.items, loc);
     const methods_vec = try vec(arena, method_rows.items, loc);
 
-    // (rt/__reify! interfaces-vec methods-vec)
+    // (cljw.internal/__reify! interfaces-vec methods-vec)
     var call_items = try arena.alloc(Form, 3);
-    call_items[0] = .{ .data = .{ .symbol = .{ .ns = "rt", .name = "__reify!" } }, .location = loc };
+    call_items[0] = .{ .data = .{ .symbol = .{ .ns = "cljw.internal", .name = "__reify!" } }, .location = loc };
     call_items[1] = interfaces_vec;
     call_items[2] = methods_vec;
     return list(arena, call_items, loc);
 }
 
 // `instance?` is no longer a macro — it is a real fn over a class
-// VALUE (`(def instance? (fn* [c x] (rt/-instance-of? c x)))` in core.clj), so it
+// VALUE (`(def instance? (fn* [c x] (cljw.internal/__instance-of? c x)))` in core.clj), so it
 // is passable higher-order (condp / map / partial). The old `expandInstanceQ`
 // (auto-quote the class symbol → `(__instance? (quote Class) x)`) is retired.
 
@@ -3749,16 +3752,16 @@ const TestFixture = struct {
     }
 };
 
-test "registerInto wires every bootstrap macro into rt and the Table" {
+test "registerInto wires every bootstrap macro into clojure.core and the Table" {
     var fix: TestFixture = undefined;
     try fix.init(testing.allocator);
     defer fix.deinit();
 
     try registerInto(&fix.env, &fix.table);
 
-    const rt_ns = fix.env.findNs("rt").?;
+    const core_ns = fix.env.findNs("clojure.core").?;
     inline for (BOOTSTRAP) |e| {
-        const v = rt_ns.resolve(e.name) orelse return error.TestUnexpectedResult;
+        const v = core_ns.resolve(e.name) orelse return error.TestUnexpectedResult;
         try testing.expect(v.flags.macro_);
         try testing.expect(fix.table.lookup(e.name) != null);
     }
@@ -3979,7 +3982,7 @@ test "expandDefprotocol accepts a 0-method MARKER protocol (D-190/ADR-0068)" {
 
     const arena = fix.arena.allocator();
     // `(defprotocol P)` — name only — is a marker; expands to
-    // `(do (def P (rt/__make-protocol! 'P [])) 'P)`, no method defs (the
+    // `(do (def P (cljw.internal/__make-protocol! 'P [])) 'P)`, no method defs (the
     // trailing `'P` is the return-symbol).
     const args = [_]Form{sym("P", .{})};
     const out = try expandDefprotocol(arena, &fix.rt, &args, .{});
@@ -3992,7 +3995,7 @@ test "expandDefprotocol accepts a 0-method MARKER protocol (D-190/ADR-0068)" {
     try expectSymbolEq(out.data.list[2].data.list[1], "P");
 }
 
-test "expandExtendType lowers to (rt/__extend-type! target proto [[\"m\" (fn* ...)]])" {
+test "expandExtendType lowers to (cljw.internal/__extend-type! target proto [[\"m\" (fn* ...)]])" {
     var fix: TestFixture = undefined;
     try fix.init(testing.allocator);
     defer fix.deinit();
@@ -4099,8 +4102,8 @@ test "expandDefrecord lowers (defrecord Name [f1 f2]) to (do (def Name __defreco
     const out = try expandDefrecord(arena, &fix.rt, &args, .{});
     try testing.expect(out.data == .list);
     try expectSymbolEq(out.data.list[0], "do");
-    // (do (def Foo (rt/__defrecord! ...)) (def ->Foo (fn* [x y] (Foo. x y)))
-    //     (def map->Foo (fn* [m] (rt/__map->record Foo m)))) — the map factory.
+    // (do (def Foo (cljw.internal/__defrecord! ...)) (def ->Foo (fn* [x y] (Foo. x y)))
+    //     (def map->Foo (fn* [m] (cljw.internal/__map->record Foo m)))) — the map factory.
     try testing.expectEqual(@as(usize, 4), out.data.list.len);
     const def_map_arrow = out.data.list[3];
     try testing.expect(def_map_arrow.data == .list);
@@ -4113,7 +4116,7 @@ test "expandDefrecord lowers (defrecord Name [f1 f2]) to (do (def Name __defreco
     try expectSymbolEq(def_name.data.list[1], "Foo");
     const call_form = def_name.data.list[2];
     try testing.expect(call_form.data == .list);
-    try testing.expectEqualStrings("rt", call_form.data.list[0].data.symbol.ns.?);
+    try testing.expectEqualStrings("cljw.internal", call_form.data.list[0].data.symbol.ns.?);
     try testing.expectEqualStrings("__defrecord!", call_form.data.list[0].data.symbol.name);
 
     const def_arrow = out.data.list[2];

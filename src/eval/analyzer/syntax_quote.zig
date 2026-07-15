@@ -78,7 +78,7 @@ fn qualifySym(env: *Env, s: SymbolRef, loc: SourceLocation) Form {
     if (BARE_SYMS.has(s.name) or hasDot(s.name) or (s.name.len > 0 and (s.name[0] == '.' or s.name[0] == '%')))
         return .{ .data = .{ .symbol = s }, .location = loc };
     const cur = env.current_ns orelse return .{ .data = .{ .symbol = s }, .location = loc };
-    var home = if (cur.resolve(s.name)) |v|
+    const home = if (cur.resolve(s.name)) |v|
         v.ns.name
     else if (s.name.len > 0 and s.name[0] >= 'A' and s.name[0] <= 'Z')
         // An unresolved capitalized symbol is a class name (`Throwable`,
@@ -88,11 +88,6 @@ fn qualifySym(env: *Env, s: SymbolRef, loc: SourceLocation) Form {
         return .{ .data = .{ .symbol = s }, .location = loc }
     else
         cur.name;
-    // cljw's `rt` ns is the implementation home of what clj calls `clojure.core`
-    // (primitives are interned in `rt` + referred everywhere; `clojure.core/+`
-    // also resolves). Present them as `clojure.core/…` so a syntax-quoted core
-    // symbol matches clj (`` `+ `` → clojure.core/+, not rt/+).
-    if (std.mem.eql(u8, home, "rt")) home = "clojure.core";
     return .{ .data = .{ .symbol = .{ .ns = home, .name = s.name } }, .location = loc };
 }
 

@@ -1039,9 +1039,9 @@ pub fn queueQFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocatio
 /// `pop` routes a queue here; pop of empty returns the empty queue (no throw).
 pub fn queuePopFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
     _ = env;
-    try error_catalog.checkArity("-queue-pop", args, 1, loc);
+    try error_catalog.checkArity("__queue-pop", args, 1, loc);
     if (args[0].tag() != .persistent_queue)
-        return error_catalog.raise(.type_arg_invalid, loc, .{ .fn_name = "-queue-pop", .expected = "a queue", .actual = @tagName(args[0].tag()) });
+        return error_catalog.raise(.type_arg_invalid, loc, .{ .fn_name = "__queue-pop", .expected = "a queue", .actual = @tagName(args[0].tag()) });
     return persistent_queue.pop(rt, args[0]);
 }
 
@@ -1084,7 +1084,7 @@ pub fn kvReduceOrFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLoc
 /// re-rooted before each `assoc` so an alloc-driven collect cannot sweep the
 /// in-progress result.
 pub fn updateInFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
-    try error_catalog.checkArity("-update-in", args, 3, loc);
+    try error_catalog.checkArity("__update-in", args, 3, loc);
     const m = args[0];
     const ks = args[1]; // guaranteed a non-empty vector by the `.clj` `update-in` guard
     const f = args[2];
@@ -1114,10 +1114,10 @@ fn updateInRec(rt: *Runtime, env: *Env, m: Value, ks: Value, i: u32, n: u32, f: 
 
 const ENTRIES = [_]Entry{
     .{ .name = "conj", .f = &conjFn },
-    .{ .name = "-update-in", .f = &updateInFn },
+    .{ .name = "__update-in", .f = &updateInFn },
     .{ .name = "__kv-reduce-or", .f = &kvReduceOrFn },
     .{ .name = "queue?", .f = &queueQFn },
-    .{ .name = "-queue-pop", .f = &queuePopFn },
+    .{ .name = "__queue-pop", .f = &queuePopFn },
     .{ .name = "disj", .f = &disjFn },
     .{ .name = "contains?", .f = &containsQFn },
     .{ .name = "get", .f = &getFn },

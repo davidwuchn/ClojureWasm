@@ -949,19 +949,19 @@ test "__class interns one boxed Value per descriptor (identity equality)" {
     try testing.expect(@intFromEnum(a) != @intFromEnum(s));
 }
 
-test "register installs the 4 protocol primitives in rt/" {
+test "register installs the protocol primitives into the target ns" {
     var fix: TestFixture = undefined;
     try fix.init(testing.allocator);
     defer fix.deinit();
 
-    const rt_ns = fix.env.findNs("rt").?;
-    try register(&fix.env, rt_ns);
-    try testing.expect(rt_ns.resolve("__make-protocol!") != null);
-    try testing.expect(rt_ns.resolve("__make-protocol-fn!") != null);
-    try testing.expect(rt_ns.resolve("__extend-type!") != null);
-    try testing.expect(rt_ns.resolve("__satisfies?") != null);
-    try testing.expect(rt_ns.resolve("__extends?") != null);
-    try testing.expect(rt_ns.resolve("__class") != null);
+    const target = fix.env.findNs("clojure.core").?;
+    try register(&fix.env, target);
+    try testing.expect(target.resolve("__make-protocol!") != null);
+    try testing.expect(target.resolve("__make-protocol-fn!") != null);
+    try testing.expect(target.resolve("__extend-type!") != null);
+    try testing.expect(target.resolve("__satisfies?") != null);
+    try testing.expect(target.resolve("__extends?") != null);
+    try testing.expect(target.resolve("__class") != null);
 }
 
 /// Test helper: build an `impls-vec` cell `[method-name fn-val]`

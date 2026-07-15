@@ -73,11 +73,11 @@ pub fn rePattern(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocati
 /// on no match.
 pub fn reFind(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
     _ = env;
-    try error_catalog.checkArity("re-find", args, 2, loc);
-    const r = try coerceRegex(rt, args[0], loc, "re-find");
+    try error_catalog.checkArity("__re-find", args, 2, loc);
+    const r = try coerceRegex(rt, args[0], loc, "__re-find");
     if (args[1].tag() != .string) {
         return error_catalog.raise(.type_arg_not_string, loc, .{
-            .fn_name = "re-find",
+            .fn_name = "__re-find",
             .actual = @tagName(args[1].tag()),
         });
     }
@@ -239,7 +239,7 @@ const Entry = struct {
 
 const ENTRIES = [_]Entry{
     .{ .name = "re-pattern", .f = &rePattern },
-    .{ .name = "re-find", .f = &reFind },
+    .{ .name = "__re-find", .f = &reFind },
     .{ .name = "re-matches", .f = &reMatches },
     .{ .name = "re-find-from", .f = &reFindFrom },
     .{ .name = "re-find-all", .f = &reFindAll },

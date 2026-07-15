@@ -4,7 +4,7 @@
 # Phase 7 §9.9 row 7.3 cycle 8 — defprotocol/satisfies smoke.
 # Validates the cycle 6 + cycle 6.6 + cycle 7 surface end-to-end:
 #   - (defprotocol P (m [x])) binds P as a `.protocol`-tagged Var.
-#   - rt/__satisfies? returns false on a non-typed_instance receiver.
+#   - cljw.internal/__satisfies? returns false on a non-typed_instance receiver.
 #   - defprotocol with 0 methods is a MARKER protocol (D-190/ADR-0068).
 #
 # Cycle 7.1 limitation: defprotocol does NOT emit per-method-Var
@@ -48,7 +48,7 @@ last_line() {
 # --- Case 1: defprotocol lowers + satisfies? false on integer ---
 got=$("$BIN" - <<'EOF' 2>/dev/null
 (defprotocol IPing (ping [this]))
-(prn (rt/__satisfies? IPing 42))
+(prn (cljw.internal/__satisfies? IPing 42))
 EOF
 ) || fail "case1: non-zero exit ($got)"
 assert_eq 'defprotocol_satisfies_false_on_integer' "$(last_line "$got")" 'false'
@@ -56,7 +56,7 @@ assert_eq 'defprotocol_satisfies_false_on_integer' "$(last_line "$got")" 'false'
 # --- Case 2: defprotocol with multi-method form ---
 got=$("$BIN" - <<'EOF' 2>/dev/null
 (defprotocol IPair (first-of [p]) (second-of [p]))
-(prn (rt/__satisfies? IPair "hello"))
+(prn (cljw.internal/__satisfies? IPair "hello"))
 EOF
 ) || fail "case2: non-zero exit ($got)"
 assert_eq 'defprotocol_multi_method_satisfies_false' "$(last_line "$got")" 'false'
@@ -107,12 +107,12 @@ assert_eq 'recursive_defn_factorial' "$(last_line "$got")" '120'
 
 # --- Case 6 (cycle 8.5): extend-type Long round-trip via __native-type ---
 # Native types reach extend-type via the per-Tag descriptor registry.
-# rt/__native-type returns the .type_descriptor Value for a given Tag
+# cljw.internal/__native-type returns the .type_descriptor Value for a given Tag
 # keyword. cycle 8.5 + cycle 8.2 together let (m receiver) dispatch
 # on integer Tag receivers through the registered method.
 got=$("$BIN" - <<'EOF' 2>/dev/null
 (defprotocol IInc (inc-one [x]))
-(def Long (rt/__native-type :integer))
+(def Long (cljw.internal/__native-type :integer))
 (extend-type Long IInc (inc-one [x] (+ x 1)))
 (prn (inc-one 41))
 EOF
@@ -122,9 +122,9 @@ assert_eq 'extend_type_long_native_dispatch' "$(last_line "$got")" '42'
 # --- Case 7 (cycle 8.5): satisfies? recognises native extension ---
 got=$("$BIN" - <<'EOF' 2>/dev/null
 (defprotocol IInc (inc-one [x]))
-(def Long (rt/__native-type :integer))
+(def Long (cljw.internal/__native-type :integer))
 (extend-type Long IInc (inc-one [x] (+ x 1)))
-(prn (rt/__satisfies? IInc 7))
+(prn (cljw.internal/__satisfies? IInc 7))
 EOF
 ) || fail "case7: non-zero exit ($got)"
 assert_eq 'extend_type_satisfies_native_receiver' "$(last_line "$got")" 'true'
@@ -140,7 +140,7 @@ assert_eq 'satisfies_wrapper_false_on_integer' "$(last_line "$got")" 'false'
 # --- Case 9: public satisfies? wrapper true after native extend-type ---
 got=$("$BIN" - <<'EOF' 2>/dev/null
 (defprotocol IInc (inc-one [x]))
-(def Long (rt/__native-type :integer))
+(def Long (cljw.internal/__native-type :integer))
 (extend-type Long IInc (inc-one [x] (+ x 1)))
 (prn (satisfies? IInc 7))
 EOF
@@ -152,7 +152,7 @@ assert_eq 'satisfies_wrapper_true_native_receiver' "$(last_line "$got")" 'true'
 # which takes an instance. Long extends IInc here, so (extends? IInc Long).
 got=$("$BIN" - <<'EOF' 2>/dev/null
 (defprotocol IInc (inc-one [x]))
-(def Long (rt/__native-type :integer))
+(def Long (cljw.internal/__native-type :integer))
 (extend-type Long IInc (inc-one [x] (+ x 1)))
 (prn (extends? IInc Long))
 EOF
@@ -163,7 +163,7 @@ assert_eq 'extends_wrapper_true_for_extended_type' "$(last_line "$got")" 'true'
 got=$("$BIN" - <<'EOF' 2>/dev/null
 (defprotocol IInc (inc-one [x]))
 (defprotocol IPing (ping [this]))
-(def Long (rt/__native-type :integer))
+(def Long (cljw.internal/__native-type :integer))
 (extend-type Long IInc (inc-one [x] (+ x 1)))
 (prn (extends? IPing Long))
 EOF

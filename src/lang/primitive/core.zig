@@ -82,7 +82,7 @@ pub fn instanceOf(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocat
 pub fn classIsaPrim(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
     _ = rt;
     _ = env;
-    try error_catalog.checkArity("-class-isa?", args, 2, loc);
+    try error_catalog.checkArity("__class-isa?", args, 2, loc);
     if (args[0].tag() != .type_descriptor or args[1].tag() != .type_descriptor)
         return .false_val;
     const child = td_mod.asTypeDescriptorRef(args[0]).fqcn orelse return .false_val;
@@ -1686,7 +1686,7 @@ pub fn alterVarRootFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceL
 /// slotmap) is deferred — see the marker below.
 pub fn createLocalVarFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
     _ = rt;
-    try error_catalog.checkArity("-create-local-var", args, 0, loc);
+    try error_catalog.checkArity("__create-local-var", args, 0, loc);
     const sentinel: *env_mod.Namespace = env.local_var_ns orelse blk: {
         const ns = try env.alloc.create(env_mod.Namespace);
         ns.* = .{ .name = "__local" };
@@ -1849,15 +1849,15 @@ const ENTRIES = [_]Entry{
     .{ .name = "mix-collection-hash", .f = &mixCollectionHashFn },
     .{ .name = "hash-ordered-coll", .f = &hashOrderedCollFn },
     .{ .name = "hash-unordered-coll", .f = &hashUnorderedCollFn },
-    .{ .name = "-create-local-var", .f = &createLocalVarFn },
+    .{ .name = "__create-local-var", .f = &createLocalVarFn },
     .{ .name = "var-get", .f = &varGetFn },
     .{ .name = "var-set", .f = &varSetFn },
     .{ .name = "eval", .f = &evalFn },
     .{ .name = "gensym", .f = &gensymFn },
     .{ .name = "__resolve", .f = &resolvePrim },
     .{ .name = "alter-var-root", .f = &alterVarRootFn },
-    .{ .name = "-instance-of?", .f = &instanceOf },
-    .{ .name = "-class-isa?", .f = &classIsaPrim },
+    .{ .name = "__instance-of?", .f = &instanceOf },
+    .{ .name = "__class-isa?", .f = &classIsaPrim },
     .{ .name = "ifn?", .f = &ifnQ },
     .{ .name = "var?", .f = &varQ },
     .{ .name = "thread-bound?", .f = &threadBoundQ },
@@ -2026,13 +2026,13 @@ test "predicates reject wrong arity" {
     try testing.expectError(error.ArityError, identicalQ(&fix.rt, &fix.env, &.{.nil_val}, .{}));
 }
 
-test "register installs every entry under rt/" {
+test "register installs every entry into the target ns" {
     var fix: TestFixture = undefined;
     try fix.init(testing.allocator);
     defer fix.deinit();
-    const rt_ns = fix.env.findNs("rt").?;
-    try register(&fix.env, rt_ns);
+    const target = fix.env.findNs("clojure.core").?;
+    try register(&fix.env, target);
     inline for (ENTRIES) |it| {
-        try testing.expect(rt_ns.resolve(it.name) != null);
+        try testing.expect(target.resolve(it.name) != null);
     }
 }

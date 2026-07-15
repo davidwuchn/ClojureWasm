@@ -705,13 +705,13 @@ fn analyzeSymbol(
         // analysis (which blocks a lib whose CORE is pure but a peripheral fn
         // touches such a class — e.g. integrant's `(clojure.lang.RT/baseLoader)`
         // in its optional hierarchy loader), rewrite it to a loud runtime
-        // `(rt/__unsupported-host-ref "ns/name")`. The enclosing fn DEFINES, the
+        // `(cljw.internal/__unsupported-host-ref "ns/name")`. The enclosing fn DEFINES, the
         // namespace LOADS, and the ref errors only if actually evaluated. Covers
         // both call-head and value positions (both reach analyzeSymbol). AD-008.
         if (isDeferredHostNs(ns_name)) {
             const full = try std.fmt.allocPrint(arena, "{s}/{s}", .{ ns_name, sym.name });
             const items = try arena.alloc(Form, 2);
-            items[0] = .{ .data = .{ .symbol = .{ .ns = "rt", .name = "__unsupported-host-ref" } }, .location = form.location };
+            items[0] = .{ .data = .{ .symbol = .{ .ns = "cljw.internal", .name = "__unsupported-host-ref" } }, .location = form.location };
             items[1] = .{ .data = .{ .string = full }, .location = form.location };
             const call_form: Form = .{ .data = .{ .list = items }, .location = form.location };
             return analyze(arena, env.rt, env, scope, call_form, macro_table);

@@ -8,7 +8,7 @@
 #   - Lowering via `expandDefrecord` produces `(do (deftype Foo [x y]))`,
 #     so the underlying TypeDescriptor allocates with `.kind = .deftype`
 #     today. Cycle 2 will flip `.kind = .defrecord` via the
-#     `rt/__defrecord!` primitive.
+#     `cljw.internal/__defrecord!` primitive.
 #   - Constructor + field access still work (inherited from the
 #     deftype skeleton landed at Phase 5 task 5.12.a).
 #

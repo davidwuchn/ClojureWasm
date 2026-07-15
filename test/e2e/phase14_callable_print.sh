@@ -39,21 +39,21 @@ case "$out" in
     *) fail "defmulti: expected #<area>/#<user/area>, got '$out'" ;;
 esac
 
-# --- Case builtin_named (D-327): a builtin prints its qualified name #<rt/+>,
+# --- Case builtin_named (D-327): a builtin prints its qualified name #<clojure.core/+>,
 # not the nameless internal tag #builtin (the home ns is rt — matches
-# (resolve '+) => #'rt/+). clj prints #object[clojure.core$_PLUS_ …] = AD-025. ---
+# (resolve '+) => #'clojure.core/+). clj prints #object[clojure.core$_PLUS_ …] = AD-025. ---
 out=$(printf '(println (pr-str +))\n' | "$BIN" - 2>&1 || true)
 case "$out" in
     *"#builtin"*) fail "builtin_named: leaked nameless #builtin: '$out'" ;;
-    *"#<rt/+>"*) echo "PASS callable_builtin_named -> #<rt/+>" ;;
-    *) fail "builtin_named: expected #<rt/+>, got '$out'" ;;
+    *"#<clojure.core/+>"*) echo "PASS callable_builtin_named -> #<clojure.core/+>" ;;
+    *) fail "builtin_named: expected #<clojure.core/+>, got '$out'" ;;
 esac
 
 # --- Case builtin_inc: another builtin names cleanly ---
 out=$(printf '(println (pr-str inc))\n' | "$BIN" - 2>&1 || true)
 case "$out" in
-    *"#<rt/inc>"*) echo "PASS callable_builtin_inc -> #<rt/inc>" ;;
-    *) fail "builtin_inc: expected #<rt/inc>, got '$out'" ;;
+    *"#<clojure.core/inc>"*) echo "PASS callable_builtin_inc -> #<clojure.core/inc>" ;;
+    *) fail "builtin_inc: expected #<clojure.core/inc>, got '$out'" ;;
 esac
 
 # --- Case builtin_str_eq_pr: (str +) and (pr-str +) render identically ---

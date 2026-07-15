@@ -2,7 +2,7 @@
 # test/e2e/phase7_instance_q.sh
 #
 # `instance?` — ADR-0128 (D-373): now a clj FN over a class VALUE
-# (`(def instance? (fn* [c x] (rt/-instance-of? c x)))`), NOT a macro. The class
+# (`(def instance? (fn* [c x] (cljw.internal/__instance-of? c x)))`), NOT a macro. The class
 # symbol evaluates to a class value via the analyzer's class-value arm, so
 # `instance?` is passable higher-order (condp / map / partial — Case 8). The
 # `-instance-of?` primitive consults `runtime/class_name.zig::isInstance`, the

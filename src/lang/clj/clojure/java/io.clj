@@ -92,7 +92,7 @@
 ;; dispatch (cljw cannot extend a protocol to String, ADR-0059). The String arm
 ;; opens a FILE at that path (URI resolution + as-url are deferred — no URL type);
 ;; encoding/append/buffer-size opts are accepted-and-ignored (the model is
-;; buffer-backed UTF-8). Use (java.io.StringReader-style) rt/__string-reader for
+;; buffer-backed UTF-8). Use (java.io.StringReader-style) cljw.internal/__string-reader for
 ;; a reader over string CONTENT.
 
 (defn reader
@@ -103,11 +103,11 @@
   [x & opts]
   (cond
     (instance? java.io.Reader x) x
-    (instance? java.io.File x)   (rt/__open-reader (.getPath x))
+    (instance? java.io.File x)   (cljw.internal/__open-reader (.getPath x))
     (instance? java.net.URI x)   (if (clojure.string/starts-with? (str x) "http")
-                                   (rt/__string-reader (:body (cljw.http.client/get (str x))))
-                                   (rt/__open-reader (.getPath x)))
-    (string? x)                  (rt/__open-reader x)
+                                   (cljw.internal/__string-reader (:body (cljw.http.client/get (str x))))
+                                   (cljw.internal/__open-reader (.getPath x)))
+    (string? x)                  (cljw.internal/__open-reader x)
     :else (throw (IllegalArgumentException. (str "Cannot open as a java.io.Reader: " (pr-str x))))))
 
 (defn writer
@@ -116,11 +116,11 @@
   [x & opts]
   (cond
     (instance? java.io.Writer x) x
-    (instance? java.io.File x)   (rt/__open-writer (.getPath x))
+    (instance? java.io.File x)   (cljw.internal/__open-writer (.getPath x))
     (instance? java.net.URI x)   (if (clojure.string/starts-with? (str x) "http")
                                    (throw (IllegalArgumentException. (str "Cannot write to a non-file URI: " (str x))))
-                                   (rt/__open-writer (.getPath x)))
-    (string? x)                  (rt/__open-writer x)
+                                   (cljw.internal/__open-writer (.getPath x)))
+    (string? x)                  (cljw.internal/__open-writer x)
     :else (throw (IllegalArgumentException. (str "Cannot open as a java.io.Writer: " (pr-str x))))))
 
 (defn input-stream
@@ -130,11 +130,11 @@
   [x & opts]
   (cond
     (instance? java.io.InputStream x) x
-    (instance? java.io.File x)        (rt/__open-input-stream (.getPath x))
+    (instance? java.io.File x)        (cljw.internal/__open-input-stream (.getPath x))
     (instance? java.net.URI x)        (if (clojure.string/starts-with? (str x) "http")
-                                        (rt/__string-reader (:body (cljw.http.client/get (str x))))
-                                        (rt/__open-input-stream (.getPath x)))
-    (string? x)                       (rt/__open-input-stream x)
+                                        (cljw.internal/__string-reader (:body (cljw.http.client/get (str x))))
+                                        (cljw.internal/__open-input-stream (.getPath x)))
+    (string? x)                       (cljw.internal/__open-input-stream x)
     :else (throw (IllegalArgumentException. (str "Cannot open as a java.io.InputStream: " (pr-str x))))))
 
 (defn output-stream
@@ -143,11 +143,11 @@
   [x & opts]
   (cond
     (instance? java.io.OutputStream x) x
-    (instance? java.io.File x)         (rt/__open-output-stream (.getPath x))
+    (instance? java.io.File x)         (cljw.internal/__open-output-stream (.getPath x))
     (instance? java.net.URI x)         (if (clojure.string/starts-with? (str x) "http")
                                          (throw (IllegalArgumentException. (str "Cannot write to a non-file URI: " (str x))))
-                                         (rt/__open-output-stream (.getPath x)))
-    (string? x)                        (rt/__open-output-stream x)
+                                         (cljw.internal/__open-output-stream (.getPath x)))
+    (string? x)                        (cljw.internal/__open-output-stream x)
     :else (throw (IllegalArgumentException. (str "Cannot open as a java.io.OutputStream: " (pr-str x))))))
 
 ;; `(copy input output & opts)` — copy input to output, returns nil. Input may be
@@ -164,15 +164,15 @@
               (instance? java.io.Reader input)      input
               (instance? java.io.InputStream input) input
               (instance? java.io.File input)        (reader input)
-              (string? input)                       (rt/__string-reader input)
+              (string? input)                       (cljw.internal/__string-reader input)
               :else (throw (IllegalArgumentException. (str "copy: cannot read from " (pr-str input)))))
         out (cond
               (instance? java.io.Writer output)       output
               (instance? java.io.OutputStream output) output
               (instance? java.io.File output)         (writer output)
-              (string? output)                        (rt/__open-writer output)
+              (string? output)                        (cljw.internal/__open-writer output)
               :else (throw (IllegalArgumentException. (str "copy: cannot write to " (pr-str output)))))
         own? (or (instance? java.io.File output) (string? output))]
-    (rt/__stream-copy in out)
+    (cljw.internal/__stream-copy in out)
     (when own? (.close out))
     nil))

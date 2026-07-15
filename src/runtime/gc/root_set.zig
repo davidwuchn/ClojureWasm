@@ -888,7 +888,7 @@ test "ns_vars walker yields Var.root across two Envs sharing a Runtime" {
     var env2 = try Env.init(&fix.rt);
     defer env2.deinit();
 
-    // Each Env has bootstrap "rt" + "user" namespaces. Define one Var
+    // Each Env has the bootstrap namespaces (clojure.core / user / cljw.internal). Define one Var
     // with a heap-Value root in each.
     const cell1 = try gc.alloc(Cell);
     cell1.* = .{ .header = HeapHeader.init(.string) };

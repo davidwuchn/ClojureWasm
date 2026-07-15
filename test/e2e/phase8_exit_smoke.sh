@@ -72,7 +72,7 @@ assert_eq 'd089_iseq_extend_smoke' "$(last_line "$got")" ':hello'
 
 # --- (6) D-089: native Tag IPersistentSet -disjoin reaches via slow-path (row 8.6 cycle 4) ---
 got=$("$BIN" - <<'EOF' 2>/dev/null
-(def Long (rt/__native-type :integer))
+(def Long (cljw.internal/__native-type :integer))
 (extend-type Long IPersistentSet (-disjoin [n k] :disj-on-int))
 (prn (disj 42 :x))
 EOF

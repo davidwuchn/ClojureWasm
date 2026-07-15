@@ -4,7 +4,7 @@
 # Phase 6.16.b-4 sub-cycle a — D-071 Part 3 closeout.
 #
 # After landing this cycle the 6 `-*-eager` leaves (currently parked
-# in `rt/` with `.private = false`) live in `clojure.core/` with
+# as public builtins) live in `clojure.core/` with
 # `.private = true`. core.clj's wrappers (`map`, `filter`, etc.)
 # resolve them as same-ns Vars; user-ns callers cannot reach them
 # via the `clojure.core/-foo-eager` qualified path.

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # test/e2e/phase14_with_in_str.sh — D-414 slice 1: the `*in*` input subsystem.
 # `*in*` dynamic var + `read-line` + `with-in-str` over the existing host
-# `rt/__string-reader` (.readLine). `line-seq` already reads any host reader;
+# `cljw.internal/__string-reader` (.readLine). `line-seq` already reads any host reader;
 # this wires it to `*in*`. (Pushback + the LispReader$StringReader shim that
 # instaparse needs are later slices.) Oracle-confirmed: read-line/line-seq.
 set -euo pipefail

@@ -3,7 +3,7 @@
 #
 # The 2026-07-06 user-filed bug: `*in*`'s root was nil (no process-stdin
 # reader), so `(read-line)` returned nil on piped/redirected/interactive
-# stdin while clj/bb read the lines. The root is now `(rt/__stdin-reader)`
+# stdin while clj/bb read the lines. The root is now `(cljw.internal/__stdin-reader)`
 # — a demand-filled blocking reader over process stdin (clj System.in
 # parity). Layer 2 (e2e CLI) per ADR-0021; non-TTY stdin is exactly what
 # this harness provides, so the regression is CI-visible.

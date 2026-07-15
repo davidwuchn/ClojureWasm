@@ -4,11 +4,10 @@
 # clojure.spec.alpha — bundled official stdlib (ADR-0156, D-475). spec is
 # eager-bundled, so fully-qualified `clojure.spec.alpha/...` resolves with no
 # require. Covers the conform/valid?/explain surface across every regex op +
-# the collection/keys/multi-spec specs, plus the ONE accepted divergence:
-# `s/form` exposes the raw captured pred form `rt/int?` where clj shows
-# `clojure.core/int?` (AD-049 — cljw's `rt` core-ns naming, ADR-0033). Note
-# explain-str/describe go through `abbrev` (ns-stripped) so they match clj
-# exactly; only the raw `s/form` differs.
+# the collection/keys/multi-spec specs. `s/form` now matches clj exactly —
+# the captured pred qualifies to `clojure.core/int?` since builtins intern
+# into clojure.core (ADR-0171; the former AD-049 rt/-naming divergence is
+# retired as parity).
 #
 # Layer 2 (e2e CLI) per ADR-0021.
 
@@ -54,10 +53,8 @@ assert_eq 'describe'      "$("$BIN" -e "($S/describe ($S/and int? pos?))")" '(an
 # anonymous fn predicate → ::unknown, matching clj (its name part is "fn").
 assert_eq 'explain_anon'  "$("$BIN" -e "($S/explain-str (fn [n] (pos? n)) -1)")" '"-1 - failed: :clojure.spec.alpha/unknown\n"'
 
-# --- AD-049 pin: raw s/form exposes the rt/-qualified captured pred ---
-# clj shows (clojure.spec.alpha/cat :a clojure.core/int?); cljw's `rt` core-ns
-# (ADR-0033) makes it rt/int?. abbrev (explain/describe above) strips this, so
-# only raw s/form diverges. Locking cljw's side per the accepted-divergence rule.
-assert_eq 'ad049_form' "$("$BIN" -e "($S/form ($S/cat :a int?))")" '(clojure.spec.alpha/cat :a rt/int?)'
+# --- s/form parity (was AD-049): the captured pred is clojure.core-qualified,
+# byte-matching clj (ADR-0171).
+assert_eq 'form_parity' "$("$BIN" -e "($S/form ($S/cat :a int?))")" '(clojure.spec.alpha/cat :a clojure.core/int?)'
 
 echo "ALL phase15_spec PASS"

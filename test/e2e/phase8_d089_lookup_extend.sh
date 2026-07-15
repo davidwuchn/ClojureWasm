@@ -59,7 +59,7 @@ assert_eq 'defrecord_nth_via_extend_type' "$(last_line "$got")" '20'
 
 # --- Case 4: native Tag (Long) -lookup via outer-else slow-path ---
 got=$("$BIN" - <<'EOF' 2>/dev/null
-(def Long (rt/__native-type :integer))
+(def Long (cljw.internal/__native-type :integer))
 (extend-type Long ILookup (-lookup [n _] (+ n 1000)))
 (prn (get 42 :anything))
 EOF

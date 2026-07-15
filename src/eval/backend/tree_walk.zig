@@ -557,14 +557,11 @@ fn evalInNs(env: *Env, n: node_mod.InNsNode) !Value {
 
 /// `(ns foo)` / `(ns foo (:refer-clojure))`. ADR-0035 D1 + D9
 /// second amendment. When `:refer-clojure` is in effect (default
-/// true), the cw v1 widened semantic refers BOTH `rt` AND
-/// `clojure.core` into the entering ns (divergence from JVM which
-/// has no rt ns). When `refer_clojure = false`, the ns switch is
-/// naked — same shape as `(in-ns 'foo)`. The widening makes the
-/// refer mechanism grep-traceable from the `.clj` head: every
-/// user-visible refer of rt + clojure.core comes from a
-/// `(:refer-clojure)` directive (boot-time fan-out for user/
-/// remains in bootstrap.zig + primitive.zig + macro_transforms.zig).
+/// true), `clojure.core`'s publics are referred into the entering ns
+/// (the mainline shape; Zig builtins live there per ADR-0171). When
+/// `refer_clojure = false`, the ns switch is naked — same shape as
+/// `(in-ns 'foo)`. Boot-time fan-out for user/ remains in
+/// bootstrap.zig + primitive.zig + macro_transforms.zig.
 fn evalNs(rt: *Runtime, env: *Env, n: node_mod.NsNode) !Value {
     env.setCurrentNs(try env.findOrCreateNs(n.name));
     // `(ns ^{…} name {:attr …} "doc" …)` → ns meta: attr merge first, then
@@ -572,17 +569,11 @@ fn evalNs(rt: *Runtime, env: *Env, n: node_mod.NsNode) !Value {
     if (!n.attr_meta.isNil()) try meta_mod.mergeNsMeta(rt, env.current_ns.?, n.attr_meta);
     if (n.doc) |d| try meta_mod.setNsDoc(rt, env.current_ns.?, d);
     if (n.refer_clojure) {
-        // Row 14.7 (D-098): filters apply to both rt/ and clojure.core
-        // (the two auto-refer sources). `rt/` is cw-side primitives;
-        // its `+` / `-` / etc. are what `:exclude [+]` shadows.
-        if (env.findNs("rt")) |rt_ns| {
-            try env.referAllWithFilter(rt_ns, env.current_ns.?, n.refer_clojure_exclude, n.refer_clojure_only);
-        }
+        // Row 14.7 (D-098): the `:exclude`/`:only` filter applies to
+        // clojure.core — the single auto-refer source (Zig builtins
+        // intern there directly per ADR-0171).
         if (env.findNs("clojure.core")) |cc_ns| {
-            // ADR-0035 D9 revision: clojure.core OVERRIDES rt on collision —
-            // the public layer's redefinition (e.g. matcher-arity re-find)
-            // wins over the internal primitive.
-            try env.referAllOverriding(cc_ns, env.current_ns.?, n.refer_clojure_exclude, n.refer_clojure_only);
+            try env.referAllWithFilter(cc_ns, env.current_ns.?, n.refer_clojure_exclude, n.refer_clojure_only);
         }
     }
     // Row 14.7 (D-098): walk ns-level (:require [...]) libspecs. Each

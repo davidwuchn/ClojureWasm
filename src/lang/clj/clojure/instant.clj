@@ -32,4 +32,4 @@
 (defn read-instant-timestamp
   "Parse an RFC3339-like instant string into a java.sql.Timestamp (nanosecond
   precision). Backed by the neutral runtime/time model (D-382), not a Date."
-  [s] (rt/__read-instant-timestamp s))
+  [s] (cljw.internal/__read-instant-timestamp s))

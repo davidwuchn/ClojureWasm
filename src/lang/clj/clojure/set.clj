@@ -10,8 +10,8 @@
 ;; `difference` / `subset?` / `superset?` / `rename-keys` /
 ;; `map-invert`) are pure-Clojure Pattern A defns per ADR-0033 D3 + v5
 ;; §8.2. Each composes `reduce` / `conj` / `disj` / `contains?` /
-;; `every?` / `assoc` / `dissoc` / `get` / `count` from rt/ — visible
-;; unqualified here because `evalInNs` refers rt/ into the entered ns
+;; `every?` / `assoc` / `dissoc` / `get` / `count` from clojure.core — visible
+;; unqualified here because the entered ns refers clojure.core
 ;; (commit 6.16.b-1 + ADR-0035 in Phase 6.16.b-4 codifies this as a
 ;; proper `(ns ...)` macro).
 ;;

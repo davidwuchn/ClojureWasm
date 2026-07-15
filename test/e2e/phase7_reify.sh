@@ -6,7 +6,7 @@
 #   - `(reify P (m [this] body))` parses cleanly (no
 #     STAGED_UNSUPPORTED_FORMS raise; row 7.5 cycle 1 retired the
 #     wedge).
-#   - The macro lowers to `(rt/__reify! ...)` which is the
+#   - The macro lowers to `(cljw.internal/__reify! ...)` which is the
 #     stubbed primitive — raising `feature_not_supported` with the
 #     "impl pending row 7.5 cycle 3" hint.
 #   - Syntactic-error diagnostics (missing impl list / bad method form).
@@ -91,7 +91,7 @@ echo "PASS reify_closure_capture -> 107"
 # --- Case 7 (cycle 3): satisfies? returns true on reified instance ---
 got=$("$BIN" - <<'EOF' 2>/dev/null
 (defprotocol P (m [x]))
-(prn (rt/__satisfies? P (reify P (m [this] 42))))
+(prn (cljw.internal/__satisfies? P (reify P (m [this] 42))))
 EOF
 ) || fail "case7: non-zero exit ($got)"
 last=$(awk 'END { print }' <<< "$got")

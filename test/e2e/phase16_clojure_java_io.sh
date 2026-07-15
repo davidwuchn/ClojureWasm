@@ -60,7 +60,7 @@ assert_eq 'as_url_uri'    "$(run '(instance? java.net.URI (clojure.java.io/as-ur
 assert_eq 'as_url_bad'    "$(run '(try (clojure.java.io/as-url 42) (catch Throwable e :threw))')" ':threw'
 # reader over a file: URI reads the file (http(s) URIs fetch via cljw.http.client).
 printf 'uri-body' > "$TMP/uri.txt"
-assert_eq 'reader_file_uri' "$(run "(rt/__stream-slurp (clojure.java.io/reader (java.net.URI. \"file://$TMP/uri.txt\")))")" '"uri-body"'
+assert_eq 'reader_file_uri' "$(run "(cljw.internal/__stream-slurp (clojure.java.io/reader (java.net.URI. \"file://$TMP/uri.txt\")))")" '"uri-body"'
 assert_eq 'resource_nil'  "$(run '(clojure.java.io/resource "config.edn")')" 'nil'
 assert_eq 'resource_gd'   "$(run '(if-let [r (clojure.java.io/resource "x")] :found :none)')" ':none'
 

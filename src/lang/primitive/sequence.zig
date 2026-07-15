@@ -764,14 +764,14 @@ fn chunkedSeqQFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocati
 fn chunkCountFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
     _ = rt;
     _ = env;
-    try error_catalog.checkArity("-chunk-count", args, 1, loc);
+    try error_catalog.checkArity("__chunk-count", args, 1, loc);
     return Value.initInteger(@intCast(chunked_cons.currentChunkCount(args[0])));
 }
 
 fn chunkNthFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
     _ = rt;
     _ = env;
-    try error_catalog.checkArity("-chunk-nth", args, 2, loc);
+    try error_catalog.checkArity("__chunk-nth", args, 2, loc);
     return chunked_cons.currentChunkNth(args[0], @intCast(args[1].asInteger()));
 }
 
@@ -820,16 +820,16 @@ const ENTRIES = [_]Entry{
     .{ .name = "__lazy-seq-create", .f = &lazySeqCreateFn },
     .{ .name = "empty", .f = &emptyFn },
     .{ .name = "chunked-seq?", .f = &chunkedSeqQFn },
-    .{ .name = "-chunk-count", .f = &chunkCountFn },
-    .{ .name = "-chunk-nth", .f = &chunkNthFn },
+    .{ .name = "__chunk-count", .f = &chunkCountFn },
+    .{ .name = "__chunk-nth", .f = &chunkNthFn },
     .{ .name = "chunk-rest", .f = &chunkRestFn },
     .{ .name = "chunk-buffer", .f = &chunkBufferFn },
     .{ .name = "chunk-append", .f = &chunkAppendFn },
     .{ .name = "chunk-cons", .f = &chunkConsFn },
     // O-032: in-Zig chunk-map/filter drain (chunk_transform.zig) — the
     // producer-side analogue of reduceFn's O-004 chunk drain.
-    .{ .name = "-chunk-map-step", .f = &chunk_transform.chunkMapStepFn },
-    .{ .name = "-chunk-filter-step", .f = &chunk_transform.chunkFilterStepFn },
+    .{ .name = "__chunk-map-step", .f = &chunk_transform.chunkMapStepFn },
+    .{ .name = "__chunk-filter-step", .f = &chunk_transform.chunkFilterStepFn },
 };
 
 pub fn register(env: *Env, rt_ns: *env_mod.Namespace) !void {

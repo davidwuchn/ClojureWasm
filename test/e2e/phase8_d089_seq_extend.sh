@@ -70,7 +70,7 @@ assert_eq 'defrecord_empty_via_extend_type' "$(last_line "$got")" ':empty-box'
 
 # --- Case 5: native Tag (Long) reaches first via outer-else slow-path ---
 got=$("$BIN" - <<'EOF' 2>/dev/null
-(def Long (rt/__native-type :integer))
+(def Long (cljw.internal/__native-type :integer))
 (extend-type Long ISeq (-first [n] (+ n 100)))
 (prn (first 42))
 EOF

@@ -770,7 +770,7 @@ test "diff: Java array aset/aget + seq (ADR-0105)" {
     // same BuiltinFn — this case locks that aset's in-place mutation + the
     // array-as-Seqable reduce path agree on TreeWalk and VM.
     try f.check(
-        \\(let* [a (rt/__array-make 3 0)]
+        \\(let* [a (cljw.internal/__array-make 3 0)]
         \\  (aset a 0 10) (aset a 1 20) (aset a 2 12)
         \\  (reduce + a))
     , 42);
@@ -955,7 +955,7 @@ test "diff: deftype macro + interop_call_node .constructor + .instance_member fi
     var f: Fixture = undefined;
     try Fixture.init(&f, testing.allocator);
     defer f.deinit();
-    // ADR-0066: deftype is a macro lowering to rt/__deftype! (a primitive
+    // ADR-0066: deftype is a macro lowering to cljw.internal/__deftype! (a primitive
     // call both backends execute), op_ctor_call + op_method_call's
     // field-first resolver. Registration is no longer a backend-specific
     // op_deftype nil-push, so the VM registers the type itself (BUG-1 fix).
@@ -1339,7 +1339,7 @@ test "diff: ADR-0060 internal error no-match inner re-raises to outer" {
 
 // `instance?` parity coverage moved to e2e (test/e2e/phase7_instance_q.sh, full
 // runtime) with ADR-0128: `instance?` is now a clj fn over a class VALUE
-// (`(def instance? (fn* [c x] (rt/-instance-of? c x)))`), so it requires the class
+// (`(def instance? (fn* [c x] (cljw.internal/__instance-of? c x)))`), so it requires the class
 // symbol to resolve to a class value — which needs the full class-value surface
 // (gc.infra descriptors) the minimal dual-eval Fixture here does not bootstrap.
 // There is no dual-backend divergence to lock: `instance?` adds no analyzer Node

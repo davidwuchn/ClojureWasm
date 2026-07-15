@@ -1383,14 +1383,14 @@ test "non-numeric arg yields TypeError" {
     try testing.expectError(error.TypeError, plus(&fix.rt, &fix.env, &args, .{}));
 }
 
-test "register installs every entry under rt/" {
+test "register installs every entry into the target ns" {
     var fix: TestFixture = undefined;
     try fix.init(testing.allocator);
     defer fix.deinit();
 
-    const rt_ns = fix.env.findNs("rt").?;
-    try register(&fix.env, rt_ns);
+    const target = fix.env.findNs("clojure.core").?;
+    try register(&fix.env, target);
     inline for (ENTRIES) |it| {
-        try testing.expect(rt_ns.resolve(it.name) != null);
+        try testing.expect(target.resolve(it.name) != null);
     }
 }

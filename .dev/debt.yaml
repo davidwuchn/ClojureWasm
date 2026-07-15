@@ -24,6 +24,27 @@
 # md-table-align no longer pads it to ~800 KB of whitespace.
 
 active:
+  - id: "D-562"
+    status: |-
+      open (2026-07-15, USER-DIRECTED landing point for the current arc).
+      Full inventory of .dev/accepted_divergences.yaml (49 rows): for EACH
+      AD decide (a) KEEP — inherent to cljw's nature (no-JVM identity
+      hashes, tz/locale-free edge target, NaN-box representation …); or
+      (b) CONVERGE — historically-motivated, now retirable: un-accept per
+      accepted_divergences.md (remove row + flip pin to parity + fix), or
+      IMPLEMENT the missing feature that blocks parity. Work the checklist
+      row by row (record per-AD verdict inline here or in a
+      private/notes checklist as the loop proceeds so autonomy survives
+      compaction). Precedent this cycle: ADR-0171 retired AD-011/038/049
+      as parity (rt merge) — the same class of "old structural excuse
+      dissolved" is what this sweep hunts. ORDER within the arc (user):
+      (1) finish the CIDER completion parity unit (incl. java-interop
+      class/static completion without require, good design), (2) this AD
+      inventory + convergence work, (3) THEN cut a release tag — the
+      arc's landing point.
+    category: "clj-parity"
+    barrier: "none — user-directed; ordered after the completion-parity unit"
+    last_reviewed: "2026-07-15"
   - id: "D-561"
     status: |-
       open (2026-07-15, Character/* completion cycle). `Character/getName` is
@@ -4546,7 +4567,7 @@ discharged:
       skips `.var_ref` + `.ns` (Env-lifetime, never GC-allocated — also closed a
       latent `.var_ref` hole). Corpus `namespace` (12), e2e phase15_namespace
       (11), unit test for the membrane. AD-010 (`#object[Namespace …]` print) +
-      AD-011 (clojure.core ns-publics omits rt-referred prims). Deferred: D-231
+      AD-011 (retired 2026-07-15: ADR-0171 made ns-publics parity). Deferred: D-231
       (Var-as-IFn), `remove-ns` (tombstone/lifetime), `*out*` (separate). Unblocks
       D-227 (clojure.test) + D-158 (real-lib). Cross-ref ADR-0083 / D-227 / F-004.
       ORIGINAL: now (structural, surfaced 2026-06-03 by D-227 design probe) — no Namespace value type / *ns* / ns-reflection.

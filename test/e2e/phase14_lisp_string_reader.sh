@@ -24,7 +24,7 @@ got=$("$BIN" - <<'EOF' 2>/dev/null
 (prn (safe-read-string "with \\\"q\\\"\""))   ; "with \"q\"" (escaped quotes are literal)
 (prn (safe-read-string "\""))                 ; "" (empty literal)
 ;; the wrap-reader 4-arg invoke (reader quote opts pending) — extra args ignored.
-(prn (string-reader (rt/__in-reader "four\"") nil {} (java.util.LinkedList.)))  ; "four"
+(prn (string-reader (cljw.internal/__in-reader "four\"") nil {} (java.util.LinkedList.)))  ; "four"
 EOF
 ) || fail "string_reader: non-zero exit ($got)"
 assert_eq 'srs_basic'   "$(sed -n '1p' <<< "$got")" '"hello"'

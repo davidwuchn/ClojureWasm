@@ -3,13 +3,14 @@
 //! `registerAll(env)` runs once at boot (from the runner's setup,
 //! after `Env.init` and `tree_walk.installVTable`). It:
 //!
-//!   1. Looks up the `rt` namespace (created by `Env.init`).
-//!   2. Calls each primitive module's `register(env, rt_ns)` so they
-//!      `intern` themselves under rt/.
-//!   3. Refers all rt mappings into `user` via `Env.referAll`. This
-//!      boot-time rt → user refer is the deliberate REPL convenience
-//!      (see L132 + ADR-0035 D9): `require`/`(ns …)` semantics are
-//!      implemented and do NOT auto-refer rt.
+//!   1. Calls each primitive module's `register(env, clojure_core_ns)`
+//!      so builtins intern with home ns = `clojure.core` (ADR-0171 —
+//!      the mainline shape: `(resolve '+)` is `#'clojure.core/+`).
+//!   2. Re-homes the `__`-prefixed kernel helpers to `cljw.internal`
+//!      (macro expansions + bundled `.clj` call them qualified; they
+//!      never appear in clojure.core's public surface).
+//!   3. Refers clojure.core's publics into `user` via `Env.referAll`
+//!      so the REPL prompt resolves them unqualified.
 //!
 //! The `const … = @import("primitive/…")` block below is the
 //! authoritative module inventory; `registerAll` invokes each in
@@ -55,40 +56,43 @@ const macroexpand_prim = @import("primitive/macroexpand.zig");
 const array_prim = @import("primitive/array.zig");
 
 pub const RegisterError = error{
-    RtNamespaceMissing,
+    InternalNamespaceMissing,
     UserNamespaceMissing,
     ClojureCoreNamespaceMissing,
     OutOfMemory,
 };
 
-/// Register every Phase-2 rt/ primitive and refer them into user/.
-/// Idempotent because every step underneath (intern + referAll) is.
+/// Register every Zig builtin primitive with home ns = `clojure.core`
+/// (ADR-0171 — the mainline shape; `__`-prefixed kernel helpers are
+/// re-homed to `cljw.internal` at the end) and refer the publics into
+/// user/. Idempotent because every step underneath (intern + referAll
+/// + rehomeInternals) is.
 pub fn registerAll(env: *Env) !void {
-    const rt_ns = env.findNs("rt") orelse return RegisterError.RtNamespaceMissing;
+    const internal_ns = env.findNs("cljw.internal") orelse return RegisterError.InternalNamespaceMissing;
     const user_ns = env.findNs("user") orelse return RegisterError.UserNamespaceMissing;
     const clojure_core_ns = env.findNs("clojure.core") orelse return RegisterError.ClojureCoreNamespaceMissing;
 
-    try math.register(env, rt_ns);
-    try core.register(env, rt_ns);
-    try sequence.register(env, rt_ns);
-    try collection.register(env, rt_ns);
-    try transient_prim.register(env, rt_ns);
+    try math.register(env, clojure_core_ns);
+    try core.register(env, clojure_core_ns);
+    try sequence.register(env, clojure_core_ns);
+    try collection.register(env, clojure_core_ns);
+    try transient_prim.register(env, clojure_core_ns);
     try edn_prim.register(env);
     // clojure.core/read-string — in cljw the reader has no `#=` eval-reader,
     // so core/read-string is the same full-reader readOne→formToValue as
     // clojure.edn/read-string (a safe DIVERGENCE: JVM core/read-string can
-    // eval). Reuse the edn impl, interned into rt (→ referred into user).
-    _ = try env.intern(rt_ns, "read-string", Value.initBuiltinFn(&edn_prim.readStringFn), null);
+    // eval). Reuse the edn impl.
+    _ = try env.intern(clojure_core_ns, "read-string", Value.initBuiltinFn(&edn_prim.readStringFn), null);
     try json_prim.register(env);
     try csv_prim.register(env);
-    try higher_order.register(env, rt_ns, clojure_core_ns);
-    try error_prim.register(env, rt_ns);
-    try uuid.register(env, rt_ns);
-    try inst.register(env, rt_ns);
-    try file_io_prim.register(env, rt_ns);
-    try host_stream.register(env, rt_ns);
-    try text_io.register(env, rt_ns);
-    try regex_prim.register(env, rt_ns);
+    try higher_order.register(env, clojure_core_ns, clojure_core_ns);
+    try error_prim.register(env, clojure_core_ns);
+    try uuid.register(env, clojure_core_ns);
+    try inst.register(env, clojure_core_ns);
+    try file_io_prim.register(env, clojure_core_ns);
+    try host_stream.register(env, clojure_core_ns);
+    try text_io.register(env, clojure_core_ns);
+    try regex_prim.register(env, clojure_core_ns);
 
     // clojure.string namespace surface (ADR-0032 + ADR-0029). Creates
     // the `clojure.string` namespace + interns cycle-1 vars; the
@@ -97,18 +101,18 @@ pub fn registerAll(env: *Env) !void {
     try string_prim.register(env);
     try set_prim.register(env);
     try walk_prim.register(env);
-    try multimethod_prim.register(env, rt_ns);
-    try protocol_prim.register(env, rt_ns);
-    try stm_prim.register(env, rt_ns);
-    try locking_prim.register(env, rt_ns);
-    try agent_prim.register(env, rt_ns);
-    try atom_prim.register(env, rt_ns);
-    try metadata_prim.register(env, rt_ns);
-    try sorted_prim.register(env, rt_ns);
-    try reduced_prim.register(env, rt_ns);
-    try namespace_prim.register(env, rt_ns); // ADR-0083 ns-reflection
-    try macroexpand_prim.register(env, rt_ns); // D-229 macroexpand-1/macroexpand
-    try array_prim.register(env, rt_ns); // ADR-0105 / D-287 Java arrays
+    try multimethod_prim.register(env, clojure_core_ns);
+    try protocol_prim.register(env, clojure_core_ns);
+    try stm_prim.register(env, clojure_core_ns);
+    try locking_prim.register(env, clojure_core_ns);
+    try agent_prim.register(env, clojure_core_ns);
+    try atom_prim.register(env, clojure_core_ns);
+    try metadata_prim.register(env, clojure_core_ns);
+    try sorted_prim.register(env, clojure_core_ns);
+    try reduced_prim.register(env, clojure_core_ns);
+    try namespace_prim.register(env, clojure_core_ns); // ADR-0083 ns-reflection
+    try macroexpand_prim.register(env, clojure_core_ns); // D-229 macroexpand-1/macroexpand
+    try array_prim.register(env, clojure_core_ns); // ADR-0105 / D-287 Java arrays
 
     // Phase 14 row 14.1 (D-079 discharge): walk every
     // `runtime/java/<pkg>/<Class>.zig`'s `___HOST_EXTENSION`
@@ -161,17 +165,21 @@ pub fn registerAll(env: *Env) !void {
     // java.lang.Character instance surface.
     try @import("../runtime/java/lang/Character.zig").installNativeMethods(env.rt);
 
-    // ADR-0035 D9 (sub-cycle d): boot-time rt → user refer makes
+    // ADR-0171: `__`-prefixed kernel helpers leave clojure.core for
+    // cljw.internal BEFORE the user refer + printer index, so neither
+    // ever sees them under core.
+    try env.rehomeInternals(clojure_core_ns, internal_ns);
+
+    // ADR-0035 D9 (sub-cycle d): boot-time core → user refer makes
     // primitives (`+`, `=`, `count`, ...) reachable unqualified at
-    // the REPL prompt. The `(ns foo (:refer-clojure))` macro does NOT
-    // refer rt into the entering ns; explicit `(require '[rt …])` is
-    // not a stable surface, so `user/` retains the rt refer at boot.
-    try env.referAll(rt_ns, user_ns);
+    // the REPL prompt before `core.clj` finishes loading.
+    try env.referAll(clojure_core_ns, user_ns);
 
     // D-327: now that every builtin_fn is interned, build the `ptr → {ns,name}`
     // reverse-index and hand the printer a borrowed pointer so `(pr +)` renders
-    // `#<rt/+>` instead of the nameless `#builtin`. Runs before `core.clj` loads,
-    // so only the bare Zig primitives are indexed (later `.clj` defns are fn_val).
+    // `#<clojure.core/+>` instead of the nameless `#builtin`. Runs before
+    // `core.clj` loads, so only the bare Zig primitives are indexed (later
+    // `.clj` defns are fn_val).
     try env.indexBuiltinNames();
     @import("../runtime/print.zig").setBuiltinNameMap(&env.builtin_names);
 }
@@ -189,22 +197,27 @@ test "registerAll installs every Phase-2 primitive in rt/" {
     defer env.deinit();
 
     try registerAll(&env);
-    const rt_ns = env.findNs("rt").?;
+    const core_ns = env.findNs("clojure.core").?;
+    const internal_ns = env.findNs("cljw.internal").?;
 
     // Math (sample)
-    try testing.expect(rt_ns.resolve("+") != null);
-    try testing.expect(rt_ns.resolve("=") != null);
-    try testing.expect(rt_ns.resolve("<") != null);
+    try testing.expect(core_ns.resolve("+") != null);
+    try testing.expect(core_ns.resolve("=") != null);
+    try testing.expect(core_ns.resolve("<") != null);
     // Core (sample)
-    try testing.expect(rt_ns.resolve("nil?") != null);
-    try testing.expect(rt_ns.resolve("identical?") != null);
+    try testing.expect(core_ns.resolve("nil?") != null);
+    try testing.expect(core_ns.resolve("identical?") != null);
     // Regex (sample — ADR-0031 cycle 1c.2)
-    try testing.expect(rt_ns.resolve("re-pattern") != null);
-    try testing.expect(rt_ns.resolve("re-find") != null);
-    try testing.expect(rt_ns.resolve("re-matches") != null);
+    try testing.expect(core_ns.resolve("re-pattern") != null);
+    try testing.expect(core_ns.resolve("re-matches") != null);
+    // `__`-prefixed kernel helpers re-homed to cljw.internal (ADR-0171);
+    // the re-find builtin is one (core.clj owns the public re-find).
+    try testing.expect(internal_ns.resolve("__re-find") != null);
+    try testing.expect(core_ns.resolve("__class") == null);
+    try testing.expect(internal_ns.resolve("__class") != null);
 }
 
-test "registerAll refers rt/ into user/ so + resolves unqualified" {
+test "registerAll refers clojure.core into user/ so + resolves unqualified" {
     var th = std.Io.Threaded.init(testing.allocator, .{});
     defer th.deinit();
     var rt = Runtime.init(th.io(), testing.allocator);
@@ -247,7 +260,7 @@ test "registerAll fails cleanly when the rt namespace is missing" {
 
     var env = Env{ .rt = &rt, .alloc = rt.gpa };
     defer env.deinit();
-    // No rt / user namespaces created → registerAll must error out.
+    // No bootstrap namespaces created → registerAll must error out.
 
-    try testing.expectError(RegisterError.RtNamespaceMissing, registerAll(&env));
+    try testing.expectError(RegisterError.InternalNamespaceMissing, registerAll(&env));
 }

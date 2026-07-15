@@ -1207,19 +1207,16 @@ inline fn stepOnce(
             // ADR-0035 D9 second amendment + ADR-0036 dual-
             // backend parity contract. Mirror of post-T3
             // tree_walk::evalNs when `refer_clojure = true`.
-            // op_in_ns logic + referAll(rt) + referAll(clojure.core).
+            // op_in_ns logic + referAll(clojure.core) — the single
+            // core surface per ADR-0171.
             if (instr.operand >= chunk.constants.len)
                 return raiseInternal("vm: op_ns_with_refer_clojure constant index out of range");
             const name_val = chunk.constants[instr.operand];
             if (!name_val.isString())
                 return raiseInternal("vm: op_ns_with_refer_clojure constant is not a String");
             env.setCurrentNs(try env.findOrCreateNs(string_mod.asString(name_val)));
-            if (env.findNs("rt")) |rt_ns| {
-                try env.referAll(rt_ns, env.current_ns.?);
-            }
             if (env.findNs("clojure.core")) |clojure_core_ns| {
-                // ADR-0035 D9 revision: clojure.core overrides rt on collision.
-                try env.referAllOverriding(clojure_core_ns, env.current_ns.?, &.{}, null);
+                try env.referAll(clojure_core_ns, env.current_ns.?);
             }
             if (sp >= stack.len)
                 return raiseInternal("vm: operand stack overflow");
@@ -1229,7 +1226,7 @@ inline fn stepOnce(
         .op_ns_with_filter => {
             // D-098: mirror of tree_walk::evalNs's refer-clojure branch
             // with the `:exclude`/`:only` filter. Enter the ns, apply the
-            // docstring meta (D-239 sibling), then refer rt + clojure.core
+            // docstring meta (D-239 sibling), then refer clojure.core
             // through referAllWithFilter (skipped when the ns form had no
             // refer-clojure step — the entry's flag).
             if (instr.operand >= chunk.ns_filters.len)
@@ -1244,12 +1241,8 @@ inline fn stepOnce(
             }
             if (f.doc) |d| try meta_mod.setNsDoc(rt, env.current_ns.?, d);
             if (f.refer_clojure) {
-                if (env.findNs("rt")) |rt_ns| {
-                    try env.referAllWithFilter(rt_ns, env.current_ns.?, f.exclude, f.only);
-                }
                 if (env.findNs("clojure.core")) |clojure_core_ns| {
-                    // ADR-0035 D9 revision: clojure.core overrides rt on collision.
-                    try env.referAllOverriding(clojure_core_ns, env.current_ns.?, f.exclude, f.only);
+                    try env.referAllWithFilter(clojure_core_ns, env.current_ns.?, f.exclude, f.only);
                 }
             }
             if (sp >= stack.len)

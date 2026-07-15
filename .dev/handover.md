@@ -44,12 +44,19 @@
   now advertises `versions.clojurewasm` (babashka-precedent CIDER-banner
   key; CIDER upstream patch draft + init.el advice:
   `private/notes/cider-clojurewasm-banner-patch.md`).
-- **NEXT (user-directed 2026-07-15)**: CIDER completion parity — kill the
-  `(rt)` ns leak (show clojure.core), add kind annotations (<s>/<m>/<v>),
-  class + static-member candidates. Design directive: mechanically
-  extract the canonical surface FROM mainline clj into a data file
-  (EDN; F-013 definition-derived), cljw consumes it via a fixed
-  convention/layer — parity audit falls out as a by-product.
+- **ADR-0171 LANDED (2026-07-15)**: the `rt` kernel ns is GONE — Zig
+  builtins + bootstrap macros intern into clojure.core (home ns matches
+  mainline: `(resolve '+)` → `#'clojure.core/+`; ns-publics parity);
+  `__`-internals live in the new `cljw.internal` ns (macro expansions
+  call them qualified). Retired AD-011/038/049 as PARITY (pins flipped);
+  new AD-053 pins cljw.internal's existence. serialize VERSION 6.
+- **ARC (user-directed 2026-07-15, the landing point)**: (1) CIDER
+  completion parity — kind annotations, class + static-member candidates
+  (java-interop completion without require), keywords, special forms,
+  sort; oracle harness `scripts/completion_oracle.py` + fixtures landed
+  (red baseline 5/18). (2) AD full inventory + convergence (**D-562**).
+  (3) THEN cut a release tag. Cron re-fire 2026-07-16 03:02 JST is set
+  (session-only).
 - **First task on resume**: self-select from the live `active:` list,
   easiest-first (D-523's architecture/wasm-demo residual + D-522 drain 3
   landed 2026-07-14; D-430 is DISCHARGED — the prior pointer here was

@@ -31,9 +31,17 @@ assert_eq 'in-ns'     "$("$BIN" -e '(do (in-ns (quote foo.bar)) clojure.core/*ns
 assert_eq 'resolve'   "$("$BIN" -e '(ns-resolve (quote clojure.core) (quote map))' 2>&1 | tail -1)" "#'clojure.core/map"
 # ns-interns sees a fresh def (user-ns exactness)
 assert_eq 'interns'   "$("$BIN" -e '(do (def zzz 7) (contains? (ns-interns *ns*) (quote zzz)))' 2>&1 | tail -1)" 'true'
-# AD-011: clojure.core ns-publics omits rt-referred primitive `reduce`, but ns-map includes it
-assert_eq 'ad011-pub' "$("$BIN" -e '(contains? (ns-publics (the-ns (quote clojure.core))) (quote reduce))' 2>&1 | tail -1)" 'false'
-assert_eq 'ad011-map' "$("$BIN" -e '(contains? (ns-map (the-ns (quote clojure.core))) (quote reduce))' 2>&1 | tail -1)" 'true'
+# ADR-0171 (was AD-011, now PARITY): Zig builtins intern into clojure.core,
+# so ns-publics/ns-map both include `reduce` — matching clj exactly.
+assert_eq 'core-pub-builtin' "$("$BIN" -e '(contains? (ns-publics (the-ns (quote clojure.core))) (quote reduce))' 2>&1 | tail -1)" 'true'
+assert_eq 'core-map-builtin' "$("$BIN" -e '(contains? (ns-map (the-ns (quote clojure.core))) (quote reduce))' 2>&1 | tail -1)" 'true'
+# AD-053: the kernel-helper ns `cljw.internal` exists (mainline has no such
+# ns) — locked so its presence stays a conscious, documented divergence.
+# `rt` (the pre-ADR-0171 kernel ns) must NOT exist, and internals must not
+# leak into clojure.core's publics.
+assert_eq 'ad053-internal-ns' "$("$BIN" -e '(some? (find-ns (quote cljw.internal)))' 2>&1 | tail -1)" 'true'
+assert_eq 'ad053-rt-gone'     "$("$BIN" -e '(find-ns (quote rt))' 2>&1 | tail -1)" 'nil'
+assert_eq 'ad053-no-leak'     "$("$BIN" -e '(contains? (ns-publics (the-ns (quote clojure.core))) (quote __class))' 2>&1 | tail -1)" 'false'
 
 # intern: programmatic Var creation (clojure.core/intern). 3-arity sets the root;
 # 2-arity leaves an existing Var untouched / creates an unbound one. Returns the Var.
@@ -42,4 +50,4 @@ assert_eq 'intern-ret'   "$("$BIN" -e '(intern (create-ns (quote foo.iv5)) (quot
 assert_eq 'intern-2ary-keeps' "$("$BIN" -e '(do (intern (create-ns (quote foo.iv6)) (quote k) 5) (deref (intern (the-ns (quote foo.iv6)) (quote k))))' 2>&1 | tail -1)" '5'
 assert_eq 'intern-2ary-var'   "$("$BIN" -e '(do (intern (create-ns (quote foo.iv4)) (quote w)) (find-var (quote foo.iv4/w)))' 2>&1 | tail -1)" "#'foo.iv4/w"
 
-echo "OK — phase15_namespace (15 cases) green"
+echo "OK — phase15_namespace (20 cases) green"

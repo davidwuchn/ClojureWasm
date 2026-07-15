@@ -2,7 +2,7 @@
 # test/e2e/phase14_arrays.sh
 #
 # ADR-0105 / D-287 — Java arrays. Type-erased uniform []Value over
-# rt/__array-make + aget/aset/alength/aclone; the clojure.core surface
+# cljw.internal/__array-make + aget/aset/alength/aclone; the clojure.core surface
 # (object-array / int-array / byte-array / make-array / to-array / aset-* /
 # amap / areduce) composed in core.clj. Per-constructor init defaults +
 # byte/short/char wrap give clj-faithful VALUES (F-011); element type erased

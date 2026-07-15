@@ -34,7 +34,7 @@ const invokeCallable = @import("higher_order.zig").invokeCallable;
 /// ChunkBuffer (the `.clj` arm does `(chunk-cons <buf> (-map-lazy f (chunk-rest
 /// s)))`). [refs: O-032, O-004]
 pub fn chunkMapStepFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
-    try error_catalog.checkArity("-chunk-map-step", args, 2, loc);
+    try error_catalog.checkArity("__chunk-map-step", args, 2, loc);
     const f = args[0];
     const s = args[1];
     const cnt = chunked_cons.currentChunkCount(s);
@@ -68,7 +68,7 @@ pub fn chunkMapStepFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceL
 /// a ChunkBuffer of survivors (partial; empty → the `.clj` `chunk-cons` returns
 /// the tail directly). [refs: O-032, O-004]
 pub fn chunkFilterStepFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
-    try error_catalog.checkArity("-chunk-filter-step", args, 2, loc);
+    try error_catalog.checkArity("__chunk-filter-step", args, 2, loc);
     const pred = args[0];
     const s = args[1];
     const cnt = chunked_cons.currentChunkCount(s);

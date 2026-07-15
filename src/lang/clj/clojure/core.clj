@@ -70,14 +70,14 @@
 ;; println/pr/prn/newline (core.zig emitToStdout) render + push to the bound
 ;; `*out*`, and `(.write *out* s)` / `.append` / `.flush` dispatch on the value's
 ;; own method_table — no sentinel, no special-case. `with-out-str` / nREPL
-;; capture are plain `(binding [*out* (rt/__string-writer)] …)` rebinds.
-(def ^:dynamic *out* (rt/__stdout-writer))
-(def ^:dynamic *err* (rt/__stderr-writer))
+;; capture are plain `(binding [*out* (cljw.internal/__string-writer)] …)` rebinds.
+(def ^:dynamic *out* (cljw.internal/__stdout-writer))
+(def ^:dynamic *err* (cljw.internal/__stderr-writer))
 ;; `*in*` — the bindable input reader var (D-414). ROOT is a process-stdin
 ;; reader (demand-filled, blocking — clj `System.in` parity), so `(read-line)`
 ;; works on piped/redirected/interactive stdin; `with-in-str` /
 ;; `(binding [*in* rdr] …)` rebind it to a string reader.
-(def ^:dynamic *in* (rt/__stdin-reader))
+(def ^:dynamic *in* (cljw.internal/__stdin-reader))
 ;; `*print-length*` / `*print-level*` (ADR-0088) are interned in Zig
 ;; (`bootstrap.registerPrintLimitVars`) alongside the other cached-pointer
 ;; dynamic vars (*ns*, *data-readers*) so the renderer reads them via a cached
@@ -156,8 +156,8 @@
         (if s
           (if (chunked-seq? s)
             ;; PERF: O-032 in-Zig chunk drain — the per-element `.clj` loop moved
-            ;; into `-chunk-map-step` (producer analogue of reduceFn's O-004 drain).
-            (chunk-cons (-chunk-map-step f s) (-map-lazy f (chunk-rest s)))
+            ;; into `cljw.internal/__chunk-map-step` (producer analogue of reduceFn's O-004 drain).
+            (chunk-cons (cljw.internal/__chunk-map-step f s) (-map-lazy f (chunk-rest s)))
             (cons (f (first s)) (-map-lazy f (rest s))))
           nil)))))
 ;; Forward-declared so map's n-ary arm resolves it at def time (D-446).
@@ -212,8 +212,8 @@
         (if s
           (if (chunked-seq? s)
             ;; PERF: O-032 in-Zig chunk drain — the per-element `.clj` loop moved
-            ;; into `-chunk-filter-step` (survivors-only partial chunk).
-            (chunk-cons (-chunk-filter-step pred s) (-filter-lazy pred (chunk-rest s)))
+            ;; into `cljw.internal/__chunk-filter-step` (survivors-only partial chunk).
+            (chunk-cons (cljw.internal/__chunk-filter-step pred s) (-filter-lazy pred (chunk-rest s)))
             (let [v (first s)]
               (if (pred v)
                 (cons v (-filter-lazy pred (rest s)))
@@ -280,11 +280,11 @@
           (let [s (seq coll)]
             (if s
               (if (chunked-seq? s)
-                (let [size (-chunk-count s)
+                (let [size (cljw.internal/__chunk-count s)
                       b (chunk-buffer size)]
                   (loop [i 0]
                     (when (< i size)
-                      (let [r (f (-chunk-nth s i))]
+                      (let [r (f (cljw.internal/__chunk-nth s i))]
                         (when (not (nil? r)) (chunk-append b r)))
                       (recur (inc i))))
                   (chunk-cons b (keep f (chunk-rest s))))
@@ -331,14 +331,14 @@
 ;; records — the earlier native-tag approximation (set?/map?/vector?
 ;; minus sorted/record) mis-sent interface-recognised deftype sets down
 ;; the transient path with no dispatch behind it.
-;; (rt/-instance-of? directly: `instance?` itself defs later in this file.)
+;; (cljw.internal/__instance-of? directly: `instance?` itself defs later in this file.)
 (def -editable?
   (fn* [coll]
-    (rt/-instance-of? clojure.lang.IEditableCollection coll)))
+    (cljw.internal/__instance-of? clojure.lang.IEditableCollection coll)))
 
 ;; `(into to from)` conj every item of `from` onto `to`; `(into to xform
 ;; from)` does so through the transducer `xform`. Defined here (Layer 2)
-;; over reduce/transduce — supersedes the rt/into eager primitive (which
+;; over reduce/transduce — supersedes the eager into primitive (which
 ;; had no other Zig callers). `conj`'s 1-arg completion arity makes the
 ;; bare-`conj` reducing fn work for the transduce path.
 ;; PERF: editable targets build via a transient (O(n) persistent! over a flat buffer) vs N persistent conjs O(n log n) [refs: O-003, D-180]
@@ -646,7 +646,7 @@
 ;; A PersistentQueue is also IPersistentStack: peek = front (oldest), pop =
 ;; drop the front (ADR-0087); pop of empty returns the empty queue (no throw).
 ;; D-280d2: defined HERE (not in the protocol block below) so peek/pop can
-;; reference it without a forward ref; peek/pop use the rt/__satisfies? primitive
+;; reference it without a forward ref; peek/pop use the cljw.internal/__satisfies? primitive
 ;; (always available) rather than the satisfies? wrapper (defined later).
 (defprotocol IPersistentStack (-peek [c]) (-pop [c]))
 (def peek
@@ -660,7 +660,7 @@
           (if (list? coll)
             (first coll)
             ;; D-280d2: a deftype/reify implementing clojure.lang.IPersistentStack.
-            (if (rt/__satisfies? IPersistentStack coll)
+            (if (cljw.internal/__satisfies? IPersistentStack coll)
               (-peek coll)
               (throw (ClassCastException. "Can't peek: not a stack (list, vector)")))))))))
 (def pop
@@ -668,7 +668,7 @@
     (if (nil? coll)
       nil
       (if (queue? coll)
-        (-queue-pop coll)
+        (cljw.internal/__queue-pop coll)
         (if (vector? coll)
           (if (pos? (count coll))
             (into [] (take (dec (count coll)) coll))
@@ -678,7 +678,7 @@
               (rest coll)
               (throw (IllegalStateException. "Can't pop empty list")))
             ;; D-280d2: a deftype/reify implementing clojure.lang.IPersistentStack.
-            (if (rt/__satisfies? IPersistentStack coll)
+            (if (cljw.internal/__satisfies? IPersistentStack coll)
               (-pop coll)
               (throw (ClassCastException. "Can't pop: not a stack (list, vector)")))))))))
 
@@ -848,7 +848,7 @@
     ;; (descent+ascent in one prim, no `.clj` per-level recursion); `-update-in-idx`
     ;; stays the fallback for non-vector / empty paths (clj-parity edge unchanged).
     ([m ks f] (if (and (vector? ks) (seq ks))
-                (-update-in m ks f)
+                (cljw.internal/__update-in m ks f)
                 (-update-in-idx m ks f 0 (count ks))))
     ([m ks f & args]
      (let [k (first ks) nks (next ks)]
@@ -979,7 +979,7 @@
 ;; in-transaction / in-action illegality check are a later slice.)
 (def await
   (fn* [& agents]
-    (let [ps (mapv (fn* [a] (__agent-await a)) agents)]
+    (let [ps (mapv (fn* [a] (cljw.internal/__agent-await a)) agents)]
       (dorun (map deref ps)))))
 
 ;; `(await-for timeout-ms & agents)` — like `await` but bounded: logical true
@@ -990,7 +990,7 @@
 ;; value (the barrier delivers the agent's state, which can be any value).
 (def await-for
   (fn* [timeout-ms & agents]
-    (let [ps (mapv (fn* [a] (__agent-await a)) agents)
+    (let [ps (mapv (fn* [a] (cljw.internal/__agent-await a)) agents)
           sentinel (atom nil)
           deadline (+ (System/currentTimeMillis) timeout-ms)]
       (every? (fn* [p]
@@ -1003,12 +1003,12 @@
 ;; agent error mode — the :fail/:continue keyword over the internal flag.
 ;; :fail (the default with no error-handler) halts the agent on a thrown action
 ;; (agent-error returns it, sends throw, restart-agent recovers); :continue drops
-;; the error and keeps draining. error-handler / set-error-handler! are rt/
+;; the error and keeps draining. error-handler / set-error-handler! are kernel
 ;; primitives (the handler runs on the drainer in both modes; D-441).
 (def set-error-mode!
-  (fn* [a mode] (__agent-set-fail-mode a (= mode :fail)) a))
+  (fn* [a mode] (cljw.internal/__agent-set-fail-mode a (= mode :fail)) a))
 (def error-mode
-  (fn* [a] (if (__agent-fail-mode? a) :fail :continue)))
+  (fn* [a] (if (cljw.internal/__agent-fail-mode? a) :fail :continue)))
 
 ;; `agent-errors` / `clear-agent-errors` — clj-DEPRECATED multi-error API,
 ;; superseded by `agent-error` (singular) which cljw has (ADR-0155 / D-442).
@@ -1030,7 +1030,7 @@
 (defmacro io! [& body]
   (let [message (when (string? (first body)) (first body))
         body (if message (next body) body)]
-    `(if (__in-transaction?)
+    `(if (cljw.internal/__in-transaction?)
        (throw (new IllegalStateException ~(if message message "I/O in transaction")))
        (do ~@body))))
 
@@ -1082,7 +1082,7 @@
       ;; IKVReduce first (a deftype declaring `kvreduce`, D-400 — clj
       ;; consults the interface before any fallback); the sentinel keyword
       ;; is interned, so `identical?` detects "no impl" exactly.
-      (let* [r (rt/__kv-reduce-or m f init :clojure.core/kv-reduce-none)]
+      (let* [r (cljw.internal/__kv-reduce-or m f init :clojure.core/kv-reduce-none)]
         (if (identical? r :clojure.core/kv-reduce-none)
           (reduce (fn* [acc k] (f acc k (get m k))) init (keys m))
           r)))))
@@ -1875,7 +1875,7 @@
 ;; these for a typed_instance (stm.zig), mirroring the IObj meta consult.
 (defprotocol IDeref (-deref [o]))
 (defprotocol IPending (-realized? [o]))
-;; D-400: kvreduce → -kv-reduce; reduce-kv consults it via rt/__kv-reduce-or
+;; D-400: kvreduce → -kv-reduce; reduce-kv consults it via cljw.internal/__kv-reduce-or
 ;; before its keys fallback. 3-arity timed deref → -blocking-deref; the deref
 ;; primitive's (deref x ms timeout-val) arity dispatches it (stm.zig).
 (defprotocol IKVReduce (-kv-reduce [m f init]))
@@ -1923,31 +1923,31 @@
     (->Eduction (apply comp (butlast args)) (last args))))
 
 ;; `(satisfies? protocol x)` — true iff x's type implements protocol.
-;; Thin wrapper over the rt/__satisfies? primitive, which consults x's
+;; Thin wrapper over the cljw.internal/__satisfies? primitive, which consults x's
 ;; TypeDescriptor (typed_instance / reified_instance / native-Tag
 ;; default registry) for a method entry naming the protocol.
 (def satisfies?
-  (fn* [protocol x] (rt/__satisfies? protocol x)))
+  (fn* [protocol x] (cljw.internal/__satisfies? protocol x)))
 
 ;; `(extends? protocol atype)` — true iff atype (a type, e.g. a defrecord/
-;; deftype name or (rt/__native-type :tag)) carries the protocol. The
+;; deftype name or (cljw.internal/__native-type :tag)) carries the protocol. The
 ;; type-level counterpart of satisfies?: satisfies? takes a value, extends?
 ;; takes the type directly.
 (def extends?
-  (fn* [protocol atype] (rt/__extends? protocol atype)))
+  (fn* [protocol atype] (cljw.internal/__extends? protocol atype)))
 
 ;; `(extend atype & proto+mmaps)` — the runtime protocol-extension fn that the
 ;; extend-type / extend-protocol macros are sugar over. `atype` is a type value
 ;; (a deftype/defrecord name or (class …)); each (protocol method-map) pair
 ;; installs onto it, where the map is {:method-kw fn}. Mirrors the macro's
-;; `(rt/__extend-type! atype proto [["m" fn] …])` lowering, built from the map
+;; `(cljw.internal/__extend-type! atype proto [["m" fn] …])` lowering, built from the map
 ;; at runtime. clojure.core/extend (used directly by libs that assemble impl
 ;; maps dynamically, e.g. clojure.tools.reader).
 (def extend
   (fn* [atype & proto+mmaps]
     (loop [pairs (seq proto+mmaps)]
       (when pairs
-        (rt/__extend-type! atype (first pairs)
+        (cljw.internal/__extend-type! atype (first pairs)
           (reduce-kv (fn* [acc k v] (conj acc [(name k) v])) [] (second pairs)))
         (recur (nnext pairs))))))
 
@@ -2046,10 +2046,10 @@
 ;; native types render as Long / String / PersistentVector, user records
 ;; as their name; (class nil) → nil. Interned, so (= (class 5) (class 6))
 ;; is true and a class is a valid map key (group-by class).
-(def class (fn* [x] (rt/__class x)))
+(def class (fn* [x] (cljw.internal/__class x)))
 
 ;; `(class? x)` — true iff x is a class object (what (class …) returns).
-(def class? (fn* [x] (rt/__class? x)))
+(def class? (fn* [x] (cljw.internal/__class? x)))
 
 ;; `(type x)` — (:type (meta x)) when present, else (class x).
 (def type (fn* [x] (or (:type (meta x)) (class x))))
@@ -2060,28 +2060,28 @@
 ;; `(resolve sym)` / `(resolve env sym)` — resolve a symbol to its Var (or
 ;; class), nil if unresolved. The 2-arg form takes a local-binding env (e.g.
 ;; macro `&env`); a symbol that names a local resolves to nil (clj parity).
-(def resolve (fn* ([sym] (rt/__resolve sym))
-                  ([env sym] (if (contains? env sym) nil (rt/__resolve sym)))))
+(def resolve (fn* ([sym] (cljw.internal/__resolve sym))
+                  ([env sym] (if (contains? env sym) nil (cljw.internal/__resolve sym)))))
 
-;; Multimethod introspection — thin fn wrappers over the rt/ primitives
+;; Multimethod introspection — thin fn wrappers over the kernel primitives
 ;; (defmulti / defmethod are macros in macro_transforms; prefer-method is a clj FN
 ;; — see below.) `methods` → dispatch-val→method map; `get-method` → the method (or
 ;; nil); `remove-method` → the multifn; `prefers` → the prefer table.
-(def methods (fn* [multifn] (rt/__methods multifn)))
-(def get-method (fn* [multifn dispatch-val] (rt/__get-method multifn dispatch-val)))
-(def remove-method (fn* [multifn dispatch-val] (rt/__remove-method! multifn dispatch-val)))
-(def prefers (fn* [multifn] (rt/__prefers multifn)))
+(def methods (fn* [multifn] (cljw.internal/__methods multifn)))
+(def get-method (fn* [multifn dispatch-val] (cljw.internal/__get-method multifn dispatch-val)))
+(def remove-method (fn* [multifn dispatch-val] (cljw.internal/__remove-method! multifn dispatch-val)))
+(def prefers (fn* [multifn] (cljw.internal/__prefers multifn)))
 ;; `prefer-method` is a FN in clj (D-373 audit: cljw had it as a needless macro —
 ;; its args are all values, no quoting — which broke higher-order use). Now a fn so
 ;; `(map (partial prefer-method mf) …)` / passing it works, matching clj.
-(def prefer-method (fn* [multifn x y] (rt/__prefer-method! multifn x y)))
+(def prefer-method (fn* [multifn x y] (cljw.internal/__prefer-method! multifn x y)))
 
 ;; `instance?` is a FN in clj taking a class VALUE (a class symbol evaluates to a
 ;; Class), so it is passable higher-order: `(condp instance? obj Map$Entry …)`,
 ;; `(map (partial instance? String) xs)`. cljw had it as a macro (auto-quoting the
 ;; class symbol) which broke that. ADR-0128 / D-373: now a fn over the class-value
-;; surface; `rt/-instance-of?` consults the class_name membership oracle.
-(def instance? (fn* [c x] (rt/-instance-of? c x)))
+;; surface; `cljw.internal/__instance-of?` consults the class_name membership oracle.
+(def instance? (fn* [c x] (cljw.internal/__instance-of? c x)))
 
 ;; `(memoize f)` returns a cached version of f: each distinct argument
 ;; tuple computes f once, then returns the stored result. Keys the
@@ -2142,11 +2142,11 @@
 
 ;; `(re-find m)` / `(re-find re s)` — the matcher 1-arity advances the cursor
 ;; (`.find`) and returns `(re-groups m)`; the 2-arity delegates to the rt
-;; primitive (this def shadows the auto-referred rt/re-find).
+;; primitive (`cljw.internal/__re-find`).
 (def re-find
   (fn*
     ([m] (when (.find m) (re-groups m)))
-    ([re s] (rt/re-find re s))))
+    ([re s] (cljw.internal/__re-find re s))))
 
 ;; ----------------------------------------------------------------
 ;; Ad-hoc hierarchies — make-hierarchy / derive / underive / isa? /
@@ -2190,7 +2190,7 @@
         (or (= child parent)
             ;; class-hierarchy arm (clj's Class.isAssignableFrom): when both
             ;; are class values, `child` isa `parent` if it is a subclass.
-            (and (class? child) (class? parent) (-class-isa? child parent))
+            (and (class? child) (class? parent) (cljw.internal/__class-isa? child parent))
             (contains? (get (:ancestors h) child) parent)
             (and (vector? parent) (vector? child)
                  (= (count parent) (count child))
@@ -2227,14 +2227,14 @@
 ;; print-method (D-370, ADR-0127): the user-extensible print multimethod. The
 ;; native pr/prn/print/pr-str path consults it behind an any-override dirty flag —
 ;; `(defmethod print-method T [o w] …)` customises T's printing. Dispatches on
-;; (class x); the :default delegates to the native printer (`rt/__print-method-default`
+;; (class x); the :default delegates to the native printer (`cljw.internal/__print-method-default`
 ;; writes o's native render into the writer handle w), so a method that recurses
 ;; `(print-method child w)` lands on either another override or the native default.
 ;; The consult only fires for a type with a NON-default method, so the no-override
 ;; case pays zero clojure calls (ADR-0127 B2 dirty flag). Placed after
 ;; `-global-hierarchy` (the defmulti constructor references it).
 (defmulti print-method (fn* [x w] (class x)))
-(defmethod print-method :default [o w] (rt/__print-method-default o w))
+(defmethod print-method :default [o w] (cljw.internal/__print-method-default o w))
 
 ;; `(doc sym)` — print a Var's documentation (name / arglists / docstring)
 ;; in clojure.repl/doc's format (D-187 part 2). The Var-metadata surface
@@ -2291,14 +2291,14 @@
   nil)
 
 ;; `(future-call f)` — the fn behind the `future` macro (clj 1.1). cljw's
-;; `future` macro expands to `(__future-call (fn* [] body))`; future-call is the
+;; `future` macro expands to `(cljw.internal/__future-call (fn* [] body))`; future-call is the
 ;; same primitive exposed for a pre-built no-arg thunk. (clj adds binding
 ;; conveyance here; cljw's `future` macro does not, so future-call matches it.)
 (defn future-call
   "Takes a function of no args and yields a future object that will invoke the
   function in another thread, caching the result for deref/@."
   [f]
-  (__future-call f))
+  (cljw.internal/__future-call f))
 
 ;; `(load-string s)` — sequentially read+eval every form in s, return the last
 ;; value (clj 1.0). clj routes through a StringReader + load-reader; cljw has no
@@ -2432,10 +2432,10 @@
 ;; `(with-in-str s & body)` — evaluate body with `*in*` bound to a reader over
 ;; the string `s`, so `read-line` / `line-seq` read from `s` (D-414). Mirrors
 ;; clojure.core/with-in-str (JVM binds a LineNumberingPushbackReader over a
-;; java.io.StringReader; cljw uses the host `rt/__string-reader`). Placed with the
+;; java.io.StringReader; cljw uses the host `cljw.internal/__string-reader`). Placed with the
 ;; other `with-*` macros — `defmacro` is not usable as early as `read-line`.
 (defmacro with-in-str [s & body]
-  `(binding [*in* (rt/__in-reader ~s)]
+  `(binding [*in* (cljw.internal/__in-reader ~s)]
      ~@body))
 
 ;; `(with-out-str & body)` — evaluate body with `*out*` bound to a fresh
@@ -2444,9 +2444,9 @@
 ;; the `*out*` writer VALUE — no threadlocal capture lane. Mirrors
 ;; clojure.core/with-out-str (JVM binds a java.io.StringWriter).
 (defmacro with-out-str [& body]
-  `(let [w# (rt/__string-writer)]
+  `(let [w# (cljw.internal/__string-writer)]
      (binding [*out* w#] ~@body)
-     (rt/__writer->str w#)))
+     (cljw.internal/__writer->str w#)))
 
 (defmacro time
   "Evaluates expr and prints the time it took. Returns the value of expr."
@@ -2460,11 +2460,11 @@
 ;; dynamic Var (ADR-0097 / D-237) thread-bound to its init for the body's extent,
 ;; popped in a finally. `var-get`/`var-set`/`@` operate on them inside the body.
 ;; The anon Var is gpa-owned + intentionally never freed (escape-safe; D-255
-;; reclamation), minted by the `-create-local-var` primitive.
+;; reclamation), minted by the `cljw.internal/__create-local-var` primitive.
 (defmacro with-local-vars [bindings & body]
   (let [names (take-nth 2 bindings)
         inits (take-nth 2 (rest bindings))]
-    `(let [~@(interleave names (map (fn* [_] (list (quote -create-local-var))) names))]
+    `(let [~@(interleave names (map (fn* [_] (list (quote cljw.internal/__create-local-var))) names))]
        (push-thread-bindings (hash-map ~@(interleave names inits)))
        (try ~@body (finally (pop-thread-bindings))))))
 
@@ -2480,7 +2480,7 @@
 
 
 ;; --- Java arrays (ADR-0105 / D-287) ---
-;; Type-erased uniform []Value over the rt/__array-make + aget/aset/alength/
+;; Type-erased uniform []Value over the cljw.internal/__array-make + aget/aset/alength/
 ;; aclone host primitives. Per-constructor init defaults + byte/short/char wrap
 ;; give clj-faithful VALUES (F-011); the element type itself is erased (AD-019),
 ;; so int/long/double/float arrays do not coerce non-byte elements. Arrays use
@@ -2491,10 +2491,10 @@
   seqable is materialised and each element passed through `coerce`."
   [size-or-seq default coerce]
   (if (number? size-or-seq)
-    (rt/__array-make size-or-seq default)
+    (cljw.internal/__array-make size-or-seq default)
     (let [s (vec size-or-seq)
           n (count s)
-          a (rt/__array-make n default)]
+          a (cljw.internal/__array-make n default)]
       (dotimes [i n] (aset a i (coerce (nth s i))))
       a)))
 
@@ -2506,7 +2506,7 @@
   overload accident: `(byte-array 3 65)` / `(char-array 3 65)` fill here but
   throw on the JVM (AD-036)."
   [size init default coerce]
-  (let [a (rt/__array-make size default)]
+  (let [a (cljw.internal/__array-make size default)]
     (if (sequential? init)
       (let [s (vec init)
             n (min size (count s))]
@@ -2534,9 +2534,9 @@
 (defn make-array
   "Allocate an array. The `type` arg is accepted but ignored (cljw arrays are
   type-erased, AD-019). Multi-dim builds nested arrays."
-  ([type len] (rt/__array-make len nil))
+  ([type len] (cljw.internal/__array-make len nil))
   ([type d & more]
-   (let [a (rt/__array-make d nil)]
+   (let [a (cljw.internal/__array-make d nil)]
      (dotimes [i d] (aset a i (apply make-array type more)))
      a)))
 
@@ -2553,7 +2553,7 @@
   diverge (clj false, cljw true). A byte-array IS usable as bytes in cljw
   (`(String. (byte-array ...))` works), so the over-broad positive is consistent
   with cljw's uniform-array model rather than a silent lie."
-  [x] (rt/array? x))
+  [x] (array? x))
 
 (defn into-array
   "coll → array; the optional leading `type` is accepted and ignored."

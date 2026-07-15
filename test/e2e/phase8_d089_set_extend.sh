@@ -30,7 +30,7 @@ last_line() {
 
 # --- Case 1: native Tag (Long) -disjoin via outer-else slow-path ---
 got=$("$BIN" - <<'EOF' 2>/dev/null
-(def Long (rt/__native-type :integer))
+(def Long (cljw.internal/__native-type :integer))
 (extend-type Long IPersistentSet (-disjoin [n k] :disjoin-on-int))
 (prn (disj 42 :anything))
 EOF

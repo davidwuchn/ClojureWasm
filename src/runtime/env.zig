@@ -210,21 +210,11 @@ pub const Namespace = struct {
     /// Resolve `name` for a FULLY-QUALIFIED reference `self/name`. clj treats a
     /// qualified symbol as a direct ns-var lookup that bypasses refers/aliases,
     /// so only `self`'s own interns satisfy it — a var merely *referred* into
-    /// `self` does NOT (clj: "No such var: ns/name"). D-261.
-    ///
-    /// EXCEPTION: `clojure.core`. cljw splits the core surface across the
-    /// internal `rt/` namespace and re-exports it into `clojure.core` via
-    /// refers (only `clojure.core` receives rt's refers at bootstrap). In clj
-    /// every core fn IS interned in `clojure.core`, so for `clojure.core/name`
-    /// those rt-refers count as its own — otherwise `clojure.core/re-find`
-    /// (an rt-origin var) would wrongly fail while `clojure.core/map` (a direct
-    /// core.clj intern) succeeds. Non-core namespaces stay own-mappings-only.
+    /// `self` does NOT (clj: "No such var: ns/name"). D-261. Zig builtins
+    /// intern straight into `clojure.core` (ADR-0171), so no refers
+    /// exception is needed here — the mainline rule applies uniformly.
     pub fn resolveQualified(self: *Namespace, name: []const u8) ?*Var {
-        if (self.mappings.get(name)) |v| return v;
-        if (std.mem.eql(u8, self.name, "clojure.core")) {
-            if (self.refers.get(name)) |v| return v;
-        }
-        return null;
+        return self.mappings.get(name);
     }
 
     /// Internal: free everything this namespace owns. The `name` slice
@@ -372,22 +362,26 @@ pub const Env = struct {
     /// memory (see `BuiltinIdentity`). The map's own buckets are freed in `deinit`.
     builtin_names: std.AutoHashMapUnmanaged(usize, BuiltinIdentity) = .empty,
 
-    /// Initialise with the three startup namespaces:
-    ///   - `rt`           → kernel primitives (`+`, `=`, `count`, …)
-    ///   - `clojure.core` → public Clojure surface + private leaves
-    ///                      (`-*-eager`) per ADR-0033 D4
-    ///   - `user`         → default eval target; `current_ns` set here.
+    /// Initialise with the three startup namespaces (ADR-0171):
+    ///   - `clojure.core`  → the FULL core surface: Zig builtins intern
+    ///                       here directly (home ns = clojure.core, the
+    ///                       mainline shape) alongside `core.clj` defs
+    ///                       and Pattern B2 private leaves (ADR-0033 D4)
+    ///   - `cljw.internal` → `__`-prefixed kernel helpers macro
+    ///                       expansions and bundled `.clj` call
+    ///                       qualified; never referred anywhere
+    ///   - `user`          → default eval target; `current_ns` set here.
     ///
     /// Creating `clojure.core` at init time (rather than letting
     /// `(in-ns 'clojure.core)` in `core.clj` create it on demand) lets
-    /// `primitive.registerAll` intern Pattern B2 private leaves into
+    /// `primitive.registerAll` intern builtins + private leaves into
     /// `clojure.core` before bootstrap runs, so the leaves are
     /// same-ns visible from `core.clj`'s wrappers and cross-ns
     /// `^:private`-blocked from `user/`. `findOrCreateNs` is
     /// idempotent so `(in-ns 'clojure.core)` later just switches.
     pub fn init(rt: *Runtime) !Env {
         var env = Env{ .rt = rt, .alloc = rt.gpa };
-        _ = try env.findOrCreateNs("rt");
+        _ = try env.findOrCreateNs("cljw.internal");
         _ = try env.findOrCreateNs("clojure.core");
         const user = try env.findOrCreateNs("user");
         env.current_ns = user;
@@ -582,6 +576,36 @@ pub const Env = struct {
         return self.referAllImpl(from, to, exclude, only, true);
     }
 
+    /// ADR-0171: move every `__`-prefixed mapping of `from` into `to`,
+    /// re-homing each Var (`v.ns = to`). Kernel helpers register through
+    /// the same tables as public builtins; this split keeps
+    /// `clojure.core`'s mappings equal to its public surface while the
+    /// helpers stay reachable qualified (`cljw.internal/__x`). Key and
+    /// Var ownership transfers with the mapping entry. Idempotent (a
+    /// second run finds no `__` names left in `from`).
+    pub fn rehomeInternals(self: *Env, from: *Namespace, to: *Namespace) !void {
+        var names: std.ArrayList([]const u8) = .empty;
+        defer names.deinit(self.alloc);
+        var it = from.mappings.iterator();
+        while (it.next()) |entry| {
+            if (std.mem.startsWith(u8, entry.key_ptr.*, "__"))
+                try names.append(self.alloc, entry.key_ptr.*);
+        }
+        for (names.items) |name| {
+            const kv = from.mappings.fetchRemove(name).?;
+            if (to.mappings.contains(name)) {
+                // Idempotent re-run: a re-register re-interned the helper
+                // into `from`; the original already lives in `to` (and is
+                // the referenced Var) — drop the fresh duplicate.
+                self.alloc.free(kv.key);
+                self.alloc.destroy(kv.value);
+                continue;
+            }
+            kv.value.ns = to;
+            try to.mappings.put(self.alloc, kv.key, kv.value);
+        }
+    }
+
     fn referAllImpl(
         self: *Env,
         from: *Namespace,
@@ -768,7 +792,8 @@ test "Env.init creates rt and user namespaces; current_ns = user" {
     var env = try Env.init(&fix.rt);
     defer env.deinit();
 
-    try testing.expect(env.findNs("rt") != null);
+    try testing.expect(env.findNs("cljw.internal") != null);
+    try testing.expect(env.findNs("clojure.core") != null);
     try testing.expect(env.findNs("user") != null);
     try testing.expectEqualStrings("user", env.current_ns.?.name);
 }
@@ -924,19 +949,19 @@ test "referAll exposes source mappings under target.refers" {
     var env = try Env.init(&fix.rt);
     defer env.deinit();
 
-    const rt_ns = env.findNs("rt").?;
+    const core = env.findNs("clojure.core").?;
     const user = env.findNs("user").?;
-    _ = try env.intern(rt_ns, "+", .true_val, null);
+    _ = try env.intern(core, "+", .true_val, null);
 
-    try env.referAll(rt_ns, user);
+    try env.referAll(core, user);
     // user/+ now resolves through refers.
     try testing.expect(user.resolve("+") != null);
-    // user does not own the Var — it lives in rt's mappings.
+    // user does not own the Var — it lives in clojure.core's mappings.
     try testing.expect(!user.mappings.contains("+"));
     try testing.expect(user.refers.contains("+"));
 
     // Idempotent — second call doesn't double-insert or leak.
-    try env.referAll(rt_ns, user);
+    try env.referAll(core, user);
     try testing.expectEqual(@as(usize, 1), user.refers.count());
 }
 
@@ -948,21 +973,21 @@ test "referAllOverriding replaces an existing refer; referAll keeps it (ADR-0035
     var env = try Env.init(&fix.rt);
     defer env.deinit();
 
-    const rt_ns = env.findNs("rt").?;
+    const other = try env.findOrCreateNs("other.ns");
     const user = env.findNs("user").?;
-    const core = try env.findOrCreateNs("clojure.core");
-    const rt_var = try env.intern(rt_ns, "re-find", .true_val, null);
+    const core = env.findNs("clojure.core").?;
+    const other_var = try env.intern(other, "re-find", .true_val, null);
     const core_var = try env.intern(core, "re-find", .false_val, null);
 
-    // rt refers first (boot fan-out order).
-    try env.referAll(rt_ns, user);
-    try testing.expectEqual(rt_var, user.refers.get("re-find").?);
+    // other.ns refers first.
+    try env.referAll(other, user);
+    try testing.expectEqual(other_var, user.refers.get("re-find").?);
 
-    // Plain referAll skips the collision — rt would win (the latent bug).
+    // Plain referAll skips the collision — the first refer would win.
     try env.referAll(core, user);
-    try testing.expectEqual(rt_var, user.refers.get("re-find").?);
+    try testing.expectEqual(other_var, user.refers.get("re-find").?);
 
-    // The overriding variant replaces it — the public layer wins.
+    // The overriding variant replaces it — the later layer wins.
     try env.referAllOverriding(core, user, &.{}, null);
     try testing.expectEqual(core_var, user.refers.get("re-find").?);
     try testing.expectEqual(@as(usize, 1), user.refers.count());

@@ -40,3 +40,4 @@ private/
 .clj-kondo/
 .lsp/
 test/conformance/verified_projects/*/.cpcache/
+__pycache__/

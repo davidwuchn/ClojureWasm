@@ -143,25 +143,6 @@ accepted:
       `#object[…]` form (pr / prn / print / println) diverges.
     derives_from: "ADR-0059 (no-JVM: no class FQN); AD-002 (opaque-ref identity-hash not reproducible); ADR-0083"
     pin: "test/e2e/phase15_namespace.sh — `(str *ns*)` => user + `(pr-str *ns*)` => #object[Namespace \"user\"] (the cljw form locked)"
-  - id: "AD-011"
-    summary: "`ns-interns`/`ns-publics` of `clojure.core` omit the `rt`-referred primitives (e.g. `reduce`, `+`) that clj interns directly"
-    example: '(contains? (ns-publics (the-ns (quote clojure.core))) (quote reduce)) => cljw false / clj true ; (contains? (ns-interns (the-ns (quote clojure.core))) (quote map)) => true both (map is .clj-defined)'
-    why: |-
-      cljw splits the core surface (ADR-0033 / placement.yaml): kernel
-      primitives are interned in the `rt` namespace and REFERRED into
-      clojure.core, while clojure.core's own `mappings` hold only the
-      `.clj`-defined vars (+ B2 private leaves). `ns-interns`/`ns-publics`
-      faithfully report a namespace's INTERNED vars (its `mappings`), so a
-      primitive that lives in `rt` and is merely referred (e.g. `reduce`)
-      does not appear, whereas a `.clj`-redefined var (e.g. `map`) does. This
-      diverges ONLY when introspecting clojure.core itself; for a user
-      namespace `ns-interns`/`ns-publics` are exact (a user `(def x …)` shows
-      up). `ns-map` (interns + refers) DOES include `reduce`, matching clj's
-      total visible set. The driver (clojure.test, D-227) keys on a user test
-      ns's interned `deftest` vars, which is unaffected.
-    derives_from: "ADR-0033 (rt/clojure.core placement split: primitives in rt, referred); ADR-0083"
-    pin: "test/e2e/phase15_namespace.sh — `ad011-pub` locks `(ns-publics 'clojure.core)` omitting `reduce` (false) + `ad011-map` locks `(ns-map …)` including it (true), matching clj's total visibility"
-
   - id: "AD-012"
     summary: "A PersistentQueue prints as a readable `#queue (…)` (cljw) instead of clj's opaque `#object[clojure.lang.PersistentQueue 0x… \"…@hash\"]`"
     example: '(pr-str (conj clojure.lang.PersistentQueue/EMPTY 1 2 3)) => cljw "#queue (1 2 3)" / clj "#object[clojure.lang.PersistentQueue 0x… \"clojure.lang.PersistentQueue@…\"]"'
@@ -370,8 +351,8 @@ accepted:
     derives_from: "ADR-0119 (callable naming + the trace-visibility discipline `isUserNs`) + user directive 2026-06-08 (host/stdlib/user is non-uniform → follow a discipline, not ad-hoc, for good UX)"
     pin: "test/e2e/phase14_error_format.sh — error_trace_discipline (map → user-only trace, no clojure.* / nameless internal frame)"
   - id: "AD-025"
-    summary: "A callable value (`fn` / `defmulti` / protocol method fn / BUILTIN) prints as `#<ns/name>` (`#<fn>` when unnamed) — clj prints `#object[user$boom__N 0xHASH \"user$boom__N@…\"]` with a munged JVM class + identity hash. A builtin prints `#<rt/+>` (home ns `rt`, matching `(resolve '+)` => `#'rt/+`). `str` and `pr` render identically (both reach the same site; clj agrees)."
-    example: '(pr-str (defn boom [] 1)) => cljw "#<user/boom>" / clj "#object[user$boom__... 0x.. \"user$boom__...@..\"]" ; (pr-str (fn [])) => cljw "#<user/fn__N>" (or "#<fn>" if nameless) ; (pr-str +) => cljw "#<rt/+>" / clj "#object[clojure.core$_PLUS_ 0x.. …]" ; (str defmulti-val) == (pr-str defmulti-val) (no str↔pr split, matching clj)'
+    summary: "A callable value (`fn` / `defmulti` / protocol method fn / BUILTIN) prints as `#<ns/name>` (`#<fn>` when unnamed) — clj prints `#object[user$boom__N 0xHASH \"user$boom__N@…\"]` with a munged JVM class + identity hash. A builtin prints `#<clojure.core/+>` (home ns clojure.core per ADR-0171, matching `(resolve '+)` => `#'clojure.core/+`). `str` and `pr` render identically (both reach the same site; clj agrees)."
+    example: '(pr-str (defn boom [] 1)) => cljw "#<user/boom>" / clj "#object[user$boom__... 0x.. \"user$boom__...@..\"]" ; (pr-str (fn [])) => cljw "#<user/fn__N>" (or "#<fn>" if nameless) ; (pr-str +) => cljw "#<clojure.core/+>" / clj "#object[clojure.core$_PLUS_ 0x.. …]" ; (str defmulti-val) == (pr-str defmulti-val) (no str↔pr split, matching clj)'
     why: |-
       cljw has no JVM Class hierarchy (TypeDescriptor instead, ADR-0059) and no
       reproducible identity hash, so the munged `user$boom__N` class + `0xHASH`
@@ -383,12 +364,12 @@ accepted:
       `pr` (they share the render site, as in clj). The print form implies NO
       `(class fn)` decision — `(class fn)` is a separate type-system concern
       (AD-044). Builtins (bare Zig fn-pointers with no name slot) now fill the same
-      envelope via the `Env.builtin_names` reverse-index (D-327, landed): `#<rt/+>`,
+      envelope via the `Env.builtin_names` reverse-index (D-327, landed): `#<clojure.core/+>`,
       the truthful home ns. A builtin bound under several names (`inc`/`inc'`)
       shows the deterministic base name (shorter-then-lex), never the hashmap
       iteration order.
     derives_from: "ADR-0121 (callable print naming) + AD-002 (opaque refs print #<…> not #object[…]) + AD-003 (simple names) + ADR-0059 (no JVM class hierarchy)"
-    pin: "test/e2e/phase14_callable_print.sh — fn_named + fn_anon + defmulti + str_eq_pr + builtin_named (#<rt/+>) + builtin_inc (#<rt/inc>, the inc/inc' tie-break) + builtin_str_eq_pr"
+    pin: "test/e2e/phase14_callable_print.sh — fn_named + fn_anon + defmulti + str_eq_pr + builtin_named (#<clojure.core/+>) + builtin_inc (#<clojure.core/inc>, the inc/inc' tie-break) + builtin_str_eq_pr"
   - id: "AD-026"
     summary: "`read-string` is eval-free: `#=(form)` (clj's read-eval reader macro) is NOT evaluated. clj reads with `*read-eval*` true by default, so `(read-string \"#=(+ 1 2)\")` returns 3; cljw's EDN-based reader has no `#=` reader function, so it raises `No reader function for tag =` — reading data never executes code."
     example: '(read-string "#=(+ 1 2)") => clj 3 (evaluated) / cljw error "No reader function for tag =" (not evaluated)'
@@ -614,25 +595,6 @@ accepted:
       match clj.
     derives_from: "AD-002 (non-reproducible JVM identity hash is not mirrored) + ADR-0054 (the print path realizes a lazy seq to its elements). clj's LazySeq.toString is the un-overridden Object.toString; no cljw analogue exists."
     pin: "test/e2e/phase14_lazy_map.sh — `str_lazyseq_elements` locks (str (map inc [1 2 3])) => \"(2 3 4)\" and `str_interpose_lazy` locks (str (interpose :x (range 3))) => \"(0 :x 1 :x 2)\" (cljw's deterministic element form, vs clj's identity-hash toString)"
-  - id: "AD-038"
-    summary: "The `@x` deref reader macro expands to `(rt/deref x)`; clj expands to `(clojure.core/deref x)`. Both are NS-qualified (so a local `deref` cannot capture it — same reader hygiene); only the qualifying namespace differs."
-    example: '(read-string "@foo") => cljw "(rt/deref foo)" / clj "(clojure.core/deref foo)". The HYGIENE matches: (let [deref (fn [_] :shadowed)] @(atom 5)) => 5 in BOTH (the qualified deref is not captured by the local).'
-    why: |-
-      clj qualifies the `@` reader expansion to `clojure.core/deref` so a local
-      `deref` binding cannot shadow it. cljw needs the same hygiene but qualifies
-      to the `rt` primitive namespace — `rt` is cljw's canonical home for core
-      fns (`(resolve 'inc)` => `#'rt/inc`; ADR-0033 / AD-011 placement split), and
-      crucially it is the ONLY core ns resolvable in a core.clj-less environment
-      (the dual-backend differential fixture is primitive-only, so
-      `clojure.core/deref` would not resolve there — verified: it broke the
-      `@(atom 7)` diff case, `rt/deref` does not). The reader runs in every
-      context, so it must emit a symbol resolvable in every context. The
-      behavioural contract (hygiene + the deref value) is identical to clj; only
-      the printed expansion's namespace differs — the same `rt`-vs-`clojure.core`
-      surface AD-011 records. `(read-string "@x")` + printing the expansion is the
-      only place a user observes it.
-    derives_from: "AD-011 / ADR-0033 (rt-vs-clojure.core primitive placement: core fns live in `rt`, referred into clojure.core) + reader-hygiene parity (the qualification itself matches clj; only the ns name differs). `rt` is the only core ns resolvable without core.clj (the diff-test fixture)."
-    pin: "test/e2e/phase14_var_special.sh — `deref_reader_qualified` locks (read-string \"@deref\") => (rt/deref deref) and `deref_no_local_capture` locks the hygiene ((let [deref f] @(atom 5)) => 5, NOT the captured local)"
   - id: "AD-039"
     summary: "The `#(…)` anonymous-fn reader expands with DETERMINISTIC params `%1`/`%2`/`%&`; clj uses non-reproducible gensyms (`p1__N#` / `rest__N#`)."
     example: '(read-string "#(+ % 1)") => cljw "(fn* [%1] (+ %1 1))" / clj "(fn* [p1__3#] (+ p1__3# 1))" ; (read-string "#(apply + % %&)") => cljw "(fn* [%1 & %&] (apply + %1 %&))" / clj "(fn* [p1__10# & rest__11#] …)". The CALL behaviour matches: (#(+ % 1) 10) => 11 both.'
@@ -660,13 +622,12 @@ accepted:
       that rewrites one clause to `(if test then (cond rest…))` and re-expands on
       the next step. Both reach the SAME nested-if after full expansion — only
       the per-step shape an inspecting tool sees differs. Matching clj's per-step
-      form would require (a) re-emitting a `cond` call (an artificial partial
-      expansion) AND (b) qualifying it `clojure.core/cond`, which cljw cannot do
-      faithfully (cljw's macros emit bare syms; the core ns is `rt`, AD-011) — so
+      form would require re-emitting a `cond` call — an artificial partial
+      expansion of a form the Zig transform has already fully lowered — so
       exact per-step parity is impractical for zero behavioural gain. The common
       `when`/`if-not`/`when-not` forms ARE made to byte-match clj; only the
       recursive-cascade cases keep cljw's full-expand shape.
-    derives_from: "F-011 (behavioural equivalence is the contract; the macros run identically — only the intermediate macroexpand-1 FORM differs) + AD-011/ADR-0033 (cljw emits bare/`rt`-ns syms, not clojure.core-qualified, so a faithful recursive re-emit is impossible). Functionally-equivalent expansion form, like ClojureScript's macroexpansions vs JVM clj."
+    derives_from: "F-011 (behavioural equivalence is the contract; the macros run identically — only the intermediate macroexpand-1 FORM differs; cljw's Zig transforms lower eagerly in one step). Functionally-equivalent expansion form, like ClojureScript's macroexpansions vs JVM clj."
     pin: "test/e2e/phase14_when_if_not.sh — `cond_expand_full` locks (macroexpand-1 '(cond a 1 :else 2)) => (if a 1 (if :else 2 nil)) (cljw's full form), and `when_expand_multi`/`when_expand_single` lock when's byte-match with clj"
   - id: "AD-041"
     summary: "clojure.test's FAIL/ERROR report line omits clj's ` (file:line)` source-location suffix, and `report :error` prints the exception's value instead of clj's JVM cause trace. The test name, expected/actual, context line, and counts all match clj."
@@ -819,25 +780,6 @@ accepted:
       "cljw does not reproduce JVM Object/Abstract* toString surface details".
     derives_from: "ADR-0059 (no JVM — no class FQN, no Object.toString identity form) + AD-002 (non-reproducible identity hash) + AD-003 (cljw renders the record with its simple name, not the JVM FQCN) + F-011 (pr-str already matches modulo the AD-003 simple name; only the JVM-Object.toString str-form diverges)."
     pin: "test/e2e/phase7_defrecord.sh — defrecord_str_content_form (str of a record = its #Name{...} content form, not Class@hash) + defrecord_print_map_style (the pr-form it mirrors)."
-  - id: "AD-049"
-    summary: "A spec's RAW captured pred form (`s/form`, and the `:pred` in `s/explain-data`) shows core predicates qualified to the `rt` namespace (`rt/int?`) where clj shows `clojure.core/int?`. Both are the same predicate; only the qualifying namespace differs. `s/explain-str` / `s/describe` go through spec's `abbrev` (which strips ANY namespace) so they match clj EXACTLY — only the un-abbreviated `s/form` / explain-data `:pred` exposes the rt/ qualification."
-    example: '(clojure.spec.alpha/form (clojure.spec.alpha/cat :a int?)) => cljw "(clojure.spec.alpha/cat :a rt/int?)" / clj "(clojure.spec.alpha/cat :a clojure.core/int?)". But (clojure.spec.alpha/explain-str int? "x") => "\"x\" - failed: int?\n" in BOTH (abbrev strips the ns).'
-    why: |-
-      spec captures a predicate's form via syntax-quote (the `cat`/`and`/... macros),
-      which qualifies a bare core symbol to its home namespace. cljw's core fns live
-      in the `rt` primitive namespace (`(resolve 'int?)` => `#'rt/int?`; ADR-0033 /
-      AD-011 placement split — `rt` is interned, referred into clojure.core), so the
-      captured form reads `rt/int?` where clj reads `clojure.core/int?`. This is the
-      SAME rt-vs-clojure.core surface as AD-038 (the `@` reader expands to `rt/deref`)
-      and AD-011 — `rt` is cljw's canonical home for core fns, and the only core ns
-      resolvable in a core.clj-less environment. The behavioural contract is identical
-      (the predicate validates the same way; conform/valid?/explain-str/describe all
-      match clj — describe/explain go through `abbrev` which strips the ns). Only the
-      raw `s/form` / explain-data `:pred`, where a user inspects the unabbreviated
-      captured form, exposes the difference. cljw cannot show `clojure.core/int?`
-      without making `clojure.core` int?'s home ns, which ADR-0033 forbids.
-    derives_from: "AD-011 / ADR-0033 (rt-vs-clojure.core primitive placement: core fns live in `rt`, referred into clojure.core) + AD-038 (the sibling reader-macro rt/-qualification) + F-011 (conform/valid?/explain-str/describe all match clj; only the raw captured form's ns differs). The fn-name half is clj-IDENTICAL: cljw's `fn-sym` recovers a predicate's name from its `#<ns/name>` print form, so explain/describe abbreviate to the same `int?` clj shows."
-    pin: "test/e2e/phase15_spec.sh — `ad049_form` locks (s/form (s/cat :a int?)) => (clojure.spec.alpha/cat :a rt/int?) (the rt/-qualified captured form), while `explain_named`/`describe` lock the clj-IDENTICAL abbreviated surface."
   - id: "AD-050"
     summary: "A float-zero DIVISOR yields IEEE ±Inf/NaN on EVERY cljw `/` path; clj returns ±Inf only on its compile-inlined 2-arg literal path and THROWS `ArithmeticException: Divide by zero` on the runtime path (1-arg `(/ 0.0)`, `(apply / …)`, `(reduce / …)`). An INTEGER-zero divisor throws in BOTH (parity). VALUE-bearing common case `(/ x 0.0)` matches clj (±Inf)."
     example: '(/ 1.0 0.0) => ##Inf in BOTH ; (/ 0.0) => cljw ##Inf / clj THROW ; (apply / [1.0 0.0]) => cljw ##Inf / clj THROW ; (reduce / [1.0 2.0 0.0]) => cljw ##Inf / clj THROW ; (/ 1 0) => THROW in both'
@@ -899,3 +841,20 @@ accepted:
       English-locale JVM.
     derives_from: "ADR-0059 no-JVM (no host tz/locale database dependency) + F-011 (the deterministic-environment rendering matches TZ=UTC/en JVM exactly; only the host-env-dependent rendering diverges) + D-462 (tz database out of scope for the edge/wasm target)."
     pin: "test/e2e/phase14_format.sh — the `%t` cases pin the UTC/English renderings (epoch-0 hour 00, Fri/Feb names, +0000 zone)."
+  - id: "AD-053"
+    summary: "`(all-ns)` / `(find-ns 'cljw.internal)` expose the kernel-helper namespace `cljw.internal` (the home of the `__`-prefixed Zig primitives macro expansions call qualified); mainline Clojure has no such namespace."
+    example: "(some? (find-ns 'cljw.internal)) => cljw true / clj false (no such ns). (contains? (ns-publics 'clojure.core) '__class) => false BOTH (internals never pollute the core surface)."
+    why: |-
+      ADR-0171 merged the former `rt` kernel ns into `clojure.core` so every
+      public builtin homes where mainline homes it (`(resolve '+)` =>
+      `#'clojure.core/+`). The `__`-prefixed kernel helpers (protocol/defrecord
+      lowering targets, stream plumbing, …) cannot live in clojure.core without
+      polluting its public surface, and cannot be core-private because macro
+      EXPANSIONS reference them qualified from user namespaces (a cross-ns
+      private reference would fail, as it does in clj). So they live public in
+      a dedicated, documented `cljw.*` namespace — consistent with the owned
+      cljw surface (cljw.error, cljw.http.*). The one observable divergence is
+      the namespace's existence; no mainline code enumerates (all-ns) expecting
+      a closed set.
+    derives_from: "ADR-0171 (rt merge — internals need a public qualified home for macro expansions) + ADR-0059 no-JVM (cljw owns the cljw.* namespace surface) + F-011 (every public var's home ns now MATCHES clj; only the extra internal ns is cljw-specific)."
+    pin: "test/e2e/phase15_namespace.sh — `ad053-internal-ns` locks (find-ns 'cljw.internal) present, `ad053-rt-gone` locks the old `rt` ns absent, `ad053-no-leak` locks __-internals out of clojure.core's publics."

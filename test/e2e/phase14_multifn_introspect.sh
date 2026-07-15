@@ -2,7 +2,7 @@
 # test/e2e/phase14_multifn_introspect.sh — multimethod introspection fns
 # (methods / get-method / remove-method / prefers) as clojure.core wrappers
 # over the rt/ primitives. Surfaced by the multimethod clj-diff sweep
-# (the rt/__methods etc. primitives existed but had no public wrapper).
+# (the cljw.internal/__methods etc. primitives existed but had no public wrapper).
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 BIN="zig-out/bin/cljw"
