@@ -17,12 +17,20 @@ const SourceLocation = error_mod.SourceLocation;
 const dispatch = @import("../../runtime/dispatch.zig");
 const object_monitor = @import("../../runtime/concurrency/object_monitor.zig");
 
-/// `(__locking obj thunk)` — acquire obj's heap-value monitor, call `(thunk)`,
-/// release. An immediate (no `HeapHeader`, hence no identity) cannot be locked.
+/// The shared monitor every IMMEDIATE lock target uses. JVM `(locking 1 …)`
+/// locks the interned Integer's monitor; cljw immediates carry no per-value
+/// header, so they all share this one — mutual exclusion is preserved
+/// (over-serialized across distinct immediates: a safe strengthening).
+var immediate_monitor: @import("../../runtime/value/heap_header.zig").HeapHeader =
+    @import("../../runtime/value/heap_header.zig").HeapHeader.init(.string);
+
+/// `(__locking obj thunk)` — acquire obj's heap-value monitor (immediates
+/// share one static monitor; nil raises, as clj's `monitor-enter` NPEs),
+/// call `(thunk)`, release.
 pub fn lockingFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
     try error_catalog.checkArity("locking", args, 2, loc);
-    const hdr = args[0].heapHeader() orelse
-        return error_catalog.raise(.locking_needs_object, loc, .{});
+    if (args[0].isNil()) return error_catalog.raise(.locking_needs_object, loc, .{});
+    const hdr = args[0].heapHeader() orelse &immediate_monitor;
     object_monitor.enter(hdr) catch
         return error_catalog.raise(.locking_nest_overflow, loc, .{ .cap = object_monitor.HELD_CAP });
     defer object_monitor.exit(hdr);

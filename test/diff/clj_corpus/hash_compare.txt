@@ -1,0 +1,118 @@
+(hash "abc")
+;;=> 74834163
+(hash "")
+;;=> 0
+(hash "日本語")
+;;=> 1333041691
+(hash :a)
+;;=> -2123407586
+(hash :user/k)
+;;=> 2135504402
+(hash 'a)
+;;=> -482876059
+(hash 'my.ns/sym)
+;;=> 836858493
+(hash 5)
+;;=> 1740791543
+(hash -7)
+;;=> -1703207563
+(hash 5.5)
+;;=> 1075183616
+(hash 5.0)
+;;=> 1075052544
+(hash -0.0)
+;;=> 0
+(hash 0.0)
+;;=> 0
+(hash \a)
+;;=> 97
+(hash nil)
+;;=> 0
+(hash [1 2])
+;;=> 156247261
+(hash '(1 2))
+;;=> 156247261
+(hash #{1})
+;;=> 1038464948
+(hash {:a 1})
+;;=> 1772842048
+(hash {:a 1 :b 2})
+;;=> 161871944
+(hash #{:x "y"})
+;;=> -745435100
+(hash (map inc [1 2]))
+;;=> -1504369821
+(hash (range 3))
+;;=> -1475093015
+(hash 5N)
+;;=> 1740791543
+(hash 1/2)
+;;=> 3
+(hash 3/4)
+;;=> 7
+(hash -1/2)
+;;=> -3
+(hash 1.5M)
+;;=> 466
+(hash 2.50M)
+;;=> 776
+(hash #uuid "00000000-0000-0000-0000-000000000001")
+;;=> 1
+(hash [])
+;;=> -2017569654
+(hash {})
+;;=> -15128758
+(hash #{})
+;;=> -15128758
+(= (hash [1 2]) (hash '(1 2)))
+;;=> true
+(compare "a" "c")
+;;=> -2
+(compare "b" "a")
+;;=> 1
+(compare "abc" "abd")
+;;=> -1
+(compare "abc" "ab")
+;;=> 1
+(compare "" "a")
+;;=> -1
+(compare \a \c)
+;;=> -2
+(compare :a :c)
+;;=> -2
+(compare :user/a :user/b)
+;;=> -1
+(compare 'aa 'ac)
+;;=> -2
+(compare 5 3)
+;;=> 1
+(compare 5.5 1.1)
+;;=> 1
+(compare [1 2] [1 3])
+;;=> -1
+(compare nil "x")
+;;=> -1
+(try (Double/parseDouble "1.5d") (catch Exception e :err))
+;;=> 1.5
+(try (Double/parseDouble "1.5F") (catch Exception e :err))
+;;=> 1.5
+(try (Double/parseDouble "0x1.8p1") (catch Exception e :err))
+;;=> 3.0
+(try (Double/parseDouble "0x1f") (catch Exception e :err))
+;;=> :err
+(try (Double/parseDouble "infinity") (catch Exception e :err))
+;;=> :err
+(try (Double/parseDouble "Infinity") (catch Exception e :err))
+;;=> ##Inf
+(try (Double/parseDouble "-Infinity") (catch Exception e :err))
+;;=> ##-Inf
+(try (Double/parseDouble "nan") (catch Exception e :err))
+;;=> :err
+(locking 5 42)
+;;=> 42
+(locking :k 9)
+;;=> 9
+(hash true)
+;;=> 1231
+(hash false)
+;;=> 1237

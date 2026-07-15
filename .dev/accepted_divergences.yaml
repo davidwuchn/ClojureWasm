@@ -67,15 +67,6 @@ accepted:
       decimal rendering of a subnormal differs. The value is bit-identical.
     derives_from: "F-005 (IEEE-754 f64; rendering is a shortest-round-trip cosmetic)"
     pin: "none — single subnormal edge, value bit-identical"
-  - id: "AD-006"
-    summary: "`Double/parseDouble` rejects some rare Java FloatingDecimal grammar (lower-case inf/nan, trailing d/f, hex-float)"
-    example: '(Double/parseDouble "0x1p4") => cljw rejects / clj 16.0'
-    why: |-
-      The full Java FloatingDecimal grammar (hex-float, case-insensitive
-      Infinity/NaN, trailing type suffixes) is a rare-edge surface not
-      reimplemented; the common decimal grammar is at parity.
-    derives_from: "F-011 (rare-edge; common-path parity holds) — revisit if a real corpus hits it"
-    pin: "none — rare-edge (would be promoted to a bug if real code hits it)"
   - id: "AD-007"
     summary: "Error rendering shows cljw's catalog Kind, not the JVM exception class"
     example: '(quot 10 0) => cljw "[arithmetic_error] ..." / clj "ArithmeticException ..." (both reject). Also `(class <caught-ex>)`: cljw returns its own simple-named exception class (AD-003), Kind-derived, which APPROXIMATES but does not always match clj''s per-case JVM class — e.g. `(inc nil)`/`(+ nil 1)` => cljw ClassCastException / clj NullPointerException; `(count 5)` => cljw IllegalArgumentException / clj UnsupportedOperationException; `(inc "x")` => ClassCastException in BOTH. Both ALWAYS reject the same inputs.'
@@ -114,22 +105,27 @@ accepted:
     derives_from: "F-005 (numeric tower: auto-promote on overflow is the chosen cljw surface)"
     pin: "none — clj diverges (throws) by design; cljw's promote result is pinned by the D-165/overflow cycle's e2e (campaign C7, next session)"
   - id: "AD-009"
-    summary: "`hash` / `.hashCode` values are cljw-native and differ from clj/JVM (only intra-cljw consistency is guaranteed)"
-    example: '(.hashCode "abc") => cljw -1277324294 / clj 96354 ; (hash "abc") => cljw -1277324294 / clj 74834163 ; (format "%h" "abc") => cljw "b3dd93fa" / clj "17862"'
+    summary: "cljw carries ONE hash system: `(hash x)` (hasheq) is clj-PORTABLE for value types (2026-07-16 leaf-formula alignment), and `.hashCode` / format `%h` DELEGATE to it — where clj/JVM has a SECOND, Java-side `Object.hashCode` system (`(.hashCode \"abc\")` → 96354 ≠ `(hash \"abc\")` → 74834163) that cljw does not reproduce. Residual hasheq divergences: defrecord/deftype instances (per-run descriptor seed) and >i64 ratio/BigDecimal components."
+    example: '(hash "abc") => 74834163 BOTH ; (hash :user/k) / (hash 1/2) / (hash 1.5M) / (hash [1 2]) all match clj (corpus hash_compare.txt) ; (.hashCode "abc") => cljw 74834163 (= hash) / clj 96354 (Java String.hashCode) ; (hash (->Pt 1 2)) => cljw per-run / clj -1763326040'
     why: |-
-      cljw has its own hash algorithm (no JVM `Object.hashCode` / Clojure
-      `Murmur3` hasheq to reproduce). Hash values are explicitly impl-specific
-      in Clojure (not stable across versions/runtimes), so the VALUE divergence
-      is acceptable — what matters is intra-cljw consistency (equal values hash
-      equal, the HAMT key contract) which holds. `(.hashCode x)` is the
-      Object-method fallback (D-207) delegating to cljw `hash` (`valueHash`),
-      so it inherits the same cljw-native value. Integers happen to match clj
-      (`(hash 42)` == 1871679806 both); strings/keywords/etc. differ. The
-      `%h`/`%H` format conversion (D-216) renders that same hashCode in hex, so
-      it inherits the cljw-native value too (the conversion works; only the
-      value diverges).
-    derives_from: "ADR-0059 (no-JVM: no Object.hashCode); F-011 (cljw-native internals; hash is impl-specific)"
-    pin: "test/diff/clj_corpus/object_methods.txt — `(= (.hashCode \"abc\") (hash \"abc\"))` → true (delegation locked) + `(integer? (.hashCode 42))` → true; test/e2e/phase14_format.sh — `(format \"%h\" \"abc\")` produces lowercase hex (intra-cljw stable)"
+      The 2026-07-16 D-562 sweep aligned every leaf hasheq formula with clj:
+      strings (Murmur3.hashInt over Java String.hashCode), keywords/symbols
+      (hashCombine(hashUnencodedChars(name), ns hashCode) ± the keyword
+      golden offset), doubles (Double.hashCode, -0.0→0), booleans
+      (1231/1237), chars (codepoint), UUIDs (msb^lsb fold), Ratio
+      (num.hashCode ^ den.hashCode over BigInteger hashCodes), normalized
+      BigDecimal (31*unscaled.hashCode + scale); ints and the Murmur
+      collection folds already matched. So `(hash x)` values are portable
+      clj values for data. What cljw deliberately does NOT carry is the
+      JVM's SECOND hash system — `Object.hashCode` (Java 31-fold String
+      hash, per-class formulas, identity hashes) — `(.hashCode x)` and
+      format `%h`/`%H` delegate to the single hasheq (D-207/D-216).
+      Residual hasheq gaps: defrecord/deftype hasheq seeds on the per-run
+      descriptor pointer (clj XORs the ns-qualified record-name hash — the
+      AD-035 ns-qualification residual would unlock parity), and ratio /
+      BigDecimal components beyond i64 keep the cljw-native managed hash.
+    derives_from: "ADR-0059 (no-JVM: no second Object.hashCode system, no identity hashes) + F-011 (the observable `(hash x)` values now MATCH clj for data; the single-hash delegation is the internal-representation freedom) + AD-028 (the mapHash/mapHasheq sibling) + AD-035 (the record-name residual)."
+    pin: "test/diff/clj_corpus/hash_compare.txt — 30+ `(hash …)` golden values locked against real clj across every aligned type; test/diff/clj_corpus/object_methods.txt — `(= (.hashCode \"abc\") (hash \"abc\"))` → true (single-system delegation locked); test/e2e/phase14_format.sh — `%h` lowercase-hex rendering."
   - id: "AD-010"
     summary: "a Namespace value prints as `#object[Namespace \"<name>\"]` (no JVM class FQN, no `0xADDR` identity hash)"
     example: '(pr-str *ns*) => cljw "#object[Namespace \"user\"]" / clj "#object[clojure.lang.Namespace 0x5ad10c1a \"user\"]" ; (str *ns*) => "user" (matches clj)'
@@ -176,25 +172,6 @@ accepted:
       the observable serializability contract the retry-only engine upholds.
     derives_from: "ADR-0090 §3 (MVCC retry-only LockingTransaction) + §4 (no-barge)"
     pin: "test/e2e/phase15_stm_dosync.sh — `dosync_concurrent_serializable` locks 4 threads × 100 `(dosync (alter c inc))` => exactly 400 (the serializable, no-lost-update result the retry-only engine produces under contention)"
-
-  - id: "AD-014"
-    summary: "`(locking x ...)` on an immutable immediate (small int, nil, bool, keyword without a heap header) ERRORS in cljw, where JVM clj locks the boxed value's monitor and runs the body. Only heap objects (those with a HeapHeader) are lockable."
-    why: |-
-      cljw's heap-value monitor (ADR-0092) locks the object's own header word
-      (ADR-0009 lock_state bits). An immutable immediate is NaN-boxed with NO
-      HeapHeader (F-004) — it has no identity word to lock and no shared mutable
-      state to protect, so there is nothing a monitor could guard. JVM clj locks
-      the boxed Long/Boolean/etc.'s intrinsic monitor, which "works" but is a
-      foot-gun: `(locking 5 ...)` and `(locking 5 ...)` on two threads serialise
-      only because `Long.valueOf` happens to cache small longs to the same box —
-      a large long gives distinct boxes and does NOT serialise. cljw rejects the
-      whole class with a clear `locking requires an object with identity` error
-      instead of silently providing fragile, value-dependent serialisation. Real
-      code always locks a mutable object (atom / deftype instance / etc.), which
-      is a heap object and locks fine; only the pathological literal-as-lock
-      pattern hits this. derives_from F-004 (immediates have no header).
-    derives_from: "F-004 (NaN-box: immediates carry no HeapHeader) + ADR-0092 (heap-value monitor)"
-    pin: "test/e2e/phase16_locking.sh — `locking_immediate_errors` locks `(locking 5 42)` => an object-identity error (not the body value JVM clj would return)"
 
   - id: "AD-015"
     summary: "An ESCAPED `with-local-vars` local var, deref'd AFTER its dynamic extent, returns `nil` in cljw, where JVM returns an unreproducible `#object[clojure.lang.Var$Unbound 0x…]` opaque."
@@ -660,22 +637,24 @@ accepted:
     derives_from: "ADR-0059 (no-JVM: no identity-hash `#object[…]` object form) + F-011 (behavioural equivalence — toString / method results / `=` match; only the unreproducible identity-wrapped pr form differs)."
     pin: "test/e2e/phase15_java_time_instant.sh + test/e2e/phase15_java_time_duration.sh + test/e2e/phase15_java_time_local_date_time.sh + test/e2e/phase15_java_time_local_date.sh — lock `(str v)` = the bare ISO toString (Instant ISO_INSTANT variable fraction + `Z`; Duration `PT…`; LocalDateTime ISO-local conditional seconds + variable fraction; LocalDate `yyyy-MM-dd`; LocalTime ISO-local time) and the instance-method + value-`=` results; the absent `#object[…]` pr wrapper is the locked divergence."
   - id: "AD-043"
-    summary: "`(compare a b)` (and the `.compareTo` it backs) returns the SIGN (-1/0/1, an Order) where clj returns a difference MAGNITUDE for some Comparable types — a char-difference for strings, a field-difference (year/month/day) for java.time.LocalDate/LocalDateTime, and the ORDINAL difference for the host enums (RoundingMode/ChronoUnit/DayOfWeek/Month, ADR-0161). The SIGN is identical, so sort order / branch behaviour match; only the non-zero magnitude differs."
-    example: "(compare \"a\" \"c\") => cljw -1 / clj -2. (compare (java.time.LocalDate/of 2024 6 1) (java.time.LocalDate/of 2024 1 1)) => cljw 1 / clj 5. (compare java.time.DayOfWeek/MONDAY java.time.DayOfWeek/SUNDAY) => cljw -1 / clj -6 (ordinal diff). (compare (java.time.Instant/ofEpochSecond 5) (java.time.Instant/ofEpochSecond 9)) => -1 BOTH (Instant/Duration/LocalTime already match — they use a sign-returning Long/Integer.compare). (sort …) is identical either way."
+    summary: "`(compare a b)` on java.time values (LocalDate/LocalDateTime …) and host enums returns the SIGN (-1/0/1) where clj returns a field-difference / ordinal-difference MAGNITUDE. The SIGN is identical, so sort order / branch behaviour match; only the non-zero magnitude differs. (Strings / chars / keywords / symbols return clj's exact Java compareTo magnitude since 2026-07-16 — `(compare \"a\" \"c\")` → -2 — so the divergence is TEMPORAL/ENUM-only.)"
+    example: "(compare (java.time.LocalDate/of 2024 6 1) (java.time.LocalDate/of 2024 1 1)) => cljw 1 / clj 5. (compare java.time.DayOfWeek/MONDAY java.time.DayOfWeek/SUNDAY) => cljw -1 / clj -6 (ordinal diff). (compare (java.time.Instant/ofEpochSecond 5) (java.time.Instant/ofEpochSecond 9)) => -1 BOTH (Instant/Duration/LocalTime already match — they use a sign-returning Long/Integer.compare). (sort …) is identical either way."
     why: |-
       cljw's `compare` (runtime/compare.zig, ADR-0053) is uniformly Order-based:
       every arm returns `std.math.Order` → -1/0/1 when surfaced to Clojure. The
       JVM's `Comparable.compareTo` is only contracted to return a value whose
       SIGN indicates the ordering — the magnitude is unspecified — and several
-      JVM types (String, LocalDate, LocalDateTime) happen to return a field
-      difference. Mirroring those magnitudes would mean re-deriving each type's
+      JVM types (LocalDate, LocalDateTime, the enums) happen to return a field
+      difference. The STRING-family magnitudes (string/char/keyword/symbol) ARE
+      mirrored since 2026-07-16 (`compare.zig::javaCompareTo`, Java
+      String.compareTo over UTF-16 units) — real code sorts and diffs on
+      those. The temporal/enum magnitudes would mean re-deriving each type's
       JVM-internal subtraction chain (ADR-0059: cljw is not a JVM reimpl) for
       zero behavioural gain: `sort`, `compare`-keyed maps, and every
-      sign-test see identical results. This is a PRE-EXISTING cljw property
-      (strings already diverged); the D-462 temporal `compare` arms follow the
-      same sign-based design and this AD records the whole class.
+      sign-test see identical results. The D-462 temporal `compare` arms
+      follow the sign-based design; this AD records that residual class.
     derives_from: "java.lang.Comparable / java.util.Comparator contract (only the SIGN of compareTo/compare is specified; magnitude is implementation-defined) + ADR-0053 (cljw compare is Order-based) + ADR-0059 (no JVM-internal magnitude reproduction)."
-    pin: "test/e2e/phase15_java_time_sort.sh — locks cljw's sign-based results: `(compare \"a\" \"c\")` => -1, `(compare LocalDate-jun LocalDate-jan)` => 1 (clj 5), and `(sort [LocalDate …])` ordering. test/e2e/phase15_java_time_dow_month.sh (block `enum-compare`) locks the host-enum sign result `(compare DayOfWeek/MONDAY DayOfWeek/SUNDAY)` => -1 (clj -6) + a sort by ordinal (ADR-0161)."
+    pin: "test/e2e/phase15_java_time_sort.sh — locks the TEMPORAL sign results (`(compare LocalDate-jun LocalDate-jan)` => 1, clj 5) + `(sort [LocalDate …])` ordering + the string-family MAGNITUDE parity (`string-family-magnitude`: `(compare \"a\" \"c\")` => -2). test/e2e/phase15_java_time_dow_month.sh (block `enum-compare`) locks the host-enum sign result `(compare DayOfWeek/MONDAY DayOfWeek/SUNDAY)` => -1 (clj -6) + a sort by ordinal (ADR-0161)."
   - id: "AD-044"
     summary: "`(class x)` / `(type x)` of a callable / seq-view / reference / transient returns a STABLE clj-faithful simple class name (`Fn` / `MultiFn` / `LazySeq` / `LongRange` / `Atom` / `Ref` / `Future` / `Promise` / …); clj returns a per-fn GENERATED class (`user$eval$fn__135`, `clojure.core$_PLUS_`) for closures/builtins and a per-call REIFY class for future/promise that cljw has no analog for."
     example: '(class (fn [x] x)) => cljw "Fn" / clj "user$eval$fn__135". (class +) => cljw "Fn" / clj "clojure.core$_PLUS_". (class (future 1)) => cljw "Future" / clj "core$future_call$reify__8578". (class (map inc [1])) => cljw "LazySeq" / clj "clojure.lang.LazySeq" (this one matches).'

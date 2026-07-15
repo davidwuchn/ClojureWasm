@@ -391,6 +391,11 @@ pub fn compare(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation
         var cs: dispatch.CallSite = .{};
         if (try dispatch.dispatchOrNull(rt, env, &cs, args[0], "Comparable", "-compare-to", args[0..2], loc)) |r| return r;
     }
+    // clj returns the Java compareTo MAGNITUDE for string/char/keyword/
+    // symbol pairs (`(compare "a" "c")` → -2); everything else is a sign.
+    if (compare_mod.javaCompareTo(args[0], args[1])) |diff| {
+        return Value.initInteger(diff);
+    }
     const order = try compare_mod.valueCompare(rt, args[0], args[1], loc);
     const c: i64 = switch (order) {
         .lt => -1,

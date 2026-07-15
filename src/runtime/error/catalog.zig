@@ -894,7 +894,7 @@ pub fn entry(comptime code: Code) Entry {
         .locking_needs_object => .{
             .kind = .type_error,
             .phase = .eval,
-            .template = "locking requires an object with identity, got an immutable value with none",
+            .template = "cannot lock nil (locking requires an object)",
         },
         .locking_nest_overflow => .{
             .kind = .value_error,

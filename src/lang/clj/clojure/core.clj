@@ -2310,6 +2310,16 @@
   [s]
   (eval (read-string (str "(do " s "\n)"))))
 
+;; `(definline name & decl)` — mainline defines an `:inline`-carrying fn (a
+;; compiler hint cljw has no analogue for: no inline compilation pass), so
+;; the observable surface — a callable fn Var — is exactly defn's.
+(defmacro definline
+  "Experimental - like defn, but will be used as a macro by the compiler when
+  it is called at the head of a form. In ClojureWasm the fn definition is the
+  whole behaviour (no inline compilation), so this is defn."
+  [name & decl]
+  (list* 'defn name decl))
+
 ;; `(memfn name & args)` — a fn wrapping an instance method call (clj 1.0).
 ;; `args` are PARAMETER names (not values): (memfn substring s e) → a 3-arg fn
 ;; (fn [target s e] (. target (substring s e))). clj type-hints the target to

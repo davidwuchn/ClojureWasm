@@ -64,9 +64,21 @@
   126/128 (out: TYPE by design, codePointOf = D-561). Var-existence
   gaps mainline completion shows (defmacro-as-var /
   default-data-readers / definline / defstruct) → the D-562 inventory.
+- **AD INVENTORY DONE (2026-07-16, D-562 DISCHARGED)**: all 50 AD rows
+  classified with live clj/cljw probes (checklist:
+  `private/notes/D562-ad-inventory-checklist.md`). RETIRED as parity:
+  AD-006 (parseDouble = exact Java grammar) + AD-014 (locking
+  immediates; nil errors like clj). NARROWED: **AD-009** — every leaf
+  hasheq formula aligned with clj (`(hash x)` is now clj-PORTABLE for
+  data: strings/keywords/symbols/doubles/bools/uuids/ratios/BigDecimals;
+  corpus `hash_compare.txt` locks 30+ goldens) + **AD-043** (string-family
+  compare returns clj's compareTo magnitude). `defmacro` Var + `definline`
+  landed. Residuals → **D-563** (record ns-qualification, Var source
+  meta, default-data-readers/defstruct, temporal compare magnitudes).
 - **ARC (user-directed 2026-07-15, the landing point)**: (1) completion
-  parity — DONE. (2) AD full inventory + convergence (**D-562**) —
-  NEXT. (3) THEN cut a release tag.
+  parity — DONE. (2) AD inventory + convergence — DONE. (3) **cut the
+  release tag — NEXT** (pre-tag: full gate --serial-e2e ALONE +
+  conformance + verify_projects + CI green).
 - **First task on resume**: self-select from the live `active:` list,
   easiest-first (D-523's architecture/wasm-demo residual + D-522 drain 3
   landed 2026-07-14; D-430 is DISCHARGED — the prior pointer here was

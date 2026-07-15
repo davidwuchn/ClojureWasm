@@ -97,6 +97,107 @@ fn numericOrder(rt: *Runtime, a: Value, b: Value, loc: SourceLocation) anyerror!
     return promote.orderNumeric(rt, a, b);
 }
 
+/// Java `String.compareTo` over UTF-16 code units: the raw difference at
+/// the first mismatching unit, else the unit-count difference. clj's
+/// `compare` on strings returns this magnitude (not a clamped sign) —
+/// `(compare "a" "c")` → -2.
+fn javaStringCompareTo(a: []const u8, b: []const u8) i64 {
+    var ia = std.unicode.Utf8View.initUnchecked(a).iterator();
+    var ib = std.unicode.Utf8View.initUnchecked(b).iterator();
+    var ua: [2]u32 = undefined;
+    var ub: [2]u32 = undefined;
+    var na: usize = 0;
+    var nb: usize = 0;
+    var qa: usize = 0;
+    var qb: usize = 0;
+    var len_a: i64 = 0;
+    var len_b: i64 = 0;
+    while (true) {
+        if (qa == na) {
+            na = 0;
+            qa = 0;
+            if (ia.nextCodepoint()) |cp| {
+                if (cp >= 0x10000) {
+                    const v: u32 = @as(u32, cp) - 0x10000;
+                    ua[0] = 0xD800 + (v >> 10);
+                    ua[1] = 0xDC00 + (v & 0x3FF);
+                    na = 2;
+                } else {
+                    ua[0] = cp;
+                    na = 1;
+                }
+                len_a += @intCast(na);
+            }
+        }
+        if (qb == nb) {
+            nb = 0;
+            qb = 0;
+            if (ib.nextCodepoint()) |cp| {
+                if (cp >= 0x10000) {
+                    const v: u32 = @as(u32, cp) - 0x10000;
+                    ub[0] = 0xD800 + (v >> 10);
+                    ub[1] = 0xDC00 + (v & 0x3FF);
+                    nb = 2;
+                } else {
+                    ub[0] = cp;
+                    nb = 1;
+                }
+                len_b += @intCast(nb);
+            }
+        }
+        if (qa == na or qb == nb) break; // one side exhausted
+        const ca = ua[qa];
+        const cb = ub[qb];
+        if (ca != cb) return @as(i64, ca) - @as(i64, cb);
+        qa += 1;
+        qb += 1;
+    }
+    // Drain the remaining units to count UTF-16 lengths (buffered units
+    // were already counted at refill time).
+    while (ia.nextCodepoint()) |cp| len_a += if (cp >= 0x10000) 2 else 1;
+    while (ib.nextCodepoint()) |cp| len_b += if (cp >= 0x10000) 2 else 1;
+    return len_a - len_b;
+}
+
+/// clj's `compare` MAGNITUDE for the Java compareTo-backed pairs: strings,
+/// chars, and keyword/symbol (ns-then-name via String.compareTo). Returns
+/// null for every other pair — those go through `valueCompare`'s sign.
+/// (Symbol.compareTo returns ±1 for the nil-vs-non-nil ns split and 0 for
+/// equals; the magnitudes come from the String comparisons.)
+pub fn javaCompareTo(a: Value, b: Value) ?i64 {
+    if (a.tag() != b.tag()) return null;
+    return switch (a.tag()) {
+        .string => javaStringCompareTo(string_mod.asString(a), string_mod.asString(b)),
+        .char => @as(i64, a.asChar()) - @as(i64, b.asChar()),
+        .keyword => blk: {
+            const ka = keyword.asKeyword(a);
+            const kb = keyword.asKeyword(b);
+            break :blk nsNameCompareTo(ka.ns, ka.name, kb.ns, kb.name);
+        },
+        .symbol => blk: {
+            const sa = symbol.asSymbol(a);
+            const sb = symbol.asSymbol(b);
+            break :blk nsNameCompareTo(sa.ns, sa.name, sb.ns, sb.name);
+        },
+        else => null,
+    };
+}
+
+/// clojure.lang.Symbol.compareTo's magnitudes: 0 on equals, ∓1 on the
+/// nil-ns split, else the ns / name String.compareTo difference.
+fn nsNameCompareTo(ns_a: ?[]const u8, name_a: []const u8, ns_b: ?[]const u8, name_b: []const u8) i64 {
+    const ns_eq = (ns_a == null and ns_b == null) or
+        (ns_a != null and ns_b != null and std.mem.eql(u8, ns_a.?, ns_b.?));
+    if (ns_eq and std.mem.eql(u8, name_a, name_b)) return 0;
+    if (ns_a == null and ns_b != null) return -1;
+    if (ns_a != null and ns_b == null) return 1;
+    if (ns_a) |na| {
+        const nsc = javaStringCompareTo(na, ns_b.?);
+        if (nsc != 0) return nsc;
+    }
+    return javaStringCompareTo(name_a, name_b);
+}
+
 fn nsNameOrder(ns_a: ?[]const u8, name_a: []const u8, ns_b: ?[]const u8, name_b: []const u8) Order {
     // A nil namespace sorts before any non-nil namespace.
     if (ns_a == null and ns_b != null) return .lt;

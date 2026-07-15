@@ -124,6 +124,49 @@ pub fn hashUnencodedChars(utf8: []const u8) u32 {
     return fmix(h1, 2 *% unit_count);
 }
 
+/// Java `String.hashCode`: the 31-fold over UTF-16 code units (surrogate
+/// pairs for astral codepoints). Feeds `hashInt` for clj's String hasheq
+/// and `hashCombine` for the Symbol/Keyword hasheq ns part.
+pub fn javaStringHashCode(utf8: []const u8) i32 {
+    var h: i32 = 0;
+    var it = std.unicode.Utf8View.initUnchecked(utf8).iterator();
+    while (it.nextCodepoint()) |cp| {
+        if (cp >= 0x10000) {
+            const v: u32 = @as(u32, cp) - 0x10000;
+            h = h *% 31 +% @as(i32, @intCast(0xD800 + (v >> 10)));
+            h = h *% 31 +% @as(i32, @intCast(0xDC00 + (v & 0x3FF)));
+        } else {
+            h = h *% 31 +% @as(i32, @intCast(cp));
+        }
+    }
+    return h;
+}
+
+/// `java.math.BigInteger.hashCode` for an i64-fitting value: the 31-fold
+/// over the magnitude's 32-bit words, times the signum. Backs clj's Ratio
+/// (num.hashCode ^ den.hashCode) and normalized-BigDecimal
+/// (31*unscaled.hashCode + scale) hasheq values.
+pub fn javaBigIntegerHashCodeI64(v: i64) i32 {
+    if (v == 0) return 0;
+    const neg = v < 0;
+    const abs: u64 = if (neg) @as(u64, @intCast(-(v + 1))) + 1 else @intCast(v);
+    const hi: u32 = @truncate(abs >> 32);
+    const lo: u32 = @truncate(abs);
+    var h: i32 = 0;
+    if (hi != 0) h = 31 *% h +% @as(i32, @bitCast(hi));
+    h = 31 *% h +% @as(i32, @bitCast(lo));
+    return if (neg) -%h else h;
+}
+
+/// `clojure.lang.Util.hashCombine` (the boost-style combiner Symbol.hasheq
+/// folds its ns hash with).
+pub fn hashCombine(seed_val: u32, hash_val: u32) u32 {
+    const seed: i32 = @bitCast(seed_val);
+    const h: i32 = @bitCast(hash_val);
+    const golden: i32 = @bitCast(@as(u32, 0x9e3779b9));
+    return @bitCast(seed ^ (h +% golden +% (seed << 6) +% (seed >> 2)));
+}
+
 /// Mix a precomputed collection hash with its element count.
 pub fn mixCollHash(hash_val: u32, count: u32) u32 {
     var h1 = SEED;

@@ -697,7 +697,9 @@ fn typedInstanceKeyEq(a: Value, b: Value) bool {
 /// the JVM Murmur output.
 pub fn valueHash(v: Value) u32 {
     return switch (v.tag()) {
-        .string => hash.hashString(string_mod.asString(v)),
+        // clj's String hasheq: Murmur3.hashInt over Java String.hashCode —
+        // portable (hash "abc") values (the AD-009 leaf-formula alignment).
+        .string => hash.hashInt(hash.javaStringHashCode(string_mod.asString(v))),
         // Symbol hashes by its ns+name `hash_cache` (ADR-0110), meta-IGNORED.
         // Without this, symbol fell to the `else` pointer-bits hash, so an
         // interned `'a` and a with-meta'd `'a` (distinct pointers) hashed apart
@@ -712,13 +714,22 @@ pub fn valueHash(v: Value) u32 {
         // are interned, so `=` keywords share one cell ⇒ one hash_cache.
         .keyword => keyword_mod.asKeyword(v).hash_cache +% 0x9e3779b9,
         .integer => hash.hashLong(@as(i64, v.asInteger())),
-        .float => hash.hashLong(@bitCast(v.asFloat())),
+        // clj's Double hasheq = Double.hashCode (bits ^ bits>>>32), with the
+        // -0.0 → 0 special case (Numbers.hasheq).
+        .float => blk: {
+            const d = v.asFloat();
+            if (d == 0.0) break :blk 0; // covers +0.0 and -0.0 (clj: -0.0 → 0, 0.0 hashCode = 0)
+            const bits: u64 = @bitCast(d);
+            break :blk @as(u32, @truncate(bits ^ (bits >> 32)));
+        },
         // Char hashes as its codepoint — clj's Character.hashCode ((hash \a)
         // → 97), and keeps `(Character/hashCode c)` == `(.hashCode c)` ==
         // `(hash c)`. Without this arm char fell to the `else` NaN-box-bits
         // hash (deterministic, but JVM-divergent).
         .char => @as(u32, v.asChar()),
         .nil => 0,
+        // Java Boolean.hashCode — clj's (hash true) → 1231 / false → 1237.
+        .boolean => if (v.asBoolean()) 1231 else 1237,
         // Sequential keys (vector / list) hash by content, ordered +
         // recursive, via the SAME formula so an equal vector and list
         // collide into one bucket (Clojure's sequential =). Partner of
@@ -734,9 +745,15 @@ pub fn valueHash(v: Value) u32 {
         // keys land in the bucket their `=` hash-map / hash-set occupies.
         .sorted_map => sorted.contentHashMap(v),
         .sorted_set => sorted.contentHashSet(v),
-        // UUID hashes by its 128 bits so equal UUIDs share a bucket
-        // (partner of the `.uuid` valueEqual arm, ADR-0074).
-        .uuid => hash.hashString(&uuid_mod.asUuid(v).bytes),
+        // clj's UUID hasheq = java.util.UUID.hashCode: fold msb^lsb to an
+        // int (equal UUIDs share a bucket; the value is clj-portable).
+        .uuid => blk: {
+            const bytes = uuid_mod.asUuid(v).bytes;
+            const msb = std.mem.readInt(u64, bytes[0..8], .big);
+            const lsb = std.mem.readInt(u64, bytes[8..16], .big);
+            const hilo = msb ^ lsb;
+            break :blk @as(u32, @truncate(hilo >> 32)) ^ @as(u32, @truncate(hilo));
+        },
         // TaggedLiteral: clj's `31*hash(tag)+hash(form)` (ADR-0075).
         .tagged_literal => blk: {
             const t = tagged_literal_mod.asTaggedLiteral(v);
@@ -757,19 +774,29 @@ pub fn valueHash(v: Value) u32 {
         .big_int => big_int.managedHash(big_int.asManaged(v)),
         .ratio => blk: {
             const r = v.decodePtr(*const ratio.Ratio);
-            // Small: hash the inline i64s via `hashLong` — identical to what
-            // `managedHash` yields for an i64-fitting Managed, so cross-rep hash
-            // parity holds (a small `1/2` hashes as a big `1/2` would). The
-            // canonical invariant means the big form of an i64-fitting ratio
-            // never exists, but the formulas agree regardless (ADR-0149).
-            if (r.is_small == 1) break :blk 31 *% hash.hashLong(r.smallNum()) +% hash.hashLong(r.smallDen());
+            // clj's Ratio.hashCode (= its hasheq): numerator.hashCode() ^
+            // denominator.hashCode() over java.math.BigInteger hashCodes —
+            // `(hash 1/2)` → 3, portable. Components beyond i64 keep the
+            // cljw-native managed hash (AD-009 residual; a canonical
+            // reduced ratio virtually never carries one).
+            if (r.is_small == 1) {
+                const hn: u32 = @bitCast(hash.javaBigIntegerHashCodeI64(r.smallNum()));
+                const hd: u32 = @bitCast(hash.javaBigIntegerHashCodeI64(r.smallDen()));
+                break :blk hn ^ hd;
+            }
             break :blk 31 *% big_int.managedHash(r.bigNum().m) +% big_int.managedHash(r.bigDen().m);
         },
         .big_decimal => blk: {
-            // Hash the cached STRIPPED projection (ADR-0077 / D-205) so
-            // `1.5M` / `1.50M` collide in one bucket (clj scale-independent
-            // hasheq); keyEqValue's `.decimal` arm then confirms equality.
+            // clj's BigDecimal hasheq: normalize (stripTrailingZeros — the
+            // cached ADR-0077 / D-205 projection) then BigDecimal.hashCode =
+            // 31 * unscaledValue.hashCode() + scale — `(hash 1.5M)` → 466,
+            // portable, and `1.5M`/`1.50M` still collide in one bucket.
+            // An unscaled beyond i64 keeps the cljw-native managed hash
+            // (AD-009 residual).
             const d = v.decodePtr(*const big_decimal.BigDecimal);
+            const fits: ?i64 = d.norm_unscaled.m.toConst().toInt(i64) catch null;
+            if (fits) |u|
+                break :blk @bitCast(31 *% hash.javaBigIntegerHashCodeI64(u) +% d.norm_scale);
             break :blk 31 *% big_int.managedHash(d.norm_unscaled.m) +% hash.hashInt(d.norm_scale);
         },
         else => hash.hashLong(@bitCast(@intFromEnum(v))),

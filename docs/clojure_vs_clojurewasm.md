@@ -61,7 +61,6 @@ render identically (matching clj).
 | `Long` overflow past i64          | `+` / `*` **throw** `ArithmeticException` (only `+'` / `*'` promote) | auto-promotes to BigInt                   | AD-008 |
 | `(float x)`                       | yields an f32                                                        | yields an f64 (no f32 representation)     | AD-004 |
 | Subnormal double shortest-render  | `4.9E-324`                                                           | `5.0E-324` (same f64 bit pattern)         | AD-005 |
-| `Double/parseDouble` rare grammar | accepts hex-float `0x1p4`, lower `inf`/`nan`, trailing `d`/`f`       | rejects those rare forms                  | AD-006 |
 | `(biginteger 5)`                  | `5` of class `java.math.BigInteger`                                  | `5N` of class `BigInt` (one big-int type) | AD-016 |
 
 `(* Long/MAX_VALUE 2)` => `18446744073709551614N` (cljw) vs a throw (clj) is
@@ -112,7 +111,6 @@ primitive-slot machinery has nothing to constrain.
 | Behaviour                                      | Clojure (JVM)                            | ClojureWasm                                         | AD     |
 |------------------------------------------------|------------------------------------------|-----------------------------------------------------|--------|
 | STM conflict resolution                        | `barge` (older txn preempts a younger)   | retry-only; identical committed result              | AD-013 |
-| `(locking imm …)` on a header-less immediate  | locks the boxed monitor, runs the body   | errors (`locking requires an object with identity`) | AD-014 |
 | An ESCAPED `with-local-vars` var, deref'd late | `#object[clojure.lang.Var$Unbound 0x…]` | `nil` (no Unbound sentinel; memory-safe)            | AD-015 |
 
 STM's committed state is identical (4 threads × 100 `(dosync (alter c inc))`

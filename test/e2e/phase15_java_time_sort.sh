@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # test/e2e/phase15_java_time_sort.sh — (compare …)/(sort …) on java.time values
 # (D-462). compare.zig grew a per-type temporal arm (mirrors the equal.zig arms),
-# so temporal values are Comparable. cljw's compare is SIGN-based (Order -1/0/1)
-# — clj returns a field-difference MAGNITUDE for LocalDate/LocalDateTime and a
-# char-difference for strings; both are Comparable-contract-equal (sign only),
-# recorded as AD-043. This test pins cljw's sign behavior. Uses `cljw -`. Layer 2.
+# so temporal values are Comparable. TEMPORAL compare stays SIGN-based (clj
+# returns a field-difference MAGNITUDE for LocalDate/LocalDateTime — the
+# narrowed AD-043); string/char/keyword/symbol compare now returns clj's
+# Java compareTo magnitude (parity, 2026-07-16). Uses `cljw -`. Layer 2.
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 BIN="zig-out/bin/cljw"
@@ -33,11 +33,11 @@ EOF
 )
 eq 'sort' "$B" '[2024-01-01 2024-03-01 2024-06-01]'
 
-# --- AD-043 pin: cljw compare is sign-based for strings too (clj -> char diff)
+# --- PARITY (was in AD-043): strings return clj's compareTo magnitude
 C=$(out <<'EOF' 2>&1
-(println (compare "a" "c"))
+(println (compare "a" "c") (compare "abc" "ab") (compare :a :c) (compare 'aa 'ac) (compare \a \c))
 EOF
 )
-eq 'sign-string' "$C" '-1'
+eq 'string-family-magnitude' "$C" '-2 1 -2 -2 -2'
 
 echo "OK — phase15_java_time_sort (D-462) green"

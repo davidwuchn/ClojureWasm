@@ -147,13 +147,11 @@ fn formatKey(alloc: std.mem.Allocator, ns: ?[]const u8, name_: []const u8) ![]u8
 }
 
 fn computeHash(ns: ?[]const u8, name_: []const u8) u32 {
-    if (ns) |n| {
-        var h: u32 = hash.hashString(n);
-        h = h *% 31 +% hash.hashString("/");
-        h = h *% 31 +% hash.hashString(name_);
-        return h;
-    }
-    return hash.hashString(name_);
+    // clojure.lang.Symbol.hasheq: hashCombine(Murmur3.hashUnencodedChars(name),
+    // ns String.hashCode or 0) — the portable clj hash value (a Keyword adds
+    // 0x9e3779b9 on top at the valueHash layer, = Keyword.hasheq).
+    const ns_hash: u32 = if (ns) |n| @bitCast(hash.javaStringHashCode(n)) else 0;
+    return hash.hashCombine(hash.hashUnencodedChars(name_), ns_hash);
 }
 
 // --- tests ---

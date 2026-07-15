@@ -7,8 +7,9 @@
 # surface primitive is `__locking` (lang/primitive/locking.zig); the macro is
 # `expandLocking` (lang/macro_transforms.zig).
 #
-# Also the AD-014 pin: `(locking <immediate>)` errors (immediates have no
-# identity to lock — derives_from F-004), where JVM clj would lock the box.
+# Also the immediate/nil cases: `(locking <immediate>)` works (immediates
+# share one static monitor — a safe over-serialization vs JVM's per-box
+# monitor); `(locking nil …)` errors (clj NPEs).
 
 set -euo pipefail
 cd "$(dirname "$0")/../.."
@@ -44,15 +45,16 @@ assert_eq 'locking_body_env' "$got" '15'
 got=$("$BIN" -e '(let [a (atom 0)] (run! deref (mapv (fn [_] (future (dotimes [_ 100] (locking a (reset! a (inc @a)))))) (range 4))) @a)' 2>/dev/null | last_line)
 assert_eq 'locking_mutual_exclusion' "$got" '400'
 
-# AD-014 pin: locking an immediate (no HeapHeader, hence no identity) is a clean
-# error, not a crash. JVM clj locks the boxed value; cljw errors (derives_from
-# F-004). If this ever starts succeeding, AD-014 must be reconsidered.
-diag=$("$BIN" -e '(locking 5 42)' 2>&1 || true)
+# PARITY (was AD-014, retired 2026-07-16): locking an immediate works —
+# JVM clj locks the boxed value's monitor; cljw immediates share one
+# static monitor (a safe over-serialization). nil still errors (clj NPEs).
+assert_eq 'locking_immediate' "$("$BIN" -e '(locking 5 42)' 2>/dev/null | last_line)" '42'
+diag=$("$BIN" -e '(locking nil 42)' 2>&1 || true)
 case "$diag" in
-    *"requires an object"*|*"identity"*)
-        echo "PASS locking_immediate_errors -> diagnostic" ;;
+    *"cannot lock nil"*)
+        echo "PASS locking_nil_errors -> diagnostic" ;;
     *)
-        fail "locking_immediate_errors: expected an object-identity diagnostic, got '$diag'" ;;
+        fail "locking_nil_errors: expected the nil diagnostic, got '$diag'" ;;
 esac
 
 # Missing body is a macroexpand-time error.

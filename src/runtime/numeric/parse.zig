@@ -39,22 +39,44 @@ pub fn parseUnsigned(comptime T: type, s: []const u8, radix: u8) ParseError!T {
     return std.fmt.parseUnsigned(T, s, radix) catch error.InvalidNumberFormat;
 }
 
-/// Parse an f64 from `s`, matching Java/Clojure `Double.parseDouble` /
-/// `parse-double`. Unlike integer parsing, Java's `Double.parseDouble`
-/// TRIMS surrounding whitespace (via `String.trim`), so `(parse-double
-/// " 3.14 ")` is `3.14` in real clj — Zig's bare `parseFloat` would
-/// reject it. Underscores are rejected as for integers. Zig already
-/// accepts the `Infinity` / `-Infinity` / `NaN` spellings clj uses.
-///
-/// Known residual divergence (recorded, not fixed): Zig's `parseFloat`
-/// also accepts the lenient `inf` / `nan` / `infinity` spellings that
-/// Java rejects, and rejects Java's trailing `d`/`f` suffix + hex
-/// floats — matching Java's full FloatingDecimal grammar is
-/// disproportionate for those rare edges.
+/// Parse an f64 from `s`, matching Java's `Double.parseDouble`
+/// (FloatingDecimal grammar): surrounding whitespace TRIMMED
+/// (`String.trim`), optional sign + EXACT-case `Infinity` / `NaN`
+/// (lowercase `inf`/`nan`/`infinity` reject, unlike Zig's lenient
+/// parser), an optional trailing `d`/`D`/`f`/`F` suffix on numeric
+/// forms, and hex floats (`0x1.8p1`). Underscores reject as for
+/// integers.
 pub fn parseFloat(s: []const u8) ParseError!f64 {
     if (std.mem.findScalar(u8, s, '_') != null) return error.InvalidNumberFormat;
     const trimmed = std.mem.trim(u8, s, &std.ascii.whitespace);
-    return std.fmt.parseFloat(f64, trimmed) catch error.InvalidNumberFormat;
+    if (trimmed.len == 0) return error.InvalidNumberFormat;
+    var body = trimmed;
+    var neg = false;
+    if (body[0] == '+' or body[0] == '-') {
+        neg = body[0] == '-';
+        body = body[1..];
+    }
+    if (std.mem.eql(u8, body, "Infinity"))
+        return if (neg) -std.math.inf(f64) else std.math.inf(f64);
+    if (std.mem.eql(u8, body, "NaN")) return std.math.nan(f64);
+    // Numeric forms may carry one trailing d/D/f/F (incl. hex floats).
+    var num = trimmed;
+    if (num.len >= 2) switch (num[num.len - 1]) {
+        'd', 'D', 'f', 'F' => num = num[0 .. num.len - 1],
+        else => {},
+    };
+    // Every remaining valid form starts (post-sign) with a digit or '.'
+    // — this is what rejects Zig's lenient `inf` / `nan` spellings.
+    var chk = num;
+    if (chk.len > 0 and (chk[0] == '+' or chk[0] == '-')) chk = chk[1..];
+    if (chk.len == 0 or !(std.ascii.isDigit(chk[0]) or chk[0] == '.'))
+        return error.InvalidNumberFormat;
+    // Java's hex-float grammar REQUIRES the binary exponent (`0x1f`
+    // rejects, `0x1fp0` parses); Zig's parser would accept the bare form.
+    if (chk.len > 1 and chk[0] == '0' and (chk[1] == 'x' or chk[1] == 'X')) {
+        if (std.mem.findAny(u8, chk[2..], "pP") == null) return error.InvalidNumberFormat;
+    }
+    return std.fmt.parseFloat(f64, num) catch error.InvalidNumberFormat;
 }
 
 const testing = std.testing;

@@ -348,7 +348,7 @@ confirmed exprs into a `*.txt` corpus here via `--corpus`.
 > Do not duplicate the list here — edit the SSOT. Summary for orientation:
 > AD-001 set/map print order · AD-002 opaque-ref `#<tag>` print · AD-003
 > `(class x)` simple name · AD-004 `(float …)` is f64 · AD-005 subnormal
-> shortest-render · AD-006 rare `Double/parseDouble` grammar · AD-007 error
+> shortest-render · AD-007 error
 > renders cljw catalog Kind (both runtimes still reject identically).
 - **clojure.set** — `union`/`intersection`/`difference` (0..3-arity + empty),
   `subset?`/`superset?`, `select`, `map-invert`, `rename-keys`, `project`,

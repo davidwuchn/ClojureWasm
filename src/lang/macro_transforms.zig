@@ -55,6 +55,14 @@ pub fn registerInto(env: *Env, table: *macro_dispatch.Table) !void {
         try ensureRegistered(table, entry.name, entry.expand);
     }
 
+    // `defmacro` is an ANALYZER special form in cljw (SPECIAL_FORMS), but
+    // mainline exposes it as a clojure.core macro Var. Intern a marker Var
+    // so `(resolve 'defmacro)` / completion / doc see it — the analyzer
+    // intercepts the name at the list head before any var dispatch, so the
+    // marker's nil root is unreachable from calls.
+    const dm = try env.intern(core_ns, "defmacro", .nil_val, null);
+    dm.flags.macro_ = true;
+
     // Boot-time core → user macro refer mirrors the primitive-Var path
     // so macros (`let`, `cond`, `->`, ...) resolve unqualified at the
     // REPL prompt before `core.clj` finishes loading.
