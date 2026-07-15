@@ -1,0 +1,58 @@
+[
+  {
+    "group": "core_vars",
+    "probes": [
+      {"prefix": "def", "ns": "user"},
+      {"prefix": "map", "ns": "user"},
+      {"prefix": "ma", "ns": "user"}
+    ]
+  },
+  {
+    "group": "user_ns",
+    "setup": ["(defn my-user-fn [x] x)", "(def my-user-var 1)", "(defmacro my-user-macro [x] x)"],
+    "probes": [
+      {"prefix": "my-", "ns": "user"}
+    ]
+  },
+  {
+    "group": "stdlib_ns",
+    "setup": ["(require '[clojure.string :as str])"],
+    "probes": [
+      {"prefix": "str/j", "ns": "user"},
+      {"prefix": "clojure.str", "ns": "user"},
+      {"prefix": "clojure.string/spl", "ns": "user"}
+    ]
+  },
+  {
+    "group": "classes",
+    "probes": [
+      {"prefix": "Character", "ns": "user"},
+      {"prefix": "Big", "ns": "user"}
+    ]
+  },
+  {
+    "group": "static_members",
+    "probes": [
+      {"prefix": "Character/", "ns": "user"},
+      {"prefix": "Character/BY", "ns": "user"},
+      {"prefix": "Character/isD", "ns": "user"},
+      {"prefix": "Long/MAX", "ns": "user"},
+      {"prefix": "Math/P", "ns": "user"}
+    ]
+  },
+  {
+    "group": "keywords",
+    "setup": ["(do :require :req-un :my-local-kw)"],
+    "probes": [
+      {"prefix": ":req", "ns": "user"},
+      {"prefix": ":my-local", "ns": "user"}
+    ]
+  },
+  {
+    "group": "negative",
+    "probes": [
+      {"prefix": "__make", "ns": "user"},
+      {"prefix": "zzz-no-such-prefix", "ns": "user"}
+    ]
+  }
+]

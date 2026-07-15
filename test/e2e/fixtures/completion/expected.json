@@ -1,0 +1,941 @@
+{
+ "classes|Big": [
+  {
+   "candidate": "BigDecimal",
+   "type": "class"
+  },
+  {
+   "candidate": "BigInteger",
+   "type": "class"
+  },
+  {
+   "candidate": "clojure.lang.BigInt",
+   "type": "class"
+  },
+  {
+   "candidate": "java.math.BigDecimal",
+   "type": "class"
+  },
+  {
+   "candidate": "java.math.BigInteger",
+   "type": "class"
+  },
+  {
+   "candidate": "sun.nio.cs.ext.Big5",
+   "type": "class"
+  },
+  {
+   "candidate": "sun.nio.cs.ext.Big5_HKSCS",
+   "type": "class"
+  },
+  {
+   "candidate": "sun.nio.cs.ext.Big5_HKSCS_2001",
+   "type": "class"
+  },
+  {
+   "candidate": "sun.nio.cs.ext.Big5_Solaris",
+   "type": "class"
+  }
+ ],
+ "classes|Character": [
+  {
+   "candidate": "Character",
+   "type": "class"
+  },
+  {
+   "candidate": "com.sun.org.apache.xerces.internal.dom.CharacterDataImpl",
+   "type": "class"
+  },
+  {
+   "candidate": "com.sun.xml.internal.stream.events.CharacterEvent",
+   "type": "class"
+  },
+  {
+   "candidate": "java.lang.Character",
+   "type": "class"
+  },
+  {
+   "candidate": "java.lang.CharacterData",
+   "type": "class"
+  },
+  {
+   "candidate": "java.lang.CharacterData00",
+   "type": "class"
+  },
+  {
+   "candidate": "java.lang.CharacterData01",
+   "type": "class"
+  },
+  {
+   "candidate": "java.lang.CharacterData02",
+   "type": "class"
+  },
+  {
+   "candidate": "java.lang.CharacterData03",
+   "type": "class"
+  },
+  {
+   "candidate": "java.lang.CharacterData0E",
+   "type": "class"
+  },
+  {
+   "candidate": "java.lang.CharacterDataLatin1",
+   "type": "class"
+  },
+  {
+   "candidate": "java.lang.CharacterDataPrivateUse",
+   "type": "class"
+  },
+  {
+   "candidate": "java.lang.CharacterDataUndefined",
+   "type": "class"
+  },
+  {
+   "candidate": "java.lang.CharacterName",
+   "type": "class"
+  },
+  {
+   "candidate": "java.lang.classfile.attribute.CharacterRangeInfo",
+   "type": "class"
+  },
+  {
+   "candidate": "java.lang.classfile.attribute.CharacterRangeTableAttribute",
+   "type": "class"
+  },
+  {
+   "candidate": "java.lang.classfile.instruction.CharacterRange",
+   "type": "class"
+  },
+  {
+   "candidate": "java.nio.charset.CharacterCodingException",
+   "type": "class"
+  },
+  {
+   "candidate": "java.text.CharacterIterator",
+   "type": "class"
+  },
+  {
+   "candidate": "java.text.CharacterIteratorFieldDelegate",
+   "type": "class"
+  },
+  {
+   "candidate": "javax.xml.stream.events.Characters",
+   "type": "class"
+  },
+  {
+   "candidate": "jdk.internal.icu.impl.CharacterIteratorWrapper",
+   "type": "class"
+  },
+  {
+   "candidate": "jdk.internal.org.commonmark.text.Characters",
+   "type": "class"
+  },
+  {
+   "candidate": "org.w3c.dom.CharacterData",
+   "type": "class"
+  },
+  {
+   "candidate": "sun.font.CharacterIteratorCodePointIterator",
+   "type": "class"
+  },
+  {
+   "candidate": "sun.jvm.hotspot.debugger.win32.coff.Characteristics",
+   "type": "class"
+  }
+ ],
+ "core_vars|def": [
+  {
+   "candidate": "def",
+   "type": "special-form"
+  },
+  {
+   "candidate": "default-data-readers",
+   "ns": "clojure.core",
+   "type": "var"
+  },
+  {
+   "candidate": "definline",
+   "ns": "clojure.core",
+   "type": "macro"
+  },
+  {
+   "candidate": "definterface",
+   "ns": "clojure.core",
+   "type": "macro"
+  },
+  {
+   "candidate": "defmacro",
+   "ns": "clojure.core",
+   "type": "macro"
+  },
+  {
+   "candidate": "defmethod",
+   "ns": "clojure.core",
+   "type": "macro"
+  },
+  {
+   "candidate": "defmulti",
+   "ns": "clojure.core",
+   "type": "macro"
+  },
+  {
+   "candidate": "defn",
+   "ns": "clojure.core",
+   "type": "macro"
+  },
+  {
+   "candidate": "defn-",
+   "ns": "clojure.core",
+   "type": "macro"
+  },
+  {
+   "candidate": "defonce",
+   "ns": "clojure.core",
+   "type": "macro"
+  },
+  {
+   "candidate": "defprotocol",
+   "ns": "clojure.core",
+   "type": "macro"
+  },
+  {
+   "candidate": "defrecord",
+   "ns": "clojure.core",
+   "type": "macro"
+  },
+  {
+   "candidate": "defstruct",
+   "ns": "clojure.core",
+   "type": "macro"
+  },
+  {
+   "candidate": "deftype",
+   "ns": "clojure.core",
+   "type": "macro"
+  }
+ ],
+ "core_vars|ma": [
+  {
+   "candidate": "macroexpand",
+   "ns": "clojure.core",
+   "type": "function"
+  },
+  {
+   "candidate": "macroexpand-1",
+   "ns": "clojure.core",
+   "type": "function"
+  },
+  {
+   "candidate": "make-array",
+   "ns": "clojure.core",
+   "type": "function"
+  },
+  {
+   "candidate": "make-hierarchy",
+   "ns": "clojure.core",
+   "type": "function"
+  },
+  {
+   "candidate": "map",
+   "ns": "clojure.core",
+   "type": "function"
+  },
+  {
+   "candidate": "map-entry?",
+   "ns": "clojure.core",
+   "type": "function"
+  },
+  {
+   "candidate": "map-indexed",
+   "ns": "clojure.core",
+   "type": "function"
+  },
+  {
+   "candidate": "map?",
+   "ns": "clojure.core",
+   "type": "function"
+  },
+  {
+   "candidate": "mapcat",
+   "ns": "clojure.core",
+   "type": "function"
+  },
+  {
+   "candidate": "mapv",
+   "ns": "clojure.core",
+   "type": "function"
+  },
+  {
+   "candidate": "max",
+   "ns": "clojure.core",
+   "type": "function"
+  },
+  {
+   "candidate": "max-key",
+   "ns": "clojure.core",
+   "type": "function"
+  }
+ ],
+ "core_vars|map": [
+  {
+   "candidate": "map",
+   "ns": "clojure.core",
+   "type": "function"
+  },
+  {
+   "candidate": "map-entry?",
+   "ns": "clojure.core",
+   "type": "function"
+  },
+  {
+   "candidate": "map-indexed",
+   "ns": "clojure.core",
+   "type": "function"
+  },
+  {
+   "candidate": "map?",
+   "ns": "clojure.core",
+   "type": "function"
+  },
+  {
+   "candidate": "mapcat",
+   "ns": "clojure.core",
+   "type": "function"
+  },
+  {
+   "candidate": "mapv",
+   "ns": "clojure.core",
+   "type": "function"
+  }
+ ],
+ "keywords|:my-local": [
+  {
+   "candidate": ":my-local-kw",
+   "type": "keyword"
+  }
+ ],
+ "keywords|:req": [
+  {
+   "candidate": ":req",
+   "type": "keyword"
+  },
+  {
+   "candidate": ":req-keys",
+   "type": "keyword"
+  },
+  {
+   "candidate": ":req-specs",
+   "type": "keyword"
+  },
+  {
+   "candidate": ":req-un",
+   "type": "keyword"
+  },
+  {
+   "candidate": ":require",
+   "type": "keyword"
+  },
+  {
+   "candidate": ":require-macros",
+   "type": "keyword"
+  },
+  {
+   "candidate": ":requires",
+   "type": "keyword"
+  }
+ ],
+ "negative|__make": [],
+ "negative|zzz-no-such-prefix": [],
+ "static_members|Character/": [
+  {
+   "candidate": "Character/BYTES",
+   "type": "static-field"
+  },
+  {
+   "candidate": "Character/COMBINING_SPACING_MARK",
+   "type": "static-field"
+  },
+  {
+   "candidate": "Character/CONNECTOR_PUNCTUATION",
+   "type": "static-field"
+  },
+  {
+   "candidate": "Character/CONTROL",
+   "type": "static-field"
+  },
+  {
+   "candidate": "Character/CURRENCY_SYMBOL",
+   "type": "static-field"
+  },
+  {
+   "candidate": "Character/DASH_PUNCTUATION",
+   "type": "static-field"
+  },
+  {
+   "candidate": "Character/DECIMAL_DIGIT_NUMBER",
+   "type": "static-field"
+  },
+  {
+   "candidate": "Character/DIRECTIONALITY_ARABIC_NUMBER",
+   "type": "static-field"
+  },
+  {
+   "candidate": "Character/DIRECTIONALITY_BOUNDARY_NEUTRAL",
+   "type": "static-field"
+  },
+  {
+   "candidate": "Character/DIRECTIONALITY_COMMON_NUMBER_SEPARATOR",
+   "type": "static-field"
+  },
+  {
+   "candidate": "Character/DIRECTIONALITY_EUROPEAN_NUMBER",
+   "type": "static-field"
+  },
+  {
+   "candidate": "Character/DIRECTIONALITY_EUROPEAN_NUMBER_SEPARATOR",
+   "type": "static-field"
+  },
+  {
+   "candidate": "Character/DIRECTIONALITY_EUROPEAN_NUMBER_TERMINATOR",
+   "type": "static-field"
+  },
+  {
+   "candidate": "Character/DIRECTIONALITY_FIRST_STRONG_ISOLATE",
+   "type": "static-field"
+  },
+  {
+   "candidate": "Character/DIRECTIONALITY_LEFT_TO_RIGHT",
+   "type": "static-field"
+  },
+  {
+   "candidate": "Character/DIRECTIONALITY_LEFT_TO_RIGHT_EMBEDDING",
+   "type": "static-field"
+  },
+  {
+   "candidate": "Character/DIRECTIONALITY_LEFT_TO_RIGHT_ISOLATE",
+   "type": "static-field"
+  },
+  {
+   "candidate": "Character/DIRECTIONALITY_LEFT_TO_RIGHT_OVERRIDE",
+   "type": "static-field"
+  },
+  {
+   "candidate": "Character/DIRECTIONALITY_NONSPACING_MARK",
+   "type": "static-field"
+  },
+  {
+   "candidate": "Character/DIRECTIONALITY_OTHER_NEUTRALS",
+   "type": "static-field"
+  },
+  {
+   "candidate": "Character/DIRECTIONALITY_PARAGRAPH_SEPARATOR",
+   "type": "static-field"
+  },
+  {
+   "candidate": "Character/DIRECTIONALITY_POP_DIRECTIONAL_FORMAT",
+   "type": "static-field"
+  },
+  {
+   "candidate": "Character/DIRECTIONALITY_POP_DIRECTIONAL_ISOLATE",
+   "type": "static-field"
+  },
+  {
+   "candidate": "Character/DIRECTIONALITY_RIGHT_TO_LEFT",
+   "type": "static-field"
+  },
+  {
+   "candidate": "Character/DIRECTIONALITY_RIGHT_TO_LEFT_ARABIC",
+   "type": "static-field"
+  },
+  {
+   "candidate": "Character/DIRECTIONALITY_RIGHT_TO_LEFT_EMBEDDING",
+   "type": "static-field"
+  },
+  {
+   "candidate": "Character/DIRECTIONALITY_RIGHT_TO_LEFT_ISOLATE",
+   "type": "static-field"
+  },
+  {
+   "candidate": "Character/DIRECTIONALITY_RIGHT_TO_LEFT_OVERRIDE",
+   "type": "static-field"
+  },
+  {
+   "candidate": "Character/DIRECTIONALITY_SEGMENT_SEPARATOR",
+   "type": "static-field"
+  },
+  {
+   "candidate": "Character/DIRECTIONALITY_UNDEFINED",
+   "type": "static-field"
+  },
+  {
+   "candidate": "Character/DIRECTIONALITY_WHITESPACE",
+   "type": "static-field"
+  },
+  {
+   "candidate": "Character/ENCLOSING_MARK",
+   "type": "static-field"
+  },
+  {
+   "candidate": "Character/END_PUNCTUATION",
+   "type": "static-field"
+  },
+  {
+   "candidate": "Character/FINAL_QUOTE_PUNCTUATION",
+   "type": "static-field"
+  },
+  {
+   "candidate": "Character/FORMAT",
+   "type": "static-field"
+  },
+  {
+   "candidate": "Character/INITIAL_QUOTE_PUNCTUATION",
+   "type": "static-field"
+  },
+  {
+   "candidate": "Character/LETTER_NUMBER",
+   "type": "static-field"
+  },
+  {
+   "candidate": "Character/LINE_SEPARATOR",
+   "type": "static-field"
+  },
+  {
+   "candidate": "Character/LOWERCASE_LETTER",
+   "type": "static-field"
+  },
+  {
+   "candidate": "Character/MATH_SYMBOL",
+   "type": "static-field"
+  },
+  {
+   "candidate": "Character/MAX_CODE_POINT",
+   "type": "static-field"
+  },
+  {
+   "candidate": "Character/MAX_HIGH_SURROGATE",
+   "type": "static-field"
+  },
+  {
+   "candidate": "Character/MAX_LOW_SURROGATE",
+   "type": "static-field"
+  },
+  {
+   "candidate": "Character/MAX_RADIX",
+   "type": "static-field"
+  },
+  {
+   "candidate": "Character/MAX_SURROGATE",
+   "type": "static-field"
+  },
+  {
+   "candidate": "Character/MAX_VALUE",
+   "type": "static-field"
+  },
+  {
+   "candidate": "Character/MIN_CODE_POINT",
+   "type": "static-field"
+  },
+  {
+   "candidate": "Character/MIN_HIGH_SURROGATE",
+   "type": "static-field"
+  },
+  {
+   "candidate": "Character/MIN_LOW_SURROGATE",
+   "type": "static-field"
+  },
+  {
+   "candidate": "Character/MIN_RADIX",
+   "type": "static-field"
+  },
+  {
+   "candidate": "Character/MIN_SUPPLEMENTARY_CODE_POINT",
+   "type": "static-field"
+  },
+  {
+   "candidate": "Character/MIN_SURROGATE",
+   "type": "static-field"
+  },
+  {
+   "candidate": "Character/MIN_VALUE",
+   "type": "static-field"
+  },
+  {
+   "candidate": "Character/MODIFIER_LETTER",
+   "type": "static-field"
+  },
+  {
+   "candidate": "Character/MODIFIER_SYMBOL",
+   "type": "static-field"
+  },
+  {
+   "candidate": "Character/NON_SPACING_MARK",
+   "type": "static-field"
+  },
+  {
+   "candidate": "Character/OTHER_LETTER",
+   "type": "static-field"
+  },
+  {
+   "candidate": "Character/OTHER_NUMBER",
+   "type": "static-field"
+  },
+  {
+   "candidate": "Character/OTHER_PUNCTUATION",
+   "type": "static-field"
+  },
+  {
+   "candidate": "Character/OTHER_SYMBOL",
+   "type": "static-field"
+  },
+  {
+   "candidate": "Character/PARAGRAPH_SEPARATOR",
+   "type": "static-field"
+  },
+  {
+   "candidate": "Character/PRIVATE_USE",
+   "type": "static-field"
+  },
+  {
+   "candidate": "Character/SIZE",
+   "type": "static-field"
+  },
+  {
+   "candidate": "Character/SPACE_SEPARATOR",
+   "type": "static-field"
+  },
+  {
+   "candidate": "Character/START_PUNCTUATION",
+   "type": "static-field"
+  },
+  {
+   "candidate": "Character/SURROGATE",
+   "type": "static-field"
+  },
+  {
+   "candidate": "Character/TITLECASE_LETTER",
+   "type": "static-field"
+  },
+  {
+   "candidate": "Character/TYPE",
+   "type": "static-field"
+  },
+  {
+   "candidate": "Character/UNASSIGNED",
+   "type": "static-field"
+  },
+  {
+   "candidate": "Character/UPPERCASE_LETTER",
+   "type": "static-field"
+  },
+  {
+   "candidate": "Character/charCount",
+   "type": "static-method"
+  },
+  {
+   "candidate": "Character/codePointAt",
+   "type": "static-method"
+  },
+  {
+   "candidate": "Character/codePointBefore",
+   "type": "static-method"
+  },
+  {
+   "candidate": "Character/codePointCount",
+   "type": "static-method"
+  },
+  {
+   "candidate": "Character/codePointOf",
+   "type": "static-method"
+  },
+  {
+   "candidate": "Character/compare",
+   "type": "static-method"
+  },
+  {
+   "candidate": "Character/digit",
+   "type": "static-method"
+  },
+  {
+   "candidate": "Character/forDigit",
+   "type": "static-method"
+  },
+  {
+   "candidate": "Character/getDirectionality",
+   "type": "static-method"
+  },
+  {
+   "candidate": "Character/getName",
+   "type": "static-method"
+  },
+  {
+   "candidate": "Character/getNumericValue",
+   "type": "static-method"
+  },
+  {
+   "candidate": "Character/getType",
+   "type": "static-method"
+  },
+  {
+   "candidate": "Character/hashCode",
+   "type": "static-method"
+  },
+  {
+   "candidate": "Character/highSurrogate",
+   "type": "static-method"
+  },
+  {
+   "candidate": "Character/isAlphabetic",
+   "type": "static-method"
+  },
+  {
+   "candidate": "Character/isBmpCodePoint",
+   "type": "static-method"
+  },
+  {
+   "candidate": "Character/isDefined",
+   "type": "static-method"
+  },
+  {
+   "candidate": "Character/isDigit",
+   "type": "static-method"
+  },
+  {
+   "candidate": "Character/isEmoji",
+   "type": "static-method"
+  },
+  {
+   "candidate": "Character/isEmojiComponent",
+   "type": "static-method"
+  },
+  {
+   "candidate": "Character/isEmojiModifier",
+   "type": "static-method"
+  },
+  {
+   "candidate": "Character/isEmojiModifierBase",
+   "type": "static-method"
+  },
+  {
+   "candidate": "Character/isEmojiPresentation",
+   "type": "static-method"
+  },
+  {
+   "candidate": "Character/isExtendedPictographic",
+   "type": "static-method"
+  },
+  {
+   "candidate": "Character/isHighSurrogate",
+   "type": "static-method"
+  },
+  {
+   "candidate": "Character/isISOControl",
+   "type": "static-method"
+  },
+  {
+   "candidate": "Character/isIdentifierIgnorable",
+   "type": "static-method"
+  },
+  {
+   "candidate": "Character/isIdeographic",
+   "type": "static-method"
+  },
+  {
+   "candidate": "Character/isJavaIdentifierPart",
+   "type": "static-method"
+  },
+  {
+   "candidate": "Character/isJavaIdentifierStart",
+   "type": "static-method"
+  },
+  {
+   "candidate": "Character/isJavaLetter",
+   "type": "static-method"
+  },
+  {
+   "candidate": "Character/isJavaLetterOrDigit",
+   "type": "static-method"
+  },
+  {
+   "candidate": "Character/isLetter",
+   "type": "static-method"
+  },
+  {
+   "candidate": "Character/isLetterOrDigit",
+   "type": "static-method"
+  },
+  {
+   "candidate": "Character/isLowSurrogate",
+   "type": "static-method"
+  },
+  {
+   "candidate": "Character/isLowerCase",
+   "type": "static-method"
+  },
+  {
+   "candidate": "Character/isMirrored",
+   "type": "static-method"
+  },
+  {
+   "candidate": "Character/isSpace",
+   "type": "static-method"
+  },
+  {
+   "candidate": "Character/isSpaceChar",
+   "type": "static-method"
+  },
+  {
+   "candidate": "Character/isSupplementaryCodePoint",
+   "type": "static-method"
+  },
+  {
+   "candidate": "Character/isSurrogate",
+   "type": "static-method"
+  },
+  {
+   "candidate": "Character/isSurrogatePair",
+   "type": "static-method"
+  },
+  {
+   "candidate": "Character/isTitleCase",
+   "type": "static-method"
+  },
+  {
+   "candidate": "Character/isUnicodeIdentifierPart",
+   "type": "static-method"
+  },
+  {
+   "candidate": "Character/isUnicodeIdentifierStart",
+   "type": "static-method"
+  },
+  {
+   "candidate": "Character/isUpperCase",
+   "type": "static-method"
+  },
+  {
+   "candidate": "Character/isValidCodePoint",
+   "type": "static-method"
+  },
+  {
+   "candidate": "Character/isWhitespace",
+   "type": "static-method"
+  },
+  {
+   "candidate": "Character/lowSurrogate",
+   "type": "static-method"
+  },
+  {
+   "candidate": "Character/offsetByCodePoints",
+   "type": "static-method"
+  },
+  {
+   "candidate": "Character/reverseBytes",
+   "type": "static-method"
+  },
+  {
+   "candidate": "Character/toChars",
+   "type": "static-method"
+  },
+  {
+   "candidate": "Character/toCodePoint",
+   "type": "static-method"
+  },
+  {
+   "candidate": "Character/toLowerCase",
+   "type": "static-method"
+  },
+  {
+   "candidate": "Character/toString",
+   "type": "static-method"
+  },
+  {
+   "candidate": "Character/toTitleCase",
+   "type": "static-method"
+  },
+  {
+   "candidate": "Character/toUpperCase",
+   "type": "static-method"
+  },
+  {
+   "candidate": "Character/valueOf",
+   "type": "static-method"
+  }
+ ],
+ "static_members|Character/BY": [
+  {
+   "candidate": "Character/BYTES",
+   "type": "static-field"
+  }
+ ],
+ "static_members|Character/isD": [
+  {
+   "candidate": "Character/isDefined",
+   "type": "static-method"
+  },
+  {
+   "candidate": "Character/isDigit",
+   "type": "static-method"
+  },
+  {
+   "candidate": "Character/isJavaLetterOrDigit",
+   "type": "static-method"
+  },
+  {
+   "candidate": "Character/isLetterOrDigit",
+   "type": "static-method"
+  }
+ ],
+ "static_members|Long/MAX": [
+  {
+   "candidate": "Long/MAX_VALUE",
+   "type": "static-field"
+  }
+ ],
+ "static_members|Math/P": [
+  {
+   "candidate": "Math/PI",
+   "type": "static-field"
+  }
+ ],
+ "stdlib_ns|clojure.str": [
+  {
+   "candidate": "clojure.string",
+   "type": "namespace"
+  }
+ ],
+ "stdlib_ns|clojure.string/spl": [
+  {
+   "candidate": "clojure.string/split",
+   "ns": "clojure.string",
+   "type": "function"
+  },
+  {
+   "candidate": "clojure.string/split-lines",
+   "ns": "clojure.string",
+   "type": "function"
+  }
+ ],
+ "stdlib_ns|str/j": [
+  {
+   "candidate": "str/join",
+   "ns": "clojure.string",
+   "type": "function"
+  }
+ ],
+ "user_ns|my-": [
+  {
+   "candidate": "my-user-fn",
+   "ns": "user",
+   "type": "function"
+  },
+  {
+   "candidate": "my-user-macro",
+   "ns": "user",
+   "type": "macro"
+  },
+  {
+   "candidate": "my-user-var",
+   "ns": "user",
+   "type": "var"
+  }
+ ]
+}
