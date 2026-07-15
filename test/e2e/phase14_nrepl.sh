@@ -394,6 +394,11 @@ vers = next(r.get("versions") for r in dm if isinstance(r, dict) and "versions" 
 cljw_v = vers.get("cljw")
 cljw_v = cljw_v.decode() if isinstance(cljw_v, bytes) else cljw_v
 assert real_version and real_version in str(cljw_v), f"describe version {cljw_v!r} != binary version {real_version!r}"
+# "clojurewasm" is the CIDER-banner key (babashka-precedent plain string,
+# same value as "cljw").
+cw_v = vers.get("clojurewasm")
+cw_v = cw_v.decode() if isinstance(cw_v, bytes) else cw_v
+assert cw_v == cljw_v, f"versions.clojurewasm {cw_v!r} != versions.cljw {cljw_v!r}"
 print(f"PASS nrepl_describe_derived -> cljw {cljw_v}")
 
 # 4h. ns honoring: an eval naming a nonexistent ns fails with

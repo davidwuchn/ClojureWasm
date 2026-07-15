@@ -40,7 +40,16 @@
   unicode_category.zig; charset.zig evaluates the JVM formulas. The one
   member out: `getName` (explicit unsupported, **D-561** — size-heavy
   name table vs gap II). Corpus `clj_corpus/character.txt` (154 golden)
-  locks parity; e2e phase14_character_statics extended.
+  locks parity; e2e phase14_character_statics extended. nREPL describe
+  now advertises `versions.clojurewasm` (babashka-precedent CIDER-banner
+  key; CIDER upstream patch draft + init.el advice:
+  `private/notes/cider-clojurewasm-banner-patch.md`).
+- **NEXT (user-directed 2026-07-15)**: CIDER completion parity — kill the
+  `(rt)` ns leak (show clojure.core), add kind annotations (<s>/<m>/<v>),
+  class + static-member candidates. Design directive: mechanically
+  extract the canonical surface FROM mainline clj into a data file
+  (EDN; F-013 definition-derived), cljw consumes it via a fixed
+  convention/layer — parity audit falls out as a by-product.
 - **First task on resume**: self-select from the live `active:` list,
   easiest-first (D-523's architecture/wasm-demo residual + D-522 drain 3
   landed 2026-07-14; D-430 is DISCHARGED — the prior pointer here was

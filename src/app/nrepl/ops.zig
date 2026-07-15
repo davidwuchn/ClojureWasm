@@ -137,8 +137,14 @@ fn opDescribe(ctx: *Ctx) anyerror!void {
     const nrepl_version = [_]bencode.Decoded.Entry{
         .{ .key = "version-string", .value = .{ .str = "1.3.1" } },
     };
+    // "clojurewasm" is the plain-string runtime-version key CIDER-style
+    // clients read for the REPL banner — the same shape babashka.nrepl
+    // advertises under "babashka" (CIDER's banner branches on that key;
+    // a ClojureWasm branch reads this one). "cljw" is the short alias
+    // kept for existing tooling.
     const versions = [_]bencode.Decoded.Entry{
         .{ .key = "cljw", .value = .{ .str = build_options.version } },
+        .{ .key = "clojurewasm", .value = .{ .str = build_options.version } },
         .{ .key = "nrepl", .value = .{ .dict = &nrepl_version } },
     };
     try ctx.respond(&.{
