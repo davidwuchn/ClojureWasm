@@ -394,6 +394,7 @@ fn staticFieldValue(rt: *Runtime, sf: *const @import("../../runtime/type_descrip
         .int => |i| try integerLiteralToValue(rt, i),
         .float => |f| Value.initFloat(f),
         .bool => |b| Value.initBoolean(b),
+        .char => |c| Value.initChar(c),
         .singleton => |s| switch (s) {
             .empty_queue => try @import("../../runtime/collection/persistent_queue.zig").emptyQueue(rt),
             .locale_us => try @import("../../runtime/locale.zig").singleton(rt, .us),

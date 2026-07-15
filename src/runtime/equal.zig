@@ -713,6 +713,11 @@ pub fn valueHash(v: Value) u32 {
         .keyword => keyword_mod.asKeyword(v).hash_cache +% 0x9e3779b9,
         .integer => hash.hashLong(@as(i64, v.asInteger())),
         .float => hash.hashLong(@bitCast(v.asFloat())),
+        // Char hashes as its codepoint — clj's Character.hashCode ((hash \a)
+        // → 97), and keeps `(Character/hashCode c)` == `(.hashCode c)` ==
+        // `(hash c)`. Without this arm char fell to the `else` NaN-box-bits
+        // hash (deterministic, but JVM-divergent).
+        .char => @as(u32, v.asChar()),
         .nil => 0,
         // Sequential keys (vector / list) hash by content, ordered +
         // recursive, via the SAME formula so an equal vector and list

@@ -32,6 +32,15 @@
   notarization) stays user-LOCKED.
 - **D-418 + D-559 agent/GC races DISCHARGED (2026-07-13)** — ADR-0150 am1;
   accepted cost = **D-560** (trigger-gated — do NOT self-select).
+- **java.lang.Character COMPLETE (2026-07-15, user-directed)** — full
+  static surface (47 methods + 70 static fields) + char instance methods
+  (charValue/compareTo) + `(hash \a)`=97 clj parity. Classification
+  flipped ASCII→full-Unicode: gen_unicode_case.py now also generates
+  General_Category/bidi/props/numeric/mirrored tables (UCD 16.0.0) into
+  unicode_category.zig; charset.zig evaluates the JVM formulas. The one
+  member out: `getName` (explicit unsupported, **D-561** — size-heavy
+  name table vs gap II). Corpus `clj_corpus/character.txt` (154 golden)
+  locks parity; e2e phase14_character_statics extended.
 - **First task on resume**: self-select from the live `active:` list,
   easiest-first (D-523's architecture/wasm-demo residual + D-522 drain 3
   landed 2026-07-14; D-430 is DISCHARGED — the prior pointer here was

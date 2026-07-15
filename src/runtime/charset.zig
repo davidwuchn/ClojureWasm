@@ -18,6 +18,7 @@
 
 const std = @import("std");
 const unicode_case = @import("unicode_case.zig");
+const unicode_category = @import("unicode_category.zig");
 
 pub const Utf8Error = error{InvalidUtf8};
 
@@ -120,13 +121,11 @@ fn appendCodepoint(out: *std.ArrayList(u8), alloc: std.mem.Allocator, cp: u21) !
     try out.appendSlice(alloc, b[0..n]);
 }
 
-/// JVM `Character.isWhitespace` mirror — recognises ASCII space, tab,
-/// CR, LF, FF, VT (matches `std.ascii.isWhitespace`) plus the Unicode
-/// SPACE_SEPARATOR / LINE_SEPARATOR / PARAGRAPH_SEPARATOR codepoints
-/// (U+1680, U+2000–U+200A, U+2028, U+2029, U+202F, U+205F, U+3000).
-/// Excludes U+00A0 NO-BREAK SPACE per JVM convention. Returns true on
-/// an empty string (vacuous truth — `blank?` callers special-case this
-/// at the source level if they need to).
+/// JVM `Character.isWhitespace` mirror over every codepoint of `s` —
+/// see `isWhitespaceCodepoint` for the formula (Zs/Zl/Zp minus the
+/// no-break spaces, plus the ASCII controls). Returns true on an empty
+/// string (vacuous truth — `blank?` callers special-case this at the
+/// source level if they need to).
 pub fn isAllWhitespace(s: []const u8) !bool {
     var iter = std.unicode.Utf8Iterator{ .bytes = s, .i = 0 };
     while (iter.nextCodepoint()) |cp| {
@@ -136,34 +135,151 @@ pub fn isAllWhitespace(s: []const u8) !bool {
 }
 
 pub fn isWhitespaceCodepoint(cp: u21) bool {
+    // JVM Character.isWhitespace: Zs minus the no-break spaces
+    // (U+00A0 / U+2007 / U+202F), Zl, Zp, plus \t \n \v \f \r and the
+    // 0x1C-0x1F file/group/record/unit separators.
     return switch (cp) {
-        // ASCII whitespace (matches std.ascii.isWhitespace).
-        ' ', '\t', '\n', '\r', 0x0B, 0x0C => true,
-        // Unicode SPACE_SEPARATOR / LINE_SEPARATOR / PARAGRAPH_SEPARATOR
-        // categories recognised by JVM Character.isWhitespace. Excludes
-        // U+00A0 / U+2007 / U+202F (NO-BREAK / FIGURE / NARROW NO-BREAK
-        // SPACE) — JVM treats those as non-whitespace.
-        0x1680, 0x2028, 0x2029, 0x205F, 0x3000 => true,
-        0x2000...0x2006 => true,
-        0x2008...0x200A => true,
-        else => false,
+        '\t', '\n', 0x0B, 0x0C, '\r', 0x1C...0x1F => true,
+        0xA0, 0x2007, 0x202F => false,
+        else => switch (unicode_category.categoryOf(cp)) {
+            CAT.Zs, CAT.Zl, CAT.Zp => true,
+            else => false,
+        },
     };
 }
 
 // Single-codepoint character classification + case folding, shared by the
 // `java.lang.Character` static surface (runtime/java/lang/Character.zig).
-// ASCII-only, matching cljw's existing string case folding (D-057 Unicode
-// caveat): the JVM uses full Unicode tables, cljw recognises ASCII a-z/A-Z/
-// 0-9 only. The oracle-verified common cases all fall in ASCII.
+// Full-Unicode: the JVM classification formulas evaluated over the
+// generated General_Category / contributory-property tables
+// (unicode_category.zig, UCD 16.0.0) — the same data the JVM reads.
 
-/// JVM `Character.isDigit` mirror (ASCII 0-9; D-057 Unicode caveat).
-pub fn isDigitCodepoint(cp: u21) bool {
-    return cp >= '0' and cp <= '9';
+/// JVM Character.getType() category byte values (the subset the
+/// classification formulas below reference).
+const CAT = struct {
+    const Lu = 1;
+    const Ll = 2;
+    const Lt = 3;
+    const Lm = 4;
+    const Lo = 5;
+    const Mn = 6;
+    const Mc = 8;
+    const Nd = 9;
+    const Nl = 10;
+    const Zs = 12;
+    const Zl = 13;
+    const Zp = 14;
+    const Cf = 16;
+    const Pc = 23;
+    const Sc = 26;
+};
+
+/// JVM Character.getType() byte value (0 = UNASSIGNED).
+pub fn categoryOf(cp: u21) u5 {
+    return unicode_category.categoryOf(cp);
 }
 
-/// JVM `Character.isLetter` mirror (ASCII a-z/A-Z; D-057 Unicode caveat).
+/// JVM Character.getDirectionality() byte value (-1 = UNDEFINED).
+pub fn directionalityOf(cp: u21) i8 {
+    return unicode_category.directionalityOf(cp);
+}
+
+/// JVM `Character.isDigit` mirror: DECIMAL_DIGIT_NUMBER (Nd).
+pub fn isDigitCodepoint(cp: u21) bool {
+    return unicode_category.categoryOf(cp) == CAT.Nd;
+}
+
+/// JVM `Character.isLetter` mirror: Lu / Ll / Lt / Lm / Lo (Nl is NOT a
+/// letter — `(Character/isLetter \Ⅰ)` is false on the JVM too).
 pub fn isLetterCodepoint(cp: u21) bool {
-    return (cp >= 'a' and cp <= 'z') or (cp >= 'A' and cp <= 'Z');
+    return switch (unicode_category.categoryOf(cp)) {
+        CAT.Lu, CAT.Ll, CAT.Lt, CAT.Lm, CAT.Lo => true,
+        else => false,
+    };
+}
+
+/// JVM `Character.isTitleCase` mirror: TITLECASE_LETTER (Lt).
+pub fn isTitleCaseCodepoint(cp: u21) bool {
+    return unicode_category.categoryOf(cp) == CAT.Lt;
+}
+
+/// JVM `Character.isSpaceChar` mirror: Zs / Zl / Zp (NBSP included,
+/// unlike isWhitespace).
+pub fn isSpaceCharCodepoint(cp: u21) bool {
+    return switch (unicode_category.categoryOf(cp)) {
+        CAT.Zs, CAT.Zl, CAT.Zp => true,
+        else => false,
+    };
+}
+
+/// JVM `Character.isDefined` mirror: assigned (category != Cn).
+pub fn isDefinedCodepoint(cp: u21) bool {
+    return unicode_category.categoryOf(cp) != 0;
+}
+
+/// JVM `Character.isMirrored` mirror (Bidi_Mirrored property).
+pub fn isMirroredCodepoint(cp: u21) bool {
+    return unicode_category.isMirrored(cp);
+}
+
+/// JVM `Character.isIdeographic` mirror (Unicode Ideographic property).
+pub fn isIdeographicCodepoint(cp: u21) bool {
+    return unicode_category.hasProp(.ideographic, cp);
+}
+
+/// JVM `Character.isAlphabetic` mirror: letters, LETTER_NUMBER, or the
+/// Other_Alphabetic contributory property.
+pub fn isAlphabeticCodepoint(cp: u21) bool {
+    if (isLetterCodepoint(cp)) return true;
+    if (unicode_category.categoryOf(cp) == CAT.Nl) return true;
+    return unicode_category.hasProp(.other_alphabetic, cp);
+}
+
+/// JVM `Character.isJavaIdentifierStart` mirror: letters, Nl, currency
+/// symbols (Sc), connector punctuation (Pc).
+pub fn isJavaIdentifierStartCodepoint(cp: u21) bool {
+    return switch (unicode_category.categoryOf(cp)) {
+        CAT.Lu, CAT.Ll, CAT.Lt, CAT.Lm, CAT.Lo, CAT.Nl, CAT.Sc, CAT.Pc => true,
+        else => false,
+    };
+}
+
+/// JVM `Character.isJavaIdentifierPart` mirror: letters, Nl, Sc, Pc, Nd,
+/// combining/non-spacing marks (Mc/Mn), or identifier-ignorable.
+pub fn isJavaIdentifierPartCodepoint(cp: u21) bool {
+    return switch (unicode_category.categoryOf(cp)) {
+        CAT.Lu, CAT.Ll, CAT.Lt, CAT.Lm, CAT.Lo, CAT.Nl, CAT.Sc, CAT.Pc, CAT.Nd, CAT.Mc, CAT.Mn => true,
+        else => isIdentifierIgnorableCodepoint(cp),
+    };
+}
+
+/// JVM `Character.isUnicodeIdentifierStart` mirror: letters, Nl, or
+/// Other_ID_Start.
+pub fn isUnicodeIdentifierStartCodepoint(cp: u21) bool {
+    if (isLetterCodepoint(cp)) return true;
+    if (unicode_category.categoryOf(cp) == CAT.Nl) return true;
+    return unicode_category.hasProp(.other_id_start, cp);
+}
+
+/// JVM `Character.isUnicodeIdentifierPart` mirror: letters, Nl, Nd,
+/// Mc/Mn, Pc, identifier-ignorable, Other_ID_Start, Other_ID_Continue.
+pub fn isUnicodeIdentifierPartCodepoint(cp: u21) bool {
+    switch (unicode_category.categoryOf(cp)) {
+        CAT.Lu, CAT.Ll, CAT.Lt, CAT.Lm, CAT.Lo, CAT.Nl, CAT.Nd, CAT.Mc, CAT.Mn, CAT.Pc => return true,
+        else => {},
+    }
+    if (isIdentifierIgnorableCodepoint(cp)) return true;
+    if (unicode_category.hasProp(.other_id_start, cp)) return true;
+    return unicode_category.hasProp(.other_id_continue, cp);
+}
+
+/// JVM `Character.isIdentifierIgnorable` mirror: the non-whitespace ISO
+/// controls (0x00-0x08 / 0x0E-0x1B / 0x7F-0x9F) plus format chars (Cf).
+pub fn isIdentifierIgnorableCodepoint(cp: u21) bool {
+    return switch (cp) {
+        0x00...0x08, 0x0E...0x1B, 0x7F...0x9F => true,
+        else => unicode_category.categoryOf(cp) == CAT.Cf,
+    };
 }
 
 /// JVM `Character.toUpperCase` mirror — the SIMPLE 1:1 Unicode map (D-057:
@@ -178,14 +294,24 @@ pub fn toLowerCodepoint(cp: u21) u21 {
     return unicode_case.toLowerSimple(cp);
 }
 
-/// JVM `Character.isUpperCase` mirror (ASCII A-Z; D-057 Unicode caveat).
+/// JVM `Character.isUpperCase` mirror: UPPERCASE_LETTER (Lu) or the
+/// Other_Uppercase contributory property (Roman numerals Ⅰ, circled Ⓐ).
 pub fn isUpperCodepoint(cp: u21) bool {
-    return cp >= 'A' and cp <= 'Z';
+    return unicode_category.categoryOf(cp) == CAT.Lu or
+        unicode_category.hasProp(.other_uppercase, cp);
 }
 
-/// JVM `Character.isLowerCase` mirror (ASCII a-z; D-057 Unicode caveat).
+/// JVM `Character.isLowerCase` mirror: LOWERCASE_LETTER (Ll) or the
+/// Other_Lowercase contributory property (feminine ordinal ª, modifier ⁱ).
 pub fn isLowerCodepoint(cp: u21) bool {
-    return cp >= 'a' and cp <= 'z';
+    return unicode_category.categoryOf(cp) == CAT.Ll or
+        unicode_category.hasProp(.other_lowercase, cp);
+}
+
+/// JVM `Character.toTitleCase` mirror — the SIMPLE 1:1 titlecase map
+/// (explicit Lt digraph mappings, falling back to the simple uppercase).
+pub fn toTitleCodepoint(cp: u21) u21 {
+    return unicode_case.toTitleSimple(cp);
 }
 
 /// JVM `Character.isLetterOrDigit` mirror (ASCII; D-057 Unicode caveat).
@@ -201,17 +327,37 @@ pub fn forDigit(d: u8, radix: u8) u21 {
     return if (d < 10) '0' + @as(u21, d) else 'a' + @as(u21, d) - 10;
 }
 
-/// JVM `Character.digit` mirror — the value of `cp` as a digit in `radix`
-/// (0-9 then a-z/A-Z = 10-35), or `null` if `cp` is not such a digit or
-/// its value is ≥ radix. `(Character/digit \f 16)` → 15; `\z 16` → null.
-pub fn digitValue(cp: u21, radix: u8) ?u8 {
-    const v: u8 = switch (cp) {
-        '0'...'9' => @intCast(cp - '0'),
+/// The 10-35 letter-digit value of `cp` (a-z / A-Z and their fullwidth
+/// forms ａ-ｚ / Ａ-Ｚ — the JVM Character.digit letter set), or null.
+fn letterDigitValue(cp: u21) ?u8 {
+    return switch (cp) {
         'a'...'z' => @intCast(cp - 'a' + 10),
         'A'...'Z' => @intCast(cp - 'A' + 10),
-        else => return null,
+        0xFF41...0xFF5A => @intCast(cp - 0xFF41 + 10), // ａ-ｚ
+        0xFF21...0xFF3A => @intCast(cp - 0xFF21 + 10), // Ａ-Ｚ
+        else => null,
     };
+}
+
+/// JVM `Character.digit` mirror — the value of `cp` as a digit in `radix`:
+/// any Unicode decimal digit (Nd: `\٥` → 5), then a-z/A-Z (incl. the
+/// fullwidth forms) = 10-35. `null` if `cp` is not such a digit or its
+/// value is ≥ radix. `(Character/digit \f 16)` → 15; `\z 16` → null.
+pub fn digitValue(cp: u21, radix: u8) ?u8 {
+    const v: u8 = unicode_category.decimalDigitValue(cp) orelse
+        (letterDigitValue(cp) orelse return null);
     return if (v < radix) v else null;
+}
+
+/// JVM `Character.getNumericValue` mirror: decimal digits and a-z/A-Z
+/// (incl. fullwidth) as in `digitValue`, plus non-decimal numerics via the
+/// UCD Numeric_Value (Ⅶ → 7); -2 for fractional values (½); -1 when the
+/// codepoint has no numeric value.
+pub fn numericValueOf(cp: u21) i32 {
+    if (unicode_category.decimalDigitValue(cp)) |v| return v;
+    if (letterDigitValue(cp)) |v| return v;
+    if (unicode_category.numericValue(cp)) |v| return v;
+    return -1;
 }
 
 /// Slice off leading whitespace codepoints per `isAllWhitespace`'s
@@ -553,4 +699,39 @@ test "replaceCharAlloc no match returns a copy" {
     const out = try replaceCharAlloc(testing.allocator, "abc", 'z', 'Z', false);
     defer testing.allocator.free(out);
     try testing.expectEqualStrings("abc", out);
+}
+
+test "classification is full-Unicode (JVM formulas over UCD tables)" {
+    try testing.expect(isLetterCodepoint(0xE9)); // é
+    try testing.expect(isLetterCodepoint(0x3042)); // あ
+    try testing.expect(!isLetterCodepoint(0x2160)); // Ⅰ is Nl, not a letter
+    try testing.expect(isDigitCodepoint(0x665)); // ٥
+    try testing.expect(isUpperCodepoint(0x2160)); // Ⅰ — Other_Uppercase
+    try testing.expect(isLowerCodepoint(0xAA)); // ª — Other_Lowercase
+    try testing.expect(isTitleCaseCodepoint(0x1C5)); // ǅ
+    try testing.expectEqual(@as(u21, 0x1C5), toTitleCodepoint(0x1C6)); // ǆ→ǅ
+    try testing.expect(isSpaceCharCodepoint(0xA0)); // NBSP is Zs …
+    try testing.expect(!isWhitespaceCodepoint(0xA0)); // … but not whitespace
+    try testing.expect(isWhitespaceCodepoint(0x1C)); // file separator
+    try testing.expect(isDefinedCodepoint('a'));
+    try testing.expect(!isDefinedCodepoint(0x378));
+    try testing.expect(isMirroredCodepoint('('));
+    try testing.expect(!isMirroredCodepoint('a'));
+    try testing.expect(isIdeographicCodepoint(0x4E00)); // 一
+    try testing.expect(isAlphabeticCodepoint(0x2160)); // Nl counts
+    try testing.expect(isJavaIdentifierStartCodepoint('$'));
+    try testing.expect(!isJavaIdentifierStartCodepoint('1'));
+    try testing.expect(isJavaIdentifierPartCodepoint('1'));
+    try testing.expect(!isUnicodeIdentifierStartCodepoint('_'));
+    try testing.expect(isUnicodeIdentifierPartCodepoint('_'));
+    try testing.expect(isIdentifierIgnorableCodepoint(0xAD)); // soft hyphen (Cf)
+    try testing.expect(!isIdentifierIgnorableCodepoint('\t'));
+    try testing.expectEqual(@as(?u8, 5), digitValue(0x665, 10)); // ٥
+    try testing.expectEqual(@as(?u8, 10), digitValue(0xFF41, 16)); // ａ
+    try testing.expectEqual(@as(?u8, null), digitValue('z', 16));
+    try testing.expectEqual(@as(i32, 7), numericValueOf(0x2166)); // Ⅶ
+    try testing.expectEqual(@as(i32, -2), numericValueOf(0xBD)); // ½
+    try testing.expectEqual(@as(i32, -1), numericValueOf('!'));
+    try testing.expectEqual(@as(u5, 12), categoryOf(' ')); // Zs
+    try testing.expectEqual(@as(i8, 1), directionalityOf(0x5D0)); // א → R
 }

@@ -157,6 +157,9 @@ pub fn registerAll(env: *Env) !void {
     // `.uuid` instance methods (getMostSignificantBits / version / compareTo …),
     // D-431 per-class completeness for java.util.UUID.
     try @import("../runtime/java/util/UUID.zig").installNativeMethods(env.rt);
+    // `.char` instance methods (charValue / compareTo) — the
+    // java.lang.Character instance surface.
+    try @import("../runtime/java/lang/Character.zig").installNativeMethods(env.rt);
 
     // ADR-0035 D9 (sub-cycle d): boot-time rt → user refer makes
     // primitives (`+`, `=`, `count`, ...) reachable unqualified at

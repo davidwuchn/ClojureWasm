@@ -4,7 +4,8 @@
 //! re-run the generator to regenerate. D-057.
 //!
 //! Three consumers, three semantics (the JVM split):
-//!   - `toUpperSimple`/`toLowerSimple` — 1:1 (Character/toUpperCase: ß stays).
+//!   - `toUpperSimple`/`toLowerSimple`/`toTitleSimple` — 1:1
+//!     (Character/toUpperCase: ß stays).
 //!   - `toUpperFull`/`toLowerFull` — 1:n via SpecialCasing then simple
 //!     (String.toUpperCase: ß→SS). Final_Sigma (the one CONDITIONAL rule)
 //!     lives in charset.zig, not here.
@@ -2959,6 +2960,69 @@ const LOWER = [_]Pair{
     .{ .cp = 0x1E91F, .to = 0x1E941 },
     .{ .cp = 0x1E920, .to = 0x1E942 },
     .{ .cp = 0x1E921, .to = 0x1E943 },
+};
+
+// Simple titlecase where it DIFFERS from simple uppercase (the Lt digraphs:
+// toTitle(ǆ)=ǅ while toUpper(ǆ)=Ǆ). Fallback is toUpperSimple.
+const TITLE = [_]Pair{
+    .{ .cp = 0x1C4, .to = 0x1C5 },
+    .{ .cp = 0x1C5, .to = 0x1C5 },
+    .{ .cp = 0x1C6, .to = 0x1C5 },
+    .{ .cp = 0x1C7, .to = 0x1C8 },
+    .{ .cp = 0x1C8, .to = 0x1C8 },
+    .{ .cp = 0x1C9, .to = 0x1C8 },
+    .{ .cp = 0x1CA, .to = 0x1CB },
+    .{ .cp = 0x1CB, .to = 0x1CB },
+    .{ .cp = 0x1CC, .to = 0x1CB },
+    .{ .cp = 0x1F1, .to = 0x1F2 },
+    .{ .cp = 0x1F2, .to = 0x1F2 },
+    .{ .cp = 0x1F3, .to = 0x1F2 },
+    .{ .cp = 0x10D0, .to = 0x10D0 },
+    .{ .cp = 0x10D1, .to = 0x10D1 },
+    .{ .cp = 0x10D2, .to = 0x10D2 },
+    .{ .cp = 0x10D3, .to = 0x10D3 },
+    .{ .cp = 0x10D4, .to = 0x10D4 },
+    .{ .cp = 0x10D5, .to = 0x10D5 },
+    .{ .cp = 0x10D6, .to = 0x10D6 },
+    .{ .cp = 0x10D7, .to = 0x10D7 },
+    .{ .cp = 0x10D8, .to = 0x10D8 },
+    .{ .cp = 0x10D9, .to = 0x10D9 },
+    .{ .cp = 0x10DA, .to = 0x10DA },
+    .{ .cp = 0x10DB, .to = 0x10DB },
+    .{ .cp = 0x10DC, .to = 0x10DC },
+    .{ .cp = 0x10DD, .to = 0x10DD },
+    .{ .cp = 0x10DE, .to = 0x10DE },
+    .{ .cp = 0x10DF, .to = 0x10DF },
+    .{ .cp = 0x10E0, .to = 0x10E0 },
+    .{ .cp = 0x10E1, .to = 0x10E1 },
+    .{ .cp = 0x10E2, .to = 0x10E2 },
+    .{ .cp = 0x10E3, .to = 0x10E3 },
+    .{ .cp = 0x10E4, .to = 0x10E4 },
+    .{ .cp = 0x10E5, .to = 0x10E5 },
+    .{ .cp = 0x10E6, .to = 0x10E6 },
+    .{ .cp = 0x10E7, .to = 0x10E7 },
+    .{ .cp = 0x10E8, .to = 0x10E8 },
+    .{ .cp = 0x10E9, .to = 0x10E9 },
+    .{ .cp = 0x10EA, .to = 0x10EA },
+    .{ .cp = 0x10EB, .to = 0x10EB },
+    .{ .cp = 0x10EC, .to = 0x10EC },
+    .{ .cp = 0x10ED, .to = 0x10ED },
+    .{ .cp = 0x10EE, .to = 0x10EE },
+    .{ .cp = 0x10EF, .to = 0x10EF },
+    .{ .cp = 0x10F0, .to = 0x10F0 },
+    .{ .cp = 0x10F1, .to = 0x10F1 },
+    .{ .cp = 0x10F2, .to = 0x10F2 },
+    .{ .cp = 0x10F3, .to = 0x10F3 },
+    .{ .cp = 0x10F4, .to = 0x10F4 },
+    .{ .cp = 0x10F5, .to = 0x10F5 },
+    .{ .cp = 0x10F6, .to = 0x10F6 },
+    .{ .cp = 0x10F7, .to = 0x10F7 },
+    .{ .cp = 0x10F8, .to = 0x10F8 },
+    .{ .cp = 0x10F9, .to = 0x10F9 },
+    .{ .cp = 0x10FA, .to = 0x10FA },
+    .{ .cp = 0x10FD, .to = 0x10FD },
+    .{ .cp = 0x10FE, .to = 0x10FE },
+    .{ .cp = 0x10FF, .to = 0x10FF },
 };
 
 const UPPER_FULL = [_]Full{
@@ -6066,6 +6130,12 @@ pub fn toLowerSimple(cp: u21) u21 {
     return lookupPair(&LOWER, cp) orelse cp;
 }
 
+/// SIMPLE 1:1 titlecase (Character/toTitleCase semantics): the explicit
+/// title mapping where one exists, else the simple uppercase.
+pub fn toTitleSimple(cp: u21) u21 {
+    return lookupPair(&TITLE, cp) orelse toUpperSimple(cp);
+}
+
 /// FULL uppercase (String.toUpperCase): SpecialCasing 1:n first, else the
 /// simple map. `buf` receives the expansion; the returned slice aliases it.
 pub fn toUpperFull(cp: u21, buf: *[3]u21) []const u21 {
@@ -6131,4 +6201,10 @@ test "simple vs full split (the JVM 3-way)" {
     try std.testing.expect(foldEq(0x3C3, 0x3A3));
     try std.testing.expect(foldEq(0x3C2, 0x3C3));
     try std.testing.expect(!foldEq(0xDF, 's'));
+}
+
+test "titlecase digraphs" {
+    try std.testing.expectEqual(@as(u21, 0x1C5), toTitleSimple(0x1C6)); // ǆ→ǅ
+    try std.testing.expectEqual(@as(u21, 0x1C5), toTitleSimple(0x1C5)); // ǅ→ǅ
+    try std.testing.expectEqual(@as(u21, 'A'), toTitleSimple('a')); // fallback = upper
 }

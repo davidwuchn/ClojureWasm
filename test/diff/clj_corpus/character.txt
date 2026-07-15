@@ -1,0 +1,308 @@
+(Character/isDigit \5)
+;;=> true
+(Character/isDigit 53)
+;;=> true
+(Character/isDigit \٥)
+;;=> true
+(Character/isDigit (int 1114112))
+;;=> false
+(Character/isLetter \a)
+;;=> true
+(Character/isLetter \é)
+;;=> true
+(Character/isLetter \あ)
+;;=> true
+(Character/isLetter \Ⅰ)
+;;=> false
+(Character/isLetterOrDigit \a)
+;;=> true
+(Character/isLetterOrDigit \-)
+;;=> false
+(Character/isWhitespace \space)
+;;=> true
+(Character/isWhitespace (char 28))
+;;=> true
+(Character/isWhitespace (char 160))
+;;=> false
+(Character/isSpaceChar (char 160))
+;;=> true
+(Character/isSpaceChar \tab)
+;;=> false
+(Character/isUpperCase \A)
+;;=> true
+(Character/isUpperCase \Ⅰ)
+;;=> true
+(Character/isLowerCase \a)
+;;=> true
+(Character/isLowerCase (char 170))
+;;=> true
+(Character/isTitleCase (char 453))
+;;=> true
+(Character/isTitleCase \A)
+;;=> false
+(Character/isAlphabetic (int \a))
+;;=> true
+(Character/isAlphabetic (int 8544))
+;;=> true
+(Character/isAlphabetic (int 49))
+;;=> false
+(Character/isDefined \a)
+;;=> true
+(Character/isDefined (char 888))
+;;=> false
+(Character/isMirrored \()
+;;=> true
+(Character/isMirrored \a)
+;;=> false
+(Character/isIdeographic (int 19968))
+;;=> true
+(Character/isIdeographic (int 12354))
+;;=> false
+(Character/isJavaIdentifierStart \$)
+;;=> true
+(Character/isJavaIdentifierStart \1)
+;;=> false
+(Character/isJavaIdentifierPart \1)
+;;=> true
+(Character/isJavaIdentifierPart \space)
+;;=> false
+(Character/isUnicodeIdentifierStart \_)
+;;=> false
+(Character/isUnicodeIdentifierStart \a)
+;;=> true
+(Character/isUnicodeIdentifierPart \_)
+;;=> true
+(Character/isUnicodeIdentifierPart \$)
+;;=> false
+(Character/isIdentifierIgnorable (char 173))
+;;=> true
+(Character/isIdentifierIgnorable \tab)
+;;=> false
+(Character/toUpperCase \a)
+;;=> \A
+(Character/toUpperCase 97)
+;;=> 65
+(Character/toUpperCase \é)
+;;=> \É
+(Character/toUpperCase \ß)
+;;=> \ß
+(Character/toUpperCase (int 1114112))
+;;=> 1114112
+(Character/toLowerCase \A)
+;;=> \a
+(Character/toLowerCase 65)
+;;=> 97
+(Character/toTitleCase \a)
+;;=> \A
+(Character/toTitleCase 97)
+;;=> 65
+(Character/toTitleCase (char 454))
+;;=> \ǅ
+(Character/getType (int \a))
+;;=> 2
+(Character/getType 32)
+;;=> 12
+(Character/getType 49)
+;;=> 9
+(Character/getType 95)
+;;=> 23
+(Character/getType (int 57344))
+;;=> 18
+(Character/getType (int 1114112))
+;;=> 0
+(Character/getDirectionality \a)
+;;=> 0
+(Character/getDirectionality (char 1488))
+;;=> 1
+(Character/getDirectionality (char 888))
+;;=> -1
+(Character/getNumericValue \a)
+;;=> 10
+(Character/getNumericValue \7)
+;;=> 7
+(Character/getNumericValue \Ⅶ)
+;;=> 7
+(Character/getNumericValue \½)
+;;=> -2
+(Character/getNumericValue \!)
+;;=> -1
+(Character/digit \f 16)
+;;=> 15
+(Character/digit \z 16)
+;;=> -1
+(Character/digit \7 10)
+;;=> 7
+(Character/digit \٥ 10)
+;;=> 5
+(Character/digit \ａ 16)
+;;=> 10
+(Character/digit 53 10)
+;;=> 5
+(Character/forDigit 15 16)
+;;=> \f
+(Character/compare \a \b)
+;;=> -1
+(Character/compare \b \a)
+;;=> 1
+(Character/compare \a \a)
+;;=> 0
+(Character/valueOf \a)
+;;=> \a
+(Character/isSpace \space)
+;;=> true
+(Character/isSpace (char 11))
+;;=> false
+(Character/reverseBytes \a)
+;;=> \愀
+(Character/hashCode \a)
+;;=> 97
+(Character/toString \a)
+;;=> "a"
+(Character/charCount 65536)
+;;=> 2
+(Character/charCount 97)
+;;=> 1
+(Character/isSurrogate (char 55296))
+;;=> true
+(Character/isHighSurrogate (char 55296))
+;;=> true
+(Character/isLowSurrogate (char 56320))
+;;=> true
+(Character/isISOControl 10)
+;;=> true
+(Character/isISOControl \a)
+;;=> false
+(Character/isBmpCodePoint 65535)
+;;=> true
+(Character/isValidCodePoint 1114111)
+;;=> true
+(Character/isValidCodePoint 1114112)
+;;=> false
+(Character/isSupplementaryCodePoint 65536)
+;;=> true
+(Character/toCodePoint (char 55296) (char 56320))
+;;=> 65536
+(Character/isSurrogatePair (char 55296) (char 56320))
+;;=> true
+(Character/codePointAt "abc" 1)
+;;=> 98
+(Character/codePointBefore "abc" 2)
+;;=> 98
+(Character/codePointCount "abc" 0 3)
+;;=> 3
+(Character/offsetByCodePoints "abc" 0 2)
+;;=> 2
+Character/MIN_RADIX
+;;=> 2
+Character/MAX_RADIX
+;;=> 36
+Character/SIZE
+;;=> 16
+Character/BYTES
+;;=> 2
+Character/MIN_CODE_POINT
+;;=> 0
+Character/MAX_CODE_POINT
+;;=> 1114111
+Character/MIN_SUPPLEMENTARY_CODE_POINT
+;;=> 65536
+(int Character/MAX_VALUE)
+;;=> 65535
+(int Character/MIN_VALUE)
+;;=> 0
+(int Character/MIN_HIGH_SURROGATE)
+;;=> 55296
+(int Character/MAX_HIGH_SURROGATE)
+;;=> 56319
+(int Character/MIN_LOW_SURROGATE)
+;;=> 56320
+(int Character/MAX_LOW_SURROGATE)
+;;=> 57343
+Character/UNASSIGNED
+;;=> 0
+Character/UPPERCASE_LETTER
+;;=> 1
+Character/LOWERCASE_LETTER
+;;=> 2
+Character/TITLECASE_LETTER
+;;=> 3
+Character/MODIFIER_LETTER
+;;=> 4
+Character/OTHER_LETTER
+;;=> 5
+Character/NON_SPACING_MARK
+;;=> 6
+Character/ENCLOSING_MARK
+;;=> 7
+Character/COMBINING_SPACING_MARK
+;;=> 8
+Character/DECIMAL_DIGIT_NUMBER
+;;=> 9
+Character/LETTER_NUMBER
+;;=> 10
+Character/OTHER_NUMBER
+;;=> 11
+Character/SPACE_SEPARATOR
+;;=> 12
+Character/LINE_SEPARATOR
+;;=> 13
+Character/PARAGRAPH_SEPARATOR
+;;=> 14
+Character/CONTROL
+;;=> 15
+Character/FORMAT
+;;=> 16
+Character/PRIVATE_USE
+;;=> 18
+Character/SURROGATE
+;;=> 19
+Character/DASH_PUNCTUATION
+;;=> 20
+Character/START_PUNCTUATION
+;;=> 21
+Character/END_PUNCTUATION
+;;=> 22
+Character/CONNECTOR_PUNCTUATION
+;;=> 23
+Character/OTHER_PUNCTUATION
+;;=> 24
+Character/MATH_SYMBOL
+;;=> 25
+Character/CURRENCY_SYMBOL
+;;=> 26
+Character/MODIFIER_SYMBOL
+;;=> 27
+Character/OTHER_SYMBOL
+;;=> 28
+Character/INITIAL_QUOTE_PUNCTUATION
+;;=> 29
+Character/FINAL_QUOTE_PUNCTUATION
+;;=> 30
+Character/DIRECTIONALITY_UNDEFINED
+;;=> -1
+Character/DIRECTIONALITY_LEFT_TO_RIGHT
+;;=> 0
+Character/DIRECTIONALITY_RIGHT_TO_LEFT
+;;=> 1
+Character/DIRECTIONALITY_RIGHT_TO_LEFT_ARABIC
+;;=> 2
+Character/DIRECTIONALITY_EUROPEAN_NUMBER
+;;=> 3
+Character/DIRECTIONALITY_WHITESPACE
+;;=> 12
+Character/DIRECTIONALITY_POP_DIRECTIONAL_ISOLATE
+;;=> 22
+(.charValue \a)
+;;=> \a
+(.compareTo \b \a)
+;;=> 1
+(.toString \a)
+;;=> "a"
+(.equals \a \a)
+;;=> true
+(.equals \a \b)
+;;=> false
+(hash \a)
+;;=> 97
+(.hashCode \a)
+;;=> 97
