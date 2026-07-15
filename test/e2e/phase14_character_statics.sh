@@ -136,7 +136,7 @@ check '(.hashCode (char 97))'               '97'    character_instance_hashCode
 set +e
 out=$("$BIN" -e '(Character/getName 97)' 2>&1)
 set -e
-[[ "$out" == *"not yet supported"* ]] || fail "character_getName_unsupported: expected explicit unsupported, got '$out'"
+[[ "$out" == *"is not supported"* ]] || fail "character_getName_unsupported: expected explicit unsupported, got '$out'"
 echo "PASS character_getName_unsupported"
 
 echo "ALL PASS phase14_character_statics"
