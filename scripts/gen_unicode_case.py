@@ -57,9 +57,15 @@ PROPS = [
     "Other_ID_Start", "Other_ID_Continue", "Ideographic",
 ]
 
+# UCD emoji/emoji-data.txt properties (JVM Character.isEmoji* family).
+EMOJI_PROPS = [
+    "Emoji", "Emoji_Presentation", "Emoji_Modifier",
+    "Emoji_Modifier_Base", "Emoji_Component", "Extended_Pictographic",
+]
+
 
 def fetch(name: str) -> str:
-    cache = Path(f"/tmp/ucd_{UCD_VERSION}_{name}")
+    cache = Path(f"/tmp/ucd_{UCD_VERSION}_{name.replace('/', '_')}")
     if cache.exists():
         return cache.read_text()
     print(f"downloading {name} …", file=sys.stderr)
@@ -205,9 +211,10 @@ def numeric_others(rows):
     return sorted(out)
 
 
-def parse_prop_list(text: str):
-    """{prop_name: [(lo,hi),...]} for the PROPS subset of PropList.txt."""
-    props = {p: [] for p in PROPS}
+def parse_prop_list(text: str, wanted=None):
+    """{prop_name: [(lo,hi),...]} for the wanted subset of a
+    range;prop-format UCD file (PropList.txt / emoji-data.txt)."""
+    props = {p: [] for p in (wanted or PROPS)}
     for line in text.splitlines():
         line = line.split("#", 1)[0].strip()
         if not line:
@@ -261,7 +268,7 @@ def emit_categories(cats, cat_tagged, bidi_tagged, props, dec_digits, num_others
         f"    .{{ .lo = 0x{lo:X}, .hi = 0x{hi:X}, .v = {v} }}," for lo, hi, v in bidi_tagged
     )
     prop_tables = "\n\n".join(
-        table(f"PROP_{p.upper()}", props[p]) for p in PROPS
+        table(f"PROP_{p.upper()}", props[p]) for p in (PROPS + EMOJI_PROPS)
     )
     mirrored_table = table("BIDI_MIRRORED", mirrored)
     dec_rows = "\n".join(
@@ -374,7 +381,8 @@ pub fn isMirrored(cp: u21) bool {{
     return inRanges(&BIDI_MIRRORED, cp);
 }}
 
-/// The contributory properties the JVM classification formulas reference.
+/// The contributory properties the JVM classification formulas reference,
+/// plus the emoji/emoji-data.txt properties (Character.isEmoji* family).
 pub const Prop = enum {{
     other_uppercase,
     other_lowercase,
@@ -382,6 +390,12 @@ pub const Prop = enum {{
     other_id_start,
     other_id_continue,
     ideographic,
+    emoji,
+    emoji_presentation,
+    emoji_modifier,
+    emoji_modifier_base,
+    emoji_component,
+    extended_pictographic,
 }};
 
 /// True iff `cp` carries the PropList.txt contributory property.
@@ -393,6 +407,12 @@ pub fn hasProp(prop: Prop, cp: u21) bool {{
         .other_id_start => &PROP_OTHER_ID_START,
         .other_id_continue => &PROP_OTHER_ID_CONTINUE,
         .ideographic => &PROP_IDEOGRAPHIC,
+        .emoji => &PROP_EMOJI,
+        .emoji_presentation => &PROP_EMOJI_PRESENTATION,
+        .emoji_modifier => &PROP_EMOJI_MODIFIER,
+        .emoji_modifier_base => &PROP_EMOJI_MODIFIER_BASE,
+        .emoji_component => &PROP_EMOJI_COMPONENT,
+        .extended_pictographic => &PROP_EXTENDED_PICTOGRAPHIC,
     }};
     return inRanges(ranges, cp);
 }}
@@ -465,6 +485,12 @@ test "directionality / props / numerics" {{
     try std.testing.expectEqual(@as(?i32, -2), numericValue(0xBD)); // ½
     try std.testing.expect(isMirrored('(') and isMirrored('<'));
     try std.testing.expect(!isMirrored('a'));
+    try std.testing.expect(hasProp(.emoji, 0x1F600)); // 😀
+    try std.testing.expect(hasProp(.emoji, '#')); // keycap base is Emoji
+    try std.testing.expect(!hasProp(.emoji_presentation, '#'));
+    try std.testing.expect(hasProp(.emoji_component, '#'));
+    try std.testing.expect(hasProp(.emoji_modifier, 0x1F3FB)); // skin tone
+    try std.testing.expect(hasProp(.extended_pictographic, 0x1F600));
 }}
 """
 
@@ -706,6 +732,7 @@ def main():
     cat_tagged = tagged_ranges(rows, 2, JVM_CAT)
     bidi_tagged = tagged_ranges(rows, 4, JVM_BIDI)
     props = parse_prop_list(fetch("PropList.txt"))
+    props.update(parse_prop_list(fetch("emoji/emoji-data.txt"), EMOJI_PROPS))
     dec = decimal_digits(rows)
     nums = numeric_others(rows)
     mirrored = mirrored_ranges(rows)

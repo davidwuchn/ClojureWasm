@@ -515,6 +515,16 @@ fn initCharacter(td: *type_descriptor.TypeDescriptor, gpa: std.mem.Allocator) an
         .{ "isUnicodeIdentifierStart", &Classify("isUnicodeIdentifierStart", charset.isUnicodeIdentifierStartCodepoint).call },
         .{ "isUnicodeIdentifierPart", &Classify("isUnicodeIdentifierPart", charset.isUnicodeIdentifierPartCodepoint).call },
         .{ "isIdentifierIgnorable", &Classify("isIdentifierIgnorable", charset.isIdentifierIgnorableCodepoint).call },
+        // Deprecated-but-callable aliases of the identifier predicates.
+        .{ "isJavaLetter", &Classify("isJavaLetter", charset.isJavaIdentifierStartCodepoint).call },
+        .{ "isJavaLetterOrDigit", &Classify("isJavaLetterOrDigit", charset.isJavaIdentifierPartCodepoint).call },
+        // JDK 21 emoji property family (UCD emoji-data.txt).
+        .{ "isEmoji", &Classify("isEmoji", charset.isEmojiCodepoint).call },
+        .{ "isEmojiPresentation", &Classify("isEmojiPresentation", charset.isEmojiPresentationCodepoint).call },
+        .{ "isEmojiModifier", &Classify("isEmojiModifier", charset.isEmojiModifierCodepoint).call },
+        .{ "isEmojiModifierBase", &Classify("isEmojiModifierBase", charset.isEmojiModifierBaseCodepoint).call },
+        .{ "isEmojiComponent", &Classify("isEmojiComponent", charset.isEmojiComponentCodepoint).call },
+        .{ "isExtendedPictographic", &Classify("isExtendedPictographic", charset.isExtendedPictographicCodepoint).call },
         .{ "toUpperCase", &CaseFold("toUpperCase", charset.toUpperCodepoint).call },
         .{ "toLowerCase", &CaseFold("toLowerCase", charset.toLowerCodepoint).call },
         .{ "toTitleCase", &CaseFold("toTitleCase", charset.toTitleCodepoint).call },

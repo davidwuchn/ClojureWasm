@@ -306,3 +306,33 @@ Character/DIRECTIONALITY_POP_DIRECTIONAL_ISOLATE
 ;;=> 97
 (.hashCode \a)
 ;;=> 97
+(Character/isEmoji 128512)
+;;=> true
+(Character/isEmoji (int \a))
+;;=> false
+(Character/isEmojiPresentation 128512)
+;;=> true
+(Character/isEmojiPresentation (int \#))
+;;=> false
+(Character/isEmojiModifier 127995)
+;;=> true
+(Character/isEmojiModifierBase 128587)
+;;=> true
+(Character/isEmojiComponent (int \#))
+;;=> true
+(Character/isEmojiComponent 128512)
+;;=> false
+(Character/isExtendedPictographic 128512)
+;;=> true
+(Character/isExtendedPictographic (int \a))
+;;=> false
+(Character/isJavaLetter \a)
+;;=> true
+(Character/isJavaLetter \1)
+;;=> false
+(Character/isJavaLetter \$)
+;;=> true
+(Character/isJavaLetterOrDigit \1)
+;;=> true
+(Character/isJavaLetterOrDigit \space)
+;;=> false

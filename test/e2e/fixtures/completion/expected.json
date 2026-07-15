@@ -276,6 +276,13 @@
    "type": "function"
   }
  ],
+ "core_vars|ma-i": [
+  {
+   "candidate": "map-indexed",
+   "ns": "clojure.core",
+   "type": "function"
+  }
+ ],
  "core_vars|map": [
   {
    "candidate": "map",
@@ -304,6 +311,17 @@
   },
   {
    "candidate": "mapv",
+   "ns": "clojure.core",
+   "type": "function"
+  }
+ ],
+ "core_vars|tru": [
+  {
+   "candidate": "true",
+   "type": "special-form"
+  },
+  {
+   "candidate": "true?",
    "ns": "clojure.core",
    "type": "function"
   }
@@ -342,6 +360,36 @@
   {
    "candidate": ":requires",
    "type": "keyword"
+  }
+ ],
+ "library_ns|clojure.wa": [
+  {
+   "candidate": "clojure.walk",
+   "type": "namespace"
+  }
+ ],
+ "library_ns|clojure.walk/post": [
+  {
+   "candidate": "clojure.walk/postwalk",
+   "ns": "clojure.walk",
+   "type": "function"
+  },
+  {
+   "candidate": "clojure.walk/postwalk-demo",
+   "ns": "clojure.walk",
+   "type": "function"
+  },
+  {
+   "candidate": "clojure.walk/postwalk-replace",
+   "ns": "clojure.walk",
+   "type": "function"
+  }
+ ],
+ "library_ns|cset/int": [
+  {
+   "candidate": "cset/intersection",
+   "ns": "clojure.set",
+   "type": "function"
   }
  ],
  "negative|__make": [],

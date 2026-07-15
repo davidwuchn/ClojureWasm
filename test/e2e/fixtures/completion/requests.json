@@ -4,7 +4,9 @@
     "probes": [
       {"prefix": "def", "ns": "user"},
       {"prefix": "map", "ns": "user"},
-      {"prefix": "ma", "ns": "user"}
+      {"prefix": "ma", "ns": "user"},
+      {"prefix": "ma-i", "ns": "user"},
+      {"prefix": "tru", "ns": "user"}
     ]
   },
   {
@@ -21,6 +23,15 @@
       {"prefix": "str/j", "ns": "user"},
       {"prefix": "clojure.str", "ns": "user"},
       {"prefix": "clojure.string/spl", "ns": "user"}
+    ]
+  },
+  {
+    "group": "library_ns",
+    "setup": ["(require '[clojure.set :as cset])", "(require 'clojure.walk)"],
+    "probes": [
+      {"prefix": "cset/int", "ns": "user"},
+      {"prefix": "clojure.walk/post", "ns": "user"},
+      {"prefix": "clojure.wa", "ns": "user"}
     ]
   },
   {

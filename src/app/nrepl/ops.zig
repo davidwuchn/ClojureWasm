@@ -290,6 +290,16 @@ const CompletionCollector = struct {
         self.items.append(self.scratch, .{ .dict = entries }) catch return false;
         return true;
     }
+
+    fn candidateLessThan(_: void, a: bencode.Decoded, b: bencode.Decoded) bool {
+        return std.mem.order(u8, a.dict[0].value.str, b.dict[0].value.str) == .lt;
+    }
+
+    /// The nREPL built-in sorts its reply by candidate name
+    /// (`sort-by :candidate`); CIDER preserves server order.
+    fn sortByCandidate(self: *CompletionCollector) void {
+        std.mem.sort(bencode.Decoded, self.items.items, {}, candidateLessThan);
+    }
 };
 
 fn contextNs(ctx: *Ctx, sess: *session_mod.Session) ?*env_mod.Namespace {
@@ -305,15 +315,24 @@ fn opCompletions(ctx: *Ctx) anyerror!void {
     var collector = CompletionCollector{ .scratch = ctx.scratch };
     if (prefix.len > 0) {
         const ns = contextNs(ctx, sess);
-        if (std.mem.findScalar(u8, prefix, '/')) |slash| {
+        if (prefix[0] == ':') {
+            introspect.forEachKeyword(ctx.env.rt, ctx.scratch, prefix[1..], &collector, CompletionCollector.add);
+        } else if (std.mem.findScalar(u8, prefix, '/')) |slash| {
             collector.qualifier = prefix[0..slash];
             if (introspect.resolveQualifier(ctx.env, ns, prefix[0..slash])) |target| {
                 introspect.forEachNsVar(target, prefix[slash + 1 ..], &collector, CompletionCollector.add);
+            } else {
+                // Not a namespace/alias — a `Class/member` static prefix
+                // (`Character/BY` → Character/BYTES <sf>).
+                introspect.forEachStaticMember(ctx.env.rt, ns, prefix[0..slash], prefix[slash + 1 ..], &collector, CompletionCollector.add);
             }
         } else {
+            introspect.forEachSpecialForm(prefix, &collector, CompletionCollector.add);
             introspect.forEachUnqualified(ctx.env, ns, prefix, &collector, CompletionCollector.add);
+            introspect.forEachClass(ctx.env.rt, ns, prefix, &collector, CompletionCollector.add);
         }
     }
+    collector.sortByCandidate();
     try ctx.respond(&.{
         .{ .key = "completions", .value = .{ .list = collector.items.items } },
         .{ .key = "status", .value = try transport.statusValue(ctx.scratch, &.{"done"}) },

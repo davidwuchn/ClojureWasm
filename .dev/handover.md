@@ -50,13 +50,23 @@
   `__`-internals live in the new `cljw.internal` ns (macro expansions
   call them qualified). Retired AD-011/038/049 as PARITY (pins flipped);
   new AD-053 pins cljw.internal's existence. serialize VERSION 6.
-- **ARC (user-directed 2026-07-15, the landing point)**: (1) CIDER
-  completion parity — kind annotations, class + static-member candidates
-  (java-interop completion without require), keywords, special forms,
-  sort; oracle harness `scripts/completion_oracle.py` + fixtures landed
-  (red baseline 5/18). (2) AD full inventory + convergence (**D-562**).
-  (3) THEN cut a release tag. Cron re-fire 2026-07-16 03:02 JST is set
-  (session-only).
+- **COMPLETION PARITY LANDED (2026-07-16)**: nREPL `completions` now
+  carries the built-in's sources — special forms + literals, vars
+  (dash-fuzzy `ma-i`→`map-indexed`), namespaces/aliases (dot-fuzzy),
+  classes (closed rt.types universe via the shared
+  `runtime/host_class_resolve.zig`; **AD-054** pins the
+  no-classpath-leak divergence), `Class/` static members
+  (camelCase-aware — the require-less java-interop ask), interned
+  keywords — by-name sorted. Fixture-driven e2e
+  `phase14_nrepl_completion` (23 probes, JVM-free; capture/audit =
+  `scripts/completion_oracle.py`). Character gained isEmoji×6 (UCD
+  emoji-data.txt via the generator) + isJavaLetter(OrDigit); statics
+  126/128 (out: TYPE by design, codePointOf = D-561). Var-existence
+  gaps mainline completion shows (defmacro-as-var /
+  default-data-readers / definline / defstruct) → the D-562 inventory.
+- **ARC (user-directed 2026-07-15, the landing point)**: (1) completion
+  parity — DONE. (2) AD full inventory + convergence (**D-562**) —
+  NEXT. (3) THEN cut a release tag.
 - **First task on resume**: self-select from the live `active:` list,
   easiest-first (D-523's architecture/wasm-demo residual + D-522 drain 3
   landed 2026-07-14; D-430 is DISCHARGED — the prior pointer here was

@@ -282,6 +282,27 @@ pub fn isIdentifierIgnorableCodepoint(cp: u21) bool {
     };
 }
 
+// JVM `Character.isEmoji*` family (JDK 21) — direct reads of the UCD
+// emoji-data.txt properties, generated alongside the contributory ones.
+pub fn isEmojiCodepoint(cp: u21) bool {
+    return unicode_category.hasProp(.emoji, cp);
+}
+pub fn isEmojiPresentationCodepoint(cp: u21) bool {
+    return unicode_category.hasProp(.emoji_presentation, cp);
+}
+pub fn isEmojiModifierCodepoint(cp: u21) bool {
+    return unicode_category.hasProp(.emoji_modifier, cp);
+}
+pub fn isEmojiModifierBaseCodepoint(cp: u21) bool {
+    return unicode_category.hasProp(.emoji_modifier_base, cp);
+}
+pub fn isEmojiComponentCodepoint(cp: u21) bool {
+    return unicode_category.hasProp(.emoji_component, cp);
+}
+pub fn isExtendedPictographicCodepoint(cp: u21) bool {
+    return unicode_category.hasProp(.extended_pictographic, cp);
+}
+
 /// JVM `Character.toUpperCase` mirror — the SIMPLE 1:1 Unicode map (D-057:
 /// ä→Ä, σ→Σ; ß stays ß — SpecialCasing 1:n belongs to STRING upper-case
 /// only, the JVM full-vs-simple split).

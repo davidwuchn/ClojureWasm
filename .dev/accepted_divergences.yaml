@@ -858,3 +858,17 @@ accepted:
       a closed set.
     derives_from: "ADR-0171 (rt merge — internals need a public qualified home for macro expansions) + ADR-0059 no-JVM (cljw owns the cljw.* namespace surface) + F-011 (every public var's home ns now MATCHES clj; only the extra internal ns is cljw-specific)."
     pin: "test/e2e/phase15_namespace.sh — `ad053-internal-ns` locks (find-ns 'cljw.internal) present, `ad053-rt-gone` locks the old `rt` ns absent, `ad053-no-leak` locks __-internals out of clojure.core's publics."
+  - id: "AD-054"
+    summary: "Class-name completion (nREPL `completions` on an uppercase / dotted prefix) offers cljw's CLOSED class universe — the `rt.types` registry (host surfaces, deftypes, the java.lang/java.math default imports) — where mainline scans the whole JVM classpath and leaks internal classes (`java.lang.CharacterData00`, `sun.nio.cs.ext.Big5`, …)."
+    example: "prefix \"Character\" => cljw [Character, java.lang.Character] / mainline additionally java.lang.CharacterData00…, com.sun.… (26 candidates). Every cljw candidate resolves; the mainline extras are not even loadable classes for user code."
+    why: |-
+      cljw has no classpath and no JVM-internal classes to enumerate
+      (ADR-0059); its class universe IS the rt.types registry, which is
+      exactly the set `resolveJavaSurface` resolves — completion never
+      offers a class name that would not resolve (a stronger guarantee than
+      mainline's, whose classpath scan surfaces package-private internals
+      user code cannot construct). Faking the JVM-internal names would be a
+      lie with zero utility. The completion fixtures therefore assert
+      cljw ⊆ mainline + a curated MUST list for class groups, not equality.
+    derives_from: "ADR-0059 no-JVM (no classpath, no JVM-internal classes) + ADR-0029/ADR-0050 (rt.types is the closed host-class SSOT; resolveJavaSurface defines reachability) + F-011 (every class a user can actually USE completes identically; only the un-usable classpath leak differs)."
+    pin: "test/e2e/phase14_nrepl_completion.sh — classes|Character / classes|Big subset assertions + the MUST-NOT java.lang.CharacterData00 lock (cljw never fakes the leak)."

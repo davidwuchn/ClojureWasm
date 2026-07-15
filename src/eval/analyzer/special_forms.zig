@@ -51,52 +51,16 @@ const type_descriptor_mod = @import("../../runtime/type_descriptor.zig");
 const TypeDescriptor = type_descriptor_mod.TypeDescriptor;
 
 /// Resolve a head namespace string from `(Class/method)` or `(Class. ...)`
-/// to a `*const TypeDescriptor` in `rt.types`. ADR-0029 D5 keys
-/// descriptors by their cljw-prefixed FQCN (e.g. `"cljw.java.util.UUID"`),
-/// but user source writes the JVM form (e.g. `"java.util.UUID"`). This
-/// helper bridges by trying, in order:
-///   1. Literal `rt.types.get(head)` (e.g. `"java.util.UUID"`; also a
-///      user `(deftype Math …)` shadowing the auto-import — local wins).
-///   2. `rt.types.get("cljw." ++ head)` for the Java prefix translation
-///      (`"java.util.UUID"` → `"cljw.java.util.UUID"`).
-///   3. `rt.types.get("cljw.java.lang." ++ head)` for the `java.lang.*`
-///      auto-import (ADR-0050 § R3): a bare class name like `Math` /
-///      `System` resolves the way JVM Clojure default-imports
-///      `java.lang.*` into every ns. Gated to dot-free heads so a
-///      qualified head (already handled by 1/2) is not re-probed.
-/// Returns `null` if none hit. `env` is read for the current ns's
-/// per-ns `(:import …)` simple-name map (D-235), checked before the
-/// always-on java.lang auto-import.
+/// to a `*const TypeDescriptor` in `rt.types`. The resolution rules
+/// (literal key → `cljw.` prefix → per-ns `(:import …)` map → java.lang
+/// auto-import → java.math Big* defaults) live in
+/// `runtime/host_class_resolve.zig`; `env` supplies the current ns for
+/// the import map (D-235).
 pub fn resolveJavaSurface(rt: *Runtime, env: *Env, head: []const u8) ?*const TypeDescriptor {
-    if (rt.types.get(head)) |td| return td;
-    var buf: [256]u8 = undefined;
-    const prefixed = std.fmt.bufPrint(&buf, "cljw.{s}", .{head}) catch return null;
-    if (rt.types.get(prefixed)) |td| return td;
-    if (std.mem.findScalar(u8, head, '.') == null) {
-        // A `(:import …)` simple name resolves to its FQCN first (D-235),
-        // before the always-on java.lang auto-import.
-        if (env.current_ns) |ns| {
-            if (ns.imports.get(head)) |fqcn| {
-                if (rt.types.get(fqcn)) |td| return td;
-                var ibuf: [256]u8 = undefined;
-                const iprefixed = std.fmt.bufPrint(&ibuf, "cljw.{s}", .{fqcn}) catch return null;
-                if (rt.types.get(iprefixed)) |td| return td;
-            }
-        }
-        var buf2: [256]u8 = undefined;
-        const auto = std.fmt.bufPrint(&buf2, "cljw.java.lang.{s}", .{head}) catch return null;
-        if (rt.types.get(auto)) |td| return td;
-        // Beyond java.lang.*, the JVM default-imports `java.math.BigDecimal` and
-        // `java.math.BigInteger` into every ns (Clojure inherits this). Mirror it
-        // so a bare `BigDecimal`/`BigInteger` resolves to its cljw.java.math
-        // surface (e.g. `BigDecimal/ROUND_FLOOR`, numeric-tower D-097/D-420).
-        if (std.mem.eql(u8, head, "BigDecimal") or std.mem.eql(u8, head, "BigInteger")) {
-            var buf3: [256]u8 = undefined;
-            const m = std.fmt.bufPrint(&buf3, "cljw.java.math.{s}", .{head}) catch return null;
-            if (rt.types.get(m)) |td| return td;
-        }
-    }
-    return null;
+    // Delegates to the shared runtime resolver so the completion surface
+    // (introspect.zig) and the analyzer can never drift: a class name
+    // completes exactly when it resolves here.
+    return @import("../../runtime/host_class_resolve.zig").resolve(rt, env.current_ns, head);
 }
 
 /// Lexical class-name resolution for `instance?`'s class argument, the

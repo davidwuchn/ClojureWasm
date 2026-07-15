@@ -489,6 +489,7 @@ run_step "e2e_phase14_ns_directive"          "bash test/e2e/phase14_ns_directive
 run_step "e2e_phase14_future_promise_delay"  "bash test/e2e/phase14_future_promise_delay.sh"
 run_step "e2e_phase14_repl"                  "bash test/e2e/phase14_repl.sh"
 run_step "e2e_phase14_nrepl"                 "bash test/e2e/phase14_nrepl.sh"
+run_step "e2e_phase14_nrepl_completion"      "bash test/e2e/phase14_nrepl_completion.sh"
 run_step "e2e_phase14_error_format"          "bash test/e2e/phase14_error_format.sh"
 run_step "e2e_phase14_render_error"          "bash test/e2e/phase14_render_error.sh"
 run_step "e2e_phase14_callable_print"        "bash test/e2e/phase14_callable_print.sh"
