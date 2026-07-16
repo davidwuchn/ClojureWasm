@@ -27,6 +27,12 @@ pub fn get(key: []const u8) ?[]const u8 {
     return if (environ) |m| m.get(key) else null;
 }
 
+/// The whole published env map, or null before `publish` — the 0-arg
+/// `(System/getenv)` surface iterates it (ADR-0174 D5).
+pub fn all() ?*const EnvMap {
+    return environ;
+}
+
 // --- tests ---
 
 const testing = std.testing;

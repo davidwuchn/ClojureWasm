@@ -27,6 +27,7 @@ const error_catalog = @import("../../error/catalog.zig");
 const clock = @import("../../clock.zig");
 const process_env = @import("../../process_env.zig");
 const java_array = @import("../../collection/java_array.zig");
+const map_collection = @import("../../collection/map.zig");
 
 /// Implements `(java.lang.System/currentTimeMillis)`.
 /// Spec: returns the current epoch milliseconds as a long.
@@ -116,19 +117,133 @@ fn propertyMiss(args: []const Value) Value {
     return if (args.len == 2) args[1] else Value.nil_val;
 }
 
-/// Implements `(java.lang.System/getenv name)`.
-/// Spec: returns the value of the environment variable `name`, or nil if unset
-///   (JVM returns `null`). The 0-arg `(getenv)` JVM form returning the whole map
-///   is out of scope until cljw has a map-from-env need.
-/// JVM reference: java.lang.System#getenv(String).
+/// Implements `(java.lang.System/getenv name)` + the 0-arg
+/// `(java.lang.System/getenv)` returning the WHOLE environment as a map
+/// (ADR-0174 D5; JVM returns an unmodifiable Map<String,String> — cljw's
+/// persistent map is the natural equivalent).
+/// Spec: 1-arg — the value of the environment variable `name`, or nil if
+/// unset (JVM `null`); 0-arg — every environment variable as {name value}.
+/// JVM reference: java.lang.System#getenv(String) / #getenv().
 /// cw v1 tier: A.
 fn getenv(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
     _ = env;
-    try error_catalog.checkArity("java.lang.System/getenv", args, 1, loc);
+    try error_catalog.checkArityRange("java.lang.System/getenv", args, 0, 1, loc);
+    if (args.len == 0) {
+        const m = process_env.all() orelse return map_collection.empty();
+        // Fabrication region: the intermediate maps of the assoc fold are
+        // live-but-unrooted between allocs; defer any collect to the end.
+        rt.gc.enterFabrication();
+        defer rt.gc.exitFabrication();
+        var out = map_collection.empty();
+        var it = m.iterator();
+        while (it.next()) |entry| {
+            const k = try string_mod.alloc(rt, entry.key_ptr.*);
+            const v = try string_mod.alloc(rt, entry.value_ptr.*);
+            out = try map_collection.assoc(rt, out, k, v);
+        }
+        return out;
+    }
     if (args[0].tag() != .string)
         return error_catalog.raise(.type_arg_not_string, loc, .{ .fn_name = "java.lang.System/getenv", .actual = @tagName(args[0].tag()) });
     const name = string_mod.asString(args[0]);
     if (process_env.get(name)) |val| return string_mod.alloc(rt, val);
+    return Value.nil_val;
+}
+
+/// Implements `(java.lang.System/getProperties)` (ADR-0174 D5).
+/// Spec: every system property as a map — the OS-truthful static set +
+/// `user.dir` + the `setProperty` overlay (overlay wins per key, matching
+/// `getProperty`'s precedence). JVM returns `java.util.Properties` (a
+/// mutable Map); cljw returns a persistent map — the map-shaped reads
+/// (`get` / `into {}` / iteration) are oracle-identical, the mutable
+/// Properties API is not modelled (AD-055).
+/// JVM reference: java.lang.System#getProperties.
+/// cw v1 tier: A.
+fn getProperties(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = env;
+    try error_catalog.checkArity("java.lang.System/getProperties", args, 0, loc);
+    rt.gc.enterFabrication();
+    defer rt.gc.exitFabrication();
+    var out = map_collection.empty();
+    const static_keys = [_][]const u8{ "line.separator", "file.separator", "path.separator", "file.encoding", "os.name", "os.arch" };
+    for (static_keys) |key| {
+        const k = try string_mod.alloc(rt, key);
+        const v = try string_mod.alloc(rt, staticProperty(key).?);
+        out = try map_collection.assoc(rt, out, k, v);
+    }
+    // user.dir resolves at call time (same as getProperty's arm).
+    {
+        var buf: [std.Io.Dir.max_path_bytes]u8 = undefined;
+        if (std.process.currentPath(rt.io, &buf)) |n| {
+            const k = try string_mod.alloc(rt, "user.dir");
+            const v = try string_mod.alloc(rt, buf[0..n]);
+            out = try map_collection.assoc(rt, out, k, v);
+        } else |_| {
+            // Unreadable cwd — the key is simply absent, like getProperty's miss.
+        }
+    }
+    var it = rt.system_properties.iterator();
+    while (it.next()) |entry| {
+        const k = try string_mod.alloc(rt, entry.key_ptr.*);
+        const v = try string_mod.alloc(rt, entry.value_ptr.*);
+        out = try map_collection.assoc(rt, out, k, v);
+    }
+    return out;
+}
+
+/// Implements `(java.lang.System/clearProperty key)` (ADR-0174 D5).
+/// Spec: removes the user-set property `key` and returns its PREVIOUS value
+/// (nil if unset), JVM-faithful. Only the `setProperty` overlay is
+/// clearable — the OS-truthful static set is not a user-set entry (same
+/// stance as `setProperty`'s previous-value rule), so clearing a static key
+/// returns nil and `getProperty` keeps answering the OS truth.
+/// JVM reference: java.lang.System#clearProperty.
+/// cw v1 tier: A.
+fn clearProperty(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = env;
+    try error_catalog.checkArity("java.lang.System/clearProperty", args, 1, loc);
+    if (args[0].tag() != .string)
+        return error_catalog.raise(.type_arg_not_string, loc, .{ .fn_name = "java.lang.System/clearProperty", .actual = @tagName(args[0].tag()) });
+    const name = string_mod.asString(args[0]);
+    if (rt.system_properties.fetchRemove(name)) |kv| {
+        const prev = try string_mod.alloc(rt, kv.value);
+        rt.gpa.free(kv.key);
+        rt.gpa.free(kv.value);
+        return prev;
+    }
+    return Value.nil_val;
+}
+
+/// Implements `(java.lang.System/identityHashCode x)` (ADR-0174 D5).
+/// Spec: a hash for `x`'s IDENTITY — nil → 0 (JVM-exact); a heap value
+/// hashes its reference bits (pointer-derived, stable for the value's
+/// lifetime); an immediate hashes its value bits (two `=`-identical
+/// immediates share an identity in cljw's NaN-box model — the same stance
+/// as `locking` on immediates, AD-055; JVM object headers do not exist
+/// here). Non-negative 31-bit result like the JVM's.
+/// JVM reference: java.lang.System#identityHashCode.
+/// cw v1 tier: A.
+fn identityHashCode(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = rt;
+    _ = env;
+    try error_catalog.checkArity("java.lang.System/identityHashCode", args, 1, loc);
+    if (args[0].isNil()) return Value.initInteger(0);
+    const bits: u64 = @intFromEnum(args[0]);
+    const folded: u32 = @truncate(bits ^ (bits >> 32));
+    return Value.initInteger(@as(i64, folded & 0x7fff_ffff));
+}
+
+/// Implements `(java.lang.System/gc)` (ADR-0174 D5).
+/// Spec: "suggests that the runtime expend effort toward recycling unused
+/// objects" — a HINT, exactly like the JVM. cljw runs a safe stop-the-world
+/// collect when one is possible at the call point, else no-ops
+/// (`GcHeap.requestCollect`). Returns nil.
+/// JVM reference: java.lang.System#gc.
+/// cw v1 tier: A.
+fn gcFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = env;
+    try error_catalog.checkArity("java.lang.System/gc", args, 0, loc);
+    rt.gc.requestCollect();
     return Value.nil_val;
 }
 
@@ -231,48 +346,20 @@ fn setProperty(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation
 
 fn initSystem(td: *type_descriptor.TypeDescriptor, gpa: std.mem.Allocator) anyerror!void {
     if (td.method_table.len != 0) return; // idempotent re-run
-    const entries = try gpa.alloc(type_descriptor.TypeDescriptor.MethodEntry, 8);
-    entries[0] = .{
-        .protocol_name = "",
-        .method_name = try gpa.dupe(u8, "currentTimeMillis"),
-        .method_val = Value.initBuiltinFn(&currentTimeMillis),
-    };
-    entries[1] = .{
-        .protocol_name = "",
-        .method_name = try gpa.dupe(u8, "nanoTime"),
-        .method_val = Value.initBuiltinFn(&nanoTime),
-    };
-    entries[2] = .{
-        .protocol_name = "",
-        .method_name = try gpa.dupe(u8, "getProperty"),
-        .method_val = Value.initBuiltinFn(&getProperty),
-    };
-    entries[3] = .{
-        .protocol_name = "",
-        .method_name = try gpa.dupe(u8, "getenv"),
-        .method_val = Value.initBuiltinFn(&getenv),
-    };
-    entries[4] = .{
-        .protocol_name = "",
-        .method_name = try gpa.dupe(u8, "lineSeparator"),
-        .method_val = Value.initBuiltinFn(&lineSeparator),
-    };
-    entries[5] = .{
-        .protocol_name = "",
-        .method_name = try gpa.dupe(u8, "exit"),
-        .method_val = Value.initBuiltinFn(&exit),
-    };
-    entries[6] = .{
-        .protocol_name = "",
-        .method_name = try gpa.dupe(u8, "arraycopy"),
-        .method_val = Value.initBuiltinFn(&arraycopy),
-    };
-    entries[7] = .{
-        .protocol_name = "",
-        .method_name = try gpa.dupe(u8, "setProperty"),
-        .method_val = Value.initBuiltinFn(&setProperty),
-    };
-    td.method_table = entries;
+    try type_descriptor.appendMethodEntries(td, gpa, .{
+        .{ "currentTimeMillis", &currentTimeMillis },
+        .{ "nanoTime", &nanoTime },
+        .{ "getProperty", &getProperty },
+        .{ "getProperties", &getProperties },
+        .{ "setProperty", &setProperty },
+        .{ "clearProperty", &clearProperty },
+        .{ "getenv", &getenv },
+        .{ "lineSeparator", &lineSeparator },
+        .{ "exit", &exit },
+        .{ "arraycopy", &arraycopy },
+        .{ "identityHashCode", &identityHashCode },
+        .{ "gc", &gcFn },
+    });
 }
 
 pub const ___HOST_EXTENSION: host_api.Extension = .{

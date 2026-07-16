@@ -495,6 +495,23 @@ pub const GcHeap = struct {
         mark_sweep.collectStopTheWorld(self, .{ .envs = &.{e}, .gc = self }, false);
     }
 
+    /// `(System/gc)` — a user-REQUESTED collect (ADR-0174 D5). Same safety
+    /// gates as `maybeAutoCollect` but without the byte threshold: if a safe
+    /// stop-the-world collect is possible right now, run it; otherwise no-op.
+    /// The no-op arm is JVM-faithful — `System.gc()` is specified as a hint
+    /// ("suggests that the JVM expend effort"), so a skipped collect inside a
+    /// fabrication region / off-worker context is correct, not a lie.
+    pub fn requestCollect(self: *GcHeap) void {
+        if (root_set_mod.fabrication_depth > 0) return;
+        const root_set = @import("root_set.zig");
+        if (root_set.is_registered_worker or in_alloc_torture) return;
+        const e = root_set.active_env orelse return;
+        const mark_sweep = @import("mark_sweep.zig");
+        in_alloc_torture = true;
+        defer in_alloc_torture = false;
+        mark_sweep.collectStopTheWorld(self, .{ .envs = &.{e}, .gc = self }, false);
+    }
+
     /// D-361: enforce the per-eval live-heap ceiling against a BULK `infra`
     /// allocation that bypasses `alloc` — the transient vector's element buffer
     /// grows via `gc.infra.realloc` and can reach hundreds of MB before the

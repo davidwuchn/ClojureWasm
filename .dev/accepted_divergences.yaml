@@ -843,3 +843,16 @@ accepted:
       cljw ⊆ mainline + a curated MUST list for class groups, not equality.
     derives_from: "ADR-0059 no-JVM (no classpath, no JVM-internal classes) + ADR-0029/ADR-0050 (rt.types is the closed host-class SSOT; resolveJavaSurface defines reachability) + F-011 (every class a user can actually USE completes identically; only the un-usable classpath leak differs)."
     pin: "test/e2e/phase14_nrepl_completion.sh — classes|Character / classes|Big subset assertions + the MUST-NOT java.lang.CharacterData00 lock (cljw never fakes the leak)."
+  - id: "AD-055"
+    summary: "System/getProperties returns a cljw persistent map (clj: java.util.Properties), and System/identityHashCode is cljw's identity hash (immediates share identity per value bits; no JVM object headers)."
+    example: '(class (System/getProperties)) => cljw PersistentArrayMap / clj java.util.Properties; (System/identityHashCode 5) is stable across calls in cljw (JVM: stable only via the Integer cache) — map-shaped reads (get / into {}) and nil→0 are oracle-identical.'
+    why: |-
+      cljw has no java.util.Properties (a mutable Hashtable subclass —
+      JVM-platform, not linguistically general per F-014); the persistent
+      map answers every read Clojure code performs on getProperties
+      (get / into {} / seq / keys). identityHashCode has no object-header
+      hash to read (ADR-0059): a heap value hashes its reference bits, an
+      immediate its value bits — the same identity model `locking` on
+      immediates already pinned. nil → 0 matches the JVM exactly.
+    derives_from: "ADR-0059 (no-JVM) + ADR-0174 D5 (System close-out) + F-014 clause 1 (Properties is a platform artifact) + F-004 (NaN-box immediates carry identity in their bits)."
+    pin: "test/e2e/phase14_system_members.sh (getprops_* / idhash_* cases)."
