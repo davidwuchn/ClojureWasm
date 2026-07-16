@@ -38,7 +38,15 @@ active:
       (priority is accepted-constant-only — no scheduler mapping), and
       Alt C from ADR-0174 (one class_registry.zig naming SSOT deriving
       class_name.zig / host_class_resolve / rt.types keys / compat rows
-      from a single table — prerequisite: ADR-0174, landed).
+      from a single table — prerequisite: ADR-0174, landed). Named member
+      residuals the D9 refresh surfaced (removed from compat_tiers as rot,
+      not implemented this campaign): BigDecimal .toPlainString (commonly
+      used; siblings all exist — cheap wire), ZonedDateTime full build-out
+      (= D-105), Socket/MessageDigest build-out (= D-106), and the
+      instance-method fills judged out of ADR-0174 scope (StringBuilder
+      insert/delete/substring set beyond the landed 8, File
+      lastModified/renameTo/createNewFile set, Locale getters, Matcher
+      region/replace family).
     last_reviewed: "2026-07-17"
   - id: "D-563"
     status: |-

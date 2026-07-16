@@ -345,6 +345,11 @@ run_step "debt_id_refs"         "bash scripts/check_debt_id_refs.sh --gate"
 # cannot drift or accept-without-reason. Rule: accepted_divergences.md.
 run_step "accepted_divergences" "bash scripts/check_accepted_divergences.sh --gate"
 
+# Host-class member truth (ADR-0174 D9): compat_tiers.yaml per-class member
+# lists must match the registered descriptors (both directions) — the gate
+# that keeps the one-time refresh from re-rotting. Rule: F-013 clause 3.
+run_step "compat_members" "bash scripts/check_compat_members.sh"
+
 # Formatting gate — mirrors CI's ci_gate.sh step (1/2) so a non-canonical
 # file fails LOCALLY at smoke time, not 15 minutes later in CI (2026-07-02:
 # four pushes went red on a single stray blank line only CI checked).

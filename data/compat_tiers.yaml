@@ -1,4 +1,14 @@
 # cw v1 compatibility tier data — single source of truth for tier classification.
+#
+# Member-list conventions (ADR-0174 D9; gated by scripts/check_compat_members.sh):
+#   - `methods:` + `static_fields:` mirror the REGISTERED descriptors exactly
+#     (both directions machine-checked against `__dump-host-classes` in the
+#     full gate). Constructors (`<init>`) and the universal Object methods
+#     (toString/equals/hashCode — dispatched generically) are never listed.
+#   - `opaque_members:` = members DELIBERATELY not implemented (F-014 clause 2:
+#     explicit rows, never silent absence). Implementing one must move it to
+#     `methods:` — the gate fails otherwise. Planned-but-absent members live in
+#     .dev/debt.yaml rows, not here.
 # Used by:
 #   - test runner (test/clj/ for Tier A 100% PASS gate)
 #   - REPL error message ("Tier D: <reason>, see ADR-NNNN")
@@ -137,7 +147,9 @@ tiers:
         phase: 14
         files:
           surface: runtime/java/lang/Long.zig
-        methods: [parseLong, valueOf, toBinaryString, toHexString, toOctalString, compare, max, min]
+        methods: [bitCount, compare, compareUnsigned, divideUnsigned, highestOneBit, lowestOneBit, max, min, numberOfLeadingZeros, numberOfTrailingZeros, parseLong, parseUnsignedLong, remainderUnsigned, reverse, reverseBytes, rotateLeft, rotateRight, signum, sum, toBinaryString, toHexString, toOctalString, toUnsignedString, valueOf]
+        static_fields: ["BYTES", "MAX_VALUE", "MIN_VALUE", "SIZE"]
+        opaque_members: [TYPE, compress, expand, decode, getLong]
         clojure_peer_vars: [parse-long]
       - fqn: java.lang.Integer
         cljw_ns: cljw.java.lang.Integer
@@ -146,7 +158,9 @@ tiers:
         phase: 14
         files:
           surface: runtime/java/lang/Integer.zig
-        methods: [parseInt, valueOf, toBinaryString, toHexString, toOctalString, compare, max, min]
+        methods: [bitCount, compare, compareUnsigned, divideUnsigned, highestOneBit, lowestOneBit, max, min, numberOfLeadingZeros, numberOfTrailingZeros, parseInt, parseUnsignedInt, remainderUnsigned, reverse, reverseBytes, rotateLeft, rotateRight, signum, sum, toBinaryString, toHexString, toOctalString, toUnsignedLong, toUnsignedString, valueOf]
+        static_fields: ["BYTES", "MAX_VALUE", "MIN_VALUE", "SIZE"]
+        opaque_members: [TYPE, compress, expand, decode, getInteger]
         clojure_peer_vars: [parse-long]
       - fqn: java.lang.Double
         cljw_ns: cljw.java.lang.Double
@@ -155,7 +169,9 @@ tiers:
         phase: 14
         files:
           surface: runtime/java/lang/Double.zig
-        methods: [parseDouble, isNaN, isInfinite, toString, valueOf, compare, max, min, sum]
+        methods: [compare, doubleToLongBits, doubleToRawLongBits, isFinite, isInfinite, isNaN, longBitsToDouble, max, min, parseDouble, sum, valueOf]
+        static_fields: ["BYTES", "MAX_EXPONENT", "MAX_VALUE", "MIN_EXPONENT", "MIN_NORMAL", "MIN_VALUE", "NEGATIVE_INFINITY", "NaN", "POSITIVE_INFINITY", "SIZE"]
+        opaque_members: [TYPE, PRECISION, toHexString]
         clojure_peer_vars: [parse-double]
       - fqn: java.lang.Boolean
         cljw_ns: cljw.java.lang.Boolean
@@ -164,8 +180,9 @@ tiers:
         phase: 14
         files:
           surface: runtime/java/lang/Boolean.zig
-        methods: [parseBoolean, valueOf, toString, logicalAnd, logicalOr, logicalXor]
-        static_fields: [TRUE, FALSE]
+        methods: [compare, logicalAnd, logicalOr, logicalXor, parseBoolean, valueOf]
+        static_fields: ["FALSE", "TRUE"]
+        opaque_members: [TYPE, getBoolean]
         clojure_peer_vars: []
       - fqn: java.lang.Character
         cljw_ns: cljw.java.lang.Character
@@ -178,8 +195,9 @@ tiers:
         # 16.0.0 tables; corpus test/diff/clj_corpus/character.txt locks
         # clj parity). getName is explicit-unsupported (D-561). Instance
         # methods on .char: charValue / compareTo (+ universal Object).
-        methods: [isDigit, isLetter, isLetterOrDigit, isWhitespace, isUpperCase, isLowerCase, isTitleCase, isSpaceChar, isDefined, isMirrored, isIdeographic, isAlphabetic, isJavaIdentifierStart, isJavaIdentifierPart, isJavaLetter, isJavaLetterOrDigit, isUnicodeIdentifierStart, isUnicodeIdentifierPart, isIdentifierIgnorable, isEmoji, isEmojiPresentation, isEmojiModifier, isEmojiModifierBase, isEmojiComponent, isExtendedPictographic, toUpperCase, toLowerCase, toTitleCase, digit, getNumericValue, getType, getDirectionality, forDigit, codePointAt, codePointBefore, codePointCount, offsetByCodePoints, toChars, toString, charCount, isSurrogate, isHighSurrogate, isLowSurrogate, isISOControl, isBmpCodePoint, isValidCodePoint, isSupplementaryCodePoint, highSurrogate, lowSurrogate, toCodePoint, isSurrogatePair, hashCode, compare, valueOf, isSpace, reverseBytes]
-        static_fields: [MIN_VALUE, MAX_VALUE, MIN_RADIX, MAX_RADIX, SIZE, BYTES, MIN_CODE_POINT, MAX_CODE_POINT, MIN_SUPPLEMENTARY_CODE_POINT, MIN_HIGH_SURROGATE, MAX_HIGH_SURROGATE, MIN_LOW_SURROGATE, MAX_LOW_SURROGATE, MIN_SURROGATE, MAX_SURROGATE, UNASSIGNED, UPPERCASE_LETTER, LOWERCASE_LETTER, TITLECASE_LETTER, MODIFIER_LETTER, OTHER_LETTER, NON_SPACING_MARK, ENCLOSING_MARK, COMBINING_SPACING_MARK, DECIMAL_DIGIT_NUMBER, LETTER_NUMBER, OTHER_NUMBER, SPACE_SEPARATOR, LINE_SEPARATOR, PARAGRAPH_SEPARATOR, CONTROL, FORMAT, PRIVATE_USE, SURROGATE, DASH_PUNCTUATION, START_PUNCTUATION, END_PUNCTUATION, CONNECTOR_PUNCTUATION, OTHER_PUNCTUATION, MATH_SYMBOL, CURRENCY_SYMBOL, MODIFIER_SYMBOL, OTHER_SYMBOL, INITIAL_QUOTE_PUNCTUATION, FINAL_QUOTE_PUNCTUATION, DIRECTIONALITY_UNDEFINED, DIRECTIONALITY_LEFT_TO_RIGHT, DIRECTIONALITY_RIGHT_TO_LEFT, DIRECTIONALITY_RIGHT_TO_LEFT_ARABIC, DIRECTIONALITY_EUROPEAN_NUMBER, DIRECTIONALITY_EUROPEAN_NUMBER_SEPARATOR, DIRECTIONALITY_EUROPEAN_NUMBER_TERMINATOR, DIRECTIONALITY_ARABIC_NUMBER, DIRECTIONALITY_COMMON_NUMBER_SEPARATOR, DIRECTIONALITY_NONSPACING_MARK, DIRECTIONALITY_BOUNDARY_NEUTRAL, DIRECTIONALITY_PARAGRAPH_SEPARATOR, DIRECTIONALITY_SEGMENT_SEPARATOR, DIRECTIONALITY_WHITESPACE, DIRECTIONALITY_OTHER_NEUTRALS, DIRECTIONALITY_LEFT_TO_RIGHT_EMBEDDING, DIRECTIONALITY_LEFT_TO_RIGHT_OVERRIDE, DIRECTIONALITY_RIGHT_TO_LEFT_EMBEDDING, DIRECTIONALITY_RIGHT_TO_LEFT_OVERRIDE, DIRECTIONALITY_POP_DIRECTIONAL_FORMAT, DIRECTIONALITY_LEFT_TO_RIGHT_ISOLATE, DIRECTIONALITY_RIGHT_TO_LEFT_ISOLATE, DIRECTIONALITY_FIRST_STRONG_ISOLATE, DIRECTIONALITY_POP_DIRECTIONAL_ISOLATE]
+        methods: [charCount, charValue, codePointAt, codePointBefore, codePointCount, compare, compareTo, digit, forDigit, getDirectionality, getName, getNumericValue, getType, highSurrogate, isAlphabetic, isBmpCodePoint, isDefined, isDigit, isEmoji, isEmojiComponent, isEmojiModifier, isEmojiModifierBase, isEmojiPresentation, isExtendedPictographic, isHighSurrogate, isISOControl, isIdentifierIgnorable, isIdeographic, isJavaIdentifierPart, isJavaIdentifierStart, isJavaLetter, isJavaLetterOrDigit, isLetter, isLetterOrDigit, isLowSurrogate, isLowerCase, isMirrored, isSpace, isSpaceChar, isSupplementaryCodePoint, isSurrogate, isSurrogatePair, isTitleCase, isUnicodeIdentifierPart, isUnicodeIdentifierStart, isUpperCase, isValidCodePoint, isWhitespace, lowSurrogate, offsetByCodePoints, reverseBytes, toChars, toCodePoint, toLowerCase, toTitleCase, toUpperCase, valueOf]
+        static_fields: ["BYTES", "COMBINING_SPACING_MARK", "CONNECTOR_PUNCTUATION", "CONTROL", "CURRENCY_SYMBOL", "DASH_PUNCTUATION", "DECIMAL_DIGIT_NUMBER", "DIRECTIONALITY_ARABIC_NUMBER", "DIRECTIONALITY_BOUNDARY_NEUTRAL", "DIRECTIONALITY_COMMON_NUMBER_SEPARATOR", "DIRECTIONALITY_EUROPEAN_NUMBER", "DIRECTIONALITY_EUROPEAN_NUMBER_SEPARATOR", "DIRECTIONALITY_EUROPEAN_NUMBER_TERMINATOR", "DIRECTIONALITY_FIRST_STRONG_ISOLATE", "DIRECTIONALITY_LEFT_TO_RIGHT", "DIRECTIONALITY_LEFT_TO_RIGHT_EMBEDDING", "DIRECTIONALITY_LEFT_TO_RIGHT_ISOLATE", "DIRECTIONALITY_LEFT_TO_RIGHT_OVERRIDE", "DIRECTIONALITY_NONSPACING_MARK", "DIRECTIONALITY_OTHER_NEUTRALS", "DIRECTIONALITY_PARAGRAPH_SEPARATOR", "DIRECTIONALITY_POP_DIRECTIONAL_FORMAT", "DIRECTIONALITY_POP_DIRECTIONAL_ISOLATE", "DIRECTIONALITY_RIGHT_TO_LEFT", "DIRECTIONALITY_RIGHT_TO_LEFT_ARABIC", "DIRECTIONALITY_RIGHT_TO_LEFT_EMBEDDING", "DIRECTIONALITY_RIGHT_TO_LEFT_ISOLATE", "DIRECTIONALITY_RIGHT_TO_LEFT_OVERRIDE", "DIRECTIONALITY_SEGMENT_SEPARATOR", "DIRECTIONALITY_UNDEFINED", "DIRECTIONALITY_WHITESPACE", "ENCLOSING_MARK", "END_PUNCTUATION", "FINAL_QUOTE_PUNCTUATION", "FORMAT", "INITIAL_QUOTE_PUNCTUATION", "LETTER_NUMBER", "LINE_SEPARATOR", "LOWERCASE_LETTER", "MATH_SYMBOL", "MAX_CODE_POINT", "MAX_HIGH_SURROGATE", "MAX_LOW_SURROGATE", "MAX_RADIX", "MAX_SURROGATE", "MAX_VALUE", "MIN_CODE_POINT", "MIN_HIGH_SURROGATE", "MIN_LOW_SURROGATE", "MIN_RADIX", "MIN_SUPPLEMENTARY_CODE_POINT", "MIN_SURROGATE", "MIN_VALUE", "MODIFIER_LETTER", "MODIFIER_SYMBOL", "NON_SPACING_MARK", "OTHER_LETTER", "OTHER_NUMBER", "OTHER_PUNCTUATION", "OTHER_SYMBOL", "PARAGRAPH_SEPARATOR", "PRIVATE_USE", "SIZE", "SPACE_SEPARATOR", "START_PUNCTUATION", "SURROGATE", "TITLECASE_LETTER", "UNASSIGNED", "UPPERCASE_LETTER"]
+        opaque_members: [TYPE]
         clojure_peer_vars: []
       - fqn: java.lang.Math
         cljw_ns: cljw.java.lang.Math
@@ -188,8 +206,9 @@ tiers:
         phase: 14
         files:
           surface: runtime/java/lang/Math.zig
-        methods: [abs, sqrt, floor, ceil, round, pow, min, max, floorDiv, floorMod, addExact, subtractExact, multiplyExact, negateExact, incrementExact, decrementExact, toIntExact]
-        static_fields: [PI, E]
+        methods: [IEEEremainder, abs, absExact, acos, addExact, asin, atan, atan2, cbrt, ceil, ceilDiv, ceilMod, clamp, copySign, cos, cosh, decrementExact, divideExact, exp, expm1, floor, floorDiv, floorDivExact, floorMod, fma, getExponent, hypot, incrementExact, log, log10, log1p, max, min, multiplyExact, multiplyHigh, negateExact, nextAfter, nextDown, nextUp, pow, random, rint, round, scalb, signum, sin, sinh, sqrt, subtractExact, tan, tanh, toDegrees, toIntExact, toRadians, ulp]
+        static_fields: ["E", "PI", "TAU"]
+        opaque_members: [ceilDivExact, multiplyFull, powExact, unsignedMultiplyExact, unsignedMultiplyHigh, unsignedPowExact]
         clojure_peer_vars: []
       - fqn: java.lang.System
         cljw_ns: cljw.java.lang.System
@@ -199,7 +218,9 @@ tiers:
         files:
           surface: runtime/java/lang/System.zig
           impl: runtime/clock.zig
-        methods: [currentTimeMillis, nanoTime, getProperty, getenv, lineSeparator, exit, arraycopy, setProperty]
+        methods: [arraycopy, clearProperty, currentTimeMillis, exit, gc, getProperties, getProperty, getenv, identityHashCode, lineSeparator, nanoTime, setProperty]
+        static_fields: ["err", "in", "out"]
+        opaque_members: [console, getLogger, inheritedChannel, load, loadLibrary, mapLibraryName, setIn, setOut, setErr, setProperties, getSecurityManager, setSecurityManager, runFinalization]
         clojure_peer_vars: []
       - {fqn: "java.lang.Throwable", native_ns: "cljw.host.java.lang.Throwable", phase: 5}
       - {fqn: "java.lang.Exception", native_ns: "cljw.host.java.lang.Exception", phase: 5}
@@ -210,7 +231,9 @@ tiers:
         phase: 15
         files:
           surface: runtime/java/lang/Thread.zig
-        methods: [sleep, currentThread, getName]
+        methods: [currentThread, getName, isAlive, isDaemon, join, onSpinWait, setDaemon, setName, sleep, start, yield]
+        static_fields: ["MAX_PRIORITY", "MIN_PRIORITY", "NORM_PRIORITY"]
+        opaque_members: [interrupt, isInterrupted, interrupted, getId, threadId, getState, getPriority, setPriority, getStackTrace, getThreadGroup, getContextClassLoader, setContextClassLoader, getUncaughtExceptionHandler, setUncaughtExceptionHandler, getDefaultUncaughtExceptionHandler, setDefaultUncaughtExceptionHandler, ofPlatform, ofVirtual, startVirtualThread, isVirtual, activeCount, dumpStack, enumerate, holdsLock, getAllStackTraces, run]
         clojure_peer_vars: []
       # java.lang.StringBuilder — mutable growable buffer (ADR-0114, host_instance).
       # hiccup's compiler builds HTML with it. java.lang.String also has the
@@ -224,7 +247,7 @@ tiers:
         phase: 14
         files:
           surface: runtime/java/lang/StringBuilder.zig
-        methods: [append, toString, length]
+        methods: [append, charAt, deleteCharAt, insert, isEmpty, length, reverse, setLength]
         clojure_peer_vars: []
       # java.io
       - fqn: java.io.File
@@ -236,7 +259,8 @@ tiers:
           surface: runtime/java/io/File.zig
           impl: runtime/file_io.zig
           clojure_peer: lang/primitive/file_io.zig
-        methods: [exists, isFile, isDirectory, getName, getPath, getParent, getParentFile, isAbsolute, length, canRead, delete, mkdir, mkdirs, list, listFiles, toString, getAbsolutePath, "getCanonicalPath (lexical; no symlink resolution per D-357)"]
+        methods: [canRead, createTempFile, delete, exists, getAbsolutePath, getCanonicalPath, getName, getParent, getParentFile, getPath, isAbsolute, isDirectory, isFile, length, list, listFiles, listRoots, mkdir, mkdirs]
+        static_fields: ["pathSeparator", "pathSeparatorChar", "separator", "separatorChar"]
         clojure_peer_vars: [clojure.core/slurp, clojure.core/spit]
       - {fqn: "java.io.InputStream", native_ns: "cljw.host.java.io.InputStream", phase: 6}
       - {fqn: "java.io.OutputStream", native_ns: "cljw.host.java.io.OutputStream", phase: 6}
@@ -255,7 +279,8 @@ tiers:
           surface: runtime/java/util/UUID.zig
           impl: runtime/uuid.zig
           clojure_peer: lang/primitive/uuid.zig
-        methods: [randomUUID, fromString, toString]
+        methods: [compareTo, fromString, getLeastSignificantBits, getMostSignificantBits, randomUUID, variant, version]
+        opaque_members: [nameUUIDFromBytes]
         clojure_peer_vars: [clojure.core/random-uuid, clojure.core/parse-uuid]
       # java.util.ArrayList — mutable growable indexed list (D-425, host_instance
       # over a gc.infra std.ArrayList(Value); elements GC-traced via host_trace).
@@ -266,7 +291,7 @@ tiers:
         phase: 14
         files:
           surface: runtime/java/util/ArrayList.zig
-        methods: [add, get, set, size, isEmpty, contains, indexOf, remove, clear]
+        methods: [add, addAll, clear, contains, get, indexOf, isEmpty, remove, set, size]
         clojure_peer_vars: []
       # java.util.Objects — null-aware helper statics (no instances). equals uses
       # cljw value equality; requireNonNull throws a real NullPointerException.
@@ -277,7 +302,7 @@ tiers:
         phase: 14
         files:
           surface: runtime/java/util/Objects.zig
-        methods: [isNull, nonNull, equals, requireNonNull, requireNonNullElse, toString]
+        methods: [isNull, nonNull, requireNonNull, requireNonNullElse]
         clojure_peer_vars: []
       # java.util.Arrays — common statics over the .array tag (D-526). asList
       # returns the ArrayList host surface; sort is in-place natural compare;
@@ -289,7 +314,7 @@ tiers:
         phase: 14
         files:
           surface: runtime/java/util/Arrays.zig
-        methods: [asList, toString, copyOf, sort, equals, fill]
+        methods: [asList, copyOf, fill, sort]
         clojure_peer_vars: []
       # java.util.Collections — common statics (D-526). emptyList/singletonList
       # return MUTABLE ArrayList hosts (no unmodifiable wrapper in cljw —
@@ -302,7 +327,7 @@ tiers:
         phase: 14
         files:
           surface: runtime/java/util/Collections.zig
-        methods: [emptyList, singletonList, sort, reverse, max, min]
+        methods: [emptyList, max, min, reverse, singletonList, sort]
         clojure_peer_vars: []
       # java.util.HashMap — mutable key→value map (D-425, host_instance backing a
       # cljw map Value; one map Value GC-traced via host_trace, reuses cljw
@@ -314,7 +339,7 @@ tiers:
         phase: 14
         files:
           surface: runtime/java/util/HashMap.zig
-        methods: [put, get, containsKey, size, isEmpty, remove, clear, keySet, values]
+        methods: [clear, containsKey, containsValue, get, getOrDefault, isEmpty, keySet, put, putIfAbsent, remove, size, values]
         clojure_peer_vars: []
       # java.util.HashSet — mutable set (D-431, host_instance backing a cljw
       # persistent-set HAMT; one set Value GC-traced via host_trace, reuses cljw
@@ -327,7 +352,7 @@ tiers:
         phase: 14
         files:
           surface: runtime/java/util/HashSet.zig
-        methods: [add, remove, contains, size, isEmpty, clear, addAll]
+        methods: [add, addAll, clear, contains, isEmpty, remove, size]
         clojure_peer_vars: []
       # java.util.TreeSet — mutable SORTED set (D-431, host_instance backing a cljw
       # persistent sorted-set RB-tree; one set Value GC-traced via host_trace).
@@ -340,7 +365,7 @@ tiers:
         phase: 14
         files:
           surface: runtime/java/util/TreeSet.zig
-        methods: [add, remove, contains, size, isEmpty, clear, addAll, first, last]
+        methods: [add, addAll, ceiling, clear, contains, first, floor, higher, isEmpty, last, lower, remove, size]
         clojure_peer_vars: []
       # java.util.TreeMap — mutable SORTED key→value map (D-431, host_instance over
       # a cljw persistent sorted-map RB-tree). Iteration is by key = clj parity. seq
@@ -352,7 +377,7 @@ tiers:
         phase: 14
         files:
           surface: runtime/java/util/TreeMap.zig
-        methods: [put, get, containsKey, containsValue, remove, getOrDefault, putIfAbsent, size, isEmpty, clear, keySet, values, firstKey, lastKey]
+        methods: [ceilingKey, clear, containsKey, containsValue, firstKey, floorKey, get, getOrDefault, higherKey, isEmpty, keySet, lastKey, lowerKey, put, putIfAbsent, remove, size, values]
         clojure_peer_vars: []
       - fqn: java.util.Date
         cljw_ns: cljw.java.util.Date
@@ -364,7 +389,7 @@ tiers:
           impl: runtime/time/instant.zig
         # D-425: ctor (java.util.Date. [ms]) + .getTime landed; setTime/toString/
         # toInstant are a follow-up (NOT listed — anti-overclaim, D-177).
-        methods: [getTime]
+        methods: [after, before, getTime, toInstant]
         clojure_peer_vars: [clojure.core/inst-ms]
       - fqn: java.util.Random
         cljw_ns: cljw.java.util.Random
@@ -374,7 +399,7 @@ tiers:
         files:
           surface: runtime/java/util/Random.zig
           impl: runtime/random.zig
-        methods: [nextInt, nextLong, nextDouble, nextFloat, nextBoolean, setSeed]
+        methods: [nextBoolean, nextDouble, nextFloat, nextInt, nextLong, setSeed]
         clojure_peer_vars: []
       # java.util.Iterator — a stateful cursor over a cljw seq (ADR-0114). Minted
       # by `(.iterator coll)` (object_method universal fallback), not a ctor.
@@ -397,7 +422,8 @@ tiers:
         files:
           surface: runtime/java/util/Locale.zig
           impl: runtime/locale.zig
-        methods: [toString]
+        methods: []
+        static_fields: ["ROOT", "US"]
         clojure_peer_vars: []
       - fqn: java.util.regex.Pattern
         cljw_ns: cljw.java.util.regex.Pattern
@@ -409,7 +435,8 @@ tiers:
           impl: runtime/regex/compile.zig
           impl_extras: [runtime/regex/match.zig]
           clojure_peer: lang/primitive/regex.zig
-        methods: [compile, matcher, pattern, quote, split, matches]
+        methods: [compile, matcher, matches, pattern, quote, split]
+        static_fields: ["CANON_EQ", "CASE_INSENSITIVE", "COMMENTS", "DOTALL", "LITERAL", "MULTILINE", "UNICODE_CASE", "UNICODE_CHARACTER_CLASS", "UNIX_LINES"]
         clojure_peer_vars: [clojure.core/re-pattern, clojure.core/re-find, clojure.core/re-matches, clojure.core/re-seq, clojure.core/re-groups, clojure.string/replace, clojure.string/split]
       - fqn: java.util.regex.Matcher
         cljw_ns: cljw.java.util.regex.Matcher
@@ -420,7 +447,7 @@ tiers:
           surface: runtime/java/util/regex/Matcher.zig
           impl: runtime/regex/match.zig
           clojure_peer: lang/primitive/regex.zig
-        methods: [find, lookingAt, matches, group, groupCount, start, end, reset]
+        methods: [end, find, group, groupCount, lookingAt, matches, reset, start]
         clojure_peer_vars: [clojure.core/re-matcher, clojure.core/re-find, clojure.core/re-matches, clojure.core/re-seq, clojure.core/re-groups]
       - {fqn: "java.util.concurrent.Future", native_ns: "cljw.host.java.util.concurrent.Future", phase: 14}
       - {fqn: "java.util.concurrent.atomic.AtomicLong", native_ns: "cljw.host.java.util.concurrent.atomic.AtomicLong", phase: 15}
@@ -436,7 +463,9 @@ tiers:
           # Value-wrap layer (F-009 wrap slot, G3-exempt): wraps instant.zig's
           # epoch data into a .typed_instance Value.
           wrap: runtime/time/instant_value.zig
-        methods: [now, ofEpochSecond, ofEpochMilli, parse, getEpochSecond, getNano, toEpochMilli, isBefore, isAfter, plusSeconds, minusSeconds, plusMillis, minusMillis, plusNanos, minusNanos, plus, minus]
+        methods: [getEpochSecond, getNano, isAfter, isBefore, minus, minusMillis, minusNanos, minusSeconds, now, ofEpochMilli, ofEpochSecond, parse, plus, plusMillis, plusNanos, plusSeconds, toEpochMilli, until]
+        static_fields: ["EPOCH"]
+        opaque_members: [MIN, MAX]
         clojure_peer_vars: []
         status: "WIRED (D-462) - statics now/ofEpochSecond([secs] | [secs nanos])/ofEpochMilli/parse mint a `.typed_instance` Instant VALUE (instant_value.zig, per-Runtime descriptor); instance methods getEpochSecond/getNano/toEpochMilli + value `=` + `(str i)` = ISO_INSTANT (variable fraction + Z) all reachable. pr-str divergence = AD-042 (no JVM `#object[…]` identity form). Pinned by test/e2e/phase15_java_time_instant.sh. Arithmetic methods (plusSeconds/minus*/isBefore/…) are NOT implemented (would be a follow-up unit, not listed above per anti-D-177). Cross-type ops plus/minus (Duration arg, with sub-second carry) ARE implemented + reachable (pinned by test/e2e/phase15_java_time_duration_between.sh). Sibling java.time reservations (ZonedDateTime) remain UNWIRED."
       - fqn: java.time.LocalDate
@@ -449,7 +478,8 @@ tiers:
           # Value-wrap layer (F-009 wrap slot, G3-exempt): mints the
           # .typed_instance LocalDate Value (1 field [epoch_day]).
           wrap: runtime/time/local_date_value.zig
-        methods: [of, now, parse, getYear, getMonthValue, getDayOfMonth, getDayOfWeek, getMonth, getDayOfYear, plusDays, minusDays, plusWeeks, minusWeeks, plusMonths, minusMonths, plusYears, minusYears, isLeapYear, lengthOfMonth, isBefore, isAfter, isEqual]
+        methods: [atStartOfDay, atTime, getDayOfMonth, getDayOfWeek, getDayOfYear, getMonth, getMonthValue, getYear, isAfter, isBefore, isEqual, isLeapYear, lengthOfMonth, minusDays, minusMonths, minusWeeks, minusYears, now, of, ofEpochDay, parse, plusDays, plusMonths, plusWeeks, plusYears, until]
+        static_fields: ["EPOCH", "MAX", "MIN"]
         clojure_peer_vars: []
         status: "WIRED (D-462) - statics of(y m d)/now/parse mint a `.typed_instance` LocalDate VALUE (local_date_value.zig, per-Runtime descriptor) carrying [epoch_day] (signed days since 1970-01-01 via the Hinnant civil algorithm reused from instant.zig); instance methods getYear/getMonthValue/getDayOfMonth/plusDays + value `=` + `(str d)` = ISO `yyyy-MM-dd` (4-digit zero-padded year, e.g. LocalDate.of(1 1 1) → \"0001-01-01\") all reachable. pr-str divergence = AD-042 (no JVM `#object[…]` identity form). Pinned by test/e2e/phase15_java_time_local_date.sh. `now` is UTC-based (cljw has no zone DB). getDayOfWeek/getMonth return the DayOfWeek/Month enum VALUE types (`(str …)` = enum NAME, getValue = ISO ordinal); getDayOfYear returns an int 1..366 — pinned by test/e2e/phase15_java_time_dow_month.sh."
       - fqn: java.time.LocalTime
@@ -462,7 +492,8 @@ tiers:
           # Value-wrap layer (F-009 wrap slot, G3-exempt): mints the
           # .typed_instance LocalTime Value (1 field [nano_of_day]).
           wrap: runtime/time/local_time_value.zig
-        methods: [of, now, parse, getHour, getMinute, getSecond, getNano, isBefore, isAfter, plusHours, minusHours, plusMinutes, minusMinutes, plusSeconds, minusSeconds, plusNanos, minusNanos]
+        methods: [getHour, getMinute, getNano, getSecond, isAfter, isBefore, minusHours, minusMinutes, minusNanos, minusSeconds, now, of, ofNanoOfDay, ofSecondOfDay, parse, plusHours, plusMinutes, plusNanos, plusSeconds]
+        static_fields: ["MAX", "MIDNIGHT", "MIN", "NOON"]
         clojure_peer_vars: []
         status: "WIRED (D-462) - statics of(h mi [s [n]] arity 2-4)/now/parse mint a `.typed_instance` LocalTime VALUE (local_time_value.zig, per-Runtime descriptor) carrying [nano_of_day] (i64 in [0, 86_400_000_000_000)); instance methods getHour/getMinute/getSecond/getNano + value `=` + `(str t)` = ISO local time (conditional :ss omitted when sec=nano=0, variable fraction, e.g. \"12:30\" / \"12:30:45.500\") all reachable. The date/time format+parse halves are shared with LocalDate/LocalDateTime via instant.zig (F-009 neutral home). pr-str divergence = AD-042 (no JVM `#object[…]` identity form). Pinned by test/e2e/phase15_java_time_local_date.sh. `now` is UTC-based (cljw has no zone DB)."
       - fqn: java.time.LocalDateTime
@@ -475,7 +506,8 @@ tiers:
           # Value-wrap layer (F-009 wrap slot, G3-exempt): mints the
           # .typed_instance LocalDateTime Value + the ISO-local formatter.
           wrap: runtime/time/local_date_time_value.zig
-        methods: [now, of, parse, getYear, getMonthValue, getDayOfMonth, getDayOfWeek, getMonth, getDayOfYear, getHour, getMinute, getSecond, getNano, toLocalDate, toLocalTime, plusDays, minusDays, plusWeeks, minusWeeks, plusHours, minusHours, plusMinutes, minusMinutes, plusSeconds, minusSeconds, plusNanos, minusNanos, plusMonths, minusMonths, plusYears, minusYears, isBefore, isAfter, isEqual, plus, minus]
+        methods: [getDayOfMonth, getDayOfWeek, getDayOfYear, getHour, getMinute, getMonth, getMonthValue, getNano, getSecond, getYear, isAfter, isBefore, isEqual, minus, minusDays, minusHours, minusMinutes, minusMonths, minusNanos, minusSeconds, minusWeeks, minusYears, now, of, parse, plus, plusDays, plusHours, plusMinutes, plusMonths, plusNanos, plusSeconds, plusWeeks, plusYears, toLocalDate, toLocalTime, until]
+        static_fields: ["MAX", "MIN"]
         clojure_peer_vars: []
         status: "WIRED (D-462) - statics of(y m d h mi [s [n]] arity 5-7)/now/parse mint a `.typed_instance` LocalDateTime VALUE (local_date_time_value.zig, per-Runtime descriptor) carrying [epoch_day, nano_of_day] (epoch_day via the Hinnant civil algorithm reused from instant.zig); instance methods getYear/getMonthValue/getDayOfMonth/getHour/getMinute/getSecond/getNano + toLocalDate/toLocalTime (return the sibling LocalDate/LocalTime VALUE types) + value `=` + `(str d)` = ISO local date-time (conditional :ss omitted when sec=nano=0, variable fraction; the date/time halves are shared with LocalDate/LocalTime via instant.zig) all reachable. pr-str divergence = AD-042 (no JVM `#object[…]` identity form). Pinned by test/e2e/phase15_java_time_local_date_time.sh + toLocalDate/toLocalTime by test/e2e/phase15_java_time_local_date.sh. Arithmetic plusDays/minusDays/plusWeeks/minusWeeks (epoch_day) + plusHours/minusHours/plusMinutes/minusMinutes/plusSeconds/minusSeconds/plusNanos/minusNanos (nano_of_day with midnight carry/borrow into epoch_day) are implemented + reachable (pinned by test/e2e/phase15_java_time_ldt_arith.sh). Cross-type ops plus/minus (Duration arg, with midnight carry/borrow into epoch_day) ARE implemented + reachable (pinned by test/e2e/phase15_java_time_duration_between.sh). Calendar arithmetic plusMonths/minusMonths/plusYears/minusYears (civil month/year shift on the DATE part with JVM day-clamping, time-of-day kept; shares instant.zig's addMonthsToEpochDay/addYearsToEpochDay with LocalDate) ARE implemented + reachable (pinned by test/e2e/phase15_java_time_ldt_calendar.sh). `now` is UTC-based (cljw has no zone DB). getDayOfWeek/getMonth return the DayOfWeek/Month enum VALUE types (`(str …)` = enum NAME, getValue = ISO ordinal); getDayOfYear returns an int 1..366 — pinned by test/e2e/phase15_java_time_dow_month.sh."
       - fqn: java.time.DayOfWeek
@@ -486,7 +518,8 @@ tiers:
         files:
           surface: runtime/java/time/DayOfWeek.zig
           impl: runtime/host_enum.zig
-        methods: [getValue, name, toString]
+        methods: [getValue, name, of, valueOf, values]
+        static_fields: ["FRIDAY", "MONDAY", "SATURDAY", "SUNDAY", "THURSDAY", "TUESDAY", "WEDNESDAY"]
         clojure_peer_vars: []
         status: "WIRED (ADR-0161, folds D-462) — host-enum singleton (.host_instance, ordinal in state[0]). Static field DayOfWeek/MONDAY..SUNDAY resolves; LocalDate/LocalDateTime.getDayOfWeek returns the SAME interned singleton (identical? parity). (str)/.name = enum NAME, getValue = 1-7 (ISO Mon=1), value `=` by identity, compare by ordinal (sign, AD-043). Pinned by test/e2e/phase15_java_time_dow_month.sh."
       - fqn: java.time.Month
@@ -497,7 +530,8 @@ tiers:
         files:
           surface: runtime/java/time/Month.zig
           impl: runtime/host_enum.zig
-        methods: [getValue, name, toString]
+        methods: [getValue, name, of, valueOf, values]
+        static_fields: ["APRIL", "AUGUST", "DECEMBER", "FEBRUARY", "JANUARY", "JULY", "JUNE", "MARCH", "MAY", "NOVEMBER", "OCTOBER", "SEPTEMBER"]
         clojure_peer_vars: []
         status: "WIRED (ADR-0161, folds D-462) — host-enum singleton (.host_instance, ordinal in state[0]). Static field Month/JANUARY..DECEMBER resolves; LocalDate/LocalDateTime.getMonth returns the SAME interned singleton (identical? parity). (str)/.name = enum NAME, getValue = 1-12, value `=` by identity, compare by ordinal (sign, AD-043). Pinned by test/e2e/phase15_java_time_dow_month.sh."
       - fqn: java.time.Duration
@@ -510,7 +544,8 @@ tiers:
           # Value-wrap layer (F-009 wrap slot, G3-exempt): the duration span's
           # value-mint + self-contained ISO-8601 formatter.
           wrap: runtime/time/duration_value.zig
-        methods: [ofSeconds, ofMillis, ofNanos, ofMinutes, ofHours, ofDays, between, getSeconds, getNano, toMillis, toMinutes, isZero, isNegative, negated, abs, plusSeconds, minusSeconds, plusMinutes, minusMinutes, plusHours, minusHours, plusDays, minusDays, plusMillis, minusMillis, plusNanos, minusNanos, plus, minus, multipliedBy, dividedBy]
+        methods: [abs, between, dividedBy, getNano, getSeconds, isNegative, isZero, minus, minusDays, minusHours, minusMillis, minusMinutes, minusNanos, minusSeconds, multipliedBy, negated, of, ofDays, ofHours, ofMillis, ofMinutes, ofNanos, ofSeconds, parse, plus, plusDays, plusHours, plusMillis, plusMinutes, plusNanos, plusSeconds, toMillis, toMinutes]
+        static_fields: ["ZERO"]
         clojure_peer_vars: []
         status: "WIRED (D-462) - statics ofSeconds([secs] | [secs nanoAdj])/ofMillis/ofNanos/ofMinutes/ofHours/ofDays mint a NORMALIZED (nanos∈[0,1e9), seconds carries sign) `.typed_instance` Duration VALUE (duration_value.zig, per-Runtime descriptor); instance methods getSeconds/getNano/toMillis/toMinutes + value `=` + `(str d)` = ISO-8601 `PT…` (the exact JDK Duration.toString) all reachable. pr-str divergence = AD-042 (no JVM `#object[…]` identity form). Pinned by test/e2e/phase15_java_time_duration.sh. The static factory `between(a b)` mints the elapsed Duration `b - a`, dispatching on the temporal type of BOTH args (Instant/LocalDateTime/LocalTime; mismatched/non-temporal pair → type_arg_invalid) — pinned by test/e2e/phase15_java_time_duration_between.sh. Remaining arithmetic methods (toNanos/…) are NOT implemented (would be a follow-up unit, not listed above per anti-D-177)."
       - fqn: java.time.ZonedDateTime
@@ -520,7 +555,7 @@ tiers:
         phase: 14
         files:
           surface: runtime/java/time/ZonedDateTime.zig
-        methods: [now, of, parse, withZoneSameInstant, toInstant]
+        methods: []
         clojure_peer_vars: []
         status: "reservation - DEFERRED (D-462): blocked on a timezone database. ZonedDateTime's headline use is named zones (ZoneId/of \"Asia/Tokyo\" -> offset+DST resolution), which needs a bundled IANA tzdata cljw does not ship (binary-size + update-cadence scope decision, user/ADR-owned, not autonomous). A fixed-offset-only subset (ZoneOffset) would just be OffsetDateTime and miss the point. Instant/LocalDateTime/LocalDate/LocalTime/Duration ARE wired (D-462); ZonedDateTime waits for a tz-DB decision."
       - {fqn: "java.time.ZoneId", native_ns: "cljw.host.java.time.ZoneId", phase: 6}
@@ -537,7 +572,7 @@ tiers:
         files:
           surface: runtime/java/net/URI.zig
           impl: runtime/net/uri.zig
-        methods: [getHost, getPath, toString]
+        methods: [create, getHost, getPath]
         clojure_peer_vars: []
       - fqn: java.net.URLEncoder
         cljw_ns: cljw.java.net.URLEncoder
@@ -556,7 +591,7 @@ tiers:
         phase: 14
         files:
           surface: runtime/java/net/Socket.zig
-        methods: [connect, getInputStream, getOutputStream, close]
+        methods: []
         clojure_peer_vars: []
         status: "reservation - TypeDescriptor only; backing runtime/net/socket.zig deferred (D-106)"
       # java.nio
@@ -573,7 +608,8 @@ tiers:
         files:
           surface: runtime/java/math/BigDecimal.zig
           impl: runtime/numeric/big_decimal.zig
-        methods: [valueOf, add, subtract, multiply, divide, toPlainString]
+        methods: [abs, add, compareTo, divide, divideAndRemainder, divideToIntegralValue, doubleValue, intValue, longValue, max, min, movePointLeft, movePointRight, multiply, negate, pow, precision, remainder, round, scale, scaleByPowerOfTen, setScale, signum, stripTrailingZeros, subtract, toBigInteger, ulp, unscaledValue, valueOf]
+        static_fields: ["ONE", "ROUND_CEILING", "ROUND_DOWN", "ROUND_FLOOR", "ROUND_HALF_DOWN", "ROUND_HALF_EVEN", "ROUND_HALF_UP", "ROUND_UNNECESSARY", "ROUND_UP", "TEN", "TWO", "ZERO"]
         clojure_peer_vars: [clojure.core/bigdec]
       # java.math.RoundingMode — the 8 enum constants (UP..UNNECESSARY) as
       # host-enum object singletons + .toString (ADR-0160). The clj-modern
@@ -587,7 +623,8 @@ tiers:
         files:
           surface: runtime/java/math/RoundingMode.zig
           impl: runtime/host_enum.zig
-        methods: [toString]
+        methods: [valueOf, values]
+        static_fields: ["CEILING", "DOWN", "FLOOR", "HALF_DOWN", "HALF_EVEN", "HALF_UP", "UNNECESSARY", "UP"]
         clojure_peer_vars: []
       # java.math.MathContext — precision+RoundingMode host object (D-511). The
       # explicit object form of with-precision (D-467); consumed by BigDecimal
@@ -601,7 +638,8 @@ tiers:
         files:
           surface: runtime/java/math/MathContext.zig
           impl: runtime/math_context.zig
-        methods: ["<init>", getPrecision, getRoundingMode, toString]
+        methods: [getPrecision, getRoundingMode]
+        static_fields: ["DECIMAL128", "DECIMAL32", "DECIMAL64", "UNLIMITED"]
         clojure_peer_vars: []
       # java.time.temporal.ChronoUnit — 16 enum constants (NANOS..FOREVER) as
       # host-enum singletons; (str)=display name, (.name)=enum name. The unit arg
@@ -614,7 +652,8 @@ tiers:
         files:
           surface: runtime/java/time/ChronoUnit.zig
           impl: runtime/host_enum.zig
-        methods: [toString, name]
+        methods: [name, valueOf, values]
+        static_fields: ["CENTURIES", "DAYS", "DECADES", "ERAS", "FOREVER", "HALF_DAYS", "HOURS", "MICROS", "MILLENNIA", "MILLIS", "MINUTES", "MONTHS", "NANOS", "SECONDS", "WEEKS", "YEARS"]
         clojure_peer_vars: []
       # java.security
       - fqn: java.security.MessageDigest
@@ -624,7 +663,7 @@ tiers:
         phase: 14
         files:
           surface: runtime/java/security/MessageDigest.zig
-        methods: [getInstance, update, digest, reset]
+        methods: []
         clojure_peer_vars: []
         status: "reservation - TypeDescriptor only; backing runtime/crypto/message_digest.zig deferred (D-106)"
       # --- Stage 0.3 (2026-06-06, campaign): Java classes real pure-Clojure
