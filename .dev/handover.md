@@ -7,16 +7,18 @@
 
 - **HEAD**: `main` (`git log` = SSOT). Per-commit = smoke; commit
   **and** push (atomic Step 6). `build.zig.zon` `.zwasm` = tag pin
-  `v2.2.1` (binary-size release). Latest release: **v1.4.0** (2026-07-16; the binary-size
-  campaign release — 6,974,584 B; tap bumped + brew-verified). CHANGELOG is the release-history SSOT.
+  `v2.2.1`. Latest release: **v1.5.0** (2026-07-17; the ADR-0174
+  host-class identity & member-surface campaign + Thread lifecycle;
+  tap bumped + brew-verified). CHANGELOG is the release-history SSOT.
 - **First task on resume MUST be**: self-select from the live
   `.dev/debt.yaml` `active:` list, easiest-first. Fresh well-scoped
-  rows: **D-563** (a2: Clojure 1.12
-  `Class/.instanceMethod` + `Class/new` method-value forms; (b) Var
-  :line/:file source meta → clojure.test `(file:line)` suffix + AD-041
-  dissolution; (c) default-data-readers / defstruct), **D-561**
-  (Character getName/codePointOf name table vs gap II), D-522 comment
-  de-pointering (next by density: diff_test.zig / vm.zig / print.zig).
+  rows: **D-563** (a2: Clojure 1.12 `Class/.instanceMethod` +
+  `Class/new` method-value forms — the ADR-0174 merged tables make
+  a2 mostly a spelling arm now; (b) Var :line/:file source meta;
+  (c) default-data-readers / defstruct), **D-564** (ADR-0174
+  residuals: Thread interrupt family, BigDecimal .toPlainString,
+  instance-method fills, Alt C class_registry SSOT), **D-561**
+  (Character codePointOf name table), D-522 comment de-pointering.
 - **Forbidden this session**: bare `zig build test` WITHOUT `-Dwasm`;
   bare `zig build` for a probe (use ReleaseSafe). **The FULL gate MUST
   run `--serial-e2e`, ALONE** (D-548 (a) future/promise SIGABRT + (b)
@@ -28,28 +30,27 @@
   External-publish payloads need `test -s` + read-back guards (memory
   `external-publish-payload-guard`).
 
-## Current state (2026-07-16; details = CHANGELOG + git log)
+## Current state (2026-07-17; details = CHANGELOG + git log)
 
-- **v1.3.0 + v1.3.1 released** — the arc the user named as the landing
-  point: `java.lang.Character` complete (full-Unicode UCD tables, D-561
-  = the one residual), **ADR-0171** (rt ns merged into clojure.core;
-  `cljw.internal` for `__` helpers; serialize v6), CIDER completion
-  parity (fixture-driven e2e `phase14_nrepl_completion`; oracle =
-  `scripts/completion_oracle.py`; AD-054), the **D-562 AD full
-  inventory** (all 50 rows classified — checklist
-  `private/notes/D562-ad-inventory-checklist.md`; portable `(hash x)`
-  values, compareTo magnitudes, locking immediates, exact parseDouble;
-  AD-006/011/014/035/038/049 retired as parity, AD-009/043 narrowed),
-  Clojure 1.12 **static method values**, and defrecord **ns-qualified
-  identity** (print/reader-round-trip/hash parity; D-563(a) done).
-- **Binary-size campaign COMPLETE** (2026-07-16, user-directed):
-  **9,469,816 → 6,974,584 B (−26.3%, sub-7MB)**. ADR-0172 (budget +
-  levers + `size_claims`/ceiling gate + `.claude/rules/binary_size.md`),
-  ADR-0173 envelope v7 (WireInstr zero-copy, constant pool, flate lazy
-  regions + .clj sources — D-517 DISCHARGED), zwasm v2.2.1 re-pin
-  (thunk collapse −1.08MB, CODEV same-day round-trip), O-052/O-053.
-  Full cross-language bench re-recorded (bench/cross-lang-latest.yaml
-  2026-07-16) + RELEASE_METRICS refreshed (6.97MB / ~6ms).
+- **v1.5.0 released** — the ADR-0174 host-class campaign (user-directed
+  2026-07-16): ONE canonical descriptor per class (fqcn = JVM FQCN for
+  Java-surface-backed classes; the typed_instance two-descriptor split
+  merged; `cljw.` prefix leak dead), bare/qualified class symbols
+  resolve as values, member-miss = precise position-split diagnostics,
+  `Class` first-class, System closed out (getProperties/getenv-0/
+  clearProperty/identityHashCode/gc + in/out/err stdio streams),
+  **Thread lifecycle** (ctor/start/join/isAlive/names/daemon +
+  join-at-exit; live daemon at exit = JVM-exact hard exit — the
+  ubuntunote teardown-race fix), constants + enum statics + Pattern
+  flags-compile + Duration/parse + File temp, envelope v8, and the
+  **compat_members gate** (`scripts/check_compat_members.sh` +
+  `__dump-host-classes`; compat_tiers member lists machine-true,
+  `opaque_members:` = deliberate skips). Binary: mac 7,073,240 B /
+  linux ~8.01MB (ADR-0172 revision notes the conscious growth;
+  README claim "about 7.5 MB").
+- Binary-size campaign (v1.4.0, ADR-0172/0173) + the v1.3.x arc
+  (Character UCD, ADR-0171 rt-ns merge, CIDER completion parity,
+  D-562 AD inventory): see CHANGELOG.
 - Debug tooling: `scripts/nrepl_send.py` (nREPL client),
   `scripts/clj_diff_sweep.sh` + corpora (now incl. `character.txt`,
   `hash_compare.txt`, `records_method_values.txt`),
