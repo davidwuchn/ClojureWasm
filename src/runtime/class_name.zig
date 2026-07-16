@@ -92,6 +92,12 @@ const NATIVE_ENTRIES = [_]NativeEntry{
     .{ .name = "BigInt", .tag = .big_int },
     .{ .name = "Ratio", .tag = .ratio },
     .{ .name = "BigDecimal", .tag = .big_decimal },
+    // ADR-0174 D4: a class VALUE's class is `Class` (clj: java.lang.Class;
+    // AD-003 simple name). One row wires `(class Long)` → Class, bare
+    // `Class` as a value, and `(instance? Class (class 5))` — the
+    // instance-method surface (getName/…) already lives on
+    // nativeDescriptor(.type_descriptor) via java/lang/Class.zig.
+    .{ .name = "Class", .tag = .type_descriptor },
 };
 
 /// FQCN → simple normalisation for native class names. Throwable
@@ -100,6 +106,7 @@ const NATIVE_ENTRIES = [_]NativeEntry{
 /// recognise.
 const FQCN_MAP = std.StaticStringMap([]const u8).initComptime(.{
     .{ "java.lang.String", "String" },
+    .{ "java.lang.Class", "Class" },
     .{ "java.lang.Long", "Long" },
     .{ "java.lang.Double", "Double" },
     .{ "java.lang.Boolean", "Boolean" },

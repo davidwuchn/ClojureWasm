@@ -81,4 +81,11 @@ assert_eq 'def_shadows_class' "$(run '(def System 42) System' | tail -1)" '42'
 # --- user code sees a clean class value through higher-order use ---
 assert_eq 'group_by_class' "$(run '(contains? (group-by class [(java.util.Date. 0) (java.util.Date. 1)]) java.util.Date)')" 'true'
 
+# --- ADR-0174 D4: Class is a first-class marker (clj: java.lang.Class) ---
+assert_eq 'class_of_class'      "$(run '(class Long)')" 'Class'
+assert_eq 'class_of_host_class' "$(run '(class (class (java.util.Date. 0)))')" 'Class'
+assert_eq 'bare_class_symbol'   "$(run 'Class')" 'Class'
+assert_eq 'instance_class'      "$(run '(instance? Class (class 5))')" 'true'
+assert_eq 'instance_class_neg'  "$(run '(instance? Class 5)')" 'false'
+
 echo "ALL PASS"
