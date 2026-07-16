@@ -75,6 +75,19 @@
   compare returns clj's compareTo magnitude). `defmacro` Var + `definline`
   landed. Residuals → **D-563** (record ns-qualification, Var source
   meta, default-data-readers/defstruct, temporal compare magnitudes).
+- **1.3.1 RELEASED (2026-07-16 JST, tag v1.3.1)** — the brew-user
+  regression fix: Clojure 1.12 STATIC METHOD VALUES
+  (`(every? Character/isWhitespace s)` — general across every host
+  surface via the analyzer's Java-surface value-position branch; the
+  1.12 `Class/.instance` + `Class/new` forms are D-563(a2)) +
+  defrecord ns-qualified identity (D-563(a) DISCHARGED: `#user.Pt{…}`
+  print, READER round-trip via the shared recordFromMap, record hasheq
+  = clj's type-hash XOR mapHasheq; AD-035 retired). Corpus
+  records_method_values.txt (26 golden). scripts/nrepl_send.py = the
+  nREPL debug client. Pre-tag: full gate green (one run) / conformance
+  0 DRIFT / verify 19/19 / CI green; tap bumped + brew-verified
+  (`1.3.0 → stable 1.3.1`). **Session STOPPED here per the user
+  (2026-07-16 morning): the patch release is the stopping point.**
 - **1.3.0 RELEASED (2026-07-16 JST, tag v1.3.0 = the user-named landing
   point)** — pre-tag: full gate green (one run hit only the
   D-548(a)-recorded SIGABRT, standalone 3/3, recurrence recorded) /
