@@ -1,0 +1,12 @@
+(.toPlainString 1.5M)
+;;=> "1.5"
+(.toPlainString (java.math.BigDecimal. "1E+3"))
+;;=> "1000"
+(.toPlainString 0.00001M)
+;;=> "0.00001"
+(.toPlainString -2.50M)
+;;=> "-2.50"
+(.toPlainString 123M)
+;;=> "123"
+(.toPlainString (java.math.BigDecimal. "1E-10"))
+;;=> "0.0000000001"

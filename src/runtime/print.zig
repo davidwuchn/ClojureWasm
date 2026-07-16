@@ -1085,6 +1085,53 @@ fn printBigDecimal(w: *Writer, v: Value) anyerror!void {
     try w.writeByte('M');
 }
 
+/// Plain (no-exponent) rendering of unsigned `digits` at `scale` — the body
+/// both `BigDecimal.toString`'s plain arm and `.toPlainString` share.
+/// scale < 0 appends zeros (unscaled × 10^-scale); scale > 0 places the
+/// decimal point, zero-padding a sub-1 magnitude.
+fn writePlainDigits(w: *Writer, digits: []const u8, scale: i32) anyerror!void {
+    if (scale == 0) {
+        try w.writeAll(digits);
+    } else if (scale < 0) {
+        try w.writeAll(digits);
+        const zeros: usize = @intCast(-@as(i64, scale));
+        for (0..zeros) |_| try w.writeByte('0');
+    } else {
+        const scale_u: usize = @intCast(scale);
+        if (scale_u >= digits.len) {
+            try w.writeAll("0.");
+            for (0..scale_u - digits.len) |_| try w.writeByte('0');
+            try w.writeAll(digits);
+        } else {
+            const dot_pos = digits.len - scale_u;
+            try w.writeAll(digits[0..dot_pos]);
+            try w.writeByte('.');
+            try w.writeAll(digits[dot_pos..]);
+        }
+    }
+}
+
+/// JVM `BigDecimal.toPlainString` — ALWAYS plain notation, whatever the
+/// scale/adjusted exponent (`1E+3M` renders "1000", `1E-10M` renders
+/// "0.0000000001"). The `.toPlainString` surface method writes through this;
+/// `writeBigDecimalDigits` (= toString) uses the same digit body only in its
+/// plain arm.
+pub fn writeBigDecimalPlain(w: *Writer, v: Value) anyerror!void {
+    const bd = v.decodePtr(*const big_decimal_mod.BigDecimal);
+    var buf: [1024]u8 = undefined;
+    var sw: std.Io.Writer = .fixed(&buf);
+    sw.print("{f}", .{bd.unscaled.m}) catch {
+        // Unscaled wider than the buffer — lossy digits-only fallback,
+        // mirroring writeBigDecimalDigits' stance.
+        return w.print("{f}", .{bd.unscaled.m});
+    };
+    const written = buf[0..sw.end];
+    const neg = written.len > 0 and written[0] == '-';
+    const digits = if (neg) written[1..] else written;
+    if (neg) try w.writeByte('-');
+    try writePlainDigits(w, digits, bd.scale);
+}
+
 pub fn writeBigDecimalDigits(w: *Writer, v: Value) anyerror!void {
     // value = unscaled * 10^(-scale). Reproduces JVM `BigDecimal.toString`:
     // plain notation when `scale >= 0` AND the adjusted exponent
@@ -1107,22 +1154,7 @@ pub fn writeBigDecimalDigits(w: *Writer, v: Value) anyerror!void {
 
     if (neg) try w.writeByte('-');
     if (bd.scale >= 0 and adj_exp >= -6) {
-        // Plain notation (toPlainString).
-        if (bd.scale == 0) {
-            try w.writeAll(digits);
-        } else {
-            const scale_u: usize = @intCast(bd.scale);
-            if (scale_u >= digits.len) {
-                try w.writeAll("0.");
-                for (0..scale_u - digits.len) |_| try w.writeByte('0');
-                try w.writeAll(digits);
-            } else {
-                const dot_pos = digits.len - scale_u;
-                try w.writeAll(digits[0..dot_pos]);
-                try w.writeByte('.');
-                try w.writeAll(digits[dot_pos..]);
-            }
-        }
+        try writePlainDigits(w, digits, bd.scale);
     } else {
         // Scientific: one digit, optional fraction, `E`, signed exponent.
         try w.writeByte(digits[0]);

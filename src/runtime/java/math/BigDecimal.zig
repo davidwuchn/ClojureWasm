@@ -47,6 +47,20 @@ fn scaleFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) an
     return Value.initInteger(big_decimal.asScale(args[0]));
 }
 
+/// `(.toPlainString bd)` — the value WITHOUT exponent notation, whatever the
+/// scale (`(BigDecimal. "1E+3")` → "1000"; `.toString` keeps "1E+3").
+/// JVM `BigDecimal.toPlainString()`. Rendering shared with the toString
+/// plain arm via `print.writeBigDecimalPlain` (D-564 residual).
+fn toPlainStringFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = env;
+    try error_catalog.checkArity("toPlainString", args, 1, loc);
+    try requireBd(args[0], "toPlainString", loc);
+    var aw: std.Io.Writer.Allocating = .init(rt.gpa);
+    defer aw.deinit();
+    try print_mod.writeBigDecimalPlain(&aw.writer, args[0]);
+    return string_collection.alloc(rt, aw.writer.buffered());
+}
+
 /// `(.signum bd)` — -1 / 0 / 1 by the sign of the value. JVM `BigDecimal.signum()`.
 fn signumFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
     _ = rt;
@@ -494,6 +508,7 @@ pub fn installNativeMethods(rt: *Runtime) !void {
     const specs = .{
         .{ "setScale", &setScale },
         .{ "scale", &scaleFn },
+        .{ "toPlainString", &toPlainStringFn },
         .{ "signum", &signumFn },
         .{ "unscaledValue", &unscaledValueFn },
         .{ "precision", &precisionFn },
