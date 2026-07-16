@@ -2,7 +2,7 @@
 
 > **SSOT for "what does the zwasm we embed offer, and what has cljw adopted".**
 > cljw embeds **zwasm v2** (F-001, unavoidable). The dep is a **tag pin** —
-> **v2.2.0** (`cf5d20d7`, see § Pin), pinned 2026-07-09 — the AOT-full-fidelity
+> **v2.2.1** (see § Pin), pinned 2026-07-16 — the binary-size-campaign release; prior v2.2.0 (`cf5d20d7`, 2026-07-09) was the AOT-full-fidelity
 > release (ADR-0203; guard-page bounds elision, diff-fuzz gate, .cwasm AOT +
 > on-disk compilation cache). zwasm is itself under active
 > co-development (`~/Documents/MyProducts/zwasm`) and its embedding API is
@@ -43,9 +43,15 @@ a cljw-side shim.
 
 ## Pin
 
-- **TAG PIN — v2.2.0 (`cf5d20d7`), pinned 2026-07-09.** `build.zig.zon`
-  `.zwasm` = `.url = "git+…/zwasm.git#v2.2.0"` + `.hash = "zwasm-2.2.0-FT1Fv2P…"`,
-  resolved from GitHub. The AOT-full-fidelity release (zwasm ADR-0203 stages
+- **TAG PIN — v2.2.1, pinned 2026-07-16.** `build.zig.zon`
+  `.zwasm` = `.url = "git+…/zwasm.git#v2.2.1"` + `.hash = "zwasm-2.2.1-FT1Fv632…"`,
+  resolved from GitHub. The binary-size-campaign release (zwasm ADR-0204 /
+  D-522 stage 1): JIT host-callback thunk collapse (`api.jit_host_bridge`
+  1,311 KB → 232 KB, −82%; zwasm CLI −21%), NO API / behaviour / JIT-output
+  change — measured cljw effect: shipped binary 8,583,352 → **7,499,896 B
+  (−1,083 KB)**. Executed under the user's standing tag-watch directive
+  (engine-follow bump) + the user's mailbox nudge this session. Prior:
+  **v2.2.0** (`cf5d20d7`, 2026-07-09), described below. The AOT-full-fidelity release (zwasm ADR-0203 stages
   1-5): guard-page bounds-check elision (D-507/ADR-0202), committed
   differential-fuzz gate (D-510), JIT helper de-baking (D-516), full-fidelity
   `.cwasm` v0.5 AOT serialize/load (aot-diff 62/62), transparent on-disk
@@ -176,3 +182,16 @@ was the `.auto`-default flip; this ledger tracks adoption status per capability.
   optional compute-only module split for safety-tier flexibility. No urgency coupling —
   rides the normal user-gated pin cadence. The mailbox dir had been cleaned; recreated.
   cljw-side budget contract: zwasm (engine+api) = 4.0 MB line in ADR-0172 §2.
+- **2026-07-16 (same day)** — **to_cljw_05 + to_cljw_06 CONSUMED; pin bumped
+  v2.2.0 → v2.2.1.** zwasm accepted the campaign (their ADR-0204), landed the
+  thunk collapse same-day (D-522 stage 1, PR #145) and released v2.2.1; cljw
+  re-pinned and measured **−1,083 KB** (8,583,352 → 7,499,896 B). Two
+  corrections adopted from the reply: (1) the x86_64 JIT emitter ALREADY
+  exists (target-comptime-gated — 0 B on arm64; my from_cljw_05 called it
+  "planned"); (2) **the table-driven-emitter request is REFUTED by their
+  reversible experiment** — `emit.compile`'s 707 KB is the aggregation of
+  once-called inlined handlers (out-lining is size-neutral, +28.8 KB even);
+  symbol-size attribution overstates recoverable size when code has ONE call
+  site — the predictive question is instantiation count (the thunks WERE
+  ×64-duplicated, hence the real win). ADR-0172's zwasm budget line re-set
+  to 2.5 MB (was 4.0) per the same reply's suggestion.

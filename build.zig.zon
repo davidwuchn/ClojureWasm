@@ -10,8 +10,11 @@
         },
         // zwasm v2 embedding API (F-001 / D-037). `lazy` so the DEFAULT build +
         // gate never resolve it — only `-Dwasm` (b.lazyDependency) does.
-        // PINNED to STABLE tag **v2.2.0** (zwasm@cf5d20d7, 2026-07-09): the
-        // AOT-full-fidelity release (ADR-0203 stages 1-5). Bumped from v2.1.0 to
+        // PINNED to STABLE tag **v2.2.1** (2026-07-16): the binary-size-campaign
+        // release (zwasm ADR-0204 / D-522: JIT host-callback thunk collapse,
+        // api.jit_host_bridge 1,311KB -> 232KB; zwasm CLI -21%; no API/JIT-output
+        // change — to_cljw_06). Prior v2.2.0 (cf5d20d7, 2026-07-09) was the
+        // AOT-full-fidelity release (ADR-0203 stages 1-5), bumped from v2.1.0 to
         // pick up guard-page bounds-check elision (zwasm D-507, ADR-0202), the
         // committed differential-fuzz gate (D-510), JIT helper de-baking into
         // JitRuntime slots (D-516), full-fidelity .cwasm v0.5 AOT serialize/load
@@ -21,8 +24,8 @@
         // cache is opt-in on the zwasm side. lazy + flag-guard means a churning
         // dep cannot break the default gate.
         .zwasm = .{
-            .url = "git+https://github.com/clojurewasm/zwasm.git#v2.2.0",
-            .hash = "zwasm-2.2.0-FT1Fv2PwjACdhzh76isO9noV0ISNRXKkS8e_8DddrYJo",
+            .url = "git+https://github.com/clojurewasm/zwasm.git#v2.2.1",
+            .hash = "zwasm-2.2.1-FT1Fv632jACwwCYKyHT_M4v_nS7Dtt21R4TlW7baQU-8",
             .lazy = true,
         },
     },

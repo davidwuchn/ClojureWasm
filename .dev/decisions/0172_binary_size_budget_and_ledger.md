@@ -101,7 +101,7 @@ components, and a breach localizes itself via the report tool:
 
 | Component              | Measured (2026-07-16) | Budget                             | Headroom rationale                                              |
 |------------------------|-----------------------|------------------------------------|-----------------------------------------------------------------|
-| zwasm (engine + api)   | 2.99 MB               | 4.0 MB                             | owns future x86_64 JIT emitter + component-model growth (CODEV) |
+| zwasm (engine + api)   | 1.94 MB               | 2.5 MB                             | thunk collapse landed (v2.2.1); x86_64 emitter is comptime-gated (0 B on arm64) |
 | cljw text              | 2.57 MB               | 3.5 MB                             | F-013/F-014 comprehensiveness growth                            |
 | Zig std text           | 1.17 MB               | 1.5 MB                             |                                                                 |
 | embedded data          | 1.59 MB               | 1.75 MB                            | re-set to **1.0 MB** when L2 lands                              |
@@ -405,6 +405,20 @@ dispositions grounded, platform binding declared, peer number measured).
   honest even if a component drifts between audits.
 
 ## Revision history
+
+- **2026-07-16 (L5 outcome — same day)**: zwasm accepted the CODEV request
+  (their ADR-0204) and shipped **v2.2.1** same-day: the JIT host-callback
+  thunk collapse (`api.jit_host_bridge` 1,311 → 232 KB, −82%) — measured
+  cljw effect on re-pin: **8,583,352 → 7,499,896 B (−1,083 KB)**. The
+  table-driven-emitter half of L5 is **REFUTED by zwasm's reversible
+  experiment**: `emit.compile`'s 707 KB is once-called-handler AGGREGATION,
+  not duplication — out-lining was size-neutral (+28.8 KB, reverted).
+  Lesson folded into the ledger method: symbol-size attribution overstates
+  recoverable size when the code under a symbol has a single call site; the
+  predictive metric is instantiation/call-site count. zwasm budget line
+  re-set 4.0 → 2.5 MB (measured 1.94); derived ceiling ≈ 11 → ≈ 9.5 MB
+  (≈ 8.8 post-L2). Corrections also adopted: the x86_64 emitter already
+  exists (comptime-gated, 0 B on arm64).
 
 - **2026-07-16 (same day, campaign start)**: L1 landed (O-052) — shipped
   ReleaseSafe 9,469,816 → 8,731,096 B; unwind/overhead budget line re-set to
