@@ -254,7 +254,7 @@ fn commit(rt: *Runtime, env: *Env, tx: *LockingTransaction, loc: SourceLocation)
     while (eit.next()) |rp| {
         if (!containsRef(locked.items, rp.*)) try locked.append(tx.gpa, rp.*);
     }
-    std.mem.sort(*Ref, locked.items, {}, refIdLess);
+    std.sort.insertion(*Ref, locked.items, {}, refIdLess); // tiny N (txn ref set) — 1KB insertion beats a 25KB block instantiation (ADR-0172 L6)
 
     // Acquire all locks in id order (deadlock-free). Conflict-check the WRITTEN
     // and ENSURED refs (a peer commit after our snapshot is a conflict); a

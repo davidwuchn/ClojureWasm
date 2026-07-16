@@ -23,6 +23,7 @@
 //! Clojure peer: none (Pattern B1 direct intern, public surface)
 
 const std = @import("std");
+const value_sort = @import("../../runtime/collection/value_sort.zig");
 const Value = @import("../../runtime/value/value.zig").Value;
 const Runtime = @import("../../runtime/runtime.zig").Runtime;
 const env_mod = @import("../../runtime/env.zig");
@@ -552,7 +553,8 @@ const NaturalSortCtx = struct {
     err: ?anyerror = null,
 };
 
-fn naturalLessThan(ctx: *NaturalSortCtx, a: Value, b: Value) bool {
+fn naturalLessThan(opaque_ctx: *anyopaque, a: Value, b: Value) bool {
+    const ctx: *NaturalSortCtx = @ptrCast(@alignCast(opaque_ctx));
     if (ctx.err != null) return false;
     // A deftype declaring java.lang.Comparable supplies its own ordering
     // (instaparse's AutoFlattenSeq): consult Comparable/-compare-to before
@@ -658,7 +660,7 @@ fn sortNaturalFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocati
     var i: u32 = 0;
     while (i < n) : (i += 1) buf[i] = vector_mod.nth(v, i);
     var ctx: NaturalSortCtx = .{ .rt = rt, .env = env, .loc = loc };
-    std.mem.sort(Value, buf, &ctx, naturalLessThan);
+    value_sort.sort(buf, @ptrCast(&ctx), &naturalLessThan);
     if (ctx.err) |e| return e;
     return vector_mod.fromSlice(rt, buf);
 }

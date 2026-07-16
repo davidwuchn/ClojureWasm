@@ -167,7 +167,7 @@ fn writeOne(w: *Writer, v: Decoded, alloc: std.mem.Allocator) !void {
             // sorted-check first would not pay off.
             const sorted = try alloc.dupe(Decoded.Entry, entries);
             defer alloc.free(sorted);
-            std.mem.sort(Decoded.Entry, sorted, {}, struct {
+            std.sort.insertion(Decoded.Entry, sorted, {}, struct { // small N (bencode dict keys) — ADR-0172 L6
                 fn lt(_: void, a: Decoded.Entry, b: Decoded.Entry) bool {
                     return std.mem.order(u8, a.key, b.key) == .lt;
                 }

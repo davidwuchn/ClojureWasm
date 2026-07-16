@@ -14,6 +14,7 @@
 //! a real consumer needs them (dead-interop lesson).
 
 const std = @import("std");
+const value_sort = @import("../../collection/value_sort.zig");
 const host_api = @import("../_host_api.zig");
 const type_descriptor = @import("../../type_descriptor.zig");
 const Value = @import("../../value/value.zig").Value;
@@ -91,7 +92,8 @@ const SortCtx = struct {
     err: ?anyerror = null,
 };
 
-fn arrayLessThan(ctx: *SortCtx, a: Value, b: Value) bool {
+fn arrayLessThan(opaque_ctx: *anyopaque, a: Value, b: Value) bool {
+    const ctx: *SortCtx = @ptrCast(@alignCast(opaque_ctx));
     if (ctx.err != null) return false;
     const ord = compare_mod.valueCompare(ctx.rt, a, b, ctx.loc) catch |e| {
         ctx.err = e;
@@ -107,7 +109,7 @@ fn sortFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) any
     try error_catalog.checkArity("java.util.Arrays/sort", args, 1, loc);
     try expectArray(args[0], "java.util.Arrays/sort", loc);
     var ctx: SortCtx = .{ .rt = rt, .loc = loc };
-    std.mem.sort(Value, java_array.asArray(args[0]).items(), &ctx, arrayLessThan);
+    value_sort.sort(java_array.asArray(args[0]).items(), @ptrCast(&ctx), &arrayLessThan);
     if (ctx.err) |e| return e;
     return .nil_val;
 }

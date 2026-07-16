@@ -102,7 +102,7 @@ components, and a breach localizes itself via the report tool:
 | Component              | Measured (2026-07-16) | Budget                             | Headroom rationale                                              |
 |------------------------|-----------------------|------------------------------------|-----------------------------------------------------------------|
 | zwasm (engine + api)   | 1.94 MB               | 2.5 MB                             | thunk collapse landed (v2.2.1); x86_64 emitter is comptime-gated (0 B on arm64) |
-| cljw text              | 2.57 MB               | 3.5 MB                             | F-013/F-014 comprehensiveness growth                            |
+| cljw text              | 2.47 MB               | 3.5 MB                             | F-013/F-014 comprehensiveness growth                            |
 | Zig std text           | 1.17 MB               | 1.5 MB                             |                                                                 |
 | embedded data          | 0.76 MB               | 1.0 MB                             | L2 LANDED 2026-07-16 (ADR-0173 C2'-C5': pool + flate regions + flate .clj) |
 | unwind + linkedit etc. | 0.23 MB               | 0.3 MB                             | L1 LANDED 2026-07-16 (O-052): tables dropped, budget re-set     |
@@ -155,7 +155,7 @@ not by vigilance (F-013 clause 3). A prose size claim can no longer rot 2.5×.
   (table-driven encoding), comptime-gating component-model surfaces cljw never
   calls. The zwasm budget line (4.0 MB) is the contract this campaign defends
   while x86_64 JIT lands.
-- **L6 — monomorphization dedup (cljw-actionable): ADOPT opportunistically.**
+- **L6 — monomorphization dedup: LANDED 2026-07-16 (O-053; 7,073,080 → 6,974,584 B).** Original disposition:
   std.sort instantiations alone are 0.22 MB (many ~20-28 KB `sort.block`
   clones); type-erased comparator shims and `std.fmt` surface narrowing are
   classic Zig size work with no safety/startup trade. Driven by the report

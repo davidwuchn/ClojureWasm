@@ -15,6 +15,7 @@
 //! lesson) — an unmodifiable view faked as a mutable list would be a lie.
 
 const std = @import("std");
+const value_sort = @import("../../collection/value_sort.zig");
 const host_api = @import("../_host_api.zig");
 const type_descriptor = @import("../../type_descriptor.zig");
 const Value = @import("../../value/value.zig").Value;
@@ -52,7 +53,8 @@ const SortCtx = struct {
     err: ?anyerror = null,
 };
 
-fn lessThan(ctx: *SortCtx, a: Value, b: Value) bool {
+fn lessThan(opaque_ctx: *anyopaque, a: Value, b: Value) bool {
+    const ctx: *SortCtx = @ptrCast(@alignCast(opaque_ctx));
     if (ctx.err != null) return false;
     const ord = compare_mod.valueCompare(ctx.rt, a, b, ctx.loc) catch |e| {
         ctx.err = e;
@@ -68,7 +70,7 @@ fn sortFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) any
     try error_catalog.checkArity("java.util.Collections/sort", args, 1, loc);
     try expectArrayList(args[0], "java.util.Collections/sort", loc);
     var ctx: SortCtx = .{ .rt = rt, .loc = loc };
-    std.mem.sort(Value, array_list_surface.itemsOf(args[0]), &ctx, lessThan);
+    value_sort.sort(array_list_surface.itemsOf(args[0]), @ptrCast(&ctx), &lessThan);
     if (ctx.err) |e| return e;
     return .nil_val;
 }

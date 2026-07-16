@@ -90,7 +90,7 @@ pub fn analyzeFnStar(
     // Sort fixed methods by arity ascending so callFunction's linear
     // scan + future binary-search optimisation see a deterministic
     // shape. Single-arity is a 1-element slice (no sort needed).
-    std.mem.sort(node_mod.FnMethod, methods.items, {}, lessByArity);
+    std.sort.insertion(node_mod.FnMethod, methods.items, {}, lessByArity); // tiny N (fn arities) — insertion, not a block instantiation (ADR-0172 L6)
 
     // Row 7.8 cycle 2 (ADR-0041): JVM rule 3 — no fixed method may
     // require more args than the variadic's required count, otherwise
