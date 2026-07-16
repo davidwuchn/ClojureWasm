@@ -38,6 +38,7 @@ const host_instance = @import("../host_instance.zig");
 const type_descriptor = @import("../type_descriptor.zig");
 const TypeDescriptor = type_descriptor.TypeDescriptor;
 const file_io = @import("../file_io.zig");
+const print_mod = @import("../print.zig");
 const string_mod = @import("../collection/string.zig");
 const env_mod = @import("../env.zig");
 const stream_classes = @import("stream_classes.zig");
@@ -56,6 +57,17 @@ pub const StreamState = struct {
     kind: Kind,
     /// flush target path (writers/outputs), `gc.infra`-duped; null for readers.
     dest: ?[]u8,
+    /// Process-stdio sink (ADR-0174 D5b): 0 = none (buffer/file-backed),
+    /// 1 = `System/out` (through `rt.stdout` — the ONE shared writer, D-096),
+    /// 2 = `System/err` (direct stderr). Writes on an fd stream bypass the
+    /// buffer entirely and flush per call (JVM stdout PrintStream autoflush).
+    fd: u8 = 0,
+    /// `System/in` (ADR-0174 D5b): `data` is demand-filled from process stdin
+    /// (blocking chunk reads, matching JVM System.in) rather than pre-loaded —
+    /// the same pattern as text_io's `*in*` root reader.
+    stdin: bool = false,
+    /// stdin mode: a zero-byte read happened — no more fills.
+    stdin_eof: bool = false,
 
     fn deinit(self: *StreamState, infra: std.mem.Allocator) void {
         self.data.deinit(infra);
@@ -86,14 +98,32 @@ fn allocStream(rt: *Runtime, kind: Kind, data: std.ArrayList(u8), dest: ?[]u8) !
 /// byte-array arm `(.read s ba off len)` defers to Phase 16 with the cljw
 /// byte-array Value, D-051.)
 fn readByte(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
-    _ = rt;
     _ = env;
     try error_catalog.checkArity("read", args, 1, loc);
     const st = stateOf(args[0]);
+    // System/in demand-fill (ADR-0174 D5b): pull one blocking chunk from
+    // process stdin when the buffer is exhausted, JVM System.in-faithful.
+    if (st.pos >= st.data.items.len and st.stdin and !st.stdin_eof)
+        try stdinFill(rt, st);
     if (st.pos >= st.data.items.len) return Value.initInteger(-1);
     const b = st.data.items[st.pos];
     st.pos += 1;
     return Value.initInteger(@intCast(b));
+}
+
+/// stdin mode: append one blocking chunk from process stdin to `data`.
+/// A zero-byte read (or error) latches EOF. Mirrors text_io's `*in*` fill.
+fn stdinFill(rt: *Runtime, st: *StreamState) !void {
+    var chunk: [4096]u8 = undefined;
+    const n = std.posix.read(std.Io.File.stdin().handle, &chunk) catch {
+        st.stdin_eof = true;
+        return;
+    };
+    if (n == 0) {
+        st.stdin_eof = true;
+        return;
+    }
+    try st.data.appendSlice(rt.gc.infra, chunk[0..n]);
 }
 
 /// `.readLine` — the next line (terminator stripped, `\r\n`/`\n` aware) as a
@@ -113,22 +143,94 @@ fn readLine(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) a
     return string_mod.alloc(rt, line);
 }
 
-/// `.write` (String) — append the string's bytes to the accumulator.
+/// Emit `bytes` on a process-stdio stream: fd 1 routes through `rt.stdout`
+/// (the ONE shared writer, D-096 — two independent stdout writers clobber)
+/// and flushes per call so cljw's own buffered print path and System/out
+/// writes never interleave nondeterministically (the JVM stdout PrintStream
+/// autoflush contract); fd 2 writes stderr directly (unbuffered).
+fn emitFd(rt: *Runtime, fd: u8, bytes: []const u8) anyerror!void {
+    if (fd == 1) {
+        if (rt.stdout) |w| {
+            try w.writeAll(bytes);
+            try w.flush();
+        } else {
+            var buf: [4096]u8 = undefined;
+            var fw = std.Io.File.stdout().writer(rt.io, &buf);
+            try fw.interface.writeAll(bytes);
+            try fw.interface.flush();
+        }
+        return;
+    }
+    var buf: [4096]u8 = undefined;
+    var fw = std.Io.File.stderr().writer(rt.io, &buf);
+    try fw.interface.writeAll(bytes);
+    try fw.interface.flush();
+}
+
+/// `.write` (String, or an int byte on a stdio PrintStream) — append the
+/// bytes to the accumulator, or emit directly on `System/out` / `System/err`.
 fn write(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
     _ = env;
     try error_catalog.checkArity("write", args, 2, loc);
+    const st = stateOf(args[0]);
+    if (st.fd != 0) {
+        // JVM PrintStream.write(int) writes one byte; write(String) is the
+        // print form — accept both on the stdio streams.
+        if (args[1].tag() == .integer) {
+            const b: u8 = @intCast(args[1].asInteger() & 0xFF);
+            try emitFd(rt, st.fd, &[_]u8{b});
+            return Value.nil_val;
+        }
+        if (args[1].tag() != .string)
+            return error_catalog.raise(.type_arg_not_string, loc, .{ .fn_name = "write", .actual = @tagName(args[1].tag()) });
+        try emitFd(rt, st.fd, string_mod.asString(args[1]));
+        return Value.nil_val;
+    }
     if (args[1].tag() != .string)
         return error_catalog.raise(.type_arg_not_string, loc, .{ .fn_name = "write", .actual = @tagName(args[1].tag()) });
-    const st = stateOf(args[0]);
     try st.data.appendSlice(rt.gc.infra, string_mod.asString(args[1]));
     return Value.nil_val;
 }
 
-/// `.flush` — push the accumulator to the destination file (writers/outputs).
+/// `.print` / `.println` on `System/out` / `System/err` (ADR-0174 D5b):
+/// the argument's `str` form (JVM String.valueOf ≈ clj str), println adds
+/// the newline; 0-arg println is just the newline. Per-call flush via emitFd.
+fn printOnStream(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation, newline: bool, fn_name: []const u8) anyerror!Value {
+    try error_catalog.checkArityRange(fn_name, args, 1, 2, loc);
+    const st = stateOf(args[0]);
+    var aw: std.Io.Writer.Allocating = .init(rt.gpa);
+    defer aw.deinit();
+    if (args.len == 2) try print_mod.writeStrValue(rt, env, &aw.writer, args[1]);
+    if (newline) try aw.writer.writeByte('\n');
+    if (st.fd != 0) {
+        try emitFd(rt, st.fd, aw.writer.buffered());
+    } else {
+        try st.data.appendSlice(rt.gc.infra, aw.writer.buffered());
+    }
+    return Value.nil_val;
+}
+
+fn printFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    // JVM print(x) is 1-arg (receiver + 1); no 0-arg print form.
+    try error_catalog.checkArity("print", args, 2, loc);
+    return printOnStream(rt, env, args, loc, false, "print");
+}
+
+fn printlnFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    return printOnStream(rt, env, args, loc, true, "println");
+}
+
+/// `.flush` — push the accumulator to the destination file (writers/outputs);
+/// on a stdio stream, flush the shared stdout writer (stderr is unbuffered).
 fn flush(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
     _ = env;
     try error_catalog.checkArity("flush", args, 1, loc);
     const st = stateOf(args[0]);
+    if (st.fd == 1) {
+        if (rt.stdout) |w| try w.flush();
+        return Value.nil_val;
+    }
+    if (st.fd == 2) return Value.nil_val; // stderr is written unbuffered
     if (st.dest) |dest|
         file_io.writeAll(rt.io, dest, st.data.items) catch |e|
             return error_catalog.raise(.file_io_error, loc, .{ .op = "flush", .path = dest, .detail = @errorName(e) });
@@ -313,6 +415,10 @@ const Method = struct { name: []const u8, f: *const fn (*Runtime, *Env, []const 
 
 const READER_METHODS = [_]Method{ .{ .name = "read", .f = &readByte }, .{ .name = "readLine", .f = &readLine }, .{ .name = "close", .f = &close } };
 const WRITER_METHODS = [_]Method{ .{ .name = "write", .f = &write }, .{ .name = "flush", .f = &flush }, .{ .name = "close", .f = &close } };
+// System/out + System/err (ADR-0174 D5b). `.close` is deliberately absent:
+// closing the process stdio is not modelled (nobody sane closes System/out;
+// the D3 member diagnostic renders the honest error).
+const PRINT_METHODS = [_]Method{ .{ .name = "write", .f = &write }, .{ .name = "print", .f = &printFn }, .{ .name = "println", .f = &printlnFn }, .{ .name = "flush", .f = &flush } };
 
 // Leaf class names recognised by `instance?` live in the stream_classes SSOT
 // (D-358) as fully-qualified `java.io.*` names, shared with class_name.isKnown
@@ -362,21 +468,53 @@ const PRIMS = [_]Prim{
     .{ .name = "__stream-copy", .f = &streamCopyFn },
 };
 
-/// Register the four stream family descriptors in `rt.types` + the `rt/__*`
+/// Register the five stream family descriptors in `rt.types` + the `rt/__*`
 /// stream primitives. Called from `primitive.registerAll`.
 pub fn register(env: *Env, rt_ns: *env_mod.Namespace) !void {
     const rt = env.rt;
     // Each descriptor is keyed + fqcn'd by its CONCRETE class (BufferedReader …)
     // so `(class s)` is clj-faithful; protocol_impls is the concrete+superclass
     // chain (the instance?-true set). reader/input share read methods; writer/
-    // output share write methods.
+    // output share write methods; print (System/out + err) adds print/println.
     if (!rt.types.contains(stream_classes.concreteFor(.reader))) {
         try registerDescriptor(rt, .reader, &READER_METHODS);
         try registerDescriptor(rt, .writer, &WRITER_METHODS);
         try registerDescriptor(rt, .input, &READER_METHODS);
         try registerDescriptor(rt, .output, &WRITER_METHODS);
+        try registerDescriptor(rt, .print, &PRINT_METHODS);
     }
     for (PRIMS) |p| {
         _ = try env.intern(rt_ns, p.name, Value.initBuiltinFn(p.f), null);
     }
+}
+
+// --- System/in, System/out, System/err singletons (ADR-0174 D5b) ---
+
+/// Mint one process-stdio stream singleton: `which` 0 = in (input kind,
+/// stdin demand-fill), 1 = out, 2 = err (print kind, fd emit). Cached on
+/// the Runtime + `gc.pin`ned (process-lifetime, the compiler_specials
+/// pattern) — `(identical? System/out System/out)` holds.
+pub fn systemStream(rt: *Runtime, which: u8) !Value {
+    const slot: *Value = switch (which) {
+        0 => &rt.system_in_val,
+        1 => &rt.system_out_val,
+        else => &rt.system_err_val,
+    };
+    if (!slot.isNil()) return slot.*;
+    const st = try rt.gc.infra.create(StreamState);
+    st.* = .{
+        .data = .empty,
+        .pos = 0,
+        .kind = if (which == 0) .input else .print,
+        .dest = null,
+        .fd = if (which == 0) 0 else which,
+        .stdin = which == 0,
+    };
+    // Registration precedes any resolvable `System/out` read (register() runs
+    // in primitive.registerAll); a miss is a startup-order bug, not a user error.
+    const td = rt.types.get(stream_classes.concreteFor(st.kind)) orelse return error.InternalError;
+    const v = try host_instance.alloc(rt, td, .{ @intFromPtr(st), 0, 0, 0 });
+    try rt.gc.pin(v);
+    slot.* = v;
+    return v;
 }

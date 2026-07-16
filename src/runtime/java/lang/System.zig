@@ -368,6 +368,17 @@ pub const ___HOST_EXTENSION: host_api.Extension = .{
     .init = &initSystem,
 };
 
+/// `System/in` / `System/out` / `System/err` (ADR-0174 D5b): heap-singleton
+/// static fields (ADR-0087) resolving to the per-Runtime process-stdio
+/// streams (`io/host_stream.zig::systemStream`). out/err are PrintStreams
+/// (write/print/println/flush, per-call autoflush); in is the demand-filled
+/// BufferedInputStream over process stdin.
+const system_static_fields = [_]type_descriptor.TypeDescriptor.StaticField{
+    .{ .name = "in", .value = .{ .singleton = .system_in } },
+    .{ .name = "out", .value = .{ .singleton = .system_out } },
+    .{ .name = "err", .value = .{ .singleton = .system_err } },
+};
+
 var descriptor: type_descriptor.TypeDescriptor = .{
     .fqcn = "java.lang.System",
     .kind = .native,
@@ -376,4 +387,5 @@ var descriptor: type_descriptor.TypeDescriptor = .{
     .method_table = &.{},
     .parent = null,
     .meta = .nil_val,
+    .static_fields = &system_static_fields,
 };

@@ -32,7 +32,7 @@ const std = @import("std");
 
 /// Stream family — the SSOT for the enum so host_stream re-exports it and the
 /// chain accessors below stay keyed to the same four kinds.
-pub const Kind = enum(u8) { reader, writer, input, output };
+pub const Kind = enum(u8) { reader, writer, input, output, print };
 
 /// Concrete class first, then its java.io superclass chain. clj-faithful
 /// `instance?` membership (the buffered concrete cljw's coercion implies).
@@ -40,6 +40,10 @@ pub const READER_CHAIN = [_][]const u8{ "java.io.BufferedReader", "java.io.Reade
 pub const WRITER_CHAIN = [_][]const u8{ "java.io.BufferedWriter", "java.io.Writer" };
 pub const INPUT_CHAIN = [_][]const u8{ "java.io.BufferedInputStream", "java.io.FilterInputStream", "java.io.InputStream" };
 pub const OUTPUT_CHAIN = [_][]const u8{ "java.io.BufferedOutputStream", "java.io.FilterOutputStream", "java.io.OutputStream" };
+/// `System/out` / `System/err` (ADR-0174 D5b): cljw DOES produce PrintStream
+/// values — the two process-stdio singletons. Chain per the JVM hierarchy, so
+/// `(instance? java.io.OutputStream System/out)` is true like clj.
+pub const PRINT_CHAIN = [_][]const u8{ "java.io.PrintStream", "java.io.FilterOutputStream", "java.io.OutputStream" };
 
 /// The OTHER concrete/abstract java.io stream classes cljw never produces —
 /// KNOWN (so `(instance? java.io.FileReader rdr)` is a clj-faithful false, not
@@ -52,18 +56,20 @@ pub const OUTPUT_CHAIN = [_][]const u8{ "java.io.BufferedOutputStream", "java.io
 /// resolve it or ClassNotFound, which cljw cannot replicate without a classpath).
 pub const SIBLING_NAMES = [_][]const u8{
     // Reader subtree (minus the BufferedReader/Reader chain)
-    "java.io.LineNumberReader",      "java.io.CharArrayReader",   "java.io.FilterReader",        "java.io.PushbackReader",
-    "java.io.InputStreamReader",     "java.io.FileReader",        "java.io.PipedReader",         "java.io.StringReader",
+    "java.io.LineNumberReader",      "java.io.CharArrayReader",  "java.io.FilterReader",        "java.io.PushbackReader",
+    "java.io.InputStreamReader",     "java.io.FileReader",       "java.io.PipedReader",         "java.io.StringReader",
     // Writer subtree (minus the BufferedWriter/Writer chain)
-    "java.io.CharArrayWriter",       "java.io.FilterWriter",      "java.io.OutputStreamWriter",  "java.io.FileWriter",
-    "java.io.PipedWriter",           "java.io.PrintWriter",       "java.io.StringWriter",
+    "java.io.CharArrayWriter",       "java.io.FilterWriter",     "java.io.OutputStreamWriter",  "java.io.FileWriter",
+    "java.io.PipedWriter",           "java.io.PrintWriter",      "java.io.StringWriter",
     // InputStream subtree (minus the Buffered/Filter/InputStream chain)
            "java.io.ByteArrayInputStream",
-    "java.io.FileInputStream",       "java.io.DataInputStream",   "java.io.PushbackInputStream", "java.io.LineNumberInputStream",
-    "java.io.ObjectInputStream",     "java.io.PipedInputStream",  "java.io.SequenceInputStream", "java.io.StringBufferInputStream",
+    "java.io.FileInputStream",       "java.io.DataInputStream",  "java.io.PushbackInputStream", "java.io.LineNumberInputStream",
+    "java.io.ObjectInputStream",     "java.io.PipedInputStream", "java.io.SequenceInputStream", "java.io.StringBufferInputStream",
     // OutputStream subtree (minus the Buffered/Filter/OutputStream chain)
-    "java.io.ByteArrayOutputStream", "java.io.FileOutputStream",  "java.io.DataOutputStream",    "java.io.PrintStream",
-    "java.io.ObjectOutputStream",    "java.io.PipedOutputStream",
+    // PrintStream is NOT a sibling: System/out + System/err ARE PrintStreams
+    // (ADR-0174 D5b) — it lives in PRINT_CHAIN above.
+    "java.io.ByteArrayOutputStream", "java.io.FileOutputStream", "java.io.DataOutputStream",    "java.io.ObjectOutputStream",
+    "java.io.PipedOutputStream",
 };
 
 /// The instance?-true chain for `kind` (concrete at index 0).
@@ -73,6 +79,7 @@ pub fn chainFor(kind: Kind) []const []const u8 {
         .writer => &WRITER_CHAIN,
         .input => &INPUT_CHAIN,
         .output => &OUTPUT_CHAIN,
+        .print => &PRINT_CHAIN,
     };
 }
 
@@ -84,7 +91,7 @@ pub fn concreteFor(kind: Kind) []const u8 {
 /// True iff `fqcn` is the concrete class of some stream kind — i.e. a live
 /// stream value's descriptor fqcn. Used by host_stream's rt/ prim type guards.
 pub fn isConcrete(fqcn: []const u8) bool {
-    inline for (.{ Kind.reader, Kind.writer, Kind.input, Kind.output }) |k| {
+    inline for (.{ Kind.reader, Kind.writer, Kind.input, Kind.output, Kind.print }) |k| {
         if (std.mem.eql(u8, concreteFor(k), fqcn)) return true;
     }
     return false;
@@ -94,7 +101,7 @@ pub fn isConcrete(fqcn: []const u8) bool {
 /// Drives `class_name.isKnown`: a name accepted here returns instance? false
 /// (not class_name_unknown) when the value isn't in its chain.
 pub fn isStreamClass(fqcn: []const u8) bool {
-    inline for (.{ READER_CHAIN, WRITER_CHAIN, INPUT_CHAIN, OUTPUT_CHAIN, SIBLING_NAMES }) |list| {
+    inline for (.{ READER_CHAIN, WRITER_CHAIN, INPUT_CHAIN, OUTPUT_CHAIN, PRINT_CHAIN, SIBLING_NAMES }) |list| {
         for (list) |n| if (std.mem.eql(u8, n, fqcn)) return true;
     }
     return false;
@@ -120,6 +127,7 @@ test "isStreamClass: chains + siblings known, others not" {
     try testing.expect(isStreamClass("java.io.FileInputStream"));
     try testing.expect(isStreamClass("java.io.LineNumberReader"));
     try testing.expect(isStreamClass("java.io.DataInputStream"));
+    // PrintStream is known via PRINT_CHAIN (System/out produces it, ADR-0174)
     try testing.expect(isStreamClass("java.io.PrintStream"));
     // not a java.io STREAM class (RandomAccessFile is java.io but not a stream),
     // not the simple form → still class_name_unknown (no classpath to confirm).

@@ -210,7 +210,7 @@ pub const TypeDescriptor = struct {
     /// pointer cannot be baked at module-comptime (it lives on a specific
     /// Runtime), so the field carries the enum tag and the resolver maps it
     /// to the live singleton (ADR-0087).
-    pub const Singleton = enum { empty_queue, locale_us, locale_root, compiler_specials };
+    pub const Singleton = enum { empty_queue, locale_us, locale_root, compiler_specials, system_in, system_out, system_err };
 
     /// The shapes a static field can carry. `int` lifts via
     /// `integerLiteralToValue` (i48 → Long, beyond → BigInt); `float` via

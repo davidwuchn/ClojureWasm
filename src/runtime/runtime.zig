@@ -283,6 +283,14 @@ pub const Runtime = struct {
     /// process-lifetime (a true singleton), released by `gc.deinit`.
     compiler_specials: @import("value/value.zig").Value = .nil_val,
 
+    /// The `System/in` / `System/out` / `System/err` stream singletons
+    /// (ADR-0174 D5b) — lazily minted + `gc.pin`ned by
+    /// `io/host_stream.zig::systemStream` (the compiler_specials pattern);
+    /// `.nil_val` until first read.
+    system_in_val: @import("value/value.zig").Value = .nil_val,
+    system_out_val: @import("value/value.zig").Value = .nil_val,
+    system_err_val: @import("value/value.zig").Value = .nil_val,
+
     /// User-set Java system properties (`(System/setProperty k v)`). Keys +
     /// values are `gpa`-owned dupes; consulted by `getProperty` BEFORE the
     /// OS-truthful static table (JVM: a set property overrides). Freed in

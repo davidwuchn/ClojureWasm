@@ -53,4 +53,29 @@ assert_eq 'idhash_nil_zero' "$(run '(println (System/identityHashCode nil))')" '
 assert_eq 'gc_hint' "$(run '(def keep-me (vec (range 1000)))
 (println [(System/gc) (count keep-me) (peek keep-me)])')" '[nil 1000 999]'
 
+# --- System/out + System/err + System/in (ADR-0174 D5b) ---
+assert_eq 'out_println' "$(run '(.println System/out "via-out")')" 'via-out'
+assert_eq 'out_print_flush' "$(run '(.print System/out "a")
+(.print System/out "b")
+(.flush System/out)')" 'ab'
+assert_eq 'out_class' "$(run '(println (str (class System/out)))')" 'java.io.PrintStream'
+assert_eq 'in_class'  "$(run '(println (str (class System/in)))')" 'java.io.BufferedInputStream'
+assert_eq 'out_instance_outputstream' "$(run '(println (instance? java.io.OutputStream System/out))')" 'true'
+assert_eq 'out_singleton' "$(run '(println (identical? System/out System/out))')" 'true'
+# println of a non-string prints its str form (JVM String.valueOf ≈ str)
+assert_eq 'out_println_value' "$(run '(.println System/out 42)')" '42'
+# interleaving with the cljw print path stays ordered (per-call autoflush)
+assert_eq 'out_interleave' "$(run '(println "one")
+(.println System/out "two")
+(println "three")')" $'one\ntwo\nthree'
+# err writes ONLY to stderr
+got_out=$("$BIN" -e '(.println System/err "e1")' 2>/dev/null)
+got_err=$("$BIN" -e '(.println System/err "e2")' 2>&1 >/dev/null)
+[[ "$got_out" == "nil" && "$got_err" == "e2" ]] || fail "err_channel: out='$got_out' err='$got_err'"
+echo "PASS err_channel"
+# System/in reads piped bytes ("h"=104, "i"=105), then EOF -1
+got=$(echo "hi" | "$BIN" -e '(prn [(.read System/in) (.read System/in) (.read System/in) (.read System/in) (.read System/in)])' 2>&1 | head -1)
+[[ "$got" == '[104 105 10 -1 -1]' ]] || fail "in_read: got '$got'"
+echo "PASS in_read"
+
 echo "ALL PASS"
