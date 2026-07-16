@@ -551,6 +551,13 @@ fn readValue(ctx: *ReadCtx, r: *ByteReader) DeserializeError!Value {
             // primitive at runtime.
             const buf = std.heap.page_allocator.alloc(Value, n) catch return DeserializeError.OutOfMemory;
             defer std.heap.page_allocator.free(buf);
+            // Fabrication region: `buf` elements + the growing `lst` are Zig
+            // locals across the nested readValue/cons allocs — a collect in
+            // the window would sweep the in-progress structure (the D-563b
+            // json_nested alloc-torture crash class). Composite constants are
+            // small; deferring the collect to the bracket end is safe.
+            rt.gc.enterFabrication();
+            defer rt.gc.exitFabrication();
             var i: u32 = 0;
             while (i < n) : (i += 1) buf[i] = try readValue(ctx, r);
             var lst: Value = .nil_val;
@@ -563,6 +570,10 @@ fn readValue(ctx: *ReadCtx, r: *ByteReader) DeserializeError!Value {
         },
         .vector => {
             const n = try r.readU32();
+            // Fabrication region: see the .list arm — `out` is unrooted
+            // across the per-element readValue/conj allocs.
+            rt.gc.enterFabrication();
+            defer rt.gc.exitFabrication();
             var out = vector_mod.empty();
             var i: u32 = 0;
             while (i < n) : (i += 1) {
@@ -573,6 +584,10 @@ fn readValue(ctx: *ReadCtx, r: *ByteReader) DeserializeError!Value {
         },
         .array_map => {
             const n = try r.readU32();
+            // Fabrication region: see the .list arm — `out` + the in-flight
+            // k are unrooted across the per-entry readValue/assoc allocs.
+            rt.gc.enterFabrication();
+            defer rt.gc.exitFabrication();
             var out = map_mod.empty();
             var i: u32 = 0;
             while (i < n) : (i += 1) {
@@ -584,6 +599,9 @@ fn readValue(ctx: *ReadCtx, r: *ByteReader) DeserializeError!Value {
         },
         .hash_set => {
             const n = try r.readU32();
+            // Fabrication region: see the .list arm.
+            rt.gc.enterFabrication();
+            defer rt.gc.exitFabrication();
             var out = set_mod.empty();
             var i: u32 = 0;
             while (i < n) : (i += 1) {
