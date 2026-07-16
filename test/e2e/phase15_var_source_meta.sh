@@ -47,6 +47,12 @@ assert_eq 'doc_and_user_meta' "$(run '(defn g "gdoc" {:author "me"} [x] x)
 assert_eq 'compiler_line_wins' "$(run '(def ^{:line 999 :author "me"} h 1)
 (println [(:line (meta (var h))) (:author (meta (var h)))])')" '[1 me]'
 
+# --- computed def-meta EVALUATES at def time (D-316; clj-exact) ---
+assert_eq 'computed_meta' "$(run '(def ^{:computed (+ 1 2) :quoted (quote (a b)) :lit "s"} mv 1)
+(println [(:computed (meta (var mv))) (:quoted (meta (var mv))) (:lit (meta (var mv)))])')" '[3 (a b) s]'
+assert_eq 'defn_attr_computed' "$(run '(defn mf "d" {:extra (* 2 3)} [x] x)
+(println [(:extra (meta (var mf))) (:arglists (meta (var mf)))])')" '[6 ([x])]'
+
 # --- fixture file: :file is the real path, :line the real line ---
 fixdir=$(mktemp -d)
 trap 'rm -rf "$fixdir"' EXIT

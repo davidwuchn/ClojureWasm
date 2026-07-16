@@ -611,18 +611,6 @@ active:
       user-ns resolution). The current source-synthesis migrates cleanly: the
       synthesized form IS the Clojure body that fn would host.
     last_reviewed: "2026-06-07"
-  - id: "D-316"
-    status: "NARROWED (2026-06-08) — quoted-datum + literal meta values now evaluate at def time. analyzeDef/analyzeDefmacro lift via unquoteMetaValues: a `(quote X)` meta value lifts to X (clj parity), covering the realistic case `:arglists '([k v])` (integrant defmulti) + `{:k '(a b)}`; literals are unchanged; defn synthesized :arglists unaffected. RESIDUAL: arbitrary COMPUTED meta (`{:k (+ 1 2)}`) still stores the unevaluated Form — full def-time RUNTIME eval needs a meta-expr node threaded through DefNode/op_def/evalDef (depth-2, both backends), deferred as rare (real def-meta is literal or quoted, never computed). 5 e2e (phase14_def_meta_quote_value). PRIOR: now (2026-06-07, integrant probe / defmulti fix) — def-target metadata MAP VALUES are not evaluated. `(defn g {:foo '(a b)} [x] x)` → `(:foo (meta #'g))` is `(quote (a b))` in cljw vs `(a b)` in clj; same for the defmulti attr-map `:arglists '([k v])` (cljw `(quote ([k v]))` vs clj `([k v])`). GENERAL: the attr-map / `^{…}` value FORMS are attached to Var.meta verbatim, not evaluated. Affects defn + defmulti (and any `^meta`). Not defmulti-specific — surfaced while fixing defmulti docstring/attr-map attachment (which itself now matches clj for `:doc`). Low-impact (most metadata values are literals: strings/keywords/bools), but `:arglists`/computed-meta diverge."
-    category: "scope"
-    barrier: |-
-      Def-target metadata map values are attached as unevaluated Forms. clj
-      evaluates `^{:k expr}` / attr-map values at def time. Fix: evaluate the
-      metadata map's VALUES (analyzeDef / the meta-lift path) instead of storing
-      the raw value Forms, so `:arglists '([k v])` → `([k v])`. Touches the meta
-      side-channel lift shared by defn/defmulti (buildDefnMeta + analyzeDef). Most
-      metadata is literal so impact is narrow; surfaced by integrant's defmulti
-      `{:arglists '([k v])}`. Cross-ref D-183 (defn meta), defmulti docstring fix.
-    last_reviewed: "2026-06-07"
   - id: "D-341"
     status: "open — security (SE-8, eval-free deploy build). `eval` (+ read-string) is public with no confinement story. read-string is ALREADY eval-free by design (ADR-0122 / AD-026 — `#=` not evaluated; the read-eval RCE footgun is closed). The residual is the `eval`/nREPL surface itself: a deployed serverless edge binary should be able to ship eval-free, author opts IN."
     category: "security"
@@ -2384,6 +2372,18 @@ standing:
     barrier: "open after the D-440 arc completes (R4 + R5 must first rewrite the bulk of 'Phase N' citations to gap-area terms). Premature adoption = ~70 dangling citations with no 1:1 redirect. Trigger: D-440 R4/R5 done + a user nod to re-architect the planning axis (it is depth-4, the project's organizing metaphor)."
     last_reviewed: "2026-06-15"
 discharged:
+  - id: "D-316"
+    status: "DISCHARGED 2026-07-17 — the residual (computed def-meta) resolved on the D-563(b) meta_expr channel: the def-meta map now analyzes as a REAL expression (quotes stay data, literals embed, computed values EVALUATE at def time — clj-exact, oracle [3 (a b) \"s\"] / defn attr-map (* 2 3) → 6). Prerequisite: defn/defmacro now QUOTE their synthesized :arglists at the generator (like clj), which is what made raw-expression analysis safe. unquoteMetaValues stays only for the analyze-time static Var.meta lift (pre-eval approximation; the runtime value wins). Corpus def_meta_eval.txt; e2e computed_meta/defn_attr_computed on phase15_var_source_meta. ORIGINAL NARROWED note (2026-06-08) + original finding (2026-06-07) in git history."
+    category: "scope"
+    barrier: |-
+      Def-target metadata map values are attached as unevaluated Forms. clj
+      evaluates `^{:k expr}` / attr-map values at def time. Fix: evaluate the
+      metadata map's VALUES (analyzeDef / the meta-lift path) instead of storing
+      the raw value Forms, so `:arglists '([k v])` → `([k v])`. Touches the meta
+      side-channel lift shared by defn/defmulti (buildDefnMeta + analyzeDef). Most
+      metadata is literal so impact is narrow; surfaced by integrant's defmulti
+      `{:arglists '([k v])}`. Cross-ref D-183 (defn meta), defmulti docstring fix.
+    last_reviewed: "2026-06-07"
   - id: "D-561"
     status: |-
       DISCHARGED 2026-07-17 — Character/getName + codePointOf land on the generated UCD 16.0.0 word-indexed name table (scripts/gen_unicode_names.py → unicode_names.zig, pre-compressed raw-deflate blobs + delta-varint index, decoded once per process in char_name.zig). JVM-oracle-exact semantics: stored names, pinned control aliases (scripts/data/jvm_control_names.txt), assigned-but-unnamed = "<BLOCK> <HEX>" (the JVM does NOT synthesize UCD algorithmic names), unassigned nil; codePointOf = trimmed case-insensitive inverse accepting exactly getName output forms. Corpus char_names.txt 10/10. Size: mac +279KB (7.35MB; ADR-0172 revision — README claim 7.8MB; Linux ~94% of ceiling, next size work measures Linux first).

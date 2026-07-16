@@ -516,7 +516,11 @@ pub fn analyzeDefmacro(
             break :blk2 av;
         };
         try meta_items.append(arena, .{ .data = .{ .keyword = .{ .name = "arglists" } }, .location = form.location });
-        try meta_items.append(arena, .{ .data = .{ .list = arglists_inner2 }, .location = form.location });
+        // Synthesized arglists are DATA — quoted, like clj's defn/defmacro.
+        const agq = try arena.alloc(Form, 2);
+        agq[0] = macro_dispatch.makeSymbol("quote", form.location);
+        agq[1] = .{ .data = .{ .list = arglists_inner2 }, .location = form.location };
+        try meta_items.append(arena, .{ .data = .{ .list = agq }, .location = form.location });
         const kws = [_]struct { name: []const u8, v: i64 }{
             .{ .name = "line", .v = @intCast(src_loc.line) },
             .{ .name = "column", .v = @intCast(src_loc.column) },
@@ -528,11 +532,9 @@ pub fn analyzeDefmacro(
         try meta_items.append(arena, .{ .data = .{ .keyword = .{ .name = "file" } }, .location = form.location });
         try meta_items.append(arena, .{ .data = .{ .string = src_loc.file }, .location = form.location });
         const meta_map2: Form = .{ .data = .{ .map = try arena.dupe(Form, meta_items.items) }, .location = form.location };
-        const quote_items = try arena.alloc(Form, 2);
-        quote_items[0] = macro_dispatch.makeSymbol("quote", form.location);
-        quote_items[1] = try unquoteMetaValues(arena, meta_map2);
-        const quoted: Form = .{ .data = .{ .list = quote_items }, .location = form.location };
-        break :blk try analyzer_mod.analyze(arena, rt, env, scope, quoted, macro_table);
+        // Real-expression analysis, mirroring analyzeDef (D-316): quoted
+        // arglists stay data, computed values evaluate.
+        break :blk try analyzer_mod.analyze(arena, rt, env, scope, meta_map2, macro_table);
     };
 
     // Build the synthetic `fn` Form, then analyse it through the regular path
@@ -680,17 +682,13 @@ pub fn analyzeDef(
         try meta_items.append(arena, .{ .data = .{ .keyword = .{ .name = "file" } }, .location = form.location });
         try meta_items.append(arena, .{ .data = .{ .string = src_loc.file }, .location = form.location });
         const meta_map: Form = .{ .data = .{ .map = try arena.dupe(Form, meta_items.items) }, .location = form.location };
-        // The whole map is wrapped in (quote …): def-meta is STATIC DATA in
-        // cljw (same semantics as the formToValue lift above — defn's raw
-        // `:arglists ([s] …)` lists must never evaluate; clj's
-        // evaluate-meta-exprs nuance is out of scope, AD candidate if ever
-        // hit). The quoted map analyzes to ONE composite constant, which the
-        // AOT wire carries (quoted literals round-trip `cljw build` today).
-        const quote_items = try arena.alloc(Form, 2);
-        quote_items[0] = macro_dispatch.makeSymbol("quote", form.location);
-        quote_items[1] = try unquoteMetaValues(arena, meta_map);
-        const quoted: Form = .{ .data = .{ .list = quote_items }, .location = form.location };
-        break :blk try analyzer_mod.analyze(arena, rt, env, scope, quoted, macro_table);
+        // The map analyzes as a REAL EXPRESSION (D-316): quoted values stay
+        // data (defn's synthesized `:arglists '([x])` — now quoted at the
+        // generator), literals embed, and a COMPUTED value like
+        // `^{:k (+ 1 2)}` EVALUATES at def time — clj's def-meta semantics
+        // exactly. The static formToValue lift above remains the pre-eval
+        // approximation; the runtime value set by evalDef/op_var_meta wins.
+        break :blk try analyzer_mod.analyze(arena, rt, env, scope, meta_map, macro_table);
     };
     // `^:dynamic` / `^:private` on the def target set the Var flags (evalDef /
     // op_def copy DefNode flags onto the Var). Without this the metadata was

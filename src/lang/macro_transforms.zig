@@ -1854,7 +1854,15 @@ fn buildDefnMeta(
     } else {
         for (body_forms) |af| try arglist_vecs.append(arena, af.data.list[0]);
     }
-    const arglists = try list(arena, arglist_vecs.items, loc);
+    // The param-vector list is DATA — emit it QUOTED, exactly like clj's
+    // defn (`:arglists '([params])`), so the def-meta EXPRESSION path
+    // (DefNode.meta_expr, D-316) can evaluate the whole meta map with
+    // clj semantics: quotes stay data, computed values evaluate.
+    const arglists_data = try list(arena, arglist_vecs.items, loc);
+    const quote_items = try arena.alloc(Form, 2);
+    quote_items[0] = sym("quote", loc);
+    quote_items[1] = arglists_data;
+    const arglists: Form = .{ .data = .{ .list = quote_items }, .location = loc };
 
     var meta_items: std.ArrayList(Form) = .empty;
     if (existing) |m| try meta_items.appendSlice(arena, m.data.map);
