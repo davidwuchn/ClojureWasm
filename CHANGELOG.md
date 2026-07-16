@@ -5,6 +5,75 @@ All notable changes to ClojureWasm are documented here. The format follows
 [SemVer](https://semver.org/). SemVer compatibility guarantees start at the
 first stable `1.0.0` tag; pre-1.0 `alpha` / `rc` tags may still change surfaces.
 
+## [1.5.0] - 2026-07-17
+
+Minor release: the host-class identity & member-surface campaign
+(ADR-0174) — class symbols, class identity, and the Java member surface
+become uniformly resolvable, precisely diagnosed, and machine-audited;
+plus the user-requested Thread lifecycle.
+
+### Added
+
+- **Class symbols resolve as values everywhere**: bare `System` / `Math` /
+  `Thread` / `StringBuilder` (java.lang auto-import), fully-qualified
+  `java.util.Date` / `java.time.Instant` / …, and `(:import …)`ed names —
+  in value position, `instance?`, `resolve`, `group-by class`, and across
+  AOT round-trips. `(= java.util.Date (class d))` is identity on ONE
+  canonical descriptor per class.
+- **`Class` is first-class**: `(class Long)` → `Class` (was a raw internal
+  tag leak), `(instance? Class (class 5))` → true.
+- **Thread lifecycle** (user-requested): `(Thread. f)` / `(Thread. f name)`,
+  `.start`, `.join` (+ ms), `.isAlive`, `.getName`/`.setName`,
+  `.setDaemon`/`.isDaemon`, `Thread/yield`, `Thread/onSpinWait`, priority
+  constants. JVM-faithful non-daemon default: main waits for live
+  non-daemon threads at exit; `Thread/currentThread` returns the real
+  per-thread object. Uncaught thunk errors print the JVM-style
+  "Exception in thread" stderr line.
+- **System close-out**: `getProperties` (map), 0-arg `getenv` (env map),
+  `clearProperty`, `identityHashCode`, `gc`, and real stdio streams
+  `System/in` / `System/out` / `System/err` (PrintStream-classed;
+  `(.println System/err "…")` works; `System/in` reads stdin
+  incrementally; `(instance? java.io.OutputStream System/out)` → true).
+- **Constants sweep**: `Math/TAU`; `Long`/`Integer`/`Double`
+  BYTES/SIZE/MIN_NORMAL; `File` separator/pathSeparator (+Char) +
+  `createTempFile`/`listRoots`; `Pattern`'s 9 flag constants + 2-arg
+  `Pattern/compile` (CASE_INSENSITIVE/MULTILINE/DOTALL/COMMENTS);
+  `BigDecimal` ZERO/ONE/TWO/TEN; `Instant/EPOCH`, `Duration/ZERO`,
+  `LocalTime` MIDNIGHT/NOON/MIN/MAX, `LocalDate`/`LocalDateTime`
+  MIN/MAX/EPOCH; host-enum `values`/`valueOf` (+ `Month/of`,
+  `DayOfWeek/of`).
+- **java.time fill**: `Duration/parse` (full ISO-8601 grammar) +
+  `Duration/of`, `LocalDate/ofEpochDay`, `LocalTime/ofSecondOfDay` +
+  `ofNanoOfDay`.
+- `scripts/check_compat_members.sh` — the member-truth gate: compat_tiers
+  member lists are now machine-verified against the registered
+  descriptors both ways (over-claims and silent omissions both fail);
+  deliberately-skipped members are explicit `opaque_members:` rows.
+
+### Changed
+
+- **Host-class names are their JVM FQCNs**: `(class (java.util.Date. 0))`
+  → `java.util.Date` (was `Date`), StringBuilder/Thread etc. no longer
+  leak the internal `cljw.` prefix. cljw-native types, user records, and
+  exceptions keep simple names (AD-003, clarified).
+- **Member misses are precise diagnostics**: `(System/getProperties)` on
+  a class without that member now says "No matching static method: … in
+  class java.lang.System" instead of the misleading "No namespace:
+  'System'" — every deliberately-skipped Java member renders this.
+- fix(time): pre-year-0 civil date conversion was off by one era
+  (`(.getYear (java.time.LocalDate/of -1 12 31))` was wrong); negative /
+  5-digit years now print in JVM sign form.
+
+### Breaking
+
+- **`cljw build` artifacts from ≤ 1.4.0 (envelope ≤ v7) are rejected**
+  by a 1.5.0 runtime — rebuild with the new `cljw build` (baked class
+  constants changed spelling with the FQCN unification).
+- `(class …)` output for Java-surface-backed values changed spelling to
+  the JVM FQCN (see Changed) — string-matching on the old simple names
+  (`"Date"`, `"Instant"`) needs updating; `instance?` / `=` code is
+  unaffected (it got strictly more capable).
+
 ## [1.4.0] - 2026-07-16
 
 Minor release: the binary-size campaign — the shipped binary shrinks
