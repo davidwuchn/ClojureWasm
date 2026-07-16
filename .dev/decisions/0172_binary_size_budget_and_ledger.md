@@ -105,8 +105,8 @@ components, and a breach localizes itself via the report tool:
 | cljw text              | 2.57 MB               | 3.5 MB                              | F-013/F-014 comprehensiveness growth                            |
 | Zig std text           | 1.17 MB               | 1.5 MB                              |                                                                 |
 | embedded data          | 1.59 MB               | 1.75 MB                             | re-set to **1.0 MB** when L2 lands                              |
-| unwind + linkedit etc. | 0.98 MB               | 1.0 MB                              | re-set to **0.3 MB** when L1 lands                              |
-| **Derived ceiling**    | **9.47 MB**           | **≈ 12 MB → ≈ 10 MB post-L1+L2** |                                                                 |
+| unwind + linkedit etc. | 0.23 MB               | 0.3 MB                              | L1 LANDED 2026-07-16 (O-052): tables dropped, budget re-set     |
+| **Derived ceiling**    | **8.73 MB**           | **≈ 11 MB → ≈ 10.3 MB post-L2**  |                                                                 |
 
 A component crossing its budget line triggers: attribute (report tool) →
 either a lever lands or the budget line is consciously amended **in this ADR**
@@ -122,7 +122,8 @@ not by vigilance (F-013 clause 3). A prose size claim can no longer rot 2.5×.
 
 ### 4. Lever ledger (each with a measured/estimated Δ and a disposition)
 
-- **L1 — `unwind_tables = .none` on release builds: ADOPT** (next cycle).
+- **L1 — `unwind_tables = .none` on release builds: LANDED 2026-07-16 (O-052;
+  shipped size 9,469,816 → 8,731,096 B).** Original disposition:
   Measured −739 KB. Measured cost ≈ zero: the stripped shipped binary
   *already* prints no native stack trace on a Zig-level panic (probe
   2026-07-16, "stack tracing is disabled" both ways); cljw renders Clojure
@@ -402,6 +403,15 @@ dispositions grounded, platform binding declared, peer number measured).
   budget-relevant moments (release, big feature). Mitigation: the report tool
   makes a measurement a one-command act; the gate keeps at least the headline
   honest even if a component drifts between audits.
+
+## Revision history
+
+- **2026-07-16 (same day, campaign start)**: L1 landed (O-052) — shipped
+  ReleaseSafe 9,469,816 → 8,731,096 B; unwind/overhead budget line re-set to
+  0.3 MB per the Decision's own re-set clause; derived ceiling ≈ 12 → ≈ 11 MB
+  (≈ 10.3 MB once L2 lands). Public comparison page
+  `docs/works/binary_size.md` (measured 2026-07-16 industry survey) landed as
+  the narrative-posture realization of Decision §5.
 
 ## Affected files
 

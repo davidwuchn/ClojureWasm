@@ -167,3 +167,12 @@ was the `.auto`-default flip; this ledger tracks adoption status per capability.
   unaffected — a clean engine follow, not a required fix. Bumped to keep the embedded
   engine current toward the gap-II×III north star; `build.zig.zon` `.zwasm` re-pinned
   (tag URL + hash), smoke green.
+- **2026-07-16** — **Sent `from_cljw_05.md`** (binary-size campaign, cljw ADR-0172 L5):
+  measured zwasm at ~2.99 MB of cljw's `__text` (44% of all code;
+  `engine.codegen.arm64.emit.compile` alone 691 KB — the biggest single symbol in the
+  product; `api.*` ~1.37 MB / 5,624 symbols). Requests, size-neutral only: (1)
+  table-driven arm64 emitter (+ design the coming x86_64 emitter table-driven from day
+  one), (2) comptime-gate unused component-model api surfaces for embedders, (3)
+  optional compute-only module split for safety-tier flexibility. No urgency coupling —
+  rides the normal user-gated pin cadence. The mailbox dir had been cleaned; recreated.
+  cljw-side budget contract: zwasm (engine+api) = 4.0 MB line in ADR-0172 §2.

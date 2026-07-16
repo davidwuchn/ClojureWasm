@@ -30,6 +30,15 @@ pub fn build(b: *std.Build) void {
         // build test` is unaffected — strip is false there.) `-Dprofile` keeps
         // symbols on an optimised build for the perf-campaign profiler.
         .strip = optimize != .Debug and !profile,
+        // Drop unwind tables from release builds: __eh_frame + __unwind_info
+        // were 749 KB (~8%) of the shipped binary, and a STRIPPED build
+        // already prints no native stack trace on a Zig-level panic (probed
+        // 2026-07-16: "stack tracing is disabled" with and without the
+        // tables), so they bought nothing user-visible. cljw renders Clojure
+        // errors from its own StackFrame stack; arm64 keeps frame pointers,
+        // so an attached debugger can still walk frames. Debug + `-Dprofile`
+        // keep the tables for dev tooling. ADR-0172 L1 / O-052.
+        .unwind_tables = if (optimize != .Debug and !profile) .none else null,
     });
 
     // Build-time options module (consumed via `@import("build_options")`):

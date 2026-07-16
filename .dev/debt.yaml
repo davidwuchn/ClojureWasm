@@ -1264,9 +1264,8 @@ standing:
     barrier: |-
       Standing axis — does not close as a single unit. Next actionable levers
       per the ADR-0172 ledger (dispositions + measurements there):
-        - L1 `unwind_tables = .none` on release builds: -739KB measured, cost
-          probed ~zero (stripped builds already print no native trace). ADOPT —
-          a one-line build.zig cycle with a smoke + panic-behaviour re-probe.
+        - L1 `unwind_tables = .none`: LANDED 2026-07-16 (O-052) — shipped
+          ReleaseSafe 9,469,816 -> 8,731,096 B (-739KB).
         - L2 embedded-data compression + format compaction: folded INTO D-517's
           envelope redesign (eager core zero-copy uncompressed; lazy regions +
           .clj flate; varint/constant-pool compaction same pass). est -0.9-1.1MB.
