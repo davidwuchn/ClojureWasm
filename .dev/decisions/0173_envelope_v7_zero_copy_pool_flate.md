@@ -147,6 +147,22 @@ re-sets to 1.0 MB on C5′); eager deserialize cost mostly eliminated (instr
 copy gone + ~5× fewer interns); cold floor toward sub-4 ms. Both claims are
 measured per-commit (protocol below), not asserted.
 
+## Revision history
+
+- **2026-07-16 (C1 landing)**: Decision 1's "opcode stays a raw u8, dispatch
+  converts via `op()`" was **measured at +5-6% on fib/arith** (the
+  per-dispatch `@enumFromInt` ReleaseSafe validity check). Amended:
+  `WireInstr.opcode` is the **typed `Opcode` field** (enum(u8), defined
+  layout, extern-legal) so dispatch reads it directly; untrusted input is
+  validated by a **raw-byte scan BEFORE any `[]WireInstr` view is formed**
+  (C3′), so an invalid enum value never materializes in a typed slice —
+  the fail-closed `DeserializeError` contract is unchanged. With the typed
+  field the C1 A/B is within noise (fib 1.02±0.11, arith 1.01±0.07 and
+  1.03±0.11 order-swapped, 30 runs hyperfine -N ReleaseSafe; sieve /
+  map_filter_reduce neutral) — the revert trigger does not fire. Guard e2e
+  `phase16_vm_error_loc_sidecar` (exact 5:6 after a peephole-elided region +
+  fused compare-branch) landed with C1.
+
 ## Measurement protocol (mandatory, per commit)
 
 - VM-hot A/B for C1 (representation change, isolated):

@@ -53,6 +53,7 @@ const std = @import("std");
 const root_set = @import("../../runtime/gc/root_set.zig");
 const opcode_mod = @import("../backend/vm/opcode.zig");
 const Instruction = opcode_mod.Instruction;
+const WireInstr = opcode_mod.WireInstr;
 const Opcode = opcode_mod.Opcode;
 const BytecodeChunk = opcode_mod.BytecodeChunk;
 const CallSiteEntry = opcode_mod.CallSiteEntry;
@@ -648,11 +649,14 @@ pub fn deserializeChunk(allocator: std.mem.Allocator, rt: *Runtime, env: *@impor
 
     var r: ByteReader = .{ .bytes = bytes, .pos = 6 };
     const instr_count = try r.readU32();
-    const instrs = try allocator.alloc(Instruction, instr_count);
+    const instrs = try allocator.alloc(WireInstr, instr_count);
     errdefer allocator.free(instrs);
     var i: u32 = 0;
     while (i < instr_count) : (i += 1) {
         const op_raw = try r.readU8();
+        // Validate against the Opcode enum (fail-closed DeserializeError for
+        // user CLJC files) BEFORE the typed field is written — an invalid
+        // enum value never materializes (ADR-0173 Decision 2).
         const op = std.enums.fromInt(Opcode, op_raw) orelse return DeserializeError.UnknownOpcode;
         const operand = try r.readU16();
         instrs[i] = .{ .opcode = op, .operand = operand };
@@ -1529,6 +1533,9 @@ test "chunk completeness gate: every side-table + entry field round-trips (D-365
             // EXEMPT: AOT omits source_file by design; a deserialized chunk
             // defaults to "unknown" (per the BytecodeChunk doc-comment).
             .source_file => true,
+            // EXEMPT: per-op loc sidecar is compiler-only (ADR-0173 C1 /
+            // ADR-0118 — AOT chunks report 0:0; the wire carries no loc).
+            .locs => true,
             // EXEMPT: `has_handlers` is a DERIVED field (ADR-0131 2b) — recomputable
             // by scanning the instructions. AOT omits it; a deserialized chunk
             // defaults to `true` (conservatively not flattened by the in-VM call
@@ -1600,7 +1607,7 @@ test "chunk completeness gate: every side-table + entry field round-trips (D-365
     const import_sites = [_]ImportPair{
         .{ .simple = "File", .fqcn = "java.io.File" },
     };
-    const instrs = [_]Instruction{.{ .opcode = .op_const, .operand = 0 }};
+    const instrs = [_]WireInstr{.from(.op_const, 0)};
     const consts = [_]Value{Value.initInteger(7)};
     const chunk: BytecodeChunk = .{
         .instructions = &instrs,
@@ -1783,7 +1790,7 @@ test "round-trips ns_filters side-table (ADR-0034 am3 — require-closure embedd
     const exclude = [_][]const u8{"map"};
     const only = [_][]const u8{"inc"};
     var filters = [_]NsFilterEntry{.{ .name = "a", .exclude = &exclude, .only = &only }};
-    const instrs = [_]Instruction{.{ .opcode = .op_ns_with_filter, .operand = 0 }};
+    const instrs = [_]WireInstr{.from(.op_ns_with_filter, 0)};
     const chunk: BytecodeChunk = .{ .instructions = &instrs, .constants = &.{}, .ns_filters = &filters };
 
     const bytes = try serializeChunk(testing.allocator, chunk);
@@ -1834,9 +1841,9 @@ test "round-trips instructions" {
     defer rt.deinit();
     var env = try @import("../../runtime/env.zig").Env.init(&rt);
     defer env.deinit();
-    const instrs = [_]Instruction{
-        .{ .opcode = .op_const, .operand = 42 },
-        .{ .opcode = .op_ret, .operand = 0 },
+    const instrs = [_]WireInstr{
+        .from(.op_const, 42),
+        .from(.op_ret, 0),
     };
     const chunk: BytecodeChunk = .{ .instructions = &instrs, .constants = &.{} };
     const bytes = try serializeChunk(testing.allocator, chunk);
@@ -1847,7 +1854,7 @@ test "round-trips instructions" {
     const round = try deserializeChunk(testing.allocator, &rt, &env, bytes);
     defer freeChunk(testing.allocator, round);
     try testing.expectEqual(@as(usize, 2), round.instructions.len);
-    try testing.expectEqual(Opcode.op_const, round.instructions[0].opcode);
+    try testing.expectEqual(Opcode.op_const, round.instructions[0].op());
     try testing.expectEqual(@as(u16, 42), round.instructions[0].operand);
 }
 

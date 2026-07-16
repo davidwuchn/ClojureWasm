@@ -951,7 +951,17 @@ const Compiler = struct {
                 break;
             }
         }
-        return .{ .instructions = instrs, .constants = consts, .call_sites = sites, .libspecs = specs, .ns_filters = filters, .ctor_sites = ctors, .import_sites = ns_imports, .source_file = self.source_file, .has_handlers = has_handlers };
+        // ADR-0173 C1: split the loc-carrying compiler form into the executed
+        // 4-byte wire stream + the loc sidecar. This is the ONLY place the
+        // split happens, so peephole/fusion above never track two arrays.
+        const wire = try self.arena.alloc(opcode_mod.WireInstr, instrs.len);
+        const locs = try self.arena.alloc(opcode_mod.InstrLoc, instrs.len);
+        for (instrs, wire, locs) |ins, *w, *l| {
+            w.* = .from(ins.opcode, ins.operand);
+            l.* = .{ .line = ins.line, .column = ins.column };
+        }
+        std.debug.assert(wire.len == locs.len);
+        return .{ .instructions = wire, .locs = locs, .constants = consts, .call_sites = sites, .libspecs = specs, .ns_filters = filters, .ctor_sites = ctors, .import_sites = ns_imports, .source_file = self.source_file, .has_handlers = has_handlers };
     }
 };
 
@@ -999,9 +1009,9 @@ test "compile constant emits op_const + op_ret" {
     const chunk = try f.compile(&node);
 
     try testing.expectEqual(@as(usize, 2), chunk.instructions.len);
-    try testing.expectEqual(Opcode.op_const, chunk.instructions[0].opcode);
+    try testing.expectEqual(Opcode.op_const, chunk.instructions[0].op());
     try testing.expectEqual(@as(u16, 0), chunk.instructions[0].operand);
-    try testing.expectEqual(Opcode.op_ret, chunk.instructions[1].opcode);
+    try testing.expectEqual(Opcode.op_ret, chunk.instructions[1].op());
     try testing.expectEqual(@as(usize, 1), chunk.constants.len);
     try testing.expectEqual(Value.nil_val, chunk.constants[0]);
 }
@@ -1025,8 +1035,8 @@ test "compile quote pushes the quoted value as a constant" {
     const chunk = try f.compile(&node);
 
     try testing.expectEqual(@as(usize, 2), chunk.instructions.len);
-    try testing.expectEqual(Opcode.op_const, chunk.instructions[0].opcode);
-    try testing.expectEqual(Opcode.op_ret, chunk.instructions[1].opcode);
+    try testing.expectEqual(Opcode.op_const, chunk.instructions[0].op());
+    try testing.expectEqual(Opcode.op_ret, chunk.instructions[1].op());
     try testing.expectEqual(@as(usize, 1), chunk.constants.len);
     try testing.expectEqual(Value.false_val, chunk.constants[0]);
 }
@@ -1039,8 +1049,8 @@ test "compile empty do yields nil constant" {
     const chunk = try f.compile(&node);
 
     try testing.expectEqual(@as(usize, 2), chunk.instructions.len);
-    try testing.expectEqual(Opcode.op_const, chunk.instructions[0].opcode);
-    try testing.expectEqual(Opcode.op_ret, chunk.instructions[1].opcode);
+    try testing.expectEqual(Opcode.op_const, chunk.instructions[0].op());
+    try testing.expectEqual(Opcode.op_ret, chunk.instructions[1].op());
     try testing.expectEqual(@as(usize, 1), chunk.constants.len);
     try testing.expectEqual(Value.nil_val, chunk.constants[0]);
 }
@@ -1053,9 +1063,9 @@ test "compile local_ref emits op_load_local with slot index" {
     const chunk = try f.compile(&node);
 
     try testing.expectEqual(@as(usize, 2), chunk.instructions.len);
-    try testing.expectEqual(Opcode.op_load_local, chunk.instructions[0].opcode);
+    try testing.expectEqual(Opcode.op_load_local, chunk.instructions[0].op());
     try testing.expectEqual(@as(u16, 3), chunk.instructions[0].operand);
-    try testing.expectEqual(Opcode.op_ret, chunk.instructions[1].opcode);
+    try testing.expectEqual(Opcode.op_ret, chunk.instructions[1].op());
 }
 
 test "compile if emits jump_if_false + jump with patched offsets" {
@@ -1070,14 +1080,14 @@ test "compile if emits jump_if_false + jump with patched offsets" {
 
     // op_const cond ; op_jump_if_false +2 ; op_const then ; op_jump +1 ; op_const else ; op_ret
     try testing.expectEqual(@as(usize, 6), chunk.instructions.len);
-    try testing.expectEqual(Opcode.op_const, chunk.instructions[0].opcode);
-    try testing.expectEqual(Opcode.op_jump_if_false, chunk.instructions[1].opcode);
+    try testing.expectEqual(Opcode.op_const, chunk.instructions[0].op());
+    try testing.expectEqual(Opcode.op_jump_if_false, chunk.instructions[1].op());
     try testing.expectEqual(@as(i16, 2), @as(i16, @bitCast(chunk.instructions[1].operand)));
-    try testing.expectEqual(Opcode.op_const, chunk.instructions[2].opcode);
-    try testing.expectEqual(Opcode.op_jump, chunk.instructions[3].opcode);
+    try testing.expectEqual(Opcode.op_const, chunk.instructions[2].op());
+    try testing.expectEqual(Opcode.op_jump, chunk.instructions[3].op());
     try testing.expectEqual(@as(i16, 1), @as(i16, @bitCast(chunk.instructions[3].operand)));
-    try testing.expectEqual(Opcode.op_const, chunk.instructions[4].opcode);
-    try testing.expectEqual(Opcode.op_ret, chunk.instructions[5].opcode);
+    try testing.expectEqual(Opcode.op_const, chunk.instructions[4].op());
+    try testing.expectEqual(Opcode.op_ret, chunk.instructions[5].op());
 }
 
 test "compile if without else branch emits nil for the alternative" {
@@ -1090,7 +1100,7 @@ test "compile if without else branch emits nil for the alternative" {
     const chunk = try f.compile(&node);
 
     try testing.expectEqual(@as(usize, 6), chunk.instructions.len);
-    try testing.expectEqual(Opcode.op_const, chunk.instructions[4].opcode);
+    try testing.expectEqual(Opcode.op_const, chunk.instructions[4].op());
     // The synthesized nil constant lives at index 2 in the pool.
     try testing.expectEqual(Value.nil_val, chunk.constants[chunk.instructions[4].operand]);
 }
@@ -1111,15 +1121,15 @@ test "compile let* stores each binding then evaluates the body" {
 
     // op_const true ; op_store_local 0 ; op_const false ; op_store_local 1 ; op_load_local 1 ; op_ret
     try testing.expectEqual(@as(usize, 6), chunk.instructions.len);
-    try testing.expectEqual(Opcode.op_const, chunk.instructions[0].opcode);
-    try testing.expectEqual(Opcode.op_store_local, chunk.instructions[1].opcode);
+    try testing.expectEqual(Opcode.op_const, chunk.instructions[0].op());
+    try testing.expectEqual(Opcode.op_store_local, chunk.instructions[1].op());
     try testing.expectEqual(@as(u16, 0), chunk.instructions[1].operand);
-    try testing.expectEqual(Opcode.op_const, chunk.instructions[2].opcode);
-    try testing.expectEqual(Opcode.op_store_local, chunk.instructions[3].opcode);
+    try testing.expectEqual(Opcode.op_const, chunk.instructions[2].op());
+    try testing.expectEqual(Opcode.op_store_local, chunk.instructions[3].op());
     try testing.expectEqual(@as(u16, 1), chunk.instructions[3].operand);
-    try testing.expectEqual(Opcode.op_load_local, chunk.instructions[4].opcode);
+    try testing.expectEqual(Opcode.op_load_local, chunk.instructions[4].op());
     try testing.expectEqual(@as(u16, 1), chunk.instructions[4].operand);
-    try testing.expectEqual(Opcode.op_ret, chunk.instructions[5].opcode);
+    try testing.expectEqual(Opcode.op_ret, chunk.instructions[5].op());
 }
 
 test "compile var_ref stores the Var pointer Value and emits op_get_var" {
@@ -1135,9 +1145,9 @@ test "compile var_ref stores the Var pointer Value and emits op_get_var" {
     const chunk = try f.compile(&node);
 
     try testing.expectEqual(@as(usize, 2), chunk.instructions.len);
-    try testing.expectEqual(Opcode.op_get_var, chunk.instructions[0].opcode);
+    try testing.expectEqual(Opcode.op_get_var, chunk.instructions[0].op());
     try testing.expectEqual(@as(u16, 0), chunk.instructions[0].operand);
-    try testing.expectEqual(Opcode.op_ret, chunk.instructions[1].opcode);
+    try testing.expectEqual(Opcode.op_ret, chunk.instructions[1].op());
     try testing.expectEqual(@as(usize, 1), chunk.constants.len);
     try testing.expectEqual(Value.encodeHeapPtr(.var_ref, &dummy_var), chunk.constants[0]);
 }
@@ -1156,12 +1166,12 @@ test "compile call emits callee, args, op_call <arity>" {
 
     // op_const callee ; op_const arg0 ; op_const arg1 ; op_call 2 ; op_ret
     try testing.expectEqual(@as(usize, 5), chunk.instructions.len);
-    try testing.expectEqual(Opcode.op_const, chunk.instructions[0].opcode);
-    try testing.expectEqual(Opcode.op_const, chunk.instructions[1].opcode);
-    try testing.expectEqual(Opcode.op_const, chunk.instructions[2].opcode);
-    try testing.expectEqual(Opcode.op_call, chunk.instructions[3].opcode);
+    try testing.expectEqual(Opcode.op_const, chunk.instructions[0].op());
+    try testing.expectEqual(Opcode.op_const, chunk.instructions[1].op());
+    try testing.expectEqual(Opcode.op_const, chunk.instructions[2].op());
+    try testing.expectEqual(Opcode.op_call, chunk.instructions[3].op());
     try testing.expectEqual(@as(u16, 2), chunk.instructions[3].operand);
-    try testing.expectEqual(Opcode.op_ret, chunk.instructions[4].opcode);
+    try testing.expectEqual(Opcode.op_ret, chunk.instructions[4].op());
 }
 
 test "compile call with zero args emits op_call 0" {
@@ -1173,7 +1183,7 @@ test "compile call with zero args emits op_call 0" {
     const chunk = try f.compile(&node);
 
     try testing.expectEqual(@as(usize, 3), chunk.instructions.len);
-    try testing.expectEqual(Opcode.op_call, chunk.instructions[1].opcode);
+    try testing.expectEqual(Opcode.op_call, chunk.instructions[1].op());
     try testing.expectEqual(@as(u16, 0), chunk.instructions[1].operand);
 }
 
@@ -1197,9 +1207,9 @@ test "compile fn* (closure-less) allocates a Function with bytecode and emits op
 
     // op_make_fn 0 ; op_ret
     try testing.expectEqual(@as(usize, 2), chunk.instructions.len);
-    try testing.expectEqual(Opcode.op_make_fn, chunk.instructions[0].opcode);
+    try testing.expectEqual(Opcode.op_make_fn, chunk.instructions[0].op());
     try testing.expectEqual(@as(u16, 0), chunk.instructions[0].operand);
-    try testing.expectEqual(Opcode.op_ret, chunk.instructions[1].opcode);
+    try testing.expectEqual(Opcode.op_ret, chunk.instructions[1].op());
 
     // The constant is a Function Value whose first method's bytecode
     // body is the compiled (true ; ret) inner chunk.
@@ -1210,8 +1220,8 @@ test "compile fn* (closure-less) allocates a Function with bytecode and emits op
     try testing.expect(fn_ptr.methods[0].bytecode != null);
     const body_chunk = fn_ptr.methods[0].bytecode.?;
     try testing.expectEqual(@as(usize, 2), body_chunk.instructions.len);
-    try testing.expectEqual(Opcode.op_const, body_chunk.instructions[0].opcode);
-    try testing.expectEqual(Opcode.op_ret, body_chunk.instructions[1].opcode);
+    try testing.expectEqual(Opcode.op_const, body_chunk.instructions[0].op());
+    try testing.expectEqual(Opcode.op_ret, body_chunk.instructions[1].op());
     try testing.expectEqual(Value.true_val, body_chunk.constants[0]);
 }
 
@@ -1252,9 +1262,9 @@ test "compile def emits value-expr then op_def with symbol-name String" {
 
     // op_const true ; op_def <idx-of-"hello"> ; op_ret
     try testing.expectEqual(@as(usize, 3), chunk.instructions.len);
-    try testing.expectEqual(Opcode.op_const, chunk.instructions[0].opcode);
-    try testing.expectEqual(Opcode.op_def, chunk.instructions[1].opcode);
-    try testing.expectEqual(Opcode.op_ret, chunk.instructions[2].opcode);
+    try testing.expectEqual(Opcode.op_const, chunk.instructions[0].op());
+    try testing.expectEqual(Opcode.op_def, chunk.instructions[1].op());
+    try testing.expectEqual(Opcode.op_ret, chunk.instructions[2].op());
 
     const operand = chunk.instructions[1].operand;
     try testing.expectEqual(@as(u16, 0), operand & ~opcode_mod.DEF_NAME_IDX_MASK);
@@ -1301,10 +1311,10 @@ test "compile loop* emits initial bindings then body without exit op" {
 
     // op_const true ; op_store_local 0 ; op_load_local 0 ; op_ret
     try testing.expectEqual(@as(usize, 4), chunk.instructions.len);
-    try testing.expectEqual(Opcode.op_const, chunk.instructions[0].opcode);
-    try testing.expectEqual(Opcode.op_store_local, chunk.instructions[1].opcode);
-    try testing.expectEqual(Opcode.op_load_local, chunk.instructions[2].opcode);
-    try testing.expectEqual(Opcode.op_ret, chunk.instructions[3].opcode);
+    try testing.expectEqual(Opcode.op_const, chunk.instructions[0].op());
+    try testing.expectEqual(Opcode.op_store_local, chunk.instructions[1].op());
+    try testing.expectEqual(Opcode.op_load_local, chunk.instructions[2].op());
+    try testing.expectEqual(Opcode.op_ret, chunk.instructions[3].op());
 }
 
 test "compile recur fuses into op_recur_loop + back-edge data word (O-022)" {
@@ -1326,11 +1336,11 @@ test "compile recur fuses into op_recur_loop + back-edge data word (O-022)" {
 
     // op_const nil ; op_store_local 0 ; <body> op_const true ;
     // op_recur_loop (base=0,N=1) ; op_jump <data word, back-offset> ; op_ret
-    try testing.expectEqual(Opcode.op_store_local, chunk.instructions[1].opcode);
-    try testing.expectEqual(Opcode.op_const, chunk.instructions[2].opcode);
-    try testing.expectEqual(Opcode.op_recur_loop, chunk.instructions[3].opcode);
+    try testing.expectEqual(Opcode.op_store_local, chunk.instructions[1].op());
+    try testing.expectEqual(Opcode.op_const, chunk.instructions[2].op());
+    try testing.expectEqual(Opcode.op_recur_loop, chunk.instructions[3].op());
     try testing.expectEqual(@as(u16, (0 << 8) | 1), chunk.instructions[3].operand);
-    try testing.expectEqual(Opcode.op_jump, chunk.instructions[4].opcode);
+    try testing.expectEqual(Opcode.op_jump, chunk.instructions[4].op());
     const back_offset: i16 = @bitCast(chunk.instructions[4].operand);
     try testing.expect(back_offset < 0);
 }
@@ -1351,12 +1361,12 @@ test "compile try with no catches emits cleanup handler + op_reraise (ADR-0071)"
     // Layout: push_cleanup ; const true ; pop_handler ; jump end ;
     //         cleanup: op_reraise ; end: op_ret
     try testing.expectEqual(@as(usize, 6), chunk.instructions.len);
-    try testing.expectEqual(Opcode.op_push_cleanup, chunk.instructions[0].opcode);
-    try testing.expectEqual(Opcode.op_const, chunk.instructions[1].opcode);
-    try testing.expectEqual(Opcode.op_pop_handler, chunk.instructions[2].opcode);
-    try testing.expectEqual(Opcode.op_jump, chunk.instructions[3].opcode);
-    try testing.expectEqual(Opcode.op_reraise, chunk.instructions[4].opcode);
-    try testing.expectEqual(Opcode.op_ret, chunk.instructions[5].opcode);
+    try testing.expectEqual(Opcode.op_push_cleanup, chunk.instructions[0].op());
+    try testing.expectEqual(Opcode.op_const, chunk.instructions[1].op());
+    try testing.expectEqual(Opcode.op_pop_handler, chunk.instructions[2].op());
+    try testing.expectEqual(Opcode.op_jump, chunk.instructions[3].op());
+    try testing.expectEqual(Opcode.op_reraise, chunk.instructions[4].op());
+    try testing.expectEqual(Opcode.op_ret, chunk.instructions[5].op());
 }
 
 test "compile try with one catch wires match_class + jump_if_false + store_local" {
@@ -1379,12 +1389,12 @@ test "compile try with one catch wires match_class + jump_if_false + store_local
     //         match_class ; jump_if_false +skip ; store_local 0 ;
     //         local_ref 0 ; jump end ;
     //         (no-match path) op_throw ; end: op_ret
-    try testing.expectEqual(Opcode.op_push_handler, chunk.instructions[0].opcode);
-    try testing.expectEqual(Opcode.op_match_class, chunk.instructions[4].opcode);
-    try testing.expectEqual(Opcode.op_jump_if_false, chunk.instructions[5].opcode);
-    try testing.expectEqual(Opcode.op_store_local, chunk.instructions[6].opcode);
-    try testing.expectEqual(Opcode.op_throw, chunk.instructions[chunk.instructions.len - 2].opcode);
-    try testing.expectEqual(Opcode.op_ret, chunk.instructions[chunk.instructions.len - 1].opcode);
+    try testing.expectEqual(Opcode.op_push_handler, chunk.instructions[0].op());
+    try testing.expectEqual(Opcode.op_match_class, chunk.instructions[4].op());
+    try testing.expectEqual(Opcode.op_jump_if_false, chunk.instructions[5].op());
+    try testing.expectEqual(Opcode.op_store_local, chunk.instructions[6].op());
+    try testing.expectEqual(Opcode.op_throw, chunk.instructions[chunk.instructions.len - 2].op());
+    try testing.expectEqual(Opcode.op_ret, chunk.instructions[chunk.instructions.len - 1].op());
 }
 
 test "compile try with finally duplicates the finally body on each exit path" {
@@ -1405,7 +1415,7 @@ test "compile try with finally duplicates the finally body on each exit path" {
 
     var pop_count: usize = 0;
     for (chunk.instructions) |inst| {
-        if (inst.opcode == .op_pop) pop_count += 1;
+        if (inst.op() == .op_pop) pop_count += 1;
     }
     // Pre-ADR-0047 this asserted two op_pops, one per finally exit
     // (success + re-raise). Post-peephole, the success-path finally is
@@ -1429,9 +1439,9 @@ test "compile throw emits value-expr then op_throw" {
     // op_throw's ThrownValue signal; op_ret is unreachable but the
     // compile signature appends it unconditionally).
     try testing.expectEqual(@as(usize, 3), chunk.instructions.len);
-    try testing.expectEqual(Opcode.op_const, chunk.instructions[0].opcode);
-    try testing.expectEqual(Opcode.op_throw, chunk.instructions[1].opcode);
-    try testing.expectEqual(Opcode.op_ret, chunk.instructions[2].opcode);
+    try testing.expectEqual(Opcode.op_const, chunk.instructions[0].op());
+    try testing.expectEqual(Opcode.op_throw, chunk.instructions[1].op());
+    try testing.expectEqual(Opcode.op_ret, chunk.instructions[2].op());
 }
 
 test "compile do pops intermediate forms and keeps the last" {
@@ -1454,8 +1464,8 @@ test "compile do pops intermediate forms and keeps the last" {
     // (peephole only rewrites instructions; orphan-constant pruning is
     // a future pass) so all 3 constants stay.
     try testing.expectEqual(@as(usize, 2), chunk.instructions.len);
-    try testing.expectEqual(Opcode.op_const, chunk.instructions[0].opcode);
+    try testing.expectEqual(Opcode.op_const, chunk.instructions[0].op());
     try testing.expectEqual(@as(u16, 2), chunk.instructions[0].operand);
-    try testing.expectEqual(Opcode.op_ret, chunk.instructions[1].opcode);
+    try testing.expectEqual(Opcode.op_ret, chunk.instructions[1].op());
     try testing.expectEqual(@as(usize, 3), chunk.constants.len);
 }

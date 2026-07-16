@@ -569,9 +569,51 @@ pub const Instruction = struct {
     /// (ADR-0118 Decision A Rev 1 — closes the VM eval-error `0:0` gap).
     /// The file label is per-chunk (`BytecodeChunk.source_file`); only
     /// line:col rides each instruction so the op the VM is executing on
-    /// error annotates the catalog `Info.location`. Default 0 = unknown
-    /// (e.g. AOT-deserialized chunks, which don't carry per-op loc — the
-    /// serialize format stays `opcode:u8 + operand:u16`).
+    /// error annotates the catalog `Info.location`. Default 0 = unknown.
+    ///
+    /// This is the COMPILER-INTERNAL form only (ADR-0173 C1): emit /
+    /// patchJump / peephole rewrite it so loc travels atomically through
+    /// every pass. `finalize` splits it into the executed `WireInstr`
+    /// stream + the `InstrLoc` sidecar; the VM never sees this type.
+    line: u32 = 0,
+    column: u16 = 0,
+};
+
+/// The instruction form the VM EXECUTES and the serializer writes
+/// (ADR-0173). 4 bytes, C layout, little-endian operand — the same record
+/// the v7 wire format stores, so an AOT chunk's instruction array can be
+/// read in place from rodata (C3'). `opcode` stays a raw u8 (NOT `Opcode`)
+/// so a bytes-as-slice view of untrusted input can hold any byte value
+/// until the load-time validation scan runs; dispatch converts via `op()`
+/// after that scan (compiler-built chunks are valid by construction).
+pub const WireInstr = extern struct {
+    /// Typed enum field (enum(u8) has defined layout, extern-legal): the
+    /// dispatch switch reads it directly with NO per-dispatch
+    /// @enumFromInt safety check (measured +5-6% on fib/arith when the
+    /// field was raw u8 + op() conversion). Untrusted input (CLJC user
+    /// files) is validated by a RAW-BYTE scan BEFORE any []WireInstr
+    /// view is formed (ADR-0173 Decision 2), so an invalid enum value
+    /// never materializes in a typed slice.
+    opcode: Opcode,
+    /// Reserved, MUST be 0 (validated at load — corruption tripwire +
+    /// forward space; a u24 operand extension was considered and rejected
+    /// for now, ADR-0173 Decision 1).
+    reserved: u8 = 0,
+    operand: u16 = 0,
+
+    pub inline fn op(self: WireInstr) Opcode {
+        return self.opcode;
+    }
+
+    pub inline fn from(opcode: Opcode, operand: u16) WireInstr {
+        return .{ .opcode = opcode, .operand = operand };
+    }
+};
+
+/// Per-instruction source position sidecar (ADR-0173 C1; ADR-0118
+/// contract). Populated only by the compiler path — AOT-deserialized
+/// chunks carry no per-op loc (`BytecodeChunk.locs == null`).
+pub const InstrLoc = struct {
     line: u32 = 0,
     column: u16 = 0,
 };
@@ -662,7 +704,11 @@ pub const NsFilterEntry = struct {
 /// owns the slices through the analyzer arena; the VM borrows them
 /// for the duration of a call.
 pub const BytecodeChunk = struct {
-    instructions: []const Instruction,
+    instructions: []const WireInstr,
+    /// Per-instruction source loc sidecar, same length as `instructions`
+    /// (ADR-0173 C1). Non-null only for compiler-built chunks; AOT chunks
+    /// report line 0 / column 0 (ADR-0118's existing AOT behaviour).
+    locs: ?[]const InstrLoc = null,
     constants: []const Value,
     /// Source file label shared by every instruction in this chunk
     /// (ADR-0118 — the per-op `line`/`column` + this = the full
@@ -740,10 +786,18 @@ test "Instruction operand reaches u16 boundary" {
     try std.testing.expectEqual(@as(u16, 65535), ins.operand);
 }
 
+test "WireInstr is 4 bytes, C layout, loc-free" {
+    try std.testing.expectEqual(@as(usize, 4), @sizeOf(WireInstr));
+    const w: WireInstr = .from(.op_const, 42);
+    try std.testing.expectEqual(Opcode.op_const, w.op());
+    try std.testing.expectEqual(@as(u16, 42), w.operand);
+    try std.testing.expectEqual(@as(u8, 0), w.reserved);
+}
+
 test "BytecodeChunk holds instructions and constants" {
-    const instrs = [_]Instruction{
-        .{ .opcode = .op_const, .operand = 0 },
-        .{ .opcode = .op_ret },
+    const instrs = [_]WireInstr{
+        .from(.op_const, 0),
+        .from(.op_ret, 0),
     };
     const constants = [_]Value{Value.nil_val};
     const chunk: BytecodeChunk = .{
@@ -752,8 +806,8 @@ test "BytecodeChunk holds instructions and constants" {
     };
     try std.testing.expectEqual(@as(usize, 2), chunk.instructions.len);
     try std.testing.expectEqual(@as(usize, 1), chunk.constants.len);
-    try std.testing.expectEqual(Opcode.op_const, chunk.instructions[0].opcode);
-    try std.testing.expectEqual(Opcode.op_ret, chunk.instructions[1].opcode);
+    try std.testing.expectEqual(Opcode.op_const, chunk.instructions[0].op());
+    try std.testing.expectEqual(Opcode.op_ret, chunk.instructions[1].op());
     try std.testing.expectEqual(Value.nil_val, chunk.constants[0]);
 }
 

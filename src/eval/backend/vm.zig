@@ -45,7 +45,7 @@ const clojure_lang_method = @import("clojure_lang_method.zig");
 const special_forms = @import("../analyzer/special_forms.zig");
 
 const Opcode = opcode_mod.Opcode;
-const Instruction = opcode_mod.Instruction;
+const WireInstr = opcode_mod.WireInstr;
 const BytecodeChunk = opcode_mod.BytecodeChunk;
 const Value = value_mod.Value;
 const Env = env_mod.Env;
@@ -483,6 +483,9 @@ inline fn stepOnce(
     if (ip >= chunk.instructions.len)
         return raiseInternal("vm: ip past end of chunk");
     const instr = chunk.instructions[ip];
+    // ADR-0173 C1: per-op loc lives in the sidecar (compiler-built chunks
+    // only); AOT chunks have no sidecar and report 0:0 as before (ADR-0118).
+    const instr_il: opcode_mod.InstrLoc = if (chunk.locs) |ls| ls[ip] else .{};
     ip += 1;
 
     // ADR-0118 cycle 2.5: this instruction's compiled source loc. Each operand
@@ -490,9 +493,10 @@ inline fn stepOnce(
     // a literal `0` pushed by `op_const` carries the `0`'s column, not the
     // enclosing call form's. `op_call` overrides its own result slot with the
     // call-form loc explicitly (it pops before it pushes, so the sweep misses it).
-    const instr_loc: SourceLocation = .{ .file = chunk.source_file, .line = instr.line, .column = instr.column };
+    const instr_loc: SourceLocation = .{ .file = chunk.source_file, .line = instr_il.line, .column = instr_il.column };
 
-    switch (instr.opcode) {
+    const instr_op = instr.op();
+    switch (instr_op) {
         .op_const => {
             @branchHint(.likely);
             if (instr.operand >= chunk.constants.len)
@@ -708,7 +712,7 @@ inline fn stepOnce(
             sp -= 2;
             const a = stack[sp];
             const b = stack[sp + 1];
-            const aop = intrinsic.fromOpcode(instr.opcode).?;
+            const aop = intrinsic.fromOpcode(instr_op).?;
             const fast: ?Value = if (rt.core_arith_pristine)
                 try intrinsic.fastBinaryFixnum(rt, aop, a, b)
             else
@@ -838,7 +842,7 @@ inline fn stepOnce(
                 return raiseInternal("vm: local_const constant index out of range");
             const a = locals[lslot];
             const b = chunk.constants[cidx];
-            const aop = intrinsic.fromLocalConstOpcode(instr.opcode).?;
+            const aop = intrinsic.fromLocalConstOpcode(instr_op).?;
             const fast: ?Value = if (rt.core_arith_pristine)
                 try intrinsic.fastBinaryFixnum(rt, aop, a, b)
             else
@@ -869,7 +873,7 @@ inline fn stepOnce(
                 return error_catalog.raise(.slot_out_of_range, .{}, .{ .form = "Local", .index = @as(u16, @intCast(if (sa >= locals.len) sa else sb)), .max = locals.len });
             const a = locals[sa];
             const b = locals[sb];
-            const aop = intrinsic.fromLocalsOpcode(instr.opcode).?;
+            const aop = intrinsic.fromLocalsOpcode(instr_op).?;
             const fast: ?Value = if (rt.core_arith_pristine)
                 try intrinsic.fastBinaryFixnum(rt, aop, a, b)
             else
@@ -896,7 +900,7 @@ inline fn stepOnce(
             // `op_jump_if_false`, never dispatched). Compute the comparison
             // (locals[a] CMP locals/const[b], fixnum-fast / builtin-deopt) and JUMP
             // when it is FALSE (jump_if_false semantics). [refs: O-021]
-            const info = intrinsic.fromBranchOpcode(instr.opcode).?;
+            const info = intrinsic.fromBranchOpcode(instr_op).?;
             const sa: usize = instr.operand >> 8;
             const sb: usize = instr.operand & 0xFF;
             if (ip >= chunk.instructions.len)
@@ -1618,9 +1622,9 @@ test "op_const then op_ret returns the constant" {
     try Fixture.init(&f, testing.allocator);
     defer f.deinit();
 
-    const instrs = [_]Instruction{
-        .{ .opcode = .op_const, .operand = 0 },
-        .{ .opcode = .op_ret },
+    const instrs = [_]WireInstr{
+        .from(.op_const, 0),
+        .from(.op_ret, 0),
     };
     const constants = [_]Value{Value.true_val};
     const chunk: BytecodeChunk = .{ .instructions = &instrs, .constants = &constants };
@@ -1633,11 +1637,11 @@ test "op_pop discards the top of the operand stack" {
     try Fixture.init(&f, testing.allocator);
     defer f.deinit();
 
-    const instrs = [_]Instruction{
-        .{ .opcode = .op_const, .operand = 0 },
-        .{ .opcode = .op_const, .operand = 1 },
-        .{ .opcode = .op_pop },
-        .{ .opcode = .op_ret },
+    const instrs = [_]WireInstr{
+        .from(.op_const, 0),
+        .from(.op_const, 1),
+        .from(.op_pop, 0),
+        .from(.op_ret, 0),
     };
     const constants = [_]Value{ Value.true_val, Value.false_val };
     const chunk: BytecodeChunk = .{ .instructions = &instrs, .constants = &constants };
@@ -1650,11 +1654,11 @@ test "op_dup duplicates the top of the operand stack" {
     try Fixture.init(&f, testing.allocator);
     defer f.deinit();
 
-    const instrs = [_]Instruction{
-        .{ .opcode = .op_const, .operand = 0 },
-        .{ .opcode = .op_dup },
-        .{ .opcode = .op_pop },
-        .{ .opcode = .op_ret },
+    const instrs = [_]WireInstr{
+        .from(.op_const, 0),
+        .from(.op_dup, 0),
+        .from(.op_pop, 0),
+        .from(.op_ret, 0),
     };
     const constants = [_]Value{Value.true_val};
     const chunk: BytecodeChunk = .{ .instructions = &instrs, .constants = &constants };
@@ -1667,11 +1671,11 @@ test "op_store_local then op_load_local round-trips a slot" {
     try Fixture.init(&f, testing.allocator);
     defer f.deinit();
 
-    const instrs = [_]Instruction{
-        .{ .opcode = .op_const, .operand = 0 },
-        .{ .opcode = .op_store_local, .operand = 7 },
-        .{ .opcode = .op_load_local, .operand = 7 },
-        .{ .opcode = .op_ret },
+    const instrs = [_]WireInstr{
+        .from(.op_const, 0),
+        .from(.op_store_local, 7),
+        .from(.op_load_local, 7),
+        .from(.op_ret, 0),
     };
     const constants = [_]Value{Value.true_val};
     const chunk: BytecodeChunk = .{ .instructions = &instrs, .constants = &constants };
@@ -1684,9 +1688,9 @@ test "op_load_local out of range raises index_error" {
     try Fixture.init(&f, testing.allocator);
     defer f.deinit();
 
-    const instrs = [_]Instruction{
-        .{ .opcode = .op_load_local, .operand = 1000 },
-        .{ .opcode = .op_ret },
+    const instrs = [_]WireInstr{
+        .from(.op_load_local, 1000),
+        .from(.op_ret, 0),
     };
     const constants = [_]Value{};
     const chunk: BytecodeChunk = .{ .instructions = &instrs, .constants = &constants };
@@ -1700,11 +1704,11 @@ test "op_jump unconditionally skips forward" {
     defer f.deinit();
 
     // op_jump +1 ; op_const false (skipped) ; op_const true ; op_ret
-    const instrs = [_]Instruction{
-        .{ .opcode = .op_jump, .operand = @as(u16, @bitCast(@as(i16, 1))) },
-        .{ .opcode = .op_const, .operand = 1 },
-        .{ .opcode = .op_const, .operand = 0 },
-        .{ .opcode = .op_ret },
+    const instrs = [_]WireInstr{
+        .from(.op_jump, @as(u16, @bitCast(@as(i16, 1)))),
+        .from(.op_const, 1),
+        .from(.op_const, 0),
+        .from(.op_ret, 0),
     };
     const constants = [_]Value{ Value.true_val, Value.false_val };
     const chunk: BytecodeChunk = .{ .instructions = &instrs, .constants = &constants };
@@ -1718,12 +1722,12 @@ test "op_jump_if_false takes the jump when popped value is false" {
     defer f.deinit();
 
     // op_const false ; op_jump_if_false +1 ; op_const true (skipped) ; op_const false ; op_ret
-    const instrs = [_]Instruction{
-        .{ .opcode = .op_const, .operand = 1 },
-        .{ .opcode = .op_jump_if_false, .operand = @as(u16, @bitCast(@as(i16, 1))) },
-        .{ .opcode = .op_const, .operand = 0 },
-        .{ .opcode = .op_const, .operand = 1 },
-        .{ .opcode = .op_ret },
+    const instrs = [_]WireInstr{
+        .from(.op_const, 1),
+        .from(.op_jump_if_false, @as(u16, @bitCast(@as(i16, 1)))),
+        .from(.op_const, 0),
+        .from(.op_const, 1),
+        .from(.op_ret, 0),
     };
     const constants = [_]Value{ Value.true_val, Value.false_val };
     const chunk: BytecodeChunk = .{ .instructions = &instrs, .constants = &constants };
@@ -1738,13 +1742,13 @@ test "op_jump_if_false falls through when popped value is truthy" {
 
     // (if true true false): push true cond ; jump_if_false +2 (no jump) ;
     // push true ; ret ; push false ; ret
-    const instrs = [_]Instruction{
-        .{ .opcode = .op_const, .operand = 0 },
-        .{ .opcode = .op_jump_if_false, .operand = @as(u16, @bitCast(@as(i16, 2))) },
-        .{ .opcode = .op_const, .operand = 0 },
-        .{ .opcode = .op_ret },
-        .{ .opcode = .op_const, .operand = 1 },
-        .{ .opcode = .op_ret },
+    const instrs = [_]WireInstr{
+        .from(.op_const, 0),
+        .from(.op_jump_if_false, @as(u16, @bitCast(@as(i16, 2)))),
+        .from(.op_const, 0),
+        .from(.op_ret, 0),
+        .from(.op_const, 1),
+        .from(.op_ret, 0),
     };
     const constants = [_]Value{ Value.true_val, Value.false_val };
     const chunk: BytecodeChunk = .{ .instructions = &instrs, .constants = &constants };
@@ -1758,10 +1762,10 @@ test "op_def interns the name into env.current_ns and pushes the Var" {
     defer f.deinit();
 
     const name_val = try string_mod.alloc(&f.rt, "answer");
-    const instrs = [_]Instruction{
-        .{ .opcode = .op_const, .operand = 1 },
-        .{ .opcode = .op_def, .operand = 0 },
-        .{ .opcode = .op_ret },
+    const instrs = [_]WireInstr{
+        .from(.op_const, 1),
+        .from(.op_def, 0),
+        .from(.op_ret, 0),
     };
     const constants = [_]Value{ name_val, Value.true_val };
     const chunk: BytecodeChunk = .{ .instructions = &instrs, .constants = &constants };
@@ -1781,10 +1785,10 @@ test "op_def stamps dynamic / macro / private flags from the operand" {
 
     const name_val = try string_mod.alloc(&f.rt, "foo");
     const packed_operand: u16 = 0 | opcode_mod.DEF_FLAG_DYNAMIC | opcode_mod.DEF_FLAG_PRIVATE;
-    const instrs = [_]Instruction{
-        .{ .opcode = .op_const, .operand = 1 },
-        .{ .opcode = .op_def, .operand = packed_operand },
-        .{ .opcode = .op_ret },
+    const instrs = [_]WireInstr{
+        .from(.op_const, 1),
+        .from(.op_def, packed_operand),
+        .from(.op_ret, 0),
     };
     const constants = [_]Value{ name_val, Value.nil_val };
     const chunk: BytecodeChunk = .{ .instructions = &instrs, .constants = &constants };
@@ -1805,9 +1809,9 @@ test "op_get_var dereferences a Var pointer from the constant pool" {
     const var_ptr = try f.env.intern(ns, "x", Value.true_val, null);
     const var_value = Value.encodeHeapPtr(.var_ref, var_ptr);
 
-    const instrs = [_]Instruction{
-        .{ .opcode = .op_get_var, .operand = 0 },
-        .{ .opcode = .op_ret },
+    const instrs = [_]WireInstr{
+        .from(.op_get_var, 0),
+        .from(.op_ret, 0),
     };
     const constants = [_]Value{var_value};
     const chunk: BytecodeChunk = .{ .instructions = &instrs, .constants = &constants };
@@ -1824,12 +1828,12 @@ test "op_call routes through rt.vtable.callFn" {
     const builtin_val = Value.initBuiltinFn(@as(dispatch.BuiltinFn, &testReturnFirstArg));
     _ = try f.env.intern(ns, "first-arg", builtin_val, null);
 
-    const instrs = [_]Instruction{
-        .{ .opcode = .op_const, .operand = 0 },
-        .{ .opcode = .op_const, .operand = 1 },
-        .{ .opcode = .op_const, .operand = 2 },
-        .{ .opcode = .op_call, .operand = 2 },
-        .{ .opcode = .op_ret },
+    const instrs = [_]WireInstr{
+        .from(.op_const, 0),
+        .from(.op_const, 1),
+        .from(.op_const, 2),
+        .from(.op_call, 2),
+        .from(.op_ret, 0),
     };
     const constants = [_]Value{ builtin_val, Value.true_val, Value.false_val };
     const chunk: BytecodeChunk = .{ .instructions = &instrs, .constants = &constants };
@@ -1857,9 +1861,9 @@ test "op_make_fn snapshots locals when template.slot_base > 0" {
     };
     // The template's bytecode body needs to actually produce a value;
     // a one-op chunk that loads local 0 + returns suffices.
-    const template_instrs = [_]Instruction{
-        .{ .opcode = .op_load_local, .operand = 0 },
-        .{ .opcode = .op_ret },
+    const template_instrs = [_]WireInstr{
+        .from(.op_load_local, 0),
+        .from(.op_ret, 0),
     };
     const template_chunk: BytecodeChunk = .{
         .instructions = &template_instrs,
@@ -1871,9 +1875,9 @@ test "op_make_fn snapshots locals when template.slot_base > 0" {
     // Outer chunk: load local 5 (which the caller seeds with true),
     // make a closure (snapshot), then read its closure_bindings[0]
     // directly to verify the snapshot captured the right thing.
-    const instrs = [_]Instruction{
-        .{ .opcode = .op_make_fn, .operand = 0 },
-        .{ .opcode = .op_ret },
+    const instrs = [_]WireInstr{
+        .from(.op_make_fn, 0),
+        .from(.op_ret, 0),
     };
     const constants = [_]Value{template_val};
     const chunk: BytecodeChunk = .{ .instructions = &instrs, .constants = &constants };
@@ -1897,9 +1901,9 @@ test "op_recur with insufficient stack raises internal_error" {
     try Fixture.init(&f, testing.allocator);
     defer f.deinit();
 
-    const instrs = [_]Instruction{
-        .{ .opcode = .op_recur, .operand = 3 },
-        .{ .opcode = .op_ret },
+    const instrs = [_]WireInstr{
+        .from(.op_recur, 3),
+        .from(.op_ret, 0),
     };
     const chunk: BytecodeChunk = .{ .instructions = &instrs, .constants = &.{} };
 
@@ -1924,9 +1928,9 @@ test "op_make_fn pushes the pre-allocated Function from the constants pool" {
     };
     const fn_val = try tree_walk.allocFunction(&f.rt, fn_node, &.{});
 
-    const instrs = [_]Instruction{
-        .{ .opcode = .op_make_fn, .operand = 0 },
-        .{ .opcode = .op_ret },
+    const instrs = [_]WireInstr{
+        .from(.op_make_fn, 0),
+        .from(.op_ret, 0),
     };
     const constants = [_]Value{fn_val};
     const chunk: BytecodeChunk = .{ .instructions = &instrs, .constants = &constants };
@@ -1940,9 +1944,9 @@ test "op_throw sets dispatch.last_thrown_exception and returns ThrownValue" {
     defer f.deinit();
     dispatch.last_thrown_exception = null;
 
-    const instrs = [_]Instruction{
-        .{ .opcode = .op_const, .operand = 0 },
-        .{ .opcode = .op_throw },
+    const instrs = [_]WireInstr{
+        .from(.op_const, 0),
+        .from(.op_throw, 0),
     };
     const constants = [_]Value{Value.true_val};
     const chunk: BytecodeChunk = .{ .instructions = &instrs, .constants = &constants };
@@ -1957,8 +1961,8 @@ test "op_invoke_builtin raises unsupported_feature (4.6 placeholder)" {
     try Fixture.init(&f, testing.allocator);
     defer f.deinit();
 
-    const instrs = [_]Instruction{
-        .{ .opcode = .op_invoke_builtin, .operand = 0 },
+    const instrs = [_]WireInstr{
+        .from(.op_invoke_builtin, 0),
     };
     const constants = [_]Value{Value.nil_val};
     const chunk: BytecodeChunk = .{ .instructions = &instrs, .constants = &constants };
@@ -1982,12 +1986,12 @@ test "op_push_handler routes thrown value into the catch arm" {
 
     // op_push_handler +3 ; op_const ex ; op_throw ; op_pop_handler (unreachable) ; <handler> op_ret
     const ex_val = try ex_info_mod.alloc(&f.rt, "boom", Value.nil_val, Value.nil_val);
-    const instrs = [_]Instruction{
-        .{ .opcode = .op_push_handler, .operand = @as(u16, @bitCast(@as(i16, 3))) },
-        .{ .opcode = .op_const, .operand = 0 },
-        .{ .opcode = .op_throw },
-        .{ .opcode = .op_pop_handler },
-        .{ .opcode = .op_ret },
+    const instrs = [_]WireInstr{
+        .from(.op_push_handler, @as(u16, @bitCast(@as(i16, 3)))),
+        .from(.op_const, 0),
+        .from(.op_throw, 0),
+        .from(.op_pop_handler, 0),
+        .from(.op_ret, 0),
     };
     const constants = [_]Value{ex_val};
     const chunk: BytecodeChunk = .{ .instructions = &instrs, .constants = &constants };
@@ -2003,12 +2007,12 @@ test "op_pop_handler removes the innermost handler so thrown propagates" {
     dispatch.last_thrown_exception = null;
 
     const ex_val = try ex_info_mod.alloc(&f.rt, "x", Value.nil_val, Value.nil_val);
-    const instrs = [_]Instruction{
-        .{ .opcode = .op_push_handler, .operand = @as(u16, @bitCast(@as(i16, 4))) },
-        .{ .opcode = .op_pop_handler },
-        .{ .opcode = .op_const, .operand = 0 },
-        .{ .opcode = .op_throw },
-        .{ .opcode = .op_ret },
+    const instrs = [_]WireInstr{
+        .from(.op_push_handler, @as(u16, @bitCast(@as(i16, 4)))),
+        .from(.op_pop_handler, 0),
+        .from(.op_const, 0),
+        .from(.op_throw, 0),
+        .from(.op_ret, 0),
     };
     const constants = [_]Value{ex_val};
     const chunk: BytecodeChunk = .{ .instructions = &instrs, .constants = &constants };
@@ -2026,10 +2030,10 @@ test "op_match_class returns true for ExceptionInfo vs ex_info tag" {
     const ex_val = try ex_info_mod.alloc(&f.rt, "x", Value.nil_val, Value.nil_val);
     const class_val = try string_mod.alloc(&f.rt, "ExceptionInfo");
 
-    const instrs = [_]Instruction{
-        .{ .opcode = .op_const, .operand = 0 },
-        .{ .opcode = .op_match_class, .operand = 1 },
-        .{ .opcode = .op_ret },
+    const instrs = [_]WireInstr{
+        .from(.op_const, 0),
+        .from(.op_match_class, 1),
+        .from(.op_ret, 0),
     };
     const constants = [_]Value{ ex_val, class_val };
     const chunk: BytecodeChunk = .{ .instructions = &instrs, .constants = &constants };
@@ -2045,10 +2049,10 @@ test "op_match_class returns false for unknown class names" {
     const ex_val = try ex_info_mod.alloc(&f.rt, "x", Value.nil_val, Value.nil_val);
     const class_val = try string_mod.alloc(&f.rt, "IndexOutOfBoundsException");
 
-    const instrs = [_]Instruction{
-        .{ .opcode = .op_const, .operand = 0 },
-        .{ .opcode = .op_match_class, .operand = 1 },
-        .{ .opcode = .op_ret },
+    const instrs = [_]WireInstr{
+        .from(.op_const, 0),
+        .from(.op_match_class, 1),
+        .from(.op_ret, 0),
     };
     const constants = [_]Value{ ex_val, class_val };
     const chunk: BytecodeChunk = .{ .instructions = &instrs, .constants = &constants };
@@ -2069,7 +2073,7 @@ test "vm.eval back-edge poll parks a worker mid-eval during a stop-the-world (D-
 
     // A trivial alloc-free chunk the worker re-evaluates in a tight loop, so the
     // ONLY safe point it can reach is the back-edge poll (no alloc-prologue park).
-    const instrs = [_]Instruction{ .{ .opcode = .op_const, .operand = 0 }, .{ .opcode = .op_ret } };
+    const instrs = [_]WireInstr{ .from(.op_const, 0), .from(.op_ret, 0) };
     const constants = [_]Value{Value.true_val};
     const chunk: BytecodeChunk = .{ .instructions = &instrs, .constants = &constants };
 
