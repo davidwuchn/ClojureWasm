@@ -141,7 +141,9 @@ pub fn start(rt: *Runtime, thread_val: Value, loc: SourceLocation) !Value {
     // Pin: the worker writes to the Thread value after main may have
     // dropped every reference (fire-and-forget start) — future.zig's rule.
     try rt.gc.pin(thread_val);
-    if (!st.daemon) try registerNonDaemon(rt, thread_val);
+    // ALL started threads register (daemon included): the exit path joins
+    // the non-daemon entries and hard-exits if a daemon is still running.
+    try registerStarted(rt, thread_val);
     var t = std.Thread.spawn(.{}, worker, .{thread_val}) catch |e| {
         io_default.lockMutex(&st.cell.mutex);
         st.run_state = .done;
@@ -263,19 +265,25 @@ pub fn setDaemon(thread_val: Value, daemon: bool, loc: SourceLocation) !Value {
     return Value.nil_val;
 }
 
-// --- join-at-exit registry (non-daemon threads; JVM-faithful main wait) ---
+// --- join-at-exit registry (JVM-faithful main-exit rule) ---
 
-fn registerNonDaemon(rt: *Runtime, thread_val: Value) !void {
+fn registerStarted(rt: *Runtime, thread_val: Value) !void {
     io_default.lockMutex(&rt.user_threads_mutex);
     defer io_default.unlockMutex(&rt.user_threads_mutex);
     try rt.user_threads.append(rt.gpa, thread_val);
 }
 
-/// Called by the app entry after the program body: wait for every live
-/// non-daemon Thread (the JVM's main-exit rule). Entries are join'd in
-/// registration order; a done thread's join returns immediately. Threads
-/// STARTED BY the joined threads land in the registry too — loop until a
-/// pass sees no new entries.
+/// Called by the app entry after the program body — the JVM main-exit rule
+/// in both halves:
+///   1. WAIT for every live non-daemon Thread (join in registration order;
+///      threads started BY joined threads land in the registry too — the
+///      loop re-reads the length each pass).
+///   2. If a DAEMON thread is still running afterwards, exit the process
+///      IMMEDIATELY (stdout flushed, no Runtime teardown) — exactly the
+///      JVM, which kills daemon threads abruptly with no cleanup. This is
+///      also the structural fix for the teardown race a sleeping daemon
+///      worker exposes (rt.deinit freeing the heap under a live worker's
+///      registered GC context — the 2026-07-17 ubuntunote alignment panic).
 pub fn joinAllNonDaemon(rt: *Runtime) void {
     var i: usize = 0;
     while (true) {
@@ -283,12 +291,26 @@ pub fn joinAllNonDaemon(rt: *Runtime) void {
         const n = rt.user_threads.items.len;
         if (i >= n) {
             io_default.unlockMutex(&rt.user_threads_mutex);
-            return;
+            break;
         }
         const tv = rt.user_threads.items[i];
         io_default.unlockMutex(&rt.user_threads_mutex);
-        join(tv, null);
+        if (!isDaemon(tv)) join(tv, null);
         i += 1;
+    }
+    // Half 2: a live daemon forbids graceful teardown (JVM-exact).
+    io_default.lockMutex(&rt.user_threads_mutex);
+    var live_daemon = false;
+    for (rt.user_threads.items) |tv| {
+        if (isDaemon(tv) and runState(tv) == .running) {
+            live_daemon = true;
+            break;
+        }
+    }
+    io_default.unlockMutex(&rt.user_threads_mutex);
+    if (live_daemon) {
+        if (rt.stdout) |out| out.flush() catch {};
+        std.process.exit(0);
     }
 }
 
