@@ -36,6 +36,9 @@ const host_instance = @import("../../host_instance.zig");
 const file_io = @import("../../file_io.zig");
 const string_mod = @import("../../collection/string.zig");
 const vector_mod = @import("../../collection/vector.zig");
+const java_array = @import("../../collection/java_array.zig");
+const clock = @import("../../clock.zig");
+const process_env = @import("../../process_env.zig");
 const mark_sweep = @import("../../gc/mark_sweep.zig");
 const gc_heap_mod = @import("../../gc/gc_heap.zig");
 
@@ -276,6 +279,53 @@ fn mkdirs(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) any
     return Value.initBoolean(file_io.makeDirs(rt.io, j orelse p));
 }
 
+// --- statics (ADR-0174 D7) ---
+
+/// `(java.io.File/createTempFile prefix suffix)` — create an empty
+/// uniquely-named file under the OS temp dir (`$TMPDIR`, else `/tmp`) and
+/// return its `java.io.File`. `suffix` nil → `".tmp"` (JVM default).
+/// Uniqueness comes from the monotonic nano clock + a retry counter (no
+/// JVM SecureRandom ceremony needed for a name). The candidate path goes
+/// through the deploy FS-jail like every other FS touch — a jailed deploy
+/// whose temp dir lies outside the jail raises `fs_jail_escape` honestly.
+fn createTempFile(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = env;
+    try error_catalog.checkArity("java.io.File/createTempFile", args, 2, loc);
+    if (args[0].tag() != .string)
+        return error_catalog.raise(.type_arg_not_string, loc, .{ .fn_name = "java.io.File/createTempFile", .actual = @tagName(args[0].tag()) });
+    const prefix = string_mod.asString(args[0]);
+    const suffix = if (args[1].isNil()) ".tmp" else blk: {
+        if (args[1].tag() != .string)
+            return error_catalog.raise(.type_arg_not_string, loc, .{ .fn_name = "java.io.File/createTempFile", .actual = @tagName(args[1].tag()) });
+        break :blk string_mod.asString(args[1]);
+    };
+    const tmpdir = std.mem.trimEnd(u8, process_env.get("TMPDIR") orelse "/tmp", "/");
+    const base: u64 = @intCast(clock.nanoTime(rt.io));
+    var attempt: u64 = 0;
+    while (attempt < 100) : (attempt += 1) {
+        const candidate = try std.fmt.allocPrint(rt.gpa, "{s}/{s}{d}{s}", .{ tmpdir, prefix, base + attempt, suffix });
+        defer rt.gpa.free(candidate);
+        const j = try jailed(rt, candidate, "createTempFile", loc);
+        defer if (j) |x| rt.gpa.free(x);
+        const real = j orelse candidate;
+        if (file_io.statKind(rt.io, real) != null) continue; // taken — bump the counter
+        file_io.writeAll(rt.io, real, "") catch
+            return error_catalog.raise(.file_io_error, loc, .{ .op = "createTempFile", .path = candidate, .detail = "cannot create the temp file" });
+        return allocFile(rt, try string_mod.alloc(rt, candidate));
+    }
+    return error_catalog.raise(.file_io_error, loc, .{ .op = "createTempFile", .path = tmpdir, .detail = "could not find a unique temp-file name" });
+}
+
+/// `(java.io.File/listRoots)` — a cljw Java array of the one POSIX
+/// filesystem root, `/` (JVM returns `File[]`; Windows' drive letters do
+/// not apply to the shipped Mac/Linux targets).
+fn listRoots(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = env;
+    try error_catalog.checkArity("java.io.File/listRoots", args, 0, loc);
+    const root = try allocFile(rt, try string_mod.alloc(rt, "/"));
+    return java_array.fromSlice(rt, &.{root});
+}
+
 // --- listing (cljw vector, not a JVM array — see module divergence note) ---
 
 fn list(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
@@ -350,6 +400,9 @@ const METHODS = [_]MethodSpec{
     .{ .name = "mkdirs", .f = &mkdirs },
     .{ .name = "list", .f = &list },
     .{ .name = "listFiles", .f = &listFiles },
+    // statics (ADR-0174 D7) — same flat table, dispatched as static_method
+    .{ .name = "createTempFile", .f = &createTempFile },
+    .{ .name = "listRoots", .f = &listRoots },
 };
 
 fn initFile(td: *type_descriptor.TypeDescriptor, gpa: std.mem.Allocator) anyerror!void {

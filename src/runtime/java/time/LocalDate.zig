@@ -66,6 +66,17 @@ fn parse(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anye
     return ld_value.make(rt, epoch_day);
 }
 
+/// `(java.time.LocalDate/ofEpochDay n)` — the date `n` days after 1970-01-01
+/// (JVM `LocalDate.ofEpochDay`). The value model IS the epoch day, so this is
+/// the identity constructor.
+fn ofEpochDay(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = env;
+    try error_catalog.checkArity("java.time.LocalDate/ofEpochDay", args, 1, loc);
+    if (args[0].tag() != .integer)
+        return error_catalog.raise(.type_arg_invalid, loc, .{ .fn_name = "java.time.LocalDate/ofEpochDay", .expected = "integer", .actual = @tagName(args[0].tag()) });
+    return ld_value.make(rt, args[0].asInteger());
+}
+
 fn initLocalDate(td: *type_descriptor.TypeDescriptor, gpa: std.mem.Allocator) anyerror!void {
     // ADR-0174 merge: ONE descriptor carries the statics AND the instance
     // methods (LocalDate values point at it). Sentinel-guarded appends keep
@@ -75,6 +86,7 @@ fn initLocalDate(td: *type_descriptor.TypeDescriptor, gpa: std.mem.Allocator) an
             .{ "of", &of },
             .{ "now", &now },
             .{ "parse", &parse },
+            .{ "ofEpochDay", &ofEpochDay },
         });
     }
     td.temporal_print = .iso_local_date;
@@ -87,12 +99,21 @@ pub const ___HOST_EXTENSION: host_api.Extension = .{
     .init = &initLocalDate,
 };
 
+/// `LocalDate/{MIN,MAX,EPOCH}` (ADR-0174 D7b). MIN/MAX epoch days
+/// (±year 999_999_999) fit the i48 immediate window (~±3.65e11 days).
+const local_date_static_fields = [_]type_descriptor.TypeDescriptor.StaticField{
+    .{ .name = "MIN", .value = .{ .singleton = .time_local_date_min } },
+    .{ .name = "MAX", .value = .{ .singleton = .time_local_date_max } },
+    .{ .name = "EPOCH", .value = .{ .singleton = .time_local_date_epoch } },
+};
+
 var descriptor: type_descriptor.TypeDescriptor = .{
     .fqcn = ld_value.FQCN, // "java.time.LocalDate" — the ONE canonical key (ADR-0174)
     .kind = .native,
     .field_layout = null,
     .protocol_impls = &.{},
     .method_table = &.{},
+    .static_fields = &local_date_static_fields,
     .parent = null,
     .meta = .nil_val,
     .temporal_print = .iso_local_date,

@@ -209,8 +209,29 @@ pub const TypeDescriptor = struct {
     /// A heap singleton a static field resolves to at analyze time. The
     /// pointer cannot be baked at module-comptime (it lives on a specific
     /// Runtime), so the field carries the enum tag and the resolver maps it
-    /// to the live singleton (ADR-0087).
-    pub const Singleton = enum { empty_queue, locale_us, locale_root, compiler_specials, system_in, system_out, system_err };
+    /// to the live singleton (ADR-0087). The `time_*` tags (ADR-0174 D7b)
+    /// are cheap immutable `=`-by-value time constants: each read mints a
+    /// fresh value at analyze time (no per-Runtime cache needed — the
+    /// analyzer's makeConstant roots the constant).
+    pub const Singleton = enum {
+        empty_queue,
+        locale_us,
+        locale_root,
+        compiler_specials,
+        system_in,
+        system_out,
+        system_err,
+        time_instant_epoch,
+        time_duration_zero,
+        time_local_time_midnight, // 00:00 — also LocalTime/MIN
+        time_local_time_noon,
+        time_local_time_max,
+        time_local_date_min,
+        time_local_date_max,
+        time_local_date_epoch,
+        time_local_date_time_min,
+        time_local_date_time_max,
+    };
 
     /// The shapes a static field can carry. `int` lifts via
     /// `integerLiteralToValue` (i48 → Long, beyond → BigInt); `float` via
@@ -234,6 +255,10 @@ pub const TypeDescriptor = struct {
         /// A `java.math.MathContext` standard constant (0-3 = DECIMAL32/64/128/
         /// UNLIMITED) → `math_context.zig::singleton` (D-511).
         math_context: u8,
+        /// A small-integer `java.math.BigDecimal` constant (ZERO/ONE/TWO/TEN) —
+        /// lifted via the BigDecimal constructor at analyze time (ADR-0174 D7),
+        /// scale 0.
+        big_decimal: i64,
     };
 
     /// Find a static field by name (ADR-0061). Linear — field tables are

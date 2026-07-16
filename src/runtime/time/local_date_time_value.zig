@@ -536,8 +536,8 @@ pub fn nanoOfDayOf(v: Value) i64 {
 /// [0, 86_400_000_000_000)) as the bare ISO local date-time string clj's
 /// `(str ldt)` emits — `formatLocalDate ++ "T" ++ formatLocalTime` (the two
 /// halves it shares with LocalDate / LocalTime, both in `instant.zig` the
-/// F-009 neutral home). `buf` must be ≥ 35 bytes; returns the written slice.
-/// Year is assumed [0, 9999] (4-digit pad).
+/// F-009 neutral home). `buf` must be ≥ 35 bytes (16-byte signed date max +
+/// `T` + 18-byte time max); returns the written slice.
 pub fn formatLocalDateTime(buf: []u8, epoch_day: i64, nano_of_day: i64) []const u8 {
     const date = instant.formatLocalDate(buf, epoch_day);
     var len = date.len;

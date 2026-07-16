@@ -23,7 +23,12 @@
 const Value = @import("value/value.zig").Value;
 const HeapHeader = @import("value/value.zig").HeapHeader;
 const Runtime = @import("runtime.zig").Runtime;
+const Env = @import("env.zig").Env;
+const SourceLocation = @import("error/info.zig").SourceLocation;
+const error_catalog = @import("error/catalog.zig");
 const host_instance = @import("host_instance.zig");
+const string_collection = @import("collection/string.zig");
+const java_array = @import("collection/java_array.zig");
 
 /// Registry index. Declaration order IS the flat-cache layout (`cache_base`
 /// accumulates from it). The `StaticFieldValue.host_enum.enum_idx` u8 is
@@ -122,6 +127,61 @@ pub fn singleton(rt: *Runtime, idx: Idx, ordinal: u8) !Value {
     };
     slot.* = Value.encodeHeapPtr(.host_instance, inst);
     return slot.*;
+}
+
+/// Uniform static-method family for a host-enum surface (ADR-0174 D7):
+/// `values` / `valueOf` / (`of` where the JVM has it — Month, DayOfWeek).
+/// ONE generic body parameterized by the registry index (the F-013 way);
+/// each surface's `init` appends thin entries pointing at its instantiation.
+/// All three return the interned `singleton` constants, so identity parity
+/// with the static-field reads holds by construction.
+pub fn Statics(comptime idx: Idx) type {
+    const def = comptime &defs[@intFromEnum(idx)];
+    return struct {
+        /// `(Enum/values)` — a cljw Java array of the constants in ordinal
+        /// order (JVM `values()` returns `Enum[]`).
+        pub fn values(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+            _ = env;
+            try error_catalog.checkArity(def.fqcn ++ "/values", args, 0, loc);
+            var buf: [def.names.len]Value = undefined;
+            for (&buf, 0..) |*slot, ord| slot.* = try singleton(rt, idx, @intCast(ord));
+            return java_array.fromSlice(rt, &buf);
+        }
+
+        /// `(Enum/valueOf "NAME")` — the constant with exactly that name; an
+        /// unknown name raises `.value_error` (JVM IllegalArgumentException).
+        pub fn valueOf(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+            _ = env;
+            try error_catalog.checkArity(def.fqcn ++ "/valueOf", args, 1, loc);
+            if (args[0].tag() != .string)
+                return error_catalog.raise(.type_arg_invalid, loc, .{ .fn_name = def.fqcn ++ "/valueOf", .expected = "string", .actual = @tagName(args[0].tag()) });
+            const s = string_collection.asString(args[0]);
+            for (def.names, 0..) |nm, ord| {
+                if (std.mem.eql(u8, nm, s)) return singleton(rt, idx, @intCast(ord));
+            }
+            return error_catalog.raise(.arg_value_invalid, loc, .{ .fn_name = def.fqcn ++ "/valueOf", .expected = "a " ++ def.fqcn ++ " constant name", .actual = s });
+        }
+
+        /// `(Enum/of n)` — the constant with ISO value `n` (Month 1-12 /
+        /// DayOfWeek 1-7). Referenced only by surfaces whose enum carries a
+        /// `value_base` (the comptime assert pins that).
+        pub fn of(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+            comptime std.debug.assert(def.value_base != null);
+            _ = env;
+            try error_catalog.checkArity(def.fqcn ++ "/of", args, 1, loc);
+            if (args[0].tag() != .integer)
+                return error_catalog.raise(.type_arg_invalid, loc, .{ .fn_name = def.fqcn ++ "/of", .expected = "integer", .actual = @tagName(args[0].tag()) });
+            const base = comptime def.value_base.?;
+            const v = args[0].asInteger();
+            if (v < base or v >= base + def.names.len)
+                return error_catalog.raise(.arg_value_invalid, loc, .{
+                    .fn_name = def.fqcn ++ "/of",
+                    .expected = std.fmt.comptimePrint("a value in {d}..{d}", .{ base, base + def.names.len - 1 }),
+                    .actual = "an out-of-range value",
+                });
+            return singleton(rt, idx, @intCast(v - base));
+        }
+    };
 }
 
 /// Release all interned host-enum singletons (gc.infra-allocated). Called from

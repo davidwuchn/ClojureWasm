@@ -625,10 +625,19 @@ pub const ___HOST_EXTENSION: host_api.Extension = .{
 /// from the canonical `rounding_mode` name↔ordinal table so the `ROUND_<name>`
 /// suffix + ordinal stay a single source of truth shared with the modern
 /// `RoundingMode/<name>` enum constants (ADR-0160).
+/// Plus the small-integer value constants ZERO/ONE/TWO/TEN (ADR-0174 D7 —
+/// TWO is Java 19+; verified against the local clj oracle), lifted to a
+/// scale-0 BigDecimal by the analyzer's `.big_decimal` arm.
 const big_decimal_static_fields = build: {
-    var arr: [host_enum.count(.rounding_mode)]type_descriptor.TypeDescriptor.StaticField = undefined;
-    for (&arr, 0..) |*sf, i| {
+    const values = [_]struct { []const u8, i64 }{
+        .{ "ZERO", 0 }, .{ "ONE", 1 }, .{ "TWO", 2 }, .{ "TEN", 10 },
+    };
+    var arr: [host_enum.count(.rounding_mode) + values.len]type_descriptor.TypeDescriptor.StaticField = undefined;
+    for (arr[0..host_enum.count(.rounding_mode)], 0..) |*sf, i| {
         sf.* = .{ .name = "ROUND_" ++ host_enum.name(.rounding_mode, @intCast(i)), .value = .{ .int = @intCast(i) } };
+    }
+    for (arr[host_enum.count(.rounding_mode)..], values) |*sf, v| {
+        sf.* = .{ .name = v[0], .value = .{ .big_decimal = v[1] } };
     }
     break :build arr;
 };

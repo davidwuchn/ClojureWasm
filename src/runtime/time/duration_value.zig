@@ -379,6 +379,116 @@ pub fn nanosOf(v: Value) i32 {
     return @intCast(v.decodePtr(*const TypedInstance).fields()[1].asInteger());
 }
 
+/// One signed integer component of the ISO duration grammar. `neg` is kept
+/// separately from `val` so a `-0` seconds component ("PT-0.5S") preserves
+/// its sign for the fraction.
+const SignedInt = struct { val: i64, neg: bool };
+
+fn readSignedInt(s: []const u8, i: *usize) error{InvalidDuration}!SignedInt {
+    var neg = false;
+    if (i.* < s.len and (s[i.*] == '+' or s[i.*] == '-')) {
+        neg = s[i.*] == '-';
+        i.* += 1;
+    }
+    var digits: usize = 0;
+    var acc: i64 = 0;
+    while (i.* < s.len and s[i.*] >= '0' and s[i.*] <= '9') : (i.* += 1) {
+        acc = std.math.mul(i64, acc, 10) catch return error.InvalidDuration;
+        acc = std.math.add(i64, acc, s[i.*] - '0') catch return error.InvalidDuration;
+        digits += 1;
+    }
+    if (digits == 0) return error.InvalidDuration;
+    return .{ .val = if (neg) -acc else acc, .neg = neg };
+}
+
+pub const ParsedIso = struct { seconds: i64, nanos: i32 };
+
+/// Parse an ISO-8601 duration — the JVM `Duration.parse` grammar
+/// `[-+]P[nD][T[nH][nM][n[.fraction]S]]`: letters case-insensitive, each
+/// numeric component independently signed, the fraction's sign following the
+/// seconds component, and a leading sign negating the WHOLE ("-PT6H" ==
+/// "PT-6H"). Date units other than D (Y/W/M) are Period territory and are
+/// rejected, exactly like the JVM. Returns the normalized {seconds,
+/// nanos∈[0,1e9)} pair (ready for `make`).
+pub fn parseIso(s: []const u8) error{InvalidDuration}!ParsedIso {
+    var i: usize = 0;
+    var whole_neg = false;
+    if (i < s.len and (s[i] == '+' or s[i] == '-')) {
+        whole_neg = s[i] == '-';
+        i += 1;
+    }
+    if (i >= s.len or std.ascii.toUpper(s[i]) != 'P') return error.InvalidDuration;
+    i += 1;
+    var total_ns: i128 = 0;
+    var any = false;
+
+    // Date half: only D is meaningful for a Duration.
+    if (i < s.len and std.ascii.toUpper(s[i]) != 'T') {
+        const d = try readSignedInt(s, &i);
+        if (i >= s.len or std.ascii.toUpper(s[i]) != 'D') return error.InvalidDuration;
+        i += 1;
+        total_ns += @as(i128, d.val) * (86_400 * NS_PER_SEC);
+        any = true;
+    }
+
+    // Time half: 'T' then at least one of nH / nM / n[.frac]S, in order.
+    if (i < s.len) {
+        if (std.ascii.toUpper(s[i]) != 'T') return error.InvalidDuration;
+        i += 1;
+        var stage: u8 = 0; // 1 = H consumed, 2 = M, 3 = S (enforces order)
+        var t_any = false;
+        while (i < s.len) {
+            const n = try readSignedInt(s, &i);
+            var frac: i64 = 0;
+            var has_frac = false;
+            if (i < s.len and (s[i] == '.' or s[i] == ',')) {
+                i += 1;
+                var digits: usize = 0;
+                var acc: i64 = 0;
+                while (i < s.len and s[i] >= '0' and s[i] <= '9') : (i += 1) {
+                    if (digits < 9) acc = acc * 10 + (s[i] - '0');
+                    digits += 1;
+                }
+                if (digits == 0 or digits > 9) return error.InvalidDuration;
+                while (digits < 9) : (digits += 1) acc *= 10;
+                frac = acc;
+                has_frac = true;
+            }
+            if (i >= s.len) return error.InvalidDuration;
+            const unit = std.ascii.toUpper(s[i]);
+            i += 1;
+            switch (unit) {
+                'H' => {
+                    if (has_frac or stage >= 1) return error.InvalidDuration;
+                    stage = 1;
+                    total_ns += @as(i128, n.val) * (3_600 * NS_PER_SEC);
+                },
+                'M' => {
+                    if (has_frac or stage >= 2) return error.InvalidDuration;
+                    stage = 2;
+                    total_ns += @as(i128, n.val) * (60 * NS_PER_SEC);
+                },
+                'S' => {
+                    if (stage >= 3) return error.InvalidDuration;
+                    stage = 3;
+                    const f: i128 = if (n.neg) -@as(i128, frac) else frac;
+                    total_ns += @as(i128, n.val) * NS_PER_SEC + f;
+                },
+                else => return error.InvalidDuration,
+            }
+            t_any = true;
+        }
+        if (!t_any) return error.InvalidDuration; // a bare trailing 'T'
+        any = true;
+    }
+    if (!any) return error.InvalidDuration; // a bare "P"
+    if (whole_neg) total_ns = -total_ns;
+    return .{
+        .seconds = @intCast(@divFloor(total_ns, NS_PER_SEC)),
+        .nanos = @intCast(@mod(total_ns, NS_PER_SEC)),
+    };
+}
+
 /// Format a normalized Duration (`seconds` signed, `nanos` in 0..999_999_999)
 /// as the ISO-8601 duration string (`PT…`), a direct port of the JDK
 /// `Duration.toString` algorithm. Self-contained — no civil calendar. `buf`
@@ -454,6 +564,35 @@ test "Duration value: make / isDuration / accessors + temporal_print set" {
     try testing.expectEqual(@as(i32, 500_000_000), nanosOf(d));
     try testing.expect(d.decodePtr(*const TypedInstance).descriptor.temporal_print == .iso_duration);
     try testing.expect(!isDuration(Value.initInteger(5)));
+}
+
+test "parseIso: JVM Duration.parse grammar" {
+    // simple time forms
+    try testing.expectEqual(ParsedIso{ .seconds = 5400, .nanos = 0 }, try parseIso("PT1H30M"));
+    try testing.expectEqual(ParsedIso{ .seconds = 3600, .nanos = 0 }, try parseIso("PT1H"));
+    try testing.expectEqual(ParsedIso{ .seconds = 0, .nanos = 0 }, try parseIso("PT0S"));
+    // days fold into seconds (P1DT2H = 26 h)
+    try testing.expectEqual(ParsedIso{ .seconds = 26 * 3600, .nanos = 0 }, try parseIso("P1DT2H"));
+    try testing.expectEqual(ParsedIso{ .seconds = 86_400, .nanos = 0 }, try parseIso("P1D"));
+    // fraction (sign follows the seconds component)
+    try testing.expectEqual(ParsedIso{ .seconds = 1, .nanos = 500_000_000 }, try parseIso("PT1.5S"));
+    try testing.expectEqual(ParsedIso{ .seconds = -1, .nanos = 500_000_000 }, try parseIso("PT-0.5S"));
+    try testing.expectEqual(ParsedIso{ .seconds = 0, .nanos = 123_456_789 }, try parseIso("PT0.123456789S"));
+    // component negatives + whole negation ("-PT6H" == "PT-6H")
+    try testing.expectEqual(ParsedIso{ .seconds = -21_600, .nanos = 0 }, try parseIso("PT-6H"));
+    try testing.expectEqual(ParsedIso{ .seconds = -21_600, .nanos = 0 }, try parseIso("-PT6H"));
+    try testing.expectEqual(ParsedIso{ .seconds = -1, .nanos = 500_000_000 }, try parseIso("-PT0.5S"));
+    // case-insensitive letters, comma fraction
+    try testing.expectEqual(ParsedIso{ .seconds = 90, .nanos = 0 }, try parseIso("pt1m30s"));
+    try testing.expectEqual(ParsedIso{ .seconds = 1, .nanos = 500_000_000 }, try parseIso("PT1,5S"));
+    // rejects
+    try testing.expectError(error.InvalidDuration, parseIso("P"));
+    try testing.expectError(error.InvalidDuration, parseIso("PT"));
+    try testing.expectError(error.InvalidDuration, parseIso("P1Y"));
+    try testing.expectError(error.InvalidDuration, parseIso("PT1.5H"));
+    try testing.expectError(error.InvalidDuration, parseIso("PT1M1H")); // out of order
+    try testing.expectError(error.InvalidDuration, parseIso("1H"));
+    try testing.expectError(error.InvalidDuration, parseIso("PT1.1234567890S")); // >9 frac digits
 }
 
 test "formatDuration: positive / negative / fraction / zero" {

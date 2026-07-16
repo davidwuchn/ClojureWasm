@@ -76,6 +76,36 @@ fn parse(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anye
     return lt_value.make(rt, nod);
 }
 
+const NANO_PER_DAY: i64 = 86_400_000_000_000;
+
+/// `(java.time.LocalTime/ofSecondOfDay n)` — the time at second-of-day `n`
+/// (0..86_399, JVM `LocalTime.ofSecondOfDay`); out of range raises
+/// `.value_error` (JVM DateTimeException).
+fn ofSecondOfDay(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = env;
+    try error_catalog.checkArity("java.time.LocalTime/ofSecondOfDay", args, 1, loc);
+    if (args[0].tag() != .integer)
+        return error_catalog.raise(.type_arg_invalid, loc, .{ .fn_name = "java.time.LocalTime/ofSecondOfDay", .expected = "integer", .actual = @tagName(args[0].tag()) });
+    const s = args[0].asInteger();
+    if (s < 0 or s >= 86_400)
+        return error_catalog.raise(.arg_value_invalid, loc, .{ .fn_name = "java.time.LocalTime/ofSecondOfDay", .expected = "a second-of-day in 0..86399", .actual = "an out-of-range value" });
+    return lt_value.make(rt, s * NANO_PER_SECOND);
+}
+
+/// `(java.time.LocalTime/ofNanoOfDay n)` — the time at nano-of-day `n`
+/// (0..86_399_999_999_999, JVM `LocalTime.ofNanoOfDay`); out of range raises
+/// `.value_error` (JVM DateTimeException).
+fn ofNanoOfDay(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = env;
+    try error_catalog.checkArity("java.time.LocalTime/ofNanoOfDay", args, 1, loc);
+    if (args[0].tag() != .integer)
+        return error_catalog.raise(.type_arg_invalid, loc, .{ .fn_name = "java.time.LocalTime/ofNanoOfDay", .expected = "integer", .actual = @tagName(args[0].tag()) });
+    const n = args[0].asInteger();
+    if (n < 0 or n >= NANO_PER_DAY)
+        return error_catalog.raise(.arg_value_invalid, loc, .{ .fn_name = "java.time.LocalTime/ofNanoOfDay", .expected = "a nano-of-day in 0..86399999999999", .actual = "an out-of-range value" });
+    return lt_value.make(rt, n);
+}
+
 fn initLocalTime(td: *type_descriptor.TypeDescriptor, gpa: std.mem.Allocator) anyerror!void {
     // ADR-0174 merge: ONE descriptor carries the statics AND the instance
     // methods (LocalTime values point at it). Sentinel-guarded appends keep
@@ -85,6 +115,8 @@ fn initLocalTime(td: *type_descriptor.TypeDescriptor, gpa: std.mem.Allocator) an
             .{ "of", &of },
             .{ "now", &now },
             .{ "parse", &parse },
+            .{ "ofSecondOfDay", &ofSecondOfDay },
+            .{ "ofNanoOfDay", &ofNanoOfDay },
         });
     }
     td.temporal_print = .iso_local_time;
@@ -97,12 +129,22 @@ pub const ___HOST_EXTENSION: host_api.Extension = .{
     .init = &initLocalTime,
 };
 
+/// `LocalTime/{MIDNIGHT,MIN,NOON,MAX}` (ADR-0174 D7b). MIDNIGHT and MIN are
+/// both 00:00 (JVM: MIN aliases MIDNIGHT's value), so they share one tag.
+const local_time_static_fields = [_]type_descriptor.TypeDescriptor.StaticField{
+    .{ .name = "MIDNIGHT", .value = .{ .singleton = .time_local_time_midnight } },
+    .{ .name = "MIN", .value = .{ .singleton = .time_local_time_midnight } },
+    .{ .name = "NOON", .value = .{ .singleton = .time_local_time_noon } },
+    .{ .name = "MAX", .value = .{ .singleton = .time_local_time_max } },
+};
+
 var descriptor: type_descriptor.TypeDescriptor = .{
     .fqcn = lt_value.FQCN, // "java.time.LocalTime" — the ONE canonical key (ADR-0174)
     .kind = .native,
     .field_layout = null,
     .protocol_impls = &.{},
     .method_table = &.{},
+    .static_fields = &local_time_static_fields,
     .parent = null,
     .meta = .nil_val,
     .temporal_print = .iso_local_time,

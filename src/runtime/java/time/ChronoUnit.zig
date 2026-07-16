@@ -48,6 +48,13 @@ fn initDescriptor(td: *type_descriptor.TypeDescriptor, gpa: std.mem.Allocator) a
     entries[0] = .{ .protocol_name = "", .method_name = try gpa.dupe(u8, "toString"), .method_val = Value.initBuiltinFn(&toString) };
     entries[1] = .{ .protocol_name = "", .method_name = try gpa.dupe(u8, "name"), .method_val = Value.initBuiltinFn(&nameFn) };
     td.method_table = entries;
+    // Uniform enum statics (ADR-0174 D7): generic bodies in host_enum.zig.
+    // No `of` — the JVM ChronoUnit has no int-valued factory.
+    const statics = host_enum.Statics(.chrono_unit);
+    try type_descriptor.appendMethodEntries(td, gpa, .{
+        .{ "values", &statics.values },
+        .{ "valueOf", &statics.valueOf },
+    });
 }
 
 /// The 16 enum constants, generated from the canonical `host_enum` registry.

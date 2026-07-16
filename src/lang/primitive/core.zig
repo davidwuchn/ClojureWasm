@@ -1818,6 +1818,47 @@ fn unsupportedHostRefFn(rt: *Runtime, env: *Env, args: []const Value, loc: Sourc
     return error_catalog.raise(.feature_not_supported, loc, .{ .name = name });
 }
 
+/// `(cljw.internal/__dump-host-classes)` — machine-readable dump of every
+/// registered host-class descriptor: one `CLASS <fqcn>` line per rt.types
+/// entry, then `F <fqcn> <field>` / `M <fqcn> <member>` lines. Feeds
+/// `scripts/check_compat_members.sh` (ADR-0174 D9 — the mechanical gate
+/// that keeps data/compat_tiers.yaml member lists honest against the
+/// code) and is a `--list-vars` building block. Line order is map-iteration
+/// order — consumers sort.
+fn dumpDescriptor(w: *std.Io.Writer, name: []const u8, td: *const td_mod.TypeDescriptor) !void {
+    try w.print("CLASS {s}\n", .{name});
+    for (td.static_fields) |sf|
+        try w.print("F {s} {s}\n", .{ name, sf.name });
+    for (td.method_table) |me| {
+        // protocol-extended entries (extend-type at bootstrap/user time) are
+        // NOT host-surface members — the yaml gate must not see them.
+        if (me.protocol_name.len != 0) continue;
+        try w.print("M {s} {s}\n", .{ name, me.method_name });
+    }
+}
+
+fn dumpHostClassesFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = env;
+    try error_catalog.checkArity("__dump-host-classes", args, 0, loc);
+    var aw: std.Io.Writer.Allocating = .init(rt.gpa);
+    defer aw.deinit();
+    var it = rt.types.iterator();
+    while (it.next()) |e| {
+        const td = e.value_ptr.*;
+        if (td.kind != .native) continue; // user deftypes are not the yaml's surface
+        try dumpDescriptor(&aw.writer, e.key_ptr.*, td);
+    }
+    // Per-tag native descriptors (String/Long/… instance methods live here,
+    // not in rt.types) — the yaml's `methods:` lists mix both, so the gate
+    // needs both. Only tags with installed members emit anything.
+    for (rt.native_descriptors) |maybe_td| {
+        const td = maybe_td orelse continue;
+        const fq = td.fqcn orelse continue;
+        try dumpDescriptor(&aw.writer, fq, td);
+    }
+    return string_mod.alloc(rt, aw.writer.buffered());
+}
+
 /// `(enumeration-seq e)` / `(iterator-seq i)` — clojure.core fns that wrap a
 /// `java.util.Enumeration` / `Iterator`. cljw has no such host iteration type
 /// (ADR-0059), so these ship as explicit-error stubs (the allowed transient-stub
@@ -1840,6 +1881,7 @@ fn iteratorSeqFn(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocati
 
 const ENTRIES = [_]Entry{
     .{ .name = "__unsupported-host-ref", .f = &unsupportedHostRefFn },
+    .{ .name = "__dump-host-classes", .f = &dumpHostClassesFn },
     .{ .name = "enumeration-seq", .f = &enumerationSeqFn },
     .{ .name = "iterator-seq", .f = &iteratorSeqFn },
     .{ .name = "hash", .f = &hashFn },

@@ -405,11 +405,44 @@ fn staticFieldValue(rt: *Runtime, sf: *const @import("../../runtime/type_descrip
             .system_in => try @import("../../runtime/io/host_stream.zig").systemStream(rt, 0),
             .system_out => try @import("../../runtime/io/host_stream.zig").systemStream(rt, 1),
             .system_err => try @import("../../runtime/io/host_stream.zig").systemStream(rt, 2),
+            // java.time constants (ADR-0174 D7b): cheap immutable `=`-by-value
+            // time values — a fresh mint per read is faithful (no cache). The
+            // `catch` coerces the constructors' anyerror-inferred sets (via
+            // ensureRegistered's configure callback) into AnalyzeError.
+            .time_instant_epoch => @import("../../runtime/time/instant_value.zig").make(rt, 0, 0) catch |e| return coerceConstErr(e),
+            .time_duration_zero => @import("../../runtime/time/duration_value.zig").make(rt, 0, 0) catch |e| return coerceConstErr(e),
+            .time_local_time_midnight => @import("../../runtime/time/local_time_value.zig").make(rt, 0) catch |e| return coerceConstErr(e),
+            .time_local_time_noon => @import("../../runtime/time/local_time_value.zig").make(rt, 43_200_000_000_000) catch |e| return coerceConstErr(e),
+            .time_local_time_max => @import("../../runtime/time/local_time_value.zig").make(rt, 86_399_999_999_999) catch |e| return coerceConstErr(e),
+            .time_local_date_min => @import("../../runtime/time/local_date_value.zig").make(rt, MIN_EPOCH_DAY) catch |e| return coerceConstErr(e),
+            .time_local_date_max => @import("../../runtime/time/local_date_value.zig").make(rt, MAX_EPOCH_DAY) catch |e| return coerceConstErr(e),
+            .time_local_date_epoch => @import("../../runtime/time/local_date_value.zig").make(rt, 0) catch |e| return coerceConstErr(e),
+            .time_local_date_time_min => @import("../../runtime/time/local_date_time_value.zig").make(rt, MIN_EPOCH_DAY, 0) catch |e| return coerceConstErr(e),
+            .time_local_date_time_max => @import("../../runtime/time/local_date_time_value.zig").make(rt, MAX_EPOCH_DAY, 86_399_999_999_999) catch |e| return coerceConstErr(e),
         },
         .host_enum => |he| try @import("../../runtime/host_enum.zig").singleton(rt, @enumFromInt(he.enum_idx), he.ordinal),
         .math_context => |which| try @import("../../runtime/math_context.zig").singleton(rt, which),
+        // BigDecimal ZERO/ONE/TWO/TEN (ADR-0174 D7): a scale-0 BigDecimal
+        // lifted via the constructor at analyze time.
+        .big_decimal => |i| @import("../../runtime/numeric/big_decimal.zig").allocFromI64Scale(rt, i, 0) catch |e| return coerceConstErr(e),
     };
 }
+
+/// Coerce a constant-constructor's anyerror-inferred failure into the
+/// analyzer's error set: OOM passes through; anything else is an internal
+/// invariant break (the constructors only really allocate).
+fn coerceConstErr(e: anyerror) AnalyzeError {
+    return switch (e) {
+        error.OutOfMemory => error.OutOfMemory,
+        else => error.InternalError,
+    };
+}
+
+/// JVM `LocalDate.MIN` (`-999999999-01-01`) / `LocalDate.MAX`
+/// (`+999999999-12-31`) as epoch days (also LocalDateTime MIN/MAX's date
+/// half). Comptime-folded from the shared civil↔epoch-day SSOT.
+const MIN_EPOCH_DAY: i64 = @import("../../runtime/time/instant.zig").daysFromCivil(-999_999_999, 1, 1);
+const MAX_EPOCH_DAY: i64 = @import("../../runtime/time/instant.zig").daysFromCivil(999_999_999, 12, 31);
 
 /// Build (once, then cache) `clojure.lang.Compiler/specials` — a map whose keys
 /// are cljw's special-form symbols (derived from `SPECIAL_FORMS`, the analyzer's

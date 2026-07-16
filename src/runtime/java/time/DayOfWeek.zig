@@ -64,6 +64,13 @@ fn initDescriptor(td: *type_descriptor.TypeDescriptor, gpa: std.mem.Allocator) a
         entries[i] = .{ .protocol_name = "", .method_name = try gpa.dupe(u8, spec[0]), .method_val = Value.initBuiltinFn(spec[1]) };
     }
     td.method_table = entries;
+    // Uniform enum statics (ADR-0174 D7): generic bodies in host_enum.zig.
+    const statics = host_enum.Statics(.day_of_week);
+    try type_descriptor.appendMethodEntries(td, gpa, .{
+        .{ "values", &statics.values },
+        .{ "valueOf", &statics.valueOf },
+        .{ "of", &statics.of },
+    });
 }
 
 /// The 7 enum constants, generated from the canonical `host_enum` registry.

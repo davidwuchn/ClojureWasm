@@ -76,21 +76,46 @@ fn quote(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anye
     return string_collection.alloc(rt, out.items);
 }
 
-/// Implements `(java.util.regex.Pattern/compile s)` — compile a pattern source
-/// into a regex value. Identical semantics to `clojure.core/re-pattern` (shares
-/// `regex_value.alloc`); an already-compiled regex passes through. JVM ref:
+/// Implements `(java.util.regex.Pattern/compile s)` and the 2-arg flag form
+/// `(… s flags)` — compile a pattern source into a regex value. The 1-arg form
+/// is identical to `clojure.core/re-pattern` (shares `regex_value.alloc`); an
+/// already-compiled regex passes through. The 2-arg form (ADR-0174 D7) honours
+/// the inline-expressible flag subset {CASE_INSENSITIVE 0x02, COMMENTS 0x04,
+/// MULTILINE 0x08, DOTALL 0x20} — the engine's `compile.Flags` are exactly the
+/// leading `(?imsx)` modifiers, so the STORED source stays the original string
+/// and `(str p)` returns it verbatim (JVM `Pattern.toString`). Any other flag
+/// bit raises (cljw's engine has no canonical-equivalence / explicit-unicode
+/// modes — an honest error beats a silently-ignored flag). JVM ref:
 /// java.util.regex.Pattern#compile. cw v1 tier: A.
 fn compile(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
     _ = env;
-    try error_catalog.checkArity("java.util.regex.Pattern/compile", args, 1, loc);
-    if (args[0].tag() == .regex) return args[0];
+    try error_catalog.checkArityRange("java.util.regex.Pattern/compile", args, 1, 2, loc);
+    if (args.len == 1 and args[0].tag() == .regex) return args[0];
     if (args[0].tag() != .string)
         return error_catalog.raise(.type_arg_invalid, loc, .{
             .fn_name = "java.util.regex.Pattern/compile",
             .expected = "string",
             .actual = @tagName(args[0].tag()),
         });
-    return regex_value.alloc(rt, string_collection.asString(args[0]), .{}) catch |err| switch (err) {
+    var flags: compile_mod.Flags = .{};
+    if (args.len == 2) {
+        if (args[1].tag() != .integer)
+            return error_catalog.raise(.type_arg_invalid, loc, .{
+                .fn_name = "java.util.regex.Pattern/compile",
+                .expected = "integer flags",
+                .actual = @tagName(args[1].tag()),
+            });
+        const bits = args[1].asInteger();
+        flags = .{
+            .case_insensitive = bits & 0x02 != 0,
+            .extended = bits & 0x04 != 0, // COMMENTS
+            .multiline = bits & 0x08 != 0,
+            .dotall = bits & 0x20 != 0,
+        };
+        if (bits & ~@as(i64, 0x02 | 0x04 | 0x08 | 0x20) != 0)
+            return error_catalog.raise(.feature_not_supported, loc, .{ .name = "java.util.regex.Pattern/compile flag (only CASE_INSENSITIVE/COMMENTS/MULTILINE/DOTALL are supported)" });
+    }
+    return regex_value.alloc(rt, string_collection.asString(args[0]), flags) catch |err| switch (err) {
         error.OutOfMemory => error.OutOfMemory,
         error.PatternTooLarge => error_catalog.raise(.regex_pattern_too_large, loc, .{}),
         else => error_catalog.raise(.feature_not_supported, loc, .{ .name = "java.util.regex.Pattern/compile (unsupported pattern syntax)" }),

@@ -114,12 +114,20 @@ pub const ___HOST_EXTENSION: host_api.Extension = .{
     .init = &initInstant,
 };
 
+/// `Instant/EPOCH` (ADR-0174 D7b). MIN/MAX are absent by design: their
+/// epoch-second (±31_557_014_167_219_200) exceeds the i64 epoch-ms field —
+/// unrepresentable in this model.
+const instant_static_fields = [_]type_descriptor.TypeDescriptor.StaticField{
+    .{ .name = "EPOCH", .value = .{ .singleton = .time_instant_epoch } },
+};
+
 var descriptor: type_descriptor.TypeDescriptor = .{
     .fqcn = instant_value.FQCN, // "java.time.Instant" — the ONE canonical key (ADR-0174)
     .kind = .native,
     .field_layout = null,
     .protocol_impls = &.{},
     .method_table = &.{},
+    .static_fields = &instant_static_fields,
     .parent = null,
     .meta = .nil_val,
     .temporal_print = .iso_instant,

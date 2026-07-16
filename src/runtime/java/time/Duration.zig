@@ -26,6 +26,9 @@ const Env = @import("../../env.zig").Env;
 const SourceLocation = @import("../../error/info.zig").SourceLocation;
 const error_catalog = @import("../../error/catalog.zig");
 const duration_value = @import("../../time/duration_value.zig");
+const host_instance = @import("../../host_instance.zig");
+const host_enum = @import("../../host_enum.zig");
+const string_collection = @import("../../collection/string.zig");
 
 const NANOS_PER_SEC: i64 = 1_000_000_000;
 
@@ -97,6 +100,48 @@ fn ofDays(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) any
     return duration_value.make(rt, d * 86400, 0);
 }
 
+/// `(java.time.Duration/parse s)` — parse an ISO-8601 duration
+/// (`[-+]P[nD][T[nH][nM][n[.frac]S]]`, JVM `Duration.parse`; the grammar
+/// lives in `duration_value.parseIso`). JVM throws `DateTimeParseException`;
+/// cljw raises the same `inst_string_invalid` the other time parsers use.
+fn parse(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = env;
+    try error_catalog.checkArity("java.time.Duration/parse", args, 1, loc);
+    if (args[0].tag() != .string)
+        return error_catalog.raise(.type_arg_not_string, loc, .{ .fn_name = "java.time.Duration/parse", .actual = @tagName(args[0].tag()) });
+    const s = string_collection.asString(args[0]);
+    const p = duration_value.parseIso(s) catch
+        return error_catalog.raise(.inst_string_invalid, loc, .{ .s = s });
+    return duration_value.make(rt, p.seconds, p.nanos);
+}
+
+const NS_PER_SEC_128: i128 = 1_000_000_000;
+
+/// `(java.time.Duration/of amount unit)` — JVM `Duration.of(long, TemporalUnit)`.
+/// `unit` is a ChronoUnit constant; only the fixed-duration units NANOS..DAYS
+/// (DAYS = 86_400 s) are supported — WEEKS and up raise, mirroring
+/// `Instant.until`'s estimated-duration rejection.
+fn of(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
+    _ = env;
+    try error_catalog.checkArity("java.time.Duration/of", args, 2, loc);
+    const amount = try intArg(args[0], "java.time.Duration/of", loc);
+    if (args[1].tag() != .host_instance)
+        return error_catalog.raise(.type_arg_invalid, loc, .{ .fn_name = "java.time.Duration/of", .expected = "a ChronoUnit", .actual = @tagName(args[1].tag()) });
+    const ord: u8 = @intCast(host_instance.asHostInstance(args[1]).state[0]);
+    const per_unit: i128 = switch (ord) {
+        0 => 1, // NANOS
+        1 => 1_000, // MICROS
+        2 => 1_000_000, // MILLIS
+        3 => NS_PER_SEC_128, // SECONDS
+        4 => 60 * NS_PER_SEC_128, // MINUTES
+        5 => 3_600 * NS_PER_SEC_128, // HOURS
+        6 => 43_200 * NS_PER_SEC_128, // HALF_DAYS
+        7 => 86_400 * NS_PER_SEC_128, // DAYS (fixed 86_400 s)
+        else => return error_catalog.raise(.type_arg_invalid, loc, .{ .fn_name = "java.time.Duration/of", .expected = "a time-based ChronoUnit (NANOS..DAYS)", .actual = host_enum.name(.chrono_unit, ord) }),
+    };
+    return duration_value.makeFromNanos(rt, @as(i128, amount) * per_unit);
+}
+
 fn initDuration(td: *type_descriptor.TypeDescriptor, gpa: std.mem.Allocator) anyerror!void {
     // ADR-0174 merge: ONE descriptor carries the statics AND the instance
     // methods (Duration values point at it). Sentinel-guarded appends keep
@@ -110,6 +155,8 @@ fn initDuration(td: *type_descriptor.TypeDescriptor, gpa: std.mem.Allocator) any
             .{ "ofHours", &ofHours },
             .{ "ofDays", &ofDays },
             .{ "between", &duration_value.betweenFn },
+            .{ "parse", &parse },
+            .{ "of", &of },
         });
     }
     td.temporal_print = .iso_duration;
@@ -122,12 +169,18 @@ pub const ___HOST_EXTENSION: host_api.Extension = .{
     .init = &initDuration,
 };
 
+/// `Duration/ZERO` (ADR-0174 D7b).
+const duration_static_fields = [_]type_descriptor.TypeDescriptor.StaticField{
+    .{ .name = "ZERO", .value = .{ .singleton = .time_duration_zero } },
+};
+
 var descriptor: type_descriptor.TypeDescriptor = .{
     .fqcn = duration_value.FQCN, // "java.time.Duration" — the ONE canonical key (ADR-0174)
     .kind = .native,
     .field_layout = null,
     .protocol_impls = &.{},
     .method_table = &.{},
+    .static_fields = &duration_static_fields,
     .parent = null,
     .meta = .nil_val,
     .temporal_print = .iso_duration,

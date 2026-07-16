@@ -45,7 +45,10 @@ const MS_PER_DAY: i64 = 86_400_000;
 /// LocalDateTime value layer (`local_date_time_value.zig`) reuses it.
 pub fn daysFromCivil(y_in: i64, m: i64, d: i64) i64 {
     const y = y_in - @as(i64, if (m <= 2) 1 else 0);
-    const era = @divFloor(if (y >= 0) y else y - 399, 400);
+    // Hinnant's `(y >= 0 ? y : y-399) / 400` emulates floor division with
+    // C++ TRUNCATING division; Zig's @divFloor does it natively (keeping the
+    // adjustment double-compensated negative years — off by one era).
+    const era = @divFloor(y, 400);
     const yoe = y - era * 400; // [0, 399]
     const doy = @divTrunc(153 * (m + (if (m > 2) @as(i64, -3) else 9)) + 2, 5) + d - 1; // [0, 365]
     const doe = yoe * 365 + @divTrunc(yoe, 4) - @divTrunc(yoe, 100) + doy; // [0, 146096]
@@ -58,7 +61,11 @@ pub const Civil = struct { y: i64, m: i64, d: i64 };
 /// LocalDateTime value layer reuses it.
 pub fn civilFromDays(z_in: i64) Civil {
     const z = z_in + 719468;
-    const era = @divFloor(if (z >= 0) z else z - 146096, 146097);
+    // Same trunc-vs-floor port fix as daysFromCivil: Hinnant's
+    // `(z >= 0 ? z : z-146096) / 146097` assumes truncating division;
+    // with @divFloor the adjustment made every pre-year-0 date decode
+    // one era low (D7b surfaced it via LocalDate/MIN).
+    const era = @divFloor(z, 146097);
     const doe = z - era * 146097; // [0, 146096]
     const yoe = @divTrunc(doe - @divTrunc(doe, 1460) + @divTrunc(doe, 36524) - @divTrunc(doe, 146096), 365); // [0, 399]
     const y = yoe + era * 400;
@@ -325,16 +332,29 @@ const NANO_PER_MINUTE: i64 = 60_000_000_000;
 const NANO_PER_SECOND: i64 = 1_000_000_000;
 
 /// Format `epoch_day` (signed days since 1970-01-01) as the ISO local date
-/// `yyyy-MM-dd` clj's `(str local-date)` emits (4-digit zero-padded year).
-/// `buf` must be ≥ 10 bytes; returns the written slice. Year is assumed
-/// [0, 9999]; clj `LocalDate.of(1,1,1)` → `"0001-01-01"`.
+/// `yyyy-MM-dd` clj's `(str local-date)` emits (4-digit zero-padded year,
+/// prefixed `-` for a negative year and `+` for a year > 9999 — the JVM
+/// `LocalDate.toString` form, so `LocalDate/MIN` → `"-999999999-01-01"`).
+/// `buf` must be ≥ 16 bytes (sign + 9-digit year + `-MM-dd`); returns the
+/// written slice. clj `LocalDate.of(1,1,1)` → `"0001-01-01"`.
 pub fn formatLocalDate(buf: []u8, epoch_day: i64) []const u8 {
     const c = civilFromDays(epoch_day);
+    var len: usize = 0;
+    var y = c.y;
+    if (y < 0) {
+        buf[0] = '-';
+        len = 1;
+        y = -y;
+    } else if (y > 9999) {
+        buf[0] = '+';
+        len = 1;
+    }
     // Zig's `{d:0>N}` zero-pad emits a `+` for SIGNED ints; cast the
-    // (always non-negative) civil fields to unsigned for a clean pad.
-    return std.fmt.bufPrint(buf, "{d:0>4}-{d:0>2}-{d:0>2}", .{
-        @as(u64, @intCast(c.y)), @as(u64, @intCast(c.m)), @as(u64, @intCast(c.d)),
-    }) catch buf[0..0];
+    // (now non-negative) civil fields to unsigned for a clean pad.
+    const body = std.fmt.bufPrint(buf[len..], "{d:0>4}-{d:0>2}-{d:0>2}", .{
+        @as(u64, @intCast(y)), @as(u64, @intCast(c.m)), @as(u64, @intCast(c.d)),
+    }) catch return buf[0..0];
+    return buf[0 .. len + body.len];
 }
 
 /// Format `nano_of_day` (in [0, 86_400_000_000_000)) as the ISO local time
@@ -428,6 +448,26 @@ test "civil round-trip: epoch day 0 = 1970-01-01" {
     try testing.expectEqual(@as(i64, 1), c.d);
 }
 
+test "civil round-trip: proleptic negative years (trunc-vs-floor port fix)" {
+    // -0001-12-31 is the day before 0000-01-01 (ISO proleptic year 0 exists).
+    try testing.expectEqual(daysFromCivil(0, 1, 1) - 1, daysFromCivil(-1, 12, 31));
+    // Round-trips across era boundaries — the @divFloor-vs-trunc port bug
+    // decoded every pre-year-0 date one era low before D7b's fix.
+    const cases = [_]Civil{
+        .{ .y = -1, .m = 12, .d = 31 },
+        .{ .y = -400, .m = 3, .d = 1 },
+        .{ .y = -401, .m = 2, .d = 28 },
+        .{ .y = -999_999_999, .m = 1, .d = 1 },
+        .{ .y = 999_999_999, .m = 12, .d = 31 },
+    };
+    for (cases) |want| {
+        const got = civilFromDays(daysFromCivil(want.y, want.m, want.d));
+        try testing.expectEqual(want.y, got.y);
+        try testing.expectEqual(want.m, got.m);
+        try testing.expectEqual(want.d, got.d);
+    }
+}
+
 test "parse #inst date-only → midnight UTC ms; format round-trips" {
     const ms = try parseInstantMillis("2024-01-01");
     var buf: [40]u8 = undefined;
@@ -467,6 +507,12 @@ test "formatLocalDate: 4-digit zero-padded year (clj str form)" {
     try testing.expectEqualStrings("2024-01-01", formatLocalDate(&buf, daysFromCivil(2024, 1, 1)));
     try testing.expectEqualStrings("2024-12-31", formatLocalDate(&buf, daysFromCivil(2024, 12, 31)));
     try testing.expectEqualStrings("0001-01-01", formatLocalDate(&buf, daysFromCivil(1, 1, 1)));
+    // JVM sign forms: `-` for a negative year, `+` for a year > 9999
+    // (LocalDate/MIN / MAX print exactly like this on the JVM).
+    try testing.expectEqualStrings("-999999999-01-01", formatLocalDate(&buf, daysFromCivil(-999_999_999, 1, 1)));
+    try testing.expectEqualStrings("+999999999-12-31", formatLocalDate(&buf, daysFromCivil(999_999_999, 12, 31)));
+    try testing.expectEqualStrings("+10000-01-01", formatLocalDate(&buf, daysFromCivil(10_000, 1, 1)));
+    try testing.expectEqualStrings("-0001-12-31", formatLocalDate(&buf, daysFromCivil(-1, 12, 31)));
 }
 
 test "formatLocalTime: conditional seconds + variable fraction (clj str form)" {

@@ -161,12 +161,20 @@ pub const ___HOST_EXTENSION: host_api.Extension = .{
     .init = &initLocalDateTime,
 };
 
+/// `LocalDateTime/{MIN,MAX}` (ADR-0174 D7b): LocalDate MIN/MAX combined with
+/// LocalTime MIN/MAX, exactly the JVM composition.
+const local_date_time_static_fields = [_]type_descriptor.TypeDescriptor.StaticField{
+    .{ .name = "MIN", .value = .{ .singleton = .time_local_date_time_min } },
+    .{ .name = "MAX", .value = .{ .singleton = .time_local_date_time_max } },
+};
+
 var descriptor: type_descriptor.TypeDescriptor = .{
     .fqcn = ldt_value.FQCN, // "java.time.LocalDateTime" — the ONE canonical key (ADR-0174)
     .kind = .native,
     .field_layout = null,
     .protocol_impls = &.{},
     .method_table = &.{},
+    .static_fields = &local_date_time_static_fields,
     .parent = null,
     .meta = .nil_val,
     .temporal_print = .iso_local_date_time,
