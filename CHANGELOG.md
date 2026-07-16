@@ -5,6 +5,35 @@ All notable changes to ClojureWasm are documented here. The format follows
 [SemVer](https://semver.org/). SemVer compatibility guarantees start at the
 first stable `1.0.0` tag; pre-1.0 `alpha` / `rc` tags may still change surfaces.
 
+## [1.3.1] - 2026-07-16
+
+Patch release: Clojure 1.12 method values (`(every? Character/isWhitespace
+s)` — the brew-user report), and defrecords gain their mainline
+ns-qualified identity (`#user.Pt{…}` printing, reader round-trip, portable
+record hash).
+
+### Added
+
+- **Method values (Clojure 1.12, static form)** — a bare `Class/method`
+  in value position is the static method as a first-class fn:
+  `(every? Character/isWhitespace s)`, `(map Character/toUpperCase "ab")`,
+  `(sort-by Math/abs …)` all work as in mainline. (The 1.12
+  `Class/.instanceMethod` / `Class/new` forms are tracked for a future
+  release.)
+- **Record literals read back** — `#user.Pt{:x 1, :y 2}` constructs the
+  record through the reader (mainline parity; extra keys land in the
+  extmap), so the printed form round-trips.
+- **`scripts/nrepl_send.py`** — a dependency-free nREPL debug client
+  (eval / describe / completions against a running server).
+
+### Changed
+
+- **Records print ns-qualified** — `#user.Pt{:x 1, :y 2}` (was `#Pt{…}`),
+  matching mainline and making the print form readable.
+- **Record hash values are portable** — `(hash (->Pt 1 2))` returns real
+  Clojure's value (the qualified-name type-hash XOR the map hash),
+  completing the 1.3.0 portable-hash work for records.
+
 ## [1.3.0] - 2026-07-16
 
 Minor release: mainline-parity deep-dive — the `rt` namespace is gone
