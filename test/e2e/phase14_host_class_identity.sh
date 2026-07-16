@@ -71,7 +71,7 @@ assert_eq 'date_gettime'   "$(run '(.getTime (java.util.Date. 42))')" '42'
 assert_eq 'instant_millis' "$(run '(.toEpochMilli (java.time.Instant/ofEpochMilli 7))')" '7'
 
 # --- statics still dispatch (registry keys flipped with the fqcns) ---
-assert_eq 'system_getprop'  "$(run '(System/getProperty "os.name")' )" '"Mac OS X"'
+assert_eq 'system_getprop'  "$(run '(string? (System/getProperty "os.name"))' )" 'true'
 assert_eq 'thread_static'   "$(run '(pos? (System/currentTimeMillis))')" 'true'
 
 # --- Var shadowing still wins over class resolution ---

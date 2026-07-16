@@ -345,10 +345,6 @@ run_step "debt_id_refs"         "bash scripts/check_debt_id_refs.sh --gate"
 # cannot drift or accept-without-reason. Rule: accepted_divergences.md.
 run_step "accepted_divergences" "bash scripts/check_accepted_divergences.sh --gate"
 
-# Host-class member truth (ADR-0174 D9): compat_tiers.yaml per-class member
-# lists must match the registered descriptors (both directions) — the gate
-# that keeps the one-time refresh from re-rotting. Rule: F-013 clause 3.
-run_step "compat_members" "bash scripts/check_compat_members.sh"
 
 # Formatting gate — mirrors CI's ci_gate.sh step (1/2) so a non-canonical
 # file fails LOCALLY at smoke time, not 15 minutes later in CI (2026-07-02:
@@ -401,6 +397,12 @@ run_step "size_claims"          "bash scripts/binary_size_report.sh --check zig-
 # drift. See .claude/rules/clj_diff_sweep.md.
 run_step "lazy_ns_replay"      "bash scripts/check_lazy_ns_replay.sh"
 run_step "corpus_regression"   "bash scripts/check_corpus_regression.sh"
+
+# Host-class member truth (ADR-0174 D9): compat_tiers.yaml per-class member
+# lists must match the registered descriptors (both directions). Runs AFTER
+# build_cljw so the dump probes the FRESH binary — on a stale checkout the
+# pre-build zig-out binary lacks __dump-host-classes (the ubuntunote miss).
+run_step "compat_members" "bash scripts/check_compat_members.sh"
 
 run_step "e2e_phase2_exit"     "bash test/e2e/phase2_exit.sh"
 run_step "e2e_phase3_cli"      "bash test/e2e/phase3_cli.sh"

@@ -28,7 +28,7 @@ EOF
 }
 
 # --- getProperties: map-shaped, carries the static set + overlay ---
-assert_eq 'getprops_osname' "$(run '(println (get (System/getProperties) "os.name"))')" 'Mac OS X'
+assert_eq 'getprops_osname' "$(run '(println (= (get (System/getProperties) "os.name") (System/getProperty "os.name")))')" 'true'
 assert_eq 'getprops_static' "$(run '(println (get (System/getProperties) "file.separator"))')" '/'
 assert_eq 'getprops_overlay' "$(run '(System/setProperty "cljw.test.k" "v1")
 (println (get (System/getProperties) "cljw.test.k"))')" 'v1'

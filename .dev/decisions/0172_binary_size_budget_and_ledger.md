@@ -406,6 +406,17 @@ dispositions grounded, platform binding declared, peer number measured).
 
 ## Revision history
 
+- **2026-07-17 (ADR-0174 feature growth, conscious)**: the host-class
+  identity & member-surface campaign grew the binary macOS
+  6,974,584 → 7,073,240 B (+98.7 KB — Thread lifecycle worker + stdio
+  streams + Duration ISO parser + member tables) and Linux x86_64
+  ≈ 7.5 → 8.01 MB (+~0.5 MB; Linux codegen amplifies the same additions).
+  Legitimate F-013/F-014 growth, within the 8.8 MB ceiling on both.
+  README's claim moved 7.1 → "about 7.5 MB" so the ±10% `size_claims`
+  gate covers BOTH platforms (the Linux gate run compares the same
+  README number against its own binary — the 2026-07-17 ubuntunote
+  failure class). Linux at 8.01 MB is ~91% of ceiling — the next
+  size-relevant feature should re-measure Linux first.
 - **2026-07-16 (L2 complete + governance hardening)**: ADR-0173 C5′-b landed
   compressed `.clj` sources (7,384,984 → **7,073,080 B**; the ~450 KB
   startup gpa copy of raw text is also gone — `rt.source_resolver`
