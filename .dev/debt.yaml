@@ -49,59 +49,6 @@ active:
       lastModified/renameTo/createNewFile set, Locale getters, Matcher
       region/replace family).
     last_reviewed: "2026-07-17"
-  - id: "D-563"
-    status: |-
-      open (2026-07-16, the D-562 inventory's enumerated residuals — each
-      verified against real clj this cycle, deferred with a named reason):
-      (a) DISCHARGED 2026-07-16 — defrecord ns-qualified identity landed:
-      TypeDescriptor carries defining_ns + a precomputed record_type_hash;
-      records print `#user.Pt{…}`, the READER constructs them back
-      (`#ns.Name{…}` → recordFromMap), and record hasheq matches clj
-      (type-hash XOR mapHasheq; corpus records_method_values.txt,
-      AD-035 retired as parity). deftype `(class …)` naming stays simple
-      (AD-003/044 scope — revisit only with a consumer).
-      (a2) DISCHARGED 2026-07-17 — all three 1.12 method-value forms now
-      carried: statics (2026-07-16), `Class/.instanceMethod` (instance
-      method as receiver-first fn — the ADR-0174 merged tables made
-      cljw's method ABI already receiver-first, so `method_val` IS the
-      fn; native-backed classes fall back to the tag-keyed descriptor)
-      and `Class/new` (the `<init>` entry as a fn). analyzeSymbol lifts
-      the value; call heads fall through to analyzeCall. e2e: 6 cases on
-      phase14_host_class_identity (map String/.length, Thread/new,
-      StringBuilder chain, Date/new higher-order), clj-1.12-oracle-matched.
-      (b) DISCHARGED 2026-07-17 — Vars carry :line/:column/:file (analyzeDef
-      mints them under user ^meta/:doc, compiler-wins on collision per clj
-      oracle) AND def meta now RIDES THE AOT WIRE: DefNode.meta_expr (the
-      merged map, wholesale-quoted = cljw's static-data meta semantics) is
-      evaluated at def time by both backends — tree_walk evalDef + the new
-      op_var_meta opcode (envelope v9). This also FIXED the pre-existing
-      user-AOT docstring loss ((:doc (meta #'f)) was nil in `cljw build`
-      artifacts while lazy-source bootstrap kept it). clojure.test's
-      ` (file:line)` suffix restored from the deftest var's meta — AD-041
-      NARROWED (deftest-line vs clj's assertion-stack-line residual).
-      e2e phase15_var_source_meta (8) + diff case + the narrowed pin.
-      Residual DISCHARGED 2026-07-17: defmacro's def_node now mints the
-      same wire-riding meta_expr (doc/arglists/line/column/file; macro
-      docstrings survive AOT artifacts — verified round-trip).
-      (c) **var-existence gaps mainline completion surfaced**:
-      `default-data-readers` DISCHARGED 2026-07-17: the {'inst 'uuid}
-      map lands at core end (corpus data_readers.txt 3/3); VALUES are
-      call-time-resolving fns, not clj's reader VARS — eager
-      requiring-resolve at def time NameErrors inside the bootstrap AOT
-      (bundled-.clj loads are strict at cache_gen) and would cost
-      startup; consumers call the values, so the fn-vs-Var class is the
-      one nuance (revisit only if a real lib var?-checks them).
-      `defstruct`/`create-struct`/`struct-map`/`accessor` DE-SCOPED
-      2026-07-17 (decision): legacy structmaps, superseded by records
-      since clj 1.2 and absent from the verified-projects/conformance
-      corpus — implement only when a real consumer pulls them
-      (`defmacro`-as-var + `definline` landed 2026-07-16).
-      (d) temporal/host-enum compare MAGNITUDES stay sign-based —
-      recorded in the narrowed AD-043 (converge only if a real consumer
-      diffs on them).
-    category: "clj-parity"
-    barrier: "none — bounded follow-ups; (a)/(b) are the valuable ones"
-    last_reviewed: "2026-07-16"
   - id: "D-561"
     status: |-
       open (2026-07-15, Character/* completion cycle). `Character/getName` is
@@ -2439,6 +2386,59 @@ standing:
     barrier: "open after the D-440 arc completes (R4 + R5 must first rewrite the bulk of 'Phase N' citations to gap-area terms). Premature adoption = ~70 dangling citations with no 1:1 redirect. Trigger: D-440 R4/R5 done + a user nod to re-architect the planning axis (it is depth-4, the project's organizing metaphor)."
     last_reviewed: "2026-06-15"
 discharged:
+  - id: "D-563"
+    status: |-
+      DISCHARGED 2026-07-17 (all sub-items resolved: a/a2/b/c landed, d = AD-043). ORIGINAL: open (2026-07-16, the D-562 inventory's enumerated residuals — each
+      verified against real clj this cycle, deferred with a named reason):
+      (a) DISCHARGED 2026-07-16 — defrecord ns-qualified identity landed:
+      TypeDescriptor carries defining_ns + a precomputed record_type_hash;
+      records print `#user.Pt{…}`, the READER constructs them back
+      (`#ns.Name{…}` → recordFromMap), and record hasheq matches clj
+      (type-hash XOR mapHasheq; corpus records_method_values.txt,
+      AD-035 retired as parity). deftype `(class …)` naming stays simple
+      (AD-003/044 scope — revisit only with a consumer).
+      (a2) DISCHARGED 2026-07-17 — all three 1.12 method-value forms now
+      carried: statics (2026-07-16), `Class/.instanceMethod` (instance
+      method as receiver-first fn — the ADR-0174 merged tables made
+      cljw's method ABI already receiver-first, so `method_val` IS the
+      fn; native-backed classes fall back to the tag-keyed descriptor)
+      and `Class/new` (the `<init>` entry as a fn). analyzeSymbol lifts
+      the value; call heads fall through to analyzeCall. e2e: 6 cases on
+      phase14_host_class_identity (map String/.length, Thread/new,
+      StringBuilder chain, Date/new higher-order), clj-1.12-oracle-matched.
+      (b) DISCHARGED 2026-07-17 — Vars carry :line/:column/:file (analyzeDef
+      mints them under user ^meta/:doc, compiler-wins on collision per clj
+      oracle) AND def meta now RIDES THE AOT WIRE: DefNode.meta_expr (the
+      merged map, wholesale-quoted = cljw's static-data meta semantics) is
+      evaluated at def time by both backends — tree_walk evalDef + the new
+      op_var_meta opcode (envelope v9). This also FIXED the pre-existing
+      user-AOT docstring loss ((:doc (meta #'f)) was nil in `cljw build`
+      artifacts while lazy-source bootstrap kept it). clojure.test's
+      ` (file:line)` suffix restored from the deftest var's meta — AD-041
+      NARROWED (deftest-line vs clj's assertion-stack-line residual).
+      e2e phase15_var_source_meta (8) + diff case + the narrowed pin.
+      Residual DISCHARGED 2026-07-17: defmacro's def_node now mints the
+      same wire-riding meta_expr (doc/arglists/line/column/file; macro
+      docstrings survive AOT artifacts — verified round-trip).
+      (c) **var-existence gaps mainline completion surfaced**:
+      `default-data-readers` DISCHARGED 2026-07-17: the {'inst 'uuid}
+      map lands at core end (corpus data_readers.txt 3/3); VALUES are
+      call-time-resolving fns, not clj's reader VARS — eager
+      requiring-resolve at def time NameErrors inside the bootstrap AOT
+      (bundled-.clj loads are strict at cache_gen) and would cost
+      startup; consumers call the values, so the fn-vs-Var class is the
+      one nuance (revisit only if a real lib var?-checks them).
+      `defstruct`/`create-struct`/`struct-map`/`accessor` DE-SCOPED
+      2026-07-17 (decision): legacy structmaps, superseded by records
+      since clj 1.2 and absent from the verified-projects/conformance
+      corpus — implement only when a real consumer pulls them
+      (`defmacro`-as-var + `definline` landed 2026-07-16).
+      (d) temporal/host-enum compare MAGNITUDES stay sign-based —
+      recorded in the narrowed AD-043 (converge only if a real consumer
+      diffs on them).
+    category: "clj-parity"
+    barrier: "none — bounded follow-ups; (a)/(b) are the valuable ones"
+    last_reviewed: "2026-07-16"
   - id: "D-559"
     status: "DISCHARGED 2026-07-13 (ADR-0150 amendment 1). The nested-cross-agent `@memcpy arguments alias` corruption (exit 134, ~3-7% under alloc-torture + the D-418 window injection). ROOT CAUSE = the D-556 residual, precisely: the alloc-prologue safepoint park (gc_heap.alloc) fired BEFORE the `fabrication_depth` gate, so a peer's stopWorld parked a worker MID-BRACKET — its in-progress builder nodes (raw *TailNode/*HamtNode/*Cons in unrooted Zig locals) were invisible to the collect and swept; the resumed builder's memcpy aliased recycled memory. FIX (JVM-GCLocker shape; web-grounded vs Boehm per-thread-scan, rejected as wasm-unportable — DA fork in private/notes/D559-da-critique.md): the park HONORS the fabrication region (skip while depth>0; park at the next NON-bracket safepoint — bracket-boundary parks are unsound at both entry and exit, see ADR-0150 am1). HARDENING (DA Alt-1 items, all landed): `fabrication_depth` moved to root_set.zig; `safepoint.park` + `enterBlocked` assert depth==0 (chokepoint for all 6 park sites + the enterBlocked side door); `safepoint.max_stopworld_wait_ns` makes the fold-chain rendezvous delay observable; mark_sweep's false 'bracket-covered' comment rewritten. Accepted cost = D-560 (rendezvous delay unbounded in fold-chain length; discharge shape = the publish-roots flip, trigger-gated). VERIFIED: pre-fix ~3-7% crash → post-fix 100/100 clean (50 orig + 50 heavy); gc_torture 81/81 incl. the new deterministic `alloc-agent/nested_xagent` guard; clj oracle confirms [1 2 2]."
     category: "concurrency"
