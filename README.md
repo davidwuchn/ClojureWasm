@@ -33,8 +33,10 @@ still use what other languages have already built.
 
 ## Features
 
-- **Small and quick to start** — about 3.8 MB, starting in ~5 ms, which suits
-  short-lived, start-and-stop workloads (CLI tools, serverless, scripts).
+- **Small and quick to start** — one static binary of about 9.5 MB with the
+  Wasm JIT engine included (for scale: babashka's native binary is ~71 MB),
+  starting in ~5 ms, which suits short-lived, start-and-stop workloads
+  (CLI tools, serverless, scripts).
 - **A lot of everyday Clojure runs** — `clojure.core` plus a growing set of
   standard-library namespaces (`clojure.string` / `set` / `walk` / `zip` /
   `edn` / `data.json` / `data.csv` / `math` / `pprint` / `test` / `tools.cli` …).

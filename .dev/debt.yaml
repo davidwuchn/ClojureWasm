@@ -286,6 +286,12 @@ active:
       the BytecodeChunk shape; cw v0 / wasmtime for in-place/position-independent chunk
       formats. Watch the JIT (ADR-0200) may operate on a different layer — do not
       over-invest in a format it would replace.
+      ADR-0172 L2 fold-in (2026-07-16): the binary-SIZE lever on the same bytes is
+      co-decided in THIS redesign, not built separately — eager core region stays
+      uncompressed for zero-copy; lazy lib regions + the raw .clj sources become
+      flate-compressed (measured 698->112KB / 451->125KB, 0.46ms full-blob
+      decompress); varint operands + cross-region constant-pool dedup evaluated in
+      the same pass (compaction shrinks with NO decompression copy). est -0.9-1.1MB.
     last_reviewed: "2026-07-02"
   - id: "D-513"
     status: "DRAIN 2 (2026-07-07, finding 3's non-core scope PARTIALLY closed): extract_core_meta.sh extended to the EAGER stdlib namespaces (clojure.string/walk/edn/core.protocols/java.io) — core_meta.clj now fills 291 vars (was 241; when-let resolve guard per row). (:doc (meta #'clojure.string/blank?)) etc. now populated; doc/find-doc cover the eager stdlib. LAZY bundled ns (set/zip/pprint/test/math/contrib) stay doc-less — their vars are not interned when the eager core_meta runs; extending needs a lazy-region post-load meta hook (noted in the script header). The 84KB blob also stress-confirms the D-558 builder-persist fix. DRAIN 2026-07-07 (finding 2 CLOSED): clojure.repl is now BUNDLED (src/lang/clj/clojure/repl.clj, require-on-demand, variant-2 attribution) — doc (clj-identical print shape) / find-doc / apropos / dir + dir-fn / demunge / root-cause, all riding the D-305 :doc/:arglists metadata that unblocked this; source/source-fn THROW with a clear explanation (per-var source text is not retained under the AOT bytecode bootstrap — an honest not-available, not a silent nil). e2e phase16_clojure_repl (8 cases, registered in run_all). REMAINING: finding 1 (core.reducers — needs reduce->CollReduce wiring or a native impl; low value, transducers supersede) + finding 3's non-core scope (stdlib/contrib ns docstrings beyond clojure.core — extract_core_meta.sh currently covers core only; extendable the same way if demanded). OPEN (2026-06-24). Missing stdlib/contrib namespaces + the var-docstring gap, found in the 2026-06-24 deeper-namespace sweep. Lower priority — each needs foundation/scope work, not a clean drop-in."
@@ -1253,25 +1259,26 @@ standing:
       (D-516). Cross-ref ADR-0162, F-004 (NaN-box absolute payload), F-006.
     last_reviewed: "2026-06-24"
   - id: "D-515"
-    status: "open (recorded 2026-06-24, user-directed) — BINARY-SIZE axis, DISTINCT from the D-450 speed campaign. cljw ReleaseSafe is 8.8MB (incl. a ~1.4MB embedded bytecode bootstrap blob). Single-binary (F-013 / ADR-0158) is an inviolable invariant — NO side-product files; any size win MUST stay within one static binary. Size grows with feature coverage (unavoidable) but the growth should be deliberately managed. NOT the current focus (speed is) — debt-ized so it is touchable on demand. Cross-ref: the eager-comprehensiveness-vs-size/startup standing tension (this file, search 'Eager comprehensiveness') + D-140 (binary_size_bytes 1.2x bench anchor) + D-450 cold-start (a smaller binary also cuts the ~3.4ms exec/linker/page-fault residual — the two axes partly co-move)."
+    status: "open (re-narrowed 2026-07-16 — ADR-0172 is now the BINARY-SIZE SSOT: measured composition, per-component budget, and the L1-L10 lever ledger with dispositions all live THERE; this row is the standing drain anchor). Measured 2026-07-16: 9,469,816 B (macOS arm64 ReleaseSafe -Dwasm stripped, v1.3.1) = code 6.9MB (zwasm 3.0 / cljw 2.6 / std 1.2) + embedded data 1.6MB (blob 698KB + .clj 451KB + UCD ~207KB) + unwind 0.75MB. Governance landed with the ADR: run_all `size_claims` step (README drift >10% fails) + per-release CHANGELOG size record. Single-binary (ADR-0158 / F-013 clause 4) stays inviolable. Cross-ref: D-277 (standing tension), D-517 (L2 embedded-data lever folds into its format redesign), D-450 (co-moving cold-start axis)."
     category: "perf"
     barrier: |-
-      Standing axis — does not close as a single unit. Pick up on demand (NOT
-      auto-drained). When taken up, FIRST web-search Zig size-optimization
-      knowledge (the user mandated this) — candidate levers to evaluate:
-        - `-Doptimize=ReleaseSmall` for the deploy artifact (vs ReleaseSafe);
-          measure the size/speed/safety trade (ReleaseSafe is the gate config).
-        - `strip=true` / `--gc-sections` / dead-code elimination of unreached
-          surfaces; section ordering for startup locality (overlaps D-450).
-        - compressing the embedded bootstrap blob (decompress at startup — costs
-          cold-start time, so co-decide with D-450; OR a heap-snapshot may change
-          the blob entirely, see the cold-start ADR).
-        - auditing what the ~29 eager-bootstrap libs cost in rodata vs how often
-          they are used (overlaps the lazy-namespace lever in the cold-start ADR).
-      Method: measure binary_size_bytes before/after each lever; never trade the
-      single-binary invariant or correctness for size. Record findings as O-NNN /
-      a `.dev/optimizations.md` row if a lever lands.
-    last_reviewed: "2026-06-24"
+      Standing axis — does not close as a single unit. Next actionable levers
+      per the ADR-0172 ledger (dispositions + measurements there):
+        - L1 `unwind_tables = .none` on release builds: -739KB measured, cost
+          probed ~zero (stripped builds already print no native trace). ADOPT —
+          a one-line build.zig cycle with a smoke + panic-behaviour re-probe.
+        - L2 embedded-data compression + format compaction: folded INTO D-517's
+          envelope redesign (eager core zero-copy uncompressed; lazy regions +
+          .clj flate; varint/constant-pool compaction same pass). est -0.9-1.1MB.
+        - L6 monomorphization dedup (std.sort clones 0.22MB etc.): opportunistic.
+        - L7 UCD two-stage packing (~-0.1MB): only when touching the generator.
+        - L5 zwasm-side campaign (691KB arm64 emitter, unused component-model
+          surfaces): FILE via CODEV; defends the 4.0MB zwasm budget line.
+      Method: scripts/binary_size_report.sh before/after each lever (reference
+      platform = macOS arm64 ReleaseSafe -Dwasm stripped); component budget
+      breach → attribute → lever or a conscious ADR-0172 revision, never silent.
+      Record landed levers as O-NNN rows.
+    last_reviewed: "2026-07-16"
   - id: "D-451"
     status: "Ratio canonical-invariant guard (ADR-0149 / O-046). The two-tier Ratio (small inline-i64 / big BigInt) is CANONICAL — small IFF reduced numer+denom both fit i64 — so a small `1/2` and a big `1/2` never coexist, which is what keeps the rt-free `equal.zig::ratioKeyEq` + `.ratio` hash arms correct WITHOUT an rt param (small-vs-big never equal). INVARIANT: every Ratio constructor MUST funnel through `allocFromI64Pair` / `allocFromManagedPair` (the canonicalizing allocators, which collapse a reduced i64-fitting pair to small). A constructor that emits a big ratio whose value fits i64 silently breaks ratio map keys. Guarded by: ratio.zig unit tests (small/big/collapse) + `test/diff/clj_corpus/ratio_small_canonical.txt` (cross-rep eq/hash/map-key pins)."
     category: "perf"
@@ -2310,7 +2317,7 @@ standing:
       ADR-0101, F-010, F-012.
     last_reviewed: "2026-06-06"
   - id: "D-277"
-    status: "now/standing-concern (F-013 clause 4, declared 2026-06-07) — comprehensive (網羅) up-front coverage tends toward 'model/load everything from the start', which grows single-binary size + cold-start time. Under-considered in the original plan; single-binary is the shipped form, and both dynamic loading and split binaries are currently undesirable. NOT solved pre-emptively — recorded as the standing tension to revisit IF the mission cold-start/size target is threatened."
+    status: "now/standing-concern (F-013 clause 4, declared 2026-06-07; RECONCILED 2026-07-16 by ADR-0172) — comprehensive (網羅) up-front coverage tends toward 'model/load everything from the start', which grows single-binary size + cold-start time. The startup half of the tension was discharged by ADR-0163 lazy-ns loading (cold floor 9.4->4.3ms); the SIZE half now has a mechanism instead of vigilance: ADR-0172's measured composition + per-component budgets (cljw-text 3.5MB / embedded-data line) + the run_all `size_claims` gate. The tension itself REMAINS standing — F-013/F-014 comprehensiveness keeps consuming those budget lines — but a breach now localizes (binary_size_report.sh) and forces a conscious ADR-0172 revision, never a silent drift. Single-binary stays the shipped form; dynamic loading / split binaries stay undesirable."
     category: "scope"
     barrier: |-
       **Eager comprehensiveness vs single-binary size/startup budget.** F-013's
@@ -2324,7 +2331,7 @@ standing:
       at which point the options (tiered bundling / lazy impl init / a non-single
       distribution) are weighed. Until then it is a watch, not a build. Cross-ref
       F-013 clause 4, F-010 (perf substrate), ADR-0102, the bench_regression gate.
-    last_reviewed: "2026-06-07"
+    last_reviewed: "2026-07-16"
   - id: "D-290"
     status: "deferred (Phase 16 owner) - opened 2026-06-07 by ADR-0105. cljw byte-array is a type-erased []Value (one Value per byte). A packed []u8 representation (a distinct ByteArray heap kind) is the likely finished form ONCE Phase 16 (Wasm linear memory / binary I/O / digest / charset) needs a contiguous byte buffer to @memcpy against - the Devil-advocate fork recommended it. DEFERRED per F-003 (decision-deferral on structural plans): whether byte-array is the Phase-16 binary vehicle or a dedicated WasmMemory/ByteBuffer host object is (JVM: byte-array != java.nio.ByteBuffer) is an unmade Phase-16 structural decision. Seizing packed bytes now risks building byte-only packing Phase 16 unwinds. The current []Value byte-array is fully F-011-equivalent (byte WRAP gives [1 2 44]); packing is perf/representation only."
     category: "interop"

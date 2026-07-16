@@ -380,11 +380,15 @@ export CLJW_SKIP_BUILD=1
 # Loud guard for the silent perf cliff (D-385): the ~3200-spawn e2e suite
 # runs ~100x slower on a Debug binary (~1.7s vs ~5ms cold-start) with NO
 # failure. Refuse to enter e2e unless the shared binary is actually
-# optimised. Size is the deterministic, load-independent signal here:
-# ReleaseSafe ≈ 3.5 MB vs Debug ≈ 12.8 MB. If a future ReleaseSafe binary
-# ever exceeds 8 MB, replace this heuristic with a semantic build-mode
-# check (e.g. a `cljw --build-mode` introspection).
+# optimised, via the `cljw --version` build-mode banner (semantic check;
+# the original size-threshold heuristic was retired — ReleaseSafe grew
+# past it, see ADR-0172 for the live size ledger).
 run_step "assert_e2e_releasesafe" 'mode=$(zig-out/bin/cljw --version 2>/dev/null | sed -nE "s/.*\((.*)\)/\1/p"); { [ -n "$mode" ] && [ "$mode" != Debug ]; } || { echo "    e2e binary build mode=${mode:-unknown} (CLJW_OPT='"$CLJW_OPT"') — Debug/unknown, not optimised. e2e would run ~100x slow; build_cljw must run every pass (NO_RESUME_STEPS). Refusing."; exit 1; }; echo "    e2e binary build mode: $mode"'
+
+# README's headline size claim must track the built binary (ADR-0172): the
+# 2026-07 incident — README said "about 3.8 MB" while the shipped binary
+# was 9.5 MB — is the vigilance failure this step closes structurally.
+run_step "size_claims"          "bash scripts/binary_size_report.sh --check zig-out/bin/cljw"
 
 # clj-diff corpus regression (cljw-only replay of golden `;;=> …` pairs —
 # no clj/network). Makes a "X/Y landed" discharge claim mechanically

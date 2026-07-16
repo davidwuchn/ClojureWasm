@@ -11,7 +11,8 @@
   brew-verified). CHANGELOG is the release-history SSOT.
 - **First task on resume MUST be**: self-select from the live
   `.dev/debt.yaml` `active:` list, easiest-first. Fresh well-scoped
-  rows from this session: **D-563** (a2: Clojure 1.12
+  rows: **D-515 L1** (`unwind_tables=.none`, -739KB measured, one
+  build.zig line + smoke — see ADR-0172), **D-563** (a2: Clojure 1.12
   `Class/.instanceMethod` + `Class/new` method-value forms; (b) Var
   :line/:file source meta → clojure.test `(file:line)` suffix + AD-041
   dissolution; (c) default-data-readers / defstruct), **D-561**
@@ -42,9 +43,15 @@
   AD-006/011/014/035/038/049 retired as parity, AD-009/043 narrowed),
   Clojure 1.12 **static method values**, and defrecord **ns-qualified
   identity** (print/reader-round-trip/hash parity; D-563(a) done).
+- **ADR-0172** (2026-07-16, user-directed): binary-size SSOT — measured
+  composition (9.47MB = zwasm 3.0 / cljw 2.6 / std 1.2 / data 1.6 /
+  unwind 0.75), per-component budget, L1-L10 lever ledger, run_all
+  `size_claims` gate (README drift >10% fails); D-515 re-narrowed,
+  L2 folded into D-517, README/ROADMAP stale figures corrected.
 - Debug tooling: `scripts/nrepl_send.py` (nREPL client),
   `scripts/clj_diff_sweep.sh` + corpora (now incl. `character.txt`,
-  `hash_compare.txt`, `records_method_values.txt`).
+  `hash_compare.txt`, `records_method_values.txt`),
+  `scripts/binary_size_report.sh` (size report + claims check).
 - nREPL is single-connection (serial accept, D-117(a)): a second
   client waits while an editor is attached — probe via a fresh server,
   not the editor's port.

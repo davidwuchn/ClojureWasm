@@ -70,7 +70,10 @@ per CLAUDE.md `§ When the active work unit completes`.
 **A Clojure runtime that does not depend on the JVM, with first-class edge
 and Wasm support, implemented in Zig 0.16.0.**
 
-- **No JVM**: target binary ≤ 5 MB, cold start ≤ 10 ms
+- **No JVM**: single static binary within the ADR-0172 per-component size
+  budget (measured 9.5 MB at v1.3.1, derived ceiling ≈ 12 MB → ≈ 10 MB after
+  queued levers; the pre-engine "≤ 5 MB" target was retired when the embedded
+  Wasm JIT engine — ~3 MB of code by itself, F-001 — landed), cold start ≤ 10 ms
 - **Edge execution**: runs on Cloudflare Workers / Fastly / Fermyon Spin
   and other Wasm Component Model hosts
 - **Language semantics compatible**: preserve Clojure JVM's *observable*
@@ -1577,6 +1580,10 @@ goes in just before Phase 4. Used during Phases 4-7.
 | lazy_chain        | 16 ms         | 10 ms   |
 | Idle memory       | < 25 MB       | < 15 MB |
 | Wasm cold start   | < 50 ms       | < 20 ms |
+
+The binary-size row is a v0.1.0-era figure that predates the embedded zwasm
+JIT engine (~3 MB of code by itself); the live size budget is ADR-0172's
+per-component ledger (measured 9.5 MB at v1.3.1).
 
 ### 10.4 Fused reduce via structural metadata
 
