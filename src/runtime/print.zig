@@ -1264,22 +1264,26 @@ fn printTypedInstance(w: *Writer, v: Value) anyerror!void {
         }
     }
     const fqcn = inst.descriptor.fqcn orelse "<anonymous>";
-    // A record prints map-style `#Name{:k v, …}` from its declared field
-    // layout (D-190 / ADR-0068) + any extmap entries (D-086 / ADR-0154). The
-    // SIMPLE name (no clj `user.` ns prefix) is the accepted divergence AD-035
-    // (cljw carries only a simple `fqcn`, the AD-003 no-JVM-Class surface).
+    // A record prints map-style `#ns.Name{:k v, …}` from its declared field
+    // layout (D-190 / ADR-0068) + any extmap entries (D-086 / ADR-0154),
+    // ns-QUALIFIED like clj (the reader constructs the record back from
+    // this form). The ns-less form appears only for a descriptor with no
+    // defining ns (bare unit-test registration).
     if (inst.descriptor.kind == .defrecord) {
         if (inst.descriptor.field_layout) |layout| {
             const fs = inst.fields();
-            try w.print("#{s}{{", .{fqcn});
+            if (inst.descriptor.defining_ns) |dns| {
+                try w.print("#{s}.{s}{{", .{ dns, fqcn });
+            } else {
+                try w.print("#{s}{{", .{fqcn});
+            }
             for (layout, 0..) |fe, i| {
                 if (i > 0) try w.writeAll(", ");
                 try w.print(":{s} ", .{fe.name});
                 try printValue(w, fs[fe.index]);
             }
             // D-086 / ADR-0154: non-declared keys (extmap) print after the
-            // declared fields — `#R{:x 1, :y 2, :z 9}`. (The `#R` vs clj's
-            // `#user.R` ns prefix is the accepted divergence AD-035.)
+            // declared fields — `#user.R{:x 1, :y 2, :z 9}`.
             if (!inst.extmap.isNil()) {
                 var ctx = ExtmapPrintCtx{ .w = w, .printed = layout.len };
                 try map_collection.forEachEntry(inst.extmap, &ctx, ExtmapPrintCtx.cb);

@@ -698,6 +698,14 @@ fn analyzeSymbol(
                 // per-Runtime value at analyze time (handled inside the helper).
                 return try makeConstant(arena, try staticFieldValue(env.rt, sf), form);
             }
+            // Clojure 1.12 METHOD VALUES: a bare `Class/method` in value
+            // position is the static method as a first-class fn —
+            // `(every? Character/isWhitespace s)`. The host surface's
+            // method_val already IS a callable builtin Value, so the
+            // symbol lifts to that constant directly.
+            if (td.lookupMethod(null, sym.name)) |me| {
+                return try makeConstant(arena, me.method_val, form);
+            }
         }
         // ADR-0113: an unresolved `clojure.lang.*` / `clojure.asm.*` qualified
         // reference is a JVM-internal class cljw has no value for (ADR-0059) —
@@ -1245,6 +1253,27 @@ fn vectorFormToValue(rt: *Runtime, env: *Env, items: []const Form) AnalyzeError!
 /// `read-string` with no reader for a tag throws, NOT a placeholder value).
 fn liftTagged(rt: *Runtime, env: *Env, t: TaggedForm, loc: SourceLocation) AnalyzeError!Value {
     const inner = try formToValue(rt, env, t.form.*);
+
+    // clj reads `#ns.Name{…}` as a RECORD constructor (the qualified
+    // record print form round-trips through the reader). A dotted tag is
+    // resolved against rt.types by its simple name; the descriptor must
+    // be a defrecord whose defining ns matches the tag's prefix.
+    if (t.tag.ns == null) {
+        if (std.mem.findScalarLast(u8, t.tag.name, '.')) |dot| {
+            const simple = t.tag.name[dot + 1 ..];
+            if (rt.types.get(simple)) |td| {
+                const matches_ns = td.defining_ns != null and
+                    std.mem.eql(u8, td.defining_ns.?, t.tag.name[0..dot]);
+                const map_arg = inner.tag() == .array_map or inner.tag() == .hash_map;
+                if (td.kind == .defrecord and matches_ns and map_arg) {
+                    return type_descriptor.recordFromMap(rt, td, inner) catch |e| switch (e) {
+                        error.OutOfMemory => error.OutOfMemory,
+                        else => error_catalog.raise(.reader_tag_unknown, loc, .{ .tag = symFullName(t.tag) }),
+                    };
+                }
+            }
+        }
+    }
 
     if (rt.data_readers_var) |dr_opaque| {
         const dr_var: *const env_mod.Var = @ptrCast(@alignCast(dr_opaque));

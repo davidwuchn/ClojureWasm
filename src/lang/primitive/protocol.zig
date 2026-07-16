@@ -27,7 +27,6 @@ const protocol_mod = @import("../../runtime/protocol.zig");
 const symbol_mod = @import("../../runtime/symbol.zig");
 const string_mod = @import("../../runtime/collection/string.zig");
 const vector_mod = @import("../../runtime/collection/vector.zig");
-const map_mod = @import("../../runtime/collection/map.zig");
 const td_mod = @import("../../runtime/type_descriptor.zig");
 const keyword_mod = @import("../../runtime/keyword.zig");
 const host_interface = @import("../../runtime/host_interface.zig");
@@ -335,8 +334,8 @@ pub fn nativeType(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocat
 /// JVM reference: clojure.core/defrecord in clojure/core_deftype.clj L387.
 /// cw v1 tier: A (row 7.4 cycle 2 — descriptor kind landed).
 pub fn defrecordPrim(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
-    _ = env;
-    return registerTypePrim(rt, args, loc, .defrecord, "__defrecord!");
+    const dns: ?[]const u8 = if (env.current_ns) |ns| ns.name else null;
+    return registerTypePrim(rt, dns, args, loc, .defrecord, "__defrecord!");
 }
 
 /// `(rt/__map->record TypeRef m)` — clj's `Record/create`: build a defrecord
@@ -357,27 +356,8 @@ pub fn mapToRecordPrim(rt: *Runtime, env: *Env, args: []const Value, loc: Source
     if (args[0].tag() != .type_descriptor)
         return error_catalog.raise(.type_arg_invalid, loc, .{ .fn_name = "map->record", .expected = "record type", .actual = @tagName(args[0].tag()) });
     const td = td_mod.asTypeDescriptorRef(args[0]);
-    const m = args[1];
-    const layout = td.field_layout orelse &[_]td_mod.TypeDescriptor.FieldEntry{};
-    // Declared field values, by keyword (nil when `m` lacks the key / is nil).
-    const fields = try rt.gpa.alloc(Value, layout.len);
-    defer rt.gpa.free(fields);
-    for (layout, 0..) |fe, i| {
-        const kw = try keyword_mod.intern(rt, null, fe.name);
-        fields[i] = if (!m.isNil() and try map_mod.contains(m, kw)) try map_mod.get(m, kw) else Value.nil_val;
-    }
-    // extmap = `m` minus the declared keys, normalized to nil when empty so the
-    // result `=`/hashes as a plain (no-extras) record would.
-    var ext: Value = Value.nil_val;
-    if (!m.isNil()) {
-        ext = m;
-        for (layout) |fe| {
-            const kw = try keyword_mod.intern(rt, null, fe.name);
-            ext = try map_mod.dissoc(rt, ext, kw);
-        }
-        if (map_mod.count(ext) == 0) ext = Value.nil_val;
-    }
-    return td_mod.allocInstanceFull(rt, td, fields, Value.nil_val, ext);
+    // Construction core shared with the record-literal reader (D-563(a)).
+    return td_mod.recordFromMap(rt, td, args[1]);
 }
 
 /// `(rt/__deftype! 'Name ['field-syms...])` — register a fresh
@@ -389,8 +369,8 @@ pub fn mapToRecordPrim(rt: *Runtime, env: *Env, args: []const Value, loc: Source
 /// Implements clojure.core/deftype registration (JVM reference:
 /// clojure.core/deftype in clojure/core_deftype.clj). cw v1 tier: A.
 pub fn deftypePrim(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLocation) anyerror!Value {
-    _ = env;
-    return registerTypePrim(rt, args, loc, .deftype, "__deftype!");
+    const dns: ?[]const u8 = if (env.current_ns) |ns| ns.name else null;
+    return registerTypePrim(rt, dns, args, loc, .deftype, "__deftype!");
 }
 
 /// Shared registration body for `__defrecord!` / `__deftype!` — the two
@@ -400,6 +380,7 @@ pub fn deftypePrim(rt: *Runtime, env: *Env, args: []const Value, loc: SourceLoca
 /// + downstream `extend-type` resolve `Name` to a usable Value.
 fn registerTypePrim(
     rt: *Runtime,
+    defining_ns: ?[]const u8,
     args: []const Value,
     loc: SourceLocation,
     kind: td_mod.TypeKind,
@@ -462,7 +443,7 @@ fn registerTypePrim(
         }
     }
 
-    const td = try td_mod.registerType(rt, name_sym.name, field_names, field_volatile, kind);
+    const td = try td_mod.registerType(rt, name_sym.name, defining_ns, field_names, field_volatile, kind);
     return td_mod.makeTypeDescriptorRef(rt, td);
 }
 

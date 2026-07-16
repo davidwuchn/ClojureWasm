@@ -28,14 +28,18 @@ active:
     status: |-
       open (2026-07-16, the D-562 inventory's enumerated residuals — each
       verified against real clj this cycle, deferred with a named reason):
-      (a) **defrecord ns-qualified identity** — clj prints `#user.Pt{…}`
-      (readable, reader-constructible) and hashes records as
-      (ns-qualified-name-hash XOR map-hasheq); cljw's descriptor carries
-      only the simple name, so print shows `#Pt{…}` (AD-035) and record
-      hasheq seeds on the per-run descriptor pointer (AD-009 residual).
-      Discharge = store the defining ns on the deftype/defrecord
-      TypeDescriptor, print qualified, hash per clj's formula — one
-      descriptor change unlocks both.
+      (a) DISCHARGED 2026-07-16 — defrecord ns-qualified identity landed:
+      TypeDescriptor carries defining_ns + a precomputed record_type_hash;
+      records print `#user.Pt{…}`, the READER constructs them back
+      (`#ns.Name{…}` → recordFromMap), and record hasheq matches clj
+      (type-hash XOR mapHasheq; corpus records_method_values.txt,
+      AD-035 retired as parity). deftype `(class …)` naming stays simple
+      (AD-003/044 scope — revisit only with a consumer).
+      (a2) NEW: Clojure 1.12 METHOD VALUES — the static form
+      (`(every? Character/isWhitespace s)`, brew-user report 2026-07-16)
+      landed via the analyzer's Java-surface value-position branch; the
+      `Class/.instanceMethod` and `Class/new` 1.12 forms are NOT yet
+      carried (implement when a consumer appears; same branch extends).
       (b) **Var source meta** — clj vars carry :line/:file/:column from
       the compiler; cljw def sites know their SourceLocation but drop it.
       Adding it converges `(meta #'x)` and clojure.test's

@@ -24,6 +24,7 @@ const Runtime = @import("runtime.zig").Runtime;
 const tag_ops = @import("gc/tag_ops.zig");
 const gc_heap_mod = @import("gc/gc_heap.zig");
 const mark_sweep = @import("gc/mark_sweep.zig");
+const hash_mod = @import("hash.zig");
 
 /// Discriminates `TypeDescriptor`'s origin so dispatch can fast-path
 /// the common cases. `native` covers the cw primitive types (String,
@@ -63,6 +64,16 @@ pub const TemporalPrint = enum {
 /// `rt.gpa` by the deftype / defrecord analyzer.
 pub const TypeDescriptor = struct {
     fqcn: ?[]const u8,
+    /// The defining namespace of a deftype/defrecord (clj's user types are
+    /// ns-qualified: `user.Pt`) — drives the qualified record print
+    /// (`#user.Pt{…}`), the record-literal reader, and the record hasheq.
+    /// Null for host surfaces / reify. gpa-owned (duped at registerType).
+    defining_ns: ?[]const u8 = null,
+    /// Precomputed clj record type-hash: the hasheq of the qualified-name
+    /// symbol (`'user.Pt`), XORed with the map hash in the record hasheq
+    /// (kept here so the rt-free hash path needs no allocation). 0 when
+    /// `defining_ns` is null.
+    record_type_hash: u32 = 0,
     kind: TypeKind,
     /// Field name → slot index, in declaration order. `null` for
     /// `reify_anon` (which has no positional field layout).
@@ -599,9 +610,38 @@ pub fn finaliseReifiedInstance(gc_ptr: *anyopaque, header: *HeapHeader) void {
 /// neutrality), differing only in the `kind` argument. Since ADR-0066
 /// both `deftype` and `defrecord` are macros emitting their respective
 /// `rt/__…!` registration call (no analyzer Node fork, no backend op).
+/// Build a defrecord instance from map `m` — clj's `Record/create`:
+/// declared fields pulled by keyword (nil when absent), every remaining
+/// key held in the extmap (nil when empty, so the result `=`/hashes as a
+/// plain record). Shared by the `__map->record` primitive (the generated
+/// `map->Name` factory) and the `#ns.Name{…}` record-literal reader.
+pub fn recordFromMap(rt: *Runtime, td: *const TypeDescriptor, m: Value) !Value {
+    const keyword_mod = @import("keyword.zig");
+    const map_mod = @import("collection/map.zig");
+    const layout = td.field_layout orelse &[_]TypeDescriptor.FieldEntry{};
+    const fields = try rt.gpa.alloc(Value, layout.len);
+    defer rt.gpa.free(fields);
+    for (layout, 0..) |fe, i| {
+        const kw = try keyword_mod.intern(rt, null, fe.name);
+        fields[i] = if (!m.isNil() and try map_mod.contains(m, kw)) try map_mod.get(m, kw) else Value.nil_val;
+    }
+    var ext: Value = Value.nil_val;
+    if (!m.isNil()) {
+        ext = m;
+        for (layout) |fe| {
+            const kw = try keyword_mod.intern(rt, null, fe.name);
+            ext = try map_mod.dissoc(rt, ext, kw);
+        }
+        if (map_mod.count(ext) == 0) ext = Value.nil_val;
+    }
+    return allocInstanceFull(rt, td, fields, Value.nil_val, ext);
+}
+
 pub fn registerType(
     rt: *Runtime,
     name: []const u8,
+    /// The defining namespace's name (null in ns-less unit-test contexts).
+    defining_ns: ?[]const u8,
     field_names: []const []const u8,
     /// Per-field `^:volatile-mutable` flag (D-444 / ADR-0152), aligned with
     /// `field_names`. Empty slice = all plain (the defrecord path + any deftype
@@ -623,8 +663,20 @@ pub fn registerType(
     const td = try rt.gpa.create(TypeDescriptor);
     errdefer rt.gpa.destroy(td);
     const fqcn = try rt.gpa.dupe(u8, name);
+    var ns_dup: ?[]const u8 = null;
+    var type_hash: u32 = 0;
+    if (defining_ns) |dns| {
+        ns_dup = try rt.gpa.dupe(u8, dns);
+        // clj's record type-hash = (hash 'ns.Name) — the qualified-name
+        // symbol hasheq, precomputed once so hashing stays alloc-free.
+        const qualified = try std.fmt.allocPrint(rt.gpa, "{s}.{s}", .{ dns, name });
+        defer rt.gpa.free(qualified);
+        type_hash = hash_mod.hashCombine(hash_mod.hashUnencodedChars(qualified), 0);
+    }
     td.* = .{
         .fqcn = fqcn,
+        .defining_ns = ns_dup,
+        .record_type_hash = type_hash,
         .kind = kind,
         .field_layout = layout,
         .protocol_impls = &.{},
@@ -640,6 +692,7 @@ pub fn registerType(
             rt.gpa.free(old_layout);
         }
         if (old.value.fqcn) |o_n| rt.gpa.free(o_n);
+        if (old.value.defining_ns) |o_ns| rt.gpa.free(o_ns);
         // Row 7.7 cycle 5: free the old TD's `method_table` slice and
         // each entry's `method_name` dup (populated by `extend-type`
         // between the prior `registerType` and now). Mirrors the

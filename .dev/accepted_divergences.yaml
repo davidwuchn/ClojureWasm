@@ -105,8 +105,8 @@ accepted:
     derives_from: "F-005 (numeric tower: auto-promote on overflow is the chosen cljw surface)"
     pin: "none — clj diverges (throws) by design; cljw's promote result is pinned by the D-165/overflow cycle's e2e (campaign C7, next session)"
   - id: "AD-009"
-    summary: "cljw carries ONE hash system: `(hash x)` (hasheq) is clj-PORTABLE for value types (2026-07-16 leaf-formula alignment), and `.hashCode` / format `%h` DELEGATE to it — where clj/JVM has a SECOND, Java-side `Object.hashCode` system (`(.hashCode \"abc\")` → 96354 ≠ `(hash \"abc\")` → 74834163) that cljw does not reproduce. Residual hasheq divergences: defrecord/deftype instances (per-run descriptor seed) and >i64 ratio/BigDecimal components."
-    example: '(hash "abc") => 74834163 BOTH ; (hash :user/k) / (hash 1/2) / (hash 1.5M) / (hash [1 2]) all match clj (corpus hash_compare.txt) ; (.hashCode "abc") => cljw 74834163 (= hash) / clj 96354 (Java String.hashCode) ; (hash (->Pt 1 2)) => cljw per-run / clj -1763326040'
+    summary: "cljw carries ONE hash system: `(hash x)` (hasheq) is clj-PORTABLE for value types incl. defrecords (2026-07-16 alignment), and `.hashCode` / format `%h` DELEGATE to it — where clj/JVM has a SECOND, Java-side `Object.hashCode` system (`(.hashCode \"abc\")` → 96354 ≠ `(hash \"abc\")` → 74834163) that cljw does not reproduce. Residual hasheq divergences: >i64 ratio/BigDecimal components; deftype stays identity-based."
+    example: '(hash "abc") => 74834163 BOTH ; (hash :user/k) / (hash 1/2) / (hash 1.5M) / (hash [1 2]) all match clj (corpus hash_compare.txt) ; (.hashCode "abc") => cljw 74834163 (= hash) / clj 96354 (Java String.hashCode) ; (hash (->Pt 1 2)) => -1763326040 BOTH (records joined 2026-07-16)'
     why: |-
       The 2026-07-16 D-562 sweep aligned every leaf hasheq formula with clj:
       strings (Murmur3.hashInt over Java String.hashCode), keywords/symbols
@@ -120,11 +120,13 @@ accepted:
       JVM's SECOND hash system — `Object.hashCode` (Java 31-fold String
       hash, per-class formulas, identity hashes) — `(.hashCode x)` and
       format `%h`/`%H` delegate to the single hasheq (D-207/D-216).
-      Residual hasheq gaps: defrecord/deftype hasheq seeds on the per-run
-      descriptor pointer (clj XORs the ns-qualified record-name hash — the
-      AD-035 ns-qualification residual would unlock parity), and ratio /
-      BigDecimal components beyond i64 keep the cljw-native managed hash.
-    derives_from: "ADR-0059 (no-JVM: no second Object.hashCode system, no identity hashes) + F-011 (the observable `(hash x)` values now MATCH clj for data; the single-hash delegation is the internal-representation freedom) + AD-028 (the mapHash/mapHasheq sibling) + AD-035 (the record-name residual)."
+      Residual hasheq gaps: ratio / BigDecimal components beyond i64 keep
+      the cljw-native managed hash, and a bare-registered descriptor with
+      no defining ns (unit-test contexts) keeps the descriptor-pointer
+      seed. defrecord instances joined parity 2026-07-16 (the D-563(a)
+      ns-qualification: type-hash XOR mapHasheq, corpus
+      records_method_values.txt).
+    derives_from: "ADR-0059 (no-JVM: no second Object.hashCode system, no identity hashes) + F-011 (the observable `(hash x)` values now MATCH clj for data; the single-hash delegation is the internal-representation freedom) + AD-028 (the mapHash/mapHasheq sibling)."
     pin: "test/diff/clj_corpus/hash_compare.txt — 30+ `(hash …)` golden values locked against real clj across every aligned type; test/diff/clj_corpus/object_methods.txt — `(= (.hashCode \"abc\") (hash \"abc\"))` → true (single-system delegation locked); test/e2e/phase14_format.sh — `%h` lowercase-hex rendering."
   - id: "AD-010"
     summary: "a Namespace value prints as `#object[Namespace \"<name>\"]` (no JVM class FQN, no `0xADDR` identity hash)"
@@ -511,24 +513,6 @@ accepted:
       locks. See ADR-0152 (the conscious election + the DA's seq_cst analysis).
     derives_from: "ADR-0152 (uniform acquire/release volatile-grade ordering) — JMM volatile = seq_cst across volatile accesses; cljw's acquire/release omits the IRIW cross-cell total order. Substrate: atom.zig/volatile.zig/iref.zig/agent.zig + the D-444 deftype field path."
     pin: "test/e2e/phase14_deftype_mutable.sh — the :volatile-mutable field increments correctly (the by-construction half: the field IS atomic acquire/release; the IRIW gap itself is non-deterministic + untestable)"
-  - id: "AD-035"
-    summary: "A defrecord prints with its SIMPLE name (`#R{:x 1, :y 2}`), not clj's namespace-qualified `#user.R{:x 1, :y 2}`."
-    example: '(pr-str (->R 1 2)) => cljw "#R{:x 1, :y 2}" / clj "#user.R{:x 1, :y 2}" ; with extras: cljw "#R{:x 1, :y 2, :z 9}" / clj "#user.R{:x 1, :y 2, :z 9}"'
-    why: |-
-      cljw registers a defrecord/deftype by its SIMPLE name (the descriptor's
-      `fqcn` is `R`, not `user.R`) — the same no-JVM-Class simple-name surface
-      AD-003 records for `(class x)`. clj prints a record reader-tag qualified by
-      its defining namespace because the JVM record class IS `user.R`; cljw has
-      no defining-ns on the descriptor (ADR-0059, no JVM Class hierarchy), so it
-      prints the simple name it actually carries. The record CONTENT (declared
-      fields + extmap entries, in declared-then-extmap order) is byte-identical
-      to clj modulo this prefix — verified across assoc/dissoc/get/keys/vals/
-      count/seq/merge/select-keys/find/update/assoc-in/reduce-kv (D-086). Adding
-      the ns prefix would require threading a defining-ns through every record
-      descriptor purely for the print fiction, contradicting the AD-003 simple-
-      name policy for no behavioural gain.
-    derives_from: "ADR-0059 (no-JVM Class hierarchy) + AD-003 (simple class name, not FQCN); no_jvm_specific_assumption.md. Records carry only a simple `fqcn`, so the printer emits `#<simple>{…}`."
-    pin: "test/e2e/phase9_record_extmap.sh — record_extmap_print locks cljw's `#R{:x 1, :y 2, :z 9}` (simple name, no `user.` prefix)"
   - id: "AD-036"
     summary: "The 2-arg array ctors `(byte-array size n)` / `(short-array size n)` / `(char-array size n)` FILL with a number init; clj throws (`IllegalArgumentException`, 'Don't know how to create ISeq from: java.lang.Long') because the JVM `Numbers` overload for those element types has no number-fill branch."
     example: "(vec (byte-array 3 65)) => cljw [65 65 65] / clj THROWS ; (int (aget (char-array 3 65) 0)) => cljw 65 / clj THROWS ; matching cases agree: (vec (int-array 5 7)) => [7 7 7 7 7], (vec (byte-array 3 [1 2])) => [1 2 0]"

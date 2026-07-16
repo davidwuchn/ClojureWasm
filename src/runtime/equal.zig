@@ -803,11 +803,56 @@ pub fn valueHash(v: Value) u32 {
     };
 }
 
-/// Content hash of a defrecord instance: seed with the descriptor pointer
-/// (so distinct record types with equal fields hash apart) then fold each
-/// field through `valueHash`. Partner of `typedInstanceKeyEq`.
+/// The hasheq a field-name KEYWORD would carry, computed from the name
+/// alone (no interner access — this path is rt-free): the Symbol formula
+/// (hashCombine over hashUnencodedChars) + Keyword's golden-ratio offset.
+fn keywordNameHasheq(name: []const u8) u32 {
+    return hash.hashCombine(hash.hashUnencodedChars(name), 0) +% 0x9e3779b9;
+}
+
+const RecordExtmapFold = struct {
+    acc: u32 = 0,
+    n: u32 = 0,
+
+    fn cb(self: *RecordExtmapFold, k: Value, v: Value) anyerror!void {
+        self.acc +%= map.entryHash(k, v);
+        self.n += 1;
+    }
+};
+
+/// Content hash of a defrecord instance — clj's generated `hasheq`:
+/// `(bit-xor <type-hash> (APersistentMap/mapHasheq record))`, where
+/// type-hash is the qualified-name symbol hasheq (precomputed on the
+/// descriptor) and the map half folds declared fields + extmap entries
+/// through the SAME per-entry formula real maps use — so
+/// `(hash (->Pt 1 2))` matches real clj. A descriptor with no defining
+/// ns (bare unit-test registration) keeps the descriptor-pointer seed
+/// (distinct types with equal fields still hash apart). Partner of
+/// `typedInstanceKeyEq`.
 fn typedInstanceHash(inst: *const td_mod.TypedInstance) u32 {
     const fields = inst.fields();
+    if (inst.descriptor.kind == .defrecord and inst.descriptor.defining_ns != null) {
+        if (inst.descriptor.field_layout) |layout| {
+            var acc: u32 = 0;
+            var n: u32 = 0;
+            for (layout) |fe| {
+                const kh = keywordNameHasheq(fe.name);
+                const eh = hash.mixCollHash((1 *% 31 +% kh) *% 31 +% valueHash(fields[fe.index]), 2);
+                acc +%= eh;
+                n += 1;
+            }
+            if (!inst.extmap.isNil()) {
+                var fold = RecordExtmapFold{};
+                map.forEachEntry(inst.extmap, &fold, RecordExtmapFold.cb) catch {
+                    // rt-free walk over a realized map cannot fail; keep the
+                    // partial fold if it somehow does.
+                };
+                acc +%= fold.acc;
+                n += fold.n;
+            }
+            return inst.descriptor.record_type_hash ^ hash.mixCollHash(acc, n);
+        }
+    }
     var h: u32 = @truncate(@intFromPtr(inst.descriptor));
     for (fields) |fv| {
         h = h *% 31 +% valueHash(fv);

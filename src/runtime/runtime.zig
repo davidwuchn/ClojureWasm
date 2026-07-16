@@ -740,6 +740,7 @@ pub const Runtime = struct {
                 self.gpa.free(layout);
             }
             if (td.fqcn) |n| self.gpa.free(n);
+            if (td.defining_ns) |n| self.gpa.free(n);
             // Row 7.7 cycle 5: user `(extend-type X P (m …))` populates
             // `method_table` via `__extend-type!` on `rt.gc.infra`
             // (same backing as gpa per F-006 / GcHeap), so free both

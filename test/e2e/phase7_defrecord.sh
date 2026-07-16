@@ -287,7 +287,7 @@ EOF
 ) || fail "case29: non-zero exit ($got)"
 assert_eq 'defrecord_protocol_method_keyword_field' "$(last_line "$got")" '16'
 
-# --- Case 30: a record prints map-style #Name{:k v} (D-190 / ADR-0068) ---
+# --- Case 30: a record prints map-style, ns-QUALIFIED like clj (D-563(a)) ---
 # The {:k v} map shape is the fix (was #Pt[1 2]); the ns-prefix (#user.Pt)
 # is deferred to the ns surface (D-058/079).
 got=$("$BIN" - <<'EOF' 2>/dev/null
@@ -295,7 +295,7 @@ got=$("$BIN" - <<'EOF' 2>/dev/null
 (prn (->Pt 1 2))
 EOF
 ) || fail "case30: non-zero exit ($got)"
-assert_eq 'defrecord_print_map_style' "$(last_line "$got")" '#Pt{:x 1, :y 2}'
+assert_eq 'defrecord_print_map_style' "$(last_line "$got")" '#user.Pt{:x 1, :y 2}'
 
 # --- Case 31 (AD-048): (str record) renders the CONTENT form, not clj's
 # Object.toString identity form (`user.Pt@<hash>`). clj's str of a record is the
@@ -307,6 +307,6 @@ got=$("$BIN" - <<'EOF' 2>/dev/null
 (prn (str (->Pt 1 2)))
 EOF
 ) || fail "case31: non-zero exit ($got)"
-assert_eq 'defrecord_str_content_form' "$(last_line "$got")" '"#Pt{:x 1, :y 2}"'
+assert_eq 'defrecord_str_content_form' "$(last_line "$got")" '"#user.Pt{:x 1, :y 2}"'
 
 echo "OK — phase7_defrecord smoke (31 cases) green"

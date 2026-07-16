@@ -1419,7 +1419,7 @@ test "every wire ValueTag has BOTH a write and a read arm (symmetry gate)" {
             .fn_val => try tree_walk.allocFunctionFromSerialized(&rt, 0, &[_]tree_walk.SerializedMethod{}, null),
             .type_descriptor => blk: {
                 const td_mod = @import("../../runtime/type_descriptor.zig");
-                const td = try td_mod.registerType(&rt, "SymGateType", &.{}, &.{}, .deftype);
+                const td = try td_mod.registerType(&rt, "SymGateType", null, &.{}, &.{}, .deftype);
                 break :blk try td_mod.makeTypeDescriptorRef(&rt, td);
             },
         };
@@ -1455,7 +1455,7 @@ test "type_descriptor constant round-trips by name (ADR-0034 am5; D-452)" {
     const type_descriptor = @import("../../runtime/type_descriptor.zig");
     // The defining chunk has run by load time → the type is registered. Mirror
     // that here by registering BEFORE deserialize.
-    const td = try type_descriptor.registerType(&rt, "ZipLoc", &.{}, &.{}, .defrecord);
+    const td = try type_descriptor.registerType(&rt, "ZipLoc", null, &.{}, &.{}, .defrecord);
     const ref = try type_descriptor.makeTypeDescriptorRef(&rt, td);
 
     const consts = [_]Value{ Value.initInteger(1), ref };
@@ -1575,7 +1575,7 @@ test "chunk completeness gate: every side-table + entry field round-trips (D-365
     // A registered host class so the static-dispatch descriptor re-resolves at
     // deserialize (resolveJavaSurface(rt, env, fqcn) returns this rt.types entry;
     // freeChunk does NOT free `descriptor`, which rt.types owns → no double-free).
-    const int_td = try type_descriptor.registerType(&rt, "java.lang.Integer", &.{}, &.{}, .native);
+    const int_td = try type_descriptor.registerType(&rt, "java.lang.Integer", null, &.{}, &.{}, .native);
 
     const call_sites = [_]CallSiteEntry{
         // instance dispatch (descriptor null, field_only false)

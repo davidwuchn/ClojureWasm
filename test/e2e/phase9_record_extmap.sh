@@ -5,7 +5,7 @@
 # record is held in an extmap (clj parity), so the record stays a record and
 # every IPersistentMap op (assoc / dissoc / get / contains? / keys / vals /
 # count / seq / = / hash / map->R) honours the extra keys. Layer 2 (e2e CLI).
-# The `#R{…}` print form omits clj's `user.` ns prefix (D-058/D-079, separate).
+# The `#user.R{…}` print form is ns-qualified like clj (D-563(a)).
 
 set -euo pipefail
 cd "$(dirname "$0")/../.."
@@ -64,13 +64,13 @@ got="$("$BIN" "$WORK/dis.clj" 2>&1 | grep '^OK' || true)"
 [[ "$got" == "OK record-extmap-dissoc" ]] || fail "dissoc: got '$("$BIN" "$WORK/dis.clj" 2>&1 | tail -4)'"
 echo "PASS record_extmap_dissoc"
 
-# --- print: extmap entries after declared fields (cljw `#R{…}`, no ns prefix) ---
+# --- print: extmap entries after declared fields (`#user.R{…}`) ---
 cat > "$WORK/pr.clj" <<'EOF'
 (defrecord R [x y])
 (pr (assoc (->R 1 2) :z 9))
 EOF
 got="$("$BIN" "$WORK/pr.clj" 2>&1)"
-[[ "$got" == '#R{:x 1, :y 2, :z 9}' ]] || fail "print: got '$got'"
+[[ "$got" == '#user.R{:x 1, :y 2, :z 9}' ]] || fail "print: got '$got'"
 echo "PASS record_extmap_print"
 
 # --- meta survives an extmap assoc; extmap survives with-meta ---

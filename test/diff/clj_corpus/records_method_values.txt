@@ -1,0 +1,52 @@
+(every? Character/isWhitespace "   ")
+;;=> true
+(every? Character/isWhitespace " a ")
+;;=> false
+(map Character/toUpperCase "ab")
+;;=> (\A \B)
+(map Character/isDigit "a1")
+;;=> (false true)
+((juxt Math/abs) -5)
+;;=> [5]
+(Math/abs -5)
+;;=> 5
+(sort-by Math/abs [-3 1 -2])
+;;=> (1 -2 -3)
+(filter Character/isLetter "a1b2")
+;;=> (\a \b)
+(do (defrecord Pt [x y]) (pr-str (->Pt 1 2)))
+;;=> "#user.Pt{:x 1, :y 2}"
+(do (defrecord Pt [x y]) (hash (->Pt 1 2)))
+;;=> -1763326040
+(do (defrecord Pt [x y]) (pr-str (assoc (->Pt 1 2) :z 9)))
+;;=> "#user.Pt{:x 1, :y 2, :z 9}"
+(do (defrecord Pt [x y]) (= (->Pt 1 2) (read-string "#user.Pt{:x 1, :y 2}")))
+;;=> true
+(do (defrecord Pt [x y]) (:x (read-string "#user.Pt{:x 7, :y 2}")))
+;;=> 7
+(do (defrecord Pt [x y]) (hash (assoc (->Pt 1 2) :z 9)))
+;;=> -1759466269
+(map Long/parseLong ["1" "22"])
+;;=> (1 22)
+(map Integer/parseInt ["7" "8"])
+;;=> (7 8)
+(map Double/parseDouble ["1.5" "2.5"])
+;;=> (1.5 2.5)
+(map String/valueOf [1 true \a])
+;;=> ("1" "true" "a")
+(map Math/sqrt [4.0 9.0])
+;;=> (2.0 3.0)
+(map Math/floor [1.7 2.3])
+;;=> (1.0 2.0)
+(map Boolean/parseBoolean ["true" "false"])
+;;=> (true false)
+(map Long/toBinaryString [5 7])
+;;=> ("101" "111")
+(map Character/getNumericValue "7a")
+;;=> (7 10)
+(sort-by Math/abs [-3 1 -2])
+;;=> (1 -2 -3)
+(remove Character/isWhitespace "a b c")
+;;=> (\a \b \c)
+(map Long/toHexString [255 16])
+;;=> ("ff" "10")
