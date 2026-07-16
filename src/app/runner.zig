@@ -89,7 +89,11 @@ pub fn runSource(
     // `rt.source_registry`, which `bootstrap.loadCore` populates per
     // file. `bootstrap_ctx` remains the fallback for the first-file
     // case where the registry has not yet been populated.
-    const bootstrap_ctx = error_print.SourceContext{ .file = bootstrap.SOURCE_LABEL, .text = bootstrap.CORE_SOURCE };
+    // C5'-b (ADR-0173): bootstrap sources ship flate-compressed; the REAL
+    // text resolves through rt.source_resolver (registry fallback) at render
+    // time, so this eager fallback ctx carries no source bytes (empty text →
+    // the renderer's extractLine misses → registry path serves the line).
+    const bootstrap_ctx = error_print.SourceContext{ .file = bootstrap.SOURCE_LABEL, .text = "" };
     // ADR-0056 Cycle 2b: restore clojure.core from the embedded AOT bytecode
     // envelope instead of parsing+analyzing+evaluating core.clj. The edge
     // cold-start win; the source path stays in `setupCore` for the build

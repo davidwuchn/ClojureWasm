@@ -78,8 +78,8 @@ Sizes cluster into three capability layers:
   honest claims are the two above: smallest Clojure-family binary, and a
   full-runtime-plus-Wasm-engine inside the 5-20 MB single-binary layer.
 - cljw's number is moving fast: the v1.3.1 row above is the SHIPPED release;
-  the working tree already measures **7.50 MB** (unwind-table strip, envelope
-  v7 constant pool, and zwasm v2.2.1's JIT-thunk collapse — a same-day
-  cross-repo campaign result), with embedded-data compression still queued
-  (**~7.1-7.2 MB** projected). The README figure is gate-checked against
+  the working tree already measures **7.07 MB** (−25% in one campaign:
+  unwind-table strip, envelope-v7 constant pool + flate-compressed lazy
+  regions and `.clj` sources, and zwasm v2.2.1's JIT-thunk collapse — a
+  same-day cross-repo result). The README figure is gate-checked against
   every release build, so it cannot silently rot.

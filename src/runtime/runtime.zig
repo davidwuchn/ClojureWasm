@@ -318,6 +318,11 @@ pub const Runtime = struct {
     /// `info.location.file` here for the per-file source-line preview.
     /// Keys + SourceContext field slices are gpa-owned.
     source_registry: std.StringHashMapUnmanaged(SourceContext) = .empty,
+    /// C5'-b (ADR-0173): registry-miss fallback installed by the bootstrap
+    /// layer — decompresses a bundled `.clj`'s text on demand (the shipped
+    /// binary carries flate sources, not raw). Vtable-style injection keeps
+    /// the zone direction legal (lang installs into runtime).
+    source_resolver: ?*const fn (*Runtime, []const u8) ?SourceContext = null,
 
     /// Swappable resolver fn for `require`. ADR-0035 D8. `null` at
     /// `init`; bootstrap installs the embedded resolver. Phase 12+
@@ -815,7 +820,9 @@ pub const Runtime = struct {
     /// not registered (= renderer should fall back to its default
     /// SourceContext).
     pub fn lookupSource(self: *Runtime, label: []const u8) ?SourceContext {
-        return self.source_registry.get(label);
+        if (self.source_registry.get(label)) |ctx| return ctx;
+        if (self.source_resolver) |resolve| return resolve(self, label);
+        return null;
     }
 };
 

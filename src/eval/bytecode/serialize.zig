@@ -1448,16 +1448,22 @@ pub fn flateCompress(allocator: std.mem.Allocator, bytes: []const u8) ![]u8 {
 /// session (`rt.load_arena` — fns capture their bytecode).
 pub fn decompressRegion(allocator: std.mem.Allocator, ref: RegionRef) ![]const u8 {
     if (!ref.compressed) return ref.bytes;
+    return flateDecompress(allocator, ref.bytes, ref.uncompressed_len);
+}
+
+/// Decompress `bytes` (flate `.raw`) into a fresh 8-aligned buffer of
+/// exactly `uncompressed_len`. A REAL history window is required: the
+/// zero-buffer "direct mode" routes readSliceAll through the indirect
+/// path, whose rebase computes buffer.len - history_len and
+/// usize-underflows on an empty buffer (probed 2026-07-16, Debug trace at
+/// Decompress.zig:104).
+pub fn flateDecompress(allocator: std.mem.Allocator, bytes: []const u8, uncompressed_len: u32) ![]const u8 {
     const flate = std.compress.flate;
-    const out = try allocator.alignedAlloc(u8, .fromByteUnits(8), ref.uncompressed_len);
+    const out = try allocator.alignedAlloc(u8, .fromByteUnits(8), uncompressed_len);
     errdefer allocator.free(out);
-    // A REAL history window is required: the zero-buffer "direct mode"
-    // routes readSliceAll through the indirect path, whose rebase computes
-    // buffer.len - history_len and usize-underflows on an empty buffer
-    // (probed 2026-07-16, Debug trace at Decompress.zig:104).
     const window = try allocator.alloc(u8, flate.max_window_len);
     defer allocator.free(window);
-    var in: std.Io.Reader = .fixed(ref.bytes);
+    var in: std.Io.Reader = .fixed(bytes);
     var d: flate.Decompress = .init(&in, .raw, window);
     try d.reader.readSliceAll(out);
     return out;

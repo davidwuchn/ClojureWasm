@@ -104,7 +104,7 @@ components, and a breach localizes itself via the report tool:
 | zwasm (engine + api)   | 1.94 MB               | 2.5 MB                             | thunk collapse landed (v2.2.1); x86_64 emitter is comptime-gated (0 B on arm64) |
 | cljw text              | 2.57 MB               | 3.5 MB                             | F-013/F-014 comprehensiveness growth                            |
 | Zig std text           | 1.17 MB               | 1.5 MB                             |                                                                 |
-| embedded data          | 1.59 MB               | 1.75 MB                            | re-set to **1.0 MB** when L2 lands                              |
+| embedded data          | 0.76 MB               | 1.0 MB                             | L2 LANDED 2026-07-16 (ADR-0173 C2'-C5': pool + flate regions + flate .clj) |
 | unwind + linkedit etc. | 0.23 MB               | 0.3 MB                             | L1 LANDED 2026-07-16 (O-052): tables dropped, budget re-set     |
 | **Derived ceiling**    | **8.73 MB**           | **≈ 11 MB → ≈ 10.3 MB post-L2** |                                                                 |
 
@@ -405,6 +405,20 @@ dispositions grounded, platform binding declared, peer number measured).
   honest even if a component drifts between audits.
 
 ## Revision history
+
+- **2026-07-16 (L2 complete + governance hardening)**: ADR-0173 C5′-b landed
+  compressed `.clj` sources (7,384,984 → **7,073,080 B**; the ~450 KB
+  startup gpa copy of raw text is also gone — `rt.source_resolver`
+  decompresses on demand and memoizes). The embedded-data budget line
+  re-sets to 1.0 MB per this ADR's own clause; derived ceiling ≈ 8.8 MB
+  (measured 7.07). **Campaign total: 9,469,816 → 7,073,080 (−25.3%).**
+  Governance mechanized further (user directive): `binary_size_report.sh
+  --check` now also FAILS when the built binary exceeds the derived ceiling
+  (`BUDGET_CEILING_BYTES`, kept in sync with this table), and the new
+  auto-loaded `.claude/rules/binary_size.md` carries the campaign's
+  operational lessons (instantiation-count metric, comptime cross-products,
+  embed-compression pattern, median-of-20 protocol) for every future
+  src/build edit.
 
 - **2026-07-16 (L5 outcome — same day)**: zwasm accepted the CODEV request
   (their ADR-0204) and shipped **v2.2.1** same-day: the JIT host-callback

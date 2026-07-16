@@ -230,10 +230,13 @@ pub fn buildBootstrapEnvelope(
     for (files) |file| {
         // Register the file's bytes so a build-time error frame keeps its
         // per-file SourceContext (mirror of loadCoreFiles; idempotent).
-        try rt.registerSource(file.label, file.source);
+        // cache_gen (raw mode) takes the embedded slice; the in-test
+        // compressed-mode round-trip decompresses on demand (C5'-b).
+        const file_source = file.source orelse (bootstrap.sourceText(rt, file.label) orelse return error.MissingBootstrapSource);
+        try rt.registerSource(file.label, file_source);
         var chunks: std.ArrayList(BytecodeChunk) = .empty;
         defer chunks.deinit(allocator); // chunk slices are arena-owned; only the list is ours
-        var reader = Reader.init(arena, file.source);
+        var reader = Reader.init(arena, file_source);
         var form_idx: usize = 0;
         while (true) {
             const form = (try reader.read()) orelse break;
@@ -583,7 +586,8 @@ test "aot: core.clj round-trips — build envelope, restore into a fresh env, ru
         var table = macro_dispatch.Table.init(A);
         defer table.deinit();
         try bootstrap.setupCorePrefix(&rt, &env, &table);
-        core_bytes = try buildEnvelope(A, &rt, &env, &table, arena, bootstrap.CORE_SOURCE, "<core>");
+        const core_src = bootstrap.sourceText(&rt, bootstrap.SOURCE_LABEL) orelse return error.MissingBootstrapSource;
+        core_bytes = try buildEnvelope(A, &rt, &env, &table, arena, core_src, "<core>");
     }
     defer A.free(core_bytes);
 

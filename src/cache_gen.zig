@@ -20,6 +20,7 @@ const Env = @import("runtime/env.zig").Env;
 const macro_dispatch = @import("eval/macro_dispatch.zig");
 const driver = @import("eval/driver.zig");
 const bootstrap = @import("lang/bootstrap.zig");
+const serialize = @import("eval/bytecode/serialize.zig");
 const builder = @import("app/builder.zig");
 
 pub fn main(init: std.process.Init) !void {
@@ -30,6 +31,7 @@ pub fn main(init: std.process.Init) !void {
     var args = init.minimal.args.iterate();
     _ = args.skip(); // argv[0]
     const out_path = args.next() orelse return error.MissingOutputPath;
+    const sources_out_path = args.next() orelse return error.MissingOutputPath;
 
     var rt = Runtime.init(io, gpa);
     defer rt.deinit();
@@ -53,4 +55,33 @@ pub fn main(init: std.process.Init) !void {
     var ow = out.writer(io, &wbuf);
     try ow.interface.writeAll(payload);
     try ow.interface.flush();
+
+    // C5'-b (ADR-0173): second artifact — the flate-compressed .clj sources
+    // blob ([count u32] then per file: label len+bytes, uncompressed_len u32,
+    // compressed len+bytes). cache_gen runs in raw mode, so entry.source is
+    // always non-null here.
+    const sources_blob = blk: {
+        var aw: std.Io.Writer.Allocating = .init(gpa);
+        errdefer aw.deinit();
+        const w = &aw.writer;
+        try w.writeInt(u32, @intCast(bootstrap.FILES.len), .little);
+        for (bootstrap.FILES) |file| {
+            const src = file.source.?;
+            const packed_bytes = try serialize.flateCompress(gpa, src);
+            defer gpa.free(packed_bytes);
+            try w.writeInt(u32, @intCast(file.label.len), .little);
+            try w.writeAll(file.label);
+            try w.writeInt(u32, @intCast(src.len), .little);
+            try w.writeInt(u32, @intCast(packed_bytes.len), .little);
+            try w.writeAll(packed_bytes);
+        }
+        break :blk try aw.toOwnedSlice();
+    };
+    defer gpa.free(sources_blob);
+    const sout = try std.Io.Dir.cwd().createFile(io, sources_out_path, .{ .truncate = true });
+    defer sout.close(io);
+    var swbuf: [4096]u8 = undefined;
+    var sow = sout.writer(io, &swbuf);
+    try sow.interface.writeAll(sources_blob);
+    try sow.interface.flush();
 }

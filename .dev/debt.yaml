@@ -276,7 +276,7 @@ active:
       findings fold into the D-175 floor.)
     last_reviewed: "2026-06-24"
   - id: "D-517"
-    status: "IN PROGRESS 2026-07-16 (ADR-0173): C1+C2'+C3'+C4'+C5'-a LANDED. Measured: blob 698->425KB; shipped binary at this point 7,384,984 B (campaign total from 9,469,816 = -22.0%); startup neutral-within-noise except C4' memoize -165us median. Remaining: C5'-b compressed .clj sources (registerSource lazy-handle surface + cache_gen second blob; est -326KB), C6' has_handlers consumer flip (own bench), then the user-directed FULL cross-language bench + record refresh (task #5). ORIGINAL: open (ADR-0162 step 3)."
+    status: "IN PROGRESS 2026-07-16 (ADR-0173): C1-C5' ALL LANDED (C5'-b: compressed .clj sources, binary 7,073,080 B — campaign -25.3% from 9,469,816; startup 450KB gpa source-copy also gone via rt.source_resolver lazy decompress). Remaining: C6' has_handlers consumer flip (own bench), then L6 sort-dedup, then the user-directed FULL cross-language bench + record refresh (task list). ORIGINAL: open (ADR-0162 step 3)."
     category: "perf"
     barrier: |-
       ADR-0162 step 3. Sequenced AFTER D-516 (so it applies to both eager core + lazy

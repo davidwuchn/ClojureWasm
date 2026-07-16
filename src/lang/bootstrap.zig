@@ -52,7 +52,11 @@ const serialize = @import("../eval/bytecode/serialize.zig");
 /// `<clojure.string>` for `string.clj`).
 pub const FileEntry = struct {
     label: []const u8,
-    source: []const u8,
+    /// Raw source text — non-null only in `embed_raw_clj_sources` mode
+    /// (cache_gen, the host tool). The shipped cljw carries the sources
+    /// flate-compressed in the `bootstrap_sources` blob; read via
+    /// `sourceText` (C5'-b, ADR-0173).
+    source: ?[]const u8,
 };
 
 /// Bootstrap source table — load order matters. `core.clj` must be
@@ -85,89 +89,138 @@ pub fn isEagerNs(ns_name: []const u8) bool {
     return EAGER_NS.has(ns_name);
 }
 
+/// Raw @embedFile in cache_gen (raw mode); null in the shipped cljw, whose
+/// text lives flate-compressed in the `bootstrap_sources` blob (C5'-b).
+/// The comptime-known flag prunes the untaken branch, so the shipped binary
+/// never embeds the raw bytes.
+fn embedSrc(comptime path: []const u8) ?[]const u8 {
+    return if (build_options.embed_raw_clj_sources) @embedFile(path) else null;
+}
+
 pub const FILES: []const FileEntry = &.{
-    .{ .label = "<bootstrap>", .source = @embedFile("clj/clojure/core.clj") },
-    .{ .label = "<clojure.string>", .source = @embedFile("clj/clojure/string.clj") },
-    .{ .label = "<clojure.set>", .source = @embedFile("clj/clojure/set.clj") },
-    .{ .label = "<clojure.walk>", .source = @embedFile("clj/clojure/walk.clj") },
-    .{ .label = "<clojure.zip>", .source = @embedFile("clj/clojure/zip.clj") },
-    .{ .label = "<clojure.edn>", .source = @embedFile("clj/clojure/edn.clj") },
-    .{ .label = "<clojure.data.json>", .source = @embedFile("clj/clojure/data/json.clj") },
-    .{ .label = "<clojure.data.csv>", .source = @embedFile("clj/clojure/data/csv.clj") },
-    .{ .label = "<clojure.tools.cli>", .source = @embedFile("clj/clojure/tools/cli.clj") },
-    .{ .label = "<clojure.pprint>", .source = @embedFile("clj/clojure/pprint.clj") },
-    .{ .label = "<clojure.test>", .source = @embedFile("clj/clojure/test.clj") },
-    .{ .label = "<cljw.error>", .source = @embedFile("clj/cljw/error.clj") },
+    .{ .label = "<bootstrap>", .source = embedSrc("clj/clojure/core.clj") },
+    .{ .label = "<clojure.string>", .source = embedSrc("clj/clojure/string.clj") },
+    .{ .label = "<clojure.set>", .source = embedSrc("clj/clojure/set.clj") },
+    .{ .label = "<clojure.walk>", .source = embedSrc("clj/clojure/walk.clj") },
+    .{ .label = "<clojure.zip>", .source = embedSrc("clj/clojure/zip.clj") },
+    .{ .label = "<clojure.edn>", .source = embedSrc("clj/clojure/edn.clj") },
+    .{ .label = "<clojure.data.json>", .source = embedSrc("clj/clojure/data/json.clj") },
+    .{ .label = "<clojure.data.csv>", .source = embedSrc("clj/clojure/data/csv.clj") },
+    .{ .label = "<clojure.tools.cli>", .source = embedSrc("clj/clojure/tools/cli.clj") },
+    .{ .label = "<clojure.pprint>", .source = embedSrc("clj/clojure/pprint.clj") },
+    .{ .label = "<clojure.test>", .source = embedSrc("clj/clojure/test.clj") },
+    .{ .label = "<cljw.error>", .source = embedSrc("clj/cljw/error.clj") },
     // clojure.data calls clojure.set/* fully-qualified, so it loads last
     // (after FILES[2] clojure.set has interned those vars).
-    .{ .label = "<clojure.data>", .source = @embedFile("clj/clojure/data.clj") },
+    .{ .label = "<clojure.data>", .source = embedSrc("clj/clojure/data.clj") },
     // clojure.math — thin Math wrappers; appended last so earlier FILES[N]
     // indices in `lookupEmbeddedFile` stay stable (D-232).
-    .{ .label = "<clojure.math>", .source = @embedFile("clj/clojure/math.clj") },
+    .{ .label = "<clojure.math>", .source = embedSrc("clj/clojure/math.clj") },
     // clojure.core.protocols (D-282) — reduce/datafy protocol surface; require-on-
     // demand (lookupEmbeddedFile), needed by deftypes implementing IKVReduce etc.
-    .{ .label = "<clojure.core.protocols>", .source = @embedFile("clj/clojure/core/protocols.clj") },
+    .{ .label = "<clojure.core.protocols>", .source = embedSrc("clj/clojure/core/protocols.clj") },
     // clojure.template — do-template / apply-template over clojure.walk; loads
     // after walk (FILES[3]). Surfaced by honeysql's honey.sql require.
-    .{ .label = "<clojure.template>", .source = @embedFile("clj/clojure/template.clj") },
+    .{ .label = "<clojure.template>", .source = embedSrc("clj/clojure/template.clj") },
     // clojure.java.io — file/stream I/O over the java.io.File host type (ADR-0126);
     // appended last so earlier FILES[N] indices in `lookupEmbeddedFile` stay stable.
-    .{ .label = "<clojure.java.io>", .source = @embedFile("clj/clojure/java/io.clj") },
+    .{ .label = "<clojure.java.io>", .source = embedSrc("clj/clojure/java/io.clj") },
     // cljw.json / cljw.fs — handy cljw.* wrappers over data.json + clojure.java.io
     // (ADR-0126 Cycle 7); load after their targets (data.json/walk/clojure.java.io).
-    .{ .label = "<cljw.json>", .source = @embedFile("clj/cljw/json.clj") },
-    .{ .label = "<cljw.fs>", .source = @embedFile("clj/cljw/fs.clj") },
+    .{ .label = "<cljw.json>", .source = embedSrc("clj/cljw/json.clj") },
+    .{ .label = "<cljw.fs>", .source = embedSrc("clj/cljw/fs.clj") },
     // clojure.stacktrace (D-273) — pure-Clojure cause-chain printer over the
     // ex-info model; appended last so earlier FILES[N] indices stay stable.
-    .{ .label = "<clojure.stacktrace>", .source = @embedFile("clj/clojure/stacktrace.clj") },
+    .{ .label = "<clojure.stacktrace>", .source = embedSrc("clj/clojure/stacktrace.clj") },
     // clojure.uuid (D-273) — require-compat shim; the #uuid reader + UUID print
     // are cljw built-ins. Appended last so earlier FILES[N] indices stay stable.
-    .{ .label = "<clojure.uuid>", .source = @embedFile("clj/clojure/uuid.clj") },
+    .{ .label = "<clojure.uuid>", .source = embedSrc("clj/clojure/uuid.clj") },
     // clojure.instant (D-273) — read-instant-* over the built-in #inst parser;
     // single Date type (no Timestamp/Calendar = AD-030). Appended last.
-    .{ .label = "<clojure.instant>", .source = @embedFile("clj/clojure/instant.clj") },
+    .{ .label = "<clojure.instant>", .source = embedSrc("clj/clojure/instant.clj") },
     // clojure.test.tap (D-273) — TAP reporter for clojure.test; loads after
     // clojure.test (FILES[10]) + clojure.stacktrace (FILES[19]). Appended last.
-    .{ .label = "<clojure.test.tap>", .source = @embedFile("clj/clojure/test/tap.clj") },
+    .{ .label = "<clojure.test.tap>", .source = embedSrc("clj/clojure/test/tap.clj") },
     // cljw.wasm (W1, D-404) — require-a-component over the wasm/ primitives.
     // Require-on-demand AND wasm-gated (the lookup below only serves it under
     // `-Dwasm`, since the wasm/ ns it rides is absent otherwise). Appended last.
-    .{ .label = "<cljw.wasm>", .source = @embedFile("clj/cljw/wasm.clj") },
+    .{ .label = "<cljw.wasm>", .source = embedSrc("clj/cljw/wasm.clj") },
     // clojure.spec.gen.alpha + clojure.spec.alpha — official stdlib (ships in
     // clojure.jar), so eager-bundled (the stdlib-eager / contrib-completeness
     // policy). gen loads FIRST (alpha `(:require clojure.spec.gen.alpha)`).
     // Reproduced from spec.alpha with 4 no-JVM adaptations (see each file's header).
     // Appended last so earlier FILES[N] indices stay stable. The list stays
     // data-driven so a future eager→lazy switch (lazy-AOT, deferred) is local.
-    .{ .label = "<clojure.spec.gen.alpha>", .source = @embedFile("clj/clojure/spec/gen/alpha.clj") },
-    .{ .label = "<clojure.spec.alpha>", .source = @embedFile("clj/clojure/spec/alpha.clj") },
+    .{ .label = "<clojure.spec.gen.alpha>", .source = embedSrc("clj/clojure/spec/gen/alpha.clj") },
+    .{ .label = "<clojure.spec.alpha>", .source = embedSrc("clj/clojure/spec/alpha.clj") },
     // clojure.core.specs.alpha — official stdlib (ships in clojure.jar); specs
     // for clojure.core macros. Loads after spec.alpha (it `(:require …spec.alpha)`).
     // Verbatim upstream (no adaptations). Appended last.
-    .{ .label = "<clojure.core.specs.alpha>", .source = @embedFile("clj/clojure/core/specs/alpha.clj") },
+    .{ .label = "<clojure.core.specs.alpha>", .source = embedSrc("clj/clojure/core/specs/alpha.clj") },
     // clojure.datafy — official stdlib (datafy/nav over core.protocols). Loads
     // after clojure.core.protocols (FILES[14]). One no-JVM adaptation (the
     // warn-on-reflection set! dropped); its Datafiable extend over IRef/Namespace/
     // Throwable/Class rides D-478. Re-landed once D-481 (gc.deinit ordering) fixed.
-    .{ .label = "<clojure.datafy>", .source = @embedFile("clj/clojure/datafy.clj") },
+    .{ .label = "<clojure.datafy>", .source = embedSrc("clj/clojure/datafy.clj") },
     // clojure.test.junit — official stdlib (JUnit-XML reporter extending
     // clojure.test's `report` multimethod, like clojure.test.tap). Loads after
     // clojure.test (FILES[10]). Verbatim upstream. Appended last.
-    .{ .label = "<clojure.test.junit>", .source = @embedFile("clj/clojure/test/junit.clj") },
-    .{ .label = "<clojure.core-meta>", .source = @embedFile("clj/clojure/core_meta.clj") },
+    .{ .label = "<clojure.test.junit>", .source = embedSrc("clj/clojure/test/junit.clj") },
+    .{ .label = "<clojure.core-meta>", .source = embedSrc("clj/clojure/core_meta.clj") },
     // clojure.repl (D-513) — doc/dir/apropos/find-doc/demunge over the D-305
     // :doc/:arglists metadata; require-on-demand (NOT eager). Appended last.
-    .{ .label = "<clojure.repl>", .source = @embedFile("clj/clojure/repl.clj") },
+    .{ .label = "<clojure.repl>", .source = embedSrc("clj/clojure/repl.clj") },
 };
 
-/// First file's source — exposed so `main.zig`'s renderer can fall
-/// back to it when a bootstrap-time error fires (per D-058 the
-/// renderer does not yet thread per-file context; this kept the
-/// renderer call sites unchanged from the single-file era).
-pub const CORE_SOURCE: []const u8 = FILES[0].source;
+/// The bundled `.clj` text for `label` (C5'-b). Raw mode (cache_gen)
+/// returns the embedded slice; the shipped cljw decompresses from the
+/// `bootstrap_sources` blob into `rt.load_arena` (session lifetime — the
+/// text backs SourceContext renders and source replays). Returns null for
+/// labels outside the bundled set.
+pub fn sourceText(rt: *Runtime, label: []const u8) ?[]const u8 {
+    for (FILES) |file| {
+        if (!std.mem.eql(u8, file.label, label)) continue;
+        if (file.source) |raw| return raw;
+        break;
+    }
+    // Compressed mode: linear index scan of the sources blob
+    // ([count u32] then per file: label, uncompressed_len, compressed bytes).
+    const blob = @import("bootstrap_sources").data;
+    if (blob.len < 4) return null;
+    var pos: usize = 0;
+    const count = std.mem.readInt(u32, blob[pos..][0..4], .little);
+    pos += 4;
+    var i: u32 = 0;
+    while (i < count) : (i += 1) {
+        const label_len = std.mem.readInt(u32, blob[pos..][0..4], .little);
+        pos += 4;
+        const entry_label = blob[pos .. pos + label_len];
+        pos += label_len;
+        const ulen = std.mem.readInt(u32, blob[pos..][0..4], .little);
+        pos += 4;
+        const clen = std.mem.readInt(u32, blob[pos..][0..4], .little);
+        pos += 4;
+        const compressed = blob[pos .. pos + clen];
+        pos += clen;
+        if (std.mem.eql(u8, entry_label, label)) {
+            return serialize.flateDecompress(rt.load_arena.allocator(), compressed, ulen) catch null;
+        }
+    }
+    return null;
+}
 
-/// First file's source label — same compatibility purpose as
-/// `CORE_SOURCE`.
+/// Registry-miss fallback installed onto `rt.source_resolver` (C5'-b): an
+/// error render touching a bundled `.clj` decompresses its text on demand
+/// and memoizes via `registerSource` so a repeat render is a registry hit.
+fn resolveBundledSource(rt: *Runtime, label: []const u8) ?@import("../runtime/error/print.zig").SourceContext {
+    const text = sourceText(rt, label) orelse return null;
+    rt.registerSource(label, text) catch return .{ .file = label, .text = text };
+    return rt.source_registry.get(label);
+}
+
+/// First file's label — the renderer's fallback SourceContext label for
+/// bootstrap-time errors (the text itself now resolves through
+/// `rt.source_resolver`, so the eager fallback carries no source bytes).
 pub const SOURCE_LABEL: []const u8 = FILES[0].label;
 
 /// Map a bootstrap-embedded namespace name (e.g. `clojure.set`) to
@@ -224,9 +277,11 @@ pub fn embeddedResolver(
     rt: *Runtime,
     ns_name: []const u8,
 ) anyerror!?ResolvedSource {
-    _ = rt;
-    if (lookupEmbeddedFile(ns_name)) |entry|
-        return .{ .source = entry.source, .label = entry.label };
+    if (lookupEmbeddedFile(ns_name)) |entry| {
+        // C5'-b: decompress the bundled text on demand (session arena).
+        const text = entry.source orelse (sourceText(rt, entry.label) orelse return error.MissingBootstrapSource);
+        return .{ .source = text, .label = entry.label };
+    }
     return null;
 }
 
@@ -269,8 +324,9 @@ fn loadCoreFiles(
         // ADR-0035 D7: register the file's bytes so the renderer's
         // per-file SourceContext lookup hits during bootstrap-time
         // errors. Idempotent — re-running reuses the first-writer entry.
-        try rt.registerSource(file.label, file.source);
-        var reader = Reader.init(arena, file.source);
+        const text = file.source orelse (sourceText(rt, file.label) orelse return error.MissingBootstrapSource);
+        try rt.registerSource(file.label, text);
+        var reader = Reader.init(arena, text);
         var locals: [driver.MAX_LOCALS]Value = [_]Value{.nil_val} ** driver.MAX_LOCALS;
         while (true) {
             const form_opt = try reader.read();
@@ -576,7 +632,11 @@ pub fn loadCoreAot(
     // on first require. Register EVERY file's source (cheap — a slice into a hashmap)
     // so a lazy ns's runtime error frame keeps its per-file SourceContext.
     rt.bootstrap_region_blob = bootstrap_blob;
-    for (FILES) |file| try rt.registerSource(file.label, file.source);
+    // C5'-b: sources are flate-compressed in the shipped binary — install
+    // the on-demand resolver instead of eagerly duplicating ~450KB of raw
+    // text into gpa at every startup (errors are cold; first render pays
+    // one decompress, then the registry memoizes).
+    rt.source_resolver = &resolveBundledSource;
     prof.mark("    registerSource");
     // ADR-0163 D-516: pre-register the EAGER set (EAGER_NS = clj's no-require set)
     // as loaded BEFORE running, so an intra-eager `(:require eager-lib)` is a no-op

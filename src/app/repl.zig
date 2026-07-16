@@ -110,7 +110,11 @@ pub fn run(
     // setupCorePrefix and leaves *ns* unresolved when test.clj loads (ADR-0083).
     try bootstrap.setupCorePrefix(&rt, &env, &macro_table);
 
-    const bootstrap_ctx = error_print.SourceContext{ .file = bootstrap.SOURCE_LABEL, .text = bootstrap.CORE_SOURCE };
+    // C5'-b (ADR-0173): bootstrap sources ship flate-compressed; the REAL
+    // text resolves through rt.source_resolver (registry fallback) at render
+    // time, so this eager fallback ctx carries no source bytes (empty text →
+    // the renderer's extractLine misses → registry path serves the line).
+    const bootstrap_ctx = error_print.SourceContext{ .file = bootstrap.SOURCE_LABEL, .text = "" };
     // ADR-0056 Cycle 2c + Cycle 3 (D-452 Part B): restore the WHOLE eager
     // bootstrap (core + the 23 non-core libs) from the embedded AOT envelope
     // (prefix already done above) — no .clj re-parse on startup.

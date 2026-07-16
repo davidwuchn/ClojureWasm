@@ -200,6 +200,17 @@ measured per-commit (protocol below), not asserted.
   REAL 32 KB history window is required (the survey's §4 recipe is hereby
   corrected). C5′-b (compressed `.clj` sources, est −326 KB) remains.
 
+- **2026-07-16 (C5′-b landing — flate `.clj` sources)**: the raw sources
+  left the binary (cache_gen emits a second artifact, the compressed
+  sources blob; `bootstrap.sourceText` decompresses on demand into
+  `rt.load_arena`; `rt.source_resolver` serves error renders registry-miss
+  → memoized; cache_gen keeps raw @embedFile via the dual
+  `embed_raw_clj_sources` options module — its own stub `bootstrap_sources`
+  import avoids the WriteFiles dependency loop probed during landing).
+  **Measured**: shipped binary 7,384,984 → **7,073,080 B**. The eager
+  ~450 KB registerSource gpa copy at startup is gone (resolver is lazy).
+  Remaining in the arc: C6′ (has_handlers consumer flip).
+
 ## Measurement protocol (mandatory, per commit)
 
 - VM-hot A/B for C1 (representation change, isolated):

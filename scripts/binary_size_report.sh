@@ -31,6 +31,11 @@ if [[ "${1:-}" == "--check" ]]; then
 fi
 BIN="${1:-zig-out/bin/cljw}"
 
+# ADR-0172 §2 derived ceiling (per-component budgets sum). Keep in sync with
+# the ADR's budget table — a change here REQUIRES an ADR-0172 Revision
+# history entry (the budget moves consciously, never to silence this check).
+BUDGET_CEILING_BYTES=8800000
+
 if [[ ! -f "$BIN" ]]; then
     echo "binary_size_report: binary not found: $BIN (build first: zig build -Dwasm -Doptimize=ReleaseSafe)" >&2
     exit 1
@@ -47,6 +52,12 @@ if [[ "$MODE" == "check" ]]; then
     CLAIM=$(grep -m1 -oE '[0-9]+(\.[0-9]+)? MB' README.md | head -1 | grep -oE '[0-9]+(\.[0-9]+)?' || true)
     if [[ -z "$CLAIM" ]]; then
         echo "size_claims: no '<N> MB' size claim found in README.md — add one (ADR-0172)" >&2
+        exit 1
+    fi
+    if [[ "$ACTUAL" -gt "$BUDGET_CEILING_BYTES" ]]; then
+        echo "size_claims: built binary ${ACTUAL_MB} MB (${ACTUAL} B) exceeds the ADR-0172 derived ceiling ($BUDGET_CEILING_BYTES B)." >&2
+        echo "  Attribute with 'bash scripts/binary_size_report.sh' (-Dprofile build for symbols), then land a lever" >&2
+        echo "  or consciously amend the budget table in .dev/decisions/0172_binary_size_budget_and_ledger.md." >&2
         exit 1
     fi
     DRIFT=$(awk "BEGIN{c=$CLAIM*1000000; d=($ACTUAL-c)/c; if(d<0)d=-d; printf \"%.3f\", d}")
