@@ -275,24 +275,6 @@ active:
       deps.edn, exercise it, triage findings. SSOT: ADR-0166 row 7. (clj-parity
       findings fold into the D-175 floor.)
     last_reviewed: "2026-06-24"
-  - id: "D-517"
-    status: "IN PROGRESS 2026-07-16 (ADR-0173): C1-C5' ALL LANDED (C5'-b: compressed .clj sources, binary 7,073,080 B — campaign -25.3% from 9,469,816; startup 450KB gpa source-copy also gone via rt.source_resolver lazy decompress). Remaining: C6' has_handlers consumer flip (own bench), then L6 sort-dedup, then the user-directed FULL cross-language bench + record refresh (task list). ORIGINAL: open (ADR-0162 step 3)."
-    category: "perf"
-    barrier: |-
-      ADR-0162 step 3. Sequenced AFTER D-516 (so it applies to both eager core + lazy
-      non-core chunks). Makes the serialize/envelope format load-bearing/rigid — a
-      chunk-layout change becomes an on-rodata-format change (accepted; the format is
-      already AOT-embedded). Survey: serialize.zig EnvelopeIterator/deserializeChunk +
-      the BytecodeChunk shape; cw v0 / wasmtime for in-place/position-independent chunk
-      formats. Watch the JIT (ADR-0200) may operate on a different layer — do not
-      over-invest in a format it would replace.
-      ADR-0172 L2 fold-in (2026-07-16): the binary-SIZE lever on the same bytes is
-      co-decided in THIS redesign, not built separately — eager core region stays
-      uncompressed for zero-copy; lazy lib regions + the raw .clj sources become
-      flate-compressed (measured 698->112KB / 451->125KB, 0.46ms full-blob
-      decompress); varint operands + cross-region constant-pool dedup evaluated in
-      the same pass (compaction shrinks with NO decompression copy). est -0.9-1.1MB.
-    last_reviewed: "2026-07-16"
   - id: "D-513"
     status: "DRAIN 2 (2026-07-07, finding 3's non-core scope PARTIALLY closed): extract_core_meta.sh extended to the EAGER stdlib namespaces (clojure.string/walk/edn/core.protocols/java.io) — core_meta.clj now fills 291 vars (was 241; when-let resolve guard per row). (:doc (meta #'clojure.string/blank?)) etc. now populated; doc/find-doc cover the eager stdlib. LAZY bundled ns (set/zip/pprint/test/math/contrib) stay doc-less — their vars are not interned when the eager core_meta runs; extending needs a lazy-region post-load meta hook (noted in the script header). The 84KB blob also stress-confirms the D-558 builder-persist fix. DRAIN 2026-07-07 (finding 2 CLOSED): clojure.repl is now BUNDLED (src/lang/clj/clojure/repl.clj, require-on-demand, variant-2 attribution) — doc (clj-identical print shape) / find-doc / apropos / dir + dir-fn / demunge / root-cause, all riding the D-305 :doc/:arglists metadata that unblocked this; source/source-fn THROW with a clear explanation (per-var source text is not retained under the AOT bytecode bootstrap — an honest not-available, not a silent nil). e2e phase16_clojure_repl (8 cases, registered in run_all). REMAINING: finding 1 (core.reducers — needs reduce->CollReduce wiring or a native impl; low value, transducers supersede) + finding 3's non-core scope (stdlib/contrib ns docstrings beyond clojure.core — extract_core_meta.sh currently covers core only; extendable the same way if demanded). OPEN (2026-06-24). Missing stdlib/contrib namespaces + the var-docstring gap, found in the 2026-06-24 deeper-namespace sweep. Lower priority — each needs foundation/scope work, not a clean drop-in."
     category: "clj-parity"
@@ -6546,6 +6528,25 @@ discharged:
     category: "clj-parity"
     barrier: "none — discharged"
     last_reviewed: "2026-07-16"
+  - id: "D-517"
+    status: "DISCHARGED 2026-07-16 (ADR-0173 arc complete: C1 WireInstr+loc sidecar, C2' v7 wire cut + pool, C3' in-place instr views, C4' memoized slots, C5' flate lazy regions + .clj sources, C6' has_handlers flatten [rode C2'; post-hoc A/B: fib user-time neutral, real_workload 1.06±0.05 faster]. Zero-copy deliverable landed; embedded data 1.59->0.76MB; startup neutral-within-noise except C4' -165us median). WAS: IN PROGRESS 2026-07-16 (ADR-0173): C1-C5' ALL LANDED (C5'-b: compressed .clj sources, binary 7,073,080 B — campaign -25.3% from 9,469,816; startup 450KB gpa source-copy also gone via rt.source_resolver lazy decompress). Remaining: C6' has_handlers consumer flip (own bench), then L6 sort-dedup, then the user-directed FULL cross-language bench + record refresh (task list). ORIGINAL: open (ADR-0162 step 3)."
+    category: "perf"
+    barrier: |-
+      ADR-0162 step 3. Sequenced AFTER D-516 (so it applies to both eager core + lazy
+      non-core chunks). Makes the serialize/envelope format load-bearing/rigid — a
+      chunk-layout change becomes an on-rodata-format change (accepted; the format is
+      already AOT-embedded). Survey: serialize.zig EnvelopeIterator/deserializeChunk +
+      the BytecodeChunk shape; cw v0 / wasmtime for in-place/position-independent chunk
+      formats. Watch the JIT (ADR-0200) may operate on a different layer — do not
+      over-invest in a format it would replace.
+      ADR-0172 L2 fold-in (2026-07-16): the binary-SIZE lever on the same bytes is
+      co-decided in THIS redesign, not built separately — eager core region stays
+      uncompressed for zero-copy; lazy lib regions + the raw .clj sources become
+      flate-compressed (measured 698->112KB / 451->125KB, 0.46ms full-blob
+      decompress); varint operands + cross-region constant-pool dedup evaluated in
+      the same pass (compaction shrinks with NO decompression copy). est -0.9-1.1MB.
+    last_reviewed: "2026-07-16"
+
 conventions: |-
   - Structure: two top-level lists — `active:` and `discharged:`. Active entries carry id / status / category / barrier (+ optional quality_floor / last_reviewed); discharged entries carry id / discharged_at / resolution. Edit as YAML (no Markdown table to align).
   - New debt: grep `.dev/debt.yaml` for class-overlap before adding (per `.claude/rules/debt_dedup.md`).

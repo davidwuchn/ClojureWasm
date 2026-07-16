@@ -7,12 +7,11 @@
 
 - **HEAD**: `main` (`git log` = SSOT). Per-commit = smoke; commit
   **and** push (atomic Step 6). `build.zig.zon` `.zwasm` = tag pin
-  `v2.2.0`. Latest release: **v1.3.1** (2026-07-16; tap bumped +
+  `v2.2.1` (binary-size release). Latest release: **v1.3.1** (2026-07-16; tap bumped +
   brew-verified). CHANGELOG is the release-history SSOT.
 - **First task on resume MUST be**: self-select from the live
   `.dev/debt.yaml` `active:` list, easiest-first. Fresh well-scoped
-  rows: **D-515 L1** (`unwind_tables=.none`, -739KB measured, one
-  build.zig line + smoke — see ADR-0172), **D-563** (a2: Clojure 1.12
+  rows: **D-563** (a2: Clojure 1.12
   `Class/.instanceMethod` + `Class/new` method-value forms; (b) Var
   :line/:file source meta → clojure.test `(file:line)` suffix + AD-041
   dissolution; (c) default-data-readers / defstruct), **D-561**
@@ -43,11 +42,14 @@
   AD-006/011/014/035/038/049 retired as parity, AD-009/043 narrowed),
   Clojure 1.12 **static method values**, and defrecord **ns-qualified
   identity** (print/reader-round-trip/hash parity; D-563(a) done).
-- **ADR-0172** (2026-07-16, user-directed): binary-size SSOT — measured
-  composition (9.47MB = zwasm 3.0 / cljw 2.6 / std 1.2 / data 1.6 /
-  unwind 0.75), per-component budget, L1-L10 lever ledger, run_all
-  `size_claims` gate (README drift >10% fails); D-515 re-narrowed,
-  L2 folded into D-517, README/ROADMAP stale figures corrected.
+- **Binary-size campaign COMPLETE** (2026-07-16, user-directed):
+  **9,469,816 → 6,974,584 B (−26.3%, sub-7MB)**. ADR-0172 (budget +
+  levers + `size_claims`/ceiling gate + `.claude/rules/binary_size.md`),
+  ADR-0173 envelope v7 (WireInstr zero-copy, constant pool, flate lazy
+  regions + .clj sources — D-517 DISCHARGED), zwasm v2.2.1 re-pin
+  (thunk collapse −1.08MB, CODEV same-day round-trip), O-052/O-053.
+  Full cross-language bench re-recorded (bench/cross-lang-latest.yaml
+  2026-07-16) + RELEASE_METRICS refreshed (6.97MB / ~6ms).
 - Debug tooling: `scripts/nrepl_send.py` (nREPL client),
   `scripts/clj_diff_sweep.sh` + corpora (now incl. `character.txt`,
   `hash_compare.txt`, `records_method_values.txt`),
@@ -64,14 +66,6 @@
   (b) pmap wall-clock; recurrence protocol recorded in the row.
 - CIDER upstream banner patch draft:
   `private/notes/cider-clojurewasm-banner-patch.md` (user-side PR).
-
-## Stopped — user requested
-
-User instruction (2026-07-16 朝): 「今の状況を教えて、取り組み始めて
-いたようなものは完遂して、そこを停止点にしたい。パッチリリースだけ
-ですか?」 → 進行中だった method values + record identity を完遂し
-v1.3.1 を tag/release/tap まで届けて停止。Resume: the Resume
-contract's "First task on resume" (D-563 residuals, easiest-first).
 
 ## North star (ACTIVE, distal)
 

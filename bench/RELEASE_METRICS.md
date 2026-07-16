@@ -13,12 +13,18 @@ bash bench/release_metrics.sh
 
 ## Locked figure
 
-| Build (default `cljw`, no `-Dwasm`)          | Shipped (build-stripped)      | CLI-strip floor                 |
-|----------------------------------------------|-------------------------------|---------------------------------|
-| **ReleaseSafe** — recommended release build | **3.24 MB** (3,392,568 bytes) | 3.25 MB (link-strip is minimal) |
-| ReleaseSmall — optimised for size           | 1.80 MB (1,882,616 bytes)     | 1.63 MB (1,707,888 bytes)       |
+| Build (`-Dwasm` — the SHIPPED config, embedded zwasm JIT engine included) | On-disk (build-stripped)      | CLI-strip floor |
+|---------------------------------------------------------------------------|-------------------------------|------------------|
+| **ReleaseSafe** — the release build                                      | **6.97 MB** (6,974,584 bytes) | 7.01 MB (CLI strip is a no-op here) |
+| ReleaseSmall — the size floor (safety checks off; NOT shipped)           | 3.55 MB (3,547,336 bytes)     | 3.21 MB (3,213,360 bytes) |
 
-Measured with Zig 0.16.0 for `aarch64-macos` (re-measured 2026-06-11). **As of
+Measured with Zig 0.16.0 for `aarch64-macos` (re-measured **2026-07-16**, after
+the ADR-0172 binary-size campaign: 9,469,816 → 6,974,584 bytes, −26.3% in one
+campaign — unwind-table strip O-052, envelope-v7 constant pool + flate
+regions/sources ADR-0173, zwasm v2.2.1 thunk collapse, sort dedup O-053; the
+per-component budget + `size_claims` gate now govern growth). The pre-campaign
+2026-06-11 row (no `-Dwasm`, 3.24 MB) predates the always-embedded Wasm engine
+and is superseded — the `-Dwasm` build IS the artifact users download. **As of
 O-008, `build.zig` strips the symbol table from every non-Debug build**
 (`.strip = optimize != .Debug`) — so the *installed* `zig-out/bin/cljw` is the
 "shipped" column directly, with no separate packaging step (cljw renders error
@@ -44,10 +50,10 @@ and a bytecode VM.
 
 End-to-end `cljw -e nil` (process spawn + runtime init + eval), measured on the
 ReleaseSafe build with [`hyperfine`](https://github.com/sharkdp/hyperfine) `-N`
-on an Apple M4 Pro (re-measured 2026-06-11):
+on an Apple M4 Pro (re-measured 2026-07-16, the `-Dwasm` shipped config):
 
 ```
-≈ 5 ms (4.8 ms ± 0.2 mean), warm filesystem cache
+≈ 6 ms (6.3 ms ± 0.5 mean), warm filesystem cache
 ```
 
 This includes loading the AOT-compiled `clojure.core` bootstrap (ADR-0056), so
