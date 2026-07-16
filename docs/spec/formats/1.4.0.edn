@@ -72,8 +72,8 @@
   :layout
   [["magic" "4 bytes = CLJR"]
    ["region-count" "u32"]
-   ["index" "region-count × (u32 name-len + name bytes + u32 abs-offset + u32 len); offsets are 8B-aligned from blob start"]
-   ["regions" "each region = one payload-envelope (pool-count 0), zero-padded to 8B starts"]
+   ["index" "region-count × (u32 name-len + name bytes + u32 abs-offset + u32 stored-len + u8 flags [bit0 = flate] + u32 uncompressed-len); offsets are 8B-aligned from blob start"]
+   ["regions" "each region = one payload-envelope (pool-count 0); LAZY regions are stored flate-compressed (.raw container — uncompressed-len is the exact output size, decompressed into the session arena on first require); the EAGER set is stored raw for zero-copy instr views; zero-padded to 8B starts"]
    ["pool-count" "u32 — the blob-level shared pool, at align8(max(off+len))"]
    ["pool" "pool-count × (u32 len + standalone constant encoding)"]]}
 

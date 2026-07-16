@@ -124,7 +124,11 @@ pub fn loadOrFindNs(rt: *Runtime, env: *Env, name: []const u8, loc: SourceLocati
     // ADR-0163 D-516: a lazy bootstrap namespace lives as a bytecode region in the
     // embedded blob — replay it (no re-parse) before consulting the source resolver.
     if (rt.bootstrap_region_blob) |blob| {
-        if (serialize.findRegion(blob, name)) |region| {
+        if (serialize.findRegion(blob, name)) |ref| {
+            // C5': a lazy region is stored flate-compressed; decompress into
+            // the session arena (8-aligned — the in-place instr views run
+            // over the buffer). Raw regions pass through untouched.
+            const region = try serialize.decompressRegion(rt.load_arena.allocator(), ref);
             try loadRegionNamespace(rt, env, name, region, loc);
             return env.findNs(name) orelse
                 return error_catalog.raise(.lib_not_found, loc, .{ .ns = name });

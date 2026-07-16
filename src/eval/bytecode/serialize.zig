@@ -1413,13 +1413,71 @@ pub const REGION_MAGIC: [4]u8 = .{ 'C', 'L', 'J', 'R' };
 pub const Region = struct {
     ns_name: []const u8,
     envelope: []const u8,
+    /// C5' (ADR-0173 / ADR-0172 L2): store this region flate-compressed
+    /// (`.raw` container). Only LAZY regions — the eager set stays raw so
+    /// its instr sections remain zero-copy views into rodata.
+    compress: bool = false,
 };
+
+/// A located region: raw bytes + compression metadata (index v2, C5').
+pub const RegionRef = struct {
+    bytes: []const u8,
+    compressed: bool,
+    uncompressed_len: u32,
+};
+
+/// flate-compress `bytes` (`.raw` container, best level). Caller frees.
+pub fn flateCompress(allocator: std.mem.Allocator, bytes: []const u8) ![]u8 {
+    const flate = std.compress.flate;
+    // Compress.init asserts output.buffer.len > 8 — an .init(alloc)
+    // Allocating writer starts with an EMPTY buffer (cache_gen ABRT'd on
+    // the assert), so pre-grow it.
+    var aw: std.Io.Writer.Allocating = try .initCapacity(allocator, @max(64, bytes.len / 2));
+    errdefer aw.deinit();
+    const window = try allocator.alloc(u8, flate.max_window_len);
+    defer allocator.free(window);
+    var cmp = try flate.Compress.init(&aw.writer, window, .raw, .best);
+    try cmp.writer.writeAll(bytes);
+    try cmp.finish();
+    return try aw.toOwnedSlice();
+}
+
+/// Decompress a located region into `allocator` (8-aligned, so the in-place
+/// instr views work over the buffer). Returns `ref.bytes` as-is when the
+/// region is stored raw. The caller's allocator owns the result for the
+/// session (`rt.load_arena` — fns capture their bytecode).
+pub fn decompressRegion(allocator: std.mem.Allocator, ref: RegionRef) ![]const u8 {
+    if (!ref.compressed) return ref.bytes;
+    const flate = std.compress.flate;
+    const out = try allocator.alignedAlloc(u8, .fromByteUnits(8), ref.uncompressed_len);
+    errdefer allocator.free(out);
+    // A REAL history window is required: the zero-buffer "direct mode"
+    // routes readSliceAll through the indirect path, whose rebase computes
+    // buffer.len - history_len and usize-underflows on an empty buffer
+    // (probed 2026-07-16, Debug trace at Decompress.zig:104).
+    const window = try allocator.alloc(u8, flate.max_window_len);
+    defer allocator.free(window);
+    var in: std.Io.Reader = .fixed(ref.bytes);
+    var d: flate.Decompress = .init(&in, .raw, window);
+    try d.reader.readSliceAll(out);
+    return out;
+}
 
 /// Serialize `regions` into one position-independent blob (layout above). Each
 /// `region.envelope` must be a `serializeEnvelope` output; the caller owns them.
 pub fn serializeRegions(allocator: std.mem.Allocator, regions: []const Region, pool_entries: []const []const u8) ![]u8 {
+    // C5': compress the flagged (lazy) regions first — the index stores the
+    // STORED length + flags + uncompressed_len (index v2).
+    const stored = try allocator.alloc([]const u8, regions.len);
+    defer {
+        for (regions, stored) |reg, st| if (reg.compress) allocator.free(st);
+        allocator.free(stored);
+    }
+    for (regions, 0..) |reg, i|
+        stored[i] = if (reg.compress) try flateCompress(allocator, reg.envelope) else reg.envelope;
+
     var index_size: usize = 4 + 4; // magic + count
-    for (regions) |reg| index_size += 4 + reg.ns_name.len + 4 + 4; // name_len+name+off+len
+    for (regions) |reg| index_size += 4 + reg.ns_name.len + 4 + 4 + 1 + 4; // name+off+stored_len+flags+uncompressed_len
 
     var aw: std.Io.Writer.Allocating = .init(allocator);
     errdefer aw.deinit();
@@ -1430,17 +1488,19 @@ pub fn serializeRegions(allocator: std.mem.Allocator, regions: []const Region, p
     // instr alignment (writeChunkBody) is blob-absolute too (the embed
     // wrapper aligns the whole blob to 8 — ADR-0173 Decision 2).
     var off: usize = std.mem.alignForward(usize, index_size, 8);
-    for (regions) |reg| {
+    for (regions, stored) |reg, st| {
         try writeLenPrefixed(w, reg.ns_name);
         try writeU32(w, @intCast(off));
+        try writeU32(w, @intCast(st.len));
+        try writeU8(w, if (reg.compress) 1 else 0);
         try writeU32(w, @intCast(reg.envelope.len));
-        off = std.mem.alignForward(usize, off + reg.envelope.len, 8);
+        off = std.mem.alignForward(usize, off + st.len, 8);
     }
     var written: usize = index_size;
-    for (regions) |reg| {
+    for (stored) |st| {
         while (written % 8 != 0) : (written += 1) try writeU8(w, 0);
-        try w.writeAll(reg.envelope);
-        written += reg.envelope.len;
+        try w.writeAll(st);
+        written += st.len;
     }
     // Trailing blob-level pool (shared by every region's chunks): begins
     // right after the last region's padded end; `readBlobPool` derives the
@@ -1464,6 +1524,8 @@ pub fn readBlobPool(allocator: std.mem.Allocator, blob: []const u8) DeserializeE
         _ = try r.readLenPrefixed();
         const off = try r.readU32();
         const len = try r.readU32();
+        _ = try r.readU8(); // flags (C5')
+        _ = try r.readU32(); // uncompressed_len (C5')
         if (off + len > blob.len) return DeserializeError.BytecodeTruncated;
         if (off + len > end) end = off + len;
     }
@@ -1482,7 +1544,7 @@ pub fn readBlobPool(allocator: std.mem.Allocator, blob: []const u8) DeserializeE
 /// Return the envelope bytes for `ns_name` (a sub-slice into `blob`), or null if
 /// `blob` is not a region blob or has no such region. O(region_count) linear scan
 /// of the header index — region_count is ~30 and lazy `require` is not a hot path.
-pub fn findRegion(blob: []const u8, ns_name: []const u8) ?[]const u8 {
+pub fn findRegion(blob: []const u8, ns_name: []const u8) ?RegionRef {
     if (blob.len < 8 or !std.mem.eql(u8, blob[0..4], &REGION_MAGIC)) return null;
     var r: ByteReader = .{ .bytes = blob, .pos = 4 };
     const count = r.readU32() catch return null;
@@ -1491,9 +1553,11 @@ pub fn findRegion(blob: []const u8, ns_name: []const u8) ?[]const u8 {
         const name = r.readLenPrefixed() catch return null;
         const off = r.readU32() catch return null;
         const len = r.readU32() catch return null;
+        const flags = r.readU8() catch return null;
+        const ulen = r.readU32() catch return null;
         if (std.mem.eql(u8, name, ns_name)) {
             if (off + len > blob.len) return null;
-            return blob[off .. off + len];
+            return .{ .bytes = blob[off .. off + len], .compressed = (flags & 1) != 0, .uncompressed_len = ulen };
         }
     }
     return null;
@@ -1560,7 +1624,7 @@ test "region blob: findRegion returns each ns's envelope; absent / non-region ->
     defer testing.allocator.free(blob);
 
     // Each region's sub-slice equals its source envelope and deserializes to its chunk.
-    const got_a = findRegion(blob, "clojure.core") orelse return error.NoRegion;
+    const got_a = (findRegion(blob, "clojure.core") orelse return error.NoRegion).bytes;
     try testing.expectEqualSlices(u8, env_a, got_a);
     var af_1237: root_set.AnalysisFrame = undefined;
     root_set.beginAnalysis(&af_1237, testing.allocator);
@@ -1569,7 +1633,7 @@ test "region blob: findRegion returns each ns's envelope; absent / non-region ->
     defer freeEnvelope(testing.allocator, chunks_a);
     try testing.expectEqual(@as(i64, 7), chunks_a[0].constants[0].asInteger());
 
-    const got_b = findRegion(blob, "clojure.string") orelse return error.NoRegion;
+    const got_b = (findRegion(blob, "clojure.string") orelse return error.NoRegion).bytes;
     try testing.expectEqualSlices(u8, env_b, got_b);
 
     // Absent ns + a non-region blob both yield null.
@@ -2393,7 +2457,8 @@ test "v7 pool: duplicated interned-name constants dedupe and round-trip (blob le
     // Deserialize region b's chunk through the pool: constants resolve to
     // the SAME interned keyword/symbol (interning gives identity).
     const region_b = findRegion(blob, "b") orelse return error.TestUnexpectedResult;
-    var it = try EnvelopeIterator.init(region_b);
+    try testing.expectEqual(false, region_b.compressed);
+    var it = try EnvelopeIterator.init(region_b.bytes);
     const cb = (try it.next()) orelse return error.TestUnexpectedResult;
     var af: root_set.AnalysisFrame = undefined;
     root_set.beginAnalysis(&af, testing.allocator);
@@ -2437,4 +2502,41 @@ test "v7 alignment: every instr section sits 4B-aligned relative to the envelope
         const instr_off = chunk_base + r.pos + 4; // + count u32
         try testing.expectEqual(@as(usize, 0), instr_off % 4);
     }
+}
+
+test "C5': compressed lazy region round-trips through flateCompress/decompressRegion" {
+    var th = std.Io.Threaded.init(testing.allocator, .{});
+    defer th.deinit();
+    var rt = Runtime.init(th.io(), testing.allocator);
+    defer rt.deinit();
+    var env = try @import("../../runtime/env.zig").Env.init(&rt);
+    defer env.deinit();
+
+    const instrs = [_]WireInstr{ .from(.op_const, 0), .from(.op_ret, 0) };
+    const consts = [_]Value{Value.initInteger(7)};
+    const chunk: BytecodeChunk = .{ .instructions = &instrs, .constants = &consts };
+    const env_raw = try serializeEnvelope(testing.allocator, &.{chunk}, null, &.{}, null, false);
+    defer testing.allocator.free(env_raw);
+
+    const blob = try serializeRegions(testing.allocator, &.{
+        .{ .ns_name = "lazy.ns", .envelope = env_raw, .compress = true },
+    }, &.{});
+    defer testing.allocator.free(blob);
+
+    const ref = findRegion(blob, "lazy.ns") orelse return error.TestUnexpectedResult;
+    try testing.expect(ref.compressed);
+    try testing.expect(ref.bytes.len < env_raw.len); // it actually shrank
+    try testing.expectEqual(@as(u32, @intCast(env_raw.len)), ref.uncompressed_len);
+
+    const restored = try decompressRegion(testing.allocator, ref);
+    const restored_owned: []align(8) const u8 = @alignCast(restored);
+    defer testing.allocator.free(restored_owned);
+    try testing.expectEqualSlices(u8, env_raw, restored);
+
+    var af: root_set.AnalysisFrame = undefined;
+    root_set.beginAnalysis(&af, testing.allocator);
+    defer root_set.endAnalysis(&af);
+    const chunks = try deserializeEnvelope(testing.allocator, &rt, &env, restored);
+    defer freeEnvelope(testing.allocator, chunks);
+    try testing.expectEqual(@as(i64, 7), chunks[0].constants[0].asInteger());
 }

@@ -595,8 +595,11 @@ pub fn loadCoreAot(
         const ns_name = nsNameFromLabel(file.label);
         if (!isEagerNs(ns_name)) continue;
         // A missing region means the embedded blob is malformed (build bug).
-        const region = serialize.findRegion(bootstrap_blob, ns_name) orelse return error.MissingBootstrapRegion;
-        try driver.runEnvelope(rt, env, arena, region, if (blob_pool) |*cp| cp else null);
+        const ref = serialize.findRegion(bootstrap_blob, ns_name) orelse return error.MissingBootstrapRegion;
+        // Eager regions are stored RAW by construction (builder flags only
+        // the lazy set) — a compressed eager region is a build bug.
+        if (ref.compressed) return error.MissingBootstrapRegion;
+        try driver.runEnvelope(rt, env, arena, ref.bytes, if (blob_pool) |*cp| cp else null);
     }
     prof.mark("    runEnvelope");
     try finalizeUserNs(rt, env);
@@ -616,7 +619,8 @@ pub fn runEagerRegions(rt: *Runtime, env: *Env, arena: std.mem.Allocator, blob: 
         const ns_name = nsNameFromLabel(file.label);
         // A missing region means the embedded blob is malformed (a build-time
         // bug, never user input) — fail loudly rather than silently skipping a ns.
-        const region = serialize.findRegion(blob, ns_name) orelse return error.MissingBootstrapRegion;
+        const ref = serialize.findRegion(blob, ns_name) orelse return error.MissingBootstrapRegion;
+        const region = try serialize.decompressRegion(rt.load_arena.allocator(), ref);
         try driver.runEnvelope(rt, env, arena, region, if (blob_pool) |*cp| cp else null);
     }
 }

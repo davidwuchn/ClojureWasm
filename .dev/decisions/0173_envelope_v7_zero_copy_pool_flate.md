@@ -187,6 +187,19 @@ measured per-commit (protocol below), not asserted.
   median-of-20 protocol. D-517's "~2.1 ms deserialize half" premise is
   itself load-suspect and is re-anchored by these medians.
 
+- **2026-07-16 (C5′-a landing — flate lazy regions)**: region-blob index v2
+  (stored-len + flags + uncompressed-len); lazy regions flate-compressed
+  (`.raw`, level best) at cache_gen time, decompressed into `rt.load_arena`
+  (8-aligned — the in-place instr views run over the buffer) on first
+  `require`; the eager set stays raw for rodata zero-copy (compressed-eager
+  = build bug, fail-closed). **Measured**: blob 544,909 → 425,125 B; shipped
+  binary 7,499,896 → **7,384,984 B**. Two probe-caught bugs recorded:
+  `Compress.init` asserts a non-empty output buffer (`initCapacity`, the
+  cache_gen ABRT), and the zero-buffer "direct mode" Decompress recipe
+  usize-underflows via the indirect rebase path under `readSliceAll` — a
+  REAL 32 KB history window is required (the survey's §4 recipe is hereby
+  corrected). C5′-b (compressed `.clj` sources, est −326 KB) remains.
+
 ## Measurement protocol (mandatory, per commit)
 
 - VM-hot A/B for C1 (representation change, isolated):

@@ -276,7 +276,7 @@ active:
       findings fold into the D-175 floor.)
     last_reviewed: "2026-06-24"
   - id: "D-517"
-    status: "IN PROGRESS 2026-07-16 (ADR-0173): C1+C2'+C3' LANDED — v7 wire (aligned WireInstr, source_file/has_handlers, headerless nested, interned-name pool: blob 698->545KB, binary -148KB) + in-place instr views (borrowed_instrs flag, raw-byte validation scan, aligned embed wrapper). MEASUREMENT CORRECTION: startup is NEUTRAL within noise so far (median-of-20 runEnvelope 3234us baseline vs 3261us post-C3'; the earlier -32% claim was single-shot load noise). Remaining: C4' memoized pool slots (the startup candidate: 15.9K->3.3K interns — judge by median-of-20), C5' flate lazy regions+.clj (ADR-0172 L2, est -350KB), C6' has_handlers consumer flip. ORIGINAL: open (ADR-0162 step 3). The '2.1ms deserialize half' premise re-anchored: clean-median eager runEnvelope is ~3.2ms TOTAL."
+    status: "IN PROGRESS 2026-07-16 (ADR-0173): C1+C2'+C3'+C4'+C5'-a LANDED. Measured: blob 698->425KB; shipped binary at this point 7,384,984 B (campaign total from 9,469,816 = -22.0%); startup neutral-within-noise except C4' memoize -165us median. Remaining: C5'-b compressed .clj sources (registerSource lazy-handle surface + cache_gen second blob; est -326KB), C6' has_handlers consumer flip (own bench), then the user-directed FULL cross-language bench + record refresh (task #5). ORIGINAL: open (ADR-0162 step 3)."
     category: "perf"
     barrier: |-
       ADR-0162 step 3. Sequenced AFTER D-516 (so it applies to both eager core + lazy
